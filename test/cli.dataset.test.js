@@ -37,6 +37,9 @@ const {
   runDatasetBuild,
   runDatasetVerify,
   runDatasetDiff,
+  runDatasetSummary,
+  NO_LICENSE_BUCKET,
+  NO_SOURCE_BUCKET,
   buildDatasetProof,
   runDatasetProve,
   runDatasetVerifyProof,
@@ -47,6 +50,7 @@ const {
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,
+  parseDatasetSummaryArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
 } = require("../cli/vh");
@@ -1166,6 +1170,241 @@ describe("cli: vh dataset build (T-13.1)", function () {
         expect(await main(["dataset", "diff"])).to.equal(2); // no positional
         expect(await main(["dataset", "diff", aPath, aPath, aPath])).to.equal(2); // third positional
         expect(await main(["dataset", "diff", aPath, aPath, "--bogus"])).to.equal(2); // unknown flag
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------------
+  // T-14.2: `vh dataset summary <manifest>` — OFFLINE provenance/license roll-up.
+  // ---------------------------------------------------------------------------------------------------
+  describe("vh dataset summary (T-14.2): OFFLINE provenance/license roll-up", function () {
+    // Build a manifest for `files` with optional `hints`, return its path. No live tree is retained — the
+    // summary is offline. Every temp dir self-cleans in afterEach.
+    function manifestFor(files, hints, prefix) {
+      const dir = tmp((prefix || "dss") + "-tree-");
+      writeFiles(dir, files);
+      const out = path.join(tmp((prefix || "dss") + "-man-"), "manifest.json");
+      const hintsPath = hints
+        ? (() => {
+            const p = path.join(tmp((prefix || "dss") + "-hints-"), "hints.json");
+            fs.writeFileSync(p, JSON.stringify(hints));
+            return p;
+          })()
+        : undefined;
+      // Read the hints file the same way cmdDataset does (so we exercise the real shape), then build.
+      const parsedHints = hintsPath ? JSON.parse(fs.readFileSync(hintsPath, "utf8")) : undefined;
+      runDatasetBuild({ dir, out, hints: parsedHints, stdout: () => {} });
+      return out;
+    }
+
+    it("reports correct per-license / per-source counts AND the right no-hint bucket sizes", function () {
+      // 4 files: two share license MIT, one is Apache-2.0, one has no license hint. Sources: two share
+      // 'corpus-X', one is 'internal', one has no source hint.
+      const manifestPath = manifestFor(
+        { "a.txt": "AAA", "b.txt": "BBB", "c.txt": "CCC", "d.txt": "DDD" },
+        {
+          "a.txt": { license: "MIT", source: "corpus-X" },
+          "b.txt": { license: "MIT", source: "corpus-X" },
+          "c.txt": { license: "Apache-2.0", source: "internal" },
+          // d.txt: NO hint at all
+        },
+        "dss-counts"
+      );
+      const lines = [];
+      const res = runDatasetSummary({ manifest: manifestPath, stdout: (s) => lines.push(s) });
+
+      expect(res.fileCount).to.equal(4);
+      expect(res.root).to.match(/^0x[0-9a-f]{64}$/);
+      expect(res.licenses).to.deep.equal({
+        MIT: 2,
+        "Apache-2.0": 1,
+        [NO_LICENSE_BUCKET]: 1,
+      });
+      expect(res.sources).to.deep.equal({
+        "corpus-X": 2,
+        internal: 1,
+        [NO_SOURCE_BUCKET]: 1,
+      });
+      expect(res.filesWithLicenseHint).to.equal(3);
+      expect(res.filesWithSourceHint).to.equal(3);
+
+      // Per-histogram counts always sum to fileCount (no file silently dropped).
+      const sum = (h) => Object.values(h).reduce((a, b) => a + b, 0);
+      expect(sum(res.licenses)).to.equal(res.fileCount);
+      expect(sum(res.sources)).to.equal(res.fileCount);
+
+      // Human output LEADS with the trust caveat and explains the no-hint bucket.
+      const out = lines.join("");
+      expect(out).to.contain("TRUST:");
+      expect(out).to.contain("UNTRUSTED");
+      expect(out).to.contain("CLAIMS");
+      expect(out).to.contain("does NOT verify");
+      expect(out).to.contain("ASSERTS NOTHING");
+      expect(out).to.contain(res.root);
+      expect(out).to.contain("MIT");
+      expect(out).to.contain(NO_LICENSE_BUCKET);
+      expect(out).to.contain(NO_SOURCE_BUCKET);
+    });
+
+    it("a manifest with a partial hint (license only, no source) buckets the missing source correctly", function () {
+      const manifestPath = manifestFor(
+        { "a.txt": "AAA", "b.txt": "BBB" },
+        { "a.txt": { license: "CC0-1.0" } }, // license but NO source; b.txt has nothing
+        "dss-partial"
+      );
+      const res = runDatasetSummary({ manifest: manifestPath, stdout: () => {} });
+      expect(res.licenses).to.deep.equal({ "CC0-1.0": 1, [NO_LICENSE_BUCKET]: 1 });
+      expect(res.sources).to.deep.equal({ [NO_SOURCE_BUCKET]: 2 });
+      expect(res.filesWithLicenseHint).to.equal(1);
+      expect(res.filesWithSourceHint).to.equal(0);
+    });
+
+    it("a valid manifest with NO fileCount field derives fileCount from files.length (human + --json)", function () {
+      // A third-party manifest may legitimately omit the OPTIONAL fileCount field: validateManifest only
+      // checks it "when present", so a non-empty files[] with no fileCount is valid. The summary must NOT
+      // passthrough manifest.fileCount (undefined here) — it derives from files.length so the field is
+      // always present and self-consistent with the histograms.
+      const manifestPath = manifestFor(
+        { "a.txt": "AAA", "b.txt": "BBB", "c.txt": "CCC" },
+        { "a.txt": { license: "MIT" } },
+        "dss-nofc"
+      );
+      // Strip the OPTIONAL fileCount; the stripped manifest stays valid (readManifest accepts it).
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      delete m.fileCount;
+      const strippedPath = path.join(tmp("dss-nofc-stripped-"), "m.json");
+      fs.writeFileSync(strippedPath, JSON.stringify(m));
+
+      // Human denominator is the real count, not "undefined".
+      const lines = [];
+      const res = runDatasetSummary({ manifest: strippedPath, stdout: (s) => lines.push(s) });
+      expect(res.fileCount).to.equal(3);
+      const out = lines.join("");
+      expect(out).to.contain("files: 3");
+      expect(out).to.contain("1/3 files carry a license hint");
+      expect(out).to.not.contain("undefined");
+
+      // --json carries the fileCount key (JSON.stringify would DROP it if it were undefined).
+      const jsonLines = [];
+      const jres = runDatasetSummary({ manifest: strippedPath, json: true, stdout: (s) => jsonLines.push(s) });
+      const parsed = JSON.parse(jsonLines.join(""));
+      expect(parsed).to.have.property("fileCount", 3);
+      expect(jres.fileCount).to.equal(3);
+      // Histograms still sum to fileCount.
+      const sum = (h) => Object.values(h).reduce((a, b) => a + b, 0);
+      expect(sum(parsed.licenses)).to.equal(parsed.fileCount);
+      expect(sum(parsed.sources)).to.equal(parsed.fileCount);
+    });
+
+    it("a manifest with ZERO hints reports every file under the no-hint buckets", function () {
+      const manifestPath = manifestFor(
+        { "a.txt": "AAA", "b.txt": "BBB", "c.txt": "CCC" },
+        undefined,
+        "dss-zero"
+      );
+      const res = runDatasetSummary({ manifest: manifestPath, stdout: () => {} });
+      expect(res.fileCount).to.equal(3);
+      expect(res.licenses).to.deep.equal({ [NO_LICENSE_BUCKET]: 3 });
+      expect(res.sources).to.deep.equal({ [NO_SOURCE_BUCKET]: 3 });
+      expect(res.filesWithLicenseHint).to.equal(0);
+      expect(res.filesWithSourceHint).to.equal(0);
+    });
+
+    it("--json round-trips (machine-readable object, no human text leaked)", function () {
+      const manifestPath = manifestFor(
+        { "a.txt": "AAA", "b.txt": "BBB" },
+        { "a.txt": { license: "MIT", source: "corpus-X" } },
+        "dss-json"
+      );
+      const lines = [];
+      const res = runDatasetSummary({ manifest: manifestPath, json: true, stdout: (s) => lines.push(s) });
+      const parsed = JSON.parse(lines.join(""));
+      expect(parsed.root).to.equal(res.root);
+      expect(parsed.fileCount).to.equal(2);
+      expect(parsed.licenses).to.deep.equal({ MIT: 1, [NO_LICENSE_BUCKET]: 1 });
+      expect(parsed.sources).to.deep.equal({ "corpus-X": 1, [NO_SOURCE_BUCKET]: 1 });
+      expect(parsed.filesWithLicenseHint).to.equal(1);
+      expect(parsed.filesWithSourceHint).to.equal(1);
+      // No TRUST caveat text leaked into the JSON line.
+      expect(lines.join("")).to.not.contain("TRUST:");
+    });
+
+    it("rejects a corrupt/foreign manifest (no half-accept)", function () {
+      const manifestPath = manifestFor({ "a.txt": "AAA" }, undefined, "dss-corrupt");
+      // Corrupt: valid JSON, non-hex root.
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      const badPath = path.join(tmp("dss-corrupt-bad-"), "m.json");
+      fs.writeFileSync(badPath, JSON.stringify(m));
+      expect(() => runDatasetSummary({ manifest: badPath, stdout: () => {} })).to.throw(
+        /root must be a 0x-prefixed 32-byte hex/
+      );
+      // A FOREIGN artifact (wrong kind) is rejected too.
+      const foreignPath = path.join(tmp("dss-foreign-"), "f.json");
+      fs.writeFileSync(foreignPath, JSON.stringify({ kind: "not-a-manifest", schemaVersion: 1 }));
+      expect(() => runDatasetSummary({ manifest: foreignPath, stdout: () => {} })).to.throw(
+        /not a verifyhash dataset manifest/
+      );
+    });
+
+    // ---- CLI wiring + exit codes -------------------------------------------------------------------
+    it("parseDatasetSummaryArgs parses positional + --json; rejects unknowns / extra positionals", function () {
+      expect(parseDatasetSummaryArgs(["/m"])).to.deep.equal({ manifest: "/m", json: false });
+      expect(parseDatasetSummaryArgs(["/m", "--json"])).to.deep.equal({ manifest: "/m", json: true });
+      expect(() => parseDatasetSummaryArgs(["/m", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseDatasetSummaryArgs(["/m", "/n"])).to.throw(/unexpected extra argument/);
+    });
+
+    it("main() exit 0 on success; --json emits the machine-readable object", async function () {
+      const manifestPath = manifestFor(
+        { "a.txt": "AAA", "b.txt": "BBB" },
+        { "a.txt": { license: "MIT" } },
+        "dss-cli"
+      );
+      const chunks = [];
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (s) => {
+        chunks.push(s);
+        return true;
+      };
+      let code;
+      try {
+        code = await main(["dataset", "summary", manifestPath, "--json"]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(0);
+      const parsed = JSON.parse(chunks.join(""));
+      expect(parsed.fileCount).to.equal(2);
+      expect(parsed.licenses).to.deep.equal({ MIT: 1, [NO_LICENSE_BUCKET]: 1 });
+    });
+
+    it("main() exit 2 (usage) on a missing positional / extra positional / unknown flag", async function () {
+      const manifestPath = manifestFor({ "a.txt": "AAA" }, undefined, "dss-usage");
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "summary"])).to.equal(2); // no positional
+        expect(await main(["dataset", "summary", manifestPath, manifestPath])).to.equal(2); // extra positional
+        expect(await main(["dataset", "summary", manifestPath, "--bogus"])).to.equal(2); // unknown flag
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    it("main() exit 1 on a missing / corrupt manifest (runtime error)", async function () {
+      const manifestPath = manifestFor({ "a.txt": "AAA" }, undefined, "dss-rt");
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      const badPath = path.join(tmp("dss-rt-bad-"), "m.json");
+      fs.writeFileSync(badPath, JSON.stringify(m));
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "summary", "/no/such/manifest.json"])).to.equal(1);
+        expect(await main(["dataset", "summary", badPath])).to.equal(1);
       } finally {
         process.stderr.write = orig;
       }

@@ -641,6 +641,150 @@ function formatDatasetDiff(r) {
 }
 
 // =================================================================================================
+// `vh dataset summary <manifest> [--json]` — provenance/license roll-up the due-diligence reviewer reads.
+//
+// WHY THIS EXISTS
+//   A compliance/due-diligence reviewer holding a manifest wants a one-glance aggregate: how many files,
+//   what root, and a histogram of the self-asserted {source, license} hints — "what does this dataset
+//   CLAIM about where its files came from and under what license?". This is PURELY OFFLINE: it reads the
+//   manifest via the SAME strict `readManifest` (a corrupt/foreign manifest is rejected) and counts what
+//   the manifest records. NO dataset tree, NO provider, NO key, NO network.
+//
+// TRUST POSTURE (carried verbatim into output). The file SET (relPath + content) is bound into the root
+//   and is trustworthy; the {source, license} hints are UNTRUSTED, self-asserted metadata NOT bound into
+//   the root. The summary counts what the dataset CLAIMS — it does NOT verify any license/source is
+//   correct. A file with NO license hint lands in the explicit "(no license hint)" bucket: that means the
+//   manifest ASSERTS NOTHING, not that the file is unlicensed.
+
+// Explicit bucket labels for files that carry no hint, so the histogram never silently drops them and a
+// reader can never mistake "no claim" for a real license/source value.
+const NO_LICENSE_BUCKET = "(no license hint)";
+const NO_SOURCE_BUCKET = "(no source hint)";
+
+/**
+ * Compute (purely, OFFLINE) the provenance/license roll-up over a manifest's TRUSTED file set. Reads the
+ * manifest via the strict `readManifest` (so a corrupt/foreign manifest is rejected, never half-accepted)
+ * and aggregates the per-file {source, license} hints into histograms. Files with no license hint are
+ * counted under NO_LICENSE_BUCKET, files with no source hint under NO_SOURCE_BUCKET — never dropped.
+ *
+ * The hints are UNTRUSTED self-asserted metadata (NOT bound into the root); this counts CLAIMS, it does
+ * not verify them. NO dataset tree, NO provider, NO key, NO network.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
+ * @param {boolean}[opts.json]    emit a machine-readable object instead of the human block
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {{
+ *   root: string,
+ *   fileCount: number,
+ *   licenses: Object<string,number>,
+ *   sources: Object<string,number>,
+ *   filesWithLicenseHint: number,
+ *   filesWithSourceHint: number,
+ * }}
+ */
+function runDatasetSummary(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetSummary requires options");
+  const { manifest: manifestPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runDatasetSummary requires a <manifest> path");
+
+  // Strict read: a corrupt/edited/foreign manifest is rejected here, never half-accepted, BEFORE any
+  // aggregation. The file SET it commits to is the TRUSTED basis of the roll-up.
+  const manifest = readManifest(manifestPath);
+
+  // Aggregate the UNTRUSTED hints. A file with no `hints.license` (or no hints at all) is counted under
+  // the explicit no-hint bucket; ditto for source. We never silently omit a file from either histogram,
+  // so the per-histogram counts always sum to fileCount.
+  const licenses = {};
+  const sources = {};
+  let filesWithLicenseHint = 0;
+  let filesWithSourceHint = 0;
+  for (const f of manifest.files) {
+    const license =
+      f.hints && typeof f.hints.license === "string" ? f.hints.license : null;
+    const source = f.hints && typeof f.hints.source === "string" ? f.hints.source : null;
+    const licenseKey = license === null ? NO_LICENSE_BUCKET : license;
+    const sourceKey = source === null ? NO_SOURCE_BUCKET : source;
+    licenses[licenseKey] = (licenses[licenseKey] || 0) + 1;
+    sources[sourceKey] = (sources[sourceKey] || 0) + 1;
+    if (license !== null) filesWithLicenseHint++;
+    if (source !== null) filesWithSourceHint++;
+  }
+
+  const result = {
+    root: manifest.root,
+    // Derive fileCount from the TRUSTED files array (not the OPTIONAL manifest.fileCount passthrough): a
+    // valid third-party manifest may omit fileCount, and this keeps the field always present and always
+    // self-consistent with the histograms (which sum to manifest.files.length). Mirrors runDatasetVerify.
+    fileCount: manifest.files.length,
+    licenses,
+    sources,
+    filesWithLicenseHint,
+    filesWithSourceHint,
+  };
+
+  if (opts.json) {
+    write(JSON.stringify(result) + "\n");
+  } else {
+    for (const line of formatDatasetSummary(result)) {
+      write(line + "\n");
+    }
+  }
+  return result;
+}
+
+/**
+ * Render a dataset-summary result as the human-readable block the CLI prints. LEADS with the trust caveat
+ * (reusing the dataset TRUST_NOTE wording): the file SET is bound into the root and trustworthy; the
+ * {source, license} hints are UNTRUSTED — the summary counts what the dataset CLAIMS, it does not verify
+ * any license/source is correct. States plainly that "(no license hint)" means the manifest asserts
+ * nothing, not that the file is unlicensed.
+ * @param {{root:string,fileCount:number,licenses:object,sources:object,filesWithLicenseHint:number,filesWithSourceHint:number}} r
+ * @returns {string[]} lines
+ */
+function formatDatasetSummary(r) {
+  const lines = [
+    // TRUST caveat FIRST: this counts CLAIMS, not verified facts.
+    "  TRUST: the file SET (relPath + content) is bound into the root and is trustworthy. " + TRUST_NOTE,
+    "         This summary counts what the dataset CLAIMS — it does NOT verify any license/source is",
+    "         correct. \"(no license hint)\" means the manifest ASSERTS NOTHING for that file, NOT that",
+    "         the file is unlicensed; likewise \"(no source hint)\".",
+    "",
+    `  root:  ${r.root}`,
+    `  files: ${r.fileCount}`,
+    "",
+    `  licenses (CLAIMED; ${r.filesWithLicenseHint}/${r.fileCount} files carry a license hint):`,
+  ];
+  for (const line of _histogramLines(r.licenses)) lines.push(line);
+  lines.push(
+    "",
+    `  sources (CLAIMED; ${r.filesWithSourceHint}/${r.fileCount} files carry a source hint):`
+  );
+  for (const line of _histogramLines(r.sources)) lines.push(line);
+  return lines;
+}
+
+/**
+ * Render a histogram { value -> count } as sorted, aligned lines. Real values are listed first (sorted by
+ * descending count, then by value for a stable order); a no-hint bucket, if present, is listed LAST so a
+ * reader sees the asserted values before the "no claim" tally.
+ */
+function _histogramLines(hist) {
+  const entries = Object.entries(hist);
+  const isNoHint = (k) => k === NO_LICENSE_BUCKET || k === NO_SOURCE_BUCKET;
+  entries.sort((a, b) => {
+    const an = isNoHint(a[0]);
+    const bn = isNoHint(b[0]);
+    if (an !== bn) return an ? 1 : -1; // no-hint bucket always last
+    if (b[1] !== a[1]) return b[1] - a[1]; // higher count first
+    return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; // then stable by value
+  });
+  if (entries.length === 0) return ["    (no files)"];
+  return entries.map(([value, count]) => `    ${String(count).padStart(6)}  ${value}`);
+}
+
+// =================================================================================================
 // `vh dataset prove --file <p> --manifest <m>`  +  `vh dataset verify-proof <proof>`
 // Offline set-membership of ONE file in a manifested dataset.
 //
@@ -944,6 +1088,8 @@ module.exports = {
   SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
   TRUST_NOTE,
   MEMBERSHIP_TRUST_NOTE,
+  NO_LICENSE_BUCKET,
+  NO_SOURCE_BUCKET,
   VERIFY_STATUS,
   MEMBERSHIP_STATUS,
   buildManifest,
@@ -955,6 +1101,8 @@ module.exports = {
   formatDatasetVerify,
   runDatasetDiff,
   formatDatasetDiff,
+  runDatasetSummary,
+  formatDatasetSummary,
   buildDatasetProof,
   runDatasetProve,
   runDatasetVerifyProof,

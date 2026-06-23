@@ -26,6 +26,7 @@ const {
   runDatasetBuild,
   runDatasetVerify,
   runDatasetDiff,
+  runDatasetSummary,
   runDatasetProve,
   runDatasetVerifyProof,
 } = require("./dataset");
@@ -51,6 +52,7 @@ function usage() {
     "  vh dataset build <dir> --out <p>  tamper-evident dataset manifest (Merkle root + per-file leaves)",
     "  vh dataset verify <dir> --manifest <p>  re-derive the root + per-file diff vs a manifest (OFFLINE)",
     "  vh dataset diff <manifestA> <manifestB>  OFFLINE manifest-to-manifest change report (no tree/key/net)",
+    "  vh dataset summary <manifest>   OFFLINE provenance/license roll-up over a manifest (no tree/key/net)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "",
@@ -232,6 +234,17 @@ function usage() {
     "  bound into the leaf). Compares what each manifest CLAIMS — it does NOT re-derive content (use",
     "  `vh dataset verify` against the live tree for that). The verdict/exit code is the CHANGE SET",
     "  (`identical`), NOT root-string equality. Exit 0 IDENTICAL, 3 DIFFERENT.",
+    "",
+    "dataset summary options (OFFLINE provenance/license roll-up; NO tree, NO key, NO network):",
+    "  <manifest>                 REQUIRED: a manifest written by `vh dataset build`",
+    "  --json                     emit { root, fileCount, licenses, sources, filesWithLicenseHint, filesWithSourceHint }",
+    "  Reads the manifest via the strict readManifest (a corrupt/foreign manifest is rejected) and rolls",
+    "  up the TRUSTED file set: total fileCount, the root, and license + source histograms (count of",
+    "  files per CLAIMED value; files with no hint grouped under '(no license hint)' / '(no source hint)').",
+    "  The file SET (relPath + content) is bound into the root and trustworthy; the {source, license}",
+    "  hints are UNTRUSTED, self-asserted metadata NOT bound into the root — this counts what the dataset",
+    "  CLAIMS, it does NOT verify any license/source is correct. '(no license hint)' means the manifest",
+    "  asserts nothing, NOT that the file is unlicensed. Exit 0; usage error 2; corrupt/missing manifest 1.",
     "",
     "dataset prove options (OFFLINE set-membership of ONE file; NO key, NO network):",
     "  --file <path>              REQUIRED: the single file to prove was a member of the dataset",
@@ -1597,6 +1610,28 @@ function parseDatasetDiffArgs(argv) {
 }
 
 /**
+ * Parse `dataset summary` argv into { manifest, json }. Takes EXACTLY one positional manifest path and an
+ * optional --json. Throws on a missing/extra positional or an unknown flag, so a typo never silently
+ * summarizes the wrong (or no) manifest (parser parity with the other dataset subcommands).
+ */
+function parseDatasetSummaryArgs(argv) {
+  const opts = { manifest: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.manifest !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.manifest = a;
+    }
+  }
+  return opts;
+}
+
+/**
  * Parse `dataset prove` argv into { file, manifest, out, json }. Takes NO positional (the file is the
  * REQUIRED --file flag, the manifest the REQUIRED --manifest flag), so a stray positional hard-errors —
  * a typo never silently proves the wrong file or writes to a surprise path (parser parity with the others).
@@ -1658,6 +1693,9 @@ function cmdDataset(argv) {
   if (sub === "diff") {
     return cmdDatasetDiff(rest);
   }
+  if (sub === "summary") {
+    return cmdDatasetSummary(rest);
+  }
   if (sub === "prove") {
     return cmdDatasetProve(rest);
   }
@@ -1667,7 +1705,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | diff | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | summary | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -1793,6 +1831,35 @@ function cmdDatasetDiff(argv) {
   // never disagree with the printed/JSON changeset — a hand-edited `root` whose leaves are unchanged
   // still exits 0 (IDENTICAL), matching its empty changeset.
   return result.identical ? 0 : 3;
+}
+
+/**
+ * `vh dataset summary <manifest> [--json]` — OFFLINE provenance/license roll-up over a manifest. Reads
+ * the manifest strictly and aggregates the (UNTRUSTED) per-file {source, license} hints into histograms,
+ * leading with the trust caveat that this counts CLAIMS, not verified facts. PURELY OFFLINE: no tree, no
+ * provider, no key, no network. Exit 0 on success, 2 on a usage error, 1 on a runtime error (missing or
+ * corrupt manifest).
+ */
+function cmdDatasetSummary(argv) {
+  let opts;
+  try {
+    opts = parseDatasetSummaryArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset summary` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+
+  try {
+    runDatasetSummary({ manifest: opts.manifest, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
 }
 
 /**
@@ -1928,11 +1995,13 @@ module.exports = {
   cmdDataset,
   cmdDatasetVerify,
   cmdDatasetDiff,
+  cmdDatasetSummary,
   cmdDatasetProve,
   cmdDatasetVerifyProof,
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,
+  parseDatasetSummaryArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
   parseHashArgs,

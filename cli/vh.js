@@ -16,6 +16,7 @@ const { hashPath } = require("./hash");
 const { runAnchor } = require("./anchor");
 const { runVerify } = require("./verify");
 const { runProve } = require("./prove");
+const { runClaim } = require("./claim");
 
 function usage() {
   return [
@@ -23,16 +24,25 @@ function usage() {
     "",
     "Usage:",
     "  vh hash <path>             keccak256 of a file, or sorted-leaf Merkle root of a directory",
-    "  vh anchor <path> [opts]    anchor a file/dir's content hash on-chain",
+    "  vh anchor <path> [opts]    anchor a file/dir's content hash on-chain (FRONT-RUNNABLE)",
+    "  vh claim <path> [opts]     front-running-resistant attribution via commit-reveal",
     "  vh verify <path> [opts]    recompute the hash, read the registry, print MATCH / MISMATCH",
     "  vh prove <file> [opts]     Merkle-prove a file against an anchored repo root via verifyLeaf",
     "",
-    "anchor options:",
+    "anchor options (one-shot; contributor = 'first anchorer', NOT proven authorship):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --dry-run                  print the tx that would be sent; needs no key, sends nothing",
     "  --i-understand-mainnet     allow anchoring on a non-testnet chainId (DANGER: real funds)",
+    "",
+    "claim options (commit-reveal; contributor = proven first claimant, authorBound = true):",
+    "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
+    "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
+    "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --dry-run                  print the commit+reveal plan; needs no key, sends nothing",
+    "  --i-understand-mainnet     allow claiming on a non-testnet chainId (DANGER: real funds)",
     "",
     "verify options:",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
@@ -175,6 +185,127 @@ async function cmdAnchor(argv) {
     await runAnchor({
       path: opts.path,
       uri: opts.uri,
+      contractAddress,
+      iUnderstandMainnet: opts.iUnderstandMainnet,
+      provider,
+      signer,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * Parse `claim` argv into { path, uri, salt, contract, rpc, dryRun, iUnderstandMainnet }.
+ * Throws on unknown/incomplete flags so a typo never silently turns into a real submission.
+ */
+function parseClaimArgs(argv) {
+  const opts = {
+    path: undefined,
+    uri: undefined,
+    salt: undefined,
+    contract: undefined,
+    rpc: undefined,
+    dryRun: false,
+    iUnderstandMainnet: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--dry-run":
+        opts.dryRun = true;
+        break;
+      case "--i-understand-mainnet":
+        opts.iUnderstandMainnet = true;
+        break;
+      case "--uri":
+        opts.uri = argv[++i];
+        if (opts.uri === undefined) throw new Error("--uri requires a value");
+        break;
+      case "--salt":
+        opts.salt = argv[++i];
+        if (opts.salt === undefined) throw new Error("--salt requires a value");
+        break;
+      case "--contract":
+        opts.contract = argv[++i];
+        if (opts.contract === undefined) throw new Error("--contract requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.path !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.path = a;
+    }
+  }
+  return opts;
+}
+
+async function cmdClaim(argv) {
+  let opts;
+  try {
+    opts = parseClaimArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.path) {
+    process.stderr.write("error: `vh claim` requires a <path>\n\n" + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+
+  // Dry run: build the commit-reveal plan with no key and no network. We still need a committer
+  // address to compute the (sender-bound) commitment; allow VH_COMMITTER for previewing.
+  if (opts.dryRun) {
+    try {
+      await runClaim({
+        path: opts.path,
+        uri: opts.uri,
+        salt: opts.salt,
+        committer: process.env.VH_COMMITTER,
+        contractAddress,
+        dryRun: true,
+        ethers,
+      });
+    } catch (e) {
+      process.stderr.write(`error: ${e.message}\n`);
+      return 1;
+    }
+    return 0;
+  }
+
+  // Real submission: build provider + signer from env/flags.
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL " +
+        "(or use --dry-run to preview without a network)\n"
+    );
+    return 1;
+  }
+  const pk = process.env.PRIVATE_KEY;
+  if (!pk) {
+    process.stderr.write(
+      "error: no PRIVATE_KEY in the environment; cannot sign. Use --dry-run to preview.\n"
+    );
+    return 1;
+  }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const signer = new ethers.Wallet(pk, provider);
+    await runClaim({
+      path: opts.path,
+      uri: opts.uri,
+      salt: opts.salt,
       contractAddress,
       iUnderstandMainnet: opts.iUnderstandMainnet,
       provider,
@@ -384,6 +515,8 @@ async function main(argv) {
       return cmdHash(rest);
     case "anchor":
       return cmdAnchor(rest);
+    case "claim":
+      return cmdClaim(rest);
     case "verify":
       return cmdVerify(rest);
     case "prove":
@@ -408,9 +541,11 @@ module.exports = {
   main,
   cmdHash,
   cmdAnchor,
+  cmdClaim,
   cmdVerify,
   cmdProve,
   parseAnchorArgs,
+  parseClaimArgs,
   parseVerifyArgs,
   parseProveArgs,
   usage,

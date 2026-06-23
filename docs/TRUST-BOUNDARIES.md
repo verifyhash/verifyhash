@@ -5,11 +5,12 @@ This is the canonical, plain-language statement of what you may rely on when you
 TRUST BOUNDARIES` block in `contracts/ContributionRegistry.sol`; if the two ever drift, the
 NatSpec in the contract is authoritative. Resolves audit findings **F17** and **C3**.
 
-A record returned by `getRecord(contentHash)` has four fields:
+A record returned by `getRecord(contentHash)` has these fields:
 
 ```solidity
 struct Record {
-    address contributor;  // first anchorer
+    address contributor;  // who is recorded — meaning depends on authorBound (see below)
+    bool    authorBound;  // true => front-running-resistant claim (commit-reveal); false => first anchorer
     uint64  timestamp;    // block.timestamp at anchor time
     uint64  blockNumber;  // block.number at anchor time
     string  uri;          // off-chain pointer hint
@@ -78,9 +79,39 @@ They do **NOT** prove:
   timestamp is when someone *recorded* the hash, not when the work was done.
 - **A lower bound.** Nothing here says the content did *not* exist earlier; it only caps how late it
   could have appeared.
-- **Who authored it.** `contributor` is the first *anchorer* (broadcaster), not a proven author —
-  anyone who learns a `contentHash` (for example from the public mempool) can anchor it first. (The
-  attribution question itself is tracked separately as decision **D-1** / task **T-0.3**.)
+- **Who authored it — for a one-shot `anchor()` record (`authorBound == false`).** There,
+  `contributor` is only the first *anchorer* (broadcaster), not a proven author: anyone who learns a
+  `contentHash` (for example from the public mempool) can `anchor` it first. A
+  commit-reveal record (`authorBound == true`) is different — see below.
+
+---
+
+## `contributor` — two attribution strengths, told apart by `authorBound`
+
+This was decision **D-1** / task **T-0.3**: one-shot anchoring is front-runnable (a mempool watcher
+can copy your `contentHash` and `anchor` it first, becoming the recorded `contributor`). The fix is a
+**commit-reveal** path that binds the claimant to the content *before* the content hash is public.
+Both paths write the same `Record`; `authorBound` tells you which guarantee you actually have:
+
+| How the record was written | `authorBound` | What `contributor` means |
+|----------------------------|---------------|--------------------------|
+| `anchor(contentHash, uri)` (one tx) | `false` | **First anchorer only.** Front-runnable; NOT proven authorship. Use for cheap existence/timestamp proofs where attribution does not matter. |
+| `commit(commitment)` then `reveal(contentHash, salt, uri)` | `true` | **Proven first claimant.** Front-running-resistant: the committer is hashed into the commitment before the content hash is exposed, so a copier cannot redirect attribution. |
+
+**Why commit-reveal defeats the front-runner.** The commitment is
+`keccak256(abi.encode(contentHash, committer, salt))`. Only that opaque hash goes on-chain first
+(it leaks nothing about the content and is bound to the committer's address + a secret salt). After
+`MIN_REVEAL_DELAY` blocks the committer reveals `(contentHash, salt)`. An attacker who copies the
+revealed values from the mempool and resubmits the reveal as themselves recomputes
+`keccak256(abi.encode(contentHash, ATTACKER, salt))` — a commitment they never registered — so their
+reveal reverts (`NoSuchCommitment`). The maturation window stops them from committing-then-revealing
+fast enough to beat an already-matured legitimate commitment. Net result: `contributor` stays the
+original committer.
+
+The CLI exposes this as `vh claim <path>` (commit-reveal) versus `vh anchor <path>` (one-shot).
+`vh verify` prints the attribution strength for the record it finds. Tests live in
+`test/Attribution.test.js` (contract) and `test/cli.claim.test.js` (CLI + a live-node front-run
+proof).
 
 ### `timestamp` is validator-influenced — don't treat it as a precise clock
 
@@ -101,7 +132,8 @@ small incentive surface to nudge it. Therefore:
 | Field | Trust it for | Do NOT trust it for |
 |-------|--------------|---------------------|
 | `contentHash` | integrity of the exact content (after you re-hash and compare) | — |
-| `contributor` | who *anchored* it first | who *authored* it |
+| `contributor` (`authorBound = true`) | proven first *claimant* (commit-reveal; front-running-resistant) | — |
+| `contributor` (`authorBound = false`) | who *anchored* it first | who *authored* it |
 | `blockNumber` | hard on-chain ordering; "existed by block N" | authorship time; a lower time bound |
 | `timestamp` | coarse ordering; "existed by ~T" | precise wall-clock time; authorship time |
 | `uri` | a human hint of where the content might be | anything security-relevant — re-fetch + re-hash |

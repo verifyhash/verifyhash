@@ -24,8 +24,12 @@ than they look:
   ("this content existed no later than this block") — **not** authorship time and not who authored
   it. `block.timestamp` is set by the block proposer (validator-influenced), so it is not a precise
   wall clock; prefer `blockNumber` for hard ordering.
-- **`contributor` is the first *anchorer*, not a proven author** (attribution is tracked as decision
-  D-1 / task T-0.3).
+- **`contributor` has two strengths, told apart by the `authorBound` flag** (decision D-1 /
+  task T-0.3). A one-shot `anchor()` is **front-runnable** — `contributor` is only the "first
+  anchorer", not a proven author (`authorBound = false`). The **commit-reveal** path (`vh claim`)
+  binds the claimant to the content before the hash is public, so a mempool copier cannot steal
+  attribution; those records have `authorBound = true` and `contributor` is the proven first
+  *claimant*.
 
 Full detail, including the table of "trust it for / do NOT trust it for", is in
 [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md). The exact directory-root construction is in
@@ -35,10 +39,17 @@ Full detail, including the table of "trust it for / do NOT trust it for", is in
 
 ```
 vh hash   <path>            # keccak256 of a file, or the Merkle root of a directory
-vh anchor <path> [--uri u]  # anchor the hash on-chain (testnet only; --dry-run needs no key)
+vh anchor <path> [--uri u]  # one-shot anchor (FRONT-RUNNABLE: contributor = first anchorer only)
+vh claim  <path> [--uri u]  # commit-reveal: front-running-resistant authorship claim (authorBound)
 vh verify <path>            # recompute the hash, look it up on-chain, report MATCH / MISMATCH
 vh prove  <file> --root dir # generate + on-chain-verify a per-file Merkle proof
 ```
+
+`vh anchor` is a single cheap transaction but its `contentHash` is public in the mempool, so anyone
+can copy and anchor it first — use it only for existence/timestamp proofs where attribution does not
+matter. `vh claim` runs the two-step commit-reveal flow (`commit` a sender-bound, salt-blinded
+commitment, wait `MIN_REVEAL_DELAY` blocks, then `reveal`) so a front-runner cannot become the
+recorded contributor. See `docs/TRUST-BOUNDARIES.md` for the threat model and why it holds.
 
 `vh verify` is read-only: it re-derives the content hash and compares it to what is anchored, which
 is exactly the integrity check the trust model requires. It needs only an RPC URL — no key, no

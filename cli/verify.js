@@ -133,6 +133,7 @@ async function runVerify(opts) {
     kind,
     path: targetPath,
     contributor: null,
+    authorBound: null,
     timestamp: null,
     blockNumber: null,
     uri: null,
@@ -143,6 +144,7 @@ async function runVerify(opts) {
   } else {
     result.status = STATUS.MATCH;
     result.contributor = record.contributor;
+    result.authorBound = Boolean(record.authorBound);
     result.timestamp = BigInt(record.timestamp);
     result.blockNumber = BigInt(record.blockNumber);
     result.uri = record.uri;
@@ -161,8 +163,14 @@ function formatVerify(r) {
   ];
   if (r.status === STATUS.MATCH) {
     const ts = r.timestamp == null ? "(unknown)" : isoFromUnix(r.timestamp);
+    // Spell out exactly what `contributor` is allowed to mean for THIS record. A commit-reveal
+    // record (authorBound) is a front-running-resistant claim; a one-shot anchor is not.
+    const attribution = r.authorBound
+      ? "proven first claimant (commit-reveal, front-running-resistant)"
+      : "first anchorer only — NOT proven authorship (anyone could have anchored this hash)";
     lines.push(
       `  contributor:  ${r.contributor}`,
+      `  attribution:  ${attribution}`,
       `  timestamp:    ${r.timestamp} (${ts})`
     );
     if (r.uri) lines.push(`  uri:          ${r.uri}`);

@@ -18,6 +18,7 @@ const { runVerify } = require("./verify");
 const { runProve } = require("./prove");
 const { runClaim, runCommit, runReveal } = require("./claim");
 const { runList } = require("./list");
+const { runShow } = require("./show");
 
 function usage() {
   return [
@@ -32,6 +33,7 @@ function usage() {
     "  vh verify <path> [opts]    recompute the hash, read the registry, print MATCH / MISMATCH",
     "  vh prove <file> [opts]     Merkle-prove a file against an anchored repo root via verifyLeaf",
     "  vh list [opts]             enumerate the registry read-only (discovery + audit)",
+    "  vh show <0xhash> [opts]    look up ONE record by content hash (no local content needed)",
     "",
     "anchor options (one-shot; contributor = 'first anchorer', NOT proven authorship):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
@@ -86,6 +88,14 @@ function usage() {
     "  --limit <n>                show at most n records (after --offset)",
     "  --offset <n>               skip the first n (filtered) records",
     "  --json                     emit a machine-readable JSON array instead of the human block",
+    "",
+    "show options (read-only lookup by hash; provider only, never a signer/key):",
+    "  <0xhash>                   a 32-byte (0x + 64 hex) content hash, e.g. from `vh list`",
+    "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --json                     emit a machine-readable JSON object instead of the human block",
+    "  NOTE: `show` proves only that the hash is on-chain; it does NOT re-derive content. To bind a",
+    "        record to real bytes you must still run `vh verify <path>`. Exits non-zero if NOT ANCHORED.",
     "",
   ].join("\n");
 }
@@ -789,6 +799,92 @@ async function cmdList(argv) {
   return 0;
 }
 
+/**
+ * Parse `show` argv into { hash, contract, rpc, json }. Takes exactly one positional <0xhash>.
+ * Throws on unknown/incomplete flags or a duplicate/missing hash so a typo never silently looks up
+ * the wrong thing. The hash VALUE is shape-validated later (in runShow) so the same usage-grade error
+ * fires whether the hash came from the CLI or a programmatic caller.
+ */
+function parseShowArgs(argv) {
+  const opts = { hash: undefined, contract: undefined, rpc: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--contract":
+        opts.contract = argv[++i];
+        if (opts.contract === undefined) throw new Error("--contract requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.hash !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.hash = a;
+    }
+  }
+  return opts;
+}
+
+async function cmdShow(argv) {
+  let opts;
+  try {
+    opts = parseShowArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.hash) {
+    process.stderr.write("error: `vh show` requires a <0xhash>\n\n" + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+
+  // Validate the hash shape BEFORE building a provider or reading any env/network — a malformed/short
+  // hash must hard-error with usage and never hit the network. We re-use runShow's normalizer (via a
+  // dry, provider-less throw) by checking the shape here directly so the error precedes the RPC check.
+  const { normalizeContentHash } = require("./show");
+  try {
+    normalizeContentHash(opts.hash, ethers);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL\n"
+    );
+    return 1;
+  }
+
+  let result;
+  try {
+    // Read-only: provider only — `vh show` NEVER constructs a signer or touches a key.
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    result = await runShow({
+      contentHash: opts.hash,
+      contractAddress,
+      provider,
+      json: opts.json,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero when the hash has no record so scripts/CI can branch on "NOT ANCHORED".
+  return result.status === "ANCHORED" ? 0 : 4;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -808,6 +904,8 @@ async function main(argv) {
       return cmdProve(rest);
     case "list":
       return cmdList(rest);
+    case "show":
+      return cmdShow(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -834,11 +932,13 @@ module.exports = {
   cmdVerify,
   cmdProve,
   cmdList,
+  cmdShow,
   parseAnchorArgs,
   parseClaimArgs,
   parseRevealArgs,
   parseVerifyArgs,
   parseProveArgs,
   parseListArgs,
+  parseShowArgs,
   usage,
 };

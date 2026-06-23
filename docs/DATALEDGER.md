@@ -75,7 +75,7 @@ the code:
 ## Workflow, end to end
 
 ```
-build → diff (between versions) → summary → report (the filed deliverable) → attest (the signing-ready payload) → prove (a single file) → verify-proof
+build → diff (between versions) → summary → check (the policy gate) → report (the filed deliverable) → attest (the signing-ready payload) → prove (a single file) → verify-proof
 ```
 
 | Command | What it does | Offline? Key? Network? |
@@ -84,7 +84,8 @@ build → diff (between versions) → summary → report (the filed deliverable)
 | `vh dataset verify <dir> --manifest <p>` | Re-derive the root from a fresh copy on disk + a per-file ADDED/REMOVED/CHANGED diff vs the manifest | offline, no key, no network |
 | `vh dataset diff <manifestA> <manifestB>` | Compare two manifests; report the exact change set between versions | offline, no tree, no key, no network |
 | `vh dataset summary <manifest>` | Provenance/license roll-up over the trusted file set | offline, no tree, no key, no network |
-| `vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]` | Consolidate identity + roll-up + (optional) verify verdict + caveats into ONE deterministic evidence document the reviewer files | offline, no key, no network |
+| `vh dataset check <manifest> --policy <p> [--json]` | GATE the manifest's self-asserted hints against a written license/source policy: PASS/FAIL + the exact violating files; CI-gateable exit 0/3 | offline, no tree, no key, no network |
+| `vh dataset report <manifest> [--verify <dir>] [--policy <p>] [--json] [--out <p>]` | Consolidate identity + roll-up + (optional) verify verdict + (optional) policy verdict + caveats into ONE deterministic evidence document the reviewer files | offline, no key, no network |
 | `vh dataset attest <manifest> [--json] [--out <p>]` | Emit the canonical, byte-deterministic UNSIGNED attestation payload (root + fileCount + manifestDigest) a human signing/timestamp trust-root will sign | offline, no key, no network |
 | `vh dataset prove --file <p> --manifest <m> --out <a>` | Build a portable set-membership proof for ONE file | offline, no key, no network |
 | `vh dataset verify-proof <proof>` | Fold the membership proof back to the recorded root | purely offline, no dataset, no key, no network |
@@ -127,21 +128,149 @@ vh dataset verify-proof 0007.proof.json
 
 Exit codes are CI-friendly: `vh dataset verify` and `vh dataset diff` exit `3` on
 mismatch/difference (so a pipeline can gate "the training set changed unexpectedly"), `0` on
-match/identical; `vh dataset prove`/`verify-proof` exit `0` MEMBER/CONFIRMED, `3` non-member/rejected.
+match/identical; `vh dataset prove`/`verify-proof` exit `0` MEMBER/CONFIRMED, `3` non-member/rejected;
+and `vh dataset check` exits `0` PASS / `3` FAIL (the policy gate, below).
+
+---
+
+## Policy compliance gate
+
+`vh dataset summary` *describes* a dataset's license/source composition; `vh dataset check <manifest>
+--policy <p>` **GATES** it. It is the difference between "a provenance report" and "a compliance control":
+the control your pipeline runs on every change and the verdict your auditor files (an EU-AI-Act
+technical-documentation / enterprise due-diligence packet). It answers the one question a compliance
+reviewer and a CI job actually ask — **"does this training set VIOLATE our written policy?"** — as a
+deterministic, OFFLINE PASS/FAIL with the exact list of which files broke which rule.
+
+> **Trust posture, FIRST (the same wording the artifact carries in-band, verbatim).** The `{source,
+> license}` hints checked here are **UNTRUSTED, self-asserted metadata that are NOT bound into the
+> Merkle root.** A PASS means the dataset's self-asserted hints satisfy this policy —
+> **NOT that the licenses are genuinely correct.** A `(no license hint)` file ASSERTS NOTHING (the `requireLicense` rule
+> is the one that flags it). This NEVER verifies that any license or source is real. It is the same
+> boundary every DataLedger artifact carries:
+>
+> > The Merkle root commits to the full set of (relPath, content) pairs (names AND bytes): any edit, rename, add, or remove changes the root. Per-file `hints` (source/license) are UNTRUSTED, self-asserted metadata — they are NOT bound into the root and prove nothing.
+
+### The policy file
+
+A policy is a small, versioned, strictly-validated JSON document. A corrupt, foreign, or malformed
+policy is **rejected outright** (never half-accepted into a surprise verdict). Two fixed fields identify
+it, then every RULE field is **optional and combinable**:
+
+| Field | Required | Type | Meaning / match semantics |
+| --- | --- | --- | --- |
+| `kind` | yes | string | MUST be exactly `verifyhash.dataset-policy`. |
+| `schemaVersion` | yes | number | MUST be a supported version (this build understands `1`). |
+| `allowLicenses` | no | string[] | A file whose license hint is **NOT** in this list VIOLATES. A file with **no** license hint also violates (it is in no allowlist). |
+| `denyLicenses` | no | string[] | A file whose license hint **IS** in this list VIOLATES. A file with **no** license hint does NOT violate (no value to match). |
+| `allowSources` | no | string[] | Same as `allowLicenses`, on the `source` hint. |
+| `denySources` | no | string[] | Same as `denyLicenses`, on the `source` hint. |
+| `requireLicense` | no | boolean | When `true`, every file MUST carry a license hint; a `(no license hint)` file VIOLATES. This is the ONE rule that flags a missing hint. |
+
+**Match semantics (so a verdict is reproducible).** A file's "license hint value" is its
+`hints.license` string, or the **absence** of one (no `hints` at all, or `hints` with no `license`);
+likewise for `hints.source`. All comparisons against the policy's lists are **CASE-SENSITIVE EXACT STRING
+matches** — `"GPL-3.0"` matches only `"GPL-3.0"`, never `"gpl-3.0"` or `"GPL-3.0-or-later"`. A missing
+hint is reported with the explicit `(no license hint)` / `(no source hint)` sentinel value, never a
+literal string named that.
+
+**The no-rules case.** A policy that declares **no rules** (no list fields, or only empty lists, and
+`requireLicense` not `true`) is valid and **trivially PASSes** — every dataset satisfies a policy with no
+constraints. `vh dataset check` says so explicitly (`rules evaluated: 0` + a NOTE) so a green check from
+an empty policy can never be mistaken for a real gate.
+
+### `vh dataset check` — the gate
+
+`vh dataset check <manifest> --policy <p>` reads the manifest via the SAME strict reader the other
+commands use and the policy via its strict reader, then evaluates the manifest's **trusted file set**
+against the policy in a **pure, deterministic** function (no tree, no provider, no key, no network) and
+emits a verdict:
+
+- **PASS / FAIL.** PASS when no file's self-asserted hints violate any rule; FAIL when at least one does.
+- **The violating-file output.** On FAIL, one line per violation — the **file (relPath)**, the **rule it
+  broke**, and the **offending hint value** — sorted by relPath then rule, so two runs over the same
+  inputs produce byte-identical output. A single file that breaks two rules produces two lines.
+- **The 0/3 exit contract a CI job gates on.** `vh dataset check` exits **`0` on PASS, `3` on FAIL** —
+  the SAME data-divergence exit convention as `vh dataset verify`/`diff`, so all dataset gates share one
+  contract. A missing/unreadable manifest or policy is a runtime error (exit `1`); a missing `--policy`
+  is a usage error (exit `2`) — a gate with no policy must never silently pass. So a pipeline step is
+  simply `vh dataset check ds.manifest.json --policy org-policy.json` and the build blocks on a non-zero
+  exit.
+- **`--json`.** Emits the machine object
+  `{ verdict, fileCount, rulesEvaluated, violations: [{ relPath, rule, value }] }` for an ingestion
+  pipeline. The `rule` strings are stable identifiers a consumer can gate on
+  (`allowLicenses` / `denyLicenses` / `allowSources` / `denySources` / `requireLicense`).
+
+### `vh dataset report --policy` — embedding the verdict in the filed document
+
+`vh dataset report <manifest> --policy <p>` folds the **SAME pure evaluator** `vh dataset check` runs
+(verbatim — no re-implementation) into the filed evidence document as a **"Policy compliance" section**:
+the verdict, the number of rules evaluated, and (on FAIL) the violating files. Because it reuses the same
+evaluator, the report's PASS/FAIL **can never diverge** from `vh dataset check`'s for the same manifest +
+policy. The section LEADS with the same UNTRUSTED-hints caveat as `vh dataset check`, so the embedded
+verdict never implies a real license was checked.
+
+`--policy` combines with `--verify` to make **one report invocation a complete CI gate**: with `--verify`
+the exit is `0` MATCH / `3` MISMATCH; with `--policy` it is `0` PASS / `3` FAIL; with **both**, the report
+exits `3` if **EITHER** the live-tree verify is a MISMATCH OR the policy is a FAIL, and `0` only when the
+verify is MATCH **and** the policy is PASS — so a single command gates data integrity AND policy
+compliance, and the buyer's filed document shows both verdicts.
+
+### Worked example — build with hints, write a policy, check, then embed in a report
+
+```sh
+# 1. BUILD a manifest, attaching the (UNTRUSTED, self-asserted) source/license hints per file.
+vh dataset build ./dataset-v2 --out v2.manifest.json --hints ./hints.json
+#   wrote v2.manifest.json   root: 0xdef…   fileCount: 1033
+
+# 2. WRITE a policy: a proprietary product that forbids copyleft and requires every file to be licensed.
+cat > org-policy.json <<'JSON'
+{
+  "kind": "verifyhash.dataset-policy",
+  "schemaVersion": 1,
+  "denyLicenses": ["GPL-3.0", "AGPL-3.0"],
+  "requireLicense": true
+}
+JSON
+
+# 3. CHECK the dataset against the policy — the gate a CI job runs (exit 0 PASS / 3 FAIL).
+vh dataset check v2.manifest.json --policy org-policy.json
+#   TRUST: the {source, license} hints checked here are UNTRUSTED, self-asserted metadata. …
+#   policy check: FAIL
+#   files:           1033
+#   rules evaluated: 2
+#   FAIL: 2 violations (each line: the file, the rule it broke, and the offending hint value):
+#     src/vendored/lib.py   [denyLicenses]      value: GPL-3.0
+#     data/notes.txt        [requireLicense]    value: (no license hint)     (exit 3)
+
+# 4. …or as a machine object for an ingestion pipeline:
+vh dataset check v2.manifest.json --policy org-policy.json --json
+#   {"verdict":"FAIL","fileCount":1033,"rulesEvaluated":2,"violations":[…]}
+
+# 5. EMBED the SAME verdict in the ONE document the reviewer files (and gate integrity + policy at once):
+vh dataset report v2.manifest.json --verify ./dataset-v2 --policy org-policy.json --out evidence.md
+#   dataset report written: /abs/path/evidence.md     (exit 3 if EITHER verify MISMATCH or policy FAIL)
+```
+
+> **What a PASS does and does NOT mean.** A PASS attests that the dataset's **self-asserted hints satisfy
+> the policy** — the control your pipeline ran and the verdict your auditor files. It is **NOT** a claim
+> that the licenses are genuinely correct, nor a timestamp ("unaltered since date T"). Those require the
+> human-owned signing/timestamp trust-root (`needs-human`, P-3 in [`STRATEGY.md`](../STRATEGY.md)).
 
 ---
 
 ## The evidence report
 
 A reviewer does not file three terminal outputs — they file **one document**. `vh dataset report
-<manifest> [--verify <dir>] [--json] [--out <p>]` consolidates everything a manifest already proves into
-a single deterministic artifact you attach to an EU-AI-Act technical-documentation section or an
-enterprise data-provenance due-diligence packet.
+<manifest> [--verify <dir>] [--policy <p>] [--json] [--out <p>]` consolidates everything a manifest
+already proves into a single deterministic artifact you attach to an EU-AI-Act technical-documentation
+section or an enterprise data-provenance due-diligence packet.
 
 It **invents no new math.** The dataset identity (root + fileCount) comes from the strict manifest read;
 the provenance/license roll-up reuses the SAME aggregation `vh dataset summary` emits (identical
-histogram order); the optional verification reuses `vh dataset verify` verbatim. So the report can never
-drift from the commands it consolidates.
+histogram order); the optional verification reuses `vh dataset verify` verbatim; the optional policy
+verdict reuses the SAME pure evaluator `vh dataset check` runs (see [Policy compliance
+gate](#policy-compliance-gate) above). So the report can never drift from the commands it consolidates.
 
 What it consolidates, in a stable section order:
 
@@ -152,7 +281,11 @@ What it consolidates, in a stable section order:
 2. **Dataset identity** — the Merkle `root` and `fileCount`.
 3. **Verification status** — either the embedded `--verify` verdict, or a plain statement that NO
    live-tree verification was performed (so the report never *implies* a verify that did not run).
-4. **Provenance / license roll-up** — the `{source, license}` histogram over the trusted file set.
+4. **Policy compliance** — ONLY when `--policy` is given: the PASS/FAIL verdict, rules evaluated, and (on
+   FAIL) the violating files (relPath / rule / value), leading with the same UNTRUSTED-hints caveat as
+   `vh dataset check`. Omitted entirely without `--policy`, so the report never implies a gate that did
+   not run.
+5. **Provenance / license roll-up** — the `{source, license}` histogram over the trusted file set.
 
 **Deterministic Markdown vs `--json`.** The default human output is a Markdown document with a stable
 section order and a histogram ordered by the same rule `vh dataset summary` uses, so two runs over the
@@ -166,6 +299,11 @@ writes the document to a caller-chosen explicit path (never silently the cwd) an
 ADDED/REMOVED/CHANGED localization; under `--verify` the command's exit code mirrors `vh dataset verify`
 (`0` on MATCH, `3` on MISMATCH) so a pipeline can gate on it.
 
+**The optional `--policy` compliance section.** With `--policy <p>` the report embeds the SAME PASS/FAIL
+verdict `vh dataset check` produces (see above). Combined with `--verify`, ONE report invocation is a
+complete CI gate: it exits `3` if **EITHER** the live-tree verify is a MISMATCH **OR** the policy is a
+FAIL, and `0` only when both pass.
+
 ```sh
 # The single document a reviewer files (manifest-only — claims the manifest's root):
 vh dataset report v2.manifest.json --out evidence.md
@@ -173,6 +311,9 @@ vh dataset report v2.manifest.json --out evidence.md
 
 # …or with a live-tree verdict embedded, gating on the recomputed-root match (exit 3 on drift):
 vh dataset report v2.manifest.json --verify ./dataset-v2 --out evidence.md
+
+# …or with the policy verdict embedded too, so ONE invocation gates integrity AND policy (exit 3 if either fails):
+vh dataset report v2.manifest.json --verify ./dataset-v2 --policy org-policy.json --out evidence.md
 
 # …or the machine form for an ingestion pipeline:
 vh dataset report v2.manifest.json --json
@@ -237,7 +378,8 @@ A mapping from the reviewer's question to the command that produces the evidence
 | "Is this copy of the dataset byte-for-byte the one you manifested?" | `vh dataset verify` | Recomputed-root vs manifest-root verdict + a per-file ADDED/REMOVED/CHANGED localization |
 | "What changed in the training data between model version N and N+1?" | `vh dataset diff` | The precise add/remove/change set between two manifests (offline) |
 | "What is the provenance/license composition of the dataset?" | `vh dataset summary` | A `{source, license}` histogram over the trusted file set (claims, clearly labeled untrusted) |
-| "Give me ONE document to file in the technical-documentation / due-diligence packet." | `vh dataset report` | A single deterministic Markdown (or `--json`) document: dataset identity + the provenance/license roll-up + the standing trust caveats + an optional live-tree verify verdict |
+| "Does this dataset VIOLATE our written license/source policy? (the control CI runs)" | `vh dataset check --policy` | A PASS/FAIL verdict + the exact violating files (relPath / rule / value); a CI-gateable exit code (0 PASS / 3 FAIL) over the dataset's self-asserted hints (clearly labeled untrusted) |
+| "Give me ONE document to file in the technical-documentation / due-diligence packet." | `vh dataset report` | A single deterministic Markdown (or `--json`) document: dataset identity + the provenance/license roll-up + the standing trust caveats + an optional live-tree verify verdict + (with `--policy`) the embedded policy-compliance verdict |
 | "Give me the exact bytes our publisher (or a timestamp authority) will sign over." | `vh dataset attest` | A canonical, byte-deterministic UNSIGNED attestation payload committing to `root` / `fileCount` / `manifestDigest` (the file a human signing/timestamp trust-root signs — see P-3) |
 | "Prove this specific record/file was actually in the dataset." | `vh dataset prove` → `vh dataset verify-proof` | A portable, offline-verifiable set-membership proof for one file |
 

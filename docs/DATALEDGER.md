@@ -75,7 +75,7 @@ the code:
 ## Workflow, end to end
 
 ```
-build → diff (between versions) → summary → check (the policy gate) → report (the filed deliverable) → attest (the signing-ready payload) → prove (a single file) → verify-proof
+build → diff (between versions) → summary → check (the policy gate) → report (the filed deliverable) → attest (the signing-ready payload) → [human signs, P-3] → verify-attest (offline-verify a signed container) → prove (a single file) → verify-proof
 ```
 
 | Command | What it does | Offline? Key? Network? |
@@ -87,6 +87,7 @@ build → diff (between versions) → summary → check (the policy gate) → re
 | `vh dataset check <manifest> --policy <p> [--json]` | GATE the manifest's self-asserted hints against a written license/source policy: PASS/FAIL + the exact violating files; CI-gateable exit 0/3 | offline, no tree, no key, no network |
 | `vh dataset report <manifest> [--verify <dir>] [--policy <p>] [--json] [--out <p>]` | Consolidate identity + roll-up + (optional) verify verdict + (optional) policy verdict + caveats into ONE deterministic evidence document the reviewer files | offline, no key, no network |
 | `vh dataset attest <manifest> [--json] [--out <p>]` | Emit the canonical, byte-deterministic UNSIGNED attestation payload (root + fileCount + manifestDigest) a human signing/timestamp trust-root will sign | offline, no key, no network |
+| `vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` | OFFLINE-verify a SIGNED attestation container: recover the signer, optionally pin the publisher (`--signer`) and bind to your manifest (`--manifest`); ACCEPTED/REJECTED with a CI-gateable exit 0/3 | offline, no key, no network |
 | `vh dataset prove --file <p> --manifest <m> --out <a>` | Build a portable set-membership proof for ONE file | offline, no key, no network |
 | `vh dataset verify-proof <proof>` | Fold the membership proof back to the recorded root | purely offline, no dataset, no key, no network |
 
@@ -366,6 +367,122 @@ vh dataset attest v2.manifest.json --json
 > payload. Until a signature is attached, this payload proves only the same set-membership / identity the
 > manifest already does — **NOT** that the dataset is unaltered since a date T. Do not overclaim past P-3.
 
+### Signed attestation + verification
+
+The UNSIGNED payload above is the bytes a publisher signs; this build also ships the **detached signature
+container that WRAPS those bytes** and the **offline VERIFIER** a buyer runs to confirm a signature is
+genuine — `vh dataset verify-attest`. Read the boundary FIRST, because it is exactly the standing dataset
+trust posture plus one signing-specific line:
+
+> **Trust posture, FIRST (reuses the standing dataset `TRUST_NOTE` verbatim).** A valid signature proves
+> **the holder of `signer`'s key vouched for THIS dataset identity** (the embedded `root` / `fileCount` /
+> `manifestDigest`). It does **NOT** by itself prove a trustworthy TIMESTAMP — there is still no "unaltered
+> since a date T" unless the `scheme` is a timestamp authority, which is **still the human-owned trust-root,
+> `needs-human`, P-3** in [`STRATEGY.md`](../STRATEGY.md). It does **NOT** validate that the dataset's
+> `{source, license}` hints are genuinely correct (that is `vh dataset check`'s untrusted-hint caveat). It
+> is the same boundary every DataLedger artifact carries:
+>
+> > The Merkle root commits to the full set of (relPath, content) pairs (names AND bytes): any edit, rename, add, or remove changes the root. Per-file `hints` (source/license) are UNTRUSTED, self-asserted metadata — they are NOT bound into the root and prove nothing.
+
+> **CRITICAL — what this build ships, and what it does NOT.** This build ships only the **FORMAT** (the
+> signed-container schema below) and the **VERIFIER** (`vh dataset verify-attest`), proved end-to-end in the
+> test suite with **EPHEMERAL, throwaway `Wallet.createRandom()` keys generated in-process and never
+> persisted**. **Producing the SIGNATURE itself — provisioning a real signing key and choosing trust-root
+> option A/B/C — is still the human-owned trust-root, P-3** (`needs-human`, [`STRATEGY.md`](../STRATEGY.md)).
+> The loop NEVER signs, holds, or provisions a real key, and emitting/verifying a signed container NEVER
+> implies "unaltered since date T". A signed container says only "this key vouched for this dataset
+> identity" — the trustworthy *timestamp* is the part P-3 still owns.
+
+#### The signed-container schema (`verifyhash.dataset-attestation-signed`)
+
+The signed container **WRAPS, never edits** the unsigned payload: it embeds the EXACT canonical UNSIGNED
+bytes verbatim (byte-for-byte the string `vh dataset attest` emits, including its trailing newline) and
+attaches a detached signature alongside. Every field, with a FIXED key order so the container is itself
+byte-deterministic:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `kind` | string | MUST be exactly `verifyhash.dataset-attestation-signed`. |
+| `schemaVersion` | number | MUST be a supported version (this build understands `1`). |
+| `note` | string | The standing in-band trust caveat (the dataset `TRUST_NOTE` + the signing-specific line above), carried verbatim so the caveats can never drift from the artifact. |
+| `attestation` | string | **The EXACT canonical UNSIGNED bytes**, embedded as a string. Re-parsed and re-validated by the SAME unsigned reader on every read: it must STILL be strictly `signed: false` / `signature: null`, and must be byte-for-byte `serializeAttestation`'s output. |
+| `signature` | object | The detached `{ scheme, signer, signature }` triple (below). |
+| `signature.scheme` | string | The signature scheme. This build's `scheme` value is **`eip191-personal-sign`** — EIP-191 `personal_sign` over the EXACT embedded canonical bytes (a detached signature, deliberately NOT EIP-712, so the signed message IS the payload bytes verbatim with no separate domain/struct to drift from). |
+| `signature.signer` | string | The CLAIMED `0x` signer address, **lowercase** (a checksummed/mixed-case address is rejected for byte-determinism — lowercase it first). |
+| `signature.signature` | string | The detached signature: for `eip191-personal-sign`, a 65-byte `r‖s‖v` secp256k1 signature as a **lowercase** `0x`-hex string (130 hex chars). |
+
+**The wrap-don't-edit invariant.** The embedded `attestation` stays strictly `signed: false` /
+`signature: null`: the strict reader re-parses it and runs the SAME `validateAttestation` the unsigned path
+uses (which hard-rejects any `signed: true` / non-null `signature`), then requires the embedded string to
+be byte-for-byte canonical. So a signed container can never smuggle in an edited or already-"signed"
+payload — wrapping adds a vouch, it never edits the thing vouched for. T-15.2's strict UNSIGNED guarantee
+is preserved unchanged.
+
+#### `vh dataset verify-attest` — the offline verifier
+
+`vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` is **purely offline — no
+tree walk, no provider, no key, no network.** It reads the container with the strict reader (a
+malformed/edited/foreign container is rejected, never half-accepted), then runs up to three checks:
+
+1. **Signature recovery (always).** Recover the signer from the embedded canonical bytes + signature
+   (`eip191-personal-sign` → ethers' `verifyMessage` over exactly those bytes) and confirm it equals the
+   container's CLAIMED `signer`. A signature that does not recover to the claimed signer — or a tampered,
+   unrecoverable signature — is a clean **REJECTED**, not a crash.
+2. **`--signer <addr>` (optional publisher pin).** Confirm the RECOVERED signer equals the SPECIFIC
+   publisher address the buyer pinned — so a buyer pins WHO must have signed, not merely that someone did.
+   Accepts a checksummed or lowercase address.
+3. **`--manifest <m>` (optional identity binding).** Recompute the canonical UNSIGNED bytes from the
+   buyer's OWN manifest via the EXISTING build path and require them byte-identical to the embedded
+   (signed-over) payload — proving the signature binds the dataset the buyer actually holds, not some other
+   set.
+
+**The 0/3 exit contract a buyer's CI gates on.** The verdict is **ACCEPTED only when EVERY requested check
+passes**; any failure is REJECTED. It exits **`0` on ACCEPTED, `3` on REJECTED** — the SAME
+data-divergence convention as `vh dataset verify` / `diff` / `check`, so all dataset gates share one exit
+contract. A usage error (e.g. missing `<signed>`) exits `2`; a missing/corrupt container or manifest is a
+runtime error (exit `1`). `--json` emits the machine object
+`{ verdict, accepted, recoveredSigner, claimedSigner, scheme, checks: { signatureMatchesSigner,
+signerMatchesExpected, manifestBindsAttestation }, expectedSigner, manifestChecked, failedChecks }` — the
+`checks.*` booleans are `null` for a check that was not requested (never a silent fail), and `failedChecks`
+names the stable rule ids a consumer gates on. So a buyer's pipeline step is simply
+`vh dataset verify-attest signed.json --signer 0x<ourPublishedAddr> --manifest ds.manifest.json` and the
+build blocks on a non-zero exit.
+
+#### Worked end-to-end example (attest → human signs → wrap → verify-attest)
+
+```sh
+# 1. ATTEST: emit the canonical UNSIGNED bytes (the exact bytes the publisher signs over).
+vh dataset attest v2.manifest.json --out v2.attestation.json
+#   dataset attestation written: /abs/path/v2.attestation.json
+
+# 2. [HUMAN-OWNED, P-3] The PUBLISHER signs those exact bytes with a REAL, human-provisioned key, using
+#    the documented scheme `eip191-personal-sign` (EIP-191 personal_sign over the file's bytes verbatim).
+#    The loop NEVER does this step and NEVER holds the key — provisioning the key + choosing A/B/C is P-3.
+#      sig    = personal_sign(<the bytes of v2.attestation.json>)        # e.g. via the publisher's wallet
+#      signer = 0x<the publisher's lowercased address>
+
+# 3. WRAP the unsigned bytes (verbatim) into the signed container — the embedded payload stays signed:false.
+#    (Format shipped by this build; the signed-container JSON is { kind, schemaVersion, note, attestation,
+#     signature: { scheme: "eip191-personal-sign", signer, signature } }.)
+#      -> v2.attestation.signed.json
+
+# 4. The BUYER VERIFIES offline — no key, no network — pinning WHO signed AND binding it to THEIR dataset:
+vh dataset verify-attest v2.attestation.signed.json \
+  --signer 0x<the publisher's published address> --manifest ./my-copy.manifest.json
+#   TRUST: A valid signature proves the holder of `signer`'s key vouched for THIS dataset identity …
+#   verify-attest: ACCEPTED
+#   [PASS] signature recovers to the claimed signer
+#   [PASS] recovered signer matches the expected publisher (0x…)
+#   [PASS] the signature binds YOUR manifest (its canonical bytes are byte-identical to the signed payload)
+#   ACCEPTED: every requested check passed.            (exit 0; exit 3 if ANY requested check FAILs)
+```
+
+> **Still bounded by P-3.** An ACCEPTED verdict proves the key-holder vouched for this dataset identity —
+> it does **NOT** prove a trustworthy timestamp ("unaltered since date T") and does **NOT** validate any
+> `{source, license}` hint. The trustworthy timestamp is the human-owned trust-root, `needs-human`, P-3 in
+> [`STRATEGY.md`](../STRATEGY.md). This build ships only the FORMAT + the VERIFIER (proved with throwaway
+> test keys); the human still owns provisioning the key and choosing trust-root option A/B/C.
+
 ---
 
 ## What an auditor / EU AI Act reviewer gets
@@ -381,6 +498,7 @@ A mapping from the reviewer's question to the command that produces the evidence
 | "Does this dataset VIOLATE our written license/source policy? (the control CI runs)" | `vh dataset check --policy` | A PASS/FAIL verdict + the exact violating files (relPath / rule / value); a CI-gateable exit code (0 PASS / 3 FAIL) over the dataset's self-asserted hints (clearly labeled untrusted) |
 | "Give me ONE document to file in the technical-documentation / due-diligence packet." | `vh dataset report` | A single deterministic Markdown (or `--json`) document: dataset identity + the provenance/license roll-up + the standing trust caveats + an optional live-tree verify verdict + (with `--policy`) the embedded policy-compliance verdict |
 | "Give me the exact bytes our publisher (or a timestamp authority) will sign over." | `vh dataset attest` | A canonical, byte-deterministic UNSIGNED attestation payload committing to `root` / `fileCount` / `manifestDigest` (the file a human signing/timestamp trust-root signs — see P-3) |
+| "A vendor handed me a 'signed by the publisher' attestation — confirm it is genuine and binds the dataset I hold." | `vh dataset verify-attest` | An OFFLINE ACCEPTED/REJECTED verdict: the signature recovers to the claimed signer, (with `--signer`) the recovered signer is the publisher I pinned, and (with `--manifest`) it binds MY dataset; CI-gateable exit 0/3. Proves the key-holder vouched for this dataset identity — NOT a timestamp (P-3) |
 | "Prove this specific record/file was actually in the dataset." | `vh dataset prove` → `vh dataset verify-proof` | A portable, offline-verifiable set-membership proof for one file |
 
 What this mapping deliberately does NOT claim: a wall-clock "unaltered since date T", and the

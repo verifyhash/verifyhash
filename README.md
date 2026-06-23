@@ -57,6 +57,7 @@ vh dataset summary <manifest>        # provenance/license roll-up over the trust
 vh dataset check <manifest> --policy <p> # OFFLINE license/source policy gate (PASS/FAIL, CI-gateable exit 0/3); offline, no key, no network
 vh dataset report <manifest> [--verify <dir>] [--policy <p>] # ONE deterministic evidence document the reviewer files; offline, no key, no network
 vh dataset attest <manifest>         # canonical UNSIGNED attestation payload a human trust-root signs (P-3); offline, no key, no network
+vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] # OFFLINE-verify a SIGNED attestation container (recover signer, pin publisher, bind manifest); no key, no network, CI-gateable exit 0/3
 vh dataset prove --file <p> --manifest <m> # set-membership proof for ONE file; offline, no key, no network
 vh dataset verify-proof <proof>      # fold a membership proof back to the recorded root; offline, no key, no network
 ```
@@ -389,6 +390,7 @@ vh dataset summary <manifest>             # provenance/license roll-up over the 
 vh dataset check <manifest> --policy <p> [--json]  # OFFLINE license/source policy gate: PASS/FAIL + violating files; CI-gateable exit code (0 PASS / 3 FAIL); no key, no network
 vh dataset report <manifest> [--verify <dir>] [--policy <p>] [--json] [--out <p>]  # ONE deterministic evidence document the reviewer files; offline, no key, no network
 vh dataset attest <manifest> [--json] [--out <p>]  # canonical UNSIGNED attestation payload (root+fileCount+manifestDigest) a human trust-root signs; offline, no key, no network
+vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]  # OFFLINE-verify a SIGNED attestation container: recover the signer, pin the publisher, bind YOUR manifest; offline, no key, no network, CI-gateable exit code (0 ACCEPTED / 3 REJECTED)
 vh dataset prove --file <p> --manifest <m> --out <a>  # portable set-membership proof for ONE file
 vh dataset verify-proof <proof>           # fold a membership proof back to the recorded root (no dataset, no manifest, no key, no net)
 ```
@@ -400,9 +402,17 @@ consolidates dataset identity + the provenance/license roll-up + the trust cavea
 `--verify <dir>`, a live-tree MATCH/MISMATCH verdict; with `--policy <p>`, the SAME policy verdict
 embedded as a "Policy compliance" section) into ONE deterministic document a reviewer files; `vh dataset
 attest` emits the canonical, byte-deterministic **UNSIGNED** payload a human signing/timestamp trust-root
-signs over (`needs-human`, P-3 in [`STRATEGY.md`](STRATEGY.md)). All are **offline, need NO key, and need
+signs over (`needs-human`, P-3 in [`STRATEGY.md`](STRATEGY.md)); `vh dataset verify-attest` is the
+**offline, no key, no network, CI-gateable exit code** (0 ACCEPTED / 3 REJECTED) VERIFIER a buyer runs on a
+SIGNED attestation container — it recovers the signer, optionally pins the expected publisher (`--signer`)
+and binds the signature to the buyer's own dataset (`--manifest`). All are **offline, need NO key, and need
 NO network**. A PASS attests only that the dataset's UNTRUSTED, self-asserted hints satisfy the policy —
 NOT that the licenses are genuinely correct.
+
+This build ships only the signed-attestation **FORMAT + the offline VERIFIER** (proved with throwaway test
+keys); producing the signature itself — provisioning a real key and choosing the trust-root option — stays
+the human-owned **UNSIGNED**-to-signed step P-3 (`needs-human`, [`STRATEGY.md`](STRATEGY.md)). A verified
+signature proves the key-holder vouched for the dataset identity, NOT a "unaltered since date T" timestamp.
 
 The Merkle root commits to file **names AND bytes** (the SAME path-bound convention as `vh hash <dir>`),
 so any edit/rename/add/remove changes it. What DataLedger does **NOT** prove: it is **not a timestamp**

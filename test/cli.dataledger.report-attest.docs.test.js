@@ -43,6 +43,165 @@ describe("T-15.3 docs: DataLedger report + attest documented (docs/DATALEDGER.md
     expect(dataset.ATTESTATION_TRUST_NOTE, "ATTESTATION_TRUST_NOTE export").to.be.a("string");
   });
 
+  // -------------------------------------------------------------------------
+  // T-17.3 docs-rot guard for the SIGNED-attestation container + the OFFLINE verifier.
+  //
+  // Pure (no chain, no fixtures): asserts docs/DATALEDGER.md + README.md document the signed-container
+  // FORMAT (T-17.1) and `vh dataset verify-attest` (T-17.2) the way the code actually behaves — and,
+  // CRITICALLY, that the docs never imply the loop signs or holds a key, never overclaim "unaltered since
+  // date T", and lead with / reuse the existing dataset TRUST_NOTE so caveats stay consistent.
+  // -------------------------------------------------------------------------
+  it("dataset.js still exports the signed-attestation + verify-attest surface this guard pins against", function () {
+    expect(dataset.runDatasetVerifyAttest, "runDatasetVerifyAttest export").to.be.a("function");
+    expect(dataset.SIGNED_ATTESTATION_KIND, "SIGNED_ATTESTATION_KIND export").to.be.a("string");
+    expect(dataset.SIGNED_ATTESTATION_SCHEMES, "SIGNED_ATTESTATION_SCHEMES export").to.be.an("array");
+    expect(dataset.validateSignedAttestation, "validateSignedAttestation export").to.be.a("function");
+    // The exact kind + scheme strings the docs must name verbatim (so prose can't drift from the wire).
+    expect(dataset.SIGNED_ATTESTATION_KIND).to.equal("verifyhash.dataset-attestation-signed");
+    expect(dataset.SIGNED_ATTESTATION_SCHEMES).to.include("eip191-personal-sign");
+  });
+
+  describe("docs/DATALEDGER.md: 'Signed attestation + verification' subsection (T-17.3)", function () {
+    let section;
+    before(function () {
+      const start = docLower.indexOf("### signed attestation + verification");
+      expect(start, "signed-attestation subsection present").to.be.greaterThan(-1);
+      const rest = doc.slice(start);
+      // Subsection runs until the next top-level (## ) section.
+      const end = rest.indexOf("\n## ");
+      section = end === -1 ? rest : rest.slice(0, end);
+    });
+
+    it("is nested inside the 'Unsigned attestation payload' section (subsection, not a peer ## section)", function () {
+      const unsignedStart = docLower.indexOf("## unsigned attestation payload");
+      const signedStart = docLower.indexOf("### signed attestation + verification");
+      expect(unsignedStart, "unsigned section present").to.be.greaterThan(-1);
+      expect(signedStart, "signed subsection present").to.be.greaterThan(unsignedStart);
+      // No intervening top-level ## heading between them.
+      const between = doc.slice(unsignedStart, signedStart);
+      expect(between.includes("\n## "), "no ## heading between unsigned section and signed subsection").to.equal(false);
+    });
+
+    it("documents the signed-container schema: kind, scheme value, every field", function () {
+      expect(section).to.include("verifyhash.dataset-attestation-signed");
+      expect(section).to.include("eip191-personal-sign");
+      // Every field of the container.
+      for (const f of ["kind", "schemaVersion", "note", "attestation", "signature", "signer", "scheme"]) {
+        expect(section, `schema field ${f}`).to.include(f);
+      }
+    });
+
+    it("documents the wrap-don't-edit invariant: the embedded payload stays strictly signed:false", function () {
+      const s = section.toLowerCase();
+      expect(s).to.match(/wrap.*(don't|never).*edit|wrap-don't-edit|wraps,? never edits/);
+      expect(s).to.match(/signed.*false/);
+    });
+
+    it("documents the three verify-attest checks (recovery, --signer pin, --manifest binding)", function () {
+      const s = section.toLowerCase();
+      expect(s).to.match(/recover/); // signature recovery
+      expect(section).to.include("--signer");
+      expect(section).to.include("--manifest");
+      expect(s).to.match(/publisher/); // the --signer pin meaning
+      expect(s).to.match(/bind/); // the --manifest binding meaning
+    });
+
+    it("documents the 0/3 exit contract a buyer's CI gates on", function () {
+      const s = section.toLowerCase();
+      expect(s).to.match(/accepted/);
+      expect(s).to.match(/rejected/);
+      // 0 on ACCEPTED, 3 on REJECTED.
+      expect(s).to.match(/exit `?0`?/);
+      expect(s).to.match(/exit `?3`?|exit 3/);
+    });
+
+    it("has a worked end-to-end example: attest -> [human signs] -> wrap -> verify-attest", function () {
+      const s = section.toLowerCase();
+      expect(section).to.include("vh dataset attest");
+      expect(section).to.include("vh dataset verify-attest");
+      // The human-signs step is called out explicitly inside the example.
+      expect(s).to.match(/human/);
+      expect(s).to.match(/wrap/);
+    });
+
+    it("CRITICALLY states the loop ships only the FORMAT + VERIFIER, proved with throwaway keys", function () {
+      const s = section.toLowerCase();
+      expect(section).to.include("FORMAT");
+      expect(s).to.match(/verifier/);
+      expect(s).to.match(/throwaway|ephemeral|wallet\.createrandom/);
+    });
+
+    it("CRITICALLY states producing the SIGNATURE (key/scheme A/B/C) is still the human-owned P-3", function () {
+      const s = section.toLowerCase();
+      expect(s).to.match(/human-owned|human owns|human-held|human/);
+      expect(section).to.include("P-3");
+      expect(s).to.include("needs-human");
+      // The loop never signs / holds a key.
+      expect(s).to.match(/never (sign|hold|provision)|loop never/);
+    });
+
+    it("does NOT overclaim 'unaltered since date T' (a signature is not a timestamp)", function () {
+      expect(section.toLowerCase()).to.include("unaltered since");
+      expect(section.toLowerCase()).to.match(/not.*timestamp|does not.*timestamp|not by itself prove a trustworthy timestamp/);
+    });
+
+    it("LEADS with / reuses the existing dataset TRUST_NOTE so caveats stay consistent", function () {
+      // The dataset TRUST_NOTE's load-bearing clause is reused verbatim in the subsection's caveat.
+      const noteClause = "Per-file `hints` (source/license) are UNTRUSTED";
+      expect(dataset.TRUST_NOTE, "TRUST_NOTE carries the reused clause").to.include(noteClause);
+      expect(section, "subsection reuses the TRUST_NOTE clause").to.include(noteClause);
+    });
+  });
+
+  describe("docs/DATALEDGER.md command table + auditor mapping add verify-attest (T-17.3)", function () {
+    it("the command table lists `vh dataset verify-attest`", function () {
+      const rows = doc.split("\n").filter((l) => l.trim().startsWith("|"));
+      expect(rows.join("\n")).to.include("vh dataset verify-attest");
+    });
+
+    it("the auditor / EU-AI-Act mapping maps verify-attest to the evidence it produces", function () {
+      const start = docLower.indexOf("what an auditor");
+      expect(start, "auditor mapping section present").to.be.greaterThan(-1);
+      expect(doc.slice(start)).to.include("vh dataset verify-attest");
+    });
+  });
+
+  describe("README documents verify-attest with the offline/no-key/no-network/CI-exit property (T-17.3)", function () {
+    let section;
+    before(function () {
+      const start = readme.indexOf("### Dataset provenance (DataLedger)");
+      const rest = readme.slice(start);
+      const end = rest.indexOf("\n## ");
+      section = end === -1 ? rest : rest.slice(0, end);
+    });
+
+    it("lists `vh dataset verify-attest` in the Dataset provenance section", function () {
+      expect(section).to.match(/vh dataset verify-attest[^\n]+/);
+    });
+
+    it("advertises offline / no key / no network / CI-gateable exit code for verify-attest", function () {
+      const s = section.toLowerCase();
+      expect(s).to.include("offline");
+      expect(s).to.match(/no key/);
+      expect(s).to.match(/no network|no net\b/);
+      expect(s).to.match(/exit code|exit 0|0 accepted|ci-gateable|ci-gate/);
+    });
+
+    it("states the build ships only the FORMAT + VERIFIER and does not imply the loop signs / overclaims a timestamp", function () {
+      const s = section.toLowerCase();
+      expect(section).to.include("P-3");
+      expect(s).to.match(/format/);
+      expect(s).to.match(/verifier/);
+      expect(s).to.include("unaltered since");
+    });
+
+    it("top CLI quick-list mentions verify-attest", function () {
+      const block = readme.split("```").find((b) => b.includes("vh hash") && b.includes("vh dataset build"));
+      expect(block, "top CLI fenced block").to.be.a("string");
+      expect(block).to.match(/vh dataset verify-attest[^\n]+/);
+    });
+  });
+
   describe("docs/DATALEDGER.md: 'The evidence report' section documents `vh dataset report`", function () {
     it("has an evidence-report section heading", function () {
       expect(docLower).to.match(/##+\s*the evidence report/);

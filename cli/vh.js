@@ -7,11 +7,14 @@
 //   vh hash <path>             Print the keccak256 of a file, or the sorted-leaf Merkle root of a
 //                              directory (matching ContributionRegistry.verifyLeaf).
 //   vh anchor <path> [opts]    Submit a file/dir's content hash on-chain via anchor().
+//   vh verify <path> [opts]    Recompute a file/dir's hash, read it back from the registry, and
+//                              report MATCH / MISMATCH (a one-byte edit flips it to MISMATCH).
 //
-// Other commands (verify, prove) are defined by later backlog tasks.
+// Other commands (prove) are defined by later backlog tasks.
 
 const { hashPath } = require("./hash");
 const { runAnchor } = require("./anchor");
+const { runVerify } = require("./verify");
 
 function usage() {
   return [
@@ -20,6 +23,7 @@ function usage() {
     "Usage:",
     "  vh hash <path>             keccak256 of a file, or sorted-leaf Merkle root of a directory",
     "  vh anchor <path> [opts]    anchor a file/dir's content hash on-chain",
+    "  vh verify <path> [opts]    recompute the hash, read the registry, print MATCH / MISMATCH",
     "",
     "anchor options:",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
@@ -27,6 +31,10 @@ function usage() {
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --dry-run                  print the tx that would be sent; needs no key, sends nothing",
     "  --i-understand-mainnet     allow anchoring on a non-testnet chainId (DANGER: real funds)",
+    "",
+    "verify options:",
+    "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "",
   ].join("\n");
 }
@@ -169,6 +177,73 @@ async function cmdAnchor(argv) {
   return 0;
 }
 
+/**
+ * Parse `verify` argv into { path, contract, rpc }.
+ * Throws on unknown/incomplete flags so a typo is never silently ignored.
+ */
+function parseVerifyArgs(argv) {
+  const opts = { path: undefined, contract: undefined, rpc: undefined };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--contract":
+        opts.contract = argv[++i];
+        if (opts.contract === undefined) throw new Error("--contract requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.path !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.path = a;
+    }
+  }
+  return opts;
+}
+
+async function cmdVerify(argv) {
+  let opts;
+  try {
+    opts = parseVerifyArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.path) {
+    process.stderr.write("error: `vh verify` requires a <path>\n\n" + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL\n"
+    );
+    return 1;
+  }
+
+  let result;
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    result = await runVerify({
+      path: opts.path,
+      contractAddress,
+      provider,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on a tamper/MISMATCH so scripts and CI can branch on it.
+  return result.status === "MATCH" ? 0 : 3;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -176,6 +251,8 @@ async function main(argv) {
       return cmdHash(rest);
     case "anchor":
       return cmdAnchor(rest);
+    case "verify":
+      return cmdVerify(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -192,4 +269,12 @@ if (require.main === module) {
   Promise.resolve(main(process.argv.slice(2))).then((code) => process.exit(code));
 }
 
-module.exports = { main, cmdHash, cmdAnchor, parseAnchorArgs, usage };
+module.exports = {
+  main,
+  cmdHash,
+  cmdAnchor,
+  cmdVerify,
+  parseAnchorArgs,
+  parseVerifyArgs,
+  usage,
+};

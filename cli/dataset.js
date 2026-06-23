@@ -36,7 +36,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { keccak256, toUtf8Bytes, verifyMessage, getAddress } = require("ethers");
+const { keccak256, toUtf8Bytes } = require("ethers");
 const { hashDirStream, hashFileStream, pathLeaf, buildTree, proofForIndex } = require("./hash");
 const { diffManifest } = require("./receipt");
 const {
@@ -45,6 +45,12 @@ const {
   readProofArtifact,
   recomputeFold,
 } = require("./proof");
+// The GENERIC, product-agnostic provenance engine. DataLedger is a THIN adapter over it: the manifest
+// builder/validator + the signed-attestation envelope live ONCE in cli/core/ and are shared with
+// ProofParcel (and AttestKit later) so the Merkle/manifest/attest math and — critically — the TRUST
+// caveats can NEVER drift between products. The dependency points dataset → core (never the reverse).
+const coreManifest = require("./core/manifest");
+const coreAttestation = require("./core/attestation");
 
 // On-disk schema discriminators. A dataset manifest carries its OWN kind + version (distinct from the
 // receipt kinds in cli/receipt.js and the proof-artifact kind in cli/proof.js) so a random JSON file,
@@ -53,15 +59,27 @@ const MANIFEST_KIND = "verifyhash.dataset-manifest";
 const MANIFEST_SCHEMA_VERSION = 1;
 const SUPPORTED_MANIFEST_SCHEMA_VERSIONS = Object.freeze([1]);
 
-// Same hex shape cli/receipt.js / cli/proof.js validate against, so the modules never drift.
-const HEX32_RE = /^0x[0-9a-fA-F]{64}$/;
+// Same hex shape cli/receipt.js / cli/proof.js validate against, so the modules never drift. Sourced
+// from cli/core so the per-file hex check is the IDENTICAL regex the whole product family shares.
+const HEX32_RE = coreManifest.HEX32_RE;
 
 // In-band note so a reader of the raw JSON cannot mistake an untrusted license hint for a fact, nor
-// the root for proof of anything more than set-membership of (relPath, content) pairs.
-const TRUST_NOTE =
-  "The Merkle root commits to the full set of (relPath, content) pairs (names AND bytes): any edit, " +
-  "rename, add, or remove changes the root. Per-file `hints` (source/license) are UNTRUSTED, " +
-  "self-asserted metadata — they are NOT bound into the root and prove nothing.";
+// the root for proof of anything more than set-membership of (relPath, content) pairs. The text lives
+// in EXACTLY ONE place — cli/core/manifest.js — and is imported here (and by ProofParcel) so the
+// caveats can NEVER drift between products.
+const TRUST_NOTE = coreManifest.TRUST_NOTE;
+
+// DataLedger's manifest framing, passed to the GENERIC core builder/validator. The core does the
+// shared math + structural validation; this object supplies ONLY the DataLedger-specific framing
+// (kind, schema, note, and the human "dataset manifest" label so the error strings are byte-identical
+// to the pre-extraction code). ProofParcel passes its OWN config to the same core.
+const MANIFEST_CFG = Object.freeze({
+  kind: MANIFEST_KIND,
+  schemaVersion: MANIFEST_SCHEMA_VERSION,
+  supportedSchemaVersions: SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
+  note: TRUST_NOTE,
+  label: "dataset manifest",
+});
 
 /**
  * Build a normalized, fully-validated dataset-manifest object from a streamed directory result plus
@@ -77,154 +95,23 @@ const TRUST_NOTE =
  * @returns {object} a validated manifest object
  */
 function buildManifest(built, opts = {}) {
-  if (!built || typeof built !== "object" || !Array.isArray(built.leaves)) {
-    throw new Error("buildManifest requires the object hashDirStream() returns");
-  }
-  const knownPaths = new Set(built.leaves.map((l) => l.path));
-  const hints = _normalizeHints(opts.hints, knownPaths);
-
-  const manifest = {
-    kind: MANIFEST_KIND,
-    schemaVersion: MANIFEST_SCHEMA_VERSION,
-    note: TRUST_NOTE,
-    root: built.root,
-    fileCount: built.leaves.length,
-    files: built.leaves.map((l) => {
-      const entry = { relPath: l.path, contentHash: l.contentHash, leaf: l.leaf };
-      // Attach the untrusted hint INLINE on the file entry (only when present) so a consumer reads
-      // path/content/leaf/hint together. The hint never participates in the leaf or the root.
-      const h = hints[l.path];
-      if (h) entry.hints = h;
-      return entry;
-    }),
-  };
-  validateManifest(manifest);
-  return manifest;
+  // THIN wrapper over the generic core: the core does the shared hint-normalization, the Merkle/manifest
+  // assembly, and the strict validation; DataLedger supplies ONLY its framing (MANIFEST_CFG). Behaviour
+  // is byte-for-byte identical to the pre-extraction code (same kind, note, fields, error strings).
+  return coreManifest.buildItemManifest(built, MANIFEST_CFG, opts);
 }
 
 /**
- * Normalize raw per-file hints into a { relPath -> {source?,license?} } map of plain strings. Rejects
- * a hint whose relPath is not in the tree, and a non-string source/license, so junk never lands in the
- * manifest. Returns {} for absent hints.
- */
-function _normalizeHints(rawHints, knownPaths) {
-  if (rawHints == null) return {};
-  if (typeof rawHints !== "object" || Array.isArray(rawHints)) {
-    throw new Error("hints must be an object keyed by relPath");
-  }
-  const out = {};
-  for (const [rel, h] of Object.entries(rawHints)) {
-    if (!knownPaths.has(rel)) {
-      throw new Error(`hint for unknown path (not in the dataset): ${JSON.stringify(rel)}`);
-    }
-    if (h == null || typeof h !== "object" || Array.isArray(h)) {
-      throw new Error(`hint for ${JSON.stringify(rel)} must be an object with source/license`);
-    }
-    const entry = {};
-    for (const k of ["source", "license"]) {
-      if (h[k] === undefined || h[k] === null) continue;
-      if (typeof h[k] !== "string") {
-        throw new Error(`hint ${k} for ${JSON.stringify(rel)} must be a string`);
-      }
-      entry[k] = h[k];
-    }
-    // Only record a hint that actually carries at least one labeled field.
-    if (Object.keys(entry).length > 0) out[rel] = entry;
-  }
-  return out;
-}
-
-/**
- * Strictly validate a parsed dataset-manifest object. Throws an Error describing the FIRST problem.
- * Never mutates and never fills defaults — a manifest either is complete and well-formed or it is
- * rejected outright (mirroring cli/proof.js › _validate). A wrong kind/schemaVersion, a missing/!hex
- * root, or any file entry with a missing/!hex contentHash/leaf or empty relPath hard-errors here.
+ * Strictly validate a parsed dataset-manifest object. THIN wrapper over the generic core validator with
+ * DataLedger's framing (MANIFEST_CFG) — the core enforces the shared structural rules (kind/
+ * schemaVersion, hex root, per-file leaf == pathLeaf(relPath, contentHash), hint shape) and the
+ * "dataset manifest" label keeps every error string byte-identical. Throws on the FIRST problem; never
+ * mutates and never fills defaults.
  * @param {any} obj
  * @returns {object} the same object, if valid
  */
 function validateManifest(obj) {
-  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
-    throw new Error("dataset manifest must be a JSON object");
-  }
-  if (obj.kind !== MANIFEST_KIND) {
-    throw new Error(
-      `not a verifyhash dataset manifest (kind: ${JSON.stringify(obj.kind)}; expected ${JSON.stringify(
-        MANIFEST_KIND
-      )})`
-    );
-  }
-  if (!SUPPORTED_MANIFEST_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
-    throw new Error(
-      `unsupported dataset manifest schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
-        `(this build understands ${JSON.stringify(SUPPORTED_MANIFEST_SCHEMA_VERSIONS)})`
-    );
-  }
-  if (typeof obj.root !== "string" || !HEX32_RE.test(obj.root)) {
-    throw new Error(
-      `dataset manifest root must be a 0x-prefixed 32-byte hex string, got: ${String(obj.root)}`
-    );
-  }
-  if (!Array.isArray(obj.files)) {
-    throw new Error("dataset manifest field files must be an array");
-  }
-  if (obj.files.length === 0) {
-    throw new Error("dataset manifest files must be non-empty (a manifest over zero files is invalid)");
-  }
-  // fileCount, when present, must agree with the files array (catch a hand-edited count).
-  if (obj.fileCount !== undefined && obj.fileCount !== obj.files.length) {
-    throw new Error(
-      `dataset manifest fileCount (${String(obj.fileCount)}) does not match files length (${obj.files.length})`
-    );
-  }
-
-  const seen = new Set();
-  obj.files.forEach((entry, i) => {
-    if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
-      throw new Error(`dataset manifest files[${i}] must be an object`);
-    }
-    if (typeof entry.relPath !== "string" || entry.relPath.length === 0) {
-      throw new Error(
-        `dataset manifest files[${i}].relPath must be a non-empty string, got: ${String(entry.relPath)}`
-      );
-    }
-    if (seen.has(entry.relPath)) {
-      throw new Error(`dataset manifest has a duplicate relPath: ${JSON.stringify(entry.relPath)}`);
-    }
-    seen.add(entry.relPath);
-    for (const f of ["contentHash", "leaf"]) {
-      if (typeof entry[f] !== "string" || !HEX32_RE.test(entry[f])) {
-        throw new Error(
-          `dataset manifest files[${i}].${f} must be a 0x-prefixed 32-byte hex string, got: ${String(
-            entry[f]
-          )}`
-        );
-      }
-    }
-    // The leaf MUST be the path-bound digest of (relPath, contentHash) — re-derive it and reject a
-    // manifest whose leaf was tampered with independently of its relPath/contentHash. This is a
-    // structural self-consistency check (no content needed): it binds the three fields together so an
-    // edited leaf (or relPath, or contentHash) is caught here rather than producing a false proof.
-    const expectedLeaf = pathLeaf(entry.relPath, entry.contentHash);
-    if (entry.leaf.toLowerCase() !== expectedLeaf.toLowerCase()) {
-      throw new Error(
-        `dataset manifest files[${i}].leaf is inconsistent with its relPath+contentHash ` +
-          `(expected ${expectedLeaf}, got ${entry.leaf})`
-      );
-    }
-    // Optional hint shape, when present.
-    if (entry.hints !== undefined && entry.hints !== null) {
-      if (typeof entry.hints !== "object" || Array.isArray(entry.hints)) {
-        throw new Error(`dataset manifest files[${i}].hints must be an object when present`);
-      }
-      for (const k of ["source", "license"]) {
-        if (entry.hints[k] !== undefined && typeof entry.hints[k] !== "string") {
-          throw new Error(`dataset manifest files[${i}].hints.${k} must be a string when present`);
-        }
-      }
-    }
-  });
-
-  return obj;
+  return coreManifest.validateItemManifest(obj, MANIFEST_CFG);
 }
 
 /**
@@ -1669,32 +1556,10 @@ const SIGNED_ATTESTATION_KIND = "verifyhash.dataset-attestation-signed";
 const SIGNED_ATTESTATION_SCHEMA_VERSION = 1;
 const SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS = Object.freeze([1]);
 
-// The detached signature schemes this build understands. Each is an EXPLICIT, documented value so a
-// reader knows EXACTLY what bytes were signed and how. `eip191-personal-sign` = EIP-191 personal_sign
-// over the canonical UNSIGNED attestation bytes (a 65-byte r||s||v secp256k1 signature).
-const SIGNED_ATTESTATION_SCHEMES = Object.freeze(["eip191-personal-sign"]);
-
-// A 0x-prefixed, 0x-only, EVEN-length, non-empty hex string for the signature. eip191-personal-sign is
-// specifically a 65-byte (r||s||v) secp256k1 signature -> exactly 130 hex chars. Strict by scheme below.
-//
-// CANONICAL CASE (T-17.1 byte-determinism). These accept ONLY lowercase hex. The signature block is the
-// HUMAN-supplied part of the container and the part most likely to arrive EIP-55-checksummed (mixed
-// case) or upper-cased. If we accepted mixed case and round-tripped it verbatim, two structurally
-// identical containers over the SAME logical signature would serialize to DIFFERENT bytes — breaking the
-// "byte-deterministic ... two runs over the same inputs produce an identical string" contract a future
-// indexer/UI keys on. We REJECT non-canonical case on read/validate (rather than silently normalizing)
-// so the wire format ossifies with one — and only one — byte encoding for a given logical signature.
-// (The embedded UNSIGNED payload is machine-generated lowercase, so its determinism was never at risk.)
-const HEXSTR_RE = /^0x([0-9a-f]{2})+$/;
-const EIP191_SIG_RE = /^0x[0-9a-f]{130}$/; // 65 bytes: r(32) || s(32) || v(1)
-
-// A claimed 0x-address: 0x + 40 LOWERCASE hex chars. The container records the CLAIMED signer; it does
-// not (and the loop cannot) recover the address from the signature — that is the verifier/human step
-// (T-17.2). Lowercase-only for the same byte-determinism reason as the signature value above: an
-// EIP-55-checksummed (mixed-case) signer is the canonical address in a DIFFERENT encoding, so accepting
-// it verbatim would let the same signer serialize two ways. A caller holding a checksummed address
-// lowercases it (e.g. `addr.toLowerCase()`) before building the container.
-const ADDRESS_RE = /^0x[0-9a-f]{40}$/;
+// The detached signature schemes this build understands, sourced from cli/core so the supported-scheme
+// set is the IDENTICAL one shared across the product family. `eip191-personal-sign` = EIP-191
+// personal_sign over the canonical UNSIGNED attestation bytes (a 65-byte r||s||v secp256k1 signature).
+const SIGNED_ATTESTATION_SCHEMES = coreAttestation.SIGNED_ATTESTATION_SCHEMES;
 
 // The standing trust caveat carried IN-BAND in every signed container. It REUSES the dataset TRUST_NOTE
 // VERBATIM (so the dataset caveats never drift) and adds only the signed-container-specific assertion:
@@ -1710,6 +1575,21 @@ const SIGNED_ATTESTATION_TRUST_NOTE =
   "payload still applies. " +
   TRUST_NOTE;
 
+// DataLedger's signed-container framing, passed to the GENERIC core. The core owns the envelope
+// machinery (the wrap-don't-edit invariant, the scheme list, signer recovery); this object supplies
+// ONLY DataLedger's kind/schema/note + the "signed dataset attestation" label (so error strings stay
+// byte-identical) and the DataLedger UNSIGNED-payload codec (validate/serialize) the core re-validates
+// the embedded payload with — so the core never needs to know anything dataset-specific (no back-edge).
+const SIGNED_ATTESTATION_CFG = Object.freeze({
+  kind: SIGNED_ATTESTATION_KIND,
+  schemaVersion: SIGNED_ATTESTATION_SCHEMA_VERSION,
+  supportedSchemaVersions: SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS,
+  note: SIGNED_ATTESTATION_TRUST_NOTE,
+  label: "signed dataset attestation",
+  validateUnsigned: validateAttestation,
+  serializeUnsigned: serializeAttestation,
+});
+
 /**
  * Strictly validate a parsed SIGNED-attestation container. Throws an Error describing the FIRST problem;
  * never mutates and never fills defaults (same discipline as validateAttestation). REJECTS: a wrong
@@ -1722,80 +1602,11 @@ const SIGNED_ATTESTATION_TRUST_NOTE =
  * @returns {object} the same object, if valid
  */
 function validateSignedAttestation(obj) {
-  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
-    throw new Error("signed dataset attestation must be a JSON object");
-  }
-  if (obj.kind !== SIGNED_ATTESTATION_KIND) {
-    throw new Error(
-      `not a verifyhash signed dataset attestation (kind: ${JSON.stringify(obj.kind)}; expected ` +
-        `${JSON.stringify(SIGNED_ATTESTATION_KIND)})`
-    );
-  }
-  if (!SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
-    throw new Error(
-      `unsupported signed dataset attestation schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
-        `(this build understands ${JSON.stringify(SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS)})`
-    );
-  }
-  if (obj.note !== SIGNED_ATTESTATION_TRUST_NOTE) {
-    throw new Error("signed dataset attestation note must be the standing SIGNED_ATTESTATION_TRUST_NOTE");
-  }
-  // The embedded UNSIGNED payload is carried as the EXACT canonical bytes serializeAttestation emits —
-  // a STRING, so the signed-over bytes are unambiguous. Re-parse and re-validate it with the SAME strict
-  // reader the unsigned path uses: it must STILL be signed:false/signature:null. This is the
-  // wrap-don't-edit invariant — a signed container can never smuggle an edited or already-"signed" payload.
-  if (typeof obj.attestation !== "string") {
-    throw new Error(
-      "signed dataset attestation must embed the canonical UNSIGNED attestation as a string `attestation`"
-    );
-  }
-  let embedded;
-  try {
-    embedded = JSON.parse(obj.attestation);
-  } catch (e) {
-    throw new Error(`embedded attestation is not valid JSON: ${e.message}`);
-  }
-  // Re-validate the embedded payload by the EXISTING unsigned validator (throws on signed:true etc.).
-  validateAttestation(embedded);
-  // Re-serialize the embedded payload and require the embedded STRING to be byte-identical to the
-  // canonical form. This pins the embedded bytes to EXACTLY what serializeAttestation emits — the bytes
-  // that were signed over — so no insignificant-whitespace / reordered variant can sneak in.
-  if (obj.attestation !== serializeAttestation(embedded)) {
-    throw new Error(
-      "embedded attestation is not in canonical form (the signed-over bytes must be byte-for-byte " +
-        "serializeAttestation's output)"
-    );
-  }
-
-  const sig = obj.signature;
-  if (sig == null || typeof sig !== "object" || Array.isArray(sig)) {
-    throw new Error("signed dataset attestation signature must be a { scheme, signer, signature } object");
-  }
-  if (!SIGNED_ATTESTATION_SCHEMES.includes(sig.scheme)) {
-    throw new Error(
-      `unknown signature scheme: ${JSON.stringify(sig.scheme)} ` +
-        `(this build understands ${JSON.stringify(SIGNED_ATTESTATION_SCHEMES)})`
-    );
-  }
-  if (typeof sig.signer !== "string" || !ADDRESS_RE.test(sig.signer)) {
-    throw new Error(
-      `signature signer must be a 0x-prefixed 20-byte LOWERCASE-hex address ` +
-        `(checksummed/mixed-case rejected for byte-determinism — lowercase it first), got: ${String(sig.signer)}`
-    );
-  }
-  if (typeof sig.signature !== "string" || !HEXSTR_RE.test(sig.signature)) {
-    throw new Error(
-      `signature value must be a 0x-prefixed LOWERCASE-hex string ` +
-        `(mixed/upper case rejected for byte-determinism), got: ${String(sig.signature)}`
-    );
-  }
-  // Per-scheme shape: eip191-personal-sign is a 65-byte r||s||v secp256k1 signature.
-  if (sig.scheme === "eip191-personal-sign" && !EIP191_SIG_RE.test(sig.signature)) {
-    throw new Error(
-      `eip191-personal-sign signature must be a 65-byte (r||s||v) 0x-hex string, got length ${sig.signature.length}`
-    );
-  }
-  return obj;
+  // THIN wrapper over the generic core validator with DataLedger's framing. The core enforces the shared
+  // wrap-don't-edit invariant (re-validate + canonical-byte equality of the embedded UNSIGNED payload via
+  // DataLedger's own validateAttestation/serializeAttestation), the scheme list, and the signer/signature
+  // shape; the "signed dataset attestation" label keeps every error string byte-identical.
+  return coreAttestation.validateSignedAttestation(obj, SIGNED_ATTESTATION_CFG);
 }
 
 /**
@@ -1820,24 +1631,10 @@ function validateSignedAttestation(obj) {
  * @returns {object} a validated signed-attestation container
  */
 function buildSignedAttestation(params) {
-  if (!params || typeof params !== "object") {
-    throw new Error("buildSignedAttestation requires { attestation, scheme, signer, signature }");
-  }
-  const { attestation, scheme, signer, signature } = params;
-  // The embedded payload must itself be a sound UNSIGNED attestation before we wrap it (re-validate so a
-  // programmatic caller that hand-built one is checked too). validateAttestation rejects signed:true.
-  validateAttestation(attestation);
-  // Embed the EXACT canonical bytes — the string serializeAttestation emits — so the signed-over bytes
-  // are byte-for-byte unambiguous.
-  const container = {
-    kind: SIGNED_ATTESTATION_KIND,
-    schemaVersion: SIGNED_ATTESTATION_SCHEMA_VERSION,
-    note: SIGNED_ATTESTATION_TRUST_NOTE,
-    attestation: serializeAttestation(attestation),
-    signature: { scheme, signer, signature },
-  };
-  validateSignedAttestation(container);
-  return container;
+  // THIN wrapper: the core embeds the EXACT canonical UNSIGNED bytes (via DataLedger's serializeAttestation
+  // in SIGNED_ATTESTATION_CFG), attaches { scheme, signer, signature }, and strictly validates the whole
+  // container. NO signing, NO key handling — the loop never holds a key.
+  return coreAttestation.buildSignedAttestation(params, SIGNED_ATTESTATION_CFG);
 }
 
 /**
@@ -1848,21 +1645,9 @@ function buildSignedAttestation(params) {
  * @returns {string} the canonical serialization (newline-terminated)
  */
 function serializeSignedAttestation(container) {
-  validateSignedAttestation(container);
-  const canonical = {
-    kind: container.kind,
-    schemaVersion: container.schemaVersion,
-    note: container.note,
-    // The embedded canonical UNSIGNED bytes (a string) — JSON.stringify escapes it, preserving the exact
-    // bytes including the embedded trailing newline.
-    attestation: container.attestation,
-    signature: {
-      scheme: container.signature.scheme,
-      signer: container.signature.signer,
-      signature: container.signature.signature,
-    },
-  };
-  return JSON.stringify(canonical) + "\n";
+  // THIN wrapper: the core serializes with the fixed top-level + signature-block key order, no
+  // insignificant whitespace, and a single trailing newline — byte-deterministic across runs.
+  return coreAttestation.serializeSignedAttestation(container, SIGNED_ATTESTATION_CFG);
 }
 
 /**
@@ -1874,22 +1659,10 @@ function serializeSignedAttestation(container) {
  * @returns {object} the validated container
  */
 function readSignedAttestation(signedPath) {
-  if (!signedPath || typeof signedPath !== "string") {
-    throw new Error("readSignedAttestation requires a signed attestation file path");
-  }
-  let raw;
-  try {
-    raw = fs.readFileSync(signedPath, "utf8");
-  } catch (e) {
-    throw new Error(`cannot read signed dataset attestation at ${signedPath}: ${e.message}`);
-  }
-  let obj;
-  try {
-    obj = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`signed dataset attestation at ${signedPath} is not valid JSON: ${e.message}`);
-  }
-  return validateSignedAttestation(obj);
+  // THIN wrapper over the generic core reader with DataLedger's framing (label keeps the I/O error
+  // strings byte-identical). Reads, parses, and strictly validates — a malformed/edited/foreign
+  // container is rejected, never half-accepted.
+  return coreAttestation.readSignedAttestation(signedPath, SIGNED_ATTESTATION_CFG);
 }
 
 /**
@@ -2000,17 +1773,9 @@ const VERIFY_ATTEST_TRUST_NOTE =
  * @returns {string} the recovered signer address, 0x-prefixed lowercase
  */
 function recoverSignedAttestationSigner(container) {
-  const { scheme, signature } = container.signature;
-  if (scheme === "eip191-personal-sign") {
-    // The signed message IS the embedded canonical UNSIGNED bytes verbatim (the string, including its
-    // single trailing newline). verifyMessage runs EIP-191 personal_sign recovery over exactly those bytes.
-    const recovered = verifyMessage(container.attestation, signature);
-    return recovered.toLowerCase();
-  }
-  throw new Error(
-    `cannot recover signer for unknown signature scheme: ${JSON.stringify(scheme)} ` +
-      `(this build understands ${JSON.stringify(SIGNED_ATTESTATION_SCHEMES)})`
-  );
+  // THIN wrapper: the core recovers the signer from the embedded canonical bytes + signature per the
+  // declared scheme (eip191-personal-sign = EIP-191 personal_sign recovery over the embedded bytes).
+  return coreAttestation.recoverSigner(container);
 }
 
 /**
@@ -2049,75 +1814,17 @@ function verifySignedAttestation(params) {
   }
   const { container, expectedSigner, manifest } = params;
 
-  const claimedSigner = container.signature.signer; // validated lowercase 0x-address
-  const scheme = container.signature.scheme;
-
-  // (b) Recover the signer from the embedded canonical bytes + signature, and confirm it equals the
-  //     container's CLAIMED `signer`. A signature that does not recover to the claimed signer means the
-  //     `signer` label is unbacked — a clean check failure (REJECTED), not an error.
-  //
-  //     A TAMPERED signature can be not merely WRONG but UNRECOVERABLE: a corrupted (r,s,v) may have no
-  //     valid secp256k1 point, in which case ethers' verifyMessage throws. That is still a buyer-facing
-  //     REJECTED verdict, NOT a crash — so we catch it and treat it as a failed signature check (the
-  //     recovered signer is the explicit "(unrecoverable)" sentinel, never a real address). An unknown
-  //     scheme is a different (structural) failure and is re-thrown — validateSignedAttestation already
-  //     rejects it, so this is defense-in-depth that should never fire for a read container.
-  let recoveredSigner;
-  let signatureMatchesSigner;
-  try {
-    recoveredSigner = recoverSignedAttestationSigner(container);
-    signatureMatchesSigner = recoveredSigner === claimedSigner.toLowerCase();
-  } catch (e) {
-    if (/unknown signature scheme/.test(e.message)) throw e;
-    recoveredSigner = "(unrecoverable)";
-    signatureMatchesSigner = false;
-  }
-
-  // (c) OPTIONAL pin: confirm the recovered signer equals the EXPECTED publisher address the buyer pinned.
-  //     Normalize the expected address (accept checksummed/mixed-case via getAddress, then lowercase) so a
-  //     buyer can paste an EIP-55 address; an unparseable address is a usage-grade error surfaced by the
-  //     CLI before we get here, but defend anyway. null = not requested.
-  let signerMatchesExpected = null;
-  let normalizedExpected = null;
-  if (expectedSigner !== undefined && expectedSigner !== null) {
-    normalizedExpected = getAddress(expectedSigner).toLowerCase();
-    // Pin against the RECOVERED signer (not the merely-claimed one): the buyer pins WHO actually signed.
-    signerMatchesExpected = recoveredSigner === normalizedExpected;
-  }
-
-  // (d) OPTIONAL binding: recompute the canonical UNSIGNED bytes from the buyer's OWN manifest via the
-  //     EXISTING build path and require them byte-identical to the embedded (signed-over) payload. This
-  //     proves the signature binds the dataset the buyer actually holds, not some other set. null = not
-  //     requested.
-  let manifestBindsAttestation = null;
+  // The ONLY DataLedger-specific step: the OPTIONAL dataset-binding check recomputes the canonical
+  // UNSIGNED bytes from the buyer's OWN manifest via the EXISTING build path, then hands those bytes to
+  // the GENERIC core as `expectedCanonical`. The core does the signer recovery, the claimed-signer
+  // check, the OPTIONAL expected-signer pin, and the byte-identity binding comparison — all product-
+  // agnostic. The returned shape (incl. the `manifestBindsAttestation`/`manifestChecked` field names) is
+  // byte-for-byte what the pre-extraction function returned.
+  let expectedCanonical;
   if (manifest !== undefined && manifest !== null) {
-    const recomputed = serializeAttestation(buildAttestation(manifest));
-    manifestBindsAttestation = recomputed === container.attestation;
+    expectedCanonical = serializeAttestation(buildAttestation(manifest));
   }
-
-  // Verdict: ACCEPTED only when EVERY REQUESTED check passes. The signature-vs-signer check is ALWAYS
-  // requested; the other two only when their flag was given (null = not requested, never fails the gate).
-  const failedChecks = [];
-  if (!signatureMatchesSigner) failedChecks.push("signatureMatchesSigner");
-  if (signerMatchesExpected === false) failedChecks.push("signerMatchesExpected");
-  if (manifestBindsAttestation === false) failedChecks.push("manifestBindsAttestation");
-  const accepted = failedChecks.length === 0;
-
-  return {
-    verdict: accepted ? VERIFY_ATTEST_VERDICT.ACCEPTED : VERIFY_ATTEST_VERDICT.REJECTED,
-    accepted,
-    recoveredSigner,
-    claimedSigner: claimedSigner.toLowerCase(),
-    scheme,
-    checks: {
-      signatureMatchesSigner,
-      signerMatchesExpected,
-      manifestBindsAttestation,
-    },
-    expectedSigner: normalizedExpected,
-    manifestChecked: manifestBindsAttestation !== null,
-    failedChecks,
-  };
+  return coreAttestation.verifySignedAttestation({ container, expectedSigner, expectedCanonical });
 }
 
 /**

@@ -458,6 +458,189 @@ function formatDatasetVerify(r) {
 }
 
 // =================================================================================================
+// `vh dataset diff <manifestA> <manifestB>` — OFFLINE manifest-to-manifest change report.
+//
+// WHY THIS EXISTS
+//   `vh dataset verify` answers "does this manifest still match the live tree on disk?". But a CI
+//   pipeline (or a data scientist comparing two dataset SNAPSHOTS) often holds TWO manifests and no
+//   tree at all, and wants to answer "what changed between version A and version B of the training
+//   set?" — purely from the two portable artifacts, with NO dataset copy, NO provider, NO key, NO
+//   network. `vh dataset diff A B` reads both via the SAME strict `readManifest` (a corrupt/edited
+//   manifest is rejected, never half-accepted) and computes the change set by REUSING the EXACT diff
+//   core `vh dataset verify` uses — `cli/receipt.js › diffManifest` — verbatim. NO new diff logic.
+//
+//   The diff compares what each manifest CLAIMS; it does NOT re-derive content (there is no tree to
+//   read). To actually re-derive a root from bytes, run `vh dataset verify` against the live tree.
+//
+// EXIT CODES (mirror the dataset family): 0 when the two manifests are IDENTICAL, 3 when they DIFFER
+//   (so a pipeline can `fail if the training set changed unexpectedly`), 2 usage, 1 runtime.
+
+/**
+ * Compute (purely, OFFLINE) the change set between two dataset manifests A and B. Reads both via the
+ * strict `readManifest` (so a corrupt/foreign manifest is rejected) and diffs them by REUSING
+ * `cli/receipt.js › diffManifest` verbatim — the SAME core `vh dataset verify` uses. The diff is
+ * directional: ADDED = present in B not A, REMOVED = present in A not B, CHANGED = same relPath with a
+ * different leaf (carrying old→new contentHash). A rename surfaces as REMOVED(old path) + ADDED(new
+ * path) because the relPath is bound into the leaf — never as a single edit.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifestA  path to the BASELINE manifest (the "from")
+ * @param {string} opts.manifestB  path to the COMPARISON manifest (the "to")
+ * @param {boolean}[opts.json]     emit a machine-readable object instead of the human block
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {{
+ *   rootA: string, rootB: string, rootsIdentical: boolean, identical: boolean,
+ *   added: any[], removed: any[], changed: any[], unchanged: any[],
+ *   counts: { added: number, removed: number, changed: number, unchanged: number }
+ * }}
+ */
+function runDatasetDiff(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetDiff requires options");
+  const { manifestA, manifestB } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestA) throw new Error("runDatasetDiff requires a <manifestA> path");
+  if (!manifestB) throw new Error("runDatasetDiff requires a <manifestB> path");
+
+  // Strict reads: a corrupt/edited/foreign manifest is rejected here, never half-accepted, BEFORE any
+  // diff is attempted. Both must be structurally sound (every leaf == pathLeaf(relPath, contentHash)).
+  const a = readManifest(manifestA);
+  const b = readManifest(manifestB);
+
+  const rootA = a.root;
+  const rootB = b.root;
+  // The two roots, recorded in the manifests, are DISPLAYED metadata only. readManifest validates that
+  // every leaf == pathLeaf(relPath, contentHash) and the fileCount, but it does NOT re-derive
+  // root == merkleRoot(leaves) (that only happens in `dataset verify` against a live tree). So a
+  // hand-edited `root` could disagree with the leaves it claims to summarize. We therefore do NOT let
+  // root-string equality decide the verdict — see `identical` below.
+  const rootsIdentical = rootA.toLowerCase() === rootB.toLowerCase();
+
+  // Map each manifest's `files` (relPath→path) into the shape diffManifest expects, then REUSE the
+  // SAME diff core verbatim. A is the baseline ("recorded"), B is the comparison ("current"): so
+  // diffManifest's ADDED = in B not A, REMOVED = in A not B, CHANGED = same relPath, different leaf.
+  const aManifest = a.files.map((f) => ({
+    path: f.relPath,
+    contentHash: f.contentHash,
+    leaf: f.leaf,
+  }));
+  const bManifest = b.files.map((f) => ({
+    path: f.relPath,
+    contentHash: f.contentHash,
+    leaf: f.leaf,
+  }));
+  const diff = diffManifest(aManifest, bManifest);
+
+  // AUTHORITATIVE verdict (and thus exit code + IDENTICAL/DIFFERENT headline) is the CHANGE SET, not
+  // root-string equality. diffManifest already returns `identical` (true iff there is no ADDED /
+  // REMOVED / CHANGED) from the per-file LEAVES — the same data the printed/JSON changeset is built
+  // from. Deriving the verdict from the changeset guarantees the exit code, the headline, and the body
+  // can never disagree: a manifest with a hand-edited `root` (whose leaves are unchanged) still reports
+  // IDENTICAL with exit 0 and an empty changeset, instead of a DIFFERENT verdict that contradicts a
+  // "+0 / -0 / ~0" body. rootA/rootB/rootsIdentical remain DISPLAYED metadata.
+  const identical = diff.identical;
+
+  const counts = {
+    added: diff.added.length,
+    removed: diff.removed.length,
+    changed: diff.changed.length,
+    unchanged: diff.unchanged.length,
+  };
+
+  if (opts.json) {
+    write(
+      JSON.stringify({
+        rootA,
+        rootB,
+        rootsIdentical,
+        identical,
+        added: diff.added,
+        removed: diff.removed,
+        changed: diff.changed,
+        unchanged: diff.unchanged,
+        counts,
+      }) + "\n"
+    );
+  } else {
+    for (const line of formatDatasetDiff({ rootA, rootB, rootsIdentical, identical, diff, counts })) {
+      write(line + "\n");
+    }
+  }
+
+  return {
+    rootA,
+    rootB,
+    rootsIdentical,
+    identical,
+    added: diff.added,
+    removed: diff.removed,
+    changed: diff.changed,
+    unchanged: diff.unchanged,
+    counts,
+  };
+}
+
+/**
+ * Render a dataset-diff result as the human-readable block the CLI prints. Leads with the one-line
+ * TRUST note (reusing the dataset TRUST_NOTE wording), states whether the roots are IDENTICAL or
+ * DIFFERENT, prints the precise per-file ADDED/REMOVED/CHANGED set with a count line, and states that
+ * a rename surfaces as REMOVED+ADDED (so it is not mistaken for two unrelated edits).
+ * The headline (IDENTICAL vs DIFFERENT) is driven by `identical` — the CHANGE SET, not root-string
+ * equality — so it can never contradict the per-file body or the exit code. rootA/rootB and whether the
+ * raw root STRINGS matched are printed as metadata; if they disagree with the change set (a hand-edited
+ * `root` whose leaves are unchanged) the discrepancy is called out explicitly rather than letting it
+ * silently flip the verdict.
+ * @param {{rootA:string,rootB:string,rootsIdentical:boolean,identical:boolean,diff:object,counts:object}} r
+ * @returns {string[]} lines
+ */
+function formatDatasetDiff(r) {
+  const lines = [
+    // TRUST note FIRST: a diff compares what each manifest CLAIMS; it does not re-derive content.
+    "  TRUST: this compares what each manifest CLAIMS — it does NOT re-derive content. " + TRUST_NOTE,
+    "         (run `vh dataset verify` against the live tree to re-derive a root from bytes).",
+    "",
+    `  manifest A root: ${r.rootA}`,
+    `  manifest B root: ${r.rootB}`,
+  ];
+  if (r.identical) {
+    lines.push(
+      "  files: IDENTICAL — the two manifests commit to the SAME set of (relPath, content) pairs;",
+      "         the file sets are identical (no ADDED / REMOVED / CHANGED).",
+      `  +0 / -0 / ~0 / ${r.counts.unchanged} unchanged`
+    );
+    // The verdict is the change set, not the raw root strings. If those root strings DISAGREE while the
+    // file sets are identical, a `root` field was hand-edited (readManifest does not re-derive
+    // root-over-leaves); flag it so a reader is not surprised by mismatched root lines above.
+    if (!r.rootsIdentical) {
+      lines.push(
+        "  NOTE: the two manifests' recorded `root` fields DIFFER even though their file sets are",
+        "        identical — a `root` was hand-edited (a manifest's root is not re-derived from its",
+        "        leaves on read). Run `vh dataset verify` against the live tree to re-derive a root.",
+        "        The IDENTICAL verdict above is the file-set change set, which is authoritative here."
+      );
+    }
+    return lines;
+  }
+  lines.push(
+    "  files: DIFFERENT — the manifests commit to different (relPath, content) sets. Per-file changes",
+    "         (A→B). A rename surfaces as REMOVED(old path) + ADDED(new path) — the path is bound into",
+    "         the leaf — NOT as two unrelated edits.",
+    `  +${r.counts.added} / -${r.counts.removed} / ~${r.counts.changed} / ${r.counts.unchanged} unchanged`
+  );
+  for (const c of r.diff.changed) {
+    lines.push(`    CHANGED  ${c.path}`);
+    lines.push(`               old: ${c.oldContentHash}`);
+    lines.push(`               new: ${c.newContentHash}`);
+  }
+  for (const a of r.diff.added) {
+    lines.push(`    ADDED    ${a.path}  (${a.contentHash})   in B, not in A`);
+  }
+  for (const rm of r.diff.removed) {
+    lines.push(`    REMOVED  ${rm.path}  (${rm.contentHash})   in A, not in B`);
+  }
+  return lines;
+}
+
+// =================================================================================================
 // `vh dataset prove --file <p> --manifest <m>`  +  `vh dataset verify-proof <proof>`
 // Offline set-membership of ONE file in a manifested dataset.
 //
@@ -770,6 +953,8 @@ module.exports = {
   runDatasetBuild,
   runDatasetVerify,
   formatDatasetVerify,
+  runDatasetDiff,
+  formatDatasetDiff,
   buildDatasetProof,
   runDatasetProve,
   runDatasetVerifyProof,

@@ -36,6 +36,7 @@ const {
   writeManifest,
   runDatasetBuild,
   runDatasetVerify,
+  runDatasetDiff,
   buildDatasetProof,
   runDatasetProve,
   runDatasetVerifyProof,
@@ -45,6 +46,7 @@ const {
   main,
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
+  parseDatasetDiffArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
 } = require("../cli/vh");
@@ -917,6 +919,256 @@ describe("cli: vh dataset build (T-13.1)", function () {
       expect(fs.readdirSync(outDir)).to.deep.equal([]);
       runDatasetProve({ file: path.join(dir, "a.txt"), manifest: manifestPath, out, stdout: () => {} });
       expect(fs.readdirSync(outDir)).to.deep.equal(["membership.json"]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------------
+  // T-14.1: `vh dataset diff <manifestA> <manifestB>` — OFFLINE manifest-to-manifest change report.
+  // ---------------------------------------------------------------------------------------------------
+  describe("vh dataset diff (T-14.1): OFFLINE manifest-to-manifest change report", function () {
+    // Build a manifest for `files` and return its path (no live tree is retained — diff is offline).
+    function manifestFor(files, prefix) {
+      const dir = tmp(prefix + "-tree-");
+      writeFiles(dir, files);
+      const out = path.join(tmp(prefix + "-man-"), "manifest.json");
+      runDatasetBuild({ dir, out, stdout: () => {} });
+      return out;
+    }
+
+    const BASE = {
+      "a.txt": "alpha",
+      "sub/b.txt": "beta",
+      "sub/deep/c.bin": Buffer.from([0, 1, 2, 3]),
+    };
+
+    it("reports exactly the CHANGED/ADDED/REMOVED set with old->new hashes (A built; B edits+adds+removes)", function () {
+      const aPath = manifestFor(BASE, "dsd-a");
+      // B: edit a.txt, add d.txt, remove sub/b.txt (keep sub/deep/c.bin unchanged).
+      const bPath = manifestFor(
+        {
+          "a.txt": "alpha EDITED",
+          "sub/deep/c.bin": Buffer.from([0, 1, 2, 3]),
+          "d.txt": "newly added",
+        },
+        "dsd-b"
+      );
+
+      const lines = [];
+      const res = runDatasetDiff({ manifestA: aPath, manifestB: bPath, stdout: (s) => lines.push(s) });
+
+      expect(res.rootsIdentical).to.equal(false);
+      expect(res.identical).to.equal(false);
+      expect(res.changed.map((c) => c.path)).to.deep.equal(["a.txt"]);
+      expect(res.added.map((a) => a.path)).to.deep.equal(["d.txt"]);
+      expect(res.removed.map((r) => r.path)).to.deep.equal(["sub/b.txt"]);
+      expect(res.unchanged.map((u) => u.path)).to.deep.equal(["sub/deep/c.bin"]);
+
+      // CHANGED carries old->new contentHash (A's bytes -> B's bytes).
+      const c = res.changed[0];
+      expect(c.oldContentHash).to.equal(ethers.keccak256(Buffer.from("alpha")));
+      expect(c.newContentHash).to.equal(ethers.keccak256(Buffer.from("alpha EDITED")));
+      // ADDED / REMOVED carry the right contentHash.
+      expect(res.added[0].contentHash).to.equal(ethers.keccak256(Buffer.from("newly added")));
+      expect(res.removed[0].contentHash).to.equal(ethers.keccak256(Buffer.from("beta")));
+
+      expect(res.counts).to.deep.equal({ added: 1, removed: 1, changed: 1, unchanged: 1 });
+
+      // Human output: TRUST note, both roots, DIFFERENT, the count line, and the rename caveat.
+      const out = lines.join("");
+      expect(out).to.contain("TRUST:");
+      expect(out).to.contain(res.rootA);
+      expect(out).to.contain(res.rootB);
+      expect(out).to.contain("DIFFERENT");
+      expect(out).to.contain("+1 / -1 / ~1 / 1 unchanged");
+      expect(out).to.contain("REMOVED(old path) + ADDED(new path)");
+      expect(out).to.contain("CHANGED  a.txt");
+      expect(out).to.contain("ADDED    d.txt");
+      expect(out).to.contain("REMOVED  sub/b.txt");
+    });
+
+    it("exit 3 via main() when the manifests DIFFER", async function () {
+      const aPath = manifestFor(BASE, "dsd-x3a");
+      const bPath = manifestFor({ "a.txt": "alpha EDITED" }, "dsd-x3b");
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      try {
+        expect(await main(["dataset", "diff", aPath, bPath])).to.equal(3);
+      } finally {
+        process.stdout.write = orig;
+      }
+    });
+
+    it("diffing a manifest against ITSELF reports IDENTICAL with exit 0", async function () {
+      const aPath = manifestFor(BASE, "dsd-self");
+      const lines = [];
+      const res = runDatasetDiff({ manifestA: aPath, manifestB: aPath, stdout: (s) => lines.push(s) });
+      expect(res.rootsIdentical).to.equal(true);
+      expect(res.identical).to.equal(true);
+      expect(res.rootA).to.equal(res.rootB);
+      expect(res.counts).to.deep.equal({
+        added: 0,
+        removed: 0,
+        changed: 0,
+        unchanged: Object.keys(BASE).length,
+      });
+      const out = lines.join("");
+      expect(out).to.contain("IDENTICAL");
+      expect(out).to.contain(`+0 / -0 / ~0 / ${Object.keys(BASE).length} unchanged`);
+
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      try {
+        expect(await main(["dataset", "diff", aPath, aPath])).to.equal(0);
+      } finally {
+        process.stdout.write = orig;
+      }
+    });
+
+    it("two DISTINCT manifests over the SAME tree are IDENTICAL (root commits to content, not the file)", function () {
+      const aPath = manifestFor(BASE, "dsd-eqA");
+      const bPath = manifestFor(BASE, "dsd-eqB");
+      const res = runDatasetDiff({ manifestA: aPath, manifestB: bPath, stdout: () => {} });
+      expect(res.rootsIdentical).to.equal(true);
+      expect(res.counts.changed).to.equal(0);
+      expect(res.counts.added).to.equal(0);
+      expect(res.counts.removed).to.equal(0);
+    });
+
+    it("verdict is the CHANGE SET, not the root string: a hand-edited `root` (leaves intact) stays IDENTICAL/exit 0", async function () {
+      // Two manifests with IDENTICAL leaves, but B's recorded `root` field is hand-edited to a
+      // different (still well-formed) value. readManifest validates each leaf == pathLeaf(relPath,
+      // contentHash) and the fileCount, but does NOT re-derive root == merkleRoot(leaves), so this
+      // tampered manifest passes validation. The verdict (exit + headline) must come from the change
+      // set (empty here) — NOT from rootsIdentical — so it never contradicts its own changeset.
+      const aPath = manifestFor(BASE, "dsd-tamperA");
+      const bPath = path.join(tmp("dsd-tamperB-"), "manifest.json");
+      const m = JSON.parse(fs.readFileSync(aPath, "utf8"));
+      // Flip the first hex digit of the root to a guaranteed-different well-formed 32-byte hex value.
+      const flipped = m.root[2] === "f" ? "0" : "f";
+      m.root = "0x" + flipped + m.root.slice(3);
+      fs.writeFileSync(bPath, JSON.stringify(m, null, 2) + "\n");
+
+      const lines = [];
+      const res = runDatasetDiff({ manifestA: aPath, manifestB: bPath, stdout: (s) => lines.push(s) });
+
+      // The raw root STRINGS differ (B was tampered), but the change set is EMPTY.
+      expect(res.rootsIdentical).to.equal(false);
+      expect(res.identical).to.equal(true);
+      expect(res.counts).to.deep.equal({
+        added: 0,
+        removed: 0,
+        changed: 0,
+        unchanged: Object.keys(BASE).length,
+      });
+
+      // Headline + body AGREE: IDENTICAL with an empty changeset; the discrepancy is called out, not hidden.
+      const out = lines.join("");
+      expect(out).to.contain("IDENTICAL");
+      expect(out).to.contain(`+0 / -0 / ~0 / ${Object.keys(BASE).length} unchanged`);
+      expect(out).to.contain("hand-edited"); // explicitly flags the root mismatch rather than flipping the verdict
+
+      // The EXIT CODE (what CI branches on) matches the empty changeset: 0, not 3.
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      try {
+        expect(await main(["dataset", "diff", aPath, bPath])).to.equal(0);
+      } finally {
+        process.stdout.write = orig;
+      }
+    });
+
+    it("a RENAME surfaces as REMOVED(old path) + ADDED(new path), same bytes (not 'unchanged')", function () {
+      const aPath = manifestFor(
+        { "stable.txt": "stays", "old-name.txt": "same bytes either way" },
+        "dsd-renA"
+      );
+      const bPath = manifestFor(
+        { "stable.txt": "stays", "new-name.txt": "same bytes either way" },
+        "dsd-renB"
+      );
+      const res = runDatasetDiff({ manifestA: aPath, manifestB: bPath, stdout: () => {} });
+      expect(res.rootsIdentical).to.equal(false);
+      expect(res.removed.map((r) => r.path)).to.deep.equal(["old-name.txt"]);
+      expect(res.added.map((a) => a.path)).to.deep.equal(["new-name.txt"]);
+      expect(res.changed).to.have.length(0);
+      const sameHash = ethers.keccak256(Buffer.from("same bytes either way"));
+      expect(res.removed[0].contentHash).to.equal(sameHash);
+      expect(res.added[0].contentHash).to.equal(sameHash);
+    });
+
+    it("--json round-trips and carries the same counts (no human text)", function () {
+      const aPath = manifestFor(BASE, "dsd-jsonA");
+      const bPath = manifestFor({ "a.txt": "alpha EDITED", "sub/b.txt": "beta" }, "dsd-jsonB");
+      const lines = [];
+      const res = runDatasetDiff({ manifestA: aPath, manifestB: bPath, json: true, stdout: (s) => lines.push(s) });
+      const parsed = JSON.parse(lines.join(""));
+      expect(parsed.rootA).to.equal(res.rootA);
+      expect(parsed.rootB).to.equal(res.rootB);
+      expect(parsed.rootsIdentical).to.equal(false);
+      expect(parsed.identical).to.equal(false);
+      expect(parsed.counts).to.deep.equal(res.counts);
+      expect(parsed.changed.map((c) => c.path)).to.deep.equal(["a.txt"]);
+      expect(parsed.removed.map((r) => r.path)).to.deep.equal(["sub/deep/c.bin"]);
+      // Pure JSON object on a single line: no TRUST note leaked into machine output.
+      expect(lines.join("")).to.not.contain("TRUST:");
+    });
+
+    it("rejects a corrupt/foreign manifest by readManifest (no half-accept)", async function () {
+      const aPath = manifestFor(BASE, "dsd-corrupt");
+      // A corrupt B: valid JSON but a non-hex root.
+      const m = JSON.parse(fs.readFileSync(aPath, "utf8"));
+      m.root = "0xnothex";
+      const bPath = path.join(tmp("dsd-corrupt-b-"), "m.json");
+      fs.writeFileSync(bPath, JSON.stringify(m));
+      expect(() => runDatasetDiff({ manifestA: aPath, manifestB: bPath, stdout: () => {} })).to.throw(
+        /root must be a 0x-prefixed 32-byte hex/
+      );
+
+      // A FOREIGN artifact (wrong kind) is rejected too.
+      const foreignPath = path.join(tmp("dsd-foreign-"), "f.json");
+      fs.writeFileSync(foreignPath, JSON.stringify({ kind: "not-a-manifest", schemaVersion: 1 }));
+      expect(() => runDatasetDiff({ manifestA: aPath, manifestB: foreignPath, stdout: () => {} })).to.throw(
+        /not a verifyhash dataset manifest/
+      );
+
+      // main() surfaces a corrupt/missing manifest as exit 1 (runtime error).
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "diff", aPath, bPath])).to.equal(1);
+        expect(await main(["dataset", "diff", aPath, "/no/such/manifest.json"])).to.equal(1);
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    it("parseDatasetDiffArgs: two positionals + --json; rejects a third positional / unknown flag", function () {
+      expect(parseDatasetDiffArgs(["A", "B"])).to.deep.equal({
+        manifestA: "A",
+        manifestB: "B",
+        json: false,
+      });
+      expect(parseDatasetDiffArgs(["A", "B", "--json"])).to.deep.equal({
+        manifestA: "A",
+        manifestB: "B",
+        json: true,
+      });
+      expect(() => parseDatasetDiffArgs(["A", "B", "C"])).to.throw(/exactly two manifests/);
+      expect(() => parseDatasetDiffArgs(["A", "B", "--bogus"])).to.throw(/unknown flag/);
+    });
+
+    it("main() exit 2 (usage) on a missing positional, a third positional, or an unknown flag", async function () {
+      const aPath = manifestFor(BASE, "dsd-usage");
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "diff", aPath])).to.equal(2); // only one positional
+        expect(await main(["dataset", "diff"])).to.equal(2); // no positional
+        expect(await main(["dataset", "diff", aPath, aPath, aPath])).to.equal(2); // third positional
+        expect(await main(["dataset", "diff", aPath, aPath, "--bogus"])).to.equal(2); // unknown flag
+      } finally {
+        process.stderr.write = orig;
+      }
     });
   });
 });

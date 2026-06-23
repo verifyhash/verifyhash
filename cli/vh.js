@@ -25,6 +25,7 @@ const { runReputation } = require("./reputation");
 const {
   runDatasetBuild,
   runDatasetVerify,
+  runDatasetDiff,
   runDatasetProve,
   runDatasetVerifyProof,
 } = require("./dataset");
@@ -49,6 +50,7 @@ function usage() {
     "  vh reputation <addr> [opts] verifiable, on-chain-derived contribution score for one address (read-only)",
     "  vh dataset build <dir> --out <p>  tamper-evident dataset manifest (Merkle root + per-file leaves)",
     "  vh dataset verify <dir> --manifest <p>  re-derive the root + per-file diff vs a manifest (OFFLINE)",
+    "  vh dataset diff <manifestA> <manifestB>  OFFLINE manifest-to-manifest change report (no tree/key/net)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "",
@@ -219,6 +221,17 @@ function usage() {
     "  so a hand-edited manifest root cannot fake a MATCH. Prints a precise per-file ADDED/REMOVED/CHANGED",
     "  (old->new contentHash) diff (the SAME diff core as `vh verify --receipt`) to localize WHICH file",
     "  diverged; a rename shows as REMOVED+ADDED (the root commits to file names). Exit 0 MATCH, 3 MISMATCH.",
+    "",
+    "dataset diff options (OFFLINE manifest-to-manifest change report; NO tree, NO key, NO network):",
+    "  <manifestA>                REQUIRED: the BASELINE manifest (the 'from')",
+    "  <manifestB>                REQUIRED: the COMPARISON manifest (the 'to')",
+    "  --json                     emit { rootA, rootB, rootsIdentical, identical, added, removed, changed, unchanged, counts }",
+    "  Reads BOTH via the strict readManifest (a corrupt/foreign manifest is rejected) and diffs them by",
+    "  REUSING the SAME diff core as `vh dataset verify`. ADDED = in B not A, REMOVED = in A not B,",
+    "  CHANGED = same relPath/different content (old->new). A rename shows as REMOVED+ADDED (the path is",
+    "  bound into the leaf). Compares what each manifest CLAIMS — it does NOT re-derive content (use",
+    "  `vh dataset verify` against the live tree for that). The verdict/exit code is the CHANGE SET",
+    "  (`identical`), NOT root-string equality. Exit 0 IDENTICAL, 3 DIFFERENT.",
     "",
     "dataset prove options (OFFLINE set-membership of ONE file; NO key, NO network):",
     "  --file <path>              REQUIRED: the single file to prove was a member of the dataset",
@@ -1555,6 +1568,35 @@ function parseDatasetVerifyArgs(argv) {
 }
 
 /**
+ * Parse `dataset diff` argv into { manifestA, manifestB, json }. Takes EXACTLY two positional manifest
+ * paths and an optional --json. Throws on a missing/third positional or an unknown flag, so a typo
+ * never silently diffs the wrong pair (parser parity with the other dataset subcommands).
+ */
+function parseDatasetDiffArgs(argv) {
+  const opts = { manifestA: undefined, manifestB: undefined, json: false };
+  const positionals = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        positionals.push(a);
+    }
+  }
+  if (positionals.length > 2) {
+    throw new Error(
+      `unexpected extra argument: ${positionals[2]} (vh dataset diff takes exactly two manifests)`
+    );
+  }
+  opts.manifestA = positionals[0];
+  opts.manifestB = positionals[1];
+  return opts;
+}
+
+/**
  * Parse `dataset prove` argv into { file, manifest, out, json }. Takes NO positional (the file is the
  * REQUIRED --file flag, the manifest the REQUIRED --manifest flag), so a stray positional hard-errors —
  * a typo never silently proves the wrong file or writes to a surprise path (parser parity with the others).
@@ -1613,6 +1655,9 @@ function cmdDataset(argv) {
   if (sub === "verify") {
     return cmdDatasetVerify(rest);
   }
+  if (sub === "diff") {
+    return cmdDatasetDiff(rest);
+  }
   if (sub === "prove") {
     return cmdDatasetProve(rest);
   }
@@ -1622,7 +1667,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -1706,6 +1751,48 @@ function cmdDatasetVerify(argv) {
 
   // Exit non-zero on a tamper/MISMATCH so scripts and CI can branch on it (mirrors `vh verify`).
   return result.status === "MATCH" ? 0 : 3;
+}
+
+/**
+ * `vh dataset diff <manifestA> <manifestB> [--json]` — OFFLINE manifest-to-manifest change report.
+ * Reads BOTH manifests strictly and reuses the SAME diff core as `vh dataset verify`. PURELY OFFLINE:
+ * no tree, no provider, no key, no network. Exit 0 when the manifests are IDENTICAL, 3 when they
+ * DIFFER (so CI can branch — "fail the pipeline if the training set changed"), 2 on a usage error, 1
+ * on a runtime error (missing/corrupt manifest).
+ */
+function cmdDatasetDiff(argv) {
+  let opts;
+  try {
+    opts = parseDatasetDiffArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifestA || !opts.manifestB) {
+    process.stderr.write(
+      "error: `vh dataset diff` requires exactly two manifest paths <manifestA> <manifestB>\n\n" +
+        usage()
+    );
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runDatasetDiff({
+      manifestA: opts.manifestA,
+      manifestB: opts.manifestB,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero when the manifests DIFFER so CI can branch (mirrors the dataset family's MISMATCH).
+  // The verdict is the CHANGE SET (`identical`), not raw root-string equality, so the exit code can
+  // never disagree with the printed/JSON changeset — a hand-edited `root` whose leaves are unchanged
+  // still exits 0 (IDENTICAL), matching its empty changeset.
+  return result.identical ? 0 : 3;
 }
 
 /**
@@ -1840,10 +1927,12 @@ module.exports = {
   cmdReputation,
   cmdDataset,
   cmdDatasetVerify,
+  cmdDatasetDiff,
   cmdDatasetProve,
   cmdDatasetVerifyProof,
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
+  parseDatasetDiffArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
   parseHashArgs,

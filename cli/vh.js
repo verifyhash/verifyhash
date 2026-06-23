@@ -34,6 +34,7 @@ const {
   runDatasetVerifyAttest,
   runDatasetCheck,
 } = require("./dataset");
+const { runParcelBuild, runParcelVerify } = require("./parcel");
 
 function usage() {
   return [
@@ -63,6 +64,8 @@ function usage() {
     "  vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed attestation (no key/net)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
+    "  vh parcel build <dir> --out <p>  tamper-evident DELIVERY receipt (root + per-file leaves + untrusted parcel meta)",
+    "  vh parcel verify <dir> --manifest <p>  re-derive the root + per-file diff vs a parcel manifest (OFFLINE)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -340,6 +343,28 @@ function usage() {
     "  Prints CONFIRMED only when the leaf re-derives AND folds to the root; else REJECTED (non-zero exit).",
     "  Proves SET-MEMBERSHIP in the recorded root, NOT that the root is anchored on-chain (`vh verify-proof`",
     "  does the on-chain leg) nor 'unaltered since date T'. Exit 0 CONFIRMED, 3 REJECTED.",
+    "",
+    "parcel build options (tamper-evident DELIVERY receipt; offline, NO key, NO network):",
+    "  <dir>                      the delivered directory to manifest (walked recursively)",
+    "  --out <path>               REQUIRED: where to write the parcel manifest (caller-chosen; never cwd)",
+    "  --parcel-id <s>            OPTIONAL untrusted self-asserted parcel identifier (NOT bound into the root)",
+    "  --sender <s>               OPTIONAL untrusted self-asserted sender (NOT bound into the root)",
+    "  --recipient <s>            OPTIONAL untrusted self-asserted recipient (NOT bound into the root)",
+    "  --hints <path>             OPTIONAL JSON of untrusted per-file {source,license} hints",
+    "  --json                     emit { root, fileCount, out, parcel } instead of the human summary",
+    "  Same Merkle root + per-file {relPath,contentHash,leaf} as a dataset manifest, PLUS an OPTIONAL,",
+    "  UNTRUSTED `parcel` block (parcelId/sender/recipient) recorded as self-asserted metadata that is NOT",
+    "  bound into the root. The receipt is NOT a trusted delivery timestamp — 'delivered ON date T' needs",
+    "  the human-owned signing/timestamp trust-root (STRATEGY.md P-3). Exit 0; usage error 2; runtime 1.",
+    "",
+    "parcel verify options (OFFLINE re-derive + per-file diff; NO key, NO network):",
+    "  <dir>                      the delivered directory to RE-DERIVE the root from (a fresh copy on disk)",
+    "  --manifest <path>          REQUIRED: a manifest written by `vh parcel build` (an UNTRUSTED hint)",
+    "  --json                     emit { status, recomputedRoot, manifestRoot, parcel, diff } as JSON",
+    "  Re-derives the root from disk and prints MATCH/MISMATCH + a precise per-file ADDED/REMOVED/CHANGED",
+    "  diff (the SAME diff core as `vh dataset verify`). The AUTHORITATIVE verdict is recomputed-root vs",
+    "  manifest-root; the untrusted `parcel` block plays NO part in it. Exit 0 MATCH, 3 MISMATCH (mirrors",
+    "  `vh dataset verify` so all verify gates share ONE exit contract); usage 2; corrupt/missing manifest 1.",
     "",
   ].join("\n");
 }
@@ -1883,6 +1908,83 @@ function parseDatasetVerifyProofArgs(argv) {
   return opts;
 }
 
+/**
+ * Parse `parcel build` argv into { dir, out, parcelId, sender, recipient, hints, json }. Takes exactly one
+ * positional <dir>, a REQUIRED --out, and OPTIONAL untrusted parcel-metadata flags. Throws on unknown/
+ * incomplete flags or a duplicate/missing positional so a typo never silently builds the wrong tree
+ * (parser parity with the dataset subcommands).
+ */
+function parseParcelBuildArgs(argv) {
+  const opts = {
+    dir: undefined,
+    out: undefined,
+    parcelId: undefined,
+    sender: undefined,
+    recipient: undefined,
+    hints: undefined,
+    json: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      case "--parcel-id":
+        opts.parcelId = argv[++i];
+        if (opts.parcelId === undefined) throw new Error("--parcel-id requires a value");
+        break;
+      case "--sender":
+        opts.sender = argv[++i];
+        if (opts.sender === undefined) throw new Error("--sender requires a value");
+        break;
+      case "--recipient":
+        opts.recipient = argv[++i];
+        if (opts.recipient === undefined) throw new Error("--recipient requires a value");
+        break;
+      case "--hints":
+        opts.hints = argv[++i];
+        if (opts.hints === undefined) throw new Error("--hints requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.dir !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.dir = a;
+    }
+  }
+  return opts;
+}
+
+/**
+ * Parse `parcel verify` argv into { dir, manifest, json }. Takes exactly one positional <dir> and a
+ * REQUIRED --manifest. Throws on unknown/incomplete flags or a duplicate/missing positional so a typo
+ * never silently verifies the wrong tree or against a surprise manifest (parser parity).
+ */
+function parseParcelVerifyArgs(argv) {
+  const opts = { dir: undefined, manifest: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--manifest":
+        opts.manifest = argv[++i];
+        if (opts.manifest === undefined) throw new Error("--manifest requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.dir !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.dir = a;
+    }
+  }
+  return opts;
+}
+
 function cmdDataset(argv) {
   const [sub, ...rest] = argv;
   if (sub === "verify") {
@@ -2319,6 +2421,119 @@ function cmdDatasetVerifyProof(argv) {
   return result.status === "CONFIRMED" ? 0 : 3;
 }
 
+/**
+ * `vh parcel <subcommand>` — ProofParcel: tamper-evident B2B data-DELIVERY receipts over the shared
+ * provenance core. Dispatches build/verify; an unknown/missing subcommand hard-errors with usage (exit 2,
+ * parser parity with `vh dataset`).
+ */
+function cmdParcel(argv) {
+  const [sub, ...rest] = argv;
+  if (sub === "verify") {
+    return cmdParcelVerify(rest);
+  }
+  if (sub !== "build") {
+    process.stderr.write(
+      `error: unknown parcel subcommand: ${sub === undefined ? "(none)" : sub} ` +
+        `(expected: build | verify)\n\n` + usage()
+    );
+    return 2;
+  }
+
+  let opts;
+  try {
+    opts = parseParcelBuildArgs(rest);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.dir) {
+    process.stderr.write("error: `vh parcel build` requires a <dir>\n\n" + usage());
+    return 2;
+  }
+  if (!opts.out) {
+    process.stderr.write("error: `vh parcel build` requires --out <path>\n\n" + usage());
+    return 2;
+  }
+
+  // Optional untrusted per-file hints: read + parse the JSON file BEFORE walking the tree so a malformed
+  // hints file hard-errors early (and never half-writes a manifest). parcel.js validates every hinted
+  // path exists in the tree.
+  let hints;
+  if (opts.hints !== undefined) {
+    const fs = require("fs");
+    let raw;
+    try {
+      raw = fs.readFileSync(opts.hints, "utf8");
+    } catch (e) {
+      process.stderr.write(`error: cannot read --hints file ${opts.hints}: ${e.message}\n`);
+      return 1;
+    }
+    try {
+      hints = JSON.parse(raw);
+    } catch (e) {
+      process.stderr.write(`error: --hints file ${opts.hints} is not valid JSON: ${e.message}\n`);
+      return 1;
+    }
+  }
+
+  // Assemble the OPTIONAL, UNTRUSTED parcel block from the dedicated flags (omitting absent fields so an
+  // empty block never litters the manifest). runParcelBuild records it as self-asserted metadata only.
+  const parcel = {};
+  if (opts.parcelId !== undefined) parcel.parcelId = opts.parcelId;
+  if (opts.sender !== undefined) parcel.sender = opts.sender;
+  if (opts.recipient !== undefined) parcel.recipient = opts.recipient;
+
+  try {
+    runParcelBuild({
+      dir: opts.dir,
+      out: opts.out,
+      hints,
+      parcel: Object.keys(parcel).length > 0 ? parcel : undefined,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * `vh parcel verify <dir> --manifest <p>` — re-derive the parcel root from a FRESH copy on disk and
+ * compare it to the manifest's (UNTRUSTED) recorded root, plus a precise per-file diff. OFFLINE: no
+ * provider, no key, no network. Exit 0 on MATCH, 3 on MISMATCH (mirrors `vh dataset verify` so all verify
+ * gates share ONE exit contract), 2 on a usage error, 1 on a runtime error (missing/corrupt/foreign
+ * manifest, bad dir).
+ */
+function cmdParcelVerify(argv) {
+  let opts;
+  try {
+    opts = parseParcelVerifyArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.dir) {
+    process.stderr.write("error: `vh parcel verify` requires a <dir>\n\n" + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh parcel verify` requires --manifest <path>\n\n" + usage());
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runParcelVerify({ dir: opts.dir, manifest: opts.manifest, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on a tamper/MISMATCH so scripts and CI can branch on it (mirrors `vh dataset verify`).
+  return result.status === "MATCH" ? 0 : 3;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -2348,6 +2563,8 @@ async function main(argv) {
       return cmdReputation(rest);
     case "dataset":
       return cmdDataset(rest);
+    case "parcel":
+      return cmdParcel(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -2388,6 +2605,10 @@ module.exports = {
   cmdDatasetVerifyAttest,
   cmdDatasetProve,
   cmdDatasetVerifyProof,
+  cmdParcel,
+  cmdParcelVerify,
+  parseParcelBuildArgs,
+  parseParcelVerifyArgs,
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,

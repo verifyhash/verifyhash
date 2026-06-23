@@ -1718,6 +1718,130 @@ function runDatasetAttest(opts) {
 }
 
 // =================================================================================================
+// `vh dataset sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]` — read a
+// HUMAN-supplied key, sign the UNSIGNED dataset attestation, write the SIGNED container (T-19.2).
+//
+// WHY THIS EXISTS
+//   `vh dataset attest` emits the canonical UNSIGNED identity bytes a signer signs; T-19.1 added the pure
+//   `signAttestation` core that turns a payload + a signer OBJECT into a wrapped, signed container. This
+//   command is the CLI glue that lets a HUMAN actually sign: it reads a key the human provisioned OUTSIDE
+//   this tool (an env var or a key file), constructs an in-process ethers Wallet from it, and routes it
+//   through the SAME `signAttestation` core. The loop itself never generates or holds a key — the key is
+//   100% caller-supplied.
+//
+// KEY HYGIENE (load-bearing). The key source is EXACTLY ONE of `--key-env`/`--key-file`; neither, both, a
+//   missing env var, an unreadable file, or a malformed/zero key HARD-ERRORS BEFORE any signing, with a
+//   message that NEVER includes the key material. The key is read, used to build the Wallet, used to sign,
+//   and discarded; success/`--json` output prints ONLY the signer ADDRESS (public), the output path, and
+//   the scheme — never the key.
+//
+// TRUST POSTURE (P-3, verbatim). This signs the dataset IDENTITY with the key YOU supplied. A self-managed
+//   key attests "the signer says so" — it is NOT an independent, trusted TIMESTAMP ("existed/unaltered
+//   since date T" still needs the human-owned signing/timestamp trust-root, P-3). The in-band container
+//   note (SIGNED_ATTESTATION_TRUST_NOTE) and the human output both say so plainly.
+
+// The signing-specific caveat the human-output sign path LEADS with. States the P-3 posture verbatim: this
+// signs the dataset identity with the caller's OWN key; "the signer says so" is NOT a trusted timestamp.
+const SIGN_TRUST_NOTE =
+  "This signs the dataset IDENTITY (root, fileCount, manifestDigest) with the key YOU supplied. A " +
+  "self-managed key attests \"the signer says so\" — it is NOT an independent, trusted TIMESTAMP: " +
+  '"existed/unaltered since a date T" still needs the human-owned signing/timestamp trust-root ' +
+  "(needs-human, P-3). The key must be one YOU provisioned OUTSIDE this tool.";
+
+/**
+ * Orchestrate `vh dataset sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]`. Reads
+ * the manifest via the strict `readManifest`, builds the UNSIGNED attestation payload via the EXISTING
+ * `buildAttestation` path (NO re-implementation), resolves a HUMAN-supplied key into an in-process Wallet
+ * via the shared `loadSigningWallet`, signs over the canonical bytes via the T-19.1 `signAttestation` core,
+ * and writes the SIGNED container's canonical bytes to `--out` (or stdout). PURELY OFFLINE: the Wallet has
+ * no provider, signing is EIP-191 personal_sign, no network is touched.
+ *
+ * KEY HYGIENE: the key is read, used, and discarded; it is NEVER returned, persisted, or logged. The
+ * success/`--json` output prints ONLY the signer address, the output path, and the scheme — never the key.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
+ * @param {string} [opts.keyEnv]  env var holding the signing key (EXACTLY ONE of keyEnv/keyFile)
+ * @param {string} [opts.keyFile] path to a key file the human created (EXACTLY ONE of keyEnv/keyFile)
+ * @param {boolean}[opts.json]    emit a machine-readable { signer, out, scheme, container, ... } object;
+ *                                with NO --out the `container` field carries the canonical signed bytes so
+ *                                `--json` never silently drops the artifact (parity with `attest --json`)
+ * @param {string} [opts.out]     write the signed container to this explicit path (caller-chosen; never cwd)
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {Promise<{ container: object, canonical: string, signer: string, scheme: string, out: string|null }>}
+ */
+async function runDatasetSign(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetSign requires options");
+  const { manifest: manifestPath, keyEnv, keyFile } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runDatasetSign requires a <manifest> path");
+
+  // Resolve the HUMAN-supplied key into an in-process Wallet FIRST (BEFORE any signing). Neither/both
+  // sources, a missing env var, an unreadable file, or a malformed/zero key hard-errors here with a
+  // key-free message — so we never read the manifest only to fail on a bad key, and never sign with junk.
+  const { wallet } = coreAttestation.loadSigningWallet({ keyEnv, keyFile });
+
+  // Strict read: a corrupt/edited/foreign manifest is rejected here, never half-accepted. The file SET it
+  // commits to is the TRUSTED basis of the attestation identity.
+  const manifest = readManifest(manifestPath);
+
+  // Build the UNSIGNED payload via the EXISTING `vh dataset attest` code path (NO re-implementation), then
+  // route the Wallet + payload through the SAME T-19.1 core `signAttestation`. The container ROUND-TRIPS by
+  // construction: `vh dataset verify-attest` recovers exactly this signer over exactly these bytes.
+  const unsigned = buildAttestation(manifest);
+  const container = await coreAttestation.signAttestation(
+    { attestation: unsigned, signer: wallet },
+    SIGNED_ATTESTATION_CFG
+  );
+  const canonical = serializeSignedAttestation(container);
+  const signer = container.signature.signer; // lowercase 0x-address (PUBLIC) — never the key
+  const scheme = container.signature.scheme;
+
+  let outAbs = null;
+  if (opts.out) {
+    // Write the EXACT canonical signed bytes to the caller-chosen path (resolved absolute) — never cwd.
+    // The ONLY side effect. NOTHING about the key is written: a signed container holds only the public
+    // signer address + the signature.
+    outAbs = path.resolve(opts.out);
+    fs.writeFileSync(outAbs, canonical);
+  }
+
+  if (opts.json) {
+    // Machine form: ONLY public fields — signer ADDRESS, output path, scheme. NEVER the key.
+    //
+    // ARTIFACT PARITY with `attest --json` (which emits the canonical bytes on stdout so a caller can
+    // pipe straight on). When there is NO --out, the signed container has nowhere else to live, so we
+    // carry the EXACT canonical signed bytes in a `container` field — `--json` without --out NEVER drops
+    // the artifact. With --out the bytes are on disk at `out`, so `container` is null (no redundant copy).
+    write(
+      JSON.stringify({
+        signed: true,
+        signer,
+        scheme,
+        out: outAbs,
+        kind: container.kind,
+        // The canonical signed bytes when there is no file to point at; null when --out holds them.
+        container: outAbs ? null : canonical,
+        note: SIGN_TRUST_NOTE,
+      }) + "\n"
+    );
+  } else {
+    write(`  TRUST: ${SIGN_TRUST_NOTE}\n`);
+    // The success line names WHICH key signed (by its PUBLIC address) so the human can confirm.
+    write(`signed by ${signer}\n`);
+    write(`  scheme: ${scheme}\n`);
+    if (outAbs) {
+      write(`  signed dataset attestation written: ${outAbs}\n`);
+    } else {
+      // No --out: emit the canonical signed bytes to stdout after the human header.
+      write(canonical);
+    }
+  }
+
+  return { container, canonical, signer, scheme, out: outAbs };
+}
+
+// =================================================================================================
 // `vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` — an OFFLINE verifier
 // that confirms a SIGNED attestation container (T-17.1) is genuinely signed and (optionally) binds the
 // buyer's own dataset.
@@ -2295,6 +2419,8 @@ module.exports = {
   serializeSignedAttestation,
   readSignedAttestation,
   runDatasetAttest,
+  SIGN_TRUST_NOTE,
+  runDatasetSign,
   VERIFY_ATTEST_VERDICT,
   VERIFY_ATTEST_TRUST_NOTE,
   recoverSignedAttestationSigner,

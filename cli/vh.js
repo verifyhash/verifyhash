@@ -31,6 +31,7 @@ const {
   runDatasetProve,
   runDatasetVerifyProof,
   runDatasetAttest,
+  runDatasetSign,
   runDatasetVerifyAttest,
   runDatasetCheck,
 } = require("./dataset");
@@ -38,6 +39,7 @@ const {
   runParcelBuild,
   runParcelVerify,
   runParcelAttest,
+  runParcelSign,
   runParcelVerifyAttest,
 } = require("./parcel");
 
@@ -66,12 +68,14 @@ function usage() {
     "  vh dataset check <manifest> --policy <p>  OFFLINE license/source policy gate (PASS/FAIL; CI-gateable)",
     "  vh dataset report <manifest> [--verify <dir>] [--policy <p>]  ONE deterministic evidence document (combined CI gate)",
     "  vh dataset attest <manifest> [--out <p>]  canonical UNSIGNED attestation payload (the signing-ready bytes)",
+    "  vh dataset sign <manifest> --key-env <VAR>|--key-file <p> [--out <p>]  sign with YOUR key -> signed container (offline)",
     "  vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed attestation (no key/net)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "  vh parcel build <dir> --out <p>  tamper-evident DELIVERY receipt (root + per-file leaves + untrusted parcel meta)",
     "  vh parcel verify <dir> --manifest <p>  re-derive the root + per-file diff vs a parcel manifest (OFFLINE)",
     "  vh parcel attest <manifest> [--out <p>]  canonical UNSIGNED parcel-attestation payload (the signing-ready bytes)",
+    "  vh parcel sign <manifest> --key-env <VAR>|--key-file <p> [--out <p>]  sign with YOUR key -> signed container (offline)",
     "  vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed parcel attestation (no key/net)",
     "",
     "hash options:",
@@ -316,6 +320,26 @@ function usage() {
     "  signature is attached it proves only the same set-membership/identity the manifest already does —",
     "  NOT 'unaltered since date T'. Exit 0; usage error 2; corrupt/missing manifest 1.",
     "",
+    "dataset sign options (sign the UNSIGNED attestation with YOUR key -> a signed container; OFFLINE; NO network):",
+    "  <manifest>                 REQUIRED: a manifest written by `vh dataset build`",
+    "  --key-env <VAR>            read the signing private key from process.env[VAR] (EXACTLY ONE key source)",
+    "  --key-file <path>          read the signing private key from a file YOU created (EXACTLY ONE key source)",
+    "  --out <path>               write the signed container here (caller-chosen; never cwd). Without it the",
+    "                             signed bytes print to stdout. The signed container holds ONLY the PUBLIC",
+    "                             signer address + signature — NEVER the key.",
+    "  --json                     emit { signed, signer, scheme, out, kind, container, note } (public only; NO",
+    "                             key). With NO --out, `container` carries the canonical signed bytes so --json",
+    "                             never drops the artifact (parity with `attest --json`); with --out it is null.",
+    "  Builds the UNSIGNED payload EXACTLY as `vh dataset attest` does (same canonical bytes), constructs an",
+    "  in-process ethers Wallet from YOUR key, signs (eip191-personal-sign), and wraps it WITHOUT editing the",
+    "  payload. The key is read, used, and discarded — NEVER generated, persisted, or logged; the success",
+    "  line states 'signed by <0xaddr>' so you can confirm WHICH key signed. EXACTLY ONE of --key-env/",
+    "  --key-file is required: neither, both, a missing env var, an unreadable file, or a malformed/zero key",
+    "  HARD-ERRORS BEFORE any signing (the message never includes the key). The output is accepted by",
+    "  `vh dataset verify-attest` unchanged. This signs the dataset IDENTITY with the key YOU supplied — it",
+    "  is NOT a trusted TIMESTAMP ('the signer says so', not 'existed by date T'; P-3). The key must be one",
+    "  YOU provisioned outside this tool. Exit 0; usage error 2 (no/both key source, unknown flag); runtime 1.",
+    "",
     "dataset verify-attest options (OFFLINE verify a SIGNED attestation; NO tree, NO provider, NO key, NO network):",
     "  <signed>                   REQUIRED: a signed-attestation container (the wrapped, signed T-17.1 artifact)",
     "  --manifest <path>          OPTIONAL: bind the signature to YOUR dataset — recompute the canonical",
@@ -381,6 +405,25 @@ function usage() {
     "  manifestDigest over the delivered file SET) over the SAME core as `vh dataset attest`, with",
     "  `signed:false`. The UNTRUSTED `parcel` block is EXCLUDED. It is NOT a timestamp — attaching a real",
     "  signature is the human-owned signing/timestamp trust-root (STRATEGY.md P-3). Exit 0; usage 2; runtime 1.",
+    "",
+    "parcel sign options (sign the UNSIGNED parcel attestation with YOUR key -> a signed container; OFFLINE; NO network):",
+    "  <manifest>                 REQUIRED: a manifest written by `vh parcel build`",
+    "  --key-env <VAR>            read the signing private key from process.env[VAR] (EXACTLY ONE key source)",
+    "  --key-file <path>          read the signing private key from a file YOU created (EXACTLY ONE key source)",
+    "  --out <path>               write the signed container here (caller-chosen; never cwd). Without it the",
+    "                             signed bytes print to stdout. The container holds ONLY the PUBLIC signer",
+    "                             address + signature — NEVER the key.",
+    "  --json                     emit { signed, signer, scheme, out, kind, container, note } (public only; NO",
+    "                             key). With NO --out, `container` carries the canonical signed bytes so --json",
+    "                             never drops the artifact (parity with `attest --json`); with --out it is null.",
+    "  Builds the UNSIGNED payload EXACTLY as `vh parcel attest` does, constructs an in-process ethers Wallet",
+    "  from YOUR key, signs (eip191-personal-sign), and wraps it WITHOUT editing the payload. The key is read,",
+    "  used, and discarded — NEVER generated, persisted, or logged; 'signed by <0xaddr>' confirms WHICH key",
+    "  signed. EXACTLY ONE of --key-env/--key-file is required: neither, both, a missing env var, an unreadable",
+    "  file, or a malformed/zero key HARD-ERRORS BEFORE any signing (the message never includes the key). The",
+    "  output is accepted by `vh parcel verify-attest` unchanged. This signs the parcel IDENTITY with the key",
+    "  YOU supplied — it is NOT a trusted delivery TIMESTAMP ('the signer says so'; P-3). The key must be one",
+    "  YOU provisioned outside this tool. Exit 0; usage error 2 (no/both key source, unknown flag); runtime 1.",
     "",
     "parcel verify-attest options (OFFLINE verify a SIGNED parcel attestation; NO tree, NO provider, NO key, NO network):",
     "  <signed>                   REQUIRED: a signed parcel-attestation container",
@@ -1849,6 +1892,42 @@ function parseDatasetAttestArgs(argv) {
 }
 
 /**
+ * Parse `dataset sign`/`parcel sign` argv into { manifest, keyEnv, keyFile, out, json }. Takes EXACTLY one
+ * positional manifest path, EXACTLY ONE of --key-env <VAR> / --key-file <path>, an optional --out <p>, and
+ * an optional --json. Throws on a missing/extra positional or an unknown/incomplete flag (parser parity with
+ * the other dataset/parcel subcommands). The neither/both key-source check is the value layer's job
+ * (loadSigningWallet), so the SAME error is produced whether the command is run via the CLI or programmatically.
+ */
+function parseSignArgs(argv) {
+  const opts = { manifest: undefined, keyEnv: undefined, keyFile: undefined, out: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--key-env":
+        opts.keyEnv = argv[++i];
+        if (opts.keyEnv === undefined) throw new Error("--key-env requires a value");
+        break;
+      case "--key-file":
+        opts.keyFile = argv[++i];
+        if (opts.keyFile === undefined) throw new Error("--key-file requires a value");
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.manifest !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.manifest = a;
+    }
+  }
+  return opts;
+}
+
+/**
  * Parse `dataset verify-attest` argv into { signed, manifest, signer, json }. Takes EXACTLY one positional
  * <signed> container path, an optional --manifest <m>, an optional --signer <addr>, and an optional --json.
  * Throws on a missing/extra positional or an unknown/incomplete flag, so a typo never silently verifies the
@@ -2088,6 +2167,9 @@ function cmdDataset(argv) {
   if (sub === "attest") {
     return cmdDatasetAttest(rest);
   }
+  if (sub === "sign") {
+    return cmdDatasetSign(rest);
+  }
   if (sub === "verify-attest") {
     return cmdDatasetVerifyAttest(rest);
   }
@@ -2100,7 +2182,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | diff | summary | check | report | attest | verify-attest | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | summary | check | report | attest | sign | verify-attest | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -2379,6 +2461,66 @@ function cmdDatasetAttest(argv) {
 }
 
 /**
+ * `vh dataset sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]` — sign the UNSIGNED
+ * dataset attestation with a HUMAN-supplied key and emit the SIGNED container. The key is read, used to
+ * build an in-process ethers Wallet, used to sign, and discarded — NEVER generated, persisted, or logged;
+ * success/`--json` output prints ONLY the PUBLIC signer address, the output path, and the scheme. PURELY
+ * OFFLINE (EIP-191 personal_sign; no provider, no network). The output is accepted by `vh dataset
+ * verify-attest` unchanged.
+ *
+ * EXIT CODES: 0 success; 2 on a usage error (missing/extra positional, unknown/incomplete flag, NEITHER or
+ * BOTH of --key-env/--key-file — the source must be unambiguous BEFORE we touch a key); 1 on a runtime
+ * error (a missing env var, an unreadable key file, a malformed/zero key, or a corrupt/missing manifest).
+ * No error message ever includes the key material.
+ */
+async function cmdDatasetSign(argv) {
+  let opts;
+  try {
+    opts = parseSignArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset sign` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+  // The key SOURCE must be unambiguous — EXACTLY ONE of --key-env/--key-file — and that is a USAGE error
+  // (exit 2), checked BEFORE any key is read. (A present-but-bad key value is a RUNTIME error, exit 1,
+  // surfaced from runDatasetSign's loadSigningWallet below — never echoing the key.)
+  const hasEnv = opts.keyEnv !== undefined;
+  const hasFile = opts.keyFile !== undefined;
+  if (!hasEnv && !hasFile) {
+    process.stderr.write(
+      "error: `vh dataset sign` requires EXACTLY ONE signing-key source: --key-env <VAR> or " +
+        "--key-file <path>\n\n" + usage()
+    );
+    return 2;
+  }
+  if (hasEnv && hasFile) {
+    process.stderr.write(
+      "error: --key-env and --key-file are mutually exclusive; pass EXACTLY ONE signing-key source\n\n" +
+        usage()
+    );
+    return 2;
+  }
+
+  try {
+    await runDatasetSign({
+      manifest: opts.manifest,
+      keyEnv: opts.keyEnv,
+      keyFile: opts.keyFile,
+      out: opts.out,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
  * `vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` — OFFLINE verify a
  * SIGNED attestation container. Reads the container strictly, recovers the signer from the embedded
  * canonical bytes + signature, and confirms it equals the container's `signer`; with --signer it pins the
@@ -2517,13 +2659,16 @@ function cmdParcel(argv) {
   if (sub === "attest") {
     return cmdParcelAttest(rest);
   }
+  if (sub === "sign") {
+    return cmdParcelSign(rest);
+  }
   if (sub === "verify-attest") {
     return cmdParcelVerifyAttest(rest);
   }
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown parcel subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | attest | verify-attest)\n\n` + usage()
+        `(expected: build | verify | attest | sign | verify-attest)\n\n` + usage()
     );
     return 2;
   }
@@ -2652,6 +2797,61 @@ function cmdParcelAttest(argv) {
 }
 
 /**
+ * `vh parcel sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]` — sign the UNSIGNED
+ * parcel attestation with a HUMAN-supplied key and emit the SIGNED container (the THIN parcel parallel to
+ * `vh dataset sign`). The key is read, used to build an in-process ethers Wallet, used to sign, and
+ * discarded — NEVER generated, persisted, or logged; output prints ONLY the PUBLIC signer address, the
+ * output path, and the scheme. PURELY OFFLINE. The output is accepted by `vh parcel verify-attest` unchanged.
+ *
+ * EXIT CODES: 0 success; 2 on a usage error (missing/extra positional, unknown/incomplete flag, NEITHER or
+ * BOTH of --key-env/--key-file); 1 on a runtime error (missing env var, unreadable key file, malformed/zero
+ * key, corrupt/missing manifest). No error message ever includes the key material.
+ */
+async function cmdParcelSign(argv) {
+  let opts;
+  try {
+    opts = parseSignArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh parcel sign` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+  const hasEnv = opts.keyEnv !== undefined;
+  const hasFile = opts.keyFile !== undefined;
+  if (!hasEnv && !hasFile) {
+    process.stderr.write(
+      "error: `vh parcel sign` requires EXACTLY ONE signing-key source: --key-env <VAR> or " +
+        "--key-file <path>\n\n" + usage()
+    );
+    return 2;
+  }
+  if (hasEnv && hasFile) {
+    process.stderr.write(
+      "error: --key-env and --key-file are mutually exclusive; pass EXACTLY ONE signing-key source\n\n" +
+        usage()
+    );
+    return 2;
+  }
+
+  try {
+    await runParcelSign({
+      manifest: opts.manifest,
+      keyEnv: opts.keyEnv,
+      keyFile: opts.keyFile,
+      out: opts.out,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
  * `vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` — OFFLINE verify a SIGNED
  * parcel-attestation container. Reads the container strictly, recovers the signer from the embedded
  * canonical bytes + signature, and confirms it equals the container's `signer`; with --signer it pins the
@@ -2772,17 +2972,20 @@ module.exports = {
   cmdDatasetCheck,
   cmdDatasetReport,
   cmdDatasetAttest,
+  cmdDatasetSign,
   cmdDatasetVerifyAttest,
   cmdDatasetProve,
   cmdDatasetVerifyProof,
   cmdParcel,
   cmdParcelVerify,
   cmdParcelAttest,
+  cmdParcelSign,
   cmdParcelVerifyAttest,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,
   parseParcelAttestArgs,
   parseParcelVerifyAttestArgs,
+  parseSignArgs,
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,

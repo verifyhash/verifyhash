@@ -802,3 +802,331 @@ describe("cli/parcel.js — ProofParcel attest + verify-attest (T-18.3)", functi
     });
   });
 });
+
+// =================================================================================================
+// T-19.2 — `vh parcel sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]`: read a
+// HUMAN-supplied key, sign the UNSIGNED parcel attestation, write the signed container.
+//
+// CRITICAL: every key here is an EPHEMERAL, in-process `Wallet.createRandom()` — a TEST-ONLY key written
+// ONLY to a TEMP env var / a TEMP file under the OS temp dir, NEVER the repo, NEVER a real key. NO network,
+// NO provider anywhere in this suite (signing is purely offline EIP-191 personal_sign).
+const {
+  runParcelSign,
+  SIGN_TRUST_NOTE: PARCEL_SIGN_TRUST_NOTE,
+} = require("../cli/parcel");
+const { cmdParcelSign, parseSignArgs } = require("../cli/vh");
+
+describe("cli: vh parcel sign (T-19.2) — sign with a HUMAN-supplied key, EPHEMERAL test keys only", function () {
+  let tmpDirs3 = [];
+  function tmp3(prefix) {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tmpDirs3.push(d);
+    return d;
+  }
+  // Each test that sets a temp env var records its NAME here so afterEach restores the environment (no
+  // leaked key material persists past the test, pass or fail).
+  let envVars = [];
+  function setTempEnv(name, value) {
+    envVars.push(name);
+    process.env[name] = value;
+  }
+  afterEach(function () {
+    for (const d of tmpDirs3) fs.rmSync(d, { recursive: true, force: true });
+    tmpDirs3 = [];
+    for (const n of envVars) delete process.env[n];
+    envVars = [];
+  });
+
+  // Build a parcel manifest from a fresh tree -> { manifestPath, manifest, canonical-unsigned }.
+  function buildManifestFixture(files = THREE, prefix = "psign", parcel = META) {
+    const dir = writeFiles(tmp3(prefix + "-tree-"), files);
+    const manifestPath = path.join(tmp3(prefix + "-man-"), "p.json");
+    runParcelBuild({ dir, out: manifestPath, parcel, stdout: () => {} });
+    return { dir, manifestPath, manifest: readParcelManifest(manifestPath) };
+  }
+
+  it("--key-env signs; the container is ACCEPTED by `vh parcel verify-attest --signer <thatAddr> --manifest`", async function () {
+    const fx = buildManifestFixture();
+    const w = Wallet.createRandom(); // EPHEMERAL TEST-ONLY key — never persisted to the repo
+    setTempEnv("VH_PARCEL_TEST_KEY", w.privateKey);
+    const out = path.join(tmp3("psign-out-"), "signed.json");
+
+    let printed = "";
+    const r = await runParcelSign({
+      manifest: fx.manifestPath,
+      keyEnv: "VH_PARCEL_TEST_KEY",
+      out,
+      stdout: (s) => (printed += s),
+    });
+    expect(r.signer).to.equal(w.address.toLowerCase());
+    expect(r.scheme).to.equal("eip191-personal-sign");
+    // The success line names WHICH key signed (its public address) so the human can confirm.
+    expect(printed).to.include(`signed by ${w.address.toLowerCase()}`);
+    // The output NEVER contains the private key.
+    expect(printed).to.not.include(w.privateKey);
+    expect(fs.readFileSync(out, "utf8")).to.not.include(w.privateKey);
+
+    // The EXISTING verify-attest accepts it unchanged — and pins the expected signer + binds the manifest.
+    const va = runParcelVerifyAttest({
+      signed: out,
+      manifest: fx.manifestPath,
+      signer: w.address,
+      stdout: () => {},
+    });
+    expect(va.verdict).to.equal("ACCEPTED");
+    expect(va.accepted).to.equal(true);
+    expect(va.recoveredSigner).to.equal(w.address.toLowerCase());
+    expect(va.checks.signatureMatchesSigner).to.equal(true);
+    expect(va.checks.signerMatchesExpected).to.equal(true);
+    expect(va.checks.manifestBindsAttestation).to.equal(true);
+  });
+
+  it("--key-file (a file the human created) signs and verify-attest ACCEPTS it", async function () {
+    const fx = buildManifestFixture(undefined, "psign-file");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    const keyDir = tmp3("psign-key-"); // a TEMP dir under the OS temp dir, NEVER the repo
+    const keyPath = path.join(keyDir, "key.hex");
+    fs.writeFileSync(keyPath, w.privateKey + "\n"); // trailing newline is tolerated
+    const out = path.join(tmp3("psign-fout-"), "signed.json");
+
+    const r = await runParcelSign({ manifest: fx.manifestPath, keyFile: keyPath, out, stdout: () => {} });
+    expect(r.signer).to.equal(w.address.toLowerCase());
+
+    const va = runParcelVerifyAttest({ signed: out, manifest: fx.manifestPath, signer: w.address, stdout: () => {} });
+    expect(va.accepted).to.equal(true);
+  });
+
+  it("--json round-trips: prints ONLY public fields (signer, scheme, out) — NEVER the key", async function () {
+    const fx = buildManifestFixture(undefined, "psign-json");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    setTempEnv("VH_PARCEL_JSON_KEY", w.privateKey);
+    const out = path.join(tmp3("psign-jout-"), "signed.json");
+
+    let printed = "";
+    await runParcelSign({
+      manifest: fx.manifestPath,
+      keyEnv: "VH_PARCEL_JSON_KEY",
+      out,
+      json: true,
+      stdout: (s) => (printed += s),
+    });
+    const obj = JSON.parse(printed);
+    expect(obj.signed).to.equal(true);
+    expect(obj.signer).to.equal(w.address.toLowerCase());
+    expect(obj.scheme).to.equal("eip191-personal-sign");
+    expect(obj.out).to.equal(path.resolve(out));
+    // With --out, the bytes live on disk; the JSON `container` field is null (no redundant copy).
+    expect(obj.container).to.equal(null);
+    // No key field anywhere in the JSON, and the raw key string never appears.
+    expect(JSON.stringify(obj)).to.not.include(w.privateKey);
+    expect(printed).to.not.include(w.privateKey);
+  });
+
+  it("--json WITHOUT --out NEVER drops the artifact: the canonical signed bytes ride in `container`, and verify-attest ACCEPTS them", async function () {
+    const fx = buildManifestFixture(undefined, "psign-json-noout");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    setTempEnv("VH_PARCEL_JSON_NOOUT_KEY", w.privateKey);
+
+    let printed = "";
+    const r = await runParcelSign({
+      manifest: fx.manifestPath,
+      keyEnv: "VH_PARCEL_JSON_NOOUT_KEY",
+      // NO --out: the only place the signed container can live is the JSON output itself.
+      json: true,
+      stdout: (s) => (printed += s),
+    });
+    const obj = JSON.parse(printed);
+    expect(obj.signed).to.equal(true);
+    expect(obj.signer).to.equal(w.address.toLowerCase());
+    expect(obj.out).to.equal(null);
+    // The artifact is NOT dropped: `container` carries the EXACT canonical signed bytes the function built.
+    expect(obj.container).to.be.a("string");
+    expect(obj.container).to.equal(r.canonical);
+    // No key ever leaks into the JSON.
+    expect(printed).to.not.include(w.privateKey);
+    expect(obj.container).to.not.include(w.privateKey);
+
+    // Round-trip: write the carried bytes to a TEMP file and confirm the EXISTING verify-attest ACCEPTS them.
+    const reconstructed = path.join(tmp3("psign-json-noout-rt-"), "signed.json");
+    fs.writeFileSync(reconstructed, obj.container);
+    const va = runParcelVerifyAttest({
+      signed: reconstructed,
+      manifest: fx.manifestPath,
+      signer: w.address,
+      stdout: () => {},
+    });
+    expect(va.accepted).to.equal(true);
+    expect(va.recoveredSigner).to.equal(w.address.toLowerCase());
+  });
+
+  it("the signed container output never contains the private key (on disk)", async function () {
+    const fx = buildManifestFixture(undefined, "psign-leak");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    setTempEnv("VH_PARCEL_LEAK_KEY", w.privateKey);
+    const out = path.join(tmp3("psign-lout-"), "signed.json");
+    await runParcelSign({ manifest: fx.manifestPath, keyEnv: "VH_PARCEL_LEAK_KEY", out, stdout: () => {} });
+    const bytes = fs.readFileSync(out, "utf8");
+    expect(bytes).to.not.include(w.privateKey);
+    // Also not the bare (0x-stripped) form.
+    expect(bytes).to.not.include(w.privateKey.slice(2));
+    // It DOES contain the public signer address (so verify-attest can recover/confirm).
+    expect(bytes).to.include(w.address.toLowerCase());
+  });
+
+  describe("HARD-ERRORS before signing, and NEVER leak the key", function () {
+    it("NEITHER key source: exit 2, no output written", async function () {
+      const fx = buildManifestFixture(undefined, "psign-none");
+      const out = path.join(tmp3("psign-none-out-"), "signed.json");
+      const code = await cmdParcelSign([fx.manifestPath, "--out", out]);
+      expect(code).to.equal(2);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("BOTH key sources: exit 2, no output written", async function () {
+      const fx = buildManifestFixture(undefined, "psign-both");
+      const w = Wallet.createRandom(); // TEST-ONLY
+      setTempEnv("VH_PARCEL_BOTH_KEY", w.privateKey);
+      const keyPath = path.join(tmp3("psign-both-key-"), "k.hex");
+      fs.writeFileSync(keyPath, w.privateKey);
+      const out = path.join(tmp3("psign-both-out-"), "signed.json");
+      const code = await cmdParcelSign([
+        fx.manifestPath,
+        "--key-env",
+        "VH_PARCEL_BOTH_KEY",
+        "--key-file",
+        keyPath,
+        "--out",
+        out,
+      ]);
+      expect(code).to.equal(2);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("missing env var: throws BEFORE signing, no output, message names only the SOURCE (not the key)", async function () {
+      const fx = buildManifestFixture(undefined, "psign-missing");
+      const out = path.join(tmp3("psign-missing-out-"), "signed.json");
+      let threw;
+      try {
+        await runParcelSign({ manifest: fx.manifestPath, keyEnv: "VH_DEFINITELY_UNSET_KEY_XYZ", out, stdout: () => {} });
+        threw = null;
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).to.be.an("error");
+      expect(threw.message).to.match(/VH_DEFINITELY_UNSET_KEY_XYZ.*not set|not set.*VH_DEFINITELY_UNSET_KEY_XYZ/);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("unreadable key file: throws BEFORE signing, no output, message names the PATH (not the key)", async function () {
+      const fx = buildManifestFixture(undefined, "psign-badfile");
+      const out = path.join(tmp3("psign-badfile-out-"), "signed.json");
+      let threw;
+      try {
+        await runParcelSign({ manifest: fx.manifestPath, keyFile: "/no/such/key/file.hex", out, stdout: () => {} });
+        threw = null;
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).to.be.an("error");
+      expect(threw.message).to.include("/no/such/key/file.hex");
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("a malformed key HARD-ERRORS without writing output and WITHOUT leaking the key value", async function () {
+      const fx = buildManifestFixture(undefined, "psign-malformed");
+      const malformed = "this-is-not-a-private-key";
+      setTempEnv("VH_PARCEL_MALFORMED_KEY", malformed);
+      const out = path.join(tmp3("psign-malformed-out-"), "signed.json");
+      let threw;
+      try {
+        await runParcelSign({ manifest: fx.manifestPath, keyEnv: "VH_PARCEL_MALFORMED_KEY", out, stdout: () => {} });
+        threw = null;
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).to.be.an("error");
+      // Names the SOURCE (env:VAR), NEVER the malformed value itself.
+      expect(threw.message).to.include("env:VH_PARCEL_MALFORMED_KEY");
+      expect(threw.message).to.not.include(malformed);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("an all-zero key is rejected (not a usable signer), no output, no leak", async function () {
+      const fx = buildManifestFixture(undefined, "psign-zero");
+      const zero = "0x" + "00".repeat(32);
+      setTempEnv("VH_PARCEL_ZERO_KEY", zero);
+      const out = path.join(tmp3("psign-zero-out-"), "signed.json");
+      let threw;
+      try {
+        await runParcelSign({ manifest: fx.manifestPath, keyEnv: "VH_PARCEL_ZERO_KEY", out, stdout: () => {} });
+        threw = null;
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).to.be.an("error");
+      expect(threw.message).to.match(/all-zero/);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+  });
+
+  describe("CLI exit codes + parser parity", function () {
+    it("a clean sign via the cmd handler returns exit 0", async function () {
+      const fx = buildManifestFixture(undefined, "psign-cli-ok");
+      const w = Wallet.createRandom(); // TEST-ONLY
+      setTempEnv("VH_PARCEL_CLI_KEY", w.privateKey);
+      const out = path.join(tmp3("psign-cli-out-"), "signed.json");
+      let printed = "";
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (s) => ((printed += s), true);
+      let code;
+      try {
+        code = await cmdParcelSign([fx.manifestPath, "--key-env", "VH_PARCEL_CLI_KEY", "--out", out]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(0);
+      expect(fs.existsSync(out)).to.equal(true);
+      expect(printed).to.not.include(w.privateKey);
+    });
+
+    it("missing <manifest> is exit 2; a malformed/zero key surfaces as exit 1 (runtime)", async function () {
+      // missing positional manifest -> usage error 2
+      const code2 = await cmdParcelSign(["--key-env", "VH_PARCEL_X"]);
+      expect(code2).to.equal(2);
+      // present manifest + a present-but-bad key -> runtime error 1 (not a usage error)
+      const fx = buildManifestFixture(undefined, "psign-rt");
+      setTempEnv("VH_PARCEL_BADV", "nope");
+      const out = path.join(tmp3("psign-rt-out-"), "signed.json");
+      const code1 = await cmdParcelSign([fx.manifestPath, "--key-env", "VH_PARCEL_BADV", "--out", out]);
+      expect(code1).to.equal(1);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("parser parity: unknown/incomplete flag, duplicate positional hard-error", function () {
+      expect(() => parseSignArgs(["/m", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseSignArgs(["/m", "/n"])).to.throw(/unexpected extra argument/);
+      expect(() => parseSignArgs(["/m", "--key-env"])).to.throw(/--key-env requires a value/);
+      expect(() => parseSignArgs(["/m", "--key-file"])).to.throw(/--key-file requires a value/);
+      expect(() => parseSignArgs(["/m", "--out"])).to.throw(/--out requires a value/);
+    });
+
+    it("a typo'd flag via the cmd handler is exit 2 (a typo never silently signs)", async function () {
+      const fx = buildManifestFixture(undefined, "psign-typo");
+      setTempEnv("VH_PARCEL_TYPO_KEY", Wallet.createRandom().privateKey);
+      const code = await cmdParcelSign([fx.manifestPath, "--key-env", "VH_PARCEL_TYPO_KEY", "--nope"]);
+      expect(code).to.equal(2);
+    });
+
+    it("the SIGN_TRUST_NOTE carries the P-3 posture (NOT a trusted timestamp; key YOU supplied)", function () {
+      expect(PARCEL_SIGN_TRUST_NOTE).to.match(/NOT an independent, trusted TIMESTAMP/);
+      expect(PARCEL_SIGN_TRUST_NOTE).to.include("P-3");
+      expect(PARCEL_SIGN_TRUST_NOTE).to.match(/key YOU supplied/);
+    });
+  });
+
+  it("leaves ZERO key files / signed containers in the repo working tree (all side effects in temp dirs)", function () {
+    expect(fs.existsSync(path.join(process.cwd(), "signed.json"))).to.equal(false);
+    expect(fs.existsSync(path.join(process.cwd(), "key.hex"))).to.equal(false);
+    expect(fs.existsSync(path.join(process.cwd(), "p.json"))).to.equal(false);
+  });
+});

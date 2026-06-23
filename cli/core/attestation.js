@@ -24,7 +24,8 @@
 //   `cfg.serializeUnsigned(embedded)` — so wrapping adds a vouch, it NEVER edits the thing vouched for,
 //   and the bytes that were signed are unambiguous.
 
-const { verifyMessage, getAddress } = require("ethers");
+const { verifyMessage, getAddress, Wallet } = require("ethers");
+const fs = require("fs");
 
 // The detached signature schemes this build understands. Each is an EXPLICIT, documented value so a
 // reader knows EXACTLY what bytes were signed and how. `eip191-personal-sign` = EIP-191 personal_sign
@@ -270,6 +271,112 @@ async function signAttestation(params, cfg) {
 }
 
 /**
+ * Resolve a HUMAN-supplied private key from EXACTLY ONE source — an env var (`keyEnv`, read via
+ * `process.env[keyEnv]`) or a file the human created (`keyFile`, read with fs) — and construct an
+ * in-process ethers `Wallet` from it. This is the ONE place the CLI sign-path turns a caller-provisioned
+ * key into a signer object; the key is read, used to build the Wallet, and then exists ONLY inside that
+ * Wallet (the raw string is never returned, persisted, or logged).
+ *
+ * KEY HYGIENE (load-bearing). EXACTLY ONE of `keyEnv`/`keyFile` must be supplied: neither, both, a
+ * missing env var, an unreadable file, or a malformed/zero key HARD-ERRORS with a clear, actionable
+ * message — and the message NEVER includes the key material (only the SOURCE: the var name or the path).
+ * The key is trimmed of surrounding whitespace/newlines (so a key file written by `echo`/an editor works),
+ * a bare 64-hex key is accepted (0x is prefixed for it), and an all-zero key is rejected (it is not a
+ * usable signer and is a common "empty placeholder" mistake). All validation happens BEFORE any signing.
+ *
+ * The Wallet is NOT given a provider — signing an attestation is purely offline (EIP-191 personal_sign),
+ * needs no network, and must never be able to touch a chain.
+ *
+ * @param {object} params
+ * @param {string} [params.keyEnv]  name of an env var holding the private key (read via process.env)
+ * @param {string} [params.keyFile] path to a file the human created holding the private key
+ * @returns {{ wallet: object, source: string }} the in-process Wallet + a human SOURCE label (no key)
+ */
+function loadSigningWallet(params) {
+  if (!params || typeof params !== "object") {
+    throw new Error("loadSigningWallet requires { keyEnv } or { keyFile }");
+  }
+  const { keyEnv, keyFile } = params;
+  const hasEnv = keyEnv !== undefined && keyEnv !== null;
+  const hasFile = keyFile !== undefined && keyFile !== null;
+
+  // EXACTLY ONE key source. Neither and both are BOTH hard errors (a clear, actionable message), so the
+  // human is never surprised about WHICH key signed (or that nothing was provided).
+  if (!hasEnv && !hasFile) {
+    throw new Error(
+      "no signing key: pass EXACTLY ONE of --key-env <VAR> (read process.env[VAR]) or " +
+        "--key-file <path> (a key file YOU created). The key must be one you provisioned outside this tool."
+    );
+  }
+  if (hasEnv && hasFile) {
+    throw new Error(
+      "--key-env and --key-file are mutually exclusive; pass EXACTLY ONE signing-key source"
+    );
+  }
+
+  // Read the raw key from the single chosen source. The error messages name only the SOURCE (the env var
+  // name or the file path) — NEVER the key material.
+  let raw;
+  let source;
+  if (hasEnv) {
+    if (typeof keyEnv !== "string" || keyEnv.length === 0) {
+      throw new Error("--key-env requires a non-empty environment-variable NAME");
+    }
+    source = `env:${keyEnv}`;
+    const fromEnv = process.env[keyEnv];
+    if (fromEnv === undefined || fromEnv === "") {
+      throw new Error(
+        `environment variable ${keyEnv} is not set (or empty); it must hold the signing private key`
+      );
+    }
+    raw = fromEnv;
+  } else {
+    if (typeof keyFile !== "string" || keyFile.length === 0) {
+      throw new Error("--key-file requires a non-empty file PATH");
+    }
+    source = `file:${keyFile}`;
+    try {
+      raw = fs.readFileSync(keyFile, "utf8");
+    } catch (e) {
+      // Surface the OS error (ENOENT/EACCES…) but never the key — the file was unreadable, so there is no
+      // key to leak here anyway.
+      throw new Error(`cannot read --key-file ${keyFile}: ${e.message}`);
+    }
+  }
+
+  // Normalize: trim surrounding whitespace/newlines (a key file from `echo`/an editor has a trailing \n),
+  // and accept a bare 64-hex key by prefixing 0x. Then validate WITHOUT echoing the key on failure.
+  let key = String(raw).trim();
+  if (key.length === 0) {
+    throw new Error(`signing key from ${source} is empty after trimming whitespace`);
+  }
+  if (/^[0-9a-fA-F]{64}$/.test(key)) key = "0x" + key;
+
+  // Reject an all-zero key explicitly (a common empty-placeholder mistake; ethers would also reject it,
+  // but we give a clearer, key-free message). Compare case-insensitively, with or without 0x.
+  const stripped = key.toLowerCase().startsWith("0x") ? key.slice(2) : key;
+  if (/^0{64}$/.test(stripped)) {
+    throw new Error(
+      `signing key from ${source} is the all-zero key, which is not a usable signer ` +
+        "(provision a real key outside this tool)"
+    );
+  }
+
+  let wallet;
+  try {
+    wallet = new Wallet(key);
+  } catch (e) {
+    // ethers' message can be verbose; it does NOT echo the key, but we replace it with a fixed, key-free
+    // message naming only the SOURCE so nothing about the key material can ever reach stderr/logs.
+    throw new Error(
+      `signing key from ${source} is not a valid private key (expected a 32-byte 0x-hex secp256k1 key)`
+    );
+  }
+  // The key now lives ONLY inside `wallet`; `key`/`raw` go out of scope when this function returns.
+  return { wallet, source };
+}
+
+/**
  * Serialize a signed-attestation container to its canonical, byte-deterministic bytes: a FIXED top-level
  * (and signature-block) key order, NO insignificant whitespace, a single trailing newline. Two runs over
  * the same inputs produce an identical string.
@@ -465,6 +572,7 @@ module.exports = {
   validateSignedAttestation,
   buildSignedAttestation,
   signAttestation,
+  loadSigningWallet,
   serializeSignedAttestation,
   readSignedAttestation,
   recoverSigner,

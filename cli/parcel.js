@@ -822,6 +822,120 @@ function runParcelAttest(opts) {
 }
 
 // =================================================================================================
+// `vh parcel sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]` — read a
+// HUMAN-supplied key, sign the UNSIGNED parcel attestation, write the SIGNED container (T-19.2).
+//
+// THIN parallel to `vh dataset sign`: it builds the UNSIGNED parcel-attestation payload via the EXISTING
+// `vh parcel attest` code path (buildParcelAttestation — NO re-implementation), resolves a HUMAN-supplied
+// key into an in-process Wallet via the SHARED `loadSigningWallet`, and signs over the canonical bytes via
+// the SAME T-19.1 `signAttestation` core with ProofParcel's signed-container framing. The loop never
+// generates or holds a key. The container ROUND-TRIPS by construction: `vh parcel verify-attest` recovers
+// exactly this signer over exactly these bytes, and a DATASET signed-container does NOT cross-verify
+// (distinct kind).
+//
+// KEY HYGIENE (load-bearing): EXACTLY ONE of `--key-env`/`--key-file`; neither/both, a missing env var, an
+// unreadable file, or a malformed/zero key HARD-ERRORS BEFORE any signing, with a message that NEVER
+// includes the key. Success/`--json` output prints ONLY the signer ADDRESS, the output path, and the
+// scheme — never the key.
+
+// The signing-specific caveat the human-output sign path LEADS with (P-3, verbatim). This signs the parcel
+// IDENTITY with the caller's OWN key; "the signer says so" is NOT a trusted delivery TIMESTAMP.
+const SIGN_TRUST_NOTE =
+  "This signs the parcel IDENTITY (root, fileCount, manifestDigest) with the key YOU supplied. A " +
+  "self-managed key attests \"the signer says so\" — it is NOT an independent, trusted TIMESTAMP: " +
+  '"delivered/unaltered since a date T" still needs the human-owned signing/timestamp trust-root ' +
+  "(needs-human, P-3). The key must be one YOU provisioned OUTSIDE this tool.";
+
+/**
+ * Orchestrate `vh parcel sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]`. Reads
+ * the parcel manifest via the strict `readParcelManifest`, builds the UNSIGNED attestation via the EXISTING
+ * `buildParcelAttestation` path (NO re-implementation), resolves a HUMAN-supplied key into an in-process
+ * Wallet via the shared `loadSigningWallet`, signs over the canonical bytes via the T-19.1 `signAttestation`
+ * core, and writes the SIGNED container's canonical bytes to `--out` (or stdout). PURELY OFFLINE.
+ *
+ * KEY HYGIENE: the key is read, used, and discarded; NEVER returned, persisted, or logged. The
+ * success/`--json` output prints ONLY the signer address, the output path, and the scheme — never the key.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifest  path to a manifest written by `vh parcel build`
+ * @param {string} [opts.keyEnv]  env var holding the signing key (EXACTLY ONE of keyEnv/keyFile)
+ * @param {string} [opts.keyFile] path to a key file the human created (EXACTLY ONE of keyEnv/keyFile)
+ * @param {boolean}[opts.json]    emit a machine-readable { signer, out, scheme, container, ... } object;
+ *                                with NO --out the `container` field carries the canonical signed bytes so
+ *                                `--json` never silently drops the artifact (parity with `attest --json`)
+ * @param {string} [opts.out]     write the signed container to this explicit path (caller-chosen; never cwd)
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {Promise<{ container: object, canonical: string, signer: string, scheme: string, out: string|null }>}
+ */
+async function runParcelSign(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runParcelSign requires options");
+  const { manifest: manifestPath, keyEnv, keyFile } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runParcelSign requires a <manifest> path");
+
+  // Resolve the HUMAN-supplied key into an in-process Wallet FIRST (BEFORE any signing). Neither/both
+  // sources, a missing env var, an unreadable file, or a malformed/zero key hard-errors here with a
+  // key-free message.
+  const { wallet } = coreAttestation.loadSigningWallet({ keyEnv, keyFile });
+
+  // Strict read: a corrupt/edited/foreign manifest (INCLUDING a dataset manifest) is rejected here, never
+  // half-accepted. The file SET it commits to is the TRUSTED basis of the attestation identity.
+  const manifest = readParcelManifest(manifestPath);
+
+  // Build the UNSIGNED payload via the EXISTING `vh parcel attest` path (NO re-implementation), then route
+  // the Wallet + payload through the SAME T-19.1 core with ProofParcel's signed-container framing.
+  const unsigned = buildParcelAttestation(manifest);
+  const container = await coreAttestation.signAttestation(
+    { attestation: unsigned, signer: wallet },
+    SIGNED_PARCEL_ATTESTATION_CFG
+  );
+  const canonical = serializeSignedParcelAttestation(container);
+  const signer = container.signature.signer; // lowercase 0x-address (PUBLIC) — never the key
+  const scheme = container.signature.scheme;
+
+  let outAbs = null;
+  if (opts.out) {
+    // Write the EXACT canonical signed bytes to the caller-chosen path (resolved absolute) — never cwd.
+    // The ONLY side effect. NOTHING about the key is written.
+    outAbs = path.resolve(opts.out);
+    fs.writeFileSync(outAbs, canonical);
+  }
+
+  if (opts.json) {
+    // Machine form: ONLY public fields — signer ADDRESS, output path, scheme. NEVER the key.
+    //
+    // ARTIFACT PARITY with `attest --json` (which emits the canonical bytes on stdout so a caller can
+    // pipe straight on). When there is NO --out, the signed container has nowhere else to live, so we
+    // carry the EXACT canonical signed bytes in a `container` field — `--json` without --out NEVER drops
+    // the artifact. With --out the bytes are on disk at `out`, so `container` is null (no redundant copy).
+    write(
+      JSON.stringify({
+        signed: true,
+        signer,
+        scheme,
+        out: outAbs,
+        kind: container.kind,
+        // The canonical signed bytes when there is no file to point at; null when --out holds them.
+        container: outAbs ? null : canonical,
+        note: SIGN_TRUST_NOTE,
+      }) + "\n"
+    );
+  } else {
+    write(`  TRUST: ${SIGN_TRUST_NOTE}\n`);
+    // The success line names WHICH key signed (by its PUBLIC address) so the human can confirm.
+    write(`signed by ${signer}\n`);
+    write(`  scheme: ${scheme}\n`);
+    if (outAbs) {
+      write(`  signed parcel attestation written: ${outAbs}\n`);
+    } else {
+      write(canonical);
+    }
+  }
+
+  return { container, canonical, signer, scheme, out: outAbs };
+}
+
+// =================================================================================================
 // `vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` — the OFFLINE verifier
 // for a SIGNED parcel-attestation container, over the SAME generic core `vh dataset verify-attest` uses.
 //
@@ -1017,5 +1131,7 @@ module.exports = {
   verifySignedParcelAttestation,
   formatParcelVerifyAttest,
   runParcelAttest,
+  SIGN_TRUST_NOTE,
+  runParcelSign,
   runParcelVerifyAttest,
 };

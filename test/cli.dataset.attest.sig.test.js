@@ -878,3 +878,328 @@ describe("cli/core: signAttestation (T-19.1) — ephemeral TEST-ONLY keys, NO ne
     expect(fs.existsSync(path.join(process.cwd(), "signed.json"))).to.equal(false);
   });
 });
+
+// =================================================================================================
+// T-19.2 — `vh dataset sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]`: read a
+// HUMAN-supplied key, sign the UNSIGNED dataset attestation, write the signed container.
+//
+// CRITICAL: every key here is an EPHEMERAL, in-process `Wallet.createRandom()` — a TEST-ONLY key written
+// ONLY to a TEMP env var / a TEMP file under the OS temp dir, NEVER the repo, NEVER a real key. NO network,
+// NO provider anywhere in this suite (signing is purely offline EIP-191 personal_sign).
+const { runDatasetSign, SIGN_TRUST_NOTE, runDatasetVerifyAttest: runDsVerifyAttest } = require("../cli/dataset");
+const { cmdDatasetSign, parseSignArgs } = require("../cli/vh");
+
+describe("cli: vh dataset sign (T-19.2) — sign with a HUMAN-supplied key, EPHEMERAL test keys only", function () {
+  let tmpDirs = [];
+  function tmp(prefix) {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tmpDirs.push(d);
+    return d;
+  }
+  let envVars = [];
+  function setTempEnv(name, value) {
+    envVars.push(name);
+    process.env[name] = value;
+  }
+  afterEach(function () {
+    for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true });
+    tmpDirs = [];
+    for (const n of envVars) delete process.env[n];
+    envVars = [];
+  });
+  function writeTree(files, prefix) {
+    const dir = tmp(prefix);
+    for (const [name, content] of Object.entries(files)) {
+      const full = path.join(dir, name);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, content);
+    }
+    return dir;
+  }
+  function buildManifestFixture(files = { "a.txt": "AAA", "b.txt": "BBB" }, prefix = "dsign") {
+    const dir = writeTree(files, prefix + "-tree-");
+    const manifestPath = path.join(tmp(prefix + "-man-"), "manifest.json");
+    runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+    return { dir, manifestPath, manifest: readManifest(manifestPath) };
+  }
+
+  it("--key-env signs; the container is ACCEPTED by `vh dataset verify-attest --signer <thatAddr> --manifest`", async function () {
+    const fx = buildManifestFixture();
+    const w = Wallet.createRandom(); // EPHEMERAL TEST-ONLY key — never persisted to the repo
+    setTempEnv("VH_DS_TEST_KEY", w.privateKey);
+    const out = path.join(tmp("dsign-out-"), "signed.json");
+
+    let printed = "";
+    const r = await runDatasetSign({
+      manifest: fx.manifestPath,
+      keyEnv: "VH_DS_TEST_KEY",
+      out,
+      stdout: (s) => (printed += s),
+    });
+    expect(r.signer).to.equal(w.address.toLowerCase());
+    expect(r.scheme).to.equal("eip191-personal-sign");
+    // "signed by <0xaddr>" names WHICH key signed (its public address) so the human can confirm.
+    expect(printed).to.include(`signed by ${w.address.toLowerCase()}`);
+    // The output NEVER contains the private key.
+    expect(printed).to.not.include(w.privateKey);
+    expect(fs.readFileSync(out, "utf8")).to.not.include(w.privateKey);
+
+    // The EXISTING verify-attest accepts it unchanged — pins the expected signer + binds the manifest.
+    const va = runDsVerifyAttest({ signed: out, manifest: fx.manifestPath, signer: w.address, stdout: () => {} });
+    expect(va.verdict).to.equal("ACCEPTED");
+    expect(va.accepted).to.equal(true);
+    expect(va.recoveredSigner).to.equal(w.address.toLowerCase());
+    expect(va.checks.signatureMatchesSigner).to.equal(true);
+    expect(va.checks.signerMatchesExpected).to.equal(true);
+    expect(va.checks.manifestBindsAttestation).to.equal(true);
+  });
+
+  it("--key-file (a file the human created) signs and verify-attest ACCEPTS it", async function () {
+    const fx = buildManifestFixture(undefined, "dsign-file");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    const keyPath = path.join(tmp("dsign-key-"), "key.hex"); // TEMP dir, NEVER the repo
+    fs.writeFileSync(keyPath, w.privateKey + "\n"); // trailing newline tolerated
+    const out = path.join(tmp("dsign-fout-"), "signed.json");
+
+    const r = await runDatasetSign({ manifest: fx.manifestPath, keyFile: keyPath, out, stdout: () => {} });
+    expect(r.signer).to.equal(w.address.toLowerCase());
+
+    const va = runDsVerifyAttest({ signed: out, manifest: fx.manifestPath, signer: w.address, stdout: () => {} });
+    expect(va.accepted).to.equal(true);
+  });
+
+  it("a bare 64-hex key (no 0x) in --key-file is accepted (0x is prefixed)", async function () {
+    const fx = buildManifestFixture(undefined, "dsign-bare");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    const keyPath = path.join(tmp("dsign-bare-key-"), "key.hex");
+    fs.writeFileSync(keyPath, w.privateKey.slice(2)); // strip the 0x prefix
+    const out = path.join(tmp("dsign-bare-out-"), "signed.json");
+    const r = await runDatasetSign({ manifest: fx.manifestPath, keyFile: keyPath, out, stdout: () => {} });
+    expect(r.signer).to.equal(w.address.toLowerCase());
+  });
+
+  it("--json round-trips: prints ONLY public fields (signer, scheme, out) — NEVER the key", async function () {
+    const fx = buildManifestFixture(undefined, "dsign-json");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    setTempEnv("VH_DS_JSON_KEY", w.privateKey);
+    const out = path.join(tmp("dsign-jout-"), "signed.json");
+    let printed = "";
+    await runDatasetSign({
+      manifest: fx.manifestPath,
+      keyEnv: "VH_DS_JSON_KEY",
+      out,
+      json: true,
+      stdout: (s) => (printed += s),
+    });
+    const obj = JSON.parse(printed);
+    expect(obj.signed).to.equal(true);
+    expect(obj.signer).to.equal(w.address.toLowerCase());
+    expect(obj.scheme).to.equal("eip191-personal-sign");
+    expect(obj.out).to.equal(path.resolve(out));
+    // With --out, the bytes live on disk; the JSON `container` field is null (no redundant copy).
+    expect(obj.container).to.equal(null);
+    expect(JSON.stringify(obj)).to.not.include(w.privateKey);
+  });
+
+  it("--json WITHOUT --out NEVER drops the artifact: the canonical signed bytes ride in `container`, and verify-attest ACCEPTS them", async function () {
+    const fx = buildManifestFixture(undefined, "dsign-json-noout");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    setTempEnv("VH_DS_JSON_NOOUT_KEY", w.privateKey);
+
+    let printed = "";
+    const r = await runDatasetSign({
+      manifest: fx.manifestPath,
+      keyEnv: "VH_DS_JSON_NOOUT_KEY",
+      // NO --out: the only place the signed container can live is the JSON output itself.
+      json: true,
+      stdout: (s) => (printed += s),
+    });
+    const obj = JSON.parse(printed);
+    expect(obj.signed).to.equal(true);
+    expect(obj.signer).to.equal(w.address.toLowerCase());
+    expect(obj.out).to.equal(null);
+    // The artifact is NOT dropped: `container` carries the EXACT canonical signed bytes the function built.
+    expect(obj.container).to.be.a("string");
+    expect(obj.container).to.equal(r.canonical);
+    // No key ever leaks into the JSON (the container holds only the PUBLIC signer + signature).
+    expect(printed).to.not.include(w.privateKey);
+    expect(obj.container).to.not.include(w.privateKey);
+
+    // Round-trip: write the carried bytes to a TEMP file and confirm the EXISTING verify-attest ACCEPTS them.
+    const reconstructed = path.join(tmp("dsign-json-noout-rt-"), "signed.json");
+    fs.writeFileSync(reconstructed, obj.container);
+    const va = runDsVerifyAttest({
+      signed: reconstructed,
+      manifest: fx.manifestPath,
+      signer: w.address,
+      stdout: () => {},
+    });
+    expect(va.accepted).to.equal(true);
+    expect(va.recoveredSigner).to.equal(w.address.toLowerCase());
+  });
+
+  it("the signed container output never contains the private key (on disk)", async function () {
+    const fx = buildManifestFixture(undefined, "dsign-leak");
+    const w = Wallet.createRandom(); // TEST-ONLY
+    setTempEnv("VH_DS_LEAK_KEY", w.privateKey);
+    const out = path.join(tmp("dsign-lout-"), "signed.json");
+    await runDatasetSign({ manifest: fx.manifestPath, keyEnv: "VH_DS_LEAK_KEY", out, stdout: () => {} });
+    const bytes = fs.readFileSync(out, "utf8");
+    expect(bytes).to.not.include(w.privateKey);
+    expect(bytes).to.not.include(w.privateKey.slice(2)); // not the bare form either
+    expect(bytes).to.include(w.address.toLowerCase()); // does carry the PUBLIC signer
+  });
+
+  describe("HARD-ERRORS before signing, and NEVER leak the key", function () {
+    it("NEITHER key source: exit 2, no output written", async function () {
+      const fx = buildManifestFixture(undefined, "dsign-none");
+      const out = path.join(tmp("dsign-none-out-"), "signed.json");
+      const code = await cmdDatasetSign([fx.manifestPath, "--out", out]);
+      expect(code).to.equal(2);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("BOTH key sources: exit 2, no output written", async function () {
+      const fx = buildManifestFixture(undefined, "dsign-both");
+      const w = Wallet.createRandom(); // TEST-ONLY
+      setTempEnv("VH_DS_BOTH_KEY", w.privateKey);
+      const keyPath = path.join(tmp("dsign-both-key-"), "k.hex");
+      fs.writeFileSync(keyPath, w.privateKey);
+      const out = path.join(tmp("dsign-both-out-"), "signed.json");
+      const code = await cmdDatasetSign([
+        fx.manifestPath,
+        "--key-env",
+        "VH_DS_BOTH_KEY",
+        "--key-file",
+        keyPath,
+        "--out",
+        out,
+      ]);
+      expect(code).to.equal(2);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("missing env var: throws BEFORE signing, no output, message names only the SOURCE", async function () {
+      const fx = buildManifestFixture(undefined, "dsign-missing");
+      const out = path.join(tmp("dsign-missing-out-"), "signed.json");
+      let threw;
+      try {
+        await runDatasetSign({ manifest: fx.manifestPath, keyEnv: "VH_DS_UNSET_KEY_XYZ", out, stdout: () => {} });
+        threw = null;
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).to.be.an("error");
+      expect(threw.message).to.match(/VH_DS_UNSET_KEY_XYZ.*not set|not set.*VH_DS_UNSET_KEY_XYZ/);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("unreadable key file: throws BEFORE signing, no output, message names the PATH (not the key)", async function () {
+      const fx = buildManifestFixture(undefined, "dsign-badfile");
+      const out = path.join(tmp("dsign-badfile-out-"), "signed.json");
+      let threw;
+      try {
+        await runDatasetSign({ manifest: fx.manifestPath, keyFile: "/no/such/key.hex", out, stdout: () => {} });
+        threw = null;
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).to.be.an("error");
+      expect(threw.message).to.include("/no/such/key.hex");
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("a malformed key HARD-ERRORS without writing output and WITHOUT leaking the key value", async function () {
+      const fx = buildManifestFixture(undefined, "dsign-malformed");
+      const malformed = "definitely-not-a-key-value";
+      setTempEnv("VH_DS_MALFORMED_KEY", malformed);
+      const out = path.join(tmp("dsign-malformed-out-"), "signed.json");
+      let threw;
+      try {
+        await runDatasetSign({ manifest: fx.manifestPath, keyEnv: "VH_DS_MALFORMED_KEY", out, stdout: () => {} });
+        threw = null;
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).to.be.an("error");
+      expect(threw.message).to.include("env:VH_DS_MALFORMED_KEY");
+      expect(threw.message).to.not.include(malformed);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("an all-zero key is rejected (not a usable signer), no output, no leak", async function () {
+      const fx = buildManifestFixture(undefined, "dsign-zero");
+      setTempEnv("VH_DS_ZERO_KEY", "0x" + "00".repeat(32));
+      const out = path.join(tmp("dsign-zero-out-"), "signed.json");
+      let threw;
+      try {
+        await runDatasetSign({ manifest: fx.manifestPath, keyEnv: "VH_DS_ZERO_KEY", out, stdout: () => {} });
+        threw = null;
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).to.be.an("error");
+      expect(threw.message).to.match(/all-zero/);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+  });
+
+  describe("CLI exit codes + parser parity", function () {
+    it("a clean sign via the cmd handler returns exit 0", async function () {
+      const fx = buildManifestFixture(undefined, "dsign-cli-ok");
+      const w = Wallet.createRandom(); // TEST-ONLY
+      setTempEnv("VH_DS_CLI_KEY", w.privateKey);
+      const out = path.join(tmp("dsign-cli-out-"), "signed.json");
+      let printed = "";
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (s) => ((printed += s), true);
+      let code;
+      try {
+        code = await cmdDatasetSign([fx.manifestPath, "--key-env", "VH_DS_CLI_KEY", "--out", out]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(0);
+      expect(fs.existsSync(out)).to.equal(true);
+      expect(printed).to.not.include(w.privateKey);
+    });
+
+    it("missing <manifest> is exit 2; a present-but-bad key surfaces as exit 1 (runtime, not usage)", async function () {
+      const code2 = await cmdDatasetSign(["--key-env", "VH_DS_X"]);
+      expect(code2).to.equal(2);
+      const fx = buildManifestFixture(undefined, "dsign-rt");
+      setTempEnv("VH_DS_BADV", "nope");
+      const out = path.join(tmp("dsign-rt-out-"), "signed.json");
+      const code1 = await cmdDatasetSign([fx.manifestPath, "--key-env", "VH_DS_BADV", "--out", out]);
+      expect(code1).to.equal(1);
+      expect(fs.existsSync(out)).to.equal(false);
+    });
+
+    it("parser parity: unknown/incomplete flag, duplicate positional hard-error", function () {
+      expect(() => parseSignArgs(["/m", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseSignArgs(["/m", "/n"])).to.throw(/unexpected extra argument/);
+      expect(() => parseSignArgs(["/m", "--key-env"])).to.throw(/--key-env requires a value/);
+      expect(() => parseSignArgs(["/m", "--key-file"])).to.throw(/--key-file requires a value/);
+      expect(() => parseSignArgs(["/m", "--out"])).to.throw(/--out requires a value/);
+    });
+
+    it("a typo'd flag via the cmd handler is exit 2 (a typo never silently signs)", async function () {
+      const fx = buildManifestFixture(undefined, "dsign-typo");
+      setTempEnv("VH_DS_TYPO_KEY", Wallet.createRandom().privateKey);
+      const code = await cmdDatasetSign([fx.manifestPath, "--key-env", "VH_DS_TYPO_KEY", "--nope"]);
+      expect(code).to.equal(2);
+    });
+
+    it("the SIGN_TRUST_NOTE carries the P-3 posture (NOT a trusted timestamp; key YOU supplied)", function () {
+      expect(SIGN_TRUST_NOTE).to.match(/NOT an independent, trusted TIMESTAMP/);
+      expect(SIGN_TRUST_NOTE).to.include("P-3");
+      expect(SIGN_TRUST_NOTE).to.match(/key YOU supplied/);
+    });
+  });
+
+  it("leaves ZERO key files / signed containers in the repo working tree (all side effects in temp dirs)", function () {
+    expect(fs.existsSync(path.join(process.cwd(), "signed.json"))).to.equal(false);
+    expect(fs.existsSync(path.join(process.cwd(), "key.hex"))).to.equal(false);
+    expect(fs.existsSync(path.join(process.cwd(), "manifest.json"))).to.equal(false);
+  });
+});

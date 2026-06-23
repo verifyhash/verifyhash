@@ -267,15 +267,44 @@ function hashDir(dirPath) {
   if (files.length === 0) {
     throw new Error(`no files found under directory: ${dirPath}`);
   }
+  // Map each absolute file path to its repo-relative POSIX path + bytes, then hand the entries to the
+  // shared tree builder so the filesystem walk and the git-scoped walk produce byte-identical roots.
+  const entries = files.map((f) => ({
+    path: toPosixRel(path.relative(dirPath, f)),
+    abs: f,
+    content: fs.readFileSync(f),
+  }));
+  return hashEntries(entries);
+}
+
+/**
+ * Build the directory-root result from an explicit list of file entries. This is the shared core
+ * behind both `hashDir` (filesystem walk) and the git-scoped walk in cli/git.js, so they compute the
+ * IDENTICAL Merkle root via the same pathLeaf/buildTree/leafHash/nodeHash convention the contract's
+ * verifyLeaf accepts. Each entry is `{ path: repoRelPosixPath, content: Buffer, abs?: absPath }`;
+ * `abs` is optional and only used to let `proofFor`/`leafFor` accept an absolute path.
+ *
+ * @param {{ path: string, content: Buffer|Uint8Array, abs?: string }[]} entries
+ * @returns {{
+ *   root: string,
+ *   leaves: { path: string, leaf: string, contentHash: string }[],
+ *   proofFor: (relOrAbsPathOrLeaf: string) => string[],
+ *   leafFor: (relOrAbsPath: string) => string,
+ * }}
+ */
+function hashEntries(entries) {
+  if (!entries || entries.length === 0) {
+    throw new Error("cannot build a directory root from zero files");
+  }
   // Compute (path, contentHash, leaf) triples. The tree leaf is the PATH-BOUND digest so the root
   // commits to names+content; the bare contentHash is kept for display. Sort by leaf so the root is
-  // order-independent.
-  const pairs = files.map((f) => {
-    const rel = path.relative(dirPath, f);
-    const contentHash = hashFile(f);
+  // order-independent. `path` is already a normalized POSIX relPath; pathLeaf re-normalizes anyway.
+  const pairs = entries.map((e) => {
+    const rel = toPosixRel(e.path);
+    const contentHash = hashBytes(e.content);
     return {
-      path: toPosixRel(rel),
-      abs: f,
+      path: rel,
+      abs: e.abs,
       contentHash,
       leaf: pathLeaf(rel, contentHash),
     };
@@ -294,14 +323,18 @@ function hashDir(dirPath) {
     });
 
   // Resolve a target (relative/absolute path, or a path-bound leaf hash) to its index in the sorted
-  // leaf layer. Path matching uses the normalized (forward-slash) relPath.
+  // leaf layer. Path matching uses the normalized (forward-slash) relPath; an absolute target is
+  // matched against each entry's recorded absolute path (entries carry their own `abs`, so there is
+  // no single base directory to resolve against).
   function indexFor(target) {
     if (/^0x[0-9a-fA-F]{64}$/.test(target)) {
       return sortedLeaves.findIndex((l) => BigInt(l) === BigInt(target));
     }
-    const absTarget = path.isAbsolute(target) ? target : path.resolve(dirPath, target);
+    if (path.isAbsolute(target)) {
+      return sortedPairs.findIndex((p) => p.abs === target);
+    }
     const normTarget = toPosixRel(target);
-    return sortedPairs.findIndex((p) => p.abs === absTarget || p.path === normTarget);
+    return sortedPairs.findIndex((p) => p.path === normTarget);
   }
 
   function proofFor(target) {
@@ -329,6 +362,64 @@ function hashDir(dirPath) {
 }
 
 /**
+ * Hash a directory into a stable Merkle root over EXACTLY the files git tracks at `ref` (default
+ * HEAD), reading their bytes from the WORKING TREE. This is the engine behind `vh hash <path> --git`.
+ *
+ * The tracked set is enumerated from the commit's tree (`git ls-tree`, via cli/git.js), so untracked
+ * junk in the work tree (`node_modules/`, `.env`, unstaged scratch files) is IGNORED — the root
+ * depends only on which files git tracks. Each tracked file's bytes are read from the work tree and
+ * fed through the IDENTICAL pathLeaf/buildTree/leafHash/nodeHash convention as `hashDir`, with the
+ * git path bound into each leaf, so the resulting root is byte-identical to (and verifiable by) the
+ * contract's verifyLeaf — no new leaf scheme, no contract change.
+ *
+ * Errors explicitly (never silently falls back to a filesystem walk):
+ *   - `dirPath` not in a git work tree -> error (via repoRoot),
+ *   - unknown `ref` -> error (via resolveCommit),
+ *   - zero tracked files -> actionable error (cannot build a tree from zero leaves).
+ * A tracked file that is missing from the work tree (e.g. `git rm` without commit) is reported as a
+ * clear error rather than silently skipped, so the root always reflects the full tracked set.
+ *
+ * @param {string} dirPath a directory inside the repo
+ * @param {{ ref?: string }} [opts] `ref` to enumerate (default HEAD)
+ * @returns {{
+ *   root: string,
+ *   commit: string,
+ *   leaves: { path: string, leaf: string, contentHash: string }[],
+ *   proofFor: (relOrAbsPathOrLeaf: string) => string[],
+ *   leafFor: (relOrAbsPath: string) => string,
+ * }}
+ */
+function hashGit(dirPath, opts = {}) {
+  // Lazy-require so cli/hash.js stays usable (and unit-testable) without git on the host unless the
+  // --git path is actually taken.
+  const git = require("./git");
+  const root = git.repoRoot(dirPath); // errors clearly if dirPath is not in a git work tree
+  const commit = git.resolveCommit(dirPath, opts.ref); // errors clearly on an unknown ref
+  const tracked = git.listTrackedFiles(dirPath, opts.ref); // sorted repo-relative POSIX paths
+  if (tracked.length === 0) {
+    throw new Error(
+      `git tracks zero files at ${opts.ref || "HEAD"} (${commit.slice(0, 12)}); ` +
+        `nothing to hash. Commit at least one file, or hash without --git.`
+    );
+  }
+  const entries = tracked.map((rel) => {
+    const abs = path.join(root, rel);
+    let content;
+    try {
+      content = fs.readFileSync(abs);
+    } catch (e) {
+      throw new Error(
+        `tracked file is missing from the work tree: ${rel}\n` +
+          `  (git lists it at ${commit.slice(0, 12)} but it could not be read: ${e.message})`
+      );
+    }
+    return { path: rel, abs, content };
+  });
+  const result = hashEntries(entries);
+  return { ...result, commit };
+}
+
+/**
  * Hash a path, dispatching on whether it is a file or a directory.
  * @param {string} targetPath
  * @returns {{ kind: "file"|"dir", root: string, leaves?: {path:string,leaf:string}[] }}
@@ -349,6 +440,8 @@ module.exports = {
   hashFile,
   hashBytes,
   hashDir,
+  hashEntries,
+  hashGit,
   hashPath,
   leafHash,
   nodeHash,

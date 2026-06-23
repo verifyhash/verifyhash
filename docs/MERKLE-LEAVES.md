@@ -67,6 +67,20 @@ Leaves are **sorted by their `pathLeaf` value** before the tree is built, so the
 independent of enumeration/creation order. Odd (lone) nodes are paired with themselves
 (`nodeHash(node, node)`) rather than promoted, giving every leaf a full-depth proof.
 
+## Which files become leaves: filesystem walk vs. `--git`
+
+The leaf/tree formulas above are unchanged regardless of how the file SET is chosen — `--git` reuses
+the identical `pathLeaf` / `leafHash` / `nodeHash` convention. Only the enumeration differs:
+
+- **`vh hash <dir>` (default)** walks the filesystem and makes a leaf for every regular file it finds,
+  including untracked files (`node_modules/`, `.env`, build artifacts, editor scratch). The root then
+  depends on whatever happens to be in the work tree.
+- **`vh hash <dir> --git [--ref <ref>]`** makes a leaf for EXACTLY the files git tracks at that commit
+  (`git ls-tree -r`, default `HEAD`), reading each file's bytes from the work tree. Untracked files
+  are ignored, so the root is reproducible across clones of the same commit. The git path is the
+  `relPath` bound into each leaf, so renaming a tracked file still changes the root. See
+  `cli/git.js` (`repoRoot` / `resolveCommit` / `listTrackedFiles`) and `test/cli.hash.git.test.js`.
+
 ## What the root does NOT commit to
 
 - File mode/permissions, mtimes, or other filesystem metadata (only path + bytes).

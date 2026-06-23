@@ -12,7 +12,7 @@
 //   vh prove <file> [opts]     Prove a single file belongs to an anchored repo root: build its
 //                              Merkle proof and have the on-chain verifyLeaf accept/reject it.
 
-const { hashPath } = require("./hash");
+const { hashPath, hashGit } = require("./hash");
 const { runAnchor } = require("./anchor");
 const { runVerify } = require("./verify");
 const { runProve } = require("./prove");
@@ -25,7 +25,8 @@ function usage() {
     "vh — verifyhash CLI",
     "",
     "Usage:",
-    "  vh hash <path>             keccak256 of a file, or sorted-leaf Merkle root of a directory",
+    "  vh hash <path> [--git]     keccak256 of a file, or sorted-leaf Merkle root of a directory",
+    "                             (--git [--ref <ref>]: hash ONLY the files git tracks at that commit)",
     "  vh anchor <path> [opts]    anchor a file/dir's content hash on-chain (FRONT-RUNNABLE)",
     "  vh claim <path> [opts]     front-running-resistant attribution via commit-reveal (one-shot)",
     "  vh commit <path> [opts]    commit-reveal step 1: commit + write a resumable claim receipt",
@@ -34,6 +35,11 @@ function usage() {
     "  vh prove <file> [opts]     Merkle-prove a file against an anchored repo root via verifyLeaf",
     "  vh list [opts]             enumerate the registry read-only (discovery + audit)",
     "  vh show <0xhash> [opts]    look up ONE record by content hash (no local content needed)",
+    "",
+    "hash options:",
+    "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
+    "                             node_modules/, .env, build artifacts); <path> must be in a git repo",
+    "  --ref <ref>                with --git: which commit's tracked set to hash (default HEAD)",
     "",
     "anchor options (one-shot; contributor = 'first anchorer', NOT proven authorship):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
@@ -100,15 +106,76 @@ function usage() {
   ].join("\n");
 }
 
+/**
+ * Parse `hash` argv into { path, git, ref }. Takes exactly one positional <path>. `--git` scopes the
+ * hash to git-tracked files; `--ref <ref>` selects which commit's tracked set (only with `--git`).
+ * Throws on unknown/incomplete flags, a duplicate path, or `--ref` without `--git` (parser parity
+ * with the other commands) so a typo never silently changes what gets hashed.
+ */
+function parseHashArgs(argv) {
+  const opts = { path: undefined, git: false, ref: undefined };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--git":
+        opts.git = true;
+        break;
+      case "--ref":
+        opts.ref = argv[++i];
+        if (opts.ref === undefined) throw new Error("--ref requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.path !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.path = a;
+    }
+  }
+  // --ref is meaningful only when scoping to git-tracked files; flag it rather than silently ignore.
+  if (opts.ref !== undefined && !opts.git) {
+    throw new Error("--ref requires --git (it selects which commit's tracked files to hash)");
+  }
+  return opts;
+}
+
 function cmdHash(argv) {
-  const target = argv[0];
-  if (!target) {
+  let opts;
+  try {
+    opts = parseHashArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.path) {
     process.stderr.write("error: `vh hash` requires a <path>\n\n" + usage());
     return 2;
   }
+
+  // --git: hash EXACTLY the files git tracks (no filesystem walk, no untracked junk). Errors clearly
+  // on a non-git dir / unknown ref / zero tracked files — it never silently falls back to the walk.
+  if (opts.git) {
+    let result;
+    try {
+      result = hashGit(opts.path, { ref: opts.ref });
+    } catch (e) {
+      process.stderr.write(`error: ${e.message}\n`);
+      return 1;
+    }
+    // Print the root, then the resolved commit oid as a `# commit <oid>` comment so the snapshot is
+    // SELF-DESCRIBING: an operator running `--git --ref some-branch` can see WHICH commit produced
+    // this root (the whole point of a commit-pinned, reproducible snapshot). The comment leads with
+    // `#` so a downstream consumer of the line-oriented `<leaf>  <path>` body can skip it trivially,
+    // and the root stays on line 1 — the human shape is otherwise byte-identical to the dir output.
+    process.stdout.write(result.root + "\n");
+    process.stdout.write(`# commit ${result.commit}\n`);
+    for (const { path: p, leaf } of result.leaves) {
+      process.stdout.write(`${leaf}  ${p}\n`);
+    }
+    return 0;
+  }
+
   let result;
   try {
-    result = hashPath(target);
+    result = hashPath(opts.path);
   } catch (e) {
     process.stderr.write(`error: ${e.message}\n`);
     return 1;
@@ -933,6 +1000,7 @@ module.exports = {
   cmdProve,
   cmdList,
   cmdShow,
+  parseHashArgs,
   parseAnchorArgs,
   parseClaimArgs,
   parseRevealArgs,

@@ -57,12 +57,14 @@ vh dataset summary <manifest>        # provenance/license roll-up over the trust
 vh dataset check <manifest> --policy <p> # OFFLINE license/source policy gate (PASS/FAIL, CI-gateable exit 0/3); offline, no key, no network
 vh dataset report <manifest> [--verify <dir>] [--policy <p>] # ONE deterministic evidence document the reviewer files; offline, no key, no network
 vh dataset attest <manifest>         # canonical UNSIGNED attestation payload a human trust-root signs (P-3); offline, no key, no network
+vh dataset sign <manifest> --key-env <VAR>|--key-file <p> # sign the UNSIGNED attestation with a key YOU provisioned -> signed container; reads YOUR key, never generates/persists/logs one; offline, no network
 vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] # OFFLINE-verify a SIGNED attestation container (recover signer, pin publisher, bind manifest); no key, no network, CI-gateable exit 0/3
 vh dataset prove --file <p> --manifest <m> # set-membership proof for ONE file; offline, no key, no network
 vh dataset verify-proof <proof>      # fold a membership proof back to the recorded root; offline, no key, no network
 vh parcel build <dir> --out <p>      # ProofParcel: tamper-evident B2B delivery receipt (root + per-file leaves + untrusted parcel meta); offline, no key, no network
 vh parcel verify <dir> --manifest <p> # re-derive the root + per-file diff vs a parcel manifest; offline, no key, no network
 vh parcel attest <manifest>          # canonical UNSIGNED parcel-attestation payload a human trust-root signs (P-3); offline, no key, no network
+vh parcel sign <manifest> --key-env <VAR>|--key-file <p> # sign the UNSIGNED parcel attestation with a key YOU provisioned -> signed container; reads YOUR key, never generates/persists/logs one; offline, no network
 vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] # OFFLINE-verify a SIGNED parcel attestation (recover signer, pin sender, bind parcel); no key, no network, CI-gateable exit 0/3
 ```
 
@@ -394,6 +396,7 @@ vh dataset summary <manifest>             # provenance/license roll-up over the 
 vh dataset check <manifest> --policy <p> [--json]  # OFFLINE license/source policy gate: PASS/FAIL + violating files; CI-gateable exit code (0 PASS / 3 FAIL); no key, no network
 vh dataset report <manifest> [--verify <dir>] [--policy <p>] [--json] [--out <p>]  # ONE deterministic evidence document the reviewer files; offline, no key, no network
 vh dataset attest <manifest> [--json] [--out <p>]  # canonical UNSIGNED attestation payload (root+fileCount+manifestDigest) a human trust-root signs; offline, no key, no network
+vh dataset sign <manifest> --key-env <VAR>|--key-file <p> [--out <p>] [--json]  # sign the UNSIGNED attestation with a key YOU provisioned -> the signed container verify-attest accepts; reads YOUR key (never generates/persists/logs one); offline, no network
 vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]  # OFFLINE-verify a SIGNED attestation container: recover the signer, pin the publisher, bind YOUR manifest; offline, no key, no network, CI-gateable exit code (0 ACCEPTED / 3 REJECTED)
 vh dataset prove --file <p> --manifest <m> --out <a>  # portable set-membership proof for ONE file
 vh dataset verify-proof <proof>           # fold a membership proof back to the recorded root (no dataset, no manifest, no key, no net)
@@ -413,10 +416,13 @@ and binds the signature to the buyer's own dataset (`--manifest`). All are **off
 NO network**. A PASS attests only that the dataset's UNTRUSTED, self-asserted hints satisfy the policy —
 NOT that the licenses are genuinely correct.
 
-This build ships only the signed-attestation **FORMAT + the offline VERIFIER** (proved with throwaway test
-keys); producing the signature itself — provisioning a real key and choosing the trust-root option — stays
-the human-owned **UNSIGNED**-to-signed step P-3 (`needs-human`, [`STRATEGY.md`](STRATEGY.md)). A verified
-signature proves the key-holder vouched for the dataset identity, NOT a "unaltered since date T" timestamp.
+This build ships the signed-attestation **FORMAT, the offline VERIFIER, AND the `vh dataset sign` command**
+(all proved with throwaway test keys). `vh dataset sign` reads a key YOU provisioned OUTSIDE the loop
+(`--key-env`/`--key-file`), signs the canonical `vh dataset attest` bytes, and writes the container
+`verify-attest` accepts — it **never generates, persists, or logs a key** and touches no network. So the
+human's remaining P-3 step (`needs-human`, [`STRATEGY.md`](STRATEGY.md)) collapses to: **PROVISION a real
+key, choose the trust-root option, and run `vh dataset sign --key-env <VAR>`**. A verified signature proves
+the key-holder vouched for the dataset identity, NOT a "unaltered since date T" timestamp (still P-3).
 
 The Merkle root commits to file **names AND bytes** (the SAME path-bound convention as `vh hash <dir>`),
 so any edit/rename/add/remove changes it. What DataLedger does **NOT** prove: it is **not a timestamp**
@@ -438,6 +444,7 @@ that parcel's identity. Every command is **offline, needs NO key, and needs NO n
 vh parcel build <dir> --out <p>           # tamper-evident delivery receipt: Merkle root + per-file leaves + optional UNTRUSTED parcel meta
 vh parcel verify <dir> --manifest <p>     # re-derive the root from a fresh copy on disk + per-file ADDED/REMOVED/CHANGED diff; exit 0 MATCH / 3 MISMATCH
 vh parcel attest <manifest> [--json] [--out <p>]  # canonical UNSIGNED parcel-attestation payload (root+fileCount+manifestDigest) a human trust-root signs; offline, no key, no network
+vh parcel sign <manifest> --key-env <VAR>|--key-file <p> [--out <p>] [--json]  # sign the UNSIGNED parcel attestation with a key YOU provisioned -> the signed container verify-attest accepts; reads YOUR key (never generates/persists/logs one); offline, no network
 vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]  # OFFLINE-verify a SIGNED parcel attestation: recover the signer, pin the sender, bind YOUR parcel; offline, no key, no network, CI-gateable exit code (0 ACCEPTED / 3 REJECTED)
 ```
 
@@ -454,9 +461,11 @@ is signable, but is **NOT by itself a trusted delivery TIMESTAMP** — "delivere
 human-owned signing/timestamp trust-root (`needs-human`, P-3 in [`STRATEGY.md`](STRATEGY.md)); a valid
 signature proves the key-holder vouched for the parcel identity, NOT a "unaltered since date T"
 timestamp. The `parcel` metadata (parcelId/sender/recipient) is **UNTRUSTED self-asserted metadata** that
-is NOT bound into the root. This build ships only the **FORMAT + the offline VERIFIER** (proved with
-throwaway test keys); producing the signature is the human-owned P-3 step. Full buyer-facing spec, command
-table, and worked example: [`docs/PROOFPARCEL.md`](docs/PROOFPARCEL.md).
+is NOT bound into the root. This build ships the **FORMAT, the offline VERIFIER, AND the `vh parcel sign`
+command** (proved with throwaway test keys); `vh parcel sign` reads a key the sender PROVISIONED outside the
+loop (never generates/persists/logs one), so the human's P-3 step collapses to "provision a key, run
+`vh parcel sign --key-env <VAR>`." Full buyer-facing spec, command table, and worked example:
+[`docs/PROOFPARCEL.md`](docs/PROOFPARCEL.md).
 
 ## Develop
 

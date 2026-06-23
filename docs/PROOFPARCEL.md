@@ -52,9 +52,11 @@ A parcel manifest commits to a Merkle root over the full set of `(relPath, conte
 
 - **A trusted delivery TIMESTAMP.** "Delivered ON date T" / "unaltered since date T" rides the
   **human-owned signing/timestamp trust-root** ([`STRATEGY.md` P-3](../STRATEGY.md), `needs-human`).
-  The loop ships only the **FORMAT + the OFFLINE VERIFIER**; standing up a real signing key / timestamp
-  anchor and producing the actual signature is a human step. This is the **same honest trust posture as
-  DataLedger** — a receipt binds the file SET and is signable, but a signature is not a timestamp.
+  The loop ships the **FORMAT, the OFFLINE VERIFIER, AND the `vh parcel sign` command** — but `vh parcel
+  sign` only ever reads a key the human PROVISIONED outside the loop (it never generates/persists/logs a
+  key); PROVISIONING the key / standing up a timestamp anchor is the human step. This is the **same honest
+  trust posture as DataLedger** — a receipt binds the file SET and is signable, but a signature is not a
+  timestamp.
 - **That the self-asserted `parcel` metadata is true.** The optional `parcel` block
   (`parcelId` / `sender` / `recipient`) is **UNTRUSTED, self-asserted metadata**: it is **NOT bound
   into the Merkle root**, editing it does not change the root, and it is **EXCLUDED** from the
@@ -70,6 +72,7 @@ A parcel manifest commits to a Merkle root over the full set of `(relPath, conte
 | `vh parcel build <dir> --out <p>` | a tamper-evident parcel manifest (Merkle root + per-file `{relPath,contentHash,leaf}` + optional untrusted `parcel` block) | offline, no key, no network |
 | `vh parcel verify <dir> --manifest <p>` | re-derives the root from a fresh copy on disk + a precise per-file `ADDED/REMOVED/CHANGED` diff | offline, no key, no network; **CI-gateable exit 0 MATCH / 3 MISMATCH** |
 | `vh parcel attest <manifest> [--out <p>] [--json]` | the deterministic, byte-canonical **UNSIGNED** attestation payload a sender signs (root + fileCount + `manifestDigest`; `signed:false`) | offline, no key, no network |
+| `vh parcel sign <manifest> --key-env <VAR>\|--key-file <p> [--out <p>] [--json]` | signs the UNSIGNED attestation with a key YOU provisioned → the signed container `verify-attest` accepts. Read-only of YOUR key; never generates/persists/logs a key | offline, **caller-supplied key**, no network |
 | `vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` | recovers the signer, optionally pins the expected sender (`--signer`) and binds the signature to your parcel (`--manifest`) | **offline, no key, no network, CI-gateable exit 0 ACCEPTED / 3 REJECTED** |
 
 The signed container uses ProofParcel's own `kind: "verifyhash.parcel-attestation-signed"`, distinct
@@ -89,9 +92,31 @@ passes:
   parcel manifest must be byte-identical to the signed payload — proving the signature vouches for the
   parcel **you** hold.
 
+### `vh parcel sign` — the one-command signing leg (reads a key YOU provisioned)
+
+`vh parcel sign <manifest> --key-env <VAR> | --key-file <path> [--out <p>] [--json]` is the **one command
+that turns "the sender has a key" into a signed container the recipient can verify.** It builds the UNSIGNED
+payload exactly as `vh parcel attest` does (no re-implementation), constructs an in-process ethers `Wallet`
+from the key YOU supply, signs the canonical bytes (`eip191-personal-sign`), and **wraps WITHOUT editing**
+the payload into the `verifyhash.parcel-attestation-signed` container the existing `vh parcel verify-attest`
+accepts.
+
+It performs a **read-only of a key YOU provisioned outside this tool**; it **never generates, never
+persists, and never logs (or echoes) a key**, and it is **OFFLINE — no provider, no network**. The key is
+read from EXACTLY ONE of `--key-env <VAR>` or `--key-file <path>`, used in-process ONLY to sign, then
+discarded. **Neither source, both sources, a missing env var, an unreadable file, or a malformed/all-zero
+key HARD-ERRORS before any signing**, naming only the SOURCE — **never the key material**. On success the
+output prints ONLY the PUBLIC signer address, the output path, and the scheme.
+
+> **Trust posture (inherited verbatim — a signature is NOT a timestamp).** This is the SHARED in-band
+> `SIGN_TRUST_NOTE` (`cli/parcel.js`), the same wording the `sign` command prints and the **SAME honest
+> posture as DataLedger**, so the caveat can never drift from the code:
+>
+> > This signs the parcel IDENTITY (root, fileCount, manifestDigest) with the key YOU supplied. A self-managed key attests "the signer says so" — it is NOT an independent, trusted TIMESTAMP: "delivered/unaltered since a date T" still needs the human-owned signing/timestamp trust-root (needs-human, P-3). The key must be one YOU provisioned OUTSIDE this tool.
+
 ---
 
-## Worked example: sender builds a parcel → [signs, P-3] → recipient verify-attests
+## Worked example: sender builds a parcel → signs (P-3, ONE command) → recipient verify-attests
 
 ```sh
 # --- SENDER ---
@@ -104,10 +129,14 @@ vh parcel build ./delivery --out parcel.json \
 vh parcel attest parcel.json --out attest.json
 #    attest.json carries `signed:false` — it is NOT yet a vouch and NOT a timestamp.
 
-# 3. [HUMAN step, STRATEGY.md P-3] The sender signs the EXACT bytes of attest.json with a real key
-#    (eip191-personal-sign) and wraps them into a signed container `signed.json`. The loop NEVER holds
-#    a key — it ships only the FORMAT + the OFFLINE verifier. (In tests this signing step uses an
-#    EPHEMERAL throwaway `Wallet.createRandom()` key — test-only, never a real key.)
+# 3. [HUMAN step, STRATEGY.md P-3 — PROVISION ONLY] The sender PROVISIONS a real key OUTSIDE the loop, then
+#    SIGNs with ONE command: `vh parcel sign` reads that key, signs the canonical attest bytes
+#    (eip191-personal-sign), and wraps them into a signed container WITHOUT editing the payload (it stays
+#    signed:false). The loop NEVER generates/persists/logs the key. (In tests this uses an EPHEMERAL
+#    throwaway `Wallet.createRandom()` key — test-only, never a real key.)
+vh parcel sign parcel.json --key-env PARCEL_SIGNING_KEY --out signed.json
+#    signed by 0x<sender's public address>     scheme: eip191-personal-sign
+#    signed parcel attestation written: /abs/path/signed.json
 
 # --- RECIPIENT (offline, no key, no network) ---
 # 4. Verify the signed container binds the parcel actually received, by the expected sender.

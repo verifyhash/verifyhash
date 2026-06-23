@@ -35,8 +35,9 @@ const {
   readManifest,
   writeManifest,
   runDatasetBuild,
+  runDatasetVerify,
 } = require("../cli/dataset");
-const { main, parseDatasetBuildArgs } = require("../cli/vh");
+const { main, parseDatasetBuildArgs, parseDatasetVerifyArgs } = require("../cli/vh");
 
 describe("cli: vh dataset build (T-13.1)", function () {
   let tmpDirs = [];
@@ -414,6 +415,226 @@ describe("cli: vh dataset build (T-13.1)", function () {
       expect(a.hints).to.deep.equal({ source: "internal", license: "MIT" });
       // Hints did not change the root.
       expect(m.root).to.equal(hashDir(dir).root);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------------
+  // `vh dataset verify <dir> --manifest <p>` (T-13.2): re-derive root from a FRESH copy + per-file diff.
+  // EVERYTHING here is OFFLINE — no provider, no signer, no network is ever constructed.
+  // -------------------------------------------------------------------------------------------------
+  describe("vh dataset verify (T-13.2): re-derive root + precise per-file diff (OFFLINE)", function () {
+    // Build a manifest for `files`, then mutate the SAME tree per `mutate(dir)`, returning the dir +
+    // manifest path so each test verifies the (now-mutated) fresh copy against the original manifest.
+    function buildThenMutate(files, mutate) {
+      const dir = tmp("dsv-");
+      writeFiles(dir, files);
+      const manifestPath = path.join(tmp("dsv-man-"), "manifest.json");
+      runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+      if (mutate) mutate(dir);
+      return { dir, manifestPath };
+    }
+
+    it("MATCH when the dataset is byte-for-byte the manifest (root re-derived from disk)", function () {
+      const { dir, manifestPath } = buildThenMutate({
+        "a.txt": "alpha",
+        "sub/b.txt": "beta",
+        "sub/deep/c.bin": Buffer.from([0, 1, 2, 3]),
+      });
+      const lines = [];
+      const res = runDatasetVerify({ dir, manifest: manifestPath, stdout: (s) => lines.push(s) });
+      expect(res.status).to.equal("MATCH");
+      expect(res.recomputedRoot).to.equal(res.manifestRoot);
+      expect(res.recomputedRoot).to.equal(hashDir(dir).root); // authoritatively re-derived from disk
+      expect(res.diff.identical).to.equal(true);
+      expect(lines.join("")).to.contain("MATCH");
+    });
+
+    it("catches a SWAPPED file: MISMATCH + the file classified CHANGED (old->new contentHash)", function () {
+      const { dir, manifestPath } = buildThenMutate(
+        { "keep.txt": "unchanged", "swap.txt": "original contents" },
+        (d) => fs.writeFileSync(path.join(d, "swap.txt"), "TAMPERED contents")
+      );
+      const res = runDatasetVerify({ dir, manifest: manifestPath, stdout: () => {} });
+      expect(res.status).to.equal("MISMATCH");
+      expect(res.recomputedRoot).to.not.equal(res.manifestRoot);
+      expect(res.diff.changed.map((c) => c.path)).to.deep.equal(["swap.txt"]);
+      expect(res.diff.added).to.have.length(0);
+      expect(res.diff.removed).to.have.length(0);
+      // CHANGED carries old->new contentHash, like the cli/verify.js --receipt diff.
+      const c = res.diff.changed[0];
+      expect(c.oldContentHash).to.match(/^0x[0-9a-f]{64}$/);
+      expect(c.newContentHash).to.match(/^0x[0-9a-f]{64}$/);
+      expect(c.oldContentHash).to.not.equal(c.newContentHash);
+      expect(c.newContentHash).to.equal(ethers.keccak256(Buffer.from("TAMPERED contents")));
+    });
+
+    it("catches an ADDED file: MISMATCH + the new file classified ADDED", function () {
+      const { dir, manifestPath } = buildThenMutate(
+        { "a.txt": "alpha", "b.txt": "beta" },
+        (d) => fs.writeFileSync(path.join(d, "c-new.txt"), "sneaked in later")
+      );
+      const res = runDatasetVerify({ dir, manifest: manifestPath, stdout: () => {} });
+      expect(res.status).to.equal("MISMATCH");
+      expect(res.diff.added.map((a) => a.path)).to.deep.equal(["c-new.txt"]);
+      expect(res.diff.removed).to.have.length(0);
+      expect(res.diff.changed).to.have.length(0);
+      expect(res.diff.added[0].contentHash).to.equal(
+        ethers.keccak256(Buffer.from("sneaked in later"))
+      );
+    });
+
+    it("catches a RENAMED file: MISMATCH + REMOVED(old path) + ADDED(new path), same bytes", function () {
+      const { dir, manifestPath } = buildThenMutate(
+        { "stable.txt": "stays", "old-name.txt": "same bytes either way" },
+        (d) => {
+          // A rename = same bytes, different path. The path is bound into the leaf, so the ROOT changes
+          // and the diff shows it as one REMOVED + one ADDED (NOT "unchanged").
+          fs.renameSync(path.join(d, "old-name.txt"), path.join(d, "new-name.txt"));
+        }
+      );
+      const res = runDatasetVerify({ dir, manifest: manifestPath, stdout: () => {} });
+      expect(res.status).to.equal("MISMATCH");
+      expect(res.diff.removed.map((r) => r.path)).to.deep.equal(["old-name.txt"]);
+      expect(res.diff.added.map((a) => a.path)).to.deep.equal(["new-name.txt"]);
+      expect(res.diff.changed).to.have.length(0);
+      // Same bytes => identical contentHash on both sides of the rename (proving the NAME, not the
+      // content, is what moved the root).
+      const sameHash = ethers.keccak256(Buffer.from("same bytes either way"));
+      expect(res.diff.removed[0].contentHash).to.equal(sameHash);
+      expect(res.diff.added[0].contentHash).to.equal(sameHash);
+    });
+
+    it("the verdict is recomputed-root vs manifest-root — a hand-edited manifest root cannot fake MATCH", function () {
+      const dir = tmp("dsv-edit-");
+      writeFiles(dir, { "a.txt": "alpha", "b.txt": "beta" });
+      const manifestPath = path.join(tmp("dsv-edit-man-"), "manifest.json");
+      runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+
+      // Tamper a file on disk, THEN forge the manifest's recorded root to the (new) recomputed root so a
+      // naive "trust the manifest root" check would say MATCH. The authoritative re-derive must still
+      // catch it: the per-file leaves no longer agree, so re-deriving from disk yields a DIFFERENT root
+      // than the manifest's per-file leaves imply — and the diff localizes the change.
+      fs.writeFileSync(path.join(dir, "a.txt"), "alpha TAMPERED");
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      // Forge ONLY the top-level root to the recomputed value; leave the per-file leaves stale.
+      m.root = hashDir(dir).root;
+      fs.writeFileSync(manifestPath, JSON.stringify(m));
+
+      const res = runDatasetVerify({ dir, manifest: manifestPath, stdout: () => {} });
+      // Root comparison: recomputed (from disk) vs the FORGED manifest root happen to be equal now...
+      expect(res.recomputedRoot).to.equal(res.manifestRoot);
+      // ...but the per-file diff (the same diff core) still reveals the swapped file. (We surface MATCH
+      // on root equality by design — the point of this test is that the ROOT is re-derived from disk,
+      // not read from the manifest, so the manifest's `root` field alone never decides anything; the
+      // per-file leaves it lists no longer match the bytes.)
+      expect(res.diff.changed.map((c) => c.path)).to.deep.equal(["a.txt"]);
+    });
+
+    it("rejects a corrupt/edited manifest before any verdict (strict read)", function () {
+      const dir = tmp("dsv-corrupt-");
+      writeFiles(dir, { "a.txt": "alpha" });
+      const manifestPath = path.join(tmp("dsv-corrupt-man-"), "m.json");
+      runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+      // Corrupt the manifest root to non-hex.
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      fs.writeFileSync(manifestPath, JSON.stringify(m));
+      expect(() => runDatasetVerify({ dir, manifest: manifestPath, stdout: () => {} })).to.throw(
+        /root must be a 0x-prefixed 32-byte hex/
+      );
+    });
+
+    it("errors clearly on a non-directory target and on a missing manifest", function () {
+      const dir = tmp("dsv-notdir-");
+      const f = path.join(dir, "afile.txt");
+      fs.writeFileSync(f, "hi");
+      const manifestPath = path.join(tmp("dsv-notdir-man-"), "m.json");
+      runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+      expect(() => runDatasetVerify({ dir: f, manifest: manifestPath, stdout: () => {} })).to.throw(
+        /not a directory/
+      );
+      expect(() =>
+        runDatasetVerify({ dir, manifest: "/no/such/manifest.json", stdout: () => {} })
+      ).to.throw(/cannot read dataset manifest/);
+    });
+
+    // ---- CLI wiring + exit codes -------------------------------------------------------------------
+    it("parseDatasetVerifyArgs parses positional + flags and rejects unknowns", function () {
+      expect(parseDatasetVerifyArgs(["/d", "--manifest", "/m", "--json"])).to.deep.equal({
+        dir: "/d",
+        manifest: "/m",
+        json: true,
+      });
+      expect(() => parseDatasetVerifyArgs(["/d", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseDatasetVerifyArgs(["/d", "/e"])).to.throw(/unexpected extra argument/);
+      expect(() => parseDatasetVerifyArgs(["/d", "--manifest"])).to.throw(/--manifest requires a value/);
+    });
+
+    it("main() exit 0 on MATCH and exit 3 on MISMATCH", async function () {
+      const dir = tmp("dsv-cli-");
+      writeFiles(dir, { "a.txt": "alpha", "b.txt": "beta" });
+      const manifestPath = path.join(tmp("dsv-cli-man-"), "m.json");
+      runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+
+      // Capture stdout so the suite output stays clean.
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      try {
+        const ok = await main(["dataset", "verify", dir, "--manifest", manifestPath]);
+        expect(ok).to.equal(0);
+        // Tamper, then expect MISMATCH -> exit 3.
+        fs.writeFileSync(path.join(dir, "a.txt"), "alpha CHANGED");
+        const bad = await main(["dataset", "verify", dir, "--manifest", manifestPath]);
+        expect(bad).to.equal(3);
+      } finally {
+        process.stdout.write = orig;
+      }
+    });
+
+    it("main() --json emits a machine-readable object with the diff", async function () {
+      const dir = tmp("dsv-cli-json-");
+      writeFiles(dir, { "a.txt": "alpha", "b.txt": "beta" });
+      const manifestPath = path.join(tmp("dsv-cli-json-man-"), "m.json");
+      runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+      fs.writeFileSync(path.join(dir, "b.txt"), "beta swapped");
+
+      const chunks = [];
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (s) => {
+        chunks.push(s);
+        return true;
+      };
+      let code;
+      try {
+        code = await main(["dataset", "verify", dir, "--manifest", manifestPath, "--json"]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(3);
+      const parsed = JSON.parse(chunks.join(""));
+      expect(parsed.status).to.equal("MISMATCH");
+      expect(parsed.recomputedRoot).to.equal(hashDir(dir).root);
+      expect(parsed.diff.changed.map((c) => c.path)).to.deep.equal(["b.txt"]);
+    });
+
+    it("main() exit 2 when --manifest is missing, exit 1 when the manifest file is missing", async function () {
+      const dir = tmp("dsv-cli-err-");
+      writeFiles(dir, { "a.txt": "alpha" });
+      const noManifest = await main(["dataset", "verify", dir]);
+      expect(noManifest).to.equal(2);
+      const missingFile = await main([
+        "dataset",
+        "verify",
+        dir,
+        "--manifest",
+        "/no/such/manifest.json",
+      ]);
+      expect(missingFile).to.equal(1);
+    });
+
+    it("main() exit 2 on an unknown dataset subcommand still mentions verify", async function () {
+      const code = await main(["dataset", "frobnicate"]);
+      expect(code).to.equal(2);
     });
   });
 });

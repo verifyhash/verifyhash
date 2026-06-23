@@ -22,7 +22,7 @@ const { runList } = require("./list");
 const { runShow } = require("./show");
 const { runLineage } = require("./lineage");
 const { runReputation } = require("./reputation");
-const { runDatasetBuild } = require("./dataset");
+const { runDatasetBuild, runDatasetVerify } = require("./dataset");
 
 function usage() {
   return [
@@ -43,6 +43,7 @@ function usage() {
     "  vh lineage <0xhash> [opts] walk the parent chain UP from a record to its lineage root (read-only)",
     "  vh reputation <addr> [opts] verifiable, on-chain-derived contribution score for one address (read-only)",
     "  vh dataset build <dir> --out <p>  tamper-evident dataset manifest (Merkle root + per-file leaves)",
+    "  vh dataset verify <dir> --manifest <p>  re-derive the root + per-file diff vs a manifest (OFFLINE)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -202,6 +203,15 @@ function usage() {
     "  Streams each file (a multi-GB dataset is hashed without loading all content into memory). The root",
     "  reuses the SAME path-bound Merkle convention as `vh hash <dir>` and the on-chain verifyLeaf — the",
     "  root commits to file NAMES and bytes, so any edit/rename/add/remove changes it.",
+    "",
+    "dataset verify options (OFFLINE re-derive + per-file diff; NO key, NO network):",
+    "  <dir>                      the dataset directory to RE-DERIVE the root from (a fresh copy on disk)",
+    "  --manifest <path>          REQUIRED: a manifest written by `vh dataset build` (an UNTRUSTED hint).",
+    "  --json                     emit a machine-readable { status, recomputedRoot, manifestRoot, ... }",
+    "  The AUTHORITATIVE verdict is recomputed-root vs manifest-root — recomputed from the bytes on disk,",
+    "  so a hand-edited manifest root cannot fake a MATCH. Prints a precise per-file ADDED/REMOVED/CHANGED",
+    "  (old->new contentHash) diff (the SAME diff core as `vh verify --receipt`) to localize WHICH file",
+    "  diverged; a rename shows as REMOVED+ADDED (the root commits to file names). Exit 0 MATCH, 3 MISMATCH.",
     "",
   ].join("\n");
 }
@@ -1492,12 +1502,41 @@ function parseDatasetBuildArgs(argv) {
   return opts;
 }
 
+/**
+ * Parse `dataset verify` argv into { dir, manifest, json }. Takes exactly one positional <dir> and a
+ * REQUIRED --manifest. Throws on unknown/incomplete flags or a duplicate/missing positional so a typo
+ * never silently verifies the wrong tree or against a surprise manifest (parser parity with the others).
+ */
+function parseDatasetVerifyArgs(argv) {
+  const opts = { dir: undefined, manifest: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--manifest":
+        opts.manifest = argv[++i];
+        if (opts.manifest === undefined) throw new Error("--manifest requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.dir !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.dir = a;
+    }
+  }
+  return opts;
+}
+
 function cmdDataset(argv) {
   const [sub, ...rest] = argv;
+  if (sub === "verify") {
+    return cmdDatasetVerify(rest);
+  }
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build)\n\n` + usage()
+        `(expected: build | verify)\n\n` + usage()
     );
     return 2;
   }
@@ -1546,6 +1585,41 @@ function cmdDataset(argv) {
     return 1;
   }
   return 0;
+}
+
+/**
+ * `vh dataset verify <dir> --manifest <p>` — re-derive the dataset root from a FRESH copy on disk and
+ * compare it to the manifest's (UNTRUSTED) recorded root, plus a precise per-file diff. OFFLINE: no
+ * provider, no key, no network. Exit 0 on MATCH, 3 on MISMATCH (so scripts/CI can branch like
+ * `vh verify`), 2 on a usage error, 1 on a runtime error (missing/corrupt manifest, bad dir).
+ */
+function cmdDatasetVerify(argv) {
+  let opts;
+  try {
+    opts = parseDatasetVerifyArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.dir) {
+    process.stderr.write("error: `vh dataset verify` requires a <dir>\n\n" + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset verify` requires --manifest <path>\n\n" + usage());
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runDatasetVerify({ dir: opts.dir, manifest: opts.manifest, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on a tamper/MISMATCH so scripts and CI can branch on it (mirrors `vh verify`).
+  return result.status === "MATCH" ? 0 : 3;
 }
 
 async function main(argv) {
@@ -1608,7 +1682,9 @@ module.exports = {
   cmdLineage,
   cmdReputation,
   cmdDataset,
+  cmdDatasetVerify,
   parseDatasetBuildArgs,
+  parseDatasetVerifyArgs,
   parseHashArgs,
   parseAnchorArgs,
   parseClaimArgs,

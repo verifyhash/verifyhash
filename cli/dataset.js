@@ -37,6 +37,7 @@
 const fs = require("fs");
 const path = require("path");
 const { hashDirStream, pathLeaf } = require("./hash");
+const { diffManifest } = require("./receipt");
 
 // On-disk schema discriminators. A dataset manifest carries its OWN kind + version (distinct from the
 // receipt kinds in cli/receipt.js and the proof-artifact kind in cli/proof.js) so a random JSON file,
@@ -309,14 +310,158 @@ function runDatasetBuild(opts) {
   return { root: manifest.root, fileCount: manifest.fileCount, out: outAbs };
 }
 
+// Possible outcomes of a `vh dataset verify` run. The AUTHORITATIVE verdict is recomputed-root vs
+// manifest-root — never the per-file diff (which only LOCALIZES which file moved).
+const VERIFY_STATUS = Object.freeze({
+  MATCH: "MATCH", // root re-derived from the FRESH tree equals the manifest's recorded root
+  MISMATCH: "MISMATCH", // it does NOT — a file was added/removed/changed/renamed since the manifest
+});
+
+/**
+ * Re-derive the dataset root from a FRESH copy of the dataset at `dir` and compare it to the
+ * (UNTRUSTED) manifest's recorded root, then localize any divergence to specific files.
+ *
+ * TRUST POSTURE (docs/TRUST-BOUNDARIES.md). The manifest is an UNTRUSTED hint: the AUTHORITATIVE
+ * MATCH/MISMATCH is `recomputed-root === manifest-root`, recomputed here from the actual bytes on
+ * disk via the SAME path-bound Merkle convention `vh hash <dir>` and the on-chain verifyLeaf use.
+ * The per-file ADDED/REMOVED/CHANGED diff is a CONVENIENCE that says WHICH file diverged; it never
+ * decides the verdict (so even a manifest with a hand-edited `root` cannot fake a MATCH — the root
+ * is recomputed, not read from the manifest). This is fully OFFLINE: no provider, no key, no network.
+ *
+ * The diff reuses the SAME receipt-manifest diff core (`cli/receipt.js › diffManifest`, the function
+ * `cli/verify.js` uses for its `--receipt` directory diff): a `CHANGED` entry carries old→new
+ * `contentHash`, exactly like the verify path. A rename surfaces as one REMOVED (old path) + one
+ * ADDED (new path), because the path is bound into the leaf — the root commits to file NAMES too.
+ *
+ * @param {object} opts
+ * @param {string} opts.dir       dataset directory to re-derive the root from (the FRESH copy)
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build` (UNTRUSTED hint)
+ * @param {boolean}[opts.json]    emit a machine-readable JSON object instead of the human block
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {{
+ *   status: "MATCH"|"MISMATCH",
+ *   recomputedRoot: string,
+ *   manifestRoot: string,
+ *   fileCount: number,
+ *   diff: { added: any[], removed: any[], changed: any[], unchanged: any[], identical: boolean }
+ * }}
+ */
+function runDatasetVerify(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetVerify requires options");
+  const { dir, manifest: manifestPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!dir) throw new Error("runDatasetVerify requires a dataset <dir>");
+  if (!manifestPath) throw new Error("runDatasetVerify requires a --manifest <p> path");
+
+  // Resolve so we read EXACTLY where the caller asked regardless of cwd. statSync errors clearly
+  // (ENOENT / not a dir) before we walk anything — and BEFORE we trust the manifest at all.
+  const dirAbs = path.resolve(dir);
+  const stat = fs.statSync(dirAbs);
+  if (!stat.isDirectory()) {
+    throw new Error(`dataset target is not a directory: ${dir}`);
+  }
+
+  // The manifest is an untrusted hint, but it must be STRUCTURALLY sound or we cannot diff against it
+  // (readManifest rejects a corrupt/edited manifest rather than half-accepting it).
+  const manifest = readManifest(manifestPath);
+
+  // Re-derive the root + per-file leaves from the FRESH tree (streamed; never loads all content).
+  const built = hashDirStream(dirAbs);
+  const recomputedRoot = built.root;
+  const manifestRoot = manifest.root;
+
+  // AUTHORITATIVE verdict: recomputed root vs manifest root. Case-insensitive hex compare (both are
+  // 0x-prefixed lowercase here, but never let a case difference flip the verdict).
+  const status =
+    recomputedRoot.toLowerCase() === manifestRoot.toLowerCase()
+      ? VERIFY_STATUS.MATCH
+      : VERIFY_STATUS.MISMATCH;
+
+  // Localize WHICH file diverged using the SAME diff core cli/verify.js uses for its --receipt diff.
+  // The manifest entries are keyed by `relPath`; diffManifest expects `path`, so map across (the leaf
+  // is what diffManifest compares, so a swapped file shows as CHANGED and a rename as REMOVED+ADDED).
+  const recordedManifest = manifest.files.map((f) => ({
+    path: f.relPath,
+    contentHash: f.contentHash,
+    leaf: f.leaf,
+  }));
+  const diff = diffManifest(recordedManifest, built.leaves);
+
+  if (opts.json) {
+    write(
+      JSON.stringify({
+        status,
+        recomputedRoot,
+        manifestRoot,
+        fileCount: built.leaves.length,
+        diff,
+      }) + "\n"
+    );
+  } else {
+    for (const line of formatDatasetVerify({ status, recomputedRoot, manifestRoot, diff })) {
+      write(line + "\n");
+    }
+  }
+  return { status, recomputedRoot, manifestRoot, fileCount: built.leaves.length, diff };
+}
+
+/**
+ * Render a dataset-verify result as the human-readable block the CLI prints. Leads with the
+ * authoritative root comparison, then the per-file diff (labeled as localization, never the verdict).
+ * @param {{status:string,recomputedRoot:string,manifestRoot:string,diff:object}} r
+ * @returns {string[]} lines
+ */
+function formatDatasetVerify(r) {
+  const lines = [
+    `  dataset verify: ${r.status}`,
+    `  recomputed root: ${r.recomputedRoot}  (re-derived from the files on disk — AUTHORITATIVE)`,
+    `  manifest root:   ${r.manifestRoot}  (untrusted hint)`,
+  ];
+  if (r.status === VERIFY_STATUS.MATCH) {
+    lines.push(
+      "  The dataset is byte-for-byte (and name-for-name) what the manifest committed to."
+    );
+  } else {
+    lines.push(
+      "  The dataset does NOT match the manifest: a file was added, removed, changed, or renamed",
+      "  since the manifest was built (the root commits to file NAMES and bytes)."
+    );
+  }
+  const d = r.diff;
+  lines.push("", "  --- per-file diff (localization; the root comparison above is the verdict) ---");
+  if (d.identical) {
+    lines.push("  files: IDENTICAL — every file matches the manifest (no ADDED/REMOVED/CHANGED).");
+    return lines;
+  }
+  lines.push(
+    `  files: ${d.changed.length} CHANGED, ${d.added.length} ADDED, ${d.removed.length} REMOVED` +
+      ` (${d.unchanged.length} unchanged)`
+  );
+  for (const c of d.changed) {
+    lines.push(`    CHANGED  ${c.path}`);
+    lines.push(`               old: ${c.oldContentHash}`);
+    lines.push(`               new: ${c.newContentHash}`);
+  }
+  for (const a of d.added) {
+    lines.push(`    ADDED    ${a.path}  (${a.contentHash})   present now, not in the manifest`);
+  }
+  for (const rm of d.removed) {
+    lines.push(`    REMOVED  ${rm.path}  (${rm.contentHash})   in the manifest, gone now`);
+  }
+  return lines;
+}
+
 module.exports = {
   MANIFEST_KIND,
   MANIFEST_SCHEMA_VERSION,
   SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
   TRUST_NOTE,
+  VERIFY_STATUS,
   buildManifest,
   validateManifest,
   readManifest,
   writeManifest,
   runDatasetBuild,
+  runDatasetVerify,
+  formatDatasetVerify,
 };

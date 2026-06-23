@@ -3,6 +3,20 @@ pragma solidity 0.8.24;
 
 /// @title  ContributionRegistry
 /// @notice Tamper-evident, permissionless, immutable registry of code-contribution hashes.
+/// @notice TRUST BOUNDARIES (read before relying on any field):
+///         - `contributor` is the address that FIRST anchored the hash — the first broadcaster,
+///           NOT a proven author. Anyone who learns a `contentHash` (e.g. from the mempool) can
+///           anchor it first. Do not treat `contributor` as authorship without an out-of-band proof.
+///         - `uri` is an UNTRUSTED, unauthenticated hint. The contract never fetches, validates,
+///           or derives it. To trust a record, a consumer must independently fetch the content,
+///           RE-DERIVE its hash with the same scheme (`vh hash`), and check that the recomputed
+///           hash equals the anchored `contentHash`. A matching `contentHash` is the only proof of
+///           integrity; the `uri` string itself proves nothing and may point anywhere (or nowhere).
+///         - `timestamp`/`blockNumber` prove ON-CHAIN ORDERING and an UPPER BOUND on existence time
+///           ("this content existed no later than this block"). They do NOT prove authorship time,
+///           when the content was actually created, or a lower bound — and `block.timestamp` is set
+///           by the block proposer (validator-influenced, ~seconds of slack), so it is not a
+///           trustworthy wall clock. Use it for ordering and "existed by N", not as precise time.
 /// @dev    Design choices that the security audit should hold us to:
 ///         - No owner, no admin, no pause, no upgrade path. There is no privileged key to
 ///           compromise and nothing to centralize. This is deliberate for a "decentralized
@@ -13,11 +27,22 @@ pragma solidity 0.8.24;
 ///         - Enumeration is index-based (mapping, not array) so no function ever loops over an
 ///           unbounded set — there is no griefable gas-DoS surface.
 contract ContributionRegistry {
+    /// @dev Immutable record written by `anchor`. See the contract-level "TRUST BOUNDARIES" notice
+    ///      for what each field does and does NOT prove.
     struct Record {
-        address contributor; // who anchored it (msg.sender at anchor time)
-        uint64 timestamp; // block.timestamp at anchor time
-        uint64 blockNumber; // block.number at anchor time
-        string uri; // optional off-chain pointer: IPFS CID, commit URL, etc.
+        // The first address to anchor this hash (first broadcaster). NOT a proven author: anyone
+        // who sees the contentHash can anchor it first. Treat as "first anchorer", not authorship.
+        address contributor;
+        // block.timestamp at anchor time. Proves an upper bound on existence time ("existed by
+        // here") + ordering relative to other records — NOT authorship time, and validator-set
+        // within consensus slack, so not a trustworthy wall clock.
+        uint64 timestamp;
+        // block.number at anchor time. Proves on-chain ordering / "anchored no later than this
+        // block". Monotonic and harder to game than timestamp; still not an authorship time.
+        uint64 blockNumber;
+        // UNTRUSTED off-chain pointer hint (IPFS CID, commit URL, etc.). May be empty. The contract
+        // never fetches/validates it; consumers must re-fetch + re-hash and compare to contentHash.
+        string uri;
     }
 
     /// @dev contentHash => immutable Record. A zero `contributor` means "not anchored".
@@ -28,6 +53,13 @@ contract ContributionRegistry {
     /// @notice Total number of distinct content hashes anchored.
     uint256 public total;
 
+    /// @notice Emitted once per successful anchor. Mirrors the stored Record; same trust caveats.
+    /// @param  contentHash the 32-byte digest that was anchored.
+    /// @param  contributor the FIRST anchorer (msg.sender), NOT a proven author.
+    /// @param  index       insertion index assigned to this hash.
+    /// @param  timestamp   block.timestamp at anchor time: upper bound on existence time + ordering,
+    ///                     NOT authorship time and validator-influenced (not a trustworthy clock).
+    /// @param  uri         UNTRUSTED off-chain pointer hint; never validated. Re-fetch + re-hash.
     event Anchored(
         bytes32 indexed contentHash,
         address indexed contributor,
@@ -42,8 +74,15 @@ contract ContributionRegistry {
     error IndexOutOfRange(uint256 index, uint256 total);
 
     /// @notice Anchor a contribution's content hash on-chain. First writer wins; immutable after.
+    /// @dev    `uri` is stored verbatim and is an UNTRUSTED hint: it is never fetched, validated, or
+    ///         hashed by the contract, and the recorded `contributor`/`timestamp` describe the
+    ///         anchoring transaction, not authorship of the content. See the contract-level
+    ///         "TRUST BOUNDARIES" notice. The only integrity guarantee is `contentHash` itself:
+    ///         consumers re-derive and re-hash the content and compare.
     /// @param  contentHash keccak256 (or any 32-byte digest) of the contribution's content.
-    /// @param  uri optional, human/off-chain pointer to the content. May be empty.
+    /// @param  uri optional, UNTRUSTED off-chain pointer hint (IPFS CID, commit URL, etc.). May be
+    ///         empty. Stored as-is; proves nothing on its own. To trust a record, fetch the content
+    ///         this uri claims to point at, re-derive its hash, and require it to equal contentHash.
     /// @return index the insertion index assigned to this hash.
     function anchor(bytes32 contentHash, string calldata uri) external returns (uint256 index) {
         if (contentHash == bytes32(0)) revert ZeroHash();
@@ -75,6 +114,11 @@ contract ContributionRegistry {
     }
 
     /// @notice Fetch the immutable record for `contentHash`. Reverts if it was never anchored.
+    /// @dev    The returned `uri` is an UNTRUSTED hint and `timestamp`/`blockNumber` are an upper
+    ///         bound on existence time + on-chain ordering, NOT authorship time (see "TRUST
+    ///         BOUNDARIES"). The record only attests that the EXACT `contentHash` you queried was
+    ///         anchored; to bind it to real content, the caller must re-derive and re-hash that
+    ///         content and confirm it equals `contentHash`.
     function getRecord(bytes32 contentHash) external view returns (Record memory) {
         Record memory r = _records[contentHash];
         if (r.contributor == address(0)) revert NotAnchored(contentHash);

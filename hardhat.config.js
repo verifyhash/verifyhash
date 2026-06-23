@@ -10,6 +10,15 @@ module.exports = {
     version: "0.8.24",
     settings: {
       optimizer: { enabled: true, runs: 200 },
+      // Emit compiled NatSpec (devdoc/userdoc) into the build-info so tests can assert that the
+      // documented trust boundaries (uri = untrusted hint; timestamp/blockNumber = ordering + an
+      // upper bound on existence time, NOT authorship time) are present in the *compiled* contract
+      // documentation, not merely in source comments. See test/TrustBoundaries.test.js (T-0.4).
+      outputSelection: {
+        "*": {
+          "*": ["devdoc", "userdoc"],
+        },
+      },
     },
   },
   networks: {

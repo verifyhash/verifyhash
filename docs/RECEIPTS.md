@@ -74,7 +74,7 @@ A claim receipt carries the **secret material** that lets a separate process fin
 | `commitTxHash` | `0x`+64 hex (32 bytes) | optional | informational | The `commit()` transaction hash. |
 | `commitBlockNumber` | non-negative integer | optional | operational | Block the commit mined in; used to compute when the reveal window matures. |
 | `minRevealDelay` | non-negative integer | optional | operational | `MIN_REVEAL_DELAY` read from the contract at commit time; how many blocks must pass before `reveal()`. |
-| `parent` | `0x`+64 hex (32 bytes) | optional (v4+) | **UNTRUSTED hint** | The lineage edge (B-10.1): an **already-anchored** predecessor's `contentHash`, recorded by `vh commit --parent`. Present only for a revision; **omitted entirely** for a lineage root (the all-zero hash is rejected, never recorded). On resume, `vh reveal` routes to `revealWithParent(contentHash, salt, uri, parent)` and records the edge; the **authoritative** edge is what that on-chain call records, not this field. It is a *claim* of a predecessor — never proof of content ancestry or any transfer of the parent's authorship. Rejected on an anchor receipt, on a receipt below v4, when malformed/zero, or when equal to `contentHash` (`SelfParent`). |
+| `parent` | `0x`+64 hex (32 bytes) | optional (v4+) | **UNTRUSTED hint** | The lineage edge (B-10.1): an **already-anchored** predecessor's `contentHash`, recorded by `vh commit --parent`. Present only for a revision; **omitted entirely** for a lineage root (the all-zero hash is rejected, never recorded). On resume, `vh reveal` routes to `revealWithParent(contentHash, salt, uri, parent)` and records the edge; the **authoritative** edge is what that on-chain call records, not this field. It is a *claim* of a predecessor — never proof of content ancestry or any transfer of the parent's authorship. **Back-compat is total:** this field is purely additive, so a v1/v2/v3 receipt simply has no `parent` and is read **unchanged** (and reveals via the legacy `reveal`, as a lineage root). Rejected on an anchor receipt, on a receipt below v4, when malformed/zero, or when equal to `contentHash` (`SelfParent`). |
 
 ### Anchor receipt — additional fields (`kind: "verifyhash.anchor-receipt"`)
 
@@ -181,8 +181,20 @@ vh reveal --receipt <that exact path>   # resumes from the receipt and reveals
 3. **`vh reveal --receipt <p>`** (`runReveal`) `readReceipt`s the file (strict — a corrupt receipt throws
    here rather than producing a wrong reveal), checks the signer **is** the receipt's `committer` (else
    the reveal would hit `NoSuchCommitment`; it fails fast with a clear message instead), waits out the
-   window, then sends `reveal(contentHash, salt, uri)`. This needs **no** information that was not durably
-   written at commit time, so it works from a completely fresh process — even after a reboot.
+   window, then sends `reveal(contentHash, salt, uri)` — **or, if the receipt carries a `parent` (v4),
+   `revealWithParent(contentHash, salt, uri, parent)`** so the resumed reveal records the lineage edge
+   (B-10.1). This needs **no** information that was not durably written at commit time, so it works from a
+   completely fresh process — even after a reboot.
+
+**Resumable lineage edge (`vh commit --parent`, schema v4).** `vh commit --parent <hash>` validates the
+parent's *shape* locally and persists it into the claim receipt (the additive v4 `parent` field above);
+`commit()` itself never carries a parent (it encodes only the opaque commitment). The edge is therefore
+checked **on-chain at reveal time, not at commit time**: a separate `vh reveal --receipt <p>` reads
+`parent` back and routes to `revealWithParent`. If the parent is stale (never anchored, or anchored only
+after the commit) the **reveal** reverts `UnknownParent` while the **commit stays valid** — so the receipt
+is left untouched and reusable: anchor the missing parent and re-run the same `vh reveal --receipt <p>`,
+with no lost salt. A receipt with **no** `parent` reveals exactly as before (legacy `reveal`, a lineage
+root). See [`docs/LINEAGE.md`](LINEAGE.md) for the full write/read flow.
 
 **Retry semantics.** If you reveal before the window matures the contract reverts with `RevealTooSoon`;
 `runReveal` lets that propagate and **leaves the receipt file untouched**, so you simply retry later. The

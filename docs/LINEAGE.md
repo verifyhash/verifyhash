@@ -137,6 +137,13 @@ vh claim  <path> --parent <0xhash> [--uri u] [--git]   # commit-reveal revision 
   so the commitment binding is identical with or without a parent; the edge is recorded at reveal time.
   A malformed/self-referential `--parent` on `vh commit` hard-errors **before any network call** (a typo
   never silently drops the edge). See `B-10.1`.
+- **The parent is checked on-chain at REVEAL time, never at commit time.** `vh commit --parent` only
+  validates the hash's *shape* locally and persists it; `commit()` does not touch the parent at all
+  (it sees only the opaque commitment). So if the named `parent` is stale — never anchored, or anchored
+  only after you committed — the **`vh reveal`** reverts `UnknownParent(parent)` (a self-referencing
+  parent reverts `SelfParent(contentHash)`), and **`vh commit` still succeeds**. A failed reveal leaves
+  the claim receipt **untouched and reusable**: anchor the missing parent (or fix the edge) and re-run
+  the same `vh reveal --receipt <p>` — the secret `salt` is never lost (see [`docs/RECEIPTS.md`](RECEIPTS.md)).
 - If the named `parent` was never anchored, the transaction reverts `UnknownParent(parent)`; a
   self-referencing parent reverts `SelfParent(contentHash)`.
 - `--dry-run` prints the plan including a `parent:` line (the predecessor hash, or `(none) — lineage

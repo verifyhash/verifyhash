@@ -41,8 +41,8 @@ Full detail, including the table of "trust it for / do NOT trust it for", is in
 vh hash    <path> [--git [--ref r]]  # keccak256 of a file, or the Merkle root of a directory
 vh anchor  <path> [--uri u] [--git] [--parent 0xhash] # one-shot anchor (FRONT-RUNNABLE: contributor = first anchorer only); --parent records a lineage edge
 vh claim   <path> [--uri u] [--git] [--parent 0xhash] # commit-reveal in one shot: front-running-resistant claim (authorBound); --parent records a lineage edge
-vh commit  <path> [--receipt p]      # commit-reveal step 1: commit + persist a resumable claim receipt
-vh reveal  --receipt <p>             # commit-reveal step 2: resume from the receipt and reveal
+vh commit  <path> [--receipt p] [--parent 0xhash] # commit-reveal step 1: commit + persist a resumable claim receipt (records --parent into the receipt, schema v4)
+vh reveal  --receipt <p>             # commit-reveal step 2: resume from the receipt and reveal (carries the receipt's --parent edge — no flag needed)
 vh verify  <path> [--git [--ref r]]  # recompute the hash, look it up on-chain, report MATCH / MISMATCH
 vh prove   <file> --root dir [--out p] # Merkle-prove a file against an anchored root; --out exports a portable artifact (read-only, no key, no repo needed to verify)
 vh verify-proof <p>                  # read-only: independently verify a portable proof artifact (offline fold + on-chain; no key, no repo needed)
@@ -161,10 +161,13 @@ vh lineage 0xCHILD… --rpc <url>        # read-only walk UP the parent chain: c
 `--parent <0xhash>` records an **immutable predecessor edge** to a hash that **must already be
 anchored** (the contract reverts `UnknownParent` otherwise, and `SelfParent` if a record names itself);
 omit it for a **lineage root**. Because a parent must pre-exist, the graph is **acyclic by
-construction** and the on-chain check is O(1) — no on-chain walk. `--parent` is on the one-shot
-`vh anchor`/`vh claim`; the resumable `vh commit`/`vh reveal` split does not carry it yet (BACKLOG
-B-10.1). Naming a parent does not change the child's own attribution (lineage and `authorBound` are
-orthogonal).
+construction** and the on-chain check is O(1) — no on-chain walk. `--parent` works on the one-shot
+`vh anchor`/`vh claim` **and** on the resumable `vh commit`/`vh reveal` split: `vh commit --parent
+<hash>` persists the edge into the claim receipt (schema **v4**) and a later, separate `vh reveal
+--receipt <p>` reads it back and records it — no `--parent` flag on `vh reveal`. The parent is checked
+on-chain at **reveal** time, so a stale/unanchored parent reverts the *reveal* (not the commit) and
+leaves the receipt reusable for a retry. Naming a parent does not change the child's own attribution
+(lineage and `authorBound` are orthogonal).
 
 `vh lineage <0xhash>` is **read-only and needs no key** — it takes a provider only, never a signer —
 and follows `record.parent` from a record UP to its lineage root, printing each ancestor in child→root

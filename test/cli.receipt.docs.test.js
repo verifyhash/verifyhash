@@ -105,6 +105,57 @@ describe("T-6.3 docs: docs/RECEIPTS.md specifies the receipt format + lifecycle"
     });
   });
 
+  // -------------------------------------------------------------------------
+  // B-10.2: the v4 schema bump + the OPTIONAL `parent` claim-receipt field that records the resumable
+  // lineage edge (B-10.1). The docs-rot guard pins the doc to what cli/receipt.js + cli/claim.js do:
+  // schemaVersion is 4 (and 1-3 still read back), `parent` is an UNTRUSTED hint, and a resumed reveal
+  // routes to revealWithParent. The README's stale "(do not carry it yet, B-10.1)" caveat must be GONE
+  // and the CLI block must show --parent on vh commit/vh reveal.
+  // -------------------------------------------------------------------------
+  describe("v4 parent field + resumable lineage edge (B-10.2)", function () {
+    it("documents the v4 schema bump as additive over v1-v3 (the version the build writes)", function () {
+      // SCHEMA_VERSION is 4 here; the existing version test already asserts every SUPPORTED version is
+      // named. This pins that the doc frames v4 as the *current writer* AND back-compat with 1-3.
+      expect(SCHEMA_VERSION).to.equal(4); // tripwire: if the writer bumps, this guard must be revisited
+      expect(doc).to.include("schemaVersion");
+      // The doc must say v1-v3 receipts still read back (total back-compat), not just name "4".
+      expect(docLower).to.match(/v1[\s\S]{0,40}(still|read|back-compat)|back-?compat|additive/);
+    });
+
+    it("documents the OPTIONAL parent field as a v4+, UNTRUSTED hint that records a lineage edge", function () {
+      expect(doc).to.include("parent");
+      // It is on a CLAIM receipt, optional, and tagged v4+.
+      expect(doc).to.match(/parent[\s\S]{0,80}(optional|v4)/i);
+      expect(docLower).to.include("untrusted");
+      // It is a CLAIM of a predecessor (the lineage trust posture, reused from TRUST-BOUNDARIES).
+      expect(docLower).to.match(/claim[\s\S]{0,40}predecessor|predecessor/);
+    });
+
+    it("states a resumed reveal routes to revealWithParent and a no-parent receipt reveals legacy", function () {
+      expect(doc).to.include("revealWithParent");
+      // The check is at reveal time (a stale parent fails the reveal, not the commit) leaving the
+      // receipt reusable — the whole point of persisting the edge durably.
+      expect(docLower).to.match(/reveal time|at reveal/);
+      expect(doc).to.include("UnknownParent");
+      expect(docLower).to.match(/reusable|retry|untouched|survives/);
+      // Cross-links the full write/read flow.
+      expect(doc).to.include("LINEAGE.md");
+    });
+
+    it("README CLI block now shows --parent on vh commit/vh reveal and DROPS the stale caveat", function () {
+      const readme = read("README.md");
+      const readmeLower = readme.toLowerCase();
+      // The "(do not carry it yet / does not carry it yet … B-10.1)" caveat must be gone everywhere.
+      expect(readmeLower).to.not.match(/does not carry it yet|do not carry it yet/);
+      expect(readmeLower).to.not.match(/split does not carry/);
+      // The CLI fenced block's vh commit line must mention --parent now.
+      const block = readme.split("```").find((b) => b.includes("vh commit") && b.includes("vh reveal"));
+      expect(block, "CLI fenced block with vh commit/vh reveal").to.be.a("string");
+      const commitLine = block.split("\n").find((l) => l.includes("vh commit"));
+      expect(commitLine, "vh commit line").to.match(/--parent/);
+    });
+  });
+
   it("includes a worked example with a concrete JSON receipt", function () {
     expect(doc).to.include("```json");
     expect(doc).to.include(CLAIM_RECEIPT_KIND); // inside the worked example block too

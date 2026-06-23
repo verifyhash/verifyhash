@@ -38,16 +38,23 @@ Full detail, including the table of "trust it for / do NOT trust it for", is in
 ## CLI (`cli/vh.js`)
 
 ```
-vh hash   <path>                 # keccak256 of a file, or the Merkle root of a directory
-vh anchor <path> [--uri u]       # one-shot anchor (FRONT-RUNNABLE: contributor = first anchorer only)
-vh claim  <path> [--uri u]       # commit-reveal in one shot: front-running-resistant claim (authorBound)
-vh commit <path> [--receipt p]   # commit-reveal step 1: commit + persist a resumable claim receipt
-vh reveal --receipt <p>          # commit-reveal step 2: resume from the receipt and reveal
-vh verify <path>                 # recompute the hash, look it up on-chain, report MATCH / MISMATCH
-vh prove  <file> --root dir      # generate + on-chain-verify a per-file Merkle proof
-vh list   [filters]              # read-only: enumerate the registry (discovery + audit, NO key)
-vh show   <0xhash>               # read-only: look up ONE record by hash, no local content (NO key)
+vh hash   <path> [--git [--ref r]]   # keccak256 of a file, or the Merkle root of a directory
+vh anchor <path> [--uri u] [--git]   # one-shot anchor (FRONT-RUNNABLE: contributor = first anchorer only)
+vh claim  <path> [--uri u] [--git]   # commit-reveal in one shot: front-running-resistant claim (authorBound)
+vh commit <path> [--receipt p]       # commit-reveal step 1: commit + persist a resumable claim receipt
+vh reveal --receipt <p>              # commit-reveal step 2: resume from the receipt and reveal
+vh verify <path> [--git [--ref r]]   # recompute the hash, look it up on-chain, report MATCH / MISMATCH
+vh prove  <file> --root dir          # generate + on-chain-verify a per-file Merkle proof
+vh list   [filters]                  # read-only: enumerate the registry (discovery + audit, NO key)
+vh show   <0xhash>                   # read-only: look up ONE record by hash, no local content (NO key)
 ```
+
+> **`--git` scopes a directory to exactly what git tracks.** `vh hash/anchor/claim/verify <dir> --git
+> [--ref <ref>]` hashes **EXACTLY the files git tracks at that commit** (`--ref` defaults to `HEAD`),
+> reading their bytes from the work tree. It deliberately **never** includes `.git/` internals,
+> untracked files, secrets like `.env`, `node_modules/`, or build output — so the git-scoped root is
+> **reproducible from a fresh clone of the same commit** and is not perturbed by whatever junk happens
+> to sit in your working tree. See [git-scoped, reproducible anchoring](#git-scoped-reproducible-anchoring).
 
 `vh anchor` is a single cheap transaction but its `contentHash` is public in the mempool, so anyone
 can copy and anchor it first — use it only for existence/timestamp proofs where attribution does not
@@ -118,6 +125,40 @@ non-zero with `NOT ANCHORED` when there is no such record.
 is exactly the integrity check the trust model requires. It needs only an RPC URL — no key, no
 funds.
 
+### Git-scoped, reproducible anchoring
+
+A "code contribution" is a git tree, not whatever files happen to be on disk. By default `vh hash
+<dir>` walks the raw filesystem and hashes **every** regular file it finds — including `.git/`
+internals, untracked files, `node_modules/`, build artifacts, and secrets like `.env`. That makes a
+directory root **non-reproducible** (two clones of the same commit yield different roots because of
+local junk) and is a privacy footgun (it silently hashes secrets).
+
+`--git` fixes both. `vh hash/anchor/claim/verify <dir> --git [--ref <ref>]` feeds **EXACTLY the set
+of files git tracks at the chosen commit** (`git ls-tree -r`, `--ref` defaults to `HEAD`) through the
+*same* path-bound, sorted-leaf Merkle machinery — the leaf formula is unchanged; only the file **set**
+differs (see [`docs/MERKLE-LEAVES.md`](docs/MERKLE-LEAVES.md)). Concretely the git-scoped root:
+
+- anchors **exactly the files git tracks at that commit** and nothing else — it **never** includes
+  `.git/`, untracked files, `.env`/secrets, `node_modules/`, or build output;
+- is **reproducible from a fresh clone**: anyone who checks out the same commit and runs
+  `vh verify <dir> --git --ref <commit>` re-derives the identical root and gets `MATCH`, with no
+  server, admin, or key to trust (the project's core promise, now true for repos, not just single files);
+- still binds each file's **path** into its leaf, so renaming or moving a tracked file changes the root.
+
+```
+vh hash   ./repo --git                 # root over the files tracked at HEAD (prints the resolved commit oid)
+vh anchor ./repo --git --uri https://… # anchor that reproducible root; records a git provenance hint
+vh verify ./repo --git --ref <commit>  # re-derive over the same tracked set and report MATCH / MISMATCH
+```
+
+`--git` requires `<dir>` to be inside a git work tree and errors clearly otherwise (it **never**
+silently falls back to the raw filesystem walk); `--ref` is only meaningful with `--git`. When you
+`anchor`/`claim` with `--git`, the receipt records a `git` block (`{ commit, scope }`) as an
+**UNTRUSTED hint** so a reader can reproduce the enumeration — exactly the trust posture of every other
+receipt field (see [`docs/RECEIPTS.md`](docs/RECEIPTS.md) and [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md)).
+The authoritative verdict is still the recomputed root vs the on-chain record; the `git.commit` is
+never re-checked against the chain.
+
 ## Develop
 
 ```
@@ -132,7 +173,8 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
 ## Docs
 
 - [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not.
-- [`docs/MERKLE-LEAVES.md`](docs/MERKLE-LEAVES.md) — what a directory root commits to (paths + bytes).
+- [`docs/MERKLE-LEAVES.md`](docs/MERKLE-LEAVES.md) — what a directory root commits to (paths + bytes),
+  including the `--git` scope note (same leaf formula, reproducible git-tracked file set).
 - [`docs/RECEIPTS.md`](docs/RECEIPTS.md) — the receipt JSON schema (trusted vs hints), the
   commit→reveal resume lifecycle, and the directory-manifest diff semantics.
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.

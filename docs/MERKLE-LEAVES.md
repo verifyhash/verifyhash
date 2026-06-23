@@ -81,6 +81,12 @@ the identical `pathLeaf` / `leafHash` / `nodeHash` convention. Only the enumerat
   `relPath` bound into each leaf, so renaming a tracked file still changes the root. See
   `cli/git.js` (`repoRoot` / `resolveCommit` / `listTrackedFiles`) and `test/cli.hash.git.test.js`.
 
+Because `--git` only changes which files become leaves (never how a leaf is hashed), every caveat in
+[`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md) still applies verbatim: the on-chain record attests
+only to the resulting `contentHash`/root, and the receipt's `git` provenance (commit + scope) is an
+**untrusted hint** that records *how* the tracked set was enumerated, never a second proof (see
+[`docs/RECEIPTS.md`](RECEIPTS.md)).
+
 ## What the root does NOT commit to
 
 - File mode/permissions, mtimes, or other filesystem metadata (only path + bytes).

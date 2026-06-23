@@ -8,6 +8,7 @@ const { spawn } = require("child_process");
 const http = require("http");
 
 const { buildProof, runProve, ABI } = require("../cli/prove");
+const { readProofArtifact, PROOF_KIND } = require("../cli/proof");
 const { runAnchor } = require("../cli/anchor");
 const { hashFile, hashDir, pathLeaf } = require("../cli/hash");
 
@@ -336,6 +337,43 @@ describe("cli: vh prove (repo-level Merkle proof)", function () {
       expect(out).to.contain(built.root);
       expect(out).to.contain(built.leaf);
       for (const h of built.proof) expect(out).to.contain(h);
+    });
+
+    it("--out writes a self-contained, valid proof artifact on the no-key build path", async function () {
+      const dir = makeRepo("vh-prove-out-");
+      const outDir = tmp("vh-prove-out-dest-");
+      const p = path.join(outDir, "proof.json");
+      const built = buildProof({ file: "src/index.js", rootDir: dir });
+
+      const res = await runProve({
+        file: "src/index.js",
+        rootDir: dir,
+        out: p,
+        dryRun: true, // no contract/provider/signer — --out must work entirely offline
+        log: () => {},
+      });
+      expect(res.out).to.equal(p);
+      expect(fs.existsSync(p)).to.equal(true);
+
+      const art = readProofArtifact(p); // round-trips through strict validation
+      expect(art.kind).to.equal(PROOF_KIND);
+      expect(art.root).to.equal(built.root);
+      expect(art.leaf).to.equal(built.leaf);
+      expect(art.contentHash).to.equal(built.contentHash);
+      expect(art.relPath).to.equal("src/index.js");
+      expect(art.proof).to.deep.equal(built.proof);
+    });
+
+    it("--out with an empty path hard-errors (parser parity)", async function () {
+      const dir = makeRepo("vh-prove-out-empty-");
+      let err = null;
+      try {
+        await runProve({ file: "README.md", rootDir: dir, out: "   ", dryRun: true, log: () => {} });
+      } catch (e) {
+        err = e;
+      }
+      expect(err, "empty --out must hard-error").to.not.equal(null);
+      expect(err.message).to.match(/--out requires a destination file path/i);
     });
   });
 });

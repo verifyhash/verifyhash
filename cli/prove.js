@@ -33,6 +33,7 @@
 const path = require("path");
 const fs = require("fs");
 const { hashDir } = require("./hash");
+const { buildProofArtifact, writeProofArtifact } = require("./proof");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
@@ -150,6 +151,10 @@ function formatProof(p, extra) {
  * @param {boolean}[opts.anchorFirst]           anchor the root before proving (needs a signer)
  * @param {object} [opts.signer]                ethers Signer (required iff anchorFirst)
  * @param {boolean}[opts.iUnderstandMainnet]    forwarded to anchor()'s chainId guard
+ * @param {string} [opts.out]                   write a portable, self-contained proof artifact here
+ *                                              (caller-chosen path — never silently the cwd). Works on
+ *                                              the no-key `--dry-run`/build path; `vh verify-proof <p>`
+ *                                              independently verifies it offline + on-chain.
  * @param {object} [opts.ethers]                ethers v6 module
  * @param {(s:string)=>void}[opts.log]          sink for human output (defaults to process.stdout)
  * @returns {Promise<object>} result describing what happened
@@ -166,8 +171,15 @@ async function runProve(opts) {
   }
 
   if (opts.dryRun) {
+    // The build path needs no key and no network. If asked, write the portable proof artifact here so
+    // a fresh repo's proof can be exported and handed to a third party who only has an RPC URL.
+    let artifactPath = null;
+    if (opts.out) {
+      artifactPath = _writeArtifact(built, opts);
+      log(`Wrote portable proof artifact: ${artifactPath}\n`);
+    }
     log(formatProof(built) + "\n");
-    return { dryRun: true, ...built };
+    return { dryRun: true, ...built, out: artifactPath };
   }
 
   const { contractAddress, provider } = opts;
@@ -219,10 +231,27 @@ async function runProve(opts) {
   // The acceptance criterion: the *on-chain* verifyLeaf must accept a genuine file's proof.
   const accepted = await readContract.verifyLeaf(built.root, built.leaf, built.proof);
 
+  // If asked, export the portable proof artifact here too — recording the resolved contract address
+  // and chainId so the artifact is fully self-describing for `vh verify-proof`.
+  let artifactPath = null;
+  if (opts.out) {
+    let chainId;
+    try {
+      const net = await provider.getNetwork();
+      chainId = net.chainId;
+    } catch (_) {
+      chainId = undefined; // chainId is an optional hint; never fail the prove over it
+    }
+    artifactPath = _writeArtifact(built, opts, { contractAddress: address, chainId });
+  }
+
   const extra = [
     `  root anchored: yes`,
     `  verifyLeaf:    ${accepted ? "ACCEPTED" : "REJECTED"}`,
   ];
+  if (artifactPath) {
+    extra.push(`  proof artifact: ${artifactPath}  (verify with \`vh verify-proof\`)`);
+  }
   if (!accepted) {
     extra.push(
       "  The on-chain verifyLeaf rejected this proof: the file does not match the anchored",
@@ -238,7 +267,29 @@ async function runProve(opts) {
     rootIsAnchored: true,
     accepted,
     anchored,
+    out: artifactPath,
   };
+}
+
+/**
+ * Build and write the portable proof artifact for `built` to `opts.out`. Validates the destination
+ * path is a non-empty string (an `--out` with no/empty value hard-errors, parser parity with the
+ * other commands) and resolves it to an absolute path so the caller always learns the exact file
+ * written — never silently dropping it into an ambiguous cwd.
+ *
+ * @param {object} built  a buildProof() result
+ * @param {object} opts   the runProve opts (carries `out`)
+ * @param {object} [ctx]  optional on-chain context { contractAddress, chainId } to record
+ * @returns {string} the absolute path written
+ */
+function _writeArtifact(built, opts, ctx = {}) {
+  if (typeof opts.out !== "string" || opts.out.trim() === "") {
+    throw new Error("--out requires a destination file path");
+  }
+  const outPath = path.resolve(opts.out);
+  const artifact = buildProofArtifact(built, ctx);
+  writeProofArtifact(artifact, outPath);
+  return outPath;
 }
 
 module.exports = {

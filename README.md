@@ -44,7 +44,8 @@ vh claim  <path> [--uri u] [--git]   # commit-reveal in one shot: front-running-
 vh commit <path> [--receipt p]       # commit-reveal step 1: commit + persist a resumable claim receipt
 vh reveal --receipt <p>              # commit-reveal step 2: resume from the receipt and reveal
 vh verify <path> [--git [--ref r]]   # recompute the hash, look it up on-chain, report MATCH / MISMATCH
-vh prove  <file> --root dir          # generate + on-chain-verify a per-file Merkle proof
+vh prove  <file> --root dir [--out p] # Merkle-prove a file against an anchored root; --out exports a portable artifact
+vh verify-proof <p>                  # read-only: independently verify a portable proof artifact (offline + on-chain, NO key)
 vh list   [filters]                  # read-only: enumerate the registry (discovery + audit, NO key)
 vh show   <0xhash>                   # read-only: look up ONE record by hash, no local content (NO key)
 ```
@@ -135,6 +136,46 @@ non-zero with `NOT ANCHORED` when there is no such record.
 `vh verify` is read-only: it re-derives the content hash and compares it to what is anchored, which
 is exactly the integrity check the trust model requires. It needs only an RPC URL — no key, no
 funds.
+
+### Portable proofs (`vh prove --out` + `vh verify-proof`)
+
+`vh prove <file> --root <dir>` builds a Merkle proof that a single file is part of an anchored repo
+root, but on its own that proof only lives in the prover's terminal. `--out <p>` exports it as a
+**self-contained, portable proof artifact** — a versioned JSON file carrying everything a verifier
+needs:
+
+```
+vh prove src/index.js --root ./repo --out proof.json   # build + export (no key; works with --dry-run)
+vh verify-proof proof.json --rpc <url>                 # independently verify, needing ONLY the file + an RPC URL
+```
+
+`vh verify-proof <p>` is **read-only and needs no key, no repo, and no working tree** — just the
+artifact and an RPC URL. That is the portability property: hand someone the artifact and they can
+**independently** confirm the file is in the anchored root with **no trust in the prover**. It:
+
+1. **Re-derives the leaf** from the artifact's `contentHash` + `relPath` and **re-folds** the `proof`
+   **purely offline**, using the same sorted-pair / domain-separated convention the contract's
+   `verifyLeaf` uses (the leaf must equal `pathLeaf(contentHash, relPath)`, then the fold must reach
+   `root`). The artifact is an **untrusted transport container** — verify-proof never trusts its
+   claims; it re-computes them.
+2. Makes **one read-only on-chain check** that the root is actually anchored (`isAnchored`) and that
+   the contract's own `verifyLeaf` accepts the proof.
+
+It prints `ACCEPTED` **only** when the offline fold **and** both on-chain checks pass. A tampered
+`proof`/`leaf`/`contentHash` is caught (offline, no network even needed) and `REJECTED`; an artifact
+whose `root` was never anchored reports `NOT ANCHORED` (a distinct, non-zero exit) rather than a false
+accept. The artifact records its `contractAddress`/`chainId` when built on the on-chain path, so
+verify-proof can run with no `--contract` flag; an explicit `--contract`/`--rpc` always overrides.
+
+> **This proves SET-MEMBERSHIP in a root — not authorship, not the `uri`.** An `ACCEPTED` verdict
+> binds the file's path + bytes to an anchored Merkle root. It says nothing about who anchored that
+> root or what `contributor`/`uri` mean — exactly the boundary the contract's `verifyLeaf` draws.
+> `vh verify-proof` leads its output with this caveat verbatim. See
+> [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md).
+
+The artifact schema is `{ kind, schemaVersion, root, leaf, contentHash, relPath, proof, contractAddress?, chainId? }`,
+strictly validated on read (a malformed/short hash or a non-hex proof hard-errors), reusing the same
+validation style as the receipt schema in [`docs/RECEIPTS.md`](docs/RECEIPTS.md).
 
 ### Git-scoped, reproducible anchoring
 

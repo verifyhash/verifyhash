@@ -16,6 +16,7 @@ const { hashPath, hashGit } = require("./hash");
 const { runAnchor } = require("./anchor");
 const { runVerify } = require("./verify");
 const { runProve } = require("./prove");
+const { runVerifyProof } = require("./proof");
 const { runClaim, runCommit, runReveal } = require("./claim");
 const { runList } = require("./list");
 const { runShow } = require("./show");
@@ -33,6 +34,7 @@ function usage() {
     "  vh reveal --receipt <p>    commit-reveal step 2: resume from a receipt and reveal",
     "  vh verify <path> [opts]    recompute the hash, read the registry, print MATCH / MISMATCH",
     "  vh prove <file> [opts]     Merkle-prove a file against an anchored repo root via verifyLeaf",
+    "  vh verify-proof <p> [opts] independently verify a portable proof artifact (offline + on-chain)",
     "  vh list [opts]             enumerate the registry read-only (discovery + audit)",
     "  vh show <0xhash> [opts]    look up ONE record by content hash (no local content needed)",
     "",
@@ -96,11 +98,22 @@ function usage() {
     "",
     "prove options:",
     "  --root <dir>               the repo root directory whose Merkle root <file> is proven against",
+    "  --out <path>               write a self-contained, portable proof artifact here (works on the",
+    "                             no-key --dry-run/build path); verify it later with `vh verify-proof`",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --anchor                   anchor the repo root first (needs PRIVATE_KEY), then prove",
     "  --i-understand-mainnet     allow --anchor on a non-testnet chainId (DANGER: real funds)",
     "  --dry-run                  build & print the proof only; needs no key and no network",
+    "",
+    "verify-proof options (read-only, NO key; needs only the artifact + an RPC URL — no repo):",
+    "  <p>                        path to a proof artifact written by `vh prove --out <p>`",
+    "  --contract <address>       ContributionRegistry address (or the artifact's recorded address)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --json                     emit a machine-readable JSON object instead of the human block",
+    "  Re-derives the leaf + re-folds the proof OFFLINE, then confirms the root is anchored on-chain.",
+    "  Prints ACCEPTED only when the offline fold AND the on-chain checks all pass; else REJECTED /",
+    "  NOT ANCHORED (non-zero exit). Proves SET-MEMBERSHIP in an anchored root, not authorship/uri.",
     "",
     "list options (read-only enumeration; provider only, never a signer/key):",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
@@ -738,6 +751,7 @@ function parseProveArgs(argv) {
   const opts = {
     file: undefined,
     root: undefined,
+    out: undefined,
     contract: undefined,
     rpc: undefined,
     anchor: false,
@@ -759,6 +773,10 @@ function parseProveArgs(argv) {
       case "--root":
         opts.root = argv[++i];
         if (opts.root === undefined) throw new Error("--root requires a value");
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
         break;
       case "--contract":
         opts.contract = argv[++i];
@@ -796,10 +814,11 @@ async function cmdProve(argv) {
 
   const ethers = require("ethers");
 
-  // Dry run: only builds & prints the proof. No key, no network — must work entirely offline.
+  // Dry run: only builds & prints the proof (and writes the --out artifact if asked). No key, no
+  // network — must work entirely offline. This is the no-key build path for `--out`.
   if (opts.dryRun) {
     try {
-      await runProve({ file: opts.file, rootDir: opts.root, dryRun: true, ethers });
+      await runProve({ file: opts.file, rootDir: opts.root, out: opts.out, dryRun: true, ethers });
     } catch (e) {
       process.stderr.write(`error: ${e.message}\n`);
       return 1;
@@ -835,6 +854,7 @@ async function cmdProve(argv) {
     result = await runProve({
       file: opts.file,
       rootDir: opts.root,
+      out: opts.out,
       contractAddress,
       provider,
       signer,
@@ -850,6 +870,83 @@ async function cmdProve(argv) {
   // Exit non-zero when the on-chain verifyLeaf rejects the proof (tampered / not in the snapshot),
   // so scripts and CI can branch on it.
   return result.accepted ? 0 : 3;
+}
+
+/**
+ * Parse `verify-proof` argv into { artifact, contract, rpc, json }. Takes exactly one positional
+ * <p> (the artifact path). Throws on unknown/incomplete flags or a duplicate/missing positional so a
+ * typo never silently verifies the wrong file (parser parity with the other commands).
+ */
+function parseVerifyProofArgs(argv) {
+  const opts = { artifact: undefined, contract: undefined, rpc: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--contract":
+        opts.contract = argv[++i];
+        if (opts.contract === undefined) throw new Error("--contract requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.artifact !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.artifact = a;
+    }
+  }
+  return opts;
+}
+
+async function cmdVerifyProof(argv) {
+  let opts;
+  try {
+    opts = parseVerifyProofArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.artifact) {
+    process.stderr.write("error: `vh verify-proof` requires a <p> (proof artifact path)\n\n" + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL " +
+        "(verify-proof confirms the root is anchored on-chain)\n"
+    );
+    return 1;
+  }
+
+  let result;
+  try {
+    // Read-only: provider only — `vh verify-proof` NEVER constructs a signer or touches a key.
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    result = await runVerifyProof({
+      artifactPath: opts.artifact,
+      contractAddress,
+      provider,
+      json: opts.json,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit 0 ONLY on ACCEPTED. A NOT ANCHORED root is exit 4 (mirrors `vh show`'s NOT ANCHORED), a
+  // REJECTED proof is exit 3 (mirrors `vh verify`/`vh prove`), so scripts/CI can branch on each.
+  if (result.status === "ACCEPTED") return 0;
+  if (result.status === "NOT_ANCHORED") return 4;
+  return 3;
 }
 
 /**
@@ -1053,6 +1150,8 @@ async function main(argv) {
       return cmdVerify(rest);
     case "prove":
       return cmdProve(rest);
+    case "verify-proof":
+      return cmdVerifyProof(rest);
     case "list":
       return cmdList(rest);
     case "show":
@@ -1082,6 +1181,7 @@ module.exports = {
   cmdReveal,
   cmdVerify,
   cmdProve,
+  cmdVerifyProof,
   cmdList,
   cmdShow,
   parseHashArgs,
@@ -1090,6 +1190,7 @@ module.exports = {
   parseRevealArgs,
   parseVerifyArgs,
   parseProveArgs,
+  parseVerifyProofArgs,
   parseListArgs,
   parseShowArgs,
   usage,

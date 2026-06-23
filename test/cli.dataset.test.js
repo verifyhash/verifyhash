@@ -54,6 +54,12 @@ const {
   serializeAttestation,
   readAttestation,
   runDatasetAttest,
+  POLICY_KIND,
+  POLICY_RULE,
+  validatePolicy,
+  readPolicy,
+  evaluatePolicy,
+  runDatasetCheck,
 } = require("../cli/dataset");
 const { readProofArtifact, recomputeFold } = require("../cli/proof");
 const {
@@ -62,6 +68,7 @@ const {
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,
   parseDatasetSummaryArgs,
+  parseDatasetCheckArgs,
   parseDatasetReportArgs,
   parseDatasetAttestArgs,
   parseDatasetProveArgs,
@@ -1956,6 +1963,451 @@ describe("cli: vh dataset build (T-13.1)", function () {
       // The written file is a valid, strictly-readable attestation over this manifest.
       const env = readAttestation(outPath);
       expect(env.root).to.equal(readManifest(manifestPath).root);
+      expect(fs.readdirSync(process.cwd())).to.deep.equal(cwdBefore);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------------
+  // T-16.1: `vh dataset check <manifest> --policy <p> [--json]` — deterministic, OFFLINE license/source
+  // policy gate (PASS/FAIL + exact violating files, CI-gateable exit code).
+  // ---------------------------------------------------------------------------------------------------
+  describe("vh dataset check (T-16.1): OFFLINE license/source policy gate", function () {
+    // Build a manifest for `files` (+ optional hints) and return its path. The check is OFFLINE — no live
+    // tree is retained. Every temp dir self-cleans in afterEach.
+    function manifestFor(files, hints, prefix) {
+      const dir = tmp((prefix || "dck") + "-tree-");
+      writeFiles(dir, files);
+      const out = path.join(tmp((prefix || "dck") + "-man-"), "manifest.json");
+      runDatasetBuild({ dir, out, hints, stdout: () => {} });
+      return out;
+    }
+    // Write a policy object to a temp file and return its path.
+    function policyFor(policy, prefix) {
+      const p = path.join(tmp((prefix || "dck") + "-pol-"), "policy.json");
+      fs.writeFileSync(p, JSON.stringify(policy));
+      return p;
+    }
+    function pol(rules) {
+      return Object.assign({ kind: POLICY_KIND, schemaVersion: 1 }, rules);
+    }
+
+    // A reusable fixture manifest with mixed/absent license + source hints.
+    //   a.txt -> MIT          / corpus-X
+    //   b.txt -> GPL-3.0      / corpus-X
+    //   c.txt -> GPL-3.0      / internal
+    //   d.txt -> (no license) / (no source)
+    function mixedManifest(prefix) {
+      return manifestFor(
+        { "a.txt": "AAA", "b.txt": "BBB", "c.txt": "CCC", "d.txt": "DDD" },
+        {
+          "a.txt": { license: "MIT", source: "corpus-X" },
+          "b.txt": { license: "GPL-3.0", source: "corpus-X" },
+          "c.txt": { license: "GPL-3.0", source: "internal" },
+          // d.txt: NO hint at all
+        },
+        prefix || "dck-mixed"
+      );
+    }
+
+    // ---- the strict, versioned policy schema -------------------------------------------------------
+    describe("policy schema is strict & versioned", function () {
+      it("accepts a well-formed policy (all rule fields optional & combinable)", function () {
+        expect(() =>
+          validatePolicy(
+            pol({
+              allowLicenses: ["MIT", "Apache-2.0"],
+              denyLicenses: ["GPL-3.0"],
+              allowSources: ["corpus-X"],
+              denySources: ["scraped"],
+              requireLicense: true,
+            })
+          )
+        ).to.not.throw();
+        // A policy with NO rules is valid.
+        expect(() => validatePolicy(pol({}))).to.not.throw();
+      });
+
+      it("rejects a wrong kind / unsupported schemaVersion (never half-accept)", function () {
+        expect(() => validatePolicy({ kind: "not-a-policy", schemaVersion: 1 })).to.throw(
+          /not a verifyhash dataset policy/
+        );
+        expect(() => validatePolicy({ kind: POLICY_KIND, schemaVersion: 2 })).to.throw(
+          /unsupported dataset policy schemaVersion/
+        );
+        expect(() => validatePolicy(null)).to.throw(/must be a JSON object/);
+        expect(() => validatePolicy([])).to.throw(/must be a JSON object/);
+      });
+
+      it("rejects a malformed field (non-array list, non-string entry, non-boolean requireLicense)", function () {
+        expect(() => validatePolicy(pol({ allowLicenses: "MIT" }))).to.throw(
+          /allowLicenses must be an array of strings/
+        );
+        expect(() => validatePolicy(pol({ denyLicenses: ["GPL-3.0", 7] }))).to.throw(
+          /denyLicenses\[1\] must be a non-empty string/
+        );
+        expect(() => validatePolicy(pol({ allowSources: [""] }))).to.throw(
+          /allowSources\[0\] must be a non-empty string/
+        );
+        expect(() => validatePolicy(pol({ requireLicense: "yes" }))).to.throw(
+          /requireLicense must be a boolean/
+        );
+      });
+
+      it("readPolicy rejects a missing file / invalid JSON / foreign policy", function () {
+        expect(() => readPolicy("/no/such/policy.json")).to.throw(/cannot read dataset policy/);
+        const badJson = path.join(tmp("dck-badjson-"), "p.json");
+        fs.writeFileSync(badJson, "{ not json");
+        expect(() => readPolicy(badJson)).to.throw(/is not valid JSON/);
+        const foreign = path.join(tmp("dck-foreign-"), "p.json");
+        fs.writeFileSync(foreign, JSON.stringify({ kind: "x", schemaVersion: 1 }));
+        expect(() => readPolicy(foreign)).to.throw(/not a verifyhash dataset policy/);
+      });
+    });
+
+    // ---- the PURE evaluator ------------------------------------------------------------------------
+    it("denyLicenses:['GPL-3.0'] FAILs and names exactly the GPL files (and nothing else)", function () {
+      const manifestPath = mixedManifest("dck-deny");
+      const policyPath = policyFor(pol({ denyLicenses: ["GPL-3.0"] }), "dck-deny");
+      const res = runDatasetCheck({ manifest: manifestPath, policy: policyPath, stdout: () => {} });
+      expect(res.verdict).to.equal("FAIL");
+      expect(res.fileCount).to.equal(4);
+      expect(res.rulesEvaluated).to.equal(1);
+      // Exactly b.txt and c.txt (the GPL-3.0 files), each on the denyLicenses rule, with the offending value.
+      expect(res.violations).to.deep.equal([
+        { relPath: "b.txt", rule: "denyLicenses", value: "GPL-3.0" },
+        { relPath: "c.txt", rule: "denyLicenses", value: "GPL-3.0" },
+      ]);
+      // The MIT file and the no-hint file do NOT violate a denylist.
+      expect(res.violations.map((v) => v.relPath)).to.not.include("a.txt");
+      expect(res.violations.map((v) => v.relPath)).to.not.include("d.txt");
+    });
+
+    it("allowLicenses FAILs EVERY off-allowlist file (including a no-license file)", function () {
+      const manifestPath = mixedManifest("dck-allow");
+      const policyPath = policyFor(pol({ allowLicenses: ["MIT"] }), "dck-allow");
+      const res = runDatasetCheck({ manifest: manifestPath, policy: policyPath, stdout: () => {} });
+      expect(res.verdict).to.equal("FAIL");
+      // a.txt (MIT) is allowed; b/c (GPL-3.0) and d (no hint) all violate. The no-hint file reports the
+      // explicit "(no license hint)" sentinel value, not a literal license string.
+      expect(res.violations).to.deep.equal([
+        { relPath: "b.txt", rule: "allowLicenses", value: "GPL-3.0" },
+        { relPath: "c.txt", rule: "allowLicenses", value: "GPL-3.0" },
+        { relPath: "d.txt", rule: "allowLicenses", value: "(no license hint)" },
+      ]);
+    });
+
+    it("requireLicense:true FAILs EXACTLY the no-hint files", function () {
+      const manifestPath = mixedManifest("dck-req");
+      const policyPath = policyFor(pol({ requireLicense: true }), "dck-req");
+      const res = runDatasetCheck({ manifest: manifestPath, policy: policyPath, stdout: () => {} });
+      expect(res.verdict).to.equal("FAIL");
+      // Only d.txt asserts no license; a/b/c all carry one.
+      expect(res.violations).to.deep.equal([
+        { relPath: "d.txt", rule: "requireLicense", value: "(no license hint)" },
+      ]);
+    });
+
+    it("allowSources / denySources gate on the source hint with the same semantics", function () {
+      const manifestPath = mixedManifest("dck-src");
+      // denySources: 'internal' -> only c.txt violates (its source is 'internal').
+      const denyRes = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ denySources: ["internal"] }), "dck-src-deny"),
+        stdout: () => {},
+      });
+      expect(denyRes.verdict).to.equal("FAIL");
+      expect(denyRes.violations).to.deep.equal([
+        { relPath: "c.txt", rule: "denySources", value: "internal" },
+      ]);
+      // allowSources: 'corpus-X' -> c.txt (internal) and d.txt (no source) violate.
+      const allowRes = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ allowSources: ["corpus-X"] }), "dck-src-allow"),
+        stdout: () => {},
+      });
+      expect(allowRes.verdict).to.equal("FAIL");
+      expect(allowRes.violations).to.deep.equal([
+        { relPath: "c.txt", rule: "allowSources", value: "internal" },
+        { relPath: "d.txt", rule: "allowSources", value: "(no source hint)" },
+      ]);
+    });
+
+    it("matching is CASE-SENSITIVE EXACT (a near-miss denylist value does not match)", function () {
+      const manifestPath = mixedManifest("dck-case");
+      // 'gpl-3.0' (lowercase) and 'GPL-3.0-or-later' do NOT match the manifest's 'GPL-3.0' hint.
+      const res = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ denyLicenses: ["gpl-3.0", "GPL-3.0-or-later"] }), "dck-case"),
+        stdout: () => {},
+      });
+      expect(res.verdict).to.equal("PASS");
+      expect(res.violations).to.deep.equal([]);
+    });
+
+    it("a single file can break MULTIPLE rules (each is its own violation entry)", function () {
+      const manifestPath = mixedManifest("dck-multi");
+      // d.txt (no license, no source) breaks requireLicense AND allowLicenses AND allowSources.
+      const res = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(
+          pol({ allowLicenses: ["MIT"], allowSources: ["corpus-X"], requireLicense: true }),
+          "dck-multi"
+        ),
+        stdout: () => {},
+      });
+      expect(res.verdict).to.equal("FAIL");
+      expect(res.rulesEvaluated).to.equal(3);
+      const dViolations = res.violations.filter((v) => v.relPath === "d.txt");
+      expect(dViolations.map((v) => v.rule).sort()).to.deep.equal([
+        "allowLicenses",
+        "allowSources",
+        "requireLicense",
+      ]);
+    });
+
+    it("a policy ALL files satisfy PASSes (exit-0 model: no violations)", function () {
+      const manifestPath = mixedManifest("dck-pass");
+      // Allow both licenses present, deny one that is absent, require a license (all carry one EXCEPT d) —
+      // so to PASS we must avoid requireLicense (d has none) and allow GPL-3.0 + MIT.
+      const res = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ denyLicenses: ["Proprietary"], allowSources: ["corpus-X", "internal"] }), "dck-pass-1"),
+        stdout: () => {},
+      });
+      // denyLicenses 'Proprietary' matches nothing; allowSources covers corpus-X+internal but NOT d's
+      // missing source -> d violates allowSources. So this particular policy FAILs on d. Use a policy
+      // that truly all files satisfy instead:
+      expect(res.verdict).to.equal("FAIL");
+
+      const passRes = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ allowLicenses: ["MIT", "GPL-3.0"], denySources: ["scraped-web"] }), "dck-pass-2"),
+        stdout: () => {},
+      });
+      // allowLicenses MIT+GPL-3.0 covers a/b/c but NOT d (no license) -> still a violation. The cleanest
+      // all-satisfy policy is a denylist that matches nothing:
+      expect(passRes.verdict).to.equal("FAIL");
+
+      const trulyPass = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ denyLicenses: ["Proprietary"], denySources: ["scraped-web"] }), "dck-pass-3"),
+        stdout: () => {},
+      });
+      expect(trulyPass.verdict).to.equal("PASS");
+      expect(trulyPass.violations).to.deep.equal([]);
+      expect(trulyPass.rulesEvaluated).to.equal(2);
+    });
+
+    it("a policy with NO rules is valid and trivially PASSes (with a clear note)", function () {
+      const manifestPath = mixedManifest("dck-norules");
+      const lines = [];
+      const res = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({}), "dck-norules"),
+        stdout: (s) => lines.push(s),
+      });
+      expect(res.verdict).to.equal("PASS");
+      expect(res.rulesEvaluated).to.equal(0);
+      expect(res.violations).to.deep.equal([]);
+      const out = lines.join("");
+      expect(out).to.contain("NO rules");
+      expect(out).to.contain("trivially PASSes");
+    });
+
+    it("an EMPTY list rule (allowLicenses:[]) carries no constraint (rulesEvaluated counts it as 0)", function () {
+      const manifestPath = mixedManifest("dck-empty");
+      const res = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ allowLicenses: [] }), "dck-empty"),
+        stdout: () => {},
+      });
+      expect(res.verdict).to.equal("PASS");
+      expect(res.rulesEvaluated).to.equal(0);
+    });
+
+    // ---- determinism + output shape ----------------------------------------------------------------
+    it("running twice yields BYTE-IDENTICAL output (violations sorted by relPath then rule)", function () {
+      const manifestPath = mixedManifest("dck-det");
+      const policyPath = policyFor(
+        pol({ allowLicenses: ["MIT"], allowSources: ["corpus-X"], requireLicense: true }),
+        "dck-det"
+      );
+      const a = [];
+      const b = [];
+      runDatasetCheck({ manifest: manifestPath, policy: policyPath, stdout: (s) => a.push(s) });
+      runDatasetCheck({ manifest: manifestPath, policy: policyPath, stdout: (s) => b.push(s) });
+      expect(a.join("")).to.equal(b.join(""));
+      // The violation list is sorted by relPath then rule.
+      const res = runDatasetCheck({ manifest: manifestPath, policy: policyPath, stdout: () => {} });
+      const sorted = res.violations
+        .slice()
+        .sort((x, y) => (x.relPath !== y.relPath ? (x.relPath < y.relPath ? -1 : 1) : x.rule < y.rule ? -1 : x.rule > y.rule ? 1 : 0));
+      expect(res.violations).to.deep.equal(sorted);
+    });
+
+    it("human output LEADS with the trust caveat and NEVER implies a license was verified real", function () {
+      const manifestPath = mixedManifest("dck-trust");
+      const lines = [];
+      runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ denyLicenses: ["GPL-3.0"] }), "dck-trust"),
+        stdout: (s) => lines.push(s),
+      });
+      const out = lines.join("");
+      // The FIRST printed line leads with the trust caveat.
+      expect(lines[0]).to.contain("TRUST:");
+      expect(out).to.contain("UNTRUSTED");
+      expect(out).to.contain("SELF-ASSERTED");
+      expect(out).to.contain("NOT that the licenses");
+      expect(out).to.contain("does NOT verify");
+      // Names the violating files.
+      expect(out).to.contain("b.txt");
+      expect(out).to.contain("denyLicenses");
+    });
+
+    it("--json round-trips and carries the violation list (no human text leaked)", function () {
+      const manifestPath = mixedManifest("dck-json");
+      const lines = [];
+      const res = runDatasetCheck({
+        manifest: manifestPath,
+        policy: policyFor(pol({ allowLicenses: ["MIT"] }), "dck-json"),
+        json: true,
+        stdout: (s) => lines.push(s),
+      });
+      const parsed = JSON.parse(lines.join(""));
+      expect(parsed.verdict).to.equal("FAIL");
+      expect(parsed.fileCount).to.equal(4);
+      expect(parsed.rulesEvaluated).to.equal(1);
+      expect(parsed.violations).to.deep.equal(res.violations);
+      expect(parsed.violations).to.deep.equal([
+        { relPath: "b.txt", rule: "allowLicenses", value: "GPL-3.0" },
+        { relPath: "c.txt", rule: "allowLicenses", value: "GPL-3.0" },
+        { relPath: "d.txt", rule: "allowLicenses", value: "(no license hint)" },
+      ]);
+      // No human caveat text leaked into the JSON line.
+      expect(lines.join("")).to.not.contain("TRUST:");
+    });
+
+    it("rejects a corrupt/foreign MANIFEST (no half-accept)", function () {
+      const manifestPath = mixedManifest("dck-badman");
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      const badPath = path.join(tmp("dck-badman-bad-"), "m.json");
+      fs.writeFileSync(badPath, JSON.stringify(m));
+      const policyPath = policyFor(pol({ denyLicenses: ["GPL-3.0"] }), "dck-badman");
+      expect(() =>
+        runDatasetCheck({ manifest: badPath, policy: policyPath, stdout: () => {} })
+      ).to.throw(/root must be a 0x-prefixed 32-byte hex/);
+    });
+
+    // ---- CLI wiring + exit codes -------------------------------------------------------------------
+    it("parseDatasetCheckArgs parses positional + --policy + --json; rejects unknowns / extras", function () {
+      expect(parseDatasetCheckArgs(["/m", "--policy", "/p"])).to.deep.equal({
+        manifest: "/m",
+        policy: "/p",
+        json: false,
+      });
+      expect(parseDatasetCheckArgs(["/m", "--policy", "/p", "--json"])).to.deep.equal({
+        manifest: "/m",
+        policy: "/p",
+        json: true,
+      });
+      expect(() => parseDatasetCheckArgs(["/m", "--policy"])).to.throw(/--policy requires a value/);
+      expect(() => parseDatasetCheckArgs(["/m", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseDatasetCheckArgs(["/m", "/n", "--policy", "/p"])).to.throw(
+        /unexpected extra argument/
+      );
+    });
+
+    it("main() exit 0 on PASS, 3 on FAIL (CI-gateable, mirrors the dataset 0/3 contract)", async function () {
+      const manifestPath = mixedManifest("dck-exit");
+      const passPolicy = policyFor(pol({ denyLicenses: ["Proprietary"] }), "dck-exit-pass");
+      const failPolicy = policyFor(pol({ denyLicenses: ["GPL-3.0"] }), "dck-exit-fail");
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      let passCode, failCode;
+      try {
+        passCode = await main(["dataset", "check", manifestPath, "--policy", passPolicy]);
+        failCode = await main(["dataset", "check", manifestPath, "--policy", failPolicy]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(passCode).to.equal(0);
+      expect(failCode).to.equal(3);
+    });
+
+    it("main() --json emits the machine-readable object on stdout", async function () {
+      const manifestPath = mixedManifest("dck-cli-json");
+      const policyPath = policyFor(pol({ requireLicense: true }), "dck-cli-json");
+      const chunks = [];
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (s) => {
+        chunks.push(s);
+        return true;
+      };
+      let code;
+      try {
+        code = await main(["dataset", "check", manifestPath, "--policy", policyPath, "--json"]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(3); // FAIL (d.txt has no license)
+      const parsed = JSON.parse(chunks.join(""));
+      expect(parsed.verdict).to.equal("FAIL");
+      expect(parsed.violations).to.deep.equal([
+        { relPath: "d.txt", rule: "requireLicense", value: "(no license hint)" },
+      ]);
+    });
+
+    it("main() exit 2 (usage) on a missing positional / missing --policy / extra positional / unknown flag", async function () {
+      const manifestPath = mixedManifest("dck-usage");
+      const policyPath = policyFor(pol({ requireLicense: true }), "dck-usage");
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "check"])).to.equal(2); // no positional
+        expect(await main(["dataset", "check", manifestPath])).to.equal(2); // missing --policy (NOT a silent PASS)
+        expect(await main(["dataset", "check", manifestPath, manifestPath, "--policy", policyPath])).to.equal(2); // extra positional
+        expect(await main(["dataset", "check", manifestPath, "--policy", policyPath, "--bogus"])).to.equal(2); // unknown flag
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    it("main() exit 1 on a missing / corrupt manifest OR policy (runtime error)", async function () {
+      const manifestPath = mixedManifest("dck-rt");
+      const goodPolicy = policyFor(pol({ requireLicense: true }), "dck-rt-good");
+      // Corrupt manifest (valid JSON, non-hex root).
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      const badManifest = path.join(tmp("dck-rt-badman-"), "m.json");
+      fs.writeFileSync(badManifest, JSON.stringify(m));
+      // Foreign policy (wrong kind).
+      const badPolicy = path.join(tmp("dck-rt-badpol-"), "p.json");
+      fs.writeFileSync(badPolicy, JSON.stringify({ kind: "x", schemaVersion: 1 }));
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "check", "/no/such/m.json", "--policy", goodPolicy])).to.equal(1);
+        expect(await main(["dataset", "check", manifestPath, "--policy", "/no/such/p.json"])).to.equal(1);
+        expect(await main(["dataset", "check", badManifest, "--policy", goodPolicy])).to.equal(1);
+        expect(await main(["dataset", "check", manifestPath, "--policy", badPolicy])).to.equal(1);
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    it("the CLI writes NO side-effect file (the gate is read-only; working tree stays clean)", async function () {
+      const manifestPath = mixedManifest("dck-clean");
+      const policyPath = policyFor(pol({ denyLicenses: ["GPL-3.0"] }), "dck-clean");
+      const cwdBefore = fs.readdirSync(process.cwd());
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      try {
+        await main(["dataset", "check", manifestPath, "--policy", policyPath]);
+      } finally {
+        process.stdout.write = orig;
+      }
       expect(fs.readdirSync(process.cwd())).to.deep.equal(cwdBefore);
     });
   });

@@ -1609,10 +1609,353 @@ function runDatasetAttest(opts) {
   return { envelope, canonical, out: outAbs };
 }
 
+// =================================================================================================
+// `vh dataset check <manifest> --policy <p> [--json]` — deterministic, OFFLINE license/source policy gate.
+//
+// WHY THIS EXISTS
+//   `vh dataset summary` rolls up what a dataset CLAIMS about its files' {source, license}. But a CI
+//   pipeline (or a compliance reviewer) wants the next step: a PASS/FAIL GATE — "does this dataset's
+//   self-asserted provenance satisfy MY policy?" (e.g. "no GPL in my proprietary product", "only files
+//   from this allowed corpus", "every file MUST carry a license"). `vh dataset check` reads the manifest
+//   via the SAME strict `readManifest` (a corrupt/foreign manifest is rejected, never half-accepted) and a
+//   new strict, versioned POLICY file, then evaluates the manifest's TRUSTED file set against the policy
+//   in a PURE, deterministic function (no I/O, no provider, no key, no network) and returns a verdict.
+//
+// TRUST POSTURE (carried verbatim — reuses TRUST_NOTE so caveats never drift)
+//   The {source, license} hints are UNTRUSTED, self-asserted metadata NOT bound into the root. A PASS
+//   means "the dataset's self-asserted hints satisfy this policy" — NOT "the licenses are genuinely
+//   correct". A `(no license hint)` file ASSERTS NOTHING (which `requireLicense` is the rule that flags).
+//   This NEVER implies it verified a license is real.
+//
+// MATCH SEMANTICS (documented so a verdict is reproducible)
+//   A file's "license hint value" is its `hints.license` string, or the absence of one (no `hints` at
+//   all, or `hints` with no `license`). Likewise for `hints.source`. All comparisons against the policy's
+//   lists are CASE-SENSITIVE EXACT STRING MATCHES on the hint value ("GPL-3.0" matches only "GPL-3.0",
+//   never "gpl-3.0" or "GPL-3.0-or-later"). The rules:
+//     - allowLicenses : any file whose license hint is NOT in the allowlist VIOLATES (a file with no
+//                       license hint also violates — it is not in any allowlist).
+//     - denyLicenses  : any file whose license hint IS in the denylist VIOLATES (a file with no license
+//                       hint does NOT violate — there is no value on the denylist to match).
+//     - allowSources / denySources : the same, on the source hint.
+//     - requireLicense: true : every file MUST carry a license hint; a `(no license hint)` file VIOLATES.
+//   A policy with NO rules is valid and trivially PASSes (with a clear "no rules" note).
+
+const POLICY_KIND = "verifyhash.dataset-policy";
+const POLICY_SCHEMA_VERSION = 1;
+const SUPPORTED_POLICY_SCHEMA_VERSIONS = Object.freeze([1]);
+
+// The (stable, documented) rule identifiers a violation reports in its `rule` field. A consumer can gate
+// on these exact strings.
+const POLICY_RULE = Object.freeze({
+  ALLOW_LICENSES: "allowLicenses",
+  DENY_LICENSES: "denyLicenses",
+  ALLOW_SOURCES: "allowSources",
+  DENY_SOURCES: "denySources",
+  REQUIRE_LICENSE: "requireLicense",
+});
+
+// The sentinel value a violation carries for a file that asserts NO license/source hint. It is NOT a real
+// hint value — it is the explicit "(no license hint)" / "(no source hint)" label (reusing the summary's
+// buckets), so a reader can never mistake "no claim" for a literal hint string named "(no license hint)".
+const NO_HINT_VALUE = Object.freeze({
+  license: NO_LICENSE_BUCKET,
+  source: NO_SOURCE_BUCKET,
+});
+
+// Possible verdicts. PASS = no file violates any rule; FAIL = at least one file violates at least one rule.
+const POLICY_VERDICT = Object.freeze({ PASS: "PASS", FAIL: "FAIL" });
+
+/**
+ * Strictly validate a parsed policy object. Throws an Error describing the FIRST problem; never mutates
+ * and never fills defaults (mirroring validateManifest / validateAttestation). A wrong kind/schemaVersion,
+ * or any malformed field (a non-array allow/deny list, a non-string list entry, a non-boolean
+ * requireLicense) hard-errors here so a corrupt/foreign policy is rejected, never half-accepted. Every
+ * rule field is OPTIONAL and combinable; a policy with NO rules is valid (and trivially PASSes).
+ * @param {any} obj
+ * @returns {object} the same object, if valid
+ */
+function validatePolicy(obj) {
+  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+    throw new Error("dataset policy must be a JSON object");
+  }
+  if (obj.kind !== POLICY_KIND) {
+    throw new Error(
+      `not a verifyhash dataset policy (kind: ${JSON.stringify(obj.kind)}; expected ${JSON.stringify(
+        POLICY_KIND
+      )})`
+    );
+  }
+  if (!SUPPORTED_POLICY_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
+    throw new Error(
+      `unsupported dataset policy schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
+        `(this build understands ${JSON.stringify(SUPPORTED_POLICY_SCHEMA_VERSIONS)})`
+    );
+  }
+  // The four list rules: each, WHEN PRESENT, must be an array of non-empty strings. We reject a non-array,
+  // an empty-string entry, or a non-string entry rather than silently coercing — a malformed list must
+  // never half-evaluate into a surprise verdict.
+  for (const f of [
+    POLICY_RULE.ALLOW_LICENSES,
+    POLICY_RULE.DENY_LICENSES,
+    POLICY_RULE.ALLOW_SOURCES,
+    POLICY_RULE.DENY_SOURCES,
+  ]) {
+    if (obj[f] === undefined) continue;
+    if (!Array.isArray(obj[f])) {
+      throw new Error(`dataset policy ${f} must be an array of strings when present, got: ${String(obj[f])}`);
+    }
+    obj[f].forEach((v, i) => {
+      if (typeof v !== "string" || v.length === 0) {
+        throw new Error(`dataset policy ${f}[${i}] must be a non-empty string, got: ${String(v)}`);
+      }
+    });
+  }
+  // requireLicense, WHEN PRESENT, must be a strict boolean (reject a truthy string/number that would
+  // silently enable the rule).
+  if (obj.requireLicense !== undefined && typeof obj.requireLicense !== "boolean") {
+    throw new Error(
+      `dataset policy requireLicense must be a boolean when present, got: ${String(obj.requireLicense)}`
+    );
+  }
+  return obj;
+}
+
+/**
+ * Read, parse, and STRICTLY validate the policy at `policyPath`. Throws on a missing file, invalid JSON,
+ * or ANY schema deviation (so a malformed/foreign policy is rejected, never half-accepted) — mirroring
+ * readManifest / readAttestation.
+ * @param {string} policyPath
+ * @returns {object} the validated policy object
+ */
+function readPolicy(policyPath) {
+  if (!policyPath || typeof policyPath !== "string") {
+    throw new Error("readPolicy requires a policy file path");
+  }
+  let raw;
+  try {
+    raw = fs.readFileSync(policyPath, "utf8");
+  } catch (e) {
+    throw new Error(`cannot read dataset policy at ${policyPath}: ${e.message}`);
+  }
+  let obj;
+  try {
+    obj = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`dataset policy at ${policyPath} is not valid JSON: ${e.message}`);
+  }
+  return validatePolicy(obj);
+}
+
+/**
+ * Count the rules a (validated) policy actually carries — so the verdict can report `rulesEvaluated` and
+ * a no-rules policy is announced clearly. A list rule counts only when present AND non-empty (an empty
+ * `allowLicenses: []` carries no constraint). `requireLicense` counts only when exactly `true`.
+ * @param {object} policy a validated policy object
+ * @returns {number}
+ */
+function _countPolicyRules(policy) {
+  let n = 0;
+  for (const f of [
+    POLICY_RULE.ALLOW_LICENSES,
+    POLICY_RULE.DENY_LICENSES,
+    POLICY_RULE.ALLOW_SOURCES,
+    POLICY_RULE.DENY_SOURCES,
+  ]) {
+    if (Array.isArray(policy[f]) && policy[f].length > 0) n++;
+  }
+  if (policy.requireLicense === true) n++;
+  return n;
+}
+
+/**
+ * Evaluate a manifest's TRUSTED file set against a policy in a PURE, deterministic function (no I/O, no
+ * provider, no key, no network). Returns a verdict: PASS (no file violates any rule) or FAIL with, per
+ * violating file, the relPath + which rule it broke + the offending hint value. A single file can violate
+ * more than one rule (each is its own violation entry). Violations are sorted by relPath then rule, so two
+ * runs over the same inputs produce a byte-identical verdict.
+ *
+ * Match semantics (see header): CASE-SENSITIVE EXACT STRING match on the hint value. A file with no
+ * license hint has the NO_HINT_VALUE.license sentinel as its "value"; ditto source.
+ *
+ * @param {object} manifest a validated manifest object (from readManifest)
+ * @param {object} policy   a validated policy object (from readPolicy)
+ * @returns {{
+ *   verdict: "PASS"|"FAIL",
+ *   fileCount: number,
+ *   rulesEvaluated: number,
+ *   violations: { relPath: string, rule: string, value: string }[],
+ * }}
+ */
+function evaluatePolicy(manifest, policy) {
+  const allowLicenses =
+    Array.isArray(policy.allowLicenses) && policy.allowLicenses.length > 0
+      ? new Set(policy.allowLicenses)
+      : null;
+  const denyLicenses =
+    Array.isArray(policy.denyLicenses) && policy.denyLicenses.length > 0
+      ? new Set(policy.denyLicenses)
+      : null;
+  const allowSources =
+    Array.isArray(policy.allowSources) && policy.allowSources.length > 0
+      ? new Set(policy.allowSources)
+      : null;
+  const denySources =
+    Array.isArray(policy.denySources) && policy.denySources.length > 0
+      ? new Set(policy.denySources)
+      : null;
+  const requireLicense = policy.requireLicense === true;
+
+  const violations = [];
+  for (const f of manifest.files) {
+    const license =
+      f.hints && typeof f.hints.license === "string" ? f.hints.license : null;
+    const source = f.hints && typeof f.hints.source === "string" ? f.hints.source : null;
+
+    // requireLicense: a file with NO license hint asserts nothing — it violates. (This is the ONE rule
+    // that flags a missing hint; allow/deny lists below handle PRESENT vs absent per their own semantics.)
+    if (requireLicense && license === null) {
+      violations.push({
+        relPath: f.relPath,
+        rule: POLICY_RULE.REQUIRE_LICENSE,
+        value: NO_HINT_VALUE.license,
+      });
+    }
+    // allowLicenses: a license hint NOT in the allowlist violates. A file with no license hint is not in
+    // any allowlist, so it also violates (reported with the explicit no-hint sentinel value).
+    if (allowLicenses && (license === null || !allowLicenses.has(license))) {
+      violations.push({
+        relPath: f.relPath,
+        rule: POLICY_RULE.ALLOW_LICENSES,
+        value: license === null ? NO_HINT_VALUE.license : license,
+      });
+    }
+    // denyLicenses: a license hint IN the denylist violates. A file with no license hint has no value to
+    // match on the denylist, so it does NOT violate this rule.
+    if (denyLicenses && license !== null && denyLicenses.has(license)) {
+      violations.push({ relPath: f.relPath, rule: POLICY_RULE.DENY_LICENSES, value: license });
+    }
+    // allowSources: a source hint NOT in the allowlist violates (a missing source hint is not in it).
+    if (allowSources && (source === null || !allowSources.has(source))) {
+      violations.push({
+        relPath: f.relPath,
+        rule: POLICY_RULE.ALLOW_SOURCES,
+        value: source === null ? NO_HINT_VALUE.source : source,
+      });
+    }
+    // denySources: a source hint IN the denylist violates (a missing source hint does not).
+    if (denySources && source !== null && denySources.has(source)) {
+      violations.push({ relPath: f.relPath, rule: POLICY_RULE.DENY_SOURCES, value: source });
+    }
+  }
+
+  // Deterministic order: by relPath, then by rule (a stable total order, so two runs are byte-identical).
+  violations.sort((a, b) => {
+    if (a.relPath !== b.relPath) return a.relPath < b.relPath ? -1 : 1;
+    return a.rule < b.rule ? -1 : a.rule > b.rule ? 1 : 0;
+  });
+
+  return {
+    verdict: violations.length === 0 ? POLICY_VERDICT.PASS : POLICY_VERDICT.FAIL,
+    fileCount: manifest.files.length,
+    rulesEvaluated: _countPolicyRules(policy),
+    violations,
+  };
+}
+
+/**
+ * Render a policy-check result as the human-readable block the CLI prints. LEADS with the trust caveat
+ * (reusing TRUST_NOTE verbatim so caveats never drift): the {source, license} hints are UNTRUSTED — a
+ * PASS means the dataset's self-asserted hints satisfy this policy, NOT that the licenses are genuinely
+ * correct. NEVER implies a license was verified to be real.
+ * @param {object} r the object evaluatePolicy returns
+ * @returns {string[]} lines
+ */
+function formatDatasetCheck(r) {
+  const lines = [
+    // TRUST caveat FIRST: a PASS is about self-asserted hints, not verified licenses.
+    "  TRUST: the {source, license} hints checked here are UNTRUSTED, self-asserted metadata. " +
+      TRUST_NOTE,
+    "         A PASS means the dataset's SELF-ASSERTED hints satisfy this policy — NOT that the licenses",
+    "         are genuinely correct. \"(no license hint)\" asserts NOTHING (requireLicense flags it). This",
+    "         does NOT verify any license/source is real.",
+    "",
+    `  policy check: ${r.verdict}`,
+    `  files:           ${r.fileCount}`,
+    `  rules evaluated: ${r.rulesEvaluated}`,
+  ];
+  if (r.rulesEvaluated === 0) {
+    lines.push(
+      "  NOTE: this policy declares NO rules, so it trivially PASSes — every dataset satisfies a policy",
+      "        with no constraints. Add allowLicenses/denyLicenses/allowSources/denySources/requireLicense."
+    );
+    return lines;
+  }
+  if (r.verdict === POLICY_VERDICT.PASS) {
+    lines.push("  PASS: no file's self-asserted hints violate any rule in this policy.");
+    return lines;
+  }
+  lines.push(
+    `  FAIL: ${r.violations.length} violation${r.violations.length === 1 ? "" : "s"} ` +
+      "(each line: the file, the rule it broke, and the offending hint value):"
+  );
+  for (const v of r.violations) {
+    lines.push(`    ${v.relPath}  [${v.rule}]  value: ${v.value}`);
+  }
+  return lines;
+}
+
+/**
+ * Orchestrate `vh dataset check <manifest> --policy <p> [--json]`. Reads the manifest via the strict
+ * `readManifest` (a corrupt/foreign manifest is rejected) and the policy via the strict `readPolicy`,
+ * then evaluates the manifest's TRUSTED file set against the policy in the PURE `evaluatePolicy`. Emits
+ * the deterministic verdict as a human block (LEADS with the trust caveat) or `--json` machine form.
+ * PURELY OFFLINE: no tree, no provider, no key, no network.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
+ * @param {string} opts.policy    path to a policy file (the new strict, versioned schema)
+ * @param {boolean}[opts.json]    emit the machine-readable object instead of the human block
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {{ verdict: "PASS"|"FAIL", fileCount: number, rulesEvaluated: number, violations: object[] }}
+ */
+function runDatasetCheck(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetCheck requires options");
+  const { manifest: manifestPath, policy: policyPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runDatasetCheck requires a <manifest> path");
+  if (!policyPath) throw new Error("runDatasetCheck requires a --policy <p> path");
+
+  // Strict reads: a corrupt/edited/foreign manifest OR policy is rejected here, never half-accepted,
+  // BEFORE any evaluation. The manifest's file SET is the TRUSTED basis of the check.
+  const manifest = readManifest(manifestPath);
+  const policy = readPolicy(policyPath);
+
+  // The verdict math lives in the PURE evaluator (no I/O) so it is deterministic and unit-testable.
+  const result = evaluatePolicy(manifest, policy);
+
+  if (opts.json) {
+    write(JSON.stringify(result) + "\n");
+  } else {
+    for (const line of formatDatasetCheck(result)) write(line + "\n");
+  }
+  return result;
+}
+
 module.exports = {
   MANIFEST_KIND,
   MANIFEST_SCHEMA_VERSION,
   SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
+  POLICY_KIND,
+  POLICY_SCHEMA_VERSION,
+  SUPPORTED_POLICY_SCHEMA_VERSIONS,
+  POLICY_RULE,
+  POLICY_VERDICT,
+  NO_HINT_VALUE,
+  validatePolicy,
+  readPolicy,
+  evaluatePolicy,
+  formatDatasetCheck,
+  runDatasetCheck,
   ATTESTATION_KIND,
   ATTESTATION_SCHEMA_VERSION,
   SUPPORTED_ATTESTATION_SCHEMA_VERSIONS,

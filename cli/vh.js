@@ -31,6 +31,7 @@ const {
   runDatasetProve,
   runDatasetVerifyProof,
   runDatasetAttest,
+  runDatasetCheck,
 } = require("./dataset");
 
 function usage() {
@@ -55,6 +56,7 @@ function usage() {
     "  vh dataset verify <dir> --manifest <p>  re-derive the root + per-file diff vs a manifest (OFFLINE)",
     "  vh dataset diff <manifestA> <manifestB>  OFFLINE manifest-to-manifest change report (no tree/key/net)",
     "  vh dataset summary <manifest>   OFFLINE provenance/license roll-up over a manifest (no tree/key/net)",
+    "  vh dataset check <manifest> --policy <p>  OFFLINE license/source policy gate (PASS/FAIL; CI-gateable)",
     "  vh dataset report <manifest> [--verify <dir>]  ONE deterministic evidence document for a filing",
     "  vh dataset attest <manifest> [--out <p>]  canonical UNSIGNED attestation payload (the signing-ready bytes)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
@@ -249,6 +251,20 @@ function usage() {
     "  hints are UNTRUSTED, self-asserted metadata NOT bound into the root — this counts what the dataset",
     "  CLAIMS, it does NOT verify any license/source is correct. '(no license hint)' means the manifest",
     "  asserts nothing, NOT that the file is unlicensed. Exit 0; usage error 2; corrupt/missing manifest 1.",
+    "",
+    "dataset check options (OFFLINE license/source policy gate; NO tree, NO key, NO network):",
+    "  <manifest>                 REQUIRED: a manifest written by `vh dataset build`",
+    "  --policy <path>            REQUIRED: a versioned policy file. ALL rules OPTIONAL and combinable:",
+    "                             allowLicenses (allowlist), denyLicenses (denylist), allowSources,",
+    "                             denySources, requireLicense:true (every file MUST carry a license hint).",
+    "  --json                     emit { verdict, fileCount, rulesEvaluated, violations:[{relPath,rule,value}] }",
+    "  Reads the manifest AND policy strictly (a corrupt/foreign one is rejected) and evaluates the",
+    "  manifest's TRUSTED file set against the policy in a PURE, deterministic function. Match semantics:",
+    "  CASE-SENSITIVE EXACT string match on the hint value. A policy with NO rules trivially PASSes. The",
+    "  {source, license} hints are UNTRUSTED, self-asserted metadata NOT bound into the root: a PASS means",
+    "  the dataset's self-asserted hints satisfy this policy, NOT that the licenses are genuinely correct.",
+    "  Violations are sorted by relPath then rule (byte-identical output across runs). A missing --policy",
+    "  is a usage error. Exit 0 PASS, 3 FAIL; usage error 2; corrupt/missing manifest OR policy 1.",
     "",
     "dataset report options (ONE deterministic evidence document; OFFLINE; NO key, NO network):",
     "  <manifest>                 REQUIRED: a manifest written by `vh dataset build`",
@@ -1667,6 +1683,33 @@ function parseDatasetSummaryArgs(argv) {
 }
 
 /**
+ * Parse `dataset check` argv into { manifest, policy, json }. Takes EXACTLY one positional manifest path,
+ * a REQUIRED --policy <p>, and an optional --json. Throws on a missing/extra positional or an unknown/
+ * incomplete flag, so a typo never silently checks the wrong (or no) manifest against a surprise policy
+ * (parser parity with the other dataset subcommands). A missing --policy is enforced in cmdDatasetCheck.
+ */
+function parseDatasetCheckArgs(argv) {
+  const opts = { manifest: undefined, policy: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--policy":
+        opts.policy = argv[++i];
+        if (opts.policy === undefined) throw new Error("--policy requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.manifest !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.manifest = a;
+    }
+  }
+  return opts;
+}
+
+/**
  * Parse `dataset report` argv into { manifest, verifyDir, out, json }. Takes EXACTLY one positional
  * manifest path, an optional --verify <dir>, an optional --out <p>, and an optional --json. Throws on a
  * missing/extra positional or an unknown/incomplete flag, so a typo never silently reports the wrong (or
@@ -1789,6 +1832,9 @@ function cmdDataset(argv) {
   if (sub === "summary") {
     return cmdDatasetSummary(rest);
   }
+  if (sub === "check") {
+    return cmdDatasetCheck(rest);
+  }
   if (sub === "report") {
     return cmdDatasetReport(rest);
   }
@@ -1804,7 +1850,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | diff | summary | report | attest | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | summary | check | report | attest | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -1959,6 +2005,45 @@ function cmdDatasetSummary(argv) {
     return 1;
   }
   return 0;
+}
+
+/**
+ * `vh dataset check <manifest> --policy <p> [--json]` — OFFLINE license/source policy gate. Reads the
+ * manifest AND policy strictly (a corrupt/foreign one is rejected) and evaluates the manifest's TRUSTED
+ * file set against the policy in a PURE, deterministic function. PURELY OFFLINE: no tree, no provider, no
+ * key, no network. Exit 0 PASS, 3 FAIL (mirrors the dataset family's data-divergence convention so all
+ * dataset gates use the same 0/3 contract), 2 on a usage error (missing/extra positional, missing
+ * --policy, unknown flag), 1 on a runtime error (missing/corrupt manifest OR policy). A missing --policy
+ * is a usage error (2), NOT a silent PASS.
+ */
+function cmdDatasetCheck(argv) {
+  let opts;
+  try {
+    opts = parseDatasetCheckArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset check` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+  // A missing --policy is a USAGE error (2), never a silent PASS: a gate with no policy must not pass.
+  if (!opts.policy) {
+    process.stderr.write("error: `vh dataset check` requires --policy <path>\n\n" + usage());
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runDatasetCheck({ manifest: opts.manifest, policy: opts.policy, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on FAIL so CI can gate (mirrors the dataset family's 0/3 data-divergence convention).
+  return result.verdict === "PASS" ? 0 : 3;
 }
 
 /**
@@ -2168,6 +2253,7 @@ module.exports = {
   cmdDatasetVerify,
   cmdDatasetDiff,
   cmdDatasetSummary,
+  cmdDatasetCheck,
   cmdDatasetReport,
   cmdDatasetAttest,
   cmdDatasetProve,
@@ -2176,6 +2262,7 @@ module.exports = {
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,
   parseDatasetSummaryArgs,
+  parseDatasetCheckArgs,
   parseDatasetReportArgs,
   parseDatasetAttestArgs,
   parseDatasetProveArgs,

@@ -60,6 +60,26 @@ of what the `uri` says.
 
 > Rule of thumb: **the `contentHash` is the proof; the `uri` is just a convenience pointer.**
 
+### Reading a record (`vh list` / `vh show`) does NOT validate its content
+
+`vh list` enumerates the registry and `vh show <0xhash>` looks up one record by hash. Both are
+**read-only and need no key** — they take a provider only, never a signer — and both exist for
+*discovery and audit*: answering "what is in the registry?" and "what does the record for this hash
+say?". Neither command touches your files, so **a hit does not bind the record to any real bytes you
+hold.** Seeing a record in `vh list`, or a populated record from `vh show`, tells you only that some
+hash was anchored — it is *not* the integrity check.
+
+The integrity check is unchanged: it is the same re-derive-and-compare flow above. To trust that some
+content is what a record attests, you must still independently obtain the content, **re-derive its
+hash** (`vh hash`), and confirm it equals the anchored `contentHash` — which is exactly what
+`vh verify <path>` automates. Until you have done that, treat a listed/shown record's `uri` as an
+untrusted hint and its `contributor` per the `authorBound` rule below. The read commands lead their
+human-readable output with this caveat verbatim, so a browser of the registry is never lulled into
+treating a `list`/`show` hit as proof that any file is authentic.
+
+> Rule of thumb: **`list`/`show` tell you a hash is on-chain; only `vh verify` binds that hash to
+> bytes.**
+
 ### A `--receipt` manifest is an UNTRUSTED hint too — it localizes, it does not verify
 
 `vh anchor <dir> --receipt <p>` records a `manifest`: the sorted list of `{ path, contentHash, leaf }`
@@ -167,3 +187,8 @@ small incentive surface to nudge it. Therefore:
   it unchanged — demonstrating the `uri` is never validated, so consumers must re-hash,
 - `timestamp`/`blockNumber` reflect the *anchoring* block (set by the chain at anchor time), and the
   same content can be anchored long after it was created, demonstrating they are not authorship time.
+
+`test/cli.readside.docs.test.js` additionally guards that the read-side caveat above can't rot: it
+asserts that README.md and this file keep documenting `vh list` / `vh show` as read-only/no-key and
+keep stating that listing or showing a record does NOT validate its content (you still re-derive +
+`vh verify`), pinned to the caveats the read commands actually export.

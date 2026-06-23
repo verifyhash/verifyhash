@@ -45,6 +45,8 @@ vh commit <path> [--receipt p]   # commit-reveal step 1: commit + persist a resu
 vh reveal --receipt <p>          # commit-reveal step 2: resume from the receipt and reveal
 vh verify <path>                 # recompute the hash, look it up on-chain, report MATCH / MISMATCH
 vh prove  <file> --root dir      # generate + on-chain-verify a per-file Merkle proof
+vh list   [filters]              # read-only: enumerate the registry (discovery + audit, NO key)
+vh show   <0xhash>               # read-only: look up ONE record by hash, no local content (NO key)
 ```
 
 `vh anchor` is a single cheap transaction but its `contentHash` is public in the mempool, so anyone
@@ -82,6 +84,35 @@ commit time, so even it is crash-recoverable.
 The full receipt JSON schema (every field, which are trusted vs untrusted hints), the commit→reveal
 resume lifecycle, and the directory-manifest diff semantics are specified in
 [`docs/RECEIPTS.md`](docs/RECEIPTS.md).
+
+### Discovery & audit (`vh list` + `vh show`)
+
+`vh verify` answers "is THIS content anchored?"; the read side answers "WHAT is in the registry?".
+Both are **read-only and need no key** — they take an RPC provider only and never construct a signer,
+because enumerating or reading a public, immutable registry must never require the ability to write
+to it.
+
+```
+vh list                              # every record, in insertion order
+vh list --contributor 0xABC… --json  # filter by address; machine-readable JSON
+vh list --author-bound --limit 20    # only commit-reveal records; page with --limit/--offset
+vh show 0x<64-hex>                    # one record by content hash — no files on disk needed
+```
+
+`vh list` pages through the registry and prints one block per record (contentHash, contributor,
+attribution strength, timestamp, blockNumber, uri), filterable by `--contributor` / `--author-bound`
+and sliceable with `--limit` / `--offset` (or `--json` for tooling). `vh show <0xhash>` looks up a
+single record by a hash you already have (copied from `vh list`, a receipt, or a PR) and exits
+non-zero with `NOT ANCHORED` when there is no such record.
+
+> **Listing or showing a record does NOT validate its content.** Both commands only read what is
+> on-chain — they never touch your files, so a hit binds nothing to real bytes you hold. `uri` stays
+> an **untrusted hint** the contract never fetched or validated, and `contributor` only means proven
+> authorship when `authorBound` is `true` (commit-reveal); otherwise it is merely the first anchorer.
+> To bind a record to actual content you must still independently fetch it, **re-derive its hash**,
+> and run `vh verify <path>` (re-derive-and-compare). These are exactly the caveats in
+> [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md), which the read commands lead their output
+> with verbatim.
 
 `vh verify` is read-only: it re-derives the content hash and compares it to what is anchored, which
 is exactly the integrity check the trust model requires. It needs only an RPC URL — no key, no

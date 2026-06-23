@@ -49,6 +49,7 @@ vh verify-proof <p>                  # read-only: independently verify a portabl
 vh list    [filters]                 # read-only: enumerate the registry (discovery + audit, NO key)
 vh show    <0xhash>                  # read-only: look up ONE record by hash, no local content (NO key)
 vh lineage <0xhash> [--max-depth n]  # read-only walk UP the parent chain to the lineage root (no key)
+vh reputation <addr>                 # read-only, no key, authenticated: a non-transferable, re-derivable contribution SCORE for one address (NOT a token)
 ```
 
 > **Read commands authenticate the registry by default.** Every read command (`verify` / `show` /
@@ -249,6 +250,37 @@ client); `--json` emits an ordered ancestor array an indexer/UI can reconstruct 
 > [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md); the full graph spec, the log shape, and a
 > worked anchor-root → anchor-revision → walk-lineage example are in [`docs/LINEAGE.md`](docs/LINEAGE.md).
 
+### Contribution score (`vh reputation <addr>`)
+
+`vh reputation <addr>` reports a **verifiable contribution score** for one address: the `total`
+records under it, the **authorBound vs anchor-only** breakdown, the **lineage-root vs revision**
+breakdown, and the earliest/latest block + timestamp. It is **read-only, needs no key, and
+authenticates the registry** (the same [authenticated-read](#authenticated-reads-registry-identity--chainid)
+preflight every read command runs) before reporting anything.
+
+```
+vh reputation 0xABC… --rpc <url>            # human block, led by the trust caveat
+vh reputation 0xABC… --json                  # { registry, address, total, authorBound, anchorOnly, … }
+```
+
+The score is computed from a **single ownerless on-chain read** — the paged, clamped
+`getRecordsByContributor(addr, start, count)` walk (`total` = `records.length` from that walk) — so
+scoring one address is **O(that address's own records), never O(total)**. The companion T-12.1 O(1)
+read `contributorRecordCount(addr)` (which `vh reputation` does **not** call) returns the same `total`
+without paging, for an external consumer that wants the count alone.
+
+> **The score is a NON-TRANSFERABLE DERIVED VIEW — NOT a token.** It is re-derivable by anyone from the
+> same registry, holds no value, grants no rights, and `vh reputation` takes a **provider only, never a
+> key**. Any tradeable/reputation-**token** layer is a separate, **human-gated** decision (D-2 / P-1 in
+> `STRATEGY.md`) and is not built here. It does **NOT** validate record content (re-derive + `vh verify`
+> for that), does **NOT** upgrade a front-runnable anchor's attribution, and for anchor-only records the
+> grouping address is merely the **first anchorer**. **Anti-sybil:** the meaningful signal is the
+> **`authorBound` (commit-reveal) count** — producing a front-running-resistant claim has a real cost,
+> whereas anchor-only records and address creation are cheap — so authorBound and anchor-only are
+> reported **separately and never summed**. These are exactly the caveats in
+> [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md); the full definition is in
+> [`docs/REPUTATION.md`](docs/REPUTATION.md).
+
 ### Portable proofs (`vh prove --out` + `vh verify-proof`)
 
 `vh prove <file> --root <dir>` builds a Merkle proof that a single file is part of an anchored repo
@@ -359,4 +391,10 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   (acyclic-by-construction, O(1), a CLAIM that proves no ancestry/authorship), the `Linked` log an
   indexer reconstructs the graph from, the `--parent` write flow, and the `vh lineage`/`vh show` read
   flow with a worked anchor-root → anchor-revision → walk-lineage example.
+- [`docs/REPUTATION.md`](docs/REPUTATION.md) — the contribution score: its exact definition (the single
+  `getRecordsByContributor` walk it aggregates, with `contributorRecordCount` the companion O(1) count,
+  the authorBound/anchor-only
+  and root/revision breakdowns, the block/time bounds), why it is a non-transferable derived view (NOT a
+  token — any tradeable layer is D-2/P-1, human-only), what it does NOT prove, and the anti-sybil note
+  (the meaningful signal is the authorBound count).
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.

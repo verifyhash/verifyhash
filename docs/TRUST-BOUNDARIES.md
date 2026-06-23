@@ -231,6 +231,30 @@ The CLI exposes this as `vh claim <path>` (commit-reveal) versus `vh anchor <pat
 `test/Attribution.test.js` (contract) and `test/cli.claim.test.js` (CLI + a live-node front-run
 proof).
 
+### The contribution score (`vh reputation`) inherits this boundary — anti-sybil
+
+`vh reputation <addr>` aggregates the records grouped under one address — via a single paged
+`getRecordsByContributor` walk (`total` = the walked records; `contributorRecordCount` is the companion
+O(1) count it does not itself call) — into a **score**. That score is a
+**NON-TRANSFERABLE DERIVED VIEW** —
+re-derivable by anyone from the same registry, holding no value and granting no rights — **NOT a
+token** (any tradeable/reputation-token layer is the human-gated D-2 / P-1 decision in
+[`STRATEGY.md`](../STRATEGY.md), not built here). It is **read-only and needs no key** (provider only,
+never a signer), and like `vh list`/`vh show` it does **NOT validate content** — re-derive + `vh verify`
+for that. Crucially it does **NOT upgrade a front-runnable anchor's attribution**: grouping by
+`contributor` is a raw enumeration, so an anchor-only record stays "first anchorer only", never proven
+authorship, exactly per the rule above.
+
+**Anti-sybil.** Address creation and one-shot `anchor()` are cheap, so the `total` / anchor-only counts
+are trivially inflatable and prove only order-of-anchoring. The **meaningful signal is the `authorBound`
+(commit-reveal) count**, because producing a front-running-resistant claim has a real cost (commit a
+sender-bound, salt-blinded commitment, wait out `MIN_REVEAL_DELAY`, then reveal — only the original
+committer can). `vh reputation` therefore reports `authorBound` and `anchor-only` **separately and never
+sums them**. Full definition in [`docs/REPUTATION.md`](REPUTATION.md).
+
+> Rule of thumb: **a contribution score is a re-derivable VIEW, not a token; weight the `authorBound`
+> (commit-reveal) count, because anchor-only and address creation are cheap.**
+
 ### `timestamp` is validator-influenced — don't treat it as a precise clock
 
 `block.timestamp` is chosen by the block proposer, constrained only loosely by consensus (it must

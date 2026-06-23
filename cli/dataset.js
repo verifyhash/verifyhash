@@ -1635,6 +1635,263 @@ function readAttestation(attestationPath) {
   return validateAttestation(obj);
 }
 
+// =================================================================================================
+// SIGNED-attestation envelope (T-17.1) — a detached signature WRAPPED AROUND the canonical UNSIGNED
+// payload, never an edit of it.
+//
+// WHY A SEPARATE KIND
+//   The UNSIGNED attestation (above) deliberately hard-asserts `signed:false`/`signature:null`: that
+//   guarantee must NEVER be loosened, because a reader who trusts `serializeAttestation`'s bytes is
+//   trusting that they carry NO signature claim. So instead of mutating that payload to add a
+//   signature, we WRAP it: a new, separately-versioned container kind that embeds the EXACT canonical
+//   unsigned bytes (byte-for-byte the string `serializeAttestation` emits) as a string, alongside a
+//   detached `signature` block. The embedded unsigned bytes are re-parsed and re-validated by the SAME
+//   `validateAttestation`, so the wrapped payload is still provably `signed:false`/`signature:null` —
+//   wrapping adds a vouch, it never edits the thing vouched for.
+//
+// THE SCHEME (detached, NOT EIP-712)
+//   `eip191-personal-sign` means: the signer ran `personal_sign` (EIP-191) over the EXACT canonical
+//   unsigned bytes (the UTF-8 of the embedded `attestation` string, including its single trailing
+//   newline). We use a detached signature — not EIP-712 typed data — precisely so the signed message
+//   IS the canonical payload bytes verbatim, with no separate domain/struct encoding to drift from
+//   them. This container does NOT itself verify the signature (the loop holds no key and does no
+//   crypto recovery — see T-17.2); it asserts the STRUCTURE is well-formed and the embedded payload is
+//   a valid UNSIGNED attestation.
+//
+// WHAT IT PROVES / DOES NOT PROVE
+//   A valid signed container asserts: the holder of `signer`'s key vouched for THIS dataset identity
+//   (the embedded root/fileCount/manifestDigest) at signing time. It does NOT prove a timestamp — there
+//   is no "unaltered since date T" unless `scheme` is a timestamp authority (still P-3, needs-human) —
+//   and EVERY caveat of the embedded UNSIGNED payload (the {source,license} hints are untrusted, the
+//   digest commits to the CLAIMED file set, not re-derived content) still applies verbatim.
+
+const SIGNED_ATTESTATION_KIND = "verifyhash.dataset-attestation-signed";
+const SIGNED_ATTESTATION_SCHEMA_VERSION = 1;
+const SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS = Object.freeze([1]);
+
+// The detached signature schemes this build understands. Each is an EXPLICIT, documented value so a
+// reader knows EXACTLY what bytes were signed and how. `eip191-personal-sign` = EIP-191 personal_sign
+// over the canonical UNSIGNED attestation bytes (a 65-byte r||s||v secp256k1 signature).
+const SIGNED_ATTESTATION_SCHEMES = Object.freeze(["eip191-personal-sign"]);
+
+// A 0x-prefixed, 0x-only, EVEN-length, non-empty hex string for the signature. eip191-personal-sign is
+// specifically a 65-byte (r||s||v) secp256k1 signature -> exactly 130 hex chars. Strict by scheme below.
+//
+// CANONICAL CASE (T-17.1 byte-determinism). These accept ONLY lowercase hex. The signature block is the
+// HUMAN-supplied part of the container and the part most likely to arrive EIP-55-checksummed (mixed
+// case) or upper-cased. If we accepted mixed case and round-tripped it verbatim, two structurally
+// identical containers over the SAME logical signature would serialize to DIFFERENT bytes — breaking the
+// "byte-deterministic ... two runs over the same inputs produce an identical string" contract a future
+// indexer/UI keys on. We REJECT non-canonical case on read/validate (rather than silently normalizing)
+// so the wire format ossifies with one — and only one — byte encoding for a given logical signature.
+// (The embedded UNSIGNED payload is machine-generated lowercase, so its determinism was never at risk.)
+const HEXSTR_RE = /^0x([0-9a-f]{2})+$/;
+const EIP191_SIG_RE = /^0x[0-9a-f]{130}$/; // 65 bytes: r(32) || s(32) || v(1)
+
+// A claimed 0x-address: 0x + 40 LOWERCASE hex chars. The container records the CLAIMED signer; it does
+// not (and the loop cannot) recover the address from the signature — that is the verifier/human step
+// (T-17.2). Lowercase-only for the same byte-determinism reason as the signature value above: an
+// EIP-55-checksummed (mixed-case) signer is the canonical address in a DIFFERENT encoding, so accepting
+// it verbatim would let the same signer serialize two ways. A caller holding a checksummed address
+// lowercases it (e.g. `addr.toLowerCase()`) before building the container.
+const ADDRESS_RE = /^0x[0-9a-f]{40}$/;
+
+// The standing trust caveat carried IN-BAND in every signed container. It REUSES the dataset TRUST_NOTE
+// VERBATIM (so the dataset caveats never drift) and adds only the signed-container-specific assertion:
+// the container asserts the holder of `signer`'s key vouched for THIS dataset identity at signing time;
+// it does NOT prove a timestamp (no "unaltered since date T" unless `scheme` is a timestamp authority —
+// still P-3), and EVERY caveat of the embedded UNSIGNED payload still applies.
+const SIGNED_ATTESTATION_TRUST_NOTE =
+  "This is a SIGNED attestation container: it wraps (never edits) the EXACT canonical UNSIGNED " +
+  "attestation bytes in `attestation` and attaches a detached signature. It asserts that the holder of " +
+  "the `signer` key vouched for THIS dataset identity (the embedded root, fileCount, manifestDigest) at " +
+  "signing time. It does NOT prove a timestamp: there is no \"unaltered since a date T\" unless the " +
+  "scheme is a timestamp authority (still needs-human, P-3). Every caveat of the embedded UNSIGNED " +
+  "payload still applies. " +
+  TRUST_NOTE;
+
+/**
+ * Strictly validate a parsed SIGNED-attestation container. Throws an Error describing the FIRST problem;
+ * never mutates and never fills defaults (same discipline as validateAttestation). REJECTS: a wrong
+ * kind/schemaVersion, a non-string embedded `attestation`, a missing/non-object `signature` block, an
+ * unknown `scheme`, a malformed `signer` address, a missing/!hex `signature` value, or an embedded
+ * `attestation` that does not re-validate as a sound UNSIGNED attestation (i.e. it must STILL be
+ * `signed:false`/`signature:null` — wrapping never edits). It NEVER half-accepts.
+ *
+ * @param {any} obj
+ * @returns {object} the same object, if valid
+ */
+function validateSignedAttestation(obj) {
+  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+    throw new Error("signed dataset attestation must be a JSON object");
+  }
+  if (obj.kind !== SIGNED_ATTESTATION_KIND) {
+    throw new Error(
+      `not a verifyhash signed dataset attestation (kind: ${JSON.stringify(obj.kind)}; expected ` +
+        `${JSON.stringify(SIGNED_ATTESTATION_KIND)})`
+    );
+  }
+  if (!SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
+    throw new Error(
+      `unsupported signed dataset attestation schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
+        `(this build understands ${JSON.stringify(SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS)})`
+    );
+  }
+  if (obj.note !== SIGNED_ATTESTATION_TRUST_NOTE) {
+    throw new Error("signed dataset attestation note must be the standing SIGNED_ATTESTATION_TRUST_NOTE");
+  }
+  // The embedded UNSIGNED payload is carried as the EXACT canonical bytes serializeAttestation emits —
+  // a STRING, so the signed-over bytes are unambiguous. Re-parse and re-validate it with the SAME strict
+  // reader the unsigned path uses: it must STILL be signed:false/signature:null. This is the
+  // wrap-don't-edit invariant — a signed container can never smuggle an edited or already-"signed" payload.
+  if (typeof obj.attestation !== "string") {
+    throw new Error(
+      "signed dataset attestation must embed the canonical UNSIGNED attestation as a string `attestation`"
+    );
+  }
+  let embedded;
+  try {
+    embedded = JSON.parse(obj.attestation);
+  } catch (e) {
+    throw new Error(`embedded attestation is not valid JSON: ${e.message}`);
+  }
+  // Re-validate the embedded payload by the EXISTING unsigned validator (throws on signed:true etc.).
+  validateAttestation(embedded);
+  // Re-serialize the embedded payload and require the embedded STRING to be byte-identical to the
+  // canonical form. This pins the embedded bytes to EXACTLY what serializeAttestation emits — the bytes
+  // that were signed over — so no insignificant-whitespace / reordered variant can sneak in.
+  if (obj.attestation !== serializeAttestation(embedded)) {
+    throw new Error(
+      "embedded attestation is not in canonical form (the signed-over bytes must be byte-for-byte " +
+        "serializeAttestation's output)"
+    );
+  }
+
+  const sig = obj.signature;
+  if (sig == null || typeof sig !== "object" || Array.isArray(sig)) {
+    throw new Error("signed dataset attestation signature must be a { scheme, signer, signature } object");
+  }
+  if (!SIGNED_ATTESTATION_SCHEMES.includes(sig.scheme)) {
+    throw new Error(
+      `unknown signature scheme: ${JSON.stringify(sig.scheme)} ` +
+        `(this build understands ${JSON.stringify(SIGNED_ATTESTATION_SCHEMES)})`
+    );
+  }
+  if (typeof sig.signer !== "string" || !ADDRESS_RE.test(sig.signer)) {
+    throw new Error(
+      `signature signer must be a 0x-prefixed 20-byte LOWERCASE-hex address ` +
+        `(checksummed/mixed-case rejected for byte-determinism — lowercase it first), got: ${String(sig.signer)}`
+    );
+  }
+  if (typeof sig.signature !== "string" || !HEXSTR_RE.test(sig.signature)) {
+    throw new Error(
+      `signature value must be a 0x-prefixed LOWERCASE-hex string ` +
+        `(mixed/upper case rejected for byte-determinism), got: ${String(sig.signature)}`
+    );
+  }
+  // Per-scheme shape: eip191-personal-sign is a 65-byte r||s||v secp256k1 signature.
+  if (sig.scheme === "eip191-personal-sign" && !EIP191_SIG_RE.test(sig.signature)) {
+    throw new Error(
+      `eip191-personal-sign signature must be a 65-byte (r||s||v) 0x-hex string, got length ${sig.signature.length}`
+    );
+  }
+  return obj;
+}
+
+/**
+ * Assemble + validate a SIGNED-attestation container from a validated UNSIGNED attestation envelope and
+ * a detached signature triple. PURE: it performs NO signing and NO key handling — the loop never holds a
+ * key (T-17.2). It embeds the EXACT canonical unsigned bytes (serializeAttestation(attestation)) as a
+ * string so the signed-over bytes are unambiguous, then attaches { scheme, signer, signature } and
+ * strictly validates the whole container (throws if anything is malformed, so a corrupt container is
+ * never produced).
+ *
+ * The resulting container ASSERTS that the holder of `signer`'s key vouched for THIS dataset identity at
+ * signing time. It does NOT prove a timestamp (no "unaltered since date T" unless `scheme` is a timestamp
+ * authority — still P-3, needs-human), and EVERY caveat of the embedded UNSIGNED payload applies verbatim
+ * (the {source,license} hints are untrusted; the digest commits to the CLAIMED file set, not re-derived
+ * content). Signing WRAPS the unsigned payload, it never edits it.
+ *
+ * @param {object} params
+ * @param {object} params.attestation a validated UNSIGNED attestation envelope (from buildAttestation/readAttestation)
+ * @param {string} params.scheme one of SIGNED_ATTESTATION_SCHEMES (e.g. "eip191-personal-sign")
+ * @param {string} params.signer the claimed 0x-address of the signer
+ * @param {string} params.signature the 0x-hex detached signature over serializeAttestation(attestation)
+ * @returns {object} a validated signed-attestation container
+ */
+function buildSignedAttestation(params) {
+  if (!params || typeof params !== "object") {
+    throw new Error("buildSignedAttestation requires { attestation, scheme, signer, signature }");
+  }
+  const { attestation, scheme, signer, signature } = params;
+  // The embedded payload must itself be a sound UNSIGNED attestation before we wrap it (re-validate so a
+  // programmatic caller that hand-built one is checked too). validateAttestation rejects signed:true.
+  validateAttestation(attestation);
+  // Embed the EXACT canonical bytes — the string serializeAttestation emits — so the signed-over bytes
+  // are byte-for-byte unambiguous.
+  const container = {
+    kind: SIGNED_ATTESTATION_KIND,
+    schemaVersion: SIGNED_ATTESTATION_SCHEMA_VERSION,
+    note: SIGNED_ATTESTATION_TRUST_NOTE,
+    attestation: serializeAttestation(attestation),
+    signature: { scheme, signer, signature },
+  };
+  validateSignedAttestation(container);
+  return container;
+}
+
+/**
+ * Serialize a signed-attestation container to its canonical, byte-deterministic bytes: a FIXED top-level
+ * (and signature-block) key order, NO insignificant whitespace, a single trailing newline — the same
+ * discipline as serializeAttestation. Two runs over the same inputs produce an identical string.
+ * @param {object} container a validated signed-attestation container
+ * @returns {string} the canonical serialization (newline-terminated)
+ */
+function serializeSignedAttestation(container) {
+  validateSignedAttestation(container);
+  const canonical = {
+    kind: container.kind,
+    schemaVersion: container.schemaVersion,
+    note: container.note,
+    // The embedded canonical UNSIGNED bytes (a string) — JSON.stringify escapes it, preserving the exact
+    // bytes including the embedded trailing newline.
+    attestation: container.attestation,
+    signature: {
+      scheme: container.signature.scheme,
+      signer: container.signature.signer,
+      signature: container.signature.signature,
+    },
+  };
+  return JSON.stringify(canonical) + "\n";
+}
+
+/**
+ * Read, parse, and STRICTLY validate the signed-attestation container at `signedPath`. Round-trips with
+ * serializeSignedAttestation: a malformed/edited container (wrong kind/schemaVersion, unknown scheme,
+ * malformed signer, missing/!hex signature, a non-canonical or itself-"signed" embedded payload) is
+ * rejected, never half-accepted. Throws on a missing file or invalid JSON too.
+ * @param {string} signedPath
+ * @returns {object} the validated container
+ */
+function readSignedAttestation(signedPath) {
+  if (!signedPath || typeof signedPath !== "string") {
+    throw new Error("readSignedAttestation requires a signed attestation file path");
+  }
+  let raw;
+  try {
+    raw = fs.readFileSync(signedPath, "utf8");
+  } catch (e) {
+    throw new Error(`cannot read signed dataset attestation at ${signedPath}: ${e.message}`);
+  }
+  let obj;
+  try {
+    obj = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`signed dataset attestation at ${signedPath} is not valid JSON: ${e.message}`);
+  }
+  return validateSignedAttestation(obj);
+}
+
 /**
  * Orchestrate `vh dataset attest <manifest> [--json] [--out <p>]`. Reads the manifest via the strict
  * `readManifest`, builds the UNSIGNED attestation envelope, and emits its canonical bytes. With `--out`
@@ -2044,6 +2301,15 @@ module.exports = {
   validateAttestation,
   serializeAttestation,
   readAttestation,
+  SIGNED_ATTESTATION_KIND,
+  SIGNED_ATTESTATION_SCHEMA_VERSION,
+  SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS,
+  SIGNED_ATTESTATION_SCHEMES,
+  SIGNED_ATTESTATION_TRUST_NOTE,
+  buildSignedAttestation,
+  validateSignedAttestation,
+  serializeSignedAttestation,
+  readSignedAttestation,
   runDatasetAttest,
   TRUST_NOTE,
   MEMBERSHIP_TRUST_NOTE,

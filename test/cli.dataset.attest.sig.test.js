@@ -291,3 +291,379 @@ describe("cli: signed dataset attestation (T-17.1)", function () {
     expect(() => readSignedAttestation(p)).to.throw(/is not valid JSON/);
   });
 });
+
+// =================================================================================================
+// T-17.2 — `vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]`: an OFFLINE
+// verifier that confirms a signed attestation, PROVED end-to-end with THROWAWAY test keys.
+//
+// CRITICAL: every key here is an EPHEMERAL, in-process `Wallet.createRandom()` — a TEST-ONLY key that is
+// NEVER persisted and is NEVER a real-funds key. We assert/comment this throughout. NO network, NO real
+// key, NO provider anywhere in this suite (the verifier is purely offline).
+const { Wallet, getAddress } = require("ethers");
+const {
+  runDatasetVerifyAttest,
+  verifySignedAttestation,
+  recoverSignedAttestationSigner,
+  VERIFY_ATTEST_TRUST_NOTE,
+} = require("../cli/dataset");
+const { cmdDataset, cmdDatasetVerifyAttest, parseDatasetVerifyAttestArgs } = require("../cli/vh");
+
+describe("cli: vh dataset verify-attest (T-17.2) — OFFLINE signed-attestation verifier", function () {
+  let tmpDirs = [];
+  function tmp(prefix) {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tmpDirs.push(d);
+    return d;
+  }
+  afterEach(function () {
+    for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true });
+    tmpDirs = [];
+  });
+
+  function writeFiles(dir, files) {
+    for (const [name, content] of Object.entries(files)) {
+      const full = path.join(dir, name);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, content);
+    }
+  }
+
+  // Build a manifest from a fresh tree and return { manifestPath, manifest, unsigned, canonical }.
+  function buildFixture(files, prefix) {
+    const dir = tmp((prefix || "va") + "-tree-");
+    writeFiles(dir, files);
+    const manifestPath = path.join(tmp((prefix || "va") + "-man-"), "manifest.json");
+    runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+    const manifest = readManifest(manifestPath);
+    const unsigned = buildAttestation(manifest);
+    const canonical = serializeAttestation(unsigned);
+    return { manifestPath, manifest, unsigned, canonical };
+  }
+
+  // Sign the EXACT canonical UNSIGNED bytes per the eip191-personal-sign scheme with an EPHEMERAL,
+  // THROWAWAY test-only key (NEVER persisted, NEVER a real-funds key), build the signed container
+  // (T-17.1), write it to a throwaway temp path, and return everything the tests need.
+  async function signFixture(files, prefix, wallet) {
+    const fx = buildFixture(files, prefix);
+    // TEST-ONLY KEY: generated in-process, never written to disk, never funded. Asserted below.
+    const w = wallet || Wallet.createRandom();
+    expect(w.privateKey).to.match(/^0x[0-9a-fA-F]{64}$/); // an in-memory key — never a real-funds key
+    const signature = (await w.signMessage(fx.canonical)).toLowerCase();
+    const container = buildSignedAttestation({
+      attestation: fx.unsigned,
+      scheme: "eip191-personal-sign",
+      signer: w.address.toLowerCase(),
+      signature,
+    });
+    const signedPath = path.join(tmp(prefix + "-signed-"), "signed.json");
+    fs.writeFileSync(signedPath, serializeSignedAttestation(container));
+    return { ...fx, wallet: w, container, signedPath };
+  }
+
+  it("ACCEPTS a genuinely-signed container (signature recovers to the claimed signer)", async function () {
+    const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-accept");
+    let out = "";
+    const r = runDatasetVerifyAttest({ signed: fx.signedPath, stdout: (s) => (out += s) });
+    expect(r.verdict).to.equal("ACCEPTED");
+    expect(r.accepted).to.equal(true);
+    expect(r.recoveredSigner).to.equal(fx.wallet.address.toLowerCase());
+    expect(r.claimedSigner).to.equal(fx.wallet.address.toLowerCase());
+    expect(r.checks.signatureMatchesSigner).to.equal(true);
+    // The two optional checks were not requested -> null, never fail the gate.
+    expect(r.checks.signerMatchesExpected).to.equal(null);
+    expect(r.checks.manifestBindsAttestation).to.equal(null);
+    expect(out).to.contain("ACCEPTED");
+  });
+
+  it("OUTPUT LEADS with the standing TRUST_NOTE + signing caveat; never overclaims past P-3", async function () {
+    const fx = await signFixture({ "a.txt": "AAA" }, "va-trust");
+    let out = "";
+    runDatasetVerifyAttest({ signed: fx.signedPath, stdout: (s) => (out += s) });
+    // Leads with the trust caveat.
+    expect(out.indexOf("TRUST:")).to.be.lessThan(out.indexOf("verify-attest:"));
+    // Reuses the standing dataset TRUST_NOTE verbatim.
+    expect(VERIFY_ATTEST_TRUST_NOTE).to.contain(TRUST_NOTE);
+    expect(out).to.contain(TRUST_NOTE);
+    // Signing-specific caveats: NOT a timestamp (P-3), NOT a license/source validation.
+    expect(out).to.contain("does NOT by itself prove a trustworthy TIMESTAMP");
+    expect(out).to.contain("P-3");
+    expect(out).to.contain("license/source");
+  });
+
+  it("--signer PINS the expected publisher: ACCEPTS the right one, REJECTS a different one", async function () {
+    const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-pin");
+    // Right publisher (checksummed form accepted via getAddress) -> ACCEPTED + pin PASS.
+    const ok = runDatasetVerifyAttest({
+      signed: fx.signedPath,
+      signer: getAddress(fx.wallet.address), // EIP-55 checksummed; the verifier normalizes
+      stdout: () => {},
+    });
+    expect(ok.verdict).to.equal("ACCEPTED");
+    expect(ok.checks.signerMatchesExpected).to.equal(true);
+    expect(ok.expectedSigner).to.equal(fx.wallet.address.toLowerCase());
+
+    // A DIFFERENT expected publisher (another throwaway key's address) -> REJECTED, naming the failed pin.
+    const other = Wallet.createRandom(); // TEST-ONLY key
+    let out = "";
+    const bad = runDatasetVerifyAttest({
+      signed: fx.signedPath,
+      signer: other.address,
+      stdout: (s) => (out += s),
+    });
+    expect(bad.verdict).to.equal("REJECTED");
+    expect(bad.checks.signerMatchesExpected).to.equal(false);
+    // The signature itself is still genuine — only the EXPECTED-publisher pin failed.
+    expect(bad.checks.signatureMatchesSigner).to.equal(true);
+    expect(bad.failedChecks).to.deep.equal(["signerMatchesExpected"]);
+    expect(out).to.contain("signerMatchesExpected");
+  });
+
+  it("--manifest BINDS the signature to the buyer's dataset: ACCEPTS the matching one", async function () {
+    const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-bind-ok");
+    const r = runDatasetVerifyAttest({
+      signed: fx.signedPath,
+      manifest: fx.manifestPath,
+      stdout: () => {},
+    });
+    expect(r.verdict).to.equal("ACCEPTED");
+    expect(r.checks.manifestBindsAttestation).to.equal(true);
+    expect(r.manifestChecked).to.equal(true);
+  });
+
+  it("--manifest that DIFFERS from the signed payload REJECTS with a clear binding-mismatch", async function () {
+    // Sign over dataset A...
+    const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-bind-bad");
+    // ...but the buyer holds a DIFFERENT dataset B (different content -> different canonical bytes).
+    const otherDir = tmp("va-bind-bad-other-tree-");
+    writeFiles(otherDir, { "a.txt": "DIFFERENT", "b.txt": "BBB" });
+    const otherManifest = path.join(tmp("va-bind-bad-other-man-"), "manifest.json");
+    runDatasetBuild({ dir: otherDir, out: otherManifest, stdout: () => {} });
+
+    let out = "";
+    const r = runDatasetVerifyAttest({
+      signed: fx.signedPath,
+      manifest: otherManifest,
+      stdout: (s) => (out += s),
+    });
+    expect(r.verdict).to.equal("REJECTED");
+    expect(r.checks.manifestBindsAttestation).to.equal(false);
+    // The signature is genuine; only the dataset binding failed.
+    expect(r.checks.signatureMatchesSigner).to.equal(true);
+    expect(r.failedChecks).to.deep.equal(["manifestBindsAttestation"]);
+    expect(out).to.contain("binding-mismatch");
+  });
+
+  it("TAMPERING the signature REJECTS (recovers to a different/garbage address)", async function () {
+    const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-tamper-sig");
+    // Flip one byte of the signature -> it recovers to some OTHER address, not the claimed signer.
+    const onDisk = JSON.parse(serializeSignedAttestation(fx.container));
+    const sig = onDisk.signature.signature;
+    // Mutate a middle hex char (stay lowercase + 65 bytes so it passes the shape validator but is wrong).
+    const idx = 50;
+    const ch = sig[idx] === "a" ? "b" : "a";
+    onDisk.signature.signature = sig.slice(0, idx) + ch + sig.slice(idx + 1);
+    const p = path.join(tmp("va-tamper-sig-w-"), "signed.json");
+    fs.writeFileSync(p, JSON.stringify(onDisk));
+    const r = runDatasetVerifyAttest({ signed: p, stdout: () => {} });
+    expect(r.verdict).to.equal("REJECTED");
+    expect(r.checks.signatureMatchesSigner).to.equal(false);
+    expect(r.recoveredSigner).to.not.equal(r.claimedSigner);
+  });
+
+  it("TAMPERING the claimed `signer` REJECTS (recovered != claimed)", async function () {
+    const fx = await signFixture({ "a.txt": "AAA" }, "va-tamper-signer");
+    const onDisk = JSON.parse(serializeSignedAttestation(fx.container));
+    // Replace the claimed signer with a DIFFERENT (throwaway) address; the signature still recovers to the
+    // ORIGINAL signer, so recovered != claimed -> REJECTED.
+    const other = Wallet.createRandom(); // TEST-ONLY key
+    onDisk.signature.signer = other.address.toLowerCase();
+    const p = path.join(tmp("va-tamper-signer-w-"), "signed.json");
+    fs.writeFileSync(p, JSON.stringify(onDisk));
+    const r = runDatasetVerifyAttest({ signed: p, stdout: () => {} });
+    expect(r.verdict).to.equal("REJECTED");
+    expect(r.checks.signatureMatchesSigner).to.equal(false);
+    expect(r.recoveredSigner).to.equal(fx.wallet.address.toLowerCase());
+    expect(r.claimedSigner).to.equal(other.address.toLowerCase());
+  });
+
+  it("TAMPERING the embedded payload REJECTS (the signature no longer recovers to the claimed signer)", async function () {
+    const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-tamper-payload");
+    const onDisk = JSON.parse(serializeSignedAttestation(fx.container));
+    // Edit the embedded canonical bytes in a way that STAYS structurally valid + canonical (so the strict
+    // reader accepts the container) but changes the signed-over identity: swap the manifestDigest to a
+    // different (still-32-byte-hex) value. The signature was made over the ORIGINAL bytes, so it now
+    // recovers to a DIFFERENT address than the claimed signer -> REJECTED. The signed identity is bound.
+    const embedded = JSON.parse(onDisk.attestation);
+    embedded.manifestDigest = "0x" + "11".repeat(32);
+    onDisk.attestation = JSON.stringify(embedded) + "\n";
+    const p = path.join(tmp("va-tamper-payload-w-"), "signed.json");
+    fs.writeFileSync(p, JSON.stringify(onDisk));
+    const r = runDatasetVerifyAttest({ signed: p, stdout: () => {} });
+    expect(r.verdict).to.equal("REJECTED");
+    expect(r.checks.signatureMatchesSigner).to.equal(false);
+    // The signature recovered to SOMETHING, but not the claimed signer (the payload was altered after signing).
+    expect(r.recoveredSigner).to.not.equal(r.claimedSigner);
+  });
+
+  it("a NON-CANONICAL embedded payload is rejected at READ (strict reader, runtime error -> exit 1)", async function () {
+    const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-noncanon");
+    const onDisk = JSON.parse(serializeSignedAttestation(fx.container));
+    // Pretty-print the embedded payload: valid JSON, validates fine, but NOT byte-identical to
+    // serializeAttestation -> readSignedAttestation rejects it (the signed-over bytes must be canonical).
+    const embedded = JSON.parse(onDisk.attestation);
+    onDisk.attestation = JSON.stringify(embedded, null, 2) + "\n";
+    const p = path.join(tmp("va-noncanon-w-"), "signed.json");
+    fs.writeFileSync(p, JSON.stringify(onDisk));
+    expect(() => runDatasetVerifyAttest({ signed: p, stdout: () => {} })).to.throw(/not in canonical form/);
+  });
+
+  it("a WRONG-KEY signature REJECTS (valid 65-byte sig from a different key over the same bytes)", async function () {
+    const fx = buildFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-wrongkey");
+    // Two distinct THROWAWAY keys. The container CLAIMS `claimant` signed, but `imposter` actually signed
+    // the bytes -> recovered (imposter) != claimed (claimant) -> REJECTED.
+    const claimant = Wallet.createRandom(); // TEST-ONLY key
+    const imposter = Wallet.createRandom(); // TEST-ONLY key
+    const imposterSig = (await imposter.signMessage(fx.canonical)).toLowerCase();
+    const container = buildSignedAttestation({
+      attestation: fx.unsigned,
+      scheme: "eip191-personal-sign",
+      signer: claimant.address.toLowerCase(), // claims claimant, but imposter signed
+      signature: imposterSig,
+    });
+    const p = path.join(tmp("va-wrongkey-w-"), "signed.json");
+    fs.writeFileSync(p, serializeSignedAttestation(container));
+    const r = runDatasetVerifyAttest({ signed: p, stdout: () => {} });
+    expect(r.verdict).to.equal("REJECTED");
+    expect(r.checks.signatureMatchesSigner).to.equal(false);
+    expect(r.recoveredSigner).to.equal(imposter.address.toLowerCase());
+    expect(r.claimedSigner).to.equal(claimant.address.toLowerCase());
+  });
+
+  it("ALL THREE checks together: a fully-pinned ACCEPT round-trips through --json", async function () {
+    const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB", "sub/c.txt": "CCC" }, "va-all");
+    let out = "";
+    const r = runDatasetVerifyAttest({
+      signed: fx.signedPath,
+      manifest: fx.manifestPath,
+      signer: fx.wallet.address,
+      json: true,
+      stdout: (s) => (out += s),
+    });
+    expect(r.verdict).to.equal("ACCEPTED");
+    // --json emits a machine verdict carrying recovered/expected signer, the binding result, per-check bools.
+    const parsed = JSON.parse(out);
+    expect(parsed).to.deep.equal(r);
+    expect(parsed.recoveredSigner).to.equal(fx.wallet.address.toLowerCase());
+    expect(parsed.expectedSigner).to.equal(fx.wallet.address.toLowerCase());
+    expect(parsed.checks).to.deep.equal({
+      signatureMatchesSigner: true,
+      signerMatchesExpected: true,
+      manifestBindsAttestation: true,
+    });
+    expect(parsed.failedChecks).to.deep.equal([]);
+  });
+
+  it("recoverSignedAttestationSigner recovers the exact signer from the embedded bytes (pure helper)", async function () {
+    const fx = await signFixture({ "a.txt": "AAA" }, "va-recover");
+    expect(recoverSignedAttestationSigner(fx.container)).to.equal(fx.wallet.address.toLowerCase());
+  });
+
+  describe("CLI exit codes mirror the dataset gate convention (0 ACCEPTED, 3 REJECTED, 2 usage, 1 runtime)", function () {
+    it("exit 0 on ACCEPTED", async function () {
+      const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-exit0");
+      const code = cmdDataset([
+        "verify-attest",
+        fx.signedPath,
+        "--manifest",
+        fx.manifestPath,
+        "--signer",
+        fx.wallet.address,
+        "--json",
+      ]);
+      expect(code).to.equal(0);
+    });
+
+    it("exit 3 on REJECTED (wrong --signer)", async function () {
+      const fx = await signFixture({ "a.txt": "AAA" }, "va-exit3");
+      const other = Wallet.createRandom(); // TEST-ONLY key
+      const code = cmdDataset(["verify-attest", fx.signedPath, "--signer", other.address, "--json"]);
+      expect(code).to.equal(3);
+    });
+
+    it("exit 2 on a usage error (unknown flag)", async function () {
+      const fx = await signFixture({ "a.txt": "AAA" }, "va-exit2-flag");
+      const code = cmdDatasetVerifyAttest([fx.signedPath, "--nope"]);
+      expect(code).to.equal(2);
+    });
+
+    it("exit 2 on a usage error (missing positional)", function () {
+      const code = cmdDatasetVerifyAttest(["--json"]);
+      expect(code).to.equal(2);
+    });
+
+    it("exit 2 on a usage error (extra positional)", async function () {
+      const fx = await signFixture({ "a.txt": "AAA" }, "va-exit2-extra");
+      const code = cmdDatasetVerifyAttest([fx.signedPath, "extra.json"]);
+      expect(code).to.equal(2);
+    });
+
+    it("exit 2 on a malformed --signer address (caught before any work)", async function () {
+      const fx = await signFixture({ "a.txt": "AAA" }, "va-exit2-signer");
+      const code = cmdDatasetVerifyAttest([fx.signedPath, "--signer", "0xnotanaddress"]);
+      expect(code).to.equal(2);
+    });
+
+    it("exit 1 on a runtime error (missing container)", function () {
+      const code = cmdDatasetVerifyAttest(["/no/such/signed.json"]);
+      expect(code).to.equal(1);
+    });
+
+    it("exit 1 on a runtime error (corrupt/edited embedded payload)", async function () {
+      const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-exit1-corrupt");
+      const onDisk = JSON.parse(serializeSignedAttestation(fx.container));
+      const embedded = JSON.parse(onDisk.attestation);
+      embedded.root = "0xnothex";
+      onDisk.attestation = JSON.stringify(embedded) + "\n";
+      const p = path.join(tmp("va-exit1-corrupt-w-"), "signed.json");
+      fs.writeFileSync(p, JSON.stringify(onDisk));
+      const code = cmdDatasetVerifyAttest([p]);
+      expect(code).to.equal(1);
+    });
+  });
+
+  describe("parser parity: unknown/incomplete flags hard-error (a typo never silently passes)", function () {
+    it("unknown flag throws", function () {
+      expect(() => parseDatasetVerifyAttestArgs(["s.json", "--bogus"])).to.throw(/unknown flag: --bogus/);
+    });
+    it("--manifest without a value throws", function () {
+      expect(() => parseDatasetVerifyAttestArgs(["s.json", "--manifest"])).to.throw(
+        /--manifest requires a value/
+      );
+    });
+    it("--signer without a value throws", function () {
+      expect(() => parseDatasetVerifyAttestArgs(["s.json", "--signer"])).to.throw(
+        /--signer requires a value/
+      );
+    });
+    it("a duplicate positional throws", function () {
+      expect(() => parseDatasetVerifyAttestArgs(["a.json", "b.json"])).to.throw(
+        /unexpected extra argument/
+      );
+    });
+    it("a well-formed argv parses cleanly", function () {
+      expect(parseDatasetVerifyAttestArgs(["s.json", "--manifest", "m.json", "--signer", "0xabc", "--json"])).to.deep.equal({
+        signed: "s.json",
+        manifest: "m.json",
+        signer: "0xabc",
+        json: true,
+      });
+    });
+  });
+
+  it("leaves ZERO artifacts in the repo working tree (filesystem hygiene; all side effects in temp dirs)", function () {
+    // A sentinel check: this suite writes ONLY under os.tmpdir() (every helper uses tmp()), and afterEach
+    // removes them. There is no caller-less write path here. Confirm the cwd has no leaked signed.json.
+    const leaked = fs.existsSync(path.join(process.cwd(), "signed.json"));
+    expect(leaked).to.equal(false);
+  });
+});

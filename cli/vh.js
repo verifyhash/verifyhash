@@ -31,6 +31,7 @@ const {
   runDatasetProve,
   runDatasetVerifyProof,
   runDatasetAttest,
+  runDatasetVerifyAttest,
   runDatasetCheck,
 } = require("./dataset");
 
@@ -59,6 +60,7 @@ function usage() {
     "  vh dataset check <manifest> --policy <p>  OFFLINE license/source policy gate (PASS/FAIL; CI-gateable)",
     "  vh dataset report <manifest> [--verify <dir>] [--policy <p>]  ONE deterministic evidence document (combined CI gate)",
     "  vh dataset attest <manifest> [--out <p>]  canonical UNSIGNED attestation payload (the signing-ready bytes)",
+    "  vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed attestation (no key/net)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "",
@@ -303,6 +305,22 @@ function usage() {
     "  up a real signing key / timestamp anchor is the human-owned trust-root (needs-human, P-3). Until a",
     "  signature is attached it proves only the same set-membership/identity the manifest already does —",
     "  NOT 'unaltered since date T'. Exit 0; usage error 2; corrupt/missing manifest 1.",
+    "",
+    "dataset verify-attest options (OFFLINE verify a SIGNED attestation; NO tree, NO provider, NO key, NO network):",
+    "  <signed>                   REQUIRED: a signed-attestation container (the wrapped, signed T-17.1 artifact)",
+    "  --manifest <path>          OPTIONAL: bind the signature to YOUR dataset — recompute the canonical",
+    "                             attestation bytes from this manifest and require them byte-identical to the",
+    "                             signed payload (a binding mismatch REJECTS).",
+    "  --signer <addr>            OPTIONAL: pin the EXPECTED publisher — require the RECOVERED signer to equal",
+    "                             this address (so a buyer pins WHO must have signed, not just that someone did)",
+    "  --json                     emit a machine verdict { verdict, recoveredSigner, expectedSigner, checks, ... }",
+    "  Reads the container strictly (a malformed/edited/foreign one is rejected), recovers the signing address",
+    "  from the embedded canonical bytes + signature per the declared scheme (eip191-personal-sign), and",
+    "  confirms it equals the container's `signer`. With --signer it also pins the expected publisher; with",
+    "  --manifest it also confirms the signature binds the dataset you hold. Prints ACCEPTED only when EVERY",
+    "  requested check passes, else REJECTED naming which failed. A valid signature proves the key-holder",
+    "  vouched for this dataset IDENTITY — NOT a timestamp ('unaltered since date T' still needs P-3) and NOT",
+    "  that the license/source hints are correct. Exit 0 ACCEPTED, 3 REJECTED; usage error 2; corrupt input 1.",
     "",
     "dataset prove options (OFFLINE set-membership of ONE file; NO key, NO network):",
     "  --file <path>              REQUIRED: the single file to prove was a member of the dataset",
@@ -1780,6 +1798,38 @@ function parseDatasetAttestArgs(argv) {
 }
 
 /**
+ * Parse `dataset verify-attest` argv into { signed, manifest, signer, json }. Takes EXACTLY one positional
+ * <signed> container path, an optional --manifest <m>, an optional --signer <addr>, and an optional --json.
+ * Throws on a missing/extra positional or an unknown/incomplete flag, so a typo never silently verifies the
+ * wrong (or no) container, binds a surprise manifest, or pins a surprise signer (parser parity with the
+ * other dataset subcommands).
+ */
+function parseDatasetVerifyAttestArgs(argv) {
+  const opts = { signed: undefined, manifest: undefined, signer: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--manifest":
+        opts.manifest = argv[++i];
+        if (opts.manifest === undefined) throw new Error("--manifest requires a value");
+        break;
+      case "--signer":
+        opts.signer = argv[++i];
+        if (opts.signer === undefined) throw new Error("--signer requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.signed !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.signed = a;
+    }
+  }
+  return opts;
+}
+
+/**
  * Parse `dataset prove` argv into { file, manifest, out, json }. Takes NO positional (the file is the
  * REQUIRED --file flag, the manifest the REQUIRED --manifest flag), so a stray positional hard-errors —
  * a typo never silently proves the wrong file or writes to a surprise path (parser parity with the others).
@@ -1853,6 +1903,9 @@ function cmdDataset(argv) {
   if (sub === "attest") {
     return cmdDatasetAttest(rest);
   }
+  if (sub === "verify-attest") {
+    return cmdDatasetVerifyAttest(rest);
+  }
   if (sub === "prove") {
     return cmdDatasetProve(rest);
   }
@@ -1862,7 +1915,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | diff | summary | check | report | attest | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | summary | check | report | attest | verify-attest | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -2141,6 +2194,61 @@ function cmdDatasetAttest(argv) {
 }
 
 /**
+ * `vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` — OFFLINE verify a
+ * SIGNED attestation container. Reads the container strictly, recovers the signer from the embedded
+ * canonical bytes + signature, and confirms it equals the container's `signer`; with --signer it pins the
+ * expected publisher; with --manifest it confirms the signature binds the buyer's own dataset. PURELY
+ * OFFLINE: no tree, no provider, no key, no network. Exit 0 ACCEPTED, 3 REJECTED (mirrors the dataset
+ * family's 0/3 data-divergence convention so a buyer's CI can gate), 2 on a usage error (missing/extra
+ * positional, unknown flag, malformed --signer), 1 on a runtime error (missing/corrupt container or manifest).
+ */
+function cmdDatasetVerifyAttest(argv) {
+  let opts;
+  try {
+    opts = parseDatasetVerifyAttestArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.signed) {
+    process.stderr.write(
+      "error: `vh dataset verify-attest` requires a <signed> (signed attestation container path)\n\n" +
+        usage()
+    );
+    return 2;
+  }
+  // Validate the --signer address SHAPE up front (when given) so a malformed expected publisher is a
+  // usage error (2), never a runtime throw mid-verify (parser parity with `vh show`/`vh reputation`,
+  // which validate the address/hash shape before doing any work). PURELY OFFLINE — no network here either.
+  if (opts.signer !== undefined) {
+    const ethers = require("ethers");
+    if (!ethers.isAddress(opts.signer)) {
+      process.stderr.write(
+        `error: invalid --signer address: ${opts.signer} (expected a 20-byte 0x-hex address)\n\n` +
+          usage()
+      );
+      return 2;
+    }
+  }
+
+  let result;
+  try {
+    result = runDatasetVerifyAttest({
+      signed: opts.signed,
+      manifest: opts.manifest,
+      signer: opts.signer,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on REJECTED so a buyer's CI can gate (mirrors the dataset family's 0/3 convention).
+  return result.accepted ? 0 : 3;
+}
+
+/**
  * `vh dataset prove --file <p> --manifest <m> [--out <p>] [--json]` — build an OFFLINE set-membership
  * proof that ONE file was a member of the manifest's dataset. NO key, NO network. Exit 0 on MEMBER, 3
  * on NOT A MEMBER (so scripts/CI can branch), 2 on a usage error, 1 on a runtime error.
@@ -2277,6 +2385,7 @@ module.exports = {
   cmdDatasetCheck,
   cmdDatasetReport,
   cmdDatasetAttest,
+  cmdDatasetVerifyAttest,
   cmdDatasetProve,
   cmdDatasetVerifyProof,
   parseDatasetBuildArgs,
@@ -2286,6 +2395,7 @@ module.exports = {
   parseDatasetCheckArgs,
   parseDatasetReportArgs,
   parseDatasetAttestArgs,
+  parseDatasetVerifyAttestArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
   parseHashArgs,

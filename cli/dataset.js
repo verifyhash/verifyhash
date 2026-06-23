@@ -36,7 +36,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { keccak256, toUtf8Bytes } = require("ethers");
+const { keccak256, toUtf8Bytes, verifyMessage, getAddress } = require("ethers");
 const { hashDirStream, hashFileStream, pathLeaf, buildTree, proofForIndex } = require("./hash");
 const { diffManifest } = require("./receipt");
 const {
@@ -1945,6 +1945,283 @@ function runDatasetAttest(opts) {
 }
 
 // =================================================================================================
+// `vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` — an OFFLINE verifier
+// that confirms a SIGNED attestation container (T-17.1) is genuinely signed and (optionally) binds the
+// buyer's own dataset.
+//
+// WHY THIS EXISTS
+//   A buyer handed a "signed by the publisher" attestation needs ONE command that answers, with no key
+//   and no network: (1) is the embedded signature genuine — i.e. does it recover to the address the
+//   container CLAIMS as `signer`? Without this check a `signer` field is just a self-asserted label.
+//   (2) Optionally: is the recovered signer the SPECIFIC publisher I expected (`--signer <addr>`)? — so a
+//   buyer pins WHO must have signed, not merely that SOMEONE did. (3) Optionally: does the signature bind
+//   the dataset I actually hold (`--manifest <m>`)? — by recomputing the canonical UNSIGNED bytes from MY
+//   manifest via the EXISTING build path and confirming they are byte-identical to the embedded payload.
+//
+//   PURELY OFFLINE: no tree walk, no provider, no key, no network. The signature recovery is ethers'
+//   `verifyMessage` over the EXACT embedded canonical bytes (the wire is `eip191-personal-sign` = EIP-191
+//   personal_sign over those bytes), so the message recovered-over IS the signed-over payload verbatim.
+//
+// TRUST POSTURE (carried verbatim into output). A valid signature proves the HOLDER OF `signer`'s KEY
+//   vouched for THIS dataset identity. It does NOT by itself prove a trustworthy TIMESTAMP ("unaltered
+//   since date T" still needs the human-owned trust-root, P-3), and it does NOT validate that the
+//   dataset's license/source HINTS are genuinely correct (that is the `check` policy gate's untrusted-hint
+//   caveat). The verdict never overclaims past P-3.
+//
+// EXIT CODES (mirror the dataset family's data-divergence convention): 0 on ACCEPTED, 3 on REJECTED (so a
+//   buyer's CI can gate "attestation is genuinely signed by our publisher and binds this dataset"), 2 on a
+//   usage error, 1 on a runtime error (missing/corrupt container/manifest). The CLI derives 3 from the
+//   returned `accepted` boolean.
+
+// Possible verdicts. ACCEPTED = every REQUESTED check passed; REJECTED = at least one failed.
+const VERIFY_ATTEST_VERDICT = Object.freeze({ ACCEPTED: "ACCEPTED", REJECTED: "REJECTED" });
+
+// The standing trust caveat the verify-attest output LEADS with. REUSES the dataset TRUST_NOTE verbatim
+// (so the dataset caveats never drift) and adds the signing-specific caveat: a valid signature proves the
+// key-holder vouched for this dataset IDENTITY; it does NOT prove a timestamp (P-3, needs-human) and does
+// NOT validate the license/source hints (the `check` policy gate's untrusted-hint caveat). Never overclaims.
+const VERIFY_ATTEST_TRUST_NOTE =
+  "A valid signature proves the HOLDER OF `signer`'s key vouched for THIS dataset identity (the embedded " +
+  "root, fileCount, manifestDigest). It does NOT by itself prove a trustworthy TIMESTAMP: \"unaltered " +
+  "since a date T\" still needs the human-owned signing/timestamp trust-root (needs-human, P-3). It does " +
+  "NOT validate that the dataset's license/source HINTS are genuinely correct (that is the `vh dataset " +
+  "check` policy gate's untrusted-hint caveat). " +
+  TRUST_NOTE;
+
+/**
+ * Recover the signing address from a signed-attestation container's embedded canonical bytes + signature
+ * per the declared `scheme`. PURE: no I/O, no key, no network. For `eip191-personal-sign` this is ethers'
+ * `verifyMessage(<embedded canonical bytes>, signature)` — EIP-191 personal_sign recovery over the EXACT
+ * bytes that were signed. Returns the recovered address as a LOWERCASE 0x-hex string (so it compares
+ * directly to the container's lowercase `signer` and a lowercased `--signer`). Throws on an unknown scheme
+ * (defense-in-depth: validateSignedAttestation already rejects one) or an unrecoverable signature.
+ *
+ * @param {object} container a validated signed-attestation container (from readSignedAttestation)
+ * @returns {string} the recovered signer address, 0x-prefixed lowercase
+ */
+function recoverSignedAttestationSigner(container) {
+  const { scheme, signature } = container.signature;
+  if (scheme === "eip191-personal-sign") {
+    // The signed message IS the embedded canonical UNSIGNED bytes verbatim (the string, including its
+    // single trailing newline). verifyMessage runs EIP-191 personal_sign recovery over exactly those bytes.
+    const recovered = verifyMessage(container.attestation, signature);
+    return recovered.toLowerCase();
+  }
+  throw new Error(
+    `cannot recover signer for unknown signature scheme: ${JSON.stringify(scheme)} ` +
+      `(this build understands ${JSON.stringify(SIGNED_ATTESTATION_SCHEMES)})`
+  );
+}
+
+/**
+ * Verify (purely, OFFLINE) a signed-attestation container: recover the signer from the embedded canonical
+ * bytes + signature and confirm it equals the container's CLAIMED `signer`; OPTIONALLY pin it to an
+ * EXPECTED publisher (`expectedSigner`); OPTIONALLY confirm the signature binds a buyer's own manifest
+ * (`manifest`) by recomputing the canonical UNSIGNED bytes via the EXISTING build path and requiring them
+ * byte-identical to the embedded payload. The verdict is ACCEPTED only when EVERY requested check passes.
+ *
+ * No I/O, no provider, no key, no network. Throws only on an unrecoverable signature; a recovered address
+ * that simply doesn't match is a clean REJECTED (a normal verdict, not an error).
+ *
+ * @param {object} params
+ * @param {object} params.container       a validated signed-attestation container (from readSignedAttestation)
+ * @param {string} [params.expectedSigner] OPTIONAL expected publisher 0x-address (--signer); checked when present
+ * @param {object} [params.manifest]       OPTIONAL validated manifest object (from readManifest); binding check when present
+ * @returns {{
+ *   verdict: "ACCEPTED"|"REJECTED",
+ *   accepted: boolean,
+ *   recoveredSigner: string,
+ *   claimedSigner: string,
+ *   scheme: string,
+ *   checks: {
+ *     signatureMatchesSigner: boolean,
+ *     signerMatchesExpected: boolean|null,
+ *     manifestBindsAttestation: boolean|null,
+ *   },
+ *   expectedSigner: string|null,
+ *   manifestChecked: boolean,
+ *   failedChecks: string[],
+ * }}
+ */
+function verifySignedAttestation(params) {
+  if (!params || typeof params !== "object") {
+    throw new Error("verifySignedAttestation requires { container, [expectedSigner], [manifest] }");
+  }
+  const { container, expectedSigner, manifest } = params;
+
+  const claimedSigner = container.signature.signer; // validated lowercase 0x-address
+  const scheme = container.signature.scheme;
+
+  // (b) Recover the signer from the embedded canonical bytes + signature, and confirm it equals the
+  //     container's CLAIMED `signer`. A signature that does not recover to the claimed signer means the
+  //     `signer` label is unbacked — a clean check failure (REJECTED), not an error.
+  //
+  //     A TAMPERED signature can be not merely WRONG but UNRECOVERABLE: a corrupted (r,s,v) may have no
+  //     valid secp256k1 point, in which case ethers' verifyMessage throws. That is still a buyer-facing
+  //     REJECTED verdict, NOT a crash — so we catch it and treat it as a failed signature check (the
+  //     recovered signer is the explicit "(unrecoverable)" sentinel, never a real address). An unknown
+  //     scheme is a different (structural) failure and is re-thrown — validateSignedAttestation already
+  //     rejects it, so this is defense-in-depth that should never fire for a read container.
+  let recoveredSigner;
+  let signatureMatchesSigner;
+  try {
+    recoveredSigner = recoverSignedAttestationSigner(container);
+    signatureMatchesSigner = recoveredSigner === claimedSigner.toLowerCase();
+  } catch (e) {
+    if (/unknown signature scheme/.test(e.message)) throw e;
+    recoveredSigner = "(unrecoverable)";
+    signatureMatchesSigner = false;
+  }
+
+  // (c) OPTIONAL pin: confirm the recovered signer equals the EXPECTED publisher address the buyer pinned.
+  //     Normalize the expected address (accept checksummed/mixed-case via getAddress, then lowercase) so a
+  //     buyer can paste an EIP-55 address; an unparseable address is a usage-grade error surfaced by the
+  //     CLI before we get here, but defend anyway. null = not requested.
+  let signerMatchesExpected = null;
+  let normalizedExpected = null;
+  if (expectedSigner !== undefined && expectedSigner !== null) {
+    normalizedExpected = getAddress(expectedSigner).toLowerCase();
+    // Pin against the RECOVERED signer (not the merely-claimed one): the buyer pins WHO actually signed.
+    signerMatchesExpected = recoveredSigner === normalizedExpected;
+  }
+
+  // (d) OPTIONAL binding: recompute the canonical UNSIGNED bytes from the buyer's OWN manifest via the
+  //     EXISTING build path and require them byte-identical to the embedded (signed-over) payload. This
+  //     proves the signature binds the dataset the buyer actually holds, not some other set. null = not
+  //     requested.
+  let manifestBindsAttestation = null;
+  if (manifest !== undefined && manifest !== null) {
+    const recomputed = serializeAttestation(buildAttestation(manifest));
+    manifestBindsAttestation = recomputed === container.attestation;
+  }
+
+  // Verdict: ACCEPTED only when EVERY REQUESTED check passes. The signature-vs-signer check is ALWAYS
+  // requested; the other two only when their flag was given (null = not requested, never fails the gate).
+  const failedChecks = [];
+  if (!signatureMatchesSigner) failedChecks.push("signatureMatchesSigner");
+  if (signerMatchesExpected === false) failedChecks.push("signerMatchesExpected");
+  if (manifestBindsAttestation === false) failedChecks.push("manifestBindsAttestation");
+  const accepted = failedChecks.length === 0;
+
+  return {
+    verdict: accepted ? VERIFY_ATTEST_VERDICT.ACCEPTED : VERIFY_ATTEST_VERDICT.REJECTED,
+    accepted,
+    recoveredSigner,
+    claimedSigner: claimedSigner.toLowerCase(),
+    scheme,
+    checks: {
+      signatureMatchesSigner,
+      signerMatchesExpected,
+      manifestBindsAttestation,
+    },
+    expectedSigner: normalizedExpected,
+    manifestChecked: manifestBindsAttestation !== null,
+    failedChecks,
+  };
+}
+
+/**
+ * Render a verify-attest result as the human-readable block the CLI prints. LEADS with the standing
+ * trust caveat (VERIFY_ATTEST_TRUST_NOTE: reuses TRUST_NOTE verbatim + the signing caveat — never
+ * overclaims past P-3), then the verdict, the recovered/claimed/expected signer, and each requested
+ * check with PASS/FAIL. A REJECTED verdict NAMES which check(s) failed.
+ * @param {object} r the object verifySignedAttestation returns
+ * @returns {string[]} lines
+ */
+function formatVerifyAttest(r) {
+  const lines = [
+    // TRUST caveat FIRST: a valid signature proves identity-vouching, NOT a timestamp, NOT correct hints.
+    "  TRUST: " + VERIFY_ATTEST_TRUST_NOTE,
+    "",
+    `  verify-attest: ${r.verdict}`,
+    `  scheme:           ${r.scheme}`,
+    `  recovered signer: ${r.recoveredSigner}  (from the embedded canonical bytes + signature)`,
+    `  claimed signer:   ${r.claimedSigner}  (the container's \`signer\` field)`,
+  ];
+  // Check 1 (always performed): the signature recovers to the claimed signer.
+  lines.push(
+    `  [${r.checks.signatureMatchesSigner ? "PASS" : "FAIL"}] signature recovers to the claimed signer`
+  );
+  // Check 2 (only when --signer pinned): the recovered signer equals the expected publisher.
+  if (r.checks.signerMatchesExpected === null) {
+    lines.push("  [skip] expected-signer pin: not requested (pass --signer <addr> to pin the publisher)");
+  } else {
+    lines.push(
+      `  [${r.checks.signerMatchesExpected ? "PASS" : "FAIL"}] recovered signer matches the expected ` +
+        `publisher (${r.expectedSigner})`
+    );
+  }
+  // Check 3 (only when --manifest given): the signature binds the buyer's own dataset.
+  if (r.checks.manifestBindsAttestation === null) {
+    lines.push(
+      "  [skip] dataset binding: not requested (pass --manifest <m> to bind the signature to YOUR dataset)"
+    );
+  } else {
+    lines.push(
+      `  [${r.checks.manifestBindsAttestation ? "PASS" : "FAIL"}] the signature binds YOUR manifest ` +
+        "(its canonical bytes are byte-identical to the signed payload)"
+    );
+  }
+  if (r.accepted) {
+    lines.push("  ACCEPTED: every requested check passed.");
+  } else {
+    lines.push(`  REJECTED: failed check(s): ${r.failedChecks.join(", ")}.`);
+    if (r.failedChecks.includes("manifestBindsAttestation")) {
+      lines.push(
+        "    binding-mismatch: the signed payload does NOT match YOUR manifest — the signature vouches for a"
+      );
+      lines.push("    DIFFERENT dataset identity than the one you hold.");
+    }
+  }
+  return lines;
+}
+
+/**
+ * Orchestrate `vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]`. Reads the
+ * signed container via the strict `readSignedAttestation` (a malformed/edited/foreign container is
+ * rejected, never half-accepted) and, when given, the buyer's manifest via the strict `readManifest`,
+ * then runs the PURE `verifySignedAttestation`. Emits the verdict as a human block (LEADS with the trust
+ * caveat) or a `--json` machine-readable object carrying the recovered signer, expected signer (if any),
+ * the manifest-binding result (if checked), and per-check booleans. PURELY OFFLINE: no tree, no provider,
+ * no key, no network.
+ *
+ * @param {object} opts
+ * @param {string} opts.signed     path to a signed-attestation container (from T-17.1)
+ * @param {string} [opts.manifest] OPTIONAL path to the buyer's manifest (binds the signature to it)
+ * @param {string} [opts.signer]   OPTIONAL expected publisher 0x-address to pin
+ * @param {boolean}[opts.json]     emit the machine-readable verdict instead of the human block
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {object} the object verifySignedAttestation returns
+ */
+function runDatasetVerifyAttest(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetVerifyAttest requires options");
+  const { signed: signedPath, manifest: manifestPath, signer: expectedSigner } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!signedPath) throw new Error("runDatasetVerifyAttest requires a <signed> path");
+
+  // Strict read: a malformed/edited/foreign signed container is rejected here, never half-accepted, BEFORE
+  // any recovery is attempted. (This also re-validates the embedded UNSIGNED payload, scheme, signer, and
+  // signature shape.)
+  const container = readSignedAttestation(signedPath);
+
+  // OPTIONAL: read the buyer's manifest strictly (a corrupt/foreign manifest is rejected) so the binding
+  // check recomputes canonical bytes from a sound manifest.
+  let manifest;
+  if (manifestPath !== undefined && manifestPath !== null) {
+    manifest = readManifest(manifestPath);
+  }
+
+  const result = verifySignedAttestation({ container, expectedSigner, manifest });
+
+  if (opts.json) {
+    write(JSON.stringify(result) + "\n");
+  } else {
+    for (const line of formatVerifyAttest(result)) write(line + "\n");
+  }
+  return result;
+}
+
+// =================================================================================================
 // `vh dataset check <manifest> --policy <p> [--json]` — deterministic, OFFLINE license/source policy gate.
 //
 // WHY THIS EXISTS
@@ -2311,6 +2588,12 @@ module.exports = {
   serializeSignedAttestation,
   readSignedAttestation,
   runDatasetAttest,
+  VERIFY_ATTEST_VERDICT,
+  VERIFY_ATTEST_TRUST_NOTE,
+  recoverSignedAttestationSigner,
+  verifySignedAttestation,
+  formatVerifyAttest,
+  runDatasetVerifyAttest,
   TRUST_NOTE,
   MEMBERSHIP_TRUST_NOTE,
   NO_LICENSE_BUCKET,

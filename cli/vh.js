@@ -21,6 +21,7 @@ const { runClaim, runCommit, runReveal } = require("./claim");
 const { runList } = require("./list");
 const { runShow } = require("./show");
 const { runLineage } = require("./lineage");
+const { runReputation } = require("./reputation");
 
 function usage() {
   return [
@@ -39,6 +40,7 @@ function usage() {
     "  vh list [opts]             enumerate the registry read-only (discovery + audit)",
     "  vh show <0xhash> [opts]    look up ONE record by content hash (no local content needed)",
     "  vh lineage <0xhash> [opts] walk the parent chain UP from a record to its lineage root (read-only)",
+    "  vh reputation <addr> [opts] verifiable, on-chain-derived contribution score for one address (read-only)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -173,6 +175,19 @@ function usage() {
     "  attribution, timestamp+ISO, blockNumber, uri). A `parent` is only the CHILD author's CLAIMED",
     "  predecessor: it proves neither content ancestry nor a transfer of authorship. Exits non-zero if the",
     "  start hash is NOT ANCHORED.",
+    "",
+    "reputation options (read-only score for ONE address; provider only, never a signer/key):",
+    "  <addr>                     a 20-byte (0x + 40 hex) contributor address, e.g. from `vh list`",
+    "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --json                     emit a machine-readable JSON object instead of the human block",
+    "  --skip-identity-check      DANGER: skip authenticating the contract is a real verifyhash registry",
+    "                             (only for a KNOWN local/not-yet-deployed contract). NEVER the default.",
+    "  Reports total records + authorBound vs anchor-only + lineage-root vs revision breakdowns + the",
+    "  earliest/latest block & timestamp. The score is a TRANSPARENT, on-chain-DERIVED aggregate — NOT a",
+    "  token, NOT transferable. An anchor-only count is WEAKER (a plain anchor() is front-runnable), so the",
+    "  breakdown reports authorBound and anchor-only SEPARATELY. It does NOT validate record CONTENT (run",
+    "  `vh verify` for that). Exits non-zero if the address has NO contributions.",
     "",
   ].join("\n");
 }
@@ -1336,6 +1351,103 @@ async function cmdLineage(argv) {
   return result.status === "WALKED" ? 0 : 4;
 }
 
+/**
+ * Parse `reputation` argv into { addr, contract, rpc, json, skipIdentityCheck }. Takes exactly one
+ * positional <addr>. Throws on unknown/incomplete flags or a duplicate/missing addr so a typo never
+ * silently scores the wrong (or no) address (parser parity with `vh show`/`vh lineage`). The addr VALUE
+ * is shape-validated in runReputation so the same usage-grade error fires whether the addr came from
+ * the CLI or a programmatic caller.
+ */
+function parseReputationArgs(argv) {
+  const opts = {
+    addr: undefined,
+    contract: undefined,
+    rpc: undefined,
+    json: false,
+    skipIdentityCheck: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--skip-identity-check":
+        opts.skipIdentityCheck = true;
+        break;
+      case "--contract":
+        opts.contract = argv[++i];
+        if (opts.contract === undefined) throw new Error("--contract requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.addr !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.addr = a;
+    }
+  }
+  return opts;
+}
+
+async function cmdReputation(argv) {
+  let opts;
+  try {
+    opts = parseReputationArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.addr) {
+    process.stderr.write("error: `vh reputation` requires an <addr>\n\n" + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+
+  // Validate the address shape BEFORE building a provider or reading any env/network — a malformed
+  // address must hard-error with usage (exit 2) and never hit the network (parser parity with
+  // `vh show`/`vh lineage`, which validate the hash shape first).
+  if (!ethers.isAddress(opts.addr)) {
+    process.stderr.write(
+      `error: invalid address: ${opts.addr} (expected a 20-byte 0x-hex address)\n\n` + usage()
+    );
+    return 2;
+  }
+
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL\n"
+    );
+    return 1;
+  }
+
+  let result;
+  try {
+    // Read-only: provider only — `vh reputation` NEVER constructs a signer or touches a key.
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    result = await runReputation({
+      address: opts.addr,
+      contractAddress,
+      provider,
+      json: opts.json,
+      skipIdentityCheck: opts.skipIdentityCheck,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero when the address has NO contributions so scripts/CI can branch on "no contributions"
+  // — the same not-found exit-4 contract `vh show`/`vh lineage` use, so the read commands agree.
+  return result.total === 0 ? 4 : 0;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -1361,6 +1473,8 @@ async function main(argv) {
       return cmdShow(rest);
     case "lineage":
       return cmdLineage(rest);
+    case "reputation":
+      return cmdReputation(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -1390,6 +1504,7 @@ module.exports = {
   cmdList,
   cmdShow,
   cmdLineage,
+  cmdReputation,
   parseHashArgs,
   parseAnchorArgs,
   parseClaimArgs,
@@ -1400,5 +1515,6 @@ module.exports = {
   parseListArgs,
   parseShowArgs,
   parseLineageArgs,
+  parseReputationArgs,
   usage,
 };

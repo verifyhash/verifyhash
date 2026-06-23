@@ -145,6 +145,39 @@ contract ContributionRegistry {
     ///      a successful reveal so a commitment is single-use.
     mapping(bytes32 => Commitment) private _commitments;
 
+    // ---------------------------------------------------------------------------------------------
+    // PER-CONTRIBUTOR INDEX (T-12.1). Purely ADDITIVE side state so an off-chain reputation/scoring
+    // consumer can enumerate one address's records in O(that address's own records) instead of
+    // scanning all N records (and doing N getRecord round-trips) just to find the few written by one
+    // contributor.
+    //
+    // INVARIANTS / SAFETY:
+    //   * APPEND-ONLY, insertion order preserved. `_record` pushes the new global insertion index
+    //     onto `_contributorIndices[contributor]` and bumps `_contributorCount[contributor]` — one
+    //     array push + one counter bump, NO loop, so every write stays O(1) and the "no function
+    //     loops over an unbounded set / no gas-DoS on writes" invariant holds. The counter is a
+    //     cheap, single-slot read that always equals the array's length (an explicit invariant the
+    //     tests pin), so a consumer can size its pagination without paying to load the whole array.
+    //   * COVERS EVERY WRITE PATH WITH NO PER-PATH SPECIAL-CASING. Both the legacy no-parent
+    //     `anchor`/`reveal` and the `*WithParent` paths funnel through the SAME shared `_record`
+    //     writer, which is the only place this index is touched.
+    //   * READ-ONLY SIDE STATE. It NEVER changes a record's attribution or content: the `Record`
+    //     struct, the existing events/errors, and the `_records`/`_hashByIndex`/`total` layout used
+    //     by current reads are all untouched. Grouping by `contributor` is a RAW ENUMERATION, not an
+    //     endorsement — see the contract-level "TRUST BOUNDARIES" notice and the read functions'
+    //     NatSpec: an `authorBound == false` record grouped under an address is STILL only "first
+    //     anchorer", never proven authorship.
+    // ---------------------------------------------------------------------------------------------
+
+    /// @dev contributor address => the GLOBAL insertion indices of the records written by (recorded
+    ///      under) that address, in insertion order. Append-only; an entry is added by `_record` on
+    ///      every write and never removed or reordered.
+    mapping(address => uint256[]) private _contributorIndices;
+    /// @dev contributor address => number of records recorded under that address. A cheap,
+    ///      single-slot mirror of `_contributorIndices[a].length`, bumped in the same O(1) write so a
+    ///      consumer can read a contributor's count without loading the whole index array.
+    mapping(address => uint256) private _contributorCount;
+
     /// @notice Total number of distinct content hashes anchored.
     uint256 public total;
 
@@ -452,6 +485,19 @@ contract ContributionRegistry {
             total = index + 1;
         }
 
+        // PER-CONTRIBUTOR INDEX (T-12.1): append-only, O(1), and the SAME for every write path (this
+        // is the only place it is touched, so the legacy no-parent `anchor`/`reveal` and the
+        // `*WithParent` paths are all covered with no special-casing). One push + one counter bump,
+        // NO loop. This is read-only side state: it records ONLY which global insertion index belongs
+        // to `contributor`; it changes neither attribution nor content. For an `anchor()` record this
+        // `contributor` is merely the "first anchorer" (authorBound == false) — grouping it under an
+        // address is a raw enumeration, NOT an endorsement of authorship (see TRUST BOUNDARIES).
+        _contributorIndices[contributor].push(index);
+        unchecked {
+            // Bounded by the number of writes ever made by this contributor; cannot overflow.
+            _contributorCount[contributor] = _contributorCount[contributor] + 1;
+        }
+
         emit Anchored(contentHash, contributor, index, uint64(block.timestamp), uri);
         // Emit the parallel edge log only when there IS an edge, so an indexer can reconstruct the
         // full edge set from Linked logs alone (a child with no Linked log is a lineage root).
@@ -559,6 +605,95 @@ contract ContributionRegistry {
         // Bounded by `len <= count` (the caller's page size), never by `total`.
         for (uint256 i = 0; i < len; i++) {
             bytes32 h = _hashByIndex[start + i];
+            contentHashes[i] = h;
+            records[i] = _records[h];
+        }
+    }
+
+    /// @notice Number of records recorded under `contributor` (i.e. written by that address). This is
+    ///         the cheap, single-`eth_call` length an off-chain scorer reads to size its pagination,
+    ///         so enumerating one contributor is O(that contributor's own records), never O(total).
+    /// @dev    Ownerless, side-effect-free read of the additive `_contributorCount` mirror; it always
+    ///         equals `_contributorIndices[contributor].length`. Adds no state and no write path.
+    ///
+    ///         TRUST BOUNDARY — this count is a RAW ENUMERATION, NOT AN ENDORSEMENT. Grouping records
+    ///         by `contributor` does NOT upgrade attribution: a record written via the front-runnable
+    ///         `anchor()` is counted under its writer's address while still being `authorBound == false`
+    ///         (i.e. only "first anchorer", never proven authorship — anyone who saw the contentHash
+    ///         could have anchored it). A reputation consumer MUST inspect each record's `authorBound`
+    ///         and weight it accordingly; this number says only "how many records carry this address",
+    ///         not "how many this address provably authored". See the contract-level "TRUST
+    ///         BOUNDARIES" notice.
+    /// @param  contributor the address to count records for.
+    /// @return count the number of records recorded under `contributor` (0 for an unknown address).
+    function contributorRecordCount(address contributor) external view returns (uint256 count) {
+        return _contributorCount[contributor];
+    }
+
+    /// @notice Paginated, forgiving batch read of the records recorded under a single `contributor`,
+    ///         in insertion order — the per-contributor analogue of `getRecords`. Lets an off-chain
+    ///         reputation/scoring consumer page through ONE address's contributions in
+    ///         O(that contributor's own records) instead of scanning all `total` records.
+    /// @dev    Returns two PARALLEL arrays: `contentHashes[i]` and `records[i]` describe the same
+    ///         entry, the i-th of THIS contributor's records (skipping every record written by anyone
+    ///         else) within the clamped window `[start, start+count)` over that contributor's own
+    ///         sequence.
+    ///
+    ///         CLAMPING (identical to `getRecords` — forgiving, NEVER reverts on an out-of-range tail):
+    ///           * if `start >= contributorRecordCount(contributor)`, both arrays are empty;
+    ///           * the effective length is `min(count, owned - start)`, so an over-long `count` (or a
+    ///             window that runs off the end) returns only the entries that actually exist.
+    ///         A caller can blindly walk `getRecordsByContributor(a, 0, page), (a, page, page), ...`
+    ///         and stop on a short/empty page, without knowing the count up front and without ever
+    ///         risking a boundary revert.
+    ///
+    ///         BOUNDEDNESS / no gas-DoS: the loop runs exactly `len <= count` iterations — bounded by
+    ///         the CALLER-SUPPLIED page size, never by the contributor's (or the registry's) size. As
+    ///         with `getRecords` these are `view`/`eth_call` reads (no gas paid by an EOA), so the
+    ///         CALLER chooses a sane page size: an absurd `count` can still exceed an RPC node's
+    ///         `eth_call` budget. Page in modest chunks (e.g. 100-1000) and walk forward.
+    ///
+    ///         Ownerless, side-effect-free, additive: reads the `_contributorIndices` side index plus
+    ///         the existing `_hashByIndex`/`_records`; adds no state and no write path, and NEVER
+    ///         changes any record's attribution or content.
+    ///
+    ///         TRUST BOUNDARY — grouping by `contributor` is a RAW ENUMERATION, NOT AN ENDORSEMENT. It
+    ///         does NOT upgrade a front-runnable `anchor()` record's attribution: an `authorBound ==
+    ///         false` record returned under an address is STILL only "first anchorer" (anyone who saw
+    ///         the contentHash could have anchored it), never proven authorship. A reputation consumer
+    ///         MUST read each returned record's `authorBound` and weight it accordingly. Each record
+    ///         also carries the SAME TRUST BOUNDARIES as `getRecord`/`getRecords`: `uri` is an
+    ///         UNTRUSTED hint the contract never fetches/validates; `timestamp`/`blockNumber` are an
+    ///         UPPER BOUND on existence time + on-chain ORDERING, not authorship time; `parent` is only
+    ///         a CLAIMED predecessor edge. See the contract-level "TRUST BOUNDARIES" notice.
+    /// @param  contributor the address whose own records to page through.
+    /// @param  start the first index INTO THAT CONTRIBUTOR'S sequence to read (clamped:
+    ///               `start >= contributorRecordCount(contributor)` yields empty arrays).
+    /// @param  count the maximum number of records to return (the realized length is clamped to what
+    ///               that contributor actually has; you are responsible for a sane page size).
+    /// @return contentHashes the digests of this contributor's records for the clamped window, in
+    ///                       insertion order.
+    /// @return records       the parallel immutable Records for those digests.
+    function getRecordsByContributor(address contributor, uint256 start, uint256 count)
+        external
+        view
+        returns (bytes32[] memory contentHashes, Record[] memory records)
+    {
+        uint256[] storage idxs = _contributorIndices[contributor];
+        uint256 owned = idxs.length;
+        // Forgiving clamp over THIS contributor's own sequence: nothing exists at or past `owned`, so
+        // an out-of-range window is empty, not a revert.
+        uint256 len;
+        if (start < owned) {
+            uint256 available = owned - start;
+            len = count < available ? count : available;
+        }
+
+        contentHashes = new bytes32[](len);
+        records = new Record[](len);
+        // Bounded by `len <= count` (the caller's page size), never by `owned` or `total`.
+        for (uint256 i = 0; i < len; i++) {
+            bytes32 h = _hashByIndex[idxs[start + i]];
             contentHashes[i] = h;
             records[i] = _records[h];
         }

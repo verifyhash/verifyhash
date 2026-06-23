@@ -667,3 +667,214 @@ describe("cli: vh dataset verify-attest (T-17.2) — OFFLINE signed-attestation 
     expect(leaked).to.equal(false);
   });
 });
+
+// =====================================================================================================
+// T-19.1 — core signing helper: signAttestation({ attestation, signer }, cfg)
+//
+// What these prove:
+//   * signAttestation produces an EIP-191 personal_sign signature over the EXACT canonical UNSIGNED bytes
+//     and WRAPS it into a validated signed container via the existing buildSignedAttestation path.
+//   * The container ROUND-TRIPS: verifySignedAttestation recovers exactly the signer address over exactly
+//     those bytes, AND binding against the caller's recomputed canonical bytes (expectedCanonical) passes
+//     — proving signAttestation and recoverSigner/verify agree on the signed-over bytes byte-for-byte.
+//   * Wrap-don't-edit: the embedded payload stays signed:false/signature:null.
+//   * A DIFFERENT wallet's expectedSigner pin REJECTS (the signature is bound to the real signer).
+//   * It works with BOTH a dataset unsigned payload and a parcel unsigned payload, against the respective
+//     product cfg — proving the helper is genuinely product-agnostic and parameterized by cfg.
+//   * It never accepts a raw private-key string (it takes a signer OBJECT); key handling is the CLI layer's.
+//
+// CRITICAL: every key here is an EPHEMERAL, in-process `Wallet.createRandom()` — a TEST-ONLY key, never
+// persisted, NEVER a real-funds key, NO network, NO provider. It exists solely to mint a genuine
+// eip191-personal-sign signature so the round-trip is honestly exercised.
+// =====================================================================================================
+const coreAttestation = require("../cli/core/attestation");
+const datasetMod = require("../cli/dataset");
+const parcelMod = require("../cli/parcel");
+
+describe("cli/core: signAttestation (T-19.1) — ephemeral TEST-ONLY keys, NO network, NO real funds", function () {
+  let tmpDirs = [];
+  function tmp(prefix) {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tmpDirs.push(d);
+    return d;
+  }
+  afterEach(function () {
+    for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true });
+    tmpDirs = [];
+  });
+  function writeTree(files, prefix) {
+    const dir = tmp(prefix);
+    for (const [name, content] of Object.entries(files)) {
+      const full = path.join(dir, name);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, content);
+    }
+    return dir;
+  }
+
+  // The DataLedger signed-container cfg, rebuilt from the dataset module's PUBLIC exports (kind/schema/
+  // note + the unsigned codec). Faithful to the product framing — proven below because the product's OWN
+  // validateSignedAttestation (which uses the REAL internal cfg) accepts every container we produce, so a
+  // drift between this reconstructed cfg and the product's would surface as a rejection, not a silent pass.
+  const DATASET_CFG = Object.freeze({
+    kind: datasetMod.SIGNED_ATTESTATION_KIND,
+    schemaVersion: datasetMod.SIGNED_ATTESTATION_SCHEMA_VERSION,
+    supportedSchemaVersions: datasetMod.SUPPORTED_SIGNED_ATTESTATION_SCHEMA_VERSIONS,
+    note: datasetMod.SIGNED_ATTESTATION_TRUST_NOTE,
+    label: "signed dataset attestation",
+    validateUnsigned: datasetMod.validateAttestation,
+    serializeUnsigned: datasetMod.serializeAttestation,
+  });
+
+  // Build a REAL dataset UNSIGNED attestation payload (offline) + its canonical bytes.
+  function datasetUnsigned(files) {
+    const dir = writeTree(files, "t191-ds-tree-");
+    const manifestPath = path.join(tmp("t191-ds-man-"), "manifest.json");
+    datasetMod.runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+    const manifest = datasetMod.readManifest(manifestPath);
+    const unsigned = datasetMod.buildAttestation(manifest);
+    return { unsigned, canonical: datasetMod.serializeAttestation(unsigned) };
+  }
+
+  // The ProofParcel signed-container cfg, rebuilt the same way from parcel's PUBLIC exports.
+  const PARCEL_CFG = Object.freeze({
+    kind: parcelMod.SIGNED_PARCEL_ATTESTATION_KIND,
+    schemaVersion: parcelMod.PARCEL_ATTESTATION_SCHEMA_VERSION,
+    supportedSchemaVersions: parcelMod.SUPPORTED_PARCEL_ATTESTATION_SCHEMA_VERSIONS,
+    note: parcelMod.SIGNED_PARCEL_ATTESTATION_TRUST_NOTE,
+    label: "signed parcel attestation",
+    validateUnsigned: parcelMod.validateParcelAttestation,
+    serializeUnsigned: parcelMod.serializeParcelAttestation,
+  });
+
+  // Build a REAL parcel UNSIGNED attestation payload (offline) + its canonical bytes.
+  function parcelUnsigned(files) {
+    const dir = writeTree(files, "t191-pc-tree-");
+    const manifestPath = path.join(tmp("t191-pc-man-"), "manifest.json");
+    parcelMod.runParcelBuild({ dir, out: manifestPath, stdout: () => {} });
+    const manifest = parcelMod.readParcelManifest(manifestPath);
+    const unsigned = parcelMod.buildParcelAttestation(manifest);
+    return { unsigned, canonical: parcelMod.serializeParcelAttestation(unsigned) };
+  }
+
+  // The product-level validator (uses the REAL internal cfg) — used as a drift guard on the cfgs above.
+  const PRODUCT_VALIDATOR = {
+    "signed dataset attestation": datasetMod.validateSignedAttestation,
+    "signed parcel attestation": parcelMod.validateSignedParcelAttestation,
+  };
+
+  // The single parameterized round-trip assertion, run against BOTH products.
+  function assertSignRoundTrip(label, cfg, build) {
+    it(`${label}: signs, wraps, recovers the signer, binds its own bytes, and the product validator accepts it`, async function () {
+      const { unsigned, canonical } = build();
+      const wallet = Wallet.createRandom(); // EPHEMERAL, in-memory, TEST-ONLY — never persisted.
+
+      const container = await coreAttestation.signAttestation({ attestation: unsigned, signer: wallet }, cfg);
+
+      // The produced container passes the PRODUCT's own strict validator (real internal cfg) — proving the
+      // reconstructed cfg here matches the product framing (no silent drift) and the container is sound.
+      expect(PRODUCT_VALIDATOR[label](container)).to.equal(container);
+
+      // Container framing: the product's kind/note, eip191 scheme, claimed signer = lowercased wallet addr.
+      expect(container.kind).to.equal(cfg.kind);
+      expect(container.note).to.equal(cfg.note);
+      expect(container.signature.scheme).to.equal("eip191-personal-sign");
+      expect(container.signature.signer).to.equal(wallet.address.toLowerCase());
+
+      // The embedded payload is the EXACT canonical UNSIGNED bytes the caller would recompute — byte-for-byte.
+      expect(container.attestation).to.equal(canonical);
+
+      // WRAP-DON'T-EDIT: the embedded payload stays signed:false/signature:null.
+      const embedded = JSON.parse(container.attestation);
+      expect(embedded.signed).to.equal(false);
+      expect(embedded.signature).to.equal(null);
+
+      // ROUND-TRIP: recoverSigner + verify agree on the signed-over bytes. ACCEPTED, recovers the wallet
+      // address, and binding the caller's own recomputed canonical bytes also passes.
+      expect(coreAttestation.recoverSigner(container)).to.equal(wallet.address.toLowerCase());
+      const verdict = coreAttestation.verifySignedAttestation({
+        container,
+        expectedSigner: wallet.address,
+        expectedCanonical: canonical,
+      });
+      expect(verdict.verdict).to.equal("ACCEPTED");
+      expect(verdict.accepted).to.equal(true);
+      expect(verdict.recoveredSigner).to.equal(wallet.address.toLowerCase());
+      expect(verdict.checks.signatureMatchesSigner).to.equal(true);
+      expect(verdict.checks.signerMatchesExpected).to.equal(true);
+      expect(verdict.checks.manifestBindsAttestation).to.equal(true);
+
+      // A DIFFERENT wallet's expectedSigner pin REJECTS (the signature is bound to the real signer).
+      const imposter = Wallet.createRandom(); // TEST-ONLY key
+      const rej = coreAttestation.verifySignedAttestation({ container, expectedSigner: imposter.address });
+      expect(rej.verdict).to.equal("REJECTED");
+      expect(rej.checks.signerMatchesExpected).to.equal(false);
+      expect(rej.failedChecks).to.include("signerMatchesExpected");
+    });
+  }
+
+  assertSignRoundTrip("signed dataset attestation", DATASET_CFG, function () {
+    return datasetUnsigned({ "a.txt": "AAA", "b.txt": "BBB" });
+  });
+  assertSignRoundTrip("signed parcel attestation", PARCEL_CFG, function () {
+    return parcelUnsigned({ "x.txt": "XYZ", "nested/y.txt": "YZ" });
+  });
+
+  it("two ephemeral signers over the SAME payload recover to their OWN distinct addresses", async function () {
+    const { unsigned } = datasetUnsigned({ "a.txt": "AAA" });
+    const w1 = Wallet.createRandom(); // TEST-ONLY
+    const w2 = Wallet.createRandom(); // TEST-ONLY
+    const c1 = await coreAttestation.signAttestation({ attestation: unsigned, signer: w1 }, DATASET_CFG);
+    const c2 = await coreAttestation.signAttestation({ attestation: unsigned, signer: w2 }, DATASET_CFG);
+    expect(coreAttestation.recoverSigner(c1)).to.equal(w1.address.toLowerCase());
+    expect(coreAttestation.recoverSigner(c2)).to.equal(w2.address.toLowerCase());
+    expect(coreAttestation.recoverSigner(c1)).to.not.equal(coreAttestation.recoverSigner(c2));
+    // Both bind the SAME embedded canonical bytes (only the signature/signer differ).
+    expect(c1.attestation).to.equal(c2.attestation);
+  });
+
+  it("rejects a raw private-key STRING and a non-signer object (key handling is the CLI layer's job)", async function () {
+    const { unsigned } = datasetUnsigned({ "a.txt": "AAA" });
+    const wallet = Wallet.createRandom(); // TEST-ONLY — we use its private key string ONLY to prove rejection
+    let threw;
+    try {
+      await coreAttestation.signAttestation({ attestation: unsigned, signer: wallet.privateKey }, DATASET_CFG);
+      threw = null;
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw, "a raw private-key string must be rejected").to.be.an("error");
+    expect(threw.message).to.match(/signer.*object|getAddress|signMessage/);
+
+    // A plain object missing signMessage/getAddress is rejected too.
+    let threw2;
+    try {
+      await coreAttestation.signAttestation({ attestation: unsigned, signer: {} }, DATASET_CFG);
+      threw2 = null;
+    } catch (e) {
+      threw2 = e;
+    }
+    expect(threw2).to.be.an("error");
+    expect(threw2.message).to.match(/getAddress.*signMessage|signMessage/);
+  });
+
+  it("re-validates the UNSIGNED payload before signing (never signs an already-'signed' payload)", async function () {
+    const { unsigned } = datasetUnsigned({ "a.txt": "AAA" });
+    const wallet = Wallet.createRandom(); // TEST-ONLY
+    // An already-"signed" payload must be rejected by cfg.validateUnsigned BEFORE any signing happens.
+    const tampered = { ...unsigned, signed: true };
+    let threw;
+    try {
+      await coreAttestation.signAttestation({ attestation: tampered, signer: wallet }, DATASET_CFG);
+      threw = null;
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).to.be.an("error");
+  });
+
+  it("leaves ZERO artifacts in the repo working tree (all side effects in temp dirs)", function () {
+    expect(fs.existsSync(path.join(process.cwd(), "manifest.json"))).to.equal(false);
+    expect(fs.existsSync(path.join(process.cwd(), "signed.json"))).to.equal(false);
+  });
+});

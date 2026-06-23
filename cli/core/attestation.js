@@ -208,6 +208,68 @@ function buildSignedAttestation(params, cfg) {
 }
 
 /**
+ * Sign a validated UNSIGNED payload with a caller-supplied signer and WRAP it into a validated signed
+ * container — the single, tested place that turns a payload + key-holder into the detached-signature
+ * envelope, parameterized by the product's framing.
+ *
+ * KEY HYGIENE (why a signer OBJECT, never a raw key). This helper takes an ethers signer-like object
+ * (exposing async `getAddress()` + `signMessage(bytes|string)` — e.g. an ethers `Wallet`). It NEVER
+ * accepts a raw private-key string, NEVER persists a key, and NEVER logs one: the key lives only inside
+ * the caller's signer object. Loading a key from a keystore/env/HSM and constructing that signer is the
+ * CLI layer's job (T-19.2); this core stays key-agnostic.
+ *
+ * WHAT IS SIGNED (byte-for-byte). It re-validates the unsigned payload via `cfg.validateUnsigned` and
+ * serializes it to the EXACT canonical bytes with `cfg.serializeUnsigned` — the SAME string
+ * `recoverSigner` later runs `verifyMessage` over (including the trailing newline). It then runs
+ * `signer.signMessage(canonicalBytes)` (EIP-191 personal_sign), reads `signer.getAddress()`, lowercases
+ * it, and routes the triple through the EXISTING `buildSignedAttestation` so the container is assembled
+ * AND strictly validated by the one shared path (no new container assembly here). The result therefore
+ * ROUND-TRIPS by construction: verifySignedAttestation recovers exactly this signer over exactly these
+ * bytes, and binding against `cfg.serializeUnsigned(attestation)` passes.
+ *
+ * The embedded UNSIGNED payload is WRAPPED, never edited — it stays signed:false/signature:null (the
+ * wrap-don't-edit invariant, enforced by buildSignedAttestation re-validating it).
+ *
+ * @param {object} params
+ * @param {object} params.attestation a validated UNSIGNED payload (re-validated via cfg.validateUnsigned)
+ * @param {object} params.signer      an ethers signer-like object: async getAddress() + signMessage(bytes|string)
+ * @param {object} cfg                the product's signed-container framing
+ * @returns {Promise<object>} the validated signed-attestation container
+ */
+async function signAttestation(params, cfg) {
+  _requireCfg(cfg);
+  if (!params || typeof params !== "object") {
+    throw new Error("signAttestation requires { attestation, signer }");
+  }
+  const { attestation, signer } = params;
+  if (!signer || (typeof signer !== "object" && typeof signer !== "function")) {
+    throw new Error(
+      "signAttestation requires a `signer` object exposing getAddress() + signMessage() (e.g. an ethers Wallet); a raw private-key string is NOT accepted"
+    );
+  }
+  if (typeof signer.getAddress !== "function" || typeof signer.signMessage !== "function") {
+    throw new Error(
+      "signAttestation `signer` must expose getAddress() and signMessage() (an ethers signer-like object)"
+    );
+  }
+  // (a) Re-validate the unsigned payload and serialize it to the EXACT canonical bytes — the same string
+  //     recoverSigner runs verifyMessage over (byte-for-byte, including the trailing newline). We validate
+  //     FIRST so we never ask the signer to sign a malformed/already-"signed" payload.
+  cfg.validateUnsigned(attestation);
+  const canonicalBytes = cfg.serializeUnsigned(attestation);
+  // (b) EIP-191 personal_sign over exactly those bytes. The key never leaves the signer object.
+  const signature = await signer.signMessage(canonicalBytes);
+  // (c) Read the signer's address, lowercase it (the container records the CLAIMED signer in canonical
+  //     lowercase), and route through the EXISTING builder so the container is assembled AND strictly
+  //     validated by the one shared path — no separate container assembly here.
+  const signerAddress = (await signer.getAddress()).toLowerCase();
+  return buildSignedAttestation(
+    { attestation, scheme: "eip191-personal-sign", signer: signerAddress, signature },
+    cfg
+  );
+}
+
+/**
  * Serialize a signed-attestation container to its canonical, byte-deterministic bytes: a FIXED top-level
  * (and signature-block) key order, NO insignificant whitespace, a single trailing newline. Two runs over
  * the same inputs produce an identical string.
@@ -402,6 +464,7 @@ module.exports = {
   SIGNED_ATTESTATION_SCHEMES,
   validateSignedAttestation,
   buildSignedAttestation,
+  signAttestation,
   serializeSignedAttestation,
   readSignedAttestation,
   recoverSigner,

@@ -42,6 +42,7 @@
 const fs = require("fs");
 const path = require("path");
 const { keccak256, concat, toUtf8Bytes } = require("ethers");
+const { keccak256: streamingKeccak256 } = require("js-sha3");
 
 /**
  * keccak256 of a single file's raw bytes, as a 0x-prefixed 32-byte hex string.
@@ -63,6 +64,42 @@ function hashFile(filePath) {
  */
 function hashBytes(bytes) {
   return keccak256(bytes);
+}
+
+// Read a file in fixed-size chunks rather than slurping it whole. 1 MiB balances syscall overhead
+// against peak memory: a multi-gigabyte dataset file is hashed with at most ~1 MiB resident at a time.
+const STREAM_CHUNK_BYTES = 1024 * 1024;
+
+/**
+ * keccak256 of a single file's raw bytes, computed by STREAMING the file through an incremental
+ * keccak so the whole file is never resident in memory at once. The digest is byte-identical to
+ * `hashFile` (and to Solidity's keccak256 of the same bytes) — js-sha3's incremental keccak256 is the
+ * same primitive ethers' one-shot keccak256 wraps, verified in test/cli.dataset.test.js against
+ * `hashFile`/`hashBytes`/`ethers.keccak256`. Empty files hash to keccak256("") exactly like hashFile.
+ *
+ * This is the building block that lets a large dataset tree be hashed without loading all file
+ * content into memory at once: callers hash one file at a time, keeping at most STREAM_CHUNK_BYTES
+ * plus that file's 32-byte digest live, then move to the next file.
+ *
+ * @param {string} filePath
+ * @returns {string} 0x-prefixed bytes32 hex
+ */
+function hashFileStream(filePath) {
+  const h = streamingKeccak256.create();
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const buf = Buffer.allocUnsafe(STREAM_CHUNK_BYTES);
+    for (;;) {
+      const bytesRead = fs.readSync(fd, buf, 0, STREAM_CHUNK_BYTES, null);
+      if (bytesRead === 0) break;
+      // Update with exactly the bytes read (subarray is a view, no copy) so a short final read does
+      // not feed stale trailing bytes from a previous, larger chunk into the digest.
+      h.update(buf.subarray(0, bytesRead));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return "0x" + h.hex();
 }
 
 // Domain tags, byte-identical to ContributionRegistry's LEAF_TAG / NODE_TAG. These keep a leaf
@@ -278,6 +315,59 @@ function hashDir(dirPath) {
 }
 
 /**
+ * Build a sorted-leaf directory Merkle root + per-file manifest by STREAMING each file, so a large
+ * dataset tree is hashed WITHOUT loading all file content into memory at once. This is the engine
+ * behind `vh dataset build`.
+ *
+ * It reuses the EXACT path-bound, domain-separated convention of `hashDir`/`hashEntries` — the only
+ * difference is *how* each file's content digest is obtained: instead of `fs.readFileSync` (whole file
+ * resident) the bytes are streamed through an incremental keccak (`hashFileStream`), and only the
+ * resulting 32-byte `contentHash` + `pathLeaf` are retained. Peak memory is therefore one chunk
+ * (~1 MiB) plus the O(number-of-files) array of 32-byte hashes — never the sum of all file sizes. The
+ * resulting root is byte-identical to `hashDir(dirPath).root` for the same tree (asserted in tests),
+ * so it verifies against the on-chain `verifyLeaf` with no new hashing convention.
+ *
+ * @param {string} dirPath directory to walk recursively (symlinks/sockets skipped, as in listFiles)
+ * @returns {{
+ *   root: string,
+ *   leaves: { path: string, contentHash: string, leaf: string }[],   // sorted by leaf, ascending
+ * }}
+ */
+function hashDirStream(dirPath) {
+  const files = listFiles(dirPath);
+  if (files.length === 0) {
+    throw new Error(`no files found under directory: ${dirPath}`);
+  }
+  // Compute one file's (path, contentHash, leaf) at a time. Only the 32-byte hashes are kept; the
+  // file's bytes are released as soon as its streamed digest is computed, so total content never piles
+  // up in memory regardless of how large or how many the files are.
+  const pairs = files.map((abs) => {
+    const rel = toPosixRel(path.relative(dirPath, abs));
+    const contentHash = hashFileStream(abs);
+    return { path: rel, contentHash, leaf: pathLeaf(rel, contentHash) };
+  });
+
+  const { root } = buildTree(pairs.map((p) => p.leaf));
+
+  // Sort the manifest the same way buildTree sorted the bare leaves, so the on-disk order is the
+  // canonical (leaf-ascending) order and is reproducible across hosts.
+  const sortedPairs = pairs.slice().sort((a, b) => {
+    const x = BigInt(a.leaf);
+    const y = BigInt(b.leaf);
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+
+  return {
+    root,
+    leaves: sortedPairs.map((p) => ({
+      path: p.path,
+      contentHash: p.contentHash,
+      leaf: p.leaf,
+    })),
+  };
+}
+
+/**
  * Build the directory-root result from an explicit list of file entries. This is the shared core
  * behind both `hashDir` (filesystem walk) and the git-scoped walk in cli/git.js, so they compute the
  * IDENTICAL Merkle root via the same pathLeaf/buildTree/leafHash/nodeHash convention the contract's
@@ -441,8 +531,10 @@ function hashPath(targetPath) {
 
 module.exports = {
   hashFile,
+  hashFileStream,
   hashBytes,
   hashDir,
+  hashDirStream,
   hashEntries,
   hashGit,
   hashPath,

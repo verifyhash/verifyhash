@@ -22,6 +22,7 @@ const { runList } = require("./list");
 const { runShow } = require("./show");
 const { runLineage } = require("./lineage");
 const { runReputation } = require("./reputation");
+const { runDatasetBuild } = require("./dataset");
 
 function usage() {
   return [
@@ -41,6 +42,7 @@ function usage() {
     "  vh show <0xhash> [opts]    look up ONE record by content hash (no local content needed)",
     "  vh lineage <0xhash> [opts] walk the parent chain UP from a record to its lineage root (read-only)",
     "  vh reputation <addr> [opts] verifiable, on-chain-derived contribution score for one address (read-only)",
+    "  vh dataset build <dir> --out <p>  tamper-evident dataset manifest (Merkle root + per-file leaves)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -188,6 +190,18 @@ function usage() {
     "  token, NOT transferable. An anchor-only count is WEAKER (a plain anchor() is front-runnable), so the",
     "  breakdown reports authorBound and anchor-only SEPARATELY. It does NOT validate record CONTENT (run",
     "  `vh verify` for that). Exits non-zero if the address has NO contributions.",
+    "",
+    "dataset build options (tamper-evident dataset manifest; offline, NO key, NO network):",
+    "  <dir>                      the dataset directory to manifest (walked recursively)",
+    "  --out <path>               REQUIRED: write the manifest JSON here (caller-chosen path; never cwd).",
+    "                             The exact absolute file written is named in the success output.",
+    "  --hints <path>             OPTIONAL: a JSON file { \"<relPath>\": { source, license } } of UNTRUSTED",
+    "                             per-file provenance hints. They are recorded labeled as untrusted and are",
+    "                             NOT bound into the Merkle root — editing them does not change the root.",
+    "  --json                     emit a machine-readable { root, fileCount, out } object",
+    "  Streams each file (a multi-GB dataset is hashed without loading all content into memory). The root",
+    "  reuses the SAME path-bound Merkle convention as `vh hash <dir>` and the on-chain verifyLeaf — the",
+    "  root commits to file NAMES and bytes, so any edit/rename/add/remove changes it.",
     "",
   ].join("\n");
 }
@@ -1448,6 +1462,92 @@ async function cmdReputation(argv) {
   return result.total === 0 ? 4 : 0;
 }
 
+/**
+ * Parse `dataset build` argv into { dir, out, hints, json }. Takes exactly one positional <dir> and a
+ * REQUIRED --out. Throws on unknown/incomplete flags or a duplicate/missing positional so a typo never
+ * silently manifests the wrong tree or writes to a surprise path (parser parity with the other commands).
+ */
+function parseDatasetBuildArgs(argv) {
+  const opts = { dir: undefined, out: undefined, hints: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      case "--hints":
+        opts.hints = argv[++i];
+        if (opts.hints === undefined) throw new Error("--hints requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.dir !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.dir = a;
+    }
+  }
+  return opts;
+}
+
+function cmdDataset(argv) {
+  const [sub, ...rest] = argv;
+  if (sub !== "build") {
+    process.stderr.write(
+      `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
+        `(expected: build)\n\n` + usage()
+    );
+    return 2;
+  }
+
+  let opts;
+  try {
+    opts = parseDatasetBuildArgs(rest);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.dir) {
+    process.stderr.write("error: `vh dataset build` requires a <dir>\n\n" + usage());
+    return 2;
+  }
+  if (!opts.out) {
+    process.stderr.write("error: `vh dataset build` requires --out <path>\n\n" + usage());
+    return 2;
+  }
+
+  // Optional untrusted hints: read + parse the JSON file BEFORE walking the tree so a malformed hints
+  // file hard-errors early (and never half-writes a manifest). dataset.js validates that every hinted
+  // path exists in the tree.
+  let hints;
+  if (opts.hints !== undefined) {
+    const fs = require("fs");
+    let raw;
+    try {
+      raw = fs.readFileSync(opts.hints, "utf8");
+    } catch (e) {
+      process.stderr.write(`error: cannot read --hints file ${opts.hints}: ${e.message}\n`);
+      return 1;
+    }
+    try {
+      hints = JSON.parse(raw);
+    } catch (e) {
+      process.stderr.write(`error: --hints file ${opts.hints} is not valid JSON: ${e.message}\n`);
+      return 1;
+    }
+  }
+
+  try {
+    runDatasetBuild({ dir: opts.dir, out: opts.out, hints, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -1475,6 +1575,8 @@ async function main(argv) {
       return cmdLineage(rest);
     case "reputation":
       return cmdReputation(rest);
+    case "dataset":
+      return cmdDataset(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -1505,6 +1607,8 @@ module.exports = {
   cmdShow,
   cmdLineage,
   cmdReputation,
+  cmdDataset,
+  parseDatasetBuildArgs,
   parseHashArgs,
   parseAnchorArgs,
   parseClaimArgs,

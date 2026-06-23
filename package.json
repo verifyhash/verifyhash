@@ -9,6 +9,9 @@
     "node": "hardhat node",
     "deploy:amoy": "hardhat run scripts/deploy.js --network amoy"
   },
+  "dependencies": {
+    "js-sha3": "^0.8.0"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "hardhat": "^2.22.0",

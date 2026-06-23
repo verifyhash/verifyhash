@@ -28,6 +28,7 @@ const {
   runLineage,
 } = require("../cli/lineage");
 const show = require("../cli/show");
+const { cmdCommit } = require("../cli/vh");
 
 // The compiled contract ABI — the source of truth for the on-chain shape the docs describe.
 const ABI =
@@ -242,6 +243,51 @@ describe("T-10.3 docs: contribution lineage (docs/LINEAGE.md) + README CLI block
 
     it("cross-links docs/LINEAGE.md for the full graph spec", function () {
       expect(tb).to.include("LINEAGE.md");
+    });
+  });
+
+  // The doc's write-flow section (docs/LINEAGE.md) makes a LOAD-BEARING behavioral claim: `--parent` is
+  // supported on the one-shot `vh claim` only, and the resumable `vh commit`/`vh reveal` split does not
+  // carry it yet — `vh commit --parent` HARD-ERRORS and points you at `vh claim --parent`. Pin that
+  // claim to the actual CLI guard (cli/vh.js cmdCommit) so the prose can't outrun the code: if someone
+  // ever wires --parent into `vh commit`, the doc would be lying and THIS test fails. The guard returns
+  // before any network/file access, so the test needs no chain/fixtures.
+  describe("docs/LINEAGE.md's `vh commit --parent` redirection is the LIVE CLI behaviour, not just prose", function () {
+    it("docs state vh commit/reveal cannot carry --parent yet (claim --parent only)", function () {
+      // The doc must explicitly scope --parent to the one-shot claim and route commit users elsewhere.
+      expect(lineage).to.include("vh claim --parent");
+      expect(lineageLower).to.match(/vh commit[\s\S]{0,80}--parent|--parent[\s\S]{0,80}vh commit/);
+      // It names the one-shot `vh claim` as the path that DOES carry the edge.
+      expect(lineage).to.match(/one-shot `?vh claim`?|`?vh claim`? --parent only/);
+    });
+
+    it("`vh commit --parent <hash>` actually hard-errors and redirects to `vh claim --parent`", async function () {
+      // Capture stderr without touching the real one; cmdCommit writes there and returns the exit code.
+      const origWrite = process.stderr.write.bind(process.stderr);
+      let captured = "";
+      process.stderr.write = (s) => {
+        captured += s;
+        return true;
+      };
+      let code;
+      try {
+        // A truthy path clears the path check; the --parent guard fires BEFORE any rpc/file access, so
+        // this never opens a connection. (The hash value is irrelevant — the guard only checks presence.)
+        code = await cmdCommit([
+          ".",
+          "--parent",
+          "0x" + "11".repeat(32),
+        ]);
+      } finally {
+        process.stderr.write = origWrite;
+      }
+      expect(code, "vh commit --parent must exit non-zero (usage error)").to.equal(2);
+      expect(captured, "must explain commit can't carry --parent").to.match(
+        /vh commit.*does not yet support --parent/i
+      );
+      expect(captured, "must redirect to the one-shot claim path").to.include(
+        "vh claim --parent"
+      );
     });
   });
 });

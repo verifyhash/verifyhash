@@ -92,6 +92,53 @@ describe("T-7.4 docs: README + TRUST-BOUNDARIES document the read side (vh list 
     });
   });
 
+  // T-11.2 (REWORK): the `vh list --json` OUTPUT CONTRACT changed from a bare top-level array to an
+  // ENVELOPE `{ registry, records }`, and every read command authenticates the registry first. The
+  // docs-rot guards deliberately didn't pin --json shapes before, so this drifted while the suite
+  // stayed green. Pin the published contract here so a third party / indexer coding against the README
+  // can't be silently surprised again.
+  describe("README publishes the T-11.2 read-side output contract (envelope + authentication)", function () {
+    it("documents that vh list --json is an ENVELOPE { registry, records }, not a bare array", function () {
+      // The README must name the envelope keys so a consumer doesn't do JSON.parse(out)[0].
+      expect(readme).to.match(/vh list --json[\s\S]{0,200}envelope/i);
+      expect(readme).to.include('"registry"');
+      expect(readme).to.include('"records"');
+      // The new top-level shape the code emits (cli/list.js): { registry, records }.
+      expect(readmeLower).to.match(/\{\s*registry\s*,\s*records\s*\}|registry[\s\S]{0,40}records/);
+    });
+
+    it("WARNS that the list --json change is breaking for `JSON.parse(out)[0]` consumers", function () {
+      expect(readmeLower).to.match(/breaking/);
+      // Names the exact pattern that breaks, and the migration to records.
+      expect(readme).to.include("JSON.parse(out)[0]");
+      expect(readme).to.match(/JSON\.parse\(out\)\.records|iterate[\s\S]{0,40}records/);
+    });
+
+    it("documents the registry-authentication line + the registry:{id,version,chainId} JSON block", function () {
+      // The human confirmation every read command prints, and the machine-readable block.
+      expect(readmeLower).to.include("registry authenticated");
+      expect(readme).to.match(/registry:\s*\{\s*id,\s*version,\s*chainId\s*\}|"registry":\s*\{[^}]*"id"/i);
+    });
+
+    it("documents the loud, non-default --skip-identity-check opt-out", function () {
+      expect(readme).to.include("--skip-identity-check");
+      expect(readmeLower).to.match(/never the default|not the default|loud/);
+      expect(readmeLower).to.match(/skipped|only as trustworthy as the rpc/);
+    });
+
+    it("the documented JSON keys match what cli/list.js + cli/registry.js actually emit", function () {
+      // Tripwire: assert the live code still produces { registry: { id, version, chainId }, records: [] }
+      // so the README prose above can't outrun the implementation.
+      const registry = require("../cli/registry");
+      const auth = { registryId: "0xabc", registryVersion: 1, chainId: 137 };
+      const block = registry.jsonRegistryBlock(auth);
+      expect(Object.keys(block).sort()).to.deep.equal(["chainId", "id", "version"]);
+      const skipped = registry.jsonSkippedBlock();
+      expect(skipped).to.have.property("skipped", true);
+      expect(skipped).to.have.property("note").that.is.a("string");
+    });
+  });
+
   describe("docs/TRUST-BOUNDARIES.md carries the read-side caveat", function () {
     it("names both read commands", function () {
       expect(tb).to.include("vh list");

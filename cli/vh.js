@@ -113,6 +113,9 @@ function usage() {
     "                             ADDED/REMOVED/CHANGED per file (verdict still = root vs on-chain)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --skip-identity-check      DANGER: skip authenticating the contract is a real verifyhash registry",
+    "                             (only for a KNOWN local/not-yet-deployed contract). The verdict is then",
+    "                             only as trustworthy as the RPC you pointed at. NEVER the default.",
     "",
     "prove options:",
     "  --root <dir>               the repo root directory whose Merkle root <file> is proven against",
@@ -129,6 +132,9 @@ function usage() {
     "  --contract <address>       ContributionRegistry address (or the artifact's recorded address)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --json                     emit a machine-readable JSON object instead of the human block",
+    "  --skip-identity-check      DANGER: skip authenticating the contract + the artifact's chainId",
+    "                             cross-check (only for a KNOWN local/not-yet-deployed contract). NEVER",
+    "                             the default — the verdict is then only as trustworthy as the RPC.",
     "  Re-derives the leaf + re-folds the proof OFFLINE, then confirms the root is anchored on-chain.",
     "  Prints ACCEPTED only when the offline fold AND the on-chain checks all pass; else REJECTED /",
     "  NOT ANCHORED (non-zero exit). Proves SET-MEMBERSHIP in an anchored root, not authorship/uri.",
@@ -140,13 +146,17 @@ function usage() {
     "  --author-bound             only commit-reveal records (authorBound = proven first claimant)",
     "  --limit <n>                show at most n records (after --offset)",
     "  --offset <n>               skip the first n (filtered) records",
-    "  --json                     emit a machine-readable JSON array instead of the human block",
+    "  --json                     emit a machine-readable JSON envelope { registry, records }",
+    "  --skip-identity-check      DANGER: skip authenticating the contract is a real verifyhash registry",
+    "                             (only for a KNOWN local/not-yet-deployed contract). NEVER the default.",
     "",
     "show options (read-only lookup by hash; provider only, never a signer/key):",
     "  <0xhash>                   a 32-byte (0x + 64 hex) content hash, e.g. from `vh list`",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --json                     emit a machine-readable JSON object instead of the human block",
+    "  --skip-identity-check      DANGER: skip authenticating the contract is a real verifyhash registry",
+    "                             (only for a KNOWN local/not-yet-deployed contract). NEVER the default.",
     "  NOTE: `show` proves only that the hash is on-chain; it does NOT re-derive content. To bind a",
     "        record to real bytes you must still run `vh verify <path>`. Exits non-zero if NOT ANCHORED.",
     "",
@@ -157,6 +167,8 @@ function usage() {
     "  --max-depth <n>            cap the walk at n ancestors (default 256); reaching the cap prints a",
     "                             clear note instead of looping forever on a pathological chain",
     "  --json                     emit a machine-readable ordered ancestor array instead of the human block",
+    "  --skip-identity-check      DANGER: skip authenticating the contract is a real verifyhash registry",
+    "                             (only for a KNOWN local/not-yet-deployed contract). NEVER the default.",
     "  Walks child -> parent -> ... to the lineage root, printing each ancestor (contentHash, contributor,",
     "  attribution, timestamp+ISO, blockNumber, uri). A `parent` is only the CHILD author's CLAIMED",
     "  predecessor: it proves neither content ancestry nor a transfer of authorship. Exits non-zero if the",
@@ -713,10 +725,14 @@ function parseVerifyArgs(argv) {
     receipt: undefined,
     git: false,
     ref: undefined,
+    skipIdentityCheck: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
+      case "--skip-identity-check":
+        opts.skipIdentityCheck = true;
+        break;
       case "--git":
         opts.git = true;
         break;
@@ -781,6 +797,7 @@ async function cmdVerify(argv) {
       ref: opts.ref,
       contractAddress,
       receiptPath: opts.receipt,
+      skipIdentityCheck: opts.skipIdentityCheck,
       provider,
       ethers,
     });
@@ -928,12 +945,21 @@ async function cmdProve(argv) {
  * typo never silently verifies the wrong file (parser parity with the other commands).
  */
 function parseVerifyProofArgs(argv) {
-  const opts = { artifact: undefined, contract: undefined, rpc: undefined, json: false };
+  const opts = {
+    artifact: undefined,
+    contract: undefined,
+    rpc: undefined,
+    json: false,
+    skipIdentityCheck: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
       case "--json":
         opts.json = true;
+        break;
+      case "--skip-identity-check":
+        opts.skipIdentityCheck = true;
         break;
       case "--contract":
         opts.contract = argv[++i];
@@ -985,6 +1011,7 @@ async function cmdVerifyProof(argv) {
       contractAddress,
       provider,
       json: opts.json,
+      skipIdentityCheck: opts.skipIdentityCheck,
       ethers,
     });
   } catch (e) {
@@ -1014,6 +1041,7 @@ function parseListArgs(argv) {
     limit: undefined,
     offset: undefined,
     json: false,
+    skipIdentityCheck: false,
   };
   // Parse a flag value as a non-negative integer, hard-erroring on anything else.
   const intArg = (flag, raw) => {
@@ -1029,6 +1057,9 @@ function parseListArgs(argv) {
         break;
       case "--json":
         opts.json = true;
+        break;
+      case "--skip-identity-check":
+        opts.skipIdentityCheck = true;
         break;
       case "--contract":
         opts.contract = argv[++i];
@@ -1088,6 +1119,7 @@ async function cmdList(argv) {
         offset: opts.offset,
       },
       json: opts.json,
+      skipIdentityCheck: opts.skipIdentityCheck,
       ethers,
     });
   } catch (e) {
@@ -1104,12 +1136,21 @@ async function cmdList(argv) {
  * fires whether the hash came from the CLI or a programmatic caller.
  */
 function parseShowArgs(argv) {
-  const opts = { hash: undefined, contract: undefined, rpc: undefined, json: false };
+  const opts = {
+    hash: undefined,
+    contract: undefined,
+    rpc: undefined,
+    json: false,
+    skipIdentityCheck: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
       case "--json":
         opts.json = true;
+        break;
+      case "--skip-identity-check":
+        opts.skipIdentityCheck = true;
         break;
       case "--contract":
         opts.contract = argv[++i];
@@ -1172,6 +1213,7 @@ async function cmdShow(argv) {
       contractAddress,
       provider,
       json: opts.json,
+      skipIdentityCheck: opts.skipIdentityCheck,
       ethers,
     });
   } catch (e) {
@@ -1197,12 +1239,16 @@ function parseLineageArgs(argv) {
     rpc: undefined,
     json: false,
     maxDepth: undefined,
+    skipIdentityCheck: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
       case "--json":
         opts.json = true;
+        break;
+      case "--skip-identity-check":
+        opts.skipIdentityCheck = true;
         break;
       case "--contract":
         opts.contract = argv[++i];
@@ -1277,6 +1323,7 @@ async function cmdLineage(argv) {
       provider,
       maxDepth: opts.maxDepth,
       json: opts.json,
+      skipIdentityCheck: opts.skipIdentityCheck,
       ethers,
     });
   } catch (e) {

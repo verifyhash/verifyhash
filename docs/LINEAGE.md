@@ -232,6 +232,7 @@ NOTE: `uri` is an UNTRUSTED hint (never fetched/validated — re-fetch + re-hash
 
 NOTE (lineage): a `parent` edge is the CHILD author's CLAIM of a predecessor. It does NOT prove the predecessor's content is a genuine ancestor of the child's content (re-derive BOTH yourself and reason about the relationship), and it does NOT transfer the parent's authorship to the child. Each record's contributor/authorBound stands on its own.
 
+  registry authenticated: REGISTRY_ID ok (v1), chainId 137
   start:        0xchild…
   result:       WALKED 2 records (child -> root order)
 
@@ -252,12 +253,21 @@ NOTE (lineage): a `parent` edge is the CHILD author's CLAIM of a predecessor. It
       parent:       (none) — lineage root
 ```
 
+Like every read command, `vh lineage` first **authenticates the registry** (T-11.2): it prints a
+`registry authenticated: REGISTRY_ID ok (vN), chainId N` line (above) before any ancestor, and the
+`--json` walk carries a top-level `registry: { id, version, chainId }` block — so a consumer knows the
+walk was read from a genuine verifyhash registry, not a look-alike contract. A loud, non-default
+`--skip-identity-check` bypasses the preflight for a known local-dev contract (`registry` then becomes
+`{ "skipped": true, "note": … }`). See the README's
+[authenticated reads](../README.md#authenticated-reads-registry-identity--chainid) section.
+
 The same walk as machine-readable JSON for tooling/an indexer:
 
 ```
 $ vh lineage 0xCHILD… --contract 0x… --rpc <url> --json
 {
   "start": "0xchild…",
+  "registry": { "id": "0x0395e2ec…", "version": 1, "chainId": 137 },
   "anchored": true,
   "ancestors": [
     { "depth": 0, "contentHash": "0xchild…", "contributor": "0xAlice…", "authorBound": false,

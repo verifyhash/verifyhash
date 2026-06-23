@@ -34,6 +34,13 @@
 
 const fs = require("fs");
 const { pathLeaf, leafHash, nodeHash } = require("./hash");
+const {
+  assertRegistry,
+  formatRegistryLine,
+  formatSkippedLine,
+  jsonRegistryBlock,
+  jsonSkippedBlock,
+} = require("./registry");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
@@ -307,6 +314,15 @@ function formatVerifyProof(r) {
     `    leaf re-derived from contentHash+relPath: ${yn(r.leafMatches)}`,
     `    proof folds to the claimed root:          ${yn(r.foldsToRoot)}`,
   ];
+  // T-11.2: the registry-authentication confirmation (or the loud skip warning), printed BEFORE the
+  // on-chain checks so a reader sees the contract+network were authenticated before believing them.
+  if (r.checkedChain || r.identitySkipped) {
+    if (r.identitySkipped) {
+      lines.push("", formatSkippedLine());
+    } else if (r.registry) {
+      lines.push("", formatRegistryLine(r.registry));
+    }
+  }
   // On-chain checks are only meaningful once the offline fold holds; we still report what we did.
   if (r.checkedChain) {
     lines.push(
@@ -378,6 +394,14 @@ function jsonVerifyProof(r) {
     onChain: r.checkedChain
       ? { checked: true, rootAnchored: r.rootAnchored, verifyLeaf: r.onChainVerified }
       : { checked: false },
+    // T-11.2: the machine-readable registry block — proves the on-chain leg ran against an
+    // authenticated registry on the artifact's recorded chain (or that the check was skipped). null
+    // when no on-chain leg ran (offline-only / rejected before the chain check).
+    registry: r.identitySkipped
+      ? jsonSkippedBlock()
+      : r.registry
+      ? jsonRegistryBlock(r.registry)
+      : null,
     accepted: r.status === STATUS.ACCEPTED,
     status: r.status,
     trustNote: TRUST_CAVEAT,
@@ -432,6 +456,10 @@ async function runVerifyProof(opts) {
     rootAnchored: null,
     onChainVerified: null,
     contractAddress: null,
+    // T-11.2: the resolved registry identity (or null when not yet checked / skipped / offline-only).
+    registry: null,
+    identitySkipped: Boolean(opts.skipIdentityCheck),
+    artifactChainId: artifact.chainId != null ? artifact.chainId : null,
     status: STATUS.REJECTED,
   };
 
@@ -469,6 +497,26 @@ async function runVerifyProof(opts) {
     throw new Error(`invalid contract address: ${contractAddress}`);
   }
   result.contractAddress = ethersLib.getAddress(contractAddress);
+
+  // T-11.2: authenticate the registry BEFORE the on-chain checks — and cross-check the chainId. The
+  // artifact's recorded `chainId` (T-9.2) is passed as expectedChainId, so the offline fold + on-chain
+  // checks are believed ONLY once the provider is confirmed to be the right network AND the contract is
+  // the real registry. This is the portability promise made trustworthy: the consumer no longer has to
+  // trust the prover's RPC blindly. (A power user pointed at a known local/not-yet-deployed contract can
+  // opt out, loudly, via skipIdentityCheck.)
+  let registryAuth = null;
+  if (!opts.skipIdentityCheck) {
+    registryAuth = await assertRegistry({
+      provider,
+      contractAddress: result.contractAddress,
+      // The artifact's chainId is an UNTRUSTED hint we now ENFORCE: if it disagrees with the provider's
+      // chain, refuse to report a verdict against the wrong network.
+      expectedChainId: artifact.chainId,
+      ethers: ethersLib,
+    });
+  }
+  result.registry = registryAuth;
+  result.identitySkipped = Boolean(opts.skipIdentityCheck);
 
   const contract = new ethersLib.Contract(result.contractAddress, ABI, provider);
 

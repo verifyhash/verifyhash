@@ -31,8 +31,20 @@ function loadCompiledDoc() {
     .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
     .sort((a, b) => b.t - a.t);
   if (files.length === 0) throw new Error("no build-info; run `npx hardhat compile` first");
-  const bi = JSON.parse(fs.readFileSync(path.join(dir, files[0].f), "utf8"));
-  const out = bi.output.contracts["contracts/ContributionRegistry.sol"]["ContributionRegistry"];
+  // Pick the NEWEST build-info that actually contains ContributionRegistry. An incremental compile can
+  // split unrelated contracts (e.g. the test-only stubs in contracts/test/) into their own newer
+  // build-info that does NOT carry ContributionRegistry, so "latest file" alone is not enough.
+  const KEY = "contracts/ContributionRegistry.sol";
+  let bi = null;
+  for (const { f } of files) {
+    const parsed = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+    if (parsed.output && parsed.output.contracts && parsed.output.contracts[KEY]) {
+      bi = parsed;
+      break;
+    }
+  }
+  if (!bi) throw new Error("no build-info contains ContributionRegistry; run `npx hardhat compile`");
+  const out = bi.output.contracts[KEY]["ContributionRegistry"];
   if (!out.devdoc || !out.userdoc) {
     throw new Error(
       "compiled devdoc/userdoc missing — ensure hardhat.config.js outputSelection emits them"

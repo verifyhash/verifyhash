@@ -162,6 +162,18 @@ describe("T-10.3 docs: contribution lineage (docs/LINEAGE.md) + README CLI block
       // A root serializes parent:null + isRoot:true in the JSON example.
       expect(lineage).to.match(/"isRoot":\s*true/);
     });
+
+    // T-11.2 (REWORK): the human walk now prints a "registry authenticated" line and the --json walk
+    // carries a top-level registry:{id,version,chainId} block. The worked examples must show both, or
+    // an indexer coding against the doc gets a shape the code doesn't emit.
+    it("shows the registry-authentication line in the human walk", function () {
+      expect(lineage).to.match(/registry authenticated: REGISTRY_ID ok/);
+    });
+
+    it("the --json example carries the top-level registry block (id/version/chainId)", function () {
+      // The block cli/lineage.js puts at the top of the walk JSON (after `start`).
+      expect(lineage).to.match(/"registry":\s*\{[\s\S]{0,80}"id"[\s\S]{0,80}"version"[\s\S]{0,80}"chainId"/);
+    });
   });
 
   describe("README CLI block lists vh lineage and the --parent flag", function () {

@@ -270,14 +270,20 @@ describe("cli: vh list", function () {
   // -------------------------------------------------------------------------
   // --json: machine-readable array carrying the same fields.
   // -------------------------------------------------------------------------
-  it("--json emits a parseable array carrying the same fields", async function () {
+  it("--json emits a parseable envelope { registry, records } carrying the same fields", async function () {
     const { res, out } = await list({ json: true });
     const parsed = JSON.parse(out);
-    expect(parsed).to.be.an("array").with.length(3);
+    // T-11.2: --json is now an ENVELOPE — a `registry` authentication block plus the `records` array.
+    expect(parsed).to.have.property("registry");
+    expect(parsed).to.have.property("records");
+    expect(parsed.records).to.be.an("array").with.length(3);
+    // The registry block proves the list was read from an authenticated verifyhash registry.
+    expect(parsed.registry).to.include({ version: 1, chainId: 31337 });
+    expect(parsed.registry.id).to.match(/^0x[0-9a-f]{64}$/);
     // Same fields/semantics as the structured result.
-    expect(parsed).to.deep.equal(res.records);
+    expect(parsed.records).to.deep.equal(res.records);
 
-    expect(parsed[0]).to.include({
+    expect(parsed.records[0]).to.include({
       index: 0,
       contentHash: H0,
       contributor: alice.address,
@@ -285,7 +291,7 @@ describe("cli: vh list", function () {
       attribution: ATTRIBUTION_ANCHOR_ONLY,
       uri: URI0,
     });
-    expect(parsed[2]).to.include({
+    expect(parsed.records[2]).to.include({
       index: 2,
       contentHash: H2,
       contributor: alice.address,
@@ -294,23 +300,24 @@ describe("cli: vh list", function () {
       uri: URI2,
     });
     // Record [1]'s empty uri serializes as null in JSON (the human renderer shows "(none)").
-    expect(parsed[1].uri).to.equal(null);
+    expect(parsed.records[1].uri).to.equal(null);
     // Numeric, JSON-safe timestamp/blockNumber + an ISO string.
-    expect(parsed[0].timestamp).to.be.a("number");
-    expect(parsed[0].blockNumber).to.be.a("number");
-    expect(parsed[0].timestampISO).to.match(/^\d{4}-\d{2}-\d{2}T/);
+    expect(parsed.records[0].timestamp).to.be.a("number");
+    expect(parsed.records[0].blockNumber).to.be.a("number");
+    expect(parsed.records[0].timestampISO).to.match(/^\d{4}-\d{2}-\d{2}T/);
     // No human caveat leaks into the JSON stream (clean for piping).
     expect(out).to.not.contain("UNTRUSTED");
   });
 
-  it("--json respects filters (e.g. --author-bound yields a single-element array)", async function () {
+  it("--json respects filters (e.g. --author-bound yields a single-element records array)", async function () {
     const { out } = await list({ json: true, filters: { authorBound: true } });
     const parsed = JSON.parse(out);
-    expect(parsed).to.have.length(1);
-    expect(parsed[0].index).to.equal(2);
+    expect(parsed.records).to.have.length(1);
+    expect(parsed.records[0].index).to.equal(2);
+    expect(parsed.registry).to.include({ version: 1, chainId: 31337 });
   });
 
-  it("--json on an empty result is the empty array []", async function () {
+  it("--json on an empty result is the envelope with records: []", async function () {
     let out = "";
     await runList({
       contractAddress: emptyAddress,
@@ -318,7 +325,10 @@ describe("cli: vh list", function () {
       json: true,
       log: (s) => (out += s),
     });
-    expect(JSON.parse(out)).to.deep.equal([]);
+    const parsed = JSON.parse(out);
+    expect(parsed.records).to.deep.equal([]);
+    // The empty registry is still a GENUINE registry, so the block is present (never skipped).
+    expect(parsed.registry).to.include({ version: 1, chainId: 31337 });
   });
 
   // -------------------------------------------------------------------------

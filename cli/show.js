@@ -21,6 +21,13 @@
 // Read-only by construction: it takes a PROVIDER only, never a signer and never a key.
 
 const { isNotAnchoredError } = require("./verify");
+const {
+  assertRegistry,
+  formatRegistryLine,
+  formatSkippedLine,
+  jsonRegistryBlock,
+  jsonSkippedBlock,
+} = require("./registry");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
@@ -116,7 +123,15 @@ function attributionFor(authorBound) {
  * caveat (which cross-links `vh verify`), then either the record fields or a NOT ANCHORED block.
  */
 function formatShow(r) {
-  const lines = [TRUST_CAVEAT, "", `  contentHash:  ${r.contentHash}`];
+  const lines = [TRUST_CAVEAT, ""];
+  // T-11.2: the registry-authentication confirmation (or the loud skip warning), printed BEFORE the
+  // record so a reader sees the contract was authenticated before believing any field below.
+  if (r.identitySkipped) {
+    lines.push(formatSkippedLine());
+  } else if (r.registry) {
+    lines.push(formatRegistryLine(r.registry));
+  }
+  lines.push(`  contentHash:  ${r.contentHash}`);
   if (r.status === STATUS.ANCHORED) {
     const ts = r.timestamp == null ? "(unknown)" : isoFromUnix(r.timestamp);
     // `parent` is the optional immutable lineage edge. A root (0x0) renders as "(none) — lineage
@@ -158,10 +173,18 @@ function formatShow(r) {
  * can branch on it without parsing stderr — while still seeing a non-zero exit from the CLI.
  */
 function jsonShow(r) {
+  // T-11.2: the machine-readable registry block — the same identity a UI/indexer can depend on to
+  // know the record was read from an authenticated registry (or that the check was skipped).
+  const registry = r.identitySkipped
+    ? jsonSkippedBlock()
+    : r.registry
+    ? jsonRegistryBlock(r.registry)
+    : null;
   if (r.status === STATUS.ANCHORED) {
     const root = isRoot(r.parent);
     return {
       contentHash: r.contentHash,
+      registry,
       anchored: true,
       contributor: r.contributor,
       authorBound: r.authorBound,
@@ -181,6 +204,7 @@ function jsonShow(r) {
   }
   return {
     contentHash: r.contentHash,
+    registry,
     anchored: false,
     note:
       "NOT ANCHORED: no on-chain record for this hash. `show` only proves a hash is on-chain; " +
@@ -235,6 +259,14 @@ async function runShow(opts) {
     throw new Error("no provider: pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL");
   }
 
+  // T-11.2: authenticate the registry BEFORE reading the record — no record is reported until we have
+  // confirmed there is a real verifyhash ContributionRegistry at this address (unless the caller
+  // explicitly, loudly opts out with skipIdentityCheck for a known not-yet-deployed/local-dev target).
+  let registryAuth = null;
+  if (!opts.skipIdentityCheck) {
+    registryAuth = await assertRegistry({ provider, contractAddress, ethers: ethersLib });
+  }
+
   const iface = new ethersLib.Interface(ABI);
   const notAnchoredSelector = iface.getError("NotAnchored").selector;
 
@@ -258,6 +290,10 @@ async function runShow(opts) {
   const result = {
     contentHash,
     status: record === null ? STATUS.NOT_ANCHORED : STATUS.ANCHORED,
+    // T-11.2: the resolved registry identity (or null when skipped). Surfaced in both the human block
+    // and --json so a consumer can SEE the registry was authenticated before believing this record.
+    registry: registryAuth,
+    identitySkipped: Boolean(opts.skipIdentityCheck),
     contributor: null,
     authorBound: null,
     timestamp: null,

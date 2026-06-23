@@ -20,6 +20,11 @@
 
 const { hashPath, hashGit } = require("./hash");
 const { readReceipt, diffManifest } = require("./receipt");
+const {
+  assertRegistry,
+  formatRegistryLine,
+  formatSkippedLine,
+} = require("./registry");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
@@ -153,6 +158,14 @@ async function runVerify(opts) {
     ref: opts.ref,
   });
 
+  // T-11.2: authenticate the registry BEFORE any record read — no verdict is reported until we have
+  // confirmed there is a real verifyhash ContributionRegistry at this address (unless the caller
+  // explicitly, loudly opts out with skipIdentityCheck for a known not-yet-deployed/local-dev target).
+  let registryAuth = null;
+  if (!opts.skipIdentityCheck) {
+    registryAuth = await assertRegistry({ provider, contractAddress, ethers: ethersLib });
+  }
+
   const iface = new ethersLib.Interface(ABI);
   const notAnchoredSelector = iface.getError("NotAnchored").selector;
 
@@ -178,6 +191,10 @@ async function runVerify(opts) {
     kind,
     path: targetPath,
     git, // { commit, scope } when --git was used; null otherwise (untrusted provenance hint)
+    // T-11.2: the resolved registry identity (or null when the check was skipped). The human block and
+    // --json both surface this so a user can SEE the registry was authenticated before the verdict.
+    registry: registryAuth,
+    identitySkipped: Boolean(opts.skipIdentityCheck),
     contributor: null,
     authorBound: null,
     timestamp: null,
@@ -252,6 +269,13 @@ function formatVerify(r) {
     `  path:         ${r.path}  (${r.kind})`,
     `  contentHash:  ${r.contentHash}`,
   ];
+  // T-11.2: the registry-authentication confirmation (or the loud skip warning) so the user can SEE
+  // the preflight ran before believing the verdict below.
+  if (r.identitySkipped) {
+    lines.push(formatSkippedLine());
+  } else if (r.registry) {
+    lines.push(formatRegistryLine(r.registry));
+  }
   if (r.git) {
     // Show WHICH commit's tracked set produced this root — an untrusted provenance hint, never the
     // verdict (that is the MATCH/MISMATCH below, recomputed root vs the on-chain record).

@@ -36,6 +36,13 @@ const {
   ZERO_HASH,
 } = require("./show");
 const { isNotAnchoredError } = require("./verify");
+const {
+  assertRegistry,
+  formatRegistryLine,
+  formatSkippedLine,
+  jsonRegistryBlock,
+  jsonSkippedBlock,
+} = require("./registry");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
@@ -256,7 +263,15 @@ function formatAncestor(a, index) {
  * a capped-walk note when the cap was hit.
  */
 function formatLineage(r) {
-  const lines = [RECORD_CAVEAT, "", LINEAGE_CAVEAT, "", `  start:        ${r.start}`];
+  const lines = [RECORD_CAVEAT, "", LINEAGE_CAVEAT, ""];
+  // T-11.2: the registry-authentication confirmation (or the loud skip warning), printed BEFORE the
+  // walk so a reader sees the contract was authenticated before believing any ancestor below.
+  if (r.identitySkipped) {
+    lines.push(formatSkippedLine(), "");
+  } else if (r.registry) {
+    lines.push(formatRegistryLine(r.registry), "");
+  }
+  lines.push(`  start:        ${r.start}`);
 
   if (r.status === STATUS.NOT_ANCHORED) {
     lines.push(
@@ -293,9 +308,17 @@ function formatLineage(r) {
  * it without parsing stderr — while still seeing a non-zero exit from the CLI.
  */
 function jsonLineage(r) {
+  // T-11.2: the machine-readable registry block — proves the walk was read from an authenticated
+  // registry (or that the check was skipped).
+  const registry = r.identitySkipped
+    ? jsonSkippedBlock()
+    : r.registry
+    ? jsonRegistryBlock(r.registry)
+    : null;
   if (r.status === STATUS.NOT_ANCHORED) {
     return {
       start: r.start,
+      registry,
       anchored: false,
       ancestors: [],
       note:
@@ -305,6 +328,7 @@ function jsonLineage(r) {
   }
   return {
     start: r.start,
+    registry,
     anchored: true,
     // The ordered ancestor array, child -> root. An indexer/UI can reconstruct the lineage path from
     // this alone, mirroring the on-chain Linked(child, parent) logs.
@@ -378,6 +402,14 @@ async function runLineage(opts) {
     throw new Error("no provider: pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL");
   }
 
+  // T-11.2: authenticate the registry BEFORE walking the chain — no lineage is reported until we have
+  // confirmed there is a real verifyhash ContributionRegistry at this address (unless the caller
+  // explicitly, loudly opts out with skipIdentityCheck for a known not-yet-deployed/local-dev target).
+  let registryAuth = null;
+  if (!opts.skipIdentityCheck) {
+    registryAuth = await assertRegistry({ provider, contractAddress, ethers: ethersLib });
+  }
+
   const contract = new ethersLib.Contract(
     ethersLib.getAddress(contractAddress),
     ABI,
@@ -385,6 +417,9 @@ async function runLineage(opts) {
   );
 
   const result = await walkLineage(contract, contentHash, { maxDepth, ethers: ethersLib });
+  // Attach the registry identity (or the skip marker) so the human block and --json both surface it.
+  result.registry = registryAuth;
+  result.identitySkipped = Boolean(opts.skipIdentityCheck);
 
   if (opts.json) {
     log(JSON.stringify(jsonLineage(result), null, 2) + "\n");

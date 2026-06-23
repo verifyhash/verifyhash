@@ -485,10 +485,13 @@ describe("Lineage CLI consumability (T-10.1 rework: show/list surface + --parent
         json: true,
         log: (s) => (out += s),
       });
-      const arr = JSON.parse(out);
+      // T-11.2: `vh list --json` is now an envelope { registry, records }; the rows live under `records`.
+      const parsed = JSON.parse(out);
+      expect(parsed.registry).to.include({ version: 1 });
+      const arr = parsed.records;
       expect(arr).to.have.lengthOf(3);
-      // The emitted JSON is exactly the structured result `res.records` (which is the jsonRecord shape
-      // for each row) — no drift between what runList returns and what it prints.
+      // The emitted records are exactly the structured result `res.records` (the jsonRecord shape per
+      // row) — no drift between what runList returns and what it prints.
       expect(arr).to.deep.equal(res.records);
 
       // Row 0 is the root; rows 1,2 carry their predecessor.

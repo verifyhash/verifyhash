@@ -188,6 +188,8 @@ on-chain. Set-membership in an anchored root is exactly what the contract's veri
     leaf re-derived from contentHash+relPath: yes
     proof folds to the claimed root:          yes
 
+  registry authenticated: REGISTRY_ID ok (v1), chainId 137
+
   on-chain checks (one read-only call set):
     root is anchored (isAnchored):            yes
     contract verifyLeaf accepts the proof:    yes
@@ -200,8 +202,24 @@ the offline fold would not hold and the verdict would be `REJECTED` — caught o
 needed. If the `root` was never anchored, the verdict would be `NOT ANCHORED` rather than a false
 accept.
 
+**The on-chain leg authenticates the registry first, on the artifact's recorded chain** (T-11.2).
+Before any on-chain check, verify-proof runs the shared `assertRegistry` preflight: it confirms a
+contract is actually deployed at the address, that it self-identifies as a genuine verifyhash registry
+(`REGISTRY_ID` / `REGISTRY_VERSION`), AND — because the artifact records the `chainId` it was anchored
+on — that the provider is on **that same chain**. An artifact that says "anchored on chainId 137"
+**hard-errors** rather than be "verified" against a different chain that returns fakes. That is the
+portability promise made trustworthy: the consumer no longer trusts the prover's RPC blindly. The
+human verdict prints a `registry authenticated: REGISTRY_ID ok (vN), chainId N` line (above) before
+the on-chain checks; a loud, non-default `--skip-identity-check` bypasses the preflight for a known
+local-dev contract. See the README's
+[authenticated reads](../README.md#authenticated-reads-registry-identity--chainid) section.
+
 `--json` emits the same verdict + per-check booleans (`offline.{leafMatches,foldsToRoot,ok}`,
-`onChain.{checked,rootAnchored,verifyLeaf}`, `accepted`, `status`) plus the trust note, for tooling.
+`onChain.{checked,rootAnchored,verifyLeaf}`, `accepted`, `status`) plus the trust note, for tooling. It
+also carries a top-level `registry: { id, version, chainId }` block proving the on-chain leg ran
+against an authenticated registry on the artifact's recorded chain (or `{ "skipped": true, "note": … }`
+under `--skip-identity-check`, or `null` when no on-chain leg ran — an offline-only / rejected-early
+verdict).
 
 ---
 

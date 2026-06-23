@@ -51,6 +51,11 @@ vh show    <0xhash>                  # read-only: look up ONE record by hash, no
 vh lineage <0xhash> [--max-depth n]  # read-only walk UP the parent chain to the lineage root (no key)
 ```
 
+> Every read command (`verify` / `show` / `list` / `lineage` / `verify-proof`) **authenticates the
+> registry before reporting anything** and prints a `registry authenticated: …` line (`--json`: a
+> `registry` block). A loud, non-default `--skip-identity-check` opts out for a known local-dev
+> contract. See [authenticated reads](#authenticated-reads-registry-identity--chainid).
+
 > **`--parent <0xhash>` records a contribution lineage edge.** `vh anchor/claim <path> --parent
 > <hash>` anchors the record AS a revision of an ALREADY-anchored predecessor (the parent must already
 > exist on-chain or the tx reverts `UnknownParent`); omit it for a lineage root. A `parent` edge is the
@@ -133,6 +138,14 @@ and sliceable with `--limit` / `--offset` (or `--json` for tooling). `vh show <0
 single record by a hash you already have (copied from `vh list`, a receipt, or a PR) and exits
 non-zero with `NOT ANCHORED` when there is no such record.
 
+> **`vh list --json` is an ENVELOPE, not a bare array** (changed in T-11.2). The output is
+> `{ "registry": { "id", "version", "chainId" }, "records": [ … ] }` — the `registry` block proves the
+> records were read from an [authenticated registry](#authenticated-reads-registry-identity--chainid)
+> (or carries `{ "skipped": true, "note": … }` when `--skip-identity-check` was used), and `records` is
+> the array a consumer iterates. **This is a breaking change for any consumer that previously did
+> `JSON.parse(out)[0]`** — iterate `JSON.parse(out).records` instead. (`vh show` / `vh lineage` /
+> `vh verify-proof` each likewise carry a top-level `registry` block.)
+
 > **Listing or showing a record does NOT validate its content.** Both commands only read what is
 > on-chain — they never touch your files, so a hit binds nothing to real bytes you hold. `uri` stays
 > an **untrusted hint** the contract never fetched or validated, and `contributor` only means proven
@@ -145,6 +158,39 @@ non-zero with `NOT ANCHORED` when there is no such record.
 `vh verify` is read-only: it re-derives the content hash and compares it to what is anchored, which
 is exactly the integrity check the trust model requires. It needs only an RPC URL — no key, no
 funds.
+
+### Authenticated reads (registry identity + chainId)
+
+The project's core promise is to prove things **without trusting any server**. But the `(rpc, address)`
+pair a reader uses is itself untrusted — it comes from a prover, a receipt's `contractAddress`, a
+README, or a forwarded event. A *rogue or wrong* contract that implements the same ABI shape could
+return `isAnchored = true` / fabricated records and make the CLI print `MATCH` / `ACCEPTED`. So before
+believing any record, **every read command authenticates the registry first** (T-11.2):
+
+- `vh verify`, `vh show`, `vh list`, `vh lineage`, and `vh verify-proof` run a shared preflight
+  (`cli/registry.js › assertRegistry`) that (a) confirms a contract is actually deployed at the address
+  (`getCode`), (b) reads the contract's immutable `REGISTRY_ID()` / `REGISTRY_VERSION()` self-identity
+  marker and refuses to trust a contract that is not a genuine verifyhash registry, and (c) — for
+  `vh verify-proof`, whose artifact records the `chainId` it was anchored on — cross-checks the
+  provider's chainId so a verdict is never reported against the wrong network.
+- The human output gains a one-line confirmation so you can **see** the check ran:
+  `registry authenticated: REGISTRY_ID ok (vN), chainId N` — printed **before** any verdict/record.
+- `--json` carries a machine-readable `registry: { id, version, chainId }` block on every read command.
+- A genuine RPC/network error is surfaced **as itself** — it is never masqueraded as an identity
+  failure (mirroring the `isNotAnchoredError` discipline `vh verify` already uses).
+
+```
+vh verify ./repo --git                          # prints "registry authenticated: …" then MATCH/MISMATCH
+vh show 0x<hash> --json                          # → { "registry": { id, version, chainId }, … }
+vh verify-proof proof.json --rpc <url>           # rejects if the provider's chainId != the artifact's
+```
+
+> **Opt-out (`--skip-identity-check`) is loud and never the default.** If you KNOW you are pointed at a
+> not-yet-deployed / local-dev contract, every read command accepts `--skip-identity-check` to bypass
+> the preflight. When you use it the output says so unmistakably — human:
+> `registry authentication: SKIPPED (--skip-identity-check) … the verdict is only as trustworthy as the
+> RPC/address you supplied`; `--json`: `registry: { "skipped": true, "note": … }`. Without the flag,
+> **every read command authenticates**.
 
 ### Contribution lineage (`vh anchor/claim --parent` + `vh lineage`)
 
@@ -216,6 +262,13 @@ It prints `ACCEPTED` **only** when the offline fold **and** both on-chain checks
 whose `root` was never anchored reports `NOT ANCHORED` (a distinct, non-zero exit) rather than a false
 accept. The artifact records its `contractAddress`/`chainId` when built on the on-chain path, so
 verify-proof can run with no `--contract` flag; an explicit `--contract`/`--rpc` always overrides.
+
+Before the on-chain leg runs, verify-proof [authenticates the
+registry](#authenticated-reads-registry-identity--chainid) AND cross-checks the artifact's recorded
+`chainId` against the provider's chainId — so it **hard-errors** rather than report a verdict against
+the wrong network (the portability promise made trustworthy: the consumer no longer trusts the prover's
+RPC blindly). `--json` therefore carries a `registry: { id, version, chainId }` block alongside
+`offline.*` / `onChain.*` / `accepted` / `status` / `trustNote`.
 
 > **This proves SET-MEMBERSHIP in a root — not authorship, not the `uri`.** An `ACCEPTED` verdict
 > binds the file's path + bytes to an anchored Merkle root. It says nothing about who anchored that

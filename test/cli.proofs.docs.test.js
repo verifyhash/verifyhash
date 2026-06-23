@@ -98,6 +98,27 @@ describe("T-9.3 docs: portable proofs (docs/PROOFS.md) + README CLI block", func
       expect(proofsLower).to.match(/offline fold[\s\S]{0,80}on-chain|both[\s\S]{0,60}on-chain/);
       expect(proofsLower).to.include("accepted");
     });
+
+    // T-11.2 (REWORK): the on-chain leg authenticates the registry AND cross-checks the artifact's
+    // chainId, and --json now carries a top-level registry:{id,version,chainId} block. The doc enumerates
+    // the --json fields, so it must enumerate this one too (it omitted it, which the rework flagged).
+    it("documents the chainId cross-check the on-chain leg enforces", function () {
+      expect(proofsLower).to.match(/chainid/);
+      expect(proofsLower).to.match(/authenticat/);
+      // The portability-promise framing: refuse to verify against the wrong network.
+      expect(proofsLower).to.match(/wrong network|same chain|recorded chain/);
+    });
+
+    it("enumerates the registry block in the --json field list (alongside offline.* / onChain.*)", function () {
+      expect(proofs).to.match(/registry:\s*\{[\s\S]{0,60}id[\s\S]{0,60}version[\s\S]{0,60}chainId\s*\}/);
+      // It is listed beside the pre-existing --json fields the doc already pins.
+      expect(proofs).to.include("offline.{");
+      expect(proofs).to.include("onChain.{");
+    });
+
+    it("shows the registry-authentication line in the worked human verify-proof example", function () {
+      expect(proofs).to.match(/registry authenticated: REGISTRY_ID ok/);
+    });
   });
 
   describe("trust posture: set-membership only, reusing TRUST-BOUNDARIES wording", function () {

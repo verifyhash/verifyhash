@@ -21,6 +21,13 @@ const ABI = ARTIFACT.abi;
 // Reuse the lineage-root predicate from `show` so `list` and `show` never disagree about what a
 // "root" (parent == bytes32(0)) is. T-10.1.
 const { isRoot } = require("./show");
+const {
+  assertRegistry,
+  formatRegistryLine,
+  formatSkippedLine,
+  jsonRegistryBlock,
+  jsonSkippedBlock,
+} = require("./registry");
 
 // Default page size for walking getRecords(). The contract clamps a window to what exists, so this is
 // purely a request-batching knob; it never affects which records come back.
@@ -202,6 +209,14 @@ async function runList(opts) {
     throw new Error(`invalid --contributor address: ${filters.contributor}`);
   }
 
+  // T-11.2: authenticate the registry BEFORE enumerating it — no records are reported until we have
+  // confirmed there is a real verifyhash ContributionRegistry at this address (unless the caller
+  // explicitly, loudly opts out with skipIdentityCheck for a known not-yet-deployed/local-dev target).
+  let registryAuth = null;
+  if (!opts.skipIdentityCheck) {
+    registryAuth = await assertRegistry({ provider, contractAddress, ethers: ethersLib });
+  }
+
   const contract = new ethersLib.Contract(
     ethersLib.getAddress(contractAddress),
     ABI,
@@ -218,12 +233,28 @@ async function runList(opts) {
 
   const jsonRows = filtered.map(jsonRecord);
 
+  // T-11.2: the machine-readable registry block — the same identity a UI/indexer can depend on to know
+  // the list was read from an authenticated registry (or that the check was skipped).
+  const registryBlock = opts.skipIdentityCheck
+    ? jsonSkippedBlock()
+    : registryAuth
+    ? jsonRegistryBlock(registryAuth)
+    : null;
+
   if (opts.json) {
-    // Machine-readable: a JSON array (possibly empty) and nothing else, so it pipes cleanly into CI.
-    log(JSON.stringify(jsonRows, null, 2) + "\n");
+    // Machine-readable ENVELOPE (T-11.2): `{ registry, records }`. The `registry` block proves the
+    // records came from an authenticated registry; `records` is the array a consumer iterates. (Before
+    // T-11.2 this was a bare top-level array; the envelope is the documented contract now.)
+    log(JSON.stringify({ registry: registryBlock, records: jsonRows }, null, 2) + "\n");
   } else {
-    // Human-readable: lead with the trust caveat, then one block per record.
+    // Human-readable: lead with the trust caveat, then the registry-authentication confirmation (or the
+    // loud skip warning), then one block per record.
     log(TRUST_CAVEAT + "\n\n");
+    if (opts.skipIdentityCheck) {
+      log(formatSkippedLine() + "\n\n");
+    } else if (registryAuth) {
+      log(formatRegistryLine(registryAuth) + "\n\n");
+    }
     if (filtered.length === 0) {
       log("no records\n");
     } else {
@@ -231,7 +262,13 @@ async function runList(opts) {
     }
   }
 
-  return { records: jsonRows, total: all.length, shown: filtered.length, json: Boolean(opts.json) };
+  return {
+    records: jsonRows,
+    registry: registryBlock,
+    total: all.length,
+    shown: filtered.length,
+    json: Boolean(opts.json),
+  };
 }
 
 module.exports = {

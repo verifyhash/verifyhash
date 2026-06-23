@@ -51,10 +51,17 @@ vh show    <0xhash>                  # read-only: look up ONE record by hash, no
 vh lineage <0xhash> [--max-depth n]  # read-only walk UP the parent chain to the lineage root (no key)
 ```
 
-> Every read command (`verify` / `show` / `list` / `lineage` / `verify-proof`) **authenticates the
-> registry before reporting anything** and prints a `registry authenticated: …` line (`--json`: a
-> `registry` block). A loud, non-default `--skip-identity-check` opts out for a known local-dev
-> contract. See [authenticated reads](#authenticated-reads-registry-identity--chainid).
+> **Read commands authenticate the registry by default.** Every read command (`verify` / `show` /
+> `list` / `lineage` / `verify-proof`) **authenticates the registry before reporting anything** — a
+> wrong/rogue RPC+address could otherwise fabricate a `MATCH`/`ACCEPTED`. The preflight confirms a
+> contract is deployed there (bytecode), reads its immutable `REGISTRY_ID`/version, and (for
+> `verify-proof`) cross-checks the artifact's `chainId`; it prints a `registry authenticated: …` line
+> (`--json`: a `registry` block). A **loud, non-default `--skip-identity-check`** opts out for a known
+> local-dev contract (the output then says the verdict is only as trustworthy as the RPC you supplied).
+> The `REGISTRY_ID` is a "right interface" signal verified alongside bytecode + chainId, **not a sole
+> root of trust** — a fork can reuse it, so pin the address out-of-band if you need a SPECIFIC
+> deployment. See [authenticated reads](#authenticated-reads-registry-identity--chainid) and
+> [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md).
 
 > **`--parent <0xhash>` records a contribution lineage edge.** `vh anchor/claim <path> --parent
 > <hash>` anchors the record AS a revision of an ALREADY-anchored predecessor (the parent must already
@@ -191,6 +198,15 @@ vh verify-proof proof.json --rpc <url>           # rejects if the provider's cha
 > `registry authentication: SKIPPED (--skip-identity-check) … the verdict is only as trustworthy as the
 > RPC/address you supplied`; `--json`: `registry: { "skipped": true, "note": … }`. Without the flag,
 > **every read command authenticates**.
+
+> **The `REGISTRY_ID` is a "right interface" signal, NOT a sole root of trust.** It is verified
+> alongside the deployed bytecode + chainId and proves you are talking to a contract that *implements
+> the verifyhash interface on the expected chain* — it does **not** make the records honest beyond the
+> contract's own first-writer-wins + commit-reveal rules, and because the constant is open source, **a
+> fork can compile and return the same `REGISTRY_ID`**. So a consumer who needs a SPECIFIC deployment
+> (not merely *some* contract that speaks the interface) must **also pin the address out-of-band**.
+> This is exactly the caveat in [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) and the
+> contract's "ON-CHAIN IDENTITY MARKER" NatSpec.
 
 ### Contribution lineage (`vh anchor/claim --parent` + `vh lineage`)
 
@@ -329,7 +345,9 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
 
 ## Docs
 
-- [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not.
+- [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not,
+  plus "Authenticating the registry you read from" (why read commands authenticate the registry before
+  believing it, and why the `REGISTRY_ID` is a "right interface" signal, not a sole root of trust).
 - [`docs/MERKLE-LEAVES.md`](docs/MERKLE-LEAVES.md) — what a directory root commits to (paths + bytes),
   including the `--git` scope note (same leaf formula, reproducible git-tracked file set).
 - [`docs/PROOFS.md`](docs/PROOFS.md) — the portable proof-artifact schema (every field UNTRUSTED

@@ -102,6 +102,84 @@ the receipt schema's NatSpec (`cli/receipt.js`) states it as well.
 
 ---
 
+## Authenticating the registry you read from — "don't believe a record until you know who answered"
+
+Everything above is about trusting a *record*. This section is about trusting the *source* of the
+record. The project's core promise is to prove things **without trusting any server**, but the
+`(rpc, address)` pair a reader uses is itself **untrusted** — it comes from a prover, a receipt's
+`contractAddress`, a proof artifact's `chainId`, a README, or a forwarded event. None of those are
+the chain; any of them can be wrong or hostile.
+
+### The threat — a wrong/rogue RPC+address can fabricate verdicts
+
+A read command does `getRecord(contentHash)` (or `isAnchored` / `verifyLeaf`) against whatever
+`(rpc, address)` it was handed and reports the answer. Two ways that silently produces a
+confident-looking-but-wrong verdict:
+
+- **Wrong address / wrong network.** Point at an address with *no contract* (a typo, or the right
+  address on the wrong chain) and `getRecord` returns empty — read naively as "not anchored", so a
+  genuinely-anchored contribution is mislabeled `MISMATCH`/absent.
+- **Rogue look-alike contract.** Point at a *deployed but different* contract that implements the
+  same ABI shape and it can return `isAnchored = true` / fabricated records, making the CLI print
+  `MATCH` / `ACCEPTED` for content that was never anchored. The consumer is then trusting exactly the
+  server the promise says they should not have to.
+
+### What the read path now does to defend against it (T-11.1 / T-11.2)
+
+Before believing any record, **every read command** (`vh verify`, `vh show`, `vh list`,
+`vh lineage`, `vh verify-proof`) runs a shared, side-effect-free preflight
+(`cli/registry.js › assertRegistry`) that authenticates the registry first, in this order:
+
+1. **Bytecode-present check (`getCode`).** Confirm a contract is *actually deployed* at the address —
+   so a typo'd address or right-address-wrong-network is caught with an actionable
+   "no contract at &lt;addr&gt; on this RPC" error instead of a silent false `MISMATCH`.
+2. **`REGISTRY_ID` / `REGISTRY_VERSION` identity probe.** Read the contract's immutable, ownerless
+   self-identification marker (T-11.1: `REGISTRY_ID == keccak256("verifyhash.ContributionRegistry.v1")`
+   plus a monotonic `REGISTRY_VERSION`) and **refuse to trust** a contract that does not self-identify
+   as a genuine verifyhash registry of a version this build understands — closing the rogue-look-alike
+   gap.
+3. **Receipt/artifact `chainId` cross-check.** For `vh verify-proof` (whose artifact records the
+   `chainId` it was anchored on), cross-check the provider's chainId against it, so a verdict is never
+   reported against the wrong network — a root anchored on chain X says nothing about chain Y.
+
+A genuine RPC/network error is surfaced **as itself** — never masqueraded as an identity failure
+(mirroring the `isNotAnchoredError` discipline `vh verify` already uses). On success the human output
+prints a one-line `registry authenticated: REGISTRY_ID ok (vN), chainId N` **before** any
+verdict/record, and `--json` carries a `registry: { id, version, chainId }` block, so you can *see*
+the check ran.
+
+### The residual caveat — the ID is a "right interface" signal, NOT a sole root of trust
+
+The identity probe proves you are talking to a contract that **exists**, **self-identifies as the
+right interface**, and (for artifacts) lives on the **expected chain**. It does **NOT** make the
+records honest beyond the contract's own immutable first-writer-wins + commit-reveal rules — `uri` is
+still an untrusted hint and `contributor` still means proven authorship only when `authorBound` is
+`true`, exactly per the sections above.
+
+Crucially, `REGISTRY_ID` is a **POSITIVE "right interface" signal verified ALONGSIDE the deployed
+bytecode and chainId — never a sole root of trust.** The constant is part of the open source, so
+**a fork or copy-paste deployment can compile and return the same `REGISTRY_ID`.** The marker proves
+"this is the right interface", not "this is *the* canonical registry". Therefore a consumer who needs
+a **SPECIFIC** deployment (not merely *some* contract that speaks the interface) must **also pin the
+address out-of-band** — confirm you are on the expected chain at the expected address with the
+expected code — and not rely on the ID alone. This is the same caveat the contract's NatSpec states
+verbatim under "ON-CHAIN IDENTITY MARKER" (`contracts/ContributionRegistry.sol`); if the two ever
+drift, the contract NatSpec is authoritative.
+
+### The loud opt-out (`--skip-identity-check`)
+
+If you KNOW you are pointed at a not-yet-deployed / local-dev contract, every read command accepts a
+**non-default, loud** `--skip-identity-check` that bypasses the preflight. When used, the output says
+so unmistakably (human: `registry authentication: SKIPPED (--skip-identity-check) … the verdict is
+only as trustworthy as the RPC/address you supplied`; `--json`: `registry: { "skipped": true, "note":
+… }`). Without the flag, **every read command authenticates by default.**
+
+> Rule of thumb: **authenticate the registry before you believe it — the `REGISTRY_ID` proves the
+> right interface (alongside bytecode + chainId), but pin the address yourself if you need a specific
+> deployment.**
+
+---
+
 ## `timestamp` / `blockNumber` prove ordering + an UPPER BOUND on existence — NOT authorship time
 
 `timestamp` is the `block.timestamp` and `blockNumber` is the `block.number` of the anchoring
@@ -220,4 +298,10 @@ reconstructs the graph from the `Linked(child, parent)` event. Full detail and a
 `test/cli.readside.docs.test.js` additionally guards that the read-side caveat above can't rot: it
 asserts that README.md and this file keep documenting `vh list` / `vh show` as read-only/no-key and
 keep stating that listing or showing a record does NOT validate its content (you still re-derive +
-`vh verify`), pinned to the caveats the read commands actually export.
+`vh verify`), pinned to the caveats the read commands actually export. The same guard pins the
+"Authenticating the registry you read from" section (T-11.3): that this file and the README keep
+stating the threat (a wrong/rogue RPC+address can fabricate verdicts), the defence (the
+`REGISTRY_ID`/version probe + the bytecode-present `getCode` check + the artifact `chainId`
+cross-check), the residual caveat (the ID is a "right interface" signal verified alongside bytecode +
+chainId, NOT a sole root of trust — a fork can reuse it, so pin the address out-of-band for a SPECIFIC
+deployment), and the loud `--skip-identity-check` opt-out.

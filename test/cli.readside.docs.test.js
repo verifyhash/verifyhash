@@ -139,6 +139,76 @@ describe("T-7.4 docs: README + TRUST-BOUNDARIES document the read side (vh list 
     });
   });
 
+  // T-11.3: document the trust-anchored read path ("authenticate the registry before you believe
+  // it") consistently in BOTH README.md and docs/TRUST-BOUNDARIES.md. Pure documentation of the
+  // T-11.1/T-11.2 runtime; pinned to phrases cli/registry.js actually exports so the prose can't
+  // drift from the implementation it describes.
+  describe("T-11.3 docs: the trust-anchored read path is documented in TRUST-BOUNDARIES + README", function () {
+    const registry = require("../cli/registry");
+
+    it("the registry module still exports the identity surface this guard pins against", function () {
+      // Tripwire: if cli/registry.js drops these, the docs guard below is describing nothing.
+      expect(registry.assertRegistry, "assertRegistry export").to.be.a("function");
+      expect(registry.EXPECTED_REGISTRY_ID, "EXPECTED_REGISTRY_ID export").to.be.a("string");
+      expect(registry.formatRegistryLine({ registryVersion: 1, chainId: 137 })).to.match(
+        /registry authenticated/i
+      );
+      expect(registry.formatSkippedLine()).to.match(/--skip-identity-check/);
+    });
+
+    it("TRUST-BOUNDARIES has a dedicated 'Authenticating the registry you read from' section", function () {
+      expect(tbLower).to.include("authenticating the registry you read from");
+    });
+
+    it("TRUST-BOUNDARIES states the threat: a wrong/rogue RPC+address can fabricate verdicts", function () {
+      // The threat must be stated plainly: an untrusted (rpc, address) can produce a false verdict.
+      expect(tbLower).to.match(/rogue|wrong\/rogue|look-alike/);
+      expect(tbLower).to.match(/fabricat(e|ed)|fake records|false (match|mismatch)/);
+    });
+
+    it("TRUST-BOUNDARIES names the three defences: REGISTRY_ID/version probe, getCode bytecode check, chainId cross-check", function () {
+      expect(tb).to.include("REGISTRY_ID");
+      expect(tb).to.include("REGISTRY_VERSION");
+      // bytecode-present check via getCode
+      expect(tb).to.include("getCode");
+      expect(tbLower).to.match(/bytecode/);
+      // the receipt/artifact chainId cross-check
+      expect(tbLower).to.match(/chainid cross-check|cross-check the provider's chainid|chainid/);
+    });
+
+    it("TRUST-BOUNDARIES states the residual caveat: a 'right interface' signal, NOT a sole root of trust", function () {
+      expect(tbLower).to.include("right interface");
+      expect(tbLower).to.match(/not a sole root of trust|sole root of trust/);
+      // a fork can reuse the ID, so a consumer needing a specific deployment must pin the address.
+      expect(tbLower).to.match(/a fork (can|could) (re)?use|fork or copy-paste/);
+      expect(tbLower).to.match(/pin the address/);
+      expect(tbLower).to.match(/out-of-band/);
+    });
+
+    it("TRUST-BOUNDARIES documents the loud --skip-identity-check opt-out", function () {
+      expect(tb).to.include("--skip-identity-check");
+    });
+
+    it("README's CLI block notes read commands authenticate the registry by default", function () {
+      expect(readmeLower).to.match(/read commands authenticate the registry by default|authenticate the\s+registry by default/);
+    });
+
+    it("README documents the loud --skip-identity-check opt-out near the CLI block", function () {
+      expect(readme).to.include("--skip-identity-check");
+      expect(readmeLower).to.match(/loud|never the default|not the default/);
+    });
+
+    it("README carries the same residual caveat (right interface / not sole root of trust / pin address)", function () {
+      expect(readmeLower).to.include("right interface");
+      expect(readmeLower).to.match(/not a sole root of trust|sole root of trust/);
+      expect(readmeLower).to.match(/pin the address/);
+    });
+
+    it("README states the threat (rogue/wrong RPC+address) so the caveats stay consistent with TRUST-BOUNDARIES", function () {
+      expect(readmeLower).to.match(/rogue|wrong\/rogue|look-alike/);
+    });
+  });
+
   describe("docs/TRUST-BOUNDARIES.md carries the read-side caveat", function () {
     it("names both read commands", function () {
       expect(tb).to.include("vh list");

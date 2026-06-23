@@ -54,6 +54,8 @@ vh dataset build <dir> --out <p>     # DataLedger: tamper-evident dataset manife
 vh dataset verify <dir> --manifest <p> # re-derive the root + per-file ADDED/REMOVED/CHANGED diff vs a manifest; offline, no key, no network
 vh dataset diff <manifestA> <manifestB> # the exact change set between two dataset versions; offline, no key, no network
 vh dataset summary <manifest>        # provenance/license roll-up over the trusted file set; offline, no key, no network
+vh dataset report <manifest> [--verify <dir>] # ONE deterministic evidence document the reviewer files; offline, no key, no network
+vh dataset attest <manifest>         # canonical UNSIGNED attestation payload a human trust-root signs (P-3); offline, no key, no network
 vh dataset prove --file <p> --manifest <m> # set-membership proof for ONE file; offline, no key, no network
 vh dataset verify-proof <proof>      # fold a membership proof back to the recorded root; offline, no key, no network
 ```
@@ -383,9 +385,17 @@ vh dataset build <dir> --out <p>          # tamper-evident manifest: Merkle root
 vh dataset verify <dir> --manifest <p>    # re-derive the root from a fresh copy on disk + per-file ADDED/REMOVED/CHANGED diff
 vh dataset diff <manifestA> <manifestB>   # the precise add/remove/change set between two dataset versions (offline, no tree)
 vh dataset summary <manifest>             # provenance/license roll-up over the trusted file set (counts CLAIMS, not facts)
+vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]  # ONE deterministic evidence document the reviewer files; offline, no key, no network
+vh dataset attest <manifest> [--json] [--out <p>]  # canonical UNSIGNED attestation payload (root+fileCount+manifestDigest) a human trust-root signs; offline, no key, no network
 vh dataset prove --file <p> --manifest <m> --out <a>  # portable set-membership proof for ONE file
 vh dataset verify-proof <proof>           # fold a membership proof back to the recorded root (no dataset, no manifest, no key, no net)
 ```
+
+`vh dataset report` consolidates dataset identity + the provenance/license roll-up + the trust caveats
+(and, with `--verify <dir>`, a live-tree MATCH/MISMATCH verdict) into ONE deterministic document a
+reviewer files; `vh dataset attest` emits the canonical, byte-deterministic **UNSIGNED** payload a human
+signing/timestamp trust-root signs over (`needs-human`, P-3 in [`STRATEGY.md`](STRATEGY.md)). Both are
+**offline, need NO key, and need NO network**.
 
 The Merkle root commits to file **names AND bytes** (the SAME path-bound convention as `vh hash <dir>`),
 so any edit/rename/add/remove changes it. What DataLedger does **NOT** prove: it is **not a timestamp**

@@ -26,7 +26,7 @@ const read = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
 // module (or its caveat exports) is ever removed — the docs guard would otherwise be meaningless.
 const dataset = require("../cli/dataset");
 
-const SUBCOMMANDS = ["build", "verify", "diff", "summary", "prove", "verify-proof"];
+const SUBCOMMANDS = ["build", "verify", "diff", "summary", "report", "attest", "prove", "verify-proof"];
 
 describe("T-14.3 docs: DataLedger documented as a product (docs/DATALEDGER.md + README)", function () {
   let doc, docLower, readme, readmeLower;

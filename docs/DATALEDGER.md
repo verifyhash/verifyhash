@@ -75,7 +75,7 @@ the code:
 ## Workflow, end to end
 
 ```
-build → diff (between versions) → summary → prove (a single file) → verify-proof
+build → diff (between versions) → summary → report (the filed deliverable) → attest (the signing-ready payload) → prove (a single file) → verify-proof
 ```
 
 | Command | What it does | Offline? Key? Network? |
@@ -84,6 +84,8 @@ build → diff (between versions) → summary → prove (a single file) → veri
 | `vh dataset verify <dir> --manifest <p>` | Re-derive the root from a fresh copy on disk + a per-file ADDED/REMOVED/CHANGED diff vs the manifest | offline, no key, no network |
 | `vh dataset diff <manifestA> <manifestB>` | Compare two manifests; report the exact change set between versions | offline, no tree, no key, no network |
 | `vh dataset summary <manifest>` | Provenance/license roll-up over the trusted file set | offline, no tree, no key, no network |
+| `vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]` | Consolidate identity + roll-up + (optional) verify verdict + caveats into ONE deterministic evidence document the reviewer files | offline, no key, no network |
+| `vh dataset attest <manifest> [--json] [--out <p>]` | Emit the canonical, byte-deterministic UNSIGNED attestation payload (root + fileCount + manifestDigest) a human signing/timestamp trust-root will sign | offline, no key, no network |
 | `vh dataset prove --file <p> --manifest <m> --out <a>` | Build a portable set-membership proof for ONE file | offline, no key, no network |
 | `vh dataset verify-proof <proof>` | Fold the membership proof back to the recorded root | purely offline, no dataset, no key, no network |
 
@@ -129,6 +131,102 @@ match/identical; `vh dataset prove`/`verify-proof` exit `0` MEMBER/CONFIRMED, `3
 
 ---
 
+## The evidence report
+
+A reviewer does not file three terminal outputs — they file **one document**. `vh dataset report
+<manifest> [--verify <dir>] [--json] [--out <p>]` consolidates everything a manifest already proves into
+a single deterministic artifact you attach to an EU-AI-Act technical-documentation section or an
+enterprise data-provenance due-diligence packet.
+
+It **invents no new math.** The dataset identity (root + fileCount) comes from the strict manifest read;
+the provenance/license roll-up reuses the SAME aggregation `vh dataset summary` emits (identical
+histogram order); the optional verification reuses `vh dataset verify` verbatim. So the report can never
+drift from the commands it consolidates.
+
+What it consolidates, in a stable section order:
+
+1. **Trust posture, FIRST.** The same in-band `TRUST_NOTE` (file SET bound into the root and trustworthy;
+   `{source, license}` hints UNTRUSTED and NOT bound into the root) plus the explicit no-overclaim line:
+   this report is NOT a timestamp — it does not prove the dataset is "unaltered since date T", nor
+   authorship/licensing.
+2. **Dataset identity** — the Merkle `root` and `fileCount`.
+3. **Verification status** — either the embedded `--verify` verdict, or a plain statement that NO
+   live-tree verification was performed (so the report never *implies* a verify that did not run).
+4. **Provenance / license roll-up** — the `{source, license}` histogram over the trusted file set.
+
+**Deterministic Markdown vs `--json`.** The default human output is a Markdown document with a stable
+section order and a histogram ordered by the same rule `vh dataset summary` uses, so two runs over the
+same manifest produce **byte-identical Markdown** — suitable to attach to a filing and to diff in CI.
+`--json` emits the same consolidated model as a machine object for an ingestion pipeline. `--out <p>`
+writes the document to a caller-chosen explicit path (never silently the cwd) and names the file.
+
+**The optional `--verify` status section.** Without `--verify`, the report documents the manifest's
+*claimed* root and says so plainly. With `--verify <dir>` it re-derives the root from the live tree
+(still offline — no network) and embeds the **MATCH/MISMATCH verdict** plus the per-file
+ADDED/REMOVED/CHANGED localization; under `--verify` the command's exit code mirrors `vh dataset verify`
+(`0` on MATCH, `3` on MISMATCH) so a pipeline can gate on it.
+
+```sh
+# The single document a reviewer files (manifest-only — claims the manifest's root):
+vh dataset report v2.manifest.json --out evidence.md
+#   dataset report written: /abs/path/evidence.md
+
+# …or with a live-tree verdict embedded, gating on the recomputed-root match (exit 3 on drift):
+vh dataset report v2.manifest.json --verify ./dataset-v2 --out evidence.md
+
+# …or the machine form for an ingestion pipeline:
+vh dataset report v2.manifest.json --json
+```
+
+> **What the reviewer files.** This Markdown (or its `--json` twin) IS the deliverable — the EU-AI-Act
+> technical-documentation section / due-diligence evidence packet a buyer's compliance process is built
+> around — not a transcript of three commands. It still claims nothing past the standing trust posture:
+> no wall-clock "unaltered since date T", no truth of any `{source, license}` hint.
+
+---
+
+## Unsigned attestation payload
+
+`vh dataset attest <manifest> [--json] [--out <p>]` emits the **canonical, byte-deterministic** payload a
+human-owned signing/timestamp trust-root will sign. It is the bridge that turns the human step (P-3) from
+"design and sign a payload" into "sign THIS exact file."
+
+**What it commits to.** A small envelope binding the dataset IDENTITY:
+
+- `root` — the manifest's Merkle root.
+- `fileCount` — the number of files in the committed set.
+- `manifestDigest` — `keccak256` over a canonical serialization of the manifest's committed file set
+  (each entry's root-committed `{relPath, contentHash, leaf}`, keys in fixed order, entries sorted by
+  `relPath`, no insignificant whitespace; the UNTRUSTED `hints` are excluded). Any edit/rename/add/remove
+  to the committed set changes the digest.
+
+The envelope serializes with a fixed top-level key order and no insignificant whitespace, so **two runs
+over the same manifest produce identical bytes** — that determinism is exactly what makes "sign the
+bytes" well-defined. `--json` emits those same canonical bytes (pipe it straight into a signer); `--out
+<p>` writes them to a caller-chosen explicit path (never the cwd) and names the file.
+
+**It is UNSIGNED — and says so, in-band.** The envelope carries an explicit `signed: false` and a
+`signature: null` slot, plus the standing caveat verbatim. The strict reader REJECTS any payload that
+claims `signed: true` or a non-null `signature`, so this build can never be tricked into treating a
+hand-edited envelope as if it were signed.
+
+```sh
+# Emit the canonical UNSIGNED payload (the exact bytes a signer/timestamp service signs over):
+vh dataset attest v2.manifest.json --out v2.attestation.json
+#   dataset attestation written: /abs/path/v2.attestation.json
+
+# …or to stdout / piped into a signer:
+vh dataset attest v2.manifest.json --json
+```
+
+> **Attaching a real signature/timestamp is the human-owned trust-root.** Standing up a real signing key
+> or an external timestamp authority is a `needs-human` step recorded in
+> [`STRATEGY.md`](../STRATEGY.md) as **P-3** — the loop only BUILDS and locally TESTS the UNSIGNED
+> payload. Until a signature is attached, this payload proves only the same set-membership / identity the
+> manifest already does — **NOT** that the dataset is unaltered since a date T. Do not overclaim past P-3.
+
+---
+
 ## What an auditor / EU AI Act reviewer gets
 
 A mapping from the reviewer's question to the command that produces the evidence:
@@ -139,6 +237,8 @@ A mapping from the reviewer's question to the command that produces the evidence
 | "Is this copy of the dataset byte-for-byte the one you manifested?" | `vh dataset verify` | Recomputed-root vs manifest-root verdict + a per-file ADDED/REMOVED/CHANGED localization |
 | "What changed in the training data between model version N and N+1?" | `vh dataset diff` | The precise add/remove/change set between two manifests (offline) |
 | "What is the provenance/license composition of the dataset?" | `vh dataset summary` | A `{source, license}` histogram over the trusted file set (claims, clearly labeled untrusted) |
+| "Give me ONE document to file in the technical-documentation / due-diligence packet." | `vh dataset report` | A single deterministic Markdown (or `--json`) document: dataset identity + the provenance/license roll-up + the standing trust caveats + an optional live-tree verify verdict |
+| "Give me the exact bytes our publisher (or a timestamp authority) will sign over." | `vh dataset attest` | A canonical, byte-deterministic UNSIGNED attestation payload committing to `root` / `fileCount` / `manifestDigest` (the file a human signing/timestamp trust-root signs — see P-3) |
 | "Prove this specific record/file was actually in the dataset." | `vh dataset prove` → `vh dataset verify-proof` | A portable, offline-verifiable set-membership proof for one file |
 
 What this mapping deliberately does NOT claim: a wall-clock "unaltered since date T", and the

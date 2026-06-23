@@ -17,6 +17,7 @@ const { runAnchor } = require("./anchor");
 const { runVerify } = require("./verify");
 const { runProve } = require("./prove");
 const { runClaim, runCommit, runReveal } = require("./claim");
+const { runList } = require("./list");
 
 function usage() {
   return [
@@ -30,6 +31,7 @@ function usage() {
     "  vh reveal --receipt <p>    commit-reveal step 2: resume from a receipt and reveal",
     "  vh verify <path> [opts]    recompute the hash, read the registry, print MATCH / MISMATCH",
     "  vh prove <file> [opts]     Merkle-prove a file against an anchored repo root via verifyLeaf",
+    "  vh list [opts]             enumerate the registry read-only (discovery + audit)",
     "",
     "anchor options (one-shot; contributor = 'first anchorer', NOT proven authorship):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
@@ -75,6 +77,15 @@ function usage() {
     "  --anchor                   anchor the repo root first (needs PRIVATE_KEY), then prove",
     "  --i-understand-mainnet     allow --anchor on a non-testnet chainId (DANGER: real funds)",
     "  --dry-run                  build & print the proof only; needs no key and no network",
+    "",
+    "list options (read-only enumeration; provider only, never a signer/key):",
+    "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --contributor <address>    only records whose contributor is this address",
+    "  --author-bound             only commit-reveal records (authorBound = proven first claimant)",
+    "  --limit <n>                show at most n records (after --offset)",
+    "  --offset <n>               skip the first n (filtered) records",
+    "  --json                     emit a machine-readable JSON array instead of the human block",
     "",
   ].join("\n");
 }
@@ -680,6 +691,104 @@ async function cmdProve(argv) {
   return result.accepted ? 0 : 3;
 }
 
+/**
+ * Parse `list` argv into { contract, rpc, contributor, authorBound, limit, offset, json }.
+ * `list` takes NO positional argument (it enumerates the whole registry). Throws on unknown or
+ * incomplete flags so a typo never silently returns a wrong/empty list (parser parity with the
+ * other commands). `--limit`/`--offset` must be non-negative integers.
+ */
+function parseListArgs(argv) {
+  const opts = {
+    contract: undefined,
+    rpc: undefined,
+    contributor: undefined,
+    authorBound: false,
+    limit: undefined,
+    offset: undefined,
+    json: false,
+  };
+  // Parse a flag value as a non-negative integer, hard-erroring on anything else.
+  const intArg = (flag, raw) => {
+    if (raw === undefined) throw new Error(`${flag} requires a value`);
+    if (!/^\d+$/.test(raw)) throw new Error(`${flag} requires a non-negative integer, got: ${raw}`);
+    return Number(raw);
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--author-bound":
+        opts.authorBound = true;
+        break;
+      case "--json":
+        opts.json = true;
+        break;
+      case "--contract":
+        opts.contract = argv[++i];
+        if (opts.contract === undefined) throw new Error("--contract requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      case "--contributor":
+        opts.contributor = argv[++i];
+        if (opts.contributor === undefined) throw new Error("--contributor requires a value");
+        break;
+      case "--limit":
+        opts.limit = intArg("--limit", argv[++i]);
+        break;
+      case "--offset":
+        opts.offset = intArg("--offset", argv[++i]);
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        throw new Error(`unexpected argument: ${a} (vh list takes no positional path)`);
+    }
+  }
+  return opts;
+}
+
+async function cmdList(argv) {
+  let opts;
+  try {
+    opts = parseListArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL\n"
+    );
+    return 1;
+  }
+
+  try {
+    // Read-only: provider only — `vh list` NEVER constructs a signer or touches a key.
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    await runList({
+      contractAddress,
+      provider,
+      filters: {
+        contributor: opts.contributor,
+        authorBound: opts.authorBound,
+        limit: opts.limit,
+        offset: opts.offset,
+      },
+      json: opts.json,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -697,6 +806,8 @@ async function main(argv) {
       return cmdVerify(rest);
     case "prove":
       return cmdProve(rest);
+    case "list":
+      return cmdList(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -722,10 +833,12 @@ module.exports = {
   cmdReveal,
   cmdVerify,
   cmdProve,
+  cmdList,
   parseAnchorArgs,
   parseClaimArgs,
   parseRevealArgs,
   parseVerifyArgs,
   parseProveArgs,
+  parseListArgs,
   usage,
 };

@@ -57,7 +57,7 @@ function usage() {
     "  vh dataset diff <manifestA> <manifestB>  OFFLINE manifest-to-manifest change report (no tree/key/net)",
     "  vh dataset summary <manifest>   OFFLINE provenance/license roll-up over a manifest (no tree/key/net)",
     "  vh dataset check <manifest> --policy <p>  OFFLINE license/source policy gate (PASS/FAIL; CI-gateable)",
-    "  vh dataset report <manifest> [--verify <dir>]  ONE deterministic evidence document for a filing",
+    "  vh dataset report <manifest> [--verify <dir>] [--policy <p>]  ONE deterministic evidence document (combined CI gate)",
     "  vh dataset attest <manifest> [--out <p>]  canonical UNSIGNED attestation payload (the signing-ready bytes)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
@@ -271,17 +271,24 @@ function usage() {
     "  --verify <dir>             OPTIONAL: re-derive the root from this live tree (REUSES dataset verify)",
     "                             and embed the MATCH/MISMATCH verdict + per-file ADDED/REMOVED/CHANGED.",
     "                             Without it, the report states plainly that NO live-tree verify was done.",
+    "  --policy <path>            OPTIONAL: evaluate the manifest against this policy (REUSES the SAME pure",
+    "                             evaluator as `vh dataset check`) and embed a 'Policy compliance' section",
+    "                             (verdict + rules evaluated + violating files: relPath/rule/value).",
     "  --out <path>               write the report to this explicit path (caller-chosen; never cwd); the",
     "                             exact file written is named. Without it the report prints to stdout.",
     "  --json                     emit { root, fileCount, licenses, sources, filesWithLicenseHint,",
-    "                             filesWithSourceHint, verify? } instead of the Markdown document",
+    "                             filesWithSourceHint, verify?, policy? } instead of the Markdown document",
     "  Reads the manifest strictly (a corrupt/foreign manifest is rejected) and CONSOLIDATES the dataset",
     "  identity (root + fileCount), the provenance/license roll-up (the SAME aggregation as `vh dataset",
     "  summary`), and the standing trust caveats into ONE document. Default human output is DETERMINISTIC",
-    "  Markdown (byte-identical across runs over the same manifest). It LEADS with the trust posture and",
-    "  does NOT overclaim: it is NOT a timestamp ('unaltered since date T' needs a human-signed step).",
-    "  Exit: with --verify, 0 MATCH / 3 MISMATCH (CI can gate); without --verify, 0 on a well-formed",
-    "  manifest; usage error 2; corrupt/missing manifest (or bad --verify dir) 1.",
+    "  Markdown (byte-identical across runs over the same manifest + policy). It LEADS with the trust",
+    "  posture and does NOT overclaim: it is NOT a timestamp ('unaltered since date T' needs a human-signed",
+    "  step), and a policy PASS attests the dataset's UNTRUSTED self-asserted hints satisfy the policy, NOT",
+    "  that the licenses are genuinely correct.",
+    "  Exit (the report is a COMBINED CI gate — non-zero if ANY embedded gate fails, 0 only when all pass):",
+    "    with --verify: 0 MATCH / 3 MISMATCH; with --policy: 0 PASS / 3 FAIL; with BOTH: 3 if EITHER fails,",
+    "    0 only when MATCH AND PASS; without either gate: 0 on a well-formed manifest. Usage error 2;",
+    "    corrupt/missing manifest or policy (or bad --verify dir) 1.",
     "",
     "dataset attest options (canonical UNSIGNED attestation payload; OFFLINE; NO key, NO network):",
     "  <manifest>                 REQUIRED: a manifest written by `vh dataset build`",
@@ -1710,13 +1717,14 @@ function parseDatasetCheckArgs(argv) {
 }
 
 /**
- * Parse `dataset report` argv into { manifest, verifyDir, out, json }. Takes EXACTLY one positional
- * manifest path, an optional --verify <dir>, an optional --out <p>, and an optional --json. Throws on a
- * missing/extra positional or an unknown/incomplete flag, so a typo never silently reports the wrong (or
- * no) manifest or verifies a surprise tree (parser parity with the other dataset subcommands).
+ * Parse `dataset report` argv into { manifest, verifyDir, policy, out, json }. Takes EXACTLY one
+ * positional manifest path, an optional --verify <dir>, an optional --policy <p>, an optional --out <p>,
+ * and an optional --json. Throws on a missing/extra positional or an unknown/incomplete flag, so a typo
+ * never silently reports the wrong (or no) manifest, verifies a surprise tree, or checks a surprise
+ * policy (parser parity with the other dataset subcommands).
  */
 function parseDatasetReportArgs(argv) {
-  const opts = { manifest: undefined, verifyDir: undefined, out: undefined, json: false };
+  const opts = { manifest: undefined, verifyDir: undefined, policy: undefined, out: undefined, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
@@ -1726,6 +1734,10 @@ function parseDatasetReportArgs(argv) {
       case "--verify":
         opts.verifyDir = argv[++i];
         if (opts.verifyDir === undefined) throw new Error("--verify requires a value");
+        break;
+      case "--policy":
+        opts.policy = argv[++i];
+        if (opts.policy === undefined) throw new Error("--policy requires a value");
         break;
       case "--out":
         opts.out = argv[++i];
@@ -2047,14 +2059,21 @@ function cmdDatasetCheck(argv) {
 }
 
 /**
- * `vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]` — ONE self-contained,
- * deterministic evidence document. Reads the manifest strictly, consolidates the dataset identity +
- * the provenance/license roll-up (REUSES the SAME aggregation as `vh dataset summary`) + the trust
- * caveats, and OPTIONALLY embeds a live-tree verification verdict (REUSES `runDatasetVerify`). PURELY
- * OFFLINE for the manifest-only path (no tree/provider/key/network); `--verify` adds an offline live-
- * tree re-derive. Exit codes: WITH --verify, mirror `vh dataset verify` (0 MATCH / 3 MISMATCH) so CI
- * can gate; WITHOUT --verify, exit 0 on a well-formed manifest; 2 on a usage error; 1 on a runtime
- * error (missing/corrupt manifest, or a bad --verify dir).
+ * `vh dataset report <manifest> [--verify <dir>] [--policy <p>] [--json] [--out <p>]` — ONE
+ * self-contained, deterministic evidence document. Reads the manifest strictly, consolidates the dataset
+ * identity + the provenance/license roll-up (REUSES the SAME aggregation as `vh dataset summary`) + the
+ * trust caveats, OPTIONALLY embeds a live-tree verification verdict (REUSES `runDatasetVerify`), and
+ * OPTIONALLY embeds a Policy compliance verdict (REUSES the SAME pure `evaluatePolicy` as `vh dataset
+ * check` — the report verdict can never diverge from `vh dataset check`'s). PURELY OFFLINE for the
+ * manifest-only path (no tree/provider/key/network); `--verify` adds an offline live-tree re-derive.
+ *
+ * EXIT CODES — the report is a COMBINED CI gate (non-zero whenever ANY embedded gate fails, 0 only when
+ * all pass):
+ *   - WITH --verify: 0 on MATCH, 3 on MISMATCH (mirrors `vh dataset verify`).
+ *   - WITH --policy: 0 on PASS, 3 on FAIL (mirrors `vh dataset check`).
+ *   - WITH BOTH:     3 if EITHER the verify is MISMATCH OR the policy is FAIL; 0 only when MATCH AND PASS.
+ *   - WITHOUT either gate: 0 on a well-formed manifest.
+ *   - 2 on a usage error; 1 on a runtime error (missing/corrupt manifest or policy, or a bad --verify dir).
  */
 function cmdDatasetReport(argv) {
   let opts;
@@ -2074,6 +2093,7 @@ function cmdDatasetReport(argv) {
     result = runDatasetReport({
       manifest: opts.manifest,
       verifyDir: opts.verifyDir,
+      policy: opts.policy,
       out: opts.out,
       json: opts.json,
     });
@@ -2082,10 +2102,11 @@ function cmdDatasetReport(argv) {
     return 1;
   }
 
-  // WITH --verify the report carries a verdict: mirror `vh dataset verify` (0 MATCH / 3 MISMATCH) so a
-  // pipeline can gate on the embedded verification. WITHOUT --verify there is no verdict — a well-formed
-  // manifest is exit 0.
-  if (result.verifyStatus === "MISMATCH") return 3;
+  // COMBINED gate: the report is non-zero whenever ANY embedded gate fails, and 0 only when all pass.
+  //   --verify  => fail on MISMATCH (mirrors `vh dataset verify`).
+  //   --policy  => fail on FAIL     (mirrors `vh dataset check`).
+  // With BOTH, either failure yields exit 3; with NEITHER, a well-formed manifest is exit 0.
+  if (result.verifyStatus === "MISMATCH" || result.policyVerdict === "FAIL") return 3;
   return 0;
 }
 

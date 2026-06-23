@@ -831,19 +831,26 @@ function _histogramLines(hist) {
 
 /**
  * Build (purely) the consolidated report MODEL from a validated manifest object + an OPTIONAL verify
- * result. No I/O, no aggregation math of its own — it composes `aggregateManifest`'s roll-up with the
- * (already-run) `runDatasetVerify` result. This is the SAME object the `--json` mode emits.
+ * result + an OPTIONAL policy result. No I/O, no aggregation/verdict math of its own — it composes
+ * `aggregateManifest`'s roll-up with the (already-run) `runDatasetVerify` result and the (already-run)
+ * `evaluatePolicy` verdict. This is the SAME object the `--json` mode emits.
+ *
+ * The policy block is the EXACT object `evaluatePolicy` returns (the same pure evaluator `vh dataset
+ * check` uses, never re-implemented), trimmed to the fields the report documents — so the report's
+ * policy verdict can never diverge from `vh dataset check`'s.
  *
  * @param {object} manifest a validated manifest object (from readManifest)
  * @param {object|null} [verifyResult] the object runDatasetVerify returns, or null when no --verify
+ * @param {object|null} [policyResult] the object evaluatePolicy returns, or null when no --policy
  * @returns {{
  *   root: string, fileCount: number,
  *   licenses: Object<string,number>, sources: Object<string,number>,
  *   filesWithLicenseHint: number, filesWithSourceHint: number,
- *   verify?: { status: string, added: any[], removed: any[], changed: any[] }
+ *   verify?: { status: string, added: any[], removed: any[], changed: any[] },
+ *   policy?: { verdict: string, rulesEvaluated: number, violations: {relPath:string,rule:string,value:string}[] }
  * }}
  */
-function buildDatasetReport(manifest, verifyResult) {
+function buildDatasetReport(manifest, verifyResult, policyResult) {
   const agg = aggregateManifest(manifest); // SAME roll-up as `vh dataset summary` — never re-derived
   const model = {
     root: agg.root,
@@ -863,15 +870,27 @@ function buildDatasetReport(manifest, verifyResult) {
       changed: verifyResult.diff.changed,
     };
   }
+  if (policyResult) {
+    // Carry the verdict, the rule count, and the exact violating files. These are taken VERBATIM from
+    // the same pure `evaluatePolicy` the `vh dataset check` command uses — no re-implementation — so the
+    // report's PASS/FAIL can never disagree with `vh dataset check`'s for the same manifest + policy.
+    model.policy = {
+      verdict: policyResult.verdict,
+      rulesEvaluated: policyResult.rulesEvaluated,
+      violations: policyResult.violations,
+    };
+  }
   return model;
 }
 
 /**
- * Render the consolidated report MODEL as a DETERMINISTIC Markdown document. Stable section order; the
- * histogram reuses `_histogramLines` so the ordering matches `vh dataset summary` exactly and two runs
- * over the same manifest produce byte-identical Markdown. LEADS with the trust posture (reusing
- * TRUST_NOTE verbatim) so the caveats can never drift, and NEVER implies a live-tree verify happened
- * when it did not.
+ * Render the consolidated report MODEL as a DETERMINISTIC Markdown document. Stable section order
+ * (Trust posture, Dataset identity, Verification status, Policy compliance [only with --policy],
+ * Provenance roll-up); the histogram reuses `_histogramLines` and policy violations are pre-sorted by
+ * `evaluatePolicy`, so two runs over the same manifest + policy produce byte-identical Markdown. LEADS
+ * with the trust posture (reusing TRUST_NOTE verbatim) so the caveats can never drift; the Policy
+ * compliance section repeats the SAME UNTRUSTED-hints caveat as `vh dataset check`; and the document
+ * NEVER implies a live-tree verify (or a real license check) happened when it did not.
  * @param {object} model the object buildDatasetReport returns
  * @returns {string} the full Markdown document (newline-terminated)
  */
@@ -938,7 +957,44 @@ function formatDatasetReportMarkdown(model) {
   }
   lines.push("");
 
-  // --- 4. Provenance / license roll-up. SAME aggregation + SAME histogram ordering as summary. ------
+  // --- 4. Policy compliance. ONLY when --policy was given; the verdict is the SAME pure `evaluatePolicy`
+  //         the `vh dataset check` command uses (no re-implementation), so PASS/FAIL can never diverge.
+  //         LEADS with the SAME UNTRUSTED-hints caveat as `vh dataset check` so the report never implies
+  //         the licenses were verified to be genuinely correct. Violations are already sorted (relPath,
+  //         then rule) by evaluatePolicy, so this section is byte-identical across runs.
+  if (model.policy) {
+    const p = model.policy;
+    lines.push("## Policy compliance");
+    lines.push("");
+    lines.push(
+      "The {source, license} hints evaluated below are UNTRUSTED, self-asserted metadata NOT bound into " +
+        "the root. A PASS means the dataset's SELF-ASSERTED hints satisfy this policy — NOT that the " +
+        "licenses are genuinely correct. \"(no license hint)\" asserts NOTHING (requireLicense flags it). " +
+        "This does NOT verify any license/source is real."
+    );
+    lines.push("");
+    lines.push(`- verdict: **${p.verdict}**`);
+    lines.push(`- rules evaluated: ${p.rulesEvaluated}`);
+    if (p.rulesEvaluated === 0) {
+      lines.push(
+        "- This policy declares NO rules, so it trivially PASSes — every dataset satisfies a policy with " +
+          "no constraints."
+      );
+    } else if (p.verdict === POLICY_VERDICT.PASS) {
+      lines.push("- No file's self-asserted hints violate any rule in this policy.");
+    } else {
+      lines.push(
+        `- violations: ${p.violations.length} ` +
+          "(each line: the file, the rule it broke, and the offending hint value)"
+      );
+      for (const v of p.violations) {
+        lines.push(`  - \`${v.relPath}\` [${v.rule}] value: ${v.value}`);
+      }
+    }
+    lines.push("");
+  }
+
+  // --- 5. Provenance / license roll-up. SAME aggregation + SAME histogram ordering as summary. ------
   lines.push("## Provenance / license roll-up (CLAIMED — untrusted hints)");
   lines.push("");
   lines.push(
@@ -969,28 +1025,40 @@ function formatDatasetReportMarkdown(model) {
 }
 
 /**
- * Orchestrate `vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]`. Reads the manifest
- * via the strict `readManifest`, OPTIONALLY runs `runDatasetVerify` against a live tree (REUSED
- * verbatim), composes the consolidated report MODEL (reusing `aggregateManifest`), and emits it as
- * deterministic Markdown (default) or a machine-readable JSON object (`--json`). With `--out <p>` it
- * writes the report to the caller's EXPLICIT path (never cwd) and names the file; without `--out` it
- * prints to stdout.
+ * Orchestrate `vh dataset report <manifest> [--verify <dir>] [--policy <p>] [--json] [--out <p>]`. Reads
+ * the manifest via the strict `readManifest`, OPTIONALLY runs `runDatasetVerify` against a live tree
+ * (REUSED verbatim) and OPTIONALLY reads `--policy` (strict `readPolicy`) and evaluates it via the SAME
+ * pure `evaluatePolicy` `vh dataset check` uses (REUSED verbatim — the report verdict can never diverge
+ * from `vh dataset check`'s), composes the consolidated report MODEL (reusing `aggregateManifest`), and
+ * emits it as deterministic Markdown (default) or a machine-readable JSON object (`--json`). With
+ * `--out <p>` it writes the report to the caller's EXPLICIT path (never cwd) and names the file; without
+ * `--out` it prints to stdout.
+ *
+ * EXIT-CODE PRECEDENCE (the caller in cli/vh.js maps these). The report is a COMBINED CI gate: it is
+ * non-zero whenever ANY embedded gate fails, and 0 only when ALL pass.
+ *   - with `--verify`: the embedded verification returns its MATCH/MISMATCH verdict (MISMATCH => fail).
+ *   - with `--policy`: the embedded policy returns its PASS/FAIL verdict (FAIL => fail).
+ *   - with BOTH: fail (exit 3) if EITHER the verify is MISMATCH OR the policy is FAIL; 0 only when the
+ *     verify is MATCH AND the policy is PASS. So a single invocation gates data integrity AND policy.
+ * This function returns `verifyStatus` and `policyVerdict`; the CLI derives exit 3 from either failing.
  *
  * @param {object} opts
  * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
  * @param {string} [opts.verifyDir] when given, re-derive the root from this live tree (reuses runDatasetVerify)
+ * @param {string} [opts.policy]  when given, evaluate the manifest against this policy (reuses evaluatePolicy)
  * @param {boolean}[opts.json]    emit a machine-readable object instead of the Markdown document
  * @param {string} [opts.out]     write the report to this explicit path (caller-chosen; never cwd)
  * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
  * @returns {{
  *   model: object,
  *   verifyStatus: string|null,
+ *   policyVerdict: string|null,
  *   out: string|null,
  * }}
  */
 function runDatasetReport(opts) {
   if (!opts || typeof opts !== "object") throw new Error("runDatasetReport requires options");
-  const { manifest: manifestPath, verifyDir } = opts;
+  const { manifest: manifestPath, verifyDir, policy: policyPath } = opts;
   const write = opts.stdout || ((s) => process.stdout.write(s));
   if (!manifestPath) throw new Error("runDatasetReport requires a <manifest> path");
 
@@ -1006,7 +1074,16 @@ function runDatasetReport(opts) {
     verifyResult = runDatasetVerify({ dir: verifyDir, manifest: manifestPath, stdout: () => {} });
   }
 
-  const model = buildDatasetReport(manifest, verifyResult);
+  // OPTIONAL policy evaluation: read the policy strictly (a corrupt/foreign policy is rejected, never
+  // half-accepted) and REUSE the SAME pure `evaluatePolicy` `vh dataset check` runs (no re-implementation)
+  // so the report's PASS/FAIL can never diverge from `vh dataset check`'s for the same manifest + policy.
+  let policyResult = null;
+  if (policyPath) {
+    const policy = readPolicy(policyPath);
+    policyResult = evaluatePolicy(manifest, policy);
+  }
+
+  const model = buildDatasetReport(manifest, verifyResult, policyResult);
 
   // Render the document: deterministic Markdown by default, machine-readable JSON with --json.
   const document = opts.json ? JSON.stringify(model) + "\n" : formatDatasetReportMarkdown(model);
@@ -1025,6 +1102,7 @@ function runDatasetReport(opts) {
   return {
     model,
     verifyStatus: verifyResult ? verifyResult.status : null,
+    policyVerdict: policyResult ? policyResult.verdict : null,
     out: outAbs,
   };
 }

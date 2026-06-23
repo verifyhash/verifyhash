@@ -56,6 +56,7 @@ const {
   runDatasetAttest,
   POLICY_KIND,
   POLICY_RULE,
+  POLICY_VERDICT,
   validatePolicy,
   readPolicy,
   evaluatePolicy,
@@ -1625,12 +1626,14 @@ describe("cli: vh dataset build (T-13.1)", function () {
       expect(parseDatasetReportArgs(["/m"])).to.deep.equal({
         manifest: "/m",
         verifyDir: undefined,
+        policy: undefined,
         out: undefined,
         json: false,
       });
       expect(parseDatasetReportArgs(["/m", "--verify", "/d", "--out", "/o", "--json"])).to.deep.equal({
         manifest: "/m",
         verifyDir: "/d",
+        policy: undefined,
         out: "/o",
         json: true,
       });
@@ -2409,6 +2412,259 @@ describe("cli: vh dataset build (T-13.1)", function () {
         process.stdout.write = orig;
       }
       expect(fs.readdirSync(process.cwd())).to.deep.equal(cwdBefore);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------------
+  // T-16.2: `vh dataset report <manifest> --policy <p>` — fold the SAME pure policy evaluator into the
+  // report as a "Policy compliance" section, with a well-defined combined exit code.
+  // ---------------------------------------------------------------------------------------------------
+  describe("vh dataset report (T-16.2): embedded Policy compliance section", function () {
+    // Build a manifest (+ optional hints) and return { dir, manifestPath } so a test can also --verify
+    // against the live `dir`. Every temp dir self-cleans in afterEach.
+    function buildFixture(files, hints, prefix) {
+      const dir = tmp((prefix || "rep2") + "-tree-");
+      writeFiles(dir, files);
+      const manifestPath = path.join(tmp((prefix || "rep2") + "-man-"), "manifest.json");
+      runDatasetBuild({ dir, out: manifestPath, hints, stdout: () => {} });
+      return { dir, manifestPath };
+    }
+    function policyFor(rules, prefix) {
+      const p = path.join(tmp((prefix || "rep2") + "-pol-"), "policy.json");
+      fs.writeFileSync(p, JSON.stringify(Object.assign({ kind: POLICY_KIND, schemaVersion: 1 }, rules)));
+      return p;
+    }
+    // Mixed-hint fixture reused across cases:
+    //   a.txt -> MIT     / corpus-X
+    //   b.txt -> GPL-3.0 / corpus-X
+    //   c.txt -> GPL-3.0 / internal
+    function mixedFixture(prefix) {
+      return buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB", "c.txt": "CCC" },
+        {
+          "a.txt": { license: "MIT", source: "corpus-X" },
+          "b.txt": { license: "GPL-3.0", source: "corpus-X" },
+          "c.txt": { license: "GPL-3.0", source: "internal" },
+        },
+        prefix || "rep2-mixed"
+      );
+    }
+
+    it("a PASSing policy embeds a PASS section (Markdown + --json), exit 0 via main", async function () {
+      const { manifestPath } = mixedFixture("rep2-pass");
+      const policyPath = policyFor({ denyLicenses: ["BSD-3-Clause"] }, "rep2-pass"); // nothing in the manifest matches
+
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, policy: policyPath, stdout: (s) => lines.push(s) });
+      const out = lines.join("");
+      expect(res.policyVerdict).to.equal(POLICY_VERDICT.PASS);
+      expect(out).to.contain("## Policy compliance");
+      expect(out).to.contain("verdict: **PASS**");
+      expect(out).to.contain("No file's self-asserted hints violate any rule in this policy.");
+
+      // The section LEADS with the SAME untrusted-hints caveat as `vh dataset check` (never overclaims).
+      expect(out).to.contain("UNTRUSTED");
+      const policyIdx = out.indexOf("## Policy compliance");
+      const caveatIdx = out.indexOf("A PASS means the dataset's SELF-ASSERTED hints satisfy this policy");
+      expect(caveatIdx).to.be.greaterThan(policyIdx);
+
+      // --json carries the policy block.
+      const jlines = [];
+      const jres = runDatasetReport({ manifest: manifestPath, policy: policyPath, json: true, stdout: (s) => jlines.push(s) });
+      const parsed = JSON.parse(jlines.join(""));
+      expect(parsed.policy).to.deep.equal({ verdict: "PASS", rulesEvaluated: 1, violations: [] });
+      expect(jres.policyVerdict).to.equal("PASS");
+
+      // main() exits 0 on PASS.
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      let code;
+      try {
+        code = await main(["dataset", "report", manifestPath, "--policy", policyPath]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(0);
+    });
+
+    it("a FAILing policy embeds the FAIL + the exact violating files, exit 3 via main", async function () {
+      const { manifestPath } = mixedFixture("rep2-fail");
+      const policyPath = policyFor({ denyLicenses: ["GPL-3.0"] }, "rep2-fail"); // b.txt + c.txt violate
+
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, policy: policyPath, stdout: (s) => lines.push(s) });
+      const out = lines.join("");
+      expect(res.policyVerdict).to.equal(POLICY_VERDICT.FAIL);
+      expect(out).to.contain("## Policy compliance");
+      expect(out).to.contain("verdict: **FAIL**");
+      // The two violating files, each with rule + value, appear in the section.
+      expect(out).to.contain("`b.txt` [denyLicenses] value: GPL-3.0");
+      expect(out).to.contain("`c.txt` [denyLicenses] value: GPL-3.0");
+      // a.txt (MIT) is NOT a violation.
+      expect(out).to.not.contain("`a.txt` [denyLicenses]");
+
+      // The report's verdict + violations are EXACTLY what `vh dataset check` produces (no divergence).
+      const checkRes = runDatasetCheck({ manifest: manifestPath, policy: policyPath, json: true, stdout: () => {} });
+      expect(res.model.policy).to.deep.equal({
+        verdict: checkRes.verdict,
+        rulesEvaluated: checkRes.rulesEvaluated,
+        violations: checkRes.violations,
+      });
+
+      // main() exits 3 on FAIL (mirrors `vh dataset check`).
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      let code;
+      try {
+        code = await main(["dataset", "report", manifestPath, "--policy", policyPath]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(3);
+    });
+
+    it("the embedded verdict matches `vh dataset check` VERBATIM (shared pure evaluator)", function () {
+      const { manifestPath } = mixedFixture("rep2-parity");
+      // A policy that fires multiple rules so the comparison is non-trivial.
+      const policyPath = policyFor(
+        { allowLicenses: ["MIT"], denySources: ["internal"], requireLicense: true },
+        "rep2-parity"
+      );
+      const checkRes = runDatasetCheck({ manifest: manifestPath, policy: policyPath, json: true, stdout: () => {} });
+      const rep = runDatasetReport({ manifest: manifestPath, policy: policyPath, json: true, stdout: () => {} });
+      expect(rep.model.policy.verdict).to.equal(checkRes.verdict);
+      expect(rep.model.policy.rulesEvaluated).to.equal(checkRes.rulesEvaluated);
+      expect(rep.model.policy.violations).to.deep.equal(checkRes.violations);
+    });
+
+    it("the Markdown is DETERMINISTIC: two runs over the same manifest + policy are byte-identical", function () {
+      const { manifestPath } = mixedFixture("rep2-det");
+      const policyPath = policyFor({ denyLicenses: ["GPL-3.0"], allowSources: ["corpus-X"] }, "rep2-det");
+      const run1 = [];
+      const run2 = [];
+      runDatasetReport({ manifest: manifestPath, policy: policyPath, stdout: (s) => run1.push(s) });
+      runDatasetReport({ manifest: manifestPath, policy: policyPath, stdout: (s) => run2.push(s) });
+      expect(run1.join("")).to.equal(run2.join(""));
+    });
+
+    it("a no-rules policy embeds a PASS section announcing NO rules (exit 0)", async function () {
+      const { manifestPath } = mixedFixture("rep2-norules");
+      const policyPath = policyFor({}, "rep2-norules");
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, policy: policyPath, stdout: (s) => lines.push(s) });
+      const out = lines.join("");
+      expect(res.policyVerdict).to.equal(POLICY_VERDICT.PASS);
+      expect(out).to.contain("rules evaluated: 0");
+      expect(out).to.contain("declares NO rules");
+
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      let code;
+      try {
+        code = await main(["dataset", "report", manifestPath, "--policy", policyPath]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(0);
+    });
+
+    it("--policy + --verify: exit 3 if EITHER fails, 0 only when BOTH pass", async function () {
+      // Four combinations exercised via main():
+      //   (verify MATCH, policy PASS) -> 0
+      //   (verify MATCH, policy FAIL) -> 3
+      //   (verify MISMATCH, policy PASS) -> 3
+      //   (verify MISMATCH, policy FAIL) -> 3
+      const passPolicy = policyFor({ denyLicenses: ["BSD-3-Clause"] }, "rep2-both-pass"); // nothing matches
+      const failPolicy = policyFor({ denyLicenses: ["GPL-3.0"] }, "rep2-both-fail"); // b.txt + c.txt match
+
+      async function run(manifestPath, dir, policyPath) {
+        const orig = process.stdout.write.bind(process.stdout);
+        process.stdout.write = () => true;
+        try {
+          return await main(["dataset", "report", manifestPath, "--verify", dir, "--policy", policyPath]);
+        } finally {
+          process.stdout.write = orig;
+        }
+      }
+
+      // MATCH tree (untouched).
+      const ok = mixedFixture("rep2-both-ok");
+      expect(await run(ok.manifestPath, ok.dir, passPolicy)).to.equal(0); // MATCH + PASS => 0
+      expect(await run(ok.manifestPath, ok.dir, failPolicy)).to.equal(3); // MATCH + FAIL => 3
+
+      // MISMATCH tree (edit a file AFTER the manifest so the re-derived root differs).
+      const bad = mixedFixture("rep2-both-bad");
+      fs.writeFileSync(path.join(bad.dir, "a.txt"), "EDITED-BYTES");
+      expect(await run(bad.manifestPath, bad.dir, passPolicy)).to.equal(3); // MISMATCH + PASS => 3
+      expect(await run(bad.manifestPath, bad.dir, failPolicy)).to.equal(3); // MISMATCH + FAIL => 3
+
+      // The combined report carries BOTH embedded blocks in --json.
+      const jlines = [];
+      const jres = runDatasetReport({
+        manifest: bad.manifestPath,
+        verifyDir: bad.dir,
+        policy: failPolicy,
+        json: true,
+        stdout: (s) => jlines.push(s),
+      });
+      const parsed = JSON.parse(jlines.join(""));
+      expect(parsed.verify.status).to.equal("MISMATCH");
+      expect(parsed.policy.verdict).to.equal("FAIL");
+      expect(jres.verifyStatus).to.equal("MISMATCH");
+      expect(jres.policyVerdict).to.equal("FAIL");
+    });
+
+    it("WITHOUT --policy the report is byte-identical to the pre-T-16.2 output (no regression)", function () {
+      const { manifestPath } = mixedFixture("rep2-noreg");
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, stdout: (s) => lines.push(s) });
+      const out = lines.join("");
+      // No policy section anywhere, no policy key in the model.
+      expect(out).to.not.contain("Policy compliance");
+      expect(res.policyVerdict).to.equal(null);
+      expect(res.model).to.not.have.property("policy");
+
+      // --json has no policy key.
+      const jlines = [];
+      runDatasetReport({ manifest: manifestPath, json: true, stdout: (s) => jlines.push(s) });
+      const parsed = JSON.parse(jlines.join(""));
+      expect(parsed).to.not.have.property("policy");
+    });
+
+    it("rejects a corrupt/foreign policy (runtime error / exit 1) — no half-accept", async function () {
+      const { manifestPath } = mixedFixture("rep2-badpol");
+      const foreignPath = path.join(tmp("rep2-badpol-"), "p.json");
+      fs.writeFileSync(foreignPath, JSON.stringify({ kind: "not-a-policy", schemaVersion: 1 }));
+      expect(() =>
+        runDatasetReport({ manifest: manifestPath, policy: foreignPath, stdout: () => {} })
+      ).to.throw(/not a verifyhash dataset policy/);
+
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "report", manifestPath, "--policy", foreignPath])).to.equal(1);
+        expect(await main(["dataset", "report", manifestPath, "--policy", "/no/such/policy.json"])).to.equal(1);
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    it("parseDatasetReportArgs parses --policy and rejects an incomplete flag", function () {
+      expect(parseDatasetReportArgs(["/m", "--policy", "/p"])).to.deep.equal({
+        manifest: "/m",
+        verifyDir: undefined,
+        policy: "/p",
+        out: undefined,
+        json: false,
+      });
+      expect(parseDatasetReportArgs(["/m", "--verify", "/d", "--policy", "/p", "--out", "/o", "--json"])).to.deep.equal({
+        manifest: "/m",
+        verifyDir: "/d",
+        policy: "/p",
+        out: "/o",
+        json: true,
+      });
+      expect(() => parseDatasetReportArgs(["/m", "--policy"])).to.throw(/--policy requires a value/);
     });
   });
 });

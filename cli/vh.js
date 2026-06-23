@@ -9,12 +9,13 @@
 //   vh anchor <path> [opts]    Submit a file/dir's content hash on-chain via anchor().
 //   vh verify <path> [opts]    Recompute a file/dir's hash, read it back from the registry, and
 //                              report MATCH / MISMATCH (a one-byte edit flips it to MISMATCH).
-//
-// Other commands (prove) are defined by later backlog tasks.
+//   vh prove <file> [opts]     Prove a single file belongs to an anchored repo root: build its
+//                              Merkle proof and have the on-chain verifyLeaf accept/reject it.
 
 const { hashPath } = require("./hash");
 const { runAnchor } = require("./anchor");
 const { runVerify } = require("./verify");
+const { runProve } = require("./prove");
 
 function usage() {
   return [
@@ -24,6 +25,7 @@ function usage() {
     "  vh hash <path>             keccak256 of a file, or sorted-leaf Merkle root of a directory",
     "  vh anchor <path> [opts]    anchor a file/dir's content hash on-chain",
     "  vh verify <path> [opts]    recompute the hash, read the registry, print MATCH / MISMATCH",
+    "  vh prove <file> [opts]     Merkle-prove a file against an anchored repo root via verifyLeaf",
     "",
     "anchor options:",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
@@ -35,6 +37,14 @@ function usage() {
     "verify options:",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "",
+    "prove options:",
+    "  --root <dir>               the repo root directory whose Merkle root <file> is proven against",
+    "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --anchor                   anchor the repo root first (needs PRIVATE_KEY), then prove",
+    "  --i-understand-mainnet     allow --anchor on a non-testnet chainId (DANGER: real funds)",
+    "  --dry-run                  build & print the proof only; needs no key and no network",
     "",
   ].join("\n");
 }
@@ -244,6 +254,128 @@ async function cmdVerify(argv) {
   return result.status === "MATCH" ? 0 : 3;
 }
 
+/**
+ * Parse `prove` argv into { file, root, contract, rpc, anchor, iUnderstandMainnet, dryRun }.
+ * Throws on unknown/incomplete flags so a typo is never silently ignored.
+ */
+function parseProveArgs(argv) {
+  const opts = {
+    file: undefined,
+    root: undefined,
+    contract: undefined,
+    rpc: undefined,
+    anchor: false,
+    iUnderstandMainnet: false,
+    dryRun: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--dry-run":
+        opts.dryRun = true;
+        break;
+      case "--anchor":
+        opts.anchor = true;
+        break;
+      case "--i-understand-mainnet":
+        opts.iUnderstandMainnet = true;
+        break;
+      case "--root":
+        opts.root = argv[++i];
+        if (opts.root === undefined) throw new Error("--root requires a value");
+        break;
+      case "--contract":
+        opts.contract = argv[++i];
+        if (opts.contract === undefined) throw new Error("--contract requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.file !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.file = a;
+    }
+  }
+  return opts;
+}
+
+async function cmdProve(argv) {
+  let opts;
+  try {
+    opts = parseProveArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.file) {
+    process.stderr.write("error: `vh prove` requires a <file>\n\n" + usage());
+    return 2;
+  }
+  if (!opts.root) {
+    process.stderr.write("error: `vh prove` requires --root <dir> (the repo root)\n\n" + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+
+  // Dry run: only builds & prints the proof. No key, no network — must work entirely offline.
+  if (opts.dryRun) {
+    try {
+      await runProve({ file: opts.file, rootDir: opts.root, dryRun: true, ethers });
+    } catch (e) {
+      process.stderr.write(`error: ${e.message}\n`);
+      return 1;
+    }
+    return 0;
+  }
+
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL " +
+        "(or use --dry-run to build the proof without a network)\n"
+    );
+    return 1;
+  }
+
+  let result;
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    // Only the --anchor path needs to sign; verifying a proof is read-only.
+    let signer;
+    if (opts.anchor) {
+      const pk = process.env.PRIVATE_KEY;
+      if (!pk) {
+        process.stderr.write(
+          "error: --anchor needs a PRIVATE_KEY in the environment to submit the root\n"
+        );
+        return 1;
+      }
+      signer = new ethers.Wallet(pk, provider);
+    }
+    result = await runProve({
+      file: opts.file,
+      rootDir: opts.root,
+      contractAddress,
+      provider,
+      signer,
+      anchorFirst: opts.anchor,
+      iUnderstandMainnet: opts.iUnderstandMainnet,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero when the on-chain verifyLeaf rejects the proof (tampered / not in the snapshot),
+  // so scripts and CI can branch on it.
+  return result.accepted ? 0 : 3;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -253,6 +385,8 @@ async function main(argv) {
       return cmdAnchor(rest);
     case "verify":
       return cmdVerify(rest);
+    case "prove":
+      return cmdProve(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -274,7 +408,9 @@ module.exports = {
   cmdHash,
   cmdAnchor,
   cmdVerify,
+  cmdProve,
   parseAnchorArgs,
   parseVerifyArgs,
+  parseProveArgs,
   usage,
 };

@@ -80,9 +80,18 @@ function listFiles(dirPath) {
 /**
  * Build a sorted-leaf Merkle tree and return its layers (bottom-up).
  * Leaves are sorted ascending by their 32-byte value so the tree — and thus the root —
- * is independent of input order. Odd nodes are promoted unchanged to the next level,
- * the same carry rule used by the contract test's reference tree and by verifyLeaf's
- * proof shape.
+ * is independent of input order.
+ *
+ * Odd nodes are paired with *themselves* (`hashPair(node, node)`) rather than promoted
+ * unchanged to the next level. This is the OpenZeppelin / merkletreejs "duplicate the
+ * lone node" convention. Promoting a node unchanged (the old carry rule) makes that node
+ * its own ancestor, so its Merkle proof skips a level and can collapse to a single sibling
+ * (or none) — a degenerate, shorter-than-the-tree proof. Hashing the lone node against
+ * itself gives every leaf a genuine sibling at each level, so a depth-d tree yields a
+ * depth-d proof for *all* leaves. Crucially this stays compatible with the contract's
+ * `verifyLeaf`: the duplicated sibling is just the node's own value, and the fold
+ * `keccak256(min(x,x) ++ max(x,x)) == keccak256(x ++ x)` is exactly what verifyLeaf
+ * computes when it folds `computed == x` with the proof element `x`.
  * @param {string[]} leaves array of 0x bytes32
  * @returns {{ root: string, layers: string[][], sortedLeaves: string[] }}
  */
@@ -101,7 +110,9 @@ function buildTree(leaves) {
   while (layer.length > 1) {
     const next = [];
     for (let i = 0; i < layer.length; i += 2) {
-      next.push(i + 1 < layer.length ? hashPair(layer[i], layer[i + 1]) : layer[i]);
+      // Pair (i, i+1); if i is the lone last (odd) node, pair it with itself.
+      const right = i + 1 < layer.length ? layer[i + 1] : layer[i];
+      next.push(hashPair(layer[i], right));
     }
     layer = next;
     layers.push(layer);
@@ -113,6 +124,11 @@ function buildTree(leaves) {
  * Generate a Merkle proof for the leaf at `index` within `layers` (as produced by
  * buildTree). The proof is the sequence of sibling hashes from leaf to root; replaying
  * it with sorted-pair hashing reproduces the root — i.e. it is accepted by verifyLeaf.
+ *
+ * Mirrors buildTree's "duplicate the lone node" rule: when a node is the last in an
+ * odd-length level it has no real neighbor, so its sibling is its own value (the parent
+ * was `hashPair(node, node)`). We therefore push `lvl[idx]` itself in that case, giving a
+ * full-depth proof for every leaf rather than skipping the level.
  * @param {string[][]} layers
  * @param {number} index index into the *sorted* leaf layer
  * @returns {string[]} proof (array of 0x bytes32)
@@ -123,7 +139,9 @@ function proofForIndex(layers, index) {
   for (let l = 0; l < layers.length - 1; l++) {
     const lvl = layers[l];
     const sibling = idx ^ 1;
-    if (sibling < lvl.length) proof.push(lvl[sibling]);
+    // In-range sibling -> push it. Otherwise this is a lone odd node whose sibling is
+    // itself (buildTree paired it with itself), so push its own value.
+    proof.push(sibling < lvl.length ? lvl[sibling] : lvl[idx]);
     idx = Math.floor(idx / 2);
   }
   return proof;

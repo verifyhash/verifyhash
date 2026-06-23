@@ -13,6 +13,7 @@ const {
   readReceipt,
   diffManifest,
   defaultReceiptPath,
+  _normGit,
 } = require("../cli/receipt");
 
 // ---------------------------------------------------------------------------
@@ -299,6 +300,155 @@ describe("cli/receipt: v2 manifest + anchor receipts (additive, back-compatible)
   it("rejects an anchor receipt missing its contentHash / contractAddress", function () {
     expect(() => buildAnchorReceipt({ contractAddress: CONTRACT, chainId: 1 })).to.throw(/contentHash/);
     expect(() => buildAnchorReceipt({ contentHash: HASH, chainId: 1 })).to.throw(/contractAddress/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Schema v3: the optional, additive `git` provenance block { commit, scope }
+// (T-8.2). Carries the resolved commit oid + repo-relative scope used to
+// enumerate the tracked files for a `--git` anchor/claim. An UNTRUSTED hint —
+// validated for SHAPE only, never elevated to the authoritative verdict. The
+// reader still accepts all prior versions (v1/v2 receipts have no git block).
+// ---------------------------------------------------------------------------
+describe("cli/receipt: v3 git provenance block (additive, back-compatible)", function () {
+  const OID = "099438f796ab23b0f64805f1aca3da64e3b504bb"; // a real 40-hex commit oid
+  const GIT = { commit: OID, scope: "." };
+
+  const LEAF_A = "0x" + "a1".repeat(32);
+  const CH_A = "0x" + "01".repeat(32);
+  function manifest() {
+    return [{ path: "src/a.js", contentHash: CH_A, leaf: LEAF_A }];
+  }
+
+  it("SCHEMA_VERSION is at least 3 (the git-block schema bump)", function () {
+    expect(SCHEMA_VERSION).to.be.at.least(3);
+  });
+
+  it("buildAnchorReceipt records a git block (commit + scope) at schemaVersion >= 3", function () {
+    const r = buildAnchorReceipt({
+      contentHash: HASH,
+      contractAddress: CONTRACT,
+      chainId: 31337,
+      kind: "dir",
+      manifest: manifest(),
+      git: GIT,
+    });
+    expect(r.schemaVersion).to.be.at.least(3);
+    expect(r.git).to.deep.equal(GIT);
+  });
+
+  it("buildReceipt (claim) records a git block too", function () {
+    const r = buildReceipt(goodParts({ git: GIT, kind: "dir", manifest: manifest() }));
+    expect(r.git).to.deep.equal(GIT);
+  });
+
+  it("normalizes git.commit to lowercase and keeps a nested subdir scope verbatim", function () {
+    const mixed = { commit: OID.toUpperCase(), scope: "packages/core" };
+    const r = buildAnchorReceipt({
+      contentHash: HASH,
+      contractAddress: CONTRACT,
+      chainId: 31337,
+      git: mixed,
+    });
+    expect(r.git.commit).to.equal(OID); // lowercased
+    expect(r.git.scope).to.equal("packages/core");
+  });
+
+  it("write/read round-trips a receipt WITH a git block (the new field survives disk)", function () {
+    const p = path.join(tmp(), "git.vhclaim.json");
+    const written = writeReceipt(
+      buildAnchorReceipt({
+        contentHash: HASH,
+        contractAddress: CONTRACT,
+        chainId: 31337,
+        kind: "dir",
+        manifest: manifest(),
+        git: GIT,
+      }),
+      p
+    );
+    const read = readReceipt(p);
+    expect(read).to.deep.equal(written);
+    expect(read.git).to.deep.equal(GIT);
+    // The git block is literally on disk as { commit, scope }.
+    const onDisk = JSON.parse(fs.readFileSync(p, "utf8"));
+    expect(onDisk.git).to.deep.equal(GIT);
+  });
+
+  it("READER ACCEPTS PRIOR VERSIONS: a v2 receipt (manifest, NO git block) still validates", function () {
+    // A genuine v2 receipt: has a manifest, no git block.
+    const v2 = buildAnchorReceipt({
+      contentHash: HASH,
+      contractAddress: CONTRACT,
+      chainId: 31337,
+      kind: "dir",
+      manifest: manifest(),
+    });
+    v2.schemaVersion = 2;
+    expect(v2).to.not.have.property("git");
+    const p = path.join(tmp(), "v2-nogit.vhclaim.json");
+    fs.writeFileSync(p, JSON.stringify(v2));
+    const read = readReceipt(p);
+    expect(read.schemaVersion).to.equal(2);
+    expect(read).to.not.have.property("git");
+  });
+
+  it("READER ACCEPTS PRIOR VERSIONS: a v1 receipt (no manifest, no git block) still validates", function () {
+    const v1 = buildReceipt(goodParts());
+    v1.schemaVersion = 1;
+    delete v1.manifest;
+    delete v1.git;
+    const p = path.join(tmp(), "v1-nogit.vhclaim.json");
+    fs.writeFileSync(p, JSON.stringify(v1));
+    const read = readReceipt(p);
+    expect(read.schemaVersion).to.equal(1);
+    expect(read).to.not.have.property("git");
+  });
+
+  it("rejects a v2 receipt that smuggles in a git block (version must not lie)", function () {
+    const r = buildAnchorReceipt({
+      contentHash: HASH,
+      contractAddress: CONTRACT,
+      chainId: 31337,
+      git: GIT,
+    });
+    r.schemaVersion = 2; // claim v2 while carrying a v3-only field
+    const p = path.join(tmp(), "lying-git.vhclaim.json");
+    fs.writeFileSync(p, JSON.stringify(r));
+    expect(() => readReceipt(p)).to.throw(/git block requires schemaVersion/);
+  });
+
+  it("rejects a malformed git.commit (not a 40-hex oid)", function () {
+    expect(() => buildAnchorReceipt({
+      contentHash: HASH,
+      contractAddress: CONTRACT,
+      chainId: 31337,
+      git: { commit: "deadbeef", scope: "." }, // too short
+    })).to.throw(/git\.commit/);
+    // A 0x-prefixed value is also rejected (the block records the BARE git oid).
+    expect(() => _normGit({ commit: "0x" + "a".repeat(40), scope: "." })).to.throw(/git\.commit/);
+  });
+
+  it("rejects a missing / empty git.scope", function () {
+    expect(() => _normGit({ commit: OID })).to.throw(/git\.scope/);
+    expect(() => _normGit({ commit: OID, scope: "" })).to.throw(/git\.scope/);
+  });
+
+  it("rejects a non-object git block", function () {
+    expect(() => _normGit("not-an-object")).to.throw(/git block/);
+    expect(() => _normGit([OID, "."])).to.throw(/git block/);
+  });
+
+  it("a receipt that fails git-block validation never lands on disk (validate-before-write)", function () {
+    const p = path.join(tmp(), "never-git.json");
+    const bad = buildAnchorReceipt({
+      contentHash: HASH,
+      contractAddress: CONTRACT,
+      chainId: 31337,
+    });
+    bad.git = { commit: "nope", scope: "." }; // corrupt after build
+    expect(() => writeReceipt(bad, p)).to.throw(/git\.commit/);
+    expect(fs.existsSync(p)).to.equal(false);
   });
 });
 

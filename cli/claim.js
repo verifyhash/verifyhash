@@ -23,7 +23,7 @@
 // orchestration runner (runClaim) so the end-to-end test can drive both legs against a live hardhat
 // node and prove a front-runner cannot steal the attribution.
 
-const { hashPath } = require("./hash");
+const { hashPath, hashGit } = require("./hash");
 const {
   buildReceipt,
   writeReceipt,
@@ -39,17 +39,39 @@ const ABI = ARTIFACT.abi;
  * a file claims its keccak256 digest, a directory its sorted-leaf Merkle root. For a directory the
  * per-file manifest (sorted `{ path, contentHash, leaf }`) is returned too, so the claim/commit
  * receipt records it (letting a later `vh verify --receipt` localize a tamper).
+ *
+ * With `opts.git`, the root and manifest are computed over EXACTLY the files git tracks at `opts.ref`
+ * (default HEAD) — the same reproducible `vh hash --git` enumeration (T-8.1) — and a `git` provenance
+ * block `{ commit, scope }` is returned so the claim/commit receipt records the resolved commit oid
+ * and the repo-relative scope used to enumerate the tracked set (an UNTRUSTED convenience hint).
+ *
  * @param {string} targetPath
+ * @param {{ git?: boolean, ref?: string }} [opts]
  * @returns {{ contentHash: string, kind: "file"|"dir",
- *            manifest: Array<{path:string,contentHash:string,leaf:string}>|null }}
+ *            manifest: Array<{path:string,contentHash:string,leaf:string}>|null,
+ *            git: {commit:string,scope:string}|null }}
  */
-function contentHashForPath(targetPath) {
+function contentHashForPath(targetPath, opts = {}) {
+  if (opts.git) {
+    const res = hashGit(targetPath, { ref: opts.ref });
+    const manifest = res.leaves.map((l) => ({
+      path: l.path,
+      contentHash: l.contentHash,
+      leaf: l.leaf,
+    }));
+    return {
+      contentHash: res.root,
+      kind: "dir",
+      manifest,
+      git: { commit: res.commit, scope: res.scope },
+    };
+  }
   const res = hashPath(targetPath);
   const manifest =
     res.kind === "dir" && Array.isArray(res.leaves)
       ? res.leaves.map((l) => ({ path: l.path, contentHash: l.contentHash, leaf: l.leaf }))
       : null;
-  return { contentHash: res.root, kind: res.kind, manifest };
+  return { contentHash: res.root, kind: res.kind, manifest, git: null };
 }
 
 /**
@@ -114,12 +136,15 @@ function _resolveContext(opts) {
  * @param {object} opts
  * @param {string}  opts.path             file/dir to claim
  * @param {string}  opts.committer        address that will commit & reveal
+ * @param {boolean}[opts.git]             hash EXACTLY the git-tracked files (T-8.1 enumeration)
+ * @param {string} [opts.ref]             with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress  ContributionRegistry address (tx `to`)
  * @param {string} [opts.salt]            reuse a salt (else a fresh random one is generated)
  * @param {object} [opts.ethers]          ethers v6 module
  * @returns {{
  *   to: string, data: string, value: string, functionName: "commit",
  *   contentHash: string, kind: "file"|"dir", path: string,
+ *   manifest: Array|null, git: {commit:string,scope:string}|null,
  *   committer: string, salt: string, commitment: string
  * }}
  */
@@ -131,7 +156,10 @@ function buildCommitTx(opts) {
     throw new Error(`claim requires a valid committer address, got: ${committer}`);
   }
 
-  const { contentHash, kind, manifest } = contentHashForPath(targetPath);
+  const { contentHash, kind, manifest, git } = contentHashForPath(targetPath, {
+    git: opts.git,
+    ref: opts.ref,
+  });
   if (/^0x0{64}$/i.test(contentHash)) {
     throw new Error("refusing to claim the zero hash (contract rejects it)");
   }
@@ -157,6 +185,7 @@ function buildCommitTx(opts) {
     kind,
     path: targetPath,
     manifest, // per-file manifest for a dir target (null for a file); recorded into the receipt
+    git, // { commit, scope } when --git was used; null otherwise. Recorded into the receipt.
     committer: committerAddr,
     salt,
     commitment,
@@ -198,7 +227,7 @@ function buildRevealTx(opts) {
 
 /** Render the commit/reveal plan a `--dry-run` claim prints (no key, no network). */
 function formatDryRun(commitTx) {
-  return [
+  const lines = [
     "DRY RUN — no transaction will be sent (commit-reveal attribution).",
     "",
     `  path:         ${commitTx.path}  (${commitTx.kind})`,
@@ -206,6 +235,14 @@ function formatDryRun(commitTx) {
     `  committer:    ${commitTx.committer}`,
     `  salt:         ${commitTx.salt}   <-- SECRET: keep this to reveal later`,
     `  commitment:   ${commitTx.commitment}`,
+  ];
+  if (commitTx.git) {
+    lines.push(
+      `  git commit:   ${commitTx.git.commit}  (untrusted provenance hint)`,
+      `  git scope:    ${commitTx.git.scope}`
+    );
+  }
+  lines.push(
     "",
     "  Step 1 — commit() that WOULD be sent:",
     `    to:    ${commitTx.to}`,
@@ -215,8 +252,9 @@ function formatDryRun(commitTx) {
     "  Step 2 — after MIN_REVEAL_DELAY blocks, reveal(contentHash, salt, uri) is sent.",
     "  A mempool copier who lifts your reveal cannot win: their commitment (bound to THEIR",
     "  address) was never registered, so their reveal reverts. Attribution stays yours.",
-    "",
-  ].join("\n");
+    ""
+  );
+  return lines.join("\n");
 }
 
 /**
@@ -302,6 +340,8 @@ function _parseRevealed(receipt, ethersLib) {
  * @param {object} opts
  * @param {string}  opts.path
  * @param {string} [opts.uri]
+ * @param {boolean}[opts.git]               hash EXACTLY the git-tracked files (T-8.1 enumeration)
+ * @param {string} [opts.ref]               with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress
  * @param {string} [opts.receiptPath]       where to write the receipt (default ./<prefix>.vhclaim.json)
  * @param {boolean}[opts.iUnderstandMainnet]
@@ -327,6 +367,8 @@ async function runCommit(opts) {
   const commitTx = buildCommitTx({
     path: opts.path,
     committer,
+    git: opts.git,
+    ref: opts.ref,
     contractAddress: opts.contractAddress,
     salt: opts.salt,
     ethers: ethersLib,
@@ -362,6 +404,7 @@ async function runCommit(opts) {
     path: commitTx.path,
     kind: commitTx.kind,
     manifest: commitTx.manifest || undefined,
+    git: commitTx.git || undefined, // untrusted provenance hint: { commit, scope } when --git
     commitTxHash: commitReceiptTx.hash,
     commitBlockNumber: commitBlock,
     minRevealDelay: minDelay,
@@ -482,6 +525,8 @@ async function runReveal(opts) {
  * @param {object} opts
  * @param {string}  opts.path
  * @param {string} [opts.uri]
+ * @param {boolean}[opts.git]               hash EXACTLY the git-tracked files (T-8.1 enumeration)
+ * @param {string} [opts.ref]               with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress
  * @param {boolean}[opts.dryRun]
  * @param {boolean}[opts.iUnderstandMainnet]
@@ -510,6 +555,8 @@ async function runClaim(opts) {
   const commitTx = buildCommitTx({
     path: opts.path,
     committer,
+    git: opts.git,
+    ref: opts.ref,
     contractAddress: opts.contractAddress,
     salt: opts.salt,
     ethers: ethersLib,
@@ -566,6 +613,7 @@ async function runClaim(opts) {
       path: commitTx.path,
       kind: commitTx.kind,
       manifest: commitTx.manifest || undefined,
+      git: commitTx.git || undefined, // untrusted provenance hint: { commit, scope } when --git
       commitTxHash: commitReceipt.hash,
       commitBlockNumber: commitBlock,
       minRevealDelay: minDelay,

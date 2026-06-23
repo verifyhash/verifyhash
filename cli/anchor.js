@@ -17,7 +17,7 @@
 // This module is split into small, side-effect-free pieces (buildAnchorTx, chainId guard) so the
 // integration test can drive it against a local hardhat node and assert the on-chain Anchored event.
 
-const { hashPath } = require("./hash");
+const { hashPath, hashGit } = require("./hash");
 const { buildAnchorReceipt, writeReceipt } = require("./receipt");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
@@ -47,17 +47,43 @@ function isTestnetChainId(chainId) {
  * directory the per-file MANIFEST (sorted `{ path, contentHash, leaf }` — exactly what `vh hash <dir>`
  * produces) is also returned so an anchor receipt can record it and a later `vh verify --receipt`
  * can localize which file diverged.
+ *
+ * With `opts.git`, the root and manifest are computed over EXACTLY the files git tracks at `opts.ref`
+ * (default HEAD) — the same reproducible, untracked-junk-ignoring enumeration as `vh hash --git`
+ * (T-8.1) — and a `git` provenance block `{ commit, scope }` is returned so the receipt can record
+ * the resolved commit oid and the repo-relative scope used to enumerate the tracked set. That block
+ * is an UNTRUSTED convenience hint (docs/TRUST-BOUNDARIES); the anchored contentHash is unchanged
+ * whether it was derived by the filesystem walk or the git walk for the same tracked content.
+ *
  * @param {string} targetPath
+ * @param {{ git?: boolean, ref?: string }} [opts]
  * @returns {{ contentHash: string, kind: "file"|"dir",
- *            manifest: Array<{path:string,contentHash:string,leaf:string}>|null }}
+ *            manifest: Array<{path:string,contentHash:string,leaf:string}>|null,
+ *            git: {commit:string,scope:string}|null }}
  */
-function contentHashForPath(targetPath) {
+function contentHashForPath(targetPath, opts = {}) {
+  if (opts.git) {
+    // git-scoped: a directory root over the tracked set, with provenance. (--git always means a dir
+    // root; hashGit errors clearly on a non-git dir / unknown ref / zero tracked files.)
+    const res = hashGit(targetPath, { ref: opts.ref });
+    const manifest = res.leaves.map((l) => ({
+      path: l.path,
+      contentHash: l.contentHash,
+      leaf: l.leaf,
+    }));
+    return {
+      contentHash: res.root,
+      kind: "dir",
+      manifest,
+      git: { commit: res.commit, scope: res.scope },
+    };
+  }
   const res = hashPath(targetPath);
   const manifest =
     res.kind === "dir" && Array.isArray(res.leaves)
       ? res.leaves.map((l) => ({ path: l.path, contentHash: l.contentHash, leaf: l.leaf }))
       : null;
-  return { contentHash: res.root, kind: res.kind, manifest };
+  return { contentHash: res.root, kind: res.kind, manifest, git: null };
 }
 
 /**
@@ -68,11 +94,14 @@ function contentHashForPath(targetPath) {
  * @param {object} opts
  * @param {string} opts.path             path to a file or directory to hash & anchor
  * @param {string} [opts.uri]            optional off-chain pointer stored alongside the hash
+ * @param {boolean}[opts.git]            hash EXACTLY the git-tracked files (ignores untracked junk)
+ * @param {string} [opts.ref]            with git: which commit's tracked set to hash (default HEAD)
  * @param {string} opts.contractAddress  deployed ContributionRegistry address (the tx `to`)
  * @param {object} [opts.ethers]         an ethers v6 module (defaults to the one bundled here)
  * @returns {{
  *   to: string, data: string, value: string,
  *   contentHash: string, uri: string, kind: "file"|"dir", path: string,
+ *   manifest: Array|null, git: {commit:string,scope:string}|null,
  *   functionName: "anchor"
  * }}
  */
@@ -91,7 +120,10 @@ function buildAnchorTx(opts) {
     throw new Error(`invalid contract address: ${contractAddress}`);
   }
 
-  const { contentHash, kind, manifest } = contentHashForPath(targetPath);
+  const { contentHash, kind, manifest, git } = contentHashForPath(targetPath, {
+    git: opts.git,
+    ref: opts.ref,
+  });
   // The contract reverts on a zero hash; catch it here with a clearer message before we ever
   // try to build/send a doomed transaction.
   if (/^0x0{64}$/i.test(contentHash)) {
@@ -110,6 +142,7 @@ function buildAnchorTx(opts) {
     kind,
     path: targetPath,
     manifest, // per-file manifest for a dir (null for a file); recorded into a --receipt
+    git, // { commit, scope } when --git was used; null otherwise. Recorded into a --receipt.
     functionName: "anchor",
   };
 }
@@ -122,12 +155,21 @@ function formatDryRun(tx, chainId) {
     `  path:         ${tx.path}  (${tx.kind})`,
     `  contentHash:  ${tx.contentHash}`,
     `  uri:          ${tx.uri === "" ? "(none)" : tx.uri}`,
-    "",
+  ];
+  if (tx.git) {
+    // Provenance is an untrusted convenience hint — say so, so it is never mistaken for the verdict.
+    lines.push(
+      `  git commit:   ${tx.git.commit}  (untrusted provenance hint)`,
+      `  git scope:    ${tx.git.scope}`
+    );
+  }
+  lines.push("");
+  lines.push(
     "  Transaction that WOULD be sent:",
     `    to:    ${tx.to}`,
     `    value: ${tx.value}`,
-    `    data:  ${tx.data}`,
-  ];
+    `    data:  ${tx.data}`
+  );
   if (chainId != null) lines.push(`    chainId: ${BigInt(chainId).toString()}`);
   lines.push("");
   return lines.join("\n");
@@ -143,6 +185,8 @@ function formatDryRun(tx, chainId) {
  * @param {object} opts
  * @param {string}  opts.path
  * @param {string} [opts.uri]
+ * @param {boolean}[opts.git]                   hash EXACTLY the git-tracked files (T-8.1 enumeration)
+ * @param {string} [opts.ref]                   with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress
  * @param {boolean}[opts.dryRun]
  * @param {boolean}[opts.iUnderstandMainnet]   bypass the non-testnet chainId refusal
@@ -162,6 +206,8 @@ async function runAnchor(opts) {
   const tx = buildAnchorTx({
     path: opts.path,
     uri: opts.uri,
+    git: opts.git,
+    ref: opts.ref,
     contractAddress: opts.contractAddress,
     ethers: ethersLib,
   });
@@ -187,6 +233,7 @@ async function runAnchor(opts) {
       path: tx.path,
       kind: tx.kind,
       manifest: tx.manifest || undefined,
+      git: tx.git || undefined, // untrusted provenance hint: { commit, scope } when --git was used
       ...extra,
     });
     writeReceipt(receipt, opts.receiptPath);

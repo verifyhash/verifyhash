@@ -43,6 +43,9 @@ function usage() {
     "",
     "anchor options (one-shot; contributor = 'first anchorer', NOT proven authorship):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
+    "  --git                      anchor EXACTLY the files git tracks (ignores untracked junk); records",
+    "                             a `git` provenance hint (commit oid + scope) in the receipt",
+    "  --ref <ref>                with --git: which commit's tracked set to anchor (default HEAD)",
     "  --receipt <path>           write an anchor receipt here (records a dir's per-file manifest",
     "                             so `vh verify <dir> --receipt <p>` can localize WHICH file changed)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
@@ -52,6 +55,8 @@ function usage() {
     "",
     "claim options (commit-reveal; contributor = proven first claimant, authorBound = true):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
+    "  --git                      claim EXACTLY the files git tracks (records a `git` provenance hint)",
+    "  --ref <ref>                with --git: which commit's tracked set to claim (default HEAD)",
     "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
     "  --receipt <path>           where to write the claim receipt (default ./<hashPrefix>.vhclaim.json)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
@@ -61,6 +66,8 @@ function usage() {
     "",
     "commit options (step 1 of a resumable claim; writes a receipt, then commits):",
     "  --uri <uri>                pointer recorded at reveal time (kept in the receipt until then)",
+    "  --git                      commit EXACTLY the files git tracks (records a `git` provenance hint)",
+    "  --ref <ref>                with --git: which commit's tracked set to commit (default HEAD)",
     "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
     "  --receipt <path>           where to write the claim receipt (default ./<hashPrefix>.vhclaim.json)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
@@ -73,6 +80,9 @@ function usage() {
     "  --i-understand-mainnet     allow revealing on a non-testnet chainId (DANGER: real funds)",
     "",
     "verify options:",
+    "  --git                      recompute the root over EXACTLY the files git tracks (ignores",
+    "                             untracked junk); reproducible end-to-end against a fresh checkout",
+    "  --ref <ref>                with --git: which commit's tracked set to verify (default HEAD)",
     "  --receipt <path>           UNTRUSTED hint: diff a dir against this receipt's manifest and print",
     "                             ADDED/REMOVED/CHANGED per file (verdict still = root vs on-chain)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
@@ -205,6 +215,8 @@ function parseAnchorArgs(argv) {
     receipt: undefined,
     contract: undefined,
     rpc: undefined,
+    git: false,
+    ref: undefined,
     dryRun: false,
     iUnderstandMainnet: false,
   };
@@ -216,6 +228,13 @@ function parseAnchorArgs(argv) {
         break;
       case "--i-understand-mainnet":
         opts.iUnderstandMainnet = true;
+        break;
+      case "--git":
+        opts.git = true;
+        break;
+      case "--ref":
+        opts.ref = argv[++i];
+        if (opts.ref === undefined) throw new Error("--ref requires a value");
         break;
       case "--uri":
         opts.uri = argv[++i];
@@ -238,6 +257,10 @@ function parseAnchorArgs(argv) {
         if (opts.path !== undefined) throw new Error(`unexpected extra argument: ${a}`);
         opts.path = a;
     }
+  }
+  // --ref is meaningful only when scoping to git-tracked files (parser parity with `vh hash`).
+  if (opts.ref !== undefined && !opts.git) {
+    throw new Error("--ref requires --git (it selects which commit's tracked files to anchor)");
   }
   return opts;
 }
@@ -264,6 +287,8 @@ async function cmdAnchor(argv) {
       await runAnchor({
         path: opts.path,
         uri: opts.uri,
+        git: opts.git,
+        ref: opts.ref,
         contractAddress,
         receiptPath: opts.receipt,
         dryRun: true,
@@ -299,6 +324,8 @@ async function cmdAnchor(argv) {
     await runAnchor({
       path: opts.path,
       uri: opts.uri,
+      git: opts.git,
+      ref: opts.ref,
       contractAddress,
       receiptPath: opts.receipt,
       iUnderstandMainnet: opts.iUnderstandMainnet,
@@ -326,6 +353,8 @@ function parseClaimArgs(argv) {
     receipt: undefined,
     contract: undefined,
     rpc: undefined,
+    git: false,
+    ref: undefined,
     dryRun: false,
     iUnderstandMainnet: false,
   };
@@ -337,6 +366,13 @@ function parseClaimArgs(argv) {
         break;
       case "--i-understand-mainnet":
         opts.iUnderstandMainnet = true;
+        break;
+      case "--git":
+        opts.git = true;
+        break;
+      case "--ref":
+        opts.ref = argv[++i];
+        if (opts.ref === undefined) throw new Error("--ref requires a value");
         break;
       case "--uri":
         opts.uri = argv[++i];
@@ -363,6 +399,10 @@ function parseClaimArgs(argv) {
         if (opts.path !== undefined) throw new Error(`unexpected extra argument: ${a}`);
         opts.path = a;
     }
+  }
+  // --ref is meaningful only when scoping to git-tracked files (parser parity with `vh hash`).
+  if (opts.ref !== undefined && !opts.git) {
+    throw new Error("--ref requires --git (it selects which commit's tracked files to claim)");
   }
   return opts;
 }
@@ -419,6 +459,8 @@ async function cmdClaim(argv) {
         path: opts.path,
         uri: opts.uri,
         salt: opts.salt,
+        git: opts.git,
+        ref: opts.ref,
         committer: process.env.VH_COMMITTER,
         contractAddress,
         dryRun: true,
@@ -455,6 +497,8 @@ async function cmdClaim(argv) {
       path: opts.path,
       uri: opts.uri,
       salt: opts.salt,
+      git: opts.git,
+      ref: opts.ref,
       receiptPath: opts.receipt,
       contractAddress,
       iUnderstandMainnet: opts.iUnderstandMainnet,
@@ -514,6 +558,8 @@ async function cmdCommit(argv) {
       path: opts.path,
       uri: opts.uri,
       salt: opts.salt,
+      git: opts.git,
+      ref: opts.ref,
       receiptPath: opts.receipt,
       contractAddress,
       iUnderstandMainnet: opts.iUnderstandMainnet,
@@ -579,10 +625,24 @@ async function cmdReveal(argv) {
  * Throws on unknown/incomplete flags so a typo is never silently ignored.
  */
 function parseVerifyArgs(argv) {
-  const opts = { path: undefined, contract: undefined, rpc: undefined, receipt: undefined };
+  const opts = {
+    path: undefined,
+    contract: undefined,
+    rpc: undefined,
+    receipt: undefined,
+    git: false,
+    ref: undefined,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
+      case "--git":
+        opts.git = true;
+        break;
+      case "--ref":
+        opts.ref = argv[++i];
+        if (opts.ref === undefined) throw new Error("--ref requires a value");
+        break;
       case "--receipt":
         opts.receipt = argv[++i];
         if (opts.receipt === undefined) throw new Error("--receipt requires a value");
@@ -600,6 +660,10 @@ function parseVerifyArgs(argv) {
         if (opts.path !== undefined) throw new Error(`unexpected extra argument: ${a}`);
         opts.path = a;
     }
+  }
+  // --ref is meaningful only when scoping to git-tracked files (parser parity with `vh hash`).
+  if (opts.ref !== undefined && !opts.git) {
+    throw new Error("--ref requires --git (it selects which commit's tracked files to verify)");
   }
   return opts;
 }
@@ -632,6 +696,8 @@ async function cmdVerify(argv) {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     result = await runVerify({
       path: opts.path,
+      git: opts.git,
+      ref: opts.ref,
       contractAddress,
       receiptPath: opts.receipt,
       provider,

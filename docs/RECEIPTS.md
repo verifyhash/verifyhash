@@ -34,14 +34,15 @@ never silently half-accepted.
 | Field | Type | Required | Trust | Meaning |
 |-------|------|----------|-------|---------|
 | `kind` | string | yes | structural | `"verifyhash.claim-receipt"` or `"verifyhash.anchor-receipt"`. A discriminator so a random JSON file is never mistaken for a receipt. |
-| `schemaVersion` | integer | yes | structural | On-disk schema version. This build **writes** `2` and **reads** `1` or `2`. Any other version is rejected, so a future/foreign file is never misread. |
+| `schemaVersion` | integer | yes | structural | On-disk schema version. This build **writes** `3` and **reads** `1`, `2`, or `3`. Any other version is rejected, so a future/foreign file is never misread. (`1` → base, `2` added the optional `manifest`, `3` added the optional `git` block — all additive.) |
 | `contentHash` | `0x`+64 hex (32 bytes) | yes | **trusted-as-target** | The digest being claimed/anchored: a file's `keccak256`, or a directory's Merkle **root** (see [`docs/MERKLE-LEAVES.md`](MERKLE-LEAVES.md)). This is the only thing the chain attests to; everything else is metadata. |
 | `contractAddress` | `0x`+40 hex (address) | yes | hint | The `ContributionRegistry` the receipt is about. Used to target the right contract on resume. |
 | `chainId` | non-negative integer | yes | hint | Chain the commit/anchor was sent to (e.g. `31337` local, `80002` Amoy). |
 | `uri` | string | yes (may be `""`) | **UNTRUSTED hint** | Off-chain pointer (IPFS CID, commit URL, …). The contract **never fetches, validates, or hashes it**; consumers must re-fetch + re-hash and compare to `contentHash`. Defaulted to `""`, never `undefined`. |
 | `path` | string | optional | informational | The source path that was hashed. For humans only. |
 | `targetKind` | `"file"` \| `"dir"` | optional | informational | Whether the target was a single file or a directory. |
-| `manifest` | array | optional (v2 only) | **UNTRUSTED hint** | Per-file breakdown of a directory target; see [Manifest](#the-manifest-directory-targets). A v1 receipt that carries a manifest is rejected (the version must not lie). |
+| `manifest` | array | optional (v2+) | **UNTRUSTED hint** | Per-file breakdown of a directory target; see [Manifest](#the-manifest-directory-targets). A v1 receipt that carries a manifest is rejected (the version must not lie). |
+| `git` | object | optional (v3+) | **UNTRUSTED hint** | Git provenance `{ commit, scope }` recorded by a `--git` anchor/claim; see [Git provenance](#the-git-provenance-block-git-scoped-targets). A v1/v2 receipt that carries a git block is rejected (the version must not lie). |
 
 ### Claim receipt — additional fields (`kind: "verifyhash.claim-receipt"`)
 
@@ -87,6 +88,26 @@ build the tree), so a written manifest is deterministic regardless of input enum
 the `leaf` binds the path, two files at different paths can never collide, and a leaf change with the
 same path is unambiguously a **content** change.
 
+### The git provenance block (`--git`-scoped targets)
+
+When a directory is anchored/claimed with **`--git`** (T-8.2), the root and `manifest` are computed over
+**exactly the files git tracks** at a commit — the same reproducible, untracked-junk-ignoring enumeration
+as `vh hash <dir> --git` (see [`docs/MERKLE-LEAVES.md`](MERKLE-LEAVES.md)). The receipt then records a
+`git` block (schemaVersion ≥ 3):
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `commit` | 40-hex (bare, no `0x`) | the resolved commit object id the tracked set was enumerated from (paste straight into `git show <oid>`) |
+| `scope` | non-empty string | the repo-relative POSIX path the operator pointed `vh` at (`"."` for the repo root) — *how* the tracked set was scoped |
+
+The `git` block is an **UNTRUSTED convenience hint**, consistent with
+[`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md): it records *how* a root was produced so a reader can
+reproduce the `--git --ref <oid>` enumeration, but the authoritative verdict is still the **recomputed
+root vs the on-chain record**. A receipt's `git.commit` is never re-checked against the chain — the chain
+attests only to `contentHash`. `vh verify <dir> --git [--ref <ref>]` re-derives the root over the tracked
+set at that ref and reports MATCH/MISMATCH; with `--receipt` it localizes ADDED/REMOVED/CHANGED over the
+tracked set. Untracked junk in the work tree never affects the verdict.
+
 ### Trust vs hints
 
 Summarizing the columns above, in the same spirit as the [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md)
@@ -99,6 +120,7 @@ one-liner table:
 | `commitment`, `committer` | knowing who can reveal and what was committed | proving authorship by themselves — that comes from the on-chain `Record.authorBound` |
 | `uri` | a human hint of where the content might be | anything security-relevant — re-fetch + re-hash |
 | `manifest` | **localizing** which file diverged (ADDED/REMOVED/CHANGED) | deciding MATCH/MISMATCH — the recomputed root vs the on-chain record decides that |
+| `git` (`{ commit, scope }`) | reproducing *how* a `--git` root was enumerated (which commit/scope) | proving the root — it is never re-checked against the chain; the chain attests only to `contentHash` |
 | `*TxHash`, `*BlockNumber`, `path`, `targetKind` | operational convenience (resume timing, display) | any security claim |
 
 ---

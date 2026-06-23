@@ -18,6 +18,8 @@
 // deterministically rather than going through git's default C-quoting of "unusual" path names.
 
 const { execFileSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 
 // A hard cap on git's stdout so a pathological repo can't exhaust memory; ls-tree of a normal repo is
 // far under this. Buffer overflow throws (ENOBUFS), which surfaces as a clear error to the caller.
@@ -151,6 +153,56 @@ function listTrackedFiles(dir, ref) {
   return paths;
 }
 
+/**
+ * Resolve the GIT PROVENANCE of a directory: the full commit oid at `ref`, and the repo-relative,
+ * POSIX-slashed "scope" — the path of `dir` relative to the repository top-level. The scope is "."
+ * when `dir` IS the repo root.
+ *
+ * This is the untrusted-convenience hint T-8.2 carries into anchor/claim receipts: it records WHICH
+ * commit produced a root and WHERE in the repo the operator pointed `vh`, so a later reader can
+ * reproduce the same `--git --ref <oid>` enumeration. It is purely descriptive — the authoritative
+ * verdict is still the recomputed root vs the on-chain record (docs/TRUST-BOUNDARIES.md). Note the
+ * current `--git` enumeration is whole-repo (`ls-tree --full-tree`), so the scope documents the
+ * operator's vantage point rather than narrowing the tracked set.
+ *
+ * @param {string} dir a directory inside the repo
+ * @param {string} [ref] the ref/commit to resolve (default "HEAD")
+ * @returns {{ commit: string, scope: string }} full 40-hex commit oid + repo-relative POSIX scope
+ */
+function gitProvenance(dir, ref) {
+  const root = repoRoot(dir); // errors clearly if `dir` is not in a git work tree
+  const commit = resolveCommit(dir, ref); // errors clearly on an unknown ref
+  const scope = repoRelativeScope(root, dir);
+  return { commit, scope };
+}
+
+/**
+ * Compute the repo-relative, POSIX-slashed path of `dir` under the repository top-level `root`.
+ * Returns "." when `dir` is the repo root itself. Both inputs are realpath'd so /tmp -> /private/tmp
+ * style symlinks (macOS) don't make an in-repo path look like it escapes the tree.
+ *
+ * @param {string} root absolute repository top-level
+ * @param {string} dir absolute directory inside the repo
+ * @returns {string} "." or a forward-slash repo-relative path
+ */
+function repoRelativeScope(root, dir) {
+  const realRoot = safeRealpath(root);
+  const realDir = safeRealpath(dir);
+  let rel = path.relative(realRoot, realDir);
+  if (rel === "" || rel === ".") return ".";
+  rel = rel.split(path.sep).join("/");
+  return rel;
+}
+
+/** realpathSync that falls back to the input if the path cannot be resolved (e.g. does not exist). */
+function safeRealpath(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch (_) {
+    return p;
+  }
+}
+
 /** First line of a possibly-multiline string, trimmed. */
 function firstLine(s) {
   const str = String(s || "");
@@ -163,4 +215,6 @@ module.exports = {
   repoRoot,
   resolveCommit,
   listTrackedFiles,
+  gitProvenance,
+  repoRelativeScope,
 };

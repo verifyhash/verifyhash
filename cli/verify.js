@@ -18,7 +18,7 @@
 // never writes to the chain. Verification of a public, immutable record should never require a
 // private key.
 
-const { hashPath } = require("./hash");
+const { hashPath, hashGit } = require("./hash");
 const { readReceipt, diffManifest } = require("./receipt");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
@@ -34,17 +34,40 @@ const STATUS = Object.freeze({
  * Recompute the content hash for a filesystem path: a file hashes its keccak256 digest, a
  * directory its sorted-leaf Merkle root — matching exactly what `vh anchor` would have stored. For a
  * directory the per-file leaves are returned too (so a `--receipt` diff can localize a change).
+ *
+ * With `opts.git`, the root and leaves are recomputed over EXACTLY the files git tracks at `opts.ref`
+ * (default HEAD) — the SAME reproducible enumeration `vh anchor <dir> --git` used and `vh hash --git`
+ * defines (T-8.1). Untracked junk in the work tree is ignored, so the verdict depends only on the
+ * tracked content. The resolved commit oid + repo-relative scope are also returned for display (an
+ * untrusted provenance hint, never the verdict).
+ *
  * @param {string} targetPath
+ * @param {{ git?: boolean, ref?: string }} [opts]
  * @returns {{ contentHash: string, kind: "file"|"dir",
- *            leaves: Array<{path:string,contentHash:string,leaf:string}>|null }}
+ *            leaves: Array<{path:string,contentHash:string,leaf:string}>|null,
+ *            git: {commit:string,scope:string}|null }}
  */
-function contentHashForPath(targetPath) {
+function contentHashForPath(targetPath, opts = {}) {
+  if (opts.git) {
+    const res = hashGit(targetPath, { ref: opts.ref });
+    const leaves = res.leaves.map((l) => ({
+      path: l.path,
+      contentHash: l.contentHash,
+      leaf: l.leaf,
+    }));
+    return {
+      contentHash: res.root,
+      kind: "dir",
+      leaves,
+      git: { commit: res.commit, scope: res.scope },
+    };
+  }
   const res = hashPath(targetPath);
   const leaves =
     res.kind === "dir" && Array.isArray(res.leaves)
       ? res.leaves.map((l) => ({ path: l.path, contentHash: l.contentHash, leaf: l.leaf }))
       : null;
-  return { contentHash: res.root, kind: res.kind, leaves };
+  return { contentHash: res.root, kind: res.kind, leaves, git: null };
 }
 
 /**
@@ -88,6 +111,8 @@ function isNotAnchoredError(err, ethersLib, notAnchoredSelector) {
  *
  * @param {object} opts
  * @param {string}  opts.path             path to a file or directory to verify
+ * @param {boolean}[opts.git]             recompute the root over EXACTLY the git-tracked files (T-8.1)
+ * @param {string} [opts.ref]             with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress  deployed ContributionRegistry address to read from
  * @param {object}  opts.provider         ethers v6 Provider (read-only RPC connection)
  * @param {string} [opts.receiptPath]     optional receipt whose manifest localizes a dir diff
@@ -123,7 +148,10 @@ async function runVerify(opts) {
     throw new Error("no provider: pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL");
   }
 
-  const { contentHash, kind, leaves } = contentHashForPath(targetPath);
+  const { contentHash, kind, leaves, git } = contentHashForPath(targetPath, {
+    git: opts.git,
+    ref: opts.ref,
+  });
 
   const iface = new ethersLib.Interface(ABI);
   const notAnchoredSelector = iface.getError("NotAnchored").selector;
@@ -149,6 +177,7 @@ async function runVerify(opts) {
     contentHash,
     kind,
     path: targetPath,
+    git, // { commit, scope } when --git was used; null otherwise (untrusted provenance hint)
     contributor: null,
     authorBound: null,
     timestamp: null,
@@ -222,8 +251,16 @@ function formatVerify(r) {
   const lines = [
     `  path:         ${r.path}  (${r.kind})`,
     `  contentHash:  ${r.contentHash}`,
-    `  result:       ${r.status}`,
   ];
+  if (r.git) {
+    // Show WHICH commit's tracked set produced this root — an untrusted provenance hint, never the
+    // verdict (that is the MATCH/MISMATCH below, recomputed root vs the on-chain record).
+    lines.push(
+      `  git commit:   ${r.git.commit}  (untrusted provenance hint)`,
+      `  git scope:    ${r.git.scope}`
+    );
+  }
+  lines.push(`  result:       ${r.status}`);
   if (r.status === STATUS.MATCH) {
     const ts = r.timestamp == null ? "(unknown)" : isoFromUnix(r.timestamp);
     // Spell out exactly what `contributor` is allowed to mean for THIS record. A commit-reveal

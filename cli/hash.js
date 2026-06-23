@@ -384,6 +384,7 @@ function hashEntries(entries) {
  * @returns {{
  *   root: string,
  *   commit: string,
+ *   scope: string,
  *   leaves: { path: string, leaf: string, contentHash: string }[],
  *   proofFor: (relOrAbsPathOrLeaf: string) => string[],
  *   leafFor: (relOrAbsPath: string) => string,
@@ -395,6 +396,8 @@ function hashGit(dirPath, opts = {}) {
   const git = require("./git");
   const root = git.repoRoot(dirPath); // errors clearly if dirPath is not in a git work tree
   const commit = git.resolveCommit(dirPath, opts.ref); // errors clearly on an unknown ref
+  // Repo-relative scope (the operator's vantage point) recorded as an untrusted provenance hint.
+  const scope = git.repoRelativeScope(root, dirPath);
   const tracked = git.listTrackedFiles(dirPath, opts.ref); // sorted repo-relative POSIX paths
   if (tracked.length === 0) {
     throw new Error(
@@ -416,7 +419,7 @@ function hashGit(dirPath, opts = {}) {
     return { path: rel, abs, content };
   });
   const result = hashEntries(entries);
-  return { ...result, commit };
+  return { ...result, commit, scope };
 }
 
 /**

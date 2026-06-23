@@ -39,12 +39,15 @@
 
 const fs = require("fs");
 
-// Current on-disk schema version written by this build. Bumped 1 -> 2 to add the optional `manifest`
-// field (additive). `readReceipt` still ACCEPTS version 1 receipts (which simply have no manifest), so
-// older artifacts keep working; it only WRITES version SCHEMA_VERSION. Any version outside the
-// supported set is rejected so a future/foreign file is never misread as a current one.
-const SCHEMA_VERSION = 2;
-const SUPPORTED_SCHEMA_VERSIONS = Object.freeze([1, 2]);
+// Current on-disk schema version written by this build. History (all ADDITIVE):
+//   1 -> 2 : added the optional `manifest` (per-file dir leaves, for localized verify diffs).
+//   2 -> 3 : added the optional `git` block { commit, scope } — the resolved commit oid and the
+//            repo-relative scope used to enumerate the tracked files for a `--git` anchor/claim.
+// `readReceipt` still ACCEPTS every prior version (a v1 receipt has no manifest, a v1/v2 receipt has
+// no git block), so older artifacts keep working; it only WRITES version SCHEMA_VERSION. Any version
+// outside the supported set is rejected so a future/foreign file is never misread as a current one.
+const SCHEMA_VERSION = 3;
+const SUPPORTED_SCHEMA_VERSIONS = Object.freeze([1, 2, 3]);
 
 // Receipts carry one of these discriminators so a random JSON file (or a different vh artifact) is
 // never mistaken for a verifyhash receipt. A CLAIM receipt is the resumable commit-reveal artifact
@@ -65,6 +68,10 @@ const ADDR_FIELDS_ANCHOR = ["contractAddress"];
 
 const HEX32_RE = /^0x[0-9a-fA-F]{64}$/;
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+// A full git commit object id: 40 lowercase hex chars (what resolveCommit always yields). The `git`
+// block records this BARE (no 0x prefix) to match git's own representation, so a reader can paste it
+// straight into `git show <oid>`.
+const GIT_OID_RE = /^[0-9a-f]{40}$/;
 
 /**
  * Build a normalized, fully-populated CLAIM-receipt object from raw parts. Throws if any required
@@ -85,6 +92,9 @@ const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
  * @param {number|string|bigint} [parts.minRevealDelay]    MIN_REVEAL_DELAY read from the contract
  * @param {Array<{path:string,contentHash:string,leaf:string}>} [parts.manifest]
  *        sorted per-file manifest for a directory target (exactly what `vh hash <dir>` produces)
+ * @param {{commit:string,scope:string}} [parts.git]
+ *        optional UNTRUSTED git-provenance hint: the resolved commit oid + repo-relative scope used
+ *        to enumerate the tracked files for a `--git` claim
  * @returns {object} a validated receipt object
  */
 function buildReceipt(parts) {
@@ -123,6 +133,9 @@ function buildReceipt(parts) {
  * @param {number|string|bigint} [parts.anchorBlockNumber] block.number the anchor mined in
  * @param {Array<{path:string,contentHash:string,leaf:string}>} [parts.manifest]
  *        sorted per-file manifest for a directory target (exactly what `vh hash <dir>` produces)
+ * @param {{commit:string,scope:string}} [parts.git]
+ *        optional UNTRUSTED git-provenance hint: the resolved commit oid + repo-relative scope used
+ *        to enumerate the tracked files for a `--git` anchor
  * @returns {object} a validated anchor-receipt object
  */
 function buildAnchorReceipt(parts) {
@@ -144,6 +157,7 @@ function buildAnchorReceipt(parts) {
     receipt.anchorBlockNumber = _normIntField("anchorBlockNumber", parts.anchorBlockNumber);
   }
   if (parts.manifest != null) receipt.manifest = _normManifest(parts.manifest);
+  if (parts.git != null) receipt.git = _normGit(parts.git);
   _validate(receipt);
   return receipt;
 }
@@ -160,6 +174,30 @@ function _attachOptional(receipt, parts) {
     receipt.minRevealDelay = _normIntField("minRevealDelay", parts.minRevealDelay);
   }
   if (parts.manifest != null) receipt.manifest = _normManifest(parts.manifest);
+  if (parts.git != null) receipt.git = _normGit(parts.git);
+}
+
+/**
+ * Normalize an optional git-provenance block into the canonical on-disk shape: { commit, scope }.
+ * `commit` is a full 40-hex lowercase oid (lowercased here); `scope` is a non-empty repo-relative
+ * POSIX path (or "." for the repo root). This is an UNTRUSTED convenience hint (docs/TRUST-BOUNDARIES):
+ * it records HOW the tracked set was enumerated, never the authoritative verdict. Throws on a
+ * malformed block — a git block either is well-formed or is rejected (the schema must not lie).
+ * @param {any} git
+ * @returns {{ commit: string, scope: string }}
+ */
+function _normGit(git) {
+  if (!git || typeof git !== "object" || Array.isArray(git)) {
+    throw new Error("receipt git block must be an object { commit, scope }");
+  }
+  const commit = typeof git.commit === "string" ? git.commit.toLowerCase() : git.commit;
+  if (typeof commit !== "string" || !GIT_OID_RE.test(commit)) {
+    throw new Error(`receipt git.commit must be a 40-hex commit oid, got: ${String(git.commit)}`);
+  }
+  if (typeof git.scope !== "string" || git.scope.length === 0) {
+    throw new Error(`receipt git.scope must be a non-empty string, got: ${String(git.scope)}`);
+  }
+  return { commit, scope: git.scope };
 }
 
 /** Normalize a chainId (number|string|bigint) to a non-negative integer Number. */
@@ -314,7 +352,31 @@ function _validate(obj) {
     _validateManifestShape(obj.manifest);
   }
 
+  // Optional git provenance block: only meaningful at schemaVersion >= 3. A v1/v2 receipt that
+  // smuggles in a git block is rejected (those versions are defined to have none), so the version is
+  // never a lie. The block is an UNTRUSTED hint — validating its SHAPE here only keeps a written
+  // receipt internally consistent; it never elevates the block to an authoritative claim.
+  if (obj.git !== undefined && obj.git !== null) {
+    if (obj.schemaVersion < 3) {
+      throw new Error("receipt git block requires schemaVersion >= 3");
+    }
+    _validateGitShape(obj.git);
+  }
+
   return obj;
+}
+
+/** Validate a parsed git-provenance block's shape (without mutating). Throws on the first problem. */
+function _validateGitShape(git) {
+  if (!git || typeof git !== "object" || Array.isArray(git)) {
+    throw new Error("receipt git block must be an object { commit, scope }");
+  }
+  if (typeof git.commit !== "string" || !GIT_OID_RE.test(git.commit)) {
+    throw new Error(`receipt git.commit must be a 40-hex commit oid, got: ${String(git.commit)}`);
+  }
+  if (typeof git.scope !== "string" || git.scope.length === 0) {
+    throw new Error(`receipt git.scope must be a non-empty string, got: ${String(git.scope)}`);
+  }
 }
 
 /** Validate a parsed manifest's shape (without re-sorting). Throws on the first malformed entry. */
@@ -472,4 +534,5 @@ module.exports = {
   // Exported for unit tests that exercise validation/manifest normalization directly.
   _validate,
   _normManifest,
+  _normGit,
 };

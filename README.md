@@ -50,6 +50,12 @@ vh list    [filters]                 # read-only: enumerate the registry (discov
 vh show    <0xhash>                  # read-only: look up ONE record by hash, no local content (NO key)
 vh lineage <0xhash> [--max-depth n]  # read-only walk UP the parent chain to the lineage root (no key)
 vh reputation <addr>                 # read-only, no key, authenticated: a non-transferable, re-derivable contribution SCORE for one address (NOT a token)
+vh dataset build <dir> --out <p>     # DataLedger: tamper-evident dataset manifest (Merkle root + per-file leaves); offline, no key, no network
+vh dataset verify <dir> --manifest <p> # re-derive the root + per-file ADDED/REMOVED/CHANGED diff vs a manifest; offline, no key, no network
+vh dataset diff <manifestA> <manifestB> # the exact change set between two dataset versions; offline, no key, no network
+vh dataset summary <manifest>        # provenance/license roll-up over the trusted file set; offline, no key, no network
+vh dataset prove --file <p> --manifest <m> # set-membership proof for ONE file; offline, no key, no network
+vh dataset verify-proof <proof>      # fold a membership proof back to the recorded root; offline, no key, no network
 ```
 
 > **Read commands authenticate the registry by default.** Every read command (`verify` / `show` /
@@ -364,6 +370,31 @@ receipt field (see [`docs/RECEIPTS.md`](docs/RECEIPTS.md) and [`docs/TRUST-BOUND
 The authoritative verdict is still the recomputed root vs the on-chain record; the `git.commit` is
 never re-checked against the chain.
 
+### Dataset provenance (DataLedger)
+
+DataLedger turns an AI training dataset into a **reproducible, tamper-evident manifest** plus the
+diff/summary/proof artifacts a data-provenance reviewer (enterprise due-diligence, EU AI Act technical
+documentation) consumes. Every command below is **offline, needs NO key, and needs NO network** — a
+manifest, diff, summary, or single-file proof can be handed to a third party and re-derived on an
+air-gapped machine with only the `vh` CLI, trusting no server.
+
+```
+vh dataset build <dir> --out <p>          # tamper-evident manifest: Merkle root over every (relPath, content) pair + per-file leaves
+vh dataset verify <dir> --manifest <p>    # re-derive the root from a fresh copy on disk + per-file ADDED/REMOVED/CHANGED diff
+vh dataset diff <manifestA> <manifestB>   # the precise add/remove/change set between two dataset versions (offline, no tree)
+vh dataset summary <manifest>             # provenance/license roll-up over the trusted file set (counts CLAIMS, not facts)
+vh dataset prove --file <p> --manifest <m> --out <a>  # portable set-membership proof for ONE file
+vh dataset verify-proof <proof>           # fold a membership proof back to the recorded root (no dataset, no manifest, no key, no net)
+```
+
+The Merkle root commits to file **names AND bytes** (the SAME path-bound convention as `vh hash <dir>`),
+so any edit/rename/add/remove changes it. What DataLedger does **NOT** prove: it is **not a timestamp**
+— "unaltered since date T" needs the human-owned signing/timestamp trust-root, a `needs-human` step in
+[`STRATEGY.md`](STRATEGY.md) — and the per-file `{source, license}` **hints are UNTRUSTED self-asserted
+metadata** that are NOT bound into the root (the summary counts what the dataset CLAIMS). Do not
+overclaim. Full buyer-facing spec, worked example, and the auditor / EU-AI-Act evidence mapping:
+[`docs/DATALEDGER.md`](docs/DATALEDGER.md).
+
 ## Develop
 
 ```
@@ -377,6 +408,10 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
 
 ## Docs
 
+- [`docs/DATALEDGER.md`](docs/DATALEDGER.md) — the buyer-facing DataLedger product spec: what a dataset
+  manifest PROVES (file names + bytes, offline set-membership, version diff, license roll-up) and does
+  NOT (not a timestamp; untrusted source/license hints), the build→diff→summary→prove→verify-proof
+  workflow with a worked example, and the auditor / EU-AI-Act evidence mapping.
 - [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not,
   plus "Authenticating the registry you read from" (why read commands authenticate the registry before
   believing it, and why the `REGISTRY_ID` is a "right interface" signal, not a sole root of trust).

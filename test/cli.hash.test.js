@@ -5,7 +5,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const { hashFile, hashBytes, hashDir, hashPath, hashPair } = require("../cli/hash");
+const { hashFile, hashBytes, hashDir, hashPath, leafHash, nodeHash } = require("../cli/hash");
 
 // Create a throwaway temp directory, run `fn(dir)`, then clean it up.
 function withTempDir(prefix) {
@@ -67,11 +67,15 @@ describe("cli: vh hash", function () {
       const onchainAlg = ethers.keccak256(content);
       expect(cliHash).to.equal(onchainAlg);
 
-      // And prove the contract accepts this digest as a 1-leaf Merkle root (empty proof):
-      // verifyLeaf(root, leaf, []) returns root == leaf, so the CLI digest *is* a valid
-      // anchorable/verifiable value on-chain.
+      // And prove the contract accepts this digest as a 1-leaf Merkle root (empty proof). With
+      // domain separation the root of a single-leaf tree is leafHash(contentDigest), and
+      // verifyLeaf applies LEAF_TAG internally — so verifyLeaf(leafHash(c), c, []) is true while
+      // verifyLeaf(c, c, []) (the old untagged convention) is now false.
       const { registry } = await loadFixture(deploy);
-      expect(await registry.verifyLeaf(cliHash, cliHash, [])).to.equal(true);
+      const root = await registry.leafHash(cliHash);
+      expect(root).to.equal(leafHash(cliHash)); // CLI and contract agree on the leaf convention
+      expect(await registry.verifyLeaf(root, cliHash, [])).to.equal(true);
+      expect(await registry.verifyLeaf(cliHash, cliHash, [])).to.equal(false);
     });
 
     it("empty file hashes to keccak256 of empty input (Solidity keccak256(\"\"))", async function () {
@@ -88,7 +92,7 @@ describe("cli: vh hash", function () {
       );
 
       const { registry } = await loadFixture(deploy);
-      expect(await registry.verifyLeaf(cliHash, cliHash, [])).to.equal(true);
+      expect(await registry.verifyLeaf(await registry.leafHash(cliHash), cliHash, [])).to.equal(true);
     });
 
     it("hashPath dispatches a file to a keccak256 digest", function () {
@@ -238,17 +242,108 @@ describe("cli: vh hash", function () {
     });
   });
 
-  describe("hashPair matches the contract's sorted-pair convention", function () {
-    it("agrees with verifyLeaf on a 2-leaf tree both ways", async function () {
+  describe("leafHash / nodeHash match the contract's domain-separated convention", function () {
+    it("CLI leafHash and nodeHash equal the contract's leafHash/nodeHash byte-for-byte", async function () {
       const { registry } = await loadFixture(deploy);
       const x = ethers.keccak256(ethers.toUtf8Bytes("left"));
       const y = ethers.keccak256(ethers.toUtf8Bytes("right"));
-      const root = hashPair(x, y);
-      // x proven with sibling y, and y proven with sibling x, both verify against root.
-      expect(await registry.verifyLeaf(root, x, [y])).to.equal(true);
-      expect(await registry.verifyLeaf(root, y, [x])).to.equal(true);
-      // sorted-pair: order of inputs to hashPair does not matter.
-      expect(hashPair(x, y)).to.equal(hashPair(y, x));
+      expect(leafHash(x)).to.equal(await registry.leafHash(x));
+      expect(nodeHash(x, y)).to.equal(await registry.nodeHash(x, y));
+      // sorted-pair: nodeHash is order-independent.
+      expect(nodeHash(x, y)).to.equal(nodeHash(y, x));
+      expect(await registry.nodeHash(x, y)).to.equal(await registry.nodeHash(y, x));
+    });
+
+    it("agrees with verifyLeaf on a 2-leaf tree both ways (content digests + tagged leaves)", async function () {
+      const { registry } = await loadFixture(deploy);
+      // Content digests (the verifyLeaf input layer).
+      const cx = ethers.keccak256(ethers.toUtf8Bytes("left"));
+      const cy = ethers.keccak256(ethers.toUtf8Bytes("right"));
+      // The tree is built from TAGGED leaves; the root is nodeHash of the two tagged leaves.
+      const root = nodeHash(leafHash(cx), leafHash(cy));
+      // cx proven with sibling leafHash(cy), and cy with sibling leafHash(cx), both verify.
+      expect(await registry.verifyLeaf(root, cx, [leafHash(cy)])).to.equal(true);
+      expect(await registry.verifyLeaf(root, cy, [leafHash(cx)])).to.equal(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------
+  // SECURITY: second-preimage resistance. Domain separation must make it impossible to pass an
+  // interior node (or a bare content digest) off as a leaf. This is the heart of T-0.1.
+  // ---------------------------------------------------------------------------------------------
+  describe("second-preimage resistance (domain-separated leaves vs. nodes)", function () {
+    function writeFiles(dir, files) {
+      for (const [name, content] of Object.entries(files)) {
+        const full = path.join(dir, name);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, content);
+      }
+    }
+
+    it("rejects an interior node replayed as a leaf (the classic Merkle forgery)", async function () {
+      const { registry } = await loadFixture(deploy);
+      const dir = tmp("vh-2ndpre-");
+      // A 4-file repo gives a real 2-level tree with genuine interior nodes.
+      writeFiles(dir, {
+        "f0.txt": "alpha contents",
+        "f1.txt": "beta contents",
+        "f2.txt": "gamma contents",
+        "f3.txt": "delta contents",
+      });
+      const { root, leaves, proofFor } = hashDir(dir);
+      expect(leaves).to.have.length(4);
+
+      // Sanity: every genuine file still verifies against the (domain-separated) root.
+      for (const { path: p, leaf } of leaves) {
+        expect(await registry.verifyLeaf(root, leaf, proofFor(p))).to.equal(true);
+      }
+
+      // Reconstruct the tagged leaves in sorted order (exactly buildTree's bottom layer), then the
+      // interior node over the first two — the value an attacker would try to pass off as a leaf.
+      const taggedLeaves = leaves.map((l) => leafHash(l.leaf)); // already sorted by content digest
+      const interiorNode = nodeHash(taggedLeaves[0], taggedLeaves[1]);
+      const otherInterior = nodeHash(taggedLeaves[2], taggedLeaves[3]);
+      // The interior node really is an interior value of THIS tree: nodeHash(left,right) == root.
+      expect(nodeHash(interiorNode, otherInterior)).to.equal(root);
+
+      // THE EXPLOIT ATTEMPT: present the interior node as a "content digest" leaf, with the sibling
+      // interior node as a one-element proof. Under a naive (untagged) scheme this folds straight to
+      // the root and would be ACCEPTED — forging membership of a value that is no real file.
+      // Under domain separation, verifyLeaf re-tags the argument: leafHash(interiorNode) != node,
+      // so the fold misses the root and it is REJECTED.
+      expect(
+        await registry.verifyLeaf(root, interiorNode, [otherInterior]),
+        "interior node must NOT verify as a leaf"
+      ).to.equal(false);
+
+      // Belt and braces: confirm that WITHOUT domain separation this exact forgery WOULD succeed,
+      // so the test is proving the tag is what stops it (not some unrelated mismatch).
+      const naiveNode = (a, b) => {
+        const [lo, hi] = BigInt(a) <= BigInt(b) ? [a, b] : [b, a];
+        return ethers.keccak256(ethers.concat([lo, hi]));
+      };
+      const naiveN01 = naiveNode(leaves[0].leaf, leaves[1].leaf);
+      const naiveN23 = naiveNode(leaves[2].leaf, leaves[3].leaf);
+      const naiveRoot = naiveNode(naiveN01, naiveN23);
+      const naiveVerify = (r, leaf, proof) => {
+        let x = leaf;
+        for (const p of proof) x = naiveNode(x, p);
+        return x === r;
+      };
+      expect(naiveVerify(naiveRoot, naiveN01, [naiveN23]), "naive scheme is forgeable").to.equal(true);
+    });
+
+    it("rejects a bare (untagged) content digest passed as the leaf-layer value", async function () {
+      const { registry } = await loadFixture(deploy);
+      // Single-leaf tree: root = leafHash(c). The verifier accepts the content digest c (it tags it
+      // itself) but must reject c's already-tagged value, and reject an untagged value as the root.
+      const c = ethers.keccak256(ethers.toUtf8Bytes("only-file"));
+      const root = leafHash(c);
+      expect(await registry.verifyLeaf(root, c, [])).to.equal(true);
+      // Passing the tagged leaf itself as the "content digest" double-tags it -> rejected.
+      expect(await registry.verifyLeaf(root, root, [])).to.equal(false);
+      // Old untagged convention (root == content digest) no longer verifies.
+      expect(await registry.verifyLeaf(c, c, [])).to.equal(false);
     });
   });
 });

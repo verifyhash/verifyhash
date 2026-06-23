@@ -87,21 +87,72 @@ contract ContributionRegistry {
         return _hashByIndex[index];
     }
 
-    /// @notice Verify a single leaf against a Merkle `root` using sorted-pair hashing.
+    // ---------------------------------------------------------------------------------------------
+    // Domain-separated Merkle verification.
+    //
+    // SECURITY (second-preimage resistance). A naive Merkle scheme where a leaf is just
+    // keccak256(content) and an internal node is just keccak256(childA ++ childB) is forgeable:
+    // every value on the tree — leaf or interior — is "some 32 bytes", and a folding verifier that
+    // accepts an arbitrary 32-byte `leaf` argument cannot tell which layer that value belongs to.
+    // An attacker who knows two sibling leaves can compute their parent interior node N and submit
+    // it as if it were a leaf, with a *shorter* proof; the fold reaches the root and the forged
+    // "membership" of N (which is NOT any real file) is accepted. See the second-preimage forgery
+    // test in test/ for a concrete exploit of exactly that bug.
+    //
+    // The fix here is RFC 6962 / OpenZeppelin-style domain separation enforced *by the verifier*:
+    //   * leaves are tagged:  leafHash(c) = keccak256(LEAF_TAG ++ c)
+    //   * interior nodes are tagged differently: nodeHash(a,b) = keccak256(NODE_TAG ++ min ++ max)
+    // and, crucially, `verifyLeaf` itself applies LEAF_TAG to the value it is asked to verify. The
+    // caller passes the raw per-file content digest c = keccak256(file bytes); it can never inject a
+    // value that is already at the "tagged leaf" layer, and it can never replay an interior node as
+    // a leaf — re-tagging an interior node N as keccak256(LEAF_TAG ++ N) != N, so the fold misses
+    // the root. Forging membership now requires a preimage/collision on keccak256.
+    //
+    // The off-chain CLI (cli/hash.js) builds trees with the identical leafHash/nodeHash convention,
+    // so a root produced by `vh hash <dir>` is exactly the root this verifier reconstructs.
+    // ---------------------------------------------------------------------------------------------
+
+    /// @dev Distinct one-byte domain tags so a leaf hash can never equal an interior-node hash, and
+    ///      neither can equal a bare content digest. (RFC 6962 uses 0x00 for leaves, 0x01 for nodes.)
+    bytes1 internal constant LEAF_TAG = 0x00;
+    bytes1 internal constant NODE_TAG = 0x01;
+
+    /// @notice Domain-separated leaf hash for a per-file content digest.
+    /// @param  contentHash keccak256(file bytes) — the same digest `anchor` stores for a single file.
+    /// @return the tagged leaf value used at the bottom layer of the Merkle tree.
+    function leafHash(bytes32 contentHash) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(LEAF_TAG, contentHash));
+    }
+
+    /// @notice Domain-separated, order-independent interior-node hash of two children.
+    /// @dev    Sorted-pair (min ++ max) so the tree is independent of left/right child order, then
+    ///         tagged with NODE_TAG so an interior node can never collide with a leaf.
+    function nodeHash(bytes32 a, bytes32 b) public pure returns (bytes32) {
+        return a <= b
+            ? keccak256(abi.encodePacked(NODE_TAG, a, b))
+            : keccak256(abi.encodePacked(NODE_TAG, b, a));
+    }
+
+    /// @notice Verify that `contentHash` is a genuine leaf of the Merkle tree whose root is `root`.
     /// @dev    Lets a whole tree (e.g. an entire repository) be anchored by its root via
-    ///         `anchor(root, ...)`, then individual files proven against it later without
-    ///         storing every leaf on-chain. Matches OpenZeppelin's MerkleProof convention.
-    function verifyLeaf(bytes32 root, bytes32 leaf, bytes32[] calldata proof)
+    ///         `anchor(root, ...)`, then individual files proven against it later without storing
+    ///         every leaf on-chain. The verifier applies LEAF_TAG to `contentHash` itself, so an
+    ///         interior node cannot be passed off as a leaf (second-preimage resistant). `proof` is
+    ///         the list of sibling node values from the leaf up to the root.
+    /// @param  root        the anchored Merkle root.
+    /// @param  contentHash the raw per-file content digest = keccak256(file bytes) (NOT pre-tagged).
+    /// @param  proof       sibling hashes from leaf to root.
+    /// @return true iff folding the tagged leaf up through `proof` reproduces `root`.
+    function verifyLeaf(bytes32 root, bytes32 contentHash, bytes32[] calldata proof)
         external
         pure
         returns (bool)
     {
-        bytes32 computed = leaf;
+        // Apply the leaf domain tag *inside* the verifier: the caller can only ever supply a value
+        // at the pre-leaf (content-digest) layer, never an already-tagged leaf or interior node.
+        bytes32 computed = leafHash(contentHash);
         for (uint256 i = 0; i < proof.length; i++) {
-            bytes32 p = proof[i];
-            computed = computed <= p
-                ? keccak256(abi.encodePacked(computed, p))
-                : keccak256(abi.encodePacked(p, computed));
+            computed = nodeHash(computed, proof[i]);
         }
         return computed == root;
     }

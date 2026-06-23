@@ -3,19 +3,31 @@ const { ethers } = require("hardhat");
 const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 const { anyUint } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 
-// ---- tiny sorted-pair Merkle helper, mirroring the contract's verifyLeaf ----
-function hashPair(a, b) {
-  const [lo, hi] = BigInt(a) <= BigInt(b) ? [a, b] : [b, a];
-  return ethers.keccak256(ethers.concat([lo, hi]));
+// ---- domain-separated sorted-pair Merkle helper, mirroring the contract's verifyLeaf ----
+// IDENTICAL convention to cli/hash.js and ContributionRegistry: a leaf is leafHash(c) =
+// keccak256(LEAF_TAG ++ c) where c is a content digest, and an interior node is nodeHash(a,b) =
+// keccak256(NODE_TAG ++ min ++ max). This domain separation is what makes an interior node
+// impossible to replay as a leaf (second-preimage resistance).
+const LEAF_TAG = "0x00";
+const NODE_TAG = "0x01";
+function leafHash(c) {
+  return ethers.keccak256(ethers.concat([LEAF_TAG, c]));
 }
+function nodeHash(a, b) {
+  const [lo, hi] = BigInt(a) <= BigInt(b) ? [a, b] : [b, a];
+  return ethers.keccak256(ethers.concat([NODE_TAG, lo, hi]));
+}
+// `leaves` are CONTENT DIGESTS. Returns { root, proofFor(i) } where verifyLeaf(root, leaves[i],
+// proofFor(i)) is true on-chain (verifyLeaf tags the content digest itself). The bottom layer is
+// the tagged leaves; lone odd nodes are paired with themselves so every leaf gets a full-depth proof.
 function buildTree(leaves) {
-  // returns { root, proofFor(i) }
-  let layer = leaves.slice();
+  let layer = leaves.map((c) => leafHash(c));
   const layers = [layer];
   while (layer.length > 1) {
     const next = [];
     for (let i = 0; i < layer.length; i += 2) {
-      next.push(i + 1 < layer.length ? hashPair(layer[i], layer[i + 1]) : layer[i]);
+      const right = i + 1 < layer.length ? layer[i + 1] : layer[i];
+      next.push(nodeHash(layer[i], right));
     }
     layer = next;
     layers.push(layer);
@@ -27,12 +39,12 @@ function buildTree(leaves) {
     for (let l = 0; l < layers.length - 1; l++) {
       const lvl = layers[l];
       const pair = idx ^ 1;
-      if (pair < lvl.length) proof.push(lvl[pair]);
+      proof.push(pair < lvl.length ? lvl[pair] : lvl[idx]);
       idx = Math.floor(idx / 2);
     }
     return proof;
   }
-  return { root, proofFor };
+  return { root, proofFor, layers };
 }
 
 describe("ContributionRegistry", function () {
@@ -160,6 +172,52 @@ describe("ContributionRegistry", function () {
       const { proofFor } = buildTree(leaves);
       const wrongRoot = ethers.keccak256(ethers.toUtf8Bytes("not-the-root"));
       expect(await registry.verifyLeaf(wrongRoot, leaves[0], proofFor(0))).to.equal(false);
+    });
+
+    it("leafHash and nodeHash are distinct and domain-tagged (no collision)", async function () {
+      const { registry } = await loadFixture(deploy);
+      const a = ethers.keccak256(ethers.toUtf8Bytes("a"));
+      const b = ethers.keccak256(ethers.toUtf8Bytes("b"));
+      // Contract helpers match the JS convention.
+      expect(await registry.leafHash(a)).to.equal(leafHash(a));
+      expect(await registry.nodeHash(a, b)).to.equal(nodeHash(a, b));
+      // nodeHash is order-independent; leafHash(c) is never the bare c (it is tagged).
+      expect(await registry.nodeHash(a, b)).to.equal(await registry.nodeHash(b, a));
+      expect(await registry.leafHash(a)).to.not.equal(a);
+      // A leaf hash and a node hash over the same bytes are different domains.
+      expect(await registry.leafHash(a)).to.not.equal(await registry.nodeHash(a, a));
+    });
+
+    it("SECOND-PREIMAGE: an interior node cannot be forged into a verified leaf", async function () {
+      const { registry } = await loadFixture(deploy);
+      // 4 content digests -> a real 2-level tree with genuine interior nodes.
+      const c = [0, 1, 2, 3].map((i) => ethers.keccak256(ethers.toUtf8Bytes("file-" + i)));
+      const { root, proofFor, layers } = buildTree(c);
+
+      // Every genuine content digest verifies against the root.
+      for (let i = 0; i < c.length; i++) {
+        expect(await registry.verifyLeaf(root, c[i], proofFor(i))).to.equal(true);
+      }
+
+      // The interior nodes are layer 1 of the tree. Take one and try to pass it off as a leaf with
+      // its sibling interior node as the proof — the textbook Merkle second-preimage forgery.
+      const interior = layers[1]; // [ node(L0,L1), node(L2,L3) ]
+      expect(nodeHash(interior[0], interior[1])).to.equal(root); // it really is interior to THIS tree
+
+      // Under domain separation verifyLeaf re-tags the supplied value as a leaf, so an interior node
+      // can never fold to the root. Both interior nodes must be rejected as forged leaves.
+      expect(
+        await registry.verifyLeaf(root, interior[0], [interior[1]]),
+        "interior[0] must not verify as a leaf"
+      ).to.equal(false);
+      expect(
+        await registry.verifyLeaf(root, interior[1], [interior[0]]),
+        "interior[1] must not verify as a leaf"
+      ).to.equal(false);
+
+      // Also reject an already-leaf-tagged value passed as the content digest (would be double-tagged).
+      const taggedLeaf0 = layers[0][0];
+      expect(await registry.verifyLeaf(root, taggedLeaf0, proofFor(0))).to.equal(false);
     });
   });
 });

@@ -9,10 +9,14 @@
 //     this value and later proving against it requires byte-for-byte equality.
 //
 //   * hashDir(path)   -> a *stable, sorted-leaf* Merkle root whose proofs verify against
-//     ContributionRegistry.verifyLeaf. verifyLeaf folds a leaf up to the root using
-//     sorted-pair hashing (the OpenZeppelin MerkleProof convention): at each step it
-//     hashes keccak256(min(a,b) ++ max(a,b)). We mirror that here so a root produced by
-//     this CLI is the same root the contract reconstructs from a leaf + proof.
+//     ContributionRegistry.verifyLeaf. The tree is DOMAIN-SEPARATED (RFC 6962 /
+//     OpenZeppelin style) so that a crafted interior node can never be re-presented as a
+//     leaf (second-preimage resistance):
+//       - a leaf is leafHash(c) = keccak256(LEAF_TAG ++ c), where c = keccak256(file bytes)
+//       - an interior node is nodeHash(a,b) = keccak256(NODE_TAG ++ min(a,b) ++ max(a,b))
+//     The on-chain verifyLeaf applies LEAF_TAG to its content-digest argument itself and
+//     folds with NODE_TAG, so a root produced here is exactly the root the contract
+//     reconstructs from a content digest + proof. The two conventions are byte-identical.
 //
 //     "Stable" means the root does not depend on filesystem enumeration order: leaves are
 //     sorted before the tree is built, so the same set of files always yields the same root.
@@ -43,17 +47,37 @@ function hashBytes(bytes) {
   return keccak256(bytes);
 }
 
+// Domain tags, byte-identical to ContributionRegistry's LEAF_TAG / NODE_TAG. These keep a leaf
+// hash, an interior-node hash, and a bare content digest in three disjoint value spaces, so an
+// interior node can never be replayed as a leaf (second-preimage resistance).
+const LEAF_TAG = "0x00";
+const NODE_TAG = "0x01";
+
 /**
- * One level of sorted-pair hashing, matching ContributionRegistry.verifyLeaf:
- *   computed = a <= b ? keccak256(a ++ b) : keccak256(b ++ a)
- * Comparison is on the 32-byte big-endian value, exactly as Solidity compares bytes32.
+ * Domain-separated leaf hash, matching ContributionRegistry.leafHash:
+ *   leafHash(c) = keccak256(LEAF_TAG ++ c)
+ * `c` is a per-file content digest = keccak256(file bytes). Tagging the leaf means the value at the
+ * bottom of the tree differs from `c` itself and from any interior node, defeating second-preimage
+ * forgeries that try to pass a node (or a bare content digest) off as a leaf.
+ * @param {string} c 0x bytes32 content digest
+ * @returns {string} 0x bytes32 tagged leaf
+ */
+function leafHash(c) {
+  return keccak256(concat([LEAF_TAG, c]));
+}
+
+/**
+ * One level of sorted-pair, domain-tagged interior hashing, matching ContributionRegistry.nodeHash:
+ *   nodeHash(a,b) = a <= b ? keccak256(NODE_TAG ++ a ++ b) : keccak256(NODE_TAG ++ b ++ a)
+ * Comparison is on the 32-byte big-endian value, exactly as Solidity compares bytes32. The NODE_TAG
+ * prefix is what keeps an interior node from ever colliding with a (LEAF_TAG-prefixed) leaf.
  * @param {string} a 0x bytes32
  * @param {string} b 0x bytes32
  * @returns {string} 0x bytes32
  */
-function hashPair(a, b) {
+function nodeHash(a, b) {
   const [lo, hi] = BigInt(a) <= BigInt(b) ? [a, b] : [b, a];
-  return keccak256(concat([lo, hi]));
+  return keccak256(concat([NODE_TAG, lo, hi]));
 }
 
 /**
@@ -78,21 +102,26 @@ function listFiles(dirPath) {
 }
 
 /**
- * Build a sorted-leaf Merkle tree and return its layers (bottom-up).
- * Leaves are sorted ascending by their 32-byte value so the tree — and thus the root —
- * is independent of input order.
+ * Build a sorted-leaf, domain-separated Merkle tree and return its layers (bottom-up).
  *
- * Odd nodes are paired with *themselves* (`hashPair(node, node)`) rather than promoted
- * unchanged to the next level. This is the OpenZeppelin / merkletreejs "duplicate the
- * lone node" convention. Promoting a node unchanged (the old carry rule) makes that node
- * its own ancestor, so its Merkle proof skips a level and can collapse to a single sibling
- * (or none) — a degenerate, shorter-than-the-tree proof. Hashing the lone node against
- * itself gives every leaf a genuine sibling at each level, so a depth-d tree yields a
- * depth-d proof for *all* leaves. Crucially this stays compatible with the contract's
- * `verifyLeaf`: the duplicated sibling is just the node's own value, and the fold
- * `keccak256(min(x,x) ++ max(x,x)) == keccak256(x ++ x)` is exactly what verifyLeaf
- * computes when it folds `computed == x` with the proof element `x`.
- * @param {string[]} leaves array of 0x bytes32
+ * Input `leaves` are per-file CONTENT DIGESTS (c = keccak256(file bytes)). They are sorted ascending
+ * by their 32-byte value so the tree — and thus the root — is independent of input order. Each is
+ * then mapped to a *tagged* leaf via leafHash(c) = keccak256(LEAF_TAG ++ c); the tagged values form
+ * the bottom layer of `layers`. Interior layers are folded with nodeHash (NODE_TAG-tagged), exactly
+ * as ContributionRegistry.verifyLeaf does. This domain separation is what makes the scheme
+ * second-preimage resistant: an interior node value can never be re-presented as a leaf.
+ *
+ * `sortedLeaves` (returned) is the sorted CONTENT DIGEST array (pre-tag), used for index lookup by a
+ * caller that knows a file's content digest. `layers[0]` is the corresponding TAGGED-leaf layer.
+ *
+ * Odd nodes are paired with *themselves* (`nodeHash(node, node)`) rather than promoted unchanged to
+ * the next level. This is the OpenZeppelin / merkletreejs "duplicate the lone node" convention.
+ * Promoting a node unchanged (the old carry rule) makes that node its own ancestor, so its Merkle
+ * proof skips a level and can collapse to a single sibling (or none) — a degenerate, shorter-than-
+ * the-tree proof. Hashing the lone node against itself gives every leaf a genuine sibling at each
+ * level, so a depth-d tree yields a depth-d proof for *all* leaves, and stays compatible with the
+ * contract's verifyLeaf (it folds `computed == x` with proof element `x` as `nodeHash(x, x)`).
+ * @param {string[]} leaves array of 0x bytes32 content digests
  * @returns {{ root: string, layers: string[][], sortedLeaves: string[] }}
  */
 function buildTree(leaves) {
@@ -105,14 +134,15 @@ function buildTree(leaves) {
     return x < y ? -1 : x > y ? 1 : 0;
   });
 
-  let layer = sortedLeaves;
+  // Bottom layer is the DOMAIN-TAGGED leaves; folding then matches the on-chain verifier exactly.
+  let layer = sortedLeaves.map((c) => leafHash(c));
   const layers = [layer];
   while (layer.length > 1) {
     const next = [];
     for (let i = 0; i < layer.length; i += 2) {
       // Pair (i, i+1); if i is the lone last (odd) node, pair it with itself.
       const right = i + 1 < layer.length ? layer[i + 1] : layer[i];
-      next.push(hashPair(layer[i], right));
+      next.push(nodeHash(layer[i], right));
     }
     layer = next;
     layers.push(layer);
@@ -127,8 +157,11 @@ function buildTree(leaves) {
  *
  * Mirrors buildTree's "duplicate the lone node" rule: when a node is the last in an
  * odd-length level it has no real neighbor, so its sibling is its own value (the parent
- * was `hashPair(node, node)`). We therefore push `lvl[idx]` itself in that case, giving a
+ * was `nodeHash(node, node)`). We therefore push `lvl[idx]` itself in that case, giving a
  * full-depth proof for every leaf rather than skipping the level.
+ *
+ * `layers[0]` is the TAGGED-leaf layer (see buildTree), so the sibling values pushed here are the
+ * exact node/leaf hashes the on-chain verifyLeaf folds against — the proof is replay-compatible.
  * @param {string[][]} layers
  * @param {number} index index into the *sorted* leaf layer
  * @returns {string[]} proof (array of 0x bytes32)
@@ -229,7 +262,8 @@ module.exports = {
   hashBytes,
   hashDir,
   hashPath,
-  hashPair,
+  leafHash,
+  nodeHash,
   buildTree,
   proofForIndex,
   listFiles,

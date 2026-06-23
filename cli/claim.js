@@ -36,13 +36,20 @@ const ABI = ARTIFACT.abi;
 
 /**
  * Compute the content hash to claim for a filesystem path (same convention as `vh anchor`):
- * a file claims its keccak256 digest, a directory its sorted-leaf Merkle root.
+ * a file claims its keccak256 digest, a directory its sorted-leaf Merkle root. For a directory the
+ * per-file manifest (sorted `{ path, contentHash, leaf }`) is returned too, so the claim/commit
+ * receipt records it (letting a later `vh verify --receipt` localize a tamper).
  * @param {string} targetPath
- * @returns {{ contentHash: string, kind: "file"|"dir" }}
+ * @returns {{ contentHash: string, kind: "file"|"dir",
+ *            manifest: Array<{path:string,contentHash:string,leaf:string}>|null }}
  */
 function contentHashForPath(targetPath) {
   const res = hashPath(targetPath);
-  return { contentHash: res.root, kind: res.kind };
+  const manifest =
+    res.kind === "dir" && Array.isArray(res.leaves)
+      ? res.leaves.map((l) => ({ path: l.path, contentHash: l.contentHash, leaf: l.leaf }))
+      : null;
+  return { contentHash: res.root, kind: res.kind, manifest };
 }
 
 /**
@@ -124,7 +131,7 @@ function buildCommitTx(opts) {
     throw new Error(`claim requires a valid committer address, got: ${committer}`);
   }
 
-  const { contentHash, kind } = contentHashForPath(targetPath);
+  const { contentHash, kind, manifest } = contentHashForPath(targetPath);
   if (/^0x0{64}$/i.test(contentHash)) {
     throw new Error("refusing to claim the zero hash (contract rejects it)");
   }
@@ -149,6 +156,7 @@ function buildCommitTx(opts) {
     contentHash,
     kind,
     path: targetPath,
+    manifest, // per-file manifest for a dir target (null for a file); recorded into the receipt
     committer: committerAddr,
     salt,
     commitment,
@@ -353,6 +361,7 @@ async function runCommit(opts) {
     uri: opts.uri,
     path: commitTx.path,
     kind: commitTx.kind,
+    manifest: commitTx.manifest || undefined,
     commitTxHash: commitReceiptTx.hash,
     commitBlockNumber: commitBlock,
     minRevealDelay: minDelay,
@@ -556,6 +565,7 @@ async function runClaim(opts) {
       uri: opts.uri,
       path: commitTx.path,
       kind: commitTx.kind,
+      manifest: commitTx.manifest || undefined,
       commitTxHash: commitReceipt.hash,
       commitBlockNumber: commitBlock,
       minRevealDelay: minDelay,

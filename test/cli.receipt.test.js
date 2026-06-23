@@ -6,9 +6,12 @@ const path = require("path");
 const {
   SCHEMA_VERSION,
   RECEIPT_KIND,
+  ANCHOR_RECEIPT_KIND,
   buildReceipt,
+  buildAnchorReceipt,
   writeReceipt,
   readReceipt,
+  diffManifest,
   defaultReceiptPath,
 } = require("../cli/receipt");
 
@@ -187,5 +190,168 @@ describe("cli/receipt: strict validation (rejects corrupt/partial receipts)", fu
     const p = path.join(tmp(), "never-written.json");
     expect(() => writeReceipt({ kind: "wrong" }, p)).to.throw();
     expect(fs.existsSync(p)).to.equal(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Schema v2: the optional, additive `manifest` (directory anchor receipts) and
+// the backward-compatible reader that still accepts v1 receipts (no manifest).
+// ---------------------------------------------------------------------------
+describe("cli/receipt: v2 manifest + anchor receipts (additive, back-compatible)", function () {
+  const LEAF_A = "0x" + "a1".repeat(32);
+  const LEAF_B = "0x" + "b2".repeat(32);
+  const CH_A = "0x" + "01".repeat(32);
+  const CH_B = "0x" + "02".repeat(32);
+
+  function manifest() {
+    return [
+      { path: "src/b.js", contentHash: CH_B, leaf: LEAF_B },
+      { path: "src/a.js", contentHash: CH_A, leaf: LEAF_A },
+    ];
+  }
+
+  it("SCHEMA_VERSION is at least 2 (the manifest schema bump)", function () {
+    expect(SCHEMA_VERSION).to.be.at.least(2);
+  });
+
+  it("buildReceipt records a manifest on a claim receipt and sorts it by leaf", function () {
+    const r = buildReceipt(goodParts({ manifest: manifest(), kind: "dir" }));
+    expect(r.schemaVersion).to.equal(SCHEMA_VERSION);
+    expect(r.manifest).to.be.an("array").with.length(2);
+    // Sorted ascending by leaf value: LEAF_A (a1..) < LEAF_B (b2..).
+    expect(r.manifest[0].path).to.equal("src/a.js");
+    expect(r.manifest[1].path).to.equal("src/b.js");
+    expect(r.manifest[0].leaf).to.equal(LEAF_A);
+  });
+
+  it("buildAnchorReceipt produces an anchor-kind receipt with no salt/commitment but a manifest", function () {
+    const r = buildAnchorReceipt({
+      contentHash: HASH,
+      contractAddress: CONTRACT,
+      chainId: 31337,
+      uri: "ipfs://cid",
+      path: "/repo",
+      kind: "dir",
+      anchorTxHash: COMMIT_TX,
+      anchorBlockNumber: 7,
+      manifest: manifest(),
+    });
+    expect(r.kind).to.equal(ANCHOR_RECEIPT_KIND);
+    expect(r).to.not.have.property("salt");
+    expect(r).to.not.have.property("commitment");
+    expect(r).to.not.have.property("committer");
+    expect(r.anchorTxHash).to.equal(COMMIT_TX);
+    expect(r.anchorBlockNumber).to.equal(7);
+    expect(r.manifest).to.have.length(2);
+  });
+
+  it("write/read round-trips an anchor receipt with a manifest", function () {
+    const p = path.join(tmp(), "anchor.vhclaim.json");
+    const written = writeReceipt(
+      buildAnchorReceipt({
+        contentHash: HASH,
+        contractAddress: CONTRACT,
+        chainId: 31337,
+        kind: "dir",
+        manifest: manifest(),
+      }),
+      p
+    );
+    expect(readReceipt(p)).to.deep.equal(written);
+  });
+
+  it("READER ACCEPTS BOTH versions: a v1 receipt (no manifest) still validates", function () {
+    // Construct a genuine v1 receipt on disk and read it back through the current reader.
+    const v1 = buildReceipt(goodParts());
+    v1.schemaVersion = 1;
+    delete v1.manifest;
+    const p = path.join(tmp(), "v1.vhclaim.json");
+    fs.writeFileSync(p, JSON.stringify(v1));
+    const read = readReceipt(p);
+    expect(read.schemaVersion).to.equal(1);
+    expect(read).to.not.have.property("manifest");
+  });
+
+  it("rejects a v1 receipt that smuggles in a manifest (version must not lie)", function () {
+    const r = buildReceipt(goodParts({ manifest: manifest(), kind: "dir" }));
+    r.schemaVersion = 1; // claim v1 while carrying a v2-only field
+    const p = path.join(tmp(), "lying.vhclaim.json");
+    fs.writeFileSync(p, JSON.stringify(r));
+    expect(() => readReceipt(p)).to.throw(/manifest requires schemaVersion/);
+  });
+
+  it("rejects a malformed manifest entry (bad leaf)", function () {
+    const bad = manifest();
+    bad[0].leaf = "0xnothex";
+    expect(() => buildReceipt(goodParts({ manifest: bad, kind: "dir" }))).to.throw(/manifest/);
+  });
+
+  it("rejects a manifest entry missing a path", function () {
+    const bad = [{ contentHash: CH_A, leaf: LEAF_A }];
+    expect(() => buildAnchorReceipt({
+      contentHash: HASH,
+      contractAddress: CONTRACT,
+      chainId: 31337,
+      manifest: bad,
+    })).to.throw(/path/);
+  });
+
+  it("rejects an anchor receipt missing its contentHash / contractAddress", function () {
+    expect(() => buildAnchorReceipt({ contractAddress: CONTRACT, chainId: 1 })).to.throw(/contentHash/);
+    expect(() => buildAnchorReceipt({ contentHash: HASH, chainId: 1 })).to.throw(/contractAddress/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// diffManifest: the pure localizer used by `vh verify --receipt`.
+// ---------------------------------------------------------------------------
+describe("cli/receipt: diffManifest (pure file-level localizer)", function () {
+  // A tiny helper that fabricates a stable (path -> leaf/contentHash) manifest. The exact hash
+  // values are arbitrary here; diffManifest keys on path and compares leaf values.
+  function entry(p, n) {
+    const h = "0x" + String(n).padStart(2, "0").repeat(32);
+    return { path: p, contentHash: h, leaf: h };
+  }
+
+  it("identical manifests diff to nothing (identical = true)", function () {
+    const m = [entry("a", 1), entry("b", 2), entry("c", 3)];
+    const d = diffManifest(m, m.map((e) => ({ ...e })));
+    expect(d.identical).to.equal(true);
+    expect(d.added).to.be.empty;
+    expect(d.removed).to.be.empty;
+    expect(d.changed).to.be.empty;
+    expect(d.unchanged).to.have.length(3);
+  });
+
+  it("a single changed file is reported as exactly that CHANGED, old->new", function () {
+    const recorded = [entry("a", 1), entry("b", 2), entry("c", 3)];
+    const current = [entry("a", 1), entry("b", 9), entry("c", 3)]; // b changed
+    const d = diffManifest(recorded, current);
+    expect(d.identical).to.equal(false);
+    expect(d.added).to.be.empty;
+    expect(d.removed).to.be.empty;
+    expect(d.changed).to.have.length(1);
+    expect(d.changed[0].path).to.equal("b");
+    expect(d.changed[0].oldContentHash).to.equal(entry("b", 2).contentHash);
+    expect(d.changed[0].newContentHash).to.equal(entry("b", 9).contentHash);
+  });
+
+  it("an added and a removed file are reported as ADDED / REMOVED", function () {
+    const recorded = [entry("a", 1), entry("b", 2)];
+    const current = [entry("a", 1), entry("c", 3)]; // b removed, c added
+    const d = diffManifest(recorded, current);
+    expect(d.added.map((x) => x.path)).to.deep.equal(["c"]);
+    expect(d.removed.map((x) => x.path)).to.deep.equal(["b"]);
+    expect(d.changed).to.be.empty;
+  });
+
+  it("two unrelated manifests diff as fully divergent (all added + all removed, no overlap)", function () {
+    const recorded = [entry("x", 1), entry("y", 2)];
+    const current = [entry("p", 3), entry("q", 4)];
+    const d = diffManifest(recorded, current);
+    expect(d.added.map((x) => x.path)).to.deep.equal(["p", "q"]);
+    expect(d.removed.map((x) => x.path)).to.deep.equal(["x", "y"]);
+    expect(d.changed).to.be.empty;
+    expect(d.identical).to.equal(false);
   });
 });

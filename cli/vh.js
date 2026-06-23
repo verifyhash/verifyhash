@@ -33,6 +33,8 @@ function usage() {
     "",
     "anchor options (one-shot; contributor = 'first anchorer', NOT proven authorship):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
+    "  --receipt <path>           write an anchor receipt here (records a dir's per-file manifest",
+    "                             so `vh verify <dir> --receipt <p>` can localize WHICH file changed)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --dry-run                  print the tx that would be sent; needs no key, sends nothing",
@@ -61,6 +63,8 @@ function usage() {
     "  --i-understand-mainnet     allow revealing on a non-testnet chainId (DANGER: real funds)",
     "",
     "verify options:",
+    "  --receipt <path>           UNTRUSTED hint: diff a dir against this receipt's manifest and print",
+    "                             ADDED/REMOVED/CHANGED per file (verdict still = root vs on-chain)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "",
@@ -110,6 +114,7 @@ function parseAnchorArgs(argv) {
   const opts = {
     path: undefined,
     uri: undefined,
+    receipt: undefined,
     contract: undefined,
     rpc: undefined,
     dryRun: false,
@@ -127,6 +132,10 @@ function parseAnchorArgs(argv) {
       case "--uri":
         opts.uri = argv[++i];
         if (opts.uri === undefined) throw new Error("--uri requires a value");
+        break;
+      case "--receipt":
+        opts.receipt = argv[++i];
+        if (opts.receipt === undefined) throw new Error("--receipt requires a value");
         break;
       case "--contract":
         opts.contract = argv[++i];
@@ -168,6 +177,7 @@ async function cmdAnchor(argv) {
         path: opts.path,
         uri: opts.uri,
         contractAddress,
+        receiptPath: opts.receipt,
         dryRun: true,
         ethers,
       });
@@ -202,6 +212,7 @@ async function cmdAnchor(argv) {
       path: opts.path,
       uri: opts.uri,
       contractAddress,
+      receiptPath: opts.receipt,
       iUnderstandMainnet: opts.iUnderstandMainnet,
       provider,
       signer,
@@ -480,10 +491,14 @@ async function cmdReveal(argv) {
  * Throws on unknown/incomplete flags so a typo is never silently ignored.
  */
 function parseVerifyArgs(argv) {
-  const opts = { path: undefined, contract: undefined, rpc: undefined };
+  const opts = { path: undefined, contract: undefined, rpc: undefined, receipt: undefined };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
+      case "--receipt":
+        opts.receipt = argv[++i];
+        if (opts.receipt === undefined) throw new Error("--receipt requires a value");
+        break;
       case "--contract":
         opts.contract = argv[++i];
         if (opts.contract === undefined) throw new Error("--contract requires a value");
@@ -530,6 +545,7 @@ async function cmdVerify(argv) {
     result = await runVerify({
       path: opts.path,
       contractAddress,
+      receiptPath: opts.receipt,
       provider,
       ethers,
     });

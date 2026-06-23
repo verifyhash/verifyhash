@@ -60,6 +60,25 @@ of what the `uri` says.
 
 > Rule of thumb: **the `contentHash` is the proof; the `uri` is just a convenience pointer.**
 
+### A `--receipt` manifest is an UNTRUSTED hint too — it localizes, it does not verify
+
+`vh anchor <dir> --receipt <p>` records a `manifest`: the sorted list of `{ path, contentHash, leaf }`
+for every file in the directory (exactly what `vh hash <dir>` computes). `vh verify <dir> --receipt <p>`
+then loads that manifest and prints a precise per-file diff — files **ADDED / REMOVED / CHANGED**
+(old→new `contentHash`) — so a `MISMATCH` tells you *which* file diverged, not just *that* the tree
+diverged.
+
+The manifest is a **local convenience, not a trust anchor.** The authoritative verdict is still the
+same re-derive-and-compare check above: `vh verify` recomputes the directory's Merkle **root** from
+the files on disk and compares that root to the on-chain record. **MATCH/MISMATCH comes only from
+that comparison.** The manifest never participates in the verdict; a malicious or stale receipt can at
+worst mislabel which file moved, and even that is caught — `vh verify` flags a receipt whose recorded
+root does not match the recomputed root (`receiptHashMismatch`) and reports it as a different snapshot
+rather than silently pretending the files line up. The verify output prints this caveat inline, and
+the receipt schema's NatSpec (`cli/receipt.js`) states it as well.
+
+> Rule of thumb: **the on-chain root decides MATCH/MISMATCH; the receipt manifest only points at the file.**
+
 ---
 
 ## `timestamp` / `blockNumber` prove ordering + an UPPER BOUND on existence — NOT authorship time

@@ -18,6 +18,7 @@
 // integration test can drive it against a local hardhat node and assert the on-chain Anchored event.
 
 const { hashPath } = require("./hash");
+const { buildAnchorReceipt, writeReceipt } = require("./receipt");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
@@ -42,13 +43,21 @@ function isTestnetChainId(chainId) {
 
 /**
  * Compute the content hash to anchor for a filesystem path.
- * A file anchors its keccak256 digest; a directory anchors its sorted-leaf Merkle root.
+ * A file anchors its keccak256 digest; a directory anchors its sorted-leaf Merkle root. For a
+ * directory the per-file MANIFEST (sorted `{ path, contentHash, leaf }` — exactly what `vh hash <dir>`
+ * produces) is also returned so an anchor receipt can record it and a later `vh verify --receipt`
+ * can localize which file diverged.
  * @param {string} targetPath
- * @returns {{ contentHash: string, kind: "file"|"dir" }}
+ * @returns {{ contentHash: string, kind: "file"|"dir",
+ *            manifest: Array<{path:string,contentHash:string,leaf:string}>|null }}
  */
 function contentHashForPath(targetPath) {
   const res = hashPath(targetPath);
-  return { contentHash: res.root, kind: res.kind };
+  const manifest =
+    res.kind === "dir" && Array.isArray(res.leaves)
+      ? res.leaves.map((l) => ({ path: l.path, contentHash: l.contentHash, leaf: l.leaf }))
+      : null;
+  return { contentHash: res.root, kind: res.kind, manifest };
 }
 
 /**
@@ -82,7 +91,7 @@ function buildAnchorTx(opts) {
     throw new Error(`invalid contract address: ${contractAddress}`);
   }
 
-  const { contentHash, kind } = contentHashForPath(targetPath);
+  const { contentHash, kind, manifest } = contentHashForPath(targetPath);
   // The contract reverts on a zero hash; catch it here with a clearer message before we ever
   // try to build/send a doomed transaction.
   if (/^0x0{64}$/i.test(contentHash)) {
@@ -100,6 +109,7 @@ function buildAnchorTx(opts) {
     uri,
     kind,
     path: targetPath,
+    manifest, // per-file manifest for a dir (null for a file); recorded into a --receipt
     functionName: "anchor",
   };
 }
@@ -139,9 +149,11 @@ function formatDryRun(tx, chainId) {
  * @param {object} [opts.signer]               ethers Signer (required unless dryRun)
  * @param {object} [opts.provider]             ethers Provider (used to read chainId; falls back to signer.provider)
  * @param {bigint|number}[opts.chainId]        override/short-circuit the chainId lookup (tests)
+ * @param {string} [opts.receiptPath]          if set, write an anchor receipt here (records the dir
+ *                                             manifest so `vh verify --receipt` can localize a tamper)
  * @param {object} [opts.ethers]               ethers v6 module
  * @param {(s:string)=>void}[opts.log]         sink for human output (defaults to process.stdout)
- * @returns {Promise<object>} result describing what happened
+ * @returns {Promise<object>} result describing what happened (includes `receiptPath` when one was written)
  */
 async function runAnchor(opts) {
   const ethersLib = opts.ethers || require("ethers");
@@ -162,9 +174,36 @@ async function runAnchor(opts) {
     chainId = net.chainId;
   }
 
+  // Write a receipt (recording the dir manifest) when asked. For a dry run we still write it if a
+  // path was given, so a user can produce the manifest offline without ever broadcasting; the
+  // anchorTxHash/anchorBlockNumber are simply omitted until a real submission fills them in.
+  const maybeWriteReceipt = (extra) => {
+    if (!opts.receiptPath) return undefined;
+    const receipt = buildAnchorReceipt({
+      contentHash: tx.contentHash,
+      contractAddress: tx.to,
+      chainId: chainId == null ? 0 : chainId,
+      uri: tx.uri,
+      path: tx.path,
+      kind: tx.kind,
+      manifest: tx.manifest || undefined,
+      ...extra,
+    });
+    writeReceipt(receipt, opts.receiptPath);
+    log(`  receipt written: ${opts.receiptPath}\n`);
+    return receipt;
+  };
+
   if (opts.dryRun) {
     log(formatDryRun(tx, chainId) + "\n");
-    return { dryRun: true, tx, chainId: chainId == null ? null : BigInt(chainId) };
+    const receipt = maybeWriteReceipt();
+    return {
+      dryRun: true,
+      tx,
+      chainId: chainId == null ? null : BigInt(chainId),
+      receiptPath: opts.receiptPath,
+      receipt,
+    };
   }
 
   // Real submission from here on — enforce the safety rail first.
@@ -213,6 +252,12 @@ async function runAnchor(opts) {
     log(`  Anchored at index ${anchored.index} by ${anchored.contributor} in tx ${receipt.hash}\n`);
   }
 
+  // Persist an anchor receipt (with the dir manifest + the now-known tx hash/block) when asked.
+  const anchorReceipt = maybeWriteReceipt({
+    anchorTxHash: receipt.hash,
+    anchorBlockNumber: receipt.blockNumber,
+  });
+
   return {
     dryRun: false,
     tx,
@@ -220,6 +265,8 @@ async function runAnchor(opts) {
     txHash: receipt.hash,
     receipt,
     anchored,
+    receiptPath: opts.receiptPath,
+    anchorReceipt,
   };
 }
 

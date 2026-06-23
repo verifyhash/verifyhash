@@ -292,6 +292,83 @@ contract ContributionRegistry {
         return _hashByIndex[index];
     }
 
+    /// @notice Fetch the immutable record at a given insertion `index` (its hash + the Record).
+    /// @dev    Bounded, ownerless, side-effect-free read over the existing `_hashByIndex` / `_records`
+    ///         mappings — adds no state and no write path. Reverts with the SAME `IndexOutOfRange`
+    ///         error as `hashAtIndex` when `index >= total`.
+    ///         TRUST BOUNDARIES (identical to `getRecord`): the returned `uri` is an UNTRUSTED hint the
+    ///         contract never fetches/validates; `timestamp`/`blockNumber` are an UPPER BOUND on
+    ///         existence time + on-chain ORDERING, NOT authorship time; and `authorBound`
+    ///         distinguishes a proven first *claimant* (commit+reveal, true) from a mere "first
+    ///         anchorer" (one-shot anchor, false). See the contract-level "TRUST BOUNDARIES" notice.
+    /// @param  index       insertion index in `[0, total)`.
+    /// @return contentHash the digest anchored at `index`.
+    /// @return record      the immutable Record stored for that digest.
+    function getRecordAtIndex(uint256 index)
+        external
+        view
+        returns (bytes32 contentHash, Record memory record)
+    {
+        if (index >= total) revert IndexOutOfRange(index, total);
+        contentHash = _hashByIndex[index];
+        record = _records[contentHash];
+    }
+
+    /// @notice Paginated, forgiving batch read of records for the index window `[start, start+count)`.
+    /// @dev    Returns two PARALLEL arrays: `contentHashes[i]` and `records[i]` describe the same
+    ///         entry, for the i-th index in the (clamped) window. This is the read-side primitive an
+    ///         off-chain enumerator/indexer uses to page through the registry in one batched
+    ///         `eth_call` per page instead of `2*N` round-trips.
+    ///
+    ///         CLAMPING (pagination must be forgiving — it NEVER reverts on an out-of-range tail):
+    ///           * if `start >= total`, both arrays are empty;
+    ///           * the effective length is `min(count, total - start)`, so an over-long `count` (or a
+    ///             window that runs off the end) returns only the entries that actually exist.
+    ///         This means a caller can blindly walk `getRecords(0, page), getRecords(page, page), ...`
+    ///         and simply stop when it gets a short/empty page, without ever needing to know `total`
+    ///         up front or risking a revert at the boundary.
+    ///
+    ///         BOUNDEDNESS / no gas-DoS: the loop runs exactly `len <= count` iterations, i.e. it is
+    ///         bounded by the CALLER-SUPPLIED page size, never by the unbounded registry size — the
+    ///         contract's "no function loops over an unbounded set" invariant is preserved. These are
+    ///         `view`/`eth_call` reads (no gas is paid by an EOA), so the CALLER is responsible for
+    ///         choosing a sane `count`: an absurd page size can still exceed an RPC node's `eth_call`
+    ///         gas/time budget. Page in modest chunks (e.g. 100-1000) and walk forward.
+    ///
+    ///         Ownerless, side-effect-free, additive: adds no state and no write path. Each returned
+    ///         record carries the SAME TRUST BOUNDARIES as `getRecord` / `getRecordAtIndex` — `uri`
+    ///         untrusted; `timestamp`/`blockNumber` an existence upper bound + ordering, not
+    ///         authorship time; `authorBound` distinguishes a proven first claimant (true) from a mere
+    ///         first anchorer (false). See the contract-level "TRUST BOUNDARIES" notice.
+    /// @param  start the first insertion index to read (clamped: `start >= total` yields empty arrays).
+    /// @param  count the maximum number of records to return (the realized length is clamped to what
+    ///               actually exists; you are responsible for keeping this a sane page size).
+    /// @return contentHashes the digests for the clamped window, in insertion order.
+    /// @return records       the parallel immutable Records for those digests.
+    function getRecords(uint256 start, uint256 count)
+        external
+        view
+        returns (bytes32[] memory contentHashes, Record[] memory records)
+    {
+        uint256 t = total;
+        // Forgiving clamp: nothing exists at or past `total`, so an out-of-range window is empty, not
+        // a revert. `start >= t` short-circuits to `len = 0` and we never read past the end.
+        uint256 len;
+        if (start < t) {
+            uint256 available = t - start;
+            len = count < available ? count : available;
+        }
+
+        contentHashes = new bytes32[](len);
+        records = new Record[](len);
+        // Bounded by `len <= count` (the caller's page size), never by `total`.
+        for (uint256 i = 0; i < len; i++) {
+            bytes32 h = _hashByIndex[start + i];
+            contentHashes[i] = h;
+            records[i] = _records[h];
+        }
+    }
+
     /// @notice Inspect a pending commitment. Returns a zero `committer` if the commitment was never
     ///         registered or has already been opened by `reveal()`.
     /// @param  commitment the commitment hash (see `commitmentOf`).

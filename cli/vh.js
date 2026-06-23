@@ -30,6 +30,7 @@ const {
   runDatasetReport,
   runDatasetProve,
   runDatasetVerifyProof,
+  runDatasetAttest,
 } = require("./dataset");
 
 function usage() {
@@ -55,6 +56,7 @@ function usage() {
     "  vh dataset diff <manifestA> <manifestB>  OFFLINE manifest-to-manifest change report (no tree/key/net)",
     "  vh dataset summary <manifest>   OFFLINE provenance/license roll-up over a manifest (no tree/key/net)",
     "  vh dataset report <manifest> [--verify <dir>]  ONE deterministic evidence document for a filing",
+    "  vh dataset attest <manifest> [--out <p>]  canonical UNSIGNED attestation payload (the signing-ready bytes)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "",
@@ -264,6 +266,20 @@ function usage() {
     "  does NOT overclaim: it is NOT a timestamp ('unaltered since date T' needs a human-signed step).",
     "  Exit: with --verify, 0 MATCH / 3 MISMATCH (CI can gate); without --verify, 0 on a well-formed",
     "  manifest; usage error 2; corrupt/missing manifest (or bad --verify dir) 1.",
+    "",
+    "dataset attest options (canonical UNSIGNED attestation payload; OFFLINE; NO key, NO network):",
+    "  <manifest>                 REQUIRED: a manifest written by `vh dataset build`",
+    "  --out <path>               write the canonical payload to this explicit path (caller-chosen; never",
+    "                             cwd); the exact file written is named. Without it, it prints to stdout.",
+    "  --json                     emit the machine form — which IS the canonical, signable bytes",
+    "  Reads the manifest strictly (a corrupt/foreign manifest is rejected) and emits a versioned,",
+    "  strictly-validated, BYTE-DETERMINISTIC envelope committing to the dataset IDENTITY a signer signs:",
+    "  the Merkle root, fileCount, and a canonical manifestDigest (keccak256 over a canonical serialization",
+    "  of the committed file set — any edit to that set changes it). The envelope is marked `signed:false`",
+    "  with a `signature:null` slot the human/timestamp step fills. This is the UNSIGNED payload: standing",
+    "  up a real signing key / timestamp anchor is the human-owned trust-root (needs-human, P-3). Until a",
+    "  signature is attached it proves only the same set-membership/identity the manifest already does —",
+    "  NOT 'unaltered since date T'. Exit 0; usage error 2; corrupt/missing manifest 1.",
     "",
     "dataset prove options (OFFLINE set-membership of ONE file; NO key, NO network):",
     "  --file <path>              REQUIRED: the single file to prove was a member of the dataset",
@@ -1682,6 +1698,33 @@ function parseDatasetReportArgs(argv) {
 }
 
 /**
+ * Parse `dataset attest` argv into { manifest, out, json }. Takes EXACTLY one positional manifest path,
+ * an optional --out <p>, and an optional --json. Throws on a missing/extra positional or an unknown/
+ * incomplete flag, so a typo never silently attests the wrong (or no) manifest or writes to a surprise
+ * path (parser parity with the other dataset subcommands).
+ */
+function parseDatasetAttestArgs(argv) {
+  const opts = { manifest: undefined, out: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.manifest !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.manifest = a;
+    }
+  }
+  return opts;
+}
+
+/**
  * Parse `dataset prove` argv into { file, manifest, out, json }. Takes NO positional (the file is the
  * REQUIRED --file flag, the manifest the REQUIRED --manifest flag), so a stray positional hard-errors —
  * a typo never silently proves the wrong file or writes to a surprise path (parser parity with the others).
@@ -1749,6 +1792,9 @@ function cmdDataset(argv) {
   if (sub === "report") {
     return cmdDatasetReport(rest);
   }
+  if (sub === "attest") {
+    return cmdDatasetAttest(rest);
+  }
   if (sub === "prove") {
     return cmdDatasetProve(rest);
   }
@@ -1758,7 +1804,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | diff | summary | report | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | summary | report | attest | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -1959,6 +2005,36 @@ function cmdDatasetReport(argv) {
 }
 
 /**
+ * `vh dataset attest <manifest> [--out <p>] [--json]` — emit the canonical, byte-deterministic UNSIGNED
+ * attestation payload the human signing/timestamp trust-root (P-3) will sign. Reads the manifest
+ * strictly and commits to the dataset identity (root + fileCount + canonical manifestDigest) plus the
+ * standing trust caveat, with explicit `signed:false`/`signature:null` markers. PURELY OFFLINE: no tree,
+ * no provider, no key, no network. Exit 0 on success, 2 on a usage error, 1 on a runtime error
+ * (missing/corrupt manifest).
+ */
+function cmdDatasetAttest(argv) {
+  let opts;
+  try {
+    opts = parseDatasetAttestArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset attest` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+
+  try {
+    runDatasetAttest({ manifest: opts.manifest, out: opts.out, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
  * `vh dataset prove --file <p> --manifest <m> [--out <p>] [--json]` — build an OFFLINE set-membership
  * proof that ONE file was a member of the manifest's dataset. NO key, NO network. Exit 0 on MEMBER, 3
  * on NOT A MEMBER (so scripts/CI can branch), 2 on a usage error, 1 on a runtime error.
@@ -2093,6 +2169,7 @@ module.exports = {
   cmdDatasetDiff,
   cmdDatasetSummary,
   cmdDatasetReport,
+  cmdDatasetAttest,
   cmdDatasetProve,
   cmdDatasetVerifyProof,
   parseDatasetBuildArgs,
@@ -2100,6 +2177,7 @@ module.exports = {
   parseDatasetDiffArgs,
   parseDatasetSummaryArgs,
   parseDatasetReportArgs,
+  parseDatasetAttestArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
   parseHashArgs,

@@ -36,6 +36,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { keccak256, toUtf8Bytes } = require("ethers");
 const { hashDirStream, hashFileStream, pathLeaf, buildTree, proofForIndex } = require("./hash");
 const { diffManifest } = require("./receipt");
 const {
@@ -1326,10 +1327,303 @@ function runDatasetVerifyProof(opts) {
   return result;
 }
 
+// =================================================================================================
+// `vh dataset attest <manifest> [--json] [--out <p>]` — the deterministic, canonical UNSIGNED
+// attestation payload the human signing/timestamp trust-root (P-3) will sign.
+//
+// WHY THIS EXISTS
+//   DataLedger's most-repeated limit is that a manifest is NOT a timestamp: until someone with a real
+//   signing key / timestamp anchor signs it, a manifest proves only set-membership/identity — the same
+//   thing it already proves — NOT "unaltered since date T". Standing up that key/timestamp anchor is a
+//   HUMAN-owned trust-root (P-3, needs-human). But the deterministic, canonical BYTES that human/service
+//   would sign are fully buildable NOW, purely offline. Producing them turns the future human signing
+//   step from "design AND sign a payload" into "sign THIS exact file" — a one-liner.
+//
+//   `vh dataset attest <manifest>` reads the manifest via the SAME strict `readManifest` (a corrupt/
+//   foreign manifest is rejected, never half-accepted) and emits a versioned, strictly-validated
+//   attestation ENVELOPE that commits to the dataset IDENTITY a signer signs over:
+//     - `root`          : the manifest's Merkle root (commits to file NAMES and bytes)
+//     - `fileCount`     : the number of committed files
+//     - `manifestDigest`: keccak256 over a CANONICAL serialization of the manifest's `files` array
+//                         (see canonicalization below) — so the same committed file set always yields
+//                         the same digest, and ANY edit to the committed set changes it.
+//     - `note`          : the standing trust caveat (NOT a timestamp; signing is human-owned, P-3).
+//   PURELY OFFLINE: no tree, no provider, no key, no network.
+//
+// CANONICALIZATION (documented exactly so signing the bytes is well-defined)
+//   The `manifestDigest` is keccak256(utf8(canonicalFiles)), where canonicalFiles is the manifest's
+//   `files` entries projected to ONLY the root-committed fields { relPath, contentHash, leaf } (the
+//   UNTRUSTED `hints` are deliberately EXCLUDED — they are not bound into the root, so they must not
+//   change the identity a signer commits to), each entry serialized with its keys in the FIXED order
+//   [relPath, contentHash, leaf], the entries ORDERED by relPath ascending (a total, deterministic
+//   order), and the whole array JSON-serialized with NO insignificant whitespace. So two runs over the
+//   same committed file set produce byte-identical canonical bytes regardless of the on-disk manifest's
+//   key order or whitespace — which is the property that makes signing the bytes well-defined.
+//
+//   The ENVELOPE itself is then serialized canonically the same way (fixed top-level key order, no
+//   insignificant whitespace, trailing newline) so `--json` / `--out` emit byte-deterministic bytes.
+//
+// UNSIGNED MARKER (never imply a signature/timestamp exists)
+//   The envelope carries an explicit `signed: false` and a `signature: null` slot the human/timestamp
+//   step fills in. Until a signature is attached, the artifact proves only the same set-membership/
+//   identity the manifest already does — NOT "unaltered since date T". This is stated in-band in `note`.
+
+const ATTESTATION_KIND = "verifyhash.dataset-attestation";
+const ATTESTATION_SCHEMA_VERSION = 1;
+const SUPPORTED_ATTESTATION_SCHEMA_VERSIONS = Object.freeze([1]);
+
+// The standing trust caveat carried IN-BAND in every attestation envelope. Load-bearing, not
+// decorative: a reader (or the future human signer) must never mistake this UNSIGNED payload for a
+// time-anchored proof. It states plainly that signing is the human-owned trust-root (P-3, needs-human).
+const ATTESTATION_TRUST_NOTE =
+  "This is the UNSIGNED attestation payload. It commits to the dataset IDENTITY (Merkle root, " +
+  "fileCount, and a canonical manifestDigest over the committed file set). It is NOT signed and NOT " +
+  "timestamped: `signed` is false and `signature` is null until a human/timestamp trust-root fills " +
+  "them in. Standing up a real signing key / timestamp anchor is the human-owned trust-root " +
+  "(needs-human, P-3). Until a signature is attached, this proves only the same set-membership / " +
+  "identity the manifest already does — NOT that the dataset is unaltered since a date T.";
+
+/**
+ * Canonically serialize the manifest's COMMITTED file set to the exact UTF-8 bytes the `manifestDigest`
+ * is taken over. Deterministic by construction (see CANONICALIZATION above): only the root-committed
+ * fields { relPath, contentHash, leaf } are included (the untrusted `hints` are excluded), each entry's
+ * keys are emitted in the FIXED order [relPath, contentHash, leaf], the entries are ordered by relPath
+ * ascending, and the array is JSON-serialized with NO insignificant whitespace. Pure (no mutation).
+ *
+ * @param {object} manifest a validated manifest object (from readManifest/validateManifest)
+ * @returns {string} the canonical JSON string of the committed file set
+ */
+function canonicalManifestFiles(manifest) {
+  const entries = manifest.files.map((f) => ({
+    relPath: f.relPath,
+    contentHash: f.contentHash,
+    leaf: f.leaf,
+  }));
+  // Total, deterministic order by relPath. readManifest already rejects duplicate relPaths, so this is
+  // a strict total order (no ties) and the result is independent of the manifest's on-disk entry order.
+  entries.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
+  // JSON.stringify with the explicit per-entry key list pins key ORDER and emits NO insignificant
+  // whitespace; the fixed [relPath, contentHash, leaf] order is guaranteed by the object literal above
+  // (V8 preserves insertion order for string keys), so the bytes are stable across runs/manifests.
+  return JSON.stringify(entries);
+}
+
+/**
+ * Compute the canonical `manifestDigest`: keccak256 over the canonical serialization of the manifest's
+ * committed file set (see canonicalManifestFiles). Deterministic: the same committed set always yields
+ * the same digest; any edit/rename/add/remove to the committed set changes it. Pure.
+ * @param {object} manifest a validated manifest object
+ * @returns {string} a 0x-prefixed 32-byte hex digest
+ */
+function manifestDigest(manifest) {
+  return keccak256(toUtf8Bytes(canonicalManifestFiles(manifest)));
+}
+
+/**
+ * Build a normalized, fully-validated UNSIGNED attestation envelope from a validated manifest object.
+ * The envelope commits to the dataset identity (root, fileCount, manifestDigest) plus the standing trust
+ * caveat, and carries the explicit `signed: false` / `signature: null` unsigned markers. PURE: no I/O,
+ * no key, no network. Throws (via validateAttestation) if the result is malformed, so a corrupt envelope
+ * is never produced.
+ *
+ * @param {object} manifest a validated manifest object (from readManifest)
+ * @returns {object} a validated attestation envelope
+ */
+function buildAttestation(manifest) {
+  // The manifest must itself be sound before we attest its identity (readManifest already did this for
+  // the CLI path; revalidate here so a programmatic caller that hand-built a manifest is also checked).
+  validateManifest(manifest);
+  const env = {
+    kind: ATTESTATION_KIND,
+    schemaVersion: ATTESTATION_SCHEMA_VERSION,
+    note: ATTESTATION_TRUST_NOTE,
+    // Dataset identity the signer commits to.
+    root: manifest.root,
+    fileCount: manifest.files.length,
+    manifestDigest: manifestDigest(manifest),
+    // Explicit UNSIGNED markers — the human/timestamp trust-root (P-3) fills these in. The artifact
+    // NEVER implies it has been signed or timestamped.
+    signed: false,
+    signature: null,
+  };
+  validateAttestation(env);
+  return env;
+}
+
+/**
+ * Strictly validate a parsed attestation envelope. Throws an Error describing the FIRST problem; never
+ * mutates and never fills defaults (mirroring validateManifest / cli/proof.js's posture). A wrong kind/
+ * schemaVersion, a missing/!hex root or manifestDigest, a bad fileCount, or an envelope that claims to be
+ * signed (this UNSIGNED payload must never imply a signature) hard-errors here so a tampered/edited
+ * payload is caught on read.
+ * @param {any} obj
+ * @returns {object} the same object, if valid
+ */
+function validateAttestation(obj) {
+  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+    throw new Error("dataset attestation must be a JSON object");
+  }
+  if (obj.kind !== ATTESTATION_KIND) {
+    throw new Error(
+      `not a verifyhash dataset attestation (kind: ${JSON.stringify(obj.kind)}; expected ${JSON.stringify(
+        ATTESTATION_KIND
+      )})`
+    );
+  }
+  if (!SUPPORTED_ATTESTATION_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
+    throw new Error(
+      `unsupported dataset attestation schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
+        `(this build understands ${JSON.stringify(SUPPORTED_ATTESTATION_SCHEMA_VERSIONS)})`
+    );
+  }
+  for (const f of ["root", "manifestDigest"]) {
+    if (typeof obj[f] !== "string" || !HEX32_RE.test(obj[f])) {
+      throw new Error(
+        `dataset attestation ${f} must be a 0x-prefixed 32-byte hex string, got: ${String(obj[f])}`
+      );
+    }
+  }
+  if (!Number.isInteger(obj.fileCount) || obj.fileCount < 1) {
+    throw new Error(
+      `dataset attestation fileCount must be a positive integer, got: ${String(obj.fileCount)}`
+    );
+  }
+  // The UNSIGNED payload must NEVER imply a signature/timestamp. `signed` must be exactly false and
+  // `signature` exactly null — a payload that claims otherwise (e.g. a hand-edited `signed:true` with no
+  // real signature scheme this build understands) is rejected rather than silently believed.
+  if (obj.signed !== false) {
+    throw new Error(
+      `dataset attestation signed must be false (this build emits/reads only the UNSIGNED payload; ` +
+        `attaching a real signature is the human-owned trust-root, P-3), got: ${String(obj.signed)}`
+    );
+  }
+  if (obj.signature !== null) {
+    throw new Error(
+      `dataset attestation signature must be null in the UNSIGNED payload, got: ${String(obj.signature)}`
+    );
+  }
+  return obj;
+}
+
+/**
+ * Serialize an attestation envelope to its canonical, byte-deterministic bytes: a fixed top-level key
+ * order, NO insignificant whitespace, a single trailing newline. Two runs over the same manifest produce
+ * an identical string — this is the property that makes signing the bytes well-defined. The string IS
+ * the canonical bytes the `--json` form emits and the `--out` file holds.
+ * @param {object} env a validated attestation envelope
+ * @returns {string} the canonical serialization (newline-terminated)
+ */
+function serializeAttestation(env) {
+  validateAttestation(env);
+  // Fixed top-level key order via the explicit object literal (V8 preserves string-key insertion order),
+  // JSON.stringify with no spacing -> no insignificant whitespace.
+  const canonical = {
+    kind: env.kind,
+    schemaVersion: env.schemaVersion,
+    note: env.note,
+    root: env.root,
+    fileCount: env.fileCount,
+    manifestDigest: env.manifestDigest,
+    signed: env.signed,
+    signature: env.signature,
+  };
+  return JSON.stringify(canonical) + "\n";
+}
+
+/**
+ * Read, parse, and STRICTLY validate the attestation envelope at `attestationPath`. The strict reader
+ * round-trips with serializeAttestation: a malformed/edited envelope (wrong kind/schemaVersion, missing
+ * or !hex root/manifestDigest, a signed-looking payload) is rejected, never half-accepted. Throws on a
+ * missing file or invalid JSON too.
+ * @param {string} attestationPath
+ * @returns {object} the validated envelope
+ */
+function readAttestation(attestationPath) {
+  if (!attestationPath || typeof attestationPath !== "string") {
+    throw new Error("readAttestation requires an attestation file path");
+  }
+  let raw;
+  try {
+    raw = fs.readFileSync(attestationPath, "utf8");
+  } catch (e) {
+    throw new Error(`cannot read dataset attestation at ${attestationPath}: ${e.message}`);
+  }
+  let obj;
+  try {
+    obj = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`dataset attestation at ${attestationPath} is not valid JSON: ${e.message}`);
+  }
+  return validateAttestation(obj);
+}
+
+/**
+ * Orchestrate `vh dataset attest <manifest> [--json] [--out <p>]`. Reads the manifest via the strict
+ * `readManifest`, builds the UNSIGNED attestation envelope, and emits its canonical bytes. With `--out`
+ * it writes those exact bytes to the caller's EXPLICIT path (never cwd) and names the file; without
+ * `--out` it prints them to stdout. `--json` is the machine form AND is itself the canonical bytes.
+ * PURELY OFFLINE: no tree, no provider, no key, no network.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
+ * @param {boolean}[opts.json]    emit the canonical machine form (which is the same canonical bytes)
+ * @param {string} [opts.out]     write the canonical payload to this explicit path (caller-chosen; never cwd)
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {{ envelope: object, canonical: string, out: string|null }}
+ */
+function runDatasetAttest(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetAttest requires options");
+  const { manifest: manifestPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runDatasetAttest requires a <manifest> path");
+
+  // Strict read: a corrupt/edited/foreign manifest is rejected here, never half-accepted, BEFORE any
+  // payload is built. The file SET it commits to is the TRUSTED basis of the attestation identity.
+  const manifest = readManifest(manifestPath);
+
+  const envelope = buildAttestation(manifest);
+  // The canonical bytes are the SAME whether printed, written, or `--json`-emitted — signing is then a
+  // one-liner over exactly these bytes.
+  const canonical = serializeAttestation(envelope);
+
+  let outAbs = null;
+  if (opts.out) {
+    // Write the EXACT canonical bytes to the caller-chosen path (resolved to absolute so the success
+    // line names precisely the file written) — never silently the cwd. The ONLY side effect.
+    outAbs = path.resolve(opts.out);
+    fs.writeFileSync(outAbs, canonical);
+    // The success line goes to stdout for the human path; --json stays pure canonical bytes (no extra
+    // lines) so its stdout IS the signable payload.
+    if (!opts.json) write(`dataset attestation written: ${outAbs}\n`);
+  }
+
+  if (opts.json) {
+    // The machine form IS the canonical bytes (so a caller can pipe `--json` straight into a signer).
+    write(canonical);
+  } else if (!outAbs) {
+    // No --out: print the canonical payload to stdout. (When --out was given, the success line above is
+    // the human feedback and the bytes live in the file.)
+    write(canonical);
+  }
+
+  return { envelope, canonical, out: outAbs };
+}
+
 module.exports = {
   MANIFEST_KIND,
   MANIFEST_SCHEMA_VERSION,
   SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
+  ATTESTATION_KIND,
+  ATTESTATION_SCHEMA_VERSION,
+  SUPPORTED_ATTESTATION_SCHEMA_VERSIONS,
+  ATTESTATION_TRUST_NOTE,
+  canonicalManifestFiles,
+  manifestDigest,
+  buildAttestation,
+  validateAttestation,
+  serializeAttestation,
+  readAttestation,
+  runDatasetAttest,
   TRUST_NOTE,
   MEMBERSHIP_TRUST_NOTE,
   NO_LICENSE_BUCKET,

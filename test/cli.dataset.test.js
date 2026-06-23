@@ -44,6 +44,16 @@ const {
   buildDatasetProof,
   runDatasetProve,
   runDatasetVerifyProof,
+  ATTESTATION_KIND,
+  ATTESTATION_SCHEMA_VERSION,
+  ATTESTATION_TRUST_NOTE,
+  canonicalManifestFiles,
+  manifestDigest,
+  buildAttestation,
+  validateAttestation,
+  serializeAttestation,
+  readAttestation,
+  runDatasetAttest,
 } = require("../cli/dataset");
 const { readProofArtifact, recomputeFold } = require("../cli/proof");
 const {
@@ -53,6 +63,7 @@ const {
   parseDatasetDiffArgs,
   parseDatasetSummaryArgs,
   parseDatasetReportArgs,
+  parseDatasetAttestArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
 } = require("../cli/vh");
@@ -1648,6 +1659,304 @@ describe("cli: vh dataset build (T-13.1)", function () {
       } finally {
         process.stderr.write = orig;
       }
+    });
+  });
+
+  describe("vh dataset attest (T-15.2): canonical UNSIGNED attestation payload", function () {
+    // Build a manifest for `files` (+ optional hints) and return { dir, manifestPath }. Every temp dir
+    // self-cleans in afterEach. attest is purely offline (no tree/provider/key/network).
+    function buildFixture(files, hints, prefix) {
+      const dir = tmp((prefix || "att") + "-tree-");
+      writeFiles(dir, files);
+      const manifestPath = path.join(tmp((prefix || "att") + "-man-"), "manifest.json");
+      runDatasetBuild({ dir, out: manifestPath, hints, stdout: () => {} });
+      return { dir, manifestPath };
+    }
+
+    it("attest's root/fileCount match the manifest; manifestDigest is stable across runs", function () {
+      const { manifestPath } = buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB", "c.txt": "CCC" },
+        undefined,
+        "att-basic"
+      );
+      const manifest = readManifest(manifestPath);
+
+      const r1 = runDatasetAttest({ manifest: manifestPath, stdout: () => {} });
+      const r2 = runDatasetAttest({ manifest: manifestPath, stdout: () => {} });
+
+      // Identity matches the manifest.
+      expect(r1.envelope.root).to.equal(manifest.root);
+      expect(r1.envelope.fileCount).to.equal(3);
+      expect(r1.envelope.fileCount).to.equal(manifest.files.length);
+      // The envelope shape is versioned + the correct kind.
+      expect(r1.envelope.kind).to.equal(ATTESTATION_KIND);
+      expect(r1.envelope.schemaVersion).to.equal(ATTESTATION_SCHEMA_VERSION);
+      // manifestDigest is a 0x 32-byte hex, equals the pure helper, and is STABLE across runs.
+      expect(r1.envelope.manifestDigest).to.match(/^0x[0-9a-f]{64}$/);
+      expect(r1.envelope.manifestDigest).to.equal(manifestDigest(manifest));
+      expect(r2.envelope.manifestDigest).to.equal(r1.envelope.manifestDigest);
+      // The whole canonical payload is byte-identical across runs.
+      expect(r2.canonical).to.equal(r1.canonical);
+    });
+
+    it("is canonical/whitespace-and-key-order independent: re-serializing a manifest does NOT change the digest", function () {
+      const { manifestPath } = buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB", "z/c.txt": "CCC" },
+        { "a.txt": { license: "MIT", source: "X" } },
+        "att-canon"
+      );
+      const manifest = readManifest(manifestPath);
+      const d0 = manifestDigest(manifest);
+
+      // Re-serialize the manifest with DIFFERENT, insignificant variation: pretty-print whitespace AND a
+      // re-ordered `files` entry key order AND a re-ordered files array. Canonicalization must absorb all
+      // of this — the committed file SET is unchanged, so the digest must be unchanged.
+      const reordered = {
+        // Top-level keys shuffled.
+        files: manifest.files
+          .slice()
+          .reverse()
+          .map((f) => {
+            // Per-entry key order shuffled; add the untrusted hint back in a different position (hints
+            // are NOT bound into the digest, so they must not change it either).
+            const e = { leaf: f.leaf, contentHash: f.contentHash, relPath: f.relPath };
+            if (f.hints) e.hints = f.hints;
+            return e;
+          }),
+        fileCount: manifest.fileCount,
+        root: manifest.root,
+        note: manifest.note,
+        schemaVersion: manifest.schemaVersion,
+        kind: manifest.kind,
+      };
+      const reMan = readManifest(
+        (() => {
+          const p = path.join(tmp("att-canon-re-"), "m.json");
+          fs.writeFileSync(p, JSON.stringify(reordered, null, 4) + "\n"); // pretty + reordered
+          return p;
+        })()
+      );
+      expect(manifestDigest(reMan)).to.equal(d0); // canonicalization holds across reorder/whitespace/hints
+
+      // Removing a hint entirely also leaves the digest unchanged (hints are not committed).
+      const noHint = JSON.parse(JSON.stringify(manifest));
+      for (const f of noHint.files) delete f.hints;
+      const noHintPath = path.join(tmp("att-canon-nh-"), "m.json");
+      fs.writeFileSync(noHintPath, JSON.stringify(noHint));
+      expect(manifestDigest(readManifest(noHintPath))).to.equal(d0);
+    });
+
+    it("editing one committed file (rebuild the manifest) CHANGES the manifestDigest + root", function () {
+      const dir = tmp("att-edit-tree-");
+      writeFiles(dir, { "a.txt": "AAA", "b.txt": "BBB" });
+      const m1Path = path.join(tmp("att-edit-m1-"), "m.json");
+      runDatasetBuild({ dir, out: m1Path, stdout: () => {} });
+      const a1 = runDatasetAttest({ manifest: m1Path, stdout: () => {} }).envelope;
+
+      // Edit a committed file's bytes and rebuild the manifest.
+      fs.writeFileSync(path.join(dir, "a.txt"), "EDITED");
+      const m2Path = path.join(tmp("att-edit-m2-"), "m.json");
+      runDatasetBuild({ dir, out: m2Path, stdout: () => {} });
+      const a2 = runDatasetAttest({ manifest: m2Path, stdout: () => {} }).envelope;
+
+      expect(a2.root).to.not.equal(a1.root);
+      expect(a2.manifestDigest).to.not.equal(a1.manifestDigest);
+    });
+
+    it("the envelope is marked UNSIGNED and carries no signature; the trust note disavows a timestamp", function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "att-unsigned");
+      const env = runDatasetAttest({ manifest: manifestPath, stdout: () => {} }).envelope;
+      expect(env.signed).to.equal(false);
+      expect(env.signature).to.equal(null);
+      expect(env.note).to.equal(ATTESTATION_TRUST_NOTE);
+      // The in-band note states plainly it is unsigned, not a timestamp, and points at the human step.
+      expect(env.note).to.contain("UNSIGNED");
+      expect(env.note).to.contain("needs-human");
+      expect(env.note).to.contain("P-3");
+      expect(env.note).to.contain("unaltered since a date");
+    });
+
+    it("the strict reader round-trips the writer and REJECTS a hand-edited/tampered envelope", function () {
+      const { manifestPath } = buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB" },
+        undefined,
+        "att-strict"
+      );
+      const outPath = path.join(tmp("att-strict-out-"), "att.json");
+      const res = runDatasetAttest({ manifest: manifestPath, out: outPath, stdout: () => {} });
+
+      // Round-trip: the strict reader accepts exactly what the writer wrote, byte-for-byte.
+      const back = readAttestation(outPath);
+      expect(back).to.deep.equal(res.envelope);
+      // And serializing the read-back envelope reproduces the exact file bytes (canonical round-trip).
+      expect(serializeAttestation(back)).to.equal(res.canonical);
+      expect(fs.readFileSync(outPath, "utf8")).to.equal(res.canonical);
+
+      // Tamper variants — each must be REJECTED, never half-accepted.
+      const base = JSON.parse(res.canonical);
+      const writeBad = (mut, name) => {
+        const o = JSON.parse(res.canonical);
+        mut(o);
+        const p = path.join(tmp("att-strict-bad-" + name + "-"), "att.json");
+        fs.writeFileSync(p, JSON.stringify(o));
+        return p;
+      };
+      expect(() => readAttestation(writeBad((o) => (o.kind = "nope"), "kind"))).to.throw(
+        /not a verifyhash dataset attestation/
+      );
+      expect(() => readAttestation(writeBad((o) => (o.schemaVersion = 99), "ver"))).to.throw(
+        /unsupported dataset attestation schemaVersion/
+      );
+      expect(() => readAttestation(writeBad((o) => (o.root = "0xnothex"), "root"))).to.throw(
+        /root must be a 0x-prefixed 32-byte hex/
+      );
+      expect(() => readAttestation(writeBad((o) => delete o.manifestDigest, "digest"))).to.throw(
+        /manifestDigest must be a 0x-prefixed 32-byte hex/
+      );
+      // A payload that CLAIMS to be signed (without a real signature scheme) is rejected — the UNSIGNED
+      // payload must never imply a signature.
+      expect(() => readAttestation(writeBad((o) => (o.signed = true), "signed"))).to.throw(
+        /signed must be false/
+      );
+      expect(() => readAttestation(writeBad((o) => (o.signature = "0xdead"), "sig"))).to.throw(
+        /signature must be null/
+      );
+      // Keep a reference to `base` so eslint-style unused doesn't bite; assert it's the good envelope.
+      expect(base.kind).to.equal(ATTESTATION_KIND);
+    });
+
+    it("--out writes EXACTLY that file (and names it) and leaves the working tree clean", function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "att-out");
+      const outDir = tmp("att-out-dst-");
+      const outPath = path.join(outDir, "attestation.json");
+      const cwdBefore = fs.readdirSync(process.cwd());
+
+      const lines = [];
+      const res = runDatasetAttest({ manifest: manifestPath, out: outPath, stdout: (s) => lines.push(s) });
+      expect(res.out).to.equal(path.resolve(outPath));
+      expect(fs.existsSync(outPath)).to.equal(true);
+      // The human success line names the exact file written.
+      expect(lines.join("")).to.contain(path.resolve(outPath));
+      // The file holds exactly the canonical bytes.
+      expect(fs.readFileSync(outPath, "utf8")).to.equal(res.canonical);
+      // No cwd litter: the working tree is unchanged.
+      expect(fs.readdirSync(process.cwd())).to.deep.equal(cwdBefore);
+    });
+
+    it("--json IS the canonical bytes and round-trips through the strict reader", function () {
+      const { manifestPath } = buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB" },
+        { "a.txt": { license: "MIT" } },
+        "att-json"
+      );
+      const lines = [];
+      const res = runDatasetAttest({ manifest: manifestPath, json: true, stdout: (s) => lines.push(s) });
+      const printed = lines.join("");
+      // The machine form printed to stdout IS the canonical signable bytes (nothing extra).
+      expect(printed).to.equal(res.canonical);
+      const parsed = JSON.parse(printed);
+      expect(validateAttestation(parsed)).to.deep.equal(res.envelope);
+
+      // --json + --out: the file holds the canonical bytes and stdout is ONLY those bytes (no success
+      // line mixed in, so a caller can pipe `--json` straight into a signer).
+      const outPath = path.join(tmp("att-json-out-"), "att.json");
+      const jlines = [];
+      const r2 = runDatasetAttest({ manifest: manifestPath, json: true, out: outPath, stdout: (s) => jlines.push(s) });
+      expect(jlines.join("")).to.equal(r2.canonical);
+      expect(fs.readFileSync(outPath, "utf8")).to.equal(r2.canonical);
+    });
+
+    it("without --out it prints the canonical payload to stdout", function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "att-stdout");
+      const lines = [];
+      const res = runDatasetAttest({ manifest: manifestPath, stdout: (s) => lines.push(s) });
+      expect(lines.join("")).to.equal(res.canonical);
+      expect(res.out).to.equal(null);
+    });
+
+    it("rejects a corrupt/foreign manifest (throws; main exit 1) — no half-accept", async function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "att-corrupt");
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      const badPath = path.join(tmp("att-corrupt-bad-"), "m.json");
+      fs.writeFileSync(badPath, JSON.stringify(m));
+      expect(() => runDatasetAttest({ manifest: badPath, stdout: () => {} })).to.throw(
+        /root must be a 0x-prefixed 32-byte hex/
+      );
+      const foreignPath = path.join(tmp("att-foreign-"), "f.json");
+      fs.writeFileSync(foreignPath, JSON.stringify({ kind: "not-a-manifest", schemaVersion: 1 }));
+      expect(() => runDatasetAttest({ manifest: foreignPath, stdout: () => {} })).to.throw(
+        /not a verifyhash dataset manifest/
+      );
+
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "attest", "/no/such/manifest.json"])).to.equal(1);
+        expect(await main(["dataset", "attest", badPath])).to.equal(1);
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    // ---- CLI wiring + exit codes -------------------------------------------------------------------
+    it("parseDatasetAttestArgs parses positional + --out/--json; rejects unknowns / extras", function () {
+      expect(parseDatasetAttestArgs(["/m"])).to.deep.equal({
+        manifest: "/m",
+        out: undefined,
+        json: false,
+      });
+      expect(parseDatasetAttestArgs(["/m", "--out", "/o", "--json"])).to.deep.equal({
+        manifest: "/m",
+        out: "/o",
+        json: true,
+      });
+      expect(() => parseDatasetAttestArgs(["/m", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseDatasetAttestArgs(["/m", "/n"])).to.throw(/unexpected extra argument/);
+      expect(() => parseDatasetAttestArgs(["/m", "--out"])).to.throw(/--out requires a value/);
+    });
+
+    it("main() exit 0 on success; exit 2 (usage) on missing/extra positional / unknown flag", async function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "att-usage");
+      const origOut = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      let okCode;
+      try {
+        okCode = await main(["dataset", "attest", manifestPath]);
+      } finally {
+        process.stdout.write = origOut;
+      }
+      expect(okCode).to.equal(0);
+
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "attest"])).to.equal(2); // no positional
+        expect(await main(["dataset", "attest", manifestPath, manifestPath])).to.equal(2); // extra positional
+        expect(await main(["dataset", "attest", manifestPath, "--bogus"])).to.equal(2); // unknown flag
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    it("main() --out writes the file and exits 0, leaving the working tree clean", async function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA", "b.txt": "BBB" }, undefined, "att-main-out");
+      const outPath = path.join(tmp("att-main-out-dst-"), "att.json");
+      const cwdBefore = fs.readdirSync(process.cwd());
+      const origOut = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      let code;
+      try {
+        code = await main(["dataset", "attest", manifestPath, "--out", outPath]);
+      } finally {
+        process.stdout.write = origOut;
+      }
+      expect(code).to.equal(0);
+      expect(fs.existsSync(outPath)).to.equal(true);
+      // The written file is a valid, strictly-readable attestation over this manifest.
+      const env = readAttestation(outPath);
+      expect(env.root).to.equal(readManifest(manifestPath).root);
+      expect(fs.readdirSync(process.cwd())).to.deep.equal(cwdBefore);
     });
   });
 });

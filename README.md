@@ -38,11 +38,13 @@ Full detail, including the table of "trust it for / do NOT trust it for", is in
 ## CLI (`cli/vh.js`)
 
 ```
-vh hash   <path>            # keccak256 of a file, or the Merkle root of a directory
-vh anchor <path> [--uri u]  # one-shot anchor (FRONT-RUNNABLE: contributor = first anchorer only)
-vh claim  <path> [--uri u]  # commit-reveal: front-running-resistant authorship claim (authorBound)
-vh verify <path>            # recompute the hash, look it up on-chain, report MATCH / MISMATCH
-vh prove  <file> --root dir # generate + on-chain-verify a per-file Merkle proof
+vh hash   <path>                 # keccak256 of a file, or the Merkle root of a directory
+vh anchor <path> [--uri u]       # one-shot anchor (FRONT-RUNNABLE: contributor = first anchorer only)
+vh claim  <path> [--uri u]       # commit-reveal in one shot: front-running-resistant claim (authorBound)
+vh commit <path> [--receipt p]   # commit-reveal step 1: commit + persist a resumable claim receipt
+vh reveal --receipt <p>          # commit-reveal step 2: resume from the receipt and reveal
+vh verify <path>                 # recompute the hash, look it up on-chain, report MATCH / MISMATCH
+vh prove  <file> --root dir      # generate + on-chain-verify a per-file Merkle proof
 ```
 
 `vh anchor` is a single cheap transaction but its `contentHash` is public in the mempool, so anyone
@@ -50,6 +52,32 @@ can copy and anchor it first — use it only for existence/timestamp proofs wher
 matter. `vh claim` runs the two-step commit-reveal flow (`commit` a sender-bound, salt-blinded
 commitment, wait `MIN_REVEAL_DELAY` blocks, then `reveal`) so a front-runner cannot become the
 recorded contributor. See `docs/TRUST-BOUNDARIES.md` for the threat model and why it holds.
+
+### Resumable claims (`vh commit` + `vh reveal`)
+
+The commit-reveal flow spans two transactions separated by a maturation window of `MIN_REVEAL_DELAY`
+blocks (minutes on a live testnet). The secret salt that binds your commitment exists only in memory
+during that wait — if the one-shot `vh claim` process crashes or is interrupted, the salt is lost and
+the claim is **permanently unrevealable by anyone** (reveal requires that exact salt). To make a claim
+durable and crash-recoverable, split it:
+
+```
+vh commit ./src --uri ipfs://cid      # sends commit(), writes ./<hashPrefix>.vhclaim.json, then exits
+# ...wait out MIN_REVEAL_DELAY (a few blocks)...
+vh reveal --receipt ./<hashPrefix>.vhclaim.json   # resumes from the receipt and reveals
+```
+
+`vh commit` persists a versioned JSON **claim receipt** (salt, commitment, contentHash, committer,
+contract, chainId, commit tx/block, `MIN_REVEAL_DELAY`) to `--receipt <path>` (default
+`./<contentHashPrefix>.vhclaim.json`) **before it returns**, so a separate `vh reveal` invocation — even
+after a reboot — can finish the claim. If you reveal before the window matures the contract reverts with
+`RevealTooSoon` and the receipt is left intact, so you can simply retry. The receipt is an *untrusted
+local convenience*: the authoritative attribution is always the on-chain record (see
+`docs/TRUST-BOUNDARIES.md`). `vh claim` remains the one-shot convenience and now also drops a receipt at
+commit time, so even it is crash-recoverable.
+
+> Keep the receipt private until you reveal: it contains the secret salt. After a successful reveal the
+> commitment is single-use and spent, so the receipt is no longer sensitive.
 
 `vh verify` is read-only: it re-derives the content hash and compares it to what is anchored, which
 is exactly the integrity check the trust model requires. It needs only an RPC URL — no key, no

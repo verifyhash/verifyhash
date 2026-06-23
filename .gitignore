@@ -5,3 +5,6 @@ coverage/
 coverage.json
 typechain-types/
 .env
+
+# Claim receipts (vh commit/claim) — contain a secret salt; never commit them.
+*.vhclaim.json

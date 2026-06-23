@@ -16,7 +16,7 @@ const { hashPath } = require("./hash");
 const { runAnchor } = require("./anchor");
 const { runVerify } = require("./verify");
 const { runProve } = require("./prove");
-const { runClaim } = require("./claim");
+const { runClaim, runCommit, runReveal } = require("./claim");
 
 function usage() {
   return [
@@ -25,7 +25,9 @@ function usage() {
     "Usage:",
     "  vh hash <path>             keccak256 of a file, or sorted-leaf Merkle root of a directory",
     "  vh anchor <path> [opts]    anchor a file/dir's content hash on-chain (FRONT-RUNNABLE)",
-    "  vh claim <path> [opts]     front-running-resistant attribution via commit-reveal",
+    "  vh claim <path> [opts]     front-running-resistant attribution via commit-reveal (one-shot)",
+    "  vh commit <path> [opts]    commit-reveal step 1: commit + write a resumable claim receipt",
+    "  vh reveal --receipt <p>    commit-reveal step 2: resume from a receipt and reveal",
     "  vh verify <path> [opts]    recompute the hash, read the registry, print MATCH / MISMATCH",
     "  vh prove <file> [opts]     Merkle-prove a file against an anchored repo root via verifyLeaf",
     "",
@@ -39,10 +41,24 @@ function usage() {
     "claim options (commit-reveal; contributor = proven first claimant, authorBound = true):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
     "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
+    "  --receipt <path>           where to write the claim receipt (default ./<hashPrefix>.vhclaim.json)",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --dry-run                  print the commit+reveal plan; needs no key, sends nothing",
     "  --i-understand-mainnet     allow claiming on a non-testnet chainId (DANGER: real funds)",
+    "",
+    "commit options (step 1 of a resumable claim; writes a receipt, then commits):",
+    "  --uri <uri>                pointer recorded at reveal time (kept in the receipt until then)",
+    "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
+    "  --receipt <path>           where to write the claim receipt (default ./<hashPrefix>.vhclaim.json)",
+    "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --i-understand-mainnet     allow committing on a non-testnet chainId (DANGER: real funds)",
+    "",
+    "reveal options (step 2; resumes a prior commit from its receipt and reveals):",
+    "  --receipt <path>           REQUIRED: the receipt file written by `vh commit`",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --i-understand-mainnet     allow revealing on a non-testnet chainId (DANGER: real funds)",
     "",
     "verify options:",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
@@ -199,14 +215,16 @@ async function cmdAnchor(argv) {
 }
 
 /**
- * Parse `claim` argv into { path, uri, salt, contract, rpc, dryRun, iUnderstandMainnet }.
- * Throws on unknown/incomplete flags so a typo never silently turns into a real submission.
+ * Parse `claim`/`commit` argv into { path, uri, salt, receipt, contract, rpc, dryRun,
+ * iUnderstandMainnet }. Throws on unknown/incomplete flags so a typo never silently turns into a
+ * real submission. Both `vh claim` and `vh commit` take the same flags (commit ignores --dry-run).
  */
 function parseClaimArgs(argv) {
   const opts = {
     path: undefined,
     uri: undefined,
     salt: undefined,
+    receipt: undefined,
     contract: undefined,
     rpc: undefined,
     dryRun: false,
@@ -229,6 +247,10 @@ function parseClaimArgs(argv) {
         opts.salt = argv[++i];
         if (opts.salt === undefined) throw new Error("--salt requires a value");
         break;
+      case "--receipt":
+        opts.receipt = argv[++i];
+        if (opts.receipt === undefined) throw new Error("--receipt requires a value");
+        break;
       case "--contract":
         opts.contract = argv[++i];
         if (opts.contract === undefined) throw new Error("--contract requires a value");
@@ -241,6 +263,34 @@ function parseClaimArgs(argv) {
         if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
         if (opts.path !== undefined) throw new Error(`unexpected extra argument: ${a}`);
         opts.path = a;
+    }
+  }
+  return opts;
+}
+
+/**
+ * Parse `reveal` argv into { receipt, rpc, iUnderstandMainnet }. `--receipt <path>` is required and
+ * carries everything reveal needs; there is no <path> positional. Throws on unknown/incomplete flags.
+ */
+function parseRevealArgs(argv) {
+  const opts = { receipt: undefined, rpc: undefined, iUnderstandMainnet: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--i-understand-mainnet":
+        opts.iUnderstandMainnet = true;
+        break;
+      case "--receipt":
+        opts.receipt = argv[++i];
+        if (opts.receipt === undefined) throw new Error("--receipt requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        throw new Error(`unexpected extra argument: ${a}`);
     }
   }
   return opts;
@@ -306,7 +356,113 @@ async function cmdClaim(argv) {
       path: opts.path,
       uri: opts.uri,
       salt: opts.salt,
+      receiptPath: opts.receipt,
       contractAddress,
+      iUnderstandMainnet: opts.iUnderstandMainnet,
+      provider,
+      signer,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+async function cmdCommit(argv) {
+  let opts;
+  try {
+    opts = parseClaimArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.path) {
+    process.stderr.write("error: `vh commit` requires a <path>\n\n" + usage());
+    return 2;
+  }
+  // `commit` has no dry-run: it intentionally sends a real tx and writes a receipt. A typo'd
+  // --dry-run should not silently no-op into nothing useful.
+  if (opts.dryRun) {
+    process.stderr.write(
+      "error: `vh commit` has no --dry-run; use `vh claim --dry-run` to preview the plan\n"
+    );
+    return 2;
+  }
+
+  const ethers = require("ethers");
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL\n"
+    );
+    return 1;
+  }
+  const pk = process.env.PRIVATE_KEY;
+  if (!pk) {
+    process.stderr.write(
+      "error: no PRIVATE_KEY in the environment; cannot sign the commit.\n"
+    );
+    return 1;
+  }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const signer = new ethers.Wallet(pk, provider);
+    await runCommit({
+      path: opts.path,
+      uri: opts.uri,
+      salt: opts.salt,
+      receiptPath: opts.receipt,
+      contractAddress,
+      iUnderstandMainnet: opts.iUnderstandMainnet,
+      provider,
+      signer,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+async function cmdReveal(argv) {
+  let opts;
+  try {
+    opts = parseRevealArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.receipt) {
+    process.stderr.write("error: `vh reveal` requires --receipt <path>\n\n" + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL\n"
+    );
+    return 1;
+  }
+  const pk = process.env.PRIVATE_KEY;
+  if (!pk) {
+    process.stderr.write(
+      "error: no PRIVATE_KEY in the environment; cannot sign the reveal.\n"
+    );
+    return 1;
+  }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const signer = new ethers.Wallet(pk, provider);
+    await runReveal({
+      receiptPath: opts.receipt,
       iUnderstandMainnet: opts.iUnderstandMainnet,
       provider,
       signer,
@@ -517,6 +673,10 @@ async function main(argv) {
       return cmdAnchor(rest);
     case "claim":
       return cmdClaim(rest);
+    case "commit":
+      return cmdCommit(rest);
+    case "reveal":
+      return cmdReveal(rest);
     case "verify":
       return cmdVerify(rest);
     case "prove":
@@ -542,10 +702,13 @@ module.exports = {
   cmdHash,
   cmdAnchor,
   cmdClaim,
+  cmdCommit,
+  cmdReveal,
   cmdVerify,
   cmdProve,
   parseAnchorArgs,
   parseClaimArgs,
+  parseRevealArgs,
   parseVerifyArgs,
   parseProveArgs,
   usage,

@@ -13,8 +13,11 @@ const {
   buildRevealTx,
   newSalt,
   runClaim,
+  runCommit,
+  runReveal,
   ABI,
 } = require("../cli/claim");
+const { readReceipt } = require("../cli/receipt");
 const { hashFile } = require("../cli/hash");
 const { cmdClaim } = require("../cli/vh");
 
@@ -172,6 +175,10 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
     "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", // #2 attacker
     "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6", // #3
   ];
+  // Dedicated keys for the resumable (commit/reveal) tests, used by NO other test so each runs
+  // against a pristine on-chain nonce (no NonceManager cross-test interference).
+  const RESUME_KEY = "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"; // #4
+  const TOOSOON_KEY = "0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba"; // #5
 
   before(async function () {
     nodeProc = spawn(
@@ -280,6 +287,135 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
     expect(rec.contributor).to.equal(await alice.getAddress());
     expect(rec.authorBound).to.equal(true);
     expect(rec.contributor).to.not.equal(await attacker.getAddress());
+  });
+
+  // The selector of `error RevealTooSoon(uint64,uint64,uint64)` — a spawned node sometimes surfaces
+  // a custom-error revert as raw data ("unknown custom error") rather than a decoded name, so we
+  // match either the decoded name OR this selector to keep the assertion robust across nodes.
+  const REVEAL_TOO_SOON_SELECTOR = "0x6c6a2001";
+  function isRevealTooSoon(err) {
+    const msg = err && err.message ? err.message : "";
+    if (/RevealTooSoon/.test(msg)) return true;
+    if (msg.includes(REVEAL_TOO_SOON_SELECTOR)) return true;
+    // ethers attaches the raw revert payload on .data / nested info when it cannot decode it.
+    const data =
+      (err && err.data) ||
+      (err && err.info && err.info.error && err.info.error.data && err.info.error.data.data);
+    return typeof data === "string" && data.startsWith(REVEAL_TOO_SOON_SELECTOR);
+  }
+
+  it("RESUMABLE: commit writes a receipt, then a SEPARATE reveal from only that file claims authorBound", async function () {
+    // Dedicated key (used by no other test) and PLAIN wallets per phase, so each phase reads its
+    // own on-chain nonce — the point of the test is that reveal needs nothing held in memory.
+    const committer = managedSigner(RESUME_KEY);
+    const committerAddr = await committer.getAddress();
+    const f = writeFile(tmp("vh-resume-"), "resumable.txt", "alice resumable " + Date.now());
+    const expected = hashFile(f);
+    const receiptPath = path.join(tmp("vh-receipt-"), "claim.vhclaim.json");
+
+    // --- Phase 1: commit (writes the receipt BEFORE returning) ---
+    const committed = await runCommit({
+      path: f,
+      uri: "ipfs://cid-resume",
+      contractAddress: registryAddress,
+      receiptPath,
+      provider,
+      signer: committer,
+      log: () => {},
+    });
+    expect(committed.commitTxHash).to.be.a("string");
+
+    // The receipt file must exist and carry the secret salt + commitment for a later process.
+    expect(fs.existsSync(receiptPath), "receipt file should exist after commit").to.equal(true);
+    const receipt = readReceipt(receiptPath);
+    expect(receipt.contentHash).to.equal(expected);
+    expect(receipt.committer).to.equal(committerAddr);
+    expect(receipt.salt).to.equal(committed.commitTx.salt);
+    expect(receipt.commitment).to.equal(committed.commitTx.commitment);
+    expect(receipt.salt).to.match(/^0x[0-9a-fA-F]{64}$/);
+
+    // Mine past the maturation window, simulating real time passing between two CLI invocations.
+    await mineBlocks(2);
+
+    // --- Phase 2: reveal from ONLY the receipt, in a SIMULATED FRESH PROCESS ---
+    // A brand-new provider (no cached block/nonce state) + a fresh plain Wallet reconstructed from
+    // the same key — exactly what `vh reveal --receipt` does in a separate invocation. This proves
+    // reveal depends only on what was durably written to the receipt, nothing held in memory.
+    const freshProvider = new ethers.JsonRpcProvider(RPC_URL, undefined, { cacheTimeout: -1 });
+    const freshSigner = new ethers.Wallet(RESUME_KEY, freshProvider);
+    const revealedRes = await runReveal({
+      receiptPath,
+      provider: freshProvider,
+      signer: freshSigner,
+      noWait: true, // window already matured above
+      log: () => {},
+    });
+
+    expect(revealedRes.revealed, "Revealed event should be present").to.not.equal(null);
+    expect(revealedRes.revealed.contentHash).to.equal(expected);
+    expect(revealedRes.revealed.contributor).to.equal(committerAddr);
+
+    const registry = new ethers.Contract(registryAddress, ABI, provider);
+    const rec = await registry.getRecord(expected);
+    expect(rec.contributor).to.equal(committerAddr);
+    expect(rec.authorBound).to.equal(true);
+    expect(rec.uri).to.equal("ipfs://cid-resume");
+  });
+
+  it("reveal before the window matures reverts with RevealTooSoon and leaves the receipt intact for retry", async function () {
+    const committer = managedSigner(TOOSOON_KEY);
+    const f = writeFile(tmp("vh-toosoon-"), "early.txt", "too soon " + Date.now());
+    const expected = hashFile(f);
+    const receiptPath = path.join(tmp("vh-receipt-too-"), "early.vhclaim.json");
+
+    await runCommit({
+      path: f,
+      uri: "ipfs://cid-early",
+      contractAddress: registryAddress,
+      receiptPath,
+      provider,
+      signer: committer,
+      log: () => {},
+    });
+    expect(fs.existsSync(receiptPath)).to.equal(true);
+    const before = fs.readFileSync(receiptPath, "utf8");
+
+    // Reveal immediately (noWait + do NOT mine): MIN_REVEAL_DELAY has not elapsed, so the contract
+    // must revert with RevealTooSoon. Use a fresh-process provider/wallet (resume semantics).
+    let err = null;
+    try {
+      const fp = new ethers.JsonRpcProvider(RPC_URL, undefined, { cacheTimeout: -1 });
+      await runReveal({
+        receiptPath,
+        provider: fp,
+        signer: new ethers.Wallet(TOOSOON_KEY, fp),
+        noWait: true,
+        log: () => {},
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err, "early reveal must throw").to.not.equal(null);
+    expect(isRevealTooSoon(err), `expected a RevealTooSoon revert, got: ${err && err.message}`).to.equal(
+      true
+    );
+
+    // The receipt must be left untouched so the user can simply retry once the window opens.
+    expect(fs.existsSync(receiptPath), "receipt must survive a failed reveal").to.equal(true);
+    expect(fs.readFileSync(receiptPath, "utf8")).to.equal(before);
+
+    // Prove it really is retryable: mine past the window, reveal again, and it now succeeds.
+    await mineBlocks(2);
+    const fp2 = new ethers.JsonRpcProvider(RPC_URL, undefined, { cacheTimeout: -1 });
+    const ok = await runReveal({
+      receiptPath,
+      provider: fp2,
+      signer: new ethers.Wallet(TOOSOON_KEY, fp2),
+      noWait: true,
+      log: () => {},
+    });
+    expect(ok.revealed.contentHash).to.equal(expected);
+    expect(ok.revealed.contributor).to.equal(await committer.getAddress());
   });
 
   it("cmdClaim --dry-run exits 0 with no key/RPC and prints the plan (uses VH_COMMITTER)", async function () {

@@ -60,6 +60,10 @@ vh dataset attest <manifest>         # canonical UNSIGNED attestation payload a 
 vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] # OFFLINE-verify a SIGNED attestation container (recover signer, pin publisher, bind manifest); no key, no network, CI-gateable exit 0/3
 vh dataset prove --file <p> --manifest <m> # set-membership proof for ONE file; offline, no key, no network
 vh dataset verify-proof <proof>      # fold a membership proof back to the recorded root; offline, no key, no network
+vh parcel build <dir> --out <p>      # ProofParcel: tamper-evident B2B delivery receipt (root + per-file leaves + untrusted parcel meta); offline, no key, no network
+vh parcel verify <dir> --manifest <p> # re-derive the root + per-file diff vs a parcel manifest; offline, no key, no network
+vh parcel attest <manifest>          # canonical UNSIGNED parcel-attestation payload a human trust-root signs (P-3); offline, no key, no network
+vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] # OFFLINE-verify a SIGNED parcel attestation (recover signer, pin sender, bind parcel); no key, no network, CI-gateable exit 0/3
 ```
 
 > **Read commands authenticate the registry by default.** Every read command (`verify` / `show` /
@@ -422,6 +426,38 @@ metadata** that are NOT bound into the root (the summary counts what the dataset
 overclaim. Full buyer-facing spec, worked example, and the auditor / EU-AI-Act evidence mapping:
 [`docs/DATALEDGER.md`](docs/DATALEDGER.md).
 
+### Data-delivery receipts (ProofParcel)
+
+ProofParcel is a **second income product on the SAME provenance core**, aimed at a different paying
+buyer: B2B data exchange where a delivery dispute ("you never sent file X" / "the file you sent was
+altered") is expensive. It issues a portable, independently-verifiable **proof-of-delivery receipt** that
+pins exactly which files (names AND bytes) were delivered for a parcel, plus a signable attestation over
+that parcel's identity. Every command is **offline, needs NO key, and needs NO network**.
+
+```
+vh parcel build <dir> --out <p>           # tamper-evident delivery receipt: Merkle root + per-file leaves + optional UNTRUSTED parcel meta
+vh parcel verify <dir> --manifest <p>     # re-derive the root from a fresh copy on disk + per-file ADDED/REMOVED/CHANGED diff; exit 0 MATCH / 3 MISMATCH
+vh parcel attest <manifest> [--json] [--out <p>]  # canonical UNSIGNED parcel-attestation payload (root+fileCount+manifestDigest) a human trust-root signs; offline, no key, no network
+vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]  # OFFLINE-verify a SIGNED parcel attestation: recover the signer, pin the sender, bind YOUR parcel; offline, no key, no network, CI-gateable exit code (0 ACCEPTED / 3 REJECTED)
+```
+
+`vh parcel attest` emits the canonical, byte-deterministic **UNSIGNED** payload a sender signs over —
+over the SAME signed-attestation core as `vh dataset attest`, with `signed:false`. `vh parcel
+verify-attest` is the **offline, no key, no network, CI-gateable exit code** (0 ACCEPTED / 3 REJECTED)
+VERIFIER a recipient runs on a SIGNED container: it recovers the signer, optionally pins the expected
+sender (`--signer`) and binds the signature to the recipient's own parcel (`--manifest`). The signed
+container uses ProofParcel's own `verifyhash.parcel-attestation-signed` kind, so a dataset
+signed-container does **not** cross-verify as a parcel one.
+
+ProofParcel inherits the **SAME honest trust posture as DataLedger**: the receipt binds the file SET and
+is signable, but is **NOT by itself a trusted delivery TIMESTAMP** — "delivered ON date T" rides the
+human-owned signing/timestamp trust-root (`needs-human`, P-3 in [`STRATEGY.md`](STRATEGY.md)); a valid
+signature proves the key-holder vouched for the parcel identity, NOT a "unaltered since date T"
+timestamp. The `parcel` metadata (parcelId/sender/recipient) is **UNTRUSTED self-asserted metadata** that
+is NOT bound into the root. This build ships only the **FORMAT + the offline VERIFIER** (proved with
+throwaway test keys); producing the signature is the human-owned P-3 step. Full buyer-facing spec, command
+table, and worked example: [`docs/PROOFPARCEL.md`](docs/PROOFPARCEL.md).
+
 ## Develop
 
 ```
@@ -439,6 +475,11 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   manifest PROVES (file names + bytes, offline set-membership, version diff, license roll-up) and does
   NOT (not a timestamp; untrusted source/license hints), the build→diff→summary→prove→verify-proof
   workflow with a worked example, and the auditor / EU-AI-Act evidence mapping.
+- [`docs/PROOFPARCEL.md`](docs/PROOFPARCEL.md) — the buyer-facing ProofParcel product spec (B2B
+  proof-of-delivery): the command table (build/verify/attest/verify-attest with the offline, no key, no
+  network, CI-gateable exit 0/3 property), a worked sender → [signs, P-3] → recipient verify-attests
+  example, and the SAME honest trust posture as DataLedger (binds the file SET, signable, NOT a delivery
+  timestamp; parcel metadata is untrusted self-asserted).
 - [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not,
   plus "Authenticating the registry you read from" (why read commands authenticate the registry before
   believing it, and why the `REGISTRY_ID` is a "right interface" signal, not a sole root of trust).

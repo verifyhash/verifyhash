@@ -430,3 +430,375 @@ describe("cli/parcel.js — ProofParcel delivery receipt (T-18.2)", function () 
     });
   });
 });
+
+// =====================================================================================================
+// T-18.3: `vh parcel attest` (canonical UNSIGNED payload) + `vh parcel verify-attest` (OFFLINE verifier),
+// over the SAME signed-attestation core as `vh dataset`. Proves the full attest -> sign (EPHEMERAL
+// throwaway key) -> wrap -> verify-attest loop end-to-end and the wrap-don't-edit invariant.
+//
+// CRITICAL: every key here is an EPHEMERAL, in-process `Wallet.createRandom()` — a TEST-ONLY key that is
+// NEVER persisted and NEVER a real-funds key. NO network, NO provider anywhere (the verifier is offline).
+// =====================================================================================================
+const { Wallet, getAddress } = require("ethers");
+const {
+  PARCEL_ATTESTATION_KIND,
+  PARCEL_ATTESTATION_TRUST_NOTE,
+  SIGNED_PARCEL_ATTESTATION_KIND,
+  SIGNED_PARCEL_ATTESTATION_SCHEMES,
+  PARCEL_VERIFY_ATTEST_TRUST_NOTE,
+  buildParcelAttestation,
+  serializeParcelAttestation,
+  validateParcelAttestation,
+  readParcelAttestation,
+  buildSignedParcelAttestation,
+  serializeSignedParcelAttestation,
+  readSignedParcelAttestation,
+  validateSignedParcelAttestation,
+  runParcelAttest,
+  runParcelVerifyAttest,
+} = require("../cli/parcel");
+const {
+  validateAttestation: validateDatasetAttestation,
+  validateSignedAttestation: validateDatasetSignedAttestation,
+  buildAttestation: buildDatasetAttestation,
+  serializeAttestation: serializeDatasetAttestation,
+  buildSignedAttestation: buildDatasetSignedAttestation,
+  serializeSignedAttestation: serializeDatasetSignedAttestation,
+  runDatasetBuild,
+  readManifest: readDatasetManifest,
+} = require("../cli/dataset");
+const {
+  parseParcelAttestArgs,
+  parseParcelVerifyAttestArgs,
+} = require("../cli/vh");
+
+describe("cli/parcel.js — ProofParcel attest + verify-attest (T-18.3)", function () {
+  let tmpDirs2 = [];
+  function tmp2(prefix) {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tmpDirs2.push(d);
+    return d;
+  }
+  afterEach(function () {
+    for (const d of tmpDirs2) fs.rmSync(d, { recursive: true, force: true });
+    tmpDirs2 = [];
+  });
+
+  // Build a parcel manifest from a fresh tree -> { manifestPath, manifest, unsigned, canonical }.
+  function buildFixture(files = THREE, prefix = "pa", parcel = META) {
+    const dir = writeFiles(tmp2(prefix + "-tree-"), files);
+    const manifestPath = path.join(tmp2(prefix + "-man-"), "p.json");
+    runParcelBuild({ dir, out: manifestPath, parcel, stdout: () => {} });
+    const manifest = readParcelManifest(manifestPath);
+    const unsigned = buildParcelAttestation(manifest);
+    const canonical = serializeParcelAttestation(unsigned);
+    return { dir, manifestPath, manifest, unsigned, canonical };
+  }
+
+  // attest -> sign EXACT canonical bytes (EPHEMERAL throwaway key) -> wrap -> write the signed container.
+  async function signFixture(files, prefix, wallet, parcel = META) {
+    const fx = buildFixture(files, prefix, parcel);
+    const w = wallet || Wallet.createRandom(); // TEST-ONLY key — never persisted, never funded
+    expect(w.privateKey).to.match(/^0x[0-9a-fA-F]{64}$/);
+    const signature = (await w.signMessage(fx.canonical)).toLowerCase();
+    const container = buildSignedParcelAttestation({
+      attestation: fx.unsigned,
+      scheme: "eip191-personal-sign",
+      signer: w.address.toLowerCase(),
+      signature,
+    });
+    const signedPath = path.join(tmp2(prefix + "-signed-"), "signed.json");
+    fs.writeFileSync(signedPath, serializeSignedParcelAttestation(container));
+    return { ...fx, wallet: w, container, signedPath };
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // attest — the canonical UNSIGNED payload
+  // -----------------------------------------------------------------------------------------------
+  describe("vh parcel attest (canonical UNSIGNED payload)", function () {
+    it("emits a deterministic UNSIGNED envelope (root + fileCount + manifestDigest), signed:false", function () {
+      const fx = buildFixture();
+      expect(fx.unsigned.kind).to.equal(PARCEL_ATTESTATION_KIND);
+      expect(fx.unsigned.root).to.equal(fx.manifest.root);
+      expect(fx.unsigned.fileCount).to.equal(3);
+      expect(fx.unsigned.manifestDigest).to.match(/^0x[0-9a-f]{64}$/);
+      expect(fx.unsigned.signed).to.equal(false);
+      expect(fx.unsigned.signature).to.equal(null);
+      // The in-band note points at the human signing trust-root P-3, never claims a timestamp.
+      expect(fx.unsigned.note).to.equal(PARCEL_ATTESTATION_TRUST_NOTE);
+      expect(fx.unsigned.note).to.include("P-3");
+      expect(fx.unsigned.note).to.match(/not.*timestamp/i);
+      // Byte-deterministic: a second attest over the same manifest yields identical bytes.
+      const again = serializeParcelAttestation(buildParcelAttestation(fx.manifest));
+      expect(again).to.equal(fx.canonical);
+    });
+
+    it("the UNTRUSTED parcel block is EXCLUDED from the signed identity (digest ignores it)", function () {
+      // Two parcels over the SAME files but DIFFERENT parcel metadata yield the SAME manifestDigest+root.
+      const a = buildFixture(THREE, "pa-excl-a", { parcelId: "PX-1", sender: "Acme" });
+      const b = buildFixture(THREE, "pa-excl-b", { parcelId: "PX-999", sender: "Other" });
+      expect(b.unsigned.root).to.equal(a.unsigned.root);
+      expect(b.unsigned.manifestDigest).to.equal(a.unsigned.manifestDigest);
+      expect(a.canonical).to.equal(b.canonical); // metadata is NOT in the signable bytes
+    });
+
+    it("--out writes the canonical bytes to the caller's explicit path (no cwd litter); --json IS those bytes", async function () {
+      const fx = buildFixture();
+      const outDir = tmp2("pa-out-");
+      const out = path.join(outDir, "att.json");
+      const before = fs.readdirSync(process.cwd());
+      const { ret: code } = await capture(() =>
+        main(["parcel", "attest", fx.manifestPath, "--out", out])
+      );
+      expect(code).to.equal(0);
+      expect(fs.readFileSync(out, "utf8")).to.equal(fx.canonical); // exact canonical bytes on disk
+      expect(fs.readdirSync(outDir)).to.deep.equal(["att.json"]);
+      expect(fs.readdirSync(process.cwd())).to.deep.equal(before); // nothing leaked into cwd
+
+      const { ret: code2, out: text } = await capture(() =>
+        main(["parcel", "attest", fx.manifestPath, "--json"])
+      );
+      expect(code2).to.equal(0);
+      expect(text).to.equal(fx.canonical); // --json stdout IS the signable bytes
+    });
+
+    it("a DATASET manifest is rejected by `vh parcel attest` (exit 1)", async function () {
+      const dir = writeFiles(tmp2("pa-xkind-"), THREE);
+      const dman = path.join(tmp2("pa-xkind-out-"), "d.json");
+      await capture(() => main(["dataset", "build", dir, "--out", dman]));
+      const code = await capture(() => main(["parcel", "attest", dman])).then((c) => c.ret);
+      expect(code).to.equal(1);
+    });
+
+    it("readParcelAttestation rejects a DATASET attestation (kinds never cross-validate)", function () {
+      const dir = writeFiles(tmp2("pa-roundtrip-"), THREE);
+      const dman = path.join(tmp2("pa-roundtrip-out-"), "d.json");
+      runDatasetBuild({ dir, out: dman, stdout: () => {} });
+      const dAtt = buildDatasetAttestation(readDatasetManifest(dman));
+      // A dataset attestation envelope must NOT validate as a parcel attestation (distinct kind).
+      expect(() => validateParcelAttestation(dAtt)).to.throw(/not a verifyhash parcel attestation/);
+    });
+
+    it("parser parity: unknown/incomplete flag, duplicate positional; missing <manifest> is exit 2", async function () {
+      expect(() => parseParcelAttestArgs(["/m", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseParcelAttestArgs(["/m", "/n"])).to.throw(/unexpected extra argument/);
+      expect(() => parseParcelAttestArgs(["/m", "--out"])).to.throw(/--out requires a value/);
+      const code = await capture(() => main(["parcel", "attest"])).then((c) => c.ret);
+      expect(code).to.equal(2);
+    });
+  });
+
+  // -----------------------------------------------------------------------------------------------
+  // verify-attest — the OFFLINE verifier, full attest->sign->wrap->verify loop
+  // -----------------------------------------------------------------------------------------------
+  describe("vh parcel verify-attest (OFFLINE; full attest->sign->wrap->verify loop)", function () {
+    it("ACCEPTS a genuine signature over a parcel (recovers to the claimed signer)", async function () {
+      const fx = await signFixture(THREE, "pva-accept");
+      let out = "";
+      const r = runParcelVerifyAttest({ signed: fx.signedPath, stdout: (s) => (out += s) });
+      expect(r.verdict).to.equal("ACCEPTED");
+      expect(r.recoveredSigner).to.equal(fx.wallet.address.toLowerCase());
+      expect(r.claimedSigner).to.equal(fx.wallet.address.toLowerCase());
+      expect(r.checks.signatureMatchesSigner).to.equal(true);
+      expect(r.checks.signerMatchesExpected).to.equal(null);
+      expect(r.checks.manifestBindsAttestation).to.equal(null);
+      expect(out).to.contain("ACCEPTED");
+      // Exit 0 through the CLI.
+      const code = await capture(() => main(["parcel", "verify-attest", fx.signedPath])).then(
+        (c) => c.ret
+      );
+      expect(code).to.equal(0);
+    });
+
+    it("the signed container uses ProofParcel's OWN kind", async function () {
+      const fx = await signFixture(THREE, "pva-kind");
+      const onDisk = JSON.parse(fs.readFileSync(fx.signedPath, "utf8"));
+      expect(onDisk.kind).to.equal(SIGNED_PARCEL_ATTESTATION_KIND);
+      expect(onDisk.kind).to.equal("verifyhash.parcel-attestation-signed");
+      expect(SIGNED_PARCEL_ATTESTATION_SCHEMES).to.include("eip191-personal-sign");
+    });
+
+    it("a DATASET signed-container does NOT cross-verify as a parcel one (and vice-versa)", async function () {
+      // Build + sign a DATASET attestation over the same files with a throwaway key.
+      const dir = writeFiles(tmp2("pva-cross-tree-"), THREE);
+      const dman = path.join(tmp2("pva-cross-man-"), "d.json");
+      runDatasetBuild({ dir, out: dman, stdout: () => {} });
+      const dUnsigned = buildDatasetAttestation(readDatasetManifest(dman));
+      const dCanon = serializeDatasetAttestation(dUnsigned);
+      const w = Wallet.createRandom(); // TEST-ONLY key
+      const dSig = (await w.signMessage(dCanon)).toLowerCase();
+      const dContainer = buildDatasetSignedAttestation({
+        attestation: dUnsigned,
+        scheme: "eip191-personal-sign",
+        signer: w.address.toLowerCase(),
+        signature: dSig,
+      });
+      const dSignedPath = path.join(tmp2("pva-cross-signed-"), "d-signed.json");
+      fs.writeFileSync(dSignedPath, serializeDatasetSignedAttestation(dContainer));
+
+      // The PARCEL verifier must REJECT the dataset signed-container (wrong kind) -> runtime error (exit 1).
+      expect(() => readSignedParcelAttestation(dSignedPath)).to.throw(
+        /not a verifyhash signed parcel attestation/
+      );
+      const code = await capture(() => main(["parcel", "verify-attest", dSignedPath])).then(
+        (c) => c.ret
+      );
+      expect(code).to.equal(1);
+
+      // And the converse: a PARCEL signed-container must NOT validate as a dataset signed-container.
+      const pfx = await signFixture(THREE, "pva-cross2");
+      const pOnDisk = JSON.parse(fs.readFileSync(pfx.signedPath, "utf8"));
+      expect(() => validateDatasetSignedAttestation(pOnDisk)).to.throw(
+        /not a verifyhash signed dataset attestation/
+      );
+    });
+
+    it("a WRONG --signer REJECTS (signature genuine; only the expected-sender pin fails)", async function () {
+      const fx = await signFixture(THREE, "pva-pin");
+      // Right sender (checksummed form accepted) -> ACCEPTED + pin PASS.
+      const ok = runParcelVerifyAttest({
+        signed: fx.signedPath,
+        signer: getAddress(fx.wallet.address),
+        stdout: () => {},
+      });
+      expect(ok.verdict).to.equal("ACCEPTED");
+      expect(ok.checks.signerMatchesExpected).to.equal(true);
+
+      // A DIFFERENT expected sender -> REJECTED, naming the failed pin; signature itself still genuine.
+      const other = Wallet.createRandom(); // TEST-ONLY key
+      let out = "";
+      const bad = runParcelVerifyAttest({
+        signed: fx.signedPath,
+        signer: other.address,
+        stdout: (s) => (out += s),
+      });
+      expect(bad.verdict).to.equal("REJECTED");
+      expect(bad.checks.signerMatchesExpected).to.equal(false);
+      expect(bad.checks.signatureMatchesSigner).to.equal(true);
+      expect(bad.failedChecks).to.deep.equal(["signerMatchesExpected"]);
+      expect(out).to.contain("signerMatchesExpected");
+
+      const code = await capture(() =>
+        main(["parcel", "verify-attest", fx.signedPath, "--signer", other.address])
+      ).then((c) => c.ret);
+      expect(code).to.equal(3);
+    });
+
+    it("binding to a DIFFERENT --manifest REJECTS with a clear binding-mismatch", async function () {
+      // Sign over parcel A...
+      const fx = await signFixture(THREE, "pva-bind");
+      // ...but the recipient holds a DIFFERENT parcel B (different content -> different canonical bytes).
+      const otherDir = writeFiles(tmp2("pva-bind-other-tree-"), { "a.txt": "DIFFERENT", "src/b.txt": "beta", "c.txt": "gamma" });
+      const otherMan = path.join(tmp2("pva-bind-other-man-"), "p.json");
+      runParcelBuild({ dir: otherDir, out: otherMan, parcel: META, stdout: () => {} });
+
+      // The matching manifest BINDS (ACCEPTED).
+      const okR = runParcelVerifyAttest({ signed: fx.signedPath, manifest: fx.manifestPath, stdout: () => {} });
+      expect(okR.verdict).to.equal("ACCEPTED");
+      expect(okR.checks.manifestBindsAttestation).to.equal(true);
+
+      // The different manifest does NOT bind (REJECTED).
+      let out = "";
+      const r = runParcelVerifyAttest({
+        signed: fx.signedPath,
+        manifest: otherMan,
+        stdout: (s) => (out += s),
+      });
+      expect(r.verdict).to.equal("REJECTED");
+      expect(r.checks.manifestBindsAttestation).to.equal(false);
+      expect(r.checks.signatureMatchesSigner).to.equal(true); // signature genuine; only binding failed
+      expect(r.failedChecks).to.deep.equal(["manifestBindsAttestation"]);
+      expect(out).to.contain("binding-mismatch");
+    });
+
+    it("a TAMPERED container REJECTS (flipped signature recovers to a different address)", async function () {
+      const fx = await signFixture(THREE, "pva-tamper");
+      const onDisk = JSON.parse(serializeSignedParcelAttestation(fx.container));
+      const sig = onDisk.signature.signature;
+      const idx = 50;
+      const ch = sig[idx] === "a" ? "b" : "a";
+      onDisk.signature.signature = sig.slice(0, idx) + ch + sig.slice(idx + 1);
+      const p = path.join(tmp2("pva-tamper-w-"), "signed.json");
+      fs.writeFileSync(p, JSON.stringify(onDisk));
+      const r = runParcelVerifyAttest({ signed: p, stdout: () => {} });
+      expect(r.verdict).to.equal("REJECTED");
+      expect(r.checks.signatureMatchesSigner).to.equal(false);
+      expect(r.recoveredSigner).to.not.equal(r.claimedSigner);
+    });
+
+    it("the wrap-don't-edit invariant holds: the embedded payload stays signed:false", async function () {
+      const fx = await signFixture(THREE, "pva-wrap");
+      const onDisk = JSON.parse(fs.readFileSync(fx.signedPath, "utf8"));
+      // The embedded `attestation` is the EXACT canonical UNSIGNED bytes (a string), still signed:false.
+      expect(onDisk.attestation).to.equal(fx.canonical);
+      const embedded = JSON.parse(onDisk.attestation);
+      expect(embedded.signed).to.equal(false);
+      expect(embedded.signature).to.equal(null);
+      // The container re-validates (the core re-checks the embedded payload IS a sound UNSIGNED one).
+      expect(() => validateSignedParcelAttestation(onDisk)).to.not.throw();
+      // A container smuggling an already-"signed" embedded payload is rejected by the core invariant.
+      const cheat = JSON.parse(JSON.stringify(onDisk));
+      const ed = JSON.parse(cheat.attestation);
+      ed.signed = true;
+      cheat.attestation = JSON.stringify(ed) + "\n";
+      expect(() => validateSignedParcelAttestation(cheat)).to.throw();
+    });
+
+    it("--json round-trips the verify-attest verdict (recovered signer + per-check booleans)", async function () {
+      const fx = await signFixture(THREE, "pva-json");
+      const { ret: code, out: text } = await capture(() =>
+        main([
+          "parcel",
+          "verify-attest",
+          fx.signedPath,
+          "--manifest",
+          fx.manifestPath,
+          "--signer",
+          fx.wallet.address,
+          "--json",
+        ])
+      );
+      expect(code).to.equal(0);
+      const obj = JSON.parse(text);
+      expect(obj.verdict).to.equal("ACCEPTED");
+      expect(obj.recoveredSigner).to.equal(fx.wallet.address.toLowerCase());
+      expect(obj.checks.signatureMatchesSigner).to.equal(true);
+      expect(obj.checks.signerMatchesExpected).to.equal(true);
+      expect(obj.checks.manifestBindsAttestation).to.equal(true);
+    });
+
+    it("output LEADS with the shared TRUST_NOTE + parcel caveat; never overclaims a delivery timestamp", async function () {
+      const fx = await signFixture(THREE, "pva-trust");
+      let out = "";
+      runParcelVerifyAttest({ signed: fx.signedPath, stdout: (s) => (out += s) });
+      expect(out.indexOf("TRUST:")).to.be.lessThan(out.indexOf("verify-attest:"));
+      expect(PARCEL_VERIFY_ATTEST_TRUST_NOTE).to.contain(TRUST_NOTE); // shared note reused verbatim
+      expect(PARCEL_VERIFY_ATTEST_TRUST_NOTE).to.contain(PARCEL_TRUST_NOTE); // parcel caveat reused verbatim
+      expect(out).to.contain(TRUST_NOTE);
+      expect(out).to.contain("P-3");
+      expect(out).to.match(/not.*timestamp/i);
+    });
+
+    it("a malformed --signer is a usage error (exit 2), not a runtime throw", async function () {
+      const fx = await signFixture(THREE, "pva-badsigner");
+      const code = await capture(() =>
+        main(["parcel", "verify-attest", fx.signedPath, "--signer", "0xnotanaddress"])
+      ).then((c) => c.ret);
+      expect(code).to.equal(2);
+    });
+
+    it("parser parity: unknown/incomplete flag, duplicate positional; missing <signed> is exit 2", async function () {
+      expect(() => parseParcelVerifyAttestArgs(["/s", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseParcelVerifyAttestArgs(["/s", "/t"])).to.throw(/unexpected extra argument/);
+      expect(() => parseParcelVerifyAttestArgs(["/s", "--manifest"])).to.throw(/--manifest requires a value/);
+      expect(() => parseParcelVerifyAttestArgs(["/s", "--signer"])).to.throw(/--signer requires a value/);
+      const code = await capture(() => main(["parcel", "verify-attest"])).then((c) => c.ret);
+      expect(code).to.equal(2);
+    });
+
+    it("unknown parcel subcommand still hard-errors (exit 2) now that attest/verify-attest exist", async function () {
+      const code = await capture(() => main(["parcel", "frobnicate"])).then((c) => c.ret);
+      expect(code).to.equal(2);
+    });
+  });
+});

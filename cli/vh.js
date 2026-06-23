@@ -34,7 +34,12 @@ const {
   runDatasetVerifyAttest,
   runDatasetCheck,
 } = require("./dataset");
-const { runParcelBuild, runParcelVerify } = require("./parcel");
+const {
+  runParcelBuild,
+  runParcelVerify,
+  runParcelAttest,
+  runParcelVerifyAttest,
+} = require("./parcel");
 
 function usage() {
   return [
@@ -66,6 +71,8 @@ function usage() {
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "  vh parcel build <dir> --out <p>  tamper-evident DELIVERY receipt (root + per-file leaves + untrusted parcel meta)",
     "  vh parcel verify <dir> --manifest <p>  re-derive the root + per-file diff vs a parcel manifest (OFFLINE)",
+    "  vh parcel attest <manifest> [--out <p>]  canonical UNSIGNED parcel-attestation payload (the signing-ready bytes)",
+    "  vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed parcel attestation (no key/net)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -365,6 +372,25 @@ function usage() {
     "  diff (the SAME diff core as `vh dataset verify`). The AUTHORITATIVE verdict is recomputed-root vs",
     "  manifest-root; the untrusted `parcel` block plays NO part in it. Exit 0 MATCH, 3 MISMATCH (mirrors",
     "  `vh dataset verify` so all verify gates share ONE exit contract); usage 2; corrupt/missing manifest 1.",
+    "",
+    "parcel attest options (canonical UNSIGNED parcel-attestation payload; OFFLINE; NO key, NO network):",
+    "  <manifest>                 REQUIRED: a manifest written by `vh parcel build`",
+    "  --out <path>               OPTIONAL: write the canonical bytes here (caller-chosen; never cwd)",
+    "  --json                     emit the canonical machine form (which IS the same signable bytes)",
+    "  Emits the deterministic, byte-canonical UNSIGNED attestation (root + fileCount + a canonical",
+    "  manifestDigest over the delivered file SET) over the SAME core as `vh dataset attest`, with",
+    "  `signed:false`. The UNTRUSTED `parcel` block is EXCLUDED. It is NOT a timestamp — attaching a real",
+    "  signature is the human-owned signing/timestamp trust-root (STRATEGY.md P-3). Exit 0; usage 2; runtime 1.",
+    "",
+    "parcel verify-attest options (OFFLINE verify a SIGNED parcel attestation; NO tree, NO provider, NO key, NO network):",
+    "  <signed>                   REQUIRED: a signed parcel-attestation container",
+    "  --manifest <path>          OPTIONAL: bind the signature to YOUR parcel — recompute the canonical UNSIGNED",
+    "                             bytes from this manifest and require them byte-identical to the signed payload",
+    "  --signer <addr>            OPTIONAL: pin the expected SENDER (recovered signer must equal this address)",
+    "  --json                     emit the machine-readable verdict (recovered signer + per-check booleans)",
+    "  Recovers the signer over the SAME core as `vh dataset verify-attest`; the parcel signed-container kind",
+    "  (verifyhash.parcel-attestation-signed) means a DATASET signed-container does NOT cross-verify. A valid",
+    "  signature is NOT a delivery timestamp (STRATEGY.md P-3). Exit 0 ACCEPTED, 3 REJECTED; usage 2; runtime 1.",
     "",
   ].join("\n");
 }
@@ -1985,6 +2011,63 @@ function parseParcelVerifyArgs(argv) {
   return opts;
 }
 
+/**
+ * Parse `parcel attest` argv into { manifest, out, json }. Takes EXACTLY one positional manifest path, an
+ * optional --out <p>, and an optional --json. Throws on a missing/extra positional or an unknown/incomplete
+ * flag (parser parity with `dataset attest`).
+ */
+function parseParcelAttestArgs(argv) {
+  const opts = { manifest: undefined, out: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.manifest !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.manifest = a;
+    }
+  }
+  return opts;
+}
+
+/**
+ * Parse `parcel verify-attest` argv into { signed, manifest, signer, json }. Takes EXACTLY one positional
+ * <signed> container path, an optional --manifest <m>, an optional --signer <addr>, and an optional --json.
+ * Throws on a missing/extra positional or an unknown/incomplete flag (parser parity with `dataset
+ * verify-attest`).
+ */
+function parseParcelVerifyAttestArgs(argv) {
+  const opts = { signed: undefined, manifest: undefined, signer: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--manifest":
+        opts.manifest = argv[++i];
+        if (opts.manifest === undefined) throw new Error("--manifest requires a value");
+        break;
+      case "--signer":
+        opts.signer = argv[++i];
+        if (opts.signer === undefined) throw new Error("--signer requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.signed !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.signed = a;
+    }
+  }
+  return opts;
+}
+
 function cmdDataset(argv) {
   const [sub, ...rest] = argv;
   if (sub === "verify") {
@@ -2431,10 +2514,16 @@ function cmdParcel(argv) {
   if (sub === "verify") {
     return cmdParcelVerify(rest);
   }
+  if (sub === "attest") {
+    return cmdParcelAttest(rest);
+  }
+  if (sub === "verify-attest") {
+    return cmdParcelVerifyAttest(rest);
+  }
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown parcel subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify)\n\n` + usage()
+        `(expected: build | verify | attest | verify-attest)\n\n` + usage()
     );
     return 2;
   }
@@ -2534,6 +2623,87 @@ function cmdParcelVerify(argv) {
   return result.status === "MATCH" ? 0 : 3;
 }
 
+/**
+ * `vh parcel attest <manifest> [--out <p>] [--json]` — emit the canonical, byte-deterministic UNSIGNED
+ * parcel-attestation payload a human signing/timestamp trust-root (P-3) will sign. Reads the parcel
+ * manifest strictly and commits to the parcel identity (root + fileCount + canonical manifestDigest) plus
+ * the standing trust caveat, with explicit `signed:false`/`signature:null` markers. PURELY OFFLINE: no
+ * tree, no provider, no key, no network. Exit 0 on success, 2 on a usage error, 1 on a runtime error.
+ */
+function cmdParcelAttest(argv) {
+  let opts;
+  try {
+    opts = parseParcelAttestArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh parcel attest` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+  try {
+    runParcelAttest({ manifest: opts.manifest, out: opts.out, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * `vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` — OFFLINE verify a SIGNED
+ * parcel-attestation container. Reads the container strictly, recovers the signer from the embedded
+ * canonical bytes + signature, and confirms it equals the container's `signer`; with --signer it pins the
+ * expected sender; with --manifest it confirms the signature binds the recipient's own parcel. PURELY
+ * OFFLINE: no tree, no provider, no key, no network. Exit 0 ACCEPTED, 3 REJECTED (mirrors the family's 0/3
+ * convention so a recipient's CI can gate), 2 on a usage error, 1 on a runtime error.
+ */
+function cmdParcelVerifyAttest(argv) {
+  let opts;
+  try {
+    opts = parseParcelVerifyAttestArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.signed) {
+    process.stderr.write(
+      "error: `vh parcel verify-attest` requires a <signed> (signed attestation container path)\n\n" +
+        usage()
+    );
+    return 2;
+  }
+  // Validate the --signer address SHAPE up front (when given) so a malformed expected sender is a usage
+  // error (2), never a runtime throw mid-verify. PURELY OFFLINE — no network here either.
+  if (opts.signer !== undefined) {
+    const ethers = require("ethers");
+    if (!ethers.isAddress(opts.signer)) {
+      process.stderr.write(
+        `error: invalid --signer address: ${opts.signer} (expected a 20-byte 0x-hex address)\n\n` +
+          usage()
+      );
+      return 2;
+    }
+  }
+
+  let result;
+  try {
+    result = runParcelVerifyAttest({
+      signed: opts.signed,
+      manifest: opts.manifest,
+      signer: opts.signer,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on REJECTED so a recipient's CI can gate (mirrors the family's 0/3 convention).
+  return result.accepted ? 0 : 3;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -2607,8 +2777,12 @@ module.exports = {
   cmdDatasetVerifyProof,
   cmdParcel,
   cmdParcelVerify,
+  cmdParcelAttest,
+  cmdParcelVerifyAttest,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,
+  parseParcelAttestArgs,
+  parseParcelVerifyAttestArgs,
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,

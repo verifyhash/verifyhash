@@ -44,8 +44,8 @@ vh claim  <path> [--uri u] [--git]   # commit-reveal in one shot: front-running-
 vh commit <path> [--receipt p]       # commit-reveal step 1: commit + persist a resumable claim receipt
 vh reveal --receipt <p>              # commit-reveal step 2: resume from the receipt and reveal
 vh verify <path> [--git [--ref r]]   # recompute the hash, look it up on-chain, report MATCH / MISMATCH
-vh prove  <file> --root dir [--out p] # Merkle-prove a file against an anchored root; --out exports a portable artifact
-vh verify-proof <p>                  # read-only: independently verify a portable proof artifact (offline + on-chain, NO key)
+vh prove  <file> --root dir [--out p] # Merkle-prove a file against an anchored root; --out exports a portable artifact (read-only, no key, no repo needed to verify)
+vh verify-proof <p>                  # read-only: independently verify a portable proof artifact (offline fold + on-chain; no key, no repo needed)
 vh list   [filters]                  # read-only: enumerate the registry (discovery + audit, NO key)
 vh show   <0xhash>                   # read-only: look up ONE record by hash, no local content (NO key)
 ```
@@ -175,7 +175,9 @@ verify-proof can run with no `--contract` flag; an explicit `--contract`/`--rpc`
 
 The artifact schema is `{ kind, schemaVersion, root, leaf, contentHash, relPath, proof, contractAddress?, chainId? }`,
 strictly validated on read (a malformed/short hash or a non-hex proof hard-errors), reusing the same
-validation style as the receipt schema in [`docs/RECEIPTS.md`](docs/RECEIPTS.md).
+validation style as the receipt schema in [`docs/RECEIPTS.md`](docs/RECEIPTS.md). The full proof-artifact
+spec — every field (all UNTRUSTED transport, verification re-derives), the offline-fold + on-chain-check
+steps, and a worked prove → hand over → verify-proof example — is in [`docs/PROOFS.md`](docs/PROOFS.md).
 
 ### Git-scoped, reproducible anchoring
 
@@ -227,6 +229,9 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
 - [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not.
 - [`docs/MERKLE-LEAVES.md`](docs/MERKLE-LEAVES.md) — what a directory root commits to (paths + bytes),
   including the `--git` scope note (same leaf formula, reproducible git-tracked file set).
+- [`docs/PROOFS.md`](docs/PROOFS.md) — the portable proof-artifact schema (every field UNTRUSTED
+  transport), the offline-fold + on-chain-check verification steps, and a worked
+  prove → hand over → `vh verify-proof` example (read-only, no key, no repo needed).
 - [`docs/RECEIPTS.md`](docs/RECEIPTS.md) — the receipt JSON schema (trusted vs hints), the
   commit→reveal resume lifecycle, and the directory-manifest diff semantics.
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.

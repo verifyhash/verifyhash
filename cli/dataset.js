@@ -36,8 +36,14 @@
 
 const fs = require("fs");
 const path = require("path");
-const { hashDirStream, pathLeaf } = require("./hash");
+const { hashDirStream, hashFileStream, pathLeaf, buildTree, proofForIndex } = require("./hash");
 const { diffManifest } = require("./receipt");
+const {
+  buildProofArtifact,
+  writeProofArtifact,
+  readProofArtifact,
+  recomputeFold,
+} = require("./proof");
 
 // On-disk schema discriminators. A dataset manifest carries its OWN kind + version (distinct from the
 // receipt kinds in cli/receipt.js and the proof-artifact kind in cli/proof.js) so a random JSON file,
@@ -451,12 +457,312 @@ function formatDatasetVerify(r) {
   return lines;
 }
 
+// =================================================================================================
+// `vh dataset prove --file <p> --manifest <m>`  +  `vh dataset verify-proof <proof>`
+// Offline set-membership of ONE file in a manifested dataset.
+//
+// WHY THIS EXISTS
+//   `vh dataset build` commits a whole dataset to one Merkle root + a per-file leaf list. `vh dataset
+//   verify` re-derives that root from a FULL fresh copy of the dataset. But a recipient often holds
+//   only ONE file (a single training image, one document) and the manifest — NOT the whole multi-GB
+//   dataset — and wants to answer "was THIS exact file a member of that dataset?" without re-walking
+//   the entire tree, without a network, and without any key.
+//
+//   `vh dataset prove` answers that by emitting a SELF-CONTAINED proof artifact: it recomputes the
+//   one file's contentHash + path-bound leaf, finds that leaf in the manifest's committed leaf set,
+//   and builds the Merkle proof (the sibling path) that folds the leaf back up to the manifest root —
+//   reusing the EXACT buildTree/proofForIndex from cli/hash.js (the same construction `vh prove` uses)
+//   and emitting the SAME `verifyhash.merkle-proof` artifact cli/proof.js reads. NO new crypto.
+//
+//   `vh dataset verify-proof <proof>` then folds that artifact PURELY OFFLINE via cli/proof.js's
+//   recomputeFold — NO dataset copy, NO manifest, NO key, NO network — and confirms the leaf folds to
+//   the recorded root. A fabricated or altered file's proof does NOT fold to the root and is REJECTED.
+//
+// TRUST BOUNDARY (carried verbatim into output/docs — do NOT overclaim).
+//   This proves SET-MEMBERSHIP: that the named file (its relPath + bytes) was a leaf of the manifest's
+//   Merkle root. It does NOT prove "unaltered since date T", authorship, or licensing — that stronger,
+//   time-anchored claim needs the human-owned signing/timestamp trust-root (a needs-human step). The
+//   proof binds a file to a ROOT; whether that root is itself trustworthy/anchored is a separate layer.
+const MEMBERSHIP_TRUST_NOTE = [
+  "NOTE: this proves SET-MEMBERSHIP only — that the named file (its relPath + bytes) is a leaf of the",
+  "dataset manifest's Merkle root. It does NOT prove the file is UNALTERED SINCE a date, nor authorship",
+  "or licensing: that time-anchored claim needs a signing/timestamp trust-root (a separate, human step).",
+].join("\n");
+
+/**
+ * Build (purely, OFFLINE) a portable set-membership proof that `filePath` was a member of the dataset
+ * the manifest at `manifestPath` commits to. Reuses cli/hash.js's buildTree/proofForIndex (the SAME
+ * fold/recompute construction `vh prove` uses) and emits the SAME `verifyhash.merkle-proof` artifact
+ * cli/proof.js validates — no new crypto.
+ *
+ * Membership is decided by CONTENT, not by the caller's file name: the file's contentHash is streamed
+ * from disk and the manifest entry is matched by contentHash. The proof binds the manifest's RECORDED
+ * relPath for that entry (so the artifact's leaf re-derives to the manifest's committed leaf). If the
+ * file's bytes are not present in the manifest at all, it is a clear NON-member (a fabricated/altered
+ * file fails here, before any artifact is built).
+ *
+ * @param {object} opts
+ * @param {string} opts.file      path to the single file to prove membership of
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
+ * @returns {{
+ *   member: boolean,
+ *   contentHash: string,        // streamed keccak256 of the file's bytes
+ *   relPath: string|null,       // the manifest's recorded relPath for the matched entry (null if none)
+ *   leaf: string|null,          // the path-bound leaf (what folds to the root) (null if non-member)
+ *   root: string,               // the manifest's committed Merkle root
+ *   proof: string[]|null,       // sibling path folding leaf -> root (null if non-member)
+ *   artifact: object|null,      // a validated verifyhash.merkle-proof artifact (null if non-member)
+ * }}
+ */
+function buildDatasetProof(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("buildDatasetProof requires options");
+  const { file, manifest: manifestPath } = opts;
+  if (!file) throw new Error("buildDatasetProof requires a --file <p>");
+  if (!manifestPath) throw new Error("buildDatasetProof requires a --manifest <m> path");
+
+  // Resolve + stat the file first so a missing/non-regular file errors clearly before we trust the
+  // manifest (statSync throws ENOENT; a directory is not provable as a single member).
+  const fileAbs = path.resolve(file);
+  const stat = fs.statSync(fileAbs);
+  if (!stat.isFile()) {
+    throw new Error(`--file must be a regular file (the single member to prove), got: ${file}`);
+  }
+
+  // The manifest is the (structurally-validated) commitment we prove against. readManifest rejects a
+  // corrupt/edited manifest rather than half-accepting it (it also re-checks every leaf == pathLeaf).
+  const manifest = readManifest(manifestPath);
+
+  // Stream the file's content digest (never loads the whole file at once — a large member stays cheap).
+  const contentHash = hashFileStream(fileAbs);
+
+  // Membership is by CONTENT: find the manifest entry whose recorded contentHash equals this file's.
+  // Matching by content (not by the caller's chosen path) means renaming the file on disk does not
+  // change the answer, and a single file whose bytes appear in the dataset is provable regardless of
+  // where the caller stored it. (The manifest entry carries the canonical relPath that binds the leaf.)
+  const entry = manifest.files.find(
+    (f) => f.contentHash.toLowerCase() === contentHash.toLowerCase()
+  );
+
+  if (!entry) {
+    // Clear NEGATIVE: the file's bytes are not committed by this manifest. No artifact is built.
+    return {
+      member: false,
+      contentHash,
+      relPath: null,
+      leaf: null,
+      root: manifest.root,
+      proof: null,
+      artifact: null,
+    };
+  }
+
+  // Rebuild the SAME sorted-leaf tree the manifest committed to (its `leaf` list IS that committed set),
+  // then generate the proof for this entry's leaf. buildTree sorts the leaves ascending exactly as
+  // `vh dataset build` did, so the index we locate matches the canonical tree position.
+  const leaves = manifest.files.map((f) => f.leaf);
+  const { root, layers, sortedLeaves } = buildTree(leaves);
+
+  // Defense in depth: the tree we rebuilt from the manifest's leaves MUST reproduce the manifest's
+  // recorded root, or the manifest is internally inconsistent (and any proof off it is meaningless).
+  if (root.toLowerCase() !== manifest.root.toLowerCase()) {
+    throw new Error(
+      `manifest is internally inconsistent: its leaf set folds to ${root}, not its recorded root ` +
+        `${manifest.root}. Refusing to build a proof against a self-contradictory manifest.`
+    );
+  }
+
+  const index = sortedLeaves.findIndex((l) => BigInt(l) === BigInt(entry.leaf));
+  if (index < 0) {
+    // Should be unreachable (entry.leaf came from manifest.files), but never build a bogus proof.
+    throw new Error(`internal: manifest leaf ${entry.leaf} not found in its own tree`);
+  }
+  const proof = proofForIndex(layers, index);
+
+  // Emit the SAME portable artifact cli/proof.js reads, so `vh dataset verify-proof` (and even
+  // `vh verify-proof`, given an on-chain anchored root) fold it with the identical recompute path.
+  const artifact = buildProofArtifact({
+    root: manifest.root,
+    leaf: entry.leaf,
+    contentHash: entry.contentHash,
+    proof,
+    file: entry.relPath,
+  });
+
+  return {
+    member: true,
+    contentHash,
+    relPath: entry.relPath,
+    leaf: entry.leaf,
+    root: manifest.root,
+    proof,
+    artifact,
+  };
+}
+
+/**
+ * Orchestrate `vh dataset prove --file <p> --manifest <m> [--out <p>] [--json]`. Builds the membership
+ * proof OFFLINE and, on a MEMBER, optionally writes the self-contained artifact to the caller's --out
+ * path (never silently the cwd). On a NON-member it writes NO artifact and reports a clear negative.
+ *
+ * @param {object} opts
+ * @param {string} opts.file
+ * @param {string} opts.manifest
+ * @param {string} [opts.out]     where to write the proof artifact (caller-chosen; required to persist one)
+ * @param {boolean}[opts.json]
+ * @param {(s:string)=>void}[opts.stdout]
+ * @returns {{ member: boolean, contentHash: string, relPath: string|null, root: string, out: string|null }}
+ */
+function runDatasetProve(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetProve requires options");
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  const built = buildDatasetProof({ file: opts.file, manifest: opts.manifest });
+
+  let outAbs = null;
+  if (built.member && opts.out) {
+    // Validate + write the artifact at the EXACT path the caller chose (resolved to absolute so the
+    // success line names precisely the file written). writeProofArtifact re-validates before writing.
+    outAbs = path.resolve(opts.out);
+    writeProofArtifact(built.artifact, outAbs);
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify({
+        member: built.member,
+        contentHash: built.contentHash,
+        relPath: built.relPath,
+        root: built.root,
+        proofLength: built.proof ? built.proof.length : null,
+        out: outAbs,
+      }) + "\n"
+    );
+  } else if (built.member) {
+    write(`dataset membership: MEMBER\n`);
+    write(`  relPath:     ${built.relPath}  (the manifest's committed path for this content)\n`);
+    write(`  contentHash: ${built.contentHash}\n`);
+    write(`  leaf:        ${built.leaf}\n`);
+    write(`  root:        ${built.root}\n`);
+    write(`  proof:       ${built.proof.length} sibling${built.proof.length === 1 ? "" : "s"}\n`);
+    if (outAbs) {
+      write(`  proof artifact written: ${outAbs}  (verify with \`vh dataset verify-proof <p>\`)\n`);
+    } else {
+      write(`  (pass --out <p> to write a portable proof artifact for offline verification)\n`);
+    }
+    write(MEMBERSHIP_TRUST_NOTE + "\n");
+  } else {
+    write(`dataset membership: NOT A MEMBER\n`);
+    write(`  contentHash: ${built.contentHash}\n`);
+    write(`  root:        ${built.root}\n`);
+    write(
+      `  The file's bytes are NOT committed by this manifest (it was never in the dataset, or it was\n` +
+        `  altered/fabricated). No proof artifact is written for a non-member.\n`
+    );
+    write(MEMBERSHIP_TRUST_NOTE + "\n");
+  }
+
+  return {
+    member: built.member,
+    contentHash: built.contentHash,
+    relPath: built.relPath,
+    root: built.root,
+    out: outAbs,
+  };
+}
+
+// Outcomes of `vh dataset verify-proof`. Distinct from cli/proof.js's on-chain STATUS: this command is
+// PURELY OFFLINE (no anchored-root check), so the only verdicts are CONFIRMED (folds to the root) or
+// REJECTED (does not). Confirming the root is itself anchored on-chain is `vh verify-proof`'s job.
+const MEMBERSHIP_STATUS = Object.freeze({
+  CONFIRMED: "CONFIRMED", // the proof folds OFFLINE to its recorded root (set-membership holds)
+  REJECTED: "REJECTED", // it does NOT (a fabricated/altered file, or a tampered proof/leaf/root)
+});
+
+/**
+ * Run `vh dataset verify-proof <proof>` — fold a portable proof artifact PURELY OFFLINE, with NO
+ * dataset copy, NO manifest, NO key, and NO network, confirming the file's leaf folds to the recorded
+ * root. Reuses cli/proof.js's readProofArtifact (strict validation) + recomputeFold (the SAME fold the
+ * on-chain verifyLeaf does), so the fold path is byte-identical to `vh verify-proof`'s offline leg.
+ *
+ * CONFIRMED requires BOTH: (1) the artifact's leaf re-derives from its contentHash+relPath, and (2) the
+ * leaf folds through the proof to the recorded root. Either failing -> REJECTED.
+ *
+ * @param {object} opts
+ * @param {string} opts.artifact  path to a proof artifact (from `vh dataset prove --out` / `vh prove --out`)
+ * @param {boolean}[opts.json]
+ * @param {(s:string)=>void}[opts.stdout]
+ * @returns {{
+ *   status: "CONFIRMED"|"REJECTED",
+ *   leafMatches: boolean, foldsToRoot: boolean,
+ *   relPath: string, contentHash: string, leaf: string, root: string,
+ *   computedRoot: string, proofLength: number,
+ * }}
+ */
+function runDatasetVerifyProof(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetVerifyProof requires options");
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!opts.artifact) throw new Error("runDatasetVerifyProof requires a <proof> artifact path");
+
+  // Strict read (rejects a corrupt/forged artifact) then the OFFLINE fold — the entire verification.
+  const artifact = readProofArtifact(opts.artifact);
+  const fold = recomputeFold(artifact);
+  const status = fold.offlineOk ? MEMBERSHIP_STATUS.CONFIRMED : MEMBERSHIP_STATUS.REJECTED;
+
+  const result = {
+    status,
+    leafMatches: fold.leafMatches,
+    foldsToRoot: fold.foldsToRoot,
+    relPath: artifact.relPath,
+    contentHash: artifact.contentHash,
+    leaf: artifact.leaf,
+    root: artifact.root,
+    computedRoot: fold.computedRoot,
+    proofLength: artifact.proof.length,
+  };
+
+  if (opts.json) {
+    write(JSON.stringify(result) + "\n");
+  } else {
+    write(MEMBERSHIP_TRUST_NOTE + "\n\n");
+    write(`  proof artifact: ${opts.artifact}\n`);
+    write(`  relPath:        ${result.relPath}\n`);
+    write(`  contentHash:    ${result.contentHash}\n`);
+    write(`  leaf:           ${result.leaf}\n`);
+    write(`  root:           ${result.root}\n`);
+    write(`  proof siblings: ${result.proofLength}\n\n`);
+    write("  offline recompute (no dataset, no network, no key):\n");
+    write(`    leaf re-derived from contentHash+relPath: ${result.leafMatches ? "yes" : "NO"}\n`);
+    write(`    proof folds to the recorded root:         ${result.foldsToRoot ? "yes" : "NO"}\n\n`);
+    write(`  result:         ${result.status}\n`);
+    if (status === MEMBERSHIP_STATUS.CONFIRMED) {
+      write(
+        "  CONFIRMED: the file is a leaf of the dataset manifest's Merkle root (set-membership proven\n" +
+          "  OFFLINE). This binds the file's relPath + bytes to that root; it does NOT prove the file is\n" +
+          "  unaltered since a date, nor authorship/licensing.\n"
+      );
+    } else if (!result.leafMatches) {
+      write(
+        "  REJECTED: the artifact's leaf does NOT equal pathLeaf(relPath, contentHash) — the leaf,\n" +
+          "  contentHash, or relPath was altered. A fabricated/tampered member is caught here offline.\n"
+      );
+    } else {
+      write(
+        "  REJECTED: the proof does NOT fold to the recorded root — a proof sibling (or the root) was\n" +
+          "  altered. The file is NOT a member of that root. Caught here offline, no dataset needed.\n"
+      );
+    }
+  }
+
+  return result;
+}
+
 module.exports = {
   MANIFEST_KIND,
   MANIFEST_SCHEMA_VERSION,
   SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
   TRUST_NOTE,
+  MEMBERSHIP_TRUST_NOTE,
   VERIFY_STATUS,
+  MEMBERSHIP_STATUS,
   buildManifest,
   validateManifest,
   readManifest,
@@ -464,4 +770,7 @@ module.exports = {
   runDatasetBuild,
   runDatasetVerify,
   formatDatasetVerify,
+  buildDatasetProof,
+  runDatasetProve,
+  runDatasetVerifyProof,
 };

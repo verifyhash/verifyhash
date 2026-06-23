@@ -36,8 +36,18 @@ const {
   writeManifest,
   runDatasetBuild,
   runDatasetVerify,
+  buildDatasetProof,
+  runDatasetProve,
+  runDatasetVerifyProof,
 } = require("../cli/dataset");
-const { main, parseDatasetBuildArgs, parseDatasetVerifyArgs } = require("../cli/vh");
+const { readProofArtifact, recomputeFold } = require("../cli/proof");
+const {
+  main,
+  parseDatasetBuildArgs,
+  parseDatasetVerifyArgs,
+  parseDatasetProveArgs,
+  parseDatasetVerifyProofArgs,
+} = require("../cli/vh");
 
 describe("cli: vh dataset build (T-13.1)", function () {
   let tmpDirs = [];
@@ -635,6 +645,278 @@ describe("cli: vh dataset build (T-13.1)", function () {
     it("main() exit 2 on an unknown dataset subcommand still mentions verify", async function () {
       const code = await main(["dataset", "frobnicate"]);
       expect(code).to.equal(2);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------------
+  // `vh dataset prove --file <p> --manifest <m>` + `vh dataset verify-proof <proof>` (T-13.3):
+  // OFFLINE set-membership of ONE file. NO provider, NO signer, NO network is ever constructed.
+  // -------------------------------------------------------------------------------------------------
+  describe("vh dataset prove / verify-proof (T-13.3): OFFLINE set-membership", function () {
+    // Build a dataset + manifest; return the dir, manifest path, and a place to write proof artifacts.
+    function freshDataset(files) {
+      const dir = tmp("dsp-");
+      writeFiles(dir, files);
+      const manifestPath = path.join(tmp("dsp-man-"), "manifest.json");
+      runDatasetBuild({ dir, out: manifestPath, stdout: () => {} });
+      return { dir, manifestPath };
+    }
+
+    it("an in-set file's proof folds OFFLINE to the manifest root (the headline criterion)", function () {
+      const { dir, manifestPath } = freshDataset({
+        "a.txt": "alpha contents",
+        "sub/b.txt": "beta contents",
+        "sub/deep/c.bin": Buffer.from([0, 1, 2, 3, 255]),
+      });
+      const manifest = readManifest(manifestPath);
+
+      // Prove the deeply-nested member.
+      const built = buildDatasetProof({
+        file: path.join(dir, "sub/b.txt"),
+        manifest: manifestPath,
+      });
+      expect(built.member).to.equal(true);
+      expect(built.relPath).to.equal("sub/b.txt");
+      expect(built.root).to.equal(manifest.root);
+      expect(built.contentHash).to.equal(ethers.keccak256(Buffer.from("beta contents")));
+
+      // The proof folds to the manifest root via the SAME recompute the on-chain verifyLeaf uses.
+      const fold = recomputeFold(built.artifact);
+      expect(fold.leafMatches).to.equal(true);
+      expect(fold.foldsToRoot).to.equal(true);
+      expect(fold.computedRoot).to.equal(manifest.root);
+      expect(fold.offlineOk).to.equal(true);
+    });
+
+    it("a single-file dataset proves with an empty proof folding to the (== leaf) root", function () {
+      const { dir, manifestPath } = freshDataset({ "only.txt": "sole member" });
+      const built = buildDatasetProof({ file: path.join(dir, "only.txt"), manifest: manifestPath });
+      expect(built.member).to.equal(true);
+      expect(built.proof).to.have.length(0);
+      expect(recomputeFold(built.artifact).offlineOk).to.equal(true);
+    });
+
+    it("a fabricated/altered file is a clear NON-member (and writes NO artifact)", function () {
+      const { dir, manifestPath } = freshDataset({ "a.txt": "alpha", "b.txt": "beta" });
+      // A file whose bytes were never in the dataset.
+      const fake = path.join(tmp("dsp-fake-"), "fabricated.txt");
+      fs.writeFileSync(fake, "this content was never in the dataset");
+      const built = buildDatasetProof({ file: fake, manifest: manifestPath });
+      expect(built.member).to.equal(false);
+      expect(built.artifact).to.equal(null);
+      expect(built.proof).to.equal(null);
+
+      // Through the runner with --out: a non-member must NOT write an artifact.
+      const outDir = tmp("dsp-fake-out-");
+      const out = path.join(outDir, "proof.json");
+      const res = runDatasetProve({ file: fake, manifest: manifestPath, out, stdout: () => {} });
+      expect(res.member).to.equal(false);
+      expect(res.out).to.equal(null);
+      expect(fs.existsSync(out)).to.equal(false);
+      expect(fs.readdirSync(outDir)).to.deep.equal([]);
+    });
+
+    it("an ALTERED in-set file (one byte flipped) is a NON-member", function () {
+      const { dir, manifestPath } = freshDataset({ "doc.txt": "the original document" });
+      const altered = path.join(tmp("dsp-alt-"), "doc.txt");
+      fs.writeFileSync(altered, "the original document!"); // one byte added
+      const built = buildDatasetProof({ file: altered, manifest: manifestPath });
+      expect(built.member).to.equal(false);
+    });
+
+    it("verify-proof CONFIRMS a genuine artifact with NO dataset copy and NO network", function () {
+      const { dir, manifestPath } = freshDataset({ "x.txt": "ex", "y.txt": "why", "z.txt": "zee" });
+      const out = path.join(tmp("dsp-vp-out-"), "proof.json");
+      const res = runDatasetProve({
+        file: path.join(dir, "y.txt"),
+        manifest: manifestPath,
+        out,
+        stdout: () => {},
+      });
+      expect(res.member).to.equal(true);
+      expect(res.out).to.equal(path.resolve(out));
+      expect(fs.existsSync(out)).to.equal(true);
+
+      // Delete the WHOLE dataset + manifest to prove verification needs neither.
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(manifestPath, { force: true });
+
+      const vp = runDatasetVerifyProof({ artifact: out, stdout: () => {} });
+      expect(vp.status).to.equal("CONFIRMED");
+      expect(vp.leafMatches).to.equal(true);
+      expect(vp.foldsToRoot).to.equal(true);
+      expect(vp.computedRoot).to.equal(vp.root);
+    });
+
+    it("verify-proof REJECTS a tampered proof sibling (does not fold to the root)", function () {
+      const { dir, manifestPath } = freshDataset({ "a.txt": "alpha", "b.txt": "beta", "c.txt": "gamma" });
+      const out = path.join(tmp("dsp-tamper-out-"), "proof.json");
+      runDatasetProve({ file: path.join(dir, "a.txt"), manifest: manifestPath, out, stdout: () => {} });
+
+      // Flip one nibble of the first proof sibling -> the fold no longer reaches the recorded root.
+      const art = JSON.parse(fs.readFileSync(out, "utf8"));
+      expect(art.proof.length).to.be.greaterThan(0);
+      const s = art.proof[0];
+      art.proof[0] = s.slice(0, -1) + (s.slice(-1) === "0" ? "1" : "0");
+      fs.writeFileSync(out, JSON.stringify(art));
+
+      const vp = runDatasetVerifyProof({ artifact: out, stdout: () => {} });
+      expect(vp.status).to.equal("REJECTED");
+      expect(vp.leafMatches).to.equal(true); // leaf untouched
+      expect(vp.foldsToRoot).to.equal(false); // but it no longer folds
+    });
+
+    it("verify-proof REJECTS a forged leaf (leaf != pathLeaf(relPath, contentHash))", function () {
+      const { dir, manifestPath } = freshDataset({ "a.txt": "alpha", "b.txt": "beta" });
+      const out = path.join(tmp("dsp-forge-out-"), "proof.json");
+      runDatasetProve({ file: path.join(dir, "a.txt"), manifest: manifestPath, out, stdout: () => {} });
+      const art = JSON.parse(fs.readFileSync(out, "utf8"));
+      // Swap the contentHash so the leaf no longer re-derives from contentHash+relPath.
+      art.contentHash = ethers.keccak256(Buffer.from("a different file entirely"));
+      fs.writeFileSync(out, JSON.stringify(art));
+      const vp = runDatasetVerifyProof({ artifact: out, stdout: () => {} });
+      expect(vp.status).to.equal("REJECTED");
+      expect(vp.leafMatches).to.equal(false);
+    });
+
+    it("verify-proof on a CONFIRMED proof needs neither network nor the original dataset (artifact is self-contained)", function () {
+      // Build a proof, then verify it with the artifact as the ONLY input that exists on disk.
+      const { dir, manifestPath } = freshDataset({ "p.txt": "payload", "q.txt": "quux" });
+      const isolated = tmp("dsp-isolated-");
+      const out = path.join(isolated, "proof.json");
+      runDatasetProve({ file: path.join(dir, "p.txt"), manifest: manifestPath, out, stdout: () => {} });
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(path.dirname(manifestPath), { recursive: true, force: true });
+      // Only the artifact remains; verification is pure recompute.
+      const back = readProofArtifact(out);
+      expect(recomputeFold(back).offlineOk).to.equal(true);
+      expect(runDatasetVerifyProof({ artifact: out, stdout: () => {} }).status).to.equal("CONFIRMED");
+    });
+
+    it("buildDatasetProof errors on a missing file and on a corrupt manifest", function () {
+      const { dir, manifestPath } = freshDataset({ "a.txt": "alpha" });
+      expect(() =>
+        buildDatasetProof({ file: path.join(dir, "nope.txt"), manifest: manifestPath })
+      ).to.throw(); // statSync ENOENT
+      // Corrupt the manifest -> readManifest rejects it before any proof.
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      fs.writeFileSync(manifestPath, JSON.stringify(m));
+      expect(() =>
+        buildDatasetProof({ file: path.join(dir, "a.txt"), manifest: manifestPath })
+      ).to.throw(/root must be a 0x-prefixed 32-byte hex/);
+    });
+
+    // ---- CLI wiring + exit codes -------------------------------------------------------------------
+    it("parseDatasetProveArgs parses flags and rejects unknowns / stray positionals", function () {
+      expect(parseDatasetProveArgs(["--file", "/f", "--manifest", "/m", "--out", "/o", "--json"])).to.deep.equal({
+        file: "/f",
+        manifest: "/m",
+        out: "/o",
+        json: true,
+      });
+      expect(() => parseDatasetProveArgs(["--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseDatasetProveArgs(["stray"])).to.throw(/unexpected argument/);
+      expect(() => parseDatasetProveArgs(["--file"])).to.throw(/--file requires a value/);
+    });
+
+    it("parseDatasetVerifyProofArgs parses positional + flags and rejects unknowns", function () {
+      expect(parseDatasetVerifyProofArgs(["/p", "--json"])).to.deep.equal({
+        artifact: "/p",
+        json: true,
+      });
+      expect(() => parseDatasetVerifyProofArgs(["/p", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseDatasetVerifyProofArgs(["/p", "/q"])).to.throw(/unexpected extra argument/);
+    });
+
+    it("main() prove exit 0 MEMBER / 3 NOT A MEMBER; verify-proof exit 0 CONFIRMED / 3 REJECTED", async function () {
+      const { dir, manifestPath } = freshDataset({ "a.txt": "alpha", "b.txt": "beta" });
+      const out = path.join(tmp("dsp-cli-out-"), "proof.json");
+
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      try {
+        // MEMBER -> exit 0, artifact written.
+        const member = await main([
+          "dataset", "prove", "--file", path.join(dir, "a.txt"), "--manifest", manifestPath, "--out", out,
+        ]);
+        expect(member).to.equal(0);
+        expect(fs.existsSync(out)).to.equal(true);
+
+        // verify-proof CONFIRMED -> exit 0.
+        const confirmed = await main(["dataset", "verify-proof", out]);
+        expect(confirmed).to.equal(0);
+
+        // NON-member -> exit 3.
+        const fake = path.join(tmp("dsp-cli-fake-"), "fake.txt");
+        fs.writeFileSync(fake, "never in the dataset");
+        const notMember = await main([
+          "dataset", "prove", "--file", fake, "--manifest", manifestPath,
+        ]);
+        expect(notMember).to.equal(3);
+
+        // Tamper the artifact -> verify-proof REJECTED -> exit 3.
+        const art = JSON.parse(fs.readFileSync(out, "utf8"));
+        const s = art.proof[0];
+        art.proof[0] = s.slice(0, -1) + (s.slice(-1) === "0" ? "1" : "0");
+        fs.writeFileSync(out, JSON.stringify(art));
+        const rejected = await main(["dataset", "verify-proof", out]);
+        expect(rejected).to.equal(3);
+      } finally {
+        process.stdout.write = orig;
+      }
+    });
+
+    it("main() --json prove + verify-proof emit machine-readable objects", async function () {
+      const { dir, manifestPath } = freshDataset({ "a.txt": "alpha", "b.txt": "beta" });
+      const out = path.join(tmp("dsp-cli-json-out-"), "proof.json");
+      const chunks = [];
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (s) => {
+        chunks.push(s);
+        return true;
+      };
+      try {
+        const code = await main([
+          "dataset", "prove", "--file", path.join(dir, "a.txt"), "--manifest", manifestPath, "--out", out, "--json",
+        ]);
+        expect(code).to.equal(0);
+        const proveJson = JSON.parse(chunks.join(""));
+        expect(proveJson.member).to.equal(true);
+        expect(proveJson.relPath).to.equal("a.txt");
+        expect(proveJson.out).to.equal(path.resolve(out));
+
+        chunks.length = 0;
+        const vpCode = await main(["dataset", "verify-proof", out, "--json"]);
+        expect(vpCode).to.equal(0);
+        const vpJson = JSON.parse(chunks.join(""));
+        expect(vpJson.status).to.equal("CONFIRMED");
+        expect(vpJson.foldsToRoot).to.equal(true);
+      } finally {
+        process.stdout.write = orig;
+      }
+    });
+
+    it("main() prove exit 2 on missing --file / --manifest; verify-proof exit 1 on a missing artifact", async function () {
+      const { dir, manifestPath } = freshDataset({ "a.txt": "alpha" });
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "prove", "--manifest", manifestPath])).to.equal(2); // no --file
+        expect(await main(["dataset", "prove", "--file", path.join(dir, "a.txt")])).to.equal(2); // no --manifest
+        expect(await main(["dataset", "verify-proof", "/no/such/proof.json"])).to.equal(1); // missing artifact
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    it("writes the proof artifact ONLY at the caller's --out path (no cwd litter)", function () {
+      const { dir, manifestPath } = freshDataset({ "a.txt": "alpha", "b.txt": "beta" });
+      const outDir = tmp("dsp-only-out-");
+      const out = path.join(outDir, "membership.json");
+      expect(fs.readdirSync(outDir)).to.deep.equal([]);
+      runDatasetProve({ file: path.join(dir, "a.txt"), manifest: manifestPath, out, stdout: () => {} });
+      expect(fs.readdirSync(outDir)).to.deep.equal(["membership.json"]);
     });
   });
 });

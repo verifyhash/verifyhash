@@ -22,7 +22,12 @@ const { runList } = require("./list");
 const { runShow } = require("./show");
 const { runLineage } = require("./lineage");
 const { runReputation } = require("./reputation");
-const { runDatasetBuild, runDatasetVerify } = require("./dataset");
+const {
+  runDatasetBuild,
+  runDatasetVerify,
+  runDatasetProve,
+  runDatasetVerifyProof,
+} = require("./dataset");
 
 function usage() {
   return [
@@ -44,6 +49,8 @@ function usage() {
     "  vh reputation <addr> [opts] verifiable, on-chain-derived contribution score for one address (read-only)",
     "  vh dataset build <dir> --out <p>  tamper-evident dataset manifest (Merkle root + per-file leaves)",
     "  vh dataset verify <dir> --manifest <p>  re-derive the root + per-file diff vs a manifest (OFFLINE)",
+    "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
+    "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -212,6 +219,25 @@ function usage() {
     "  so a hand-edited manifest root cannot fake a MATCH. Prints a precise per-file ADDED/REMOVED/CHANGED",
     "  (old->new contentHash) diff (the SAME diff core as `vh verify --receipt`) to localize WHICH file",
     "  diverged; a rename shows as REMOVED+ADDED (the root commits to file names). Exit 0 MATCH, 3 MISMATCH.",
+    "",
+    "dataset prove options (OFFLINE set-membership of ONE file; NO key, NO network):",
+    "  --file <path>              REQUIRED: the single file to prove was a member of the dataset",
+    "  --manifest <path>          REQUIRED: a manifest written by `vh dataset build`",
+    "  --out <path>               write a self-contained proof artifact here (caller-chosen; never cwd).",
+    "                             Verify it later with `vh dataset verify-proof <p>` — no dataset needed.",
+    "  --json                     emit a machine-readable { member, contentHash, relPath, root, ... }",
+    "  Matches the file by CONTENT against the manifest's committed leaves and builds the Merkle proof",
+    "  folding its leaf to the manifest root (the SAME construction as `vh prove`). A fabricated/altered",
+    "  file is a clear NON-member (no artifact written). Exit 0 MEMBER, 3 NOT A MEMBER. Proves",
+    "  SET-MEMBERSHIP only — NOT 'unaltered since date T', authorship, or licensing (a human-signed step).",
+    "",
+    "dataset verify-proof options (PURELY OFFLINE; NO dataset copy, NO manifest, NO key, NO network):",
+    "  <proof>                    path to a proof artifact written by `vh dataset prove --out <p>`",
+    "  --json                     emit a machine-readable { status, leafMatches, foldsToRoot, ... }",
+    "  Folds the leaf through the proof to the recorded root (reuses the SAME recompute as verify-proof).",
+    "  Prints CONFIRMED only when the leaf re-derives AND folds to the root; else REJECTED (non-zero exit).",
+    "  Proves SET-MEMBERSHIP in the recorded root, NOT that the root is anchored on-chain (`vh verify-proof`",
+    "  does the on-chain leg) nor 'unaltered since date T'. Exit 0 CONFIRMED, 3 REJECTED.",
     "",
   ].join("\n");
 }
@@ -1528,15 +1554,75 @@ function parseDatasetVerifyArgs(argv) {
   return opts;
 }
 
+/**
+ * Parse `dataset prove` argv into { file, manifest, out, json }. Takes NO positional (the file is the
+ * REQUIRED --file flag, the manifest the REQUIRED --manifest flag), so a stray positional hard-errors —
+ * a typo never silently proves the wrong file or writes to a surprise path (parser parity with the others).
+ */
+function parseDatasetProveArgs(argv) {
+  const opts = { file: undefined, manifest: undefined, out: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--file":
+        opts.file = argv[++i];
+        if (opts.file === undefined) throw new Error("--file requires a value");
+        break;
+      case "--manifest":
+        opts.manifest = argv[++i];
+        if (opts.manifest === undefined) throw new Error("--manifest requires a value");
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        throw new Error(`unexpected argument: ${a} (vh dataset prove takes --file/--manifest, no positional)`);
+    }
+  }
+  return opts;
+}
+
+/**
+ * Parse `dataset verify-proof` argv into { artifact, json }. Takes exactly one positional <proof> (the
+ * artifact path). Throws on unknown/incomplete flags or a duplicate/missing positional (parser parity).
+ */
+function parseDatasetVerifyProofArgs(argv) {
+  const opts = { artifact: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.artifact !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.artifact = a;
+    }
+  }
+  return opts;
+}
+
 function cmdDataset(argv) {
   const [sub, ...rest] = argv;
   if (sub === "verify") {
     return cmdDatasetVerify(rest);
   }
+  if (sub === "prove") {
+    return cmdDatasetProve(rest);
+  }
+  if (sub === "verify-proof") {
+    return cmdDatasetVerifyProof(rest);
+  }
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify)\n\n` + usage()
+        `(expected: build | verify | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -1622,6 +1708,77 @@ function cmdDatasetVerify(argv) {
   return result.status === "MATCH" ? 0 : 3;
 }
 
+/**
+ * `vh dataset prove --file <p> --manifest <m> [--out <p>] [--json]` — build an OFFLINE set-membership
+ * proof that ONE file was a member of the manifest's dataset. NO key, NO network. Exit 0 on MEMBER, 3
+ * on NOT A MEMBER (so scripts/CI can branch), 2 on a usage error, 1 on a runtime error.
+ */
+function cmdDatasetProve(argv) {
+  let opts;
+  try {
+    opts = parseDatasetProveArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.file) {
+    process.stderr.write("error: `vh dataset prove` requires --file <path>\n\n" + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset prove` requires --manifest <path>\n\n" + usage());
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runDatasetProve({
+      file: opts.file,
+      manifest: opts.manifest,
+      out: opts.out,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero when the file is NOT a member so scripts/CI can branch (mirrors `vh verify`/MISMATCH).
+  return result.member ? 0 : 3;
+}
+
+/**
+ * `vh dataset verify-proof <proof> [--json]` — fold a membership proof artifact PURELY OFFLINE (no
+ * dataset, no manifest, no key, no network). Exit 0 on CONFIRMED, 3 on REJECTED (mirrors `vh verify`),
+ * 2 on a usage error, 1 on a runtime error (missing/corrupt artifact).
+ */
+function cmdDatasetVerifyProof(argv) {
+  let opts;
+  try {
+    opts = parseDatasetVerifyProofArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.artifact) {
+    process.stderr.write(
+      "error: `vh dataset verify-proof` requires a <proof> (artifact path)\n\n" + usage()
+    );
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runDatasetVerifyProof({ artifact: opts.artifact, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on REJECTED so scripts/CI can branch (mirrors `vh verify`/MISMATCH).
+  return result.status === "CONFIRMED" ? 0 : 3;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -1683,8 +1840,12 @@ module.exports = {
   cmdReputation,
   cmdDataset,
   cmdDatasetVerify,
+  cmdDatasetProve,
+  cmdDatasetVerifyProof,
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
+  parseDatasetProveArgs,
+  parseDatasetVerifyProofArgs,
   parseHashArgs,
   parseAnchorArgs,
   parseClaimArgs,

@@ -227,10 +227,13 @@ function buildCommitTx(opts) {
  * @param {string}  opts.contentHash      the digest committed to
  * @param {string}  opts.salt             the secret salt used to build the commitment
  * @param {string} [opts.uri]             optional untrusted off-chain pointer hint
+ * @param {string} [opts.parent]          optional predecessor contentHash (T-10.1 lineage edge);
+ *                                        non-zero routes to revealWithParent() and records the edge
  * @param {string}  opts.contractAddress  ContributionRegistry address (tx `to`)
  * @param {object} [opts.ethers]          ethers v6 module
- * @returns {{ to: string, data: string, value: string, functionName: "reveal",
- *            contentHash: string, salt: string, uri: string }}
+ * @returns {{ to: string, data: string, value: string,
+ *            functionName: "reveal"|"revealWithParent",
+ *            contentHash: string, salt: string, uri: string, parent: string|null }}
  */
 function buildRevealTx(opts) {
   const { ethersLib, to } = _resolveContext(opts);
@@ -239,17 +242,33 @@ function buildRevealTx(opts) {
   if (!salt) throw new Error("reveal requires the secret salt from the commit step");
   const uri = opts.uri == null ? "" : String(opts.uri);
 
+  // Resolve the optional lineage edge (same convention/validation as `vh anchor --parent`): a
+  // missing/zero parent is a root via the legacy reveal(); a non-zero 32-byte hash routes to
+  // revealWithParent(). Self-reference is rejected here; the contract enforces UnknownParent/SelfParent.
+  const { normalizeParent } = require("./anchor");
+  const parent = normalizeParent(opts.parent, ethersLib);
+  if (parent !== null && parent.toLowerCase() === contentHash.toLowerCase()) {
+    throw new Error(
+      "refusing to reveal a record as its own parent (self-reference; the contract rejects it as SelfParent)"
+    );
+  }
+
   const iface = new ethersLib.Interface(ABI);
-  const data = iface.encodeFunctionData("reveal", [contentHash, salt, uri]);
+  const functionName = parent === null ? "reveal" : "revealWithParent";
+  const data =
+    parent === null
+      ? iface.encodeFunctionData("reveal", [contentHash, salt, uri])
+      : iface.encodeFunctionData("revealWithParent", [contentHash, salt, uri, parent]);
 
   return {
     to,
     data,
-    value: "0x0", // reveal() is non-payable.
-    functionName: "reveal",
+    value: "0x0", // reveal()/revealWithParent() are non-payable.
+    functionName,
     contentHash,
     salt,
     uri,
+    parent, // null for a lineage root; the predecessor hash when --parent was given.
   };
 }
 
@@ -577,6 +596,8 @@ async function runReveal(opts) {
  * @param {object} opts
  * @param {string}  opts.path
  * @param {string} [opts.uri]
+ * @param {string} [opts.parent]            optional predecessor contentHash (T-10.1 lineage edge);
+ *                                          non-zero routes the reveal leg to revealWithParent()
  * @param {boolean}[opts.git]               hash EXACTLY the git-tracked files (T-8.1 enumeration)
  * @param {string} [opts.ref]               with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress
@@ -621,6 +642,7 @@ async function runClaim(opts) {
       contentHash: commitTx.contentHash,
       salt: commitTx.salt,
       uri: opts.uri,
+      parent: opts.parent,
       contractAddress: opts.contractAddress,
       ethers: ethersLib,
     });
@@ -703,8 +725,22 @@ async function runClaim(opts) {
   });
 
   // --- Step 2: reveal ---
-  log(`claim: revealing ${commitTx.contentHash}...\n`);
-  const revealSent = await contract.reveal(commitTx.contentHash, commitTx.salt, opts.uri == null ? "" : String(opts.uri));
+  // Route to revealWithParent() iff a non-zero predecessor was given (T-10.1); otherwise the legacy
+  // reveal(), byte-for-byte unchanged. Reuse the same parent normalization/self-ref guard as anchor.
+  const { normalizeParent } = require("./anchor");
+  const parent = normalizeParent(opts.parent, ethersLib);
+  if (parent !== null && parent.toLowerCase() === commitTx.contentHash.toLowerCase()) {
+    throw new Error(
+      "refusing to reveal a record as its own parent (self-reference; the contract rejects it as SelfParent)"
+    );
+  }
+  const lineageNote = parent == null ? "" : ` with parent ${parent}`;
+  log(`claim: revealing ${commitTx.contentHash}${lineageNote}...\n`);
+  const revealUri = opts.uri == null ? "" : String(opts.uri);
+  const revealSent =
+    parent == null
+      ? await contract.reveal(commitTx.contentHash, commitTx.salt, revealUri)
+      : await contract.revealWithParent(commitTx.contentHash, commitTx.salt, revealUri, parent);
   log(`  reveal tx: ${revealSent.hash}\n`);
   const revealReceipt = await revealSent.wait();
 

@@ -32,6 +32,21 @@ const STATUS = Object.freeze({
   NOT_ANCHORED: "NOT_ANCHORED",
 });
 
+// The lineage sentinel: a record whose `parent` is the 32-byte zero hash has NO predecessor and is a
+// "lineage root" (the contract's documented convention; bytes32(0) == "no predecessor / root of a
+// lineage"). Both the human block and the --json shape flag this explicitly so a consumer can tell a
+// deliberate root from a missing/omitted field.
+const ZERO_HASH = "0x" + "0".repeat(64);
+
+/**
+ * True iff `parent` is the zero-hash sentinel (== lineage root / no predecessor). Tolerant of a
+ * null/undefined/missing value (an older record shape or a NOT_ANCHORED result) — those are treated
+ * as "root" too, so callers never crash on a missing edge.
+ */
+function isRoot(parent) {
+  return parent == null || BigInt(parent) === 0n;
+}
+
 // The two attribution phrases, kept consistent with cli/verify.js / cli/list.js so show, verify and
 // list never disagree about what `contributor` is allowed to mean for a given record.
 const ATTRIBUTION_PROVEN =
@@ -104,6 +119,13 @@ function formatShow(r) {
   const lines = [TRUST_CAVEAT, "", `  contentHash:  ${r.contentHash}`];
   if (r.status === STATUS.ANCHORED) {
     const ts = r.timestamp == null ? "(unknown)" : isoFromUnix(r.timestamp);
+    // `parent` is the optional immutable lineage edge. A root (0x0) renders as "(none) — lineage
+    // root" so a reader can tell a deliberate root from a missing field; a parented record shows the
+    // predecessor hash and `vh show <parent>` to walk one step back. Per TRUST BOUNDARIES the edge is
+    // only a CLAIM by this record's author — it proves neither content ancestry nor authorship.
+    const parentLine = isRoot(r.parent)
+      ? "  parent:       (none) — lineage root (no predecessor)"
+      : `  parent:       ${r.parent}  (claimed predecessor — walk it with \`vh show ${r.parent}\`)`;
     lines.push(
       "  result:       ANCHORED",
       `  contributor:  ${r.contributor}`,
@@ -112,9 +134,11 @@ function formatShow(r) {
       `  timestamp:    ${r.timestamp} (${ts})`,
       `  blockNumber:  ${r.blockNumber}`,
       `  uri:          ${r.uri ? r.uri : "(none)"}`,
+      parentLine,
       "",
       "  This record attests only that the EXACT hash above is on-chain. To bind it to real bytes,",
-      "  run `vh verify <path>` — `show` does not re-derive content."
+      "  run `vh verify <path>` — `show` does not re-derive content. A `parent` is only this author's",
+      "  CLAIMED predecessor: it proves neither content ancestry nor a transfer of the parent's authorship."
     );
   } else {
     lines.push(
@@ -135,6 +159,7 @@ function formatShow(r) {
  */
 function jsonShow(r) {
   if (r.status === STATUS.ANCHORED) {
+    const root = isRoot(r.parent);
     return {
       contentHash: r.contentHash,
       anchored: true,
@@ -145,6 +170,13 @@ function jsonShow(r) {
       timestampISO: isoFromUnix(r.timestamp),
       blockNumber: Number(r.blockNumber),
       uri: r.uri ? r.uri : null,
+      // Lineage edge (T-10.1): `parent` is always present in the contract; surface it explicitly so an
+      // indexer/UI consuming the documented --json contract can see the edge. A root serializes
+      // parent:null + isRoot:true (so a deliberate root is distinguishable from a missing key), a
+      // parented record carries the predecessor hash + isRoot:false. The edge is only this author's
+      // CLAIMED predecessor — it proves neither content ancestry nor a transfer of authorship.
+      parent: root ? null : r.parent,
+      isRoot: root,
     };
   }
   return {
@@ -179,6 +211,7 @@ function jsonShow(r) {
  *   timestamp: bigint|null,
  *   blockNumber: bigint|null,
  *   uri: string|null,
+ *   parent: string|null,
  * }>}
  */
 async function runShow(opts) {
@@ -230,6 +263,7 @@ async function runShow(opts) {
     timestamp: null,
     blockNumber: null,
     uri: null,
+    parent: null,
   };
 
   if (record !== null) {
@@ -238,6 +272,9 @@ async function runShow(opts) {
     result.timestamp = BigInt(record.timestamp);
     result.blockNumber = BigInt(record.blockNumber);
     result.uri = record.uri;
+    // The immutable lineage edge (T-10.1). Normalize to a lowercase 0x string so isRoot() / equality
+    // checks are stable; a root reads back as the 32-byte zero hash.
+    result.parent = String(record.parent).toLowerCase();
   }
 
   if (opts.json) {
@@ -256,8 +293,10 @@ module.exports = {
   jsonShow,
   attributionFor,
   isoFromUnix,
+  isRoot,
   STATUS,
   TRUST_CAVEAT,
+  ZERO_HASH,
   ATTRIBUTION_PROVEN,
   ATTRIBUTION_ANCHOR_ONLY,
   ABI,

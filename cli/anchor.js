@@ -96,13 +96,18 @@ function contentHashForPath(targetPath, opts = {}) {
  * @param {string} [opts.uri]            optional off-chain pointer stored alongside the hash
  * @param {boolean}[opts.git]            hash EXACTLY the git-tracked files (ignores untracked junk)
  * @param {string} [opts.ref]            with git: which commit's tracked set to hash (default HEAD)
+ * @param {string} [opts.parent]         optional predecessor contentHash (the immutable lineage edge,
+ *                                       T-10.1). Omitted/zero -> a lineage root via the plain
+ *                                       `anchor()`; a non-zero 32-byte hash routes to
+ *                                       `anchorWithParent()` and records the edge child->parent.
  * @param {string} opts.contractAddress  deployed ContributionRegistry address (the tx `to`)
  * @param {object} [opts.ethers]         an ethers v6 module (defaults to the one bundled here)
  * @returns {{
  *   to: string, data: string, value: string,
  *   contentHash: string, uri: string, kind: "file"|"dir", path: string,
  *   manifest: Array|null, git: {commit:string,scope:string}|null,
- *   functionName: "anchor"
+ *   parent: string|null,
+ *   functionName: "anchor"|"anchorWithParent"
  * }}
  */
 function buildAnchorTx(opts) {
@@ -130,21 +135,64 @@ function buildAnchorTx(opts) {
     throw new Error("refusing to anchor the zero hash (contract rejects it)");
   }
 
+  // Resolve the optional lineage edge. A missing/empty/zero parent means "no predecessor / lineage
+  // root" and routes to the legacy `anchor()` (byte-for-byte unchanged). A non-zero parent must be a
+  // well-formed 32-byte hash and routes to `anchorWithParent()`. We validate shape + self-reference
+  // here so a typo hard-errors BEFORE building a doomed tx; the contract still enforces UnknownParent
+  // (the parent must already be anchored) and SelfParent on-chain as the authoritative checks.
+  const parent = normalizeParent(opts.parent, ethersLib);
+  if (parent !== null && parent.toLowerCase() === contentHash.toLowerCase()) {
+    throw new Error(
+      "refusing to anchor a record as its own parent (self-reference; the contract rejects it as SelfParent)"
+    );
+  }
+
   const iface = new ethersLib.Interface(ABI);
-  const data = iface.encodeFunctionData("anchor", [contentHash, uri]);
+  const functionName = parent === null ? "anchor" : "anchorWithParent";
+  const data =
+    parent === null
+      ? iface.encodeFunctionData("anchor", [contentHash, uri])
+      : iface.encodeFunctionData("anchorWithParent", [contentHash, uri, parent]);
 
   return {
     to: ethersLib.getAddress(contractAddress),
     data,
-    value: "0x0", // anchor() is non-payable; never attach value.
+    value: "0x0", // anchor()/anchorWithParent() are non-payable; never attach value.
     contentHash,
     uri,
     kind,
     path: targetPath,
     manifest, // per-file manifest for a dir (null for a file); recorded into a --receipt
     git, // { commit, scope } when --git was used; null otherwise. Recorded into a --receipt.
-    functionName: "anchor",
+    parent, // null for a lineage root; the predecessor hash when --parent was given.
+    functionName,
   };
+}
+
+/**
+ * Normalize an optional `--parent` value into either null (no edge / lineage root) or a validated,
+ * lowercased 32-byte 0x hash. Empty/undefined/null and the zero hash all mean "root" (-> null), so a
+ * caller can pass through an unset flag freely. A malformed non-zero value is a usage-grade error so a
+ * typo'd parent hard-errors before any tx is built (it never silently becomes a root).
+ *
+ * @param {string|undefined|null} value
+ * @param {object} ethersLib  ethers v6 module (for isHexString)
+ * @returns {string|null} the normalized parent hash, or null for "no predecessor"
+ */
+function normalizeParent(value, ethersLib) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") {
+    throw new Error(`invalid --parent: expected a 0x 32-byte hash, got ${typeof value}`);
+  }
+  if (!ethersLib.isHexString(value, 32)) {
+    throw new Error(
+      `invalid --parent: must be a 32-byte (0x + 64 hex) content hash, got: ${value}`
+    );
+  }
+  // The zero hash is the explicit "no predecessor" sentinel -> treat as a root (null), matching the
+  // contract (a zero parent skips the edge entirely and emits no Linked event).
+  if (/^0x0{64}$/i.test(value)) return null;
+  return value.toLowerCase();
 }
 
 /** Render a built anchor tx as the multi-line block `--dry-run` prints. */
@@ -155,6 +203,10 @@ function formatDryRun(tx, chainId) {
     `  path:         ${tx.path}  (${tx.kind})`,
     `  contentHash:  ${tx.contentHash}`,
     `  uri:          ${tx.uri === "" ? "(none)" : tx.uri}`,
+    // Lineage edge (T-10.1): show whether this would be a root or a child of `parent`, and which
+    // write path (anchor vs anchorWithParent) it routes to, so a dry-run reader sees the edge.
+    `  parent:       ${tx.parent == null ? "(none) — lineage root" : tx.parent}`,
+    `  function:     ${tx.functionName}`,
   ];
   if (tx.git) {
     // Provenance is an untrusted convenience hint — say so, so it is never mistaken for the verdict.
@@ -187,6 +239,8 @@ function formatDryRun(tx, chainId) {
  * @param {string} [opts.uri]
  * @param {boolean}[opts.git]                   hash EXACTLY the git-tracked files (T-8.1 enumeration)
  * @param {string} [opts.ref]                   with git: which commit's tracked set (default HEAD)
+ * @param {string} [opts.parent]                optional predecessor contentHash (T-10.1 lineage edge);
+ *                                              non-zero routes to anchorWithParent()
  * @param {string}  opts.contractAddress
  * @param {boolean}[opts.dryRun]
  * @param {boolean}[opts.iUnderstandMainnet]   bypass the non-testnet chainId refusal
@@ -208,6 +262,7 @@ async function runAnchor(opts) {
     uri: opts.uri,
     git: opts.git,
     ref: opts.ref,
+    parent: opts.parent,
     contractAddress: opts.contractAddress,
     ethers: ethersLib,
   });
@@ -268,15 +323,26 @@ async function runAnchor(opts) {
   }
 
   const contract = new ethersLib.Contract(tx.to, ABI, opts.signer);
-  log(`Anchoring ${tx.path} (${tx.kind}) as ${tx.contentHash} on chainId ${BigInt(chainId)}...\n`);
+  const lineageNote = tx.parent == null ? "" : ` with parent ${tx.parent}`;
+  log(
+    `Anchoring ${tx.path} (${tx.kind}) as ${tx.contentHash}${lineageNote} on chainId ${BigInt(chainId)}...\n`
+  );
 
-  const sent = await contract.anchor(tx.contentHash, tx.uri);
+  // Route to anchorWithParent() iff a non-zero predecessor was given (T-10.1); otherwise the legacy
+  // anchor() path, byte-for-byte unchanged. The contract enforces UnknownParent/SelfParent.
+  const sent =
+    tx.parent == null
+      ? await contract.anchor(tx.contentHash, tx.uri)
+      : await contract.anchorWithParent(tx.contentHash, tx.uri, tx.parent);
   log(`  tx sent: ${sent.hash}\n`);
   const receipt = await sent.wait();
 
-  // Pull the Anchored event back out of the receipt so callers see what was recorded.
+  // Pull the Anchored event back out of the receipt so callers see what was recorded. Also surface
+  // the parallel Linked(child, parent) edge log (T-10.1) when a parented record was written, so the
+  // lineage edge is observable from the same result the caller already gets back.
   const iface = new ethersLib.Interface(ABI);
   let anchored = null;
+  let linked = null;
   for (const lg of receipt.logs) {
     try {
       const parsed = iface.parseLog({ topics: lg.topics, data: lg.data });
@@ -288,7 +354,8 @@ async function runAnchor(opts) {
           timestamp: parsed.args.timestamp,
           uri: parsed.args.uri,
         };
-        break;
+      } else if (parsed && parsed.name === "Linked") {
+        linked = { child: parsed.args.child, parent: parsed.args.parent };
       }
     } catch (_) {
       // Not one of our events; skip.
@@ -296,7 +363,10 @@ async function runAnchor(opts) {
   }
 
   if (anchored) {
-    log(`  Anchored at index ${anchored.index} by ${anchored.contributor} in tx ${receipt.hash}\n`);
+    const lineageMsg = linked ? ` (lineage edge -> parent ${linked.parent})` : "";
+    log(
+      `  Anchored at index ${anchored.index} by ${anchored.contributor} in tx ${receipt.hash}${lineageMsg}\n`
+    );
   }
 
   // Persist an anchor receipt (with the dir manifest + the now-known tx hash/block) when asked.
@@ -312,6 +382,7 @@ async function runAnchor(opts) {
     txHash: receipt.hash,
     receipt,
     anchored,
+    linked, // { child, parent } when a lineage edge was written (T-10.1); null for a root
     receiptPath: opts.receiptPath,
     anchorReceipt,
   };
@@ -322,6 +393,7 @@ module.exports = {
   runAnchor,
   formatDryRun,
   contentHashForPath,
+  normalizeParent,
   isTestnetChainId,
   KNOWN_TESTNET_CHAIN_IDS,
   ABI,

@@ -18,6 +18,10 @@
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
 
+// Reuse the lineage-root predicate from `show` so `list` and `show` never disagree about what a
+// "root" (parent == bytes32(0)) is. T-10.1.
+const { isRoot } = require("./show");
+
 // Default page size for walking getRecords(). The contract clamps a window to what exists, so this is
 // purely a request-batching knob; it never affects which records come back.
 const DEFAULT_PAGE = 100;
@@ -43,7 +47,7 @@ const ATTRIBUTION_ANCHOR_ONLY = "first anchorer only — NOT authorship";
  * @param {number} [pageSize]
  * @returns {Promise<Array<{
  *   index:number, contentHash:string, contributor:string, authorBound:boolean,
- *   timestamp:bigint, blockNumber:bigint, uri:string
+ *   timestamp:bigint, blockNumber:bigint, uri:string, parent:string
  * }>>}
  */
 async function readAllRecords(contract, pageSize = DEFAULT_PAGE) {
@@ -63,6 +67,9 @@ async function readAllRecords(contract, pageSize = DEFAULT_PAGE) {
         timestamp: BigInt(r.timestamp),
         blockNumber: BigInt(r.blockNumber),
         uri: r.uri,
+        // The immutable lineage edge (T-10.1). Normalized to a lowercase 0x string; a root reads back
+        // as the 32-byte zero hash (isRoot() flags it for the JSON/human shapes below).
+        parent: String(r.parent).toLowerCase(),
       });
     }
   }
@@ -116,6 +123,11 @@ function isoFromUnix(unixSeconds) {
  * index, contentHash, contributor, attribution strength, timestamp (+ISO), blockNumber, uri.
  */
 function formatRecord(r) {
+  // `parent` (T-10.1): a root (0x0) shows "(none) — lineage root"; a parented record shows the
+  // predecessor hash. The edge is only a CLAIM (see the trust caveat), so it is reported, not trusted.
+  const parentLine = isRoot(r.parent)
+    ? "      parent:       (none) — lineage root"
+    : `      parent:       ${r.parent}`;
   return [
     `[${r.index}]  ${r.contentHash}`,
     `      contributor:  ${r.contributor}`,
@@ -123,6 +135,7 @@ function formatRecord(r) {
     `      timestamp:    ${r.timestamp} (${isoFromUnix(r.timestamp)})`,
     `      blockNumber:  ${r.blockNumber}`,
     `      uri:          ${r.uri ? r.uri : "(none)"}`,
+    parentLine,
   ].join("\n");
 }
 
@@ -131,6 +144,7 @@ function formatRecord(r) {
  * the attribution phrase is included so a machine consumer gets the same semantics as the human block.
  */
 function jsonRecord(r) {
+  const root = isRoot(r.parent);
   return {
     index: r.index,
     contentHash: r.contentHash,
@@ -141,6 +155,11 @@ function jsonRecord(r) {
     timestampISO: isoFromUnix(r.timestamp),
     blockNumber: Number(r.blockNumber),
     uri: r.uri ? r.uri : null,
+    // Lineage edge (T-10.1): a root serializes parent:null + isRoot:true (distinguishable from a
+    // missing key); a parented record carries the predecessor hash + isRoot:false. So an indexer can
+    // reconstruct the full edge set from `vh list --json` alone, mirroring the on-chain Linked logs.
+    parent: root ? null : r.parent,
+    isRoot: root,
   };
 }
 

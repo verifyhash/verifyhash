@@ -45,6 +45,11 @@ function usage() {
     "",
     "anchor options (one-shot; contributor = 'first anchorer', NOT proven authorship):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
+    "  --parent <0xhash>          record an immutable predecessor edge to an ALREADY-anchored hash",
+    "                             (the lineage graph). Routes to anchorWithParent(); the parent must",
+    "                             already exist or the tx reverts UnknownParent. Omit it for a root.",
+    "                             A `parent` is only a CLAIMED predecessor: it proves neither content",
+    "                             ancestry nor any transfer of the parent's authorship.",
     "  --git                      anchor EXACTLY the files git tracks (ignores untracked junk); records",
     "                             a `git` provenance hint (commit oid + scope) in the receipt",
     "  --ref <ref>                with --git: which commit's tracked set to anchor (default HEAD)",
@@ -57,6 +62,10 @@ function usage() {
     "",
     "claim options (commit-reveal one-shot; contributor = proven first claimant, authorBound = true):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
+    "  --parent <0xhash>          record an immutable predecessor edge to an ALREADY-anchored hash",
+    "                             (routes the reveal leg to revealWithParent(); the parent must already",
+    "                             exist or it reverts UnknownParent). Only on the one-shot `vh claim`;",
+    "                             `vh commit`/`vh reveal` do not carry it yet (BACKLOG B-10.1).",
     "  --git                      claim EXACTLY the files git tracks (records a `git` provenance hint)",
     "  --ref <ref>                with --git: which commit's tracked set to claim (default HEAD)",
     "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
@@ -231,6 +240,7 @@ function parseAnchorArgs(argv) {
   const opts = {
     path: undefined,
     uri: undefined,
+    parent: undefined,
     receipt: undefined,
     contract: undefined,
     rpc: undefined,
@@ -258,6 +268,10 @@ function parseAnchorArgs(argv) {
       case "--uri":
         opts.uri = argv[++i];
         if (opts.uri === undefined) throw new Error("--uri requires a value");
+        break;
+      case "--parent":
+        opts.parent = argv[++i];
+        if (opts.parent === undefined) throw new Error("--parent requires a value");
         break;
       case "--receipt":
         opts.receipt = argv[++i];
@@ -306,6 +320,7 @@ async function cmdAnchor(argv) {
       await runAnchor({
         path: opts.path,
         uri: opts.uri,
+        parent: opts.parent,
         git: opts.git,
         ref: opts.ref,
         contractAddress,
@@ -343,6 +358,7 @@ async function cmdAnchor(argv) {
     await runAnchor({
       path: opts.path,
       uri: opts.uri,
+      parent: opts.parent,
       git: opts.git,
       ref: opts.ref,
       contractAddress,
@@ -368,6 +384,7 @@ function parseClaimArgs(argv) {
   const opts = {
     path: undefined,
     uri: undefined,
+    parent: undefined,
     salt: undefined,
     receipt: undefined,
     receiptDir: undefined,
@@ -397,6 +414,10 @@ function parseClaimArgs(argv) {
       case "--uri":
         opts.uri = argv[++i];
         if (opts.uri === undefined) throw new Error("--uri requires a value");
+        break;
+      case "--parent":
+        opts.parent = argv[++i];
+        if (opts.parent === undefined) throw new Error("--parent requires a value");
         break;
       case "--salt":
         opts.salt = argv[++i];
@@ -487,6 +508,7 @@ async function cmdClaim(argv) {
       await runClaim({
         path: opts.path,
         uri: opts.uri,
+        parent: opts.parent,
         salt: opts.salt,
         git: opts.git,
         ref: opts.ref,
@@ -525,6 +547,7 @@ async function cmdClaim(argv) {
     await runClaim({
       path: opts.path,
       uri: opts.uri,
+      parent: opts.parent,
       salt: opts.salt,
       git: opts.git,
       ref: opts.ref,
@@ -560,6 +583,16 @@ async function cmdCommit(argv) {
   if (opts.dryRun) {
     process.stderr.write(
       "error: `vh commit` has no --dry-run; use `vh claim --dry-run` to preview the plan\n"
+    );
+    return 2;
+  }
+  // The lineage edge belongs on the REVEAL leg (revealWithParent), but the resumable receipt schema
+  // does not yet persist a `parent` (that is BACKLOG B-10.1). Rather than silently drop the edge,
+  // hard-error and point to the one-shot path that DOES support it (`vh claim --parent`).
+  if (opts.parent !== undefined) {
+    process.stderr.write(
+      "error: `vh commit` does not yet support --parent (the resumable receipt cannot carry the " +
+        "lineage edge yet; see BACKLOG B-10.1). Use the one-shot `vh claim --parent <hash>` instead.\n"
     );
     return 2;
   }

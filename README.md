@@ -71,22 +71,33 @@ the claim is **permanently unrevealable by anyone** (reveal requires that exact 
 durable and crash-recoverable, split it:
 
 ```
-vh commit ./src --uri ipfs://cid      # sends commit(), writes ./<hashPrefix>.vhclaim.json, then exits
+vh commit ./src --uri ipfs://cid      # sends commit(), writes the receipt, prints its EXACT path, then exits
 # ...wait out MIN_REVEAL_DELAY (a few blocks)...
-vh reveal --receipt ./<hashPrefix>.vhclaim.json   # resumes from the receipt and reveals
+vh reveal --receipt <that exact path>   # resumes from the receipt and reveals
 ```
 
 `vh commit` persists a versioned JSON **claim receipt** (salt, commitment, contentHash, committer,
-contract, chainId, commit tx/block, `MIN_REVEAL_DELAY`) to `--receipt <path>` (default
-`./<contentHashPrefix>.vhclaim.json`) **before it returns**, so a separate `vh reveal` invocation — even
-after a reboot — can finish the claim. If you reveal before the window matures the contract reverts with
-`RevealTooSoon` and the receipt is left intact, so you can simply retry. The receipt is an *untrusted
-local convenience*: the authoritative attribution is always the on-chain record (see
-`docs/TRUST-BOUNDARIES.md`). `vh claim` remains the one-shot convenience and now also drops a receipt at
-commit time, so even it is crash-recoverable.
+contract, chainId, commit tx/block, `MIN_REVEAL_DELAY`) **before it returns**, so a separate `vh reveal`
+invocation — even after a reboot — can finish the claim.
 
-> Keep the receipt private until you reveal: it contains the secret salt. After a successful reveal the
-> commitment is single-use and spent, so the receipt is no longer sensitive.
+**The receipt holds the SECRET `salt`** that binds your commitment. Where it is written is always
+something you opt into, and `vh commit` **never writes it silently**:
+
+- `--receipt <path>` writes it to that exact file;
+- `--receipt-dir <dir>` writes it into that directory under a tidy default file name;
+- with neither, `vh commit` defaults to `<cwd>/<contentHashPrefix>.vhclaim.json` — **but the success
+  output always names the EXACT file written** (`receipt written: <abs path>`), so you can see, move, or
+  delete it. It is never dropped where you can't find it. (`*.vhclaim.json` is also git-ignored.)
+
+**Keep it private until you reveal** — anyone who holds the salt before reveal could front-run the open;
+after a successful reveal the commitment is single-use and spent, so the receipt is no longer sensitive.
+This reuses the receipt trust posture in [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md): the
+receipt is an *untrusted local convenience*; the authoritative attribution is always the on-chain record.
+
+If you reveal before the window matures the contract reverts with `RevealTooSoon` and the receipt is left
+intact, so you can simply retry. **`vh claim`** remains the one-shot convenience (commit + reveal in one
+process); to keep it safe it persists a receipt **only if you ask** (`--receipt`/`--receipt-dir`) — by
+default it writes nothing and you use `vh commit` for a durable, resumable claim.
 
 The full receipt JSON schema (every field, which are trusted vs untrusted hints), the commit→reveal
 resume lifecycle, and the directory-manifest diff semantics are specified in

@@ -80,7 +80,9 @@ const GIT_OID_RE = /^[0-9a-f]{40}$/;
  * @param {object} parts
  * @param {string}  parts.contentHash     0x 32-byte digest being claimed
  * @param {string}  parts.committer       0x 20-byte address that committed and will reveal
- * @param {string}  parts.salt            0x 32-byte secret salt
+ * @param {string}  parts.salt            0x 32-byte secret salt — `secret: true`: keep this PRIVATE
+ *                                        until reveal. Whoever holds it before reveal can front-run
+ *                                        the open; it is the one operationally-load-bearing field.
  * @param {string}  parts.commitment      0x 32-byte commitment hash
  * @param {string}  parts.contractAddress 0x 20-byte ContributionRegistry address
  * @param {number|string|bigint} parts.chainId chain the commit was sent to
@@ -506,10 +508,19 @@ function diffManifest(recordedManifest, currentLeaves) {
 }
 
 /**
- * Default receipt path for a contentHash: `./<first 16 hex chars>.vhclaim.json` in the cwd. Short
- * enough to be tidy, long enough to be collision-resistant for a human's working set.
+ * Default receipt FILE NAME for a contentHash: `<first 16 hex chars>.vhclaim.json`. Short enough to
+ * be tidy, long enough to be collision-resistant for a human's working set.
+ *
+ * PURE HELPER — no side effects, no `process.cwd()` lookup. The returned path is RELATIVE
+ * (`./<prefix>.vhclaim.json`) and the CALLER is responsible for choosing a SAFE BASE to resolve it
+ * against before writing. This helper deliberately does NOT decide where the file lands: a claim
+ * receipt holds the SECRET `salt`, so silently dropping it into whatever the current working
+ * directory happens to be is a footgun. Callers must resolve against an explicit, user-opted-in base
+ * (e.g. `--receipt-dir`, or cwd when the user has been told the exact resolved path) — see
+ * `runCommit` and docs/RECEIPTS.md. `runClaim` (the one-shot convenience) writes NOTHING unless an
+ * explicit `receiptPath` is passed.
  * @param {string} contentHash 0x 32-byte digest
- * @returns {string}
+ * @returns {string} a RELATIVE file name; resolve it against a caller-chosen safe base before writing
  */
 function defaultReceiptPath(contentHash) {
   if (typeof contentHash !== "string" || !HEX32_RE.test(contentHash)) {

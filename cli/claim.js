@@ -23,6 +23,7 @@
 // orchestration runner (runClaim) so the end-to-end test can drive both legs against a live hardhat
 // node and prove a front-runner cannot steal the attribution.
 
+const path = require("path");
 const { hashPath, hashGit } = require("./hash");
 const {
   buildReceipt,
@@ -30,6 +31,33 @@ const {
   readReceipt,
   defaultReceiptPath,
 } = require("./receipt");
+
+/**
+ * Resolve where a receipt file should be written from the caller's explicit choices, returning an
+ * ABSOLUTE path so the success line can name the exact file the user can see/relocate/delete.
+ *
+ * Precedence (all caller-opted-in; none of them silently default to cwd without telling the user):
+ *   1. `receiptPath` — an explicit full path (from `--receipt <path>`): used verbatim (resolved to
+ *      absolute). The caller picked the exact file.
+ *   2. `receiptDir` + `contentHash` — an explicit destination directory (from `--receipt-dir <dir>`):
+ *      `<dir>/<defaultName>`. The caller picked the folder; we pick the tidy default file name.
+ *   3. `contentHash` only — the documented default: `<baseDir>/<defaultName>` where `baseDir`
+ *      defaults to `process.cwd()`. This is only reached for the DURABLE `vh commit` command, which
+ *      MUST then print the exact resolved path (see runCommit) — never a silent cwd drop.
+ *
+ * @param {object} args
+ * @param {string} [args.receiptPath] explicit full path
+ * @param {string} [args.receiptDir]  explicit destination directory
+ * @param {string} [args.contentHash] 0x digest, used to derive the default file name
+ * @param {string} [args.baseDir]     base for the bare default (defaults to process.cwd())
+ * @returns {string} an ABSOLUTE receipt path
+ */
+function resolveReceiptPath(args) {
+  if (args.receiptPath) return path.resolve(args.receiptPath);
+  const name = path.basename(defaultReceiptPath(args.contentHash)); // "<prefix>.vhclaim.json"
+  const base = args.receiptDir ? args.receiptDir : args.baseDir || process.cwd();
+  return path.resolve(base, name);
+}
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
@@ -343,7 +371,10 @@ function _parseRevealed(receipt, ethersLib) {
  * @param {boolean}[opts.git]               hash EXACTLY the git-tracked files (T-8.1 enumeration)
  * @param {string} [opts.ref]               with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress
- * @param {string} [opts.receiptPath]       where to write the receipt (default ./<prefix>.vhclaim.json)
+ * @param {string} [opts.receiptPath]       explicit full path to write the receipt to (--receipt)
+ * @param {string} [opts.receiptDir]        explicit destination DIRECTORY (--receipt-dir); the tidy
+ *                                          default file name is used inside it
+ * @param {string} [opts.baseDir]           base dir for the bare default name (default process.cwd())
  * @param {boolean}[opts.iUnderstandMainnet]
  * @param {object}  opts.signer             ethers Signer
  * @param {object} [opts.provider]
@@ -352,6 +383,11 @@ function _parseRevealed(receipt, ethersLib) {
  * @param {object} [opts.ethers]
  * @param {(s:string)=>void}[opts.log]
  * @returns {Promise<{commitTx, commitTxHash, commitBlockNumber, minRevealDelay, chainId, receiptPath, receipt}>}
+ *
+ * The receipt path is resolved to an ABSOLUTE path (see resolveReceiptPath) and the EXACT file is
+ * named in the success log so the user can always see/relocate/delete the secret-bearing receipt.
+ * When no `--receipt`/`--receipt-dir` is given the default lands in `baseDir` (cwd) — but only ever
+ * after the success line names that exact resolved file, so it is never a silent secret drop.
  */
 async function runCommit(opts) {
   const ethersLib = opts.ethers || require("ethers");
@@ -392,7 +428,14 @@ async function runCommit(opts) {
   const minDelay = BigInt(await contract.MIN_REVEAL_DELAY());
 
   // Persist the receipt BEFORE returning/waiting, so the salt survives a crash from here on.
-  const receiptPath = opts.receiptPath || defaultReceiptPath(commitTx.contentHash);
+  // Resolve to an ABSOLUTE path from the caller's explicit choices; we name it exactly below so the
+  // secret-bearing file is never silently dropped somewhere the user can't find.
+  const receiptPath = resolveReceiptPath({
+    receiptPath: opts.receiptPath,
+    receiptDir: opts.receiptDir,
+    baseDir: opts.baseDir,
+    contentHash: commitTx.contentHash,
+  });
   const receipt = buildReceipt({
     contentHash: commitTx.contentHash,
     committer: commitTx.committer,
@@ -410,7 +453,10 @@ async function runCommit(opts) {
     minRevealDelay: minDelay,
   });
   writeReceipt(receipt, receiptPath);
-  log(`  receipt written: ${receiptPath} (resume with: vh reveal --receipt ${receiptPath})\n`);
+  log(
+    `  receipt written: ${receiptPath}\n` +
+      `  KEEP THIS PRIVATE — it holds the secret salt. Resume with: vh reveal --receipt ${receiptPath}\n`
+  );
 
   return {
     commitTx,
@@ -518,9 +564,15 @@ async function runReveal(opts) {
  * network). Otherwise it: enforces the testnet guard, sends commit(), persists a durable receipt,
  * waits for the MIN_REVEAL_DELAY window to pass, sends reveal(), and parses the Revealed event.
  *
- * The legacy single-process behaviour (used by the existing e2e test) is preserved exactly; the
- * only addition is that a receipt is also written at commit time (so even the one-shot path is
- * crash-recoverable). Pass `writeReceiptFile: false` to opt out.
+ * RECEIPT POLICY (T-9.1). This one-shot helper NEVER silently drops a secret-bearing receipt into
+ * the current working directory. A claim receipt holds the secret `salt`, so persisting it is OPT-IN:
+ *   - if an explicit `receiptPath` (or `receiptDir`) is given (and `writeReceiptFile !== false`), the
+ *     receipt is written and the exact resolved file is named in the success log;
+ *   - if NEITHER is given, NOTHING is written — the validated receipt object is returned in-memory on
+ *     the result as `receipt` (and `receiptPath` stays undefined). The caller that wants a durable,
+ *     resumable artifact should use `runCommit`/`vh commit` (the intended durable command, which
+ *     resolves a documented default path), or pass an explicit `receiptPath`/`receiptDir` here.
+ * `writeReceiptFile: false` still hard-disables the write even when a destination is present.
  *
  * @param {object} opts
  * @param {string}  opts.path
@@ -534,12 +586,14 @@ async function runReveal(opts) {
  * @param {object} [opts.provider]          ethers Provider (chainId + block waits)
  * @param {bigint|number}[opts.chainId]     override chainId lookup (tests)
  * @param {string} [opts.salt]              reuse a salt (else random)
- * @param {string} [opts.receiptPath]       where to write the receipt (default ./<prefix>.vhclaim.json)
- * @param {boolean}[opts.writeReceiptFile]  set false to skip writing the receipt (default true)
+ * @param {string} [opts.receiptPath]       explicit full path to persist the receipt (else nothing)
+ * @param {string} [opts.receiptDir]        explicit destination DIR to persist the receipt into (else nothing)
+ * @param {boolean}[opts.writeReceiptFile]  set false to hard-disable the write even with a destination
  * @param {object} [opts.ethers]
  * @param {(s:string)=>void}[opts.log]
  * @param {(target:bigint)=>Promise<void>}[opts.waitForBlock]  test hook to advance/await blocks
- * @returns {Promise<object>}
+ * @returns {Promise<object>}  includes `receipt` (the in-memory receipt object) and `receiptPath`
+ *                             (the file written, or undefined when none was)
  */
 async function runClaim(opts) {
   const ethersLib = opts.ethers || require("ethers");
@@ -597,29 +651,47 @@ async function runClaim(opts) {
   const commitBlock = BigInt(commitReceipt.blockNumber);
   const minDelay = BigInt(await contract.MIN_REVEAL_DELAY());
 
-  // Persist a durable receipt so even this one-shot path is crash-recoverable: if the process dies
-  // during the wait, the salt is on disk and `vh reveal` can finish the claim.
+  // Build the validated receipt object in memory regardless — it is always returned so a caller can
+  // persist it itself. We PERSIST it to disk only when the caller explicitly opted in with a
+  // `receiptPath` (and did not set writeReceiptFile:false). A claim receipt holds the secret salt, so
+  // this one-shot convenience never silently drops it into cwd; for a durable, resumable artifact use
+  // `runCommit`/`vh commit` (which resolves a documented default path and names the exact file).
   let receiptPath;
-  if (opts.writeReceiptFile !== false) {
-    receiptPath = opts.receiptPath || defaultReceiptPath(commitTx.contentHash);
-    const receipt = buildReceipt({
+  const receipt = buildReceipt({
+    contentHash: commitTx.contentHash,
+    committer: commitTx.committer,
+    salt: commitTx.salt,
+    commitment: commitTx.commitment,
+    contractAddress: commitTx.to,
+    chainId,
+    uri: opts.uri,
+    path: commitTx.path,
+    kind: commitTx.kind,
+    manifest: commitTx.manifest || undefined,
+    git: commitTx.git || undefined, // untrusted provenance hint: { commit, scope } when --git
+    commitTxHash: commitReceipt.hash,
+    commitBlockNumber: commitBlock,
+    minRevealDelay: minDelay,
+  });
+  const persistOptIn = opts.receiptPath != null || opts.receiptDir != null;
+  if (opts.writeReceiptFile !== false && persistOptIn) {
+    receiptPath = resolveReceiptPath({
+      receiptPath: opts.receiptPath,
+      receiptDir: opts.receiptDir,
       contentHash: commitTx.contentHash,
-      committer: commitTx.committer,
-      salt: commitTx.salt,
-      commitment: commitTx.commitment,
-      contractAddress: commitTx.to,
-      chainId,
-      uri: opts.uri,
-      path: commitTx.path,
-      kind: commitTx.kind,
-      manifest: commitTx.manifest || undefined,
-      git: commitTx.git || undefined, // untrusted provenance hint: { commit, scope } when --git
-      commitTxHash: commitReceipt.hash,
-      commitBlockNumber: commitBlock,
-      minRevealDelay: minDelay,
     });
     writeReceipt(receipt, receiptPath);
-    log(`  receipt written: ${receiptPath}\n`);
+    log(
+      `  receipt written: ${receiptPath}\n` +
+        `  KEEP THIS PRIVATE — it holds the secret salt.\n`
+    );
+  } else if (opts.writeReceiptFile !== false) {
+    // No explicit destination: do NOT silently write a secret receipt to cwd. Tell the user how to
+    // persist one if they want a resumable artifact.
+    log(
+      "  (no --receipt given: not persisting a claim receipt. " +
+        "Pass --receipt <path> to persist a resumable receipt, or use `vh commit`.)\n"
+    );
   }
 
   // --- Wait out MIN_REVEAL_DELAY ---
@@ -651,7 +723,8 @@ async function runClaim(opts) {
     commitTxHash: commitReceipt.hash,
     revealTxHash: revealReceipt.hash,
     revealed,
-    receiptPath,
+    receiptPath, // undefined when no receipt file was written (the default, safe behaviour)
+    receipt, // the validated receipt object, always returned in-memory for the caller to persist
   };
 }
 
@@ -662,6 +735,7 @@ module.exports = {
   buildCommitTx,
   buildRevealTx,
   formatDryRun,
+  resolveReceiptPath,
   runClaim,
   runCommit,
   runReveal,

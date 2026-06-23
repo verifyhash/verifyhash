@@ -17,8 +17,26 @@ makes two CLI flows durable and operable:
 > only points at the file.** The one field that is operationally load-bearing is the claim receipt's
 > secret `salt` — see [Trust vs hints](#trust-vs-hints).
 
-The receipt is **never** consumed by the contract and is **never** uploaded anywhere; it lives in your
-working directory (default `./<contentHashPrefix>.vhclaim.json`) and is git-ignored (`*.vhclaim.json`).
+The receipt is **never** consumed by the contract and is **never** uploaded anywhere. **A claim receipt
+holds the SECRET `salt`**, so where it is written is always something you opt into — `vh` never silently
+drops it into your repo unless you ask:
+
+- the durable **`vh commit`** writes a claim receipt to `--receipt <path>` (exact file) or
+  `--receipt-dir <dir>` (into that folder under a tidy default file name), or — with neither — defaults
+  to `<cwd>/<contentHashPrefix>.vhclaim.json` **and prints the EXACT absolute path it wrote**
+  (`receipt written: <abs path>`), so you can always see, move, or delete it. It is never written
+  somewhere you can't find;
+- the one-shot **`vh claim`** persists a receipt **only if you pass `--receipt`/`--receipt-dir`**; with
+  neither it writes **nothing** (the in-memory receipt is just returned to the caller). Use `vh commit`
+  for a durable, resumable claim;
+- the pure helper `defaultReceiptPath(contentHash)` only computes a **relative** file name
+  (`./<prefix>.vhclaim.json`); the caller is responsible for resolving it against a safe base.
+
+Receipt files are also git-ignored (`*.vhclaim.json`). **Keep a claim receipt private until you reveal:**
+anyone holding the `salt` before reveal could front-run the open (after a successful reveal the
+commitment is single-use and spent, so the receipt is no longer sensitive). This reuses the trust posture
+in [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md): the receipt is an **untrusted local convenience**;
+the authoritative result always comes from the on-chain record.
 
 ---
 
@@ -145,16 +163,18 @@ attribution. The receipt fixes this by persisting the salt (and everything `reve
 ### The split: `vh commit` then `vh reveal`
 
 ```
-vh commit ./src --uri ipfs://cid      # sends commit(), writes ./<hashPrefix>.vhclaim.json, then exits
+vh commit ./src --uri ipfs://cid      # sends commit(), writes the receipt, PRINTS its exact path, exits
 # ...wait out MIN_REVEAL_DELAY (a few blocks)...
-vh reveal --receipt ./<hashPrefix>.vhclaim.json   # resumes from the receipt and reveals
+vh reveal --receipt <that exact path>   # resumes from the receipt and reveals
 ```
 
 1. **`vh commit <path>`** (`runCommit`) hashes the target, derives `(salt, commitment)`, sends
    `commit(commitment)`, reads `MIN_REVEAL_DELAY`, then **writes the claim receipt before it returns**.
-   For a directory it also records the `manifest`. The receipt path defaults to
-   `./<contentHashPrefix>.vhclaim.json` or is set with `--receipt`. From this point on, a crash is
-   survivable: the salt is durable.
+   For a directory it also records the `manifest`. The receipt destination is **always opted into**:
+   `--receipt <path>` (exact file), `--receipt-dir <dir>` (default name inside that folder), or — with
+   neither — `<cwd>/<contentHashPrefix>.vhclaim.json`; in every case the success line names the **exact
+   absolute path written** (`receipt written: <abs path>`), so the secret-bearing file is never dropped
+   silently. From this point on, a crash is survivable: the salt is durable.
 2. **Wait** out `MIN_REVEAL_DELAY` blocks. The commit-block height and the delay are in the receipt, so
    any process can compute when the window matures.
 3. **`vh reveal --receipt <p>`** (`runReveal`) `readReceipt`s the file (strict — a corrupt receipt throws
@@ -168,9 +188,12 @@ vh reveal --receipt ./<hashPrefix>.vhclaim.json   # resumes from the receipt and
 receipt is also unaffected by an unrelated crash, so resume is idempotent up to the single successful
 reveal.
 
-**`vh claim` is still the one-shot convenience** (commit + reveal in one process) — and it now **also**
-drops a receipt at commit time, so even the one-shot path is crash-recoverable: if it dies during the
-wait, resume with `vh reveal --receipt <p>`.
+**`vh claim` is still the one-shot convenience** (commit + reveal in one process). To keep it safe by
+default it persists a receipt **only if you ask** — pass `--receipt <path>` or `--receipt-dir <dir>` and
+it writes the secret-bearing receipt to that exact, named location (so even the one-shot path is then
+crash-recoverable: resume with `vh reveal --receipt <p>`). With **neither**, `vh claim` writes
+**nothing** to disk (the in-memory `runClaim` helper just returns the receipt object); use `vh commit`
+for a durable, resumable claim rather than relying on a silent cwd drop.
 
 > **Keep the receipt private until you reveal:** it contains the secret `salt`. After a successful reveal
 > the commitment is single-use and spent, so the receipt is no longer sensitive.
@@ -226,9 +249,14 @@ a note — there are no per-file leaves to localize.
 
 ```
 $ vh commit ./src --uri ipfs://bafy...   # step 1
-commit: committed 0x0c271a48...02b5
-  receipt written: ./0c271a48a26d075d.vhclaim.json (resume with: vh reveal --receipt ./0c271a48a26d075d.vhclaim.json)
+commit: committing ./src (file) as 0x7099...79C8...
+  commit tx: 0x...
+  receipt written: /work/0c271a48a26d075d.vhclaim.json
+  KEEP THIS PRIVATE — it holds the secret salt. Resume with: vh reveal --receipt /work/0c271a48a26d075d.vhclaim.json
 ```
+
+The `receipt written:` line names the **exact absolute path** so you can see, relocate, or delete the
+secret-bearing file. Choose where it goes with `--receipt <path>` or `--receipt-dir <dir>`.
 
 The receipt on disk (a real v1 claim receipt; v2 adds an optional `manifest` for a directory target):
 

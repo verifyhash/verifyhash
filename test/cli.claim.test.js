@@ -12,6 +12,7 @@ const {
   buildCommitTx,
   buildRevealTx,
   newSalt,
+  resolveReceiptPath,
   runClaim,
   runCommit,
   runReveal,
@@ -19,7 +20,7 @@ const {
 } = require("../cli/claim");
 const { readReceipt } = require("../cli/receipt");
 const { hashFile } = require("../cli/hash");
-const { cmdClaim } = require("../cli/vh");
+const { cmdClaim, parseClaimArgs } = require("../cli/vh");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 
@@ -132,6 +133,39 @@ describe("cli: vh claim — pure helpers", function () {
     expect(decoded[2]).to.equal("ipfs://cid");
   });
 
+  it("parseClaimArgs accepts --receipt-dir and preserves typo/flag parity (T-9.1)", function () {
+    // --receipt-dir captures a value.
+    expect(parseClaimArgs(["./src", "--receipt-dir", "/tmp/out"]).receiptDir).to.equal("/tmp/out");
+    expect(parseClaimArgs(["./src", "--receipt", "/tmp/r.json"]).receipt).to.equal("/tmp/r.json");
+    // A typo in the new flag still hard-errors (it is not silently swallowed as a positional).
+    expect(() => parseClaimArgs(["./src", "--reciept-dir", "/tmp/out"])).to.throw(/unknown flag/);
+    // --receipt-dir with no value hard-errors.
+    expect(() => parseClaimArgs(["./src", "--receipt-dir"])).to.throw(/--receipt-dir requires a value/);
+    // --receipt and --receipt-dir are mutually exclusive.
+    expect(() =>
+      parseClaimArgs(["./src", "--receipt", "/tmp/r.json", "--receipt-dir", "/tmp/out"])
+    ).to.throw(/mutually exclusive/);
+  });
+
+  it("resolveReceiptPath honors an explicit path / dir / documented default base (T-9.1)", function () {
+    // 1. An explicit --receipt path wins and is resolved to absolute.
+    const explicit = path.join(os.tmpdir(), "vh-explicit", "r.vhclaim.json");
+    expect(resolveReceiptPath({ receiptPath: explicit, contentHash: CONTENT })).to.equal(
+      path.resolve(explicit)
+    );
+    // 2. An explicit --receipt-dir picks the folder; the tidy default file name goes inside it.
+    const dir = path.join(os.tmpdir(), "vh-rdir");
+    const inDir = resolveReceiptPath({ receiptDir: dir, contentHash: CONTENT });
+    expect(path.dirname(inDir)).to.equal(path.resolve(dir));
+    expect(path.basename(inDir)).to.match(/^[0-9a-f]{16}\.vhclaim\.json$/);
+    // 3. With only a contentHash + an explicit baseDir, it resolves the default INTO that base —
+    //    never silently into some unrelated cwd. The result is always absolute.
+    const base = path.join(os.tmpdir(), "vh-base");
+    const def = resolveReceiptPath({ contentHash: CONTENT, baseDir: base });
+    expect(def).to.equal(path.join(path.resolve(base), path.basename(inDir)));
+    expect(path.isAbsolute(def)).to.equal(true);
+  });
+
   it("a --dry-run claim needs no key/network and prints the commit+reveal plan", async function () {
     const f = writeFile(tmp("vh-claim-dry-"), "y.txt", "dry claim");
     let out = "";
@@ -179,6 +213,9 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
   // against a pristine on-chain nonce (no NonceManager cross-test interference).
   const RESUME_KEY = "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"; // #4
   const TOOSOON_KEY = "0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba"; // #5
+  // Dedicated key for the T-9.1 "default path resolves into an explicit base" commit test, used by
+  // NO other test, so it runs against a pristine on-chain nonce (no cross-test nonce contention).
+  const COMMITDIR_KEY = "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e"; // #6
 
   before(async function () {
     nodeProc = spawn(
@@ -219,7 +256,7 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
     return new ethers.NonceManager(new ethers.Wallet(key, provider));
   }
 
-  it("commit+reveal records the claimant with authorBound = true", async function () {
+  it("commit+reveal records the claimant with authorBound = true (and writes NO receipt by default)", async function () {
     const alice = managedSigner(DEV_KEYS[0]);
     const f = writeFile(tmp("vh-claim-e2e-"), "work.txt", "alice work " + Date.now());
     const expected = hashFile(f);
@@ -230,6 +267,7 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
       contractAddress: registryAddress,
       provider,
       signer: alice,
+      // No receiptPath / receiptDir: the one-shot must persist NOTHING (T-9.1).
       // Test hook: instead of polling real time, mine the blocks the window needs.
       waitForBlock: async () => mineBlocks(2),
       log: () => {},
@@ -239,11 +277,46 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
     expect(res.revealed.contentHash).to.equal(expected);
     expect(res.revealed.contributor).to.equal(await alice.getAddress());
 
+    // T-9.1: a one-shot runClaim with no explicit receipt destination writes no file at all, but
+    // still surfaces the validated receipt object in-memory for a caller that wants to persist it.
+    expect(res.receiptPath, "no receipt file should be written without an explicit destination").to.equal(
+      undefined
+    );
+    expect(res.receipt, "the receipt object is returned in-memory").to.be.an("object");
+    expect(res.receipt.salt).to.match(/^0x[0-9a-fA-F]{64}$/);
+    expect(res.receipt.contentHash).to.equal(expected);
+
     const registry = new ethers.Contract(registryAddress, ABI, provider);
     const rec = await registry.getRecord(expected);
     expect(rec.contributor).to.equal(await alice.getAddress());
     expect(rec.authorBound).to.equal(true);
     expect(rec.uri).to.equal("ipfs://cid-alice");
+  });
+
+  it("runClaim with an explicit --receipt path persists the receipt THERE (and nowhere else)", async function () {
+    const alice = managedSigner(DEV_KEYS[0]);
+    const f = writeFile(tmp("vh-claim-rcpt-"), "work.txt", "alice receipt " + Date.now());
+    const expected = hashFile(f);
+    const receiptPath = path.join(tmp("vh-claim-rcpt-out-"), "explicit.vhclaim.json");
+
+    const res = await runClaim({
+      path: f,
+      uri: "ipfs://cid-explicit",
+      contractAddress: registryAddress,
+      receiptPath,
+      provider,
+      signer: alice,
+      waitForBlock: async () => mineBlocks(2),
+      log: () => {},
+    });
+
+    expect(res.revealed.contentHash).to.equal(expected);
+    // The receipt landed exactly where asked (resolved to absolute), carrying the secret salt.
+    expect(res.receiptPath).to.equal(path.resolve(receiptPath));
+    expect(fs.existsSync(receiptPath), "receipt must exist at the explicit path").to.equal(true);
+    const written = readReceipt(receiptPath);
+    expect(written.contentHash).to.equal(expected);
+    expect(written.salt).to.equal(res.receipt.salt);
   });
 
   it("FRONT-RUN: an attacker copying the reveal calldata cannot become the recorded author", async function () {
@@ -360,6 +433,39 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
     expect(rec.contributor).to.equal(committerAddr);
     expect(rec.authorBound).to.equal(true);
     expect(rec.uri).to.equal("ipfs://cid-resume");
+  });
+
+  it("runCommit default path resolves into an explicit base dir and the log NAMES the exact file (T-9.1)", async function () {
+    // The durable command keeps a default file name, but it must resolve against an explicit base
+    // (here a temp dir, never the repo cwd) and the success line must name the EXACT absolute file so
+    // the user can see/relocate/delete the secret-bearing receipt.
+    const committer = managedSigner(COMMITDIR_KEY);
+    const f = writeFile(tmp("vh-commit-default-"), "d.txt", "default base " + Date.now());
+    const expected = hashFile(f);
+    const baseDir = tmp("vh-commit-base-"); // stands in for "cwd", but isolated under the OS temp dir
+
+    let out = "";
+    const committed = await runCommit({
+      path: f,
+      uri: "ipfs://cid-default",
+      contractAddress: registryAddress,
+      baseDir, // explicit, documented base for the default file name (never a silent cwd drop)
+      provider,
+      signer: committer,
+      log: (s) => (out += s),
+    });
+
+    // The receipt landed inside the explicit base under the default <prefix>.vhclaim.json name.
+    expect(path.dirname(committed.receiptPath)).to.equal(path.resolve(baseDir));
+    expect(path.basename(committed.receiptPath)).to.match(/^[0-9a-f]{16}\.vhclaim\.json$/);
+    expect(fs.existsSync(committed.receiptPath)).to.equal(true);
+    // The success output names the EXACT file written and warns it is secret.
+    expect(out).to.include(committed.receiptPath);
+    expect(out).to.match(/KEEP THIS PRIVATE|secret salt/i);
+
+    const written = readReceipt(committed.receiptPath);
+    expect(written.contentHash).to.equal(expected);
+    expect(written.salt).to.match(/^0x[0-9a-fA-F]{64}$/);
   });
 
   it("reveal before the window matures reverts with RevealTooSoon and leaves the receipt intact for retry", async function () {

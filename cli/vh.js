@@ -53,12 +53,15 @@ function usage() {
     "  --dry-run                  print the tx that would be sent; needs no key, sends nothing",
     "  --i-understand-mainnet     allow anchoring on a non-testnet chainId (DANGER: real funds)",
     "",
-    "claim options (commit-reveal; contributor = proven first claimant, authorBound = true):",
+    "claim options (commit-reveal one-shot; contributor = proven first claimant, authorBound = true):",
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
     "  --git                      claim EXACTLY the files git tracks (records a `git` provenance hint)",
     "  --ref <ref>                with --git: which commit's tracked set to claim (default HEAD)",
     "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
-    "  --receipt <path>           where to write the claim receipt (default ./<hashPrefix>.vhclaim.json)",
+    "  --receipt <path>           persist a resumable claim receipt at this exact path (holds the SECRET",
+    "                             salt). WITHOUT it the one-shot claim persists NOTHING — use `vh commit`",
+    "                             for a durable, resumable receipt.",
+    "  --receipt-dir <dir>        persist the receipt into this directory under its default file name",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --dry-run                  print the commit+reveal plan; needs no key, sends nothing",
@@ -69,7 +72,10 @@ function usage() {
     "  --git                      commit EXACTLY the files git tracks (records a `git` provenance hint)",
     "  --ref <ref>                with --git: which commit's tracked set to commit (default HEAD)",
     "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
-    "  --receipt <path>           where to write the claim receipt (default ./<hashPrefix>.vhclaim.json)",
+    "  --receipt <path>           write the claim receipt (holds the SECRET salt) at this exact path;",
+    "                             default <cwd>/<hashPrefix>.vhclaim.json — the EXACT file written is",
+    "                             always named in the success output so you can see/relocate/delete it",
+    "  --receipt-dir <dir>        write the receipt into this directory under its default file name",
     "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --i-understand-mainnet     allow committing on a non-testnet chainId (DANGER: real funds)",
@@ -351,6 +357,7 @@ function parseClaimArgs(argv) {
     uri: undefined,
     salt: undefined,
     receipt: undefined,
+    receiptDir: undefined,
     contract: undefined,
     rpc: undefined,
     git: false,
@@ -386,6 +393,10 @@ function parseClaimArgs(argv) {
         opts.receipt = argv[++i];
         if (opts.receipt === undefined) throw new Error("--receipt requires a value");
         break;
+      case "--receipt-dir":
+        opts.receiptDir = argv[++i];
+        if (opts.receiptDir === undefined) throw new Error("--receipt-dir requires a value");
+        break;
       case "--contract":
         opts.contract = argv[++i];
         if (opts.contract === undefined) throw new Error("--contract requires a value");
@@ -403,6 +414,11 @@ function parseClaimArgs(argv) {
   // --ref is meaningful only when scoping to git-tracked files (parser parity with `vh hash`).
   if (opts.ref !== undefined && !opts.git) {
     throw new Error("--ref requires --git (it selects which commit's tracked files to claim)");
+  }
+  // --receipt picks the exact file; --receipt-dir picks the folder. Asking for both is ambiguous, so
+  // hard-error rather than silently honor one (a fat-fingered combination must not pick a surprise path).
+  if (opts.receipt !== undefined && opts.receiptDir !== undefined) {
+    throw new Error("--receipt and --receipt-dir are mutually exclusive; pass at most one");
   }
   return opts;
 }
@@ -500,6 +516,7 @@ async function cmdClaim(argv) {
       git: opts.git,
       ref: opts.ref,
       receiptPath: opts.receipt,
+      receiptDir: opts.receiptDir,
       contractAddress,
       iUnderstandMainnet: opts.iUnderstandMainnet,
       provider,
@@ -561,6 +578,7 @@ async function cmdCommit(argv) {
       git: opts.git,
       ref: opts.ref,
       receiptPath: opts.receipt,
+      receiptDir: opts.receiptDir,
       contractAddress,
       iUnderstandMainnet: opts.iUnderstandMainnet,
       provider,

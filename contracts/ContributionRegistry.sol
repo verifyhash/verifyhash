@@ -41,6 +41,52 @@ pragma solidity 0.8.24;
 ///         - Enumeration is index-based (mapping, not array) so no function ever loops over an
 ///           unbounded set — there is no griefable gas-DoS surface.
 contract ContributionRegistry {
+    // ---------------------------------------------------------------------------------------------
+    // ON-CHAIN IDENTITY MARKER (T-11.1).
+    //
+    // WHAT THIS PROVES: that the bytecode an off-chain caller is talking to genuinely implements THIS
+    // documented ContributionRegistry interface (the anchor/commit/reveal/getRecord/verifyLeaf surface
+    // above). It is the cheapest, most direct "am I pointed at the right contract" probe: a single
+    // `pure`/`constant` read with no storage, no state, no owner, and no write surface — so an
+    // off-chain verifier (cli/registry.js, planned T-11.2) can authenticate a real registry before
+    // believing any record it returns, instead of blindly trusting whatever an untrusted (rpc, address)
+    // pair returns.
+    //
+    // WHAT THIS DOES NOT PROVE — DO NOT TREAT THE MARKER AS A SOLE ROOT OF TRUST:
+    //   * It does NOT make the RECORDS honest beyond what the contract's own rules already guarantee.
+    //     Attribution honesty still comes ONLY from the immutable first-writer-wins + commit-reveal
+    //     mechanics and the `authorBound` flag (see the contract-level "TRUST BOUNDARIES" notice); the
+    //     `uri` is still an untrusted hint and timestamps are still only an existence upper bound.
+    //   * A FORK or a copy-paste deployment can carry the SAME `REGISTRY_ID` — the constant is part of
+    //     the source, so anyone may compile and deploy bytecode that returns this exact value. The ID
+    //     is therefore a POSITIVE signal of "this is the right interface", NOT proof of "this is THE
+    //     canonical registry". It must be verified ALONGSIDE the deployed bytecode and the chainId
+    //     (i.e. confirm you are on the expected chain at the expected address with the expected code),
+    //     never as the only check.
+    // See the contract-level "TRUST BOUNDARIES" notice for the records' own trust model.
+    // ---------------------------------------------------------------------------------------------
+
+    /// @notice Immutable, ownerless self-identification tag for this contract family. An off-chain
+    ///         verifier reads this to confirm the bytecode implements the documented registry
+    ///         interface (a "right interface" signal), NOT to prove the records are honest and NOT as a
+    ///         sole root of trust (a fork can reuse the same value — verify it alongside bytecode +
+    ///         chainId). See the "ON-CHAIN IDENTITY MARKER" and contract-level "TRUST BOUNDARIES"
+    ///         notices.
+    /// @dev    FROZEN VALUE: keccak256("verifyhash.ContributionRegistry.v1") ==
+    ///         0x0395e2ec987e96e51cdf619980638100236c5fc7f7c3646f8b759f3cdceb2df3, computed by the
+    ///         compiler from the constant string literal below; the documented preimage is exactly the
+    ///         ASCII string `verifyhash.ContributionRegistry.v1`. It is a `constant` (baked into
+    ///         bytecode, no storage slot, no setter) so it can never change after deploy and adds no
+    ///         admin/write surface. test/Identity.test.js pins this exact expected hash.
+    bytes32 public constant REGISTRY_ID =
+        keccak256("verifyhash.ContributionRegistry.v1");
+
+    /// @notice Monotonic interface version of this registry, starting at 1. Bumped only if a future
+    ///         contract makes a breaking change to the documented read/write interface, so an
+    ///         off-chain verifier can refuse a registry whose version it does not understand.
+    /// @dev    `constant` (no storage, no setter); immutable after deploy. Paired with `REGISTRY_ID`.
+    uint256 public constant REGISTRY_VERSION = 1;
+
     /// @dev Immutable record written by `anchor`. See the contract-level "TRUST BOUNDARIES" notice
     ///      for what each field does and does NOT prove.
     struct Record {
@@ -530,6 +576,34 @@ contract ContributionRegistry {
     {
         Commitment memory c = _commitments[commitment];
         return (c.committer, c.blockNumber);
+    }
+
+    /// @notice ERC-165 interface id of this registry's CORE READ interface, as the XOR of the
+    ///         function selectors `isAnchored(bytes32) ^ getRecord(bytes32) ^ total() ^
+    ///         hashAtIndex(uint256) ^ verifyLeaf(bytes32,bytes32,bytes32[])`.
+    /// @dev    FROZEN VALUE: 0xc5d8cdda. A SECONDARY identity probe alongside the primary `REGISTRY_ID`
+    ///         constant (which does not depend on selector bookkeeping). Like `REGISTRY_ID` it proves
+    ///         only "the right interface is present", not record honesty, and a fork can reuse it; see
+    ///         the "ON-CHAIN IDENTITY MARKER" notice. `constant` — no storage, no setter, immutable.
+    bytes4 public constant REGISTRY_INTERFACE_ID = 0xc5d8cdda;
+
+    /// @notice ERC-165 (`0x01ffc9a7`) interface-detection probe. Returns true for ERC-165 itself and
+    ///         for this registry's core read interface id (`REGISTRY_INTERFACE_ID` == 0xc5d8cdda), and
+    ///         false for everything else — including the reserved invalid id `0xffffffff` (per the
+    ///         ERC-165 spec) and any unrelated id.
+    /// @dev    `pure` (no storage, no state, no owner) — a purely additive identity probe that changes
+    ///         no existing function, event, error, struct, or storage layout. As with `REGISTRY_ID`,
+    ///         a positive result proves "this bytecode exposes the documented read interface", NOT that
+    ///         the records are honest and NOT that this is the canonical/only registry (a fork can
+    ///         return the same id); verify it alongside the deployed bytecode + chainId. See the
+    ///         "ON-CHAIN IDENTITY MARKER" notice and the contract-level "TRUST BOUNDARIES" notice.
+    /// @param  interfaceId the 4-byte ERC-165 interface identifier to probe.
+    /// @return true iff `interfaceId` is the ERC-165 id or this registry's core read interface id.
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        // 0xffffffff is the ERC-165 reserved id that MUST return false; the `!= 0xffffffff` guard makes
+        // that explicit even though neither matched constant equals it.
+        return interfaceId != 0xffffffff &&
+            (interfaceId == 0x01ffc9a7 || interfaceId == REGISTRY_INTERFACE_ID);
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -14,6 +14,7 @@ struct Record {
     uint64  timestamp;    // block.timestamp at anchor time
     uint64  blockNumber;  // block.number at anchor time
     string  uri;          // off-chain pointer hint
+    bytes32 parent;       // optional predecessor edge; bytes32(0) == lineage root (see below)
 }
 ```
 
@@ -166,6 +167,33 @@ small incentive surface to nudge it. Therefore:
 
 ---
 
+## `parent` is a CLAIMED predecessor — not proof of ancestry, not a transfer of authorship
+
+`parent` is an OPTIONAL, immutable predecessor edge (`bytes32(0)` == "no predecessor / root of a
+lineage"). A record written with `vh anchor/claim --parent <hash>` names an **already-anchored**
+predecessor; because the parent must pre-exist, the lineage graph is **acyclic by construction** (a
+DAG), and the on-chain check is O(1) with no chain-walk. It asserts ONLY that the author of THIS record
+CLAIMED the named predecessor. It does **NOT**:
+
+- **prove content ancestry** — that the predecessor's bytes are genuinely an earlier version of, or
+  were derived into, this content. Anyone can name any anchored hash as a parent; consumers must still
+  **independently re-derive BOTH contents** (`vh hash`) and judge the relationship themselves.
+- **transfer or imply authorship** — naming a parent grants this record nothing from it. Each record's
+  `contributor`/`authorBound` stand alone, per the rule above.
+
+`vh lineage <0xhash>` walks the `parent` chain from a record UP to its lineage root, and `vh show
+<0xhash>` surfaces a record's `parent`. Both are **read-only and need no key** (provider only, never a
+signer), exactly like `vh list`/`vh show` — walking a public, immutable lineage must never require the
+ability to write to it. As with `list`/`show`, a lineage walk does **NOT validate content**: it only
+reads what is on-chain. The human output of `vh lineage` leads with both this lineage caveat and the
+shared record caveat (untrusted `uri`; `contributor` per `authorBound`), and an off-chain indexer
+reconstructs the graph from the `Linked(child, parent)` event. Full detail and a worked example are in
+[`docs/LINEAGE.md`](LINEAGE.md).
+
+> Rule of thumb: **a `parent` edge is a claim of "I built on that", not a proof of "that became this".**
+
+---
+
 ## One-line summary
 
 | Field | Trust it for | Do NOT trust it for |
@@ -176,6 +204,7 @@ small incentive surface to nudge it. Therefore:
 | `blockNumber` | hard on-chain ordering; "existed by block N" | authorship time; a lower time bound |
 | `timestamp` | coarse ordering; "existed by ~T" | precise wall-clock time; authorship time |
 | `uri` | a human hint of where the content might be | anything security-relevant — re-fetch + re-hash |
+| `parent` | the child author's *claim* that it built on that predecessor (anchored earlier) | genuine content ancestry; any transfer of the parent's authorship — re-derive both |
 
 ## Tests
 

@@ -38,17 +38,26 @@ Full detail, including the table of "trust it for / do NOT trust it for", is in
 ## CLI (`cli/vh.js`)
 
 ```
-vh hash   <path> [--git [--ref r]]   # keccak256 of a file, or the Merkle root of a directory
-vh anchor <path> [--uri u] [--git]   # one-shot anchor (FRONT-RUNNABLE: contributor = first anchorer only)
-vh claim  <path> [--uri u] [--git]   # commit-reveal in one shot: front-running-resistant claim (authorBound)
-vh commit <path> [--receipt p]       # commit-reveal step 1: commit + persist a resumable claim receipt
-vh reveal --receipt <p>              # commit-reveal step 2: resume from the receipt and reveal
-vh verify <path> [--git [--ref r]]   # recompute the hash, look it up on-chain, report MATCH / MISMATCH
-vh prove  <file> --root dir [--out p] # Merkle-prove a file against an anchored root; --out exports a portable artifact (read-only, no key, no repo needed to verify)
+vh hash    <path> [--git [--ref r]]  # keccak256 of a file, or the Merkle root of a directory
+vh anchor  <path> [--uri u] [--git] [--parent 0xhash] # one-shot anchor (FRONT-RUNNABLE: contributor = first anchorer only); --parent records a lineage edge
+vh claim   <path> [--uri u] [--git] [--parent 0xhash] # commit-reveal in one shot: front-running-resistant claim (authorBound); --parent records a lineage edge
+vh commit  <path> [--receipt p]      # commit-reveal step 1: commit + persist a resumable claim receipt
+vh reveal  --receipt <p>             # commit-reveal step 2: resume from the receipt and reveal
+vh verify  <path> [--git [--ref r]]  # recompute the hash, look it up on-chain, report MATCH / MISMATCH
+vh prove   <file> --root dir [--out p] # Merkle-prove a file against an anchored root; --out exports a portable artifact (read-only, no key, no repo needed to verify)
 vh verify-proof <p>                  # read-only: independently verify a portable proof artifact (offline fold + on-chain; no key, no repo needed)
-vh list   [filters]                  # read-only: enumerate the registry (discovery + audit, NO key)
-vh show   <0xhash>                   # read-only: look up ONE record by hash, no local content (NO key)
+vh list    [filters]                 # read-only: enumerate the registry (discovery + audit, NO key)
+vh show    <0xhash>                  # read-only: look up ONE record by hash, no local content (NO key)
+vh lineage <0xhash> [--max-depth n]  # read-only walk UP the parent chain to the lineage root (no key)
 ```
+
+> **`--parent <0xhash>` records a contribution lineage edge.** `vh anchor/claim <path> --parent
+> <hash>` anchors the record AS a revision of an ALREADY-anchored predecessor (the parent must already
+> exist on-chain or the tx reverts `UnknownParent`); omit it for a lineage root. A `parent` edge is the
+> **child author's CLAIM** of a predecessor — it neither proves genuine content ancestry (re-derive
+> **both** contents) nor transfers the parent's authorship. `vh lineage <0xhash>` is the **read-only
+> walk, no key**: it follows the parent chain from a record UP to its lineage root. See
+> [contribution lineage](#contribution-lineage-vh-anchorclaim---parent--vh-lineage).
 
 > **`--git` scopes a directory to exactly what git tracks.** `vh hash/anchor/claim/verify <dir> --git
 > [--ref <ref>]` hashes **EXACTLY the files git tracks at that commit** (`--ref` defaults to `HEAD`),
@@ -136,6 +145,44 @@ non-zero with `NOT ANCHORED` when there is no such record.
 `vh verify` is read-only: it re-derives the content hash and compares it to what is anchored, which
 is exactly the integrity check the trust model requires. It needs only an RPC URL — no key, no
 funds.
+
+### Contribution lineage (`vh anchor/claim --parent` + `vh lineage`)
+
+A contribution evolves — v2 fixes v1, a fork derives from an upstream, a patch builds on a base. Each
+record may optionally name **one already-anchored predecessor**, turning the registry from a pile of
+unrelated hashes into a contribution **history you can walk and audit**.
+
+```
+vh anchor ./repo-v2 --parent 0xROOT…   # anchor v2 AS a revision of the already-anchored root 0xROOT…
+vh claim  ./repo-v2 --parent 0xROOT…   # same, via commit-reveal (the revision is authorBound)
+vh lineage 0xCHILD… --rpc <url>        # read-only walk UP the parent chain: child -> parent -> … -> root
+```
+
+`--parent <0xhash>` records an **immutable predecessor edge** to a hash that **must already be
+anchored** (the contract reverts `UnknownParent` otherwise, and `SelfParent` if a record names itself);
+omit it for a **lineage root**. Because a parent must pre-exist, the graph is **acyclic by
+construction** and the on-chain check is O(1) — no on-chain walk. `--parent` is on the one-shot
+`vh anchor`/`vh claim`; the resumable `vh commit`/`vh reveal` split does not carry it yet (BACKLOG
+B-10.1). Naming a parent does not change the child's own attribution (lineage and `authorBound` are
+orthogonal).
+
+`vh lineage <0xhash>` is **read-only and needs no key** — it takes a provider only, never a signer —
+and follows `record.parent` from a record UP to its lineage root, printing each ancestor in child→root
+order (`contentHash`, `contributor`, attribution strength, timestamp, blockNumber, uri, parent). The
+walk is **off-chain** and bounded by `--max-depth` (default 256, so a pathological chain can't hang the
+client); `--json` emits an ordered ancestor array an indexer/UI can reconstruct the graph from, and a
+`NOT ANCHORED` start exits non-zero. `vh show <0xhash>` also surfaces a record's `parent` (or
+`(none) — lineage root`).
+
+> **A `parent` edge is the child author's CLAIM — not proof of ancestry, not a transfer of authorship.**
+> It proves only that the named predecessor was anchored *before* this child and that the child's author
+> chose to point at it. It does **NOT** prove the predecessor's content is a genuine ancestor of the
+> child's content — re-derive **both** contents (`vh hash`) and judge the relationship yourself — and it
+> does **NOT** transfer the parent's authorship: each record's `contributor`/`authorBound` stands alone.
+> An indexer reconstructs the graph from the `Linked(child, parent)` event (emitted only for non-root
+> records, alongside the unchanged `Anchored`/`Revealed`). These are exactly the caveats in
+> [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md); the full graph spec, the log shape, and a
+> worked anchor-root → anchor-revision → walk-lineage example are in [`docs/LINEAGE.md`](docs/LINEAGE.md).
 
 ### Portable proofs (`vh prove --out` + `vh verify-proof`)
 
@@ -234,4 +281,8 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   prove → hand over → `vh verify-proof` example (read-only, no key, no repo needed).
 - [`docs/RECEIPTS.md`](docs/RECEIPTS.md) — the receipt JSON schema (trusted vs hints), the
   commit→reveal resume lifecycle, and the directory-manifest diff semantics.
+- [`docs/LINEAGE.md`](docs/LINEAGE.md) — the contribution lineage graph: the immutable `parent` edge
+  (acyclic-by-construction, O(1), a CLAIM that proves no ancestry/authorship), the `Linked` log an
+  indexer reconstructs the graph from, the `--parent` write flow, and the `vh lineage`/`vh show` read
+  flow with a worked anchor-root → anchor-revision → walk-lineage example.
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.

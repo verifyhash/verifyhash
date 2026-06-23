@@ -66,8 +66,9 @@ function usage() {
     "  --uri <uri>                optional off-chain pointer stored with the hash (IPFS CID, URL)",
     "  --parent <0xhash>          record an immutable predecessor edge to an ALREADY-anchored hash",
     "                             (routes the reveal leg to revealWithParent(); the parent must already",
-    "                             exist or it reverts UnknownParent). Only on the one-shot `vh claim`;",
-    "                             `vh commit`/`vh reveal` do not carry it yet (BACKLOG B-10.1).",
+    "                             exist or it reverts UnknownParent). Works on the one-shot `vh claim`",
+    "                             AND on the resumable split: `vh commit --parent` persists the edge",
+    "                             into the receipt (v4) and `vh reveal` then records it — no reveal flag.",
     "  --git                      claim EXACTLY the files git tracks (records a `git` provenance hint)",
     "  --ref <ref>                with --git: which commit's tracked set to claim (default HEAD)",
     "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
@@ -82,6 +83,10 @@ function usage() {
     "",
     "commit options (step 1 of a resumable claim; writes a receipt, then commits):",
     "  --uri <uri>                pointer recorded at reveal time (kept in the receipt until then)",
+    "  --parent <0xhash>          persist a predecessor edge to an ALREADY-anchored hash into the receipt;",
+    "                             the resumed `vh reveal` routes to revealWithParent() and records it (the",
+    "                             commit() tx itself carries no parent — the edge is recorded at reveal time).",
+    "                             A malformed/self-referential value hard-errors BEFORE any network call.",
     "  --git                      commit EXACTLY the files git tracks (records a `git` provenance hint)",
     "  --ref <ref>                with --git: which commit's tracked set to commit (default HEAD)",
     "  --salt <0xhex>             reuse a 32-byte salt (default: a fresh random one)",
@@ -94,7 +99,9 @@ function usage() {
     "  --i-understand-mainnet     allow committing on a non-testnet chainId (DANGER: real funds)",
     "",
     "reveal options (step 2; resumes a prior commit from its receipt and reveals):",
-    "  --receipt <path>           REQUIRED: the receipt file written by `vh commit`",
+    "  --receipt <path>           REQUIRED: the receipt file written by `vh commit`. If the receipt",
+    "                             recorded a `--parent` it reveals via revealWithParent() (records the",
+    "                             lineage edge); otherwise it uses the legacy reveal(). No --parent flag.",
     "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
     "  --i-understand-mainnet     allow revealing on a non-testnet chainId (DANGER: real funds)",
     "",
@@ -600,16 +607,11 @@ async function cmdCommit(argv) {
     );
     return 2;
   }
-  // The lineage edge belongs on the REVEAL leg (revealWithParent), but the resumable receipt schema
-  // does not yet persist a `parent` (that is BACKLOG B-10.1). Rather than silently drop the edge,
-  // hard-error and point to the one-shot path that DOES support it (`vh claim --parent`).
-  if (opts.parent !== undefined) {
-    process.stderr.write(
-      "error: `vh commit` does not yet support --parent (the resumable receipt cannot carry the " +
-        "lineage edge yet; see BACKLOG B-10.1). Use the one-shot `vh claim --parent <hash>` instead.\n"
-    );
-    return 2;
-  }
+  // The lineage edge (B-10.1) belongs on the REVEAL leg (revealWithParent), and the resumable receipt
+  // schema (v4) now persists `parent` so a resumed `vh reveal` can record it. We thread `opts.parent`
+  // into runCommit, which validates it up front via the SAME normalizeParent as `vh anchor --parent`:
+  // a malformed/self-referential value hard-errors BEFORE any network call (a typo never silently
+  // drops the edge), surfacing through the catch below with exit 1.
 
   const ethers = require("ethers");
   const contractAddress = opts.contract || process.env.VH_CONTRACT;
@@ -635,6 +637,7 @@ async function cmdCommit(argv) {
       path: opts.path,
       uri: opts.uri,
       salt: opts.salt,
+      parent: opts.parent, // B-10.1: persisted into the v4 receipt so `vh reveal` records the edge
       git: opts.git,
       ref: opts.ref,
       receiptPath: opts.receipt,

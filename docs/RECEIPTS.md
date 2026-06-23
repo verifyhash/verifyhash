@@ -52,7 +52,7 @@ never silently half-accepted.
 | Field | Type | Required | Trust | Meaning |
 |-------|------|----------|-------|---------|
 | `kind` | string | yes | structural | `"verifyhash.claim-receipt"` or `"verifyhash.anchor-receipt"`. A discriminator so a random JSON file is never mistaken for a receipt. |
-| `schemaVersion` | integer | yes | structural | On-disk schema version. This build **writes** `3` and **reads** `1`, `2`, or `3`. Any other version is rejected, so a future/foreign file is never misread. (`1` → base, `2` added the optional `manifest`, `3` added the optional `git` block — all additive.) |
+| `schemaVersion` | integer | yes | structural | On-disk schema version. This build **writes** `4` and **reads** `1`, `2`, `3`, or `4`. Any other version is rejected, so a future/foreign file is never misread. (`1` → base, `2` added the optional `manifest`, `3` added the optional `git` block, `4` added the optional `parent` on a CLAIM receipt — all additive.) |
 | `contentHash` | `0x`+64 hex (32 bytes) | yes | **trusted-as-target** | The digest being claimed/anchored: a file's `keccak256`, or a directory's Merkle **root** (see [`docs/MERKLE-LEAVES.md`](MERKLE-LEAVES.md)). This is the only thing the chain attests to; everything else is metadata. |
 | `contractAddress` | `0x`+40 hex (address) | yes | hint | The `ContributionRegistry` the receipt is about. Used to target the right contract on resume. |
 | `chainId` | non-negative integer | yes | hint | Chain the commit/anchor was sent to (e.g. `31337` local, `80002` Amoy). |
@@ -74,6 +74,7 @@ A claim receipt carries the **secret material** that lets a separate process fin
 | `commitTxHash` | `0x`+64 hex (32 bytes) | optional | informational | The `commit()` transaction hash. |
 | `commitBlockNumber` | non-negative integer | optional | operational | Block the commit mined in; used to compute when the reveal window matures. |
 | `minRevealDelay` | non-negative integer | optional | operational | `MIN_REVEAL_DELAY` read from the contract at commit time; how many blocks must pass before `reveal()`. |
+| `parent` | `0x`+64 hex (32 bytes) | optional (v4+) | **UNTRUSTED hint** | The lineage edge (B-10.1): an **already-anchored** predecessor's `contentHash`, recorded by `vh commit --parent`. Present only for a revision; **omitted entirely** for a lineage root (the all-zero hash is rejected, never recorded). On resume, `vh reveal` routes to `revealWithParent(contentHash, salt, uri, parent)` and records the edge; the **authoritative** edge is what that on-chain call records, not this field. It is a *claim* of a predecessor — never proof of content ancestry or any transfer of the parent's authorship. Rejected on an anchor receipt, on a receipt below v4, when malformed/zero, or when equal to `contentHash` (`SelfParent`). |
 
 ### Anchor receipt — additional fields (`kind: "verifyhash.anchor-receipt"`)
 

@@ -129,9 +129,14 @@ vh claim  <path> --parent <0xhash> [--uri u] [--git]   # commit-reveal revision 
   via the legacy `anchor`, emitting **no** `Linked` event.
 - On `vh claim`, a non-zero `--parent` routes the **reveal leg** to `revealWithParent(contentHash,
   salt, uri, parent)`; the commit leg is unchanged (the edge is recorded at reveal time). `--parent`
-  is supported on the **one-shot `vh claim`** only; the resumable `vh commit`/`vh reveal` split does
-  not carry it yet (the receipt schema cannot persist a `parent` — see `BACKLOG` B-10.1 — so
-  `vh commit --parent` hard-errors and points you at `vh claim --parent`).
+  works on the **one-shot `vh claim`** AND on the **resumable `vh commit`/`vh reveal` split**:
+  `vh commit --parent <hash>` validates the edge up front (same parser as `vh anchor --parent`) and
+  persists it into the claim receipt (schema **v4**); a later, separate `vh reveal --receipt <p>` then
+  reads `parent` from the receipt and routes to `revealWithParent` — no `--parent` flag on `vh reveal`.
+  The `commit()` transaction itself carries no parent (the contract's commit takes only the commitment),
+  so the commitment binding is identical with or without a parent; the edge is recorded at reveal time.
+  A malformed/self-referential `--parent` on `vh commit` hard-errors **before any network call** (a typo
+  never silently drops the edge). See `B-10.1`.
 - If the named `parent` was never anchored, the transaction reverts `UnknownParent(parent)`; a
   self-referencing parent reverts `SelfParent(contentHash)`.
 - `--dry-run` prints the plan including a `parent:` line (the predecessor hash, or `(none) — lineage
@@ -277,5 +282,5 @@ every other field in [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md).
   including the `parent` clause this doc reuses verbatim.
 - [`docs/MERKLE-LEAVES.md`](MERKLE-LEAVES.md) — what a directory/repo root commits to (paths + bytes),
   including the `--git` scope used to make a revision's root reproducible.
-- [`docs/RECEIPTS.md`](RECEIPTS.md) — why the resumable `vh commit`/`vh reveal` split cannot yet carry a
-  `--parent` (BACKLOG B-10.1) and the receipt trust posture.
+- [`docs/RECEIPTS.md`](RECEIPTS.md) — how the resumable `vh commit`/`vh reveal` split carries a
+  `--parent` in the claim receipt (schema v4, B-10.1) and the receipt trust posture.

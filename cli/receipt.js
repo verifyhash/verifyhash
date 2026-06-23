@@ -43,11 +43,17 @@ const fs = require("fs");
 //   1 -> 2 : added the optional `manifest` (per-file dir leaves, for localized verify diffs).
 //   2 -> 3 : added the optional `git` block { commit, scope } — the resolved commit oid and the
 //            repo-relative scope used to enumerate the tracked files for a `--git` anchor/claim.
+//   3 -> 4 : added the optional `parent` field on a CLAIM receipt ONLY (B-10.1) — a 0x 32-byte hex
+//            contentHash of an already-anchored predecessor (the lineage edge a `vh commit --parent`
+//            will record at REVEAL time via revealWithParent), or absent for a lineage root. It is an
+//            UNTRUSTED convenience hint (docs/TRUST-BOUNDARIES.md): the AUTHORITATIVE edge is what
+//            revealWithParent records on-chain, not this field. The ANCHOR receipt is unchanged.
 // `readReceipt` still ACCEPTS every prior version (a v1 receipt has no manifest, a v1/v2 receipt has
-// no git block), so older artifacts keep working; it only WRITES version SCHEMA_VERSION. Any version
-// outside the supported set is rejected so a future/foreign file is never misread as a current one.
-const SCHEMA_VERSION = 3;
-const SUPPORTED_SCHEMA_VERSIONS = Object.freeze([1, 2, 3]);
+// no git block, a v1/v2/v3 receipt has no parent), so older artifacts keep working; it only WRITES
+// version SCHEMA_VERSION. Any version outside the supported set is rejected so a future/foreign file
+// is never misread as a current one.
+const SCHEMA_VERSION = 4;
+const SUPPORTED_SCHEMA_VERSIONS = Object.freeze([1, 2, 3, 4]);
 
 // Receipts carry one of these discriminators so a random JSON file (or a different vh artifact) is
 // never mistaken for a verifyhash receipt. A CLAIM receipt is the resumable commit-reveal artifact
@@ -97,6 +103,14 @@ const GIT_OID_RE = /^[0-9a-f]{40}$/;
  * @param {{commit:string,scope:string}} [parts.git]
  *        optional UNTRUSTED git-provenance hint: the resolved commit oid + repo-relative scope used
  *        to enumerate the tracked files for a `--git` claim
+ * @param {string} [parts.parent]
+ *        optional 0x 32-byte contentHash of an ALREADY-ANCHORED predecessor (B-10.1 lineage edge).
+ *        Recorded ONLY when present; absent means this claim is a lineage root. This is a CLAIM of a
+ *        predecessor, NOT proof of ancestry or any transfer of the parent's authorship — it is an
+ *        UNTRUSTED convenience hint. The AUTHORITATIVE edge is what `revealWithParent(contentHash,
+ *        salt, uri, parent)` records on-chain at reveal time; this field merely lets a resumed
+ *        `vh reveal` know which reveal leg to route to. Validated as a well-formed non-zero 32-byte
+ *        hex hash that is NOT equal to `contentHash` (the contract rejects a self-parent as SelfParent).
  * @returns {object} a validated receipt object
  */
 function buildReceipt(parts) {
@@ -177,6 +191,40 @@ function _attachOptional(receipt, parts) {
   }
   if (parts.manifest != null) receipt.manifest = _normManifest(parts.manifest);
   if (parts.git != null) receipt.git = _normGit(parts.git);
+  // The lineage edge (B-10.1) is recorded ONLY when present — absent means a lineage root. Mirrors the
+  // additive-optional `_normGit` pattern: validated here so a malformed/zero/self-referential parent is
+  // rejected at build time and never lands on disk. `receipt.contentHash` is already set above, so the
+  // self-reference check can run against it.
+  if (parts.parent != null) receipt.parent = _normParent(parts.parent, receipt.contentHash);
+}
+
+/**
+ * Normalize the optional lineage `parent` (B-10.1) into the canonical on-disk shape: a lowercased 0x
+ * 32-byte hex hash of an ALREADY-ANCHORED predecessor. Throws on a malformed value, on the all-zero
+ * hash (the zero hash is the contract's "no predecessor" sentinel — a receipt that means "root" must
+ * OMIT `parent` entirely, never carry the zero hash as a lie), and on a self-reference
+ * (`parent === contentHash`; the contract rejects this as SelfParent). The edge is an UNTRUSTED claim
+ * of a predecessor (docs/TRUST-BOUNDARIES.md): the authoritative edge is what `revealWithParent`
+ * records on-chain — this normalizer only keeps the receipt internally consistent and well-formed.
+ * @param {any} parent      the candidate predecessor contentHash
+ * @param {string} contentHash the receipt's own contentHash (for the self-reference guard)
+ * @returns {string} the normalized, lowercased parent hash
+ */
+function _normParent(parent, contentHash) {
+  if (typeof parent !== "string" || !HEX32_RE.test(parent)) {
+    throw new Error(`receipt parent must be a 0x 32-byte hex contentHash, got: ${String(parent)}`);
+  }
+  if (/^0x0{64}$/i.test(parent)) {
+    throw new Error(
+      "receipt parent must not be the all-zero hash (a lineage root omits parent entirely)"
+    );
+  }
+  if (typeof contentHash === "string" && parent.toLowerCase() === contentHash.toLowerCase()) {
+    throw new Error(
+      "receipt parent must not equal contentHash (self-reference; the contract rejects it as SelfParent)"
+    );
+  }
+  return parent.toLowerCase();
 }
 
 /**
@@ -274,8 +322,9 @@ function _normManifest(manifest) {
 /**
  * Strictly validate a parsed receipt object. Throws an Error describing the FIRST problem found.
  * Never mutates the object and never fills defaults — a receipt either is complete and well-formed
- * or it is rejected outright. Accepts both schemaVersion 1 (no manifest) and 2 (optional manifest),
- * and both claim- and anchor-kind receipts.
+ * or it is rejected outright. Accepts every SUPPORTED_SCHEMA_VERSIONS (a v1 receipt has no manifest,
+ * a v1/v2 receipt has no git block, a v1/v2/v3 receipt has no parent), and both claim- and anchor-kind
+ * receipts. Each optional field is gated to the version that introduced it, so a version never lies.
  * @param {any} obj
  * @returns {object} the same object, if valid
  */
@@ -365,6 +414,38 @@ function _validate(obj) {
     _validateGitShape(obj.git);
   }
 
+  // Optional lineage `parent` (B-10.1): only meaningful at schemaVersion >= 4, and ONLY on a CLAIM
+  // receipt (the anchor receipt records its lineage edge on-chain at anchor time and carries none on
+  // disk). A v1/v2/v3 receipt that smuggles in a parent is rejected (those versions are defined to
+  // have none), so the version is never a lie. The edge is an UNTRUSTED claim of a predecessor — this
+  // SHAPE check only keeps the receipt internally consistent; the authoritative edge is on-chain.
+  if (obj.parent !== undefined && obj.parent !== null) {
+    if (isAnchor) {
+      throw new Error("an anchor receipt must not carry a parent field (the edge is on-chain only)");
+    }
+    if (obj.schemaVersion < 4) {
+      throw new Error("receipt parent requires schemaVersion >= 4");
+    }
+    if (typeof obj.parent !== "string" || !HEX32_RE.test(obj.parent)) {
+      throw new Error(
+        `receipt parent must be a 0x 32-byte hex contentHash when present, got: ${String(obj.parent)}`
+      );
+    }
+    if (/^0x0{64}$/i.test(obj.parent)) {
+      throw new Error(
+        "receipt parent must not be the all-zero hash (a lineage root omits parent entirely)"
+      );
+    }
+    if (
+      typeof obj.contentHash === "string" &&
+      obj.parent.toLowerCase() === obj.contentHash.toLowerCase()
+    ) {
+      throw new Error(
+        "receipt parent must not equal contentHash (self-reference; the contract rejects it as SelfParent)"
+      );
+    }
+  }
+
   return obj;
 }
 
@@ -423,7 +504,7 @@ function writeReceipt(obj, path) {
 /**
  * Read, JSON-parse, and strictly validate a receipt from `path`. Throws a clear error if the file is
  * missing, not JSON, or fails validation — it NEVER returns a partial/corrupt receipt. Accepts both
- * claim and anchor receipts at schemaVersion 1 or 2.
+ * claim and anchor receipts at any SUPPORTED_SCHEMA_VERSIONS (older artifacts keep working).
  * @param {string} path
  * @returns {object} the validated receipt
  */
@@ -546,4 +627,5 @@ module.exports = {
   _validate,
   _normManifest,
   _normGit,
+  _normParent,
 };

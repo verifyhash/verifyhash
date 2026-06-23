@@ -5,6 +5,7 @@ const path = require("path");
 
 const {
   SCHEMA_VERSION,
+  SUPPORTED_SCHEMA_VERSIONS,
   RECEIPT_KIND,
   ANCHOR_RECEIPT_KIND,
   buildReceipt,
@@ -14,6 +15,7 @@ const {
   diffManifest,
   defaultReceiptPath,
   _normGit,
+  _normParent,
 } = require("../cli/receipt");
 
 // ---------------------------------------------------------------------------
@@ -449,6 +451,133 @@ describe("cli/receipt: v3 git provenance block (additive, back-compatible)", fun
     bad.git = { commit: "nope", scope: "." }; // corrupt after build
     expect(() => writeReceipt(bad, p)).to.throw(/git\.commit/);
     expect(fs.existsSync(p)).to.equal(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Schema v4: the optional, additive `parent` field on a CLAIM receipt ONLY
+// (B-10.1). A 0x 32-byte hex contentHash of an already-anchored predecessor —
+// the lineage edge a `vh commit --parent` records at REVEAL time via
+// revealWithParent — or absent for a lineage root. It is an UNTRUSTED hint
+// (docs/TRUST-BOUNDARIES.md): the AUTHORITATIVE edge is on-chain. The reader
+// still accepts all prior versions (v1/v2/v3 receipts have no parent).
+// ---------------------------------------------------------------------------
+describe("cli/receipt: v4 lineage parent (claim-only, additive, back-compatible)", function () {
+  const PARENT = "0x" + "22".repeat(32);
+
+  it("SCHEMA_VERSION is at least 4 (the parent schema bump) and 4 is in SUPPORTED", function () {
+    expect(SCHEMA_VERSION).to.be.at.least(4);
+    expect(SUPPORTED_SCHEMA_VERSIONS).to.include(4);
+  });
+
+  it("buildReceipt records a valid parent on a CLAIM receipt at schemaVersion >= 4", function () {
+    const r = buildReceipt(goodParts({ parent: PARENT }));
+    expect(r.schemaVersion).to.be.at.least(4);
+    expect(r.parent).to.equal(PARENT);
+  });
+
+  it("OMITS parent entirely when none is given (a lineage root has no parent field)", function () {
+    const r = buildReceipt(goodParts());
+    expect(r).to.not.have.property("parent");
+  });
+
+  it("normalizes a mixed-case parent to lowercase", function () {
+    const r = buildReceipt(goodParts({ parent: PARENT.toUpperCase().replace("0X", "0x") }));
+    expect(r.parent).to.equal(PARENT);
+  });
+
+  it("a v4 claim receipt with a valid parent write/read round-trips (the field survives disk)", function () {
+    const p = path.join(tmp(), "parent.vhclaim.json");
+    const written = writeReceipt(buildReceipt(goodParts({ parent: PARENT })), p);
+    const read = readReceipt(p);
+    expect(read).to.deep.equal(written);
+    expect(read.parent).to.equal(PARENT);
+    // The parent is literally on disk.
+    expect(JSON.parse(fs.readFileSync(p, "utf8")).parent).to.equal(PARENT);
+  });
+
+  it("REJECTS a malformed parent (buildReceipt never writes it)", function () {
+    expect(() => buildReceipt(goodParts({ parent: "0x1234" }))).to.throw(/parent/);
+    expect(() => buildReceipt(goodParts({ parent: "0x" + "zz".repeat(32) }))).to.throw(/parent/);
+    expect(() => buildReceipt(goodParts({ parent: "deadbeef".repeat(8) }))).to.throw(/parent/);
+  });
+
+  it("REJECTS the all-zero parent (a root omits parent; the zero hash must never be recorded)", function () {
+    expect(() => buildReceipt(goodParts({ parent: "0x" + "00".repeat(32) }))).to.throw(
+      /all-zero|parent/
+    );
+  });
+
+  it("REJECTS a self-referential parent (parent === contentHash; contract rejects SelfParent)", function () {
+    expect(() => buildReceipt(goodParts({ parent: HASH }))).to.throw(/self-reference|SelfParent|parent/);
+  });
+
+  it("readReceipt REJECTS a parent smuggled onto a claim receipt that claims schemaVersion < 4", function () {
+    const r = buildReceipt(goodParts({ parent: PARENT }));
+    r.schemaVersion = 3; // claim v3 while carrying a v4-only field
+    const p = path.join(tmp(), "lying-parent.vhclaim.json");
+    fs.writeFileSync(p, JSON.stringify(r));
+    expect(() => readReceipt(p)).to.throw(/parent requires schemaVersion/);
+  });
+
+  it("readReceipt REJECTS a malformed/zero/self parent on disk (never half-accepts)", function () {
+    const base = buildReceipt(goodParts({ parent: PARENT }));
+    function writeWith(parentVal) {
+      const r = Object.assign({}, base, { parent: parentVal });
+      const p = path.join(tmp(), "bad-parent.vhclaim.json");
+      fs.writeFileSync(p, JSON.stringify(r));
+      return p;
+    }
+    expect(() => readReceipt(writeWith("0x1234"))).to.throw(/parent/);
+    expect(() => readReceipt(writeWith("0x" + "00".repeat(32)))).to.throw(/all-zero|parent/);
+    expect(() => readReceipt(writeWith(HASH))).to.throw(/self-reference|SelfParent|parent/);
+  });
+
+  it("BACK-COMPAT: a v3 claim receipt with NO parent still reads", function () {
+    // A genuine v3 receipt: has a git block + manifest, no parent.
+    const v3 = buildReceipt(
+      goodParts({
+        kind: "dir",
+        manifest: [{ path: "a.js", contentHash: "0x" + "01".repeat(32), leaf: "0x" + "a1".repeat(32) }],
+        git: { commit: "099438f796ab23b0f64805f1aca3da64e3b504bb", scope: "." },
+      })
+    );
+    v3.schemaVersion = 3;
+    delete v3.parent;
+    expect(v3).to.not.have.property("parent");
+    const p = path.join(tmp(), "v3-noparent.vhclaim.json");
+    fs.writeFileSync(p, JSON.stringify(v3));
+    const read = readReceipt(p);
+    expect(read.schemaVersion).to.equal(3);
+    expect(read).to.not.have.property("parent");
+  });
+
+  it("BACK-COMPAT: a v1 receipt (no manifest/git/parent) still reads", function () {
+    const v1 = buildReceipt(goodParts());
+    v1.schemaVersion = 1;
+    const p = path.join(tmp(), "v1-noparent.vhclaim.json");
+    fs.writeFileSync(p, JSON.stringify(v1));
+    const read = readReceipt(p);
+    expect(read.schemaVersion).to.equal(1);
+    expect(read).to.not.have.property("parent");
+  });
+
+  it("an ANCHOR receipt must NOT carry a parent (the edge is recorded on-chain at anchor time)", function () {
+    const a = buildAnchorReceipt({ contentHash: HASH, contractAddress: CONTRACT, chainId: 31337 });
+    a.parent = PARENT; // corrupt after build — an anchor receipt has no on-disk parent
+    const p = path.join(tmp(), "anchor-with-parent.json");
+    fs.writeFileSync(p, JSON.stringify(a));
+    expect(() => readReceipt(p)).to.throw(/anchor receipt must not carry a parent/);
+    // And writeReceipt refuses to persist it (validate-before-write).
+    expect(() => writeReceipt(a, path.join(tmp(), "never.json"))).to.throw(/anchor receipt must not carry a parent/);
+  });
+
+  it("_normParent: unit guards (malformed/zero/self rejected; valid lowercased)", function () {
+    expect(_normParent(PARENT, HASH)).to.equal(PARENT);
+    expect(_normParent(PARENT.toUpperCase().replace("0X", "0x"), HASH)).to.equal(PARENT);
+    expect(() => _normParent("0x1234", HASH)).to.throw(/parent/);
+    expect(() => _normParent("0x" + "00".repeat(32), HASH)).to.throw(/all-zero|parent/);
+    expect(() => _normParent(HASH, HASH)).to.throw(/self-reference|SelfParent|parent/);
   });
 });
 

@@ -246,24 +246,32 @@ describe("T-10.3 docs: contribution lineage (docs/LINEAGE.md) + README CLI block
     });
   });
 
-  // The doc's write-flow section (docs/LINEAGE.md) makes a LOAD-BEARING behavioral claim: `--parent` is
-  // supported on the one-shot `vh claim` only, and the resumable `vh commit`/`vh reveal` split does not
-  // carry it yet — `vh commit --parent` HARD-ERRORS and points you at `vh claim --parent`. Pin that
-  // claim to the actual CLI guard (cli/vh.js cmdCommit) so the prose can't outrun the code: if someone
-  // ever wires --parent into `vh commit`, the doc would be lying and THIS test fails. The guard returns
-  // before any network/file access, so the test needs no chain/fixtures.
-  describe("docs/LINEAGE.md's `vh commit --parent` redirection is the LIVE CLI behaviour, not just prose", function () {
-    it("docs state vh commit/reveal cannot carry --parent yet (claim --parent only)", function () {
-      // The doc must explicitly scope --parent to the one-shot claim and route commit users elsewhere.
+  // The doc's write-flow section (docs/LINEAGE.md) makes a LOAD-BEARING behavioral claim (B-10.1):
+  // `--parent` now works on BOTH the one-shot `vh claim` AND the resumable `vh commit`/`vh reveal`
+  // split — `vh commit --parent <hash>` persists the edge into the claim receipt (schema v4) and a
+  // later `vh reveal` records it. Pin that claim to the actual CLI behaviour (cli/vh.js cmdCommit) so
+  // the prose can't outrun the code: the OLD hard-error/redirect is gone, and a malformed `--parent`
+  // is still rejected up front (a typo never silently drops the edge). The guard runs before any
+  // network/file access, so the test needs no chain/fixtures.
+  describe("docs/LINEAGE.md's `vh commit --parent` behaviour is the LIVE CLI behaviour, not just prose", function () {
+    it("docs state --parent works on both the one-shot claim AND the resumable commit/reveal split (v4)", function () {
+      // The doc must name the one-shot `vh claim` AND tie `vh commit` to `--parent` (no longer "claim only").
       expect(lineage).to.include("vh claim --parent");
-      expect(lineageLower).to.match(/vh commit[\s\S]{0,80}--parent|--parent[\s\S]{0,80}vh commit/);
-      // It names the one-shot `vh claim` as the path that DOES carry the edge.
-      expect(lineage).to.match(/one-shot `?vh claim`?|`?vh claim`? --parent only/);
+      expect(lineageLower).to.match(/vh commit[\s\S]{0,120}--parent|--parent[\s\S]{0,120}vh commit/);
+      // It must say the resumable split now carries the edge (receipt schema v4 / reveal records it),
+      // and must NOT still claim commit "cannot carry" / "does not carry" it yet.
+      expect(lineageLower).to.match(/v4|schema|receipt/);
+      expect(lineageLower).to.not.match(/does not carry it yet|cannot (yet )?(carry|persist)/);
     });
 
-    it("`vh commit --parent <hash>` actually hard-errors and redirects to `vh claim --parent`", async function () {
-      // Capture stderr without touching the real one; cmdCommit writes there and returns the exit code.
+    it("a WELL-FORMED `vh commit --parent` no longer hard-errors on the parent (the old redirect is gone)", async function () {
+      // With a valid hash, no RPC and no key, cmdCommit must get PAST the (removed) --parent guard and
+      // fail on the missing RPC (exit 1) — proving the parent is accepted, not rejected with usage (2).
       const origWrite = process.stderr.write.bind(process.stderr);
+      const savedRpc = process.env.VH_RPC_URL;
+      const savedAmoy = process.env.AMOY_RPC_URL;
+      delete process.env.VH_RPC_URL;
+      delete process.env.AMOY_RPC_URL;
       let captured = "";
       process.stderr.write = (s) => {
         captured += s;
@@ -271,22 +279,57 @@ describe("T-10.3 docs: contribution lineage (docs/LINEAGE.md) + README CLI block
       };
       let code;
       try {
-        // A truthy path clears the path check; the --parent guard fires BEFORE any rpc/file access, so
-        // this never opens a connection. (The hash value is irrelevant — the guard only checks presence.)
+        code = await cmdCommit(["package.json", "--parent", "0x" + "11".repeat(32)]);
+      } finally {
+        process.stderr.write = origWrite;
+        if (savedRpc !== undefined) process.env.VH_RPC_URL = savedRpc;
+        if (savedAmoy !== undefined) process.env.AMOY_RPC_URL = savedAmoy;
+      }
+      // It fell through to the RPC check (exit 1), NOT the old usage-2 parent redirect.
+      expect(code, "a valid --parent must not be a usage error").to.equal(1);
+      expect(captured).to.match(/no RPC endpoint/i);
+      expect(captured, "the old redirect message must be gone").to.not.match(
+        /does not yet support --parent/i
+      );
+    });
+
+    it("a MALFORMED `vh commit --parent` still hard-errors with usage (a typo never silently drops the edge)", async function () {
+      // A malformed parent ("0x1234") is rejected up front by runCommit -> buildCommitTx -> normalizeParent,
+      // BEFORE any network call. To reach that validation we must pass cmdCommit's RPC + PRIVATE_KEY env
+      // checks; we provide a dead RPC (never reached) and a throwaway hardhat dev key (never used to send,
+      // because validation throws first). The malformed value surfaces as a non-zero exit naming --parent.
+      const origWrite = process.stderr.write.bind(process.stderr);
+      const savedPk = process.env.PRIVATE_KEY;
+      // Hardhat dev account #0's well-known key — a fixed test key, never a real-funds key (guardrail).
+      process.env.PRIVATE_KEY =
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+      let captured = "";
+      process.stderr.write = (s) => {
+        captured += s;
+        return true;
+      };
+      let code;
+      try {
+        // Dead RPC (127.0.0.1:1) — but the malformed parent must error BEFORE we ever touch it.
         code = await cmdCommit([
-          ".",
+          "package.json",
           "--parent",
-          "0x" + "11".repeat(32),
+          "0x1234",
+          "--contract",
+          "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+          "--rpc",
+          "http://127.0.0.1:1",
         ]);
       } finally {
         process.stderr.write = origWrite;
+        if (savedPk === undefined) delete process.env.PRIVATE_KEY;
+        else process.env.PRIVATE_KEY = savedPk;
       }
-      expect(code, "vh commit --parent must exit non-zero (usage error)").to.equal(2);
-      expect(captured, "must explain commit can't carry --parent").to.match(
-        /vh commit.*does not yet support --parent/i
-      );
-      expect(captured, "must redirect to the one-shot claim path").to.include(
-        "vh claim --parent"
+      expect(code, "malformed --parent must exit non-zero").to.not.equal(0);
+      expect(captured, "must name the invalid --parent").to.match(/invalid --parent/i);
+      // It is the up-front validation error, not a downstream network failure.
+      expect(captured, "must not be a downstream network error").to.not.match(
+        /ECONNREFUSED|could not detect network/i
       );
     });
   });

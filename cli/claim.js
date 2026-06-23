@@ -168,12 +168,18 @@ function _resolveContext(opts) {
  * @param {string} [opts.ref]             with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress  ContributionRegistry address (tx `to`)
  * @param {string} [opts.salt]            reuse a salt (else a fresh random one is generated)
+ * @param {string} [opts.parent]          optional predecessor contentHash (B-10.1 lineage edge). The
+ *                                        commit() tx itself NEVER carries a parent (the contract's
+ *                                        commit takes only the commitment; the edge is recorded at
+ *                                        REVEAL time via revealWithParent). We validate it here up
+ *                                        front (parser parity with `vh anchor --parent`) and return
+ *                                        the normalized value so runCommit can persist it for reveal.
  * @param {object} [opts.ethers]          ethers v6 module
  * @returns {{
  *   to: string, data: string, value: string, functionName: "commit",
  *   contentHash: string, kind: "file"|"dir", path: string,
  *   manifest: Array|null, git: {commit:string,scope:string}|null,
- *   committer: string, salt: string, commitment: string
+ *   committer: string, salt: string, commitment: string, parent: string|null
  * }}
  */
 function buildCommitTx(opts) {
@@ -190,6 +196,20 @@ function buildCommitTx(opts) {
   });
   if (/^0x0{64}$/i.test(contentHash)) {
     throw new Error("refusing to claim the zero hash (contract rejects it)");
+  }
+
+  // Validate the optional `--parent` lineage edge BEFORE building/sending anything (parser parity with
+  // `vh anchor --parent`, whose buildAnchorTx runs normalizeParent up front). A malformed/self-referential
+  // value is a typo the user must learn about immediately — never after commit() has already broadcast.
+  // The commit() tx is identical with or without a parent (the edge rides the REVEAL leg); we only carry
+  // the normalized parent on the built tx so runCommit can persist it into the receipt. normalizeParent
+  // maps missing/empty/zero -> null (a lineage root) and hard-errors on a malformed non-zero value.
+  const { normalizeParent } = require("./anchor");
+  const parent = normalizeParent(opts.parent, ethersLib);
+  if (parent !== null && parent.toLowerCase() === contentHash.toLowerCase()) {
+    throw new Error(
+      "refusing to claim a record as its own parent (self-reference; the contract rejects it as SelfParent)"
+    );
   }
 
   const salt = opts.salt || newSalt(ethersLib);
@@ -217,6 +237,8 @@ function buildCommitTx(opts) {
     committer: committerAddr,
     salt,
     commitment,
+    parent, // null for a lineage root; the normalized predecessor hash when --parent was given.
+            // The commit() tx does NOT carry it (the edge rides the reveal leg); runCommit persists it.
   };
 }
 
@@ -416,6 +438,10 @@ function _parseRevealed(receipt, ethersLib) {
  * @param {object} opts
  * @param {string}  opts.path
  * @param {string} [opts.uri]
+ * @param {string} [opts.parent]            optional predecessor contentHash (B-10.1 lineage edge);
+ *                                          validated up front and persisted into the receipt so the
+ *                                          later `runReveal` routes to revealWithParent(). The commit()
+ *                                          tx itself is unchanged (the edge is recorded at reveal time).
  * @param {boolean}[opts.git]               hash EXACTLY the git-tracked files (T-8.1 enumeration)
  * @param {string} [opts.ref]               with git: which commit's tracked set (default HEAD)
  * @param {string}  opts.contractAddress
@@ -455,6 +481,7 @@ async function runCommit(opts) {
     ref: opts.ref,
     contractAddress: opts.contractAddress,
     salt: opts.salt,
+    parent: opts.parent, // validated up front in buildCommitTx (parity with anchor); persisted below
     ethers: ethersLib,
   });
 
@@ -468,7 +495,12 @@ async function runCommit(opts) {
 
   const contract = new ethersLib.Contract(commitTx.to, ABI, opts.signer);
 
-  log(`commit: committing ${commitTx.path} (${commitTx.kind}) as ${commitTx.committer}...\n`);
+  // Name whether a lineage edge will be recorded at reveal time, so the operator SEES it from the
+  // commit step (the commit() tx is identical with or without a parent; the edge rides the reveal leg).
+  const parentNote = commitTx.parent ? ` (-> parent ${commitTx.parent} will be recorded at reveal)` : "";
+  log(
+    `commit: committing ${commitTx.path} (${commitTx.kind}) as ${commitTx.committer}${parentNote}...\n`
+  );
   const commitSent = await contract.commit(commitTx.commitment);
   log(`  commit tx: ${commitSent.hash}\n`);
   const commitReceiptTx = await commitSent.wait();
@@ -496,6 +528,7 @@ async function runCommit(opts) {
     kind: commitTx.kind,
     manifest: commitTx.manifest || undefined,
     git: commitTx.git || undefined, // untrusted provenance hint: { commit, scope } when --git
+    parent: commitTx.parent || undefined, // B-10.1 lineage edge: recorded only when --parent was given
     commitTxHash: commitReceiptTx.hash,
     commitBlockNumber: commitBlock,
     minRevealDelay: minDelay,
@@ -518,12 +551,17 @@ async function runCommit(opts) {
 }
 
 /**
- * Resume a claim from a persisted receipt and submit the `reveal()` leg once the MIN_REVEAL_DELAY
- * window has matured. Loads the salt/commitment/uri from the receipt — it needs NO information that
- * wasn't durably written at commit time, so it works from a completely fresh process.
+ * Resume a claim from a persisted receipt and submit the reveal leg once the MIN_REVEAL_DELAY window
+ * has matured. Loads the salt/commitment/uri (and, B-10.1, the optional lineage `parent`) from the
+ * receipt — it needs NO information that wasn't durably written at commit time, so it works from a
+ * completely fresh process. When the receipt records a `parent` it routes to
+ * `revealWithParent(contentHash, salt, uri, parent)` (recording the lineage edge); otherwise it uses
+ * the legacy `reveal(contentHash, salt, uri)`, byte-for-byte unchanged.
  *
- * If the window has not yet matured the contract reverts with `RevealTooSoon`; this function lets
- * that error propagate and leaves the receipt file untouched so the user can simply retry later.
+ * If the window has not yet matured the contract reverts with `RevealTooSoon`; if the receipt names a
+ * `parent` that was never anchored the contract reverts `UnknownParent`. In BOTH cases this function
+ * lets the error propagate and leaves the receipt file untouched so the user can simply retry later
+ * (the secret salt is never lost to a failed reveal).
  *
  * @param {object} opts
  * @param {string}  opts.receiptPath        the receipt written by runCommit
@@ -583,8 +621,31 @@ async function runReveal(opts) {
     });
   }
 
-  log(`reveal: revealing ${receipt.contentHash} as ${receipt.committer}...\n`);
-  const revealSent = await contract.reveal(receipt.contentHash, receipt.salt, receipt.uri || "");
+  // Route the reveal leg from what the receipt durably recorded at commit time (B-10.1). When the
+  // receipt carries a `parent` (a `vh commit --parent` claim), reuse buildRevealTx — which already
+  // supports a parent and routes to revealWithParent(contentHash, salt, uri, parent), recording the
+  // lineage edge. When absent it routes to the legacy reveal(), byte-for-byte unchanged (no regression).
+  // The contract checks the parent at REVEAL time: if the parent was never anchored it reverts
+  // UnknownParent and (since we let that propagate) the receipt is left intact for a later retry.
+  const revealTx = buildRevealTx({
+    contentHash: receipt.contentHash,
+    salt: receipt.salt,
+    uri: receipt.uri || "",
+    parent: receipt.parent, // null/undefined -> legacy reveal(); a hash -> revealWithParent()
+    contractAddress: receipt.contractAddress,
+    ethers: ethersLib,
+  });
+  const lineageNote = revealTx.parent ? ` with parent ${revealTx.parent}` : "";
+  log(`reveal: revealing ${receipt.contentHash}${lineageNote} as ${receipt.committer}...\n`);
+  const revealSent =
+    revealTx.parent == null
+      ? await contract.reveal(receipt.contentHash, receipt.salt, receipt.uri || "")
+      : await contract.revealWithParent(
+          receipt.contentHash,
+          receipt.salt,
+          receipt.uri || "",
+          revealTx.parent
+        );
   log(`  reveal tx: ${revealSent.hash}\n`);
   const revealReceiptTx = await revealSent.wait();
 

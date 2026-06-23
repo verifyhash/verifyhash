@@ -20,6 +20,7 @@ const { runVerifyProof } = require("./proof");
 const { runClaim, runCommit, runReveal } = require("./claim");
 const { runList } = require("./list");
 const { runShow } = require("./show");
+const { runLineage } = require("./lineage");
 
 function usage() {
   return [
@@ -37,6 +38,7 @@ function usage() {
     "  vh verify-proof <p> [opts] independently verify a portable proof artifact (offline + on-chain)",
     "  vh list [opts]             enumerate the registry read-only (discovery + audit)",
     "  vh show <0xhash> [opts]    look up ONE record by content hash (no local content needed)",
+    "  vh lineage <0xhash> [opts] walk the parent chain UP from a record to its lineage root (read-only)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -140,6 +142,18 @@ function usage() {
     "  --json                     emit a machine-readable JSON object instead of the human block",
     "  NOTE: `show` proves only that the hash is on-chain; it does NOT re-derive content. To bind a",
     "        record to real bytes you must still run `vh verify <path>`. Exits non-zero if NOT ANCHORED.",
+    "",
+    "lineage options (read-only walk UP the parent chain; provider only, never a signer/key):",
+    "  <0xhash>                   a 32-byte (0x + 64 hex) content hash to start the walk from",
+    "  --contract <address>       ContributionRegistry address (or env VH_CONTRACT)",
+    "  --rpc <url>                JSON-RPC endpoint (or env VH_RPC_URL / AMOY_RPC_URL)",
+    "  --max-depth <n>            cap the walk at n ancestors (default 256); reaching the cap prints a",
+    "                             clear note instead of looping forever on a pathological chain",
+    "  --json                     emit a machine-readable ordered ancestor array instead of the human block",
+    "  Walks child -> parent -> ... to the lineage root, printing each ancestor (contentHash, contributor,",
+    "  attribution, timestamp+ISO, blockNumber, uri). A `parent` is only the CHILD author's CLAIMED",
+    "  predecessor: it proves neither content ancestry nor a transfer of authorship. Exits non-zero if the",
+    "  start hash is NOT ANCHORED.",
     "",
   ].join("\n");
 }
@@ -1166,6 +1180,112 @@ async function cmdShow(argv) {
   return result.status === "ANCHORED" ? 0 : 4;
 }
 
+/**
+ * Parse `lineage` argv into { hash, contract, rpc, json, maxDepth }. Takes exactly one positional
+ * <0xhash>. Throws on unknown/incomplete flags or a duplicate/missing hash so a typo never silently
+ * walks the wrong thing (parser parity with `vh show`). The hash VALUE is shape-validated in runLineage
+ * so the same usage-grade error fires whether the hash came from the CLI or a programmatic caller.
+ * `--max-depth` must be a positive integer.
+ */
+function parseLineageArgs(argv) {
+  const opts = {
+    hash: undefined,
+    contract: undefined,
+    rpc: undefined,
+    json: false,
+    maxDepth: undefined,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--contract":
+        opts.contract = argv[++i];
+        if (opts.contract === undefined) throw new Error("--contract requires a value");
+        break;
+      case "--rpc":
+        opts.rpc = argv[++i];
+        if (opts.rpc === undefined) throw new Error("--rpc requires a value");
+        break;
+      case "--max-depth": {
+        const raw = argv[++i];
+        if (raw === undefined) throw new Error("--max-depth requires a value");
+        // A positive-integer cap; reject a zero/negative/non-integer here so a typo never silently
+        // changes how far the walk goes. (runLineage re-validates via normalizeMaxDepth for the
+        // programmatic path; this keeps the CLI usage error early and consistent.)
+        if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+          throw new Error(`--max-depth requires a positive integer, got: ${raw}`);
+        }
+        opts.maxDepth = Number(raw);
+        break;
+      }
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.hash !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.hash = a;
+    }
+  }
+  return opts;
+}
+
+async function cmdLineage(argv) {
+  let opts;
+  try {
+    opts = parseLineageArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.hash) {
+    process.stderr.write("error: `vh lineage` requires a <0xhash>\n\n" + usage());
+    return 2;
+  }
+
+  const ethers = require("ethers");
+
+  // Validate the hash shape BEFORE building a provider or reading any env/network — a malformed/short
+  // hash must hard-error with usage (exit 2) and never hit the network (parser parity with `vh show`).
+  const { normalizeContentHash } = require("./show");
+  try {
+    normalizeContentHash(opts.hash, ethers);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+
+  const contractAddress = opts.contract || process.env.VH_CONTRACT;
+  const rpcUrl = opts.rpc || process.env.VH_RPC_URL || process.env.AMOY_RPC_URL;
+  if (!rpcUrl) {
+    process.stderr.write(
+      "error: no RPC endpoint; pass --rpc <url> or set VH_RPC_URL / AMOY_RPC_URL\n"
+    );
+    return 1;
+  }
+
+  let result;
+  try {
+    // Read-only: provider only — `vh lineage` NEVER constructs a signer or touches a key.
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    result = await runLineage({
+      contentHash: opts.hash,
+      contractAddress,
+      provider,
+      maxDepth: opts.maxDepth,
+      json: opts.json,
+      ethers,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero when the START hash has no record so scripts/CI can branch on "NOT ANCHORED" — the
+  // same exit-4 contract `vh show` uses for a NOT ANCHORED hash, so the two read commands agree.
+  return result.status === "WALKED" ? 0 : 4;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -1189,6 +1309,8 @@ async function main(argv) {
       return cmdList(rest);
     case "show":
       return cmdShow(rest);
+    case "lineage":
+      return cmdLineage(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -1217,6 +1339,7 @@ module.exports = {
   cmdVerifyProof,
   cmdList,
   cmdShow,
+  cmdLineage,
   parseHashArgs,
   parseAnchorArgs,
   parseClaimArgs,
@@ -1226,5 +1349,6 @@ module.exports = {
   parseVerifyProofArgs,
   parseListArgs,
   parseShowArgs,
+  parseLineageArgs,
   usage,
 };

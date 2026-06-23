@@ -272,8 +272,27 @@ function buildRevealTx(opts) {
   };
 }
 
-/** Render the commit/reveal plan a `--dry-run` claim prints (no key, no network). */
-function formatDryRun(commitTx) {
+/**
+ * Render the commit/reveal plan a `--dry-run` claim prints (no key, no network).
+ *
+ * The optional `revealTx` (the built reveal leg from buildRevealTx) carries the lineage edge: when a
+ * `--parent` was given it routes the Step-2 reveal to `revealWithParent(contentHash, salt, uri, parent)`
+ * and the parent hash is shown so a user previewing a `vh claim --parent` write SEES the lineage edge
+ * they are about to record (parity with `vh anchor --dry-run`, which prints `parent:`). Without a
+ * parent the plan reads exactly as before — the legacy `reveal(contentHash, salt, uri)` line, byte for
+ * byte. A `revealTx` is always passed by runClaim; the parameter stays optional so an older caller that
+ * omits it degrades to the no-parent rendering rather than throwing.
+ *
+ * @param {object} commitTx  the built commit leg (from buildCommitTx)
+ * @param {object} [revealTx] the built reveal leg (from buildRevealTx); carries `parent`/`functionName`
+ */
+function formatDryRun(commitTx, revealTx) {
+  // The lineage edge to preview: a non-null parent means this claim routes its reveal to
+  // revealWithParent() and records the edge; null/absent means a lineage root via the legacy reveal().
+  const parent = revealTx && revealTx.parent != null ? revealTx.parent : null;
+  const revealFn =
+    revealTx && revealTx.functionName ? revealTx.functionName : parent == null ? "reveal" : "revealWithParent";
+
   const lines = [
     "DRY RUN — no transaction will be sent (commit-reveal attribution).",
     "",
@@ -282,6 +301,9 @@ function formatDryRun(commitTx) {
     `  committer:    ${commitTx.committer}`,
     `  salt:         ${commitTx.salt}   <-- SECRET: keep this to reveal later`,
     `  commitment:   ${commitTx.commitment}`,
+    // Lineage edge (T-10.1): show whether this claim is a root or a child of `parent`, and which reveal
+    // path (reveal vs revealWithParent) it routes to — so a dry-run reader sees the edge they'd record.
+    `  parent:       ${parent == null ? "(none) — lineage root" : parent}`,
   ];
   if (commitTx.git) {
     lines.push(
@@ -289,6 +311,13 @@ function formatDryRun(commitTx) {
       `  git scope:    ${commitTx.git.scope}`
     );
   }
+  // The Step-2 line names the EXACT reveal function and (when parented) the predecessor hash, so the
+  // printed plan never silently omits a lineage edge the user is about to record.
+  const step2 =
+    parent == null
+      ? `  Step 2 — after MIN_REVEAL_DELAY blocks, ${revealFn}(contentHash, salt, uri) is sent.`
+      : `  Step 2 — after MIN_REVEAL_DELAY blocks, ${revealFn}(contentHash, salt, uri, parent) is sent,\n` +
+        `           recording the lineage edge -> parent ${parent}.`;
   lines.push(
     "",
     "  Step 1 — commit() that WOULD be sent:",
@@ -296,7 +325,7 @@ function formatDryRun(commitTx) {
     `    value: ${commitTx.value}`,
     `    data:  ${commitTx.data}`,
     "",
-    "  Step 2 — after MIN_REVEAL_DELAY blocks, reveal(contentHash, salt, uri) is sent.",
+    step2,
     "  A mempool copier who lifts your reveal cannot win: their commitment (bound to THEIR",
     "  address) was never registered, so their reveal reverts. Attribution stays yours.",
     ""
@@ -637,16 +666,34 @@ async function runClaim(opts) {
     ethers: ethersLib,
   });
 
+  // Validate the optional `--parent` lineage edge BEFORE any network call (parser parity with
+  // `vh anchor`, whose buildAnchorTx runs normalizeParent up front). The edge is recorded only on the
+  // REVEAL leg (revealWithParent), but a malformed/self-referential parent is a typo the user must
+  // learn about immediately — NOT after commit() has already been broadcast (a real gas-spending,
+  // MIN_REVEAL_DELAY-waiting write) only to have the reveal reject it. A typo never silently drops the
+  // parent into a no-op commit. `normalizeParent` maps missing/empty/zero -> null (a lineage root) and
+  // hard-errors on a malformed non-zero value; the self-reference is rejected here, the contract still
+  // enforces UnknownParent/SelfParent authoritatively on-chain. Reuses anchor.js, not a reimplementation.
+  const { normalizeParent } = require("./anchor");
+  const parent = normalizeParent(opts.parent, ethersLib);
+  if (parent !== null && parent.toLowerCase() === commitTx.contentHash.toLowerCase()) {
+    throw new Error(
+      "refusing to reveal a record as its own parent (self-reference; the contract rejects it as SelfParent)"
+    );
+  }
+
   if (opts.dryRun) {
     const revealTx = buildRevealTx({
       contentHash: commitTx.contentHash,
       salt: commitTx.salt,
       uri: opts.uri,
-      parent: opts.parent,
+      parent, // already validated above (parity with the real submission path below)
       contractAddress: opts.contractAddress,
       ethers: ethersLib,
     });
-    log(formatDryRun(commitTx) + "\n");
+    // Pass the built revealTx so the printed plan shows the lineage edge (parent + revealWithParent)
+    // it would record — without it the preview would silently omit a `--parent` the user passed.
+    log(formatDryRun(commitTx, revealTx) + "\n");
     return { dryRun: true, commitTx, revealTx };
   }
 
@@ -726,14 +773,8 @@ async function runClaim(opts) {
 
   // --- Step 2: reveal ---
   // Route to revealWithParent() iff a non-zero predecessor was given (T-10.1); otherwise the legacy
-  // reveal(), byte-for-byte unchanged. Reuse the same parent normalization/self-ref guard as anchor.
-  const { normalizeParent } = require("./anchor");
-  const parent = normalizeParent(opts.parent, ethersLib);
-  if (parent !== null && parent.toLowerCase() === commitTx.contentHash.toLowerCase()) {
-    throw new Error(
-      "refusing to reveal a record as its own parent (self-reference; the contract rejects it as SelfParent)"
-    );
-  }
+  // reveal(), byte-for-byte unchanged. `parent` was validated up front (before any network call) so a
+  // malformed/self-referential value already hard-errored before commit() was ever broadcast.
   const lineageNote = parent == null ? "" : ` with parent ${parent}`;
   log(`claim: revealing ${commitTx.contentHash}${lineageNote}...\n`);
   const revealUri = opts.uri == null ? "" : String(opts.uri);

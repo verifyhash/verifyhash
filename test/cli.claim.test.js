@@ -216,6 +216,12 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
   // Dedicated key for the T-9.1 "default path resolves into an explicit base" commit test, used by
   // NO other test, so it runs against a pristine on-chain nonce (no cross-test nonce contention).
   const COMMITDIR_KEY = "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e"; // #6
+  // Dedicated key for the explicit---receipt-path test below. It previously reused DEV_KEYS[0] (alice),
+  // the same key the happy-path test uses; when both ran back-to-back each spun up its OWN NonceManager
+  // for that one account and the second could read a stale on-chain nonce ("Nonce too low") under load.
+  // Giving this test its own account (as the resume/toosoon/commitdir tests already do) removes that
+  // cross-test contention entirely — a test-isolation fix, not a weakened assertion.
+  const RECEIPT_KEY = "0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356"; // #7
 
   before(async function () {
     nodeProc = spawn(
@@ -294,7 +300,7 @@ describe("cli: vh claim — end to end (local hardhat node)", function () {
   });
 
   it("runClaim with an explicit --receipt path persists the receipt THERE (and nowhere else)", async function () {
-    const alice = managedSigner(DEV_KEYS[0]);
+    const alice = managedSigner(RECEIPT_KEY); // own account: no nonce contention with the happy-path test
     const f = writeFile(tmp("vh-claim-rcpt-"), "work.txt", "alice receipt " + Date.now());
     const expected = hashFile(f);
     const receiptPath = path.join(tmp("vh-claim-rcpt-out-"), "explicit.vhclaim.json");

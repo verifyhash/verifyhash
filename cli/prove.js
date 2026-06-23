@@ -19,16 +19,20 @@
 //   4. (Optional) `--anchor` first submits the root via anchor() so a fresh repo can be proven in
 //      one shot; this is the only path that needs a signer.
 //
-// Why this is tamper-evident: the leaf is keccak256(file bytes). Change one byte of the file and
-// its leaf changes, so the proof (built for the *original* leaf) no longer folds to the anchored
-// root and `verifyLeaf` returns false. That property is exactly what the test pins down.
+// Why this is tamper-evident: the leaf is the file's PATH-BOUND digest
+//   leaf = keccak256(DIR_LEAF_DOMAIN ++ relPath ++ 0x00 ++ keccak256(file bytes)).
+// Change one byte of the file and keccak256(file bytes) changes; rename the file and relPath
+// changes; either way the leaf changes, so the proof (built for the *original* leaf) no longer
+// folds to the anchored root and `verifyLeaf` returns false. That property is exactly what the
+// test pins down. (The leaf binds the path, so a single file's proof is tied to its location in
+// the repo, not just its bytes.)
 //
 // Split into pure pieces (buildProof) and an on-chain runner (runProve) so the end-to-end test can
 // drive it against a live hardhat node and assert the contract's verifyLeaf verdict directly.
 
 const path = require("path");
 const fs = require("fs");
-const { hashDir, hashFile } = require("./hash");
+const { hashDir } = require("./hash");
 
 const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
 const ABI = ARTIFACT.abi;
@@ -36,20 +40,23 @@ const ABI = ARTIFACT.abi;
 /**
  * Build (purely, no network) a Merkle proof for `filePath` within the repo at `rootDir`.
  *
- * Returns the directory's anchored root, the file's leaf (= keccak256 of its bytes), and the
- * proof. Replaying `proof` against `leaf` with sorted-pair hashing reproduces `root`, so the proof
- * is exactly what the contract's `verifyLeaf` accepts.
+ * Returns the directory's anchored root, the file's PATH-BOUND leaf
+ * (= keccak256(DIR_LEAF_DOMAIN ++ relPath ++ 0x00 ++ keccak256(file bytes))), and the proof.
+ * Replaying `proof` against `leaf` with sorted-pair hashing reproduces `root`, so the proof is
+ * exactly what the contract's `verifyLeaf` accepts (it tags the leaf with LEAF_TAG itself). The
+ * raw content digest is also returned as `contentHash` for display.
  *
  * @param {object} opts
  * @param {string} opts.file     path to a file that must live under rootDir
  * @param {string} opts.rootDir  the repository root directory to anchor/prove against
  * @returns {{
  *   root: string,
- *   leaf: string,
+ *   leaf: string,        // path-bound leaf (what on-chain verifyLeaf consumes)
+ *   contentHash: string, // bare keccak256(file bytes), for display
  *   proof: string[],
- *   file: string,       // path of the file relative to rootDir
+ *   file: string,        // path of the file relative to rootDir (forward slashes)
  *   rootDir: string,
- *   fileCount: number,  // number of files (leaves) in the tree
+ *   fileCount: number,   // number of files (leaves) in the tree
  * }}
  */
 function buildProof(opts) {
@@ -78,17 +85,22 @@ function buildProof(opts) {
     throw new Error(`file is not inside the repo root: ${absFile} (root: ${absRoot})`);
   }
 
-  const { root, leaves, proofFor } = hashDir(absRoot);
-  const leaf = hashFile(absFile);
-  // proofFor accepts a path relative to the root, an absolute path, or a leaf hash. Use the
-  // relative path so duplicate-content files still resolve to *this* file's position.
+  const { root, leaves, proofFor, leafFor } = hashDir(absRoot);
+  // The leaf the contract verifies is the PATH-BOUND digest, not the bare content hash. Look it up
+  // (and the proof) by the file's relative path so duplicate-content files still resolve to *this*
+  // file's position in the tree. proofFor/leafFor accept a rel path, an absolute path, or a leaf.
+  const leaf = leafFor(rel);
   const proof = proofFor(rel);
+  // The bare content digest is the matching entry's contentHash; surface it for transparency, and
+  // report the file's normalized (forward-slash) relative path.
+  const entry = leaves.find((l) => l.leaf === leaf);
 
   return {
     root,
     leaf,
+    contentHash: entry ? entry.contentHash : null,
     proof,
-    file: rel,
+    file: entry ? entry.path : rel,
     rootDir: absRoot,
     fileCount: leaves.length,
   };
@@ -100,7 +112,8 @@ function formatProof(p, extra) {
     `  repo root dir: ${p.rootDir}  (${p.fileCount} files)`,
     `  file:          ${p.file}`,
     `  merkle root:   ${p.root}`,
-    `  leaf:          ${p.leaf}`,
+    `  content hash:  ${p.contentHash}`,
+    `  leaf (path-bound): ${p.leaf}`,
     `  proof (${p.proof.length} sibling${p.proof.length === 1 ? "" : "s"}):`,
   ];
   if (p.proof.length === 0) {

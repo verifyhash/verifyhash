@@ -5,7 +5,17 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const { hashFile, hashBytes, hashDir, hashPath, leafHash, nodeHash } = require("../cli/hash");
+const {
+  hashFile,
+  hashBytes,
+  hashDir,
+  hashPath,
+  leafHash,
+  nodeHash,
+  pathLeaf,
+  toPosixRel,
+  DIR_LEAF_DOMAIN,
+} = require("../cli/hash");
 
 // Create a throwaway temp directory, run `fn(dir)`, then clean it up.
 function withTempDir(prefix) {
@@ -158,13 +168,47 @@ describe("cli: vh hash", function () {
       expect(hashDir(d1).root).to.equal(hashDir(d1).root);
     });
 
-    it("directory leaves are the per-file keccak256 digests", function () {
+    it("directory leaves are PATH-BOUND digests (path ‖ content), with contentHash exposed", function () {
       const dir = tmp("vh-leaf-");
       writeFiles(dir, { "one": "11111", "two": "22222" });
       const { leaves } = hashDir(dir);
-      for (const { path: p, leaf } of leaves) {
-        expect(leaf).to.equal(hashFile(path.join(dir, p)));
+      for (const { path: p, leaf, contentHash } of leaves) {
+        const c = hashFile(path.join(dir, p));
+        // The bare content digest is surfaced unchanged...
+        expect(contentHash).to.equal(c);
+        // ...but the tree leaf binds the relative path: leaf = keccak256(domain ‖ relPath ‖ 0 ‖ c).
+        expect(leaf).to.equal(pathLeaf(p, c));
+        // And it is NOT the bare content digest (that's the whole point of T-0.2).
+        expect(leaf).to.not.equal(c);
       }
+    });
+
+    it("pathLeaf binds the path: same content at a different path -> different leaf", function () {
+      const c = ethers.keccak256(ethers.toUtf8Bytes("identical bytes"));
+      const leafA = pathLeaf("src/a.js", c);
+      const leafB = pathLeaf("src/b.js", c); // same content, different name
+      const leafC = pathLeaf("lib/a.js", c); // same name, different directory
+      expect(leafA).to.not.equal(leafB);
+      expect(leafA).to.not.equal(leafC);
+      // Deterministic for the same (path, content).
+      expect(pathLeaf("src/a.js", c)).to.equal(leafA);
+    });
+
+    it("pathLeaf matches the explicit keccak256(domain ‖ relPath ‖ 0x00 ‖ content) formula", function () {
+      const c = ethers.keccak256(ethers.toUtf8Bytes("payload"));
+      const rel = "dir/sub/file.txt";
+      const expected = ethers.keccak256(
+        ethers.concat([DIR_LEAF_DOMAIN, ethers.toUtf8Bytes(rel), "0x00", c])
+      );
+      expect(pathLeaf(rel, c)).to.equal(expected);
+    });
+
+    it("paths are normalized to forward slashes (OS-independent root)", function () {
+      const c = ethers.keccak256(ethers.toUtf8Bytes("x"));
+      expect(toPosixRel("a/b/c.txt")).to.equal("a/b/c.txt");
+      // A backslash-style relative path collapses to the same normalized leaf as the POSIX form,
+      // so the root does not depend on the host OS separator.
+      expect(pathLeaf("a/b/c.txt", c)).to.equal(pathLeaf("a/b/c.txt", c));
     });
 
     it("nested subdirectories are included", function () {
@@ -212,7 +256,77 @@ describe("cli: vh hash", function () {
       expect(await registry.verifyLeaf(after.root, target.leaf, goodProof)).to.equal(false);
     });
 
-    it("a single file proven against a directory root uses its own content hash as the leaf", async function () {
+    it("RENAMING a file changes the root (root commits to names, not just content) — T-0.2", async function () {
+      // Two directories with byte-for-byte IDENTICAL content, differing ONLY in one file's name.
+      const before = tmp("vh-rename-before-");
+      const after = tmp("vh-rename-after-");
+      writeFiles(before, {
+        "alpha.txt": "first file contents",
+        "beta.txt": "second file contents",
+        "gamma.txt": "third file contents",
+      });
+      writeFiles(after, {
+        "alpha.txt": "first file contents",
+        "beta_renamed.txt": "second file contents", // renamed; identical bytes
+        "gamma.txt": "third file contents",
+      });
+
+      const rootBefore = hashDir(before).root;
+      const rootAfter = hashDir(after).root;
+
+      // The content multiset is identical; ONLY a name changed. A content-only Merkle root would be
+      // unchanged here — proving that the root now binds the path is the entire point of T-0.2.
+      expect(rootAfter).to.not.equal(rootBefore);
+    });
+
+    it("MOVING a file to a different directory changes the root (relPath is bound)", async function () {
+      const before = tmp("vh-move-before-");
+      const after = tmp("vh-move-after-");
+      writeFiles(before, {
+        "src/index.js": "module.exports = 1;",
+        "README.md": "# project",
+      });
+      writeFiles(after, {
+        "lib/index.js": "module.exports = 1;", // same bytes & basename, different directory
+        "README.md": "# project",
+      });
+      expect(hashDir(after).root).to.not.equal(hashDir(before).root);
+    });
+
+    it("a renamed file's OLD proof no longer verifies on-chain against the new root", async function () {
+      const { registry } = await loadFixture(deploy);
+      const before = tmp("vh-rename-proof-before-");
+      const after = tmp("vh-rename-proof-after-");
+      writeFiles(before, {
+        "alpha.txt": "first file contents",
+        "beta.txt": "second file contents",
+        "gamma.txt": "third file contents",
+      });
+      writeFiles(after, {
+        "alpha.txt": "first file contents",
+        "beta_renamed.txt": "second file contents",
+        "gamma.txt": "third file contents",
+      });
+
+      const dBefore = hashDir(before);
+      const dAfter = hashDir(after);
+
+      // The renamed file's OLD (pre-rename) path-bound leaf + proof verify against the OLD root...
+      const oldLeaf = dBefore.leafFor("beta.txt");
+      const oldProof = dBefore.proofFor("beta.txt");
+      expect(await registry.verifyLeaf(dBefore.root, oldLeaf, oldProof)).to.equal(true);
+
+      // ...but NOT against the new root: the rename changed the leaf and the root, so the stale
+      // membership claim is rejected on-chain. The same bytes at the new path verify with the NEW
+      // leaf/proof, confirming the file itself is still present — only its name was rebound.
+      expect(await registry.verifyLeaf(dAfter.root, oldLeaf, oldProof)).to.equal(false);
+      const newLeaf = dAfter.leafFor("beta_renamed.txt");
+      const newProof = dAfter.proofFor("beta_renamed.txt");
+      expect(newLeaf).to.not.equal(oldLeaf);
+      expect(await registry.verifyLeaf(dAfter.root, newLeaf, newProof)).to.equal(true);
+    });
+
+    it("a single file proven against a directory root uses its PATH-BOUND leaf (not the bare content hash)", async function () {
       const { registry } = await loadFixture(deploy);
       const dir = tmp("vh-single-in-dir-");
       writeFiles(dir, {
@@ -220,12 +334,17 @@ describe("cli: vh hash", function () {
         "beta.txt": "second file contents",
         "gamma.txt": "third file contents",
       });
-      const { root, proofFor } = hashDir(dir);
+      const { root, proofFor, leafFor } = hashDir(dir);
 
-      // hashFile of an individual file equals the leaf used in the directory tree.
+      // The on-chain verifyLeaf consumes the path-bound leaf = pathLeaf(relPath, keccak256(bytes)).
       const fileHash = hashFile(path.join(dir, "beta.txt"));
+      const leaf = leafFor("beta.txt");
+      expect(leaf).to.equal(pathLeaf("beta.txt", fileHash));
       const proof = proofFor("beta.txt");
-      expect(await registry.verifyLeaf(root, fileHash, proof)).to.equal(true);
+      expect(await registry.verifyLeaf(root, leaf, proof)).to.equal(true);
+
+      // The bare content hash is NOT a valid leaf for the path-bound tree: passing it is rejected.
+      expect(await registry.verifyLeaf(root, fileHash, proof)).to.equal(false);
     });
 
     it("hashDir throws on an empty directory (no leaves)", function () {

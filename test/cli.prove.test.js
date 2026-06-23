@@ -9,7 +9,7 @@ const http = require("http");
 
 const { buildProof, runProve, ABI } = require("../cli/prove");
 const { runAnchor } = require("../cli/anchor");
-const { hashFile, hashDir } = require("../cli/hash");
+const { hashFile, hashDir, pathLeaf } = require("../cli/hash");
 
 // ---------------------------------------------------------------------------
 // Helpers: throwaway temp dirs + a real local hardhat JSON-RPC node, mirroring
@@ -125,7 +125,14 @@ describe("cli: vh prove (repo-level Merkle proof)", function () {
 
       const dh = hashDir(dir);
       expect(built.root).to.equal(dh.root);
-      expect(built.leaf).to.equal(hashFile(path.join(dir, "src/index.js")));
+      // The proof leaf is the PATH-BOUND digest (what verifyLeaf consumes); the bare content digest
+      // is surfaced separately as contentHash.
+      const content = hashFile(path.join(dir, "src/index.js"));
+      expect(built.contentHash).to.equal(content);
+      expect(built.leaf).to.equal(pathLeaf("src/index.js", content));
+      expect(built.leaf).to.not.equal(content); // not the old content-only leaf
+      // It also matches the leaf hashDir recorded for that path.
+      expect(built.leaf).to.equal(dh.leafFor("src/index.js"));
       expect(built.fileCount).to.equal(5);
       // A 5-leaf tree is genuinely multi-level: this proof carries real interior siblings.
       expect(built.proof.length).to.be.greaterThan(1);

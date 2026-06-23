@@ -11,19 +11,37 @@
 //   * hashDir(path)   -> a *stable, sorted-leaf* Merkle root whose proofs verify against
 //     ContributionRegistry.verifyLeaf. The tree is DOMAIN-SEPARATED (RFC 6962 /
 //     OpenZeppelin style) so that a crafted interior node can never be re-presented as a
-//     leaf (second-preimage resistance):
-//       - a leaf is leafHash(c) = keccak256(LEAF_TAG ++ c), where c = keccak256(file bytes)
+//     leaf (second-preimage resistance), AND every leaf is *path-bound* so the root commits
+//     to file NAMES as well as their content:
+//       - each file's content digest is c = keccak256(file bytes)
+//       - the per-file leaf VALUE is the path-bound digest
+//             pathLeaf = keccak256(DIR_LEAF_DOMAIN ++ relPath ++ 0x00 ++ c)
+//         (DIR_LEAF_DOMAIN is `domainPrefix`; the 0x00 byte separates the variable-length
+//         relPath from the fixed-length content digest so no (relPath, c) pair can be
+//         re-segmented into a different (relPath', c') pair — an unambiguous encoding).
+//       - that pathLeaf is then domain-tagged for the tree:
+//             leafHash(pathLeaf) = keccak256(LEAF_TAG ++ pathLeaf)
 //       - an interior node is nodeHash(a,b) = keccak256(NODE_TAG ++ min(a,b) ++ max(a,b))
-//     The on-chain verifyLeaf applies LEAF_TAG to its content-digest argument itself and
-//     folds with NODE_TAG, so a root produced here is exactly the root the contract
-//     reconstructs from a content digest + proof. The two conventions are byte-identical.
+//     The on-chain verifyLeaf applies LEAF_TAG to whatever 32-byte value it is handed and
+//     folds with NODE_TAG. The CLI hands it the pathLeaf (NOT the bare content digest), so
+//     a root produced here is exactly the root the contract reconstructs from a pathLeaf +
+//     proof. The two conventions are byte-identical; the contract needs no change.
+//
+//     WHAT THE ROOT COMMITS TO. Because the path is hashed into every leaf, the directory
+//     root commits to the full set of (relPath, content) pairs — both the names and the
+//     bytes. Renaming a file (same bytes, new path) changes that file's pathLeaf and hence
+//     the root; moving a file between directories changes its relPath and hence the root;
+//     editing a byte changes c and hence the root. Two trees share a root iff they contain
+//     the identical set of files at the identical relative paths with identical content.
 //
 //     "Stable" means the root does not depend on filesystem enumeration order: leaves are
 //     sorted before the tree is built, so the same set of files always yields the same root.
+//     Relative paths are normalized to forward slashes so the root is identical regardless
+//     of the host OS path separator.
 
 const fs = require("fs");
 const path = require("path");
-const { keccak256, concat } = require("ethers");
+const { keccak256, concat, toUtf8Bytes } = require("ethers");
 
 /**
  * keccak256 of a single file's raw bytes, as a 0x-prefixed 32-byte hex string.
@@ -52,6 +70,49 @@ function hashBytes(bytes) {
 // interior node can never be replayed as a leaf (second-preimage resistance).
 const LEAF_TAG = "0x00";
 const NODE_TAG = "0x01";
+
+// Domain prefix for path-bound directory leaves (the `domainPrefix` in the leaf formula). A fixed,
+// versioned ASCII tag so a directory pathLeaf lives in its own value space: it can never collide
+// with a bare content digest, an on-chain anchor of a single file, or a leaf from a future scheme.
+// Bump the version suffix if the leaf encoding ever changes, to keep old and new roots disjoint.
+const DIR_LEAF_DOMAIN_STR = "verifyhash/dir-leaf/v1";
+const DIR_LEAF_DOMAIN = keccak256(toUtf8Bytes(DIR_LEAF_DOMAIN_STR)); // 32-byte fixed-length prefix
+
+// Separator byte between the variable-length relPath and the fixed-length content digest.
+const PATH_SEP = "0x00";
+
+/**
+ * Normalize a relative path to a canonical, OS-independent form: forward-slash separators with no
+ * leading "./". This makes the leaf (and thus the root) identical regardless of the host platform's
+ * path separator, so a repo hashed on Windows and on Linux yields the same root.
+ * @param {string} relPath
+ * @returns {string}
+ */
+function toPosixRel(relPath) {
+  return relPath.split(path.sep).join("/").replace(/^\.\//, "");
+}
+
+/**
+ * Path-bound directory leaf, the `dir leaf` of T-0.2:
+ *   pathLeaf(relPath, c) = keccak256(DIR_LEAF_DOMAIN ++ relPath ++ 0x00 ++ c)
+ * where c = keccak256(file bytes). Binding relPath into the leaf is what makes the directory root
+ * commit to file NAMES as well as content: rename a file (new relPath, same bytes) and its pathLeaf
+ * — and therefore the root — changes. The 0x00 separator + fixed-length 32-byte c give an
+ * unambiguous encoding: there is exactly one (relPath, c) split for any leaf preimage, so two
+ * distinct (relPath, content) pairs can never alias to the same leaf via boundary ambiguity.
+ *
+ * NOTE: this pathLeaf is the *content-digest-layer* value the on-chain verifyLeaf is handed — the
+ * verifier re-tags it with LEAF_TAG (keccak256(LEAF_TAG ++ pathLeaf)) to form the actual tree leaf,
+ * so the second-preimage protection of T-0.1 still applies on top of the path binding.
+ *
+ * @param {string} relPath file path relative to the repo root (normalized to forward slashes here)
+ * @param {string} contentDigest 0x bytes32, = keccak256(file bytes)
+ * @returns {string} 0x bytes32 path-bound leaf value
+ */
+function pathLeaf(relPath, contentDigest) {
+  const relBytes = toUtf8Bytes(toPosixRel(relPath));
+  return keccak256(concat([DIR_LEAF_DOMAIN, relBytes, PATH_SEP, contentDigest]));
+}
 
 /**
  * Domain-separated leaf hash, matching ContributionRegistry.leafHash:
@@ -181,17 +242,24 @@ function proofForIndex(layers, index) {
 }
 
 /**
- * Hash a directory into a stable sorted-leaf Merkle root.
+ * Hash a directory into a stable sorted-leaf Merkle root that commits to file NAMES and content.
  *
- * Each file contributes one leaf = keccak256(file bytes) — the same per-file digest
- * hashFile returns, so a single file proven against the directory root uses its own
- * content hash as the leaf. Duplicate-content files collapse to the same leaf value.
+ * Each file contributes one PATH-BOUND leaf:
+ *   leaf = pathLeaf(relPath, c) = keccak256(DIR_LEAF_DOMAIN ++ relPath ++ 0x00 ++ c)
+ * where c = keccak256(file bytes) is the file's content digest (= hashFile). Because relPath is
+ * hashed in, two files with identical bytes but different paths get DIFFERENT leaves, and renaming
+ * a file changes its leaf — so the root commits to the full set of (relPath, content) pairs.
+ *
+ * The returned per-file `leaf` is exactly the value the on-chain verifyLeaf expects as its
+ * `contentHash` argument (it tags it with LEAF_TAG itself); `contentHash` is also returned for
+ * transparency (the bare keccak256 of the file's bytes).
  *
  * @param {string} dirPath
  * @returns {{
  *   root: string,
- *   leaves: { path: string, leaf: string }[],   // per-file, sorted by leaf value
- *   proofFor: (relOrAbsPath: string) => string[]
+ *   leaves: { path: string, leaf: string, contentHash: string }[],   // per-file, sorted by leaf
+ *   proofFor: (relOrAbsPathOrLeaf: string) => string[],
+ *   leafFor: (relOrAbsPath: string) => string,                       // path-bound leaf for a file
  * }}
  */
 function hashDir(dirPath) {
@@ -199,12 +267,19 @@ function hashDir(dirPath) {
   if (files.length === 0) {
     throw new Error(`no files found under directory: ${dirPath}`);
   }
-  // Compute (path, leaf) pairs, then sort by leaf so the root is order-independent.
-  const pairs = files.map((f) => ({
-    path: path.relative(dirPath, f),
-    abs: f,
-    leaf: hashFile(f),
-  }));
+  // Compute (path, contentHash, leaf) triples. The tree leaf is the PATH-BOUND digest so the root
+  // commits to names+content; the bare contentHash is kept for display. Sort by leaf so the root is
+  // order-independent.
+  const pairs = files.map((f) => {
+    const rel = path.relative(dirPath, f);
+    const contentHash = hashFile(f);
+    return {
+      path: toPosixRel(rel),
+      abs: f,
+      contentHash,
+      leaf: pathLeaf(rel, contentHash),
+    };
+  });
 
   const { root, layers, sortedLeaves } = buildTree(pairs.map((p) => p.leaf));
 
@@ -218,25 +293,38 @@ function hashDir(dirPath) {
       return x < y ? -1 : x > y ? 1 : 0;
     });
 
-  function proofFor(target) {
-    // Allow lookup either by a leaf hash directly, or by file path (rel or abs).
-    let index = -1;
+  // Resolve a target (relative/absolute path, or a path-bound leaf hash) to its index in the sorted
+  // leaf layer. Path matching uses the normalized (forward-slash) relPath.
+  function indexFor(target) {
     if (/^0x[0-9a-fA-F]{64}$/.test(target)) {
-      index = sortedLeaves.findIndex((l) => BigInt(l) === BigInt(target));
-    } else {
-      const absTarget = path.isAbsolute(target) ? target : path.resolve(dirPath, target);
-      index = sortedPairs.findIndex(
-        (p) => p.abs === absTarget || p.path === target
-      );
+      return sortedLeaves.findIndex((l) => BigInt(l) === BigInt(target));
     }
+    const absTarget = path.isAbsolute(target) ? target : path.resolve(dirPath, target);
+    const normTarget = toPosixRel(target);
+    return sortedPairs.findIndex((p) => p.abs === absTarget || p.path === normTarget);
+  }
+
+  function proofFor(target) {
+    const index = indexFor(target);
     if (index < 0) throw new Error(`target not found in directory tree: ${target}`);
     return proofForIndex(layers, index);
   }
 
+  function leafFor(target) {
+    const index = indexFor(target);
+    if (index < 0) throw new Error(`target not found in directory tree: ${target}`);
+    return sortedPairs[index].leaf;
+  }
+
   return {
     root,
-    leaves: sortedPairs.map((p) => ({ path: p.path, leaf: p.leaf })),
+    leaves: sortedPairs.map((p) => ({
+      path: p.path,
+      leaf: p.leaf,
+      contentHash: p.contentHash,
+    })),
     proofFor,
+    leafFor,
   };
 }
 
@@ -264,7 +352,11 @@ module.exports = {
   hashPath,
   leafHash,
   nodeHash,
+  pathLeaf,
+  toPosixRel,
   buildTree,
   proofForIndex,
   listFiles,
+  DIR_LEAF_DOMAIN,
+  DIR_LEAF_DOMAIN_STR,
 };

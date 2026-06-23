@@ -66,7 +66,8 @@ function cmdHash(argv) {
   if (result.kind === "file") {
     process.stdout.write(result.root + "\n");
   } else {
-    // Directory: print the root, then each file's leaf for transparency.
+    // Directory: print the root, then each file's path-bound leaf (what verifyLeaf consumes) for
+    // transparency. The root commits to file NAMES and content, so the leaf binds the path.
     process.stdout.write(result.root + "\n");
     for (const { path: p, leaf } of result.leaves) {
       process.stdout.write(`${leaf}  ${p}\n`);

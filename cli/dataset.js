@@ -683,16 +683,21 @@ const NO_SOURCE_BUCKET = "(no source hint)";
  *   filesWithSourceHint: number,
  * }}
  */
-function runDatasetSummary(opts) {
-  if (!opts || typeof opts !== "object") throw new Error("runDatasetSummary requires options");
-  const { manifest: manifestPath } = opts;
-  const write = opts.stdout || ((s) => process.stdout.write(s));
-  if (!manifestPath) throw new Error("runDatasetSummary requires a <manifest> path");
-
-  // Strict read: a corrupt/edited/foreign manifest is rejected here, never half-accepted, BEFORE any
-  // aggregation. The file SET it commits to is the TRUSTED basis of the roll-up.
-  const manifest = readManifest(manifestPath);
-
+/**
+ * PURE aggregation core shared by `vh dataset summary` AND `vh dataset report`: given a validated
+ * manifest object, roll up the (UNTRUSTED) per-file {source, license} hints into histograms + counts.
+ * This is the SINGLE source of truth for the roll-up math, so `vh dataset report`'s histogram can never
+ * diverge from `vh dataset summary`'s (same buckets, same counts). It takes an already-validated
+ * manifest object (no I/O) and never mutates it.
+ *
+ * @param {object} manifest a manifest object that has passed validateManifest/readManifest
+ * @returns {{
+ *   root: string, fileCount: number,
+ *   licenses: Object<string,number>, sources: Object<string,number>,
+ *   filesWithLicenseHint: number, filesWithSourceHint: number,
+ * }}
+ */
+function aggregateManifest(manifest) {
   // Aggregate the UNTRUSTED hints. A file with no `hints.license` (or no hints at all) is counted under
   // the explicit no-hint bucket; ditto for source. We never silently omit a file from either histogram,
   // so the per-histogram counts always sum to fileCount.
@@ -712,7 +717,7 @@ function runDatasetSummary(opts) {
     if (source !== null) filesWithSourceHint++;
   }
 
-  const result = {
+  return {
     root: manifest.root,
     // Derive fileCount from the TRUSTED files array (not the OPTIONAL manifest.fileCount passthrough): a
     // valid third-party manifest may omit fileCount, and this keeps the field always present and always
@@ -723,6 +728,20 @@ function runDatasetSummary(opts) {
     filesWithLicenseHint,
     filesWithSourceHint,
   };
+}
+
+function runDatasetSummary(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetSummary requires options");
+  const { manifest: manifestPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runDatasetSummary requires a <manifest> path");
+
+  // Strict read: a corrupt/edited/foreign manifest is rejected here, never half-accepted, BEFORE any
+  // aggregation. The file SET it commits to is the TRUSTED basis of the roll-up.
+  const manifest = readManifest(manifestPath);
+
+  // The roll-up math lives in the SHARED pure aggregator so summary and report can never diverge.
+  const result = aggregateManifest(manifest);
 
   if (opts.json) {
     write(JSON.stringify(result) + "\n");
@@ -782,6 +801,231 @@ function _histogramLines(hist) {
   });
   if (entries.length === 0) return ["    (no files)"];
   return entries.map(([value, count]) => `    ${String(count).padStart(6)}  ${value}`);
+}
+
+// =================================================================================================
+// `vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]` — ONE self-contained,
+// deterministic evidence document a compliance/due-diligence reviewer files.
+//
+// WHY THIS EXISTS
+//   A reviewer (or an automated compliance pipeline) needs ONE portable artifact that consolidates
+//   everything a manifest already proves: the dataset IDENTITY (root + fileCount), the provenance/
+//   license roll-up, the standing trust caveats, and — optionally — a live-tree verification verdict.
+//   Today that takes several commands (`vh dataset summary`, `vh dataset verify`); `vh dataset report`
+//   produces the single document to attach to a filing.
+//
+//   IT INVENTS NO NEW MATH. The dataset identity comes from the strict `readManifest`; the
+//   provenance/license roll-up REUSES the SAME pure `aggregateManifest` core `vh dataset summary` uses
+//   (the histogram orders identically via `_histogramLines`); the optional verification REUSES
+//   `runDatasetVerify` VERBATIM. So the report can never drift from the commands it consolidates.
+//
+//   PURELY OFFLINE for the manifest-only path: no dataset tree, no provider, no key, no network. With
+//   `--verify <dir>` it re-derives the root from the live tree (still offline — no network) and embeds
+//   the MATCH/MISMATCH verdict + per-file ADDED/REMOVED/CHANGED localization.
+//
+// DETERMINISM
+//   The default human output is a Markdown document with a STABLE section order and a histogram ordered
+//   by the SAME `_histogramLines` rule, so two runs over the same manifest produce byte-identical
+//   Markdown — suitable to attach to a filing and to diff in CI.
+
+/**
+ * Build (purely) the consolidated report MODEL from a validated manifest object + an OPTIONAL verify
+ * result. No I/O, no aggregation math of its own — it composes `aggregateManifest`'s roll-up with the
+ * (already-run) `runDatasetVerify` result. This is the SAME object the `--json` mode emits.
+ *
+ * @param {object} manifest a validated manifest object (from readManifest)
+ * @param {object|null} [verifyResult] the object runDatasetVerify returns, or null when no --verify
+ * @returns {{
+ *   root: string, fileCount: number,
+ *   licenses: Object<string,number>, sources: Object<string,number>,
+ *   filesWithLicenseHint: number, filesWithSourceHint: number,
+ *   verify?: { status: string, added: any[], removed: any[], changed: any[] }
+ * }}
+ */
+function buildDatasetReport(manifest, verifyResult) {
+  const agg = aggregateManifest(manifest); // SAME roll-up as `vh dataset summary` — never re-derived
+  const model = {
+    root: agg.root,
+    fileCount: agg.fileCount,
+    licenses: agg.licenses,
+    sources: agg.sources,
+    filesWithLicenseHint: agg.filesWithLicenseHint,
+    filesWithSourceHint: agg.filesWithSourceHint,
+  };
+  if (verifyResult) {
+    // Carry ONLY the localization arrays the report documents; the verdict is verifyResult.status,
+    // which (per runDatasetVerify) is the AUTHORITATIVE recomputed-root-vs-manifest-root comparison.
+    model.verify = {
+      status: verifyResult.status,
+      added: verifyResult.diff.added,
+      removed: verifyResult.diff.removed,
+      changed: verifyResult.diff.changed,
+    };
+  }
+  return model;
+}
+
+/**
+ * Render the consolidated report MODEL as a DETERMINISTIC Markdown document. Stable section order; the
+ * histogram reuses `_histogramLines` so the ordering matches `vh dataset summary` exactly and two runs
+ * over the same manifest produce byte-identical Markdown. LEADS with the trust posture (reusing
+ * TRUST_NOTE verbatim) so the caveats can never drift, and NEVER implies a live-tree verify happened
+ * when it did not.
+ * @param {object} model the object buildDatasetReport returns
+ * @returns {string} the full Markdown document (newline-terminated)
+ */
+function formatDatasetReportMarkdown(model) {
+  const lines = [];
+  lines.push("# verifyhash dataset report");
+  lines.push("");
+
+  // --- 1. Trust posture FIRST (reuse TRUST_NOTE verbatim; do NOT overclaim). -----------------------
+  lines.push("## Trust posture");
+  lines.push("");
+  lines.push("The file SET (relPath + content) is bound into the Merkle root and is trustworthy.");
+  lines.push(TRUST_NOTE);
+  lines.push("");
+  lines.push(
+    "This report is NOT a timestamp: it does NOT prove the dataset is \"unaltered since date T\", nor " +
+      "authorship/licensing. That time-anchored claim needs the human-owned signing/timestamp " +
+      "trust-root (needs-human, P-3)."
+  );
+  lines.push("");
+
+  // --- 2. Dataset identity (root + fileCount), from the strict readManifest. -----------------------
+  lines.push("## Dataset identity");
+  lines.push("");
+  lines.push(`- root: \`${model.root}\``);
+  lines.push(`- fileCount: ${model.fileCount}`);
+  lines.push("");
+
+  // --- 3. Verification status. Either the embedded --verify verdict, or a PLAIN statement that NO ---
+  //         live-tree verification was performed (so the report never implies a verify that didn't run).
+  lines.push("## Verification status");
+  lines.push("");
+  if (!model.verify) {
+    lines.push(
+      "NO live-tree verification was performed. The root above is the manifest's CLAIM until it is " +
+        "re-derived from the live tree (run `vh dataset report <manifest> --verify <dir>`, or " +
+        "`vh dataset verify <dir> --manifest <manifest>`)."
+    );
+  } else {
+    const v = model.verify;
+    lines.push(`- verdict: **${v.status}** (re-derived from the live tree — AUTHORITATIVE)`);
+    if (v.status === VERIFY_STATUS.MATCH) {
+      lines.push(
+        "- The live tree is byte-for-byte (and name-for-name) what the manifest committed to " +
+          "(no ADDED / REMOVED / CHANGED)."
+      );
+    } else {
+      lines.push(
+        `- changes: ${v.changed.length} CHANGED, ${v.added.length} ADDED, ${v.removed.length} REMOVED ` +
+          "(a rename surfaces as REMOVED + ADDED — the root commits to file NAMES)."
+      );
+      for (const c of v.changed) {
+        lines.push(`  - CHANGED \`${c.path}\``);
+        lines.push(`    - old: \`${c.oldContentHash}\``);
+        lines.push(`    - new: \`${c.newContentHash}\``);
+      }
+      for (const a of v.added) {
+        lines.push(`  - ADDED \`${a.path}\` (\`${a.contentHash}\`) — present now, not in the manifest`);
+      }
+      for (const rm of v.removed) {
+        lines.push(`  - REMOVED \`${rm.path}\` (\`${rm.contentHash}\`) — in the manifest, gone now`);
+      }
+    }
+  }
+  lines.push("");
+
+  // --- 4. Provenance / license roll-up. SAME aggregation + SAME histogram ordering as summary. ------
+  lines.push("## Provenance / license roll-up (CLAIMED — untrusted hints)");
+  lines.push("");
+  lines.push(
+    "The {source, license} hints below are UNTRUSTED, self-asserted metadata NOT bound into the root. " +
+      "This counts what the dataset CLAIMS; it does NOT verify any license/source is correct. " +
+      "\"(no license hint)\" means the manifest ASSERTS NOTHING for that file, NOT that it is unlicensed."
+  );
+  lines.push("");
+  lines.push(
+    `### Licenses (${model.filesWithLicenseHint}/${model.fileCount} files carry a license hint)`
+  );
+  lines.push("");
+  lines.push("```");
+  for (const line of _histogramLines(model.licenses)) lines.push(line);
+  lines.push("```");
+  lines.push("");
+  lines.push(
+    `### Sources (${model.filesWithSourceHint}/${model.fileCount} files carry a source hint)`
+  );
+  lines.push("");
+  lines.push("```");
+  for (const line of _histogramLines(model.sources)) lines.push(line);
+  lines.push("```");
+  lines.push("");
+
+  // Trailing newline so the document ends cleanly; join with \n for byte-stable output.
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * Orchestrate `vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]`. Reads the manifest
+ * via the strict `readManifest`, OPTIONALLY runs `runDatasetVerify` against a live tree (REUSED
+ * verbatim), composes the consolidated report MODEL (reusing `aggregateManifest`), and emits it as
+ * deterministic Markdown (default) or a machine-readable JSON object (`--json`). With `--out <p>` it
+ * writes the report to the caller's EXPLICIT path (never cwd) and names the file; without `--out` it
+ * prints to stdout.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
+ * @param {string} [opts.verifyDir] when given, re-derive the root from this live tree (reuses runDatasetVerify)
+ * @param {boolean}[opts.json]    emit a machine-readable object instead of the Markdown document
+ * @param {string} [opts.out]     write the report to this explicit path (caller-chosen; never cwd)
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {{
+ *   model: object,
+ *   verifyStatus: string|null,
+ *   out: string|null,
+ * }}
+ */
+function runDatasetReport(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetReport requires options");
+  const { manifest: manifestPath, verifyDir } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runDatasetReport requires a <manifest> path");
+
+  // Strict read: a corrupt/edited/foreign manifest is rejected here, never half-accepted, BEFORE the
+  // report is composed. The file SET it commits to is the TRUSTED basis of the document.
+  const manifest = readManifest(manifestPath);
+
+  // OPTIONAL live-tree verification: REUSE runDatasetVerify verbatim (no re-implementation). We pass a
+  // no-op stdout so the verify's own block is not printed — the report embeds the verdict itself. The
+  // verify recomputes the root from the bytes on disk, so a hand-edited manifest root cannot fake MATCH.
+  let verifyResult = null;
+  if (verifyDir) {
+    verifyResult = runDatasetVerify({ dir: verifyDir, manifest: manifestPath, stdout: () => {} });
+  }
+
+  const model = buildDatasetReport(manifest, verifyResult);
+
+  // Render the document: deterministic Markdown by default, machine-readable JSON with --json.
+  const document = opts.json ? JSON.stringify(model) + "\n" : formatDatasetReportMarkdown(model);
+
+  let outAbs = null;
+  if (opts.out) {
+    // Write to the EXACT caller-chosen path (resolved to absolute so the success line names precisely
+    // the file written) — never silently the cwd. The ONLY side effect.
+    outAbs = path.resolve(opts.out);
+    fs.writeFileSync(outAbs, document);
+    write(`dataset report written: ${outAbs}\n`);
+  } else {
+    write(document);
+  }
+
+  return {
+    model,
+    verifyStatus: verifyResult ? verifyResult.status : null,
+    out: outAbs,
+  };
 }
 
 // =================================================================================================
@@ -1103,6 +1347,10 @@ module.exports = {
   formatDatasetDiff,
   runDatasetSummary,
   formatDatasetSummary,
+  aggregateManifest,
+  buildDatasetReport,
+  formatDatasetReportMarkdown,
+  runDatasetReport,
   buildDatasetProof,
   runDatasetProve,
   runDatasetVerifyProof,

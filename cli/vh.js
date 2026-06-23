@@ -27,6 +27,7 @@ const {
   runDatasetVerify,
   runDatasetDiff,
   runDatasetSummary,
+  runDatasetReport,
   runDatasetProve,
   runDatasetVerifyProof,
 } = require("./dataset");
@@ -53,6 +54,7 @@ function usage() {
     "  vh dataset verify <dir> --manifest <p>  re-derive the root + per-file diff vs a manifest (OFFLINE)",
     "  vh dataset diff <manifestA> <manifestB>  OFFLINE manifest-to-manifest change report (no tree/key/net)",
     "  vh dataset summary <manifest>   OFFLINE provenance/license roll-up over a manifest (no tree/key/net)",
+    "  vh dataset report <manifest> [--verify <dir>]  ONE deterministic evidence document for a filing",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "",
@@ -245,6 +247,23 @@ function usage() {
     "  hints are UNTRUSTED, self-asserted metadata NOT bound into the root — this counts what the dataset",
     "  CLAIMS, it does NOT verify any license/source is correct. '(no license hint)' means the manifest",
     "  asserts nothing, NOT that the file is unlicensed. Exit 0; usage error 2; corrupt/missing manifest 1.",
+    "",
+    "dataset report options (ONE deterministic evidence document; OFFLINE; NO key, NO network):",
+    "  <manifest>                 REQUIRED: a manifest written by `vh dataset build`",
+    "  --verify <dir>             OPTIONAL: re-derive the root from this live tree (REUSES dataset verify)",
+    "                             and embed the MATCH/MISMATCH verdict + per-file ADDED/REMOVED/CHANGED.",
+    "                             Without it, the report states plainly that NO live-tree verify was done.",
+    "  --out <path>               write the report to this explicit path (caller-chosen; never cwd); the",
+    "                             exact file written is named. Without it the report prints to stdout.",
+    "  --json                     emit { root, fileCount, licenses, sources, filesWithLicenseHint,",
+    "                             filesWithSourceHint, verify? } instead of the Markdown document",
+    "  Reads the manifest strictly (a corrupt/foreign manifest is rejected) and CONSOLIDATES the dataset",
+    "  identity (root + fileCount), the provenance/license roll-up (the SAME aggregation as `vh dataset",
+    "  summary`), and the standing trust caveats into ONE document. Default human output is DETERMINISTIC",
+    "  Markdown (byte-identical across runs over the same manifest). It LEADS with the trust posture and",
+    "  does NOT overclaim: it is NOT a timestamp ('unaltered since date T' needs a human-signed step).",
+    "  Exit: with --verify, 0 MATCH / 3 MISMATCH (CI can gate); without --verify, 0 on a well-formed",
+    "  manifest; usage error 2; corrupt/missing manifest (or bad --verify dir) 1.",
     "",
     "dataset prove options (OFFLINE set-membership of ONE file; NO key, NO network):",
     "  --file <path>              REQUIRED: the single file to prove was a member of the dataset",
@@ -1632,6 +1651,37 @@ function parseDatasetSummaryArgs(argv) {
 }
 
 /**
+ * Parse `dataset report` argv into { manifest, verifyDir, out, json }. Takes EXACTLY one positional
+ * manifest path, an optional --verify <dir>, an optional --out <p>, and an optional --json. Throws on a
+ * missing/extra positional or an unknown/incomplete flag, so a typo never silently reports the wrong (or
+ * no) manifest or verifies a surprise tree (parser parity with the other dataset subcommands).
+ */
+function parseDatasetReportArgs(argv) {
+  const opts = { manifest: undefined, verifyDir: undefined, out: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--verify":
+        opts.verifyDir = argv[++i];
+        if (opts.verifyDir === undefined) throw new Error("--verify requires a value");
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.manifest !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.manifest = a;
+    }
+  }
+  return opts;
+}
+
+/**
  * Parse `dataset prove` argv into { file, manifest, out, json }. Takes NO positional (the file is the
  * REQUIRED --file flag, the manifest the REQUIRED --manifest flag), so a stray positional hard-errors —
  * a typo never silently proves the wrong file or writes to a surprise path (parser parity with the others).
@@ -1696,6 +1746,9 @@ function cmdDataset(argv) {
   if (sub === "summary") {
     return cmdDatasetSummary(rest);
   }
+  if (sub === "report") {
+    return cmdDatasetReport(rest);
+  }
   if (sub === "prove") {
     return cmdDatasetProve(rest);
   }
@@ -1705,7 +1758,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | diff | summary | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | summary | report | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -1863,6 +1916,49 @@ function cmdDatasetSummary(argv) {
 }
 
 /**
+ * `vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]` — ONE self-contained,
+ * deterministic evidence document. Reads the manifest strictly, consolidates the dataset identity +
+ * the provenance/license roll-up (REUSES the SAME aggregation as `vh dataset summary`) + the trust
+ * caveats, and OPTIONALLY embeds a live-tree verification verdict (REUSES `runDatasetVerify`). PURELY
+ * OFFLINE for the manifest-only path (no tree/provider/key/network); `--verify` adds an offline live-
+ * tree re-derive. Exit codes: WITH --verify, mirror `vh dataset verify` (0 MATCH / 3 MISMATCH) so CI
+ * can gate; WITHOUT --verify, exit 0 on a well-formed manifest; 2 on a usage error; 1 on a runtime
+ * error (missing/corrupt manifest, or a bad --verify dir).
+ */
+function cmdDatasetReport(argv) {
+  let opts;
+  try {
+    opts = parseDatasetReportArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset report` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runDatasetReport({
+      manifest: opts.manifest,
+      verifyDir: opts.verifyDir,
+      out: opts.out,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // WITH --verify the report carries a verdict: mirror `vh dataset verify` (0 MATCH / 3 MISMATCH) so a
+  // pipeline can gate on the embedded verification. WITHOUT --verify there is no verdict — a well-formed
+  // manifest is exit 0.
+  if (result.verifyStatus === "MISMATCH") return 3;
+  return 0;
+}
+
+/**
  * `vh dataset prove --file <p> --manifest <m> [--out <p>] [--json]` — build an OFFLINE set-membership
  * proof that ONE file was a member of the manifest's dataset. NO key, NO network. Exit 0 on MEMBER, 3
  * on NOT A MEMBER (so scripts/CI can branch), 2 on a usage error, 1 on a runtime error.
@@ -1996,12 +2092,14 @@ module.exports = {
   cmdDatasetVerify,
   cmdDatasetDiff,
   cmdDatasetSummary,
+  cmdDatasetReport,
   cmdDatasetProve,
   cmdDatasetVerifyProof,
   parseDatasetBuildArgs,
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,
   parseDatasetSummaryArgs,
+  parseDatasetReportArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
   parseHashArgs,

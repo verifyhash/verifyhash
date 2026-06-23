@@ -38,6 +38,7 @@ const {
   runDatasetVerify,
   runDatasetDiff,
   runDatasetSummary,
+  runDatasetReport,
   NO_LICENSE_BUCKET,
   NO_SOURCE_BUCKET,
   buildDatasetProof,
@@ -51,6 +52,7 @@ const {
   parseDatasetVerifyArgs,
   parseDatasetDiffArgs,
   parseDatasetSummaryArgs,
+  parseDatasetReportArgs,
   parseDatasetProveArgs,
   parseDatasetVerifyProofArgs,
 } = require("../cli/vh");
@@ -1405,6 +1407,244 @@ describe("cli: vh dataset build (T-13.1)", function () {
       try {
         expect(await main(["dataset", "summary", "/no/such/manifest.json"])).to.equal(1);
         expect(await main(["dataset", "summary", badPath])).to.equal(1);
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------------
+  // T-15.1: `vh dataset report <manifest> [--verify <dir>] [--json] [--out <p>]` — ONE self-contained,
+  // deterministic evidence document a reviewer files.
+  // ---------------------------------------------------------------------------------------------------
+  describe("vh dataset report (T-15.1): ONE deterministic evidence document", function () {
+    // Build a manifest for `files` (+ optional hints) and return { dir, manifestPath } so a test can
+    // also verify against the live `dir`. Every temp dir self-cleans in afterEach.
+    function buildFixture(files, hints, prefix) {
+      const dir = tmp((prefix || "rep") + "-tree-");
+      writeFiles(dir, files);
+      const manifestPath = path.join(tmp((prefix || "rep") + "-man-"), "manifest.json");
+      runDatasetBuild({ dir, out: manifestPath, hints, stdout: () => {} });
+      return { dir, manifestPath };
+    }
+
+    it("manifest-only Markdown carries root, fileCount, the SAME histogram as summary, + trust caveats", function () {
+      const { manifestPath } = buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB", "c.txt": "CCC", "d.txt": "DDD" },
+        {
+          "a.txt": { license: "MIT", source: "corpus-X" },
+          "b.txt": { license: "MIT", source: "corpus-X" },
+          "c.txt": { license: "Apache-2.0", source: "internal" },
+        },
+        "rep-md"
+      );
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, stdout: (s) => lines.push(s) });
+      const out = lines.join("");
+
+      // Identity.
+      expect(out).to.contain(res.model.root);
+      expect(out).to.contain("fileCount: 4");
+      // Trust posture LEADS the document, reuses the verbatim TRUST_NOTE wording, and does not overclaim.
+      expect(out.indexOf("Trust posture")).to.be.lessThan(out.indexOf("Dataset identity"));
+      expect(out).to.contain("UNTRUSTED");
+      expect(out).to.contain("NOT a timestamp");
+      expect(out).to.contain("needs-human");
+      // Provenance roll-up uses the SAME histogram lines `vh dataset summary` produces.
+      const summaryLines = [];
+      runDatasetSummary({ manifest: manifestPath, stdout: (s) => summaryLines.push(s) });
+      const sumOut = summaryLines.join("");
+      // The "2  MIT" / "(no license hint)" histogram rows are byte-shared between the two commands.
+      expect(out).to.contain("MIT");
+      expect(out).to.contain(NO_LICENSE_BUCKET);
+      expect(out).to.contain(NO_SOURCE_BUCKET);
+      // Both render via the same _histogramLines: the exact "     2  MIT" row appears in both outputs.
+      expect(sumOut).to.contain("     2  MIT");
+      expect(out).to.contain("     2  MIT");
+      // No --verify: the report says PLAINLY that no live-tree verify happened (never implies one).
+      expect(out).to.contain("NO live-tree verification was performed");
+      expect(out).to.contain("CLAIM");
+      expect(res.verifyStatus).to.equal(null);
+    });
+
+    it("is DETERMINISTIC: two runs over the same manifest produce byte-identical Markdown", function () {
+      const { manifestPath } = buildFixture(
+        { "z.txt": "ZZZ", "m.txt": "MMM", "a.txt": "AAA" },
+        { "z.txt": { license: "MIT" }, "m.txt": { license: "MIT" }, "a.txt": { license: "BSD-3-Clause" } },
+        "rep-det"
+      );
+      const run1 = [];
+      const run2 = [];
+      runDatasetReport({ manifest: manifestPath, stdout: (s) => run1.push(s) });
+      runDatasetReport({ manifest: manifestPath, stdout: (s) => run2.push(s) });
+      expect(run1.join("")).to.equal(run2.join(""));
+    });
+
+    it("--json round-trips and carries the same fields (no verify key without --verify)", function () {
+      const { manifestPath } = buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB" },
+        { "a.txt": { license: "MIT", source: "corpus-X" } },
+        "rep-json"
+      );
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, json: true, stdout: (s) => lines.push(s) });
+      const parsed = JSON.parse(lines.join(""));
+      expect(parsed.root).to.equal(res.model.root);
+      expect(parsed.fileCount).to.equal(2);
+      expect(parsed.licenses).to.deep.equal({ MIT: 1, [NO_LICENSE_BUCKET]: 1 });
+      expect(parsed.sources).to.deep.equal({ "corpus-X": 1, [NO_SOURCE_BUCKET]: 1 });
+      expect(parsed.filesWithLicenseHint).to.equal(1);
+      expect(parsed.filesWithSourceHint).to.equal(1);
+      expect(parsed).to.not.have.property("verify"); // no --verify => no verify section
+      // JSON carries the SAME histogram object summary produces (single shared aggregator).
+      const sumLines = [];
+      runDatasetSummary({ manifest: manifestPath, json: true, stdout: (s) => sumLines.push(s) });
+      const sum = JSON.parse(sumLines.join(""));
+      expect(parsed.licenses).to.deep.equal(sum.licenses);
+      expect(parsed.sources).to.deep.equal(sum.sources);
+    });
+
+    it("--verify against the MATCHING tree embeds a MATCH section (exit 0 via main)", async function () {
+      const { dir, manifestPath } = buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB" },
+        { "a.txt": { license: "MIT" } },
+        "rep-match"
+      );
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, verifyDir: dir, stdout: (s) => lines.push(s) });
+      const out = lines.join("");
+      expect(res.verifyStatus).to.equal("MATCH");
+      expect(out).to.contain("MATCH");
+      expect(out).to.contain("byte-for-byte");
+      expect(out).to.not.contain("NO live-tree verification was performed");
+
+      // main() mirrors `vh dataset verify`: exit 0 on MATCH.
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      let code;
+      try {
+        code = await main(["dataset", "report", manifestPath, "--verify", dir]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(0);
+    });
+
+    it("--verify against an EDITED tree embeds MISMATCH + the changed file and exits 3", async function () {
+      const { dir, manifestPath } = buildFixture(
+        { "a.txt": "AAA", "b.txt": "BBB" },
+        undefined,
+        "rep-mismatch"
+      );
+      // Edit one file's bytes AFTER the manifest — the root re-derived from disk now differs.
+      fs.writeFileSync(path.join(dir, "a.txt"), "EDITED");
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, verifyDir: dir, stdout: (s) => lines.push(s) });
+      const out = lines.join("");
+      expect(res.verifyStatus).to.equal("MISMATCH");
+      expect(out).to.contain("MISMATCH");
+      expect(out).to.contain("CHANGED");
+      expect(out).to.contain("a.txt");
+
+      // --json carries the verify localization too.
+      const jlines = [];
+      const jres = runDatasetReport({ manifest: manifestPath, verifyDir: dir, json: true, stdout: (s) => jlines.push(s) });
+      const parsed = JSON.parse(jlines.join(""));
+      expect(parsed.verify.status).to.equal("MISMATCH");
+      expect(parsed.verify.changed.map((c) => c.path)).to.contain("a.txt");
+      expect(jres.verifyStatus).to.equal("MISMATCH");
+
+      // main() mirrors `vh dataset verify`: exit 3 on MISMATCH.
+      const orig = process.stdout.write.bind(process.stdout);
+      process.stdout.write = () => true;
+      let code;
+      try {
+        code = await main(["dataset", "report", manifestPath, "--verify", dir]);
+      } finally {
+        process.stdout.write = orig;
+      }
+      expect(code).to.equal(3);
+    });
+
+    it("--out writes EXACTLY that file (and names it) and leaves the working tree clean", function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "rep-out");
+      const outDir = tmp("rep-out-dst-");
+      const outPath = path.join(outDir, "report.md");
+      const cwdBefore = fs.readdirSync(process.cwd());
+
+      const lines = [];
+      const res = runDatasetReport({ manifest: manifestPath, out: outPath, stdout: (s) => lines.push(s) });
+      expect(res.out).to.equal(path.resolve(outPath));
+      // The file was written at the explicit path; the success line names it.
+      expect(fs.existsSync(outPath)).to.equal(true);
+      expect(lines.join("")).to.contain(path.resolve(outPath));
+      // The file content is the SAME deterministic Markdown the stdout path prints.
+      const stdoutLines = [];
+      runDatasetReport({ manifest: manifestPath, stdout: (s) => stdoutLines.push(s) });
+      expect(fs.readFileSync(outPath, "utf8")).to.equal(stdoutLines.join(""));
+      // No cwd litter: the working tree is unchanged.
+      expect(fs.readdirSync(process.cwd())).to.deep.equal(cwdBefore);
+    });
+
+    it("rejects a corrupt/foreign manifest (exit 1) — no half-accept", function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "rep-corrupt");
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      const badPath = path.join(tmp("rep-corrupt-bad-"), "m.json");
+      fs.writeFileSync(badPath, JSON.stringify(m));
+      expect(() => runDatasetReport({ manifest: badPath, stdout: () => {} })).to.throw(
+        /root must be a 0x-prefixed 32-byte hex/
+      );
+      const foreignPath = path.join(tmp("rep-foreign-"), "f.json");
+      fs.writeFileSync(foreignPath, JSON.stringify({ kind: "not-a-manifest", schemaVersion: 1 }));
+      expect(() => runDatasetReport({ manifest: foreignPath, stdout: () => {} })).to.throw(
+        /not a verifyhash dataset manifest/
+      );
+    });
+
+    // ---- CLI wiring + exit codes -------------------------------------------------------------------
+    it("parseDatasetReportArgs parses positional + --verify/--out/--json; rejects unknowns / extras", function () {
+      expect(parseDatasetReportArgs(["/m"])).to.deep.equal({
+        manifest: "/m",
+        verifyDir: undefined,
+        out: undefined,
+        json: false,
+      });
+      expect(parseDatasetReportArgs(["/m", "--verify", "/d", "--out", "/o", "--json"])).to.deep.equal({
+        manifest: "/m",
+        verifyDir: "/d",
+        out: "/o",
+        json: true,
+      });
+      expect(() => parseDatasetReportArgs(["/m", "--bogus"])).to.throw(/unknown flag/);
+      expect(() => parseDatasetReportArgs(["/m", "/n"])).to.throw(/unexpected extra argument/);
+      expect(() => parseDatasetReportArgs(["/m", "--verify"])).to.throw(/--verify requires a value/);
+    });
+
+    it("main() exit 2 (usage) on a missing positional / extra positional / unknown flag", async function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "rep-usage");
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "report"])).to.equal(2); // no positional
+        expect(await main(["dataset", "report", manifestPath, manifestPath])).to.equal(2); // extra positional
+        expect(await main(["dataset", "report", manifestPath, "--bogus"])).to.equal(2); // unknown flag
+      } finally {
+        process.stderr.write = orig;
+      }
+    });
+
+    it("main() exit 1 on a missing / corrupt manifest (runtime error)", async function () {
+      const { manifestPath } = buildFixture({ "a.txt": "AAA" }, undefined, "rep-rt");
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.root = "0xnothex";
+      const badPath = path.join(tmp("rep-rt-bad-"), "m.json");
+      fs.writeFileSync(badPath, JSON.stringify(m));
+      const orig = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        expect(await main(["dataset", "report", "/no/such/manifest.json"])).to.equal(1);
+        expect(await main(["dataset", "report", badPath])).to.equal(1);
       } finally {
         process.stderr.write = orig;
       }

@@ -79,6 +79,10 @@ commit time, so even it is crash-recoverable.
 > Keep the receipt private until you reveal: it contains the secret salt. After a successful reveal the
 > commitment is single-use and spent, so the receipt is no longer sensitive.
 
+The full receipt JSON schema (every field, which are trusted vs untrusted hints), the commit→reveal
+resume lifecycle, and the directory-manifest diff semantics are specified in
+[`docs/RECEIPTS.md`](docs/RECEIPTS.md).
+
 `vh verify` is read-only: it re-derives the content hash and compares it to what is anchored, which
 is exactly the integrity check the trust model requires. It needs only an RPC URL — no key, no
 funds.
@@ -98,4 +102,6 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
 
 - [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not.
 - [`docs/MERKLE-LEAVES.md`](docs/MERKLE-LEAVES.md) — what a directory root commits to (paths + bytes).
+- [`docs/RECEIPTS.md`](docs/RECEIPTS.md) — the receipt JSON schema (trusted vs hints), the
+  commit→reveal resume lifecycle, and the directory-manifest diff semantics.
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.

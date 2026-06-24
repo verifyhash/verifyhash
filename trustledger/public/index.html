@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrustLedger — Three-Way Trust-Account Reconciliation</title>
+<style>
+  body { font: 15px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+         color: #1a1a1a; max-width: 880px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.1rem; margin-top: 1.6rem; }
+  .note { color: #555; font-size: .9rem; }
+  fieldset { border: 1px solid #ddd; border-radius: 6px; margin: 1rem 0; padding: 1rem; }
+  legend { font-weight: 600; padding: 0 .4rem; }
+  label { display: block; margin: .6rem 0 .2rem; font-weight: 600; }
+  select, input[type=file] { font: inherit; }
+  button { font: inherit; padding: .5rem 1rem; border-radius: 6px; border: 1px solid #0a6b2f;
+           background: #0a6b2f; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .verdict { display: inline-block; padding: .5rem 1rem; border-radius: 6px; font-weight: 700;
+             font-size: 1.05rem; margin: 1rem 0; }
+  .verdict.pass { background: #e6f4ea; color: #0a6b2f; border: 1px solid #0a6b2f; }
+  .verdict.fail { background: #fdeaea; color: #b00020; border: 1px solid #b00020; }
+  .err { color: #b00020; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; margin: .6rem 0; }
+  th, td { border: 1px solid #ddd; padding: .4rem .6rem; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sev { display: inline-block; padding: .05rem .45rem; border-radius: 4px; font-size: .8rem; font-weight: 700; }
+  .sev.error { background: #fdeaea; color: #b00020; }
+  .sev.warning { background: #fff6e0; color: #8a5a00; }
+  .sev.info { background: #eef3fb; color: #244a87; }
+  .none { color: #555; font-style: italic; }
+  .downloads a { display: inline-block; margin-right: 1rem; }
+  iframe { width: 100%; height: 480px; border: 1px solid #ddd; border-radius: 6px; margin-top: 1rem; }
+  .disclaimer { background: #fffbe6; border: 1px solid #e6d77a; border-radius: 6px;
+                padding: .6rem .9rem; font-size: .85rem; margin: 1rem 0; }
+</style>
+</head>
+<body>
+<h1>TrustLedger — Three-Way Trust-Account Reconciliation</h1>
+<p class="note">Drop your three monthly files. Your browser reads them and sends
+their contents to this server; the reconciliation runs in memory and nothing is
+stored on disk. The result, including the downloadable HTML and CSV audit packet,
+comes straight back to your browser.</p>
+<div class="disclaimer"><strong>Disclaimer.</strong> This tool AIDS reconciliation.
+The broker remains the legal trust-account custodian and is solely responsible for
+the accuracy of the trust-account records. It is tamper-evidence and a reconciliation
+aid only — NOT a trusted timestamp, NOT legal, accounting, or audit advice, and NOT a
+substitute for a CPA's review.</div>
+
+<form id="f">
+  <fieldset>
+    <legend>The three files</legend>
+    <label for="bank">Bank statement (CSV or OFX/QFX)</label>
+    <input id="bank" type="file" accept=".csv,.ofx,.qfx,.txt" required>
+    <label for="ledger">QuickBooks trust ledger (CSV)</label>
+    <input id="ledger" type="file" accept=".csv,.txt" required>
+    <label for="rentroll">Rent roll / tenant sub-ledger (CSV)</label>
+    <input id="rentroll" type="file" accept=".csv,.txt" required>
+  </fieldset>
+  <fieldset>
+    <legend>Governing policy (optional)</legend>
+    <label for="state">State trust-account rules</label>
+    <select id="state">
+      <option value="">Baseline (no per-state policy)</option>
+      <option value="ca-example">CA (example / illustrative)</option>
+    </select>
+  </fieldset>
+  <button id="go" type="submit">Reconcile</button>
+</form>
+
+<div id="result"></div>
+
+<script>
+(function () {
+  "use strict";
+  var form = document.getElementById("f");
+  var result = document.getElementById("result");
+
+  // ---- read a chosen file as text via the browser's FileReader. -------------
+  function read(input) {
+    return new Promise(function (resolve, reject) {
+      var file = input.files && input.files[0];
+      if (!file) { reject(new Error("please choose the " + input.id + " file")); return; }
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result)); };
+      r.onerror = function () { reject(new Error("could not read " + input.id)); };
+      r.readAsText(file);
+    });
+  }
+
+  // ---- integer cents -> "$1,234.56" (exact; no float drift). ----------------
+  // The server is the source of truth for cents; this is display-only.
+  function fmtCents(cents) {
+    if (cents === null || cents === undefined) return "—";
+    var n = Number(cents);
+    var neg = n < 0;
+    var abs = Math.abs(n);
+    var whole = Math.floor(abs / 100);
+    var frac = abs % 100;
+    var dollars = String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    var cc = frac < 10 ? "0" + frac : String(frac);
+    return (neg ? "-$" : "$") + dollars + "." + cc;
+  }
+
+  function escapeHtml(s) {
+    return String(s === null || s === undefined ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  // ---- build an in-browser download link from text (no network round-trip). -
+  function downloadLink(text, mime, filename, caption) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+    a.download = filename;
+    a.textContent = caption;
+    return a;
+  }
+
+  // ---- render the three balances the broker watches. ------------------------
+  function renderBalances(b) {
+    var rows = [
+      ["Bank balance (per statement)", b.bank],
+      ["Adjusted bank balance", b.adjustedBank],
+      ["Book balance (per ledger)", b.book],
+      ["Sub-ledger total (beneficiaries)", b.subledger],
+      ["Reconciled balance", b.reconciled]
+    ];
+    var body = rows.map(function (r) {
+      return "<tr><td>" + escapeHtml(r[0]) + "</td><td class='num'>" +
+        escapeHtml(fmtCents(r[1])) + "</td></tr>";
+    }).join("");
+    return "<h2>The three balances</h2><table><thead><tr><th>Line</th>" +
+      "<th class='num'>Amount</th></tr></thead><tbody>" + body + "</tbody></table>";
+  }
+
+  // ---- render the exception table. ------------------------------------------
+  function renderExceptions(exceptions) {
+    var head = "<h2>Exceptions (" + exceptions.length + ")</h2><table><thead><tr>" +
+      "<th>Severity</th><th>Type</th><th>Label</th><th class='num'>Amount</th>" +
+      "<th>Detail</th></tr></thead><tbody>";
+    var body;
+    if (!exceptions.length) {
+      body = "<tr><td colspan='5' class='none'>No exceptions — every line reconciled.</td></tr>";
+    } else {
+      body = exceptions.map(function (e) {
+        var sev = String(e.severity || "info");
+        return "<tr><td><span class='sev " + escapeHtml(sev) + "'>" +
+          escapeHtml(sev.toUpperCase()) + "</span></td>" +
+          "<td>" + escapeHtml(e.type) + "</td>" +
+          "<td>" + escapeHtml(e.label) + "</td>" +
+          "<td class='num'>" + escapeHtml(fmtCents(e.amount)) + "</td>" +
+          "<td>" + escapeHtml(e.detail) + "</td></tr>";
+      }).join("");
+    }
+    return head + body + "</tbody></table>";
+  }
+
+  function render(d) {
+    var cls = d.pass ? "pass" : "fail";
+    var verdict = d.pass ? "PASS — three-way reconciliation ties out"
+                         : "FAIL — see exceptions";
+
+    var html = "<div class='verdict " + cls + "' id='verdict'>" +
+      escapeHtml(verdict) + "</div>" +
+      "<p id='summary'>" + escapeHtml(d.summary || "") + "</p>" +
+      renderBalances(d.balances) +
+      renderExceptions(d.exceptions || []) +
+      "<h2>Download the audit packet</h2>" +
+      "<p class='downloads' id='downloads'></p>";
+    result.innerHTML = html;
+
+    var dl = document.getElementById("downloads");
+    dl.appendChild(downloadLink(
+      d.reportHtml, "text/html", "reconciliation-packet.html", "Download HTML packet"));
+    dl.appendChild(downloadLink(
+      d.reportCsv, "text/csv", "reconciliation-exceptions.csv", "Download CSV exceptions"));
+
+    var frame = document.createElement("iframe");
+    frame.title = "Audit packet preview";
+    result.appendChild(frame);
+    frame.srcdoc = d.reportHtml;
+  }
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var go = document.getElementById("go");
+    go.disabled = true;
+    result.innerHTML = "<p>Reconciling…</p>";
+
+    Promise.all([
+      read(document.getElementById("bank")),
+      read(document.getElementById("ledger")),
+      read(document.getElementById("rentroll"))
+    ]).then(function (texts) {
+      var body = { bank: texts[0], ledger: texts[1], rentroll: texts[2] };
+      var state = document.getElementById("state").value;
+      if (state) { body.state = state; }
+      return fetch("/api/reconcile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+    }).then(function (r) {
+      go.disabled = false;
+      if (!r.ok) {
+        result.innerHTML = "<p class='err' id='error'>Error (" +
+          escapeHtml(r.data.error || "error") + "): " +
+          escapeHtml(r.data.message || "") + "</p>";
+        return;
+      }
+      render(r.data);
+    }).catch(function (e) {
+      go.disabled = false;
+      result.innerHTML = "<p class='err' id='error'>" +
+        escapeHtml(e.message || String(e)) + "</p>";
+    });
+  });
+})();
+</script>
+</body>
+</html>

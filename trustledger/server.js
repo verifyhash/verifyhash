@@ -41,6 +41,8 @@
 // AIDS reconciliation; the broker remains the responsible trust-account custodian.
 
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 
 const ingest = require("./ingest");
 const report = require("./report");
@@ -245,11 +247,29 @@ function sendError(res, err) {
   sendJson(res, status, { error: code, message });
 }
 
-// The static single-page upload UI. No framework, no CDN, no inline reconcile
-// logic duplicated from the engine — it only reads the three dropped files with
-// the browser's FileReader and POSTs their text to /api/reconcile, then renders
-// the returned balances + the report HTML. Deterministic, self-contained string.
+// The canonical single-page upload UI lives in trustledger/public/index.html —
+// ONE self-contained file (no framework, no CDN) a designer can edit without
+// touching server code. The server serves THAT file verbatim; this embedded copy
+// is a byte-faithful FALLBACK so the door still works if the file is ever missing
+// (e.g. a partial deploy). Both read the three dropped files with the browser's
+// FileReader, POST their text to /api/reconcile, and render the returned verdict,
+// balances, exception table, and download links. Read once + cached: the file is
+// immutable at deploy time, so this stays I/O-cheap and deterministic per process.
+const PUBLIC_INDEX = path.join(__dirname, "public", "index.html");
+let cachedIndexHtml = null;
+
 function indexHtml() {
+  if (cachedIndexHtml != null) return cachedIndexHtml;
+  try {
+    cachedIndexHtml = fs.readFileSync(PUBLIC_INDEX, "utf8");
+  } catch (_) {
+    cachedIndexHtml = embeddedIndexHtml();
+  }
+  return cachedIndexHtml;
+}
+
+// The byte-faithful fallback page (used only when public/index.html is absent).
+function embeddedIndexHtml() {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -443,6 +463,8 @@ module.exports = {
   makeHandler,
   reconcilePayload,
   indexHtml,
+  embeddedIndexHtml,
+  PUBLIC_INDEX,
   HttpError,
   MAX_BODY_BYTES,
   todayISO,

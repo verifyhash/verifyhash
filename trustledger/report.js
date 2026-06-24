@@ -40,6 +40,7 @@
 const ingest = require("./ingest");
 const match = require("./match");
 const reconcile = require("./reconcile");
+const policyMod = require("./policy");
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -114,6 +115,23 @@ const DISCLAIMER_LINES = Object.freeze([
 
 const DISCLAIMER_TEXT = DISCLAIMER_LINES.join(" ");
 
+// An EXTRA disclaimer sentence appended ONLY when a per-state policy governed the
+// run. It states plainly that the PASS/FAIL verdict reflects the SELECTED policy's
+// reviewed severities — and that the policy itself is still NOT legal advice and
+// must be reviewed by a CPA/counsel (cross-references the P-5 #1/#2 disclaimers).
+// Templated with the governing policy's state label so the packet names WHAT
+// governed it.
+function policyDisclaimerLine(stateLabel) {
+  return (
+    `This run's PASS/FAIL verdict reflects the SELECTED trust-rule policy ` +
+    `"${stateLabel}", which overrides the built-in baseline severities. ` +
+    "Selecting a policy does NOT make this packet legal advice: the policy " +
+    "itself — its per-state severities and statute citations — is a DRAFT that " +
+    "a qualified CPA or legal counsel must review and adopt for your " +
+    "jurisdiction before you rely on this verdict."
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Build the deterministic packet MODEL from the three normalized record sets.
 //
@@ -122,7 +140,7 @@ const DISCLAIMER_TEXT = DISCLAIMER_LINES.join(" ");
 // renderers print. Returned model is JSON-serializable and order-stable.
 // ---------------------------------------------------------------------------
 
-function buildPacket({ bank, book, rentroll, reportDate, period, opening, toleranceCents }) {
+function buildPacket({ bank, book, rentroll, reportDate, period, opening, toleranceCents, policy }) {
   if (!Array.isArray(bank)) throw new ReportError("bank must be a NormalizedRecord[]");
   if (!Array.isArray(book)) throw new ReportError("book must be a NormalizedRecord[]");
   if (!Array.isArray(rentroll)) throw new ReportError("rentroll must be a NormalizedRecord[]");
@@ -133,12 +151,62 @@ function buildPacket({ bank, book, rentroll, reportDate, period, opening, tolera
   // 1) Pair bank<->book lines.
   const matchResult = match.reconcile(bank, book);
 
+  // Resolve the reconcile tolerance. A per-state policy MAY declare its own
+  // `toleranceCents` (some statutes permit a de-minimis rounding band; most
+  // require an exact tie, i.e. 0). PRECEDENCE: a policy's toleranceCents, when
+  // present, OVERRIDES the CLI/default tolerance — the broker's reviewed
+  // jurisdiction rule, not an ad-hoc command-line value, governs how close the
+  // three balances must come. This matters because the tolerance feeds tiesOut
+  // and the bank/book + book/sub mismatch exceptions, which in turn drive the
+  // PASS/FAIL verdict; computing them under a tolerance DIFFERENT from the
+  // policy the packet names would be a silent discrepancy. Without a policy
+  // toleranceCents the CLI/default value is used unchanged (byte-for-byte the
+  // prior behaviour).
+  const cliTolerance = Number.isInteger(toleranceCents) ? toleranceCents : 0;
+  const effectiveTolerance =
+    policy && Number.isInteger(policy.toleranceCents)
+      ? policy.toleranceCents
+      : cliTolerance;
+
   // 2) The three-balance check + classified exceptions.
-  const rec = reconcile.reconcile(bank, book, rentroll, {
+  const rawRec = reconcile.reconcile(bank, book, rentroll, {
     matchResult,
     opening: opening || { bank: 0, book: 0 },
-    toleranceCents: Number.isInteger(toleranceCents) ? toleranceCents : 0,
+    toleranceCents: effectiveTolerance,
   });
+
+  // 2b) Apply the reviewed per-state policy (if any) over the reconcile result
+  //     BEFORE anything reads severities. applyPolicy is PURE and, with no
+  //     policy, returns the SAME object reference — so the no-policy path is
+  //     byte-for-byte the built-in baseline. With a policy, the overridden
+  //     severities (and citations) flow into the counts, the PASS/FAIL verdict,
+  //     the exit code, and the rendered report uniformly.
+  const rec = policyMod.applyPolicy(rawRec, policy || null);
+  const policyMeta = policy
+    ? {
+        state: policy.state,
+        // The reconcile tolerance this policy imposed, when it declared one (else
+        // null — the CLI/default tolerance governed). Surfaced so the packet
+        // names the actual band the verdict was computed under, never implying a
+        // stricter/looser tie than was applied.
+        toleranceCents: Number.isInteger(policy.toleranceCents)
+          ? policy.toleranceCents
+          : null,
+        // Surface only the overrides that actually changed a present exception,
+        // each with its citation when the policy supplies one, so the report can
+        // ground the verdict in the rule it rests on.
+        overrides: Object.keys(policy.severities)
+          .sort()
+          .map((type) => ({
+            type,
+            severity: policy.severities[type],
+            citation:
+              policy.citations && policy.citations[type] != null
+                ? policy.citations[type]
+                : null,
+          })),
+      }
+    : null;
 
   // 3) Per-beneficiary sub-ledger balances (sorted by party for stable output).
   const subBalances = reconcile.tenantBalances(rentroll);
@@ -150,6 +218,10 @@ function buildPacket({ bank, book, rentroll, reportDate, period, opening, tolera
   const exceptions = rec.exceptions.map((e) => ({
     type: e.type,
     severity: e.severity,
+    // A policy override may attach a statute/rule citation to the exception; the
+    // renderers surface it so the verdict is grounded in the rule. null when the
+    // governing policy (or the baseline) supplies none.
+    citation: e.citation != null ? e.citation : null,
     amount: e.amount,
     direction: direction(e.amount),
     label: e.label,
@@ -183,11 +255,21 @@ function buildPacket({ bank, book, rentroll, reportDate, period, opening, tolera
   // the beneficiaries, not just the totals.
   const pass = rec.tiesOut && counts.error === 0;
 
+  // Disclaimer: the three baseline lines verbatim (so the no-policy packet is
+  // byte-for-byte unchanged), plus ONE extra line naming the governing policy
+  // whenever one was selected.
+  const disclaimer = DISCLAIMER_LINES.slice();
+  if (policyMeta) disclaimer.push(policyDisclaimerLine(policyMeta.state));
+
   return {
     schema: "trustledger.reconciliation-packet/v1",
     reportDate,
     period: period || null,
-    disclaimer: DISCLAIMER_LINES.slice(),
+    // The policy (state label + the applied overrides/citations) that governed
+    // this run, or null for the built-in baseline. Names WHICH policy decided the
+    // verdict so the report and --json are self-describing.
+    policy: policyMeta,
+    disclaimer,
     pass,
     tiesOut: rec.tiesOut,
     balances: rec.balances,
@@ -267,12 +349,15 @@ function renderHTML(model) {
                 `<span class="src">[${esc(r.source || "?")}]</span></div>`
             )
             .join("\n");
+          const cite = e.citation
+            ? `<div class="cite"><strong>Policy citation:</strong> ${esc(e.citation)}</div>`
+            : "";
           return (
             `<tr>` +
             `<td>${sevBadge(e.severity)}</td>` +
             `<td>${esc(e.label)}</td>` +
             `<td class="num">${esc(fmtCents(e.amount))}</td>` +
-            `<td>${esc(e.detail)}${recs ? `<div class="recs">${recs}</div>` : ""}</td>` +
+            `<td>${esc(e.detail)}${cite}${recs ? `<div class="recs">${recs}</div>` : ""}</td>` +
             `</tr>`
           );
         })
@@ -282,6 +367,39 @@ function renderHTML(model) {
   const disclaimerHTML = model.disclaimer
     .map((p) => `<p>${esc(p)}</p>`)
     .join("\n");
+
+  // Governing-policy section: only rendered when a per-state policy was selected.
+  // Names the policy and lists each severity override with its citation, so the
+  // verdict is auditable back to the rule it rests on.
+  let policySection = "";
+  if (model.policy) {
+    const ovRows = model.policy.overrides
+      .map(
+        (o) =>
+          `<tr><td>${esc(o.type)}</td><td>${sevBadge(o.severity)}</td>` +
+          `<td>${o.citation ? esc(o.citation) : '<span class="src">(no citation supplied)</span>'}</td></tr>`
+      )
+      .join("\n");
+    const tolNote =
+      model.policy.toleranceCents != null
+        ? ` The three balances were reconciled under this policy's tolerance of
+<strong>${esc(fmtCents(model.policy.toleranceCents))}</strong> (the band within
+which the balances are treated as tying out).`
+        : "";
+    policySection = `
+<h2>Governing policy</h2>
+<p>This reconciliation was scored under the per-state trust-rule policy
+<strong>${esc(model.policy.state)}</strong>, which overrides the built-in
+baseline severities as follows. The PASS/FAIL verdict above reflects these
+reviewed severities.${tolNote}</p>
+<table>
+<thead><tr><th>Exception type</th><th>Severity</th><th>Citation</th></tr></thead>
+<tbody>
+${ovRows || '<tr><td colspan="3" class="none">No overrides.</td></tr>'}
+</tbody>
+</table>
+`;
+  }
 
   return `<!doctype html>
 <html lang="en">
@@ -308,6 +426,8 @@ function renderHTML(model) {
   .recs { margin-top: .35rem; }
   .rec { font-size: .82rem; color: #444; }
   .src { color: #999; }
+  .cite { font-size: .82rem; color: #6b3a00; background: #fff7ea; border-left: 3px solid #e6b800;
+          padding: .25rem .5rem; margin: .35rem 0; }
   .none { color: #0a6b2f; }
   .disclaimer { background: #fffbe6; border: 1px solid #e6d77a; border-radius: 6px;
                 padding: .75rem 1rem; margin: 1rem 0; font-size: .9rem; }
@@ -320,7 +440,9 @@ function renderHTML(model) {
 <h1>TrustLedger — Three-Way Trust-Account Reconciliation</h1>
 <p class="meta">Report date: <strong>${esc(model.reportDate)}</strong>${
     model.period ? ` &middot; Period: <strong>${esc(model.period)}</strong>` : ""
-  }</p>
+  } &middot; Policy: <strong>${esc(
+    model.policy ? model.policy.state : "Built-in baseline severities"
+  )}</strong></p>
 
 <div class="verdict ${passClass}">${esc(verdict)}</div>
 
@@ -328,7 +450,7 @@ function renderHTML(model) {
 <strong>Disclaimer.</strong>
 ${disclaimerHTML}
 </div>
-
+${policySection}
 <h2>The three balances</h2>
 <p>The trust account is in balance only when the adjusted bank balance, the book
 balance, and the sum of the beneficiary sub-ledgers all agree.</p>
@@ -401,10 +523,12 @@ function renderExceptionsCSV(model) {
     "record_party",
     "record_memo",
     "record_source",
-    "detail"
+    "detail",
+    "policy_citation"
   );
 
   for (const e of model.exceptions) {
+    const cite = e.citation || "";
     if (e.records.length === 0) {
       row(
         e.severity,
@@ -418,7 +542,8 @@ function renderExceptionsCSV(model) {
         "",
         "",
         "",
-        e.detail
+        e.detail,
+        cite
       );
       continue;
     }
@@ -435,7 +560,8 @@ function renderExceptionsCSV(model) {
         r.party,
         r.memo,
         r.source,
-        e.detail
+        e.detail,
+        cite
       );
     }
   }
@@ -449,6 +575,13 @@ function renderBalancesCSV(model) {
   const lines = [];
   const row = (...fields) => lines.push(fields.map(csvField).join(","));
   row("section", "label", "amount_cents", "amount");
+  // Name the governing policy so the spreadsheet is self-describing too.
+  row(
+    "policy",
+    model.policy ? model.policy.state : "Built-in baseline severities",
+    "",
+    ""
+  );
   row("balance", "bank", String(b.bank), fmtCents(b.bank));
   row("balance", "adjusted_bank", String(b.adjustedBank), fmtCents(b.adjustedBank));
   row("balance", "book", String(b.book), fmtCents(b.book));

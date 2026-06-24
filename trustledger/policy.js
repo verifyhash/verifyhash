@@ -34,7 +34,10 @@
 //     values are REUSED from EXCEPTION/SEVERITY, so a typo'd type is a
 //     validation error rather than a silently-ignored key.
 
-const { EXCEPTION, SEVERITY } = require("./reconcile");
+const fs = require("fs");
+const path = require("path");
+
+const { EXCEPTION, SEVERITY, compareExceptions } = require("./reconcile");
 
 // Bump only on an INCOMPATIBLE schema change. readPolicy rejects anything else.
 const SCHEMA_VERSION = 1;
@@ -205,6 +208,15 @@ function sortedMap(m) {
 // are left untouched. Deterministic and side-effect-free: the input result is
 // not mutated.
 //
+// RE-SORT AFTER ESCALATION. reconcile.js sorts its exceptions errors-first, and
+// the HTML/CSV renderers (and the human reading the signed packet) rely on that
+// order so an out-of-trust ERROR sits at the top. Because a policy can ESCALATE
+// a warning/info row to ERROR (or de-escalate), the input order is no longer
+// valid for the new severities. We re-apply reconcile's exact stable comparator
+// (compareExceptions, imported — not re-implemented — so the two cannot drift)
+// so a freshly-escalated ERROR re-sorts to the top exactly as a natively
+// detected one would. Order-only; the verdict/counts are order-independent.
+//
 // When `policy` is null/undefined the INPUT is returned UNCHANGED (same object
 // reference) — the no-policy path is byte-for-byte today's DEFAULT_SEVERITY
 // baseline behaviour.
@@ -258,11 +270,90 @@ function applyPolicy(reconcileResult, policy) {
     return next;
   });
 
+  // Re-sort under the NEW (possibly escalated) severities, using reconcile's
+  // own stable comparator. .sort is in-place on our freshly-built array (the
+  // input result and its exceptions array are untouched), so this stays pure.
+  exceptions.sort(compareExceptions);
+
   return {
     balances: reconcileResult.balances,
     tiesOut: reconcileResult.tiesOut,
     exceptions,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Bundled per-state fixture policies + `--state <code>` resolution.
+// ---------------------------------------------------------------------------
+//
+// The product ships a small set of DRAFT / NOT-LEGAL-ADVICE skeleton policies
+// under trustledger/fixtures/policy. `vh trust reconcile --state <code>` lets a
+// broker pick one WITHOUT having to point at a file path, by naming the policy's
+// `state` label (or, equivalently, the fixture filename). This is the ONLY part
+// of this module that touches the filesystem, and it reads only from the
+// package's own bundled fixtures directory — never a caller path — so the result
+// stays deterministic and the rest of the module stays pure.
+
+const BUNDLED_DIR = path.join(__dirname, "fixtures", "policy");
+
+// Normalize a state code/label for comparison: lowercase, collapse runs of
+// non-alphanumerics to a single space, trim. So "California", "california",
+// and "CALIFORNIA  " all resolve alike, and a verbose label like
+// "EXAMPLE-STATE (illustrative override)" can be addressed by its leading code.
+function normStateCode(s) {
+  return String(s == null ? "" : s)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// List the bundled fixture policies as { code, file, policy } entries, where
+// `code` is the fixture filename without ".json". Validates each on load so a
+// shipped fixture that drifts out of schema is a hard, named error rather than a
+// silent miss. Deterministic (filenames are sorted).
+function bundledPolicies() {
+  let names;
+  try {
+    names = fs.readdirSync(BUNDLED_DIR).filter((n) => n.endsWith(".json"));
+  } catch (e) {
+    throw new PolicyError(`cannot read bundled policy directory: ${e.message}`);
+  }
+  return names
+    .sort()
+    .map((file) => {
+      const full = path.join(BUNDLED_DIR, file);
+      let policy;
+      try {
+        policy = readPolicy(fs.readFileSync(full, "utf8"));
+      } catch (e) {
+        throw new PolicyError(`bundled policy ${file} is invalid: ${e.message}`);
+      }
+      return { code: file.replace(/\.json$/, ""), file: full, policy };
+    });
+}
+
+// Resolve a `--state <code>` to a validated bundled policy. A code matches when
+// it equals (after normalization) EITHER the fixture filename code OR the
+// policy's `state` label. An unknown code is a clear PolicyError that lists the
+// codes that ARE available, so the usage error is actionable.
+function resolveState(code) {
+  const want = normStateCode(code);
+  if (want === "") {
+    throw new PolicyError("--state requires a non-empty state code");
+  }
+  const all = bundledPolicies();
+  for (const entry of all) {
+    if (
+      normStateCode(entry.code) === want ||
+      normStateCode(entry.policy.state) === want
+    ) {
+      return entry.policy;
+    }
+  }
+  const codes = all.map((e) => e.code).sort().join(", ");
+  throw new PolicyError(
+    `unknown --state "${code}"; bundled states are: ${codes}`
+  );
 }
 
 module.exports = {
@@ -271,6 +362,11 @@ module.exports = {
   readPolicy,
   validatePolicy,
   applyPolicy,
+  // bundled per-state fixtures + --state resolution
+  BUNDLED_DIR,
+  bundledPolicies,
+  resolveState,
+  normStateCode,
   // exported for focused tests / reuse
   EXCEPTION_TYPES,
   SEVERITY_VALUES,

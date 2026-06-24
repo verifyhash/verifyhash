@@ -14,6 +14,16 @@
 //
 // and prints a single PASS/FAIL line with a CI-gateable exit code.
 //
+// PER-STATE POLICY (T-23.2): pass `--state <code>` to score under a bundled
+// per-state trust-rule policy, or `--policy <file>` for an explicit one. The
+// policy overrides exception severities (e.g. a state that makes an NSF reversal
+// a hard ERROR) BEFORE the PASS/FAIL verdict and exit code are computed, so the
+// gate reflects the REVIEWED severities. With neither flag the built-in baseline
+// is used (byte-for-byte unchanged). Supplying both, or an unknown `--state`, is
+// a usage error (exit 2). The packet names which policy governed the run and
+// surfaces each override's citation; the policy itself is still a DRAFT a CPA/
+// counsel must review (it is NOT legal advice).
+//
 // FILESYSTEM HYGIENE: side-effect files (the packet) are written ONLY to the
 // caller-chosen --out directory — never silently to cwd. Without --out the
 // command prints the summary + the report to stdout and writes NOTHING, so it is
@@ -27,6 +37,7 @@ const path = require("path");
 
 const ingest = require("./ingest");
 const report = require("./report");
+const policy = require("./policy");
 
 // Exit codes — shared, documented contract (mirrors the dataset/parcel gates:
 // 0 PASS, 3 data/gate FAIL, 2 usage, 1 IO/input error).
@@ -52,6 +63,8 @@ function parseReconcileArgs(argv) {
     openingBook: 0,
     toleranceCents: 0,
     bankFormat: undefined, // force "csv" | "ofx" for the bank file
+    policyFile: undefined, // explicit per-state policy file (--policy <file>)
+    state: undefined, // bundled per-state policy by its state code (--state <code>)
     _positionals: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -80,6 +93,12 @@ function parseReconcileArgs(argv) {
         break;
       case "--bank-format":
         opts.bankFormat = argv[++i];
+        break;
+      case "--policy":
+        opts.policyFile = argv[++i];
+        break;
+      case "--state":
+        opts.state = argv[++i];
         break;
       default:
         if (a && a.startsWith("--")) {
@@ -149,6 +168,44 @@ function runReconcile(opts, io = {}) {
     return { code: EXIT.USAGE };
   }
 
+  // -- Resolve the per-state trust-rule policy (if any). ---------------------
+  // `--policy <file>` reads an explicit file; `--state <code>` resolves a bundled
+  // fixture by its state code. Supplying BOTH is ambiguous, and an unknown
+  // `--state` is unactionable — both are USAGE errors (exit 2), as is a malformed
+  // or unreadable policy file (a bad flag value, not a data-file IO error). With
+  // neither flag the run uses the built-in baseline severities (policy = null),
+  // which is byte-for-byte today's behaviour.
+  let activePolicy = null;
+  if (opts.policyFile != null && opts.state != null) {
+    writeErr(
+      "error: --policy and --state are mutually exclusive (choose an explicit " +
+        "policy file OR a bundled state code, not both)\n"
+    );
+    return { code: EXIT.USAGE };
+  }
+  if (opts.state != null) {
+    try {
+      activePolicy = policy.resolveState(opts.state);
+    } catch (e) {
+      writeErr(`error: ${e.message}\n`);
+      return { code: EXIT.USAGE };
+    }
+  } else if (opts.policyFile != null) {
+    let policyText;
+    try {
+      policyText = fs.readFileSync(path.resolve(opts.policyFile), "utf8");
+    } catch (e) {
+      writeErr(`error: cannot read --policy file ${opts.policyFile}: ${e.message}\n`);
+      return { code: EXIT.USAGE };
+    }
+    try {
+      activePolicy = policy.readPolicy(policyText);
+    } catch (e) {
+      writeErr(`error: invalid --policy file ${opts.policyFile}: ${e.message}\n`);
+      return { code: EXIT.USAGE };
+    }
+  }
+
   // -- Read the three files (IO errors are exit 1, not a crash). -------------
   let bankText;
   let ledgerText;
@@ -196,6 +253,7 @@ function runReconcile(opts, io = {}) {
       period: opts.period,
       opening: { bank: opts.openingBank || 0, book: opts.openingBook || 0 },
       toleranceCents: opts.toleranceCents || 0,
+      policy: activePolicy,
     });
   } catch (e) {
     writeErr(`error: ${e.message}\n`);

@@ -1,0 +1,8 @@
+Date,Type,Name,Memo,Debit,Credit
+05/01/2026,Deposit,Jones Tenant,Rent received May,,1500.00
+05/02/2026,Deposit,Smith Owner,Owner funding deposit,,500.00
+05/04/2026,Payment,Doe Tenant,Partial deposit (1 of 2),,650.00
+05/04/2026,Payment,Doe Tenant,Partial deposit (2 of 2),,650.00
+05/06/2026,Check,Acme Plumbing,Vendor check 2051 plumbing repair,300.00,
+05/10/2026,Deposit,Wong Tenant,Wong rent check (later returned NSF),,225.00
+05/12/2026,Reversal,Wong Tenant,NSF reversal Wong rent check returned,225.00,

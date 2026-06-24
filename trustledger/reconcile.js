@@ -332,17 +332,7 @@ function reconcile(bank, book, tenants, opts = {}) {
 
   // Stable, deterministic ordering of exceptions: by severity (errors first),
   // then type, then amount, then a record key — independent of detection order.
-  const sevRank = { error: 0, warning: 1, info: 2 };
-  exceptions.sort((a, b) => {
-    const sa = sevRank[a.severity] ?? 3;
-    const sb = sevRank[b.severity] ?? 3;
-    if (sa !== sb) return sa - sb;
-    if (a.type !== b.type) return cmp(a.type, b.type);
-    if (a.amount !== b.amount) return a.amount - b.amount;
-    const ka = a.records[0] ? recKey(a.records[0]) : "";
-    const kb = b.records[0] ? recKey(b.records[0]) : "";
-    return cmp(ka, kb);
-  });
+  exceptions.sort(compareExceptions);
 
   return {
     balances: {
@@ -359,6 +349,24 @@ function reconcile(bank, book, tenants, opts = {}) {
 
 function cmp(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// The canonical, stable severity-first ordering of an exception list: errors
+// before warnings before info, then by type, then by amount, then by a record
+// key — independent of detection order. Exported (and reused by policy.js's
+// applyPolicy) so the order an auditor reads is computed in ONE place and a
+// freshly-escalated ERROR re-sorts to the top of the table the same way a
+// natively-detected one does. Pure: a comparator over two exceptions.
+const SEV_RANK = Object.freeze({ error: 0, warning: 1, info: 2 });
+function compareExceptions(a, b) {
+  const sa = SEV_RANK[a.severity] ?? 3;
+  const sb = SEV_RANK[b.severity] ?? 3;
+  if (sa !== sb) return sa - sb;
+  if (a.type !== b.type) return cmp(a.type, b.type);
+  if (a.amount !== b.amount) return a.amount - b.amount;
+  const ka = a.records && a.records[0] ? recKey(a.records[0]) : "";
+  const kb = b.records && b.records[0] ? recKey(b.records[0]) : "";
+  return cmp(ka, kb);
 }
 
 // Net the rent-roll rows into a per-beneficiary balance map, or accept a
@@ -518,4 +526,5 @@ module.exports = {
   DEFAULT_SEVERITY,
   // exported for focused tests / reuse
   tenantBalances,
+  compareExceptions,
 };

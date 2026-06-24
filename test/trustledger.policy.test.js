@@ -225,9 +225,13 @@ describe("trustledger/policy: applyPolicy", function () {
         `severity for ${ex.type}`
       );
     }
-    // And the per-exception severities match the pre-policy result exactly.
-    const beforeSev = before.exceptions.map((e) => `${e.type}=${e.severity}`);
-    const afterSev = after.exceptions.map((e) => `${e.type}=${e.severity}`);
+    // And the per-exception severities match the pre-policy result exactly
+    // (matched BY TYPE — applyPolicy re-sorts errors-first, so positions move
+    // even when, as here, no severity actually changes).
+    const beforeSev = before.exceptions
+      .map((e) => `${e.type}=${e.severity}`)
+      .sort();
+    const afterSev = after.exceptions.map((e) => `${e.type}=${e.severity}`).sort();
     expect(afterSev).to.deep.equal(beforeSev);
   });
 
@@ -266,14 +270,50 @@ describe("trustledger/policy: applyPolicy", function () {
     const after = applyPolicy(before, policy);
     expect(after.balances).to.deep.equal(before.balances);
     expect(after.tiesOut).to.equal(before.tiesOut);
-    for (let i = 0; i < before.exceptions.length; i++) {
-      const b = before.exceptions[i];
-      const a = after.exceptions[i];
+    // applyPolicy re-sorts the exceptions under the new severities (a
+    // freshly-escalated ERROR rises to the top), so match the before/after rows
+    // BY TYPE rather than by position. Every field except severity/citation is
+    // carried through verbatim.
+    const beforeByType = new Map(before.exceptions.map((e) => [e.type, e]));
+    expect(after.exceptions.length).to.equal(before.exceptions.length);
+    for (const a of after.exceptions) {
+      const b = beforeByType.get(a.type);
+      expect(b, `before row for ${a.type}`).to.be.an("object");
       expect(a.amount).to.equal(b.amount);
       expect(a.label).to.equal(b.label);
       expect(a.detail).to.equal(b.detail);
       expect(a.records).to.deep.equal(b.records);
     }
+  });
+
+  it("re-sorts errors-first after escalation: a freshly-escalated ERROR rises to the top", function () {
+    // The ca-example policy escalates NSF_REVERSAL (default WARNING) to ERROR.
+    // In syntheticResult the exceptions are in EXCEPTION-declaration order (NOT
+    // severity order), so before applyPolicy the nsf_reversal row is NOT first.
+    const policy = readPolicy(readFixture("ca-example.json"));
+    const after = applyPolicy(syntheticResult(), policy);
+    // Every error-severity row precedes every non-error row (stable, errors
+    // first), and the escalated nsf_reversal is among the leading errors.
+    const sevRank = { error: 0, warning: 1, info: 2 };
+    for (let i = 1; i < after.exceptions.length; i++) {
+      expect(
+        sevRank[after.exceptions[i - 1].severity]
+      ).to.be.at.most(sevRank[after.exceptions[i].severity]);
+    }
+    const firstNonError = after.exceptions.findIndex((e) => e.severity !== "error");
+    const nsfIndex = after.exceptions.findIndex((e) => e.type === EXCEPTION.NSF_REVERSAL);
+    expect(after.exceptions[nsfIndex].severity).to.equal(SEVERITY.ERROR);
+    // nsf_reversal sits within the leading error block (before the first
+    // non-error row), i.e. it is no longer buried below lower-severity rows.
+    expect(nsfIndex).to.be.below(firstNonError === -1 ? after.exceptions.length : firstNonError);
+  });
+
+  it("a policy toleranceCents is carried on the validated policy for buildPacket to apply", function () {
+    // The knob is no longer inert: validatePolicy stores it AND report.buildPacket
+    // applies it (proven in the e2e/CLI suite). Here we just assert it survives
+    // validation as an integer the downstream can read.
+    const policy = validatePolicy(goodPolicy({ toleranceCents: 500 }));
+    expect(policy.toleranceCents).to.equal(500);
   });
 
   it("is side-effect-free: the input result is not mutated", function () {

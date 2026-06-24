@@ -1,0 +1,17 @@
+{
+  "_DISCLAIMER": "DRAFT / NOT-LEGAL-ADVICE. This file reproduces trustledger's built-in DEFAULT_SEVERITY baseline verbatim. It makes NO claim of regulatory compliance and does not replace a CPA's review. A qualified human edits this for their jurisdiction.",
+  "schemaVersion": 1,
+  "state": "BASELINE (built-in defaults)",
+  "severities": {
+    "outstanding_deposit": "info",
+    "outstanding_check": "info",
+    "timing": "info",
+    "nsf_reversal": "warning",
+    "owner_draw": "warning",
+    "security_deposit_segregation": "error",
+    "unreconciled_bank": "warning",
+    "unreconciled_book": "warning",
+    "subledger_out_of_balance": "error",
+    "bank_book_mismatch": "error"
+  }
+}

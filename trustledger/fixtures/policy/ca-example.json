@@ -1,0 +1,12 @@
+{
+  "_DISCLAIMER": "DRAFT / NOT-LEGAL-ADVICE — ILLUSTRATIVE ONLY. This sample flips an NSF reversal from the built-in WARNING to ERROR to show how a per-state policy grounds a control in a statute. The citation below is a PLACEHOLDER, not verified legal text. A qualified CPA/broker must edit this for their actual jurisdiction. This tool aids reconciliation; the broker remains the responsible legal custodian of trust funds.",
+  "schemaVersion": 1,
+  "state": "EXAMPLE-STATE (illustrative override)",
+  "severities": {
+    "nsf_reversal": "error"
+  },
+  "citations": {
+    "nsf_reversal": "EXAMPLE Trust Account Rule §0000(a) (PLACEHOLDER) — a reversed/returned tenant deposit leaves the trust account short and must be cured immediately; treated as a hard finding, not a warning."
+  },
+  "toleranceCents": 0
+}

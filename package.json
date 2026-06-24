@@ -1,8 +1,19 @@
 {
   "name": "verifyhash",
   "version": "0.1.0",
-  "description": "Tamper-evident, permissionless on-chain registry of code-contribution hashes.",
+  "description": "Tamper-evident, permissionless on-chain registry of code-contribution hashes, plus an offline data-provenance toolkit (the `vh` CLI).",
   "license": "MIT",
+  "bin": {
+    "vh": "cli/vh.js"
+  },
+  "files": [
+    "cli/",
+    "README.md",
+    "docs/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
@@ -10,6 +21,7 @@
     "deploy:amoy": "hardhat run scripts/deploy.js --network amoy"
   },
   "dependencies": {
+    "ethers": "^6.17.0",
     "js-sha3": "^0.8.0"
   },
   "devDependencies": {

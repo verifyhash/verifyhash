@@ -59,7 +59,7 @@ function resolveReceiptPath(args) {
   return path.resolve(base, name);
 }
 
-const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
+const ARTIFACT = require("./core/registryArtifact");
 const ABI = ARTIFACT.abi;
 
 /**

@@ -35,7 +35,7 @@ const fs = require("fs");
 const { hashDir } = require("./hash");
 const { buildProofArtifact, writeProofArtifact } = require("./proof");
 
-const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
+const ARTIFACT = require("./core/registryArtifact");
 const ABI = ARTIFACT.abi;
 
 /**

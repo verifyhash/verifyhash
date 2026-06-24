@@ -28,7 +28,7 @@
 // against an unauthenticated/look-alike contract, then pages through the contract's
 // `getRecordsByContributor` clamped view (the T-12.1 per-contributor index).
 
-const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
+const ARTIFACT = require("./core/registryArtifact");
 const ABI = ARTIFACT.abi;
 
 // Reuse the lineage-root predicate so reputation, show and list never disagree about what a "root"

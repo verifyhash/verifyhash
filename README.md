@@ -9,6 +9,41 @@ The registry contract (`contracts/ContributionRegistry.sol`) is deliberately own
 no pause, no upgrade path, and it never holds funds. Each content hash can be anchored exactly once
 (first-writer-wins) and can never be altered or deleted. That immutability is the product.
 
+## Install / Quickstart
+
+`verifyhash` ships the `vh` command. You do **not** need to clone the repo to use it.
+
+```bash
+# from a published package (publishing to npm is a human step — see below):
+npm install -g verifyhash      # puts `vh` on your PATH
+# or run it without installing:
+npx verifyhash --help
+
+vh --help                      # the full usage block
+vh hash ./myfile.txt           # keccak256 of a file (offline, no key, no network)
+```
+
+Building a tamper-evident dataset manifest works the same way — fully offline — via the
+DataLedger subcommands documented below.
+
+The offline commands need only the package's
+runtime dependencies (`ethers`, `js-sha3`) — no chain, no key, no `hardhat`. The on-chain
+read/write commands (`vh anchor/claim/verify/list/show/lineage/reputation`) additionally
+need an RPC endpoint; the registry ABI is bundled in the package, so they run from a clean
+install without any compile step.
+
+**Local install (works today, no registry needed):** from a checkout of this repo,
+
+```bash
+npm install          # installs dependencies (incl. devDependencies)
+npm install -g .      # OR: npm link  — both create a global `vh` from this checkout
+vh --help
+```
+
+> Publishing `verifyhash` to the public npm registry (so `npm install -g verifyhash`
+> resolves remotely) is a **human action** and is intentionally not performed by the build.
+> Until then, use the local install path above.
+
 ## What it proves (and what it does NOT)
 
 > **Read this before relying on a record:** [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md)

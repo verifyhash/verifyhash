@@ -15,7 +15,7 @@
 // is true — otherwise it is merely "first anchorer". Human output always leads with that caveat so a
 // browser of the list does not over-trust either field.
 
-const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
+const ARTIFACT = require("./core/registryArtifact");
 const ABI = ARTIFACT.abi;
 
 // Reuse the lineage-root predicate from `show` so `list` and `show` never disagree about what a

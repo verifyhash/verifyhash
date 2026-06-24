@@ -44,7 +44,7 @@ const {
   jsonSkippedBlock,
 } = require("./registry");
 
-const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
+const ARTIFACT = require("./core/registryArtifact");
 const ABI = ARTIFACT.abi;
 
 // Default cap on how many ancestors the walk follows. A finite, acyclic chain always terminates at a

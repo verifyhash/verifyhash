@@ -33,7 +33,7 @@
 // itself, never masqueraded as an identity failure. An identity failure is only ever reported when the
 // chain answered and the answer was wrong (no code / wrong id / wrong version / wrong chain).
 
-const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
+const ARTIFACT = require("./core/registryArtifact");
 const ABI = ARTIFACT.abi;
 
 // The DOCUMENTED, frozen identity (T-11.1). Re-derived from the same preimage string the contract's

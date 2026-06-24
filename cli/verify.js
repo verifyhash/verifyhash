@@ -26,7 +26,7 @@ const {
   formatSkippedLine,
 } = require("./registry");
 
-const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
+const ARTIFACT = require("./core/registryArtifact");
 const ABI = ARTIFACT.abi;
 
 // Possible outcomes of a verify run.

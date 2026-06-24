@@ -20,7 +20,7 @@
 const { hashPath, hashGit } = require("./hash");
 const { buildAnchorReceipt, writeReceipt } = require("./receipt");
 
-const ARTIFACT = require("../artifacts/contracts/ContributionRegistry.sol/ContributionRegistry.json");
+const ARTIFACT = require("./core/registryArtifact");
 const ABI = ARTIFACT.abi;
 
 // Chains we consider safe to anchor on without an explicit override. These are local dev chains and

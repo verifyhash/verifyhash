@@ -1,6 +1,6 @@
 "use strict";
 
-// TrustLedger — seal.js  (EPIC-26, T-26.1)
+// TrustLedger — seal.js  (EPIC-26, T-26.1; T-30.2 refactor)
 //
 // THE RECONCILIATION SEAL — a tamper-evident, content-addressed wrapper around a
 // reconciliation packet, built on the project's ORIGINAL provenance core.
@@ -16,15 +16,16 @@
 //   deliverable ships UNSEALED.
 //
 // THE MOVE — reuse the proven manifest/attestation core VERBATIM.
-//   This module REQUIRES `cli/core/manifest.js` and does NOT re-implement hashing or leaf
-//   construction. It binds {the SOURCE inputs (bank / book / rentroll), partitioned by their
-//   logical ROLE} + {every packet file the reconcile EMITTED} into ONE content-addressed
-//   seal: a versioned, strictly-validated object recording, per file, its role/relPath +
-//   content hash, plus a single top-level Merkle root over the WHOLE set computed by the SAME
-//   path-bound, domain-separated convention `vh hash <dir>` and the on-chain `verifyLeaf` use
-//   (so the root re-derives, NO new crypto, NO contract change, NO network, NO key). The seal
-//   also carries the reconcile's PASS/FAIL verdict + report date as RECORDED FACTS, so the
-//   seal NAMES what it sealed.
+//   This module is now a THIN ADAPTER over the GENERIC, product-agnostic packet-seal core
+//   `cli/core/packetseal.js` (T-30.2). It does NOT re-implement hashing, leaf construction,
+//   the root re-derivation, the per-file MATCH/CHANGED/MISSING/UNEXPECTED localization, or the
+//   signed-attestation wrap. It supplies ONLY the TrustLedger framing: the seal `kind`
+//   (`SEAL_KIND`), and a verdict/role HEADER — the opaque, canonicalizable { relPath, content }
+//   pair binding the reconcile's PASS/FAIL verdict + report date + each input's logical ROLE into
+//   the SAME committed root as the files. It then projects the core's flat `files` view back into
+//   the TrustLedger inputs/outputs(+role)/verdict shape its callers already consume — byte-for-byte
+//   identical to before, with the same `__trustledger.seal-header__v1` sentinel and the same
+//   localized verdict/role change detection.
 //
 // PURE + I/O-FREE.
 //   Every helper here is pure: the CALLER (the CLI) does the file READING and hands in
@@ -58,7 +59,8 @@
 //   still not a trusted timestamp.
 
 const coreManifest = require("../cli/core/manifest");
-const { hashEntries, pathLeaf, hashBytes, buildTree } = require("../cli/hash");
+const packetseal = require("../cli/core/packetseal");
+const { pathLeaf } = require("../cli/hash");
 
 // ---------------------------------------------------------------------------
 // Identity. The seal has its OWN `kind`/`schemaVersion`, disjoint from the
@@ -100,16 +102,18 @@ const SEAL_TRUST_NOTE =
 
 // The reserved relPath of the synthetic HEADER entry that binds the verdict + input roles into the
 // SAME committed root as the files. It uses a sentinel that can never collide with a real packet
-// file (no real reconcile path begins with this prefix); _normalizeFileSet rejects any caller file
-// occupying it, so the header is unforgeable from the file side. The header's "content" is the
-// canonical bytes of { verdict, roles } (see _headerBytes), hashed + path-bound by the SAME pathLeaf
-// convention every other entry uses — so binding the verdict/roles re-uses the core verbatim, with
-// no second hashing scheme.
+// file (no real reconcile path begins with this prefix); the core rejects any caller file occupying
+// it, so the header is unforgeable from the file side. The header's "content" is the canonical bytes
+// of { verdict, roles } (see _headerBytes), hashed + path-bound by the SAME pathLeaf convention every
+// other entry uses — so binding the verdict/roles re-uses the core verbatim, with no second hashing
+// scheme.
 const SEAL_HEADER_RELPATH = "__trustledger.seal-header__v1";
 
 // ---------------------------------------------------------------------------
-// Errors — STRICT. A malformed/ambiguous seal raises a NAMED error rather than
-// being silently dropped, coerced, or partially accepted (mirrors close.js).
+// Errors. The adapter keeps its OWN named SealError (the TrustLedger-facing error
+// surface its callers + tests assert on). Where the shared core raises a
+// PacketSealError carrying a (deliberately product-agnostic) message, the adapter
+// re-frames it into a SealError with the TrustLedger wording its callers expect.
 // ---------------------------------------------------------------------------
 
 class SealError extends Error {
@@ -160,19 +164,38 @@ function _headerBytes(verdict, inputs) {
 }
 
 // ---------------------------------------------------------------------------
-// Internal: normalize + strictly validate a caller-supplied file set into the
-// ordered entry list the seal/manifest are built from.
-//
-// Each `inputs` entry is { role, relPath, bytes }; each `outputs` entry is
-// { relPath, bytes }. relPaths must be unique ACROSS the whole set (an input and
-// an output sharing a relPath would make the partition ambiguous and the root
-// double-count a name), every `bytes` must be a Buffer/Uint8Array, every input
-// role must be a known role used at most once.
-//
-// Returns { entries, inputs, outputs } where `entries` is the flat
-// { role, relPath, bytes } list (role === null for outputs) used to feed the
-// shared hasher, ordered inputs-then-outputs for readability (the root itself is
-// order-independent — hashEntries sorts internally).
+// The PACKET-SEAL CORE config (the TrustLedger framing). This is the entire
+// product-specific surface handed to cli/core/packetseal.js:
+//   * kind/schemaVersion/note   — the seal identity + standing trust note;
+//   * headerRelPath             — the reserved verdict/role HEADER slot;
+//   * headerContentFor(seal)    — re-derive the header's canonical bytes from a
+//                                 seal's OWN recorded verdict + input role bindings,
+//                                 so the core can recompute the header leaf on
+//                                 validate (and thus catch a verdict/role edit).
+// The core does ALL the shared math; this just NAMES what TrustLedger binds.
+// ---------------------------------------------------------------------------
+
+const SEAL_CFG = Object.freeze({
+  kind: SEAL_KIND,
+  schemaVersion: SEAL_SCHEMA_VERSION,
+  supportedSchemaVersions: SUPPORTED_SEAL_SCHEMA_VERSIONS,
+  note: SEAL_TRUST_NOTE,
+  label: "trustledger reconciliation seal",
+  headerRelPath: SEAL_HEADER_RELPATH,
+  headerContentFor: (seal) => {
+    const inputBindings = (seal.inputs || []).map((e) => ({ role: e.role, relPath: e.relPath }));
+    return _headerBytes(seal.verdict, inputBindings);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// _normalizeFileSet(files) — normalize + strictly validate the TrustLedger file
+// set ({ inputs:[{role,relPath,bytes}], outputs:[{relPath,bytes}] }) for BUILD.
+// BUILD requires all three roles' partition rules and a non-empty packet. Returns
+// { inputs, outputs } of normalized entries; relPath uniqueness across the whole
+// set + the reserved-header-slot rejection are enforced by the core when the flat
+// entries flow through it, but we ALSO enforce the role rules + the inputs/outputs
+// cardinality here (the core knows nothing of roles).
 // ---------------------------------------------------------------------------
 
 function _normalizeFileSet(files) {
@@ -186,40 +209,9 @@ function _normalizeFileSet(files) {
     throw new SealError("seal `outputs` must be a non-empty array of { relPath, bytes }");
   }
 
-  const seenRelPath = new Set();
   const seenRole = new Set();
-
-  function takeBytes(e, where) {
-    if (!isPlainObject(e)) {
-      throw new SealError(`seal ${where} entry must be an object with relPath + bytes`);
-    }
-    if (typeof e.relPath !== "string" || e.relPath.length === 0) {
-      throw new SealError(`seal ${where} entry relPath must be a non-empty string`);
-    }
-    if (e.relPath === SEAL_HEADER_RELPATH) {
-      throw new SealError(
-        `seal ${where} entry relPath ${JSON.stringify(e.relPath)} is reserved for the seal header ` +
-          "(a real file may not occupy the bound verdict/role header slot)"
-      );
-    }
-    if (seenRelPath.has(e.relPath)) {
-      throw new SealError(
-        `seal has a duplicate relPath across the file set: ${JSON.stringify(e.relPath)} ` +
-          "(every input and output must occupy a distinct path)"
-      );
-    }
-    seenRelPath.add(e.relPath);
-    if (!(e.bytes instanceof Uint8Array) && !Buffer.isBuffer(e.bytes)) {
-      throw new SealError(
-        `seal ${where} entry ${JSON.stringify(e.relPath)} bytes must be a Buffer/Uint8Array ` +
-          "(seal.js is I/O-free; the caller reads the file and hands in its bytes)"
-      );
-    }
-    return Buffer.isBuffer(e.bytes) ? e.bytes : Buffer.from(e.bytes);
-  }
-
   const inputs = files.inputs.map((e) => {
-    const bytes = takeBytes(e, "inputs");
+    _checkEntryShape(e, "inputs");
     if (!INPUT_ROLES.includes(e.role)) {
       throw new SealError(
         `seal input role must be one of ${JSON.stringify(INPUT_ROLES)}, got: ${JSON.stringify(e.role)}`
@@ -229,29 +221,20 @@ function _normalizeFileSet(files) {
       throw new SealError(`seal has a duplicate input role: ${JSON.stringify(e.role)}`);
     }
     seenRole.add(e.role);
-    return { role: e.role, relPath: e.relPath, bytes };
+    return { role: e.role, relPath: e.relPath, bytes: _bytesOf(e) };
   });
-
   const outputs = files.outputs.map((e) => {
-    const bytes = takeBytes(e, "outputs");
-    return { role: null, relPath: e.relPath, bytes };
+    _checkEntryShape(e, "outputs");
+    return { role: null, relPath: e.relPath, bytes: _bytesOf(e) };
   });
-
-  return { inputs, outputs, entries: [...inputs, ...outputs] };
+  // Cross-set relPath uniqueness + reserved-header-slot rejection happen in the core via the flat
+  // entries; surface a TrustLedger-worded duplicate/reserved error here so callers see the same message.
+  _assertDistinctPaths([...inputs, ...outputs]);
+  return { inputs, outputs };
 }
 
-// ---------------------------------------------------------------------------
-// _normalizeSuppliedForVerify(files) — the LENIENT sibling of _normalizeFileSet,
-// used ONLY by verifySeal. BUILD must see all three roles + a non-empty packet;
-// VERIFY, by contrast, must tolerate a PARTIAL supplied set (e.g. only the out/
-// folder was shipped, so the source inputs are absent on disk) and still localize
-// which sealed files are MISSING. So this allows EITHER list to be empty — but it
-// applies the SAME per-entry strictness (relPath non-empty + unique across the set +
-// not the reserved header slot; role a known role used at most once; bytes a Buffer).
-// A garbage SUPPLIED entry is still rejected loudly; only the "must be three roles /
-// non-empty" cardinality rules are relaxed for the read path.
-// ---------------------------------------------------------------------------
-
+// _normalizeSuppliedForVerify(files) — the LENIENT sibling for verifySeal: either list may be EMPTY
+// (a partial supplied set, so verifySeal can localize MISSING), but per-entry strictness is identical.
 function _normalizeSuppliedForVerify(files) {
   if (!isPlainObject(files)) {
     throw new SealError("verifySeal requires a { inputs, outputs } file set object");
@@ -259,37 +242,9 @@ function _normalizeSuppliedForVerify(files) {
   const rawInputs = Array.isArray(files.inputs) ? files.inputs : [];
   const rawOutputs = Array.isArray(files.outputs) ? files.outputs : [];
 
-  const seenRelPath = new Set();
   const seenRole = new Set();
-
-  function takeBytes(e, where) {
-    if (!isPlainObject(e)) {
-      throw new SealError(`seal ${where} entry must be an object with relPath + bytes`);
-    }
-    if (typeof e.relPath !== "string" || e.relPath.length === 0) {
-      throw new SealError(`seal ${where} entry relPath must be a non-empty string`);
-    }
-    if (e.relPath === SEAL_HEADER_RELPATH) {
-      throw new SealError(
-        `seal ${where} entry relPath ${JSON.stringify(e.relPath)} is reserved for the seal header`
-      );
-    }
-    if (seenRelPath.has(e.relPath)) {
-      throw new SealError(
-        `seal has a duplicate relPath across the supplied set: ${JSON.stringify(e.relPath)}`
-      );
-    }
-    seenRelPath.add(e.relPath);
-    if (!(e.bytes instanceof Uint8Array) && !Buffer.isBuffer(e.bytes)) {
-      throw new SealError(
-        `seal ${where} entry ${JSON.stringify(e.relPath)} bytes must be a Buffer/Uint8Array`
-      );
-    }
-    return Buffer.isBuffer(e.bytes) ? e.bytes : Buffer.from(e.bytes);
-  }
-
   const inputs = rawInputs.map((e) => {
-    const bytes = takeBytes(e, "inputs");
+    _checkEntryShape(e, "inputs");
     if (!INPUT_ROLES.includes(e.role)) {
       throw new SealError(
         `seal input role must be one of ${JSON.stringify(INPUT_ROLES)}, got: ${JSON.stringify(e.role)}`
@@ -299,82 +254,56 @@ function _normalizeSuppliedForVerify(files) {
       throw new SealError(`seal has a duplicate input role: ${JSON.stringify(e.role)}`);
     }
     seenRole.add(e.role);
-    return { role: e.role, relPath: e.relPath, bytes };
+    return { role: e.role, relPath: e.relPath, bytes: _bytesOf(e) };
   });
-
   const outputs = rawOutputs.map((e) => {
-    const bytes = takeBytes(e, "outputs");
-    return { role: null, relPath: e.relPath, bytes };
+    _checkEntryShape(e, "outputs");
+    return { role: null, relPath: e.relPath, bytes: _bytesOf(e) };
   });
-
-  return { inputs, outputs, entries: [...inputs, ...outputs] };
+  _assertDistinctPaths([...inputs, ...outputs]);
+  return { inputs, outputs };
 }
 
-// ---------------------------------------------------------------------------
-// Internal: compute the manifest (root + per-file leaf/contentHash) over the
-// whole file set by REUSING the existing core VERBATIM — `cli/hash.js`
-// `hashEntries` for the path-bound Merkle root, then `cli/core/manifest.js`
-// `buildItemManifest` for the strict, content-addressed manifest object. NO
-// hashing or leaf construction is re-implemented here.
-//
-// Returns { manifest, byRelPath } where byRelPath maps relPath ->
-// { relPath, contentHash, leaf } so the seal can attach the per-file role.
-// ---------------------------------------------------------------------------
-
-function _manifestOver(entries) {
-  // hashEntries takes { path, content } and returns { root, leaves:[{path,contentHash,leaf}] }
-  // computed with pathLeaf/buildTree/leafHash/nodeHash — the EXACT convention the contract's
-  // verifyLeaf accepts. We then hand that shape to the manifest core's strict builder.
-  const built = hashEntries(entries.map((e) => ({ path: e.relPath, content: e.bytes })));
-  const manifest = coreManifest.buildItemManifest(built, MANIFEST_CFG);
-  const byRelPath = new Map();
-  for (const f of manifest.files) {
-    byRelPath.set(f.relPath, { relPath: f.relPath, contentHash: f.contentHash, leaf: f.leaf });
+function _checkEntryShape(e, where) {
+  if (!isPlainObject(e)) {
+    throw new SealError(`seal ${where} entry must be an object with relPath + bytes`);
   }
-  return { manifest, byRelPath };
-}
-
-// _committedEntries(fileEntries, verdict, inputs) — the FULL ordered list the root commits to: every
-// real file PLUS the synthetic HEADER entry binding (verdict, role→relPath). Every caller of the
-// hasher routes through here so build/validate/verify commit to the SAME structure — the verdict and
-// roles are part of the committed set, not a free-floating annotation. The header is one more
-// { relPath, content } pair fed to the SAME hashEntries convention; no second hashing scheme.
-function _committedEntries(fileEntries, verdict, inputs) {
-  return [
-    ...fileEntries,
-    { role: null, relPath: SEAL_HEADER_RELPATH, bytes: _headerBytes(verdict, inputs) },
-  ];
-}
-
-// The seal's manifest framing, passed to the GENERIC core builder/validator. The core does the
-// shared Merkle/manifest math + structural validation; this supplies ONLY the seal-specific
-// framing (kind/schema/note/label). This is the SAME pattern DataLedger/ProofParcel use.
-const MANIFEST_CFG = Object.freeze({
-  kind: "trustledger.reconcile-seal-manifest",
-  schemaVersion: 1,
-  supportedSchemaVersions: [1],
-  note: coreManifest.TRUST_NOTE,
-  label: "reconciliation seal manifest",
-});
-
-// ---------------------------------------------------------------------------
-// buildSeal({ files, verdict }) — assemble + strictly validate a seal.
-//
-// `files` is { inputs:[{role,relPath,bytes}], outputs:[{relPath,bytes}] } (the
-// caller read these). `verdict` is the recorded reconcile facts:
-//   { pass: boolean, reportDate: "YYYY-MM-DD", period?: string|null }
-//
-// PURE + deterministic: same files + verdict -> byte-identical seal (the root is
-// order-independent; the per-file lists are emitted role-then-relPath sorted).
-// ---------------------------------------------------------------------------
-
-function buildSeal(params) {
-  if (!isPlainObject(params)) {
-    throw new SealError("buildSeal requires { files, verdict }");
+  if (typeof e.relPath !== "string" || e.relPath.length === 0) {
+    throw new SealError(`seal ${where} entry relPath must be a non-empty string`);
   }
-  const { inputs, outputs, entries } = _normalizeFileSet(params.files);
+  if (e.relPath === SEAL_HEADER_RELPATH) {
+    throw new SealError(
+      `seal ${where} entry relPath ${JSON.stringify(e.relPath)} is reserved for the seal header ` +
+        "(a real file may not occupy the bound verdict/role header slot)"
+    );
+  }
+  if (!(e.bytes instanceof Uint8Array) && !Buffer.isBuffer(e.bytes)) {
+    throw new SealError(
+      `seal ${where} entry ${JSON.stringify(e.relPath)} bytes must be a Buffer/Uint8Array ` +
+        "(seal.js is I/O-free; the caller reads the file and hands in its bytes)"
+    );
+  }
+}
 
-  const verdict = params.verdict;
+function _bytesOf(e) {
+  return Buffer.isBuffer(e.bytes) ? e.bytes : Buffer.from(e.bytes);
+}
+
+function _assertDistinctPaths(entries) {
+  const seen = new Set();
+  for (const e of entries) {
+    if (seen.has(e.relPath)) {
+      throw new SealError(
+        `seal has a duplicate relPath across the file set: ${JSON.stringify(e.relPath)} ` +
+          "(every input and output must occupy a distinct path)"
+      );
+    }
+    seen.add(e.relPath);
+  }
+}
+
+// _validateVerdictArg(verdict) — strict shape check on the recorded reconcile facts (BUILD).
+function _validateVerdictArg(verdict) {
   if (!isPlainObject(verdict)) {
     throw new SealError("buildSeal requires a `verdict` { pass, reportDate } object");
   }
@@ -384,23 +313,52 @@ function buildSeal(params) {
   if (!DATE_RE.test(String(verdict.reportDate || ""))) {
     throw new SealError('seal verdict.reportDate must be a "YYYY-MM-DD" string');
   }
-  if (
-    verdict.period !== undefined &&
-    verdict.period !== null &&
-    typeof verdict.period !== "string"
-  ) {
+  if (verdict.period !== undefined && verdict.period !== null && typeof verdict.period !== "string") {
     throw new SealError("seal verdict.period, when present, must be a string or null");
   }
+}
 
-  // Re-derive the manifest/root over the WHOLE committed set — every real file PLUS the synthetic
-  // HEADER entry binding the verdict + role→relPath — via the shared core (no re-implementation). The
-  // header makes the verdict/roles part of the same committed root as the files.
-  const committed = _committedEntries(entries, verdict, inputs);
-  const { manifest, byRelPath } = _manifestOver(committed);
+// _headerArgFor(inputs, verdict) — the opaque { relPath, content } HEADER handed to the core, binding
+// the verdict + role→relPath partition into the SAME committed root as the files.
+function _headerArgFor(inputs, verdict) {
+  return { relPath: SEAL_HEADER_RELPATH, content: _headerBytes(verdict, inputs) };
+}
 
-  // Attach the per-file role to each manifest leaf, partitioned back into inputs/outputs. Emit
-  // inputs in the FIXED INPUT_ROLES order and outputs sorted by relPath, so the seal bytes are
-  // deterministic regardless of the caller's array order.
+// ---------------------------------------------------------------------------
+// buildSeal({ files, verdict }) — assemble + strictly validate a seal.
+//
+// Delegates ALL hashing/root/header binding to cli/core/packetseal.js, then PROJECTS the core's
+// flat `files` view into the TrustLedger inputs/outputs(+role)/verdict shape its callers consume.
+// Byte-identical to the pre-refactor output.
+// ---------------------------------------------------------------------------
+
+function buildSeal(params) {
+  if (!isPlainObject(params)) {
+    throw new SealError("buildSeal requires { files, verdict }");
+  }
+  const { inputs, outputs } = _normalizeFileSet(params.files);
+  const verdict = params.verdict;
+  _validateVerdictArg(verdict);
+
+  // Hand the GENERIC core the flat file entries + the opaque verdict/role HEADER. The core re-derives
+  // the manifest/root over the WHOLE committed set (files + header) via the shared convention.
+  const flatEntries = [...inputs, ...outputs].map((e) => ({ relPath: e.relPath, bytes: e.bytes }));
+  let coreSeal;
+  try {
+    coreSeal = packetseal.buildSeal(
+      { files: { entries: flatEntries }, header: _headerArgFor(inputs, verdict) },
+      SEAL_CFG
+    );
+  } catch (e) {
+    throw _asSealError(e);
+  }
+
+  // Map the core's flat per-file leaves back to a relPath -> { contentHash, leaf } lookup so we can
+  // re-attach the per-input role + emit inputs/outputs in the TrustLedger order.
+  const byRelPath = new Map(coreSeal.files.map((f) => [f.relPath, f]));
+
+  // Inputs in the FIXED INPUT_ROLES order; outputs sorted by relPath. Deterministic regardless of the
+  // caller's array order — byte-identical to the pre-refactor emission.
   const sealInputs = INPUT_ROLES.filter((r) => inputs.some((i) => i.role === r)).map((r) => {
     const src = inputs.find((i) => i.role === r);
     const leaf = byRelPath.get(src.relPath);
@@ -417,14 +375,8 @@ function buildSeal(params) {
     kind: SEAL_KIND,
     schemaVersion: SEAL_SCHEMA_VERSION,
     note: SEAL_TRUST_NOTE,
-    // The single top-level content-addressed root over the WHOLE committed set: inputs + outputs +
-    // the synthetic header (verdict + role bindings). The header is NOT listed below — it is
-    // re-derived deterministically from verdict/roles on validate/verify — so `fileCount` counts only
-    // the real files (inputs + outputs).
-    root: manifest.root,
-    fileCount: entries.length,
-    // The recorded reconcile facts — what this seal NAMES that it sealed. These are FACTS the
-    // seal carries, NOT proofs (see SEAL_TRUST_NOTE / the NatSpec timestamp caveat).
+    root: coreSeal.root,
+    fileCount: coreSeal.fileCount,
     verdict: {
       pass: verdict.pass,
       reportDate: verdict.reportDate,
@@ -434,21 +386,17 @@ function buildSeal(params) {
     outputs: sealOutputs,
   };
 
-  // Self-check: the artifact we just built must itself validate, so build/validate stay in
-  // lock-step and a build can never emit something read back as corrupt.
+  // Self-check: the artifact we just built must itself validate, so build/validate stay in lock-step.
   validateSeal(seal);
   return seal;
 }
 
 // ---------------------------------------------------------------------------
-// validateSeal(obj) — STRICT structural + self-consistency validation. Throws a
-// named SealError on the FIRST problem; returns the object unchanged on success.
-//
-// REJECTS: a wrong kind / schemaVersion; a missing/garbled verdict; a missing or
-// duplicate input role; an unknown role; a malformed hex contentHash/leaf/root; a
-// per-file leaf inconsistent with its (relPath, contentHash); a top-level `root`
-// that does NOT re-derive from the listed entries via the SAME manifest
-// convention. It NEVER silently accepts a partial/corrupt seal.
+// validateSeal(obj) — STRICT structural + self-consistency validation of the
+// TrustLedger seal shape, with the verdict/role/inputs/outputs checks the core
+// cannot know, then DELEGATING the load-bearing root re-derivation (files + the
+// verdict/role header) to cli/core/packetseal.js via a flat core-shaped view.
+// Throws a named SealError on the FIRST problem; returns the object unchanged on success.
 // ---------------------------------------------------------------------------
 
 function validateSeal(obj) {
@@ -501,11 +449,11 @@ function validateSeal(obj) {
   }
 
   // Per-file structural + leaf self-consistency, plus relPath-uniqueness ACROSS the whole set and
-  // role-uniqueness within inputs. We collect the flat (relPath, contentHash) list so the root can
-  // be re-derived below from the SAME convention.
+  // role-uniqueness within inputs. We collect the flat (relPath, contentHash, leaf) list to build the
+  // core-shaped view the core re-derives the root from.
   const seenRelPath = new Set();
   const seenRole = new Set();
-  const flat = []; // { relPath, contentHash }
+  const flatFiles = []; // { relPath, contentHash, leaf }
 
   function checkLeafEntry(entry, where, i) {
     if (!isPlainObject(entry)) {
@@ -527,9 +475,6 @@ function validateSeal(obj) {
         );
       }
     }
-    // Re-derive the path-bound leaf from (relPath, contentHash) via the SHARED pathLeaf, and reject
-    // a leaf tampered with independently of its relPath/contentHash — the same structural check the
-    // manifest core makes.
     const expectedLeaf = pathLeaf(entry.relPath, entry.contentHash);
     if (entry.leaf.toLowerCase() !== expectedLeaf.toLowerCase()) {
       throw new SealError(
@@ -537,12 +482,9 @@ function validateSeal(obj) {
           `(expected ${expectedLeaf}, got ${entry.leaf})`
       );
     }
-    flat.push({ relPath: entry.relPath, contentHash: entry.contentHash });
+    flatFiles.push({ relPath: entry.relPath, contentHash: entry.contentHash, leaf: entry.leaf });
   }
 
-  // The input role→relPath bindings, collected so the header (which commits to them) can be
-  // re-derived for the root check below.
-  const inputBindings = []; // { role, relPath }
   obj.inputs.forEach((entry, i) => {
     checkLeafEntry(entry, "inputs", i);
     if (!INPUT_ROLES.includes(entry.role)) {
@@ -555,7 +497,6 @@ function validateSeal(obj) {
       throw new SealError(`seal has a duplicate input role: ${JSON.stringify(entry.role)}`);
     }
     seenRole.add(entry.role);
-    inputBindings.push({ role: entry.role, relPath: entry.relPath });
   });
   obj.outputs.forEach((entry, i) => {
     checkLeafEntry(entry, "outputs", i);
@@ -575,62 +516,74 @@ function validateSeal(obj) {
     );
   }
 
-  // THE LOAD-BEARING CHECK: the top-level `root` must RE-DERIVE from the listed (relPath,
-  // contentHash) file entries PLUS the synthetic HEADER entry that binds the verdict + role
-  // bindings — via the SAME path-bound Merkle convention the manifest core uses (pathLeaf/buildTree).
-  // We append the header's (relPath, contentHash) — recomputed from the seal's OWN verdict + input
-  // role bindings — to the leaf set and require the recomputed root byte-identical to obj.root. A
-  // seal whose root was edited to mask a changed file is caught here, AND so is one whose verdict
-  // (pass/reportDate/period) or input role was edited: that changes the header content → its leaf →
-  // the root, which no longer re-derives. The verdict/roles are thus tamper-EVIDENT in the BARE seal.
-  const headerContentHash = hashBytes(_headerBytes(obj.verdict, inputBindings));
-  const committedFlat = [
-    ...flat,
-    { relPath: SEAL_HEADER_RELPATH, contentHash: headerContentHash },
-  ];
-  const rederived = _rootFromLeafEntries(committedFlat);
-  if (rederived.toLowerCase() !== obj.root.toLowerCase()) {
-    throw new SealError(
-      `seal root does not re-derive from its listed entries + verdict/role header ` +
-        `(expected ${rederived}, got ${obj.root}) — the seal is internally inconsistent ` +
-        "(a file, the verdict, or an input role was edited without updating the root)"
-    );
+  // THE LOAD-BEARING CHECK — delegated to the shared core. Build a core-shaped seal view (flat `files` +
+  // the header marker) carrying the SAME root, and let the core re-derive the root from the listed file
+  // entries PLUS the synthetic HEADER entry (its content recomputed from THIS seal's verdict + input role
+  // bindings via SEAL_CFG.headerContentFor). A seal whose root was edited to mask a changed file is caught
+  // there, AND so is one whose verdict (pass/reportDate/period) or input role was edited.
+  const coreView = {
+    kind: SEAL_KIND,
+    schemaVersion: obj.schemaVersion,
+    note: SEAL_TRUST_NOTE,
+    root: obj.root,
+    fileCount: flatFiles.length,
+    files: flatFiles,
+    header: { relPath: SEAL_HEADER_RELPATH },
+    // carry the verdict + inputs so SEAL_CFG.headerContentFor can re-derive the header content
+    verdict: obj.verdict,
+    inputs: obj.inputs,
+  };
+  try {
+    packetseal.validateSeal(coreView, SEAL_CFG);
+  } catch (e) {
+    throw _asSealError(e, { rootMessage: true });
   }
 
   return obj;
 }
 
-// Internal: re-derive the top-level root from a flat list of { relPath, contentHash } using the
-// SAME convention as buildSeal — pathLeaf for each, then buildTree — via the shared hash module.
-// We reuse `buildTree` (the exact builder hashEntries uses) so this stays a re-derivation of the
-// same math, never a parallel implementation.
-function _rootFromLeafEntries(flat) {
-  const leaves = flat.map((e) => pathLeaf(e.relPath, e.contentHash));
-  return buildTree(leaves).root;
+// _asSealError(e, opts) — re-frame a core PacketSealError into a SealError with the TrustLedger wording
+// its callers/tests assert on. The core's root-mismatch message is product-agnostic; the TrustLedger
+// surface promises the specific "root does not re-derive from its listed entries + verdict/role header"
+// phrasing, so we substitute it. All other core messages pass through verbatim under SealError.
+function _asSealError(e, opts = {}) {
+  if (!(e instanceof packetseal.PacketSealError)) return e;
+  if (opts.rootMessage && /root does not re-derive/.test(e.message)) {
+    return new SealError(
+      "seal root does not re-derive from its listed entries + verdict/role header " +
+        "(the seal is internally inconsistent: a file, the verdict, or an input role was edited " +
+        "without updating the root)"
+    );
+  }
+  return new SealError(e.message);
 }
 
 /**
  * committedLeaves(seal) — the FULL ordered { relPath, contentHash } list the seal's `root` commits
  * to: every listed file (inputs + outputs) PLUS the synthetic verdict/role HEADER entry (recomputed
- * from the seal's own verdict + input role bindings). Validates the seal first. This is the seal's
- * AUTHORITATIVE committed set: `buildTree(map(pathLeaf))` over it re-derives `seal.root` byte-for-byte
- * via the SAME shared convention — so a caller (or a test) can prove the root commits to the verdict
- * and roles, not just the files. PURE.
+ * from the seal's own verdict + input role bindings). Validates the seal first. Delegated to the
+ * shared core's committedLeaves over a flat core-shaped view. PURE.
  *
  * @param {object} seal a seal (validated here)
  * @returns {{ relPath: string, contentHash: string }[]}
  */
 function committedLeaves(seal) {
   validateSeal(seal);
-  const flat = [];
-  for (const e of seal.inputs) flat.push({ relPath: e.relPath, contentHash: e.contentHash });
-  for (const e of seal.outputs) flat.push({ relPath: e.relPath, contentHash: e.contentHash });
-  const inputBindings = seal.inputs.map((e) => ({ role: e.role, relPath: e.relPath }));
-  flat.push({
-    relPath: SEAL_HEADER_RELPATH,
-    contentHash: hashBytes(_headerBytes(seal.verdict, inputBindings)),
-  });
-  return flat;
+  const flatFiles = [];
+  for (const e of seal.inputs) flatFiles.push({ relPath: e.relPath, contentHash: e.contentHash, leaf: e.leaf });
+  for (const e of seal.outputs) flatFiles.push({ relPath: e.relPath, contentHash: e.contentHash, leaf: e.leaf });
+  const coreView = {
+    kind: SEAL_KIND,
+    schemaVersion: seal.schemaVersion,
+    note: SEAL_TRUST_NOTE,
+    root: seal.root,
+    fileCount: flatFiles.length,
+    files: flatFiles,
+    header: { relPath: SEAL_HEADER_RELPATH },
+    verdict: seal.verdict,
+    inputs: seal.inputs,
+  };
+  return packetseal.committedLeaves(coreView, SEAL_CFG);
 }
 
 // ---------------------------------------------------------------------------
@@ -659,9 +612,7 @@ function readSeal(input) {
 // ---------------------------------------------------------------------------
 // serializeSeal(seal) — canonical, byte-deterministic serialization: a FIXED
 // top-level + per-entry key order, NO insignificant whitespace, a single
-// trailing newline. Two runs over the same seal produce an identical string —
-// this is the property that makes the seal's bytes well-defined as a signing
-// payload (see signSealWith / the attestation codec below).
+// trailing newline. Two runs over the same seal produce an identical string.
 // ---------------------------------------------------------------------------
 
 function serializeSeal(seal) {
@@ -695,126 +646,99 @@ function serializeSeal(seal) {
 // ---------------------------------------------------------------------------
 // verifySeal(seal, files) — the AUTHORITATIVE, PURE verify.
 //
-// Recompute the per-file content hashes + the manifest root from the SUPPLIED
-// `{ relPath, bytes }` set (`files` is the SAME { inputs, outputs } shape buildSeal
-// took) and compare them, per file, against the seal's stored EXPECTATION. The
-// authoritative check is the RECOMPUTE: the seal is an untrusted container, so a
-// verdict is decided by the bytes the caller holds, never by the seal's own hashes.
-//
-// Returns a structured result naming EXACTLY which files:
-//   * MATCH      — present in both, recomputed contentHash equals the sealed one
-//   * CHANGED    — present in both, recomputed contentHash DIFFERS (tamper localized)
-//   * MISSING    — sealed, but absent from the supplied set
-//   * UNEXPECTED — supplied, but not named in the seal
-// plus, because the role bindings are committed into the root too, any file present in BOTH whose
-// SUPPLIED role differs from its SEALED role is surfaced as a `roleMismatch` (a bank↔book swap is
-// caught and localized, not silently accepted). The overall verdict is ACCEPTED only when every
-// sealed file MATCHes, none is MISSING/UNEXPECTED, no role mismatched, AND the recomputed root —
-// computed over the supplied files PLUS the verdict/role header — equals the sealed root; otherwise
-// REJECTED. The recomputed header uses the seal's recorded verdict + the SUPPLIED role bindings, so a
-// role swap changes the recomputed root and `rootMatches` goes false. rootMatches is reported
-// separately for transparency.
+// Delegates the per-file MATCH/CHANGED/MISSING/UNEXPECTED localization + the root
+// re-derivation (over the supplied files + the verdict/role header) to the shared
+// core, then ADDS the TrustLedger-specific role projection: each finding is tagged
+// with its sealed role, and any path present in BOTH whose SUPPLIED role differs from
+// its SEALED role is surfaced as a `roleMismatch`. The recomputed header binds the
+// SUPPLIED role bindings, so a role swap changes the recomputed root and rootMatches
+// goes false; the roleMismatches list LOCALIZES which paths' roles changed.
 //
 // PURE: no I/O, no key, no network, no clock.
 // ---------------------------------------------------------------------------
 
 function verifySeal(seal, files) {
-  // The seal must itself be structurally sound before we trust its EXPECTATIONS as a comparison
-  // basis (a corrupt seal is rejected loudly, not silently treated as "everything changed").
   validateSeal(seal);
+  const { inputs, outputs } = _normalizeSuppliedForVerify(files);
 
-  // VERIFY tolerates a PARTIAL supplied set (some sealed files absent on disk) — that is the whole
-  // point of localizing MISSING. We therefore use the LENIENT normalizer here (not _normalizeFileSet,
-  // which requires non-empty inputs+outputs for BUILD): every supplied entry is still strictly checked
-  // (role/relPath/bytes), but an empty list is allowed so an all-absent set still routes through THIS
-  // honest per-file localization rather than a synthesized "everything missing" fallback.
-  const { inputs, outputs, entries } = _normalizeSuppliedForVerify(files);
+  // The recomputed header uses the seal's recorded verdict + the SUPPLIED role bindings (so a role swap
+  // changes the recomputed root). Hand the core the flat supplied entries + that header content.
+  const suppliedFlat = [...inputs, ...outputs].map((e) => ({ relPath: e.relPath, bytes: e.bytes }));
+  const headerContent = _headerBytes(seal.verdict, inputs);
 
-  // Per-file recomputed contentHash from the SUPPLIED bytes via the SHARED hasher — the authoritative
-  // re-derivation. Done per file (not via a whole-tree manifest) so a PARTIAL set still yields honest
-  // per-file findings without needing every leaf present to build a tree.
-  const suppliedByRel = new Map();
-  for (const e of entries) suppliedByRel.set(e.relPath, { relPath: e.relPath, contentHash: hashBytes(e.bytes) });
+  // Build the flat core-shaped seal view so the core can verify per-file + root against it.
+  const coreSeal = {
+    kind: SEAL_KIND,
+    schemaVersion: seal.schemaVersion,
+    note: SEAL_TRUST_NOTE,
+    root: seal.root,
+    fileCount: seal.inputs.length + seal.outputs.length,
+    files: [...seal.inputs, ...seal.outputs].map((e) => ({
+      relPath: e.relPath,
+      contentHash: e.contentHash,
+      leaf: e.leaf,
+    })),
+    header: { relPath: SEAL_HEADER_RELPATH },
+    verdict: seal.verdict,
+    inputs: seal.inputs,
+  };
 
-  // The recomputed ROOT folds in the synthetic header built from the seal's recorded verdict + the
-  // SUPPLIED input role bindings, so a swapped role (or a supplied set whose roles disagree with the
-  // sealed roles) yields a different recomputed root → rootMatches:false. A tree needs ≥1 leaf, and a
-  // partial set can never re-derive the sealed root anyway, so we compute it only when at least one
-  // file is supplied; with an empty set it is null and rootMatches is false.
-  const recomputedRoot =
-    entries.length > 0 ? _rootFromSupplied(_committedEntries(entries, seal.verdict, inputs)) : null;
+  let core;
+  try {
+    core = packetseal.verifySeal(coreSeal, { entries: suppliedFlat }, SEAL_CFG, { headerContent });
+  } catch (e) {
+    throw _asSealError(e, { rootMessage: true });
+  }
 
-  // Map the supplied set's relPath -> { role, recomputedContentHash }. Role is the input role (for
-  // inputs) so the result can name "the bank input changed", not just a path.
+  // ----- TrustLedger role projection over the core's flat findings. -----
+  // sealed relPath -> role; supplied relPath -> role.
+  const sealedRole = new Map();
+  for (const e of seal.inputs) sealedRole.set(e.relPath, e.role);
+  for (const e of seal.outputs) sealedRole.set(e.relPath, null);
   const suppliedRole = new Map();
   for (const e of [...inputs, ...outputs]) suppliedRole.set(e.relPath, e.role);
 
-  // Sealed expectation: relPath -> { role, contentHash }.
-  const sealedByRel = new Map();
-  for (const e of seal.inputs) sealedByRel.set(e.relPath, { role: e.role, contentHash: e.contentHash });
-  for (const e of seal.outputs) sealedByRel.set(e.relPath, { role: null, contentHash: e.contentHash });
+  const matched = core.matched.map((m) => ({
+    relPath: m.relPath,
+    role: sealedRole.get(m.relPath) == null ? null : sealedRole.get(m.relPath),
+    contentHash: m.contentHash,
+  }));
+  const changed = core.changed.map((c) => ({
+    relPath: c.relPath,
+    role: sealedRole.get(c.relPath) == null ? null : sealedRole.get(c.relPath),
+    expectedContentHash: c.expectedContentHash,
+    actualContentHash: c.actualContentHash,
+  }));
+  const missing = core.missing.map((m) => ({
+    relPath: m.relPath,
+    role: sealedRole.get(m.relPath) == null ? null : sealedRole.get(m.relPath),
+  }));
+  const unexpected = core.unexpected.map((u) => ({
+    relPath: u.relPath,
+    role: suppliedRole.get(u.relPath) == null ? null : suppliedRole.get(u.relPath),
+    contentHash: u.contentHash,
+  }));
 
-  const matched = [];
-  const changed = [];
-  const missing = [];
-  const unexpected = [];
-  const roleMismatches = []; // { relPath, sealedRole, suppliedRole }
-
-  // Walk the SEALED set: each sealed file is MATCH / CHANGED / MISSING.
-  for (const [relPath, exp] of sealedByRel) {
-    const supplied = suppliedByRel.get(relPath);
-    if (!supplied) {
-      missing.push({ relPath, role: exp.role });
-      continue;
-    }
-    // A file present in both: surface a ROLE swap (sealed role vs supplied role) for this path. The
-    // header binding already forces rootMatches:false on any swap; this LOCALIZES which path's role
-    // changed so the caller can name "bank↔book swapped", not just "root drifted".
-    const suppliedR = suppliedRole.get(relPath) == null ? null : suppliedRole.get(relPath);
-    if (suppliedR !== exp.role) {
-      roleMismatches.push({ relPath, sealedRole: exp.role, suppliedRole: suppliedR });
-    }
-    if (supplied.contentHash.toLowerCase() === exp.contentHash.toLowerCase()) {
-      matched.push({ relPath, role: exp.role, contentHash: supplied.contentHash });
-    } else {
-      changed.push({
-        relPath,
-        role: exp.role,
-        expectedContentHash: exp.contentHash,
-        actualContentHash: supplied.contentHash,
-      });
+  // Role mismatch: a path present in BOTH whose SUPPLIED role differs from its SEALED role.
+  const roleMismatches = [];
+  for (const [relPath, sRole] of sealedRole) {
+    if (!suppliedRole.has(relPath)) continue;
+    const supR = suppliedRole.get(relPath) == null ? null : suppliedRole.get(relPath);
+    if (supR !== sRole) {
+      roleMismatches.push({ relPath, sealedRole: sRole, suppliedRole: supR });
     }
   }
-
-  // Any supplied file NOT named in the seal is UNEXPECTED.
-  for (const [relPath, recomputed] of suppliedByRel) {
-    if (!sealedByRel.has(relPath)) {
-      unexpected.push({ relPath, role: suppliedRole.get(relPath), contentHash: recomputed.contentHash });
-    }
-  }
-
-  // Sort each list by relPath so the result is deterministic regardless of input order.
   const byRel = (a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0);
-  matched.sort(byRel);
-  changed.sort(byRel);
-  missing.sort(byRel);
-  unexpected.sort(byRel);
   roleMismatches.sort(byRel);
 
-  const rootMatches = recomputedRoot != null && recomputedRoot.toLowerCase() === seal.root.toLowerCase();
-  const accepted =
-    changed.length === 0 &&
-    missing.length === 0 &&
-    unexpected.length === 0 &&
-    roleMismatches.length === 0 &&
-    rootMatches;
+  const accepted = core.accepted && roleMismatches.length === 0;
 
   return {
     verdict: accepted ? "ACCEPTED" : "REJECTED",
     accepted,
     sealedRoot: seal.root,
-    recomputedRoot,
-    rootMatches,
+    recomputedRoot: core.recomputedRoot,
+    rootMatches: core.rootMatches,
     counts: {
       matched: matched.length,
       changed: changed.length,
@@ -830,21 +754,11 @@ function verifySeal(seal, files) {
   };
 }
 
-// Internal: recompute the top-level root from the SUPPLIED { role, relPath, bytes } entries via the
-// SAME convention buildSeal used (hashEntries). Kept separate so verifySeal's root is always the
-// authoritative re-derivation from bytes, never copied from the seal.
-function _rootFromSupplied(entries) {
-  const built = hashEntries(entries.map((e) => ({ path: e.relPath, content: e.bytes })));
-  return built.root;
-}
-
 // ---------------------------------------------------------------------------
 // SIGNED-attestation WRAP (optional). The seal MAY be wrapped by the EXISTING
 // `cli/core/attestation.js` envelope so a human can vouch for it via the SAME
 // shared signing path — NO new scheme. The seal's CANONICAL bytes (serializeSeal)
-// become the attestation payload. We expose the product's framing + thin wrappers
-// over the core, exactly as DataLedger does, and a `signSealWith(seal, signer)`
-// convenience that round-trips through recoverSigner / verifySignedAttestation.
+// become the attestation payload. Unchanged by T-30.2.
 //
 // The signature proves WHO vouched for the seal — still NOT a trusted timestamp
 // (P-3) and still NOT a legal opinion (the CPA review governs).

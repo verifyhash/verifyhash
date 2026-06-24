@@ -1,9 +1,18 @@
 "use strict";
 
-// TrustLedger — license.js  (EPIC-? / T-29.1)
+// TrustLedger — license.js  (EPIC-? / T-29.1, T-30.1)
 //
 // THE PRODUCT LICENSE — a PURE, offline-verifiable, signed entitlement token, built on the project's
 // EXISTING signed-attestation envelope (`cli/core/attestation.js`), reusing it VERBATIM.
+//
+// THIN ADAPTER (T-30.1). All of the license MACHINERY now lives in the PRODUCT-AGNOSTIC core
+// `cli/core/license.js` (which itself reuses `cli/core/attestation.js` verbatim for ALL crypto — no new
+// crypto, no new dependency). This module is the TrustLedger ADAPTER: it supplies the product-specific
+// framing — the `kind`/`schemaVersion`, the CLOSED `ENTITLEMENTS` table, the standing trust notes, and the
+// historical `LicenseError` type — as a single closed `cfg`, then re-exports the SAME public surface so
+// its byte-for-byte mint/verify outputs and every reject reason are UNCHANGED. No TrustLedger caller
+// changes; verifyLicense's localized reasons (bad_signature / wrong_issuer / expired / not_yet_valid /
+// malformed / unknown-entitlement) are exactly as before.
 //
 // THE PROBLEM THIS SOLVES.
 //   TrustLedger's premium surfaces (multi-state policy packs, the reconciliation SEAL, unlimited
@@ -13,15 +22,6 @@
 //   questions: "did OUR vendor key sign this?" and "is it in-window and what does it entitle?".
 //   A license signed by anyone else, or expired, or carrying an unknown entitlement, must be a hard
 //   REJECT — never silently honored.
-//
-// THE MOVE — reuse the proven signed-attestation envelope VERBATIM.
-//   A license is just one more product on the shared envelope, exactly like the seal: we define an
-//   UNSIGNED license PAYLOAD (a strict, versioned object), a canonical serializer, and a strict
-//   validator, then hand those to `cli/core/attestation.js` as the product framing. The core does ALL
-//   the crypto: it embeds the EXACT canonical payload bytes as the attestation, attaches the detached
-//   EIP-191 signature, and later RE-DERIVES the signer from those bytes. There is NO new crypto here,
-//   NO new dependency — `buildLicense` wraps via `signAttestation`, `verifyLicense` recovers via
-//   `recoverSigner`/`verifySignedAttestation`, exactly as the seal does.
 //
 // PURE + I/O-FREE.
 //   Every function here is pure: no filesystem, no clock, no network, no key handling (the key lives
@@ -41,8 +41,7 @@
 //   expiresAt rides the vendor's own honesty + key custody, P-3), and it is NOT a legal contract — the
 //   actual subscription agreement governs. The license gates FEATURES; it never replaces the SLA.
 
-const coreAttestation = require("../cli/core/attestation");
-const { getAddress } = require("ethers");
+const coreLicense = require("../cli/core/license");
 
 // ---------------------------------------------------------------------------
 // Identity. The license has its OWN `kind`/`schemaVersion`, disjoint from the seal/dataset/parcel
@@ -72,12 +71,6 @@ const ENTITLEMENTS = Object.freeze({
 // never drift. Sorted so error messages + any iteration are deterministic.
 const ENTITLEMENT_FLAGS = Object.freeze(Object.keys(ENTITLEMENTS).sort());
 
-// A strict ISO-8601 UTC instant, e.g. "2026-05-31T00:00:00.000Z". We require the canonical form ethers/
-// JS emit via `new Date(...).toISOString()` so two logically-identical licenses serialize to identical
-// bytes. We REJECT a date-only ("YYYY-MM-DD") or an offset-bearing form (over-loose) — the license dates
-// are machine-compared instants, so they must be a single, unambiguous UTC encoding.
-const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
-
 // The in-band trust caveat carried in EVERY license payload, stated in ONE place so it can never drift
 // from the NatSpec above. It is the load-bearing honesty of the artifact.
 const LICENSE_TRUST_NOTE =
@@ -90,7 +83,9 @@ const LICENSE_TRUST_NOTE =
 
 // ---------------------------------------------------------------------------
 // Errors — STRICT. A malformed/ambiguous license raises a NAMED error rather than being silently
-// dropped, coerced, or partially accepted (mirrors seal.js / close.js).
+// dropped, coerced, or partially accepted (mirrors seal.js / close.js). TrustLedger keeps its OWN
+// LicenseError TYPE (handed to the core as cfg.ErrorClass) so existing callers that `catch (LicenseError)`
+// and the byte-for-byte error messages are UNCHANGED.
 // ---------------------------------------------------------------------------
 
 class LicenseError extends Error {
@@ -100,162 +95,10 @@ class LicenseError extends Error {
   }
 }
 
-function isPlainObject(v) {
-  return v != null && typeof v === "object" && !Array.isArray(v);
-}
-
 // ---------------------------------------------------------------------------
-// validateLicense(obj) — STRICT structural validation of an UNSIGNED license PAYLOAD. Throws a named
-// LicenseError on the FIRST problem; returns the object unchanged on success. This is the
-// `validateUnsigned` the attestation core re-runs on the embedded payload (the wrap-don't-edit
-// invariant), so a signed container can never smuggle a malformed/edited license.
-//
-// REJECTS: a wrong kind / schemaVersion; a wrong note; a missing/non-string licenseId/customer/plan; a
-// non-array or empty entitlements; a duplicate or unknown entitlement flag; a non-ISO issuedAt/
-// expiresAt; expiresAt <= issuedAt. It NEVER half-accepts or fills defaults.
-// ---------------------------------------------------------------------------
-
-function validateLicense(obj) {
-  if (!isPlainObject(obj)) {
-    throw new LicenseError("license payload must be a JSON object");
-  }
-  if (obj.kind !== LICENSE_KIND) {
-    throw new LicenseError(
-      `not a trustledger license (kind: ${JSON.stringify(obj.kind)}; expected ${JSON.stringify(LICENSE_KIND)})`
-    );
-  }
-  if (!SUPPORTED_LICENSE_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
-    throw new LicenseError(
-      `unsupported license schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
-        `(this build understands ${JSON.stringify(SUPPORTED_LICENSE_SCHEMA_VERSIONS)})`
-    );
-  }
-  if (obj.note !== LICENSE_TRUST_NOTE) {
-    throw new LicenseError("license `note` must be the standing LICENSE_TRUST_NOTE (caveat must not drift)");
-  }
-
-  for (const f of ["licenseId", "customer", "plan"]) {
-    if (typeof obj[f] !== "string" || obj[f].length === 0) {
-      throw new LicenseError(`license ${f} must be a non-empty string`);
-    }
-  }
-
-  // entitlements — a closed set of known flags, each used at most once.
-  if (!Array.isArray(obj.entitlements) || obj.entitlements.length === 0) {
-    throw new LicenseError("license `entitlements` must be a non-empty array of known flags");
-  }
-  const seen = new Set();
-  for (const flag of obj.entitlements) {
-    if (typeof flag !== "string") {
-      throw new LicenseError(`license entitlement must be a string flag, got: ${JSON.stringify(flag)}`);
-    }
-    if (!Object.prototype.hasOwnProperty.call(ENTITLEMENTS, flag)) {
-      throw new LicenseError(
-        `unknown license entitlement: ${JSON.stringify(flag)} ` +
-          `(this build understands ${JSON.stringify(ENTITLEMENT_FLAGS)})`
-      );
-    }
-    if (seen.has(flag)) {
-      throw new LicenseError(`license has a duplicate entitlement: ${JSON.stringify(flag)}`);
-    }
-    seen.add(flag);
-  }
-
-  // issuedAt / expiresAt — strict ISO instants, expiresAt strictly after issuedAt.
-  for (const f of ["issuedAt", "expiresAt"]) {
-    if (typeof obj[f] !== "string" || !ISO_INSTANT_RE.test(obj[f])) {
-      throw new LicenseError(
-        `license ${f} must be an ISO-8601 UTC instant ("YYYY-MM-DDTHH:MM:SS(.mmm)Z"), got: ${String(obj[f])}`
-      );
-    }
-    // The regex pins the SHAPE; require it to be a real, CANONICAL calendar instant too. Date.parse on a
-    // strict-Z form is UTC, but it (1) does NOT reject out-of-range fields — it ROLLS THEM OVER (e.g.
-    // "2026-02-29T00:00:00.000Z" in non-leap 2026 silently becomes 2026-03-01; "...T24:00:00.000Z"
-    // becomes the next day), and (2) accepts a missing-millis form ("...:00Z") that is a different BYTE
-    // string than the canonical "...:00.000Z". Either case would let two logically-distinct (or
-    // logically-identical) inputs sign differently / silently coerce a self-asserted date — breaking the
-    // byte-determinism the whole product rests on. So after parsing we require the round-trip to be
-    // BYTE-IDENTICAL: `new Date(ms).toISOString() === obj[f]`. toISOString always emits the canonical,
-    // normalized "YYYY-MM-DDTHH:MM:SS.mmmZ", so this single equality both FORCES the `.mmm` millis form
-    // and REJECTS every rolled-over/impossible instant — never silently coerced.
-    const ms = Date.parse(obj[f]);
-    if (Number.isNaN(ms) || new Date(ms).toISOString() !== obj[f]) {
-      throw new LicenseError(
-        `license ${f} must be a canonical ISO-8601 UTC instant ("YYYY-MM-DDTHH:MM:SS.mmmZ", millis required, ` +
-          `no rolled-over/impossible fields), got: ${String(obj[f])}`
-      );
-    }
-  }
-  const issuedMs = Date.parse(obj.issuedAt);
-  const expiresMs = Date.parse(obj.expiresAt);
-  if (expiresMs <= issuedMs) {
-    throw new LicenseError(
-      `license expiresAt (${obj.expiresAt}) must be strictly AFTER issuedAt (${obj.issuedAt})`
-    );
-  }
-
-  return obj;
-}
-
-// ---------------------------------------------------------------------------
-// serializeLicense(payload) — canonical, byte-deterministic serialization of an UNSIGNED license
-// payload: a FIXED key order, NO insignificant whitespace, a single trailing newline. Entitlements are
-// emitted in the FROZEN ENTITLEMENT_FLAGS order (filtered to those present) so the bytes are
-// independent of the caller's array order. This is the EXACT byte sequence the envelope signs over and
-// `verifyLicense` re-derives the signer from — so two logically-identical licenses sign identically.
-// ---------------------------------------------------------------------------
-
-function serializeLicense(payload) {
-  validateLicense(payload);
-  const present = new Set(payload.entitlements);
-  const canonical = {
-    kind: payload.kind,
-    schemaVersion: payload.schemaVersion,
-    note: payload.note,
-    licenseId: payload.licenseId,
-    customer: payload.customer,
-    plan: payload.plan,
-    // Emit in the fixed table order, filtered to those present — order-independent canonical form.
-    entitlements: ENTITLEMENT_FLAGS.filter((f) => present.has(f)),
-    issuedAt: payload.issuedAt,
-    expiresAt: payload.expiresAt,
-  };
-  return JSON.stringify(canonical) + "\n";
-}
-
-// ---------------------------------------------------------------------------
-// buildLicensePayload({...}) — assemble + strictly validate an UNSIGNED license payload from caller
-// fields. PURE. This is the payload that `buildLicense` then wraps in the signed envelope. Splitting it
-// out lets a caller hold/inspect the unsigned payload before signing (and lets the build path validate
-// the SAME way the embedded payload is re-validated on read).
-// ---------------------------------------------------------------------------
-
-function buildLicensePayload(params) {
-  if (!isPlainObject(params)) {
-    throw new LicenseError("buildLicensePayload requires a { licenseId, customer, plan, entitlements, issuedAt, expiresAt } object");
-  }
-  const payload = {
-    kind: LICENSE_KIND,
-    schemaVersion: LICENSE_SCHEMA_VERSION,
-    note: LICENSE_TRUST_NOTE,
-    licenseId: params.licenseId,
-    customer: params.customer,
-    plan: params.plan,
-    entitlements: params.entitlements,
-    issuedAt: params.issuedAt,
-    expiresAt: params.expiresAt,
-  };
-  // validateLicense throws a named error on any malformed/unknown/missing field — never silently
-  // accepts. We return the canonicalized payload (re-parsed from serializeLicense) so the in-memory
-  // object's entitlement order matches the signed bytes exactly.
-  validateLicense(payload);
-  return JSON.parse(serializeLicense(payload));
-}
-
-// ---------------------------------------------------------------------------
-// The license's signed-attestation framing, passed to the GENERIC attestation core. The core does ALL
-// the crypto + the wrap-don't-edit invariant; this supplies ONLY the license-specific framing
-// (kind/schema/note/label) + the unsigned payload codec. This is the SAME pattern the seal/dataset use.
+// The signed-license container framing. The license is one more product on the shared signed-attestation
+// envelope, exactly like the seal: an UNSIGNED license PAYLOAD wrapped in a detached signature. The
+// signed container has its OWN kind/schema/note, disjoint from the embedded license payload's.
 // ---------------------------------------------------------------------------
 
 const SIGNED_LICENSE_KIND = "trustledger-license-signed";
@@ -269,218 +112,96 @@ const SIGNED_LICENSE_TRUST_NOTE =
   "Every caveat of the embedded license applies. " +
   LICENSE_TRUST_NOTE;
 
+// ---------------------------------------------------------------------------
+// THE TRUSTLEDGER LICENSE CFG — the single closed object handed to cli/core/license.js. It carries the
+// product framing (the unsigned license `kind`/`schema`/`note`/`entitlements`), the signed-container
+// framing (`signedKind`/...), and the historical `ErrorClass` so the core throws TrustLedger's
+// LicenseError verbatim. Every adapter function below routes through the core with THIS cfg, so the
+// behaviour is byte-for-byte the pre-extraction behaviour.
+// ---------------------------------------------------------------------------
+
+const CFG = Object.freeze({
+  // unsigned license payload framing
+  kind: LICENSE_KIND,
+  schemaVersion: LICENSE_SCHEMA_VERSION,
+  supportedSchemaVersions: SUPPORTED_LICENSE_SCHEMA_VERSIONS,
+  note: LICENSE_TRUST_NOTE,
+  entitlements: ENTITLEMENTS,
+  // signed-container framing
+  signedKind: SIGNED_LICENSE_KIND,
+  signedSchemaVersion: SIGNED_LICENSE_SCHEMA_VERSION,
+  supportedSignedSchemaVersions: SUPPORTED_SIGNED_LICENSE_SCHEMA_VERSIONS,
+  signedNote: SIGNED_LICENSE_TRUST_NOTE,
+  signedLabel: "signed trustledger license",
+  // historical error type (so callers + messages are unchanged)
+  ErrorClass: LicenseError,
+});
+
+// The SIGNED_LICENSE_CFG the previous module exported (the attestation-core framing). Re-derived here from
+// the same pieces so any external reader sees the SAME object shape it did before the extraction.
 const SIGNED_LICENSE_CFG = Object.freeze({
   kind: SIGNED_LICENSE_KIND,
   schemaVersion: SIGNED_LICENSE_SCHEMA_VERSION,
   supportedSchemaVersions: SUPPORTED_SIGNED_LICENSE_SCHEMA_VERSIONS,
   note: SIGNED_LICENSE_TRUST_NOTE,
   label: "signed trustledger license",
-  validateUnsigned: validateLicense,
-  serializeUnsigned: serializeLicense,
+  validateUnsigned: (obj) => coreLicense.validateLicense(obj, CFG),
+  serializeUnsigned: (obj) => coreLicense.serializeLicense(obj, CFG),
 });
 
 // ---------------------------------------------------------------------------
-// buildLicense({...}, signer) — mint a SIGNED license container. Builds + validates the unsigned
-// payload, then routes it + the caller's signer through the SHARED `signAttestation` core, which signs
-// the EXACT canonical bytes (EIP-191 personal_sign) and wraps + validates the container. NO key
-// handling here — the key lives only inside the signer object. The container ROUND-TRIPS by
-// construction: verifyLicense recovers exactly this signer over exactly serializeLicense(payload).
-//
-// @param {object} params  { licenseId, customer, plan, entitlements, issuedAt, expiresAt }
-// @param {object} signer  an ethers signer-like object: async getAddress() + signMessage()
-// @returns {Promise<object>} the validated signed-license container
+// Public surface — each a THIN adapter binding the TrustLedger CFG to the product-agnostic core. The
+// signatures match the pre-extraction module exactly, so NO TrustLedger caller changes.
 // ---------------------------------------------------------------------------
 
+/** STRICT structural validation of an UNSIGNED license PAYLOAD. Throws LicenseError on the first problem. */
+function validateLicense(obj) {
+  return coreLicense.validateLicense(obj, CFG);
+}
+
+/** Canonical, byte-deterministic serialization of an UNSIGNED license payload (newline-terminated). */
+function serializeLicense(payload) {
+  return coreLicense.serializeLicense(payload, CFG);
+}
+
+/** Assemble + strictly validate an UNSIGNED license payload from caller fields. PURE. */
+function buildLicensePayload(params) {
+  return coreLicense.buildLicensePayload(params, CFG);
+}
+
+/** Mint a SIGNED license container from caller fields + an ethers signer object. */
 async function buildLicense(params, signer) {
-  const payload = buildLicensePayload(params);
-  return coreAttestation.signAttestation({ attestation: payload, signer }, SIGNED_LICENSE_CFG);
+  return coreLicense.buildLicense(params, signer, CFG);
 }
 
-/** Strictly validate a parsed SIGNED-license container — thin wrapper over the shared core. */
+/** Strictly validate a parsed SIGNED-license container. */
 function validateSignedLicense(obj) {
-  return coreAttestation.validateSignedAttestation(obj, SIGNED_LICENSE_CFG);
+  return coreLicense.validateSignedLicense(obj, CFG);
 }
 
-/** Serialize a SIGNED-license container to its canonical bytes — thin wrapper over the shared core. */
+/** Serialize a SIGNED-license container to its canonical bytes. */
 function serializeSignedLicense(container) {
-  return coreAttestation.serializeSignedAttestation(container, SIGNED_LICENSE_CFG);
+  return coreLicense.serializeSignedLicense(container, CFG);
 }
 
-// ---------------------------------------------------------------------------
-// readLicense(text|obj) — parse + strictly validate a SIGNED-license container (JSON string or object).
-// A parse error is a LicenseError (never a raw SyntaxError); a malformed/corrupt container is rejected
-// by the shared validator, never half-accepted.
-// ---------------------------------------------------------------------------
-
+/** Parse + strictly validate a SIGNED-license container (JSON string or object). */
 function readLicense(input) {
-  let obj;
-  if (typeof input === "string") {
-    try {
-      obj = JSON.parse(input);
-    } catch (e) {
-      throw new LicenseError(`license container is not valid JSON: ${e.message}`);
-    }
-  } else if (isPlainObject(input)) {
-    obj = input;
-  } else {
-    throw new LicenseError("readLicense requires a JSON string or a signed-license container object");
-  }
-  // Surface the core's structural rejection as a LicenseError so callers catch ONE error type. The core
-  // throws plain Errors; we re-tag the message.
-  try {
-    coreAttestation.validateSignedAttestation(obj, SIGNED_LICENSE_CFG);
-  } catch (e) {
-    throw new LicenseError(e.message);
-  }
-  return obj;
+  return coreLicense.readLicense(input, CFG);
 }
 
-// ---------------------------------------------------------------------------
-// verifyLicense(container, { now, vendorAddress }) — the AUTHORITATIVE, PURE, OFFLINE verify.
-//
-// Re-derive the canonical payload from the container's embedded bytes, recover the signer via the
-// EXISTING core recovery, and return a STRUCTURED verdict. `valid` is true ONLY when ALL hold:
-//   (a) the envelope signature verifies (recovers to the CLAIMED signer);
-//   (b) the recovered signer EQUALS the pinned `vendorAddress` (any other key => wrong_issuer);
-//   (c) `now` is within [issuedAt, expiresAt] inclusive.
-// Otherwise a LOCALIZED reason is returned (never thrown for an ordinary rejection):
-//   * malformed       — the container is structurally invalid (not a sound signed license)
-//   * bad_signature   — the signature does not recover to the claimed signer (tamper / corrupt)
-//   * wrong_issuer    — recovered, but NOT the pinned vendor key
-//   * not_yet_valid   — now < issuedAt
-//   * expired         — now > expiresAt
-//
-// `now` is an EXPLICIT argument (a Date, an ISO string, or epoch-ms number) — verifyLicense NEVER reads
-// the system clock, so it stays pure/deterministic. `vendorAddress` is REQUIRED: a license is worthless
-// without a key to pin it to (we never "trust whoever signed it"). NO I/O, NO network, NO key.
-//
-// @param {object} container  a signed-license container (from buildLicense/readLicense)
-// @param {object} opts       { now: Date|string|number, vendorAddress: string }
-// @returns {{
-//   valid: boolean,
-//   reason: null|"malformed"|"bad_signature"|"wrong_issuer"|"not_yet_valid"|"expired",
-//   recoveredSigner: string|null,
-//   vendorAddress: string,
-//   payload: object|null,
-//   entitlements: string[],
-//   now: string,
-// }}
-// ---------------------------------------------------------------------------
-
+/** The AUTHORITATIVE, PURE, OFFLINE verify — re-derive the signer, pin the vendor, check the window. */
 function verifyLicense(container, opts) {
-  if (!isPlainObject(opts)) {
+  // Bind the TrustLedger CFG into the core's opts (the core requires opts.cfg). We never trust a
+  // caller-supplied cfg — TrustLedger's framing is fixed.
+  if (opts == null || typeof opts !== "object" || Array.isArray(opts)) {
     throw new LicenseError("verifyLicense requires an options object { now, vendorAddress }");
   }
-  // vendorAddress is REQUIRED + must be a syntactically valid address. We normalize via the core's
-  // ethers getAddress (accepts checksummed/mixed-case) and lowercase it for comparison. A garbage
-  // vendorAddress is a CALLER error (thrown), distinct from an ordinary license rejection.
-  let normalizedVendor;
-  try {
-    normalizedVendor = getAddress(opts.vendorAddress);
-  } catch (_e) {
-    throw new LicenseError(
-      `verifyLicense requires a valid vendorAddress (0x-address to pin the issuer to), got: ${String(opts.vendorAddress)}`
-    );
-  }
-  const vendorLc = normalizedVendor.toLowerCase();
-
-  // `now` — accept a Date, an ISO string, or epoch-ms; resolve to epoch-ms. A garbage `now` is a CALLER
-  // error (thrown). We record the resolved instant as an ISO string for transparency. NOTE: `now` is
-  // INTENTIONALLY lenient (it is the caller's explicit clock arg, not a self-asserted payload date) — a
-  // date-only "2026-06-23" is accepted as UTC midnight, unlike the strict, canonical ISO instants the
-  // payload's issuedAt/expiresAt are held to. The window check only compares epoch-ms.
-  let nowMs;
-  if (opts.now instanceof Date) {
-    nowMs = opts.now.getTime();
-  } else if (typeof opts.now === "number" && Number.isFinite(opts.now)) {
-    nowMs = opts.now;
-  } else if (typeof opts.now === "string") {
-    nowMs = Date.parse(opts.now);
-  } else {
-    nowMs = NaN;
-  }
-  if (Number.isNaN(nowMs)) {
-    throw new LicenseError(
-      `verifyLicense requires a valid \`now\` (a Date, ISO string, or epoch-ms number), got: ${String(opts.now)}`
-    );
-  }
-  const nowIso = new Date(nowMs).toISOString();
-
-  function reject(reason, recoveredSigner, payload) {
-    return {
-      valid: false,
-      reason,
-      recoveredSigner: recoveredSigner == null ? null : recoveredSigner,
-      vendorAddress: vendorLc,
-      payload: payload == null ? null : payload,
-      entitlements: [],
-      now: nowIso,
-    };
-  }
-
-  // (0) STRUCTURAL: the container must be a sound signed license, with an embedded payload that
-  //     re-validates (the core enforces the wrap-don't-edit invariant). A malformed/hand-corrupted
-  //     container is `malformed`, never trusted. The embedded payload must ALSO parse to a sound
-  //     license so we can read its dates/entitlements.
-  let payload;
-  try {
-    coreAttestation.validateSignedAttestation(container, SIGNED_LICENSE_CFG);
-    payload = JSON.parse(container.attestation);
-    validateLicense(payload);
-  } catch (_e) {
-    return reject("malformed", null, null);
-  }
-
-  // (a) SIGNATURE: recover the signer from the embedded bytes and confirm it matches the CLAIMED signer.
-  //     A tampered payload byte (the embedded bytes no longer match what was signed) recovers to the
-  //     wrong address — signatureMatchesSigner is false — so this is `bad_signature`. A structurally
-  //     unrecoverable signature is also caught (the core returns "(unrecoverable)").
-  const att = coreAttestation.verifySignedAttestation({ container });
-  if (!att.checks.signatureMatchesSigner) {
-    return reject("bad_signature", att.recoveredSigner === "(unrecoverable)" ? null : att.recoveredSigner, payload);
-  }
-  const recovered = att.recoveredSigner; // lowercase 0x-address
-
-  // (b) ISSUER PIN: the recovered signer must EQUAL the pinned vendor key. A license signed by any other
-  //     key is REJECTED (wrong_issuer), never trusted — this is the TRUST-BOUNDARIES re-derivation.
-  if (recovered !== vendorLc) {
-    return reject("wrong_issuer", recovered, payload);
-  }
-
-  // (c) WINDOW: `now` must be within [issuedAt, expiresAt] inclusive. validateLicense already proved
-  //     expiresAt > issuedAt, so the window is non-empty.
-  const issuedMs = Date.parse(payload.issuedAt);
-  const expiresMs = Date.parse(payload.expiresAt);
-  if (nowMs < issuedMs) {
-    return reject("not_yet_valid", recovered, payload);
-  }
-  if (nowMs > expiresMs) {
-    return reject("expired", recovered, payload);
-  }
-
-  // VALID — signature verifies, issuer is the vendor, and now is in-window.
-  return {
-    valid: true,
-    reason: null,
-    recoveredSigner: recovered,
-    vendorAddress: vendorLc,
-    payload,
-    entitlements: payload.entitlements.slice(),
-    now: nowIso,
-  };
+  return coreLicense.verifyLicense(container, { now: opts.now, vendorAddress: opts.vendorAddress, cfg: CFG });
 }
 
-// ---------------------------------------------------------------------------
-// hasEntitlement(verdict, flag) — PURE. True ONLY when the verdict is `valid` AND `flag` is present in
-// its entitlements. False for ANY non-valid verdict (a rejected/expired/wrong-issuer license entitles
-// NOTHING) and for an unknown/absent flag. This is the single gate product code should call — it can
-// never accidentally honor an entitlement from an untrusted verdict.
-// ---------------------------------------------------------------------------
-
+/** PURE entitlement gate — true only for a present flag on a VALID verdict (product-agnostic). */
 function hasEntitlement(verdict, flag) {
-  if (!isPlainObject(verdict) || verdict.valid !== true) return false;
-  if (typeof flag !== "string") return false;
-  return Array.isArray(verdict.entitlements) && verdict.entitlements.includes(flag);
+  return coreLicense.hasEntitlement(verdict, flag);
 }
 
 module.exports = {

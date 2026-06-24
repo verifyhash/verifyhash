@@ -27,8 +27,11 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+const { Wallet } = require("ethers");
+
 const { cmdTrust, runReconcile, EXIT } = require("../trustledger/cli");
 const sealMod = require("../trustledger/seal");
+const licenseMod = require("../trustledger/license");
 
 const FIX = path.join(__dirname, "..", "trustledger", "fixtures", "e2e");
 const BANK = path.join(FIX, "bank.csv");
@@ -52,6 +55,37 @@ function capture() {
 
 describe("trustledger T-26.2: `vh trust reconcile --seal` + `verify-seal`", function () {
   let tmpDirs;
+
+  // T-29.2: --seal is a PAID surface — it now requires a valid, vendor-pinned license
+  // carrying the `seal` entitlement. Mint ONE fresh EPHEMERAL-key license (TEST-ONLY
+  // Wallet.createRandom, NEVER a real key) into a dedicated dir that OUTLIVES the
+  // per-test cleanup, covering the pinned DATE, and reuse its [--license <f>
+  // --vendor <0xaddr>] flags across the suite. The license dir is its OWN dir (never
+  // a packet --out dir) so the dir-content assertions still see exactly packet+seal.
+  let LICENSE_FLAGS;
+  let licDir;
+  before(async function () {
+    const vendor = Wallet.createRandom();
+    const container = await licenseMod.buildLicense(
+      {
+        licenseId: "LIC-TEST-SEAL",
+        customer: "Test Broker LLC",
+        plan: "pro",
+        entitlements: ["seal"],
+        issuedAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2027-01-01T00:00:00.000Z",
+      },
+      vendor
+    );
+    licDir = fs.mkdtempSync(path.join(os.tmpdir(), "tl-seal-lic-"));
+    const file = path.join(licDir, "test.vhlicense.json");
+    fs.writeFileSync(file, licenseMod.serializeSignedLicense(container));
+    LICENSE_FLAGS = ["--license", file, "--vendor", vendor.address];
+  });
+  after(function () {
+    if (licDir) fs.rmSync(licDir, { recursive: true, force: true });
+  });
+
   beforeEach(function () {
     tmpDirs = [];
   });
@@ -64,11 +98,13 @@ describe("trustledger T-26.2: `vh trust reconcile --seal` + `verify-seal`", func
     return d;
   }
 
-  // Drive a `reconcile ... --out dir --seal` through the public dispatch.
+  // Drive a `reconcile ... --out dir --seal` through the public dispatch WITH the
+  // shared seal license (the gate now requires it). Synchronous — the license was
+  // minted once in before().
   function reconcileSeal(dir, extra = []) {
     const io = capture();
     const code = cmdTrust(
-      ["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", dir, "--seal", ...extra],
+      ["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", dir, "--seal", ...LICENSE_FLAGS, ...extra],
       io
     );
     return { code, io };
@@ -257,7 +293,7 @@ describe("trustledger T-26.2: `vh trust reconcile --seal` + `verify-seal`", func
     const named = path.join(dir, "my-custom-seal.json");
     const io = capture();
     const code = cmdTrust(
-      ["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", dir, "--seal", named],
+      ["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", dir, "--seal", named, ...LICENSE_FLAGS],
       io
     );
     expect(code).to.equal(EXIT.PASS);
@@ -273,7 +309,7 @@ describe("trustledger T-26.2: `vh trust reconcile --seal` + `verify-seal`", func
     const dir = mkTmp();
     const io = capture();
     const code = cmdTrust(
-      ["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", dir, "--seal", "--json"],
+      ["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", dir, "--seal", ...LICENSE_FLAGS, "--json"],
       io
     );
     expect(code).to.equal(EXIT.PASS);
@@ -316,7 +352,7 @@ describe("trustledger T-26.2: `vh trust reconcile --seal` + `verify-seal`", func
       [
         "reconcile", BANK, BOOK, RENT,
         "--date", DATE, "--out", dir,
-        "--emit-close", closePath, "--seal",
+        "--emit-close", closePath, "--seal", ...LICENSE_FLAGS,
       ],
       io
     );

@@ -21,9 +21,12 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+const { Wallet } = require("ethers");
+
 const { runReconcile, cmdReconcile, EXIT } = require("../trustledger/cli");
 const policy = require("../trustledger/policy");
 const report = require("../trustledger/report");
+const licenseMod = require("../trustledger/license");
 
 const FIX = path.join(__dirname, "..", "trustledger", "fixtures", "e2e");
 const POL = path.join(__dirname, "..", "trustledger", "fixtures", "policy");
@@ -74,6 +77,39 @@ function verdictView(model) {
 
 describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
   let tmpDirs;
+
+  // T-29.2: --state/--policy are PAID surfaces — they now require a valid,
+  // vendor-pinned license carrying the `multi_state_policy` entitlement. Mint ONE
+  // fresh EPHEMERAL-key license (TEST-ONLY Wallet.createRandom, NEVER a real key)
+  // into a dir that OUTLIVES per-test cleanup, in-window for the pinned DATE, and
+  // reuse it across the multi-state tests. `LIC` adds the license opts;
+  // `LICFLAGS` adds the equivalent argv flags for the cmdReconcile path.
+  let LIC; // { license, vendor }
+  let LICFLAGS; // ["--license", file, "--vendor", addr]
+  let licDir;
+  before(async function () {
+    const vendor = Wallet.createRandom();
+    const container = await licenseMod.buildLicense(
+      {
+        licenseId: "LIC-TEST-POLICY",
+        customer: "Test Broker LLC",
+        plan: "pro",
+        entitlements: ["multi_state_policy", "seal"],
+        issuedAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2027-01-01T00:00:00.000Z",
+      },
+      vendor
+    );
+    licDir = fs.mkdtempSync(path.join(os.tmpdir(), "tl-pol-lic-"));
+    const file = path.join(licDir, "test.vhlicense.json");
+    fs.writeFileSync(file, licenseMod.serializeSignedLicense(container));
+    LIC = { license: file, vendor: vendor.address };
+    LICFLAGS = ["--license", file, "--vendor", vendor.address];
+  });
+  after(function () {
+    if (licDir) fs.rmSync(licDir, { recursive: true, force: true });
+  });
+
   beforeEach(function () {
     tmpDirs = [];
   });
@@ -119,7 +155,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
     );
     const ioBase = capture();
     const base = runReconcile(
-      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, policyFile: BASELINE },
+      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, policyFile: BASELINE, ...LIC },
       ioBase
     );
 
@@ -158,7 +194,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
   it("OVERRIDE (--policy): escalating the present nsf_reversal WARNING to ERROR flips PASS->FAIL, exit 3, and shows the citation", function () {
     const ioBase = capture();
     const base = runReconcile(
-      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, policyFile: BASELINE },
+      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, policyFile: BASELINE, ...LIC },
       ioBase
     );
     expect(base.code).to.equal(EXIT.PASS);
@@ -166,7 +202,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
     const dir = mkTmp();
     const io = capture();
     const res = runReconcile(
-      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, policyFile: OVERRIDE, out: dir },
+      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, policyFile: OVERRIDE, out: dir, ...LIC },
       io
     );
 
@@ -215,7 +251,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
   it("OVERRIDE (--state): the bundled state code resolves the same policy and flips to FAIL (exit 3)", function () {
     const io = capture();
     const res = runReconcile(
-      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, state: "ca-example" },
+      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, state: "ca-example", ...LIC },
       io
     );
     expect(res.code).to.equal(EXIT.FAIL);
@@ -235,6 +271,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
         state: "ca-example",
         out: dir,
         json: true,
+        ...LIC,
       },
       io
     );
@@ -265,6 +302,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
         policyFile: BASELINE,
         state: "ca-example",
         out: dir,
+        ...LIC,
       },
       io
     );
@@ -277,7 +315,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
   it("USAGE: an unknown --state is exit 2 and lists the bundled states", function () {
     const io = capture();
     const res = runReconcile(
-      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, state: "atlantis" },
+      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, state: "atlantis", ...LIC },
       io
     );
     expect(res.code).to.equal(EXIT.USAGE);
@@ -292,7 +330,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
     fs.writeFileSync(bad, "{ not: valid json ");
     const io = capture();
     const res = runReconcile(
-      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, policyFile: bad },
+      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, policyFile: bad, ...LIC },
       io
     );
     expect(res.code).to.equal(EXIT.USAGE);
@@ -308,6 +346,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
         rentroll: RENT,
         date: DATE,
         policyFile: path.join(os.tmpdir(), "no-such-policy-xyz.json"),
+        ...LIC,
       },
       io
     );
@@ -318,7 +357,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
   it("flags parse through the real argv path too (cmdReconcile)", function () {
     const io = capture();
     const code = cmdReconcile(
-      [BANK, BOOK, RENT, "--date", DATE, "--state", "ca-example"],
+      [BANK, BOOK, RENT, "--date", DATE, "--state", "ca-example", ...LICFLAGS],
       io
     );
     expect(code).to.equal(EXIT.FAIL); // override escalates -> FAIL
@@ -330,7 +369,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
     const dir = mkTmp();
     const cwdBefore = fs.readdirSync(process.cwd()).sort();
     const res = runReconcile(
-      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, state: "ca-example", out: dir },
+      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, state: "ca-example", out: dir, ...LIC },
       capture()
     );
     expect(res.code).to.equal(EXIT.FAIL);
@@ -450,7 +489,7 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
     // rendered exception table/CSV must show the ERROR row FIRST (errors-first),
     // not buried below the lower-severity rows.
     const res = runReconcile(
-      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, state: "ca-example" },
+      { bank: BANK, ledger: BOOK, rentroll: RENT, date: DATE, state: "ca-example", ...LIC },
       capture()
     );
     expect(res.code).to.equal(EXIT.FAIL);

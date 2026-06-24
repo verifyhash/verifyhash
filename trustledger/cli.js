@@ -56,6 +56,7 @@ const policy = require("./policy");
 const close = require("./close");
 const seal = require("./seal");
 const server = require("./server");
+const license = require("./license");
 
 // The three reconcile sources, keyed by the broker-facing label used on the
 // command line (`--map <source>:<logical>=<header>` and the --map-file top-level
@@ -221,6 +222,8 @@ function parseReconcileArgs(argv) {
     emitClose: undefined, // path to write THIS run's close.json TO (--emit-close <file>)
     seal: false, // --seal [<file>] given at all (T-26.2): emit a reconciliation seal
     sealFile: undefined, // caller-named seal path; undefined => default name under --out
+    license: undefined, // path to a signed *.vhlicense.json that UNLOCKS the paid surfaces (T-29.2)
+    vendor: undefined, // 0x-address the license issuer is pinned to (T-29.2)
     mapArgs: [], // repeatable --map <source>:<logical>=<header> (T-25.3)
     mapFile: undefined, // --map-file <json> per-source column maps (T-25.3)
     _positionals: [],
@@ -259,6 +262,12 @@ function parseReconcileArgs(argv) {
         break;
       case "--state":
         opts.state = argv[++i];
+        break;
+      case "--license":
+        opts.license = argv[++i];
+        break;
+      case "--vendor":
+        opts.vendor = argv[++i];
         break;
       case "--prior-close":
         opts.priorClose = argv[++i];
@@ -321,6 +330,120 @@ function parseIntArg(raw, flag) {
 }
 
 // ---------------------------------------------------------------------------
+// The license GATE for the paid reconcile surfaces (T-29.2).
+//
+// Maps each requested PAID flag to the entitlement it needs, then — only when at
+// least one paid surface is requested — REQUIRES a valid, vendor-pinned license
+// carrying every needed entitlement. Pure of I/O except a single offline read of
+// the caller-chosen license file; holds NO signing key (verify is key-free), no
+// network. Returns { code } — EXIT.PASS to proceed, EXIT.USAGE to refuse — and
+// writes the precise, ACTIONABLE reason to writeErr. Never throws on an ordinary
+// refusal (a malformed flag is the only caller error, surfaced as a usage line).
+//
+// The reason is reported EXACTLY as `verifyLicense` returns it (wrong_issuer /
+// expired / not_yet_valid / bad_signature / malformed) so a refusal is never
+// ambiguous, and a wrong/expired license NEVER silently downgrades to a free run.
+// ---------------------------------------------------------------------------
+
+// Which entitlement each paid reconcile surface requires. The ONLY place the
+// flag->entitlement mapping lives, so the gate and the help can never drift.
+const PAID_FEATURE_ENTITLEMENTS = Object.freeze([
+  {
+    requested: (o) => o.state != null || o.policyFile != null,
+    entitlement: "multi_state_policy",
+    label: "multi-state policy packs (--state/--policy)",
+  },
+  {
+    requested: (o) => o.seal === true,
+    entitlement: "seal",
+    label: "the tamper-evident reconciliation seal (--seal)",
+  },
+]);
+
+function gateReconcile(opts, reportDate, writeErr) {
+  // Which paid features were requested in THIS run?
+  const needed = PAID_FEATURE_ENTITLEMENTS.filter((f) => f.requested(opts));
+  if (needed.length === 0) {
+    // FREE TIER. No paid surface requested: proceed UNCHANGED. (A stray --license/
+    // --vendor with no paid feature is simply ignored — it costs nothing and keeps
+    // the free path byte-for-byte identical.)
+    return { code: EXIT.PASS };
+  }
+
+  const featureList = needed.map((f) => f.label).join(" and ");
+  const hasLicense = opts.license != null;
+  const hasVendor = opts.vendor != null;
+
+  // Both license sources must be present together — a license file is worthless
+  // without the vendor key to PIN it to, and a vendor with no file is nothing to
+  // verify. Either alone is a usage error (parser parity with --key-env/--key-file).
+  if (!hasLicense && !hasVendor) {
+    writeErr(
+      `error: ${featureList} ${needed.length > 1 ? "are" : "is"} a PAID feature and ` +
+        "requires a license; pass --license <file> --vendor <0xaddr> " +
+        "(mint one with `vh trust license issue`, verify it with `vh trust license verify`). " +
+        "The FREE tier — baseline-policy reconcile + `vh trust inspect` — needs no license.\n"
+    );
+    return { code: EXIT.USAGE };
+  }
+  if (!hasLicense || !hasVendor) {
+    writeErr(
+      "error: --license and --vendor must be supplied together (a license file is " +
+        "verified by pinning it to the vendor key); pass BOTH --license <file> --vendor <0xaddr>\n"
+    );
+    return { code: EXIT.USAGE };
+  }
+
+  // Read the license file OFFLINE (the only I/O). An unreadable/garbled file is a
+  // usage error with a key-free message (there is no key in a license anyway).
+  let container;
+  try {
+    const text = fs.readFileSync(path.resolve(opts.license), "utf8");
+    container = license.readLicense(text);
+  } catch (e) {
+    writeErr(`error: cannot read --license file ${opts.license}: ${e.message}\n`);
+    return { code: EXIT.USAGE };
+  }
+
+  // Verify OFFLINE against the pinned vendor, dated at the run's reportDate. A
+  // malformed --vendor is a caller error thrown by verifyLicense — surface it as a
+  // usage line, never as a crash, and never echoing anything sensitive.
+  let verdict;
+  try {
+    verdict = license.verifyLicense(container, { now: reportDate, vendorAddress: opts.vendor });
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.USAGE };
+  }
+
+  if (!verdict.valid) {
+    // Report the precise reason verifyLicense returned — never silently downgrade.
+    writeErr(
+      `error: ${featureList} requires a VALID license, but the supplied license is ` +
+        `INVALID (reason: ${verdict.reason}). It does NOT unlock the paid surface; ` +
+        "the FREE baseline reconcile remains available without --state/--policy/--seal.\n"
+    );
+    return { code: EXIT.USAGE };
+  }
+
+  // Valid + in-window + correct issuer. Now require EACH requested feature's
+  // entitlement to actually be granted. A valid license that does not carry the
+  // entitlement still REFUSES (it never grants a feature it was not sold).
+  for (const f of needed) {
+    if (!license.hasEntitlement(verdict, f.entitlement)) {
+      writeErr(
+        `error: the supplied license is valid but does NOT include the "${f.entitlement}" ` +
+          `entitlement needed for ${f.label}; this license grants only ` +
+          `[${verdict.entitlements.join(", ")}]. The FREE baseline reconcile remains available.\n`
+      );
+      return { code: EXIT.USAGE };
+    }
+  }
+
+  return { code: EXIT.PASS };
+}
+
+// ---------------------------------------------------------------------------
 // The pipeline runner (pure of argv; takes resolved options + an injectable
 // today() so the CLI passes a real date while tests pass a fixed one).
 // ---------------------------------------------------------------------------
@@ -365,6 +488,20 @@ function runReconcile(opts, io = {}) {
     writeErr(`error: --date must be "YYYY-MM-DD" (got "${reportDate}")\n`);
     return { code: EXIT.USAGE };
   }
+
+  // -- LICENSE GATE (T-29.2). Decide BEFORE any data work. -------------------
+  // The FREE tier — baseline-policy reconcile (no --state/--policy), no --seal —
+  // needs NO license and behaves byte-for-byte as before so a broker can evaluate
+  // the product before buying. The moment a PAID surface is requested
+  // (multi-state policy via --state/--policy, or the tamper-evident --seal), a
+  // VALID, in-window, vendor-pinned license carrying the matching entitlement is
+  // REQUIRED. A missing/expired/wrong-issuer/under-entitled license REFUSES with
+  // the precise reason (exit 2, a clear gate) and never silently downgrades to a
+  // free result. `now` is the resolved reportDate (the SAME injectable clock the
+  // packet is dated under) so verification is offline + deterministic; this path
+  // is read-only, holds NO key, and touches NO network.
+  const gate = gateReconcile(opts, reportDate, writeErr);
+  if (gate.code !== EXIT.PASS) return { code: gate.code };
 
   // -- Resolve the per-state trust-rule policy (if any). ---------------------
   // `--policy <file>` reads an explicit file; `--state <code>` resolves a bundled
@@ -1548,6 +1685,335 @@ function cmdServe(argv, io = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// `vh trust license issue | verify` (T-29.2) — mint + OFFLINE-verify a product
+// license. `issue` reads a HUMAN-supplied key (EXACTLY ONE of --key-env/--key-file,
+// reused-then-discarded, NEVER written/logged/echoed — the exact key-handling
+// posture of `vh dataset sign`), signs a license via the shared license core, and
+// prints ONLY the PUBLIC vendor address + the license summary + the path. `verify`
+// is read-only, OFFLINE, key-free: it prints VALID/INVALID + the precise reason +
+// entitlements + expiry, exiting 0 (valid) / 3 (invalid) just like verifyLicense.
+// ---------------------------------------------------------------------------
+
+const coreAttestation = require("../cli/core/attestation");
+
+// Parse `license issue` argv. EXACTLY-ONE-of key sources is enforced downstream by
+// loadSigningWallet (so neither/both error key-free); the parser only collects flags.
+function parseLicenseIssueArgs(argv) {
+  const opts = {
+    customer: undefined,
+    plan: undefined,
+    entitlements: undefined, // comma-separated -> array
+    expires: undefined, // ISO instant
+    issued: undefined, // OPTIONAL ISO instant; default "now" supplied by the command
+    licenseId: undefined, // OPTIONAL; defaulted by the command when omitted
+    keyEnv: undefined,
+    keyFile: undefined,
+    out: undefined,
+    json: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const need = () => {
+      const v = argv[++i];
+      if (v === undefined || String(v).startsWith("--")) {
+        const e = new Error(`${a} requires a value`);
+        e.usage = true;
+        throw e;
+      }
+      return v;
+    };
+    switch (a) {
+      case "--customer": opts.customer = need(); break;
+      case "--plan": opts.plan = need(); break;
+      case "--entitlements": opts.entitlements = need(); break;
+      case "--expires": opts.expires = need(); break;
+      case "--issued": opts.issued = need(); break;
+      case "--license-id": opts.licenseId = need(); break;
+      case "--key-env": opts.keyEnv = need(); break;
+      case "--key-file": opts.keyFile = need(); break;
+      case "--out": opts.out = need(); break;
+      case "--json": opts.json = true; break;
+      default: {
+        const e = new Error(`unknown option: ${a}`);
+        e.usage = true;
+        throw e;
+      }
+    }
+  }
+  return opts;
+}
+
+async function cmdLicenseIssue(argv, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseLicenseIssueArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // Required license fields (the key sources are validated by loadSigningWallet).
+  for (const [flag, val] of [
+    ["--customer", opts.customer],
+    ["--plan", opts.plan],
+    ["--entitlements", opts.entitlements],
+    ["--expires", opts.expires],
+  ]) {
+    if (val == null) {
+      writeErr(`error: \`vh trust license issue\` requires ${flag}\n`);
+      return EXIT.USAGE;
+    }
+  }
+
+  // Resolve the HUMAN-supplied key into an in-process Wallet FIRST, BEFORE building
+  // anything — neither/both sources, a missing env var, an unreadable file, or a
+  // malformed/zero key hard-errors here with a KEY-FREE message (the SAME core +
+  // posture as `vh dataset sign`). The loop never holds a key.
+  let wallet;
+  try {
+    ({ wallet } = coreAttestation.loadSigningWallet({ keyEnv: opts.keyEnv, keyFile: opts.keyFile }));
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // Assemble the license fields. issuedAt defaults to the injectable clock (a real
+  // ISO instant at runtime; a pinned one in tests). entitlements is a comma list.
+  const issuedAt = opts.issued != null ? opts.issued : (io.nowISO || nowISO)();
+  const entitlements = String(opts.entitlements)
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const licenseId =
+    opts.licenseId != null && opts.licenseId !== ""
+      ? opts.licenseId
+      : `LIC-${issuedAt}-${opts.plan}`;
+
+  let container;
+  try {
+    container = await license.buildLicense(
+      {
+        licenseId,
+        customer: opts.customer,
+        plan: opts.plan,
+        entitlements,
+        issuedAt,
+        expiresAt: opts.expires,
+      },
+      wallet
+    );
+  } catch (e) {
+    // A LicenseError (bad date, unknown entitlement, expiresAt<=issuedAt, …) is a
+    // usage error — NEVER echo the key (a build error carries only the bad field).
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  const canonical = license.serializeSignedLicense(container);
+  // The PUBLIC vendor address — recovered from the signature, never the key.
+  const vendor = coreAttestation.recoverSigner(container);
+  const payload = JSON.parse(container.attestation);
+
+  let outAbs = null;
+  if (opts.out) {
+    outAbs = path.resolve(opts.out);
+    try {
+      fs.writeFileSync(outAbs, canonical);
+    } catch (e) {
+      writeErr(`error: cannot write --out license file ${opts.out}: ${e.message}\n`);
+      return EXIT.IO;
+    }
+  }
+
+  if (opts.json) {
+    // ONLY public fields: vendor ADDRESS, the license summary, the path — NEVER the
+    // key. With no --out the canonical bytes ride in `container` (artifact parity).
+    write(
+      JSON.stringify(
+        {
+          issued: true,
+          vendor,
+          licenseId: payload.licenseId,
+          customer: payload.customer,
+          plan: payload.plan,
+          entitlements: payload.entitlements,
+          issuedAt: payload.issuedAt,
+          expiresAt: payload.expiresAt,
+          out: outAbs,
+          container: outAbs ? null : canonical,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(`issued TrustLedger license by vendor ${vendor}\n`);
+    write(`  licenseId:    ${payload.licenseId}\n`);
+    write(`  customer:     ${payload.customer}\n`);
+    write(`  plan:         ${payload.plan}\n`);
+    write(`  entitlements: ${payload.entitlements.join(", ")}\n`);
+    write(`  issuedAt:     ${payload.issuedAt}\n`);
+    write(`  expiresAt:    ${payload.expiresAt}\n`);
+    if (outAbs) {
+      write(`  written:      ${outAbs}\n`);
+    } else {
+      // No --out: emit the canonical signed bytes after the human header.
+      write(canonical);
+    }
+  }
+  return EXIT.PASS;
+}
+
+// Parse `license verify <file> --vendor <0xaddr> [--json] [--now <iso>]`.
+function parseLicenseVerifyArgs(argv) {
+  const opts = { file: undefined, vendor: undefined, json: false, now: undefined, _positionals: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--vendor": opts.vendor = argv[++i]; break;
+      case "--now": opts.now = argv[++i]; break;
+      case "--json": opts.json = true; break;
+      default:
+        if (a && a.startsWith("--")) {
+          const e = new Error(`unknown option: ${a}`);
+          e.usage = true;
+          throw e;
+        }
+        opts._positionals.push(a);
+    }
+  }
+  opts.file = opts._positionals[0];
+  return opts;
+}
+
+function cmdLicenseVerify(argv, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseLicenseVerifyArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+  if (!opts.file) {
+    writeErr("error: `vh trust license verify` requires a <file>\n");
+    return EXIT.USAGE;
+  }
+  if (opts.vendor == null) {
+    writeErr("error: `vh trust license verify` requires --vendor <0xaddr> (the issuer to pin to)\n");
+    return EXIT.USAGE;
+  }
+
+  let container;
+  try {
+    const text = fs.readFileSync(path.resolve(opts.file), "utf8");
+    container = license.readLicense(text);
+  } catch (e) {
+    // A missing/garbled container is a malformed verdict (INVALID), not a crash, so
+    // a scripted check sees the 3 exit + the reason — but we surface the IO cause.
+    writeErr(`error: cannot read license file ${opts.file}: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  // `now` is the injectable clock (a pinned instant in tests); default real now.
+  const now = opts.now != null ? opts.now : (io.nowISO || nowISO)();
+  let verdict;
+  try {
+    verdict = license.verifyLicense(container, { now, vendorAddress: opts.vendor });
+  } catch (e) {
+    // A malformed --vendor (or bad --now) is a caller error — usage, key-free.
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // Read the embedded payload's expiry/entitlements for the report (present even on
+  // an expired/wrong-issuer verdict, so the human sees WHAT was rejected).
+  const payload = verdict.payload;
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          valid: verdict.valid,
+          reason: verdict.reason, // EXACTLY as verifyLicense returns it
+          vendor: verdict.vendorAddress,
+          recoveredSigner: verdict.recoveredSigner,
+          entitlements: payload ? payload.entitlements : [],
+          issuedAt: payload ? payload.issuedAt : null,
+          expiresAt: payload ? payload.expiresAt : null,
+          now: verdict.now,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else if (verdict.valid) {
+    write("VALID\n");
+    write(`  vendor:       ${verdict.vendorAddress}\n`);
+    write(`  customer:     ${payload.customer}\n`);
+    write(`  plan:         ${payload.plan}\n`);
+    write(`  entitlements: ${payload.entitlements.join(", ")}\n`);
+    write(`  expiresAt:    ${payload.expiresAt}\n`);
+  } else {
+    write("INVALID\n");
+    write(`  reason:       ${verdict.reason}\n`);
+    if (payload) {
+      write(`  entitlements: ${payload.entitlements.join(", ")}\n`);
+      write(`  expiresAt:    ${payload.expiresAt}\n`);
+    }
+  }
+  // 0 valid / 3 invalid — the SAME verdict semantics as verifyLicense / verify-seal.
+  return verdict.valid ? EXIT.PASS : EXIT.FAIL;
+}
+
+// `vh trust license <issue|verify> ...` sub-dispatch.
+function cmdLicense(argv, io = {}) {
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  const [sub, ...rest] = argv;
+  if (sub === "issue") return cmdLicenseIssue(rest, io);
+  if (sub === "verify") return cmdLicenseVerify(rest, io);
+  if (sub === "help" || sub === "-h" || sub === "--help") {
+    (io.write || ((s) => process.stdout.write(s)))(licenseHelp());
+    return EXIT.PASS;
+  }
+  writeErr(
+    `error: unknown license subcommand: ${sub === undefined ? "(none)" : sub} ` +
+      "(expected: issue, verify)\n" +
+      licenseHelp()
+  );
+  return EXIT.USAGE;
+}
+
+function licenseHelp() {
+  return [
+    "vh trust license — issue + OFFLINE-verify a TrustLedger product license",
+    "",
+    "  issue --customer <name> --plan <plan> --entitlements <a,b,c> --expires <ISO>",
+    "        (--key-env <VAR> | --key-file <path>) [--issued <ISO>] [--license-id <id>] [--out <file>] [--json]",
+    "      Sign a license with a key YOU supply at runtime (read-used-discarded, NEVER",
+    "      written/logged/echoed). Prints ONLY the public vendor address + the summary + path.",
+    `      Entitlements (closed set): ${license.ENTITLEMENT_FLAGS.join(", ")}.`,
+    "",
+    "  verify <file> --vendor <0xaddr> [--json] [--now <ISO>]",
+    "      Read-only, OFFLINE, key-free. Prints VALID/INVALID + reason + entitlements + expiry.",
+    "      Exit 0 valid / 3 invalid (reason: malformed|bad_signature|wrong_issuer|not_yet_valid|expired).",
+    "",
+    "A license GATES the paid reconcile surfaces (--state/--policy, --seal): pass",
+    "`vh trust reconcile ... --license <file> --vendor <0xaddr>` to unlock them. The FREE",
+    "tier (baseline reconcile + `vh trust inspect`) needs no license.",
+    "",
+  ].join("\n");
+}
+
+// Real "now" as a canonical ISO-8601 UTC instant — the issuer/verify default clock,
+// isolated + injectable so the commands stay deterministic under test.
+function nowISO() {
+  return new Date().toISOString();
+}
+
+// ---------------------------------------------------------------------------
 // argv dispatch
 // ---------------------------------------------------------------------------
 
@@ -1580,13 +2046,16 @@ function cmdTrust(argv, io = {}) {
   if (sub === "serve") {
     return cmdServe(rest, io);
   }
+  if (sub === "license") {
+    return cmdLicense(rest, io);
+  }
   if (sub === "help" || sub === "-h" || sub === "--help") {
     (io.write || ((s) => process.stdout.write(s)))(trustHelp());
     return EXIT.PASS;
   }
   writeErr(
     `error: unknown trust subcommand: ${sub === undefined ? "(none)" : sub} ` +
-      `(expected: reconcile, inspect, verify-seal, serve)\n` +
+      `(expected: reconcile, inspect, verify-seal, serve, license)\n` +
       trustHelp()
   );
   return EXIT.USAGE;
@@ -1599,13 +2068,20 @@ function trustHelp() {
     "vh trust — TrustLedger three-way trust-account reconciliation",
     "",
     "Subcommands:",
-    "  reconcile <bank> <ledger> <rentroll> [--out <dir>] [--seal [<file>]]",
+    "  reconcile <bank> <ledger> <rentroll> [--out <dir>] [--seal [<file>]] [--license <f> --vendor <0xaddr>]",
     "      run the whole pipeline -> a dated audit packet (HTML+CSV; PASS/FAIL exit).",
+    "      FREE: baseline-policy reconcile needs no license. PAID (require --license + --vendor):",
+    "      --state/--policy (multi-state policy packs) and --seal. Without a valid, vendor-pinned",
+    "      license carrying the matching entitlement those flags hard-error (exit 2) — see `license`.",
     "      --seal [<file>] additionally writes a TAMPER-EVIDENT reconciliation seal AFTER",
     "      the packet (binding the 3 source inputs + every emitted packet file, and the",
     "      emitted close if --emit-close). --seal REQUIRES --out (no packet, nothing to seal).",
     "      The 3 source inputs are sealed by BASENAME so the binding TRAVELS with the packet:",
     "      ship each source NEXT TO the seal (same dir) and the handoff verifies anywhere.",
+    "  license issue|verify ...",
+    "      issue: mint a signed product license with a key YOU supply (read-used-discarded).",
+    "      verify: read-only, OFFLINE check of a license against --vendor (VALID/INVALID, 0/3).",
+    "      A valid license + matching --vendor unlocks reconcile's paid surfaces. `vh trust license -h`.",
     "  inspect <file> --as <bank|ledger|rentroll>",
     "      read-only validator/preview of ONE input file (writes nothing).",
     "  serve [--port <n>] [--host <h>]",
@@ -1646,5 +2122,14 @@ module.exports = {
   SERVE_DEFAULT_HOST,
   trustHelp,
   cmdTrust,
+  parseLicenseIssueArgs,
+  cmdLicenseIssue,
+  parseLicenseVerifyArgs,
+  cmdLicenseVerify,
+  cmdLicense,
+  licenseHelp,
+  gateReconcile,
+  PAID_FEATURE_ENTITLEMENTS,
+  nowISO,
   todayISO,
 };

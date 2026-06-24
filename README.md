@@ -575,4 +575,11 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   and root/revision breakdowns, the block/time bounds), why it is a non-transferable derived view (NOT a
   token — any tradeable layer is D-2/P-1, human-only), what it does NOT prove, and the anti-sybil note
   (the meaningful signal is the authorBound count).
+- [`docs/TRUSTLEDGER.md`](docs/TRUSTLEDGER.md) — the buyer-facing TrustLedger product spec (automated
+  three-way trust-account reconciliation for small residential property managers): the three balances
+  that must legally agree, the PASS/FAIL exit contract, the per-state policy + period-close-continuity
+  layers, the tamper-evident packet seal, and the **web front-door** (`vh trust serve`) — including the
+  **in-browser inspect/map onboarding flow** (drop a file → if it won't load, see its columns and map
+  them from a dropdown → reconcile), so a non-technical broker never needs a terminal. Hosting, the CPA
+  review, the per-state policy table, and pricing all stay human steps (STRATEGY.md › P-5).
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.

@@ -201,20 +201,81 @@ describe("T-25.4 docs: `vh trust inspect` + column-mapping escape hatch (docs/TR
       expect(pipe).to.include("vh trust inspect");
     });
 
-    it("the 'What stays a human step' P-5 #3 bullet LEADS with inspect, THEN the two-month reconcile", function () {
+    it("the 'What stays a human step' P-5 #3 bullet LEADS with the BROWSER inspect/map UI, THEN the two-month reconcile", function () {
       const start = docLower.indexOf("## what stays a human step");
       expect(start, "human-step section present").to.be.greaterThan(-1);
       const human = doc.slice(start);
       const humanLower = human.toLowerCase();
-      // FIRST inspect each real file, THEN the two-month reconcile.
-      expect(humanLower).to.match(/first[\s\S]{0,200}vh trust inspect/);
+      // FIRST step is now the BROWSER (vh trust serve), not a terminal command (T-28.3).
+      expect(humanLower).to.match(/first[\s\S]{0,260}browser/);
+      expect(humanLower).to.match(/first[\s\S]{0,260}vh trust serve/);
+      expect(humanLower).to.match(/in-browser inspect\/map ui|in-browser inspect ?\/ ?map/);
+      // The CLI inspect/map path is still named as the equivalent for technical users.
       expect(human).to.include("vh trust inspect <eachFile> --as <type>");
+      expect(humanLower).to.match(/--map/);
+      // It explicitly closes the terminal gap.
+      expect(humanLower).to.match(/no terminal|never use a terminal|without.*terminal/);
+      // THEN the two-month reconcile.
       expect(humanLower).to.match(/then[\s\S]{0,400}--emit-close\s+month1\.json/);
       expect(human).to.match(/--prior-close month1\.json/);
-      expect(humanLower).to.match(/--map/);
-      // The de-risk framing is preserved.
+      // The de-risk + WTP framing is preserved.
       expect(humanLower).to.match(/loads, or the tool tells|self-service fix|dead end/);
       expect(humanLower).to.match(/willingness-to-pay|wtp/);
+    });
+  });
+
+  describe("docs/TRUSTLEDGER.md: '## The web front-door' documents the in-browser inspect/map flow (T-28.3)", function () {
+    let section, sectionLower;
+    before(function () {
+      const start = docLower.indexOf("## the web front-door");
+      expect(start, "web front-door section present").to.be.greaterThan(-1);
+      const rest = doc.slice(start);
+      const end = rest.indexOf("\n## ", 3);
+      section = end === -1 ? rest : rest.slice(0, end);
+      sectionLower = section.toLowerCase();
+    });
+
+    it("has a dedicated in-browser inspect/map onboarding subsection", function () {
+      expect(sectionLower).to.match(/in-browser onboarding/);
+      // The non-technical onboarding path: drop a file, see columns, map, reconcile.
+      expect(sectionLower).to.match(/drop a file|drop each file|drop the/);
+      expect(sectionLower).to.match(/detected header|header columns|its columns/);
+      expect(sectionLower).to.match(/dropdown/);
+      expect(sectionLower).to.match(/map/);
+      expect(sectionLower).to.match(/reconcile/);
+    });
+
+    it("states it is the SAME diagnoseSource fix as the CLI, but with no terminal", function () {
+      expect(sectionLower).to.match(/diagnosesource/);
+      // The companion CLI command is named.
+      expect(section).to.match(/vh trust inspect/);
+      expect(section).to.match(/--map <logical>=<header>|--map/);
+      // No terminal required — the gap this closes.
+      expect(sectionLower).to.match(/no terminal|never (open|use) a terminal|without.*terminal|not a command line|not a terminal/);
+    });
+
+    it("documents the /api/inspect endpoint as read-only / writes nothing server-side", function () {
+      expect(section).to.match(/\/api\/inspect/);
+      expect(sectionLower).to.match(/writes nothing|nothing.*server-side|read-only/);
+    });
+
+    it("reuses the standing custodian/CPA caveat so the posture stays consistent", function () {
+      // A clean in-browser inspect is NOT a PASS / not a compliance statement.
+      expect(sectionLower).to.match(/loads.*not that the books are right|not that the books|loads.*not.*right/);
+      expect(sectionLower).to.match(/cpa/);
+      expect(sectionLower).to.match(/disclaimer/);
+    });
+
+    it("the live web surface this prose pins against still exists (server endpoint + UI map control)", function () {
+      // Tripwire: the documented browser fix must actually be in the shipped code.
+      const server = read("trustledger/server.js");
+      expect(server).to.match(/\/api\/inspect/);
+      expect(server).to.match(/inspectPayload/);
+      expect(server).to.match(/diagnoseSource/);
+      const page = read("trustledger/public/index.html");
+      expect(page).to.contain('fetch("/api/inspect"');
+      expect(page).to.match(/class='mapsel'|class="mapsel"/);
+      expect(page).to.contain("Confirm mapping");
     });
   });
 
@@ -231,13 +292,19 @@ describe("T-25.4 docs: `vh trust inspect` + column-mapping escape hatch (docs/TR
       item3 = (end === -1 ? rest : rest.slice(0, end)).toLowerCase();
     });
 
-    it("LEADS with the onboarding step: FIRST `vh trust inspect <eachFile> --as <type>`", function () {
-      expect(item3).to.match(/first[\s\S]{0,200}vh trust inspect/);
+    it("LEADS with the BROWSER onboarding step: FIRST `vh trust serve` in the browser, the in-browser inspect/map UI", function () {
+      // T-28.3: the FIRST step is now the browser, not a terminal command.
+      expect(item3).to.match(/first[\s\S]{0,260}browser/);
+      expect(item3).to.match(/first[\s\S]{0,260}vh trust serve/);
+      expect(item3).to.match(/in-browser inspect\/map ui|in-browser inspect ?\/ ?map/);
+      // The CLI inspect/map path is still named as the same fix for technical users.
       expect(item3).to.include("vh trust inspect <eachfile> --as <type>");
       // Fix a header miss with --map.
       expect(item3).to.match(/--map <logical>=<header>|--map/);
       // inspect writes nothing / checks only PARSING.
       expect(item3).to.match(/writes nothing|checks only parsing/);
+      // It explicitly closes the "never use a terminal" gap.
+      expect(item3).to.match(/no terminal|never (open|use|touch).{0,20}terminal|without.{0,20}terminal/);
     });
 
     it("THEN runs the two-month reconcile script (emit-close month1 -> prior-close month1)", function () {

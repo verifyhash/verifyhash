@@ -625,6 +625,33 @@ Open `http://127.0.0.1:4173/`, drop the **bank statement**, the **QuickBooks led
 roll**, and the page shows the PASS/FAIL verdict, the three balances, the exception list, and the same
 audit-ready HTML packet the CLI produces — all rendered from the engine's response.
 
+### In-browser onboarding: inspect & map a file that won't load (no terminal)
+
+A non-technical broker's **first** contact with the tool is "does my real export load?" — and a real
+bank/QuickBooks/rent-roll export routinely has a header no built-in alias matches. On the CLI that is
+the `vh trust inspect` / `--map` self-service fix (see **Onboarding: inspect before you reconcile**
+above). The web door exposes the **same** fix **in the browser**, so the buyer who will never open a
+terminal can do it too — the onboarding step is the **page**, not a command line.
+
+1. **Drop a file.** If it does not parse cleanly, the page does **not** dead-end on a raw error. It
+   shows the file's **detected header columns**, a **logical-field → matched-column** table (the same
+   `diagnoseSource` report the CLI prints), the **parse tally**, a **sample**, and **every** failing
+   row — never a stack trace.
+2. **Map a missing field.** For each **required** field the auto-detect could not bind, the page shows a
+   **dropdown of the file's actual header columns**. Pick the column that holds that field and press
+   **Confirm mapping**; the page re-checks the file under your map and clears the miss when it lines up
+   (or shows what is still missing).
+3. **Reconcile.** The map you confirmed is **threaded into the real reconcile run** for that file (under
+   the same `bank`/`ledger`/`rentroll` key the engine uses), so the fix applies to the actual three-way
+   reconciliation — not just the preview. Drop all three files and watch the balances tie out.
+
+This is the **browser equivalent** of the CLI `vh trust inspect <file> --as <type> --map <logical>=<header>`
+loop: it runs the **same** `diagnoseSource` parse primitives (via the read-only `POST /api/inspect`
+endpoint, which writes nothing server-side, exactly like `/api/reconcile`), and it accepts the **same**
+`{ <logicalField>: <headerName> }` column-map override. A clean in-browser inspect means the file
+**loads**, **not** that the books are **right** — the three-way reconciliation, and a qualified CPA's
+review of the packet, still govern, exactly as the disclaimer at the top of this document states.
+
 If the port cannot be bound (already in use, a privileged port without permission, or a bad `--host`
 interface), `serve` prints `error: cannot start TrustLedger web door: …` to stderr and **exits `1`**
 (the IO class) — it never exits `0` on a failed bind. That makes `vh trust serve || alert` safe to wire
@@ -961,13 +988,18 @@ into a sellable, compliant product are **human-owned** and tracked in STRATEGY.m
   DRAFT skeletons to copy (P-5 #2).
 - **Run the two-month design-partner script with 1–2 brokers** (e.g. via NARPM). The concrete,
   decision-ready validation is a script the engine already supports — and it now **leads with the
-  de-risked onboarding step** so a real export's first contact with the tool is "it loads, or the tool
-  tells you how," not a dead-end parse error:
-  1. **FIRST** have the partner run `vh trust inspect <eachFile> --as <type>` on their **real** files to
-     confirm each **parses** (fixing any header miss with `--map <logical>=<header>` — see **Onboarding:
-     inspect before you reconcile** above). This converts the single most likely pilot-killer — ingest
-     choking on a real broker's export — from a dead end into a self-service fix **before** any
-     reconciliation runs.
+  de-risked onboarding step on the surface a non-technical broker actually uses, the BROWSER**, so a
+  real export's first contact with the tool is "it loads, or the tool tells you how," not a dead-end
+  parse error and not a terminal command the buyer will never run:
+  1. **FIRST** have the partner open `vh trust serve` **in their browser** and **drop each real file**:
+     if it does not load, the page shows that file's columns and lets the broker **map** the missing
+     field from a dropdown of its actual headers, then re-checks it — the **in-browser inspect/map UI**
+     (see **In-browser onboarding: inspect & map a file that won't load** above). This is the same
+     `diagnoseSource` self-service fix as the CLI `vh trust inspect <eachFile> --as <type>` /
+     `--map <logical>=<header>` (still available for technical users), but it requires **no terminal** —
+     closing the gap between "the buyer who will never use a terminal" and an onboarding step that used
+     to require one. It converts the single most likely pilot-killer — ingest choking on a real broker's
+     export — from a dead end into a self-service fix **before** any reconciliation runs.
   2. **THEN** run the two-month reconcile script: have the partner run
      `vh trust reconcile … --state <code> --emit-close month1.json` on their **real month-1** files, then
      re-run on **month-2** files with `--prior-close month1.json`, and confirm (a) the three balances tie
@@ -975,8 +1007,8 @@ into a sellable, compliant product are **human-owned** and tracked in STRATEGY.m
      correctly.
 
   That **two-month run IS the willingness-to-pay validation** — it shows the recurring monthly product
-  working past month one, which a single-period demo cannot; leading with `inspect` makes sure month one
-  even gets that far (P-5 #3).
+  working past month one, which a single-period demo cannot; leading with the **browser** inspect/map UI
+  makes sure month one even gets that far **without the broker ever touching a terminal** (P-5 #3).
 
 - **Deploying the web front-door.** `vh trust serve` runs the broker-facing browser UI **locally**
   (localhost only by default). Exposing it to others — behind **your** nginx/Cloudflare on **your** own

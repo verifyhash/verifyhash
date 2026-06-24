@@ -396,6 +396,80 @@ stdout and **writes nothing**, so it is safe to run anywhere and trivially pipea
 
 ---
 
+## The web front-door: `vh trust serve`
+
+A property-management broker will never use a terminal. `vh trust serve` launches a small **local web
+front-door** over the exact same engine so a broker can open a browser, drag the three monthly files
+in, and watch the balances tie out — no command line required.
+
+```
+vh trust serve [--port <n>] [--host <h>]
+```
+
+| Option        | Default          | Meaning                                                       |
+| ------------- | ---------------- | ------------------------------------------------------------- |
+| `--port <n>`  | `4173`           | TCP port to listen on (`0` = let the OS pick a free port)     |
+| `--host <h>`  | `127.0.0.1`      | interface to bind (localhost by default — see deploy posture) |
+
+It prints the URL and then stays running until you stop it (Ctrl-C):
+
+```
+$ vh trust serve
+TrustLedger web door listening on http://127.0.0.1:4173/
+  Files are processed IN MEMORY; nothing is written to disk server-side.
+  This binds to localhost — to expose it, put it behind YOUR nginx/Cloudflare
+  on YOUR own domain with TLS (a human deploy step; it is never auto-deployed).
+  Press Ctrl-C to stop.
+```
+
+Open `http://127.0.0.1:4173/`, drop the **bank statement**, the **QuickBooks ledger**, and the **rent
+roll**, and the page shows the PASS/FAIL verdict, the three balances, the exception list, and the same
+audit-ready HTML packet the CLI produces — all rendered from the engine's response.
+
+If the port cannot be bound (already in use, a privileged port without permission, or a bad `--host`
+interface), `serve` prints `error: cannot start TrustLedger web door: …` to stderr and **exits `1`**
+(the IO class) — it never exits `0` on a failed bind. That makes `vh trust serve || alert` safe to wire
+into a supervisor, systemd unit, or CI healthcheck: a non-zero exit means the door is genuinely down.
+
+### How a broker runs it locally
+
+1. Install the tool (`npm install -g .` from a checkout, or `npm link` — see the README install note).
+2. Run `vh trust serve` (optionally `--port <n>` to choose a port).
+3. Open the printed URL in a browser on the **same machine** and reconcile.
+
+That is the whole local workflow: one command, one browser tab, no terminal interaction with the files
+themselves.
+
+### File privacy posture (this is the point of `serve`)
+
+- The browser reads the three files **locally** (via the browser's `FileReader`) and POSTs their text
+  contents to the server. The server runs the pipeline **purely in memory** and returns the verdict,
+  balances, exception list, and rendered packet in the HTTP response.
+- **Nothing is persisted server-side.** `serve` has **no** `--out` flag — a long-lived server must never
+  silently accumulate a broker's trust-account files on disk. (The path that *writes* a packet is the
+  CLI `vh trust reconcile --out <dir>`, and only to the directory you name; see "Filesystem hygiene".)
+- A malformed file comes back as a **named JSON error** (HTTP 400) with the same located reason the CLI
+  prints — never a stack trace. An oversized upload is rejected (HTTP 413) before it is fully buffered,
+  so a hostile client cannot exhaust the process.
+- The returned packet carries the **same custodian disclaimer** the CLI packet does: the tool *aids*
+  reconciliation; the broker remains the responsible trust-account custodian.
+
+### Deploying it (a HUMAN step — never auto-deployed)
+
+By default `serve` binds **localhost** (`127.0.0.1`), so it is reachable only from the machine it runs
+on. To make it reachable to others, **you** put it behind a reverse proxy you control:
+
+> **HUMAN deploy step.** Run `vh trust serve` on your own host and terminate TLS in front of it with
+> **nginx** or **Cloudflare** on **your own domain** (e.g. proxy `https://reconcile.yourbrokerage.com`
+> → `http://127.0.0.1:4173/`). Add whatever access control your trust-account data requires (basic
+> auth, an allow-list, SSO). The loop **never** deploys this for you, never exposes it to a public
+> network, and never binds anything but localhost by default. Hosting, TLS, the domain, and access
+> control are all yours to own.
+
+Because the server persists nothing, a single instance is stateless and safe to restart at any time.
+
+---
+
 ## Usage
 
 ```
@@ -429,6 +503,10 @@ Options:
                          (repeatable). See "Onboarding: inspect before you reconcile"
   --map-file <json>      a { bank|ledger|rentroll: { <logical>: <header> } } file of
                          the same per-source overrides (an inline --map wins on a clash)
+
+vh trust serve [--port <n>] [--host <h>]   # the local web front-door (see above)
+  --port <n>             listen port (default 4173; 0 = OS-chosen free port)
+  --host <h>             bind interface (default 127.0.0.1 / localhost)
 ```
 
 ### Example
@@ -675,6 +753,11 @@ into a sellable, compliant product are **human-owned** and tracked in STRATEGY.m
   That **two-month run IS the willingness-to-pay validation** — it shows the recurring monthly product
   working past month one, which a single-period demo cannot; leading with `inspect` makes sure month one
   even gets that far (P-5 #3).
+
+- **Deploying the web front-door.** `vh trust serve` runs the broker-facing browser UI **locally**
+  (localhost only by default). Exposing it to others — behind **your** nginx/Cloudflare on **your** own
+  domain with TLS and access control — is a human deploy step (see **The web front-door** above). The
+  loop never auto-deploys it and never binds anything but localhost by default.
 
 Hosting, billing (a SaaS subscription), and pricing are likewise human steps. Income comes from selling
 the product to paying customers — **never** from a token, coin, sale, or yield scheme.

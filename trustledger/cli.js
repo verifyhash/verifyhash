@@ -4,6 +4,12 @@
 //
 // T-22.4: `vh trust reconcile <bank> <ledger> <rentroll> [--out <dir>]`.
 //
+// T-27.3: `vh trust serve [--port <n>] [--host <h>]` launches the LOCAL web
+// front-door (trustledger/server.js) over this same engine so a non-technical
+// broker can drop the three files in a browser. Files are processed in-memory;
+// nothing is persisted server-side. Exposing it (nginx/Cloudflare on the broker's
+// own domain) is a HUMAN deploy step — it is never auto-deployed.
+//
 // T-26.2: `vh trust reconcile ... --out <dir> --seal [<file>]` additionally emits a
 // TAMPER-EVIDENT reconciliation seal AFTER the packet (binding the 3 source inputs +
 // every emitted packet file, and the emitted close when --emit-close is used). The CLI
@@ -49,6 +55,7 @@ const report = require("./report");
 const policy = require("./policy");
 const close = require("./close");
 const seal = require("./seal");
+const server = require("./server");
 
 // The three reconcile sources, keyed by the broker-facing label used on the
 // command line (`--map <source>:<logical>=<header>` and the --map-file top-level
@@ -1370,6 +1377,177 @@ function cmdVerifySeal(argv, io = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// `vh trust serve [--port <n>] [--host <h>] [--out <dir>]` (T-27.3)
+// ---------------------------------------------------------------------------
+//
+// Launch the local web front-door over the engine — the broker-facing door so a
+// non-technical custodian can open a browser, drop their three monthly files, and
+// watch the balances tie out WITHOUT a terminal. It REUSES `server.js` VERBATIM:
+// this is only the CLI plumbing that parses the port/host, binds the http.Server,
+// and prints the URL. The pipeline itself is unchanged.
+//
+// FILE PRIVACY POSTURE (stated in-band + in docs): the server processes the three
+// uploaded files PURELY in memory and persists NOTHING server-side. There is no
+// `--out` for serve — a long-lived public server must never silently accumulate a
+// broker's trust-account files on its disk. (The CLI `vh trust reconcile --out` is
+// the path that WRITES a packet, and only to a caller-chosen dir.)
+//
+// HUMAN DEPLOY STEP (never auto-deployed): this binds to LOCALHOST by default and
+// is meant to be run locally or behind the broker's OWN nginx/Cloudflare on their
+// OWN domain with TLS. The loop NEVER deploys it to a public network.
+//
+// Exit contract: this command does not "complete" — it LISTENS until killed. The
+// runner returns { code, server, url } so a test can start it, hit it, and close
+// it; `code` is only meaningful for the early-exit USAGE error (a bad --port).
+
+const SERVE_DEFAULT_PORT = 4173;
+const SERVE_DEFAULT_HOST = "127.0.0.1";
+
+// Parse `serve` argv into options. Flags only (no positionals). An unknown flag or
+// a positional is a USAGE error, matching the rest of the family.
+function parseServeArgs(argv) {
+  const opts = { port: undefined, host: undefined, _positionals: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--port":
+        opts.port = parsePortArg(argv[++i]);
+        break;
+      case "--host":
+        opts.host = argv[++i];
+        if (opts.host === undefined) {
+          const e = new Error("--host requires a value");
+          e.usage = true;
+          throw e;
+        }
+        break;
+      default:
+        if (a && a.startsWith("--")) {
+          const e = new Error(`unknown option: ${a}`);
+          e.usage = true;
+          throw e;
+        }
+        opts._positionals.push(a);
+    }
+  }
+  if (opts._positionals.length > 0) {
+    const e = new Error(
+      `unexpected argument: ${opts._positionals[0]} (serve takes no positionals)`
+    );
+    e.usage = true;
+    throw e;
+  }
+  return opts;
+}
+
+// A --port must be an integer in the valid TCP range (1..65535) OR 0 (bind an
+// EPHEMERAL port — useful for tests and for "pick any free port"). A bad value is
+// a USAGE error (exit 2), never silently coerced.
+function parsePortArg(raw) {
+  const s = String(raw == null ? "" : raw);
+  if (!/^\d+$/.test(s)) {
+    const e = new Error(`--port must be a non-negative integer (got "${raw}")`);
+    e.usage = true;
+    throw e;
+  }
+  const n = Number(s);
+  if (n > 65535) {
+    const e = new Error(`--port must be in 0..65535 (got "${raw}")`);
+    e.usage = true;
+    throw e;
+  }
+  return n;
+}
+
+// runServe binds the server and prints the URL. It does NOT block; it returns
+// { code, server, url } once listening (or { code: USAGE } on a bad flag without
+// ever binding). `io.listen` is injectable so a test can confirm the wiring without
+// the runner picking a port itself; the default builds + listens on a real socket.
+function runServe(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  const port = opts.port == null ? SERVE_DEFAULT_PORT : opts.port;
+  const host = opts.host == null ? SERVE_DEFAULT_HOST : opts.host;
+
+  const srv = (io.createServer || server.createServer)({ today: io.today });
+
+  return new Promise((resolve) => {
+    // Guard against resolving twice: a bind failure fires 'error' and the listen
+    // callback never runs, but a defensive flag keeps the two paths exclusive.
+    let settled = false;
+
+    // Surface a bind failure (e.g. EADDRINUSE, EACCES on a privileged port, a bad
+    // --host interface) as a clear IO error AND resolve the Promise with EXIT.IO so
+    // the failure propagates to the process exit code. Without this resolve the
+    // Promise would hang forever; on the real CLI path the failed server holds no
+    // event-loop handles, so Node would exit ON ITS OWN with code 0 — collapsing
+    // the IO(1) failure class into PASS(0). A supervisor / systemd / CI healthcheck
+    // running `vh trust serve || alert` must see a non-zero code when the door
+    // failed to bind.
+    srv.on("error", (e) => {
+      if (settled) return;
+      settled = true;
+      writeErr(`error: cannot start TrustLedger web door: ${e.message}\n`);
+      resolve({ code: EXIT.IO, server: srv, url: null, error: e });
+    });
+
+    srv.listen(port, host, () => {
+      if (settled) return;
+      settled = true;
+      // When --port 0 was given the OS chose the actual port; report the real one.
+      const bound = srv.address();
+      const realPort = bound && typeof bound === "object" ? bound.port : port;
+      const url = `http://${host}:${realPort}/`;
+      // 0.0.0.0 (or ::) is a bind target, not a browsable address; tell an operator
+      // who bound all interfaces to reach it via their machine's real address.
+      const browseHint =
+        host === "0.0.0.0" || host === "::"
+          ? "  (0.0.0.0 binds ALL interfaces — browse via your machine's own address.)\n"
+          : "";
+      write(
+        `TrustLedger web door listening on ${url}\n` +
+          browseHint +
+          "  Files are processed IN MEMORY; nothing is written to disk server-side.\n" +
+          "  This binds to localhost — to expose it, put it behind YOUR nginx/Cloudflare\n" +
+          "  on YOUR own domain with TLS (a human deploy step; it is never auto-deployed).\n" +
+          "  Press Ctrl-C to stop.\n"
+      );
+      resolve({ code: EXIT.PASS, server: srv, url });
+    });
+  });
+}
+
+// cmdServe: parse argv, then bind + print. The dispatcher (`vh trust`) awaits a
+// PLAIN exit code, so this resolves to a NUMBER:
+//   * a bad flag resolves immediately to EXIT.USAGE (2) and the process exits, OR
+//   * a BIND FAILURE (EADDRINUSE / EACCES / bad --host) resolves to EXIT.IO (1) so
+//     the failed door propagates a non-zero exit instead of letting Node exit 0, OR
+//   * on success it binds, prints the URL, and returns a Promise that NEVER
+//     resolves — the open socket keeps the event loop alive so the door stays up
+//     until the operator kills it (Ctrl-C), exactly like a normal server process.
+// Tests call `runServe` directly (which resolves with the live { server } handle)
+// for the success path so they can hit it and close it; the bind-failure path is
+// exercised through cmdServe to assert the EXIT.IO exit code.
+function cmdServe(argv, io = {}) {
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseServeArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return Promise.resolve(EXIT.USAGE);
+  }
+  return runServe(opts, io).then((res) => {
+    // A non-PASS resolved code (a bind failure => EXIT.IO) maps STRAIGHT to that
+    // number so the process exits non-zero. Only the listening (PASS) case holds
+    // the process open forever on the live socket.
+    if (res.code !== EXIT.PASS) return res.code;
+    return new Promise(() => {});
+  });
+}
+
+// ---------------------------------------------------------------------------
 // argv dispatch
 // ---------------------------------------------------------------------------
 
@@ -1399,13 +1577,16 @@ function cmdTrust(argv, io = {}) {
   if (sub === "verify-seal") {
     return cmdVerifySeal(rest, io);
   }
+  if (sub === "serve") {
+    return cmdServe(rest, io);
+  }
   if (sub === "help" || sub === "-h" || sub === "--help") {
     (io.write || ((s) => process.stdout.write(s)))(trustHelp());
     return EXIT.PASS;
   }
   writeErr(
     `error: unknown trust subcommand: ${sub === undefined ? "(none)" : sub} ` +
-      `(expected: reconcile, inspect, verify-seal)\n` +
+      `(expected: reconcile, inspect, verify-seal, serve)\n` +
       trustHelp()
   );
   return EXIT.USAGE;
@@ -1427,6 +1608,11 @@ function trustHelp() {
     "      ship each source NEXT TO the seal (same dir) and the handoff verifies anywhere.",
     "  inspect <file> --as <bank|ledger|rentroll>",
     "      read-only validator/preview of ONE input file (writes nothing).",
+    "  serve [--port <n>] [--host <h>]",
+    "      launch the LOCAL web front-door (default http://127.0.0.1:4173/) so a broker can drop",
+    "      the three files in a browser and watch the balances tie out. Files are processed IN",
+    "      MEMORY; NOTHING is written to disk server-side. Binds to localhost — exposing it (behind",
+    "      YOUR nginx/Cloudflare on YOUR domain with TLS) is a HUMAN deploy step, never auto-deployed.",
     "  verify-seal <sealfile> [--dir <d>] [--inputs <d>] [--json]",
     "      read-only, OFFLINE (NO key, NO network): re-derive each sealed file from disk and",
     "      print ACCEPTED (0) only when EVERY file matches; else REJECTED (3) with the precise",
@@ -1453,6 +1639,11 @@ module.exports = {
   runVerifySeal,
   cmdVerifySeal,
   renderVerifySeal,
+  parseServeArgs,
+  runServe,
+  cmdServe,
+  SERVE_DEFAULT_PORT,
+  SERVE_DEFAULT_HOST,
   trustHelp,
   cmdTrust,
   todayISO,

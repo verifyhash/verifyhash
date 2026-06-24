@@ -93,6 +93,7 @@ function usage() {
     "  vh trust reconcile <bank> <ledger> <rentroll> [--out <dir>] [--seal [<file>]]  three-way trust-account reconciliation -> dated audit packet (HTML+CSV; PASS/FAIL exit); --seal emits a tamper-evident seal alongside the packet",
     "  vh trust inspect <file> --as <bank|ledger|rentroll>  read-only validator/preview: header + column map + sample + every bad row + a fix hint (writes nothing)",
     "  vh trust verify-seal <sealfile> [--dir <d>] [--inputs <d>]  read-only OFFLINE seal verify (no key/net): ACCEPTED (0) only if EVERY sealed file re-derives, else REJECTED (3) with the per-file CHANGED/MISSING/UNEXPECTED list; sources sealed by basename resolve next to the seal (or --inputs <d>)",
+    "  vh trust serve [--port <n>] [--host <h>]  launch the LOCAL web front-door (default http://127.0.0.1:4173/): drop the three files in a browser, watch the balances tie out; files processed in-memory, nothing persisted server-side; exposing it is a HUMAN deploy step (never auto-deployed)",
     "",
     "trust inspect options (read-only, writes NOTHING — the onboarding companion to reconcile):",
     "  --as <bank|ledger|rentroll>  REQUIRED: which logical input <file> is (a malformed value is a usage error)",

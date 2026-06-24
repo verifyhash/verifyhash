@@ -217,6 +217,165 @@ rests on.
 
 ---
 
+## Period-close continuity (chaining one month to the next)
+
+A three-way trust reconciliation is a **monthly** ritual. Each month's reconciled **ending** balances
+become the **next** month's **opening** balances — the *roll-forward*. If May closes at a bank balance of
+$3,300.00, June **must** open at exactly $3,300.00; any other opening means a period was skipped, edited,
+or re-keyed, and the chain of custody over the trust money is broken. A fat-fingered opening silently
+shifts every balance and can flip PASS↔FAIL — so the tool makes the roll-forward an explicit,
+machine-checked artifact.
+
+Two flags drive the chain:
+
+- **`--emit-close <file>`** — at the end of a run, write a small JSON **close artifact** that records this
+  period's ending balances (plus enough context to chain and detect tampering).
+- **`--prior-close <file>`** — at the start of the next run, read the prior period's close artifact, **seed
+  this run's opening** from its ending, and run a **continuity check** that the roll-forward is
+  penny-exact.
+
+Both are **additive**: with neither flag the engine behaves byte-for-byte as before (no `continuity`
+metadata, no `continuity_break` exception — see **Additivity** below).
+
+### The close-artifact schema
+
+A close artifact is a single JSON object (`trustledger/close.js` is the single source of truth: pure
+`buildClose` / `readClose` / `validateClose`). Every field:
+
+| Field | Type | What it is | Trust class |
+| --- | --- | --- | --- |
+| `schemaVersion` | string `"trustledger.period-close/v1"` | Pins the artifact shape. **Any other value is a hard, named `CloseError`** — a close from a future/older tool is never silently coerced. | mechanical |
+| `period` | string \| null | The human period label this close came from (e.g. `"2026-05"`), or `null` if the run carried no `--period`. | **hint / label** |
+| `reportDate` | string `"YYYY-MM-DD"` | The report date of the run that emitted the close. | **hint / label** |
+| `opening` | `{ bank, book }` integer cents | The opening balances **that run** used. | **hint** (asserted) |
+| `ending` | `{ bank, book }` integer cents | The **closing** bank/book balances — the numbers the next period must open at. The roll-forward is checked against these. | **hint** (asserted) |
+| `subledger` | integer cents | The sub-ledger total at close. | **hint** (asserted) |
+| `tiesOut` | boolean | Whether the emitting run's three balances tied out. | **hint** (asserted verdict) |
+| `pass` | boolean | The emitting run's PASS/FAIL verdict (tiesOut AND zero error-severity findings). | **hint** (asserted verdict) |
+| `inputs` | `{ bankRecords, bookRecords, rentrollRecords }` non-negative integers | The input record counts the emitting run saw — context, and part of the digest. | **hint** |
+| `inputsDigest` | 64-char lowercase hex | A **SHA-256 digest** over a canonical, order-stable projection of the fields above (via Node's built-in `crypto`, **no new dependency**). It **binds** the close to the summary it carries, so a hand-edited field is detectable. | **digest** |
+
+Every value-bearing field is an **asserted hint** (a convenience the next run re-derives), `schemaVersion`
+is **mechanical**, and `inputsDigest` is a **convenience integrity tag** over the *summary the close
+carries* — **not** a cryptographic proof of the underlying source files (those are the authoritative
+inputs and are re-read on the next reconciliation), and **not** a signature. All money is **integer cents**
+(no floats); a non-integer-cents balance is a hard `CloseError`. The shipped artifact carries no clock or
+randomness beyond the explicit `reportDate`, so `buildClose` is byte-deterministic for a given model.
+
+### The `--prior-close` / `--emit-close` flow
+
+```
+month 1:  vh trust reconcile bank1 ledger1 rent1 --period 2026-05 --emit-close month1.json
+              -> reconciles month 1, writes month1.json (ending bank/book/sub recorded)
+
+month 2:  vh trust reconcile bank2 ledger2 rent2 --period 2026-06 --prior-close month1.json --emit-close month2.json
+              -> seeds opening from month1.json's ending, checks the roll-forward,
+                 reconciles month 2, writes month2.json (so month 3 can chain in turn)
+```
+
+On a `--prior-close` run:
+
+1. The prior close is **read and strictly validated** (`close.readClose`). A malformed or
+   structurally-invalid close, or a missing file, is a **usage error (exit `2`)** — a bad flag value, not
+   a data-file IO error. (`error: invalid --prior-close …` / `error: cannot read --prior-close …`.)
+2. This run's **opening is seeded** from the prior close's `ending` (bank ← `ending.bank`, book ←
+   `ending.book`), **unless** you also pass an explicit `--opening-bank` / `--opening-book`. An explicit
+   opening that **disagrees** with the prior ending is **honored and noted on stderr** (`note: --opening-bank
+   … overrides the prior close's ending bank balance …`) — and the continuity check below then flags the
+   resulting gap, so a chain-breaking override surfaces as a `CONTINUITY_BREAK` rather than silently. An
+   explicit opening that **agrees** seeds cleanly with no note.
+3. The **continuity check** (`close.checkContinuity`) compares the **opening actually used** against the
+   prior `ending`, **penny-exact, with zero tolerance** (a roll-forward must be exact — a one-cent drift is
+   a real gap, not noise). It returns `{ ok, bankGap, bookGap }` where `bankGap = opening.bank −
+   priorEnding.bank` (signed; positive means this period opened **higher** than the prior closed).
+
+### The continuity check and `CONTINUITY_BREAK`
+
+When the check is not clean (`bankGap` or `bookGap` ≠ 0), the run raises a **`continuity_break`**
+exception. Its default severity is **`error`** (a broken roll-forward means the books do not actually
+continue from the signed prior period), so it **FAILs the gate (exit `3`)** even if the period's own three
+balances otherwise tie out. The exception **names the gap** (signed integer cents) and the **prior period**
+it chained from, and it flows through the rendered packet: the HTML shows a **"Period continuity
+(roll-forward)"** table (Prior ending → This opening → Gap) and, on a break, a **"Roll-forward break:"**
+callout; the balances CSV carries `continuity,prior_period` / `continuity,bank_gap` rows and the exceptions
+CSV carries the `continuity_break` row.
+
+Like every other exception type, `continuity_break` is a **legal exception type** a per-state policy MAY
+**re-grade** — e.g. a state that treats a documented timing roll-forward difference as a `warning` (with a
+citation) rather than an out-of-trust ERROR. Re-grading it to `warning` removes it from the error count, so
+the verdict no longer FAILs on the break alone. (See **The per-state policy layer** above; the bundled list
+of legal types includes `continuity_break`.)
+
+### A close is an UNTRUSTED hint — re-derived, not signed
+
+This is load-bearing and consistent with the project-wide trust posture
+([`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md)): **the close artifact is an UNTRUSTED CONVENIENCE
+HINT, not an authority.** It carries the prior period's **asserted** ending so the next run can seed and
+check the opening — but the **authoritative** numbers are always the **freshly recomputed** reconciliation,
+never the values written in the close. A broker who hand-edits the close file changes a *hint*, not the
+truth: the next reconciliation **re-derives** the three balances from the source files, and the continuity
+check merely reports whether the asserted roll-forward matched. The close is **NOT signed and NOT
+timestamped**; like every other artifact in this repo it rides the human trust-root — the broker remains
+the legal custodian and a CPA review still governs.
+
+> **The close artifact is a convenience for chaining periods — NOT a legal record.** It exists to seed and
+> check the next month's opening; it does not attest to anything, does not certify the prior period, and is
+> not evidence of compliance. The audit-ready evidence is the dated **packet** (HTML + CSV) each run emits,
+> read against the broker's actual books by a qualified CPA — exactly as for a single-period run. Emitting
+> or chaining a close changes none of the honest-posture disclaimer at the top of this document.
+
+### Worked example: month 1 → month 2 → break
+
+Run **month 1** with `--emit-close`. It reconciles and writes the close artifact:
+
+```
+$ vh trust reconcile bank-2026-05.csv ledger-2026-05.csv rentroll-2026-05.csv \
+    --period 2026-05 --date 2026-05-31 --emit-close month1.json
+PASS: three-way reconciliation tie out (...); 1 exception(s) [0 error, 0 warning, 1 info]
+wrote close month1.json
+```
+
+`month1.json` records the period's ending (say bank $3,300.00 / book $3,300.00) plus its `inputsDigest`.
+
+Now run **month 2** with `--prior-close month1.json`. The opening is **seeded** from month 1's ending and
+the roll-forward is checked. When month 2's data continues cleanly, **continuity holds** — no break, the
+three balances tie out, and the gate PASSes:
+
+```
+$ vh trust reconcile bank-2026-06.csv ledger-2026-06.csv rentroll-2026-06.csv \
+    --period 2026-06 --date 2026-06-30 --prior-close month1.json --emit-close month2.json; echo "exit=$?"
+PASS: three-way reconciliation tie out (...); 1 exception(s) [0 error, 0 warning, 1 info]
+wrote close month2.json
+exit=0
+```
+
+Now **break a balance**: re-run month 2 but force an opening that does **not** roll forward from the prior
+close (here the bank opening is $100 below the prior ending — a skipped/edited/re-keyed period, the exact
+footgun this guard exists for). The override is honored-and-noted, the continuity check flags the gap, and
+the **`CONTINUITY_BREAK` FAILs** the gate (exit `3`):
+
+```
+$ vh trust reconcile bank-2026-06.csv ledger-2026-06.csv rentroll-2026-06.csv \
+    --period 2026-06 --date 2026-06-30 --prior-close month1.json --opening-bank 3,200.00; echo "exit=$?"
+note: --opening-bank 320000 overrides the prior close's ending bank balance 330000; the roll-forward continuity check below will flag the resulting gap
+FAIL: ... ; N exception(s) [1 error, ...]
+exit=3
+```
+
+The packet names the prior period (`2026-05`), shows the roll-forward break (`bankGap = -10000`, i.e.
+−$100.00), and the `continuity_break` row is ERROR — so the FAIL is *because the chain broke*, not because
+the month's own numbers disagreed. That is the continuity layer doing its job: a silently-shifted opening
+becomes a visible, gating finding.
+
+### Additivity (no close flags == today's behaviour)
+
+With **neither** `--prior-close` nor `--emit-close`, the run is **byte-for-byte** the prior behaviour:
+`model.continuity` and `model.priorClose` are `null`, no `continuity_break` is ever raised, nothing extra
+is written, and the verdict depends only on the period's own three balances (and any selected policy). The
+continuity layer only engages when you opt in by chaining a close.
+
+---
+
 ## The packet: HTML + CSV (print-to-PDF ready)
 
 With `--out <dir>`, the command writes a **dated** packet into that directory (created if absent):
@@ -256,6 +415,11 @@ Options:
   --state <code>         score under a bundled per-state DRAFT policy by its code/label
                          (trustledger/fixtures/policy/<code>.json); mutually exclusive with --policy
   --policy <file>        score under an explicit per-state policy file you supply
+  --prior-close <file>   roll forward FROM a prior period's close artifact: seed this
+                         run's opening from it and check the roll-forward (see
+                         "Period-close continuity" below)
+  --emit-close <file>    write THIS run's close artifact to <file> so next month can
+                         consume it as --prior-close
   --opening-bank <amt>   opening bank balance (e.g. "12,345.67"); default 0
   --opening-book <amt>   opening book balance; default 0
   --tolerance-cents <n>  tie-out tolerance in integer cents; default 0
@@ -317,8 +481,13 @@ into a sellable, compliant product are **human-owned** and tracked in STRATEGY.m
   `severities` overrides + their statute `citations`) and have a CPA/counsel sign that mapping for the
   jurisdiction. No engine change is needed; the bundled `baseline.json` / `ca-example.json` are the
   DRAFT skeletons to copy (P-5 #2).
-- **1–2 design-partner brokers** (e.g. via NARPM) to run their real files and confirm the three
-  numbers tie out.
+- **Run the two-month design-partner script with 1–2 brokers** (e.g. via NARPM). The concrete,
+  decision-ready validation is now a script the engine already supports: have a partner run
+  `vh trust reconcile … --state <code> --emit-close month1.json` on their **real month-1** files, then
+  re-run on **month-2** files with `--prior-close month1.json`, and confirm (a) the three balances tie out
+  both months, (b) the roll-forward is clean (no `CONTINUITY_BREAK`), and (c) the exceptions read
+  correctly. That **two-month run IS the willingness-to-pay validation** — it shows the recurring monthly
+  product working past month one, which a single-period demo cannot (P-5 #3).
 
 Hosting, billing (a SaaS subscription), and pricing are likewise human steps. Income comes from selling
 the product to paying customers — **never** from a token, coin, sale, or yield scheme.

@@ -36,6 +36,7 @@ const {
   runDatasetCheck,
   runDatasetTimestampRequest,
   runDatasetTimestampWrap,
+  runDatasetVerifyTimestamp,
 } = require("./dataset");
 const {
   runParcelBuild,
@@ -45,6 +46,7 @@ const {
   runParcelVerifyAttest,
   runParcelTimestampRequest,
   runParcelTimestampWrap,
+  runParcelVerifyTimestamp,
 } = require("./parcel");
 
 function usage() {
@@ -76,6 +78,7 @@ function usage() {
     "  vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed attestation (no key/net)",
     "  vh dataset timestamp-request <manifest>  emit the SHA-256 digest your RFC-3161 TSA stamps (no key/net)",
     "  vh dataset timestamp-wrap <manifest> --token <p>  wrap a TSA token -> verifiable timestamped container (no key/net)",
+    "  vh dataset verify-timestamp <container> [--manifest <m>]  OFFLINE verify an RFC-3161 timestamped attestation (no key/net)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "  vh parcel build <dir> --out <p>  tamper-evident DELIVERY receipt (root + per-file leaves + untrusted parcel meta)",
@@ -85,6 +88,7 @@ function usage() {
     "  vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed parcel attestation (no key/net)",
     "  vh parcel timestamp-request <manifest>  emit the SHA-256 digest your RFC-3161 TSA stamps (no key/net)",
     "  vh parcel timestamp-wrap <manifest> --token <p>  wrap a TSA token -> verifiable timestamped container (no key/net)",
+    "  vh parcel verify-timestamp <container> [--manifest <m>]  OFFLINE verify an RFC-3161 timestamped parcel attestation (no key/net)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -2078,6 +2082,33 @@ function parseTimestampWrapArgs(argv) {
 }
 
 /**
+ * Parse `dataset verify-timestamp`/`parcel verify-timestamp` argv into { container, manifest, json }. Takes
+ * EXACTLY one positional <container> path, an optional --manifest <m>, and an optional --json. Throws on a
+ * missing/extra positional or an unknown/incomplete flag, so a typo never silently verifies the wrong (or
+ * no) container or binds a surprise manifest (parser parity with `verify-attest`/the other subcommands).
+ */
+function parseVerifyTimestampArgs(argv) {
+  const opts = { container: undefined, manifest: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--manifest":
+        opts.manifest = argv[++i];
+        if (opts.manifest === undefined) throw new Error("--manifest requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.container !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.container = a;
+    }
+  }
+  return opts;
+}
+
+/**
  * Parse `parcel build` argv into { dir, out, parcelId, sender, recipient, hints, json }. Takes exactly one
  * positional <dir>, a REQUIRED --out, and OPTIONAL untrusted parcel-metadata flags. Throws on unknown/
  * incomplete flags or a duplicate/missing positional so a typo never silently builds the wrong tree
@@ -2243,6 +2274,9 @@ function cmdDataset(argv) {
   if (sub === "timestamp-wrap") {
     return cmdDatasetTimestampWrap(rest);
   }
+  if (sub === "verify-timestamp") {
+    return cmdDatasetVerifyTimestamp(rest);
+  }
   if (sub === "prove") {
     return cmdDatasetProve(rest);
   }
@@ -2252,7 +2286,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | diff | summary | check | report | attest | sign | verify-attest | timestamp-request | timestamp-wrap | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | summary | check | report | attest | sign | verify-attest | timestamp-request | timestamp-wrap | verify-timestamp | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -2712,6 +2746,48 @@ function cmdDatasetTimestampWrap(argv) {
 }
 
 /**
+ * `vh dataset verify-timestamp <container> [--manifest <m>] [--json]` — the OFFLINE independent-timestamp
+ * verifier. Reads the timestamped container, re-derives the canonical bytes from the embedded UNSIGNED
+ * payload, confirms digest == sha256(bytes), parses the RFC-3161 token, and confirms it BINDS that digest;
+ * with --manifest it ALSO requires the embedded attestation to be byte-identical to the buyer's own
+ * re-derived canonical bytes. Prints ACCEPTED (with the asserted genTime / TSA serial / policy OID) or
+ * REJECTED naming which check failed. PURELY OFFLINE: no tree, no provider, no key, no network. Exit 0
+ * ACCEPTED, 3 REJECTED (mirrors the family's 0/3 convention so a buyer's CI can gate), 2 on a usage error,
+ * 1 on a runtime error (missing/corrupt container or manifest).
+ */
+function cmdDatasetVerifyTimestamp(argv) {
+  let opts;
+  try {
+    opts = parseVerifyTimestampArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.container) {
+    process.stderr.write(
+      "error: `vh dataset verify-timestamp` requires a <container> (timestamped attestation path)\n\n" +
+        usage()
+    );
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runDatasetVerifyTimestamp({
+      container: opts.container,
+      manifest: opts.manifest,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on REJECTED so a buyer's CI can gate (mirrors the family's 0/3 convention).
+  return result.accepted ? 0 : 3;
+}
+
+/**
  * `vh dataset prove --file <p> --manifest <m> [--out <p>] [--json]` — build an OFFLINE set-membership
  * proof that ONE file was a member of the manifest's dataset. NO key, NO network. Exit 0 on MEMBER, 3
  * on NOT A MEMBER (so scripts/CI can branch), 2 on a usage error, 1 on a runtime error.
@@ -2807,10 +2883,13 @@ function cmdParcel(argv) {
   if (sub === "timestamp-wrap") {
     return cmdParcelTimestampWrap(rest);
   }
+  if (sub === "verify-timestamp") {
+    return cmdParcelVerifyTimestamp(rest);
+  }
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown parcel subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | attest | sign | verify-attest | timestamp-request | timestamp-wrap)\n\n` + usage()
+        `(expected: build | verify | attest | sign | verify-attest | timestamp-request | timestamp-wrap | verify-timestamp)\n\n` + usage()
     );
     return 2;
   }
@@ -3111,6 +3190,45 @@ function cmdParcelTimestampWrap(argv) {
   return 0;
 }
 
+/**
+ * `vh parcel verify-timestamp <container> [--manifest <m>] [--json]` — the OFFLINE independent-timestamp
+ * verifier for ProofParcel. THIN parallel to `vh dataset verify-timestamp`: reads the timestamped parcel
+ * container, confirms digest == sha256(canonical bytes) + the RFC-3161 token binds it, and (with --manifest)
+ * binds the timestamp to the recipient's own parcel. PURELY OFFLINE: no tree, no provider, no key, no
+ * network. Exit 0 ACCEPTED, 3 REJECTED (mirrors the family's 0/3 convention), 2 usage error, 1 runtime error.
+ */
+function cmdParcelVerifyTimestamp(argv) {
+  let opts;
+  try {
+    opts = parseVerifyTimestampArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.container) {
+    process.stderr.write(
+      "error: `vh parcel verify-timestamp` requires a <container> (timestamped attestation path)\n\n" +
+        usage()
+    );
+    return 2;
+  }
+
+  let result;
+  try {
+    result = runParcelVerifyTimestamp({
+      container: opts.container,
+      manifest: opts.manifest,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+
+  // Exit non-zero on REJECTED so a recipient's CI can gate (mirrors the family's 0/3 convention).
+  return result.accepted ? 0 : 3;
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -3181,6 +3299,7 @@ module.exports = {
   cmdDatasetAttest,
   cmdDatasetSign,
   cmdDatasetVerifyAttest,
+  cmdDatasetVerifyTimestamp,
   cmdDatasetProve,
   cmdDatasetVerifyProof,
   cmdParcel,
@@ -3188,6 +3307,8 @@ module.exports = {
   cmdParcelAttest,
   cmdParcelSign,
   cmdParcelVerifyAttest,
+  cmdParcelVerifyTimestamp,
+  parseVerifyTimestampArgs,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,
   parseParcelAttestArgs,

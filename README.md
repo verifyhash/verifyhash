@@ -59,6 +59,9 @@ vh dataset report <manifest> [--verify <dir>] [--policy <p>] # ONE deterministic
 vh dataset attest <manifest>         # canonical UNSIGNED attestation payload a human trust-root signs (P-3); offline, no key, no network
 vh dataset sign <manifest> --key-env <VAR>|--key-file <p> # sign the UNSIGNED attestation with a key YOU provisioned -> signed container; reads YOUR key, never generates/persists/logs one; offline, no network
 vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] # OFFLINE-verify a SIGNED attestation container (recover signer, pin publisher, bind manifest); no key, no network, CI-gateable exit 0/3
+vh dataset timestamp-request <manifest> # emit the SHA-256 digest your RFC-3161 TSA stamps (P-3 Option B); offline, no key, no network
+vh dataset timestamp-wrap <manifest> --token <p> # wrap a TSA's RFC-3161 token -> verifiable timestamped container; offline, no key, no network
+vh dataset verify-timestamp <container> [--manifest <m>] # OFFLINE-verify an RFC-3161 timestamped attestation (genTime/serial/policy; bind manifest); no key, no network, CI-gateable exit 0/3
 vh dataset prove --file <p> --manifest <m> # set-membership proof for ONE file; offline, no key, no network
 vh dataset verify-proof <proof>      # fold a membership proof back to the recorded root; offline, no key, no network
 vh parcel build <dir> --out <p>      # ProofParcel: tamper-evident B2B delivery receipt (root + per-file leaves + untrusted parcel meta); offline, no key, no network
@@ -66,6 +69,9 @@ vh parcel verify <dir> --manifest <p> # re-derive the root + per-file diff vs a 
 vh parcel attest <manifest>          # canonical UNSIGNED parcel-attestation payload a human trust-root signs (P-3); offline, no key, no network
 vh parcel sign <manifest> --key-env <VAR>|--key-file <p> # sign the UNSIGNED parcel attestation with a key YOU provisioned -> signed container; reads YOUR key, never generates/persists/logs one; offline, no network
 vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] # OFFLINE-verify a SIGNED parcel attestation (recover signer, pin sender, bind parcel); no key, no network, CI-gateable exit 0/3
+vh parcel timestamp-request <manifest> # emit the SHA-256 digest your RFC-3161 TSA stamps (P-3 Option B); offline, no key, no network
+vh parcel timestamp-wrap <manifest> --token <p> # wrap a TSA's RFC-3161 token -> verifiable timestamped container; offline, no key, no network
+vh parcel verify-timestamp <container> [--manifest <m>] # OFFLINE-verify an RFC-3161 timestamped parcel attestation (genTime/serial/policy; bind parcel); no key, no network, CI-gateable exit 0/3
 ```
 
 > **Read commands authenticate the registry by default.** Every read command (`verify` / `show` /
@@ -398,6 +404,9 @@ vh dataset report <manifest> [--verify <dir>] [--policy <p>] [--json] [--out <p>
 vh dataset attest <manifest> [--json] [--out <p>]  # canonical UNSIGNED attestation payload (root+fileCount+manifestDigest) a human trust-root signs; offline, no key, no network
 vh dataset sign <manifest> --key-env <VAR>|--key-file <p> [--out <p>] [--json]  # sign the UNSIGNED attestation with a key YOU provisioned -> the signed container verify-attest accepts; reads YOUR key (never generates/persists/logs one); offline, no network
 vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]  # OFFLINE-verify a SIGNED attestation container: recover the signer, pin the publisher, bind YOUR manifest; offline, no key, no network, CI-gateable exit code (0 ACCEPTED / 3 REJECTED)
+vh dataset timestamp-request <manifest> [--out <p>] [--json]  # emit the SHA-256 digest your RFC-3161 TSA stamps (P-3 Option B); offline, no key, no network
+vh dataset timestamp-wrap <manifest> --token <p> [--out <p>] [--json]  # wrap a TSA's RFC-3161 token -> a verifiable verifyhash.dataset-attestation-timestamped container; offline, no key, no network
+vh dataset verify-timestamp <container> [--manifest <m>] [--json]  # OFFLINE-verify a timestamped attestation: re-derive the digest, confirm the RFC-3161 token binds it, bind YOUR manifest; ACCEPTED (genTime/serial/policy) or REJECTED; offline, no key, no network, CI-gateable exit code (0 ACCEPTED / 3 REJECTED)
 vh dataset prove --file <p> --manifest <m> --out <a>  # portable set-membership proof for ONE file
 vh dataset verify-proof <proof>           # fold a membership proof back to the recorded root (no dataset, no manifest, no key, no net)
 ```
@@ -446,6 +455,9 @@ vh parcel verify <dir> --manifest <p>     # re-derive the root from a fresh copy
 vh parcel attest <manifest> [--json] [--out <p>]  # canonical UNSIGNED parcel-attestation payload (root+fileCount+manifestDigest) a human trust-root signs; offline, no key, no network
 vh parcel sign <manifest> --key-env <VAR>|--key-file <p> [--out <p>] [--json]  # sign the UNSIGNED parcel attestation with a key YOU provisioned -> the signed container verify-attest accepts; reads YOUR key (never generates/persists/logs one); offline, no network
 vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]  # OFFLINE-verify a SIGNED parcel attestation: recover the signer, pin the sender, bind YOUR parcel; offline, no key, no network, CI-gateable exit code (0 ACCEPTED / 3 REJECTED)
+vh parcel timestamp-request <manifest> [--out <p>] [--json]  # emit the SHA-256 digest your RFC-3161 TSA stamps (P-3 Option B); offline, no key, no network
+vh parcel timestamp-wrap <manifest> --token <p> [--out <p>] [--json]  # wrap a TSA's RFC-3161 token -> a verifiable verifyhash.parcel-attestation-timestamped container; offline, no key, no network
+vh parcel verify-timestamp <container> [--manifest <m>] [--json]  # OFFLINE-verify a timestamped parcel attestation: re-derive the digest, confirm the RFC-3161 token binds it, bind YOUR parcel; ACCEPTED (genTime/serial/policy) or REJECTED; offline, no key, no network, CI-gateable exit code (0 ACCEPTED / 3 REJECTED)
 ```
 
 `vh parcel attest` emits the canonical, byte-deterministic **UNSIGNED** payload a sender signs over —

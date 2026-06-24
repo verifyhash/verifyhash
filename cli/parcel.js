@@ -1291,6 +1291,135 @@ function runParcelTimestampWrap(opts) {
   return { container, canonical, digest: facts.digest, genTime: facts.genTime, out: outAbs };
 }
 
+// =================================================================================================
+// `vh parcel verify-timestamp <container> [--manifest <m>] [--json]` — the OFFLINE independent-timestamp
+// verifier for ProofParcel (T-20.3, EPIC-20). THIN parallel to `vh dataset verify-timestamp`, over the SAME
+// generic timestamp core. ProofParcel's OWN container `kind` means a DATASET timestamped container does NOT
+// cross-validate here (and vice versa) — the strict validator rejects the wrong kind.
+
+const PARCEL_VERIFY_TIMESTAMP_VERDICT = coreTimestamp.VERIFY_TIMESTAMP_VERDICT;
+
+// The bounded, honest claim the parcel verify-timestamp output LEADS with. REUSES the shared TRUST_NOTE +
+// the parcel caveat verbatim, and states EXACTLY what ACCEPTED means: an RFC-3161 TSA asserted this parcel
+// identity existed by genTime, to the strength of the TSA YOU trust; this command does NOT validate the
+// TSA cert chain / CMS signature (use a CMS verifier / `openssl ts -verify`). Never "delivered since T"
+// unqualified.
+const PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE =
+  "ACCEPTED means an RFC-3161 Time-Stamping Authority (TSA) asserted this exact parcel identity (the " +
+  "SHA-256 digest of the canonical attestation bytes) existed by the asserted genTime. This is as " +
+  "trustworthy as the TSA whose certificate YOU trust — this command does NOT validate the TSA's " +
+  "certificate chain or the token's CMS signature (use your platform's CMS verifier, e.g. " +
+  "`openssl ts -verify`, for full PKI validation). It NEVER claims \"delivered/unaltered since date T\" " +
+  "without that qualification. The digest is a STANDARD sha256(canonical attestation bytes) — NOT the " +
+  "project's internal keccak256 manifestDigest. " +
+  PARCEL_TRUST_NOTE +
+  " " +
+  TRUST_NOTE;
+
+/**
+ * Verify (purely, OFFLINE) a TIMESTAMPED parcel-attestation container. THIN wrapper over the generic core
+ * verifier with ProofParcel's framing. When `manifest` is given, re-derives the recipient's OWN canonical
+ * UNSIGNED bytes via the EXISTING build path and requires the embedded attestation to match byte-for-byte.
+ * @param {object} params { container, [manifest] }
+ * @returns {object} the object the core verifyTimestampContainer returns
+ */
+function verifyTimestampedParcelAttestation(params) {
+  if (!params || typeof params !== "object") {
+    throw new Error("verifyTimestampedParcelAttestation requires { container, [manifest] }");
+  }
+  const { container, manifest } = params;
+  let expectedManifestCanonical;
+  if (manifest !== undefined && manifest !== null) {
+    expectedManifestCanonical = serializeParcelAttestation(buildParcelAttestation(manifest));
+  }
+  return coreTimestamp.verifyTimestampContainer(
+    { container, expectedManifestCanonical },
+    TIMESTAMPED_PARCEL_ATTESTATION_CFG
+  );
+}
+
+/**
+ * Render a parcel verify-timestamp result as the human-readable block the CLI prints. LEADS with the
+ * bounded trust claim, then the verdict, the asserted genTime / TSA serial / policy OID (on ACCEPTED), and
+ * each requested check with PASS/FAIL. A REJECTED verdict NAMES which check failed.
+ * @param {object} r the object verifyTimestampedParcelAttestation returns
+ * @returns {string[]} lines
+ */
+function formatParcelVerifyTimestamp(r) {
+  const lines = [
+    "  TRUST: " + PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE,
+    "",
+    `  verify-timestamp: ${r.verdict}`,
+  ];
+  lines.push(
+    `  [${r.checks.structureAndBinding ? "PASS" : "FAIL"}] the token binds sha256(canonical attestation ` +
+      "bytes) under RFC-3161 (structure + digest + messageImprint)"
+  );
+  if (r.checks.manifestBindsAttestation === null) {
+    lines.push(
+      "  [skip] parcel binding: not requested (pass --manifest <m> to bind the timestamp to YOUR parcel)"
+    );
+  } else {
+    lines.push(
+      `  [${r.checks.manifestBindsAttestation ? "PASS" : "FAIL"}] the timestamp binds YOUR manifest ` +
+        "(its canonical bytes are byte-identical to the timestamped payload)"
+    );
+  }
+  if (r.accepted) {
+    lines.push("  ACCEPTED: an RFC-3161 TSA asserted this parcel identity existed by:");
+    lines.push(`    genTime (ISO UTC):  ${r.genTime}`);
+    lines.push(`    TSA serialNumber:   ${r.serialNumber.hex}  (decimal ${r.serialNumber.decimal})`);
+    lines.push(`    policy OID:         ${r.policyOID}`);
+    lines.push(`    digest (sha256):    ${r.digest}`);
+  } else {
+    lines.push(`  REJECTED: failed check(s): ${r.failedChecks.join(", ")}.`);
+    if (r.reason) lines.push(`    reason: ${r.reason}`);
+  }
+  return lines;
+}
+
+/**
+ * Orchestrate `vh parcel verify-timestamp <container> [--manifest <m>] [--json]`. THIN parallel to the
+ * dataset one: reads the raw JSON at the I/O boundary (missing/non-JSON -> runtime error), runs the PURE
+ * verifier (a tampered-but-parseable container is a clean NAMED REJECTED), and optionally binds to the
+ * recipient's own manifest. PURELY OFFLINE: NO key, NO network.
+ * @param {object} opts { container, [manifest], [json], [stdout] }
+ * @returns {object} the object verifyTimestampedParcelAttestation returns
+ */
+function runParcelVerifyTimestamp(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runParcelVerifyTimestamp requires options");
+  const { container: containerPath, manifest: manifestPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!containerPath) throw new Error("runParcelVerifyTimestamp requires a <container> path");
+
+  let raw;
+  try {
+    raw = fs.readFileSync(containerPath, "utf8");
+  } catch (e) {
+    throw new Error(`cannot read timestamped parcel attestation at ${containerPath}: ${e.message}`);
+  }
+  let container;
+  try {
+    container = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`timestamped parcel attestation at ${containerPath} is not valid JSON: ${e.message}`);
+  }
+
+  let manifest;
+  if (manifestPath !== undefined && manifestPath !== null) {
+    manifest = readParcelManifest(manifestPath);
+  }
+
+  const result = verifyTimestampedParcelAttestation({ container, manifest });
+
+  if (opts.json) {
+    write(JSON.stringify(result) + "\n");
+  } else {
+    for (const line of formatParcelVerifyTimestamp(result)) write(line + "\n");
+  }
+  return result;
+}
+
 module.exports = {
   PARCEL_MANIFEST_KIND,
   PARCEL_MANIFEST_SCHEMA_VERSION,
@@ -1347,4 +1476,10 @@ module.exports = {
   readTimestampedParcelAttestation,
   runParcelTimestampRequest,
   runParcelTimestampWrap,
+  // verify-timestamp (T-20.3) — OFFLINE independent-timestamp verifier over the SAME generic core.
+  PARCEL_VERIFY_TIMESTAMP_VERDICT,
+  PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE,
+  verifyTimestampedParcelAttestation,
+  formatParcelVerifyTimestamp,
+  runParcelVerifyTimestamp,
 };

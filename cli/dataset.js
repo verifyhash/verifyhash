@@ -2336,6 +2336,177 @@ function runDatasetTimestampWrap(opts) {
 }
 
 // =================================================================================================
+// `vh dataset verify-timestamp <container> [--manifest <m>] [--json]` — the OFFLINE independent-timestamp
+// verifier (T-20.3, EPIC-20). The read-only sibling of `verify-attest`, for the TIMESTAMP dimension.
+//
+// WHY THIS EXISTS
+//   A buyer handed a `*-attestation-timestamped` container needs ONE command that answers, with no key and
+//   no network: does an INDEPENDENT RFC-3161 TSA's token genuinely bind THIS dataset's identity, and by
+//   WHAT genTime? It re-derives the canonical attestation bytes from the embedded UNSIGNED payload, confirms
+//   `digest === sha256(those bytes)`, parses the token (T-20.1), and confirms its messageImprint BINDS that
+//   digest — printing ACCEPTED with the asserted genTime (ISO UTC) / TSA serialNumber / policy OID, or
+//   REJECTED naming which check failed. With `--manifest` it ALSO re-derives the canonical bytes from the
+//   buyer's OWN manifest and requires a byte-identical match (binding the token to the buyer's data, exactly
+//   like verify-attest's `--manifest`).
+//
+//   PURELY OFFLINE: no tree walk, no provider, no key, no network. A tampered token / mismatched digest /
+//   edited embedded attestation REJECTS (never a false ACCEPT) — the same strict validator the build/read
+//   path uses decides the structure + binding, so a verify-timestamp ACCEPT can never disagree with what
+//   timestamp-wrap would have produced.
+//
+// BOUNDED, HONEST CLAIM (carried verbatim into output, never overclaims). ACCEPTED means an RFC-3161 TSA
+//   ASSERTED this exact dataset identity (digest) existed by <genTime>; this is as trustworthy as the TSA
+//   whose certificate YOU trust. This command does NOT validate the TSA's certificate chain / the token's
+//   CMS signature — use your platform's CMS verifier (`openssl ts -verify`) for full PKI validation. It
+//   NEVER prints "unaltered since date T" without that qualification.
+//
+// EXIT CODES (the family's 0/3 convention, shared with `vh dataset verify`/`verify-attest`): 0 ACCEPTED, 3
+//   REJECTED, 2 usage error, 1 runtime error (missing/corrupt container or manifest).
+
+const VERIFY_TIMESTAMP_VERDICT = coreTimestamp.VERIFY_TIMESTAMP_VERDICT;
+
+// The standing trust caveat the verify-timestamp output LEADS with — the honest, BOUNDED claim. REUSES the
+// dataset TRUST_NOTE verbatim (so the dataset caveats never drift) and states EXACTLY what ACCEPTED means:
+// an RFC-3161 TSA asserted this digest existed by genTime, to the strength of the TSA YOU trust; this
+// command does NOT validate the TSA cert chain / CMS signature (use a CMS verifier / `openssl ts -verify`).
+const VERIFY_TIMESTAMP_TRUST_NOTE =
+  "ACCEPTED means an RFC-3161 Time-Stamping Authority (TSA) asserted this exact dataset identity (the " +
+  "SHA-256 digest of the canonical attestation bytes) existed by the asserted genTime. This is as " +
+  "trustworthy as the TSA whose certificate YOU trust — this command does NOT validate the TSA's " +
+  "certificate chain or the token's CMS signature (use your platform's CMS verifier, e.g. " +
+  "`openssl ts -verify`, for full PKI validation). It NEVER claims \"unaltered since date T\" without that " +
+  "qualification. The digest is a STANDARD sha256(canonical attestation bytes) — NOT the project's " +
+  "internal keccak256 manifestDigest. Every caveat of the embedded UNSIGNED payload still applies. " +
+  TRUST_NOTE;
+
+/**
+ * Verify (purely, OFFLINE) a TIMESTAMPED dataset-attestation container. THIN wrapper over the generic core
+ * verifier with DataLedger's framing. When `manifest` is given, re-derives the buyer's OWN canonical
+ * UNSIGNED bytes via the EXISTING build path and requires the embedded attestation to match byte-for-byte.
+ *
+ * @param {object} params
+ * @param {object} params.container the parsed container object (from JSON.parse / readTimestampedAttestation)
+ * @param {object} [params.manifest] OPTIONAL validated manifest object (from readManifest); binding check when present
+ * @returns {object} the object the core verifyTimestampContainer returns
+ */
+function verifyTimestampedAttestation(params) {
+  if (!params || typeof params !== "object") {
+    throw new Error("verifyTimestampedAttestation requires { container, [manifest] }");
+  }
+  const { container, manifest } = params;
+  let expectedManifestCanonical;
+  if (manifest !== undefined && manifest !== null) {
+    expectedManifestCanonical = serializeAttestation(buildAttestation(manifest));
+  }
+  return coreTimestamp.verifyTimestampContainer(
+    { container, expectedManifestCanonical },
+    TIMESTAMPED_ATTESTATION_CFG
+  );
+}
+
+/**
+ * Render a verify-timestamp result as the human-readable block the CLI prints. LEADS with the bounded
+ * trust claim (VERIFY_TIMESTAMP_TRUST_NOTE), then the verdict, the asserted genTime / TSA serial / policy
+ * OID (on ACCEPTED), and each requested check with PASS/FAIL. A REJECTED verdict NAMES which check failed.
+ * @param {object} r the object verifyTimestampedAttestation returns
+ * @returns {string[]} lines
+ */
+function formatVerifyTimestamp(r) {
+  const lines = [
+    // BOUNDED claim FIRST: ACCEPTED == a TSA asserted this digest by genTime, to the strength of the TSA
+    // YOU trust; NOT a cert-chain validation, NEVER "unaltered since T" unqualified.
+    "  TRUST: " + VERIFY_TIMESTAMP_TRUST_NOTE,
+    "",
+    `  verify-timestamp: ${r.verdict}`,
+  ];
+  // Check 1 + 2 (always performed): structure sound, digest == sha256(bytes), token parses + binds digest.
+  lines.push(
+    `  [${r.checks.structureAndBinding ? "PASS" : "FAIL"}] the token binds sha256(canonical attestation ` +
+      "bytes) under RFC-3161 (structure + digest + messageImprint)"
+  );
+  // Check 3 (only when --manifest given): the timestamp binds the buyer's own dataset.
+  if (r.checks.manifestBindsAttestation === null) {
+    lines.push(
+      "  [skip] dataset binding: not requested (pass --manifest <m> to bind the timestamp to YOUR dataset)"
+    );
+  } else {
+    lines.push(
+      `  [${r.checks.manifestBindsAttestation ? "PASS" : "FAIL"}] the timestamp binds YOUR manifest ` +
+        "(its canonical bytes are byte-identical to the timestamped payload)"
+    );
+  }
+  if (r.accepted) {
+    lines.push("  ACCEPTED: an RFC-3161 TSA asserted this dataset identity existed by:");
+    lines.push(`    genTime (ISO UTC):  ${r.genTime}`);
+    lines.push(`    TSA serialNumber:   ${r.serialNumber.hex}  (decimal ${r.serialNumber.decimal})`);
+    lines.push(`    policy OID:         ${r.policyOID}`);
+    lines.push(`    digest (sha256):    ${r.digest}`);
+  } else {
+    lines.push(`  REJECTED: failed check(s): ${r.failedChecks.join(", ")}.`);
+    if (r.reason) lines.push(`    reason: ${r.reason}`);
+  }
+  return lines;
+}
+
+/**
+ * Orchestrate `vh dataset verify-timestamp <container> [--manifest <m>] [--json]`. Reads the timestamped
+ * container via the strict generic reader (a malformed/edited/foreign/non-binding container is rejected
+ * here, never half-accepted) and, when given, the buyer's manifest via the strict `readManifest`, then runs
+ * the PURE `verifyTimestampedAttestation`. Emits the verdict as a human block (LEADS with the bounded trust
+ * claim) or a `--json` machine-readable object. PURELY OFFLINE: NO key, NO network.
+ *
+ * NOTE: the strict reader (readTimestampedAttestation) ALSO performs the structure+binding checks. To give a
+ * NAMED REJECTED for a tampered token / mismatched digest / edited embedded attestation (rather than a bare
+ * runtime error), we read the raw JSON ourselves and let the PURE verifier turn the validator's throw into a
+ * clean REJECTED — a corrupt JSON / missing FILE is still a runtime error (exit 1) at the I/O boundary.
+ *
+ * @param {object} opts
+ * @param {string} opts.container  path to a timestamped-attestation container (from `timestamp-wrap`)
+ * @param {string} [opts.manifest] OPTIONAL path to the buyer's manifest (binds the timestamp to it)
+ * @param {boolean}[opts.json]     emit the machine-readable verdict instead of the human block
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {object} the object verifyTimestampedAttestation returns
+ */
+function runDatasetVerifyTimestamp(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetVerifyTimestamp requires options");
+  const { container: containerPath, manifest: manifestPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!containerPath) throw new Error("runDatasetVerifyTimestamp requires a <container> path");
+
+  // Read the raw JSON at the I/O boundary (a missing file / non-JSON is a runtime error, exit 1). The
+  // STRUCTURE + binding checks are then the PURE verifier's job, so a tampered-but-parseable container is a
+  // clean NAMED REJECTED (exit 3), never a thrown error.
+  let raw;
+  try {
+    raw = fs.readFileSync(containerPath, "utf8");
+  } catch (e) {
+    throw new Error(`cannot read timestamped dataset attestation at ${containerPath}: ${e.message}`);
+  }
+  let container;
+  try {
+    container = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`timestamped dataset attestation at ${containerPath} is not valid JSON: ${e.message}`);
+  }
+
+  // OPTIONAL: read the buyer's manifest strictly (a corrupt/foreign manifest is a runtime error) so the
+  // binding check recomputes canonical bytes from a sound manifest.
+  let manifest;
+  if (manifestPath !== undefined && manifestPath !== null) {
+    manifest = readManifest(manifestPath);
+  }
+
+  const result = verifyTimestampedAttestation({ container, manifest });
+
+  if (opts.json) {
+    write(JSON.stringify(result) + "\n");
+  } else {
+    for (const line of formatVerifyTimestamp(result)) write(line + "\n");
+  }
+  return result;
+}
+
+// =================================================================================================
 // `vh dataset check <manifest> --policy <p> [--json]` — deterministic, OFFLINE license/source policy gate.
 //
 // WHY THIS EXISTS
@@ -2722,6 +2893,12 @@ module.exports = {
   readTimestampedAttestation,
   runDatasetTimestampRequest,
   runDatasetTimestampWrap,
+  // verify-timestamp (T-20.3) — OFFLINE independent-timestamp verifier over the SAME generic core.
+  VERIFY_TIMESTAMP_VERDICT,
+  VERIFY_TIMESTAMP_TRUST_NOTE,
+  verifyTimestampedAttestation,
+  formatVerifyTimestamp,
+  runDatasetVerifyTimestamp,
   TRUST_NOTE,
   MEMBERSHIP_TRUST_NOTE,
   NO_LICENSE_BUCKET,

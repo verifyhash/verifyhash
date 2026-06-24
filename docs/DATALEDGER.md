@@ -76,6 +76,9 @@ the code:
 
 ```
 build → diff (between versions) → summary → check (the policy gate) → report (the filed deliverable) → attest (the signing-ready payload) → [human signs, P-3] → verify-attest (offline-verify a signed container) → prove (a single file) → verify-proof
+
+# OR, for an INDEPENDENT timestamp (P-3 Option B):
+attest → timestamp-request (the digest your TSA stamps) → [human obtains a token from a TSA] → timestamp-wrap (the token container) → verify-timestamp (offline-verify "an RFC-3161 TSA saw this by date T")
 ```
 
 | Command | What it does | Offline? Key? Network? |
@@ -89,6 +92,9 @@ build → diff (between versions) → summary → check (the policy gate) → re
 | `vh dataset attest <manifest> [--json] [--out <p>]` | Emit the canonical, byte-deterministic UNSIGNED attestation payload (root + fileCount + manifestDigest) a human signing/timestamp trust-root will sign | offline, no key, no network |
 | `vh dataset sign <manifest> --key-env <VAR>\|--key-file <p> [--out <p>] [--json]` | Sign the UNSIGNED attestation with a key YOU provisioned → the signed container `verify-attest` accepts. Read-only of YOUR key; never generates/persists/logs a key | offline, **caller-supplied key**, no network |
 | `vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` | OFFLINE-verify a SIGNED attestation container: recover the signer, optionally pin the publisher (`--signer`) and bind to your manifest (`--manifest`); ACCEPTED/REJECTED with a CI-gateable exit 0/3 | offline, no key, no network |
+| `vh dataset timestamp-request <manifest> [--out <p>] [--json]` | Emit the SHA-256 digest of the canonical attestation bytes — the exact `messageImprint` you submit to your RFC-3161 TSA | offline, no key, no network |
+| `vh dataset timestamp-wrap <manifest> --token <p> [--out <p>] [--json]` | Wrap the TSA's returned RFC-3161 token into a verifiable `verifyhash.dataset-attestation-timestamped` container (binds it to the re-derived SHA-256 digest) | offline, no key, no network |
+| `vh dataset verify-timestamp <container> [--manifest <m>] [--json]` | OFFLINE-verify a timestamped container: re-derive the digest, confirm the RFC-3161 token binds it, optionally bind to your manifest; ACCEPTED (with genTime / TSA serial / policy OID) or REJECTED; CI-gateable exit 0/3 | offline, no key, no network |
 | `vh dataset prove --file <p> --manifest <m> --out <a>` | Build a portable set-membership proof for ONE file | offline, no key, no network |
 | `vh dataset verify-proof <proof>` | Fold the membership proof back to the recorded root | purely offline, no dataset, no key, no network |
 
@@ -527,6 +533,66 @@ vh dataset verify-attest v2.attestation.signed.json \
 
 ---
 
+## The independent timestamp (P-3 Option B): an RFC-3161 TSA proves "existed by date T"
+
+A self-managed signature (`sign` / `verify-attest`, Option A) attests only "the publisher **says so**". The
+stronger claim a due-diligence / EU-AI-Act reviewer ultimately wants — "an **independent** third party saw
+this exact dataset identity **by time T**" — is what **P-3 Option (B)** delivers: an
+[RFC-3161](https://www.rfc-editor.org/rfc/rfc3161) **Time-Stamping Authority (TSA)** stamps a digest and
+returns a signed `TimeStampToken`. This build ships the **FORMAT** (the
+`verifyhash.dataset-attestation-timestamped` container) and the **OFFLINE VERIFIER**
+(`vh dataset verify-timestamp`), proved end-to-end with **self-minted test tokens** (a test-only mock TSA
+with an ephemeral key — **NEVER a real TSA**, exactly as the signing tests use `Wallet.createRandom()`).
+Obtaining a real token is a **human/network step** (you pick a TSA you trust and call it).
+
+The flow is **`timestamp-request` → (obtain a token from your TSA) → `timestamp-wrap` → `verify-timestamp`**:
+
+```sh
+# 1. REQUEST: emit the SHA-256 digest of the canonical attestation bytes — the EXACT messageImprint a TSA stamps.
+vh dataset timestamp-request v2.manifest.json
+#   sha256 digest (the messageImprint to stamp): 34031ecf…439f
+#   To obtain an RFC-3161 timestamp token over this digest (a HUMAN/network step):
+#     openssl ts -query -digest 34031ecf…439f -sha256 -cert -out request.tsq
+#     # send request.tsq to your TSA -> response.tsr ; then:
+#     openssl ts -reply -in response.tsr -token_out -out token.der
+
+# 2. [HUMAN-OWNED, P-3 Option B] Pick a TSA you trust and obtain a token over that digest (network step).
+#    The loop NEVER calls a TSA, holds no token, and generates none.
+
+# 3. WRAP: bind the returned RFC-3161 token to the re-derived digest, WITHOUT editing the payload.
+vh dataset timestamp-wrap v2.manifest.json --token token.der --out v2.attestation.timestamped.json
+#   timestamped: an INDEPENDENT TSA stamped this digest by genTime
+#   genTime (asserted by the TSA): 2026-01-01T00:00:00Z   TSA serial: 2a   policy OID: 1.2.3.4.5
+
+# 4. The BUYER VERIFIES offline — no key, no network — and (optionally) binds it to THEIR dataset:
+vh dataset verify-timestamp v2.attestation.timestamped.json --manifest ./my-copy.manifest.json
+#   TRUST: ACCEPTED means an RFC-3161 TSA asserted this exact dataset identity (digest) existed by genTime;
+#          this is as trustworthy as the TSA whose certificate YOU trust — this command does NOT validate the
+#          TSA's certificate chain (use `openssl ts -verify` / a CMS verifier for full PKI validation).
+#   verify-timestamp: ACCEPTED
+#   [PASS] the token binds sha256(canonical attestation bytes) under RFC-3161
+#   [PASS] the timestamp binds YOUR manifest
+#   ACCEPTED: an RFC-3161 TSA asserted this dataset identity existed by:
+#     genTime (ISO UTC):  2026-01-01T00:00:00Z
+#     TSA serialNumber:   2a  (decimal 42)
+#     policy OID:         1.2.3.4.5            (exit 0; exit 3 if ANY requested check FAILs)
+```
+
+> **The exact bounded trust claim (never overclaims).** ACCEPTED means **an RFC-3161 TSA asserted this exact
+> dataset identity (the SHA-256 digest of the canonical attestation bytes) existed by `<genTime>`** — and
+> this is **as trustworthy as the TSA whose certificate YOU trust**. `verify-timestamp` does **NOT** validate
+> the TSA's X.509 certificate chain or the token's CMS signature — use your platform's CMS verifier
+> (`openssl ts -verify`) for full PKI validation, exactly as Option A pins the signer ADDRESS out of band. A
+> tampered token, a mismatched digest, or an edited embedded attestation **REJECTS** — never a false ACCEPT.
+> Even so this is materially stronger than Option A: an **independent third party** (not the publisher)
+> attests existence by `genTime`.
+
+P-3 Option (B)'s human handoff therefore collapses to: **(1)** pick a TSA you trust; **(2)** run
+`vh dataset timestamp-request` to get the digest; **(3)** obtain a token from your TSA over that digest;
+**(4)** run `vh dataset timestamp-wrap` — **done**; buyers verify offline with `vh dataset verify-timestamp`.
+
+---
+
 ## What an auditor / EU AI Act reviewer gets
 
 A mapping from the reviewer's question to the command that produces the evidence:
@@ -542,6 +608,8 @@ A mapping from the reviewer's question to the command that produces the evidence
 | "Give me the exact bytes our publisher (or a timestamp authority) will sign over." | `vh dataset attest` | A canonical, byte-deterministic UNSIGNED attestation payload committing to `root` / `fileCount` / `manifestDigest` (the file a human signing/timestamp trust-root signs — see P-3) |
 | "I provisioned a signing key — turn the attestation into a signed container in one command." | `vh dataset sign` | The `verifyhash.dataset-attestation-signed` container, signed (`eip191-personal-sign`) with the key YOU supplied (`--key-env`/`--key-file`), ready for any buyer to `verify-attest`. Read-only of your key; never generates/persists/logs a key; offline. Attests the IDENTITY + "the signer says so" — NOT a timestamp (still P-3) |
 | "A vendor handed me a 'signed by the publisher' attestation — confirm it is genuine and binds the dataset I hold." | `vh dataset verify-attest` | An OFFLINE ACCEPTED/REJECTED verdict: the signature recovers to the claimed signer, (with `--signer`) the recovered signer is the publisher I pinned, and (with `--manifest`) it binds MY dataset; CI-gateable exit 0/3. Proves the key-holder vouched for this dataset identity — NOT a timestamp (P-3) |
+| "Prove an INDEPENDENT party saw this exact dataset by a date — `timestamp-request` → (TSA) → `timestamp-wrap`." | `vh dataset timestamp-request` / `vh dataset timestamp-wrap` | The SHA-256 digest a TSA stamps, then the `verifyhash.dataset-attestation-timestamped` container binding the returned RFC-3161 token to that digest. The loop never calls a TSA; obtaining the token is the human/network step (P-3 Option B) |
+| "A vendor handed me a timestamped attestation — confirm an RFC-3161 TSA stamped the dataset I hold, and by WHEN." | `vh dataset verify-timestamp` | An OFFLINE ACCEPTED (with the asserted genTime / TSA serial / policy OID) or REJECTED verdict; with `--manifest` it binds the timestamp to MY dataset; CI-gateable exit 0/3. ACCEPTED == a TSA asserted this digest existed by genTime, to the strength of the TSA YOU trust — does NOT validate the TSA cert chain (use `openssl ts -verify`) |
 | "Prove this specific record/file was actually in the dataset." | `vh dataset prove` → `vh dataset verify-proof` | A portable, offline-verifiable set-membership proof for one file |
 
 What this mapping deliberately does NOT claim: a wall-clock "unaltered since date T", and the

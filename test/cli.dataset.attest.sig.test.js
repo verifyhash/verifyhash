@@ -1203,3 +1203,340 @@ describe("cli: vh dataset sign (T-19.2) — sign with a HUMAN-supplied key, EPHE
     expect(fs.existsSync(path.join(process.cwd(), "manifest.json"))).to.equal(false);
   });
 });
+
+// =====================================================================================================
+// verify-timestamp (T-20.3) — the OFFLINE independent-timestamp verifier for DataLedger. ==============
+//   These prove a MINTED-token container (test-only mock TSA, ephemeral genTime, NO real TSA, NO network)
+//   verifies ACCEPTED and reports the asserted genTime/serial/policy; that `--manifest` binds to the
+//   buyer's OWN data (a DIFFERENT manifest REJECTS); that a tampered token, a mismatched digest, and an
+//   EDITED embedded attestation each REJECT with the family's 3-exit; that `--json` round-trips; and that
+//   the offline verify needs no network. The suite isolates every side effect to a throwaway temp dir.
+// =====================================================================================================
+
+const crypto = require("crypto");
+const {
+  runDatasetBuild: rdtBuild,
+  readManifest: rdtReadManifest,
+  buildAttestation: rdtBuildAttestation,
+  serializeAttestation: rdtSerializeAttestation,
+  buildTimestampedAttestation: rdtBuildTimestamped,
+  serializeTimestampedAttestation: rdtSerializeTimestamped,
+  runDatasetVerifyTimestamp,
+  verifyTimestampedAttestation,
+  VERIFY_TIMESTAMP_TRUST_NOTE,
+  TRUST_NOTE: RDT_TRUST_NOTE,
+} = require("../cli/dataset");
+const { OID: RDT_OID } = require("../cli/core/rfc3161");
+const { main: vhMain, cmdDatasetVerifyTimestamp, parseVerifyTimestampArgs } = require("../cli/vh");
+
+// ---- TEST-ONLY DER token minter (mock TSA; NO real TSA, NO key, NO funds, NO network). --------------
+// The timestamp analogue of Wallet.createRandom(): it stamps a chosen SHA-256 digest into a minimal,
+// valid RFC-3161 TimeStampToken. Defined HERE on the test surface only — never on a command path.
+function tsDerLen(n) {
+  if (n < 0x80) return Buffer.from([n]);
+  const b = [];
+  let x = n;
+  while (x > 0) {
+    b.unshift(x & 0xff);
+    x = Math.floor(x / 256);
+  }
+  return Buffer.from([0x80 | b.length, ...b]);
+}
+function tsTlv(tag, v) {
+  v = Buffer.isBuffer(v) ? v : Buffer.from(v);
+  return Buffer.concat([Buffer.from([tag]), tsDerLen(v.length), v]);
+}
+const tsSeq = (...p) => tsTlv(0x30, Buffer.concat(p));
+const tsSet = (...p) => tsTlv(0x31, Buffer.concat(p));
+const tsOct = (v) => tsTlv(0x04, v);
+const tsCtx0 = (v) => tsTlv(0xa0, v);
+function tsInt(v) {
+  let big = BigInt(v);
+  let h = big.toString(16);
+  if (h.length % 2) h = "0" + h;
+  let by = Buffer.from(h, "hex");
+  if (by.length === 0) by = Buffer.from([0]);
+  if (by[0] & 0x80) by = Buffer.concat([Buffer.from([0]), by]);
+  return tsTlv(0x02, by);
+}
+function tsOid(d) {
+  const a = d.split(".").map((s) => parseInt(s, 10));
+  const o = [40 * a[0] + a[1]];
+  for (let i = 2; i < a.length; i++) {
+    let v = a[i];
+    const s = [v & 0x7f];
+    v = Math.floor(v / 128);
+    while (v > 0) {
+      s.unshift((v & 0x7f) | 0x80);
+      v = Math.floor(v / 128);
+    }
+    o.push(...s);
+  }
+  return tsTlv(0x06, Buffer.from(o));
+}
+const tsGt = (s) => tsTlv(0x18, Buffer.from(s, "ascii"));
+function mintTestToken(opts = {}) {
+  const digestHex = (opts.digestHex || "").replace(/^0x/i, "").toLowerCase();
+  const hashOID = opts.hashOID || RDT_OID.sha256;
+  const genTime = opts.genTime || "20260623120000Z";
+  const serial = opts.serial !== undefined ? opts.serial : 42;
+  const policyOID = opts.policyOID || "1.2.3.4.5";
+  const ha = tsSeq(tsOid(hashOID), Buffer.from([0x05, 0x00]));
+  const mi = tsSeq(ha, tsOct(Buffer.from(digestHex, "hex")));
+  const ti = tsSeq(tsInt(1), tsOid(policyOID), mi, tsInt(serial), tsGt(genTime));
+  const encap = tsSeq(tsOid(RDT_OID.tstInfo), tsCtx0(tsOct(ti)));
+  const sd = tsSeq(tsInt(3), tsSet(tsSeq(tsOid(hashOID), Buffer.from([0x05, 0x00]))), encap);
+  return tsSeq(tsOid(RDT_OID.signedData), tsCtx0(sd));
+}
+
+describe("cli: vh dataset verify-timestamp (T-20.3) — OFFLINE independent-timestamp verifier", function () {
+  let tmpDirs = [];
+  function tmp(prefix) {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tmpDirs.push(d);
+    return d;
+  }
+  afterEach(function () {
+    for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true });
+    tmpDirs = [];
+  });
+
+  async function capture(fn) {
+    const orig = process.stdout.write.bind(process.stdout);
+    let buf = "";
+    process.stdout.write = (s) => {
+      buf += s;
+      return true;
+    };
+    try {
+      const ret = await fn();
+      return { ret, out: buf };
+    } finally {
+      process.stdout.write = orig;
+    }
+  }
+
+  // Build a dataset + its timestamped container over a MINTED token bound to the canonical sha256 digest.
+  function fixture(files, prefix, tokenOpts) {
+    const tree = tmp((prefix || "vt") + "-tree-");
+    for (const [rel, content] of Object.entries(files)) {
+      const abs = path.join(tree, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content);
+    }
+    const manifestPath = path.join(tmp((prefix || "vt") + "-man-"), "manifest.json");
+    rdtBuild({ dir: tree, out: manifestPath, stdout: () => {} });
+    const manifest = rdtReadManifest(manifestPath);
+    const unsigned = rdtBuildAttestation(manifest);
+    const canonical = rdtSerializeAttestation(unsigned);
+    const digest = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+    const token = mintTestToken({ digestHex: digest, ...(tokenOpts || {}) });
+    const container = rdtBuildTimestamped({ attestation: unsigned, token });
+    const containerPath = path.join(tmp((prefix || "vt") + "-c-"), "ts.json");
+    fs.writeFileSync(containerPath, rdtSerializeTimestamped(container));
+    return { tree, manifestPath, manifest, unsigned, canonical, digest, container, containerPath };
+  }
+
+  it("a MINTED-token container verifies ACCEPTED and reports the asserted genTime/serial/policy", async function () {
+    const f = fixture({ "a.txt": "AAA", "b.txt": "BBB" }, "ok", {
+      genTime: "20260101000000Z",
+      serial: 12345,
+      policyOID: "1.3.6.1.4.1.13762.3",
+    });
+    const { ret, out } = await capture(() =>
+      runDatasetVerifyTimestamp({ container: f.containerPath })
+    );
+    expect(ret.verdict).to.equal("ACCEPTED");
+    expect(ret.accepted).to.equal(true);
+    expect(ret.checks.structureAndBinding).to.equal(true);
+    expect(ret.checks.manifestBindsAttestation).to.equal(null); // not requested
+    expect(ret.genTime).to.equal("2026-01-01T00:00:00Z");
+    expect(ret.serialNumber.decimal).to.equal("12345");
+    expect(ret.policyOID).to.equal("1.3.6.1.4.1.13762.3");
+    expect(ret.digest).to.equal(f.digest);
+    // Human output LEADS with the bounded claim and reports the asserted facts.
+    expect(out).to.include("ACCEPTED means an RFC-3161");
+    expect(out).to.include("verify-timestamp: ACCEPTED");
+    expect(out).to.include("2026-01-01T00:00:00Z");
+  });
+
+  it("the exit code is 0 on ACCEPTED via the cmd handler (the family's 0/3 gate convention)", async function () {
+    const f = fixture({ "x.txt": "X" }, "exit0");
+    const { ret } = await capture(() => cmdDatasetVerifyTimestamp([f.containerPath]));
+    expect(ret).to.equal(0);
+  });
+
+  describe("--manifest binds the timestamp to the buyer's OWN data", function () {
+    it("the SAME manifest ACCEPTS with the binding check PASS", async function () {
+      const f = fixture({ "a.txt": "AAA", "b.txt": "BBB" }, "bind-ok");
+      const { ret } = await capture(() =>
+        runDatasetVerifyTimestamp({ container: f.containerPath, manifest: f.manifestPath })
+      );
+      expect(ret.accepted).to.equal(true);
+      expect(ret.manifestChecked).to.equal(true);
+      expect(ret.checks.manifestBindsAttestation).to.equal(true);
+    });
+
+    it("a DIFFERENT manifest REJECTS (the token stamped a different dataset identity)", async function () {
+      const f = fixture({ "a.txt": "AAA", "b.txt": "BBB" }, "bind-diff");
+      // A different dataset -> a different manifest -> different canonical bytes.
+      const other = fixture({ "a.txt": "DIFFERENT", "b.txt": "BBB" }, "bind-other");
+      const { ret } = await capture(() =>
+        runDatasetVerifyTimestamp({ container: f.containerPath, manifest: other.manifestPath })
+      );
+      expect(ret.accepted).to.equal(false);
+      expect(ret.verdict).to.equal("REJECTED");
+      expect(ret.checks.structureAndBinding).to.equal(true); // structure is fine; only the binding fails
+      expect(ret.checks.manifestBindsAttestation).to.equal(false);
+      expect(ret.failedChecks).to.deep.equal(["manifestBindsAttestation"]);
+    });
+
+    it("a DIFFERENT manifest is exit 3 via the cmd handler", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "bind-exit");
+      const other = fixture({ "a.txt": "CHANGED" }, "bind-exit-other");
+      const { ret } = await capture(() =>
+        cmdDatasetVerifyTimestamp([f.containerPath, "--manifest", other.manifestPath])
+      );
+      expect(ret).to.equal(3);
+    });
+  });
+
+  describe("a tampered token / mismatched digest / edited embedded attestation each REJECT (3-exit)", function () {
+    it("a token that binds a DIFFERENT digest REJECTS (the recorded digest is rewritten to match the bytes)", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "tok-diff");
+      // Mint a token over a DIFFERENT digest, then write a container whose recorded digest matches the
+      // bytes but whose TOKEN stamps something else — the bindsDigest check must fail.
+      const wrongToken = mintTestToken({ digestHex: "c".repeat(64), genTime: "20260101000000Z" });
+      const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+      obj.timestamp.token = require("../cli/core/rfc3161")._internal.toBuf(wrongToken).toString("base64");
+      // recorded digest stays = sha256(bytes); only the token disagrees.
+      const p = path.join(tmp("tok-diff-c-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify(obj));
+      const { ret } = await capture(() => runDatasetVerifyTimestamp({ container: p }));
+      expect(ret.accepted).to.equal(false);
+      expect(ret.checks.structureAndBinding).to.equal(false);
+      expect(ret.failedChecks).to.deep.equal(["structureAndBinding"]);
+      expect(ret.reason).to.match(/does NOT bind|messageImprint/i);
+    });
+
+    it("a mismatched recorded digest (!= sha256(bytes)) REJECTS", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "dig-mismatch");
+      const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+      obj.timestamp.digest = "d".repeat(64);
+      const p = path.join(tmp("dig-c-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify(obj));
+      const { ret } = await capture(() => cmdDatasetVerifyTimestamp([p]));
+      expect(ret).to.equal(3);
+    });
+
+    it("an EDITED embedded attestation REJECTS (wrap-don't-edit: the bytes no longer round-trip)", async function () {
+      const f = fixture({ "a.txt": "AAA", "b.txt": "BBB" }, "edit");
+      const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+      // Tamper the embedded canonical bytes (flip a hex char in the root) — no longer canonical/binding.
+      const edited = JSON.parse(obj.attestation);
+      edited.root = "0x" + "0".repeat(64);
+      obj.attestation = JSON.stringify(edited);
+      const p = path.join(tmp("edit-c-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify(obj));
+      const { ret, out } = await capture(() =>
+        runDatasetVerifyTimestamp({ container: p })
+      );
+      expect(ret.accepted).to.equal(false);
+      expect(ret.checks.structureAndBinding).to.equal(false);
+      expect(out).to.include("verify-timestamp: REJECTED");
+    });
+
+    it("a wrong-kind container (a DATASET reader given some other JSON) REJECTS, never throws to the user", async function () {
+      const p = path.join(tmp("wrong-kind-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify({ kind: "verifyhash.something-else", schemaVersion: 1 }));
+      const { ret } = await capture(() => cmdDatasetVerifyTimestamp([p]));
+      expect(ret).to.equal(3); // clean named REJECTED, NOT a runtime error (1)
+    });
+  });
+
+  describe("--json round-trips the verdict", function () {
+    it("ACCEPTED --json parses and carries the asserted facts + per-check booleans", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "json-ok", { serial: 99, genTime: "20251231235959Z" });
+      const { out } = await capture(() =>
+        runDatasetVerifyTimestamp({ container: f.containerPath, manifest: f.manifestPath, json: true })
+      );
+      const parsed = JSON.parse(out);
+      expect(parsed.verdict).to.equal("ACCEPTED");
+      expect(parsed.accepted).to.equal(true);
+      expect(parsed.checks.structureAndBinding).to.equal(true);
+      expect(parsed.checks.manifestBindsAttestation).to.equal(true);
+      expect(parsed.genTime).to.equal("2025-12-31T23:59:59Z");
+      expect(parsed.serialNumber.decimal).to.equal("99");
+      expect(parsed.digest).to.equal(f.digest);
+    });
+
+    it("REJECTED --json carries failedChecks + a reason", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "json-rej");
+      const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+      obj.timestamp.digest = "e".repeat(64);
+      const p = path.join(tmp("json-rej-c-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify(obj));
+      const { out } = await capture(() => runDatasetVerifyTimestamp({ container: p, json: true }));
+      const parsed = JSON.parse(out);
+      expect(parsed.verdict).to.equal("REJECTED");
+      expect(parsed.failedChecks).to.deep.equal(["structureAndBinding"]);
+      expect(parsed.reason).to.be.a("string").and.have.length.greaterThan(0);
+    });
+  });
+
+  describe("bounded, honest trust claim (never a false 'unaltered since T')", function () {
+    it("the TRUST_NOTE states what ACCEPTED means + disavows the cert chain, and reuses the dataset TRUST_NOTE", function () {
+      expect(VERIFY_TIMESTAMP_TRUST_NOTE).to.match(/ACCEPTED means an RFC-3161/);
+      expect(VERIFY_TIMESTAMP_TRUST_NOTE).to.match(/does NOT validate the TSA's certificate chain/);
+      expect(VERIFY_TIMESTAMP_TRUST_NOTE).to.match(/openssl ts -verify/);
+      expect(VERIFY_TIMESTAMP_TRUST_NOTE).to.match(/NEVER claims "unaltered since date T"/);
+      // Reuses the shared dataset TRUST_NOTE verbatim so caveats never drift.
+      expect(VERIFY_TIMESTAMP_TRUST_NOTE).to.include(RDT_TRUST_NOTE);
+    });
+  });
+
+  describe("usage / parser parity (a typo never silently passes)", function () {
+    it("a missing <container> is a usage error (exit 2)", async function () {
+      const { ret } = await capture(() => cmdDatasetVerifyTimestamp([]));
+      expect(ret).to.equal(2);
+    });
+    it("an unknown flag is a usage error (exit 2)", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "typo");
+      const { ret } = await capture(() => cmdDatasetVerifyTimestamp([f.containerPath, "--nope"]));
+      expect(ret).to.equal(2);
+    });
+    it("a duplicate positional hard-errors in the parser", function () {
+      expect(() => parseVerifyTimestampArgs(["a", "b"])).to.throw(/extra argument/);
+    });
+    it("a missing/corrupt container FILE is a runtime error (exit 1), distinct from a clean REJECT", async function () {
+      const { ret } = await capture(() =>
+        cmdDatasetVerifyTimestamp([path.join(os.tmpdir(), "definitely-missing-vt.json")])
+      );
+      expect(ret).to.equal(1);
+    });
+  });
+
+  it("the offline verify needs no network (works against a temp file with no provider/RPC env)", async function () {
+    const f = fixture({ "a.txt": "AAA" }, "offline");
+    const savedRpc = process.env.VH_RPC_URL;
+    delete process.env.VH_RPC_URL;
+    try {
+      const { ret } = await capture(() => runDatasetVerifyTimestamp({ container: f.containerPath }));
+      expect(ret.accepted).to.equal(true);
+    } finally {
+      if (savedRpc !== undefined) process.env.VH_RPC_URL = savedRpc;
+    }
+  });
+
+  it("the suite leaves ZERO timestamped containers in the repo working tree (all side effects in temp)", function () {
+    expect(fs.existsSync(path.join(process.cwd(), "ts.json"))).to.equal(false);
+    expect(fs.existsSync(path.join(process.cwd(), "attestation.timestamped.json"))).to.equal(false);
+  });
+
+  it("verifyTimestampedAttestation is PURE (no I/O) over an already-parsed container", function () {
+    const f = fixture({ "a.txt": "AAA" }, "pure");
+    const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+    const r = verifyTimestampedAttestation({ container: obj });
+    expect(r.accepted).to.equal(true);
+  });
+});

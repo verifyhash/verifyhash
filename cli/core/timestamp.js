@@ -332,6 +332,120 @@ function readTimestampContainer(containerPath, cfg) {
   return validateTimestampContainer(obj, cfg);
 }
 
+// Possible verify-timestamp verdicts. ACCEPTED = the container is structurally sound, the digest IS
+// sha256(canonical bytes), the token parses + BINDS that digest, and (when a manifest is given) the
+// embedded attestation is byte-identical to the buyer's own re-derived canonical bytes. REJECTED = at
+// least one check failed.
+const VERIFY_TIMESTAMP_VERDICT = Object.freeze({ ACCEPTED: "ACCEPTED", REJECTED: "REJECTED" });
+
+/**
+ * Verify (purely, OFFLINE) a DETACHED-TIMESTAMP container against a product's framing — the read-only
+ * sibling of `verifySignedAttestation`. PARAMETERIZED by `cfg` exactly like the validate/build path. It
+ * answers, with NO key and NO network: (1) does the container re-derive the canonical attestation bytes
+ * from the embedded UNSIGNED payload, with `digest === sha256(those bytes)`; (2) does the token PARSE as
+ * RFC-3161 and BIND that digest under SHA-256; (3) — OPTIONALLY, when `expectedManifestCanonical` is
+ * provided — are the embedded canonical bytes byte-identical to the buyer's OWN re-derived canonical bytes
+ * (binding the token to the buyer's data, exactly like verify-attest's `--manifest`).
+ *
+ * The structural + binding checks (1) and (2) are precisely what `validateTimestampContainer` enforces; we
+ * reuse it VERBATIM (never a re-impl) so a tampered token / mismatched digest / edited embedded attestation
+ * REJECTS for the same reason the build/read path rejects. A structural failure is a clean REJECTED that
+ * NAMES the failing reason — NEVER a false ACCEPT, and never a thrown error from a malformed-but-parseable
+ * container. (A non-JSON / unreadable file is still an I/O error at the read boundary, handled by the CLI.)
+ *
+ * @param {object} params
+ * @param {any}    params.container the parsed container object (from readTimestampContainer or JSON.parse)
+ * @param {string} [params.expectedManifestCanonical] OPTIONAL: the buyer's OWN canonical UNSIGNED bytes
+ *        (serializeUnsigned(buildUnsigned(theirManifest))); when present, the embedded attestation must
+ *        equal it byte-for-byte
+ * @param {object} cfg the product's timestamp-container framing (see buildTimestampContainer)
+ * @returns {{
+ *   verdict: "ACCEPTED"|"REJECTED",
+ *   accepted: boolean,
+ *   checks: { structureAndBinding: boolean, manifestBindsAttestation: boolean|null },
+ *   manifestChecked: boolean,
+ *   failedChecks: string[],
+ *   reason: string|null,
+ *   genTime: string|null,
+ *   genTimeEpochMs: number|null,
+ *   serialNumber: {hex:string,decimal:string}|null,
+ *   policyOID: string|null,
+ *   hashAlgorithmOID: string|null,
+ *   digest: string|null,
+ * }}
+ */
+function verifyTimestampContainer(params, cfg) {
+  _requireCfg(cfg);
+  if (!params || typeof params !== "object") {
+    throw new Error("verifyTimestampContainer requires { container, [expectedManifestCanonical] }");
+  }
+  const { container, expectedManifestCanonical } = params;
+  const manifestChecked =
+    expectedManifestCanonical !== undefined && expectedManifestCanonical !== null;
+
+  const result = {
+    verdict: VERIFY_TIMESTAMP_VERDICT.REJECTED,
+    accepted: false,
+    checks: { structureAndBinding: false, manifestBindsAttestation: manifestChecked ? false : null },
+    manifestChecked,
+    failedChecks: [],
+    reason: null,
+    genTime: null,
+    genTimeEpochMs: null,
+    serialNumber: null,
+    policyOID: null,
+    hashAlgorithmOID: null,
+    digest: null,
+  };
+
+  // Check 1 + 2 (structure + binding): run the SAME strict validator the build/read path uses. It
+  // re-derives sha256(canonical bytes), confirms digest equality, parses the token, and confirms
+  // bindsDigest — so an edited embedded attestation, a mismatched digest, or a token binding a different
+  // digest all throw HERE with a descriptive message. We turn that throw into a clean, named REJECTED
+  // (never a false ACCEPT, never a leaked exception).
+  let validated;
+  try {
+    validated = validateTimestampContainer(container, cfg);
+  } catch (e) {
+    result.failedChecks.push("structureAndBinding");
+    result.reason = e.message;
+    return result;
+  }
+  result.checks.structureAndBinding = true;
+
+  // Surface what the (now-confirmed-binding) token ASSERTS — the same honest scope as readTimestampFacts.
+  const facts = readTimestampFacts(validated);
+  result.genTime = facts.genTime;
+  result.genTimeEpochMs = facts.genTimeEpochMs;
+  result.serialNumber = facts.serialNumber;
+  result.policyOID = facts.policyOID;
+  result.hashAlgorithmOID = facts.hashAlgorithmOID;
+  result.digest = facts.digest;
+
+  // Check 3 (OPTIONAL): bind the token to the BUYER's own data. The embedded canonical bytes must equal
+  // the buyer's re-derived canonical bytes byte-for-byte. A DIFFERENT manifest -> a different attestation
+  // -> a byte mismatch -> REJECTED (the token timestamped a DIFFERENT dataset/parcel identity).
+  if (manifestChecked) {
+    if (typeof expectedManifestCanonical !== "string") {
+      throw new Error("verifyTimestampContainer: expectedManifestCanonical must be a string when provided");
+    }
+    const binds = validated.attestation === expectedManifestCanonical;
+    result.checks.manifestBindsAttestation = binds;
+    if (!binds) {
+      result.failedChecks.push("manifestBindsAttestation");
+      result.reason =
+        "the timestamped attestation does NOT match YOUR manifest — the token stamped a DIFFERENT " +
+        "dataset/parcel identity than the one you hold";
+    }
+  }
+
+  result.accepted = result.failedChecks.length === 0;
+  result.verdict = result.accepted
+    ? VERIFY_TIMESTAMP_VERDICT.ACCEPTED
+    : VERIFY_TIMESTAMP_VERDICT.REJECTED;
+  return result;
+}
+
 /**
  * Read (purely, OFFLINE) the timestamp facts a container ASSERTS: the asserted genTime / TSA serial /
  * policy OID + the bound digest, with the SAME honest scope as cli/core/rfc3161.js — it does NOT validate
@@ -363,4 +477,6 @@ module.exports = {
   serializeTimestampContainer,
   readTimestampContainer,
   readTimestampFacts,
+  VERIFY_TIMESTAMP_VERDICT,
+  verifyTimestampContainer,
 };

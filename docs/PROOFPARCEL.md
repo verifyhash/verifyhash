@@ -74,6 +74,9 @@ A parcel manifest commits to a Merkle root over the full set of `(relPath, conte
 | `vh parcel attest <manifest> [--out <p>] [--json]` | the deterministic, byte-canonical **UNSIGNED** attestation payload a sender signs (root + fileCount + `manifestDigest`; `signed:false`) | offline, no key, no network |
 | `vh parcel sign <manifest> --key-env <VAR>\|--key-file <p> [--out <p>] [--json]` | signs the UNSIGNED attestation with a key YOU provisioned → the signed container `verify-attest` accepts. Read-only of YOUR key; never generates/persists/logs a key | offline, **caller-supplied key**, no network |
 | `vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] [--json]` | recovers the signer, optionally pins the expected sender (`--signer`) and binds the signature to your parcel (`--manifest`) | **offline, no key, no network, CI-gateable exit 0 ACCEPTED / 3 REJECTED** |
+| `vh parcel timestamp-request <manifest> [--out <p>] [--json]` | the SHA-256 digest of the canonical attestation bytes — the exact `messageImprint` you submit to your RFC-3161 TSA | offline, no key, no network |
+| `vh parcel timestamp-wrap <manifest> --token <p> [--out <p>] [--json]` | wraps the TSA's returned RFC-3161 token into a verifiable `verifyhash.parcel-attestation-timestamped` container (binds it to the re-derived SHA-256 digest) | offline, no key, no network |
+| `vh parcel verify-timestamp <container> [--manifest <m>] [--json]` | OFFLINE-verifies a timestamped container: re-derives the digest, confirms the RFC-3161 token binds it, optionally binds to your parcel; ACCEPTED (with genTime / TSA serial / policy OID) or REJECTED | **offline, no key, no network, CI-gateable exit 0 ACCEPTED / 3 REJECTED** |
 
 The signed container uses ProofParcel's own `kind: "verifyhash.parcel-attestation-signed"`, distinct
 from DataLedger's `verifyhash.dataset-attestation-signed`, so a dataset signed-container does **not**
@@ -152,6 +155,48 @@ vh parcel verify ./received --manifest parcel.json   # exit 0 MATCH / 3 MISMATCH
 The wrap step is **wrap-don't-edit**: the signed container embeds the EXACT canonical UNSIGNED bytes as
 a string, and the embedded payload stays strictly `signed:false` — wrapping adds a vouch, it never
 edits the thing vouched for.
+
+---
+
+## The independent delivery timestamp (P-3 Option B): an RFC-3161 TSA proves "existed by date T"
+
+A self-managed signature attests only "the sender **says so**". For the stronger claim that an
+**independent** third party saw this exact parcel identity **by time T**, ProofParcel ships the same P-3
+Option (B) machinery as DataLedger — the `verifyhash.parcel-attestation-timestamped` **FORMAT** and the
+OFFLINE **VERIFIER** `vh parcel verify-timestamp` — proved end-to-end with **self-minted test tokens** (a
+test-only mock TSA with an ephemeral key — **NEVER a real TSA**). Obtaining a real token is a human/network
+step. The flow is **`timestamp-request` → (obtain a token from your TSA) → `timestamp-wrap` →
+`verify-timestamp`**:
+
+```sh
+# 1. REQUEST: emit the SHA-256 digest of the canonical parcel-attestation bytes (the TSA's messageImprint).
+vh parcel timestamp-request parcel.json
+#   sha256 digest (the messageImprint to stamp): 9f12…ab
+
+# 2. [HUMAN, P-3 Option B] Pick a TSA you trust and obtain a token over that digest (network step).
+#    The loop NEVER calls a TSA, holds no token, and generates none.
+
+# 3. WRAP: bind the returned RFC-3161 token to the re-derived digest, WITHOUT editing the payload.
+vh parcel timestamp-wrap parcel.json --token token.der --out parcel.timestamped.json
+
+# 4. The RECIPIENT verifies offline — no key, no network — and (optionally) binds it to THEIR parcel.
+vh parcel verify-timestamp parcel.timestamped.json --manifest parcel.json
+#   verify-timestamp: ACCEPTED
+#   ACCEPTED: an RFC-3161 TSA asserted this parcel identity existed by:
+#     genTime (ISO UTC):  2026-01-01T00:00:00Z   TSA serial: 2a   policy OID: 1.2.3.4.5
+#   (exit 0; exit 3 if a tampered token / mismatched digest / edited payload / different manifest fails)
+```
+
+> **The exact bounded trust claim (never overclaims).** ACCEPTED means **an RFC-3161 TSA asserted this exact
+> parcel identity (the SHA-256 digest of the canonical attestation bytes) existed by `<genTime>`** — and this
+> is **as trustworthy as the TSA whose certificate YOU trust**. `verify-timestamp` does **NOT** validate the
+> TSA's X.509 certificate chain or the token's CMS signature — use a CMS verifier (`openssl ts -verify`) for
+> full PKI validation. It NEVER claims "delivered/unaltered since date T" without that qualification. A
+> tampered token, a mismatched digest, or an edited embedded attestation **REJECTS** — never a false ACCEPT.
+
+P-3 Option (B)'s human handoff collapses to: **(1)** pick a TSA you trust; **(2)** run
+`vh parcel timestamp-request` to get the digest; **(3)** obtain a token from your TSA over that digest;
+**(4)** run `vh parcel timestamp-wrap` — **done**; recipients verify offline with `vh parcel verify-timestamp`.
 
 ---
 

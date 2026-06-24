@@ -1130,3 +1130,248 @@ describe("cli: vh parcel sign (T-19.2) — sign with a HUMAN-supplied key, EPHEM
     expect(fs.existsSync(path.join(process.cwd(), "p.json"))).to.equal(false);
   });
 });
+
+// =====================================================================================================
+// verify-timestamp (T-20.3) — the OFFLINE independent-timestamp verifier for ProofParcel. =============
+//   THIN parallel to the dataset suite: a MINTED-token parcel container verifies ACCEPTED and reports the
+//   asserted genTime/serial/policy; `--manifest` binds to the recipient's OWN parcel (a DIFFERENT manifest
+//   REJECTS); a tampered token / mismatched digest / edited embedded attestation each REJECT with the 3-exit;
+//   `--json` round-trips; the offline verify needs no network; the suite leaves the tree clean.
+// =====================================================================================================
+
+const crypto = require("crypto");
+const {
+  buildTimestampedParcelAttestation,
+  serializeTimestampedParcelAttestation,
+  runParcelVerifyTimestamp,
+  verifyTimestampedParcelAttestation,
+  PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE,
+} = require("../cli/parcel");
+const { OID: RPT_OID } = require("../cli/core/rfc3161");
+const { cmdParcelVerifyTimestamp } = require("../cli/vh");
+
+// ---- TEST-ONLY DER token minter (mock TSA; NO real TSA/key/funds/network). --------------------------
+function rptDerLen(n) {
+  if (n < 0x80) return Buffer.from([n]);
+  const b = [];
+  let x = n;
+  while (x > 0) {
+    b.unshift(x & 0xff);
+    x = Math.floor(x / 256);
+  }
+  return Buffer.from([0x80 | b.length, ...b]);
+}
+function rptTlv(tag, v) {
+  v = Buffer.isBuffer(v) ? v : Buffer.from(v);
+  return Buffer.concat([Buffer.from([tag]), rptDerLen(v.length), v]);
+}
+const rptSeq = (...p) => rptTlv(0x30, Buffer.concat(p));
+const rptSet = (...p) => rptTlv(0x31, Buffer.concat(p));
+const rptOct = (v) => rptTlv(0x04, v);
+const rptCtx0 = (v) => rptTlv(0xa0, v);
+function rptInt(v) {
+  let big = BigInt(v);
+  let h = big.toString(16);
+  if (h.length % 2) h = "0" + h;
+  let by = Buffer.from(h, "hex");
+  if (by.length === 0) by = Buffer.from([0]);
+  if (by[0] & 0x80) by = Buffer.concat([Buffer.from([0]), by]);
+  return rptTlv(0x02, by);
+}
+function rptOid(d) {
+  const a = d.split(".").map((s) => parseInt(s, 10));
+  const o = [40 * a[0] + a[1]];
+  for (let i = 2; i < a.length; i++) {
+    let v = a[i];
+    const s = [v & 0x7f];
+    v = Math.floor(v / 128);
+    while (v > 0) {
+      s.unshift((v & 0x7f) | 0x80);
+      v = Math.floor(v / 128);
+    }
+    o.push(...s);
+  }
+  return rptTlv(0x06, Buffer.from(o));
+}
+const rptGt = (s) => rptTlv(0x18, Buffer.from(s, "ascii"));
+function mintParcelTestToken(opts = {}) {
+  const digestHex = (opts.digestHex || "").replace(/^0x/i, "").toLowerCase();
+  const hashOID = opts.hashOID || RPT_OID.sha256;
+  const genTime = opts.genTime || "20260623120000Z";
+  const serial = opts.serial !== undefined ? opts.serial : 7;
+  const policyOID = opts.policyOID || "1.2.3.4.5";
+  const ha = rptSeq(rptOid(hashOID), Buffer.from([0x05, 0x00]));
+  const mi = rptSeq(ha, rptOct(Buffer.from(digestHex, "hex")));
+  const ti = rptSeq(rptInt(1), rptOid(policyOID), mi, rptInt(serial), rptGt(genTime));
+  const encap = rptSeq(rptOid(RPT_OID.tstInfo), rptCtx0(rptOct(ti)));
+  const sd = rptSeq(rptInt(3), rptSet(rptSeq(rptOid(hashOID), Buffer.from([0x05, 0x00]))), encap);
+  return rptSeq(rptOid(RPT_OID.signedData), rptCtx0(sd));
+}
+
+describe("cli: vh parcel verify-timestamp (T-20.3) — OFFLINE independent-timestamp verifier", function () {
+  // Build a parcel + its timestamped container over a MINTED token bound to the canonical sha256 digest.
+  function fixture(files, prefix, parcelBlock, tokenOpts) {
+    const dir = writeFiles(tmp((prefix || "pvt") + "-tree-"), files);
+    const manifestPath = path.join(tmp((prefix || "pvt") + "-man-"), "manifest.json");
+    runParcelBuild({ dir, out: manifestPath, parcel: parcelBlock, stdout: () => {} });
+    const manifest = readParcelManifest(manifestPath);
+    const unsigned = buildParcelAttestation(manifest);
+    const canonical = serializeParcelAttestation(unsigned);
+    const digest = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+    const token = mintParcelTestToken({ digestHex: digest, ...(tokenOpts || {}) });
+    const container = buildTimestampedParcelAttestation({ attestation: unsigned, token });
+    const containerPath = path.join(tmp((prefix || "pvt") + "-c-"), "ts.json");
+    fs.writeFileSync(containerPath, serializeTimestampedParcelAttestation(container));
+    return { dir, manifestPath, manifest, unsigned, canonical, digest, container, containerPath };
+  }
+
+  it("a MINTED-token parcel container verifies ACCEPTED and reports the asserted genTime/serial/policy", async function () {
+    const f = fixture(
+      { "data.csv": "1,2,3" },
+      "pok",
+      { parcelId: "PO-42", sender: "vendor", recipient: "buyer" },
+      { genTime: "20260201000000Z", serial: 555, policyOID: "1.3.6.1.4.1.13762.3" }
+    );
+    const { ret, out } = await capture(() => runParcelVerifyTimestamp({ container: f.containerPath }));
+    expect(ret.verdict).to.equal("ACCEPTED");
+    expect(ret.accepted).to.equal(true);
+    expect(ret.genTime).to.equal("2026-02-01T00:00:00Z");
+    expect(ret.serialNumber.decimal).to.equal("555");
+    expect(ret.policyOID).to.equal("1.3.6.1.4.1.13762.3");
+    expect(ret.digest).to.equal(f.digest);
+    expect(out).to.include("ACCEPTED means an RFC-3161");
+    expect(out).to.include("verify-timestamp: ACCEPTED");
+  });
+
+  it("the exit code is 0 on ACCEPTED via the cmd handler", async function () {
+    const f = fixture({ "x.bin": "X" }, "pexit0");
+    const { ret } = await capture(() => cmdParcelVerifyTimestamp([f.containerPath]));
+    expect(ret).to.equal(0);
+  });
+
+  describe("--manifest binds the timestamp to the recipient's OWN parcel", function () {
+    it("the SAME manifest ACCEPTS with the binding check PASS", async function () {
+      const f = fixture({ "data.csv": "1,2,3" }, "pbind-ok", { parcelId: "PO-1" });
+      const { ret } = await capture(() =>
+        runParcelVerifyTimestamp({ container: f.containerPath, manifest: f.manifestPath })
+      );
+      expect(ret.accepted).to.equal(true);
+      expect(ret.checks.manifestBindsAttestation).to.equal(true);
+    });
+
+    it("a DIFFERENT manifest REJECTS (the token stamped a different parcel identity)", async function () {
+      const f = fixture({ "data.csv": "1,2,3" }, "pbind-diff", { parcelId: "PO-1" });
+      const other = fixture({ "data.csv": "9,9,9" }, "pbind-other", { parcelId: "PO-1" });
+      const { ret } = await capture(() =>
+        cmdParcelVerifyTimestamp([f.containerPath, "--manifest", other.manifestPath])
+      );
+      expect(ret).to.equal(3);
+    });
+  });
+
+  describe("a tampered token / mismatched digest / edited embedded attestation each REJECT (3-exit)", function () {
+    it("a token binding a DIFFERENT digest REJECTS", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "ptok-diff");
+      const wrong = mintParcelTestToken({ digestHex: "c".repeat(64) });
+      const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+      obj.timestamp.token = require("../cli/core/rfc3161")._internal.toBuf(wrong).toString("base64");
+      const p = path.join(tmp("ptok-c-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify(obj));
+      const { ret } = await capture(() => cmdParcelVerifyTimestamp([p]));
+      expect(ret).to.equal(3);
+    });
+
+    it("a mismatched recorded digest REJECTS", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "pdig");
+      const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+      obj.timestamp.digest = "d".repeat(64);
+      const p = path.join(tmp("pdig-c-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify(obj));
+      const { ret } = await capture(() => cmdParcelVerifyTimestamp([p]));
+      expect(ret).to.equal(3);
+    });
+
+    it("an EDITED embedded attestation REJECTS (wrap-don't-edit)", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "pedit");
+      const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+      const edited = JSON.parse(obj.attestation);
+      edited.root = "0x" + "0".repeat(64);
+      obj.attestation = JSON.stringify(edited);
+      const p = path.join(tmp("pedit-c-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify(obj));
+      const { ret } = await capture(() => runParcelVerifyTimestamp({ container: p }));
+      expect(ret.accepted).to.equal(false);
+      expect(ret.checks.structureAndBinding).to.equal(false);
+    });
+
+    it("a DATASET timestamped container does NOT cross-validate as a parcel one (wrong kind REJECTS)", async function () {
+      // Take a parcel container and flip its kind to the dataset kind -> the parcel reader rejects it.
+      const f = fixture({ "a.txt": "AAA" }, "pcross");
+      const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+      obj.kind = "verifyhash.dataset-attestation-timestamped";
+      const p = path.join(tmp("pcross-c-"), "c.json");
+      fs.writeFileSync(p, JSON.stringify(obj));
+      const { ret } = await capture(() => cmdParcelVerifyTimestamp([p]));
+      expect(ret).to.equal(3);
+    });
+  });
+
+  describe("--json round-trips the verdict", function () {
+    it("ACCEPTED --json parses and carries the asserted facts", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "pjson", undefined, { serial: 3, genTime: "20251231235959Z" });
+      const { out } = await capture(() =>
+        runParcelVerifyTimestamp({ container: f.containerPath, manifest: f.manifestPath, json: true })
+      );
+      const parsed = JSON.parse(out);
+      expect(parsed.verdict).to.equal("ACCEPTED");
+      expect(parsed.checks.manifestBindsAttestation).to.equal(true);
+      expect(parsed.genTime).to.equal("2025-12-31T23:59:59Z");
+      expect(parsed.serialNumber.decimal).to.equal("3");
+    });
+  });
+
+  it("the bounded TRUST_NOTE disavows the cert chain and reuses the shared TRUST_NOTE + parcel caveat", function () {
+    expect(PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE).to.match(/ACCEPTED means an RFC-3161/);
+    expect(PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE).to.match(/does NOT validate the TSA's certificate chain/);
+    expect(PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE).to.match(/NEVER claims "delivered\/unaltered since date T"/);
+    expect(PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE).to.include(TRUST_NOTE);
+    expect(PARCEL_VERIFY_TIMESTAMP_TRUST_NOTE).to.include(PARCEL_TRUST_NOTE);
+  });
+
+  describe("usage / parser parity", function () {
+    it("a missing <container> is a usage error (exit 2)", async function () {
+      const { ret } = await capture(() => cmdParcelVerifyTimestamp([]));
+      expect(ret).to.equal(2);
+    });
+    it("an unknown flag is a usage error (exit 2)", async function () {
+      const f = fixture({ "a.txt": "AAA" }, "ptypo");
+      const { ret } = await capture(() => cmdParcelVerifyTimestamp([f.containerPath, "--nope"]));
+      expect(ret).to.equal(2);
+    });
+    it("a missing container FILE is a runtime error (exit 1), distinct from a clean REJECT", async function () {
+      const { ret } = await capture(() =>
+        cmdParcelVerifyTimestamp([path.join(os.tmpdir(), "definitely-missing-pvt.json")])
+      );
+      expect(ret).to.equal(1);
+    });
+  });
+
+  it("the offline verify needs no network (no provider/RPC env required)", async function () {
+    const f = fixture({ "a.txt": "AAA" }, "poffline");
+    const savedRpc = process.env.VH_RPC_URL;
+    delete process.env.VH_RPC_URL;
+    try {
+      const { ret } = await capture(() => runParcelVerifyTimestamp({ container: f.containerPath }));
+      expect(ret.accepted).to.equal(true);
+    } finally {
+      if (savedRpc !== undefined) process.env.VH_RPC_URL = savedRpc;
+    }
+  });
+
+  it("verifyTimestampedParcelAttestation is PURE over an already-parsed container", function () {
+    const f = fixture({ "a.txt": "AAA" }, "ppure");
+    const obj = JSON.parse(fs.readFileSync(f.containerPath, "utf8"));
+    const r = verifyTimestampedParcelAttestation({ container: obj });
+    expect(r.accepted).to.equal(true);
+  });
+});

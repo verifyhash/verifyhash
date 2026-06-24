@@ -240,4 +240,145 @@ describe("trustledger server: a stdlib HTTP door over the engine", function () {
     expect(res.status).to.equal(404);
     expect(res.json.error).to.equal("not_found");
   });
+
+  // -------------------------------------------------------------------------
+  // T-28.1: POST /api/inspect — the read-only per-file diagnostic over the door.
+  // It reuses ingest.diagnoseSource VERBATIM (parse-WITH-report, never fail-closed)
+  // and exposes a column-map escape hatch, so a broker whose export has a renamed
+  // column can self-diagnose AND fix it without touching the strict reconcile path.
+  // -------------------------------------------------------------------------
+
+  // The rent roll's tenant column renamed to a header NO alias matches, so the
+  // required `tenant` field is unmatched until the broker supplies a columnMap.
+  const RENT_RENAMED = RENT.replace("Tenant", "Occupant");
+
+  it("POST /api/inspect on a CLEAN fixture => 200 with header/mapped/okCount and EMPTY requiredMissing", async function () {
+    const cwdBefore = fs.readdirSync(process.cwd()).sort();
+    const res = await post(port, "/api/inspect", {
+      source: "rentroll",
+      text: RENT,
+    });
+    expect(res.status).to.equal(200);
+    const d = res.json;
+    // The exact diagnose report keys (and nothing thrown).
+    expect(d).to.have.all.keys(
+      "source",
+      "format",
+      "header",
+      "mapped",
+      "requiredMissing",
+      "rowCount",
+      "okCount",
+      "sample",
+      "errors"
+    );
+    expect(d.source).to.equal("rent_roll");
+    expect(d.format).to.equal("csv");
+    expect(d.header).to.include("Tenant");
+    expect(d.mapped.tenant).to.equal("Tenant");
+    expect(d.mapped.date).to.equal("Date");
+    expect(d.requiredMissing).to.deep.equal([]);
+    expect(d.okCount).to.equal(d.rowCount);
+    expect(d.okCount).to.be.greaterThan(0);
+    expect(d.errors).to.deep.equal([]);
+    // diagnose is pure: the door wrote NOTHING to cwd.
+    expect(fs.readdirSync(process.cwd()).sort()).to.deep.equal(cwdBefore);
+  });
+
+  it("POST /api/inspect on a RENAMED-header file => 200 with that field in requiredMissing (not a 400)", async function () {
+    const res = await post(port, "/api/inspect", {
+      source: "rentroll",
+      text: RENT_RENAMED,
+    });
+    // A well-formed file with an unmatched column is a self-service FINDING (200),
+    // never a server error: the UI renders requiredMissing.
+    expect(res.status).to.equal(200);
+    const d = res.json;
+    expect(d.requiredMissing).to.include("tenant");
+    expect(d.mapped.tenant).to.equal(null);
+    expect(d.header).to.include("Occupant");
+  });
+
+  it("POST /api/inspect with a columnMap override => 200 with requiredMissing EMPTY and mapped naming the override", async function () {
+    const res = await post(port, "/api/inspect", {
+      source: "rentroll",
+      text: RENT_RENAMED,
+      columnMap: { tenant: "Occupant" },
+    });
+    expect(res.status).to.equal(200);
+    const d = res.json;
+    // The escape hatch works end-to-end over HTTP: the override binds the field.
+    expect(d.requiredMissing).to.deep.equal([]);
+    expect(d.mapped.tenant).to.equal("Occupant");
+    expect(d.okCount).to.be.greaterThan(0);
+    expect(d.errors).to.deep.equal([]);
+  });
+
+  it("POST /api/inspect accepts the `quickbooks` source synonym (=> the ledger SOURCE)", async function () {
+    const res = await post(port, "/api/inspect", {
+      source: "quickbooks",
+      text: BOOK,
+    });
+    expect(res.status).to.equal(200);
+    expect(res.json.source).to.equal("quickbooks");
+    expect(res.json.requiredMissing).to.deep.equal([]);
+  });
+
+  it("POST /api/inspect with an UNKNOWN source => HTTP 400 named unknown_source", async function () {
+    const res = await post(port, "/api/inspect", {
+      source: "payroll",
+      text: BANK,
+    });
+    expect(res.status).to.equal(400);
+    expect(res.json.error).to.equal("unknown_source");
+    expect(res.json.message).to.match(/bank|ledger|rentroll/);
+    // Never a stack trace in the body.
+    expect(res.text).to.not.contain("at Object.");
+  });
+
+  it("POST /api/inspect with a MISSING text => HTTP 400 named missing_text", async function () {
+    const res = await post(port, "/api/inspect", { source: "bank" });
+    expect(res.status).to.equal(400);
+    expect(res.json.error).to.equal("missing_text");
+    expect(res.json.message).to.match(/text/);
+  });
+
+  it("POST /api/inspect with a non-string text is rejected, not coerced", async function () {
+    const res = await post(port, "/api/inspect", { source: "bank", text: 42 });
+    expect(res.status).to.equal(400);
+    expect(res.json.error).to.equal("missing_text");
+  });
+
+  it("POST /api/inspect with a malformed columnMap (unknown logical key) => named 400", async function () {
+    const res = await post(port, "/api/inspect", {
+      source: "rentroll",
+      text: RENT,
+      columnMap: { bogus: "Tenant" },
+    });
+    expect(res.status).to.equal(400);
+    expect(res.json.error).to.equal("ingest_error");
+    // The SAME message the strict parser/indexHeader gives.
+    expect(res.json.message).to.match(/unknown logical field "bogus"/);
+  });
+
+  it("POST /api/inspect with a malformed columnMap (header absent from file) => named 400", async function () {
+    const res = await post(port, "/api/inspect", {
+      source: "rentroll",
+      text: RENT_RENAMED,
+      columnMap: { tenant: "NoSuchColumn" },
+    });
+    expect(res.status).to.equal(400);
+    expect(res.json.error).to.equal("ingest_error");
+    expect(res.json.message).to.match(/not in the file/);
+  });
+
+  it("POST /api/inspect with a non-object columnMap => named 400 invalid_column_map", async function () {
+    const res = await post(port, "/api/inspect", {
+      source: "rentroll",
+      text: RENT,
+      columnMap: "Tenant",
+    });
+    expect(res.status).to.equal(400);
+    expect(res.json.error).to.equal("invalid_column_map");
+  });
 });

@@ -184,6 +184,102 @@ function reconcilePayload(payload, reportDate) {
 }
 
 // ---------------------------------------------------------------------------
+// T-28.1: the read-only DIAGNOSTIC core. Maps a broker-facing `source` spelling
+// (the SAME file keys /api/reconcile uses, plus the `quickbooks` synonym) to the
+// engine's SOURCE.*, then calls ingest.diagnoseSource VERBATIM and returns its
+// report shape. UNLIKE reconcilePayload this does NOT fail closed: a well-formed
+// file with unmatched columns returns 200 with `requiredMissing` populated — that
+// is a self-service finding the UI renders, not a server error. It throws an
+// HttpError 400 ONLY for a request that is itself malformed: an unknown source, a
+// missing/non-string `text`, or a malformed `columnMap` (the SAME named IngestError
+// the strict parser/indexHeader gives, raised EARLY via validateColumnMapForSource
+// so a bad map is a 400 rather than being folded into the diagnose error list).
+// PURE / I-O-free, exactly like reconcilePayload — the server never writes to disk.
+// ---------------------------------------------------------------------------
+
+// Broker-facing `source` spelling -> engine SOURCE.*. Accepts the SAME keys
+// /api/reconcile uses for its three files (bank / ledger / rentroll) plus the
+// natural `quickbooks` / `rent_roll` synonyms, so the door names sources the way
+// the CLI's `--as` does without forcing the browser to know the engine's enum.
+const INSPECT_SOURCE = Object.freeze({
+  bank: ingest.SOURCE.BANK,
+  ledger: ingest.SOURCE.QUICKBOOKS,
+  quickbooks: ingest.SOURCE.QUICKBOOKS,
+  rentroll: ingest.SOURCE.RENT_ROLL,
+  rent_roll: ingest.SOURCE.RENT_ROLL,
+});
+
+function inspectPayload(payload) {
+  if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new HttpError(400, "bad_request", "request body must be a JSON object");
+  }
+
+  // The `source` selects which of the three logical types to diagnose. An unknown
+  // (or missing) spelling is a named 400 that NAMES the accepted spellings, so the
+  // caller can self-correct without reading source.
+  const source = INSPECT_SOURCE[String(payload.source)];
+  if (!source) {
+    throw new HttpError(
+      400,
+      "unknown_source",
+      `"source" must be one of: ${Object.keys(INSPECT_SOURCE).join(", ")}`
+    );
+  }
+
+  // The file CONTENTS are REQUIRED and must be a string — a missing or non-string
+  // `text` is a named 400, never a coercion (diagnoseSource treats a null text as
+  // a file-level "no input" finding, but over the door an absent body field is a
+  // client mistake, so we reject it up front with a clear message).
+  if (typeof payload.text !== "string") {
+    throw new HttpError(
+      400,
+      "missing_text",
+      `"text" is required and must be the file contents as a text string`
+    );
+  }
+
+  // Optional column-map override. Validate it EARLY against this file's real
+  // header so a malformed map (unknown logical key, or a header absent from the
+  // file) is a named 400 with the SAME IngestError message the strict parser gives
+  // — rather than being folded into the diagnose report's error list. A bad shape
+  // (not a plain object) is likewise a named 400.
+  let columnMap = null;
+  if (payload.columnMap != null) {
+    if (typeof payload.columnMap !== "object" || Array.isArray(payload.columnMap)) {
+      throw new HttpError(
+        400,
+        "invalid_column_map",
+        '"columnMap" must be an object of { <logicalField>: <headerName> }'
+      );
+    }
+    columnMap = payload.columnMap;
+    try {
+      ingest.validateColumnMapForSource(source, payload.text, columnMap);
+    } catch (e) {
+      throw new HttpError(400, engineErrorCode(e), e.message);
+    }
+  }
+
+  // Call the EXISTING diagnostic VERBATIM (no re-implementation of parsing) and
+  // return EXACTLY the diagnose report shape the CLI `vh trust inspect` consumes.
+  // diagnoseSource is pure and only throws on an unknown source (already guarded);
+  // every file/row problem is reported in the structure, not thrown.
+  const report = ingest.diagnoseSource(source, payload.text, { columnMap });
+
+  return {
+    source: report.source,
+    format: report.format,
+    header: report.header,
+    mapped: report.mapped,
+    requiredMissing: report.requiredMissing,
+    rowCount: report.rowCount,
+    okCount: report.okCount,
+    sample: report.sample,
+    errors: report.errors,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // HTTP plumbing
 // ---------------------------------------------------------------------------
 
@@ -425,6 +521,27 @@ function makeHandler(opts = {}) {
       return;
     }
 
+    // T-28.1: the read-only per-file diagnostic. Additive + SEPARATE from
+    // /api/reconcile: it parses WITHOUT failing closed and reports every failing
+    // row (exactly as `vh trust inspect`), so a well-formed-but-unmatched file is
+    // a 200 with `requiredMissing`, not an error. Same body transport + named
+    // 400/413 posture; same no-cwd-write guarantee (diagnose is pure).
+    if (req.method === "POST" && pathOnly === "/api/inspect") {
+      readBody(req)
+        .then((raw) => {
+          let payload;
+          try {
+            payload = JSON.parse(raw);
+          } catch (e) {
+            throw new HttpError(400, "invalid_json", `request body is not valid JSON: ${e.message}`);
+          }
+          const out = inspectPayload(payload);
+          sendJson(res, 200, out);
+        })
+        .catch((err) => sendError(res, err));
+      return;
+    }
+
     // Anything else: a named 404 (still JSON, never an HTML error page).
     sendError(res, new HttpError(404, "not_found", `no route for ${req.method} ${pathOnly}`));
   };
@@ -462,6 +579,7 @@ module.exports = {
   createServer,
   makeHandler,
   reconcilePayload,
+  inspectPayload,
   indexHtml,
   embeddedIndexHtml,
   PUBLIC_INDEX,

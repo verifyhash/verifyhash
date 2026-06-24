@@ -99,8 +99,43 @@ function serializeSignedContainer(container) {
   return canonicalJson(canonical) + "\n";
 }
 
+// The reserved relPath of the synthetic HEADER leaf a reconciliation seal binds its verdict + input
+// role partition into, byte-identical to trustledger/seal.js#SEAL_HEADER_RELPATH. A real file may not
+// occupy it; the verifier folds the header content in under this relPath when re-deriving the root.
+const TRUST_SEAL_HEADER_RELPATH = "__trustledger.seal-header__v1";
+
+/**
+ * Reproduce the canonical "content" bytes of a reconciliation seal's verdict/role HEADER entry, byte-for-
+ * byte identical to trustledger/seal.js#_headerBytes — WITHOUT importing it. The header binds the recorded
+ * verdict (pass/reportDate/period) + each input's logical role→relPath into the SAME committed Merkle
+ * root as the files, so a verdict/role edit changes the header content -> its leaf -> the root.
+ *
+ * Canonical layout (FIXED key order, no insignificant whitespace, roles sorted by role):
+ *   { v: 1, verdict: { pass, reportDate, period }, roles: [{ role, relPath }, ...] }
+ *
+ * @param {object} verdict { pass, reportDate, period }
+ * @param {{role:string, relPath:string}[]} inputs the seal's input role bindings
+ * @returns {Buffer} the canonical UTF-8 header content
+ */
+function trustSealHeaderBytes(verdict, inputs) {
+  const canonical = {
+    v: 1,
+    verdict: {
+      pass: verdict.pass,
+      reportDate: verdict.reportDate,
+      period: verdict.period == null ? null : String(verdict.period),
+    },
+    roles: inputs
+      .map((i) => ({ role: i.role, relPath: i.relPath }))
+      .sort((a, b) => (a.role < b.role ? -1 : a.role > b.role ? 1 : 0)),
+  };
+  return Buffer.from(JSON.stringify(canonical), "utf8");
+}
+
 module.exports = {
   canonicalJson,
   serializeUnsignedDatasetAttestation,
   serializeSignedContainer,
+  TRUST_SEAL_HEADER_RELPATH,
+  trustSealHeaderBytes,
 };

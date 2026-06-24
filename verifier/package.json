@@ -1,0 +1,20 @@
+{
+  "name": "verify-vh",
+  "version": "0.1.0",
+  "description": "Standalone, read-only, OFFLINE verifier for verifyhash artifacts (evidence seals, reconciliation seals, dataset attestations, proof bundles). Near-zero-dependency: js-sha3 + a tiny vendored secp256k1 recovery — explicitly NO ethers/hardhat, so a third party can npm install it alone and audit it in an afternoon.",
+  "license": "MIT",
+  "bin": {
+    "verify-vh": "verify-vh.js"
+  },
+  "files": [
+    "verify-vh.js",
+    "lib/"
+  ],
+  "main": "verify-vh.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "js-sha3": "^0.8.0"
+  }
+}

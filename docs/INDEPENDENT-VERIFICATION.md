@@ -11,6 +11,50 @@ them. `verify-vh` exists so the relying party can recompute everything themselve
 
 ---
 
+## 0. Get it in 10 seconds (zero-install — start here)
+
+You do not need to clone this repo, run `npm install`, create an account, or install our toolchain to
+check a seal. Verification is **one self-contained file**,
+[`../verifier/dist/verify-vh-standalone.js`](../verifier/dist/verify-vh-standalone.js), that depends on
+**nothing but Node core**. The fastest honest path:
+
+```bash
+# 1. Save ONE file — verifier/dist/verify-vh-standalone.js — next to the packet you were handed.
+#    (Copy it from the repo, or your counterparty sends it to you. No clone, no install.)
+
+# 2. (Optional, recommended) Check its PUBLISHED checksum so you know the file itself wasn't swapped.
+#    The producer publishes the SHA-256 out-of-band; we ship it next to the file as
+#    verify-vh-standalone.js.sha256 (standard `sha256sum` line format):
+sha256sum -c verify-vh-standalone.js.sha256        # -> "verify-vh-standalone.js: OK"
+#    (macOS: `shasum -a 256 -c verify-vh-standalone.js.sha256`. Or eyeball it:
+#     `sha256sum verify-vh-standalone.js` and compare to the published hex.)
+
+# 3. Run it on the packet — no clone, no `npm install`, no node_modules, no account:
+node verify-vh-standalone.js <packet>.vhevidence.json --vendor 0xPRODUCER_ADDRESS
+#    exit 0 = verifies; exit 3 = REJECTED (and it names the file that changed / the wrong signer).
+```
+
+That single file is **byte-for-byte the same verifier** documented below — it is built deterministically
+from the `verifier/` sources (the keccak provider is swapped for a vendored pure-JS one, cross-checked
+against `js-sha3` and `ethers`), and a stale bundle FAILS CI
+([`../test/verifier.standalone.test.js`](../test/verifier.standalone.test.js)). The split-source,
+`npm install`-the-`verifier/`-tree path in [`../verifier/README.md`](../verifier/README.md) and §4 below
+remains for auditors who want to read each lib file on its own; both paths compute the **identical**
+verdict and exit code.
+
+**The easier path does not change what is proven.** Whether you run the one-file bundle or the split tree,
+the seal proves **tamper-evidence + signer-pin**, NOT a trusted "sealed at T" (that still requires
+**P-3** — see §3). The convenience is in the *install*, never in the *claim*.
+
+> **On the checksum's trust model — read this so step 2 isn't oversold.** `sha256sum -c` proves the file
+> you saved is bit-for-bit the file whose hash was published; it does **not**, by itself, prove *who*
+> published that hash. The hash is a **transport-integrity** check (did the bundle arrive intact / un-swapped?),
+> pinned to a value you obtain **out-of-band** from the producer — exactly like the `--vendor` signer
+> address. The real root of trust is still the cross-checked, dependency-grepped, network-poisoned audit of
+> the source in §5: the checksum only saves you from re-reading 80 KB every time once you have audited it once.
+
+---
+
 ## 1. The deliverable, precisely
 
 `verify-vh` is a **standalone, read-only, OFFLINE** verifier that, given an artifact plus the files it

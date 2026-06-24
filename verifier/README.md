@@ -11,6 +11,39 @@ independently check is not a proof.
 
 ---
 
+## 0. Get it in 10 seconds (zero-install — start here)
+
+The fastest way to check a seal needs **no clone, no `npm install`, no `node_modules`, no account**:
+save ONE self-contained file — [`dist/verify-vh-standalone.js`](dist/verify-vh-standalone.js) — and run
+it with `node`. It depends on **nothing but Node core** (the keccak provider is a vendored pure-JS one,
+cross-checked against `js-sha3` and `ethers`):
+
+```bash
+# 1. Save the single file dist/verify-vh-standalone.js next to the packet you were handed.
+
+# 2. (Optional, recommended) check its PUBLISHED checksum so you know the file wasn't swapped in transit.
+#    We ship it beside the bundle as dist/verify-vh-standalone.js.sha256 (standard `sha256sum` format):
+sha256sum -c verify-vh-standalone.js.sha256        # -> "verify-vh-standalone.js: OK"
+#    (macOS: shasum -a 256 -c verify-vh-standalone.js.sha256)
+
+# 3. Run it — no install:
+node verify-vh-standalone.js <packet> --vendor 0xPRODUCER_ADDRESS
+#    exit 0 = verifies; exit 3 = REJECTED (names the changed file / wrong signer).
+```
+
+That one file is **byte-for-byte the same verifier** described in the rest of this README — it is built
+deterministically from these sources, and a stale bundle FAILS CI
+(`../test/verifier.standalone.test.js`). The split-source path below (`npm install` the `verifier/` tree
+and run `verify-vh.js`) stays for auditors who want to read each `lib/*` file on its own; **both compute
+the identical verdict and exit code.** The checksum is a transport-integrity check pinned to a hex you
+get out-of-band from the producer — like `--vendor`; the real trust anchor is the source audit in §6.
+
+**The easier path changes nothing about what is proven:** whether you run the one-file bundle or the
+split tree, the seal proves **tamper-evidence + signer-pin**, NOT a trusted "sealed at T" (that still
+requires **P-3** — see §4). The convenience is in the *install*, never in the *claim*.
+
+---
+
 ## 1. What you have, in one minute
 
 A counterparty (the "producer") ran a paid verifyhash tool over some files and handed you:

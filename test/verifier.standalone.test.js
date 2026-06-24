@@ -28,6 +28,7 @@ const { expect } = require("chai");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 
 const { Wallet } = require("ethers");
@@ -47,7 +48,15 @@ const EXPIRES = "2027-06-01T00:00:00.000Z";
 const NOW = new Date("2026-06-24T00:00:00.000Z");
 
 const STANDALONE_PATH = path.resolve(__dirname, "..", "verifier", "dist", "verify-vh-standalone.js");
+const SHA256_PATH = STANDALONE_PATH + ".sha256";
 const INTREE_PATH = path.resolve(__dirname, "..", "verifier", "verify-vh.js");
+
+// The three docs that MUST surface the zero-install path and name the standalone file (T-35.3).
+const DOC_PATHS = {
+  "docs/INDEPENDENT-VERIFICATION.md": path.resolve(__dirname, "..", "docs", "INDEPENDENT-VERIFICATION.md"),
+  "verifier/README.md": path.resolve(__dirname, "..", "verifier", "README.md"),
+  "docs/PILOT.md": path.resolve(__dirname, "..", "docs", "PILOT.md"),
+};
 
 describe("verifier standalone: single-file, zero-install bundle (T-35.2)", function () {
   // Bundling + child spawns can be a touch slower than a unit test; give generous headroom.
@@ -614,6 +623,132 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
       expect(specs.sort()).to.deep.equal(
         ["./lib/canonical", "./lib/merkle", "./lib/secp256k1-recover", "fs", "path"].sort()
       );
+    });
+  });
+
+  // ============================================================================================
+  // (5) PUBLISHED CHECKSUM + ZERO-INSTALL DOC PATH (T-35.3).
+  //   - The committed `.sha256` sidecar equals the SHA-256 of the committed bundle (and the build's own
+  //     deterministic sidecar text), in the standard `sha256sum -c`-checkable line format.
+  //   - Each of the three docs documents the zero-install path FIRST, names `verify-vh-standalone.js`,
+  //     and RESTATES the honest scope boundary (tamper-evidence + signer-pin, NOT a trusted "sealed at T"
+  //     without P-3) so the easier path never overclaims.
+  // ============================================================================================
+  describe("(5) published checksum + zero-install doc path (T-35.3)", function () {
+    function sha256Hex(buf) {
+      return crypto.createHash("sha256").update(buf).digest("hex");
+    }
+
+    it("the committed `.sha256` sidecar EQUALS the SHA-256 of the committed bundle", function () {
+      const bundle = fs.readFileSync(STANDALONE_PATH); // raw bytes — hash the file exactly as shipped
+      const sidecar = fs.readFileSync(SHA256_PATH, "utf8");
+      const publishedHex = sidecar.trim().split(/\s+/)[0].toLowerCase();
+      expect(
+        publishedHex,
+        "verify-vh-standalone.js.sha256 is STALE — re-run `node verifier/build-standalone.js` and commit it"
+      ).to.equal(sha256Hex(bundle));
+    });
+
+    it("the sidecar is the standard `sha256sum`/`shasum -a 256 -c` line format (hex␠␠basename␊)", function () {
+      const sidecar = fs.readFileSync(SHA256_PATH, "utf8");
+      // Exactly: 64 lowercase hex chars, two spaces, the bundle's basename, one trailing newline.
+      expect(sidecar).to.match(/^[0-9a-f]{64} {2}verify-vh-standalone\.js\n$/);
+      // And it is byte-identical to the build's own deterministic sidecar of the committed bundle text
+      // (so the sidecar cannot drift from the bundle in either direction).
+      const bundleText = fs.readFileSync(STANDALONE_PATH, "utf8");
+      expect(sidecar).to.equal(builder.sha256Sidecar(bundleText));
+    });
+
+    it("`sha256sum -c` (or `shasum -a 256 -c`) ACCEPTS the committed bundle and REJECTS a tampered copy", function () {
+      // Run the verification tool a counterparty actually uses, from a scratch dir holding a COPY of the
+      // bundle + sidecar — proving step 2 of the docs' "get it in 10 seconds" path really works.
+      const dir = mkTmp();
+      fs.copyFileSync(STANDALONE_PATH, path.join(dir, "verify-vh-standalone.js"));
+      fs.copyFileSync(SHA256_PATH, path.join(dir, "verify-vh-standalone.js.sha256"));
+
+      function checksum(cmd, args) {
+        return spawnSync(cmd, args, { cwd: dir, encoding: "utf8" });
+      }
+      // Prefer sha256sum; fall back to `shasum -a 256` (macOS/BSD). Skip only if NEITHER exists.
+      let ok = checksum("sha256sum", ["-c", "verify-vh-standalone.js.sha256"]);
+      let tool = "sha256sum";
+      if (ok.error) {
+        ok = checksum("shasum", ["-a", "256", "-c", "verify-vh-standalone.js.sha256"]);
+        tool = "shasum -a 256";
+      }
+      if (ok.error) {
+        this.skip(); // no checksum CLI on this box — the byte-equality assertions above still gate the claim
+        return;
+      }
+      expect(ok.status, `${tool} -c accepts the committed bundle (out: ${ok.stdout}${ok.stderr})`).to.equal(0);
+      expect(ok.stdout + ok.stderr).to.match(/verify-vh-standalone\.js:?\s*OK/i);
+
+      // Flip one byte of the COPY -> the published checksum must now FAIL (non-zero, FAILED).
+      const copy = path.join(dir, "verify-vh-standalone.js");
+      const bytes = fs.readFileSync(copy);
+      bytes[0] = bytes[0] ^ 0xff;
+      fs.writeFileSync(copy, bytes);
+      const bad =
+        tool === "sha256sum"
+          ? checksum("sha256sum", ["-c", "verify-vh-standalone.js.sha256"])
+          : checksum("shasum", ["-a", "256", "-c", "verify-vh-standalone.js.sha256"]);
+      expect(bad.status, "a tampered bundle FAILS the published checksum").to.not.equal(0);
+      expect(bad.stdout + bad.stderr).to.match(/FAILED|did NOT match/i);
+    });
+
+    it("the sidecar is re-emitted (not rotted) by the build, in lockstep with the bundle", function () {
+      // Rebuild into a scratch dist and assert the freshly written sidecar matches the committed one — i.e.
+      // the build truly maintains the sidecar, so it can never silently fall behind the bundle.
+      const text = builder.buildBundle();
+      const fresh = builder.sha256Sidecar(text);
+      expect(fresh).to.equal(fs.readFileSync(SHA256_PATH, "utf8"));
+      // And the hash inside it really is the hash of the freshly built bundle bytes.
+      expect(fresh.trim().split(/\s+/)[0]).to.equal(sha256Hex(Buffer.from(text, "utf8")));
+    });
+
+    describe("each doc surfaces the ZERO-INSTALL path and restates the honest scope boundary", function () {
+      for (const [label, p] of Object.entries(DOC_PATHS)) {
+        it(`${label} names verify-vh-standalone.js and restates tamper-evidence + signer-pin / NOT sealed-at-T-without-P-3`, function () {
+          const doc = fs.readFileSync(p, "utf8");
+          const lower = doc.toLowerCase();
+
+          // (a) names the single standalone file.
+          expect(doc, `${label} names verify-vh-standalone.js`).to.include("verify-vh-standalone.js");
+
+          // (b) documents the zero-install promise: save ONE file, NO clone / NO npm install / NO account.
+          expect(lower, `${label} states "no clone"`).to.match(/no clone/);
+          expect(lower, `${label} states "no \`npm install\`"`).to.match(/no\s+`?npm install`?/);
+          expect(lower, `${label} states "no account"`).to.match(/no account/);
+
+          // (c) mentions the published checksum sidecar (the optional integrity check).
+          expect(doc, `${label} references the .sha256 sidecar`).to.include("verify-vh-standalone.js.sha256");
+
+          // (d) RESTATES the honest boundary verbatim so the easier path never overclaims.
+          expect(lower, `${label} restates tamper-evidence`).to.include("tamper-evidence");
+          expect(lower, `${label} restates signer-pin`).to.match(/signer.?pin/);
+          // NOT a trusted "sealed at T" (tolerate at/on + optional "date"), and P-3 named alongside.
+          expect(doc, `${label} disclaims a trusted "sealed at T"`).to.match(
+            /not a trusted\s+"?sealed (on|at) (date )?t/i
+          );
+          expect(doc, `${label} names P-3 as the upgrade`).to.include("P-3");
+        });
+
+        it(`${label} surfaces the zero-install path BEFORE the split-source \`npm install\` path`, function () {
+          const doc = fs.readFileSync(p, "utf8");
+          // The standalone file must be named at or before the FIRST place the doc tells you to
+          // `npm install` the split verifier tree (cd verifier && npm install / "pulls ... js-sha3").
+          const idxStandalone = doc.indexOf("verify-vh-standalone.js");
+          expect(idxStandalone, `${label} names the standalone file`).to.be.greaterThan(-1);
+          const m = doc.match(/cd verifier\b[\s\S]{0,40}npm install|npm install[\s\S]{0,40}js-sha3/i);
+          if (m) {
+            const idxInstall = doc.indexOf(m[0]);
+            expect(
+              idxStandalone,
+              `${label} introduces the zero-install standalone BEFORE the split-tree npm install`
+            ).to.be.lessThan(idxInstall);
+          }
+        });
+      }
     });
   });
 });

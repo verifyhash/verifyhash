@@ -98,8 +98,13 @@ checks it themselves, without trusting us**.
   exit **3** = REJECTED, and the output **localizes** which file CHANGED / MISSING / UNEXPECTED. The
   verifier is in its own [`verifier/`](../verifier/) tree with near-zero dependencies (`js-sha3`
   only — **no** `ethers`, **no** `hardhat`), so you are not installing our producer stack to check our
-  claim. See [`verifier/README.md`](../verifier/README.md) and
-  [`INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md).
+  claim. **Zero-install option:** for a counterparty who was handed only a packet, save the single
+  self-contained file [`verifier/dist/verify-vh-standalone.js`](../verifier/dist/verify-vh-standalone.js)
+  (optionally check its published `verify-vh-standalone.js.sha256`) and run
+  `node verify-vh-standalone.js <packet> --vendor <0xOperator>` — no clone, no `npm install`, no account;
+  it is byte-for-byte the same verifier and proves the same **tamper-evidence + signer-pin**, NOT a
+  trusted "sealed at T" (that still requires **P-3**). See [`verifier/README.md`](../verifier/README.md)
+  §0 and [`INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md) §0.
 
 ### 3b. The TrustLedger reconciliation seal
 

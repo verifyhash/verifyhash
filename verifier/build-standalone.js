@@ -41,10 +41,25 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const VERIFIER_DIR = __dirname;
 const DIST_DIR = path.join(VERIFIER_DIR, "dist");
 const OUT_PATH = path.join(DIST_DIR, "verify-vh-standalone.js");
+// The PUBLISHED checksum sidecar (T-35.3): the SHA-256 of the committed bundle, in the standard
+// `sha256sum`/`shasum -a 256` line format (`<hex>␠␠<basename>\n`) so a counterparty can run
+// `sha256sum -c verify-vh-standalone.js.sha256` after a one-line `curl`/save, BEFORE running the file.
+// It is a pure function of the (deterministic) bundle bytes, so it never rots: the build re-emits it and
+// the test asserts it equals sha256(committed bundle).
+const SHA256_PATH = OUT_PATH + ".sha256";
+const SHA256_BASENAME = path.basename(OUT_PATH);
+
+// The exact textual contents of the `.sha256` sidecar for a given bundle text. One canonical line, the
+// standard two-space `sha256sum` separator, a trailing newline. Pure function -> deterministic.
+function sha256Sidecar(bundleText) {
+  const hex = crypto.createHash("sha256").update(Buffer.from(bundleText, "utf8")).digest("hex");
+  return `${hex}  ${SHA256_BASENAME}\n`;
+}
 
 // ---------------------------------------------------------------------------
 // The EXPLICIT, FIXED module list. Order is deterministic by construction (it is hand-listed, not derived
@@ -235,18 +250,31 @@ function buildBundle() {
   return parts.join("\n");
 }
 
-// Write the bundle to disk (used by the CLI invocation). Creates verifier/dist/ if absent. Returns the
-// emitted text so callers can compare without a re-read.
+// Write the bundle to disk (used by the CLI invocation), AND its published `.sha256` checksum sidecar.
+// Creates verifier/dist/ if absent. Returns the emitted text so callers can compare without a re-read.
 function writeBundle() {
   const text = buildBundle();
   fs.mkdirSync(DIST_DIR, { recursive: true });
   fs.writeFileSync(OUT_PATH, text);
+  // Re-emit the published checksum so the sidecar can never drift from the bundle it pins.
+  fs.writeFileSync(SHA256_PATH, sha256Sidecar(text));
   return text;
 }
 
 if (require.main === module) {
   const text = writeBundle();
   process.stdout.write(`wrote ${path.relative(VERIFIER_DIR, OUT_PATH)} (${Buffer.byteLength(text)} bytes)\n`);
+  process.stdout.write(`wrote ${path.relative(VERIFIER_DIR, SHA256_PATH)} (${sha256Sidecar(text).trim()})\n`);
 }
 
-module.exports = { buildBundle, writeBundle, OUT_PATH, DIST_DIR, VERIFIER_DIR, MODULES };
+module.exports = {
+  buildBundle,
+  writeBundle,
+  sha256Sidecar,
+  OUT_PATH,
+  SHA256_PATH,
+  SHA256_BASENAME,
+  DIST_DIR,
+  VERIFIER_DIR,
+  MODULES,
+};

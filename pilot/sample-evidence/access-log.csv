@@ -1,0 +1,6 @@
+timestamp,actor,action,resource,result
+2026-05-12T09:10:02Z,svc-auth,read,config/rate-limit,ok
+2026-05-12T09:14:31Z,svc-auth,update,config/rate-limit,ok
+2026-05-12T09:52:10Z,oncall-lead,update,config/rate-limit,ok
+2026-05-12T10:05:44Z,compliance,read,access-log,ok
+2026-05-12T10:06:01Z,compliance,export,access-log,ok

@@ -1,0 +1,10 @@
+{
+  "framework": "SOC2-lite",
+  "period": "2026-Q2",
+  "controls": [
+    { "id": "CC6.1", "name": "Logical access", "status": "operating" },
+    { "id": "CC7.2", "name": "Anomaly detection", "status": "operating" },
+    { "id": "CC7.3", "name": "Incident response", "status": "operating" }
+  ],
+  "owner": "compliance"
+}

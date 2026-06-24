@@ -72,6 +72,7 @@ const EXCEPTION = Object.freeze({
   UNRECONCILED_BOOK: "unreconciled_book", // a book line nothing explains
   SUBLEDGER_OUT_OF_BALANCE: "subledger_out_of_balance", // sum-of-tenants != book
   BANK_BOOK_MISMATCH: "bank_book_mismatch", // adjusted bank != book
+  CONTINUITY_BREAK: "continuity_break", // this period's opening != prior period's signed ending
 });
 
 const SEVERITY = Object.freeze({
@@ -94,6 +95,10 @@ const DEFAULT_SEVERITY = Object.freeze({
   [EXCEPTION.UNRECONCILED_BOOK]: SEVERITY.WARNING,
   [EXCEPTION.SUBLEDGER_OUT_OF_BALANCE]: SEVERITY.ERROR,
   [EXCEPTION.BANK_BOOK_MISMATCH]: SEVERITY.ERROR,
+  // A broken roll-forward means the books do not actually continue from the
+  // signed prior period — an out-of-trust-grade finding by default. A state MAY
+  // re-grade a documented timing roll-forward difference to a warning via policy.
+  [EXCEPTION.CONTINUITY_BREAK]: SEVERITY.ERROR,
 });
 
 // ---------------------------------------------------------------------------
@@ -347,6 +352,39 @@ function reconcile(bank, book, tenants, opts = {}) {
   };
 }
 
+// Build a CONTINUITY_BREAK exception from a non-zero roll-forward gap. PURE.
+// `cont` is the structured result of close.checkContinuity(priorClose, opening):
+// { ok, bankGap, bookGap }. The exception carries the bank gap in `amount` (the
+// headline number) and BOTH gaps + the prior period label in `detail`, so an
+// auditor reads exactly which leg failed to roll forward and by how much. The
+// severity is the DEFAULT_SEVERITY for the type (error) unless the caller's
+// policy later overrides it — it flows through the SAME applyPolicy path as
+// every other exception. Returns null when there is no gap (ok), so the caller
+// can simply skip a null.
+function buildContinuityException(cont, priorPeriodLabel) {
+  if (!cont || cont.ok) return null;
+  const bankGap = Number.isInteger(cont.bankGap) ? cont.bankGap : 0;
+  const bookGap = Number.isInteger(cont.bookGap) ? cont.bookGap : 0;
+  const priorName =
+    priorPeriodLabel == null || String(priorPeriodLabel).trim() === ""
+      ? "the prior period"
+      : `prior period "${String(priorPeriodLabel)}"`;
+  return {
+    type: EXCEPTION.CONTINUITY_BREAK,
+    severity: DEFAULT_SEVERITY[EXCEPTION.CONTINUITY_BREAK],
+    amount: bankGap,
+    label: "Roll-forward continuity break",
+    detail:
+      `This period's opening balances do not roll forward from ${priorName}: ` +
+      `the bank opening differs from the prior ending by ${bankGap} cents and ` +
+      `the book opening differs by ${bookGap} cents. A non-zero gap means a ` +
+      "period was skipped, edited, or re-keyed and the chain of custody over " +
+      "the trust money is broken; reconcile the opening to the prior signed " +
+      "ending before relying on this packet.",
+    records: [],
+  };
+}
+
 function cmp(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -527,4 +565,5 @@ module.exports = {
   // exported for focused tests / reuse
   tenantBalances,
   compareExceptions,
+  buildContinuityException,
 };

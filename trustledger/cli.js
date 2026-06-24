@@ -38,6 +38,7 @@ const path = require("path");
 const ingest = require("./ingest");
 const report = require("./report");
 const policy = require("./policy");
+const close = require("./close");
 
 // Exit codes — shared, documented contract (mirrors the dataset/parcel gates:
 // 0 PASS, 3 data/gate FAIL, 2 usage, 1 IO/input error).
@@ -65,6 +66,8 @@ function parseReconcileArgs(argv) {
     bankFormat: undefined, // force "csv" | "ofx" for the bank file
     policyFile: undefined, // explicit per-state policy file (--policy <file>)
     state: undefined, // bundled per-state policy by its state code (--state <code>)
+    priorClose: undefined, // prior period's close.json to roll forward FROM (--prior-close <file>)
+    emitClose: undefined, // path to write THIS run's close.json TO (--emit-close <file>)
     _positionals: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -84,9 +87,11 @@ function parseReconcileArgs(argv) {
         break;
       case "--opening-bank":
         opts.openingBank = parseCentsArg(argv[++i], "--opening-bank");
+        opts.openingBankSet = true;
         break;
       case "--opening-book":
         opts.openingBook = parseCentsArg(argv[++i], "--opening-book");
+        opts.openingBookSet = true;
         break;
       case "--tolerance-cents":
         opts.toleranceCents = parseIntArg(argv[++i], "--tolerance-cents");
@@ -99,6 +104,12 @@ function parseReconcileArgs(argv) {
         break;
       case "--state":
         opts.state = argv[++i];
+        break;
+      case "--prior-close":
+        opts.priorClose = argv[++i];
+        break;
+      case "--emit-close":
+        opts.emitClose = argv[++i];
         break;
       default:
         if (a && a.startsWith("--")) {
@@ -206,6 +217,63 @@ function runReconcile(opts, io = {}) {
     }
   }
 
+  // -- Resolve the prior period's close (--prior-close), if any. -------------
+  // Mirrors how --policy is handled: a malformed/unreadable close is a USAGE
+  // error (exit 2) — a BAD FLAG VALUE, not a data-file IO error.
+  //
+  // SEED-then-OVERRIDE. When present, the prior close's `ending` SEEDS this run's
+  // opening balances. An explicit --opening-bank/--opening-book then acts as an
+  // explicit OVERRIDE of that seed. BUILDER'S CHOICE (documented): a disagreeing
+  // override is HONORED but NOTED — we let the broker open where they say (e.g. a
+  // documented mid-period adjustment), AND we surface the disagreement on stderr,
+  // AND — crucially — the continuity check then compares the OPENING actually used
+  // against the prior ending, so a disagreeing override that breaks the chain
+  // SHOWS UP as a CONTINUITY_BREAK in the packet (flipping the verdict) rather than
+  // being silently swallowed. This is strictly safer than honoring it invisibly:
+  // the gap is recorded in the signed packet, not hidden behind a one-line warning.
+  let priorClose = null;
+  let openingNotes = [];
+  if (opts.priorClose != null) {
+    let closeText;
+    try {
+      closeText = fs.readFileSync(path.resolve(opts.priorClose), "utf8");
+    } catch (e) {
+      writeErr(
+        `error: cannot read --prior-close file ${opts.priorClose}: ${e.message}\n`
+      );
+      return { code: EXIT.USAGE };
+    }
+    try {
+      priorClose = close.readClose(closeText);
+    } catch (e) {
+      writeErr(
+        `error: invalid --prior-close file ${opts.priorClose}: ${e.message}\n`
+      );
+      return { code: EXIT.USAGE };
+    }
+
+    // Seed each leg from the prior ending UNLESS the broker explicitly overrode it.
+    if (!opts.openingBankSet) {
+      opts.openingBank = priorClose.ending.bank;
+    } else if (opts.openingBank !== priorClose.ending.bank) {
+      openingNotes.push(
+        `note: --opening-bank ${opts.openingBank} overrides the prior close's ` +
+          `ending bank balance ${priorClose.ending.bank}; the roll-forward ` +
+          "continuity check below will flag the resulting gap"
+      );
+    }
+    if (!opts.openingBookSet) {
+      opts.openingBook = priorClose.ending.book;
+    } else if (opts.openingBook !== priorClose.ending.book) {
+      openingNotes.push(
+        `note: --opening-book ${opts.openingBook} overrides the prior close's ` +
+          `ending book balance ${priorClose.ending.book}; the roll-forward ` +
+          "continuity check below will flag the resulting gap"
+      );
+    }
+  }
+  for (const n of openingNotes) writeErr(`${n}\n`);
+
   // -- Read the three files (IO errors are exit 1, not a crash). -------------
   let bankText;
   let ledgerText;
@@ -254,6 +322,8 @@ function runReconcile(opts, io = {}) {
       opening: { bank: opts.openingBank || 0, book: opts.openingBook || 0 },
       toleranceCents: opts.toleranceCents || 0,
       policy: activePolicy,
+      priorClose,
+      emitClosePath: opts.emitClose != null ? path.resolve(opts.emitClose) : null,
     });
   } catch (e) {
     writeErr(`error: ${e.message}\n`);
@@ -263,6 +333,34 @@ function runReconcile(opts, io = {}) {
   const summary = report.summaryLine(model);
   const render = report.renderPacket(model);
   const code = model.pass ? EXIT.PASS : EXIT.FAIL;
+
+  // -- Emit THIS run's period close (--emit-close), if requested. ------------
+  // Built PURELY from the packet model (close.buildClose) and written ONLY to the
+  // caller-named path — never silently to cwd, exactly like the packet. The close
+  // round-trips through close.readClose so the next month's --prior-close consumes
+  // it. This run's verdict/exit code is unaffected by emitting it.
+  let closeWritten = null;
+  if (opts.emitClose != null) {
+    const closePath = path.resolve(opts.emitClose);
+    let closeArtifact;
+    try {
+      closeArtifact = close.buildClose(model);
+    } catch (e) {
+      writeErr(`error: cannot build --emit-close artifact: ${e.message}\n`);
+      return { code: EXIT.IO };
+    }
+    try {
+      const parent = path.dirname(closePath);
+      fs.mkdirSync(parent, { recursive: true });
+      fs.writeFileSync(closePath, JSON.stringify(closeArtifact, null, 2) + "\n");
+    } catch (e) {
+      writeErr(
+        `error: cannot write --emit-close file ${opts.emitClose}: ${e.message}\n`
+      );
+      return { code: EXIT.IO };
+    }
+    closeWritten = closePath;
+  }
 
   // -- Output. ---------------------------------------------------------------
   let written = [];
@@ -290,7 +388,7 @@ function runReconcile(opts, io = {}) {
     if (opts.json) {
       write(
         JSON.stringify(
-          { ...model, summary, written, outDir },
+          { ...model, summary, written, outDir, closeWritten },
           null,
           2
         ) + "\n"
@@ -298,20 +396,23 @@ function runReconcile(opts, io = {}) {
     } else {
       write(`${summary}\n`);
       for (const p of written) write(`wrote ${p}\n`);
+      if (closeWritten) write(`wrote close ${closeWritten}\n`);
     }
   } else {
-    // No --out: print the summary + the HTML report to stdout, write NOTHING.
+    // No --out: print the summary + the HTML report to stdout, write NOTHING
+    // (except the explicitly caller-named --emit-close file, already written).
     if (opts.json) {
-      write(JSON.stringify({ ...model, summary }, null, 2) + "\n");
+      write(JSON.stringify({ ...model, summary, closeWritten }, null, 2) + "\n");
     } else {
       write(`${summary}\n`);
+      if (closeWritten) write(`wrote close ${closeWritten}\n`);
       const htmlName = report.packetFilenames(reportDate).html;
       write("\n");
       write(render[htmlName]);
     }
   }
 
-  return { code, model, summary, written, render };
+  return { code, model, summary, written, render, closeWritten };
 }
 
 // Real "today" as a UTC YYYY-MM-DD. The ONLY impure call in this module, isolated

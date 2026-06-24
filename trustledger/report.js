@@ -41,6 +41,7 @@ const ingest = require("./ingest");
 const match = require("./match");
 const reconcile = require("./reconcile");
 const policyMod = require("./policy");
+const close = require("./close");
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -140,7 +141,27 @@ function policyDisclaimerLine(stateLabel) {
 // renderers print. Returned model is JSON-serializable and order-stable.
 // ---------------------------------------------------------------------------
 
-function buildPacket({ bank, book, rentroll, reportDate, period, opening, toleranceCents, policy }) {
+// `priorClose` (optional): a validated period-close artifact (close.js) this run
+// chains FORWARD from. When present, buildPacket runs close.checkContinuity over
+// the prior ending vs. THIS period's opening and, on a non-zero gap, raises a
+// CONTINUITY_BREAK exception that flows through the SAME applyPolicy / counts /
+// verdict / report path as every other exception (and is policy-overridable).
+// `emitClosePath` (optional): the caller-named path the emitted close was/will be
+// written to, referenced in the output so the artifact is traceable. Neither is
+// supplied unless `--prior-close`/`--emit-close` is used; without `priorClose` no
+// continuity exception is ever raised and the model is byte-for-byte unchanged.
+function buildPacket({
+  bank,
+  book,
+  rentroll,
+  reportDate,
+  period,
+  opening,
+  toleranceCents,
+  policy,
+  priorClose,
+  emitClosePath,
+}) {
   if (!Array.isArray(bank)) throw new ReportError("bank must be a NormalizedRecord[]");
   if (!Array.isArray(book)) throw new ReportError("book must be a NormalizedRecord[]");
   if (!Array.isArray(rentroll)) throw new ReportError("rentroll must be a NormalizedRecord[]");
@@ -168,12 +189,60 @@ function buildPacket({ bank, book, rentroll, reportDate, period, opening, tolera
       ? policy.toleranceCents
       : cliTolerance;
 
+  // Normalize the opening this run actually used (integer cents both legs), so it
+  // is the SAME value fed to reconcile AND checked for continuity against the
+  // prior close — no chance of checking a different opening than was computed on.
+  const usedOpening = {
+    bank: opening && Number.isInteger(opening.bank) ? opening.bank : 0,
+    book: opening && Number.isInteger(opening.book) ? opening.book : 0,
+  };
+
   // 2) The three-balance check + classified exceptions.
   const rawRec = reconcile.reconcile(bank, book, rentroll, {
     matchResult,
-    opening: opening || { bank: 0, book: 0 },
+    opening: usedOpening,
     toleranceCents: effectiveTolerance,
   });
+
+  // 2a) Roll-forward continuity. When this run chains from a prior period's close,
+  //     CHECK that this period's opening equals the prior period's signed ending,
+  //     penny-exact. A non-zero gap is a CONTINUITY_BREAK exception INJECTED into
+  //     the reconcile result BEFORE the policy is applied, so it flows through the
+  //     SAME severity override, counts, verdict, exit code, and report path as
+  //     every native exception. Without a priorClose this is skipped entirely and
+  //     the result is byte-for-byte unchanged. The prior close is a validated
+  //     close artifact (the CLI reads it via close.readClose); we re-validate here
+  //     so buildPacket is safe to call directly.
+  let continuity = null;
+  let priorMeta = null;
+  if (priorClose != null) {
+    const prior = close.readClose(priorClose);
+    priorMeta = {
+      period: prior.period,
+      reportDate: prior.reportDate,
+      ending: { bank: prior.ending.bank, book: prior.ending.book },
+    };
+    const cont = close.checkContinuity(prior, usedOpening);
+    continuity = {
+      checked: true,
+      ok: cont.ok === true,
+      bankGap: Number.isInteger(cont.bankGap) ? cont.bankGap : 0,
+      bookGap: Number.isInteger(cont.bookGap) ? cont.bookGap : 0,
+      priorPeriod: prior.period,
+      priorReportDate: prior.reportDate,
+      priorEnding: { bank: prior.ending.bank, book: prior.ending.book },
+      thisOpening: { bank: usedOpening.bank, book: usedOpening.book },
+    };
+    const contEx = reconcile.buildContinuityException(cont, prior.period);
+    if (contEx) {
+      rawRec.exceptions.push(contEx);
+      // Re-sort so the freshly-injected exception lands in the canonical
+      // severity-first order, exactly as a natively-detected one would. (When a
+      // policy is present, applyPolicy re-sorts again under the overridden
+      // severities; this keeps the no-policy path correctly ordered too.)
+      rawRec.exceptions.sort(reconcile.compareExceptions);
+    }
+  }
 
   // 2b) Apply the reviewed per-state policy (if any) over the reconcile result
   //     BEFORE anything reads severities. applyPolicy is PURE and, with no
@@ -276,6 +345,15 @@ function buildPacket({ bank, book, rentroll, reportDate, period, opening, tolera
     reportDate,
     period: period || null,
     opening: openingBalances,
+    // The prior period this run chained from + the roll-forward check (null when
+    // no --prior-close was supplied). Names the prior period and shows the
+    // roll-forward (prior ending -> this opening) so an auditor sees the chain.
+    continuity,
+    priorClose: priorMeta,
+    // The caller-named path THIS run's close was/will be emitted to (null when no
+    // --emit-close). Referenced so the emitted artifact is traceable from the
+    // packet; the actual write happens in the CLI, only to this caller-named path.
+    emitClose: emitClosePath == null ? null : String(emitClosePath),
     // The policy (state label + the applied overrides/citations) that governed
     // this run, or null for the built-in baseline. Names WHICH policy decided the
     // verdict so the report and --json are self-describing.
@@ -322,6 +400,57 @@ function sevBadge(sev) {
   const color =
     sev === "error" ? "#b00020" : sev === "warning" ? "#8a6d00" : "#0a6b2f";
   return `<span class="sev sev-${esc(sev)}" style="color:${color}">${esc(sev.toUpperCase())}</span>`;
+}
+
+// The roll-forward continuity section: only rendered when this run chained from a
+// prior period's close (--prior-close). Names the prior period and shows the
+// roll-forward (prior ending -> this opening) for both the bank and book legs so
+// an auditor can walk the chain. When the gap is non-zero the matching
+// CONTINUITY_BREAK row appears in the Exceptions table; this section shows the
+// arithmetic that produced it.
+function renderContinuitySection(model) {
+  const c = model.continuity;
+  if (!c || !c.checked) return "";
+  const priorName =
+    c.priorPeriod == null ? c.priorReportDate : `${c.priorPeriod} (${c.priorReportDate})`;
+  const okLine = c.ok
+    ? `<p class="none">The roll-forward is clean: this period opened exactly where
+the prior period closed.</p>`
+    : `<p style="color:#b00020"><strong>Roll-forward break:</strong> the bank
+opening differs from the prior ending by
+<strong>${esc(fmtCents(c.bankGap))}</strong> and the book opening differs by
+<strong>${esc(fmtCents(c.bookGap))}</strong>. See the CONTINUITY_BREAK exception
+below.</p>`;
+  const rows = [
+    ["Bank", c.priorEnding.bank, c.thisOpening.bank, c.bankGap],
+    ["Book", c.priorEnding.book, c.thisOpening.book, c.bookGap],
+  ]
+    .map(
+      ([leg, end, open, gap]) =>
+        `<tr><td>${esc(leg)}</td><td class="num">${esc(fmtCents(end))}</td>` +
+        `<td class="num">${esc(fmtCents(open))}</td><td class="num">${esc(
+          fmtCents(gap)
+        )}</td></tr>`
+    )
+    .join("\n");
+  const emitNote = model.emitClose
+    ? `<p class="meta">This run's period close was written to
+<strong>${esc(model.emitClose)}</strong>.</p>`
+    : "";
+  return `
+<h2>Period continuity (roll-forward)</h2>
+<p>This reconciliation chained forward from <strong>${esc(priorName)}</strong>.
+The trust chain requires that this period's OPENING balances equal the prior
+period's signed ENDING balances, to the penny.</p>
+${okLine}
+<table>
+<thead><tr><th>Leg</th><th class="num">Prior ending</th><th class="num">This opening</th><th class="num">Gap</th></tr></thead>
+<tbody>
+${rows}
+</tbody>
+</table>
+${emitNote}
+`;
 }
 
 function renderHTML(model) {
@@ -462,6 +591,7 @@ ${ovRows || '<tr><td colspan="3" class="none">No overrides.</td></tr>'}
 ${disclaimerHTML}
 </div>
 ${policySection}
+${renderContinuitySection(model)}
 <h2>The three balances</h2>
 <p>The trust account is in balance only when the adjusted bank balance, the book
 balance, and the sum of the beneficiary sub-ledgers all agree.</p>
@@ -605,6 +735,24 @@ function renderBalancesCSV(model) {
   );
   for (const x of model.beneficiaries) {
     row("beneficiary", x.party, String(x.balance), fmtCents(x.balance));
+  }
+  // Roll-forward continuity rows (only when this run chained from a prior close),
+  // so the spreadsheet names the prior period and shows the chain too.
+  const c = model.continuity;
+  if (c && c.checked) {
+    const priorLabel =
+      c.priorPeriod == null ? c.priorReportDate : `${c.priorPeriod} (${c.priorReportDate})`;
+    row("continuity", "prior_period", "", priorLabel);
+    row("continuity", "prior_ending_bank", String(c.priorEnding.bank), fmtCents(c.priorEnding.bank));
+    row("continuity", "prior_ending_book", String(c.priorEnding.book), fmtCents(c.priorEnding.book));
+    row("continuity", "this_opening_bank", String(c.thisOpening.bank), fmtCents(c.thisOpening.bank));
+    row("continuity", "this_opening_book", String(c.thisOpening.book), fmtCents(c.thisOpening.book));
+    row("continuity", "bank_gap", String(c.bankGap), fmtCents(c.bankGap));
+    row("continuity", "book_gap", String(c.bookGap), fmtCents(c.bookGap));
+    row("continuity", "roll_forward_ok", c.ok ? "1" : "0", c.ok ? "clean" : "BREAK");
+  }
+  if (model.emitClose) {
+    row("close", "emitted_to", "", model.emitClose);
   }
   return lines.join("\n") + "\n";
 }

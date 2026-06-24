@@ -150,8 +150,15 @@ validation error rather than a silently-ignored key. They are:
 outstanding_deposit   outstanding_check   timing
 nsf_reversal          owner_draw          security_deposit_segregation
 unreconciled_bank     unreconciled_book   subledger_out_of_balance
-bank_book_mismatch
+bank_book_mismatch    continuity_break
 ```
+
+`continuity_break` is raised only when a run chains from a prior period's close
+(`--prior-close`) and this period's opening does not roll forward penny-exact from
+that prior period's signed ending. Its default severity is `error` (a broken
+roll-forward means the books do not actually continue from the signed prior
+period), and — like every other type — a per-state policy MAY re-grade it (e.g. a
+state that treats a documented timing roll-forward difference as a `warning`).
 
 ### Selecting a policy: `--state` vs `--policy`
 

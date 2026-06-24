@@ -113,7 +113,7 @@ function capture() {
 }
 
 // Recursively copy a directory tree (the sample is tiny). The TAMPER step mutates a working COPY in the
-// temp workspace, never the committed sample under pilot/sample-evidence/.
+// temp workspace, never the committed sample under pilot/sample-evidence/ NOR a partner's supplied folder.
 function copyDir(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
@@ -124,13 +124,102 @@ function copyDir(src, dst) {
   }
 }
 
+// Recursively count the regular files under a directory tree (so we can hard-error on an EMPTY partner
+// folder BEFORE we seal anything — never a misleading PASS over zero files).
+function countFiles(dir) {
+  let n = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) n += countFiles(path.join(dir, entry.name));
+    else if (entry.isFile()) n += 1;
+  }
+  return n;
+}
+
+// resolveEvidenceSource(opts) — decide which folder the EVIDENCE vertical seals.
+//   * default (no --evidence-dir / PILOT_EVIDENCE_DIR): the committed, READ-ONLY canned sample. The run
+//     is byte-for-byte identical to the historical pilot.
+//   * partner override: the partner's OWN folder. We validate it up front and HARD-ERROR with a clear
+//     message BEFORE any sealing if it is missing, not a directory, unreadable, or empty — so a broken
+//     input can never surface as a misleading PASS.
+// Returns { source, isPartner }. Throws an Error (caught by main) on an invalid partner folder.
+function resolveEvidenceSource(opts) {
+  const supplied =
+    (opts && opts.evidenceDir != null ? opts.evidenceDir : undefined) ?? process.env.PILOT_EVIDENCE_DIR;
+  if (supplied === undefined || supplied === null || supplied === "") {
+    return { source: SAMPLE_EVIDENCE, isPartner: false };
+  }
+  const abs = path.resolve(supplied);
+
+  let st;
+  try {
+    st = fs.statSync(abs);
+  } catch (e) {
+    throw new PilotInputError(
+      `evidence folder not found: ${abs} (set --evidence-dir / PILOT_EVIDENCE_DIR to an existing folder)`
+    );
+  }
+  if (!st.isDirectory()) {
+    throw new PilotInputError(`evidence folder is not a directory: ${abs}`);
+  }
+  // Readable as a directory? (a permission/unreadable folder errors HERE, before sealing).
+  let count;
+  try {
+    count = countFiles(abs);
+  } catch (e) {
+    throw new PilotInputError(`evidence folder is unreadable: ${abs} (${e && e.code ? e.code : e})`);
+  }
+  if (count === 0) {
+    throw new PilotInputError(`evidence folder is empty (no files to seal): ${abs}`);
+  }
+  return { source: abs, isPartner: true };
+}
+
+// A user-facing input error (bad flag / bad partner folder). Tagged so the CLI shim prints ONE clean
+// line (no stack) and exits with a usage code, instead of a confusing "unexpected error" stack trace.
+class PilotInputError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "PilotInputError";
+    this.userError = true;
+  }
+}
+
+// parseArgs(argv) — the kit's tiny CLI: only `--evidence-dir <path>` today (env PILOT_EVIDENCE_DIR is
+// the same knob). Unknown flags are tolerated (the kit is a demo, not a general CLI) but the one knob it
+// owns is parsed strictly so `--evidence-dir` with no value is a usage error, not a silent default.
+function parseArgs(argv) {
+  const opts = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--evidence-dir") {
+      const v = argv[i + 1];
+      if (v === undefined || v.startsWith("--")) {
+        throw new PilotInputError("--evidence-dir requires a <path> argument");
+      }
+      opts.evidenceDir = v;
+      i++;
+    } else if (a.startsWith("--evidence-dir=")) {
+      opts.evidenceDir = a.slice("--evidence-dir=".length);
+    }
+  }
+  return opts;
+}
+
 // ---- the pilot run -------------------------------------------------------------------------------
 
-// runPilot(workspace) — drive BOTH sellable journeys (evidence + reconcile) inside `workspace` (a
-// caller-owned temp dir) and fold them into ONE combined PASS/FAIL verdict. PURE w.r.t. the repo: it
-// reads the committed READ-ONLY samples and writes ONLY under `workspace`. Returns true iff EVERY check
-// across BOTH verticals passed. Injectable so the test can run it against its own throwaway dir.
-async function runPilot(workspace) {
+// runPilot(workspace, opts) — drive BOTH sellable journeys (evidence + reconcile) inside `workspace` (a
+// caller-owned temp dir) and fold them into ONE combined PASS/FAIL verdict. PURE w.r.t. its inputs: it
+// reads the chosen source folders READ-ONLY (copying each into `workspace`) and writes ONLY under
+// `workspace`. Returns true iff EVERY check across BOTH verticals passed. Injectable so the test can run
+// it against its own throwaway dir.
+//
+// opts.evidenceDir (or env PILOT_EVIDENCE_DIR) points the EVIDENCE vertical at a PARTNER'S OWN folder
+// instead of the canned sample. The partner's originals are NEVER written — we operate on a COPY. An
+// invalid (missing/empty/unreadable) partner folder HARD-ERRORS before any sealing (it never PASSes).
+async function runPilot(workspace, opts) {
+  // Resolve (and VALIDATE) the evidence source BEFORE we print a journey or seal anything — a broken
+  // partner folder must surface as a hard error here, never as a misleading PASS later.
+  const { source: evidenceSource, isPartner } = resolveEvidenceSource(opts || {});
   out("");
   out("verifyhash — OFFLINE, ephemeral-key PILOT KIT (evidence + reconcile)");
   out(
@@ -140,13 +229,22 @@ async function runPilot(workspace) {
       'TAMPER-EVIDENCE + WHO vouched — NOT a trusted timestamp ("sealed at T" rides the human trust-root,\n' +
       "STRATEGY.md P-3) and NOT legal advice (a CPA still governs the reconciliation)."
   );
+  if (isPartner) {
+    out(
+      `EVIDENCE SOURCE: your folder ${evidenceSource}\n` +
+        "  The kit COPIES it into a throwaway workspace and seals/tampers ONLY the copy — your originals\n" +
+        "  are READ-ONLY and are never written, renamed, or deleted."
+    );
+  } else {
+    out(`EVIDENCE SOURCE: the canned sample ${evidenceSource} (pass --evidence-dir to run YOUR folder).`);
+  }
   hr();
 
   // ONE shared verdict array: every check from BOTH verticals lands here, so the printed VERDICT is the
   // single AND of the whole combined journey.
   const checks = [];
 
-  await runEvidencePilot(workspace, checks);
+  await runEvidencePilot(workspace, checks, { source: evidenceSource, isPartner });
   await runReconcilePilot(workspace, checks);
 
   out("HUMAN HANDOFF (where the pilot ENDS — these are the needs-human steps, NOT done here):");
@@ -166,15 +264,21 @@ async function runPilot(workspace) {
 
 // ---- VERTICAL A — the EVIDENCE buyer journey ----------------------------------------------------
 
-// runEvidencePilot(workspace, checks) — drive the evidence journey, appending each check to `checks`.
-// Reads pilot/sample-evidence/ (READ-ONLY) and writes ONLY under `workspace`.
-async function runEvidencePilot(workspace, checks) {
+// runEvidencePilot(workspace, checks, src) — drive the evidence journey, appending each check to
+// `checks`. `src.source` is the folder to seal (the canned sample by default, or the partner's OWN
+// folder when --evidence-dir / PILOT_EVIDENCE_DIR is set). EITHER WAY the source is read READ-ONLY and
+// COPIED into `workspace`; every seal/tamper touches ONLY the copy. Writes ONLY under `workspace`.
+async function runEvidencePilot(workspace, checks, src) {
+  const source = (src && src.source) || SAMPLE_EVIDENCE;
+  const isPartner = !!(src && src.isPartner);
+
   out("VERTICAL A — EVIDENCE (the signed, tamper-evident audit-evidence packet)");
   hr();
 
-  // The working COPY of the evidence dir we will seal (and later tamper). The committed sample is untouched.
+  // The working COPY of the evidence dir we will seal (and later tamper). The SOURCE — the committed
+  // sample OR the partner's own folder — is untouched (we only ever read it, here, to copy it).
   const evidenceDir = path.join(workspace, "evidence");
-  copyDir(SAMPLE_EVIDENCE, evidenceDir);
+  copyDir(source, evidenceDir);
 
   // -----------------------------------------------------------------------------------------------
   // STEP 1 — ISSUE: mint an evidence LICENSE signed by an EPHEMERAL VENDOR key.
@@ -182,12 +286,17 @@ async function runEvidencePilot(workspace, checks) {
   out("STEP 1 — issue an evidence license (ephemeral vendor key)");
   const vendorWallet = Wallet.createRandom(); // EPHEMERAL — created, used, discarded. Never persisted.
   const vendorAddress = vendorWallet.address;
+  // Grant BOTH paid evidence entitlements on this throwaway demo license. `evidence_signed` unlocks the
+  // `--sign` wrap; `evidence_unlimited` unlocks sealing MORE than the free SAMPLE_LIMIT (25) files. A real
+  // PARTNER folder routinely has dozens of files, so withholding `evidence_unlimited` here would make the
+  // valid-license STEP 3 seal REJECT (>25 files) and the whole kit print a FALSE "VERDICT: FAIL" — even
+  // though nothing is wrong. It's an ephemeral demo license; there is no reason to withhold either grant.
   const licenseContainer = await evidence.buildLicense(
     {
       licenseId: "PILOT-EVIDENCE-1",
       customer: "Design Partner (pilot)",
       plan: "pro",
-      entitlements: ["evidence_signed"],
+      entitlements: ["evidence_signed", "evidence_unlimited"],
       issuedAt: ISSUED,
       expiresAt: EXPIRES,
     },
@@ -207,8 +316,9 @@ async function runEvidencePilot(workspace, checks) {
     `vendor ${vendorAddress.slice(0, 10)}…`
   );
   check(checks,
-    "license carries the paid `evidence_signed` entitlement",
-    evidence.hasEntitlement(licVerdict, "evidence_signed")
+    "license carries the paid `evidence_signed` + `evidence_unlimited` entitlements",
+    evidence.hasEntitlement(licVerdict, "evidence_signed") &&
+      evidence.hasEntitlement(licVerdict, "evidence_unlimited")
   );
   hr();
 
@@ -356,11 +466,22 @@ async function runEvidencePilot(workspace, checks) {
   // -----------------------------------------------------------------------------------------------
   // STEP 5 — TAMPER: mutate one sealed file; the SAME independent verifier REJECTS it (exit 3).
   // -----------------------------------------------------------------------------------------------
-  out("STEP 5 — tamper one sealed file; the INDEPENDENT verifier REJECTS it (exit 3)");
+  out("STEP 5 — tamper one sealed file (in the WORKSPACE COPY only); the INDEPENDENT verifier REJECTS it (exit 3)");
   {
-    const tamperTarget = path.join(evidenceDir, "access-log.csv");
-    const before = fs.readFileSync(tamperTarget, "utf8");
-    fs.writeFileSync(tamperTarget, before + "2026-05-12T11:00:00Z,attacker,delete,access-log,ok\n");
+    // Choose the tamper target IN THE COPY. For the canned sample we keep mutating access-log.csv so the
+    // default run is byte-for-byte historical; for a partner folder (which has unknown filenames) we pick
+    // the FIRST sealed file deterministically (loadDirEntries returns a sorted [{relPath,bytes}] list — the
+    // exact enumeration the seal commits to), so the localization assertion is exact on ANY folder. EITHER
+    // target lives under evidenceDir (the workspace copy) — never the partner's original.
+    const tamperRel = isPartner ? evidence.loadDirEntries(evidenceDir)[0].relPath : "access-log.csv";
+    const tamperTarget = path.join(evidenceDir, tamperRel);
+    const before = fs.readFileSync(tamperTarget);
+    // The appended bytes are arbitrary — any change must REJECT. The default sample keeps its historical
+    // marker line (byte-for-byte the canned run); a partner file gets a neutral, format-agnostic marker.
+    const marker = isPartner
+      ? Buffer.from("\n# pilot tamper marker\n")
+      : Buffer.from("2026-05-12T11:00:00Z,attacker,delete,access-log,ok\n");
+    fs.writeFileSync(tamperTarget, Buffer.concat([before, marker]));
 
     const io = capture();
     const code = verifyVh.run(
@@ -381,8 +502,8 @@ async function runEvidencePilot(workspace, checks) {
     );
     check(
       checks,
-      "verify-vh localizes the tamper to EXACTLY the changed file (access-log.csv)",
-      changedPaths.length === 1 && changedPaths[0] === "access-log.csv"
+      `verify-vh localizes the tamper to EXACTLY the changed file (${tamperRel})`,
+      changedPaths.length === 1 && changedPaths[0] === tamperRel
     );
   }
   hr();
@@ -636,7 +757,11 @@ async function runReconcilePilot(workspace, checks) {
 
 // ---- entrypoint: own a temp workspace, run, clean up (pass or fail) -------------------------------
 
-async function main() {
+async function main(argv) {
+  // Parse the kit's one CLI knob (--evidence-dir) BEFORE touching the filesystem so a bad flag is a clean
+  // usage error, not a half-created workspace. PILOT_EVIDENCE_DIR is read inside resolveEvidenceSource.
+  const opts = parseArgs(Array.isArray(argv) ? argv : process.argv.slice(2));
+
   // A caller-chosen workspace (PILOT_OUT) or a throwaway OS temp dir. NEVER cwd, NEVER the repo tree.
   const keep = process.env.PILOT_KEEP === "1";
   let workspace;
@@ -651,7 +776,7 @@ async function main() {
 
   let ok = false;
   try {
-    ok = await runPilot(workspace);
+    ok = await runPilot(workspace, opts);
   } finally {
     if (ownTemp && !keep) {
       fs.rmSync(workspace, { recursive: true, force: true });
@@ -667,6 +792,12 @@ if (require.main === module) {
   main()
     .then((code) => process.exit(code))
     .catch((e) => {
+      if (e && e.userError) {
+        // A bad flag or an invalid partner folder: ONE clean line, no stack, usage exit (2) — and
+        // crucially BEFORE any sealing, so a broken input never reads as a PASS.
+        process.stderr.write(`pilot: ${e.message}\n`);
+        process.exit(2);
+      }
       process.stderr.write(`pilot: unexpected error: ${e && e.stack ? e.stack : e}\n`);
       process.exit(1);
     });
@@ -677,6 +808,11 @@ module.exports = {
   runEvidencePilot,
   runReconcilePilot,
   main,
+  parseArgs,
+  resolveEvidenceSource,
+  copyDir,
+  countFiles,
+  PilotInputError,
   NOW,
   ISSUED,
   EXPIRES,

@@ -24,14 +24,27 @@ to (`VERTICAL A — EVIDENCE`, `VERTICAL B — RECONCILE`).
 
 Knobs (all optional):
 
-| env var | effect |
+| env var / flag | effect |
 | --- | --- |
 | `PILOT_OUT=<dir>` | write the run's artifacts to `<dir>` instead of a fresh OS temp dir |
 | `PILOT_KEEP=1` | keep the temp workspace after the run so you can inspect the artifacts |
+| `--evidence-dir <path>` / `PILOT_EVIDENCE_DIR=<path>` | run the **evidence** vertical on **your own** folder instead of the canned sample |
+
+To watch the evidence journey on a partner's **own** data in one command:
+
+```bash
+node pilot/run-pilot.js --evidence-dir /path/to/your/folder
+```
+
+The kit **copies** that folder into the workspace and seals/tampers **only the copy** — your originals
+are **read-only** and are **never written, renamed, or deleted**. A **missing/empty/unreadable** folder
+**hard-errors before any sealing** (a clean usage exit), never a misleading PASS. The unset default is
+byte-for-byte the canned run.
 
 The run **never** writes into the repo working tree. The committed sample under
-[`sample-evidence/`](sample-evidence/) and the TrustLedger fixtures it reuses are **READ-ONLY**; the
-tamper step always mutates a throwaway **copy** in the workspace.
+[`sample-evidence/`](sample-evidence/), the TrustLedger fixtures it reuses, **and any `--evidence-dir`
+folder you supply** are **READ-ONLY**; the tamper step always mutates a throwaway **copy** in the
+workspace.
 
 ## What each vertical demonstrates
 

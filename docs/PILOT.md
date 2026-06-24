@@ -48,6 +48,31 @@ directory; set `PILOT_OUT=<dir>` to choose where, or `PILOT_KEEP=1` to keep the 
 open the produced files. It **never** writes into the repository, and the committed sample inputs are
 **read-only** — the tamper step always hits a throwaway copy.
 
+### Run it on YOUR OWN folder (the question every partner asks first)
+
+The default run above seals the committed sample. To watch the **exact same** journey — license-gated
+`--sign` → independent `verify-vh` ACCEPT → TAMPER → REJECT — run against **your own** evidence folder,
+point the evidence vertical at it in **one command**:
+
+```bash
+node pilot/run-pilot.js --evidence-dir /path/to/your/folder
+# …or, equivalently, via the environment:
+PILOT_EVIDENCE_DIR=/path/to/your/folder node pilot/run-pilot.js
+```
+
+**The kit does NOT modify your files.** It **copies** your folder into the throwaway workspace and seals,
+verifies, and tampers **only the copy**; your originals are **read-only** and are never written, renamed,
+or deleted (their bytes and mtimes are unchanged after the run — this is asserted by the test suite). If
+the folder is **missing, empty, or unreadable**, the kit **hard-errors with a clear message before it
+seals anything** — never a misleading PASS over no data. On a valid folder you get the same single
+`VERDICT: PASS` line, computed on *your* data.
+
+Folder size doesn't matter: the demo mints an **ephemeral, throwaway** license that grants the full paid
+evidence surface (`evidence_signed` + `evidence_unlimited`), so a realistic evidence/audit folder with
+dozens of files runs to the same all-PASS verdict — you are never gated by the free-sample size in the
+pilot. (In production, sealing more than the free sample is the paid tier; here the demo license simply
+unlocks it for you so you can watch the whole journey on your real data.)
+
 > Operator quick reference (knobs, file map, how it can't rot):
 > [`pilot/README.md`](../pilot/README.md).
 
@@ -190,7 +215,10 @@ de-risks all four gates at once.
 
 - **Offline + no key + no network.** No real private key is ever created, held, persisted, read, or
   echoed; every key in the run is an in-process `Wallet.createRandom()`. No socket is opened.
-- **Read-only of your inputs.** The committed sample is read-only; tampering hits a copy.
+- **Read-only of your inputs.** Whether you run the canned sample or `--evidence-dir <your folder>`, the
+  source is read-only; the kit copies it and every seal/tamper hits the copy. Your originals are never
+  written, renamed, or deleted. And even on your own data the boundary is unchanged: the seal proves
+  **tamper-evidence + signer-pin**, NOT a trusted "sealed at T" (that still requires **P-3**).
 - **Cannot silently rot.** The journey is gated by
   [`test/pilot.evidence.test.js`](../test/pilot.evidence.test.js) +
   [`test/pilot.reconcile.test.js`](../test/pilot.reconcile.test.js), and this runbook's claims are

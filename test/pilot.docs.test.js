@@ -115,6 +115,55 @@ describe("T-32.3 docs: buyer-facing pilot runbook (docs/PILOT.md + pilot/README.
     });
   });
 
+  // -------------------------------------------------------------------------------------------------
+  // T-34.1 — the docs must keep the "run it on YOUR OWN folder" path + the no-mutation promise in sync
+  // with the kit (the flag name and the read-only guarantee are load-bearing, partner-facing claims).
+  // -------------------------------------------------------------------------------------------------
+  describe("T-34.1 — run-on-your-own-folder (--evidence-dir) docs stay in sync with the kit", function () {
+    it("the kit actually exposes the --evidence-dir / PILOT_EVIDENCE_DIR knob the docs promise", function () {
+      // Tripwire: if the parser stops accepting the flag the docs describe, this fails loudly.
+      expect(pilot.parseArgs, "parseArgs").to.be.a("function");
+      expect(pilot.parseArgs(["--evidence-dir", "/x/y"]).evidenceDir).to.equal("/x/y");
+      expect(pilot.resolveEvidenceSource, "resolveEvidenceSource").to.be.a("function");
+    });
+
+    it("docs/PILOT.md documents the one-command own-folder path (flag + env)", function () {
+      expect(pilotDoc).to.include("--evidence-dir");
+      expect(pilotDoc).to.include("PILOT_EVIDENCE_DIR");
+      expect(pilotDoc).to.include("node pilot/run-pilot.js --evidence-dir");
+    });
+
+    it("docs/PILOT.md states plainly the kit does NOT modify the partner's files", function () {
+      // The exact promise the test suite enforces: copy-then-operate, originals never written.
+      expect(pilotDocLower).to.match(/does not modify your files|not modify (the )?partner/);
+      expect(pilotDocLower).to.match(/cop(y|ies)/);
+      expect(pilotDocLower).to.match(/never (written|modif)|read-only/);
+    });
+
+    it("docs/PILOT.md states the missing/empty folder HARD-ERRORS before sealing (no false PASS)", function () {
+      expect(pilotDocLower).to.match(/missing|empty|unreadable/);
+      expect(pilotDocLower).to.match(/hard-error|hard error/);
+      // "…before it seals anything" — tolerate the line-wrap between "before" and "seal".
+      expect(pilotDocLower).to.match(/before[\s\S]{0,40}seal/);
+    });
+
+    it("docs/PILOT.md reaffirms the honest boundary still holds on the partner's own data", function () {
+      // Even on your own data: tamper-evidence + signer-pin, NOT a trusted "sealed at T" without P-3.
+      const idx = pilotDocLower.indexOf("--evidence-dir");
+      expect(idx, "own-folder section present").to.be.greaterThan(-1);
+      // The boundary qualifier must appear somewhere in the runbook alongside the own-folder path.
+      expect(pilotDocLower).to.include("tamper-evidence");
+      expect(pilotDoc).to.include("P-3");
+    });
+
+    it("pilot/README.md documents the same --evidence-dir knob + no-mutation promise", function () {
+      expect(pilotReadme).to.include("--evidence-dir");
+      expect(pilotReadme).to.include("PILOT_EVIDENCE_DIR");
+      expect(pilotReadmeLower).to.match(/never (written|modif)|read-only/);
+      expect(pilotReadmeLower).to.match(/cop(y|ies)/);
+    });
+  });
+
   describe("the HONEST trust boundary is stated (no trusted timestamp without P-3)", function () {
     it("docs/PILOT.md states tamper-evidence + signer-pin, NOT a trusted timestamp", function () {
       expect(pilotDocLower).to.include("tamper-evidence");

@@ -26,6 +26,25 @@ vh hash ./myfile.txt           # keccak256 of a file (offline, no key, no networ
 Building a tamper-evident dataset manifest works the same way — fully offline — via the
 DataLedger subcommands documented below.
 
+### See the whole pipeline in one command (offline, no key, no network)
+
+The fastest way to see what `verifyhash` does is to run the committed end-to-end example. From a
+checkout (`npm install`, then):
+
+```bash
+node examples/run.js
+```
+
+It exercises the **real** DataLedger + ProofParcel buyer pipeline against tiny committed sample data —
+`dataset build → check --policy → verify → report → attest` and `parcel build → verify → attest` —
+prints a clear **PASS/FAIL** summary with the produced artifact paths, and demonstrates that a deliberate
+**policy violation is FLAGGED** and a **one-byte tamper is caught**. It writes its artifacts to an OS
+temp dir (override with `VH_EXAMPLE_OUT`, keep them with `VH_EXAMPLE_KEEP=1`) — **never** into the repo.
+It needs **no key, no TSA, no RPC, no network**, and it references — but never runs — the human-gated
+`sign` / `timestamp` / anchor steps so you can see exactly where the trust-root handoff is. The example
+is gated by `test/cli.examples.test.js`, so it can never silently rot. See
+[`examples/README.md`](examples/README.md).
+
 The offline commands need only the package's
 runtime dependencies (`ethers`, `js-sha3`) — no chain, no key, no `hardhat`. The on-chain
 read/write commands (`vh anchor/claim/verify/list/show/lineage/reputation`) additionally

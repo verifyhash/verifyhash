@@ -1,0 +1,5 @@
+A data file with NO license hint at all.
+
+This file exists ON PURPOSE so the example's strict policy (which sets
+requireLicense: true) has a second, different violation to flag: a file that asserts
+no license is reported as "(no license hint)".

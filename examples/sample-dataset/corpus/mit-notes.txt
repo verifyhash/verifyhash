@@ -1,0 +1,4 @@
+An MIT-licensed text file in the sample corpus.
+
+The MIT license is permissive; an org policy that forbids copyleft would allow this
+file. Its license hint ("MIT") is recorded in sample-dataset.hints.json as a CLAIM.

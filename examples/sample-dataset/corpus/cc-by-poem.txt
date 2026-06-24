@@ -1,0 +1,8 @@
+A short CC-BY-4.0 poem in the sample corpus.
+
+  Hash the bytes, fold the tree,
+  one root proves identity;
+  change one byte and you will see
+  the whole root shift — tamper-free.
+
+Its license hint ("CC-BY-4.0") is a self-asserted CLAIM, not a verified fact.

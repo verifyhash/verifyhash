@@ -1,0 +1,5 @@
+A vendored snippet whose license hint is GPL-3.0.
+
+This file exists ON PURPOSE so the example's strict policy (which denies copyleft
+licenses) has a real violation to flag. A proprietary-product org policy that lists
+GPL-3.0 in denyLicenses will FAIL the dataset on this file.

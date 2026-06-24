@@ -1,0 +1,7 @@
+{
+  "README.txt": { "source": "verifyhash-examples", "license": "MIT" },
+  "corpus/mit-notes.txt": { "source": "verifyhash-examples", "license": "MIT" },
+  "corpus/cc-by-poem.txt": { "source": "verifyhash-examples", "license": "CC-BY-4.0" },
+  "vendored/gpl-snippet.txt": { "source": "third-party-vendor", "license": "GPL-3.0" },
+  "data/unlabeled.txt": { "source": "verifyhash-examples" }
+}

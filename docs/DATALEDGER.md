@@ -74,6 +74,14 @@ the code:
 
 ## Workflow, end to end
 
+> **Run it, don't just read it.** [`examples/run.js`](../examples/run.js) is the executable companion to
+> the worked examples below: `node examples/run.js` drives this whole pipeline (`build → check --policy →
+> verify → report → attest`, plus the ProofParcel side) against tiny committed sample data, offline and
+> with no key, and prints a PASS/FAIL summary — including a deliberately FLAGGED policy violation and a
+> caught tamper. It writes only to an OS temp dir, references (does not run) the human-gated sign/timestamp
+> steps, and is test-gated by `test/cli.examples.test.js` so it can never drift from this prose. See
+> [`examples/README.md`](../examples/README.md).
+
 ```
 build → diff (between versions) → summary → check (the policy gate) → report (the filed deliverable) → attest (the signing-ready payload) → [human signs, P-3] → verify-attest (offline-verify a signed container) → prove (a single file) → verify-proof
 

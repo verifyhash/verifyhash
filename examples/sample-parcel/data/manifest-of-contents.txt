@@ -1,0 +1,7 @@
+Contents of this delivery:
+- delivery-note.txt        human-readable cover note
+- data/records.csv         the delivered records
+- data/manifest-of-contents.txt   this file
+
+ProofParcel's tamper-evident manifest is the machine-checkable counterpart to this
+human note: it commits to the exact bytes of every file above.

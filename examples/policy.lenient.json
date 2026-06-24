@@ -1,0 +1,5 @@
+{
+  "kind": "verifyhash.dataset-policy",
+  "schemaVersion": 1,
+  "denyLicenses": ["AGPL-3.0"]
+}

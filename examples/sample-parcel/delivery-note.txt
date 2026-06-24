@@ -1,0 +1,9 @@
+Sample B2B data-delivery parcel for the verifyhash / ProofParcel end-to-end example.
+
+This directory stands in for a real data hand-off between two parties (a sender and a
+recipient). ProofParcel pins exactly which files (names AND bytes) were delivered, so a
+later "you never sent X" / "the file you sent was altered" dispute is resolved by
+re-deriving the root from the delivered bytes.
+
+The parcel metadata (parcelId, sender, recipient) is UNTRUSTED, self-asserted, and is
+NOT bound into the Merkle root. Only the file set (names + bytes) is bound.

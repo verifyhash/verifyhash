@@ -67,6 +67,13 @@ A parcel manifest commits to a Merkle root over the full set of `(relPath, conte
 
 ## Commands
 
+> **Run it, don't just read it.** [`examples/run.js`](../examples/run.js) is the executable companion to
+> the worked example below: `node examples/run.js` drives the ProofParcel pipeline (`parcel build → verify
+> → attest`, alongside the DataLedger side) against tiny committed sample data, offline and with no key,
+> and prints a PASS/FAIL summary — including a caught delivery tamper. It writes only to an OS temp dir,
+> references (does not run) the human-gated sign/timestamp steps, and is test-gated by
+> `test/cli.examples.test.js`. See [`examples/README.md`](../examples/README.md).
+
 | Command | What it produces | Property |
 | --- | --- | --- |
 | `vh parcel build <dir> --out <p>` | a tamper-evident parcel manifest (Merkle root + per-file `{relPath,contentHash,leaf}` + optional untrusted `parcel` block) | offline, no key, no network |

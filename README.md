@@ -533,6 +533,29 @@ loop (never generates/persists/logs one), so the human's P-3 step collapses to "
 `vh parcel sign --key-env <VAR>`." Full buyer-facing spec, command table, and worked example:
 [`docs/PROOFPARCEL.md`](docs/PROOFPARCEL.md).
 
+### Evidence packets (`vh evidence`)
+
+A **product-agnostic, license-gated, tamper-evident evidence packet** for any directory of files — the
+**second vertical** built on the SAME provenance core, with its OWN sellable license. `vh evidence seal`
+binds a whole folder into one content-addressed `*.vhevidence.json`; `vh evidence verify` re-derives the
+root from the bytes you hold and localizes any tamper to the exact file. Both are **offline, no network**.
+
+```
+vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign --key-env <VAR>|--key-file <p>] [--json]  # build the packet over cli/core/packetseal.js (generic kind, NO trust-reconcile vocabulary); default PRINTS the seal + writes NOTHING; exit 0 ok / 3 seal-build-error / 2 usage / 1 IO
+vh evidence verify <p> [--dir <d>] [--json]  # read-only, NO key: RE-DERIVE the root from the bytes referenced + report OK / which file CHANGED/MISSING/UNEXPECTED; exit 0 OK / 3 REJECTED / 2 usage / 1 IO
+```
+
+The seal proves **TAMPER-EVIDENCE + OFFLINE-RECOMPUTE, NOT a trusted timestamp** ("sealed at T" rides the
+human trust-root, P-3); the packet is an **UNTRUSTED transport container** verify never trusts. The **FREE**
+tier — an unsigned baseline seal of up to **25 files** + verify — stays open so a buyer can try before
+buying. The **PAID** surface (the `--sign` signed-attestation wrap; sealing **> 25 files**) is gated behind
+a valid `--license <f> --vendor <0xaddr>` verified OFFLINE via `cli/core/license.js` against a **distinct
+evidence-product entitlement table** (`kind: vh-evidence-license`, **not** `trustledger-license`), reusing
+the SAME `verifyLicense` / named-reject posture as the TrustLedger CLI (a wrong/expired/under-entitled
+license is a hard refuse, never a silent downgrade). Full schema, free-vs-paid surface, a worked
+seal → hand over → verify example, and the core-reuse map: [`docs/EVIDENCE.md`](docs/EVIDENCE.md). The
+vendor keypair, price, and first design partner are human steps (STRATEGY.md › **P-7**).
+
 ## Develop
 
 ```
@@ -555,6 +578,11 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   network, CI-gateable exit 0/3 property), a worked sender → [signs, P-3] → recipient verify-attests
   example, and the SAME honest trust posture as DataLedger (binds the file SET, signable, NOT a delivery
   timestamp; parcel metadata is untrusted self-asserted).
+- [`docs/EVIDENCE.md`](docs/EVIDENCE.md) — the buyer-facing Evidence-packet product spec (the second
+  vertical, with its OWN license): the `*.vhevidence.json` schema (every field UNTRUSTED transport —
+  verification re-derives), the free-vs-paid surface (free unsigned baseline of up to 25 files + verify;
+  paid `--sign` wrap and over-sample sealing gated by `vh-evidence-license` entitlements), a worked
+  seal → hand over → verify example, and how it reuses the shared packetseal/license/attestation cores.
 - [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not,
   plus "Authenticating the registry you read from" (why read commands authenticate the registry before
   believing it, and why the `REGISTRY_ID` is a "right interface" signal, not a sole root of trust).

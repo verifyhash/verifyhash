@@ -49,6 +49,7 @@ const {
   runParcelVerifyTimestamp,
 } = require("./parcel");
 const { cmdTrust } = require("../trustledger/cli");
+const { cmdEvidence } = require("./evidence");
 
 function usage() {
   return [
@@ -95,6 +96,8 @@ function usage() {
     "  vh trust inspect <file> --as <bank|ledger|rentroll>  read-only validator/preview: header + column map + sample + every bad row + a fix hint (writes nothing)",
     "  vh trust verify-seal <sealfile> [--dir <d>] [--inputs <d>]  read-only OFFLINE seal verify (no key/net): ACCEPTED (0) only if EVERY sealed file re-derives, else REJECTED (3) with the per-file CHANGED/MISSING/UNEXPECTED list; sources sealed by basename resolve next to the seal (or --inputs <d>)",
     "  vh trust serve [--port <n>] [--host <h>]  launch the LOCAL web front-door (default http://127.0.0.1:4173/): drop the three files in a browser, watch the balances tie out; files processed in-memory, nothing persisted server-side; exposing it is a HUMAN deploy step (never auto-deployed)",
+    "  vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign --key-env <VAR>|--key-file <p>]  product-agnostic tamper-evident evidence packet (*.vhevidence.json) over the file set; default prints the seal + writes nothing. FREE: unsigned baseline seal of up to 25 files + verify. PAID (require --license + --vendor): --sign (signed-attestation wrap) and sealing > 25 files. Exit 0 ok / 3 seal-build-error / 2 usage / 1 IO",
+    "  vh evidence verify <p> [--dir <d>]  read-only, NO key: RE-DERIVE the root from the bytes referenced + report OK / which file CHANGED/MISSING/UNEXPECTED (the offline-recompute posture of `vh verify-seal`). Exit 0 OK / 3 REJECTED / 2 usage / 1 IO",
     "",
     "trust inspect options (read-only, writes NOTHING — the onboarding companion to reconcile):",
     "  --as <bank|ledger|rentroll>  REQUIRED: which logical input <file> is (a malformed value is a usage error)",
@@ -3304,6 +3307,8 @@ async function main(argv) {
       return cmdParcel(rest);
     case "trust":
       return cmdTrust(rest);
+    case "evidence":
+      return cmdEvidence(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -3353,6 +3358,7 @@ module.exports = {
   cmdParcelVerifyAttest,
   cmdParcelVerifyTimestamp,
   cmdTrust,
+  cmdEvidence,
   parseVerifyTimestampArgs,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,

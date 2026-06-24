@@ -104,7 +104,53 @@ checks it themselves, without trusting us**.
 
 ---
 
-## 4. The honest trust boundary (read this before you rely on anything)
+## 4. Wire it into your pipeline (this is how the pilot lives in your release process)
+
+A pilot you run once is a demo; a pilot that **lives in your CI** is a dependency. The same independent
+`verify-vh` you ran by hand in §3 drops into your build as a **merge gate**: the moment a sealed
+artifact is tampered, forged, or signed by the wrong key, the build goes **red** and the merge is
+**blocked**. You do not install our producer stack to do this — the gate runs the standalone verifier
+(`js-sha3` only, **no** `ethers`, **no** `hardhat`).
+
+We ship the snippet so this is **one paste**, not a project. A non-author wires it in like so:
+
+1. Copy [`../verifier/ci/verify-vh.generic.sh`](../verifier/ci/verify-vh.generic.sh) into your repo (a
+   portable `set -e` shell gate for GitLab CI, CircleCI, Jenkins, a Makefile recipe, or a git hook), or
+   drop [`../verifier/ci/verify-vh.github-actions.yml`](../verifier/ci/verify-vh.github-actions.yml) at
+   `.github/workflows/verify-vh.yml` for GitHub Actions.
+2. Add **three lines** to the pipeline step that runs it — the producer address you pin out-of-band, the
+   artifact(s) or release manifest, and the call:
+
+   ```bash
+   export VH_VENDOR=0xYOUR_PRODUCERS_SIGNER_ADDRESS     # pinned out-of-band
+   export VH_MANIFEST=release.manifest                  # or VH_ARTIFACTS="dist/packet.vhevidence.json"
+   ./verifier/ci/verify-vh.generic.sh                   # exit 0 = green/merge; non-zero = red/blocked
+   ```
+
+3. Read the gate: a **green** check *means* every sealed artifact still matches the bytes the producer
+   signed (exit `0`). A **red** gate *means* a `3` (REJECTED — a sealed byte changed / wrong signer,
+   localized to the offending artifact and file), a `2` (usage error), or a `1` (an artifact could not
+   even be read) — and your merge is **blocked** until it is resolved. A non-zero verdict never slips
+   through as a silent pass.
+
+**The boundary stays explicit even in CI: verification is FREE, sealing is PAID.** The gate above — and
+every `verify-vh` invocation — costs nothing and needs no licence; anyone may verify forever, offline.
+The licence (§3c) gates only the **paid sealing surface** (`evidence seal --sign`, `reconcile --seal`)
+on the **producer** side. So your pipeline can gate on our proofs without buying anything; what your
+counterparty pays for is the right to **produce** sealed artifacts, not your right to **check** them.
+
+The shipped snippets are **examples the loop never runs**, but their exact gate command is mechanically
+tested ([`../test/verifier.ci-snippet.test.js`](../test/verifier.ci-snippet.test.js)): it must exit `0`
+on a good release and `3` on a tampered one, so the snippet you copy is known-good, not aspirational.
+The deeper spec is in [`../verifier/README.md`](../verifier/README.md) §2b and
+[`INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md) §4b.
+
+> **And that is where the pilot ends:** not at "it worked once on a demo," but wired into your release
+> process, failing your build the day someone hands you a seal that no longer matches its bytes.
+
+---
+
+## 5. The honest trust boundary (read this before you rely on anything)
 
 The pilot is deliberately conservative about what it claims:
 
@@ -128,7 +174,7 @@ provenance*, and we are explicit that *trusted time* is a separate, human-owned 
 
 ---
 
-## 5. The single go-to-market ask (P-8)
+## 6. The single go-to-market ask (P-8)
 
 Everything above is **built, tested, and green**. The one thing the loop cannot do — and the one thing
 a human must — is **land a design partner and run a pilot**. That precondition was scattered across
@@ -140,7 +186,7 @@ de-risks all four gates at once.
 
 ---
 
-## 6. Why this is trustworthy to run
+## 7. Why this is trustworthy to run
 
 - **Offline + no key + no network.** No real private key is ever created, held, persisted, read, or
   echoed; every key in the run is an in-process `Wallet.createRandom()`. No socket is opened.

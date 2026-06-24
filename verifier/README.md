@@ -146,6 +146,12 @@ Both ship as **examples the loop never runs**, but their exact gate command is m
 (`../test/verifier.ci-snippet.test.js`): it must exit `0` on a good release and `3` on a tampered one, so
 the snippet you copy is known-good, not aspirational.
 
+**The boundary holds in CI too: verification is FREE, sealing is PAID.** Running this gate — like every
+`verify-vh` call — costs nothing, needs no licence, and opens no network. The licence gates only the
+**producer's** paid sealing surface; your pipeline gates on the proofs for free. A green gate is a
+*renewing* dependency precisely because checking the producer's seal never costs you anything, while
+producing a valid one is what the producer pays for.
+
 ---
 
 ## 3. The exact bytes verified, and the scheme

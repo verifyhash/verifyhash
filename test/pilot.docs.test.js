@@ -138,6 +138,72 @@ describe("T-32.3 docs: buyer-facing pilot runbook (docs/PILOT.md + pilot/README.
     });
   });
 
+  // -------------------------------------------------------------------------------------------------
+  // T-33.3 — the CI merge-gate is the pilot->renewal conversion lever, and the buyer docs keep two
+  // load-bearing claims that MUST NOT drift from the shipped artifact (T-33.2):
+  //   (1) the runbook + verifier README carry a copy-paste "wire it into your pipeline" CI section that
+  //       points at the SHIPPED snippet path (verifier/ci/verify-vh.generic.sh), and
+  //   (2) the FREE-verify / PAID-seal boundary is stated explicitly in that CI context (so a partner is
+  //       never told to pay to gate on a proof, only to pay to PRODUCE a seal).
+  // P-8 must NAME the CI gate as the renewal lever without adding a new needs-human item.
+  // -------------------------------------------------------------------------------------------------
+  describe("T-33.3 — CI merge-gate is the pilot->renewal lever, docs can't drift from the snippet", function () {
+    let verifierReadme, verifierReadmeLower;
+    before(function () {
+      verifierReadme = read("verifier/README.md");
+      verifierReadmeLower = verifierReadme.toLowerCase();
+    });
+
+    it("the shipped CI snippets from T-33.2 actually exist (the docs can't point at vapor)", function () {
+      expect(exists("verifier/ci/verify-vh.generic.sh"), "verify-vh.generic.sh").to.equal(true);
+      expect(exists("verifier/ci/verify-vh.github-actions.yml"), "verify-vh.github-actions.yml").to.equal(true);
+      expect(exists("test/verifier.ci-snippet.test.js"), "ci-snippet anti-rot test").to.equal(true);
+    });
+
+    it("docs/PILOT.md carries a copy-paste CI section pointing at the SHIPPED generic snippet", function () {
+      // The runbook must teach the partner to wire the gate in, and point at the real artifact path
+      // from T-33.2 (not a renamed/aspirational one).
+      expect(pilotDocLower).to.match(/wire it into your pipeline/);
+      expect(pilotDoc).to.include("verifier/ci/verify-vh.generic.sh");
+      // The 3-line CI shape the buyer pastes.
+      expect(pilotDoc).to.include("VH_VENDOR");
+      expect(pilotDoc).to.match(/VH_MANIFEST|VH_ARTIFACTS/);
+      // What green vs red means at the gate.
+      expect(pilotDocLower).to.match(/green/);
+      expect(pilotDocLower).to.match(/red|block/);
+    });
+
+    it("docs/PILOT.md states the FREE-verify / PAID-seal boundary explicitly", function () {
+      // The load-bearing boundary: verification costs nothing; only producing a seal is paid.
+      expect(pilotDocLower).to.match(/verification is free|verify[^.]*free|free[^.]*verif/);
+      expect(pilotDocLower).to.match(/sealing is paid|paid[^.]*seal|seal[^.]*paid/);
+    });
+
+    it("verifier/README.md keeps the SAME CI section + FREE-verify / PAID-seal boundary", function () {
+      // README §2b links the snippet relative to its own tree (ci/verify-vh.generic.sh).
+      expect(verifierReadme).to.include("ci/verify-vh.generic.sh");
+      expect(verifierReadmeLower).to.match(/verification is free|verify[^.]*free|free[^.]*verif/);
+      expect(verifierReadmeLower).to.match(/sealing is paid|paid[^.]*seal|seal[^.]*paid/);
+    });
+
+    it("STRATEGY.md P-8 names the CI gate as the pilot->renewal lever, adding NO new needs-human", function () {
+      // Anchor on the actual needs-human PROPOSAL block (dated), not the earlier narrative mention.
+      const p8 = strategy.indexOf("P-8 (2026");
+      expect(p8, "P-8 proposal present").to.be.greaterThan(-1);
+      const block = strategy.slice(p8, p8 + 6000);
+      const blockLower = block.toLowerCase();
+      // Names the CI merge-gate as the conversion lever.
+      expect(blockLower).to.match(/merge.?gate|ci .*gate|ci merge/);
+      expect(blockLower).to.match(/renew/);
+      expect(block).to.include("verifier/ci/verify-vh.generic.sh");
+      // It explicitly does NOT add a new human gate and keeps the free/paid split.
+      expect(blockLower).to.match(/no new human gate|without adding (any|a) new human gate/);
+      expect(blockLower).to.match(/free.?verify|free[^.]*seal|verify[^.]*free/);
+      // Tripwire: T-33.3 must NOT introduce a SECOND consolidated ask (P-9) as a needs-human item.
+      expect(strategy).to.not.match(/P-9 \(/);
+    });
+  });
+
   describe("pilot/README.md — operator quick reference", function () {
     it("exists, is non-trivial, and points the partner at the buyer runbook", function () {
       expect(pilotReadme, "pilot/README.md").to.be.a("string");

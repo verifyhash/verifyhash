@@ -571,6 +571,26 @@ human trust-root, P-3) and **NOT** a legal opinion. Counterparty quickstart + wo
 `seal → hand over → verify-vh` example: [`verifier/README.md`](verifier/README.md); full spec:
 [`docs/INDEPENDENT-VERIFICATION.md`](docs/INDEPENDENT-VERIFICATION.md).
 
+### Run the design-partner pilot in one command (offline, no key, no network)
+
+The single artifact you hand a prospective design partner is the **pilot kit**. It drives **both**
+sellable buyer journeys — the **evidence packet** and the **TrustLedger reconciliation seal** — end to
+end against committed sample data, **offline, with no real key, no TSA, no RPC, no network**, and
+prints **one combined PASS/FAIL verdict**:
+
+```bash
+node pilot/run-pilot.js
+```
+
+It issues an ephemeral-key licence, proves the paid surface is **really** licence-gated (refused with
+no licence and with the wrong vendor), hands the artifact to the **independent** `verify-vh` (ACCEPT),
+then **tampers** to prove REJECT — writing only to a throwaway workspace, never the repo. The trust
+boundary is honest: tamper-evidence + signer-pin, **NOT** a trusted "sealed at T" (that rides the
+human-owned trust-root, P-3). The buyer-facing runbook — what each artifact proves, where a partner
+independently verifies it, and the consolidated go-to-market ask (**P-8**) — is
+[`docs/PILOT.md`](docs/PILOT.md); the operator quick reference is [`pilot/README.md`](pilot/README.md).
+The journey and the runbook are both test-gated, so they can never silently rot.
+
 ## Develop
 
 ```
@@ -633,4 +653,9 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   free-vs-paid surface, the closed entitlement table, and how a customer verifies a license offline
   against the pinned vendor address (CLI **and** web honour the same gate). Hosting, the CPA review, the
   per-state policy table, license issuance, and pricing all stay human steps (STRATEGY.md › P-5/P-6).
+- [`docs/PILOT.md`](docs/PILOT.md) — the buyer-facing pilot runbook: how a non-author runs
+  [`pilot/run-pilot.js`](pilot/run-pilot.js), what each artifact (evidence packet, reconciliation seal,
+  licence) PROVES and where a partner independently verifies it with `verify-vh`, the honest trust
+  boundary (tamper-evidence + signer-pin, **no trusted "sealed at T" without P-3**), and the
+  consolidated go-to-market ask (**P-8**). Operator quick reference: [`pilot/README.md`](pilot/README.md).
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.

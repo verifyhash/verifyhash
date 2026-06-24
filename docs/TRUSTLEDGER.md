@@ -696,6 +696,126 @@ Because the server persists nothing, a single instance is stateless and safe to 
 
 ---
 
+## Entitlements & licensing
+
+TrustLedger is **free to try** and **licensed for the paid surface**. The baseline three-way reconcile
+and the file inspector are open to anyone — a broker can prove the tool ties out their own files before
+paying a cent. The **paid features** (per-state policy packs, the tamper-evident seal) are gated behind a
+**signed, offline-verifiable license** the vendor issues to each paying customer.
+
+A license is just one more product on the project's shared signed-attestation envelope (the same one the
+[seal](#sealing-the-packet-tamper-evident-independently-verifiable) uses): an **unsigned payload**, signed
+with the vendor's offline key, and verified locally by **re-deriving** the signer and pinning it to a
+**vendor address** the customer already trusts. There is **no license server**, **no network call**, and
+**no key on the customer's machine** — verification is pure and offline.
+
+### The free-vs-paid surface
+
+| Surface | Tier | Entitlement required |
+| --- | --- | --- |
+| `vh trust reconcile` (baseline severities) | **Free** | — |
+| `vh trust inspect` / web "Check this file" | **Free** | — |
+| Web baseline reconcile (`POST /api/reconcile`, no `state`/`policy`/`seal`) | **Free** | — |
+| `--state` / `--policy` per-state policy packs (CLI **and** web) | **Paid** | `multi_state_policy` |
+| `--seal` tamper-evident reconciliation seal | **Paid** | `seal` |
+| Unlimited reconcile runs (no per-period cap) | **Paid** | `unlimited_reconcile` |
+
+With **no** license the free paths behave **byte-for-byte** as they always did; only the paid surfaces are
+gated. A wrong, expired, or under-entitled license is a **named refusal** — it never silently downgrades to
+a free run.
+
+### The license payload schema
+
+`vh trust license issue` mints a signed `*.vhlicense.json` whose **canonical payload** carries exactly these
+fields (every field is part of the signed bytes — editing any of them breaks the signature):
+
+| Field | Type | Trusted vs hint |
+| --- | --- | --- |
+| `kind` | `"trustledger-license"` | **Structural** — fixes the artifact type; a wrong `kind` is rejected. |
+| `schemaVersion` | integer (`1`) | **Structural** — an unsupported version is rejected, never guessed. |
+| `note` | string | **Structural** — the standing trust caveat; `validateLicense` rejects a license whose note has drifted, so the caveat can never be quietly stripped. |
+| `licenseId` | non-empty string | **Hint** — the vendor's own identifier for this license (for the vendor's records; not interpreted by the gate). |
+| `customer` | non-empty string | **Hint** — who the license was issued to (self-asserted by the vendor; shown, not enforced). |
+| `plan` | non-empty string | **Hint** — the plan label the vendor sold (informational). |
+| `entitlements` | non-empty array of known flags | **Trusted** — the closed set of paid features this license unlocks. Drawn ONLY from the `ENTITLEMENTS` table below; an unknown flag is a hard error. This is what the gate consults. |
+| `issuedAt` | canonical ISO-8601 UTC instant | **Trusted-but-self-asserted** — the window start. The gate compares `now` against it, but it is the vendor's own clock (a self-asserted date, NOT a trusted timestamp — see TRUST-BOUNDARIES). |
+| `expiresAt` | canonical ISO-8601 UTC instant (strictly after `issuedAt`) | **Trusted-but-self-asserted** — the window end; same caveat. |
+
+The **closed entitlement table** (the only place a paid feature enters the system) is:
+
+| Entitlement flag | Unlocks |
+| --- | --- |
+| `multi_state_policy` | Multi-state trust-accounting policy packs (`--state` / `--policy`). |
+| `seal` | The tamper-evident reconciliation seal (`--seal` / `verify-seal`). |
+| `unlimited_reconcile` | Unlimited reconciliation runs (no per-period cap). |
+
+A typo'd or forged entitlement can never grant a feature: it is not in the table, so `validateLicense`
+rejects it. To add a paid feature, a flag is added to the `ENTITLEMENTS` table — there is no other channel.
+
+### The license is an UNTRUSTED container — verification re-derives
+
+Exactly like the close artifact and the seal (and per
+[`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md)): **the license is an UNTRUSTED transport container.**
+`verifyLicense` never trusts the file's own claims. It **re-derives** the signer from the exact embedded
+bytes (EIP-191 recovery) and **pins** that recovered address to the `vendorAddress` the customer supplies.
+A license that merely *says* it was signed by the vendor but recovers to a different key is `wrong_issuer`,
+not trusted. Only when the signature re-derives to the pinned vendor key **and** `now` is within
+`[issuedAt, expiresAt]` is the verdict `valid`; only then do its entitlements mean anything.
+
+The verify is **pure and offline**, taking `now` as an explicit argument (it never reads the system clock),
+so the same container + same `now` + same `vendorAddress` always yields a byte-identical verdict. The
+localized reject reasons are `malformed` / `bad_signature` / `wrong_issuer` / `not_yet_valid` / `expired`.
+
+### How a customer's tool verifies a license OFFLINE
+
+Both the CLI and the web door run the **same** gate. The customer needs only (1) the signed
+`*.vhlicense.json` the vendor delivered and (2) the **vendor address** the vendor published — no key, no
+network:
+
+```
+vh trust license verify customer.vhlicense.json --vendor 0xVENDOR…
+# VALID  -> exit 0 ; INVALID (wrong_issuer / expired / …) -> exit 3
+```
+
+On the **web door**, `POST /api/reconcile` accepts an optional `{ license, vendorAddress }` in the JSON body
+and threads the identical gate. A gated request (`state` / `policy` / `seal`) **without** a valid license is
+a **named 4xx**: `license_required` (402) when no license was supplied, or `license_invalid` (403) with the
+precise reason when one was. The page shows a clear *"this feature requires a license"* notice rather than a
+raw error. The server holds **no key** and verifies **offline** against the supplied `vendorAddress`.
+
+### Worked example: issue → verify → reconcile `--license`
+
+The **vendor** (offline, with their own key) mints a license for a paying customer:
+
+```
+$ vh trust license issue \
+    --customer "Acme Realty LLC" --plan pro-annual \
+    --entitlements multi_state_policy,seal \
+    --expires 2027-01-01T00:00:00.000Z \
+    --key-env VENDOR_KEY --out acme.vhlicense.json
+# prints ONLY the PUBLIC vendor address + a summary + the path — the key is never echoed
+vendor: 0xVENDOR…
+wrote acme.vhlicense.json  (customer "Acme Realty LLC", plan pro-annual, entitlements [multi_state_policy, seal])
+```
+
+The **customer** verifies it offline against the published vendor address, then runs the paid surface:
+
+```
+$ vh trust license verify acme.vhlicense.json --vendor 0xVENDOR…
+VALID — signed by the vendor, in-window; entitlements [multi_state_policy, seal]
+
+$ vh trust reconcile bank.csv quickbooks.csv rentroll.csv \
+    --state ca-example --out ./packets/may --seal \
+    --license acme.vhlicense.json --vendor 0xVENDOR…
+# the per-state policy AND the seal are unlocked; the packet names the governing policy
+```
+
+Without `--license`/`--vendor`, the same `--state`/`--seal` run is refused with an actionable message and the
+free baseline reconcile remains available. The web door behaves identically: paste the license + vendor
+address into the License fieldset, select the state, and reconcile.
+
+---
+
 ## Usage
 
 ```

@@ -257,7 +257,7 @@ describe("trustledger UI: public/index.html is a self-contained, contract-pinned
       return keys;
     }
 
-    it("posts exactly bank, ledger, rentroll, state, maps — the fields reconcilePayload reads", function () {
+    it("posts exactly bank, ledger, rentroll, state, maps, license, vendorAddress — the fields reconcilePayload reads", function () {
       const keys = reconcileKeys(PAGE);
       // Both the reconcile and inspect bodies are named `body`, so the conditional
       // `body.<key> =` scan also sees the inspect-only `columnMap`; exclude it (it
@@ -265,8 +265,17 @@ describe("trustledger UI: public/index.html is a self-contained, contract-pinned
       const reconcileOnly = Array.from(keys).filter(
         (k) => !["columnMap", "source", "text"].includes(k)
       );
-      // Required trio + the optional state selector + the optional T-28.2 maps.
-      expect(reconcileOnly.sort()).to.deep.equal(["bank", "ledger", "maps", "rentroll", "state"]);
+      // Required trio + the optional state selector + the optional T-28.2 maps +
+      // the T-29.3 license gate fields (license + vendorAddress) the server reads.
+      expect(reconcileOnly.sort()).to.deep.equal([
+        "bank",
+        "ledger",
+        "license",
+        "maps",
+        "rentroll",
+        "state",
+        "vendorAddress",
+      ]);
     });
 
     it("references /api/inspect and posts exactly source, text, columnMap — the fields inspectPayload reads", function () {
@@ -294,15 +303,16 @@ describe("trustledger UI: public/index.html is a self-contained, contract-pinned
         expect(miss.json.error).to.equal("missing_file");
         expect(miss.json.message).to.match(/rentroll/);
 
-        // A bad `state` -> policy_error (the server reads state).
-        const badState = await post(port, "/api/reconcile", {
+        // A `state` request -> the license gate fires (the server reads state and
+        // treats it as the paid multi-state surface). Unlicensed => license_required.
+        const gatedState = await post(port, "/api/reconcile", {
           bank: BANK,
           ledger: BOOK,
           rentroll: RENT,
           state: "ZZ",
         });
-        expect(badState.status).to.equal(400);
-        expect(badState.json.error).to.equal("policy_error");
+        expect(gatedState.status).to.equal(402);
+        expect(gatedState.json.error).to.equal("license_required");
 
         // `bank`/`ledger` are read: a clean post ties out.
         const ok = await post(port, "/api/reconcile", { bank: BANK, ledger: BOOK, rentroll: RENT });

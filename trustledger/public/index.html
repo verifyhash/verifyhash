@@ -79,6 +79,20 @@ substitute for a CPA's review.</div>
       <option value="">Baseline (no per-state policy)</option>
       <option value="ca-example">CA (example / illustrative)</option>
     </select>
+    <p class="note">The baseline reconcile is free. Selecting a per-state policy is a
+    paid feature and requires a license below.</p>
+  </fieldset>
+  <fieldset>
+    <legend>License (only needed for paid features)</legend>
+    <p class="note">Per-state policy packs and the tamper-evident seal are paid
+    features. Paste the signed <code>*.vhlicense.json</code> your vendor sent you and
+    the vendor address it is pinned to. The baseline reconcile and file inspection
+    need no license. Verification happens offline against the vendor address — the
+    server never holds a key.</p>
+    <label for="license">Signed license (the contents of your *.vhlicense.json)</label>
+    <textarea id="license" rows="4" style="width:100%;font:inherit" placeholder="paste your signed license JSON here (optional)"></textarea>
+    <label for="vendorAddress">Vendor address (0x…)</label>
+    <input id="vendorAddress" type="text" style="width:100%;font:inherit" placeholder="0x… (optional; required only with a license)">
   </fieldset>
   <button id="go" type="submit">Reconcile</button>
 </form>
@@ -417,6 +431,14 @@ substitute for a CPA's review.</div>
       var body = { bank: t[0], ledger: t[1], rentroll: t[2] };
       var state = document.getElementById("state").value;
       if (state) { body.state = state; }
+      // T-29.3: thread the OPTIONAL license gate fields. Only paid features
+      // (a per-state policy, the seal) need them; the server verifies the license
+      // OFFLINE against the vendorAddress and holds no key. Omitted entirely when
+      // blank, so the free baseline reconcile posts the identical body it always did.
+      var licenseText = document.getElementById("license").value.trim();
+      var vendorAddress = document.getElementById("vendorAddress").value.trim();
+      if (licenseText) { body.license = licenseText; }
+      if (vendorAddress) { body.vendorAddress = vendorAddress; }
       // Thread any column maps the broker confirmed in the inspect panel so the
       // REAL run honours them. Omitted entirely when no map was fixed, so the
       // happy path posts the identical body it always did.
@@ -436,6 +458,18 @@ substitute for a CPA's review.</div>
     }).then(function (r) {
       go.disabled = false;
       if (!r.ok) {
+        // T-29.3: a license-gate refusal is shown as a clear "this feature requires
+        // a license" notice — never a raw error — so the broker understands the
+        // paid surface needs a license rather than reading a verification reason.
+        if (r.data.error === "license_required" || r.data.error === "license_invalid") {
+          result.innerHTML = "<div class='disclaimer' id='licenseNotice'>" +
+            "<strong>This feature requires a license.</strong> " +
+            escapeHtml(r.data.message || "") +
+            " The baseline reconcile and file inspection are free — clear the State" +
+            " selection to run them without a license, or paste your signed license" +
+            " and vendor address above.</div>";
+          return;
+        }
         result.innerHTML = "<p class='err' id='error'>Error (" +
           escapeHtml(r.data.error || "error") + "): " +
           escapeHtml(r.data.message || "") + "</p>";

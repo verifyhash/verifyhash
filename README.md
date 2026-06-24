@@ -580,6 +580,9 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   that must legally agree, the PASS/FAIL exit contract, the per-state policy + period-close-continuity
   layers, the tamper-evident packet seal, and the **web front-door** (`vh trust serve`) — including the
   **in-browser inspect/map onboarding flow** (drop a file → if it won't load, see its columns and map
-  them from a dropdown → reconcile), so a non-technical broker never needs a terminal. Hosting, the CPA
-  review, the per-state policy table, and pricing all stay human steps (STRATEGY.md › P-5).
+  them from a dropdown → reconcile), so a non-technical broker never needs a terminal. It also covers
+  the **Entitlements & licensing** model: the signed, offline-verifiable `*.vhlicense.json`, the
+  free-vs-paid surface, the closed entitlement table, and how a customer verifies a license offline
+  against the pinned vendor address (CLI **and** web honour the same gate). Hosting, the CPA review, the
+  per-state policy table, license issuance, and pricing all stay human steps (STRATEGY.md › P-5/P-6).
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.

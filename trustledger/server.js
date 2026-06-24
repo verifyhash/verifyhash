@@ -48,6 +48,7 @@ const ingest = require("./ingest");
 const report = require("./report");
 const policy = require("./policy");
 const close = require("./close");
+const license = require("./license");
 
 // Hard cap on the POST body. Three monthly exports (bank CSV/OFX, QuickBooks CSV,
 // rent roll CSV) are tiny — kilobytes to low single-digit megabytes. 16 MiB is a
@@ -85,6 +86,129 @@ function engineErrorCode(err) {
       return "close_error";
     default:
       return "reconcile_error";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// T-29.3: the WEB door's LICENSE GATE — the SAME gate the CLI `gateReconcile`
+// applies, threaded through HTTP. A request that asks for a PAID surface
+// (`state`/`policy` => multi-state policy packs, or `seal` => the reconciliation
+// seal) WITHOUT a valid, vendor-pinned license is REFUSED with a NAMED 4xx; the
+// FREE inspect + baseline reconcile routes stay open and behave byte-for-byte as
+// before. The server holds NO key and verifies OFFLINE: `verifyLicense` needs only
+// the pinned vendor ADDRESS + the supplied container (no network, no signing key).
+//
+// The flag->entitlement mapping is the SAME contract the CLI uses (so the two gates
+// can never drift): `state`/`policy` need `multi_state_policy`; `seal` needs `seal`.
+// A refusal carries the PRECISE reason verifyLicense returns (wrong_issuer /
+// expired / not_yet_valid / bad_signature / malformed), so a wrong/expired license
+// NEVER silently downgrades to a free run — it is reported, not ignored.
+// ---------------------------------------------------------------------------
+
+// Which entitlement each paid WEB surface requires. Mirrors the CLI's
+// PAID_FEATURE_ENTITLEMENTS exactly (state/policy => multi_state_policy; seal =>
+// seal), keyed off the request payload's own field names.
+const WEB_PAID_FEATURE_ENTITLEMENTS = Object.freeze([
+  {
+    requested: (p) =>
+      (p.state != null && String(p.state).trim() !== "") ||
+      (p.policy != null && String(p.policy).trim() !== ""),
+    entitlement: "multi_state_policy",
+    label: "multi-state policy packs (state)",
+  },
+  {
+    requested: (p) => p.seal === true,
+    entitlement: "seal",
+    label: "the tamper-evident reconciliation seal (seal)",
+  },
+]);
+
+// Apply the license gate to an already-parsed request payload. Returns silently
+// when the request is permitted (free tier, or a valid license covering every
+// requested paid feature). Throws a NAMED HttpError otherwise:
+//   * license_required (402) — a paid surface was requested with NO license at all
+//   * license_invalid  (403) — a license WAS supplied but is invalid for this run
+//       (malformed / bad_signature / wrong_issuer / expired / not_yet_valid, or a
+//        valid license that does not carry the required entitlement)
+// `now` is the injected report date so the verdict is deterministic. The license
+// container + vendorAddress come from the request body; the server holds no key.
+function gatePayload(payload, now) {
+  const needed = WEB_PAID_FEATURE_ENTITLEMENTS.filter((f) => f.requested(payload));
+  if (needed.length === 0) {
+    // FREE TIER: no paid surface requested — proceed unchanged. A stray
+    // license/vendorAddress with no paid feature costs nothing and is ignored.
+    return;
+  }
+
+  const featureList = needed.map((f) => f.label).join(" and ");
+  const hasLicense = payload.license != null;
+  const hasVendor = payload.vendorAddress != null;
+
+  // Both must travel together: a license is worthless without the vendor address
+  // to PIN it to, and a vendor with no license is nothing to verify.
+  if (!hasLicense && !hasVendor) {
+    throw new HttpError(
+      402,
+      "license_required",
+      `${featureList} ${needed.length > 1 ? "are" : "is"} a paid feature and requires a license; ` +
+        "supply { license, vendorAddress } in the request body. " +
+        "The free tier — baseline-policy reconcile + file inspect — needs no license."
+    );
+  }
+  if (!hasLicense || !hasVendor) {
+    throw new HttpError(
+      402,
+      "license_required",
+      'both "license" and "vendorAddress" must be supplied together (a license is verified by ' +
+        "pinning it to the vendor address)"
+    );
+  }
+
+  // Parse + validate the supplied container (a JSON string OR an already-parsed
+  // object). A malformed container is a license_invalid 403 — never half-trusted.
+  let container;
+  try {
+    container = license.readLicense(payload.license);
+  } catch (e) {
+    throw new HttpError(
+      403,
+      "license_invalid",
+      `the supplied license is not a valid signed license container: ${e.message}`
+    );
+  }
+
+  // Verify OFFLINE against the pinned vendor, dated at the run's reportDate. A
+  // malformed vendorAddress is a request error (the address could not be parsed).
+  let verdict;
+  try {
+    verdict = license.verifyLicense(container, { now, vendorAddress: payload.vendorAddress });
+  } catch (e) {
+    // verifyLicense throws only for a garbage vendorAddress / now — a request bug.
+    throw new HttpError(400, "bad_request", e.message);
+  }
+
+  if (!verdict.valid) {
+    // Report the PRECISE reason — never silently downgrade to a free run.
+    throw new HttpError(
+      403,
+      "license_invalid",
+      `${featureList} requires a valid license, but the supplied license is invalid ` +
+        `(reason: ${verdict.reason}); the free baseline reconcile remains available without state/policy/seal.`
+    );
+  }
+
+  // Valid + in-window + correct issuer. Require EACH requested feature's
+  // entitlement to actually be granted — a license never grants what it was not sold.
+  for (const f of needed) {
+    if (!license.hasEntitlement(verdict, f.entitlement)) {
+      throw new HttpError(
+        403,
+        "license_invalid",
+        `the supplied license is valid but does not include the "${f.entitlement}" entitlement ` +
+          `needed for ${f.label}; this license grants only [${verdict.entitlements.join(", ")}]. ` +
+          "The free baseline reconcile remains available."
+      );
+    }
   }
 }
 
@@ -151,6 +275,12 @@ function reconcilePayload(payload, reportDate) {
       );
     }
   }
+
+  // LICENSE GATE (T-29.3). Apply the SAME paid-surface gate the CLI uses BEFORE any
+  // paid feature is resolved, so a gated request (state/policy/seal) without a valid
+  // license is refused with a NAMED license_required/license_invalid — never folded
+  // into a downstream policy_error and never silently downgraded to a free run.
+  gatePayload(payload, reportDate);
 
   // Optional per-state policy. An unknown code is a named 400 (PolicyError's
   // message names the available codes), not a silent fall-through to baseline.
@@ -629,6 +759,8 @@ module.exports = {
   createServer,
   makeHandler,
   reconcilePayload,
+  gatePayload,
+  WEB_PAID_FEATURE_ENTITLEMENTS,
   inspectPayload,
   indexHtml,
   embeddedIndexHtml,

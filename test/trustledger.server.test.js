@@ -188,15 +188,18 @@ describe("trustledger server: a stdlib HTTP door over the engine", function () {
     expect(res.json.message).to.match(/bank/);
   });
 
-  it("an unknown --state code => HTTP 400 named policy_error", async function () {
+  it("a `state` request WITHOUT a license is gated => HTTP 402 named license_required (the gate runs before policy resolution)", async function () {
     const res = await post(port, "/api/reconcile", {
       bank: BANK,
       ledger: BOOK,
       rentroll: RENT,
       state: "ZZ",
     });
-    expect(res.status).to.equal(400);
-    expect(res.json.error).to.equal("policy_error");
+    // The license gate fires BEFORE policy.resolveState, so an UNLICENSED state
+    // request never reaches (and never leaks) the policy_error path.
+    expect(res.status).to.equal(402);
+    expect(res.json.error).to.equal("license_required");
+    expect(res.json.message).to.match(/multi-state policy/);
   });
 
   it("a malformed prior-close => HTTP 400 named close_error", async function () {

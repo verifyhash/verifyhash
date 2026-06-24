@@ -52,6 +52,66 @@ Requires Node ≥ 18. No build step, no native modules, no compiler.
 
 ---
 
+## 2a. Gate a whole release in one command — batch / manifest mode
+
+A release produces *many* artifacts (an evidence packet per dataset, a reconciliation seal per report, a
+proof bundle per claim). You should not have to call the verifier once per file and `&&` the exit codes
+by hand. Pass several artifacts — or a **manifest** listing them — and get **ONE** verdict and **ONE** CI
+exit code:
+
+```bash
+# Repeated artifacts (each inherits the one --vendor/--dir you pass):
+verify-vh a.vhevidence.json b.vhseal c.vhevidence.json --vendor 0xADDR --dir ./out
+
+# A manifest file (newline list OR JSON array), each entry with its OWN optional --vendor/--dir:
+verify-vh --manifest release.manifest --json
+```
+
+**The aggregate exit contract** — the same four codes, now over the *whole set*:
+
+| code | meaning |
+|------|---------|
+| `0`  | **OK** — and only if — **every** artifact in the batch verifies |
+| `3`  | **REJECTED** — **any** artifact is rejected; the report names **which** artifact failed and why |
+| `2`  | usage error (bad flag, malformed per-entry `--vendor`, empty manifest, `--manifest` + a positional) |
+| `1`  | I/O error (the manifest, or any listed artifact, is unreadable) — the batch never "passes" while an artifact could not be evaluated |
+
+**Manifest format.** Either a **newline list** (one entry per line; blank lines and `#` comments are
+skipped) or a **JSON array**. Each entry is an artifact path with an optional per-entry `--vendor` /
+`--dir`. Paths resolve relative to the **manifest file's own directory** (a release ships its manifest
+next to its artifacts); a top-level `--vendor`/`--dir` is a **default** each entry may override.
+
+```text
+# release.manifest (newline form)
+datasets/march.vhevidence.json --vendor 0xb463…3221 --dir datasets/march
+recon/q2.vhseal                --vendor 0xb463…3221
+proofs/claim-7.vhproof.json
+```
+
+```json
+[
+  "proofs/claim-7.vhproof.json",
+  { "artifact": "recon/q2.vhseal", "vendor": "0xb463…3221" },
+  { "artifact": "datasets/march.vhevidence.json", "vendor": "0xb463…3221", "dir": "datasets/march" }
+]
+```
+
+`--json` emits a **stable aggregate**:
+
+```json
+{ "ok": false, "total": 3, "passed": 2, "failed": 1,
+  "results": [ /* …one entry PER artifact, each the SAME shape the single-artifact --json emits… */ ] }
+```
+
+Each `results[]` entry is byte-identical in shape to the single-artifact `--json` object (the same core
+verifies every entry — no divergence). Gate your release CI on `ok` (or the process exit code). The
+batch path adds **no new crypto and no new artifact kind**, and every entry keeps the same per-entry
+**path-escape / no-network** guarantees as a lone verify. The **single-artifact** invocation
+(`verify-vh <artifact>`) is unchanged — a lone positional still emits the single-artifact object, not an
+aggregate.
+
+---
+
 ## 3. The exact bytes verified, and the scheme
 
 Nothing here is magic; it is two standard primitives you can re-implement in an afternoon.

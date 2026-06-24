@@ -63,11 +63,28 @@ const TRUST_NOTE =
   "vouched — NOT a trusted timestamp and NOT a legal opinion.";
 
 // ---------------------------------------------------------------------------
-// Argument parsing. `verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]`.
+// Argument parsing.
+//   SINGLE-ARTIFACT (the original, byte-for-byte unchanged contract):
+//     verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]
+//   BATCH/MANIFEST (T-33.1 — one invocation gates EVERY release artifact, one CI exit code):
+//     verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--dir <d>] [--json]
+//     verify-vh --manifest <file> [--vendor <0xaddr>] [--dir <d>] [--json]
+// Batch mode is a pure SUPERSET: it engages ONLY when more than one positional <artifact> is given OR
+// `--manifest <file>` is supplied. A lone positional with no --manifest takes the identical single path,
+// so existing callers/tests never shift. A top-level `--vendor`/`--dir` is a DEFAULT each entry inherits
+// unless the entry (a manifest line) overrides it with its own per-entry `--vendor`/`--dir`.
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const opts = { artifact: undefined, vendor: undefined, dir: undefined, json: false, help: false, _pos: [] };
+  const opts = {
+    artifact: undefined,
+    vendor: undefined,
+    dir: undefined,
+    json: false,
+    help: false,
+    manifest: undefined,
+    _pos: [],
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const need = (flag) => {
@@ -82,6 +99,9 @@ function parseArgs(argv) {
       case "--dir":
         opts.dir = need("--dir");
         break;
+      case "--manifest":
+        opts.manifest = need("--manifest");
+        break;
       case "--json":
         opts.json = true;
         break;
@@ -95,11 +115,106 @@ function parseArgs(argv) {
         opts._pos.push(a);
     }
   }
-  if (opts._pos.length > 1) {
-    throw new UsageError(`unexpected extra argument: ${opts._pos[1]} (verify-vh takes exactly one <artifact>)`);
+  // batch === any path that aggregates MULTIPLE per-artifact verdicts under ONE exit code:
+  // either a --manifest file, or more than one repeated positional <artifact>.
+  opts.batch = opts.manifest !== undefined || opts._pos.length > 1;
+  if (opts.manifest !== undefined && opts._pos.length > 0) {
+    throw new UsageError(
+      `--manifest <file> lists the artifacts; do not also pass positional <artifact> args (got: ${opts._pos[0]})`
+    );
   }
+  // Preserve the SINGLE-artifact contract verbatim: exactly one positional and no --manifest.
   opts.artifact = opts._pos[0];
   return opts;
+}
+
+// ---------------------------------------------------------------------------
+// Manifest parsing. A manifest is a newline list OR a JSON array of artifact entries; each entry names an
+// artifact path and may carry a per-entry `--vendor`/`--dir` that overrides the top-level defaults.
+//
+//   NEWLINE form — one entry per line, shell-style tokens. Blank lines and `#` comments are skipped:
+//       releases/a.vhevidence.json
+//       releases/b.vhseal --vendor 0xabc... --dir ./out
+//   JSON form — an array of strings and/or objects:
+//       ["a.vhevidence.json", {"artifact":"b.vhseal","vendor":"0xabc...","dir":"./out"}]
+//
+// Paths in the manifest resolve relative to the MANIFEST FILE's own directory (a release ships its
+// manifest next to its artifacts), unless the path is given a per-entry `--dir` for its SIBLINGS — note
+// `dir` localizes where an artifact's SIBLING files are read, exactly as the single-artifact `--dir` does;
+// the artifact path itself resolves against the manifest dir. The manifest is parsed in-process; NO new
+// crypto and NO network — it is a list, nothing more.
+// ---------------------------------------------------------------------------
+
+// Minimal whitespace tokenizer for a newline-form manifest line. No quoting support is needed (artifact
+// paths and 0x addresses contain no spaces); a token is any run of non-whitespace.
+function tokenizeManifestLine(line) {
+  return line.split(/\s+/).filter((t) => t.length > 0);
+}
+
+function parseManifestLine(line, lineNo) {
+  const toks = tokenizeManifestLine(line);
+  const entry = { artifact: undefined, vendor: undefined, dir: undefined };
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    const need = (flag) => {
+      const v = toks[++i];
+      if (v === undefined) throw new UsageError(`manifest line ${lineNo}: ${flag} requires a value`);
+      return v;
+    };
+    if (t === "--vendor") entry.vendor = need("--vendor");
+    else if (t === "--dir") entry.dir = need("--dir");
+    else if (t.startsWith("--")) throw new UsageError(`manifest line ${lineNo}: unknown flag: ${t}`);
+    else if (entry.artifact === undefined) entry.artifact = t;
+    else throw new UsageError(`manifest line ${lineNo}: unexpected extra token: ${t}`);
+  }
+  if (entry.artifact === undefined) {
+    throw new UsageError(`manifest line ${lineNo}: no artifact path`);
+  }
+  return entry;
+}
+
+function parseManifest(text, manifestPath) {
+  const trimmed = text.replace(/^﻿/, "").trim();
+  const entries = [];
+  if (trimmed.startsWith("[")) {
+    // JSON array form.
+    let arr;
+    try {
+      arr = JSON.parse(trimmed);
+    } catch (e) {
+      throw new IOError(`manifest ${manifestPath} is not valid JSON: ${e.message}`);
+    }
+    if (!Array.isArray(arr)) throw new IOError(`manifest ${manifestPath} JSON must be an array of entries`);
+    arr.forEach((raw, idx) => {
+      if (typeof raw === "string") {
+        entries.push({ artifact: raw, vendor: undefined, dir: undefined });
+      } else if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        if (typeof raw.artifact !== "string" || raw.artifact.length === 0) {
+          throw new IOError(`manifest ${manifestPath} entry ${idx}: "artifact" must be a non-empty string`);
+        }
+        entries.push({
+          artifact: raw.artifact,
+          vendor: raw.vendor != null ? String(raw.vendor) : undefined,
+          dir: raw.dir != null ? String(raw.dir) : undefined,
+        });
+      } else {
+        throw new IOError(`manifest ${manifestPath} entry ${idx} must be a string or { artifact, vendor?, dir? }`);
+      }
+    });
+  } else {
+    // Newline form: one entry per non-blank, non-comment line.
+    const lines = trimmed.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const bare = line.trim();
+      if (bare.length === 0 || bare.startsWith("#")) continue;
+      entries.push(parseManifestLine(line, i + 1));
+    }
+  }
+  if (entries.length === 0) {
+    throw new UsageError(`manifest ${manifestPath} lists no artifacts`);
+  }
+  return entries;
 }
 
 // ---------------------------------------------------------------------------
@@ -615,6 +730,65 @@ function verifyArtifact(opts) {
 }
 
 // ---------------------------------------------------------------------------
+// BATCH / MANIFEST orchestration (T-33.1). One invocation gates EVERY artifact a release produces and
+// returns ONE CI exit code. Each entry is verified READ-ONLY through the SAME `verifyArtifact` core (NO
+// new crypto, NO new artifact kind, path-escape/no-network guarantees preserved per entry); the per-entry
+// `--json` body is the IDENTICAL single-artifact shape, so there is no divergence to drift.
+//
+// AGGREGATE EXIT CONTRACT:
+//   * exit 0 (OK)        — and only if — EVERY artifact verifies (each accepted).
+//   * exit 3 (REJECTED)  — if ANY artifact is rejected (CHANGED/MISSING/bad_signature/wrong_issuer/…);
+//                          the report names WHICH artifact failed and why.
+//   * exit 2 (USAGE)     — a malformed flag / per-entry --vendor (raised before any verify runs).
+//   * exit 1 (IO)        — an artifact (or the manifest itself) is unreadable / not the expected shape.
+// Usage/IO are evaluated PER ENTRY and SHORT-CIRCUIT the whole run with the matching code, exactly as the
+// single-artifact path does — a release gate must not "pass" while one of its artifacts could not even be
+// read or parsed. The IO/USAGE code wins over a REJECTED tally (you cannot certify a batch you could not
+// fully evaluate).
+// ---------------------------------------------------------------------------
+
+function buildBatchEntries(opts) {
+  // Returns [{ artifact, vendor, dir }] with top-level --vendor/--dir applied as DEFAULTS each entry may
+  // override. Artifact paths from a manifest resolve against the manifest file's own directory.
+  if (opts.manifest !== undefined) {
+    const manifestPath = path.resolve(opts.manifest);
+    let text;
+    try {
+      text = fs.readFileSync(manifestPath, "utf8");
+    } catch (e) {
+      throw new IOError(`cannot read manifest ${opts.manifest}: ${e.message}`);
+    }
+    const manifestDir = path.dirname(manifestPath);
+    return parseManifest(text, opts.manifest).map((e) => ({
+      // The artifact path resolves relative to the manifest's directory (a release ships them together).
+      artifact: path.resolve(manifestDir, e.artifact),
+      // Per-entry --vendor/--dir override the top-level defaults; a --dir resolves against the manifest dir.
+      vendor: e.vendor != null ? e.vendor : opts.vendor,
+      dir: e.dir != null ? path.resolve(manifestDir, e.dir) : opts.dir,
+    }));
+  }
+  // Repeated positional <artifact> args: each inherits the (single) top-level --vendor/--dir.
+  return opts._pos.map((a) => ({ artifact: a, vendor: opts.vendor, dir: opts.dir }));
+}
+
+function verifyBatch(opts) {
+  const entries = buildBatchEntries(opts);
+  const results = [];
+  for (const e of entries) {
+    // Verify each entry through the SAME core. A USAGE/IO problem with any single entry short-circuits the
+    // whole batch with that code (the gate cannot certify a release it could not fully evaluate).
+    const { result } = verifyArtifact({ artifact: e.artifact, vendor: e.vendor, dir: e.dir });
+    results.push(result);
+  }
+  const total = results.length;
+  const passed = results.filter((r) => r.accepted).length;
+  const failed = total - passed;
+  const ok = failed === 0;
+  const aggregate = { ok, total, passed, failed, results };
+  return { aggregate, code: ok ? EXIT.OK : EXIT.REJECTED };
+}
+
+// ---------------------------------------------------------------------------
 // Human + JSON rendering.
 // ---------------------------------------------------------------------------
 
@@ -691,17 +865,56 @@ function renderHuman(r) {
   return L.join("\n");
 }
 
+// Human rendering of a batch aggregate: a per-artifact PASS/FAIL line (FAIL names the reason), then the
+// one-line roll-up + the final verdict. The trust note is printed ONCE at the top.
+function renderBatchHuman(agg) {
+  const L = [];
+  L.push(TRUST_NOTE);
+  L.push("");
+  L.push(`# verify-vh — BATCH (${agg.total} artifact${agg.total === 1 ? "" : "s"})`);
+  for (const r of agg.results) {
+    if (r.accepted) {
+      L.push(`  PASS  ${r.artifact}`);
+    } else {
+      L.push(`  FAIL  ${r.artifact}  (${r.reason})`);
+      // Localize the first failing detail so a CI log names exactly what moved, per artifact.
+      for (const c of r.changed) {
+        L.push(`          CHANGED   ${c.relPath}: sealed ${c.expectedContentHash} != on-disk ${c.actualContentHash}`);
+      }
+      for (const m of r.missing) {
+        L.push(`          MISSING   ${m.relPath}`);
+      }
+      for (const x of r.escaped || []) {
+        L.push(`          REJECTED  ${x.relPath}: path escapes the artifact directory (no hash computed)`);
+      }
+    }
+  }
+  L.push("");
+  L.push(`total: ${agg.total}, passed: ${agg.passed}, failed: ${agg.failed}`);
+  L.push(agg.ok ? "OK — every artifact verifies." : `REJECTED — ${agg.failed} artifact(s) failed.`);
+  L.push("");
+  return L.join("\n");
+}
+
 function usage() {
   return [
     "verify-vh — standalone, read-only, OFFLINE verifier for verifyhash artifacts",
     "",
     "Usage:",
     "  verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]",
+    "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--dir <d>] [--json]   (batch)",
+    "  verify-vh --manifest <file> [--vendor <0xaddr>] [--dir <d>] [--json]           (batch)",
     "",
     "Auto-detects the artifact kind (evidence seal, reconciliation seal, dataset attestation, proof",
     "bundle — bare or signed), RE-DERIVES the keccak root from the referenced bytes (siblings resolve",
     "next to the artifact, or under --dir <d>), recovers the signer of a signed artifact, and PINS it",
     "to --vendor <0xaddr> (or reports the recovered signer when no pin is given).",
+    "",
+    "BATCH/MANIFEST: pass several <artifact> args, or --manifest <file> (a newline list or JSON array of",
+    "artifact paths, each line/object may carry its own --vendor/--dir). ALL must pass for exit 0; if ANY",
+    "is rejected, exit is 3 and the report names which artifact failed and why. --json emits a stable",
+    "aggregate { ok, total, passed, failed, results:[...] } whose entries are the single-artifact shape.",
+    "Top-level --vendor/--dir are inherited as defaults a manifest entry may override.",
     "",
     "READ-ONLY: holds no key, writes nothing. Exit: 0 ok / 3 rejected / 2 usage / 1 IO.",
     "",
@@ -723,14 +936,41 @@ function run(argv, io = {}) {
     writeErr(`error: ${e.message}\n`);
     return EXIT.USAGE;
   }
-  if (opts.help || opts.artifact === undefined) {
-    if (opts.help) {
-      write(usage());
-      return EXIT.OK;
-    }
+  if (opts.help) {
+    write(usage());
+    return EXIT.OK;
+  }
+  // No artifact AND no manifest → the same usage error as before (the batch additions are a pure superset).
+  if (opts.artifact === undefined && opts.manifest === undefined) {
     writeErr("error: verify-vh requires an <artifact>\n\n");
     writeErr(usage());
     return EXIT.USAGE;
+  }
+
+  // BATCH path: a --manifest file or more than one positional <artifact>. Aggregates per-artifact verdicts
+  // under one CI exit code. The single-artifact path below is byte-for-byte the original behavior.
+  if (opts.batch) {
+    let out;
+    try {
+      out = verifyBatch(opts);
+    } catch (e) {
+      if (e instanceof UsageError) {
+        writeErr(`error: ${e.message}\n`);
+        return EXIT.USAGE;
+      }
+      if (e instanceof IOError) {
+        writeErr(`error: ${e.message}\n`);
+        return EXIT.IO;
+      }
+      writeErr(`error: ${e.message}\n`);
+      return EXIT.IO;
+    }
+    if (opts.json) {
+      write(JSON.stringify(out.aggregate, null, 2) + "\n");
+    } else {
+      write(renderBatchHuman(out.aggregate));
+    }
+    return out.code;
   }
 
   let out;
@@ -771,7 +1011,11 @@ module.exports = {
   UsageError,
   IOError,
   parseArgs,
+  parseManifest,
   verifyArtifact,
+  verifyBatch,
+  buildBatchEntries,
+  renderBatchHuman,
   verifyEvidenceSeal,
   verifyTrustSeal,
   verifyDatasetAttestation,

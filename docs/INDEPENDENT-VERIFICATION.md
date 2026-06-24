@@ -154,6 +154,67 @@ OK — the artifact verifies.
 
 ---
 
+## 4a. Batch / manifest mode — gate a whole release in one invocation
+
+A release is rarely one artifact. To make `verify-vh` a wired-in CI **merge gate** rather than a one-off
+demo, a single invocation can verify **every** artifact a release produces and return **one** exit code.
+
+**Two ways to name the set:**
+
+```bash
+# (i) repeated positionals — each inherits the one top-level --vendor/--dir:
+verify-vh a.vhevidence.json b.vhseal --vendor 0xADDR --dir ./out
+
+# (ii) a manifest file — each entry carries its OWN optional --vendor/--dir:
+verify-vh --manifest release.manifest [--vendor 0xADDR] [--dir <d>] [--json]
+```
+
+**Manifest format.** A manifest is EITHER a **newline list** OR a **JSON array**:
+
+- *Newline form* — one entry per line; blank lines and lines beginning with `#` are skipped. A line is an
+  artifact path followed by optional `--vendor <0xaddr>` / `--dir <d>` tokens:
+  ```text
+  # 2026-Q2 release
+  datasets/march.vhevidence.json --vendor 0xb463…3221 --dir datasets/march
+  recon/q2.vhseal                --vendor 0xb463…3221
+  proofs/claim-7.vhproof.json
+  ```
+- *JSON form* — an array of strings and/or `{ "artifact": "...", "vendor"?: "0x...", "dir"?: "..." }`
+  objects.
+
+Artifact paths resolve relative to the **manifest file's own directory** (a release ships its manifest
+alongside its artifacts). A per-entry `--dir` likewise resolves against the manifest directory and
+localizes where THAT artifact's sibling files are read. A **top-level** `--vendor`/`--dir` is a
+**default** every entry inherits unless the entry overrides it. The manifest is parsed in-process; it
+introduces **no new crypto and no network** — it is a list, and nothing more.
+
+**Aggregate exit contract** (the existing `0/3/2/1` codes, now over the whole set):
+
+| exit | when |
+|------|------|
+| `0` (OK)       | **and only if** EVERY artifact verifies (each `accepted`) |
+| `3` (REJECTED) | ANY artifact is rejected — the report names WHICH artifact failed and why (per-entry `reason`) |
+| `2` (USAGE)    | a bad flag, a malformed per-entry `--vendor`, an empty manifest, or `--manifest` passed together with a positional artifact |
+| `1` (IO)       | the manifest itself, or any listed artifact, is unreadable / not the expected shape |
+
+Usage and IO faults are evaluated per entry and **short-circuit** the whole run with the matching code:
+a release gate must never report `ok` while one of its artifacts could not even be read or parsed.
+
+**Stable `--json` aggregate.** With `--json`, batch mode emits one object:
+
+```json
+{ "ok": false, "total": 3, "passed": 2, "failed": 1, "results": [ /* …per-artifact… */ ] }
+```
+
+Each element of `results[]` is **byte-identical in shape** to the single-artifact `--json` verdict object
+(§4) — the SAME core (`verifyArtifact`) verifies every entry, so the per-artifact body cannot drift from
+the single path. Gate your CI on `ok` (or the exit code). Every entry preserves the same per-entry
+path-escape / no-network guarantees (§3, §5) as a lone verify. The **single-artifact** invocation
+(`verify-vh <artifact>`) is a strict subset and is unchanged: a lone positional emits the single-artifact
+object, not an aggregate.
+
+---
+
 ## 5. Why you can trust the verifier itself (proven, not promised)
 
 Independence is enforced by [`../test/verifier.isolation.test.js`](../test/verifier.isolation.test.js),

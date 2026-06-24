@@ -556,4 +556,305 @@ describe("verifier CLI: `verify-vh <artifact>` (T-31.2)", function () {
       expect(c2.out()).to.equal(c.out());
     });
   });
+
+  // =================================================================================================
+  // BATCH / MANIFEST mode (T-33.1). ONE invocation gates EVERY release artifact and returns ONE CI exit
+  // code: 0 iff ALL pass, 3 if ANY is rejected (the report names WHICH artifact failed and why). The
+  // per-artifact --json body is the SAME single-artifact shape (no divergence — the core is reused). The
+  // single-artifact path stays byte-for-byte unchanged (asserted by the unchanged specs above + here).
+  // =================================================================================================
+  describe("batch / manifest mode (T-33.1)", function () {
+    it("repeated <artifact> args (no manifest): batch engages, ALL pass -> ok, exit 0, stable aggregate", async function () {
+      // Two trust seals whose siblings sit next to them (no --dir needed). Passing BOTH positionally engages
+      // batch mode and inherits one top-level --vendor; here both seals are signed by the SAME ephemeral key
+      // so a single --vendor pins both.
+      const opWallet = Wallet.createRandom();
+      async function sealNextTo() {
+        const root = mkTmp();
+        fs.writeFileSync(path.join(root, "bank.csv"), "date,amount\n2026-06-01,100\n");
+        fs.writeFileSync(path.join(root, "book.csv"), "date,amount\n2026-06-01,100\n");
+        fs.writeFileSync(path.join(root, "report.html"), "<html>ok</html>");
+        const rd = (f) => fs.readFileSync(path.join(root, f));
+        const bare = trustSeal.buildSeal({
+          files: {
+            inputs: [
+              { role: "bank", relPath: "bank.csv", bytes: rd("bank.csv") },
+              { role: "book", relPath: "book.csv", bytes: rd("book.csv") },
+            ],
+            outputs: [{ relPath: "report.html", bytes: rd("report.html") }],
+          },
+          verdict: { pass: true, reportDate: "2026-06-24", period: "2026-Q2" },
+        });
+        const container = await trustSeal.signSealWith(bare, opWallet);
+        const sealPath = path.join(root, "recon.vhseal");
+        fs.writeFileSync(sealPath, trustSeal.serializeSignedSeal(container));
+        return sealPath;
+      }
+      const s1 = await sealNextTo();
+      const s2 = await sealNextTo();
+      const c = cap();
+      const code = verifyvh.run([s1, s2, "--vendor", opWallet.address, "--json"], c.io);
+      expect(code, c.err()).to.equal(verifyvh.EXIT.OK);
+      const agg = JSON.parse(c.out());
+      expect(agg.ok).to.equal(true);
+      expect(agg.total).to.equal(2);
+      expect(agg.passed).to.equal(2);
+      expect(agg.failed).to.equal(0);
+      expect(agg.results.map((r) => r.artifact)).to.deep.equal([s1, s2]);
+    });
+
+    it("two evidence packets sharing a vendor+dir: ALL pass -> { ok:true } exit 0", async function () {
+      // Two independent signed evidence packets, each verified with its own --dir via the manifest.
+      const a = await makeSignedEvidencePacket();
+      const b = await makeSignedEvidencePacket();
+      const root = mkTmp();
+      const manifest = [
+        `${a.packetPath} --vendor ${a.opWallet.address} --dir ${a.dir}`,
+        `${b.packetPath} --vendor ${b.opWallet.address} --dir ${b.dir}`,
+      ].join("\n");
+      const manifestPath = path.join(root, "release.manifest");
+      fs.writeFileSync(manifestPath, manifest + "\n");
+
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath, "--json"], c.io);
+      expect(code, c.err()).to.equal(verifyvh.EXIT.OK);
+      const agg = JSON.parse(c.out());
+      expect(agg.ok).to.equal(true);
+      expect(agg.total).to.equal(2);
+      expect(agg.passed).to.equal(2);
+      expect(agg.failed).to.equal(0);
+      expect(agg.results).to.have.length(2);
+      // Each per-artifact entry is the SAME shape the single-artifact --json emits.
+      for (const r of agg.results) {
+        for (const k of ["artifact", "kind", "verdict", "reason", "accepted", "rootMatches", "counts", "note"]) {
+          expect(r, `missing ${k}`).to.have.property(k);
+        }
+        expect(r.accepted).to.equal(true);
+        expect(r.verdict).to.equal("OK");
+      }
+    });
+
+    it("one-of-many tampered -> exit 3 with THAT artifact named and why", async function () {
+      const good = await makeSignedEvidencePacket();
+      const bad = await makeSignedEvidencePacket();
+      // Tamper exactly one referenced byte of the SECOND packet.
+      fs.writeFileSync(path.join(bad.dir, "a.txt"), "alphX");
+
+      const root = mkTmp();
+      const manifest = [
+        `${good.packetPath} --vendor ${good.opWallet.address} --dir ${good.dir}`,
+        `${bad.packetPath} --vendor ${bad.opWallet.address} --dir ${bad.dir}`,
+      ].join("\n");
+      const manifestPath = path.join(root, "release.manifest");
+      fs.writeFileSync(manifestPath, manifest + "\n");
+
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath, "--json"], c.io);
+      expect(code).to.equal(verifyvh.EXIT.REJECTED);
+      const agg = JSON.parse(c.out());
+      expect(agg.ok).to.equal(false);
+      expect(agg.total).to.equal(2);
+      expect(agg.passed).to.equal(1);
+      expect(agg.failed).to.equal(1);
+      // The failing artifact is named and the reason is localized.
+      const failing = agg.results.filter((r) => !r.accepted);
+      expect(failing).to.have.length(1);
+      expect(failing[0].artifact).to.equal(path.resolve(bad.packetPath));
+      expect(failing[0].reason).to.equal("CHANGED");
+      expect(failing[0].changed.map((x) => x.relPath)).to.deep.equal(["a.txt"]);
+      // The good one still passed.
+      const passing = agg.results.filter((r) => r.accepted);
+      expect(passing).to.have.length(1);
+      expect(passing[0].artifact).to.equal(path.resolve(good.packetPath));
+    });
+
+    it("human batch output names the failing artifact + reason and exits 3", async function () {
+      const good = await makeSignedTrustSeal();
+      const bad = await makeSignedTrustSeal();
+      fs.writeFileSync(path.join(bad.root, "bank.csv"), "date,amount\n2026-06-01,999\n");
+      const root = mkTmp();
+      const manifest = [
+        `${good.sealPath} --vendor ${good.opWallet.address}`,
+        `${bad.sealPath} --vendor ${bad.opWallet.address}`,
+      ].join("\n");
+      const manifestPath = path.join(root, "r.manifest");
+      fs.writeFileSync(manifestPath, manifest + "\n");
+
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath], c.io);
+      expect(code).to.equal(verifyvh.EXIT.REJECTED);
+      expect(c.out()).to.match(/^verify-vh is an INDEPENDENT, read-only, OFFLINE verifier/);
+      expect(c.out()).to.match(/FAIL\s+.*\.vhseal\s+\(CHANGED\)/);
+      expect(c.out()).to.contain("bank.csv");
+      expect(c.out()).to.match(/REJECTED — 1 artifact\(s\) failed\./);
+    });
+
+    it("JSON-array manifest with string + object entries works; per-entry vendor overrides default", async function () {
+      const a = await makeSignedTrustSeal();
+      const b = await makeSignedTrustSeal();
+      const root = mkTmp();
+      // a uses an object entry with its own vendor; b is a bare string that inherits the top-level --vendor.
+      const arr = [
+        { artifact: a.sealPath, vendor: a.opWallet.address },
+        b.sealPath,
+      ];
+      const manifestPath = path.join(root, "m.json");
+      fs.writeFileSync(manifestPath, JSON.stringify(arr));
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath, "--vendor", b.opWallet.address, "--json"], c.io);
+      expect(code, c.err()).to.equal(verifyvh.EXIT.OK);
+      const agg = JSON.parse(c.out());
+      expect(agg.ok).to.equal(true);
+      expect(agg.total).to.equal(2);
+    });
+
+    it("a wrong per-entry --vendor on ONE manifest line -> that entry wrong_issuer, exit 3", async function () {
+      const a = await makeSignedTrustSeal();
+      const b = await makeSignedTrustSeal();
+      const root = mkTmp();
+      const wrong = Wallet.createRandom().address;
+      const manifest = [
+        `${a.sealPath} --vendor ${a.opWallet.address}`,
+        `${b.sealPath} --vendor ${wrong}`,
+      ].join("\n");
+      const manifestPath = path.join(root, "r.manifest");
+      fs.writeFileSync(manifestPath, manifest + "\n");
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath, "--json"], c.io);
+      expect(code).to.equal(verifyvh.EXIT.REJECTED);
+      const agg = JSON.parse(c.out());
+      expect(agg.failed).to.equal(1);
+      const failing = agg.results.filter((r) => !r.accepted);
+      expect(failing[0].reason).to.equal("wrong_issuer");
+      expect(failing[0].artifact).to.equal(path.resolve(b.sealPath));
+    });
+
+    it("newline manifest skips blank lines and # comments", async function () {
+      const a = await makeSignedTrustSeal();
+      const root = mkTmp();
+      const manifest = [
+        "# release artifacts",
+        "",
+        `${a.sealPath} --vendor ${a.opWallet.address}`,
+        "   ",
+        "# trailing comment",
+      ].join("\n");
+      const manifestPath = path.join(root, "r.manifest");
+      fs.writeFileSync(manifestPath, manifest + "\n");
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath, "--json"], c.io);
+      expect(code, c.err()).to.equal(verifyvh.EXIT.OK);
+      const agg = JSON.parse(c.out());
+      expect(agg.total).to.equal(1);
+      expect(agg.ok).to.equal(true);
+    });
+
+    it("path-escape confinement is preserved PER ENTRY in a batch (path_escape, exit 3, no hash leak)", async function () {
+      // Reuse the security fixture builder from the path-confinement suite shape: a signed evidence seal
+      // whose single relPath escapes baseDir must still be a hard REJECTED in batch, leaking no hash.
+      const { keccak256 } = require("js-sha3");
+      const root = mkTmp();
+      const outside = path.join(mkTmp(), "batch-secret.txt");
+      fs.writeFileSync(outside, "BATCH-SECRET");
+      const secretHash = "0x" + keccak256(fs.readFileSync(outside));
+      const rel = path.relative(root, outside);
+
+      const seal = {
+        kind: "vh.evidence-seal",
+        files: [{ relPath: rel, contentHash: "0x" + "11".repeat(32), leaf: "0x" + "22".repeat(32) }],
+        root: "0x" + "33".repeat(32),
+      };
+      const attestation = JSON.stringify(seal);
+      const opWallet = Wallet.createRandom();
+      const signature = await opWallet.signMessage(attestation);
+      const evil = {
+        kind: "vh.evidence-seal-signed",
+        attestation,
+        signature: { scheme: "eip191-personal-sign", signer: opWallet.address, signature },
+      };
+      const evilPath = path.join(root, "evil.vhevidence.json");
+      fs.writeFileSync(evilPath, JSON.stringify(evil));
+
+      // A good seal alongside, to prove the batch isolates the reject.
+      const good = await makeSignedTrustSeal();
+      const manifest = [
+        `${good.sealPath} --vendor ${good.opWallet.address}`,
+        `${evilPath} --vendor ${opWallet.address} --dir ${root}`,
+      ].join("\n");
+      const manifestPath = path.join(root, "r.manifest");
+      fs.writeFileSync(manifestPath, manifest + "\n");
+
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath, "--json"], c.io);
+      expect(code).to.equal(verifyvh.EXIT.REJECTED);
+      const agg = JSON.parse(c.out());
+      expect(agg.failed).to.equal(1);
+      const failing = agg.results.filter((r) => !r.accepted);
+      expect(failing[0].reason).to.equal("path_escape");
+      // CRITICAL: the out-of-tree file's hash never appears anywhere in the aggregate output.
+      expect(c.out()).to.not.contain(secretHash);
+    });
+
+    it("an unreadable artifact in the batch short-circuits as IO (exit 1), no false pass", async function () {
+      const good = await makeSignedTrustSeal();
+      const root = mkTmp();
+      const manifest = [
+        `${good.sealPath} --vendor ${good.opWallet.address}`,
+        `${path.join(root, "does-not-exist.vhseal")}`,
+      ].join("\n");
+      const manifestPath = path.join(root, "r.manifest");
+      fs.writeFileSync(manifestPath, manifest + "\n");
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath, "--json"], c.io);
+      expect(code).to.equal(verifyvh.EXIT.IO);
+      expect(c.err()).to.match(/cannot read artifact/);
+    });
+
+    it("an unreadable manifest file is an IO error (exit 1)", function () {
+      const c = cap();
+      const code = verifyvh.run(["--manifest", path.join(mkTmp(), "nope.manifest"), "--json"], c.io);
+      expect(code).to.equal(verifyvh.EXIT.IO);
+      expect(c.err()).to.match(/cannot read manifest/);
+    });
+
+    it("an empty manifest (only comments/blanks) is a usage error (exit 2)", function () {
+      const root = mkTmp();
+      const manifestPath = path.join(root, "empty.manifest");
+      fs.writeFileSync(manifestPath, "# nothing here\n\n");
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath], c.io);
+      expect(code).to.equal(verifyvh.EXIT.USAGE);
+      expect(c.err()).to.match(/lists no artifacts/);
+    });
+
+    it("--manifest together with a positional <artifact> is a usage error (exit 2)", function () {
+      const c = cap();
+      const code = verifyvh.run(["--manifest", "m.txt", "extra.json"], c.io);
+      expect(code).to.equal(verifyvh.EXIT.USAGE);
+      expect(c.err()).to.match(/do not also pass positional/);
+    });
+
+    it("a malformed per-entry --vendor in a manifest is a usage error (exit 2)", async function () {
+      const a = await makeSignedTrustSeal();
+      const root = mkTmp();
+      const manifestPath = path.join(root, "r.manifest");
+      fs.writeFileSync(manifestPath, `${a.sealPath} --vendor 0xnothex\n`);
+      const c = cap();
+      const code = verifyvh.run(["--manifest", manifestPath], c.io);
+      expect(code).to.equal(verifyvh.EXIT.USAGE);
+      expect(c.err()).to.match(/must be a 0x-prefixed 20-byte hex address/);
+    });
+
+    it("SINGLE-artifact path is unchanged: a lone positional behaves identically with no batch shape", async function () {
+      const { sealPath, opWallet } = await makeSignedTrustSeal();
+      const single = cap();
+      const codeSingle = verifyvh.run([sealPath, "--vendor", opWallet.address, "--json"], single.io);
+      expect(codeSingle).to.equal(verifyvh.EXIT.OK);
+      const r = JSON.parse(single.out());
+      // It is the single-artifact object, NOT an aggregate (no ok/total/passed/failed/results wrapper).
+      expect(r).to.not.have.property("results");
+      expect(r).to.not.have.property("total");
+      expect(r.verdict).to.equal("OK");
+    });
+  });
 });

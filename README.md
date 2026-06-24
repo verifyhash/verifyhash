@@ -556,6 +556,21 @@ license is a hard refuse, never a silent downgrade). Full schema, free-vs-paid s
 seal → hand over → verify example, and the core-reuse map: [`docs/EVIDENCE.md`](docs/EVIDENCE.md). The
 vendor keypair, price, and first design partner are human steps (STRATEGY.md › **P-7**).
 
+### The independent verifier (`verify-vh`) — a buyer deliverable
+
+A counterparty who is **not** a customer can check any sealed artifact themselves, **offline and for
+free**, without our `ethers`/`hardhat` stack: the standalone [`verifier/`](verifier/) tree
+(`verify-vh`) re-derives the keccak Merkle root from the bytes they hold, recovers the EIP-191
+secp256k1 signer, and pins it to a `--vendor` address they supply out-of-band — near-zero dependencies
+(`js-sha3` only), no network, read-only. Its independence is **mechanically proven**, not just
+promised: [`test/verifier.isolation.test.js`](test/verifier.isolation.test.js) statically greps every
+`require(` in the tree (never `ethers`/`hardhat`/`@nomicfoundation/*`/`cli/`/`trustledger/`) and runs a
+real verify under a poisoned network to assert **no socket is opened**. The trust boundary is honest:
+tamper-evidence + offline-recompute + signer-pin, **NOT** a trusted "sealed at T" (that rides the
+human trust-root, P-3) and **NOT** a legal opinion. Counterparty quickstart + worked
+`seal → hand over → verify-vh` example: [`verifier/README.md`](verifier/README.md); full spec:
+[`docs/INDEPENDENT-VERIFICATION.md`](docs/INDEPENDENT-VERIFICATION.md).
+
 ## Develop
 
 ```
@@ -583,6 +598,11 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   verification re-derives), the free-vs-paid surface (free unsigned baseline of up to 25 files + verify;
   paid `--sign` wrap and over-sample sealing gated by `vh-evidence-license` entitlements), a worked
   seal → hand over → verify example, and how it reuses the shared packetseal/license/attestation cores.
+- [`docs/INDEPENDENT-VERIFICATION.md`](docs/INDEPENDENT-VERIFICATION.md) — the counterparty-facing spec
+  for the standalone `verify-vh` verifier: the exact bytes verified (keccak content hash → Merkle root →
+  EIP-191 personal-sign signature), the FREE/no-network/no-back-edge posture, the trust boundary
+  (tamper-evidence + offline-recompute + signer-pin, NOT a trusted "sealed at T"), a worked
+  producer-seals → counterparty-runs-`verify-vh` example, and how isolation is proven mechanically.
 - [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) — what each record field proves and does not,
   plus "Authenticating the registry you read from" (why read commands authenticate the registry before
   believing it, and why the `REGISTRY_ID` is a "right interface" signal, not a sole root of trust).

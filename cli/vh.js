@@ -34,6 +34,8 @@ const {
   runDatasetSign,
   runDatasetVerifyAttest,
   runDatasetCheck,
+  runDatasetTimestampRequest,
+  runDatasetTimestampWrap,
 } = require("./dataset");
 const {
   runParcelBuild,
@@ -41,6 +43,8 @@ const {
   runParcelAttest,
   runParcelSign,
   runParcelVerifyAttest,
+  runParcelTimestampRequest,
+  runParcelTimestampWrap,
 } = require("./parcel");
 
 function usage() {
@@ -70,6 +74,8 @@ function usage() {
     "  vh dataset attest <manifest> [--out <p>]  canonical UNSIGNED attestation payload (the signing-ready bytes)",
     "  vh dataset sign <manifest> --key-env <VAR>|--key-file <p> [--out <p>]  sign with YOUR key -> signed container (offline)",
     "  vh dataset verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed attestation (no key/net)",
+    "  vh dataset timestamp-request <manifest>  emit the SHA-256 digest your RFC-3161 TSA stamps (no key/net)",
+    "  vh dataset timestamp-wrap <manifest> --token <p>  wrap a TSA token -> verifiable timestamped container (no key/net)",
     "  vh dataset prove --file <p> --manifest <m>  prove ONE file was a member of the dataset (OFFLINE)",
     "  vh dataset verify-proof <proof>  fold a membership proof OFFLINE (no dataset, no key, no network)",
     "  vh parcel build <dir> --out <p>  tamper-evident DELIVERY receipt (root + per-file leaves + untrusted parcel meta)",
@@ -77,6 +83,8 @@ function usage() {
     "  vh parcel attest <manifest> [--out <p>]  canonical UNSIGNED parcel-attestation payload (the signing-ready bytes)",
     "  vh parcel sign <manifest> --key-env <VAR>|--key-file <p> [--out <p>]  sign with YOUR key -> signed container (offline)",
     "  vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>]  OFFLINE verify a signed parcel attestation (no key/net)",
+    "  vh parcel timestamp-request <manifest>  emit the SHA-256 digest your RFC-3161 TSA stamps (no key/net)",
+    "  vh parcel timestamp-wrap <manifest> --token <p>  wrap a TSA token -> verifiable timestamped container (no key/net)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -2014,6 +2022,62 @@ function parseDatasetVerifyProofArgs(argv) {
 }
 
 /**
+ * Parse `dataset timestamp-request`/`parcel timestamp-request` argv into { manifest, out, json }. Takes
+ * EXACTLY one positional manifest path, an optional --out <p>, and an optional --json. Throws on a
+ * missing/extra positional or an unknown/incomplete flag (parser parity with `attest`).
+ */
+function parseTimestampRequestArgs(argv) {
+  const opts = { manifest: undefined, out: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.manifest !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.manifest = a;
+    }
+  }
+  return opts;
+}
+
+/**
+ * Parse `dataset timestamp-wrap`/`parcel timestamp-wrap` argv into { manifest, token, out, json }. Takes
+ * EXACTLY one positional manifest path, a REQUIRED --token <path|base64>, an optional --out <p>, and an
+ * optional --json. Throws on a missing/extra positional or an unknown/incomplete flag (parser parity).
+ */
+function parseTimestampWrapArgs(argv) {
+  const opts = { manifest: undefined, token: undefined, out: undefined, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--token":
+        opts.token = argv[++i];
+        if (opts.token === undefined) throw new Error("--token requires a value");
+        break;
+      case "--out":
+        opts.out = argv[++i];
+        if (opts.out === undefined) throw new Error("--out requires a value");
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        if (opts.manifest !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+        opts.manifest = a;
+    }
+  }
+  return opts;
+}
+
+/**
  * Parse `parcel build` argv into { dir, out, parcelId, sender, recipient, hints, json }. Takes exactly one
  * positional <dir>, a REQUIRED --out, and OPTIONAL untrusted parcel-metadata flags. Throws on unknown/
  * incomplete flags or a duplicate/missing positional so a typo never silently builds the wrong tree
@@ -2173,6 +2237,12 @@ function cmdDataset(argv) {
   if (sub === "verify-attest") {
     return cmdDatasetVerifyAttest(rest);
   }
+  if (sub === "timestamp-request") {
+    return cmdDatasetTimestampRequest(rest);
+  }
+  if (sub === "timestamp-wrap") {
+    return cmdDatasetTimestampWrap(rest);
+  }
   if (sub === "prove") {
     return cmdDatasetProve(rest);
   }
@@ -2182,7 +2252,7 @@ function cmdDataset(argv) {
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown dataset subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | diff | summary | check | report | attest | sign | verify-attest | prove | verify-proof)\n\n` + usage()
+        `(expected: build | verify | diff | summary | check | report | attest | sign | verify-attest | timestamp-request | timestamp-wrap | prove | verify-proof)\n\n` + usage()
     );
     return 2;
   }
@@ -2576,6 +2646,72 @@ function cmdDatasetVerifyAttest(argv) {
 }
 
 /**
+ * `vh dataset timestamp-request <manifest> [--out <p>] [--json]` — emit the SHA-256 digest of the canonical
+ * UNSIGNED attestation bytes (the messageImprint a human submits to their RFC-3161 TSA), plus a recipe for
+ * producing the token. PURELY OFFLINE: NO key, NO network. Exit 0 success, 2 usage error, 1 runtime error.
+ */
+function cmdDatasetTimestampRequest(argv) {
+  let opts;
+  try {
+    opts = parseTimestampRequestArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset timestamp-request` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+  try {
+    runDatasetTimestampRequest({ manifest: opts.manifest, out: opts.out, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * `vh dataset timestamp-wrap <manifest> --token <path|base64> [--out <p>] [--json]` — wrap the RFC-3161
+ * token the human obtained from their TSA into a verifiable `*-attestation-timestamped` container, binding
+ * it to the re-derived canonical SHA-256 digest. ERRORS CLEARLY (exit 1) if the token does not bind the
+ * digest. PURELY OFFLINE: NO key, NO network. Exit 0 success, 2 usage error (missing manifest/--token,
+ * unknown/incomplete flag), 1 runtime error (corrupt manifest, unparseable/non-binding token).
+ */
+function cmdDatasetTimestampWrap(argv) {
+  let opts;
+  try {
+    opts = parseTimestampWrapArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh dataset timestamp-wrap` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+  if (!opts.token) {
+    process.stderr.write(
+      "error: `vh dataset timestamp-wrap` requires --token <path|base64> (the RFC-3161 token from your TSA)\n\n" +
+        usage()
+    );
+    return 2;
+  }
+  try {
+    runDatasetTimestampWrap({
+      manifest: opts.manifest,
+      token: opts.token,
+      out: opts.out,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
  * `vh dataset prove --file <p> --manifest <m> [--out <p>] [--json]` — build an OFFLINE set-membership
  * proof that ONE file was a member of the manifest's dataset. NO key, NO network. Exit 0 on MEMBER, 3
  * on NOT A MEMBER (so scripts/CI can branch), 2 on a usage error, 1 on a runtime error.
@@ -2665,10 +2801,16 @@ function cmdParcel(argv) {
   if (sub === "verify-attest") {
     return cmdParcelVerifyAttest(rest);
   }
+  if (sub === "timestamp-request") {
+    return cmdParcelTimestampRequest(rest);
+  }
+  if (sub === "timestamp-wrap") {
+    return cmdParcelTimestampWrap(rest);
+  }
   if (sub !== "build") {
     process.stderr.write(
       `error: unknown parcel subcommand: ${sub === undefined ? "(none)" : sub} ` +
-        `(expected: build | verify | attest | sign | verify-attest)\n\n` + usage()
+        `(expected: build | verify | attest | sign | verify-attest | timestamp-request | timestamp-wrap)\n\n` + usage()
     );
     return 2;
   }
@@ -2902,6 +3044,71 @@ function cmdParcelVerifyAttest(argv) {
 
   // Exit non-zero on REJECTED so a recipient's CI can gate (mirrors the family's 0/3 convention).
   return result.accepted ? 0 : 3;
+}
+
+/**
+ * `vh parcel timestamp-request <manifest> [--out <p>] [--json]` — emit the SHA-256 digest of the canonical
+ * UNSIGNED parcel-attestation bytes (the messageImprint a human submits to their RFC-3161 TSA), plus a
+ * recipe. PURELY OFFLINE: NO key, NO network. Exit 0 success, 2 usage error, 1 runtime error.
+ */
+function cmdParcelTimestampRequest(argv) {
+  let opts;
+  try {
+    opts = parseTimestampRequestArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh parcel timestamp-request` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+  try {
+    runParcelTimestampRequest({ manifest: opts.manifest, out: opts.out, json: opts.json });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * `vh parcel timestamp-wrap <manifest> --token <path|base64> [--out <p>] [--json]` — wrap the RFC-3161 token
+ * the human obtained from their TSA into a verifiable `parcel-attestation-timestamped` container, binding it
+ * to the re-derived canonical SHA-256 digest. ERRORS CLEARLY (exit 1) if the token does not bind the digest.
+ * PURELY OFFLINE: NO key, NO network. Exit 0 success, 2 usage error, 1 runtime error.
+ */
+function cmdParcelTimestampWrap(argv) {
+  let opts;
+  try {
+    opts = parseTimestampWrapArgs(argv);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n\n` + usage());
+    return 2;
+  }
+  if (!opts.manifest) {
+    process.stderr.write("error: `vh parcel timestamp-wrap` requires a <manifest>\n\n" + usage());
+    return 2;
+  }
+  if (!opts.token) {
+    process.stderr.write(
+      "error: `vh parcel timestamp-wrap` requires --token <path|base64> (the RFC-3161 token from your TSA)\n\n" +
+        usage()
+    );
+    return 2;
+  }
+  try {
+    runParcelTimestampWrap({
+      manifest: opts.manifest,
+      token: opts.token,
+      out: opts.out,
+      json: opts.json,
+    });
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    return 1;
+  }
+  return 0;
 }
 
 async function main(argv) {

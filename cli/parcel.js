@@ -48,6 +48,7 @@ const coreManifest = require("./core/manifest");
 // it — the SAME core `vh dataset attest`/`verify-attest` use — so the envelope machinery can never drift
 // between products. parcel → core only (no back-edge).
 const coreAttestation = require("./core/attestation");
+const coreTimestamp = require("./core/timestamp");
 
 // On-disk schema discriminator. A parcel manifest carries its OWN kind + version, DISTINCT from the
 // dataset manifest kind (cli/dataset.js), the receipt kinds (cli/receipt.js), and the proof-artifact kind
@@ -1090,6 +1091,206 @@ function runParcelVerifyAttest(opts) {
   return result;
 }
 
+// =================================================================================================
+// DETACHED TIMESTAMP container for ProofParcel (T-20.2) — an INDEPENDENT RFC-3161 TSA timestamp WRAPPED
+// AROUND the canonical UNSIGNED parcel attestation, over the SAME generic timestamp core `vh dataset` uses.
+// ProofParcel's OWN container `kind` means a DATASET timestamped container does NOT cross-validate as a
+// parcel one (and vice-versa) even though the UNSIGNED identity bytes can coincide for the same files.
+//
+// THE DIGEST IS SHA-256 — NOT the keccak256 manifestDigest (universal across TSAs; see the dataset section).
+
+const TIMESTAMPED_PARCEL_ATTESTATION_KIND = "verifyhash.parcel-attestation-timestamped";
+const TIMESTAMPED_PARCEL_ATTESTATION_SCHEMA_VERSION = 1;
+const SUPPORTED_TIMESTAMPED_PARCEL_ATTESTATION_SCHEMA_VERSIONS = Object.freeze([1]);
+
+// The standing trust caveat carried IN-BAND in every timestamped parcel container. REUSES the shared
+// TRUST_NOTE + the parcel caveat verbatim, and adds ONLY the timestamp-specific caveat: a token attests an
+// INDEPENDENT TSA saw this digest by genTime — to the strength of the TSA you TRUST; the loop does NOT
+// validate the TSA cert chain / CMS signature (human out-of-band trust anchor).
+const TIMESTAMPED_PARCEL_ATTESTATION_TRUST_NOTE =
+  "This is a TIMESTAMPED parcel attestation container: it wraps (never edits) the EXACT canonical UNSIGNED " +
+  "parcel-attestation bytes in `attestation` and attaches an RFC-3161 timestamp token over the SHA-256 " +
+  "digest of those exact bytes. It asserts that an INDEPENDENT Time-Stamping Authority (TSA) saw THIS " +
+  "digest by the token's genTime — to the strength of the TSA you TRUST. It does NOT validate the TSA's " +
+  "certificate chain or the token's CMS signature (verify those out-of-band, e.g. `openssl ts -verify`). " +
+  "The digest is a STANDARD sha256(canonical attestation bytes) — NOT the project's internal keccak256 " +
+  "manifestDigest. Every caveat of the embedded UNSIGNED payload still applies. " +
+  PARCEL_TRUST_NOTE +
+  " " +
+  TRUST_NOTE;
+
+// ProofParcel's timestamp-container framing, passed to the GENERIC timestamp core (no back-edge).
+const TIMESTAMPED_PARCEL_ATTESTATION_CFG = Object.freeze({
+  kind: TIMESTAMPED_PARCEL_ATTESTATION_KIND,
+  schemaVersion: TIMESTAMPED_PARCEL_ATTESTATION_SCHEMA_VERSION,
+  supportedSchemaVersions: SUPPORTED_TIMESTAMPED_PARCEL_ATTESTATION_SCHEMA_VERSIONS,
+  note: TIMESTAMPED_PARCEL_ATTESTATION_TRUST_NOTE,
+  label: "timestamped parcel attestation",
+  validateUnsigned: validateParcelAttestation,
+  serializeUnsigned: serializeParcelAttestation,
+});
+
+function validateTimestampedParcelAttestation(obj) {
+  return coreTimestamp.validateTimestampContainer(obj, TIMESTAMPED_PARCEL_ATTESTATION_CFG);
+}
+function buildTimestampedParcelAttestation(params) {
+  return coreTimestamp.buildTimestampContainer(params, TIMESTAMPED_PARCEL_ATTESTATION_CFG);
+}
+function serializeTimestampedParcelAttestation(container) {
+  return coreTimestamp.serializeTimestampContainer(container, TIMESTAMPED_PARCEL_ATTESTATION_CFG);
+}
+function readTimestampedParcelAttestation(containerPath) {
+  return coreTimestamp.readTimestampContainer(containerPath, TIMESTAMPED_PARCEL_ATTESTATION_CFG);
+}
+
+// The parcel timestamp-request human note (parallel to the dataset one).
+const PARCEL_TIMESTAMP_REQUEST_TRUST_NOTE =
+  "This emits the SHA-256 digest of the canonical UNSIGNED parcel-attestation bytes — the EXACT digest you " +
+  "submit to your RFC-3161 Time-Stamping Authority (TSA). A timestamp token will attest an INDEPENDENT TSA " +
+  "saw THIS digest by its genTime — to the strength of the TSA you TRUST; this tool does NOT obtain the " +
+  "token (a human/network step) and does NOT validate the TSA cert chain. The digest is a STANDARD SHA-256 " +
+  "(universal across TSAs) — NOT the project's internal keccak256 manifestDigest.";
+
+function parcelTimestampRequestRecipe(digestHex) {
+  return [
+    "  To obtain an RFC-3161 timestamp token over this digest (a HUMAN/network step):",
+    `    openssl ts -query -digest ${digestHex} -sha256 -cert -out request.tsq`,
+    "    # send request.tsq to your TSA (e.g. `curl` to its HTTP endpoint) -> response.tsr",
+    "    openssl ts -reply -in response.tsr -token_out -out token.der",
+    "  Then wrap it back into a verifiable container (no key, no network):",
+    "    vh parcel timestamp-wrap <manifest> --token token.der --out attestation.timestamped.json",
+  ];
+}
+
+/**
+ * Orchestrate `vh parcel timestamp-request <manifest> [--out <p>] [--json]` — THIN parallel to the dataset
+ * command, over the parcel attest build path. Emits the SHA-256 digest the human submits to their TSA plus
+ * a recipe. PURELY OFFLINE: NO key, NO network.
+ * @param {object} opts { manifest, json?, out?, stdout? }
+ * @returns {{ digest: string, hashAlgorithm: string, canonical: string, out: string|null }}
+ */
+function runParcelTimestampRequest(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runParcelTimestampRequest requires options");
+  const { manifest: manifestPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runParcelTimestampRequest requires a <manifest> path");
+
+  const manifest = readParcelManifest(manifestPath);
+  const canonical = serializeParcelAttestation(buildParcelAttestation(manifest));
+  const digest = coreTimestamp.sha256Hex(canonical);
+
+  let outAbs = null;
+  if (opts.out) {
+    outAbs = path.resolve(opts.out);
+    fs.writeFileSync(
+      outAbs,
+      JSON.stringify(
+        {
+          kind: "verifyhash.timestamp-request",
+          hashAlgorithm: "sha256",
+          digest,
+          attestation: canonical,
+          note: PARCEL_TIMESTAMP_REQUEST_TRUST_NOTE,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify({
+        hashAlgorithm: "sha256",
+        digest,
+        canonical,
+        out: outAbs,
+        note: PARCEL_TIMESTAMP_REQUEST_TRUST_NOTE,
+      }) + "\n"
+    );
+  } else {
+    write(`  TRUST: ${PARCEL_TIMESTAMP_REQUEST_TRUST_NOTE}\n`);
+    write("\n");
+    write(`  sha256 digest (the messageImprint to stamp): ${digest}\n`);
+    write("\n");
+    for (const line of parcelTimestampRequestRecipe(digest)) write(line + "\n");
+    if (outAbs) write(`  timestamp request written: ${outAbs}\n`);
+  }
+  return { digest, hashAlgorithm: "sha256", canonical, out: outAbs };
+}
+
+const PARCEL_TIMESTAMP_WRAP_TRUST_NOTE = TIMESTAMPED_PARCEL_ATTESTATION_TRUST_NOTE;
+
+function resolveParcelTimestampToken(tokenArg) {
+  if (typeof tokenArg !== "string" || tokenArg.length === 0) {
+    throw new Error("--token requires a path to an RFC-3161 token file OR an inline base64 token");
+  }
+  if (fs.existsSync(tokenArg)) {
+    return fs.readFileSync(tokenArg);
+  }
+  return tokenArg;
+}
+
+/**
+ * Orchestrate `vh parcel timestamp-wrap <manifest> --token <path|base64> [--out <p>] [--json]` — THIN
+ * parallel to the dataset command, over the parcel attest build path + ProofParcel's container framing.
+ * ERRORS CLEARLY if the token does not bind the re-derived SHA-256 digest. PURELY OFFLINE: NO key, NO network.
+ * @param {object} opts { manifest, token, json?, out?, stdout? }
+ * @returns {{ container: object, canonical: string, digest: string, genTime: string, out: string|null }}
+ */
+function runParcelTimestampWrap(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runParcelTimestampWrap requires options");
+  const { manifest: manifestPath, token: tokenArg } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runParcelTimestampWrap requires a <manifest> path");
+  if (!tokenArg) throw new Error("runParcelTimestampWrap requires a --token <path|base64>");
+
+  const manifest = readParcelManifest(manifestPath);
+  const unsigned = buildParcelAttestation(manifest);
+  const token = resolveParcelTimestampToken(tokenArg);
+
+  const container = buildTimestampedParcelAttestation({ attestation: unsigned, token });
+  const canonical = serializeTimestampedParcelAttestation(container);
+  const facts = coreTimestamp.readTimestampFacts(container);
+
+  let outAbs = null;
+  if (opts.out) {
+    outAbs = path.resolve(opts.out);
+    fs.writeFileSync(outAbs, canonical);
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify({
+        kind: container.kind,
+        scheme: container.timestamp.scheme,
+        hashAlgorithm: container.timestamp.hashAlgorithm,
+        digest: facts.digest,
+        genTime: facts.genTime,
+        serialNumber: facts.serialNumber,
+        policyOID: facts.policyOID,
+        out: outAbs,
+        container: outAbs ? null : canonical,
+        note: PARCEL_TIMESTAMP_WRAP_TRUST_NOTE,
+      }) + "\n"
+    );
+  } else {
+    write(`  TRUST: ${PARCEL_TIMESTAMP_WRAP_TRUST_NOTE}\n`);
+    write("\n");
+    write(`  timestamped: an INDEPENDENT TSA stamped this digest by genTime\n`);
+    write(`  digest (sha256 of the canonical attestation bytes): ${facts.digest}\n`);
+    write(`  genTime (asserted by the TSA):                       ${facts.genTime}\n`);
+    write(`  TSA serial:                                          ${facts.serialNumber.hex}\n`);
+    write(`  policy OID:                                          ${facts.policyOID}\n`);
+    if (outAbs) {
+      write(`  timestamped parcel attestation written: ${outAbs}\n`);
+    } else {
+      write(canonical);
+    }
+  }
+  return { container, canonical, digest: facts.digest, genTime: facts.genTime, out: outAbs };
+}
+
 module.exports = {
   PARCEL_MANIFEST_KIND,
   PARCEL_MANIFEST_SCHEMA_VERSION,
@@ -1134,4 +1335,16 @@ module.exports = {
   SIGN_TRUST_NOTE,
   runParcelSign,
   runParcelVerifyAttest,
+  // timestamp (T-20.2) — detached RFC-3161 container over the SAME generic timestamp core.
+  TIMESTAMPED_PARCEL_ATTESTATION_KIND,
+  TIMESTAMPED_PARCEL_ATTESTATION_SCHEMA_VERSION,
+  SUPPORTED_TIMESTAMPED_PARCEL_ATTESTATION_SCHEMA_VERSIONS,
+  TIMESTAMPED_PARCEL_ATTESTATION_TRUST_NOTE,
+  PARCEL_TIMESTAMP_REQUEST_TRUST_NOTE,
+  validateTimestampedParcelAttestation,
+  buildTimestampedParcelAttestation,
+  serializeTimestampedParcelAttestation,
+  readTimestampedParcelAttestation,
+  runParcelTimestampRequest,
+  runParcelTimestampWrap,
 };

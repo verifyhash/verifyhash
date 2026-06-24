@@ -51,6 +51,7 @@ const {
 // caveats can NEVER drift between products. The dependency points dataset → core (never the reverse).
 const coreManifest = require("./core/manifest");
 const coreAttestation = require("./core/attestation");
+const coreTimestamp = require("./core/timestamp");
 
 // On-disk schema discriminators. A dataset manifest carries its OWN kind + version (distinct from the
 // receipt kinds in cli/receipt.js and the proof-artifact kind in cli/proof.js) so a random JSON file,
@@ -2053,6 +2054,288 @@ function runDatasetVerifyAttest(opts) {
 }
 
 // =================================================================================================
+// DETACHED TIMESTAMP container (T-20.2, EPIC-20) — an INDEPENDENT RFC-3161 TSA timestamp WRAPPED AROUND
+// the canonical UNSIGNED dataset attestation, over the SAME generic timestamp core ProofParcel uses.
+//
+// WHY A SEPARATE KIND (the EPIC-17 move applied to the TIMESTAMP dimension)
+//   The signed container proves "the publisher SAYS this dataset identity existed". The honestly-stronger
+//   claim a due-diligence / EU-AI-Act reviewer wants is "an INDEPENDENT TSA saw this exact digest by time
+//   T". This container delivers the FORMAT for that: it wraps (never edits) the EXACT canonical UNSIGNED
+//   attestation bytes and attaches an RFC-3161 TimeStampToken bound to the SHA-256 digest OF those bytes.
+//
+// THE DIGEST IS SHA-256 — NOT the keccak256 manifestDigest. RFC-3161 TSAs stamp a messageImprint over a
+//   STANDARD hash; SHA-256 is universal, keccak256 non-standard (most TSAs reject it). So the timestamp
+//   digest is a FRESH sha256(utf8(canonical attestation string)) — the digest the buyer re-derives and the
+//   human submits to their TSA — NOT the keccak `manifestDigest` that lives inside the payload.
+
+const TIMESTAMPED_ATTESTATION_KIND = "verifyhash.dataset-attestation-timestamped";
+const TIMESTAMPED_ATTESTATION_SCHEMA_VERSION = 1;
+const SUPPORTED_TIMESTAMPED_ATTESTATION_SCHEMA_VERSIONS = Object.freeze([1]);
+
+// The standing trust caveat carried IN-BAND in every timestamped container. REUSES the dataset TRUST_NOTE
+// VERBATIM (so caveats never drift) and adds ONLY the timestamp-specific caveat: a timestamp token attests
+// an INDEPENDENT TSA saw this digest by genTime — to the strength of the TSA you TRUST; this loop does NOT
+// validate the TSA cert chain / CMS signature (that is the human out-of-band trust anchor).
+const TIMESTAMPED_ATTESTATION_TRUST_NOTE =
+  "This is a TIMESTAMPED attestation container: it wraps (never edits) the EXACT canonical UNSIGNED " +
+  "attestation bytes in `attestation` and attaches an RFC-3161 timestamp token over the SHA-256 digest of " +
+  "those exact bytes. It asserts that an INDEPENDENT Time-Stamping Authority (TSA) saw THIS digest by the " +
+  "token's genTime — to the strength of the TSA you TRUST. It does NOT validate the TSA's certificate " +
+  "chain or the token's CMS signature (verify those out-of-band, e.g. `openssl ts -verify`, exactly as " +
+  "you pin a signer address). The digest is a STANDARD sha256(canonical attestation bytes) — NOT the " +
+  "project's internal keccak256 manifestDigest. Every caveat of the embedded UNSIGNED payload still " +
+  "applies. " +
+  TRUST_NOTE;
+
+// DataLedger's timestamp-container framing, passed to the GENERIC timestamp core. The core owns the
+// machinery (the wrap-don't-edit invariant, the SHA-256 digest, the RFC-3161 parse + bindsDigest check);
+// this object supplies ONLY DataLedger's kind/schema/note + the "timestamped dataset attestation" label
+// and the DataLedger UNSIGNED-payload codec the core re-validates the embedded payload with.
+const TIMESTAMPED_ATTESTATION_CFG = Object.freeze({
+  kind: TIMESTAMPED_ATTESTATION_KIND,
+  schemaVersion: TIMESTAMPED_ATTESTATION_SCHEMA_VERSION,
+  supportedSchemaVersions: SUPPORTED_TIMESTAMPED_ATTESTATION_SCHEMA_VERSIONS,
+  note: TIMESTAMPED_ATTESTATION_TRUST_NOTE,
+  label: "timestamped dataset attestation",
+  validateUnsigned: validateAttestation,
+  serializeUnsigned: serializeAttestation,
+});
+
+/**
+ * Strictly validate a parsed TIMESTAMPED-attestation container. THIN wrapper over the generic timestamp
+ * core validator with DataLedger's framing (label keeps error strings byte-identical). Rejects a
+ * wrong-kind/edited/foreign container, never half-accepts.
+ * @param {any} obj
+ * @returns {object} the same object, if valid
+ */
+function validateTimestampedAttestation(obj) {
+  return coreTimestamp.validateTimestampContainer(obj, TIMESTAMPED_ATTESTATION_CFG);
+}
+
+/**
+ * Assemble + validate a TIMESTAMPED-attestation container from a validated UNSIGNED envelope and an
+ * RFC-3161 token. THIN wrapper over the generic core: NO network, NO key. A token that does not bind the
+ * re-derived SHA-256 digest hard-errors here.
+ * @param {object} params { attestation, token }
+ * @returns {object} a validated timestamped-attestation container
+ */
+function buildTimestampedAttestation(params) {
+  return coreTimestamp.buildTimestampContainer(params, TIMESTAMPED_ATTESTATION_CFG);
+}
+
+/**
+ * Serialize a timestamped-attestation container to its canonical, byte-deterministic bytes. THIN wrapper.
+ * @param {object} container a validated timestamped-attestation container
+ * @returns {string} the canonical serialization (newline-terminated)
+ */
+function serializeTimestampedAttestation(container) {
+  return coreTimestamp.serializeTimestampContainer(container, TIMESTAMPED_ATTESTATION_CFG);
+}
+
+/**
+ * Read, parse, and STRICTLY validate the timestamped-attestation container at `containerPath`. THIN
+ * wrapper over the generic core reader with DataLedger's framing. Rejects a malformed/edited/foreign one.
+ * @param {string} containerPath
+ * @returns {object} the validated container
+ */
+function readTimestampedAttestation(containerPath) {
+  return coreTimestamp.readTimestampContainer(containerPath, TIMESTAMPED_ATTESTATION_CFG);
+}
+
+// The timestamp-request human note: how to turn the emitted digest into a token. States the trust caveat
+// and a concrete `openssl ts -query` recipe (the digest is the messageImprint a TSA stamps).
+const TIMESTAMP_REQUEST_TRUST_NOTE =
+  "This emits the SHA-256 digest of the canonical UNSIGNED attestation bytes — the EXACT digest you submit " +
+  "to your RFC-3161 Time-Stamping Authority (TSA). A timestamp token will attest an INDEPENDENT TSA saw " +
+  "THIS digest by its genTime — to the strength of the TSA you TRUST; this tool does NOT obtain the token " +
+  "(that is a human/network step) and does NOT validate the TSA cert chain. The digest is a STANDARD " +
+  "SHA-256 (universal across TSAs) — NOT the project's internal keccak256 manifestDigest.";
+
+/**
+ * Build the human "how to produce the token" recipe for a given SHA-256 digest. Concrete, copy-pasteable:
+ * an `openssl ts -query` over the digest, then submit to the TSA, then `vh dataset timestamp-wrap`.
+ * @param {string} digestHex the lowercase SHA-256 digest (no 0x)
+ * @returns {string[]} recipe lines (no trailing newlines)
+ */
+function timestampRequestRecipe(digestHex) {
+  return [
+    "  To obtain an RFC-3161 timestamp token over this digest (a HUMAN/network step):",
+    `    openssl ts -query -digest ${digestHex} -sha256 -cert -out request.tsq`,
+    "    # send request.tsq to your TSA (e.g. `curl` to its HTTP endpoint) -> response.tsr",
+    "    openssl ts -reply -in response.tsr -token_out -out token.der",
+    "  Then wrap it back into a verifiable container (no key, no network):",
+    "    vh dataset timestamp-wrap <manifest> --token token.der --out attestation.timestamped.json",
+  ];
+}
+
+/**
+ * Orchestrate `vh dataset timestamp-request <manifest> [--out <p>] [--json]`. Builds the UNSIGNED payload
+ * EXACTLY as `vh dataset attest` does (REUSES buildAttestation — no re-impl), computes the canonical bytes,
+ * and emits the SHA-256 digest (hex) the human submits to their TSA, plus a ready-to-use recipe for
+ * producing the token. With `--out` it writes a small machine-readable request descriptor to the caller's
+ * EXPLICIT path (never cwd). PURELY OFFLINE: NO key, NO network. This is the "here's exactly what to stamp"
+ * half of the human handoff.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
+ * @param {boolean}[opts.json]    emit a machine-readable { digest, hashAlgorithm, canonical, ... } object
+ * @param {string} [opts.out]     write the request descriptor to this explicit path (caller-chosen; never cwd)
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {{ digest: string, hashAlgorithm: string, canonical: string, out: string|null }}
+ */
+function runDatasetTimestampRequest(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetTimestampRequest requires options");
+  const { manifest: manifestPath } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runDatasetTimestampRequest requires a <manifest> path");
+
+  // Strict read + the EXISTING attest build path (NO re-impl) so the canonical bytes are byte-for-byte the
+  // SAME bytes `vh dataset attest` emits — the bytes the buyer re-derives and the SHA-256 is taken over.
+  const manifest = readManifest(manifestPath);
+  const canonical = serializeAttestation(buildAttestation(manifest));
+  const digest = coreTimestamp.sha256Hex(canonical);
+
+  let outAbs = null;
+  if (opts.out) {
+    // Write a small request descriptor (the digest + the bytes it is over) to the caller-chosen path —
+    // never cwd. The ONLY side effect.
+    outAbs = path.resolve(opts.out);
+    fs.writeFileSync(
+      outAbs,
+      JSON.stringify(
+        {
+          kind: "verifyhash.timestamp-request",
+          hashAlgorithm: "sha256",
+          digest,
+          attestation: canonical,
+          note: TIMESTAMP_REQUEST_TRUST_NOTE,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify({
+        hashAlgorithm: "sha256",
+        digest,
+        canonical,
+        out: outAbs,
+        note: TIMESTAMP_REQUEST_TRUST_NOTE,
+      }) + "\n"
+    );
+  } else {
+    write(`  TRUST: ${TIMESTAMP_REQUEST_TRUST_NOTE}\n`);
+    write("\n");
+    write(`  sha256 digest (the messageImprint to stamp): ${digest}\n`);
+    write("\n");
+    for (const line of timestampRequestRecipe(digest)) write(line + "\n");
+    if (outAbs) write(`  timestamp request written: ${outAbs}\n`);
+  }
+  return { digest, hashAlgorithm: "sha256", canonical, out: outAbs };
+}
+
+// The timestamp-wrap human note: leads with the inherited container TRUST_NOTE plus the timestamp caveat.
+const TIMESTAMP_WRAP_TRUST_NOTE = TIMESTAMPED_ATTESTATION_TRUST_NOTE;
+
+/**
+ * Resolve the `--token` argument into raw RFC-3161 DER bytes. ACCEPTS either a PATH to a token file
+ * (read as bytes) OR an inline base64 string. We try the filesystem FIRST (the common case — a `token.der`
+ * the human produced), falling back to treating the argument as inline base64/hex only when it is not a
+ * readable file. Throws a clear error if neither yields parseable token bytes.
+ * @param {string} tokenArg a path to a DER token file OR an inline base64/hex token string
+ * @returns {Buffer} the raw DER bytes
+ */
+function resolveTimestampToken(tokenArg) {
+  if (typeof tokenArg !== "string" || tokenArg.length === 0) {
+    throw new Error("--token requires a path to an RFC-3161 token file OR an inline base64 token");
+  }
+  // Prefer a file path (the natural artifact `openssl ts -reply -token_out` writes).
+  if (fs.existsSync(tokenArg)) {
+    return fs.readFileSync(tokenArg); // raw DER bytes
+  }
+  // Fall back to inline base64/hex; coreTimestamp.buildTimestampContainer's toBuf will reject non-token.
+  return tokenArg;
+}
+
+/**
+ * Orchestrate `vh dataset timestamp-wrap <manifest> --token <path|base64> [--out <p>] [--json]`. Reads the
+ * manifest strictly, builds the UNSIGNED payload via the EXISTING attest path (NO re-impl), reads the
+ * human-obtained RFC-3161 token, and builds the validated TIMESTAMPED container via the generic engine —
+ * binding it to the re-derived canonical SHA-256 digest. ERRORS CLEARLY if the token does not bind the
+ * digest. With `--out` it writes the container to the caller's EXPLICIT path (never cwd). PURELY OFFLINE:
+ * NO key, NO network.
+ *
+ * @param {object} opts
+ * @param {string} opts.manifest  path to a manifest written by `vh dataset build`
+ * @param {string} opts.token     path to an RFC-3161 token file OR an inline base64 token (REQUIRED)
+ * @param {boolean}[opts.json]    emit a machine-readable { kind, digest, genTime, ..., container } object
+ * @param {string} [opts.out]     write the timestamped container to this explicit path (caller-chosen; never cwd)
+ * @param {(s:string)=>void}[opts.stdout] sink for stdout (default process.stdout.write); injectable for tests
+ * @returns {{ container: object, canonical: string, digest: string, genTime: string, out: string|null }}
+ */
+function runDatasetTimestampWrap(opts) {
+  if (!opts || typeof opts !== "object") throw new Error("runDatasetTimestampWrap requires options");
+  const { manifest: manifestPath, token: tokenArg } = opts;
+  const write = opts.stdout || ((s) => process.stdout.write(s));
+  if (!manifestPath) throw new Error("runDatasetTimestampWrap requires a <manifest> path");
+  if (!tokenArg) throw new Error("runDatasetTimestampWrap requires a --token <path|base64>");
+
+  // Strict read + the EXISTING attest build path (NO re-impl) so the timestamped-over bytes are byte-for-
+  // byte the SAME bytes `vh dataset attest`/`timestamp-request` emit.
+  const manifest = readManifest(manifestPath);
+  const unsigned = buildAttestation(manifest);
+  const token = resolveTimestampToken(tokenArg);
+
+  // The engine re-derives the canonical SHA-256 digest, parses the token, and confirms bindsDigest — a
+  // token that stamps a DIFFERENT digest (or hash algorithm) hard-errors HERE, never lands a bad container.
+  const container = buildTimestampedAttestation({ attestation: unsigned, token });
+  const canonical = serializeTimestampedAttestation(container);
+  const facts = coreTimestamp.readTimestampFacts(container);
+
+  let outAbs = null;
+  if (opts.out) {
+    outAbs = path.resolve(opts.out);
+    fs.writeFileSync(outAbs, canonical); // the ONLY side effect — at the caller's explicit path, never cwd
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify({
+        kind: container.kind,
+        scheme: container.timestamp.scheme,
+        hashAlgorithm: container.timestamp.hashAlgorithm,
+        digest: facts.digest,
+        genTime: facts.genTime,
+        serialNumber: facts.serialNumber,
+        policyOID: facts.policyOID,
+        out: outAbs,
+        // ARTIFACT PARITY with `attest --json`: when there is no --out, carry the canonical bytes so --json
+        // never drops the artifact; with --out the bytes are on disk so `container` is null.
+        container: outAbs ? null : canonical,
+        note: TIMESTAMP_WRAP_TRUST_NOTE,
+      }) + "\n"
+    );
+  } else {
+    write(`  TRUST: ${TIMESTAMP_WRAP_TRUST_NOTE}\n`);
+    write("\n");
+    write(`  timestamped: an INDEPENDENT TSA stamped this digest by genTime\n`);
+    write(`  digest (sha256 of the canonical attestation bytes): ${facts.digest}\n`);
+    write(`  genTime (asserted by the TSA):                       ${facts.genTime}\n`);
+    write(`  TSA serial:                                          ${facts.serialNumber.hex}\n`);
+    write(`  policy OID:                                          ${facts.policyOID}\n`);
+    if (outAbs) {
+      write(`  timestamped dataset attestation written: ${outAbs}\n`);
+    } else {
+      write(canonical);
+    }
+  }
+  return { container, canonical, digest: facts.digest, genTime: facts.genTime, out: outAbs };
+}
+
+// =================================================================================================
 // `vh dataset check <manifest> --policy <p> [--json]` — deterministic, OFFLINE license/source policy gate.
 //
 // WHY THIS EXISTS
@@ -2427,6 +2710,18 @@ module.exports = {
   verifySignedAttestation,
   formatVerifyAttest,
   runDatasetVerifyAttest,
+  // timestamp (T-20.2) — detached RFC-3161 container over the SAME generic timestamp core.
+  TIMESTAMPED_ATTESTATION_KIND,
+  TIMESTAMPED_ATTESTATION_SCHEMA_VERSION,
+  SUPPORTED_TIMESTAMPED_ATTESTATION_SCHEMA_VERSIONS,
+  TIMESTAMPED_ATTESTATION_TRUST_NOTE,
+  TIMESTAMP_REQUEST_TRUST_NOTE,
+  validateTimestampedAttestation,
+  buildTimestampedAttestation,
+  serializeTimestampedAttestation,
+  readTimestampedAttestation,
+  runDatasetTimestampRequest,
+  runDatasetTimestampWrap,
   TRUST_NOTE,
   MEMBERSHIP_TRUST_NOTE,
   NO_LICENSE_BUCKET,

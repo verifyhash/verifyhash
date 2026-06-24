@@ -261,10 +261,21 @@ function buildPacket({ bank, book, rentroll, reportDate, period, opening, tolera
   const disclaimer = DISCLAIMER_LINES.slice();
   if (policyMeta) disclaimer.push(policyDisclaimerLine(policyMeta.state));
 
+  // The opening balances this period rolled FORWARD from (the prior period's
+  // asserted ending, or 0/0 for the first period). Surfaced on the model so the
+  // period-close artifact (close.js) can derive a continuity-checkable opening
+  // PURELY from the packet, and so the packet is self-describing about what it
+  // started from. Same untrusted-hint posture as every other input.
+  const openingBalances = {
+    bank: opening && Number.isInteger(opening.bank) ? opening.bank : 0,
+    book: opening && Number.isInteger(opening.book) ? opening.book : 0,
+  };
+
   return {
     schema: "trustledger.reconciliation-packet/v1",
     reportDate,
     period: period || null,
+    opening: openingBalances,
     // The policy (state label + the applied overrides/citations) that governed
     // this run, or null for the built-in baseline. Names WHICH policy decided the
     // verdict so the report and --json are self-describing.

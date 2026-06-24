@@ -424,6 +424,11 @@ Options:
   --opening-book <amt>   opening book balance; default 0
   --tolerance-cents <n>  tie-out tolerance in integer cents; default 0
   --bank-format csv|ofx  force the bank-file format instead of auto-detecting
+  --map <src>:<lf>=<hdr> bind a logical field to an EXACT column header when the
+                         alias auto-detect misses it; <src> is bank|ledger|rentroll
+                         (repeatable). See "Onboarding: inspect before you reconcile"
+  --map-file <json>      a { bank|ledger|rentroll: { <logical>: <header> } } file of
+                         the same per-source overrides (an inline --map wins on a clash)
 ```
 
 ### Example
@@ -446,6 +451,175 @@ exit=3
 
 ---
 
+## Onboarding: inspect before you reconcile
+
+`reconcile` is **strict on purpose** — it parses each of your three files **fail-closed**: a missing
+required column or the **first** malformed cell aborts the whole run with a single located error
+(`error: missing required column "date" in header` / `error: … line N …`, exit `1`), because a trust
+reconciliation must **never silently partial-parse**. That strictness is correct for the audit, but on
+**file one** of a real broker's export it can read as "the tool is broken" with no way to see what the
+file *does* contain. `vh trust inspect` is the read-only companion that turns that dead end into a
+self-service fix.
+
+```
+vh trust inspect <file> --as <bank|ledger|rentroll> [--map <lf>=<hdr>] [--map-file <json>]
+                        [--bank-format csv|ofx] [--sample <n>] [--json]
+```
+
+`inspect` runs the **same parse primitives** `reconcile` uses, but on **one file**, **without failing
+closed**. It reports, for that file:
+
+- the **detected format** (CSV vs OFX/QFX) and the **detected header columns** (or the OFX tags it read);
+- a **logical-field → header** map showing exactly which of your columns each required field bound to,
+  with any unmapped **required** field flagged `(not found) [REQUIRED]`;
+- the **parse count** (`parsed: K OK of N data row(s)`) and a **sample** of the normalized records;
+- **EVERY** failing row (not just the first), each by data-row number with its reason; and
+- a **`how to fix:`** hint that, for each miss, names both the accepted column aliases **and** the
+  `--map` override that loads the file as-is.
+
+`inspect` **writes nothing** and **checks only PARSING** — it does **not** reconcile, match, compute the
+three balances, or attest anything. Its own output leads by saying so:
+
+> `TrustLedger AIDS reconciliation; the broker remains the responsible custodian.`
+> ``inspect`` only checks that this file PARSES into the normalized model — it does NOT reconcile or
+> attest anything. To reconcile, run ``vh trust reconcile``.
+
+That is the same honest posture as the disclaimer at the top of this document: a clean `inspect` means
+the file **loads**, not that the books are **right** — the three-way reconciliation, and a qualified
+CPA's review of the packet, still govern.
+
+### Exit codes (`vh trust inspect`)
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | **clean** — the file parses end to end: every required column found and every data row normalized |
+| `3` | **not clean** — a required column is missing OR at least one row failed to parse (the report still prints the header map, the good-row sample, and the `how to fix:` hint) |
+| `2` | usage error (missing `<file>`, missing/bad `--as`, bad `--map`/`--bank-format`, unknown flag, extra positional) |
+| `1` | IO error (the file is unreadable) |
+
+Note the contrast with `reconcile`: a **malformed data file** makes `reconcile` exit `1`, but it makes
+`inspect` exit `3` — because for `inspect` a malformed file is the **expected** thing it was run to
+diagnose, not an IO failure. `--json` round-trips the full diagnostic report (header, `mapped`,
+`requiredMissing`, `rowCount`, `okCount`, `records`, `errors`, `sample`, plus `clean`/`code`/`hint`/
+`caveat`/`scope`), so onboarding can be scripted.
+
+### The column-mapping escape hatch: `--map` / `--map-file`
+
+When a real export's header matches **none** of the built-in aliases (a bank column labelled
+`MoneyOut`, a rent-roll `Tenant Name`), you do **not** have to edit the source file. Point the parser at
+the right columns with an explicit map. The map **overrides** the alias auto-detect for the fields it
+names and leaves the rest to auto-detect — so a **one-field** map fixes a single stray header.
+
+The **logical fields** you may map are the parser's own field names; an unknown key, or a header the
+file does not actually contain, is a **named error** that lists the valid options (never a silent
+mis-map):
+
+- **bank / ledger:** `date`, `memo`, `type`, and **either** a signed `amount` **or** a `debit`/`credit`
+  pair (`party`/`payee` on the ledger).
+- **rentroll:** `date`, `tenant`, and **either** `amount` **or** a `payment`/`charge` pair.
+
+**Syntax differs by command**, because `reconcile` handles three files at once and `inspect` handles
+one:
+
+| Command | `--map` form | `--map-file` shape |
+| --- | --- | --- |
+| `vh trust inspect` | `--map <logical>=<header>` (the source is `--as`) | `{ "<that --as source>": { "<logical>": "<header>" } }` |
+| `vh trust reconcile` | `--map <source>:<logical>=<header>` (`source` = `bank`\|`ledger`\|`rentroll`) | `{ "bank": { … }, "ledger": { … }, "rentroll": { … } }` |
+
+Both flags are **repeatable**; a `--map-file` supplies the base and an inline `--map` overrides it on a
+clash. **How a bad map is reported splits two ways, and it differs between the commands:**
+
+- A **structural** flag error — a malformed `--map` (no `=`, an empty side), an unreadable or invalid
+  `--map-file`, an unknown source key — is a **usage error (exit `2`)** for **both** commands. It is a
+  bad flag value caught before any file is parsed, the same exit class whether it arrives by inline
+  `--map` or by `--map-file`, so CI can tell "fix your flags" from a real IO error.
+- A **semantic** map error — an **unknown logical field**, or a **mapped-to header that is absent from
+  the file** — is where the two commands diverge. `reconcile` **pre-flights** every source's map
+  (`validateColumnMapForSource`) and rejects these as a **usage error (exit `2`)** before reconciling.
+  `inspect`, by contrast, feeds the map straight into the same `diagnoseSource` parse it is built to
+  diagnose, so an unknown field or absent header surfaces as a **parse failure in the report and exits
+  `3` (not clean)** — not `2`. That is deliberate: for `inspect` a map that does not line up with the
+  file is exactly the kind of "this file does not parse as mapped" finding the command exists to show
+  you, alongside the `how to fix:` hint, rather than a flag-usage abort.
+
+### Worked example: "my header isn't recognized → inspect → --map → it loads"
+
+A broker's bank export uses house column names no alias matches (`When`, `Narrative`, `MoneyOut`,
+`MoneyIn`, `Kategorie`). Running `reconcile` on it dead-ends on the first required column it cannot find.
+**First, `inspect` to see what the file actually contains:**
+
+```
+$ vh trust inspect bank.csv --as bank; echo "exit=$?"
+# vh trust inspect — bank (bank.csv)
+TrustLedger AIDS reconciliation; the broker remains the responsible custodian.
+`inspect` only checks that this file PARSES into the normalized model — it does NOT reconcile or attest anything. To reconcile, run `vh trust reconcile`.
+
+detected format: csv
+header columns (5): When, Narrative, MoneyOut, MoneyIn, Kategorie
+
+logical field -> header column:
+  date: (not found) [REQUIRED]
+  ...
+
+how to fix:
+  - the "date" column was not found — rename your column to (or add) one named one of [date, posted, posting date, transaction date, trans date], OR map your existing header with --map date=<your header>
+exit=3
+```
+
+**Then follow the hint — map your existing headers, no source edit — and it loads:**
+
+```
+$ vh trust inspect bank.csv --as bank \
+    --map date=When --map memo=Narrative --map debit=MoneyOut --map credit=MoneyIn --map type=Kategorie
+... parsed: 4 OK of 4 data row(s)
+... failures: none
+exit=0
+```
+
+The **same map** then drives `reconcile` (here via a reusable `--map-file`, so the three files' overrides
+live in one place):
+
+```
+$ cat maps.json
+{ "bank": { "date":"When", "memo":"Narrative", "debit":"MoneyOut", "credit":"MoneyIn", "type":"Kategorie" } }
+
+$ vh trust reconcile bank.csv ledger.csv rentroll.csv --map-file maps.json --out ./packets/may
+PASS: three-way reconciliation tie out (...)
+```
+
+This turns "hope their file matches our fixtures" into **"their file loads, or the tool tells them
+exactly how to make it load."**
+
+### Widened alias + date coverage (so many real exports load with NO map)
+
+The mapping escape hatch is the fallback; the common cases are covered by **wider built-in aliases**
+drawn from the exports the target buyer actually uses, so a typical QuickBooks / bank / rent-roll export
+parses with **no `--map` at all**:
+
+- **bank:** `Withdrawal`/`Withdrawal Amt.`/`Debit Amount` and `Deposit`/`Deposit Amt.`/`Credit Amount`
+  split columns, a `Posting Date`/`Transaction Date`, a `Check #`/`Ref`, and a running-`Balance` column
+  the parser ignores.
+- **QuickBooks ledger:** `Num`/`Clr`/`Split`/`Account` columns are tolerated, and the payee is read from
+  `Name`/`Payee`.
+- **rent roll:** `Tenant`/`Resident`/`Lessee`/`Lease` (and `Name`), and either `Amount Paid`/`Payment`
+  (a credit) or `Amount Due`/`Charge` (a debit), with a `Balance` column ignored. Note a two-word
+  `Tenant Name` is **not** itself an alias — it is exactly the header the `--map` example below maps;
+  the no-map headers are the single-word forms above.
+
+Dates now parse beyond ISO `YYYY-MM-DD`, `M/D/YYYY`, and OFX `YYYYMMDD`: the textual forms
+`Mon DD, YYYY` (e.g. `Jan 5, 2024`, `September 5 2024`, `Sept. 30, 2024`) and `DD-Mon-YYYY` (e.g.
+`5-Jan-2024`, `05-Jan-24`) are accepted. Every date is still **calendar-validated** — `Feb 30, 2024` or
+an unknown month name is a **named error**, never coerced — keeping the parser strict even as it accepts
+more shapes.
+
+> **A clean `inspect` is not a PASS.** `inspect` only confirms a file **parses**; it makes no
+> three-way, computes no balances, and attests nothing. The broker remains the legal trust-account
+> custodian, and a qualified CPA must still review the reconciliation **packet** — exactly as stated in
+> the disclaimer at the top of this document. `inspect`, `--map`, and the widened aliases change **how a
+> file gets in**, never **what a PASS means**.
+
+---
+
 ## How it works (the pipeline)
 
 ```
@@ -459,6 +633,8 @@ reconcile.js  the three-balance check + the classified exception list
 report.js     render a DATED, deterministic, audit-ready packet (HTML + CSV)
    |
 cli.js        `vh trust reconcile` — one-line PASS/FAIL + CI-gateable exit code
+              `vh trust inspect`   — read-only parse diagnostic over ONE file
+                                     (same parse primitives; never fails closed)
 ```
 
 Each stage is a pure, deterministic module under `trustledger/`. `report.buildPacket(...)` is the pure
@@ -482,12 +658,23 @@ into a sellable, compliant product are **human-owned** and tracked in STRATEGY.m
   jurisdiction. No engine change is needed; the bundled `baseline.json` / `ca-example.json` are the
   DRAFT skeletons to copy (P-5 #2).
 - **Run the two-month design-partner script with 1–2 brokers** (e.g. via NARPM). The concrete,
-  decision-ready validation is now a script the engine already supports: have a partner run
-  `vh trust reconcile … --state <code> --emit-close month1.json` on their **real month-1** files, then
-  re-run on **month-2** files with `--prior-close month1.json`, and confirm (a) the three balances tie out
-  both months, (b) the roll-forward is clean (no `CONTINUITY_BREAK`), and (c) the exceptions read
-  correctly. That **two-month run IS the willingness-to-pay validation** — it shows the recurring monthly
-  product working past month one, which a single-period demo cannot (P-5 #3).
+  decision-ready validation is a script the engine already supports — and it now **leads with the
+  de-risked onboarding step** so a real export's first contact with the tool is "it loads, or the tool
+  tells you how," not a dead-end parse error:
+  1. **FIRST** have the partner run `vh trust inspect <eachFile> --as <type>` on their **real** files to
+     confirm each **parses** (fixing any header miss with `--map <logical>=<header>` — see **Onboarding:
+     inspect before you reconcile** above). This converts the single most likely pilot-killer — ingest
+     choking on a real broker's export — from a dead end into a self-service fix **before** any
+     reconciliation runs.
+  2. **THEN** run the two-month reconcile script: have the partner run
+     `vh trust reconcile … --state <code> --emit-close month1.json` on their **real month-1** files, then
+     re-run on **month-2** files with `--prior-close month1.json`, and confirm (a) the three balances tie
+     out both months, (b) the roll-forward is clean (no `CONTINUITY_BREAK`), and (c) the exceptions read
+     correctly.
+
+  That **two-month run IS the willingness-to-pay validation** — it shows the recurring monthly product
+  working past month one, which a single-period demo cannot; leading with `inspect` makes sure month one
+  even gets that far (P-5 #3).
 
 Hosting, billing (a SaaS subscription), and pricing are likewise human steps. Income comes from selling
 the product to paying customers — **never** from a token, coin, sale, or yield scheme.

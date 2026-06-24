@@ -241,6 +241,76 @@ function _normalizeFileSet(files) {
 }
 
 // ---------------------------------------------------------------------------
+// _normalizeSuppliedForVerify(files) — the LENIENT sibling of _normalizeFileSet,
+// used ONLY by verifySeal. BUILD must see all three roles + a non-empty packet;
+// VERIFY, by contrast, must tolerate a PARTIAL supplied set (e.g. only the out/
+// folder was shipped, so the source inputs are absent on disk) and still localize
+// which sealed files are MISSING. So this allows EITHER list to be empty — but it
+// applies the SAME per-entry strictness (relPath non-empty + unique across the set +
+// not the reserved header slot; role a known role used at most once; bytes a Buffer).
+// A garbage SUPPLIED entry is still rejected loudly; only the "must be three roles /
+// non-empty" cardinality rules are relaxed for the read path.
+// ---------------------------------------------------------------------------
+
+function _normalizeSuppliedForVerify(files) {
+  if (!isPlainObject(files)) {
+    throw new SealError("verifySeal requires a { inputs, outputs } file set object");
+  }
+  const rawInputs = Array.isArray(files.inputs) ? files.inputs : [];
+  const rawOutputs = Array.isArray(files.outputs) ? files.outputs : [];
+
+  const seenRelPath = new Set();
+  const seenRole = new Set();
+
+  function takeBytes(e, where) {
+    if (!isPlainObject(e)) {
+      throw new SealError(`seal ${where} entry must be an object with relPath + bytes`);
+    }
+    if (typeof e.relPath !== "string" || e.relPath.length === 0) {
+      throw new SealError(`seal ${where} entry relPath must be a non-empty string`);
+    }
+    if (e.relPath === SEAL_HEADER_RELPATH) {
+      throw new SealError(
+        `seal ${where} entry relPath ${JSON.stringify(e.relPath)} is reserved for the seal header`
+      );
+    }
+    if (seenRelPath.has(e.relPath)) {
+      throw new SealError(
+        `seal has a duplicate relPath across the supplied set: ${JSON.stringify(e.relPath)}`
+      );
+    }
+    seenRelPath.add(e.relPath);
+    if (!(e.bytes instanceof Uint8Array) && !Buffer.isBuffer(e.bytes)) {
+      throw new SealError(
+        `seal ${where} entry ${JSON.stringify(e.relPath)} bytes must be a Buffer/Uint8Array`
+      );
+    }
+    return Buffer.isBuffer(e.bytes) ? e.bytes : Buffer.from(e.bytes);
+  }
+
+  const inputs = rawInputs.map((e) => {
+    const bytes = takeBytes(e, "inputs");
+    if (!INPUT_ROLES.includes(e.role)) {
+      throw new SealError(
+        `seal input role must be one of ${JSON.stringify(INPUT_ROLES)}, got: ${JSON.stringify(e.role)}`
+      );
+    }
+    if (seenRole.has(e.role)) {
+      throw new SealError(`seal has a duplicate input role: ${JSON.stringify(e.role)}`);
+    }
+    seenRole.add(e.role);
+    return { role: e.role, relPath: e.relPath, bytes };
+  });
+
+  const outputs = rawOutputs.map((e) => {
+    const bytes = takeBytes(e, "outputs");
+    return { role: null, relPath: e.relPath, bytes };
+  });
+
+  return { inputs, outputs, entries: [...inputs, ...outputs] };
+}
+
+// ---------------------------------------------------------------------------
 // Internal: compute the manifest (root + per-file leaf/contentHash) over the
 // whole file set by REUSING the existing core VERBATIM — `cli/hash.js`
 // `hashEntries` for the path-bound Merkle root, then `cli/core/manifest.js`
@@ -653,14 +723,26 @@ function verifySeal(seal, files) {
   // basis (a corrupt seal is rejected loudly, not silently treated as "everything changed").
   validateSeal(seal);
 
-  const { inputs, outputs, entries } = _normalizeFileSet(files);
+  // VERIFY tolerates a PARTIAL supplied set (some sealed files absent on disk) — that is the whole
+  // point of localizing MISSING. We therefore use the LENIENT normalizer here (not _normalizeFileSet,
+  // which requires non-empty inputs+outputs for BUILD): every supplied entry is still strictly checked
+  // (role/relPath/bytes), but an empty list is allowed so an all-absent set still routes through THIS
+  // honest per-file localization rather than a synthesized "everything missing" fallback.
+  const { inputs, outputs, entries } = _normalizeSuppliedForVerify(files);
 
-  // Recompute the manifest/root over the supplied bytes via the SAME shared core — this is the
-  // authoritative computation. The recomputed ROOT also folds in the synthetic header built from the
-  // seal's recorded verdict + the SUPPLIED input role bindings, so a swapped role (or a supplied set
-  // whose roles disagree with the sealed roles) yields a different recomputed root → rootMatches:false.
-  const { byRelPath: suppliedByRel } = _manifestOver(entries);
-  const recomputedRoot = _rootFromSupplied(_committedEntries(entries, seal.verdict, inputs));
+  // Per-file recomputed contentHash from the SUPPLIED bytes via the SHARED hasher — the authoritative
+  // re-derivation. Done per file (not via a whole-tree manifest) so a PARTIAL set still yields honest
+  // per-file findings without needing every leaf present to build a tree.
+  const suppliedByRel = new Map();
+  for (const e of entries) suppliedByRel.set(e.relPath, { relPath: e.relPath, contentHash: hashBytes(e.bytes) });
+
+  // The recomputed ROOT folds in the synthetic header built from the seal's recorded verdict + the
+  // SUPPLIED input role bindings, so a swapped role (or a supplied set whose roles disagree with the
+  // sealed roles) yields a different recomputed root → rootMatches:false. A tree needs ≥1 leaf, and a
+  // partial set can never re-derive the sealed root anyway, so we compute it only when at least one
+  // file is supplied; with an empty set it is null and rootMatches is false.
+  const recomputedRoot =
+    entries.length > 0 ? _rootFromSupplied(_committedEntries(entries, seal.verdict, inputs)) : null;
 
   // Map the supplied set's relPath -> { role, recomputedContentHash }. Role is the input role (for
   // inputs) so the result can name "the bank input changed", not just a path.
@@ -719,7 +801,7 @@ function verifySeal(seal, files) {
   unexpected.sort(byRel);
   roleMismatches.sort(byRel);
 
-  const rootMatches = recomputedRoot.toLowerCase() === seal.root.toLowerCase();
+  const rootMatches = recomputedRoot != null && recomputedRoot.toLowerCase() === seal.root.toLowerCase();
   const accepted =
     changed.length === 0 &&
     missing.length === 0 &&

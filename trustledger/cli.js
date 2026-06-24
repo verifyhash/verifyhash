@@ -424,6 +424,324 @@ function todayISO() {
 }
 
 // ---------------------------------------------------------------------------
+// `vh trust inspect` (T-25.2) — read-only file validator / preview
+// ---------------------------------------------------------------------------
+//
+// The onboarding companion to `reconcile`. `reconcile` fails CLOSED (the first
+// malformed row aborts the whole file) because a trust reconciliation must never
+// silently partial-parse. That is correct for the gate, but it is a DEAD END
+// when a broker first feeds the tool a real export: they get one error and no
+// path forward. `inspect` turns that dead end into a self-service fix.
+//
+// It runs `diagnoseSource` over ONE file and prints, for that file: the detected
+// header; the logical->header column map (or "(not found)"); the OK/total parse
+// count; a small SAMPLE of normalized records; and EVERY failing row (number +
+// reason). When a required column is missing OR any row failed it prints an
+// ACTIONABLE hint and exits 3 (the data-gate FAIL code); a fully-clean file
+// exits 0. It is STRICTLY read-only: it writes NOTHING anywhere — no packet, no
+// receipt, not even with a path flag. It does NOT reconcile or attest; it only
+// checks that the file PARSES into the normalized model.
+
+// Map the broker-facing `--as` value to the ingest SOURCE. The three logical
+// kinds a reconcile consumes: a bank statement, a QuickBooks ledger, a rent roll.
+const INSPECT_AS = Object.freeze({
+  bank: ingest.SOURCE.BANK,
+  ledger: ingest.SOURCE.QUICKBOOKS,
+  rentroll: ingest.SOURCE.RENT_ROLL,
+});
+
+// Parse `inspect` argv: one positional <file>, plus flags. Unknown flags and a
+// missing/duplicate positional are USAGE errors (parser parity with reconcile —
+// a typo never silently returns a wrong view). `--as` is REQUIRED and validated.
+function parseInspectArgs(argv) {
+  const opts = {
+    file: undefined,
+    as: undefined,
+    bankFormat: undefined,
+    json: false,
+    sample: undefined, // sample size (default applied by the runner)
+    _positionals: [],
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--as":
+        opts.as = argv[++i];
+        if (opts.as === undefined) {
+          const e = new Error("--as requires a value");
+          e.usage = true;
+          throw e;
+        }
+        break;
+      case "--bank-format":
+        opts.bankFormat = argv[++i];
+        if (opts.bankFormat === undefined) {
+          const e = new Error("--bank-format requires a value");
+          e.usage = true;
+          throw e;
+        }
+        break;
+      case "--json":
+        opts.json = true;
+        break;
+      case "--sample":
+        opts.sample = parseIntArg(argv[++i], "--sample");
+        break;
+      default:
+        if (a && a.startsWith("--")) {
+          const e = new Error(`unknown option: ${a}`);
+          e.usage = true;
+          throw e;
+        }
+        opts._positionals.push(a);
+    }
+  }
+  if (opts._positionals.length > 1) {
+    const e = new Error(
+      `unexpected extra argument: ${opts._positionals[1]} ` +
+        "(inspect takes exactly one <file>)"
+    );
+    e.usage = true;
+    throw e;
+  }
+  opts.file = opts._positionals[0];
+  return opts;
+}
+
+// Pretty-print signed integer cents as a signed dollar string (e.g. -75000 ->
+// "-750.00"). Pure; used only for the human SAMPLE table.
+function fmtCents(cents) {
+  const n = Number(cents) || 0;
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+}
+
+// The standing TrustLedger caveat the output LEADS with, and the inspect-specific
+// scope note. Centralized so the human and (commented) JSON paths agree.
+const INSPECT_CAVEAT =
+  "TrustLedger AIDS reconciliation; the broker remains the responsible custodian.";
+const INSPECT_SCOPE =
+  "`inspect` only checks that this file PARSES into the normalized model — it does " +
+  "NOT reconcile or attest anything. To reconcile, run `vh trust reconcile`.";
+
+// Render the diagnostic report as the human inspect view. Pure: takes the
+// report + resolved opts, returns a string. Leads with the caveat + scope, then
+// the header, the logical->header map, the OK/total count, the sample, every
+// failing row, and (when anything is wrong) the actionable hint.
+function renderInspect(report, opts) {
+  const L = [];
+  L.push(`# vh trust inspect — ${opts.as} (${opts.file})`);
+  L.push(INSPECT_CAVEAT);
+  L.push(INSPECT_SCOPE);
+  L.push("");
+
+  // Detected format (CSV vs OFX/QFX) — honest about which path ran, so an OFX
+  // bank export is recognized rather than mis-read as a one-column CSV.
+  if (report.format) {
+    L.push(`detected format: ${report.format}`);
+  }
+
+  // Detected header columns (CSV header row, or the OFX tags we read).
+  L.push(
+    `${report.format === "ofx" ? "OFX tags" : "header columns"} ` +
+      `(${report.header.length}): ` +
+      (report.header.length ? report.header.join(", ") : "(none)")
+  );
+  L.push("");
+
+  // Logical field -> header it mapped to (or "(not found)").
+  L.push("logical field -> header column:");
+  for (const logical of Object.keys(report.mapped)) {
+    const mapped = report.mapped[logical];
+    const req = report.requiredMissing.includes(logical) ? " [REQUIRED]" : "";
+    L.push(`  ${logical}: ${mapped == null ? "(not found)" : mapped}${req}`);
+  }
+  L.push("");
+
+  // Parse count.
+  L.push(`parsed: ${report.okCount} OK of ${report.rowCount} data row(s)`);
+
+  // Sample of normalized records (date / signed-cents / kind / party / memo).
+  L.push("");
+  if (report.sample.length) {
+    L.push(`sample (first ${report.sample.length} normalized record(s)):`);
+    for (const r of report.sample) {
+      L.push(
+        `  ${r.date}  ${fmtCents(r.amount).padStart(12)}  ${r.kind}  ` +
+          `${r.party || "(no party)"}  | ${r.memo || ""}`.trimEnd()
+      );
+    }
+  } else {
+    L.push("sample: (no rows parsed)");
+  }
+
+  // Every failing row with its number + reason.
+  L.push("");
+  if (report.errors.length) {
+    L.push(`failures (${report.errors.length}):`);
+    for (const e of report.errors) {
+      const where = e.row == null ? "file" : `row ${e.row}`;
+      L.push(`  ${where}: ${e.message}`);
+    }
+  } else {
+    L.push("failures: none");
+  }
+
+  // Actionable hint when a required column is missing OR any row failed.
+  const hint = inspectHint(report);
+  if (hint.length) {
+    L.push("");
+    L.push("how to fix:");
+    for (const h of hint) L.push(`  - ${h}`);
+  }
+
+  L.push("");
+  return L.join("\n");
+}
+
+// Build the actionable hint lines: for each missing required column, name the
+// accepted aliases the broker can rename/add a column to. A row-level failure
+// (with all required columns present) gets a generic "fix the cells" line.
+// Returns [] when the file is fully clean.
+//
+// HONESTY: the hint promises ONLY what the tool can do TODAY — rename/add a
+// column from the named aliases. It deliberately does NOT advertise a column-
+// mapping override flag, because none exists yet (a no-edit `--map` override is
+// the NEXT task, T-25.3); pointing a broker at a flag that hard-errors would
+// re-introduce the exact dead end this command exists to remove. The header
+// note tells them the override is coming without implying it works now.
+function inspectHint(report) {
+  const out = [];
+  for (const logical of report.requiredMissing) {
+    const aliases = ingest.aliasesFor(report.source, logical);
+    out.push(
+      `the "${logical}" column was not found — rename your column to (or add) ` +
+        `one named one of [${aliases.join(", ")}]`
+    );
+  }
+  // The amount group (signed amount OR a split pair) is reported as a file-level
+  // error rather than a missing single column; surface its own add-a-column hint.
+  for (const e of report.errors) {
+    if (e.row == null && /needs an "amount" column|debit\/credit|payment\/charge/.test(e.message)) {
+      out.push(`${e.message} — rename/add one of those columns`);
+    }
+  }
+  // Row-level failures with the header otherwise intact: a per-row data problem.
+  const rowFails = report.errors.filter((e) => e.row != null);
+  if (rowFails.length) {
+    out.push(
+      `${rowFails.length} row(s) above failed to parse — fix the listed cells, ` +
+        "then re-run `vh trust inspect` until 0 failures before `vh trust reconcile`"
+    );
+  }
+  return out;
+}
+
+// runInspect: read the one file, run diagnoseSource, render, and return
+// { code, report, render }. Read-only — writes NOTHING. Exit contract:
+//   0 = clean (every required column present AND every row parsed),
+//   3 = data-gate FAIL (a required/amount column missing OR any row failed),
+//   2 = usage error (bad --as), 1 = IO error (unreadable file) — consistent
+//   with `reconcile`.
+function runInspect(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.file) {
+    writeErr("error: `vh trust inspect` requires a <file>\n");
+    return { code: EXIT.USAGE };
+  }
+  if (opts.as == null) {
+    writeErr(
+      "error: `vh trust inspect` requires --as <bank|ledger|rentroll>\n"
+    );
+    return { code: EXIT.USAGE };
+  }
+  const source = INSPECT_AS[opts.as];
+  if (!source) {
+    writeErr(
+      `error: --as must be one of bank|ledger|rentroll (got "${opts.as}")\n`
+    );
+    return { code: EXIT.USAGE };
+  }
+  if (
+    opts.bankFormat != null &&
+    opts.bankFormat !== "csv" &&
+    opts.bankFormat !== "ofx"
+  ) {
+    writeErr(
+      `error: --bank-format must be "csv" or "ofx" (got "${opts.bankFormat}")\n`
+    );
+    return { code: EXIT.USAGE };
+  }
+
+  // Read the file (an unreadable file is exit 1, not a crash) — read-only.
+  let text;
+  try {
+    text = fs.readFileSync(path.resolve(opts.file), "utf8");
+  } catch (e) {
+    writeErr(`error: cannot read file ${opts.file}: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+
+  // Run the diagnostic core. It is PURE and side-effect-free.
+  let report;
+  try {
+    report = ingest.diagnoseSource(source, text, {
+      sampleSize: opts.sample == null ? 5 : opts.sample,
+      // Honour --bank-format (csv|ofx) for --as bank; undefined => auto-detect.
+      // Only meaningful for the bank source, ignored by diagnoseSource otherwise.
+      format: opts.bankFormat,
+    });
+  } catch (e) {
+    // diagnoseSource only throws on an unknown source (already guarded above) or
+    // a genuine (non-ingest) bug; treat as an input error rather than crashing.
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+
+  // Verdict: clean iff every required column is present AND every row parsed.
+  const clean = report.requiredMissing.length === 0 && report.errors.length === 0;
+  const code = clean ? EXIT.PASS : EXIT.FAIL;
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ...report,
+          file: opts.file,
+          as: opts.as,
+          clean,
+          code,
+          hint: inspectHint(report),
+          caveat: INSPECT_CAVEAT,
+          scope: INSPECT_SCOPE,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(renderInspect(report, opts));
+  }
+
+  return { code, report, render: undefined };
+}
+
+function cmdInspect(argv, io = {}) {
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseInspectArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+  return runInspect(opts, io).code;
+}
+
+// ---------------------------------------------------------------------------
 // argv dispatch
 // ---------------------------------------------------------------------------
 
@@ -447,9 +765,12 @@ function cmdTrust(argv, io = {}) {
   if (sub === "reconcile") {
     return cmdReconcile(rest, io);
   }
+  if (sub === "inspect") {
+    return cmdInspect(rest, io);
+  }
   writeErr(
     `error: unknown trust subcommand: ${sub === undefined ? "(none)" : sub} ` +
-      `(expected: reconcile)\n`
+      `(expected: reconcile, inspect)\n`
   );
   return EXIT.USAGE;
 }
@@ -459,6 +780,11 @@ module.exports = {
   parseReconcileArgs,
   runReconcile,
   cmdReconcile,
+  parseInspectArgs,
+  runInspect,
+  cmdInspect,
+  renderInspect,
+  inspectHint,
   cmdTrust,
   todayISO,
 };

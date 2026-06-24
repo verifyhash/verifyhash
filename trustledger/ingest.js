@@ -451,35 +451,46 @@ function parseBankCSV(text) {
   return out;
 }
 
+// Pull a single (possibly unclosed, SGML-style) tag value from an OFX block:
+// "everything up to the next '<' or newline".
+function ofxTagVal(block, tag) {
+  const m = block.match(new RegExp(`<${tag}>([^<\\r\\n]*)`, "i"));
+  return m ? m[1].trim() : undefined;
+}
+
+// Split an OFX/QFX document into its <STMTTRN> transaction blocks. Throws when
+// the text is plainly not an OFX document at all (so a misrouted CSV is a clear
+// error, not a silent empty result).
+function ofxBlocks(text) {
+  const blocks = text.match(/<STMTTRN>[\s\S]*?<\/STMTTRN>/gi) || [];
+  if (blocks.length === 0 && !/<OFX>|<STMTTRN>/i.test(text)) {
+    throw new IngestError("not an OFX/QFX document", { source: SOURCE.BANK });
+  }
+  return blocks;
+}
+
+// Build ONE normalized bank record from a single OFX <STMTTRN> block. PURE;
+// throws an IngestError (with `loc`) on any bad/missing tag, exactly like the
+// CSV per-row builders. Shared verbatim by the strict and diagnostic OFX paths.
+function buildOFXRecord(block, loc) {
+  const dtRaw = ofxTagVal(block, "DTPOSTED");
+  if (dtRaw == null) throw new IngestError("OFX txn missing DTPOSTED", loc);
+  // DTPOSTED may include time/zone: take the leading YYYYMMDD.
+  const date = parseDate(dtRaw.slice(0, 8), loc);
+  const amount = parseCents(ofxTagVal(block, "TRNAMT"), "TRNAMT", loc);
+  const memo = ofxTagVal(block, "MEMO") || ofxTagVal(block, "NAME") || "";
+  const trntype = ofxTagVal(block, "TRNTYPE") || "";
+  const kind = coerceKind(trntype, `${trntype} ${memo}`, amount, loc);
+  return makeRecord({ date, amount, memo, kind, party: "", source: SOURCE.BANK });
+}
+
 // Minimal OFX/QFX SGML reader: pull each <STMTTRN> block's fields. We only need
 // TRNTYPE, DTPOSTED, TRNAMT, NAME/MEMO. OFX tags are often unclosed (SGML), so
 // we read each tag's value as "everything up to the next '<'".
 function parseOFX(text) {
   const out = [];
-  const blocks = text.match(/<STMTTRN>[\s\S]*?<\/STMTTRN>/gi) || [];
-  if (blocks.length === 0) {
-    // Could be a non-OFX file misrouted here.
-    if (!/<OFX>|<STMTTRN>/i.test(text)) {
-      throw new IngestError("not an OFX/QFX document", { source: SOURCE.BANK });
-    }
-  }
-  const tagVal = (block, tag) => {
-    const m = block.match(new RegExp(`<${tag}>([^<\\r\\n]*)`, "i"));
-    return m ? m[1].trim() : undefined;
-  };
-  blocks.forEach((block, i) => {
-    const loc = { row: i + 1, source: SOURCE.BANK };
-    const dtRaw = tagVal(block, "DTPOSTED");
-    if (dtRaw == null) throw new IngestError("OFX txn missing DTPOSTED", loc);
-    // DTPOSTED may include time/zone: take the leading YYYYMMDD.
-    const date = parseDate(dtRaw.slice(0, 8), loc);
-    const amount = parseCents(tagVal(block, "TRNAMT"), "TRNAMT", loc);
-    const memo = tagVal(block, "MEMO") || tagVal(block, "NAME") || "";
-    const trntype = tagVal(block, "TRNTYPE") || "";
-    const kind = coerceKind(trntype, `${trntype} ${memo}`, amount, loc);
-    out.push(
-      makeRecord({ date, amount, memo, kind, party: "", source: SOURCE.BANK })
-    );
+  ofxBlocks(text).forEach((block, i) => {
+    out.push(buildOFXRecord(block, { row: i + 1, source: SOURCE.BANK }));
   });
   return out;
 }
@@ -759,9 +770,76 @@ const DIAGNOSE_CONFIG = Object.freeze({
   },
 });
 
+// Diagnose an OFX/QFX bank file: the same parse-WITH-report contract as the CSV
+// path, but OFX has no header row / column map — it is a stream of <STMTTRN>
+// blocks. We REUSE buildOFXRecord verbatim (the strict OFX path uses the same
+// builder) and accumulate per-transaction errors instead of failing closed. The
+// report keeps the SAME shape so inspect renders it uniformly; `format` is set
+// to "ofx", `header`/`mapped` reflect the OFX tags rather than CSV columns.
+function diagnoseOFX(text, sampleSize) {
+  const report = {
+    source: SOURCE.BANK,
+    format: "ofx",
+    // For OFX there is no CSV header row; surface the OFX tags we read so the
+    // human view still has a "what columns did you see" line.
+    header: ["DTPOSTED", "TRNAMT", "TRNTYPE", "NAME/MEMO"],
+    mapped: {
+      date: "DTPOSTED",
+      amount: "TRNAMT",
+      type: "TRNTYPE",
+      memo: "NAME/MEMO",
+    },
+    requiredMissing: [],
+    rowCount: 0,
+    okCount: 0,
+    records: [],
+    errors: [],
+    sample: [],
+  };
+
+  let blocks;
+  try {
+    blocks = ofxBlocks(text);
+  } catch (err) {
+    if (err instanceof IngestError) {
+      report.errors.push({ row: null, message: err.message });
+      return report;
+    }
+    throw err;
+  }
+  if (blocks.length === 0) {
+    report.errors.push({
+      row: null,
+      message: "OFX document has no <STMTTRN> transactions",
+    });
+    return report;
+  }
+
+  blocks.forEach((block, i) => {
+    report.rowCount += 1;
+    const loc = { row: i + 1, source: SOURCE.BANK };
+    try {
+      const rec = buildOFXRecord(block, loc);
+      report.records.push(rec);
+      report.okCount += 1;
+      if (report.sample.length < sampleSize) report.sample.push(rec);
+    } catch (err) {
+      if (err instanceof IngestError) {
+        report.errors.push({ row: i + 1, message: err.message });
+      } else {
+        throw err;
+      }
+    }
+  });
+  return report;
+}
+
 // The single diagnostic driver. `source` selects the config; `text` is the raw
 // file; `opts.sampleSize` controls how many ok rows are echoed in `sample`
-// (default 5). Returns the structured report described in the module header.
+// (default 5). For the bank source `opts.format` ("csv"|"ofx") forces the file
+// format; otherwise it is auto-detected exactly like `parseBankStatement`, so
+// inspect gives the SAME answer the reconcile pipeline would for OFX/QFX exports.
+// Returns the structured report described in the module header.
 function diagnoseSource(source, text, opts = {}) {
   const cfg = DIAGNOSE_CONFIG[source];
   if (!cfg) {
@@ -769,8 +847,19 @@ function diagnoseSource(source, text, opts = {}) {
   }
   const sampleSize = opts.sampleSize == null ? 5 : opts.sampleSize;
 
+  // Bank files may be OFX/QFX. Honour an explicit format, else auto-detect with
+  // the SAME predicate parseBankStatement uses, and route to the OFX diagnostic
+  // path so the onboarding tool never gives a worse answer than the real pipeline.
+  if (source === SOURCE.BANK && text != null) {
+    const fmt =
+      opts.format ||
+      (/<OFX>|<STMTTRN>|OFXHEADER/i.test(text) ? "ofx" : "csv");
+    if (fmt === "ofx") return diagnoseOFX(text, sampleSize);
+  }
+
   const report = {
     source,
+    format: "csv",
     header: [],
     mapped: {},
     requiredMissing: [],
@@ -854,6 +943,18 @@ function diagnoseSource(source, text, opts = {}) {
   return report;
 }
 
+// Report the accepted header ALIASES for a logical field of a source. The
+// inspect/onboarding path uses this to print an ACTIONABLE hint ("add a column
+// named one of [...]") without re-declaring the schema — it reads the SAME
+// schema the diagnostic + strict parsers consult, so the hint can never drift
+// from what the parser actually accepts. Returns [] for an unknown field.
+function aliasesFor(source, logical) {
+  const cfg = DIAGNOSE_CONFIG[source];
+  if (!cfg) throw new IngestError(`unknown source "${source}" for aliasesFor`);
+  const a = cfg.schema[logical];
+  return Array.isArray(a) ? a.slice() : [];
+}
+
 // Convenience per-source wrappers (the `diagnose{Bank,QuickBooks,RentRoll}`
 // family named in the acceptance), each a thin call into diagnoseSource.
 function diagnoseBank(text, opts) {
@@ -879,6 +980,7 @@ module.exports = {
   parseBankStatement,
   parseBankCSV,
   parseOFX,
+  diagnoseOFX,
   parseQuickBooksCSV,
   parseRentRollCSV,
   // diagnostic ingest core (T-25.1) — parse-with-report, never fail-closed
@@ -886,4 +988,5 @@ module.exports = {
   diagnoseBank,
   diagnoseQuickBooks,
   diagnoseRentRoll,
+  aliasesFor,
 };

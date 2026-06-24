@@ -33,6 +33,7 @@ const readFix = (name) => fs.readFileSync(path.join(FIX, name), "utf8");
 function assertReportShape(rep) {
   expect(rep).to.have.all.keys([
     "source",
+    "format",
     "header",
     "mapped",
     "requiredMissing",
@@ -42,6 +43,7 @@ function assertReportShape(rep) {
     "errors",
     "sample",
   ]);
+  expect(rep.format).to.be.oneOf(["csv", "ofx"]);
   expect(rep.header).to.be.an("array");
   expect(rep.mapped).to.be.an("object");
   expect(rep.requiredMissing).to.be.an("array");
@@ -337,6 +339,46 @@ describe("trustledger/ingest: diagnoseSource (parse-with-report)", function () {
         IngestError,
         /unknown source/
       );
+    });
+  });
+
+  describe("OFX/QFX bank files (parse-with-report, not fail-closed)", function () {
+    it("auto-detects OFX and reports format:ofx with the same records reconcile parses", function () {
+      const rep = diagnoseSource(SOURCE.BANK, readFix("bank.ofx"));
+      assertReportShape(rep);
+      expect(rep.format).to.equal("ofx");
+      expect(rep.requiredMissing).to.deep.equal([]);
+      expect(rep.errors).to.deep.equal([]);
+      expect(rep.okCount).to.equal(3);
+      expect(rep.rowCount).to.equal(3);
+      // Same 3 records the strict OFX parser yields.
+      const strict = parseBankStatement(readFix("bank.ofx"), { format: "ofx" });
+      expect(rep.records).to.deep.equal(strict);
+    });
+
+    it("--format ofx forces the OFX path; a CSV under --format ofx is an honest non-OFX error", function () {
+      const rep = diagnoseSource(SOURCE.BANK, readFix("bank.csv"), {
+        format: "ofx",
+      });
+      expect(rep.format).to.equal("ofx");
+      expect(rep.okCount).to.equal(0);
+      expect(rep.errors).to.have.length(1);
+      expect(rep.errors[0].message).to.match(/not an OFX/);
+    });
+
+    it("accumulates a malformed OFX txn instead of failing closed, previewing the good ones", function () {
+      const text = [
+        "<OFX><BANKTRANLIST>",
+        "<STMTTRN><DTPOSTED>20260501<TRNAMT>10.00<MEMO>ok</STMTTRN>",
+        "<STMTTRN><DTPOSTED>20260502<TRNAMT>1.234<MEMO>bad</STMTTRN>",
+        "</BANKTRANLIST></OFX>",
+      ].join("\n");
+      const rep = diagnoseSource(SOURCE.BANK, text);
+      expect(rep.format).to.equal("ofx");
+      expect(rep.okCount).to.equal(1);
+      expect(rep.rowCount).to.equal(2);
+      expect(rep.errors).to.have.length(1);
+      expect(rep.errors[0].row).to.equal(2);
     });
   });
 

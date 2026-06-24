@@ -125,9 +125,11 @@ describe("pilot/run-pilot.js T-32.1: OFFLINE ephemeral-key evidence pilot kit", 
     });
     const stdout = execFileSync("node", [RUN_JS], { cwd: REPO, env, encoding: "utf8" });
 
-    // The verdict line is a clean all-PASS, every step PASSed, no FAILs.
-    expect(stdout).to.match(/VERDICT: PASS — \d+\/\d+ checks passed\./);
-    expect(stdout).to.match(/VERDICT: PASS — (\d+)\/\1 checks passed\./); // passed === total
+    // The verdict line is a clean all-PASS, every step PASSed, no FAILs. (Since T-32.2 the kit drives
+    // BOTH the evidence AND the reconcile vertical into ONE combined verdict line, so the suffix names
+    // both; the count is still passed === total.)
+    expect(stdout).to.match(/VERDICT: PASS — \d+\/\d+ checks passed/);
+    expect(stdout).to.match(/VERDICT: PASS — (\d+)\/\1 checks passed/); // passed === total
     expect(stdout).to.not.match(/\[FAIL\]/);
     expect(stdout).to.include("[PASS] independent verify-vh ACCEPTS the untampered packet (exit 0)");
     expect(stdout).to.include("[PASS] independent verify-vh REJECTS the tampered packet (exit 3)");

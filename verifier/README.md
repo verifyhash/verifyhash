@@ -112,6 +112,42 @@ aggregate.
 
 ---
 
+## 2b. Wire it into your pipeline — a copy-paste CI merge gate
+
+A pilot becomes a renewal when the gate is *wired in*: the build fails the moment a sealed artifact is
+tampered, forged, or signed by the wrong key. Two shipped snippets make that one paste:
+
+- **[`ci/verify-vh.generic.sh`](ci/verify-vh.generic.sh)** — a portable `set -e` shell gate for **GitLab
+  CI, CircleCI, Jenkins, a Makefile recipe, or a git hook**. It is configured entirely by environment
+  variables (no in-file editing), runs the standalone verifier in single-artifact *or* manifest mode, and
+  passes the `0/3/2/1` exit code straight through so any non-zero verdict **fails the job**:
+
+  ```bash
+  # gate one artifact:
+  VH_VENDOR=0xPRODUCER VH_ARTIFACTS="dist/packet.vhevidence.json" ./verifier/ci/verify-vh.generic.sh
+  # gate a WHOLE release in one invocation:
+  VH_VENDOR=0xPRODUCER VH_MANIFEST=release.manifest               ./verifier/ci/verify-vh.generic.sh
+  ```
+
+  | env | meaning |
+  |-----|---------|
+  | `VH_VENDOR`    | **required** — the producer's signer address (`0x` + 20 bytes), pinned out-of-band |
+  | `VH_MANIFEST`  | a release manifest (gate every artifact at once) |
+  | `VH_ARTIFACTS` | space-separated artifact paths (when no manifest) |
+  | `VH_DIR`       | optional dir holding the referenced files |
+  | `VERIFY_VH`    | path to `verify-vh.js` (default `./verifier/verify-vh.js`) |
+
+- **[`ci/verify-vh.github-actions.yml`](ci/verify-vh.github-actions.yml)** — a GitHub Actions workflow you
+  drop at `.github/workflows/verify-vh.yml`. It installs **only** the standalone verifier (`js-sha3`, no
+  ethers/hardhat) and runs the gate on every push / pull request; a green check then *means* every sealed
+  artifact still matches the bytes the producer signed.
+
+Both ship as **examples the loop never runs**, but their exact gate command is mechanically tested
+(`../test/verifier.ci-snippet.test.js`): it must exit `0` on a good release and `3` on a tampered one, so
+the snippet you copy is known-good, not aspirational.
+
+---
+
 ## 3. The exact bytes verified, and the scheme
 
 Nothing here is magic; it is two standard primitives you can re-implement in an afternoon.

@@ -1,0 +1,56 @@
+# verify-vh.github-actions.yml — copy-paste GitHub Actions MERGE GATE for verifyhash artifacts.
+#
+# WHAT THIS IS
+#   Drop this file at `.github/workflows/verify-vh.yml` in the repo that RECEIVES sealed verifyhash
+#   artifacts. On every push / pull request it installs ONLY the standalone, offline `verify-vh`
+#   verifier (no ethers, no hardhat, no network) and runs it over your release artifact(s). If any
+#   artifact is tampered, forged, or signed by the wrong key, `verify-vh` exits non-zero and the job
+#   FAILS — so the merge is blocked. A green check now MEANS "every sealed artifact still matches the
+#   bytes the producer signed."
+#
+# WHAT YOU EDIT (three things, all near the top of the run step):
+#   - VH_VENDOR     : the producer's signer address (0x + 20 bytes), obtained out-of-band.
+#   - VH_MANIFEST   : a release manifest listing every artifact (gate the whole release in one shot),
+#                     OR set VH_ARTIFACTS to a space-separated list of artifact paths instead.
+#   - the checkout / paths to your artifacts (this example assumes they are committed in the repo;
+#     adapt the `actions/checkout` or add an artifact-download step for your release flow).
+#
+# NOTE: the loop NEVER runs this file. It is a shipped EXAMPLE. The exact gate command in the `run:`
+# block below is the SAME command verifier/ci/verify-vh.generic.sh runs, and a test extracts and
+# executes it to prove it passes on good input and fails (exit 3) on tampered input.
+
+name: verify-vh merge gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify-vh:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Your repo (containing the sealed artifacts + the vendored `verifier/` tree, or add a
+      #    download step for however your release publishes them).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 2. Install ONLY the standalone verifier. This pulls js-sha3 and NOTHING else — no ethers,
+      #    no hardhat, no producer stack. (If you vendor `verifier/` into your repo, you can drop
+      #    this step entirely; it is self-contained.)
+      - name: Install standalone verify-vh (js-sha3 only)
+        working-directory: verifier
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      # 3. THE GATE. One invocation, one exit code. verify-vh exits 0 only if EVERY artifact verifies;
+      #    3 if any is tampered/forged/wrong-issuer; 2 on misconfig; 1 on IO. `node` propagates that
+      #    exit code, and GitHub Actions fails the job on any non-zero — blocking the merge.
+      - name: Verify sealed artifacts (fails the build on a bad seal)
+        env:
+          # EDIT THESE for your release:
+          VH_VENDOR: "0x0000000000000000000000000000000000000000"   # producer signer address (out-of-band)
+          VH_MANIFEST: "release.manifest"                            # or set VH_ARTIFACTS instead
+        run: |
+          node verifier/verify-vh.js --manifest "$VH_MANIFEST" --vendor "$VH_VENDOR"

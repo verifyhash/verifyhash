@@ -215,6 +215,29 @@ object, not an aggregate.
 
 ---
 
+## 4b. A copy-paste CI merge gate — wire it into the partner's pipeline
+
+Batch mode answers the most common B2B adoption question — *"how do I make my pipeline AUTOMATICALLY
+reject a tampered/forged artifact on every merge?"* — only once it is actually **wired into CI**. Two
+shipped snippets do that with a single paste, and both install **only** the standalone verifier
+(`js-sha3`, never the producer's ethers/hardhat stack):
+
+- **[`../verifier/ci/verify-vh.generic.sh`](../verifier/ci/verify-vh.generic.sh)** — a portable `set -e`
+  shell gate for GitLab CI / CircleCI / Jenkins / a Makefile / a git hook. Configured purely by env vars
+  (`VH_VENDOR`, plus `VH_MANIFEST` *or* `VH_ARTIFACTS`, optional `VH_DIR`), it runs `verify-vh` over the
+  release and passes the `0/3/2/1` exit code straight through, so any non-zero verdict **fails the job**.
+- **[`../verifier/ci/verify-vh.github-actions.yml`](../verifier/ci/verify-vh.github-actions.yml)** — a
+  GitHub Actions workflow dropped at `.github/workflows/verify-vh.yml` that gates every push / pull
+  request.
+
+These are shipped **examples the loop never executes**. To prevent doc-rot, their exact gate command is
+mechanically extracted and run by [`../test/verifier.ci-snippet.test.js`](../test/verifier.ci-snippet.test.js):
+the shipped command MUST exit `0` on a good release and `3` on a tampered one. A snippet a partner copies
+is therefore known-good, not aspirational — the gate that converts a one-off pilot into a wired-in
+renewal.
+
+---
+
 ## 5. Why you can trust the verifier itself (proven, not promised)
 
 Independence is enforced by [`../test/verifier.isolation.test.js`](../test/verifier.isolation.test.js),

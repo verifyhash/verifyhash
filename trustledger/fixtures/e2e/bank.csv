@@ -1,0 +1,4 @@
+Date,Description,Debit,Credit,Type
+2026-05-01,"Deposit - Jones rent received",,1500.00,Deposit
+2026-05-02,"Owner funding - Smith property",,500.00,Deposit
+2026-05-04,"Batched deposit - Doe rent (2 checks)",,1300.00,Deposit

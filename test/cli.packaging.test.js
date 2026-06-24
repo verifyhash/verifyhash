@@ -200,6 +200,127 @@ describe("T-21.1 packaging integrity: `vh` is a real installable, runnable packa
     });
   });
 
+  describe("every relative require reachable from bin resolves to a SHIPPED path", function () {
+    // The bare-require gate above proves every PACKAGE the CLI imports is a declared
+    // dependency. This gate proves the complementary half: every LOCAL (relative)
+    // module the shipped `bin` transitively requires resolves to a file that the
+    // `files` allowlist actually ships. Otherwise `npm install verifyhash && vh ...`
+    // crashes with `Cannot find module '...'` on first use — the exact regression
+    // that shipped when `trustledger/cli` was required from cli/vh.js but the
+    // package did not include `trustledger/`. Walking from the real entrypoint makes
+    // that class of defect impossible to reintroduce silently.
+
+    // Resolve a relative require specifier from `fromFile` to an absolute file path,
+    // trying the standard Node resolution order (exact, +.js, /index.js, +.json).
+    function resolveRelative(fromFile, spec) {
+      const base = path.resolve(path.dirname(fromFile), spec);
+      const candidates = [
+        base,
+        `${base}.js`,
+        path.join(base, "index.js"),
+        `${base}.json`,
+      ];
+      for (const c of candidates) {
+        if (fs.existsSync(c) && fs.statSync(c).isFile()) return c;
+      }
+      return null;
+    }
+
+    // Every relative require specifier in a file.
+    function relativeRequiresIn(file) {
+      const src = fs.readFileSync(file, "utf8");
+      const re = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
+      const out = [];
+      let m;
+      while ((m = re.exec(src)) !== null) {
+        const spec = m[1];
+        if (spec.startsWith(".") || spec.startsWith("/")) out.push(spec);
+      }
+      return out;
+    }
+
+    // Is a repo-relative path covered by the `files` allowlist? An allowlist entry
+    // that is a directory (ends in `/` or names an existing dir) covers everything
+    // under it; otherwise it must match the file exactly.
+    function isShipped(relPath, files) {
+      const norm = relPath.split(path.sep).join("/");
+      for (const raw of files) {
+        const entry = raw.replace(/^\.\//, "");
+        const asDir = entry.replace(/\/$/, "");
+        // exact file match
+        if (norm === asDir) return true;
+        // directory prefix match (the allowlist ships the whole subtree)
+        if (norm.startsWith(`${asDir}/`)) return true;
+      }
+      return false;
+    }
+
+    it("walks relative requires from cli/vh.js; every resolved file is in `files`", function () {
+      const files = pkg.files || [];
+      const entry = path.join(REPO_ROOT, pkg.bin.vh.replace(/^\.\//, ""));
+
+      const visited = new Set();
+      const queue = [entry];
+      const unresolved = [];
+      const notShipped = [];
+
+      while (queue.length) {
+        const file = queue.shift();
+        if (visited.has(file)) continue;
+        visited.add(file);
+
+        const rel = path.relative(REPO_ROOT, file);
+        // The entrypoint and every file it pulls in must itself be shipped.
+        if (!isShipped(rel, files)) {
+          notShipped.push(rel.split(path.sep).join("/"));
+        }
+
+        for (const spec of relativeRequiresIn(file)) {
+          const resolved = resolveRelative(file, spec);
+          if (!resolved) {
+            unresolved.push(`${spec} (from ${rel})`);
+            continue;
+          }
+          if (!visited.has(resolved)) queue.push(resolved);
+        }
+      }
+
+      expect(
+        unresolved,
+        `relative require(s) that do not resolve to a file: ${unresolved.join(", ")}`
+      ).to.deep.equal([]);
+
+      expect(
+        notShipped,
+        "file(s) reachable from the shipped bin that the `files` allowlist does " +
+          `NOT ship (npm install would crash on require): ${notShipped.join(", ")}`
+      ).to.deep.equal([]);
+    });
+
+    it("sanity: the walk actually reaches the trustledger pipeline", function () {
+      // Guard the gate itself — prove the walk crosses the cli/ -> trustledger/
+      // boundary, so a future refactor that drops the require can't make this test
+      // silently pass by reaching nothing.
+      const entry = path.join(REPO_ROOT, pkg.bin.vh.replace(/^\.\//, ""));
+      const visited = new Set();
+      const queue = [entry];
+      while (queue.length) {
+        const file = queue.shift();
+        if (visited.has(file)) continue;
+        visited.add(file);
+        for (const spec of relativeRequiresIn(file)) {
+          const resolved = resolveRelative(file, spec);
+          if (resolved && !visited.has(resolved)) queue.push(resolved);
+        }
+      }
+      const reached = [...visited].map((f) => path.relative(REPO_ROOT, f).split(path.sep).join("/"));
+      expect(
+        reached.some((p) => p.startsWith("trustledger/")),
+        "the require walk from cli/vh.js should reach trustledger/* modules"
+      ).to.equal(true);
+    });
+  });
+
   describe("the shipped package is self-contained (no hardhat artifacts at runtime)", function () {
     it("the registry ABI loads from the bundled cli/abi copy, not artifacts/", function () {
       // The on-chain subcommands load the ABI via cli/core/registryArtifact.js, which

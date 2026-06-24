@@ -8,6 +8,7 @@
   },
   "files": [
     "cli/",
+    "trustledger/",
     "README.md",
     "docs/"
   ],

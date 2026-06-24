@@ -48,6 +48,7 @@ const {
   runParcelTimestampWrap,
   runParcelVerifyTimestamp,
 } = require("./parcel");
+const { cmdTrust } = require("../trustledger/cli");
 
 function usage() {
   return [
@@ -89,6 +90,19 @@ function usage() {
     "  vh parcel timestamp-request <manifest>  emit the SHA-256 digest your RFC-3161 TSA stamps (no key/net)",
     "  vh parcel timestamp-wrap <manifest> --token <p>  wrap a TSA token -> verifiable timestamped container (no key/net)",
     "  vh parcel verify-timestamp <container> [--manifest <m>]  OFFLINE verify an RFC-3161 timestamped parcel attestation (no key/net)",
+    "  vh trust reconcile <bank> <ledger> <rentroll> [--out <dir>]  three-way trust-account reconciliation -> dated audit packet (HTML+CSV; PASS/FAIL exit)",
+    "",
+    "trust reconcile options (the broker remains the responsible custodian; see the in-packet disclaimer):",
+    "  --out <dir>                write the dated HTML + CSV packet into THIS directory (created if absent;",
+    "                             never writes to cwd). Without --out, prints the summary + HTML to stdout.",
+    "  --date <YYYY-MM-DD>        report date (default: today); pin it for byte-reproducible output",
+    "  --period <label>          optional human label for the statement period (e.g. \"May 2026\")",
+    "  --opening-bank <amt>       opening bank balance (dollars, e.g. 1,234.56; default 0)",
+    "  --opening-book <amt>       opening book balance (dollars; default 0)",
+    "  --tolerance-cents <n>      cents the three balances may differ and still tie out (default 0)",
+    "  --bank-format <csv|ofx>    force the bank file format (default: auto-detect)",
+    "  --json                     emit the machine-readable packet model + exit-code contract",
+    "  (exit: 0 PASS / 3 FAIL (does not tie out or an out-of-trust finding) / 2 usage / 1 IO)",
     "",
     "hash options:",
     "  --git                      hash EXACTLY the files git tracks (ignores untracked junk like",
@@ -3260,6 +3274,8 @@ async function main(argv) {
       return cmdDataset(rest);
     case "parcel":
       return cmdParcel(rest);
+    case "trust":
+      return cmdTrust(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -3308,6 +3324,7 @@ module.exports = {
   cmdParcelSign,
   cmdParcelVerifyAttest,
   cmdParcelVerifyTimestamp,
+  cmdTrust,
   parseVerifyTimestampArgs,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,

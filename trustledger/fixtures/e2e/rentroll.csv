@@ -1,0 +1,6 @@
+Date,Tenant,Unit,Type,Memo,Payment,Charge
+2026-05-01,Jones,101,Payment,Rent received May,1500.00,
+2026-05-02,Smith,OWNER,Payment,Owner funding deposit,500.00,
+2026-05-04,Doe,103,Payment,Partial deposit (1 of 2),650.00,
+2026-05-04,Doe,103,Payment,Partial deposit (2 of 2),650.00,
+2026-05-06,Smith,OWNER,Charge,Vendor check 2051 plumbing repair,,300.00

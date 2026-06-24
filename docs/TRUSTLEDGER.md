@@ -376,13 +376,212 @@ continuity layer only engages when you opt in by chaining a close.
 
 ---
 
-## The packet: HTML + CSV (print-to-PDF ready)
+## Sealing the packet: tamper-evident, independently verifiable
+
+The audit packet a broker hands a state real-estate examiner months later is, by default, a **printout**:
+nothing lets the examiner — or the broker defending themselves — prove "this is the **exact** packet
+TrustLedger produced from these **exact** source files, byte-for-byte unaltered." A text editor can
+silently rewrite a dollar figure and nothing detects it. The optional **seal** closes that evidentiary
+gap. With `--seal`, `reconcile` (after writing the packet) emits a small JSON **seal** that binds the
+**three source inputs**, **every emitted packet file**, **and** the run's **verdict** (PASS/FAIL,
+`reportDate`, `period`) plus each input's **logical role** into **one content-addressed Merkle root**. The
+read-only, offline `verify-seal` later **re-derives** that root from the bytes on disk and confirms — or
+pinpoints exactly what changed.
+
+The seal **reuses the project's proven provenance core verbatim** (`cli/core/manifest.js` /
+`cli/hash.js` `hashEntries`/`pathLeaf`/`buildTree`, the same convention `vh hash <dir>` and the on-chain
+`verifyLeaf` use). There is **no second hashing scheme**, no new dependency, no contract change, no
+network, and no key. The seal module (`trustledger/seal.js`) is **pure / I-O-free / byte-deterministic**:
+the CLI reads the files and hands it already-loaded `{ relPath, bytes }` entries; given the same inputs it
+returns a byte-identical seal.
+
+> **Read this too — what the seal IS, and is NOT.** A seal is **tamper-evidence**, **NOT a trusted
+> timestamp** and **NOT a legal opinion**. It proves the inputs + packet are byte-for-byte what was
+> sealed, and that the recorded verdict/date/period and each input's role are bound into the **same**
+> root — but it does **NOT** prove **WHEN** the sealing happened. The `reportDate` is bound into the root
+> so it cannot be edited undetected, yet a self-asserted date still rides the **human-owned trust-root**:
+> standing up a real signing key or a trusted timestamp for "**sealed on date T**" is **P-3** (see
+> [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md)) and is a **needs-human** step the loop never executes.
+> The seal also does **NOT** validate whether the reconciliation is **correct** or **compliant** — the
+> custodian/CPA posture at the top of this document is unchanged: TrustLedger **aids** reconciliation, the
+> broker remains the responsible legal custodian, and a qualified CPA must still review the packet. The
+> seal makes that review one of a **tamper-evident** packet, not an editable printout.
+
+### The seal schema
+
+A seal is a single JSON object (`trustledger/seal.js` is the single source of truth: pure `buildSeal` /
+`validateSeal` / `readSeal` / `serializeSeal` / `verifySeal`). **Every field is UNTRUSTED transport** —
+`verify-seal` re-derives the root from the supplied bytes and never trusts the seal's own stored hashes.
+Every field:
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `kind` | string `"trustledger.reconcile-seal"` | Identity, disjoint from the dataset/parcel manifests so a seal can never be confused for one of them. Any other value is a hard, named `SealError`. |
+| `schemaVersion` | integer (currently **1**) | Pins the seal shape. Any unsupported version is a hard `SealError` — never silently coerced. |
+| `note` | string | The standing in-band trust caveat (tamper-evidence, NOT a timestamp, NOT a legal opinion; verify re-derives). `validateSeal` REJECTS a seal whose `note` has drifted, so the caveat can never be quietly stripped. |
+| `root` | 0x + 64-hex | The single content-addressed Merkle **root** over the **whole committed set**: the inputs + the outputs + a synthetic verdict/role **HEADER** leaf. This is the load-bearing field — `verify-seal` recomputes it from the bytes on disk. |
+| `fileCount` | non-negative integer | The number of real files committed (inputs + outputs). The header leaf is re-derived, not listed, so it is not counted. Must match the entry total or it is a `SealError`. |
+| `verdict` | `{ pass: boolean, reportDate: "YYYY-MM-DD", period: string \| null }` | The recorded reconcile **facts** — what the seal NAMES that it sealed. These are bound into the HEADER leaf (and thus the root), so editing any of them makes the root fail to re-derive. They are FACTS the seal carries, **not** proofs (a bound date is still not a trusted timestamp). |
+| `inputs` | array of `{ role, relPath, contentHash, leaf }` | The three source files, each tagged with its logical **role** — one of `bank`, `book`, `rentroll` — used **at most once** (no duplicate/unknown role). `contentHash` is the SHA-256 of the file bytes; `leaf` is the path-bound `pathLeaf(relPath, contentHash)`. Sealed by **basename** so the binding travels next to the packet. |
+| `outputs` | array of `{ relPath, contentHash, leaf }` | Every emitted packet file (the HTML + CSV, plus any `--emit-close` close artifact). No `role` (roles partition INPUTS only). |
+
+The synthetic **HEADER leaf** is *not* a stored field — it is re-derived deterministically on
+validate/verify from the seal's own `verdict` + the input role→relPath bindings, hashed and path-bound by
+the **same** `pathLeaf` convention every real file uses. That is why the verdict and the role partition
+are tamper-EVIDENT in the **same** root as the files, with **no second hashing scheme**: editing
+`verdict.pass`, the `reportDate`, the `period`, OR swapping an input's role changes the header content →
+its leaf → the root, which then no longer re-derives. `validateSeal` is **strict** — a wrong
+`kind`/`schemaVersion`, a drifted `note`, a missing/garbled verdict, a missing/duplicate/unknown input
+role, a malformed hex `contentHash`/`leaf`/`root`, a `leaf` inconsistent with its `(relPath,
+contentHash)`, or a `root` that does not re-derive from the listed entries + the verdict/role header is a
+named `SealError`, never half-accepted.
+
+### The `--seal` write flow
+
+```
+vh trust reconcile <bank> <ledger> <rentroll> --out <dir> --seal [<file>]
+```
+
+- `--seal` **requires `--out`**: without `--out` the command writes **nothing** (it streams to stdout), so
+  there is no emitted packet to seal — passing `--seal` alone is a **usage error (exit `2`)**.
+- The seal is emitted **AFTER** every packet file (and after any `--emit-close` close), so it binds the
+  **whole** emitted artifact set.
+- Without a `<file>`, the seal lands at a default name **next to the packet**:
+  `reconciliation-<reportDate>-seal.json` inside `--out`. A caller-named `--seal <file>` writes there
+  instead.
+- The three source **inputs** are sealed by their **basename** (e.g. `bank.csv`) so the portable handoff
+  ships each source next to the seal; the packet **outputs** are sealed by their seal-dir-relative path
+  (a basename when the seal sits in the `--out` dir, the common case). If two sealed files would flatten
+  to the **same name**, that is a named IO error (exit `1`) telling you to rename a source — the partition
+  must stay unambiguous.
+
+### The offline `verify-seal` flow
+
+```
+vh trust verify-seal <sealfile> [--dir <d>] [--inputs <d>] [--json]
+```
+
+This is the **independent** companion: given **only** the seal file (and the files it names), it
+re-derives each listed file's content hash and the manifest root **from the bytes on disk** and compares
+against the seal's stored expectation. It needs **no key, no network, no contract** — purely the seal
+core's `verifySeal`, and it **writes nothing**.
+
+- The seal is **read and strictly validated first** (`readSeal`). A malformed or unreadable seal is an
+  **IO error (exit `1`)** — it is never half-accepted nor treated as "everything changed".
+- **Output files** resolve relative to `--dir` (if given) else the **seal file's own directory** (the seal
+  stored output relPaths relative to where it was written). **Source inputs** (sealed by basename) resolve
+  relative to `--inputs` (if given) else the **same base dir** — the portable handoff ships the sources
+  next to the seal, so the default just works; `--inputs <d>` is for an examiner who keeps the originals in
+  a separate folder.
+- A sealed file that is **absent** on disk is **not** an abort — it is localized as **MISSING** (the verify
+  tolerates a partial supplied set). The verdict is **ACCEPTED** only when **every** sealed file MATCHes,
+  none is MISSING/UNEXPECTED, no role mismatched, AND the recomputed root equals the sealed root.
+
+**Exit codes** (mirroring the rest of the family):
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | **ACCEPTED** — every sealed file re-derives byte-for-byte, no role swap, and the root matches |
+| `3` | **REJECTED** — at least one CHANGED / MISSING / UNEXPECTED file, a role mismatch, or the root does not re-derive (the report lists exactly which) |
+| `2` | usage error (missing `<sealfile>`, bad/unknown flag, extra positional) |
+| `1` | IO error (the seal file is unreadable or not a valid seal) |
+
+### Per-file CHANGED / MISSING / UNEXPECTED (the localization)
+
+`verify-seal` is **authoritative by re-computing** from the supplied bytes, and it **localizes** every
+change so no tampered file can verify clean. Each file lands in exactly one bucket:
+
+- **MATCH** — present in both, recomputed `contentHash` equals the sealed one.
+- **CHANGED** — present in both, recomputed `contentHash` **differs** (a tamper, localized to that exact
+  file; the report prints the sealed vs on-disk hash).
+- **MISSING** — sealed, but absent from the supplied set (a dropped/renamed file).
+- **UNEXPECTED** — supplied, but **not** named in the seal (an added/renamed file).
+- **ROLE** — a file present in both whose **supplied role differs from its sealed role** (a bank↔book
+  swap), surfaced and localized rather than silently accepted.
+
+Because the verdict and the role bindings are committed into the **same** root, editing the verdict
+(PASS↔FAIL, the date, the period) or swapping a role makes the **recomputed root** differ — `rootMatches`
+goes `false` and the run REJECTs — even when every file's own bytes are untouched. The header change is
+reported against the seal HEADER (the root no longer re-derives), exactly as a file change is reported
+against its path.
+
+### The seal MAY be signed (the shared attestation envelope)
+
+A seal is, by itself, **unsigned**. It MAY be **wrapped** by the project's existing signed-attestation
+envelope (`cli/core/attestation.js`) so a human can vouch for it via the **same** shared signing path —
+the seal's canonical bytes (`serializeSeal`) become the attestation payload; `signSealWith` /
+`verifySignedSeal` round-trip it. That signature proves **WHO** vouched for the sealed packet — still
+**not** a trusted timestamp ("sealed since date T" remains the human trust-root, **P-3**) and still not a
+legal opinion (the CPA review governs). Provisioning a real signing key is a **needs-human** step the loop
+never performs.
+
+### Worked example: reconcile `--seal` → hand over → `verify-seal`
+
+Reconcile a month and seal the packet:
+
+```
+$ vh trust reconcile bank-2026-05.csv ledger-2026-05.csv rentroll-2026-05.csv \
+    --period 2026-05 --date 2026-05-31 --out ./packets/may --seal
+PASS: three-way reconciliation tie out (...); 1 exception(s) [0 error, 0 warning, 1 info]
+wrote ./packets/may/reconciliation-2026-05-31-balances.csv
+wrote ./packets/may/reconciliation-2026-05-31-exceptions.csv
+wrote ./packets/may/reconciliation-2026-05-31.html
+wrote seal ./packets/may/reconciliation-2026-05-31-seal.json
+```
+
+The packet is **three** files — the HTML report plus the **balances** and **exceptions**
+CSVs — so the seal binds **6** files: the **3** source inputs (bank / book / rentroll) plus
+those **3** emitted outputs.
+
+**Hand over** the `--out` directory **plus** the three source files (copied next to the seal) and the seal
+itself. Months later, an examiner verifies it offline — no key, no network:
+
+```
+$ vh trust verify-seal ./packets/may/reconciliation-2026-05-31-seal.json; echo "exit=$?"
+# vh trust verify-seal — ./packets/may/reconciliation-2026-05-31-seal.json
+The broker remains the responsible trust-account custodian. A seal is TAMPER-EVIDENT, NOT a trusted timestamp ... verify-seal RE-DERIVES the root from the files on disk ...
+sealed root:     0x...
+recomputed root: 0x...
+root matches:    yes
+sealed verdict:  PASS (reportDate 2026-05-31, period 2026-05)
+files: 6 matched, 0 changed, 0 missing, 0 unexpected, 0 role-mismatched
+
+ACCEPTED — every sealed file re-derives byte-for-byte and the root matches.
+exit=0
+```
+
+Now **tamper** with one packet file — edit a dollar figure in the HTML — and re-verify. The change is
+**localized** and the run REJECTs:
+
+```
+$ vh trust verify-seal ./packets/may/reconciliation-2026-05-31-seal.json; echo "exit=$?"
+...
+root matches:    NO
+files: 5 matched, 1 changed, 0 missing, 0 unexpected, 0 role-mismatched
+
+REJECTED — the files on disk do NOT match the seal:
+  CHANGED    reconciliation-2026-05-31.html: sealed 0x... != on-disk 0x...
+exit=3
+```
+
+The same REJECT-and-localize happens if you **drop** a sealed file (`MISSING`), **add** one (`UNEXPECTED`),
+**rename** one (a `MISSING` + an `UNEXPECTED`), **swap** the bank and book inputs (`ROLE`), or edit the
+**verdict/date/period** (the root no longer re-derives). No tampered file can verify clean.
+
+---
+
+## The packet: HTML + balances/exceptions CSV (print-to-PDF ready)
 
 With `--out <dir>`, the command writes a **dated** packet into that directory (created if absent):
 
-- **HTML** — a single self-contained document. Open it in any browser and **Print → Save as PDF** to
-  file the reconciliation with your records.
-- **CSV** — the exception list as a spreadsheet, so a bookkeeper can work the findings line by line.
+- **HTML** (`reconciliation-<date>.html`) — a single self-contained document. Open it in any browser
+  and **Print → Save as PDF** to file the reconciliation with your records.
+- **balances CSV** (`reconciliation-<date>-balances.csv`) — the three-way balance lines as a
+  spreadsheet, so the tie-out arithmetic is re-checkable column by column.
+- **exceptions CSV** (`reconciliation-<date>-exceptions.csv`) — the exception list as a spreadsheet,
+  so a bookkeeper can work the findings line by line.
+
+That is **three** files per run; `--seal` binds all three (plus the three source inputs) into one root.
 
 Binary PDF/xlsx generation is **deferred to v2** on purpose: HTML prints to PDF and CSV opens in any
 spreadsheet, so the packet needs **zero new heavy dependencies** and carries zero install risk. The
@@ -483,6 +682,12 @@ Positional (in order):
 Options:
   --out <dir>            write the HTML + CSV packet into <dir> (created if absent);
                          without --out, print the summary + HTML to stdout, write nothing
+  --seal [<file>]        after the packet (and any --emit-close) is written, emit a
+                         TAMPER-EVIDENT reconciliation seal binding the 3 source inputs +
+                         every packet file + the verdict/role header into ONE Merkle root;
+                         REQUIRES --out. Default name: reconciliation-<date>-seal.json under
+                         <dir>. Verify later, offline, with `vh trust verify-seal <sealfile>`
+                         (see "Sealing the packet" above)
   --json                 emit the full model + exit-code contract as JSON
   --date <YYYY-MM-DD>    pin the report date (default: today, UTC) — keeps output reproducible
   --period <label>       optional human label for the statement period
@@ -504,6 +709,13 @@ Options:
   --map-file <json>      a { bank|ledger|rentroll: { <logical>: <header> } } file of
                          the same per-source overrides (an inline --map wins on a clash)
 
+vh trust verify-seal <sealfile> [--dir <d>] [--inputs <d>] [--json]  # offline, read-only
+  <sealfile>             the seal emitted by `reconcile --seal`
+  --dir <d>              resolve OUTPUT files from <d> (default: the seal file's own dir)
+  --inputs <d>           resolve the SOURCE inputs from <d> (default: same as --dir / seal dir)
+  --json                 emit the full per-file verifySeal result as JSON
+  # exit: 0 ACCEPTED, 3 REJECTED (per-file CHANGED/MISSING/UNEXPECTED/role), 2 usage, 1 IO
+
 vh trust serve [--port <n>] [--host <h>]   # the local web front-door (see above)
   --port <n>             listen port (default 4173; 0 = OS-chosen free port)
   --host <h>             bind interface (default 127.0.0.1 / localhost)
@@ -512,10 +724,11 @@ vh trust serve [--port <n>] [--host <h>]   # the local web front-door (see above
 ### Example
 
 ```
-$ vh trust reconcile bank-2026-05.csv ledger-2026-05.csv rentroll-2026-05.csv --out ./packets/may
+$ vh trust reconcile bank-2026-05.csv ledger-2026-05.csv rentroll-2026-05.csv --date 2026-05-31 --out ./packets/may
 PASS: three-way reconciliation tie out (bank-adjusted $128,400.00, book $128,400.00, sub-ledger $128,400.00); 1 exception(s) [0 error, 0 warning, 1 info]
-wrote ./packets/may/trust-reconciliation-2026-05-30.html
-wrote ./packets/may/trust-reconciliation-2026-05-30.csv
+wrote ./packets/may/reconciliation-2026-05-31-balances.csv
+wrote ./packets/may/reconciliation-2026-05-31-exceptions.csv
+wrote ./packets/may/reconciliation-2026-05-31.html
 ```
 
 A FAIL still writes the packet (so you can review every exception) and exits `3`:
@@ -711,8 +924,14 @@ reconcile.js  the three-balance check + the classified exception list
 report.js     render a DATED, deterministic, audit-ready packet (HTML + CSV)
    |
 cli.js        `vh trust reconcile` — one-line PASS/FAIL + CI-gateable exit code
+                                     (`--seal` emits a tamper-evident seal alongside the packet)
               `vh trust inspect`   — read-only parse diagnostic over ONE file
                                      (same parse primitives; never fails closed)
+              `vh trust verify-seal` — read-only OFFLINE seal verify (re-derives the
+                                     root; ACCEPTED/REJECTED + per-file localization)
+   |
+seal.js       pure, I/O-free, byte-deterministic seal over the inputs + packet + verdict/role
+              header, REUSING cli/core/manifest.js + cli/hash.js verbatim (no new hashing scheme)
 ```
 
 Each stage is a pure, deterministic module under `trustledger/`. `report.buildPacket(...)` is the pure
@@ -728,7 +947,12 @@ TrustLedger BUILDS and locally TESTS the reconciliation engine. The steps that t
 into a sellable, compliant product are **human-owned** and tracked in STRATEGY.md (Proposals › **P-5**):
 
 - **CPA / counsel sign-off** on the disclaimer wording and on the explicit statement that a PASS does
-  not imply legal compliance (P-5 #1).
+  not imply legal compliance (P-5 #1). The deliverable that review attaches to is now a **SEALED,
+  independently-verifiable artifact**: `--seal` + `verify-seal` (see **Sealing the packet** above) make
+  the audit packet tamper-evident, so the CPA/counsel reviews a packet an examiner can confirm
+  byte-for-byte rather than an editable printout. The human trust-root for "**sealed on date T**"
+  (a signing key and/or trusted timestamp) stays P-3 and is **needs-human** — the seal proves
+  tamper-evidence only, never a timestamp or a legal opinion.
 - **Fill in + have counsel sign the per-state policy TABLE.** The engine **already consumes** a
   reviewed policy as data (see **The per-state policy layer** above) — the human task is now narrow:
   fill in `trustledger/fixtures/policy/<state>.json` in the shipped, validated format (the

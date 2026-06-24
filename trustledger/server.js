@@ -96,6 +96,45 @@ function engineErrorCode(err) {
 // injected (the caller supplies today) so this function stays deterministic.
 // ---------------------------------------------------------------------------
 
+// Read the OPTIONAL per-file `maps` object (T-28.2). Returns a frozen
+// { bank, ledger, rentroll } where each entry is either a plain object (the
+// `columnMap` to thread into that file's strict parser) or `undefined` (so the
+// parser is called with `columnMap: undefined` — the byte-identical no-map path).
+// STRICT on shape: `maps` (when present) must be a plain object, and each named
+// per-file entry (when present) must be a plain object — anything else is a named
+// 400, never a coercion. Unknown keys inside `maps` are ignored (only the three
+// file keys are honoured), and the deep validity of each map (unknown logical
+// field, or a header absent from the file) is left to the strict parser, which
+// raises the SAME located IngestError it always would.
+function readOptionalMaps(raw) {
+  const empty = Object.freeze({ bank: undefined, ledger: undefined, rentroll: undefined });
+  if (raw == null) return empty;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new HttpError(
+      400,
+      "invalid_maps",
+      '"maps" must be an object of { bank?, ledger?, rentroll? } column maps'
+    );
+  }
+  const out = {};
+  for (const key of ["bank", "ledger", "rentroll"]) {
+    const m = raw[key];
+    if (m == null) {
+      out[key] = undefined;
+      continue;
+    }
+    if (typeof m !== "object" || Array.isArray(m)) {
+      throw new HttpError(
+        400,
+        "invalid_maps",
+        `"maps.${key}" must be an object of { <logicalField>: <headerName> }`
+      );
+    }
+    out[key] = m;
+  }
+  return Object.freeze(out);
+}
+
 function reconcilePayload(payload, reportDate) {
   if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
     throw new HttpError(400, "bad_request", "request body must be a JSON object");
@@ -137,15 +176,25 @@ function reconcilePayload(payload, reportDate) {
     opening = { bank: priorClose.ending.bank, book: priorClose.ending.book };
   }
 
+  // Optional per-file column maps (T-28.2). A mapping the broker fixed in the
+  // inspect flow is threaded back here so the REAL run honours it — the same
+  // `{ <logicalField>: <headerName> }` shape the strict parsers' `columnMap`
+  // already accepts, keyed by the SAME three file keys. When `maps` is absent (or
+  // a per-file map is absent) behaviour is BYTE-FOR-BYTE the no-map path: each
+  // parser is called with `columnMap: undefined`, exactly as before. A bad shape
+  // (not a plain object, or a per-file entry that is not a plain object) is a
+  // named 400 — never a silent coercion.
+  const maps = readOptionalMaps(payload.maps);
+
   // Ingest the three files (STRICT — the first malformed row raises a located
   // IngestError, which we surface as a named 400 rather than dropping the row).
   let bank;
   let book;
   let rentroll;
   try {
-    bank = ingest.parseBankStatement(payload.bank);
-    book = ingest.parseQuickBooksCSV(payload.ledger);
-    rentroll = ingest.parseRentRollCSV(payload.rentroll);
+    bank = ingest.parseBankStatement(payload.bank, { columnMap: maps.bank });
+    book = ingest.parseQuickBooksCSV(payload.ledger, { columnMap: maps.ledger });
+    rentroll = ingest.parseRentRollCSV(payload.rentroll, { columnMap: maps.rentroll });
   } catch (e) {
     throw new HttpError(400, engineErrorCode(e), e.message);
   }
@@ -399,8 +448,9 @@ their contents to this server; the reconciliation runs in memory and nothing is
 stored on disk.</p>
 <div class="disclaimer"><strong>Disclaimer.</strong> This tool AIDS reconciliation.
 The broker remains the legal trust-account custodian and is solely responsible for
-the accuracy of the trust-account records. It does not constitute legal, accounting,
-or audit advice.</div>
+the accuracy of the trust-account records. It is tamper-evidence and a reconciliation
+aid only — NOT a trusted timestamp, NOT legal, accounting, or audit advice, and NOT a
+substitute for a CPA's review.</div>
 
 <form id="f">
   <fieldset>
@@ -475,8 +525,8 @@ or audit advice.</div>
   });
 
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
 })();

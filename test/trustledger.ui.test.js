@@ -35,6 +35,12 @@ const BOOK = fs.readFileSync(path.join(FIX, "quickbooks.csv"), "utf8");
 const RENT = fs.readFileSync(path.join(FIX, "rentroll.csv"), "utf8");
 const RENT_SHORT = fs.readFileSync(path.join(FIX, "rentroll.short.csv"), "utf8");
 
+// T-28.2: an "aliased-miss" bank file — e2e/bank.csv with its `Date` column
+// renamed to `TxnDate`, a header NO alias matches. The un-mapped run 400s
+// (required column "date" missing); mapping date -> TxnDate clears the miss and,
+// with the clean ledger + rent roll, the full three-way run ties out.
+const BANK_ALIASED = fs.readFileSync(path.join(FIX, "bank.aliased.csv"), "utf8");
+
 const DATE = "2026-06-24"; // pinned so the server core stays deterministic
 
 function post(port, pathName, bodyObj) {
@@ -133,29 +139,145 @@ describe("trustledger UI: public/index.html is a self-contained, contract-pinned
       expect(PAGE).to.contain("reportCsv");
       expect(PAGE).to.match(/download/i);
     });
+
+    it("has an inspect/fix affordance: a per-file 'Check this file' control + /api/inspect call", function () {
+      // A per-file affordance (one Check button per source) OR an automatic
+      // fallback — this page has BOTH; assert the explicit per-file control.
+      expect(PAGE).to.match(/Check this file/);
+      expect(PAGE).to.match(/data-source="bank"/);
+      expect(PAGE).to.match(/data-source="ledger"/);
+      expect(PAGE).to.match(/data-source="rentroll"/);
+      expect(PAGE).to.contain('fetch("/api/inspect"');
+    });
+
+    it("renders the diagnose report fields by name (header, mapped, requiredMissing, rowCount/okCount, sample/errors)", function () {
+      // The page reads each diagnose field the server returns — pin them so the
+      // inspect renderer can't drift from /api/inspect's response shape.
+      expect(PAGE).to.contain("rep.header");
+      expect(PAGE).to.contain("rep.mapped");
+      expect(PAGE).to.contain("rep.requiredMissing");
+      expect(PAGE).to.contain("rep.rowCount");
+      expect(PAGE).to.contain("rep.okCount");
+      expect(PAGE).to.match(/rep\.sample/);
+      expect(PAGE).to.match(/rep\.errors/);
+    });
+
+    it("offers a per-missing-field SELECT populated from the file header, then builds a columnMap", function () {
+      // For a requiredMissing field the page emits a <select> over the header.
+      expect(PAGE).to.match(/class='mapsel'/);
+      expect(PAGE).to.match(/<select/);
+      // The confirm action assembles a columnMap from the chosen columns.
+      expect(PAGE).to.contain("columnMap");
+      expect(PAGE).to.contain("Confirm mapping");
+    });
+
+    it("does NOT dump raw JSON or stack traces into the inspect view", function () {
+      // No JSON.stringify of the whole report into the DOM, no <pre> dumps.
+      expect(PAGE).to.not.match(/innerHTML\s*=\s*JSON\.stringify/);
+    });
+
+    it("threads confirmed maps into the reconcile body (pendingMaps -> body.maps)", function () {
+      expect(PAGE).to.contain("pendingMaps");
+      expect(PAGE).to.match(/body\.maps\s*=/);
+    });
+
+    it("escapeHtml escapes the single quote ' (uploaded headers land in single-quoted attributes)", function () {
+      // FINDING 1: renderInspect interpolates the broker's uploaded column-header
+      // strings into SINGLE-QUOTE-delimited attributes (value='...', data-field='...').
+      // The browser escapeHtml MUST therefore escape ' as well as & < > " — otherwise a
+      // header like  x' onmouseover='alert(1)  breaks out of value='...' and injects an
+      // event handler on the same tag (live XSS). Pin the hardened escape map + regex.
+      expect(PAGE).to.match(/replace\(\/\[&<>"'\]\/g/);
+      expect(PAGE).to.contain('"\'": "&#39;"');
+      // The inspect render uses single-quote attribute delimiters, so the contract is:
+      // the option/select values run through escapeHtml(...).
+      expect(PAGE).to.match(/value='" \+ escapeHtml\(h\)/);
+      expect(PAGE).to.match(/data-field='" \+ escapeHtml\(field\)/);
+    });
+  });
+
+  describe("escapeHtml behaviour (the actual function, pulled from the page source)", function () {
+    // Pull the browser escapeHtml out of the page and exercise it directly, so the
+    // XSS-hardening is proven on REAL bytes, not just a source-text grep.
+    function loadEscapeHtml(page) {
+      const m = page.match(/function escapeHtml\(s\) \{[\s\S]*?\n  \}/);
+      expect(m, "page must define escapeHtml").to.not.equal(null);
+      // eslint-disable-next-line no-new-func
+      return new Function(m[0] + "\nreturn escapeHtml;")();
+    }
+    const escapeHtml = loadEscapeHtml(PAGE);
+
+    it("neutralises a single-quote attribute breakout from a hostile column header", function () {
+      const hostile = "x' onmouseover='alert(document.cookie)";
+      const out = escapeHtml(hostile);
+      expect(out).to.not.contain("'");
+      expect(out).to.contain("&#39;");
+      // Rebuilt into the exact single-quoted attribute the page emits: no breakout.
+      const attr = "<option value='" + out + "'>";
+      expect(attr).to.equal(
+        "<option value='x&#39; onmouseover=&#39;alert(document.cookie)'>"
+      );
+    });
+
+    it("still escapes & < > \" (no regression on the original set)", function () {
+      expect(escapeHtml('&<>"')).to.equal("&amp;&lt;&gt;&quot;");
+    });
   });
 
   describe("CONTRACT (1): the keys the page POSTs == the keys the server reads", function () {
-    // The page builds the POST body literal `{ bank: ..., ledger: ..., rentroll: ... }`
-    // plus an optional `body.state = ...`. Extract those keys from the page source.
-    function postedKeys(page) {
+    // The page builds the reconcile POST body literal
+    // `{ bank: ..., ledger: ..., rentroll: ... }` plus optional `body.state = ...`
+    // and (T-28.2) `body.maps = ...`. Extract those keys from the page source. The
+    // literal is anchored on `bank:` so it can't accidentally match the SEPARATE
+    // inspect body literal (`{ source, text }`).
+    function reconcileKeys(page) {
       const keys = new Set();
-      // The object literal handed to JSON.stringify.
-      const m = page.match(/var body = \{([^}]*)\}/);
-      expect(m, "page must build a body object literal").to.not.equal(null);
+      const m = page.match(/var body = \{[^}]*\bbank:[^}]*\}/);
+      expect(m, "page must build a reconcile body object literal").to.not.equal(null);
       const re = /([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g;
       let g;
-      while ((g = re.exec(m[1])) !== null) keys.add(g[1]);
+      while ((g = re.exec(m[0])) !== null) keys.add(g[1]);
       // Conditionally-added fields of the form `body.<key> = `.
       const re2 = /body\.([a-zA-Z_][a-zA-Z0-9_]*)\s*=/g;
       while ((g = re2.exec(page)) !== null) keys.add(g[1]);
       return keys;
     }
 
-    it("posts exactly bank, ledger, rentroll, state — the fields reconcilePayload reads", function () {
-      const keys = postedKeys(PAGE);
-      // Required trio + the optional state selector.
-      expect(Array.from(keys).sort()).to.deep.equal(["bank", "ledger", "rentroll", "state"]);
+    // The inspect POST body literal `{ source, text }` plus optional
+    // `body.columnMap = ...`. Pinned so the page and /api/inspect can't drift.
+    function inspectKeys(page) {
+      const keys = new Set();
+      const m = page.match(/var body = \{[^}]*\bsource:[^}]*\}/);
+      expect(m, "page must build an inspect body object literal").to.not.equal(null);
+      const re = /([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g;
+      let g;
+      while ((g = re.exec(m[0])) !== null) keys.add(g[1]);
+      const re2 = /body\.([a-zA-Z_][a-zA-Z0-9_]*)\s*=/g;
+      while ((g = re2.exec(page)) !== null) keys.add(g[1]);
+      return keys;
+    }
+
+    it("posts exactly bank, ledger, rentroll, state, maps — the fields reconcilePayload reads", function () {
+      const keys = reconcileKeys(PAGE);
+      // Both the reconcile and inspect bodies are named `body`, so the conditional
+      // `body.<key> =` scan also sees the inspect-only `columnMap`; exclude it (it
+      // is pinned by its own test) and assert the reconcile contract exactly.
+      const reconcileOnly = Array.from(keys).filter(
+        (k) => !["columnMap", "source", "text"].includes(k)
+      );
+      // Required trio + the optional state selector + the optional T-28.2 maps.
+      expect(reconcileOnly.sort()).to.deep.equal(["bank", "ledger", "maps", "rentroll", "state"]);
+    });
+
+    it("references /api/inspect and posts exactly source, text, columnMap — the fields inspectPayload reads", function () {
+      expect(PAGE).to.contain('fetch("/api/inspect"');
+      const keys = inspectKeys(PAGE);
+      // Note: inspectKeys also picks up the unrelated `body.maps =` from the
+      // reconcile block (both use the name `body`); restrict to the inspect trio.
+      const inspectOnly = Array.from(keys).filter((k) =>
+        ["source", "text", "columnMap"].includes(k)
+      );
+      expect(inspectOnly.sort()).to.deep.equal(["columnMap", "source", "text"]);
     });
 
     it("the server treats each posted key as a known input (none is silently ignored)", async function () {
@@ -186,6 +308,88 @@ describe("trustledger UI: public/index.html is a self-contained, contract-pinned
         const ok = await post(port, "/api/reconcile", { bank: BANK, ledger: BOOK, rentroll: RENT });
         expect(ok.status).to.equal(200);
         expect(ok.json.pass).to.equal(true);
+
+        // `maps` is READ: a bad shape is a named 400 (not silently ignored).
+        const badMaps = await post(port, "/api/reconcile", {
+          bank: BANK,
+          ledger: BOOK,
+          rentroll: RENT,
+          maps: [],
+        });
+        expect(badMaps.status).to.equal(400);
+        expect(badMaps.json.error).to.equal("invalid_maps");
+      } finally {
+        await new Promise((r) => srv.close(r));
+      }
+    });
+
+    it("an OMITTED maps (and an empty maps) leaves the run BYTE-FOR-BYTE the no-map result", async function () {
+      // The happy path must not regress: with no maps the response is identical to
+      // a run that never knew about maps. Prove it by comparing the full response.
+      const srv = createServer({ today: () => DATE });
+      await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+      const port = srv.address().port;
+      try {
+        const noKey = await post(port, "/api/reconcile", { bank: BANK, ledger: BOOK, rentroll: RENT });
+        const emptyMaps = await post(port, "/api/reconcile", {
+          bank: BANK,
+          ledger: BOOK,
+          rentroll: RENT,
+          maps: {},
+        });
+        expect(noKey.status).to.equal(200);
+        expect(emptyMaps.status).to.equal(200);
+        // Byte-identical JSON: no-map vs empty-map produce the same packet.
+        expect(emptyMaps.text).to.equal(noKey.text);
+      } finally {
+        await new Promise((r) => srv.close(r));
+      }
+    });
+
+    it("threads a per-file map into the REAL run: an aliased-miss file that 400s un-mapped TIES OUT mapped (inspect -> map -> reconcile)", async function () {
+      const srv = createServer({ today: () => DATE });
+      await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+      const port = srv.address().port;
+      try {
+        // (a) UN-MAPPED reconcile of the aliased file 400s on ingest.
+        const unmapped = await post(port, "/api/reconcile", {
+          bank: BANK_ALIASED,
+          ledger: BOOK,
+          rentroll: RENT,
+        });
+        expect(unmapped.status).to.equal(400);
+        expect(unmapped.json.error).to.equal("ingest_error");
+
+        // (b) INSPECT the bank file: the page reads back header + a `date` miss.
+        const diag = await post(port, "/api/inspect", {
+          source: "bank",
+          text: BANK_ALIASED,
+        });
+        expect(diag.status).to.equal(200);
+        expect(diag.json).to.have.property("header");
+        expect(diag.json.header).to.include("TxnDate");
+        expect(diag.json.requiredMissing).to.include("date");
+
+        // (c) MAP date -> the chosen header and re-inspect to CONFIRM the miss clears.
+        const columnMap = { date: "TxnDate" };
+        const confirm = await post(port, "/api/inspect", {
+          source: "bank",
+          text: BANK_ALIASED,
+          columnMap,
+        });
+        expect(confirm.status).to.equal(200);
+        expect(confirm.json.requiredMissing).to.deep.equal([]);
+
+        // (d) RECONCILE with the assembled per-file map threaded in: it ties out.
+        const mapped = await post(port, "/api/reconcile", {
+          bank: BANK_ALIASED,
+          ledger: BOOK,
+          rentroll: RENT,
+          maps: { bank: columnMap },
+        });
+        expect(mapped.status).to.equal(200);
+        expect(mapped.json.pass).to.equal(true);
+        expect(mapped.json.tiesOut).to.equal(true);
       } finally {
         await new Promise((r) => srv.close(r));
       }
@@ -277,6 +481,36 @@ describe("trustledger UI: public/index.html is a self-contained, contract-pinned
       expect(res.status).to.equal(400);
       expect(res.json).to.have.property("error");
       expect(res.json).to.have.property("message");
+    });
+  });
+
+  describe("embedded fallback drift guard (the page served when public/index.html is absent)", function () {
+    // FINDING 2: embeddedIndexHtml() is the byte-faithful fallback served only when
+    // public/index.html cannot be read. It had SILENTLY diverged: the on-disk page
+    // carries the un-weakened tamper-evidence disclaimer, but the embedded copy still
+    // shipped the older, weaker "...does not constitute legal, accounting, or audit
+    // advice." wording — so the fallback could ship a weaker legal claim with no guard.
+    // Pin the embedded disclaimer to the same un-weakened wording, and pin its escape
+    // map in lock-step with the on-disk page.
+    const EMBED = server.embeddedIndexHtml();
+
+    it("is a self-contained HTML document (no framework, no CDN)", function () {
+      expect(EMBED).to.match(/^<!doctype html>/i);
+      expect(EMBED).to.contain("</html>");
+      expect(EMBED).to.not.match(/<script[^>]+src=/i);
+    });
+
+    it("carries the SAME un-weakened custodian + tamper-evidence disclaimer as the on-disk page", function () {
+      expect(EMBED).to.contain("broker remains the legal trust-account custodian");
+      expect(EMBED).to.match(/not.{0,40}trusted timestamp/i);
+      expect(EMBED).to.match(/substitute for a CPA's review/i);
+      // The old weaker wording must NOT survive (it never named CPA review / timestamp).
+      expect(EMBED).to.not.match(/It does not constitute legal, accounting,\s*or audit advice\./);
+    });
+
+    it("escapes the single quote ' in its escapeHtml, in lock-step with the on-disk page", function () {
+      expect(EMBED).to.match(/replace\(\/\[&<>"'\]\/g/);
+      expect(EMBED).to.contain('"\'": "&#39;"');
     });
   });
 });

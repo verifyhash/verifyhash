@@ -32,6 +32,16 @@
   .sev.info { background: #eef3fb; color: #244a87; }
   .none { color: #555; font-style: italic; }
   .downloads a { display: inline-block; margin-right: 1rem; }
+  .check { font: inherit; padding: .2rem .55rem; margin-left: .4rem; border-radius: 5px;
+           border: 1px solid #888; background: #fff; color: #1a1a1a; cursor: pointer; }
+  .inspect { border: 1px solid #c9c9c9; border-radius: 6px; padding: .9rem 1rem; margin: 1rem 0;
+             background: #fafafa; }
+  .inspect h2, .inspect h3 { margin-top: .4rem; }
+  .inspect .ok { color: #0a6b2f; font-weight: 700; }
+  .inspect .bad { color: #b00020; font-weight: 700; }
+  .inspect select { padding: .2rem; }
+  .chips code { background: #eee; border-radius: 4px; padding: .05rem .35rem; margin-right: .3rem;
+                font-size: .85rem; }
   iframe { width: 100%; height: 480px; border: 1px solid #ddd; border-radius: 6px; margin-top: 1rem; }
   .disclaimer { background: #fffbe6; border: 1px solid #e6d77a; border-radius: 6px;
                 padding: .6rem .9rem; font-size: .85rem; margin: 1rem 0; }
@@ -54,10 +64,13 @@ substitute for a CPA's review.</div>
     <legend>The three files</legend>
     <label for="bank">Bank statement (CSV or OFX/QFX)</label>
     <input id="bank" type="file" accept=".csv,.ofx,.qfx,.txt" required>
+    <button type="button" class="check" data-source="bank">Check this file</button>
     <label for="ledger">QuickBooks trust ledger (CSV)</label>
     <input id="ledger" type="file" accept=".csv,.txt" required>
+    <button type="button" class="check" data-source="ledger">Check this file</button>
     <label for="rentroll">Rent roll / tenant sub-ledger (CSV)</label>
     <input id="rentroll" type="file" accept=".csv,.txt" required>
+    <button type="button" class="check" data-source="rentroll">Check this file</button>
   </fieldset>
   <fieldset>
     <legend>Governing policy (optional)</legend>
@@ -70,6 +83,7 @@ substitute for a CPA's review.</div>
   <button id="go" type="submit">Reconcile</button>
 </form>
 
+<div id="inspect"></div>
 <div id="result"></div>
 
 <script>
@@ -77,6 +91,18 @@ substitute for a CPA's review.</div>
   "use strict";
   var form = document.getElementById("f");
   var result = document.getElementById("result");
+  var inspectBox = document.getElementById("inspect");
+
+  // ---- which file input feeds which /api/inspect + /api/reconcile source. ----
+  // The map KEYS are the SAME three keys the reconcile body uses (bank / ledger /
+  // rentroll); the inspect `source` value uses the identical spelling, so a map
+  // fixed here threads straight into the reconcile body under the same key.
+  var SOURCES = ["bank", "ledger", "rentroll"];
+
+  // Column maps the broker has CONFIRMED in the inspect panel, keyed by source.
+  // Threaded into the reconcile body as `maps` so the fix applies to the REAL run,
+  // not just the preview. Empty until the broker maps a missing field.
+  var pendingMaps = {};
 
   // ---- read a chosen file as text via the browser's FileReader. -------------
   function read(input) {
@@ -105,9 +131,200 @@ substitute for a CPA's review.</div>
   }
 
   function escapeHtml(s) {
-    return String(s === null || s === undefined ? "" : s).replace(/[&<>"]/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    return String(s === null || s === undefined ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+
+  // ---- a friendly label per logical field, for non-technical brokers. -------
+  function fieldLabel(field) {
+    var L = {
+      date: "Transaction date", amount: "Amount (signed)",
+      debit: "Debit / money out", credit: "Credit / money in",
+      memo: "Memo / description", type: "Type", tenant: "Tenant / beneficiary",
+      unit: "Unit", payment: "Payment", charge: "Charge", name: "Name"
+    };
+    return L[field] || field;
+  }
+
+  // ---- POST { source, text[, columnMap] } to /api/inspect. ------------------
+  function postInspect(source, text, columnMap) {
+    var body = { source: source, text: text };
+    if (columnMap) { body.columnMap = columnMap; }
+    return fetch("/api/inspect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (resp) {
+      return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+    });
+  }
+
+  // ---- render the diagnose report in a clear, non-technical layout. ----------
+  // No raw JSON, no stack traces: the detected header, a field->column table, the
+  // missing-field SELECTs (populated from the file's actual header), the row tally,
+  // and the first failing rows.
+  function renderInspect(source, text, rep) {
+    var miss = rep.requiredMissing || [];
+    var html = "<div class='inspect'>";
+    html += "<h2>Inspecting your <strong>" + escapeHtml(source) + "</strong> file</h2>";
+
+    html += "<p>Detected " + (rep.rowCount || 0) + " data row(s); " +
+      (rep.okCount || 0) + " read cleanly. Format: " + escapeHtml(rep.format || "csv") + ".</p>";
+
+    // Detected header as chips.
+    html += "<h3>Columns found in your file</h3><p class='chips'>";
+    (rep.header || []).forEach(function (h) { html += "<code>" + escapeHtml(h) + "</code>"; });
+    if (!(rep.header || []).length) { html += "<span class='none'>none</span>"; }
+    html += "</p>";
+
+    // field -> column table.
+    html += "<h3>How we matched each field</h3><table><thead><tr><th>Field</th>" +
+      "<th>Matched column</th></tr></thead><tbody>";
+    var mapped = rep.mapped || {};
+    Object.keys(mapped).forEach(function (field) {
+      var col = mapped[field];
+      var matchedMiss = miss.indexOf(field) !== -1;
+      html += "<tr><td>" + escapeHtml(fieldLabel(field)) + "</td><td>" +
+        (col === null || col === undefined
+          ? (matchedMiss ? "<span class='bad'>not matched (required)</span>"
+                         : "<span class='none'>not matched</span>")
+          : "<code>" + escapeHtml(col) + "</code>") +
+        "</td></tr>";
+    });
+    html += "</tbody></table>";
+
+    // Per-missing-required-field SELECT, populated from the actual header.
+    if (miss.length) {
+      html += "<h3 class='bad'>Required fields we could not find</h3>" +
+        "<p>Pick which column in your file holds each one, then confirm.</p>";
+      miss.forEach(function (field) {
+        html += "<label>" + escapeHtml(fieldLabel(field)) + " (<code>" +
+          escapeHtml(field) + "</code>)</label>" +
+          "<select class='mapsel' data-field='" + escapeHtml(field) + "'>" +
+          "<option value=''>— choose a column —</option>";
+        (rep.header || []).forEach(function (h) {
+          html += "<option value='" + escapeHtml(h) + "'>" + escapeHtml(h) + "</option>";
+        });
+        html += "</select>";
+      });
+      html += "<p><button type='button' class='check' id='confirmMap'>Confirm mapping</button></p>";
+      html += "<p id='mapStatus'></p>";
+    } else {
+      html += "<p class='ok' id='inspectClean'>Every required field is matched — this file is ready to reconcile.</p>";
+    }
+
+    // First failing rows (sample of errors), human-readable.
+    var errs = (rep.errors || []).filter(function (e) { return e.row !== null && e.row !== undefined; });
+    if (errs.length) {
+      html += "<h3>First rows that did not parse</h3><table><thead><tr><th>Row</th>" +
+        "<th>What went wrong</th></tr></thead><tbody>";
+      errs.slice(0, 5).forEach(function (e) {
+        html += "<tr><td class='num'>" + escapeHtml(e.row) + "</td><td>" +
+          escapeHtml(e.message) + "</td></tr>";
+      });
+      html += "</tbody></table>";
+    } else if ((rep.sample || []).length) {
+      html += "<h3>First rows we read</h3><p class='note'>" + rep.sample.length +
+        " row(s) parsed cleanly.</p>";
+    }
+
+    html += "</div>";
+    inspectBox.innerHTML = html;
+
+    // Wire the confirm button: build a columnMap from the chosen SELECTs, re-POST
+    // /api/inspect to confirm the miss clears, and stash the map for the real run.
+    var confirm = document.getElementById("confirmMap");
+    if (confirm) {
+      confirm.addEventListener("click", function () {
+        var sels = inspectBox.querySelectorAll(".mapsel");
+        var columnMap = {};
+        var incomplete = false;
+        for (var i = 0; i < sels.length; i++) {
+          var v = sels[i].value;
+          if (!v) { incomplete = true; continue; }
+          columnMap[sels[i].getAttribute("data-field")] = v;
+        }
+        var status = document.getElementById("mapStatus");
+        if (incomplete) {
+          status.innerHTML = "<span class='bad'>Please choose a column for every required field.</span>";
+          return;
+        }
+        status.textContent = "Confirming…";
+        postInspect(source, text, columnMap).then(function (r) {
+          if (!r.ok) {
+            status.innerHTML = "<span class='bad'>" +
+              escapeHtml(r.data.message || "could not apply mapping") + "</span>";
+            return;
+          }
+          var still = (r.data.requiredMissing || []).length;
+          if (still) {
+            // Re-render with the still-missing fields under the new map.
+            renderInspect(source, text, r.data);
+            return;
+          }
+          // Clean: remember the map for the real reconcile run.
+          pendingMaps[source] = columnMap;
+          renderInspect(source, text, r.data);
+          var ok = document.getElementById("inspectClean");
+          if (ok) {
+            ok.innerHTML = "Mapping saved. Click <strong>Reconcile</strong> and this " +
+              "file will be read with your column mapping.";
+          }
+        }).catch(function (e) {
+          status.innerHTML = "<span class='bad'>" + escapeHtml(e.message || String(e)) + "</span>";
+        });
+      });
+    }
+  }
+
+  // ---- "Check this file": read the chosen file and inspect it. --------------
+  function checkFile(source) {
+    var input = document.getElementById(source);
+    inspectBox.innerHTML = "<p>Inspecting…</p>";
+    return read(input).then(function (text) {
+      return postInspect(source, text, pendingMaps[source]).then(function (r) {
+        if (!r.ok) {
+          inspectBox.innerHTML = "<div class='inspect'><p class='bad'>" +
+            escapeHtml(r.data.message || "could not inspect this file") + "</p></div>";
+          return;
+        }
+        renderInspect(source, text, r.data);
+      });
+    }).catch(function (e) {
+      inspectBox.innerHTML = "<div class='inspect'><p class='bad'>" +
+        escapeHtml(e.message || String(e)) + "</p></div>";
+    });
+  }
+
+  // ---- automatic fallback after a reconcile ingest_error. -------------------
+  // Inspect each already-read file and open the panel on the FIRST one that has a
+  // required field unmatched (the typical aliased-column cause). If none has a
+  // structural miss, inspect the bank file so the broker still sees row diagnoses.
+  function autoInspect(texts) {
+    var queue = SOURCES.filter(function (s) { return texts[s] != null; });
+    function tryNext(i) {
+      if (i >= queue.length) return;
+      var src = queue[i];
+      postInspect(src, texts[src], pendingMaps[src]).then(function (r) {
+        if (r.ok && (r.data.requiredMissing || []).length) {
+          renderInspect(src, texts[src], r.data);
+          return;
+        }
+        if (i + 1 < queue.length) { tryNext(i + 1); return; }
+        // No structural miss anywhere: show the first file's row-level diagnosis.
+        if (r.ok) { renderInspect(src, texts[src], r.data); }
+      }).catch(function () { tryNext(i + 1); });
+    }
+    tryNext(0);
+  }
+
+  // Wire each per-file "Check this file" button.
+  var checks = document.querySelectorAll("button.check[data-source]");
+  for (var ci = 0; ci < checks.length; ci++) {
+    (function (btn) {
+      btn.addEventListener("click", function () { checkFile(btn.getAttribute("data-source")); });
+    })(checks[ci]);
   }
 
   // ---- build an in-browser download link from text (no network round-trip). -
@@ -190,14 +407,25 @@ substitute for a CPA's review.</div>
     go.disabled = true;
     result.innerHTML = "<p>Reconciling…</p>";
 
+    var texts = {};
     Promise.all([
       read(document.getElementById("bank")),
       read(document.getElementById("ledger")),
       read(document.getElementById("rentroll"))
-    ]).then(function (texts) {
-      var body = { bank: texts[0], ledger: texts[1], rentroll: texts[2] };
+    ]).then(function (t) {
+      texts.bank = t[0]; texts.ledger = t[1]; texts.rentroll = t[2];
+      var body = { bank: t[0], ledger: t[1], rentroll: t[2] };
       var state = document.getElementById("state").value;
       if (state) { body.state = state; }
+      // Thread any column maps the broker confirmed in the inspect panel so the
+      // REAL run honours them. Omitted entirely when no map was fixed, so the
+      // happy path posts the identical body it always did.
+      var maps = {};
+      var any = false;
+      SOURCES.forEach(function (s) {
+        if (pendingMaps[s]) { maps[s] = pendingMaps[s]; any = true; }
+      });
+      if (any) { body.maps = maps; }
       return fetch("/api/reconcile", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -211,6 +439,14 @@ substitute for a CPA's review.</div>
         result.innerHTML = "<p class='err' id='error'>Error (" +
           escapeHtml(r.data.error || "error") + "): " +
           escapeHtml(r.data.message || "") + "</p>";
+        // Automatic fallback: if the parse failed on ingest, open the inspector on
+        // the offending file so the broker can map columns and try again. The
+        // engine error names the source only when a row is located; otherwise we
+        // inspect each file and surface the FIRST one with a required field
+        // unmatched (the most likely cause of an aliased-column parse failure).
+        if (r.data.error === "ingest_error") {
+          autoInspect(texts);
+        }
         return;
       }
       render(r.data);

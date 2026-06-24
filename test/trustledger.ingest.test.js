@@ -311,6 +311,42 @@ describe("trustledger/ingest: strict rejection (never silently drop)", function 
   });
 });
 
+describe("trustledger/ingest: columnMap escape hatch + textual dates (T-25.3)", function () {
+  it("loads a no-alias file under an explicit columnMap", function () {
+    const csv =
+      "When,Narrative,MoneyOut,MoneyIn\n" +
+      "2026-05-01,Rent in,,1500.00\n2026-05-03,Owner draw,750.00,\n";
+    // No map: the amount columns don't match any alias -> hard error.
+    expect(() => parseBankCSV(csv)).to.throw(IngestError);
+    const recs = parseBankCSV(csv, {
+      columnMap: { date: "When", memo: "Narrative", debit: "MoneyOut", credit: "MoneyIn" },
+    });
+    expect(recs).to.have.length(2);
+    expect(recs[0].amount).to.equal(150000);
+    expect(recs[1].amount).to.equal(-75000);
+  });
+
+  it("hard-errors (naming options) on an unknown logical key or absent header", function () {
+    const csv = "When,MoneyIn\n2026-05-01,1500.00\n";
+    expect(() => parseBankCSV(csv, { columnMap: { bogus: "When" } })).to.throw(
+      IngestError,
+      /unknown logical field "bogus".*available fields/i
+    );
+    expect(() => parseBankCSV(csv, { columnMap: { date: "Missing" } })).to.throw(
+      IngestError,
+      /not in the file.*available headers/i
+    );
+  });
+
+  it("accepts the common textual date forms, still calendar-validated", function () {
+    expect(parseDate("Jan 5, 2024")).to.equal("2024-01-05");
+    expect(parseDate("5-Jan-2024")).to.equal("2024-01-05");
+    expect(parseDate("December 31, 2023")).to.equal("2023-12-31");
+    expect(() => parseDate("Feb 30, 2024")).to.throw(IngestError);
+    expect(() => parseDate("Smarch 1, 2024")).to.throw(IngestError);
+  });
+});
+
 describe("trustledger/ingest: determinism", function () {
   it("is a pure function — same input, identical output", function () {
     const text = readFix("quickbooks.csv");

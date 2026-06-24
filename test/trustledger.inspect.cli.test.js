@@ -139,9 +139,8 @@ describe("trustledger CLI: `vh trust inspect`", function () {
     expect(out).to.contain("how to fix:");
     expect(out).to.contain('rename your column to (or add) one named one of [');
     expect(out).to.contain("posting date"); // a real alias of the date field
-    // HONESTY: the hint must NOT advertise a --map flag that does not exist yet
-    // (it would hard-error exit 2; the no-edit override lands in T-25.3).
-    expect(out).to.not.contain("--map");
+    // T-25.3: the hint now ALSO advertises the WORKING --map escape hatch.
+    expect(out).to.contain("--map");
   });
 
   it("a missing amount GROUP (no amount and no debit/credit) exits 3 with an add-a-column hint", function () {
@@ -152,28 +151,34 @@ describe("trustledger CLI: `vh trust inspect`", function () {
     const out = io.out();
     expect(out).to.contain("how to fix:");
     expect(out).to.contain("rename/add one of those columns");
-    expect(out).to.not.contain("--map");
+    // T-25.3: the amount-group hint now also names the working --map override.
+    expect(out).to.contain("--map");
   });
 
-  // The fix hint a broker is told to follow must actually work when followed —
-  // it must never instruct a flag the parser rejects (the dead end this command
-  // exists to remove). Assert the headline hint never names an unimplemented flag.
-  it("the actionable hint never advertises an unimplemented --map flag (no dead-end advice)", function () {
-    const p = writeFix("nodate2.csv", "Description,Debit,Credit\nrent,,1500.00\n");
+  // T-25.3: the fix hint a broker is told to follow must actually WORK when
+  // followed. The hint now advertises the real `--map <logical>=<header>`
+  // escape hatch, and passing it loads the file — turning the old dead end into
+  // a self-service fix. (Before T-25.3 the flag did not exist and the hint
+  // deliberately stayed silent; now it both names AND honors it.)
+  it("the actionable hint advertises the WORKING --map flag and following it loads the file", function () {
+    const p = writeFix(
+      "nodate2.csv",
+      "Effective,Description,Debit,Credit\n2026-05-01,rent,,1500.00\n"
+    );
     const io = capture();
-    inspect([p, "--as", "bank"], io);
-    expect(io.out()).to.not.contain("--map");
-    // And --json's hint array is equally honest.
+    const code1 = inspect([p, "--as", "bank"], io);
+    expect(code1).to.equal(EXIT.FAIL); // "date" column not auto-detected
+    expect(io.out()).to.contain("--map");
+    // The --json hint array names it too.
     const io2 = capture();
     inspect([p, "--as", "bank", "--json"], io2);
     const rep = JSON.parse(io2.out());
-    expect(JSON.stringify(rep.hint)).to.not.contain("--map");
-    // Following the (real) advice — passing --map literally — is still rejected
-    // (it does not exist yet), so the hint correctly never suggests it.
+    expect(JSON.stringify(rep.hint)).to.contain("--map");
+    // Following the advice — mapping the existing header — actually LOADS it now.
     const io3 = capture();
-    const code = inspect([p, "--as", "bank", "--map", "date=Description"], io3);
-    expect(code).to.equal(EXIT.USAGE);
-    expect(io3.err()).to.contain("unknown option: --map");
+    const code = inspect([p, "--as", "bank", "--map", "date=Effective"], io3);
+    expect(code).to.equal(EXIT.PASS);
+    expect(io3.out()).to.contain("parsed: 1 OK of 1");
   });
 
   // --------------------------------------------------------- malformed rows

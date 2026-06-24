@@ -1,0 +1,5 @@
+When,Narrative,MoneyOut,MoneyIn,Kategorie
+2026-05-01,"Deposit - rent received",,1500.00,Deposit
+2026-05-03,"Check #1042 owner draw - Smith",750.00,,Check
+2026-05-05,"NSF returned item - Jones rent reversal",1200.00,,NSF
+2026-05-09,"Monthly service charge",12.50,,Fee

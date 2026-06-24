@@ -1,0 +1,5 @@
+Posting Date,Description,Withdrawal Amt,Deposit Amt,Running Balance,Check Number
+"Jan 5, 2024","Deposit - rent received",,1500.00,1500.00,
+"Jan 7, 2024","Check owner draw - Smith",750.00,,750.00,1042
+"Jan 9, 2024","NSF returned item - Jones rent reversal",1200.00,,-450.00,
+"Jan 11, 2024","Monthly service charge",12.50,,-462.50,

@@ -164,8 +164,29 @@ function parseCents(raw, field = "amount", loc = {}) {
 // Date parsing — normalize to YYYY-MM-DD
 // ---------------------------------------------------------------------------
 
-// Accepts: YYYY-MM-DD, MM/DD/YYYY, M/D/YY, YYYYMMDD (OFX style).
-// Returns a strict ISO date string, validating the calendar (no 02/30).
+// Deterministic month-name -> 1..12 table. Covers the full names and the common
+// 3-letter abbreviations QuickBooks/bank exports emit (e.g. "Jan", "Sept").
+// Lower-cased keys; matched case-insensitively. NO locale/Date() dependency, so
+// the same textual date always parses to the same ISO string.
+const MONTH_NAMES = Object.freeze({
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+});
+
+// Accepts: YYYY-MM-DD, MM/DD/YYYY, M/D/YY, YYYYMMDD (OFX style), and the common
+// textual forms QuickBooks exports use — "Mon DD, YYYY" ("Jan 5, 2024") and
+// "DD-Mon-YYYY" ("5-Jan-2024"). Returns a strict ISO date string, validating
+// the calendar (no 02/30) with a deterministic month-name table (no Date()).
 function parseDate(raw, loc = {}) {
   if (raw == null) throw new IngestError("missing date", loc);
   const s = String(raw).trim();
@@ -185,6 +206,20 @@ function parseDate(raw, loc = {}) {
   } else if ((m = s.match(/^(\d{4})(\d{2})(\d{2})$/))) {
     // OFX/QFX YYYYMMDD (optionally followed by HHMMSS we ignore upstream).
     [, y, mo, d] = m;
+  } else if ((m = s.match(/^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/))) {
+    // "Mon DD, YYYY" — e.g. "Jan 5, 2024", "January 5 2024", "Sept. 5, 2024".
+    const mon = MONTH_NAMES[m[1].toLowerCase()];
+    if (mon == null) throw new IngestError(`unrecognized month in date: "${raw}"`, loc);
+    mo = String(mon);
+    d = m[2];
+    y = m[3];
+  } else if ((m = s.match(/^(\d{1,2})-([A-Za-z]+)\.?-(\d{2}|\d{4})$/))) {
+    // "DD-Mon-YYYY" — e.g. "5-Jan-2024", "05-Jan-24".
+    const mon = MONTH_NAMES[m[2].toLowerCase()];
+    if (mon == null) throw new IngestError(`unrecognized month in date: "${raw}"`, loc);
+    d = m[1];
+    mo = String(mon);
+    y = m[3].length === 2 ? `20${m[3]}` : m[3];
   } else {
     throw new IngestError(`unrecognized date: "${raw}"`, loc);
   }
@@ -267,16 +302,70 @@ function parseCSV(text) {
 
 // Map header names to column indexes. Case-insensitive, trims, and accepts a
 // list of aliases per logical column. Returns { name -> index }.
-function indexHeader(header, schema, source) {
+//
+// `columnMap` (T-25.3) is an OPTIONAL pure `{ <logical>: <exactHeaderName> }`
+// escape hatch: for any logical field it names, it OVERRIDES the alias auto-
+// detect and binds that field to the EXACT (case-insensitive, trimmed) header
+// the caller specified — for a file whose headers no alias matches. It is
+// VALIDATED first by validateColumnMap (an unknown logical key, or a header not
+// present in the file, hard-errors naming the available headers). Logical fields
+// NOT named in the map fall through to the normal alias detect, so a partial map
+// only overrides what it touches. With no columnMap, behaviour is unchanged.
+function indexHeader(header, schema, source, columnMap = null) {
   const norm = header.map((h) => String(h).trim().toLowerCase());
+  const overrides = columnMap
+    ? validateColumnMap(columnMap, header, schema, source)
+    : null;
   const out = {};
   for (const [key, aliases] of Object.entries(schema)) {
+    if (overrides && Object.prototype.hasOwnProperty.call(overrides, key)) {
+      out[key] = overrides[key];
+      continue;
+    }
     let idx = -1;
     for (const a of aliases) {
       idx = norm.indexOf(a.toLowerCase());
       if (idx !== -1) break;
     }
     out[key] = idx;
+  }
+  return out;
+}
+
+// Validate a `columnMap` against the file's actual header + the source schema,
+// and resolve each entry to a 0-based column index. PURE; throws an IngestError
+// (the existing error style) on:
+//   * an unknown logical key (not a field of this source's schema), or
+//   * a mapped-to header that is not present in the file.
+// Both messages NAME the available options so a broker can self-correct without
+// reading source. Returns { <logical>: <index> } for the validated entries only.
+function validateColumnMap(columnMap, header, schema, source) {
+  const norm = header.map((h) => String(h).trim().toLowerCase());
+  const logicalKeys = Object.keys(schema);
+  const out = {};
+  for (const [logical, wantHeader] of Object.entries(columnMap)) {
+    if (!Object.prototype.hasOwnProperty.call(schema, logical)) {
+      throw new IngestError(
+        `unknown logical field "${logical}" in column map for ${source} ` +
+          `(available fields: ${logicalKeys.join(", ")})`,
+        { source }
+      );
+    }
+    if (wantHeader == null || String(wantHeader).trim() === "") {
+      throw new IngestError(
+        `column map for "${logical}" must name a header (got empty value)`,
+        { source }
+      );
+    }
+    const idx = norm.indexOf(String(wantHeader).trim().toLowerCase());
+    if (idx === -1) {
+      throw new IngestError(
+        `column map for "${logical}" names header "${wantHeader}" which is not ` +
+          `in the file (available headers: ${header.join(", ")})`,
+        { source }
+      );
+    }
+    out[logical] = idx;
   }
   return out;
 }
@@ -377,9 +466,29 @@ function makeRecord({ date, amount, memo, kind, party, source }) {
 const BANK_SCHEMA = {
   date: ["date", "posted", "posting date", "transaction date", "trans date"],
   amount: ["amount", "amt"],
-  debit: ["debit", "withdrawal", "withdrawals", "money out"],
-  credit: ["credit", "deposit", "deposits", "money in"],
-  memo: ["description", "memo", "details", "name", "payee"],
+  debit: [
+    "debit",
+    "withdrawal",
+    "withdrawals",
+    "money out",
+    // real bank exports (Chase/BofA/Wells/QB CSV) — money OUT columns
+    "withdrawal amt",
+    "withdrawal amount",
+    "debit amt",
+    "debit amount",
+  ],
+  credit: [
+    "credit",
+    "deposit",
+    "deposits",
+    "money in",
+    // real bank exports — money IN columns
+    "deposit amt",
+    "deposit amount",
+    "credit amt",
+    "credit amount",
+  ],
+  memo: ["description", "memo", "details", "name", "payee", "check number", "check #", "check no"],
   type: ["type", "transaction type"],
 };
 
@@ -427,12 +536,12 @@ function buildBankRecord(arr, cols, hasSigned, loc) {
   });
 }
 
-function parseBankCSV(text) {
+function parseBankCSV(text, opts = {}) {
   const rows = parseCSV(text);
   if (rows.length === 0) {
     throw new IngestError("empty bank statement", { source: SOURCE.BANK });
   }
-  const cols = indexHeader(rows[0], BANK_SCHEMA, SOURCE.BANK);
+  const cols = indexHeader(rows[0], BANK_SCHEMA, SOURCE.BANK, opts.columnMap);
   requireCols(cols, ["date"], SOURCE.BANK);
   const hasSigned = cols.amount !== -1;
   const hasSplit = cols.debit !== -1 || cols.credit !== -1;
@@ -496,11 +605,12 @@ function parseOFX(text) {
 }
 
 // Auto-detect OFX vs CSV from the content; `format` ("csv"|"ofx") forces it.
-function parseBankStatement(text, { format } = {}) {
+// `columnMap` (CSV only) overrides the alias auto-detect — OFX has no CSV header.
+function parseBankStatement(text, { format, columnMap } = {}) {
   if (text == null) throw new IngestError("no bank input", { source: SOURCE.BANK });
   const fmt = format || (/<OFX>|<STMTTRN>|OFXHEADER/i.test(text) ? "ofx" : "csv");
   if (fmt === "ofx") return parseOFX(text);
-  return parseBankCSV(text);
+  return parseBankCSV(text, { columnMap });
 }
 
 // ---------------------------------------------------------------------------
@@ -514,8 +624,20 @@ function parseBankStatement(text, { format } = {}) {
 const QB_SCHEMA = {
   date: ["date", "trans date", "transaction date"],
   type: ["type", "transaction type"],
-  party: ["name", "payee", "customer", "vendor", "received from", "paid to"],
-  memo: ["memo", "description", "memo/description"],
+  party: [
+    "name",
+    "payee",
+    "customer",
+    "vendor",
+    "received from",
+    "paid to",
+    // QuickBooks "transaction detail" report columns
+    "split",
+    "account",
+  ],
+  // QB exports often carry the check/reference number in a "Num" column and a
+  // cleared flag in "Clr"; fold them into the free-text memo so they survive.
+  memo: ["memo", "description", "memo/description", "num", "clr"],
   debit: ["debit", "payment", "decrease"],
   credit: ["credit", "deposit", "increase"],
   amount: ["amount", "amt"],
@@ -559,7 +681,7 @@ function buildQuickBooksRecord(arr, cols, hasSigned, loc) {
   });
 }
 
-function parseQuickBooksCSV(text) {
+function parseQuickBooksCSV(text, opts = {}) {
   if (text == null) {
     throw new IngestError("no QuickBooks input", { source: SOURCE.QUICKBOOKS });
   }
@@ -569,7 +691,7 @@ function parseQuickBooksCSV(text) {
       source: SOURCE.QUICKBOOKS,
     });
   }
-  const cols = indexHeader(rows[0], QB_SCHEMA, SOURCE.QUICKBOOKS);
+  const cols = indexHeader(rows[0], QB_SCHEMA, SOURCE.QUICKBOOKS, opts.columnMap);
   requireCols(cols, ["date"], SOURCE.QUICKBOOKS);
   const hasSigned = cols.amount !== -1;
   const hasSplit = cols.debit !== -1 || cols.credit !== -1;
@@ -605,12 +727,12 @@ function parseQuickBooksCSV(text) {
 //     non-cash, sign 0 unless it is a refund which is negative cash).
 const RENT_SCHEMA = {
   date: ["date", "posted", "transaction date"],
-  tenant: ["tenant", "name", "resident", "lessee", "party"],
+  tenant: ["tenant", "name", "resident", "lessee", "party", "lease"],
   unit: ["unit", "apt", "apartment", "property", "door"],
   memo: ["memo", "description", "note", "charge type", "details"],
   amount: ["amount", "amt"],
-  payment: ["payment", "paid", "received", "credit"],
-  charge: ["charge", "owed", "assessment", "debit"],
+  payment: ["payment", "paid", "received", "credit", "amount paid"],
+  charge: ["charge", "owed", "assessment", "debit", "amount due"],
   type: ["type", "transaction type"],
 };
 
@@ -681,7 +803,7 @@ function buildRentRollRecord(arr, cols, hasSigned, loc) {
   });
 }
 
-function parseRentRollCSV(text) {
+function parseRentRollCSV(text, opts = {}) {
   if (text == null) {
     throw new IngestError("no rent-roll input", { source: SOURCE.RENT_ROLL });
   }
@@ -689,7 +811,7 @@ function parseRentRollCSV(text) {
   if (rows.length === 0) {
     throw new IngestError("empty rent roll", { source: SOURCE.RENT_ROLL });
   }
-  const cols = indexHeader(rows[0], RENT_SCHEMA, SOURCE.RENT_ROLL);
+  const cols = indexHeader(rows[0], RENT_SCHEMA, SOURCE.RENT_ROLL, opts.columnMap);
   requireCols(cols, ["date", "tenant"], SOURCE.RENT_ROLL);
   const hasSigned = cols.amount !== -1;
   const hasSplit = cols.payment !== -1 || cols.charge !== -1;
@@ -886,10 +1008,24 @@ function diagnoseSource(source, text, opts = {}) {
   const header = rows[0].map((h) => String(h));
   report.header = header.slice();
 
-  // Reuse indexHeader VERBATIM, then translate each index back to the ORIGINAL
-  // header name (or null when unmatched) so the caller sees which column
-  // satisfied each logical field.
-  const cols = indexHeader(header, cfg.schema, source);
+  // Reuse indexHeader VERBATIM (including the SAME columnMap the reconcile run
+  // will use, so `inspect` previews under the identical mapping), then translate
+  // each index back to the ORIGINAL header name (or null when unmatched) so the
+  // caller sees which column satisfied each logical field. A malformed columnMap
+  // (unknown logical key or a header absent from the file) hard-errors here with
+  // the SAME message the strict parser would give — surfaced as a file-level
+  // error rather than crashing, so inspect can render it.
+  let cols;
+  try {
+    cols = indexHeader(header, cfg.schema, source, opts.columnMap);
+  } catch (err) {
+    if (err instanceof IngestError) {
+      report.errors.push({ row: null, message: err.message });
+      report.rowCount = Math.max(rows.length - 1, 0);
+      return report;
+    }
+    throw err;
+  }
   for (const key of Object.keys(cfg.schema)) {
     const idx = cols[key];
     report.mapped[key] = idx === -1 || idx === undefined ? null : header[idx];
@@ -943,6 +1079,39 @@ function diagnoseSource(source, text, opts = {}) {
   return report;
 }
 
+// Pre-flight a resolved columnMap for a source against a file's actual header,
+// WITHOUT parsing any data rows. Reuses the SAME parseCSV + per-source schema +
+// validateColumnMap the strict parsers use, so it accepts/rejects EXACTLY what
+// the strict parse would — but it throws the IngestError EARLY (before any row
+// work), letting the CLI classify a bad map as a USAGE error (a bad flag value)
+// rather than an IO/data error. PURE; no I/O, no clock.
+//
+// For the bank source an OFX/QFX document has NO CSV header row and ignores the
+// columnMap entirely (parseBankStatement routes OFX past it), so this is a no-op
+// for OFX — there is nothing to validate against and nothing the strict parse
+// would reject. `opts.format` ("csv"|"ofx") forces the bank format; otherwise it
+// is auto-detected with the SAME predicate parseBankStatement uses.
+function validateColumnMapForSource(source, text, columnMap, opts = {}) {
+  if (!columnMap || Object.keys(columnMap).length === 0) return;
+  const cfg = DIAGNOSE_CONFIG[source];
+  if (!cfg) {
+    throw new IngestError(`unknown source "${source}" for column-map validation`);
+  }
+  // OFX bank files carry no header to validate the map against; the strict
+  // parser ignores columnMap for OFX, so skip (no-op), matching that behaviour.
+  if (source === SOURCE.BANK && text != null) {
+    const fmt =
+      opts.format ||
+      (/<OFX>|<STMTTRN>|OFXHEADER/i.test(text) ? "ofx" : "csv");
+    if (fmt === "ofx") return;
+  }
+  if (text == null) return; // a null file is its own (later) error, not a map error
+  const rows = parseCSV(text);
+  if (rows.length === 0) return; // an empty file is its own (later) error
+  // Throws an IngestError (naming available headers/fields) on a bad entry.
+  validateColumnMap(columnMap, rows[0], cfg.schema, source);
+}
+
 // Report the accepted header ALIASES for a logical field of a source. The
 // inspect/onboarding path uses this to print an ACTIONABLE hint ("add a column
 // named one of [...]") without re-declaring the schema — it reads the SAME
@@ -977,12 +1146,14 @@ module.exports = {
   parseCSV,
   classifyKind,
   // the three normalizers
+  validateColumnMap,
   parseBankStatement,
   parseBankCSV,
   parseOFX,
   diagnoseOFX,
   parseQuickBooksCSV,
   parseRentRollCSV,
+  validateColumnMapForSource,
   // diagnostic ingest core (T-25.1) — parse-with-report, never fail-closed
   diagnoseSource,
   diagnoseBank,

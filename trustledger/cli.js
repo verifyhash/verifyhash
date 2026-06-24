@@ -40,6 +40,140 @@ const report = require("./report");
 const policy = require("./policy");
 const close = require("./close");
 
+// The three reconcile sources, keyed by the broker-facing label used on the
+// command line (`--map <source>:<logical>=<header>` and the --map-file top-level
+// keys). Shared with inspect's --as so the two commands name sources identically.
+const MAP_SOURCES = Object.freeze(["bank", "ledger", "rentroll"]);
+
+// Parse ONE `--map` value into { source?, logical, header }. Accepts either
+//   "<logical>=<header>"            (inspect: the source is implied by --as), or
+//   "<source>:<logical>=<header>"   (reconcile: which of the three files).
+// Malformed syntax (no "=", an empty logical/header, or an unknown source
+// prefix) is a USAGE error (exit 2) — a bad flag value, surfaced clearly.
+function parseMapArg(raw, { requireSource } = {}) {
+  const s = String(raw == null ? "" : raw);
+  const eq = s.indexOf("=");
+  if (eq === -1) {
+    const e = new Error(
+      `--map must be <logical>=<header>${
+        requireSource ? " (prefixed <source>:<logical>=<header>)" : ""
+      } (got "${raw}")`
+    );
+    e.usage = true;
+    throw e;
+  }
+  let lhs = s.slice(0, eq).trim();
+  const header = s.slice(eq + 1); // header kept verbatim (may contain spaces)
+  let source;
+  const colon = lhs.indexOf(":");
+  if (colon !== -1) {
+    source = lhs.slice(0, colon).trim().toLowerCase();
+    lhs = lhs.slice(colon + 1).trim();
+    if (!MAP_SOURCES.includes(source)) {
+      const e = new Error(
+        `--map source must be one of ${MAP_SOURCES.join("|")} (got "${source}")`
+      );
+      e.usage = true;
+      throw e;
+    }
+  }
+  if (requireSource && source === undefined) {
+    const e = new Error(
+      `--map for reconcile must be <source>:<logical>=<header> ` +
+        `(source one of ${MAP_SOURCES.join("|")}) (got "${raw}")`
+    );
+    e.usage = true;
+    throw e;
+  }
+  const logical = lhs;
+  if (logical === "" || String(header).trim() === "") {
+    const e = new Error(
+      `--map must be <logical>=<header> with both sides non-empty (got "${raw}")`
+    );
+    e.usage = true;
+    throw e;
+  }
+  return { source, logical, header };
+}
+
+// Read + parse a `--map-file <json>`: a `{ bank|ledger|rentroll: { <logical>:
+// <header> } }` per-source mapping. An unreadable file or malformed JSON, a
+// non-object body, an unknown top-level source key, or a non-string mapping
+// value is a USAGE error (exit 2). Returns { bank?, ledger?, rentroll? } where
+// each value is a plain `{ <logical>: <header> }` columnMap.
+function readMapFile(file) {
+  let text;
+  try {
+    text = fs.readFileSync(path.resolve(file), "utf8");
+  } catch (e) {
+    const err = new Error(`cannot read --map-file ${file}: ${e.message}`);
+    err.usage = true;
+    throw err;
+  }
+  let obj;
+  try {
+    obj = JSON.parse(text);
+  } catch (e) {
+    const err = new Error(`invalid JSON in --map-file ${file}: ${e.message}`);
+    err.usage = true;
+    throw err;
+  }
+  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+    const err = new Error(
+      `--map-file ${file} must be a JSON object of { bank|ledger|rentroll: {logical: header} }`
+    );
+    err.usage = true;
+    throw err;
+  }
+  const out = {};
+  for (const [src, map] of Object.entries(obj)) {
+    if (!MAP_SOURCES.includes(src)) {
+      const err = new Error(
+        `--map-file ${file}: unknown source key "${src}" (expected one of ${MAP_SOURCES.join(
+          ", "
+        )})`
+      );
+      err.usage = true;
+      throw err;
+    }
+    if (map == null || typeof map !== "object" || Array.isArray(map)) {
+      const err = new Error(
+        `--map-file ${file}: "${src}" must map to an object of {logical: header}`
+      );
+      err.usage = true;
+      throw err;
+    }
+    const cm = {};
+    for (const [logical, header] of Object.entries(map)) {
+      if (typeof header !== "string" || header.trim() === "") {
+        const err = new Error(
+          `--map-file ${file}: ${src}.${logical} must be a non-empty header string`
+        );
+        err.usage = true;
+        throw err;
+      }
+      cm[logical] = header;
+    }
+    out[src] = cm;
+  }
+  return out;
+}
+
+// Merge per-source maps: --map-file provides the base, individual --map entries
+// OVERRIDE it (last-write-wins for a repeated logical). Returns { <source>:
+// columnMap } using only sources that have at least one mapping. PURE.
+function buildSourceMaps(mapFileMaps, mapArgs) {
+  const out = {};
+  for (const src of MAP_SOURCES) {
+    if (mapFileMaps && mapFileMaps[src]) out[src] = { ...mapFileMaps[src] };
+  }
+  for (const { source, logical, header } of mapArgs) {
+    if (!out[source]) out[source] = {};
+    out[source][logical] = header;
+  }
+  return out;
+}
+
 // Exit codes — shared, documented contract (mirrors the dataset/parcel gates:
 // 0 PASS, 3 data/gate FAIL, 2 usage, 1 IO/input error).
 const EXIT = Object.freeze({ PASS: 0, IO: 1, USAGE: 2, FAIL: 3 });
@@ -68,6 +202,8 @@ function parseReconcileArgs(argv) {
     state: undefined, // bundled per-state policy by its state code (--state <code>)
     priorClose: undefined, // prior period's close.json to roll forward FROM (--prior-close <file>)
     emitClose: undefined, // path to write THIS run's close.json TO (--emit-close <file>)
+    mapArgs: [], // repeatable --map <source>:<logical>=<header> (T-25.3)
+    mapFile: undefined, // --map-file <json> per-source column maps (T-25.3)
     _positionals: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -110,6 +246,13 @@ function parseReconcileArgs(argv) {
         break;
       case "--emit-close":
         opts.emitClose = argv[++i];
+        break;
+      case "--map":
+        // reconcile: source is REQUIRED (three files), so <source>:<logical>=<header>.
+        opts.mapArgs.push(parseMapArg(argv[++i], { requireSource: true }));
+        break;
+      case "--map-file":
+        opts.mapFile = argv[++i];
         break;
       default:
         if (a && a.startsWith("--")) {
@@ -297,14 +440,65 @@ function runReconcile(opts, io = {}) {
     return { code: EXIT.IO };
   }
 
+  // -- Resolve the per-source column maps (--map-file + --map). --------------
+  // A malformed --map-file (unreadable, bad JSON, unknown source key) is a USAGE
+  // error (a bad flag value, exit 2) — same class as a bad --policy file. The
+  // individual --map flags were already syntax-validated in the arg parser.
+  let sourceMaps;
+  try {
+    const mapFileMaps = opts.mapFile != null ? readMapFile(opts.mapFile) : null;
+    sourceMaps = buildSourceMaps(mapFileMaps, opts.mapArgs || []);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.USAGE };
+  }
+
+  // -- Validate the resolved column maps up front (USAGE, not IO). -----------
+  // A STRUCTURALLY-INVALID column map (an unknown logical key, OR a mapped-to
+  // header absent from the file) is a BAD FLAG VALUE — the same error class as a
+  // malformed --map-file (readMapFile, exit 2) and as inspect's preview. Without
+  // this pre-flight the IDENTICAL mistake routed through an inline --map would
+  // fall through to the strict-ingest try/catch below and exit 1 (IO), splitting
+  // one broker mistake across exit 1/2/3 by flag form. We validate here, BEFORE
+  // any row parsing, reusing the SAME parseCSV + schema + validateColumnMap the
+  // strict parser uses, so a bad map exits 2 regardless of which flag carried it.
+  // The message (already naming the available headers/fields) is unchanged.
+  try {
+    ingest.validateColumnMapForSource(ingest.SOURCE.BANK, bankText, sourceMaps.bank, {
+      format: opts.bankFormat,
+    });
+    ingest.validateColumnMapForSource(
+      ingest.SOURCE.QUICKBOOKS,
+      ledgerText,
+      sourceMaps.ledger
+    );
+    ingest.validateColumnMapForSource(
+      ingest.SOURCE.RENT_ROLL,
+      rentText,
+      sourceMaps.rentroll
+    );
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.USAGE };
+  }
+
   // -- Ingest (a malformed row is a clear, located error -> exit 1). ---------
+  // The resolved column maps thread into BOTH the bank/QB/rent parsers, so a
+  // file whose headers no alias matches still loads under an explicit map. A
+  // structurally-invalid map was already rejected (USAGE) by the pre-flight
+  // above; any IngestError reaching this catch is a genuine data/row problem.
   let bank;
   let book;
   let rentroll;
   try {
-    bank = ingest.parseBankStatement(bankText, { format: opts.bankFormat });
-    book = ingest.parseQuickBooksCSV(ledgerText);
-    rentroll = ingest.parseRentRollCSV(rentText);
+    bank = ingest.parseBankStatement(bankText, {
+      format: opts.bankFormat,
+      columnMap: sourceMaps.bank,
+    });
+    book = ingest.parseQuickBooksCSV(ledgerText, { columnMap: sourceMaps.ledger });
+    rentroll = ingest.parseRentRollCSV(rentText, {
+      columnMap: sourceMaps.rentroll,
+    });
   } catch (e) {
     writeErr(`error: ${e.message}\n`);
     return { code: EXIT.IO };
@@ -460,6 +654,8 @@ function parseInspectArgs(argv) {
     bankFormat: undefined,
     json: false,
     sample: undefined, // sample size (default applied by the runner)
+    mapArgs: [], // repeatable --map <logical>=<header> (source = --as) (T-25.3)
+    mapFile: undefined, // --map-file <json> per-source column maps (T-25.3)
     _positionals: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -486,6 +682,14 @@ function parseInspectArgs(argv) {
         break;
       case "--sample":
         opts.sample = parseIntArg(argv[++i], "--sample");
+        break;
+      case "--map":
+        // inspect: a single file, so the source is implied by --as; an optional
+        // <source>: prefix is still accepted (and must agree with --as later).
+        opts.mapArgs.push(parseMapArg(argv[++i], { requireSource: false }));
+        break;
+      case "--map-file":
+        opts.mapFile = argv[++i];
         break;
       default:
         if (a && a.startsWith("--")) {
@@ -605,26 +809,29 @@ function renderInspect(report, opts) {
 // (with all required columns present) gets a generic "fix the cells" line.
 // Returns [] when the file is fully clean.
 //
-// HONESTY: the hint promises ONLY what the tool can do TODAY — rename/add a
-// column from the named aliases. It deliberately does NOT advertise a column-
-// mapping override flag, because none exists yet (a no-edit `--map` override is
-// the NEXT task, T-25.3); pointing a broker at a flag that hard-errors would
-// re-introduce the exact dead end this command exists to remove. The header
-// note tells them the override is coming without implying it works now.
+// T-25.3: the no-edit column-mapping override now EXISTS, so each missing-column
+// hint also names the WORKING `--map <logical>=<header>` escape hatch — a broker
+// whose header no alias matches can map it WITHOUT editing the export. The hint
+// only ever advertises what the tool can actually do today, and following it
+// (rename/add a column OR pass --map) succeeds — never a dead end.
 function inspectHint(report) {
   const out = [];
   for (const logical of report.requiredMissing) {
     const aliases = ingest.aliasesFor(report.source, logical);
     out.push(
       `the "${logical}" column was not found — rename your column to (or add) ` +
-        `one named one of [${aliases.join(", ")}]`
+        `one named one of [${aliases.join(", ")}], OR map your existing header ` +
+        `with --map ${logical}=<your header>`
     );
   }
   // The amount group (signed amount OR a split pair) is reported as a file-level
   // error rather than a missing single column; surface its own add-a-column hint.
   for (const e of report.errors) {
     if (e.row == null && /needs an "amount" column|debit\/credit|payment\/charge/.test(e.message)) {
-      out.push(`${e.message} — rename/add one of those columns`);
+      out.push(
+        `${e.message} — rename/add one of those columns, OR map your existing ` +
+          `header(s) with --map <logical>=<your header>`
+      );
     }
   }
   // Row-level failures with the header otherwise intact: a per-row data problem.
@@ -676,6 +883,33 @@ function runInspect(opts, io = {}) {
     return { code: EXIT.USAGE };
   }
 
+  // Resolve the column map for THIS file (the source is `--as`). --map-file may
+  // carry per-source maps; only the entry for this --as applies. A bare --map
+  // (no <source>: prefix) targets this --as; a prefixed --map MUST agree with it.
+  // Malformed --map-file is a USAGE error, mirroring reconcile.
+  let columnMap;
+  try {
+    const mapFileMaps = opts.mapFile != null ? readMapFile(opts.mapFile) : null;
+    // Re-scope each --map onto this --as: a bare --map targets it; a prefixed
+    // --map MUST agree with it (a plain loop, not a throwing filter callback).
+    const scoped = [];
+    for (const m of opts.mapArgs || []) {
+      if (m.source !== undefined && m.source !== opts.as) {
+        const e = new Error(
+          `--map source "${m.source}" does not match --as ${opts.as}`
+        );
+        e.usage = true;
+        throw e;
+      }
+      scoped.push({ ...m, source: opts.as });
+    }
+    const merged = buildSourceMaps(mapFileMaps, scoped);
+    columnMap = merged[opts.as];
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.USAGE };
+  }
+
   // Read the file (an unreadable file is exit 1, not a crash) — read-only.
   let text;
   try {
@@ -693,6 +927,8 @@ function runInspect(opts, io = {}) {
       // Honour --bank-format (csv|ofx) for --as bank; undefined => auto-detect.
       // Only meaningful for the bank source, ignored by diagnoseSource otherwise.
       format: opts.bankFormat,
+      // The SAME map the reconcile run would use, so inspect previews identically.
+      columnMap,
     });
   } catch (e) {
     // diagnoseSource only throws on an unknown source (already guarded above) or

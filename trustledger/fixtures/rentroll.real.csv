@@ -1,0 +1,4 @@
+Date,Lease,Unit,Type,Memo,Amount Paid,Amount Due,Balance
+"Jan 1, 2024",Jones,101,Payment,Rent received,1500.00,,0.00
+"Jan 1, 2024",Smith,102,Charge,Monthly rent due,,1500.00,1500.00
+"Jan 5, 2024",Jones,101,NSF,Returned check - rent reversal,,1200.00,1200.00

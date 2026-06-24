@@ -1,0 +1,5 @@
+Date,Type,Num,Name,Memo,Clr,Split,Debit,Credit
+5-Jan-2024,Deposit,,Jones Tenant,Rent received January,R,Rent Income,,1500.00
+7-Jan-2024,Check,1042,Smith Owner,Owner draw check,R,Owner Equity,750.00,
+9-Jan-2024,Deposit,,Jones Tenant,NSF returned item - rent reversal,,Rent Income,1200.00,
+11-Jan-2024,Service Charge,,Bank,Monthly service charge,R,Bank Fees,12.50,

@@ -1,0 +1,7 @@
+Date,Type,Name,Memo,Debit,Credit
+05/01/2026,Deposit,Jones Tenant,Rent received May,,1500.00
+05/03/2026,Check,Smith Owner,Owner draw check #1042,750.00,
+05/05/2026,Deposit,Jones Tenant,"NSF returned item - rent reversal",1200.00,
+05/07/2026,Payment,Doe Tenant,Partial deposit (1 of 2),,650.00
+05/07/2026,Payment,Doe Tenant,Partial deposit (2 of 2),,650.00
+05/09/2026,Service Charge,Bank,Monthly service charge,12.50,

@@ -1,0 +1,6 @@
+Date,Tenant,Unit,Type,Memo,Payment,Charge
+2026-05-01,Jones,101,Payment,Rent received,1500.00,
+2026-05-01,Smith,102,Charge,Monthly rent due,,1500.00
+2026-05-05,Jones,101,NSF,Returned check - rent reversal,,1200.00
+2026-05-07,Doe,103,Payment,Partial deposit (1 of 2),650.00,
+2026-05-07,Doe,103,Payment,Partial deposit (2 of 2),650.00,

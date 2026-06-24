@@ -383,6 +383,50 @@ const BANK_SCHEMA = {
   type: ["type", "transaction type"],
 };
 
+// Build ONE normalized bank record from a parsed row, given the column map and
+// the signed/split detection. PURE: throws an IngestError (with `loc`) on any
+// bad cell, exactly as the strict parser must. The strict parser and the
+// diagnostic parser share this single copy of the per-row logic — they differ
+// ONLY in that the diagnostic path wraps it in try/catch to accumulate errors.
+function buildBankRecord(arr, cols, hasSigned, loc) {
+  const date = parseDate(cell(arr, cols.date), loc);
+
+  let amount;
+  if (hasSigned) {
+    amount = parseCents(cell(arr, cols.amount), "amount", loc);
+  } else {
+    const dRaw = cell(arr, cols.debit);
+    const cRaw = cell(arr, cols.credit);
+    const dHas = dRaw != null && String(dRaw).trim() !== "";
+    const cHas = cRaw != null && String(cRaw).trim() !== "";
+    if (dHas && cHas) {
+      throw new IngestError("row has BOTH a debit and a credit value", loc);
+    }
+    if (!dHas && !cHas) {
+      throw new IngestError("row has neither debit nor credit value", loc);
+    }
+    if (dHas) {
+      const v = parseCents(dRaw, "debit", loc);
+      amount = -Math.abs(v);
+    } else {
+      const v = parseCents(cRaw, "credit", loc);
+      amount = Math.abs(v);
+    }
+  }
+
+  const memo = cell(arr, cols.memo) || "";
+  const typeText = cell(arr, cols.type) || "";
+  const kind = coerceKind(typeText, `${typeText} ${memo}`, amount, loc);
+  return makeRecord({
+    date,
+    amount,
+    memo,
+    kind,
+    party: "",
+    source: SOURCE.BANK,
+  });
+}
+
 function parseBankCSV(text) {
   const rows = parseCSV(text);
   if (rows.length === 0) {
@@ -401,42 +445,8 @@ function parseBankCSV(text) {
 
   const out = [];
   for (let r = 1; r < rows.length; r++) {
-    const arr = rows[r];
     const loc = { row: r, source: SOURCE.BANK };
-    const date = parseDate(cell(arr, cols.date), loc);
-
-    let amount;
-    if (hasSigned) {
-      amount = parseCents(cell(arr, cols.amount), "amount", loc);
-    } else {
-      const dRaw = cell(arr, cols.debit);
-      const cRaw = cell(arr, cols.credit);
-      const dHas = dRaw != null && String(dRaw).trim() !== "";
-      const cHas = cRaw != null && String(cRaw).trim() !== "";
-      if (dHas && cHas) {
-        throw new IngestError(
-          "row has BOTH a debit and a credit value",
-          loc
-        );
-      }
-      if (!dHas && !cHas) {
-        throw new IngestError("row has neither debit nor credit value", loc);
-      }
-      if (dHas) {
-        const v = parseCents(dRaw, "debit", loc);
-        amount = -Math.abs(v);
-      } else {
-        const v = parseCents(cRaw, "credit", loc);
-        amount = Math.abs(v);
-      }
-    }
-
-    const memo = cell(arr, cols.memo) || "";
-    const typeText = cell(arr, cols.type) || "";
-    const kind = coerceKind(typeText, `${typeText} ${memo}`, amount, loc);
-    out.push(
-      makeRecord({ date, amount, memo, kind, party: "", source: SOURCE.BANK })
-    );
+    out.push(buildBankRecord(rows[r], cols, hasSigned, loc));
   }
   return out;
 }
@@ -500,6 +510,44 @@ const QB_SCHEMA = {
   amount: ["amount", "amt"],
 };
 
+// Build ONE normalized QuickBooks record from a parsed row. PURE; throws on a
+// bad cell. Shared verbatim by the strict and diagnostic QuickBooks parsers.
+function buildQuickBooksRecord(arr, cols, hasSigned, loc) {
+  const date = parseDate(cell(arr, cols.date), loc);
+
+  let amount;
+  if (hasSigned) {
+    amount = parseCents(cell(arr, cols.amount), "amount", loc);
+  } else {
+    const dRaw = cell(arr, cols.debit);
+    const cRaw = cell(arr, cols.credit);
+    const dHas = dRaw != null && String(dRaw).trim() !== "";
+    const cHas = cRaw != null && String(cRaw).trim() !== "";
+    if (dHas && cHas) {
+      throw new IngestError("row has BOTH debit and credit values", loc);
+    }
+    if (!dHas && !cHas) {
+      throw new IngestError("row has neither debit nor credit value", loc);
+    }
+    amount = dHas
+      ? -Math.abs(parseCents(dRaw, "debit", loc))
+      : Math.abs(parseCents(cRaw, "credit", loc));
+  }
+
+  const memo = cell(arr, cols.memo) || "";
+  const party = cell(arr, cols.party) || "";
+  const typeText = cell(arr, cols.type) || "";
+  const kind = coerceKind(typeText, `${typeText} ${memo}`, amount, loc);
+  return makeRecord({
+    date,
+    amount,
+    memo,
+    kind,
+    party,
+    source: SOURCE.QUICKBOOKS,
+  });
+}
+
 function parseQuickBooksCSV(text) {
   if (text == null) {
     throw new IngestError("no QuickBooks input", { source: SOURCE.QUICKBOOKS });
@@ -523,43 +571,8 @@ function parseQuickBooksCSV(text) {
 
   const out = [];
   for (let r = 1; r < rows.length; r++) {
-    const arr = rows[r];
     const loc = { row: r, source: SOURCE.QUICKBOOKS };
-    const date = parseDate(cell(arr, cols.date), loc);
-
-    let amount;
-    if (hasSigned) {
-      amount = parseCents(cell(arr, cols.amount), "amount", loc);
-    } else {
-      const dRaw = cell(arr, cols.debit);
-      const cRaw = cell(arr, cols.credit);
-      const dHas = dRaw != null && String(dRaw).trim() !== "";
-      const cHas = cRaw != null && String(cRaw).trim() !== "";
-      if (dHas && cHas) {
-        throw new IngestError("row has BOTH debit and credit values", loc);
-      }
-      if (!dHas && !cHas) {
-        throw new IngestError("row has neither debit nor credit value", loc);
-      }
-      amount = dHas
-        ? -Math.abs(parseCents(dRaw, "debit", loc))
-        : Math.abs(parseCents(cRaw, "credit", loc));
-    }
-
-    const memo = cell(arr, cols.memo) || "";
-    const party = cell(arr, cols.party) || "";
-    const typeText = cell(arr, cols.type) || "";
-    const kind = coerceKind(typeText, `${typeText} ${memo}`, amount, loc);
-    out.push(
-      makeRecord({
-        date,
-        amount,
-        memo,
-        kind,
-        party,
-        source: SOURCE.QUICKBOOKS,
-      })
-    );
+    out.push(buildQuickBooksRecord(rows[r], cols, hasSigned, loc));
   }
   return out;
 }
@@ -590,6 +603,73 @@ const RENT_SCHEMA = {
   type: ["type", "transaction type"],
 };
 
+// Build ONE normalized rent-roll record from a parsed row. PURE; throws on a
+// bad cell or a missing tenant. Shared verbatim by the strict and diagnostic
+// rent-roll parsers.
+function buildRentRollRecord(arr, cols, hasSigned, loc) {
+  const date = parseDate(cell(arr, cols.date), loc);
+  const tenant = cell(arr, cols.tenant);
+  if (tenant == null || String(tenant).trim() === "") {
+    throw new IngestError("rent-roll row missing tenant", loc);
+  }
+  const unit = cell(arr, cols.unit);
+
+  let amount;
+  let kindHint;
+  if (hasSigned) {
+    amount = parseCents(cell(arr, cols.amount), "amount", loc);
+    kindHint = amount >= 0 ? KIND.DEPOSIT : KIND.CHECK;
+  } else {
+    const pRaw = cell(arr, cols.payment);
+    const cRaw = cell(arr, cols.charge);
+    const pHas = pRaw != null && String(pRaw).trim() !== "";
+    const cHas = cRaw != null && String(cRaw).trim() !== "";
+    if (pHas && cHas) {
+      throw new IngestError(
+        "rent-roll row has BOTH a payment and a charge",
+        loc
+      );
+    }
+    if (!pHas && !cHas) {
+      throw new IngestError(
+        "rent-roll row has neither payment nor charge",
+        loc
+      );
+    }
+    if (pHas) {
+      amount = Math.abs(parseCents(pRaw, "payment", loc));
+      kindHint = KIND.DEPOSIT;
+    } else {
+      // A charge is an accrual, not a cash movement: record it but with a
+      // negative sign reflecting what the tenant owes the trust ledger.
+      amount = -Math.abs(parseCents(cRaw, "charge", loc));
+      kindHint = KIND.ADJUSTMENT;
+    }
+  }
+
+  const memoRaw = cell(arr, cols.memo) || "";
+  const typeText = cell(arr, cols.type) || "";
+  // Let explicit type/keywords (e.g. "NSF") override the cash-based hint.
+  let kind = coerceKind(typeText, `${typeText} ${memoRaw}`, amount, loc);
+  if (
+    (typeText == null || typeText.trim() === "") &&
+    !/nsf|returned|fee|transfer|adjust|void/i.test(memoRaw)
+  ) {
+    kind = kindHint;
+  }
+  const party = unit
+    ? `${String(tenant).trim()} (${String(unit).trim()})`
+    : String(tenant).trim();
+  return makeRecord({
+    date,
+    amount,
+    memo: memoRaw,
+    kind,
+    party,
+    source: SOURCE.RENT_ROLL,
+  });
+}
+
 function parseRentRollCSV(text) {
   if (text == null) {
     throw new IngestError("no rent-roll input", { source: SOURCE.RENT_ROLL });
@@ -611,73 +691,179 @@ function parseRentRollCSV(text) {
 
   const out = [];
   for (let r = 1; r < rows.length; r++) {
-    const arr = rows[r];
     const loc = { row: r, source: SOURCE.RENT_ROLL };
-    const date = parseDate(cell(arr, cols.date), loc);
-    const tenant = cell(arr, cols.tenant);
-    if (tenant == null || String(tenant).trim() === "") {
-      throw new IngestError("rent-roll row missing tenant", loc);
-    }
-    const unit = cell(arr, cols.unit);
-
-    let amount;
-    let kindHint;
-    if (hasSigned) {
-      amount = parseCents(cell(arr, cols.amount), "amount", loc);
-      kindHint = amount >= 0 ? KIND.DEPOSIT : KIND.CHECK;
-    } else {
-      const pRaw = cell(arr, cols.payment);
-      const cRaw = cell(arr, cols.charge);
-      const pHas = pRaw != null && String(pRaw).trim() !== "";
-      const cHas = cRaw != null && String(cRaw).trim() !== "";
-      if (pHas && cHas) {
-        throw new IngestError(
-          "rent-roll row has BOTH a payment and a charge",
-          loc
-        );
-      }
-      if (!pHas && !cHas) {
-        throw new IngestError(
-          "rent-roll row has neither payment nor charge",
-          loc
-        );
-      }
-      if (pHas) {
-        amount = Math.abs(parseCents(pRaw, "payment", loc));
-        kindHint = KIND.DEPOSIT;
-      } else {
-        // A charge is an accrual, not a cash movement: record it but with a
-        // negative sign reflecting what the tenant owes the trust ledger.
-        amount = -Math.abs(parseCents(cRaw, "charge", loc));
-        kindHint = KIND.ADJUSTMENT;
-      }
-    }
-
-    const memoRaw = cell(arr, cols.memo) || "";
-    const typeText = cell(arr, cols.type) || "";
-    // Let explicit type/keywords (e.g. "NSF") override the cash-based hint.
-    let kind = coerceKind(typeText, `${typeText} ${memoRaw}`, amount, loc);
-    if (
-      (typeText == null || typeText.trim() === "") &&
-      !/nsf|returned|fee|transfer|adjust|void/i.test(memoRaw)
-    ) {
-      kind = kindHint;
-    }
-    const party = unit
-      ? `${String(tenant).trim()} (${String(unit).trim()})`
-      : String(tenant).trim();
-    out.push(
-      makeRecord({
-        date,
-        amount,
-        memo: memoRaw,
-        kind,
-        party,
-        source: SOURCE.RENT_ROLL,
-      })
-    );
+    out.push(buildRentRollRecord(rows[r], cols, hasSigned, loc));
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostic ingest core (T-25.1) — parse-WITH-report, never fail-closed
+// ---------------------------------------------------------------------------
+//
+// The strict parsers above (parseBankStatement / parseQuickBooksCSV /
+// parseRentRollCSV) fail CLOSED: the first malformed row aborts the whole file.
+// That is correct for the reconcile path — a trust reconciliation must NEVER
+// silently partial-parse, because a dropped row hides the exact discrepancy the
+// broker is legally on the hook to find.
+//
+// But ONBOARDING needs the opposite: when a broker first feeds the tool a real
+// export, they need to SEE what happened — which header columns mapped to which
+// logical field, how many rows normalized, and EVERY row that failed (not just
+// the first) — so they can fix the file or supply a column map. That is what the
+// `diagnose*` family provides.
+//
+// CRITICAL INVARIANT: the diagnostic path REUSES the exact same per-row builders
+// (buildBankRecord / buildQuickBooksRecord / buildRentRollRecord) and the same
+// primitives (parseCSV / indexHeader / parseDate / parseCents / coerceKind) that
+// the strict parsers use. It re-implements NONE of the parse logic. It differs
+// from the strict parsers in EXACTLY two ways:
+//   (1) it wraps each per-row build in try/catch and ACCUMULATES IngestErrors
+//       instead of throwing on the first, and
+//   (2) it returns the detected header + the logical->header column map.
+// A missing REQUIRED column is reported in `requiredMissing` (still a hard
+// problem, surfaced to the caller) rather than collapsing the whole file.
+//
+// `diagnose*` is PURE and side-effect-free: no I/O, no clock, no globals. Given
+// the same (text, opts) it returns a byte-identical report.
+
+// Per-source diagnostic config. Each entry names the schema, the REQUIRED
+// logical columns, and the per-row builder + amount-mode detector reused from
+// the strict path. Centralizing this keeps the strict and diagnostic paths in
+// lock-step: they consult the SAME schema and the SAME required set.
+const DIAGNOSE_CONFIG = Object.freeze({
+  [SOURCE.BANK]: {
+    schema: BANK_SCHEMA,
+    required: ["date"],
+    // logical fields whose presence (any one) is also required for a usable file
+    amountGroups: [["amount"], ["debit", "credit"]],
+    amountGroupMessage:
+      'bank statement needs an "amount" column or debit/credit columns',
+    build: buildBankRecord,
+  },
+  [SOURCE.QUICKBOOKS]: {
+    schema: QB_SCHEMA,
+    required: ["date"],
+    amountGroups: [["amount"], ["debit", "credit"]],
+    amountGroupMessage:
+      'QuickBooks export needs an "amount" column or debit/credit columns',
+    build: buildQuickBooksRecord,
+  },
+  [SOURCE.RENT_ROLL]: {
+    schema: RENT_SCHEMA,
+    required: ["date", "tenant"],
+    amountGroups: [["amount"], ["payment", "charge"]],
+    amountGroupMessage:
+      'rent roll needs an "amount" column or payment/charge columns',
+    build: buildRentRollRecord,
+  },
+});
+
+// The single diagnostic driver. `source` selects the config; `text` is the raw
+// file; `opts.sampleSize` controls how many ok rows are echoed in `sample`
+// (default 5). Returns the structured report described in the module header.
+function diagnoseSource(source, text, opts = {}) {
+  const cfg = DIAGNOSE_CONFIG[source];
+  if (!cfg) {
+    throw new IngestError(`unknown source "${source}" for diagnose`);
+  }
+  const sampleSize = opts.sampleSize == null ? 5 : opts.sampleSize;
+
+  const report = {
+    source,
+    header: [],
+    mapped: {},
+    requiredMissing: [],
+    rowCount: 0,
+    okCount: 0,
+    records: [],
+    errors: [],
+    sample: [],
+  };
+
+  // A null/empty file is a whole-file problem, not a row problem. Report it as a
+  // hard error rather than throwing, so the inspect command can surface it.
+  if (text == null) {
+    report.errors.push({ row: null, message: `no ${source} input` });
+    return report;
+  }
+
+  const rows = parseCSV(text);
+  if (rows.length === 0) {
+    report.errors.push({ row: null, message: `empty ${source} file` });
+    return report;
+  }
+
+  const header = rows[0].map((h) => String(h));
+  report.header = header.slice();
+
+  // Reuse indexHeader VERBATIM, then translate each index back to the ORIGINAL
+  // header name (or null when unmatched) so the caller sees which column
+  // satisfied each logical field.
+  const cols = indexHeader(header, cfg.schema, source);
+  for (const key of Object.keys(cfg.schema)) {
+    const idx = cols[key];
+    report.mapped[key] = idx === -1 || idx === undefined ? null : header[idx];
+  }
+
+  // Missing REQUIRED columns are surfaced (hard problem) but do NOT collapse the
+  // whole file — we still echo the header and the partial map back so the broker
+  // can see exactly what to add or remap.
+  for (const n of cfg.required) {
+    if (cols[n] === -1 || cols[n] === undefined) {
+      report.requiredMissing.push(n);
+    }
+  }
+
+  // An amount group must be present (signed amount OR a split pair). If none is,
+  // record it as a hard error; without it, no row can yield a usable amount.
+  const groupPresent = cfg.amountGroups.some((group) =>
+    group.some((k) => cols[k] !== -1 && cols[k] !== undefined)
+  );
+  const hasSigned = cols.amount !== -1 && cols.amount !== undefined;
+
+  // If a required column or the amount group is missing, the per-row builder
+  // would throw the SAME structural error on every single row (e.g. "missing
+  // date"), which is noise. Report the structural problems once and return — the
+  // caller fixes the header first, then re-runs to see row-level errors.
+  if (report.requiredMissing.length > 0 || !groupPresent) {
+    if (!groupPresent) {
+      report.errors.push({ row: null, message: cfg.amountGroupMessage });
+    }
+    report.rowCount = Math.max(rows.length - 1, 0);
+    return report;
+  }
+
+  for (let r = 1; r < rows.length; r++) {
+    report.rowCount += 1;
+    const loc = { row: r, source };
+    try {
+      const rec = cfg.build(rows[r], cols, hasSigned, loc);
+      report.records.push(rec);
+      report.okCount += 1;
+      if (report.sample.length < sampleSize) report.sample.push(rec);
+    } catch (err) {
+      if (err instanceof IngestError) {
+        report.errors.push({ row: r, message: err.message });
+      } else {
+        throw err; // a non-ingest bug is real — do not swallow it
+      }
+    }
+  }
+
+  return report;
+}
+
+// Convenience per-source wrappers (the `diagnose{Bank,QuickBooks,RentRoll}`
+// family named in the acceptance), each a thin call into diagnoseSource.
+function diagnoseBank(text, opts) {
+  return diagnoseSource(SOURCE.BANK, text, opts);
+}
+function diagnoseQuickBooks(text, opts) {
+  return diagnoseSource(SOURCE.QUICKBOOKS, text, opts);
+}
+function diagnoseRentRoll(text, opts) {
+  return diagnoseSource(SOURCE.RENT_ROLL, text, opts);
 }
 
 module.exports = {
@@ -695,4 +881,9 @@ module.exports = {
   parseOFX,
   parseQuickBooksCSV,
   parseRentRollCSV,
+  // diagnostic ingest core (T-25.1) — parse-with-report, never fail-closed
+  diagnoseSource,
+  diagnoseBank,
+  diagnoseQuickBooks,
+  diagnoseRentRoll,
 };

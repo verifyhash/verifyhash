@@ -280,8 +280,10 @@ __modules["merkle"] = function (module, exports, __require) {
 //   * tagged leaf          leafHash   = keccak256(0x00 ++ leaf)
 //   * interior node        nodeHash   = keccak256(0x01 ++ min(a,b) ++ max(a,b))   (sorted 32-byte pair)
 //   * tree                 sorted-leaf, "duplicate the lone odd node" pairing (OpenZeppelin style)
-//   relPath is normalized to forward slashes with no leading "./" (OS-independent), exactly as the
-//   producer's toPosixRel does.
+//   relPath is normalized with no leading "./", exactly as the producer's toPosixRel does. CRUCIALLY
+//   this must be BYTE-FOR-BYTE the producer's normalization (cli/hash.js#toPosixRel) — see toPosixRel
+//   below — or the verifier would re-derive a DIFFERENT root than the producer sealed for some input
+//   class and would either falsely reject a genuine artifact or falsely accept the wrong one.
 
 const { keccak256 } = __require("keccak");
 
@@ -313,11 +315,21 @@ function hashBytes(bytes) {
   return bufToHex(keccak256(buf));
 }
 
-/** Normalize a relPath to canonical forward-slash POSIX form with no leading "./". */
+/**
+ * Normalize a relPath EXACTLY as the producer (cli/hash.js#toPosixRel) does, so the verifier
+ * re-derives the IDENTICAL root the producer sealed. The producer is `split(path.sep).join("/")`
+ * then `.replace(/^\.\//, "")`. The artifacts the verifier reads carry relPaths the producer wrote,
+ * and those are produced on POSIX hosts (cli/evidence.js#loadDirEntries does the same `path.sep`
+ * split) — where `path.sep === "/"`, so the split/join is a no-op and a literal backslash byte is a
+ * CONTENT byte that survives into the hash. We therefore must NOT collapse backslashes: a previous
+ * version unconditionally mapped "\\"->"/", which made the verifier hash `a/b.txt` while the producer
+ * hashed `a\b.txt` — a silent root divergence that could falsely REJECT a genuine backslash-named
+ * directory or falsely ACCEPT one where `a/b.txt` and `a\b.txt` collide. All we strip is the leading
+ * "./", which the producer also strips on every host. (Windows-authored relPaths, if ever needed,
+ * must be converted to "/" on BOTH the producer and verifier sides identically — not only here.)
+ */
 function toPosixRel(relPath) {
-  // The verifier deals only in POSIX relPaths that travel inside the artifacts; still strip "./" and
-  // collapse backslashes so a Windows-authored relPath hashes identically.
-  return String(relPath).split("\\").join("/").replace(/^\.\//, "");
+  return String(relPath).replace(/^\.\//, "");
 }
 
 /**

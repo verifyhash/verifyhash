@@ -199,6 +199,57 @@ describe("verifier CLI: `verify-vh <artifact>` (T-31.2)", function () {
   });
 
   // =================================================================================================
+  // CRYPTO EQUIVALENCE: the verifier's INDEPENDENT merkle (js-sha3, no ethers) re-derives the EXACT root
+  // the producer (cli/hash.js, ethers) commits to — INCLUDING the relPath class the verifier used to skew
+  // on. The verifier's merkle.toPosixRel previously collapsed every backslash to "/", while the producer
+  // keeps a literal backslash as a content byte on POSIX (split on path.sep === "/"). For a relPath like
+  // `weird\name.txt` that made the verifier re-derive a DIFFERENT root than the producer sealed and FALSELY
+  // REJECT (or, via an `a/b.txt` vs `a\b.txt` collision, FALSELY ACCEPT). These cross-checks pin the two
+  // crypto paths byte-equal on those inputs forever. The producer path uses ethers; the verifier uses
+  // js-sha3 — disjoint crypto graphs, so this is a genuine non-circular cross-check.
+  // =================================================================================================
+
+  describe("verifier merkle == producer merkle on backslash-bearing relPaths (anti-divergence)", function () {
+    // The REAL producer hashing (ethers-backed); imported here ONLY in the test, never by the verifier.
+    const producerHash = require("../cli/hash");
+    const merkle = require("../verifier/lib/merkle");
+
+    it("toPosixRel is byte-identical to the producer's (backslash kept, leading ./ stripped)", function () {
+      for (const p of ["a\\b", "./x", "a/b", "x", "weird\\name.txt", "./a/b\\c", "dir\\a.txt"]) {
+        expect(merkle.toPosixRel(p), `toPosixRel(${JSON.stringify(p)})`).to.equal(producerHash.toPosixRel(p));
+      }
+    });
+
+    it("rootFromFlat re-derives the producer's root for a backslash-named file set", function () {
+      const sets = [
+        [{ relPath: "weird\\name.txt", bytes: Buffer.from("hi") }],
+        [{ relPath: "dir\\a.txt", bytes: Buffer.alloc(0) }],
+        // `a\b` (one backslash-named file) and `a/b` (a nested file) are DISTINCT on POSIX; both crypto
+        // paths must agree they are two leaves and produce the same root.
+        [
+          { relPath: "a\\b", bytes: Buffer.from("one") },
+          { relPath: "a/b", bytes: Buffer.from("two") },
+        ],
+        [
+          { relPath: "top.txt", bytes: Buffer.from("t") },
+          { relPath: "sub\\deep\\leaf.bin", bytes: Buffer.from([1, 2, 3]) },
+        ],
+      ];
+      for (const set of sets) {
+        // Producer root via the real ethers-backed builder (the exact math `vh evidence seal` runs).
+        const built = producerHash.hashEntries(set.map((e) => ({ path: e.relPath, content: e.bytes })));
+        const producerRoot = built.root;
+        // Verifier root via the independent js-sha3 merkle.
+        const flat = set.map((e) => ({ relPath: e.relPath, contentHash: merkle.hashBytes(e.bytes) }));
+        const verifierRoot = merkle.rootFromFlat(flat);
+        expect(verifierRoot, `root mismatch for ${JSON.stringify(set.map((e) => e.relPath))}`).to.equal(
+          producerRoot
+        );
+      }
+    });
+  });
+
+  // =================================================================================================
   // SIGNED EVIDENCE PACKET (real producer CLI).
   // =================================================================================================
   describe("signed evidence packet", function () {

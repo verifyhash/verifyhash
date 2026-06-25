@@ -205,7 +205,7 @@ validation error rather than a silently-ignored key. They are:
 outstanding_deposit   outstanding_check   timing
 nsf_reversal          owner_draw          security_deposit_segregation
 ambiguous_deposit     unreconciled_bank   unreconciled_book
-subledger_out_of_balance                  bank_book_mismatch
+subledger_out_of_balance  negative_tenant_ledger  bank_book_mismatch
 continuity_break
 ```
 
@@ -227,6 +227,48 @@ that prior period's signed ending. Its default severity is `error` (a broken
 roll-forward means the books do not actually continue from the signed prior
 period), and — like every other type — a per-state policy MAY re-grade it (e.g. a
 state that treats a documented timing roll-forward difference as a `warning`).
+
+`negative_tenant_ledger` is raised when an **individual** beneficiary's own
+sub-ledger balance is negative (beyond `toleranceCents`) — the broker is holding
+*less than zero* in trust for that person, because their money was spent or used
+to cover another beneficiary's shortfall. It is **orthogonal** to
+`subledger_out_of_balance`: the pooled SUM of all sub-ledgers can tie perfectly to
+the book while one tenant's surplus masks another tenant's deficit, so this check
+fires per-beneficiary **independently of whether the SUM ties** (both can fire at
+once). Control/sink accounts (an owner's-own-funds line, an
+`escrow`/`segregated`/`trust` sink, an `operating`/`reserve`/`suspense` control
+line) are excluded — their negative balance is structural, not a tenant shortage.
+Its default severity is `error` (a negative individual ledger is out of trust on
+its own); like every other type, a per-state policy MAY re-grade it.
+
+**How a line is recognized as a control account (and its failure mode).** Two
+signals exclude a negative line from `negative_tenant_ledger`, in priority order:
+
+1. **A structured `controlAccount: true` marker on the sub-ledger row
+   (authoritative).** Set it on the rent-roll row(s) for that party. This is a
+   deliberate assertion by the producer of the data — it is preferred over any
+   guess and excludes the line regardless of what its name reads like (the same
+   way an explicit deposit label beats a free-text guess for `ambiguous_deposit`).
+2. **A leading-token name heuristic (fallback, used only without a marker).** A
+   line is treated as a control designation when the **first** whole-word token of
+   its party name is `owner`/`owners`/`escrow`/`segregated`/`trust`/`operating`/
+   `reserve`/`suspense` — i.e. the name leads with the account designation, like
+   `Owner Acme` or `Escrow`. This is word-bounded, so an ordinary surname that
+   merely contains a control token (`Owens`, `Crowell`) is **not** excluded.
+
+**Failure mode you must know:** the name heuristic only looks at the **leading**
+token, so a real beneficiary whose name contains a control word in a *non-leading*
+position — `Smith (OWNER)`, `Jones Family Trust`, `Tenant 12 Reserve St` — IS
+correctly flagged when negative (it is not treated as a control account). But the
+heuristic **cannot** tell a genuine company beneficiary whose name *leads* with a
+control word (e.g. `Operating Co LLC`) apart from an `Operating` control account,
+so such a line is excluded by name alone and a negative balance on it would not
+surface. To protect a beneficiary whose name leads with a control word — and to
+mark any control account unambiguously rather than relying on its name — set the
+structured `controlAccount` marker, which is authoritative over the name guess.
+The precomputed `{ party: cents }` balance-map form has no per-key slot for the
+marker, so a control account supplied that way must rely on the leading-token
+name (or be supplied as rows).
 
 ### Why `ambiguous_deposit` exists: the silent-false-pass hazard
 

@@ -757,3 +757,224 @@ describe("T-40.2 trustledger/reconcile: the segregation finding NAMES the at-ris
     expect(byParty.get("Smith (4A)").detail).to.include("$1,000.00");
   });
 });
+
+describe("T-41.1 trustledger/reconcile: a NEGATIVE individual beneficiary ledger is out of trust even when the SUM ties", function () {
+  function negEx(r) {
+    return r.exceptions.filter((e) => e.type === EXCEPTION.NEGATIVE_TENANT_LEDGER);
+  }
+  function subEx(r) {
+    return r.exceptions.filter((e) => e.type === EXCEPTION.SUBLEDGER_OUT_OF_BALANCE);
+  }
+
+  it("REPRO: {Jones:-50000, Smith:+50000} now FAILS (was a silent PASS) — the SUM ties to book but Jones is negative", function () {
+    // The pooled sum is 0 and the book is 0, so the three-way SUM ties out
+    // perfectly. Before T-41.1 this produced ZERO exceptions: a silent PASS that
+    // hid the fact that Jones's trust money was used to cover Smith. Now the
+    // negative individual ledger raises an ERROR-grade finding.
+    const r = reconcile([], [], { Jones: -50000, Smith: 50000 }, {});
+
+    // The SUM still ties (this check is orthogonal to it).
+    expect(r.balances.subledger).to.equal(0);
+    expect(r.balances.book).to.equal(0);
+    expect(r.tiesOut).to.equal(true);
+    // ...but a negative beneficiary ledger is flagged as an ERROR.
+    const ex = negEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].severity).to.equal(SEVERITY.ERROR);
+    // It names the beneficiary AND the negative amount.
+    expect(ex[0].amount).to.equal(-50000);
+    expect(ex[0].detail).to.include("Jones");
+    expect(ex[0].detail).to.include("-$500.00");
+    // The pooled SUM check did NOT fire (it ties), proving orthogonality.
+    expect(subEx(r)).to.have.length(0);
+    // The downstream verdict is PASS only when there is no ERROR exception, so an
+    // ERROR-grade finding here makes the formerly-silent-PASS packet FAIL.
+    expect(r.exceptions.filter((e) => e.severity === SEVERITY.ERROR)).to.have.length(1);
+  });
+
+  it("flags EACH negative beneficiary, naming the party + the negative amount", function () {
+    const r = reconcile(
+      [],
+      [],
+      { "Jones (4B)": -50000, "Smith (4A)": 50000, "Doe (1A)": -12345, X: 12345 },
+      {}
+    );
+    const ex = negEx(r);
+    expect(ex).to.have.length(2);
+    const byParty = new Map(ex.map((e) => [e.detail.match(/ledger for (.+?) is negative/)[1], e]));
+    expect(byParty.has("Jones (4B)")).to.equal(true);
+    expect(byParty.has("Doe (1A)")).to.equal(true);
+    expect(byParty.get("Jones (4B)").amount).to.equal(-50000);
+    expect(byParty.get("Jones (4B)").detail).to.include("-$500.00");
+    expect(byParty.get("Doe (1A)").amount).to.equal(-12345);
+    expect(byParty.get("Doe (1A)").detail).to.include("-$123.45");
+  });
+
+  it("is ADDITIVE and ORTHOGONAL to SUBLEDGER_OUT_OF_BALANCE — both can fire at once", function () {
+    // Jones is negative AND the pooled sum (-$500) does not tie to the book ($0).
+    const r = reconcile([], [], { "Jones (4B)": -50000 }, {});
+    expect(negEx(r)).to.have.length(1);
+    expect(subEx(r)).to.have.length(1);
+    // The negative-ledger finding is the SAME beneficiary; the SUM finding is the
+    // pooled gap. They are independent findings, not a single double-counted one.
+    expect(negEx(r)[0].amount).to.equal(-50000);
+    expect(subEx(r)[0].amount).to.equal(50000); // book(0) - subledger(-50000)
+  });
+
+  it("does NOT flag a legitimate negative OWNER's-own-funds line (structural, not a tenant shortage)", function () {
+    // The clean-book shape: the owner funds the account and a vendor payment comes
+    // out of the OWNER's own money, so the owner line is legitimately negative.
+    const tenants = {
+      "Smith (4A)": 150000,
+      "Jones (4B)": 150000,
+      "Owner Acme": -30000,
+    };
+    const r = reconcile([], [], tenants, {});
+    expect(negEx(r)).to.have.length(0);
+    // And no ERROR is introduced on this otherwise-clean per-tenant shape.
+    expect(r.exceptions.filter((e) => e.severity === SEVERITY.ERROR && e.type === EXCEPTION.NEGATIVE_TENANT_LEDGER)).to.have.length(0);
+  });
+
+  it("does NOT flag a negative ESCROW / segregated sink line (it receives the offsetting outflow)", function () {
+    const tenants = { "Jones (4B)": 80000, Escrow: -80000 };
+    const r = reconcile([], [], tenants, {});
+    expect(negEx(r)).to.have.length(0);
+  });
+
+  it("WORD-BOUNDED: an ordinary surname that merely CONTAINS a control token IS flagged", function () {
+    // "Owens" contains "owen"/"owner"-ish text and "Crowell" contains "crow", but
+    // neither is the WHOLE-word control token, so both are real beneficiaries.
+    const r = reconcile([], [], { Owens: -100, Crowell: -200, Owner: -300 }, {});
+    const flagged = negEx(r).map((e) => e.amount).sort((a, b) => a - b);
+    // Owens (-100) and Crowell (-200) are flagged; the bare "Owner" control line is not.
+    expect(flagged).to.deep.equal([-200, -100]);
+  });
+
+  it("honors toleranceCents: a balance within -tolerance is NOT flagged; beyond it IS", function () {
+    expect(negEx(reconcile([], [], { Jones: -50 }, { toleranceCents: 50 }))).to.have.length(0);
+    const ex = negEx(reconcile([], [], { Jones: -51 }, { toleranceCents: 50 }));
+    expect(ex).to.have.length(1);
+    expect(ex[0].amount).to.equal(-51);
+  });
+
+  it("does not flag a zero or positive beneficiary ledger", function () {
+    const r = reconcile([], [], { A: 0, B: 100000, C: 1 }, {});
+    expect(negEx(r)).to.have.length(0);
+  });
+
+  it("is deterministic + order-independent (byte-identical output regardless of map key order)", function () {
+    const a = reconcile([], [], { Jones: -50000, Smith: 50000, Doe: -30000, X: 30000 }, {});
+    const b = reconcile([], [], { X: 30000, Doe: -30000, Smith: 50000, Jones: -50000 }, {});
+    expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
+  });
+
+  it("also works from rent-roll rows that net a beneficiary negative", function () {
+    // A refund larger than the tenant's deposits nets that tenant negative.
+    const tenantRows = [
+      rec("2026-05-01", 100000, "rent", { party: "Jones (4B)" }),
+      rec("2026-05-15", -150000, "over-refund", { party: "Jones (4B)" }),
+      rec("2026-05-01", 50000, "rent", { party: "Smith (4A)" }),
+    ];
+    const r = reconcile([], [], tenantRows, {});
+    const ex = negEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].amount).to.equal(-50000); // 100000 - 150000
+    expect(ex[0].detail).to.include("Jones (4B)");
+  });
+
+  // ---- REWORK (control-account over-exclusion) ----------------------------
+  // The control-account exclusion previously matched a control token ANYWHERE in
+  // the free-text name, silently dropping real beneficiaries whose name merely
+  // CONTAINS a control word. That re-opened exactly the masking hole T-41.1
+  // closes, just on a token-named beneficiary. The exclusion is now anchored to
+  // the LEADING name token (genuine account designations) and an authoritative
+  // STRUCTURED `controlAccount` marker overrides the guess.
+
+  it("REWORK: a REAL beneficiary whose name CONTAINS a control token (non-leading) going negative IS flagged", function () {
+    // "Smith (OWNER)" is a literal beneficiary line in the e2e fixture (positive
+    // there); "Jones Family Trust" naming is pervasive in this product's domain;
+    // "Tenant 12 Reserve St" is an address. None is a control account — the
+    // control word is NOT the leading token — so each negative ledger IS a
+    // shortage and MUST be flagged. Previously all three were silently dropped.
+    const tenants = {
+      "Smith (OWNER)": -50000,
+      "Jones Family Trust": -30000,
+      "Tenant 12 Reserve St": -12345,
+    };
+    const r = reconcile([], [], tenants, {});
+    const ex = negEx(r);
+    const byParty = new Map(
+      ex.map((e) => [e.detail.match(/ledger for (.+?) is negative/)[1], e])
+    );
+    expect(byParty.has("Smith (OWNER)")).to.equal(true);
+    expect(byParty.has("Jones Family Trust")).to.equal(true);
+    expect(byParty.has("Tenant 12 Reserve St")).to.equal(true);
+    expect(byParty.get("Smith (OWNER)").amount).to.equal(-50000);
+    expect(byParty.get("Smith (OWNER)").severity).to.equal(SEVERITY.ERROR);
+    expect(byParty.get("Jones Family Trust").amount).to.equal(-30000);
+    expect(byParty.get("Tenant 12 Reserve St").amount).to.equal(-12345);
+    expect(ex).to.have.length(3);
+  });
+
+  it("REWORK: a genuine control DESIGNATION (control word in LEADING position) stays excluded", function () {
+    // The legitimate cases: an owner's-own-funds line and an escrow/reserve sink,
+    // each NAMED with the control word in the leading account-designation slot.
+    const tenants = {
+      "Owner Acme": -30000, // owner's own funds
+      Escrow: -80000, // escrow sink
+      "Reserve Fund": -10000, // reserve control line
+      "Suspense 001": -2000, // suspense control line
+    };
+    const r = reconcile([], [], tenants, {});
+    expect(negEx(r)).to.have.length(0);
+  });
+
+  it("REWORK: the STRUCTURED controlAccount:true marker is AUTHORITATIVE — it excludes a line whose name is NOT a control word", function () {
+    // A control account the broker names "Operating Co" (a leading control word
+    // is the residual name-heuristic limit), AND a control account named with NO
+    // control word at all ("Building Clearing"): the structured marker on the
+    // rent-roll rows excludes BOTH, regardless of name. A real beneficiary
+    // ("Jones (4B)") without the marker is still flagged.
+    // The shared rec() helper carries only the ingest fields; attach the
+    // structured controlAccount marker explicitly (it is an extra producer
+    // assertion on the row, not part of the normalized ingest shape).
+    const tenantRows = [
+      { ...rec("2026-05-01", -40000, "owner sweep", { party: "Building Clearing" }), controlAccount: true },
+      { ...rec("2026-05-01", -30000, "operating draw", { party: "Operating Co" }), controlAccount: true },
+      rec("2026-05-01", -50000, "shortfall", { party: "Jones (4B)" }),
+    ];
+    const r = reconcile([], [], tenantRows, {});
+    const ex = negEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].detail).to.include("Jones (4B)");
+    expect(ex[0].amount).to.equal(-50000);
+  });
+
+  it("REWORK: a marked control account does NOT shield a DIFFERENTLY-named real beneficiary", function () {
+    // controlAccount:true on the "Escrow Sink" rows must mark ONLY that party's
+    // bucket — a negative "Doe (1A)" beneficiary is still flagged.
+    const tenantRows = [
+      { ...rec("2026-05-01", -80000, "to escrow", { party: "Escrow Sink" }), controlAccount: true },
+      rec("2026-05-01", -12345, "missing", { party: "Doe (1A)" }),
+    ];
+    const r = reconcile([], [], tenantRows, {});
+    const ex = negEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].detail).to.include("Doe (1A)");
+    expect(ex[0].amount).to.equal(-12345);
+  });
+
+  it("REWORK: the structured marker is order-independent across rows of the same party", function () {
+    // The marker on ANY row for a party marks the whole bucket, regardless of row
+    // order — a control account whose marked row comes after an unmarked one is
+    // still excluded; output is byte-identical across the two row orderings.
+    const drawRow = rec("2026-05-01", -30000, "draw", { party: "Sweep Building" });
+    const tagRow = { ...rec("2026-05-02", 0, "tag", { party: "Sweep Building" }), controlAccount: true };
+    const rowsA = [drawRow, tagRow];
+    const rowsB = [tagRow, drawRow];
+    const a = reconcile([], [], rowsA, {});
+    const b = reconcile([], [], rowsB, {});
+    expect(negEx(a)).to.have.length(0);
+    expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
+  });
+});

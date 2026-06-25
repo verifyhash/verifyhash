@@ -72,6 +72,7 @@ const EXCEPTION = Object.freeze({
   UNRECONCILED_BANK: "unreconciled_bank", // a bank line nothing explains
   UNRECONCILED_BOOK: "unreconciled_book", // a book line nothing explains
   SUBLEDGER_OUT_OF_BALANCE: "subledger_out_of_balance", // sum-of-tenants != book
+  NEGATIVE_TENANT_LEDGER: "negative_tenant_ledger", // an individual beneficiary balance is below zero
   BANK_BOOK_MISMATCH: "bank_book_mismatch", // adjusted bank != book
   CONTINUITY_BREAK: "continuity_break", // this period's opening != prior period's signed ending
 });
@@ -102,6 +103,12 @@ const DEFAULT_SEVERITY = Object.freeze({
   [EXCEPTION.UNRECONCILED_BANK]: SEVERITY.WARNING,
   [EXCEPTION.UNRECONCILED_BOOK]: SEVERITY.WARNING,
   [EXCEPTION.SUBLEDGER_OUT_OF_BALANCE]: SEVERITY.ERROR,
+  // An individual beneficiary whose own sub-ledger balance is NEGATIVE means the
+  // trust account is short for that beneficiary — money the broker holds in trust
+  // FOR that person is not actually there (it was spent, or used to cover another
+  // beneficiary's shortfall). That is out of trust REGARDLESS of whether the
+  // pooled SUM still ties to the book, so it is an ERROR-grade finding by default.
+  [EXCEPTION.NEGATIVE_TENANT_LEDGER]: SEVERITY.ERROR,
   [EXCEPTION.BANK_BOOK_MISMATCH]: SEVERITY.ERROR,
   // A broken roll-forward means the books do not actually continue from the
   // signed prior period — an out-of-trust-grade finding by default. A state MAY
@@ -419,6 +426,20 @@ function reconcile(bank, book, tenants, opts = {}) {
       records: [],
     });
   }
+
+  // -- Per-beneficiary negative-ledger check (T-41.1). ----------------------
+  // ORTHOGONAL to the pooled SUBLEDGER_OUT_OF_BALANCE check above: the SUM of all
+  // sub-ledgers can tie perfectly to the book while an INDIVIDUAL beneficiary's
+  // balance is negative — one tenant's surplus masking another tenant's deficit
+  // in the pooled total. A negative individual ledger means the broker is holding
+  // LESS than zero in trust for that person: their money was spent or used to
+  // cover someone else. That is out of trust on its own, so flag it regardless of
+  // whether the SUM ties. This can only ADD findings (it never removes one), so
+  // it is strictly non-looser. A control/sink account is excluded only when it is
+  // STRUCTURALLY marked (`controlAccount: true`, authoritative) or its name leads
+  // with a control word; a real beneficiary whose name merely contains a control
+  // token in a non-leading position is no longer silently dropped.
+  classifyNegativeTenantLedgers(subBalances, tol, exceptions, controlAccountKeys(tenants));
 
   const tiesOut =
     Math.abs(bankBookGap) <= tol && Math.abs(bookSubGap) <= tol;
@@ -821,6 +842,141 @@ function fmtCentsForDetail(cents) {
   const grouped = String(dollars).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const body = `$${grouped}.${String(rem).padStart(2, "0")}`;
   return neg ? `-${body}` : body;
+}
+
+// The CLOSED set of control / sink account designations whose negative balance
+// is STRUCTURAL, not a tenant shortage. The pooled trust account holds
+// beneficiaries' money, but the per-party sub-ledger map also carries a few
+// non-beneficiary control accounts whose balance is legitimately negative:
+//   * the OWNER's-own-funds line — an owner funds the account and DRAWS against
+//     their OWN money, so a negative owner position is expected (it is the
+//     owner's capital being deployed, not a tenant's trust money vanishing); and
+//   * an ESCROW / SEGREGATED / TRUST sink, or an OPERATING / RESERVE / SUSPENSE
+//     control line, which RECEIVES the offsetting outflow (the money that left
+//     the pooled side to be held separately), so it nets negative by design.
+const CONTROL_ACCOUNT_TOKENS = Object.freeze([
+  "owner",
+  "owners",
+  "escrow",
+  "segregated",
+  "trust",
+  "operating",
+  "reserve",
+  "suspense",
+]);
+
+// Does a free-text party name READ as a control-account DESIGNATION? A negative
+// balance on a control/sink account is structural; a negative balance on any
+// OTHER party is a real beneficiary whose trust money is gone, so this is the
+// ONLY thing that suppresses a negative_tenant_ledger finding when the caller
+// gave us no structured marker.
+//
+// NARROWLY ANCHORED to the LEADING token (the account-designation position):
+// only when the FIRST whole-word token of the name is a control word
+// ("Owner ...", "Escrow ...", "Reserve ...") do we treat the line as a control
+// account. The previous rule matched a control token ANYWHERE in the name, which
+// silently OVER-EXCLUDED real beneficiaries whose name merely contains a control
+// word — "Smith (OWNER)", "Jones Family Trust", "Tenant 12 Reserve St" — and so
+// swallowed exactly the shortage T-41.1 exists to surface. The leading-token
+// anchor keeps the genuine designations ("Owner Acme", "Escrow") excluded while
+// no longer dropping a beneficiary whose unit/address/entity name happens to
+// carry a control token in a NON-leading position.
+//
+// LIMITATION (documented in docs/TRUSTLEDGER.md): a name heuristic cannot tell a
+// real company named "Operating Co LLC" from an "Operating" control account, so a
+// leading control word is still treated as a designation. A real beneficiary
+// whose name LEADS with a control word — and any control account the broker wants
+// recognized unambiguously — must carry the STRUCTURED `controlAccount` marker,
+// which is authoritative over this guess (see controlAccountKeys / the
+// per-row/per-balance marker). Still WORD-BOUNDED so an ordinary surname that
+// merely CONTAINS one of these tokens ("Owens", "Crowell") is never mistaken for
+// a control account. PURE.
+function isControlAccountParty(party) {
+  const tokens = nameTokens(party);
+  if (tokens.length === 0) return false;
+  return CONTROL_ACCOUNT_TOKENS.includes(tokens[0]);
+}
+
+// Mirror the EXACT per-party normalization tenantBalances uses for the array
+// (rent-roll) form, so a control-account marker keys to the SAME sub-ledger
+// bucket the balance lives under. PURE.
+function normTenantParty(party) {
+  return String(party == null ? "unknown" : party).trim() || "unknown";
+}
+
+// The set of sub-ledger party keys the CALLER has STRUCTURALLY asserted are
+// control / sink accounts (not beneficiaries), via an explicit `controlAccount:
+// true` marker. This is a deliberate, structured assertion by the producer of
+// the data — distinct from us GUESSING from the free-text name — and is therefore
+// AUTHORITATIVE: a marked party is excluded from the negative-ledger finding no
+// matter what its name reads like, and (because the marker only ever ADDS to the
+// exclusion set, never removes the name heuristic) it can only make the check
+// MORE permissive about structural negatives, never flag fewer real shortages
+// than the name heuristic alone would. Mirrors how hasExplicitDepositLabel
+// prefers a structured assertion over a free-text guess.
+//
+// The marker is honored on the ARRAY (rent-roll) form, where each row may carry
+// `controlAccount: true`; ANY such row marks its party's bucket. The precomputed
+// `{ party: cents }` map form has no per-key slot for a marker, so a bare map
+// falls back to the name heuristic alone (a caller who needs to mark a control
+// account in the map form should supply rows or rely on the leading-token name).
+// Returns a Set of normalized party keys. PURE + order-independent.
+function controlAccountKeys(tenants) {
+  const keys = new Set();
+  if (!Array.isArray(tenants)) return keys;
+  for (const r of tenants) {
+    if (r && r.controlAccount === true) {
+      keys.add(normTenantParty(r.party));
+    }
+  }
+  return keys;
+}
+
+// Per-beneficiary negative-ledger check (T-41.1). Flag EACH individual
+// beneficiary whose own sub-ledger balance is negative beyond tolerance — i.e.
+// the broker is holding LESS than zero in trust for that person, because their
+// money was spent or used to cover another beneficiary's shortfall. This is
+// ORTHOGONAL to the pooled SUBLEDGER_OUT_OF_BALANCE check: the SUM of all
+// sub-ledgers can tie perfectly to the book (one tenant's surplus masking
+// another's deficit) while an individual ledger is negative, so this check fires
+// independently of the SUM. A control/sink account is NOT a beneficiary and is
+// excluded — its negative balance is structural, not a shortage. A control
+// account is recognized by EITHER an authoritative STRUCTURED `controlAccount`
+// marker (`controlKeys`, preferred) OR, absent a marker, a NARROWLY-ANCHORED
+// leading-token name heuristic (owner/escrow/segregated/trust/operating/reserve/
+// suspense in the FIRST name token) — see isControlAccountParty for why the
+// heuristic is anchored to the leading token and its documented limitation.
+// `toleranceCents` is honored: a balance is flagged only when it is below
+// `-toleranceCents`, so a caller's deliberate penny-tolerance applies the SAME
+// way it does to the SUM checks. Deterministic + order-independent: beneficiaries
+// are flagged in a stable key-sorted order. This can only ADD findings, never
+// remove one (strictly non-looser). PURE.
+function classifyNegativeTenantLedgers(subBalances, toleranceCents, exceptions, controlKeys) {
+  const tol = Number.isInteger(toleranceCents) && toleranceCents >= 0 ? toleranceCents : 0;
+  const control = controlKeys instanceof Set ? controlKeys : new Set();
+  const parties = Object.keys(subBalances).sort(cmp);
+  for (const party of parties) {
+    const bal = subBalances[party];
+    if (!Number.isInteger(bal)) continue; // tenantBalances already validated; guard anyway
+    if (bal >= -tol) continue; // zero/positive (or within tolerance) is fine
+    // A structured marker is authoritative; absent one, fall back to the
+    // narrowly-anchored leading-token name heuristic.
+    if (control.has(party) || isControlAccountParty(party)) continue; // structural negative, not a shortage
+    const who = beneficiaryLabel(party);
+    pushException(exceptions, {
+      type: EXCEPTION.NEGATIVE_TENANT_LEDGER,
+      amount: bal, // the negative balance itself (signed), so the row says how short
+      label: "Beneficiary ledger is negative",
+      detail:
+        `The individual trust ledger for ${who} is negative (${fmtCentsForDetail(bal)}): ` +
+        "the broker is holding less than zero in trust for this beneficiary, so " +
+        "their money has been spent or used to cover another beneficiary's " +
+        "shortfall. A negative individual ledger is out of trust even when the " +
+        "pooled sum of all sub-ledgers still ties to the book; restore the " +
+        "beneficiary's balance to at least zero before relying on this packet.",
+      records: [],
+    });
+  }
 }
 
 // Ambiguous deposits: every book INFLOW that calls itself a deposit but whose

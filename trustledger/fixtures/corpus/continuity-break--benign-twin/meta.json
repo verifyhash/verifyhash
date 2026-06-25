@@ -1,0 +1,7 @@
+{
+  "id": "continuity-break--benign-twin",
+  "control": "continuity_break",
+  "expectedVerdict": "PASS",
+  "expectedFinding": "continuity_break",
+  "principle": "The benign near-twin of the continuity control: the SAME prior close (_shared/prior-close.json, ending $2,500 / $2,500), but this period opens EXACTLY where the prior period closed — $2,500 bank / $2,500 book. The roll-forward is clean, the chain of custody is unbroken, the three balances tie out ($4,000 across all legs), the engine raises NO continuity_break finding, and the packet PASSes. Two fields differ from the out-of-trust twin, and ONLY the first is the variable under test: (1) the opening balances go from $0 to $2,500 — this is the continuity fix; (2) the carried sub-ledger (rent-roll) line goes from $1,500 to $4,000 (150000 to 400000 cents). The second change is NOT free — it is forced by trust math: once $2,500 of beneficiary money is carried forward into the opening, the book balance becomes $4,000, so the beneficiary sub-ledger must also carry $4,000 or the three legs would no longer tie and the engine would (correctly) FAIL on subledger_out_of_balance instead. Carrying the sub-ledger forward keeps every other control satisfied, so the continuity control is the only thing this pair varies."
+}

@@ -1,0 +1,7 @@
+{
+  "id": "subledger-out-of-balance--out-of-trust",
+  "control": "subledger_out_of_balance",
+  "expectedVerdict": "FAIL",
+  "expectedFinding": "subledger_out_of_balance",
+  "principle": "The pooled trust account holds ONE number that must equal the SUM of every per-beneficiary sub-ledger. The book records $1,500 of Smith's rent received, but the beneficiary sub-ledger accounts for only $1,000 — a $500 gap that belongs to no one's ledger. Money in the account that is not attributed to any beneficiary is out of trust. The engine raises an error-severity subledger_out_of_balance finding for the $500 difference and the packet FAILs."
+}

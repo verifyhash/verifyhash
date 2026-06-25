@@ -1,0 +1,13 @@
+{
+  "reportDate": "2026-05-31",
+  "period": "2026-05",
+  "bank": [
+    { "date": "2026-05-02", "amount": 80000, "memo": "security deposit jones", "kind": "deposit", "party": "", "source": "bank" }
+  ],
+  "book": [
+    { "date": "2026-05-01", "amount": 80000, "memo": "Security deposit - Jones 4B", "kind": "deposit", "party": "Jones (4B)", "source": "quickbooks" }
+  ],
+  "rentroll": [
+    { "date": "2026-05-01", "amount": 80000, "memo": "security deposit held", "kind": "rent", "party": "Jones (4B)", "source": "rentroll" }
+  ]
+}

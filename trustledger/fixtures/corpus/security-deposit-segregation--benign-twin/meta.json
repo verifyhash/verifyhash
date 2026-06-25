@@ -1,0 +1,7 @@
+{
+  "id": "security-deposit-segregation--benign-twin",
+  "control": "security_deposit_segregation",
+  "expectedVerdict": "PASS",
+  "expectedFinding": "security_deposit_segregation",
+  "principle": "The benign near-twin of the segregation control: the SAME $800 Jones security-deposit receipt, but this time a matching transfer moves the deposit OUT to a segregated escrow account. The deposit is held separately, so it is in trust. The engine raises NO security_deposit_segregation finding and the packet PASSes. The only difference from the out-of-trust twin is the presence of the segregation transfer."
+}

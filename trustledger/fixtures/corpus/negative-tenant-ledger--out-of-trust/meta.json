@@ -1,0 +1,7 @@
+{
+  "id": "negative-tenant-ledger--out-of-trust",
+  "control": "negative_tenant_ledger",
+  "expectedVerdict": "FAIL",
+  "expectedFinding": "negative_tenant_ledger",
+  "principle": "A negative INDIVIDUAL beneficiary ledger means the broker is holding less than zero in trust for that person — their money was spent or used to cover another beneficiary's shortfall. The book records a clean $500 deposit for each of Smith (4A) and Jones (4B) (book balance $1,000), but the sub-ledger applies $1,500 to Smith and -$500 to Jones: Jones's money was credited to Smith. The pooled SUM of the sub-ledgers ($1,500 - $500 = $1,000) still ties out PERFECTLY to the $1,000 book, so the three-way total would have been a SILENT PASS. The engine flags Jones's individual -$500 ledger as an error-severity negative_tenant_ledger finding regardless of the pooled tie-out, and the packet FAILs."
+}

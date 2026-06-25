@@ -1,0 +1,7 @@
+{
+  "id": "bank-book-mismatch--benign-twin",
+  "control": "bank_book_mismatch",
+  "expectedVerdict": "PASS",
+  "expectedFinding": "bank_book_mismatch",
+  "principle": "The benign near-twin of the bank/book control: the SAME matched activity and the SAME $2,000 of book + sub-ledger, but now the bank opened at the SAME $500 as the book. The adjusted bank balance equals the book exactly, the three balances tie out, the engine raises NO bank_book_mismatch finding, and the packet PASSes. The only difference from the out-of-trust twin is the bank opening: $500 vs $0."
+}

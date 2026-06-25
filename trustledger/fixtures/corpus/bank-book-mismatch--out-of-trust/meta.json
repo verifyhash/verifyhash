@@ -1,0 +1,7 @@
+{
+  "id": "bank-book-mismatch--out-of-trust",
+  "control": "bank_book_mismatch",
+  "expectedVerdict": "FAIL",
+  "expectedFinding": "bank_book_mismatch",
+  "principle": "After outstanding/in-transit items, the adjusted bank balance must equal the book balance. Here the activity lines match (no timing items), but the bank opened $500 SHORT of the book: the books say the trust account should hold $2,000 while the bank holds only $1,500. The bank is short of cash relative to the records — a genuine shortage, the textbook out-of-trust case (money that should be in the account is not there). The engine raises an error-severity bank_book_mismatch finding for the -$500 gap and the packet FAILs."
+}

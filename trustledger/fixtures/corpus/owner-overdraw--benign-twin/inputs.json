@@ -1,0 +1,15 @@
+{
+  "reportDate": "2026-05-31",
+  "period": "2026-05",
+  "bank": [],
+  "book": [
+    { "date": "2026-05-01", "amount": 100000, "memo": "Owner contribution Acme", "kind": "deposit", "party": "Owner Acme", "source": "quickbooks" },
+    { "date": "2026-05-01", "amount": 500000, "memo": "rent jones", "kind": "deposit", "party": "Jones (4B)", "source": "quickbooks" },
+    { "date": "2026-05-10", "amount": -100000, "memo": "Owner draw - disbursement to owner Acme", "kind": "check", "party": "Owner Acme", "source": "quickbooks" }
+  ],
+  "rentroll": [
+    { "date": "2026-05-01", "amount": 500000, "memo": "rent", "kind": "rent", "party": "Jones (4B)", "source": "rentroll" },
+    { "date": "2026-05-01", "amount": 100000, "memo": "owner contribution", "kind": "rent", "party": "Owner Acme", "source": "rentroll" },
+    { "date": "2026-05-10", "amount": -100000, "memo": "owner draw", "kind": "rent", "party": "Owner Acme", "source": "rentroll" }
+  ]
+}

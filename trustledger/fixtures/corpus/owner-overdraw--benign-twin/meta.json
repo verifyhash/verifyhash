@@ -1,0 +1,7 @@
+{
+  "id": "owner-overdraw--benign-twin",
+  "control": "owner_overdraw",
+  "expectedVerdict": "PASS",
+  "expectedFinding": "owner_overdraw",
+  "principle": "The benign near-twin of the owner-overdraw control: Owner Acme again contributes $1,000 of its own capital, but now draws exactly $1,000 — entirely from its OWN funds, touching no tenant money. Drawing at-or-below contributed capital is a legitimate owner disbursement. The engine raises NO owner_overdraw finding (the per-line owner_draw classification is only a warning, which does not fail the gate) and the packet PASSes. The only difference from the out-of-trust twin is the draw size: $1,000 vs $1,500."
+}

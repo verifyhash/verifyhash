@@ -1,0 +1,15 @@
+{
+  "reportDate": "2026-05-31",
+  "period": "2026-05",
+  "opening": { "bank": 250000, "book": 250000 },
+  "priorClosePath": "_shared/prior-close.json",
+  "bank": [
+    { "date": "2026-05-02", "amount": 150000, "memo": "deposit smith", "kind": "deposit", "party": "", "source": "bank" }
+  ],
+  "book": [
+    { "date": "2026-05-01", "amount": 150000, "memo": "rent smith", "kind": "deposit", "party": "Smith (4A)", "source": "quickbooks" }
+  ],
+  "rentroll": [
+    { "date": "2026-05-01", "amount": 400000, "memo": "rent carried", "kind": "rent", "party": "Smith (4A)", "source": "rentroll" }
+  ]
+}

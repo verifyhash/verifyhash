@@ -1,0 +1,7 @@
+{
+  "id": "security-deposit-segregation--out-of-trust",
+  "control": "security_deposit_segregation",
+  "expectedVerdict": "FAIL",
+  "expectedFinding": "security_deposit_segregation",
+  "principle": "Each tenant's security deposit must be held SEPARATELY from operating trust funds. A security-deposit receipt sitting in the pooled book with NO offsetting transfer to a segregated account is commingled trust money — out of trust. Jones's $800 deposit is received but never segregated, so the engine raises an error-severity security_deposit_segregation finding and the packet FAILs."
+}

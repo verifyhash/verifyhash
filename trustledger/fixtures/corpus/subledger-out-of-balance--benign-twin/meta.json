@@ -1,0 +1,7 @@
+{
+  "id": "subledger-out-of-balance--benign-twin",
+  "control": "subledger_out_of_balance",
+  "expectedVerdict": "PASS",
+  "expectedFinding": "subledger_out_of_balance",
+  "principle": "The benign near-twin of the sub-ledger control: the SAME $1,500 of Smith's rent in the book, but now the beneficiary sub-ledger records the full $1,500 against Smith (4A). The sum of the sub-ledgers equals the book exactly, every dollar is attributed to a beneficiary, the three balances tie out, the engine raises NO subledger_out_of_balance finding, and the packet PASSes. The only difference from the out-of-trust twin is the sub-ledger amount: $1,500 vs $1,000."
+}

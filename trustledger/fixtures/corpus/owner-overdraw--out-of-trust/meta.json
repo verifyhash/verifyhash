@@ -1,0 +1,7 @@
+{
+  "id": "owner-overdraw--out-of-trust",
+  "control": "owner_overdraw",
+  "expectedVerdict": "FAIL",
+  "expectedFinding": "owner_overdraw",
+  "principle": "An owner may be disbursed ONLY from that owner's own contributed capital. Owner Acme contributes $1,000 of its own funds but draws $1,500 — paying itself $500 of the tenants' pooled trust money (conversion of trust funds, the single most-prosecuted residential-PM violation). The owner is modeled as a control-account sub-ledger party, so the pooled three-way SUM still ties out and the case would have been a SILENT PASS before this check; the engine raises an error-severity owner_overdraw finding for the $500 excess and the packet FAILs."
+}

@@ -1,0 +1,7 @@
+{
+  "id": "continuity-break--out-of-trust",
+  "control": "continuity_break",
+  "expectedVerdict": "FAIL",
+  "expectedFinding": "continuity_break",
+  "principle": "The trust chain requires that each period's OPENING balances equal the prior period's signed ENDING balances, to the penny. The prior close (_shared/prior-close.json) ended at $2,500 bank / $2,500 book, but this period opens at $0 / $0. A non-zero roll-forward gap means a period was skipped, edited, or re-keyed and the chain of custody over the trust money is broken. The engine raises an error-severity continuity_break finding for the -$2,500 gap and the packet FAILs."
+}

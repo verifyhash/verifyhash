@@ -1,0 +1,13 @@
+{
+  "reportDate": "2026-05-31",
+  "period": "2026-05",
+  "bank": [],
+  "book": [
+    { "date": "2026-05-01", "amount": 50000, "memo": "rent smith", "kind": "deposit", "party": "Smith (4A)", "source": "quickbooks" },
+    { "date": "2026-05-01", "amount": 50000, "memo": "rent jones", "kind": "deposit", "party": "Jones (4B)", "source": "quickbooks" }
+  ],
+  "rentroll": [
+    { "date": "2026-05-01", "amount": 50000, "memo": "rent smith", "kind": "rent", "party": "Smith (4A)", "source": "rentroll" },
+    { "date": "2026-05-01", "amount": 50000, "memo": "rent jones", "kind": "rent", "party": "Jones (4B)", "source": "rentroll" }
+  ]
+}

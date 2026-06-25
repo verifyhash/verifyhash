@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "trustledger.period-close/v1",
+  "period": "2026-04",
+  "reportDate": "2026-04-30",
+  "opening": {
+    "bank": 0,
+    "book": 0
+  },
+  "ending": {
+    "bank": 250000,
+    "book": 250000
+  },
+  "subledger": 250000,
+  "tiesOut": true,
+  "pass": true,
+  "inputs": {
+    "bankRecords": 1,
+    "bookRecords": 1,
+    "rentrollRecords": 1
+  },
+  "inputsDigest": "05f5b527084ac007b60f8117f7bf188ebcdc60fde8e20f6c934c1f33b6e8f166"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "negative-tenant-ledger--benign-twin",
+  "control": "negative_tenant_ledger",
+  "expectedVerdict": "PASS",
+  "expectedFinding": "negative_tenant_ledger",
+  "principle": "The benign near-twin of the negative-ledger control. It shares the SAME bank (empty), the SAME book ($500 deposit each for Smith (4A) and Jones (4B), book balance $1,000), and the SAME two beneficiaries as the out-of-trust twin. The ONLY difference is the two rent-roll sub-ledger lines: instead of crediting $1,500 to Smith and -$500 to Jones (Jones robbed to cover Smith), each tenant is simply credited their own $500. Every individual ledger is now non-negative (Smith +$500, Jones +$500), the pooled sub-ledger sum ($1,000) still ties to the $1,000 book exactly as before, no beneficiary is short, the engine raises NO negative_tenant_ledger finding, and the packet PASSes. NOTE: the separate control-account-exclusion rule (a 'Owner ...'-prefixed account is allowed to go negative without being flagged) is exercised by the owner-overdraw control's own fixtures, not here, so this pair varies only the one beneficiary's sign."
+}

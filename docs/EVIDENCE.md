@@ -10,7 +10,9 @@ ProofParcel), and it ships its **own** sellable license product.
 > OFFLINE-RECOMPUTE**, **NOT a trusted timestamp**. "Sealed at time T" still rides the human-owned
 > signing/timestamp trust-root (`needs-human`, **P-3** in [`STRATEGY.md`](../STRATEGY.md)). The packet is
 > an **UNTRUSTED transport container** — `verify` re-derives the root from the bytes referenced; it never
-> trusts the packet's own stored hashes. See [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md).
+> trusts the packet's own stored hashes. `verify` checks the **CONTENT, not the signer** — to prove **WHO**
+> signed a signed packet, use `verify-signed` (it recovers the signer from the cryptography, never the
+> claimed label). See [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md).
 
 ## What it is for
 
@@ -28,6 +30,7 @@ across products.
 ```
 vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign --key-env <VAR>|--key-file <p>] [--json]
 vh evidence verify <p> [--dir <d>] [--json]
+vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--json]
 vh evidence diff <p1> <p2> [--json]
 ```
 
@@ -35,11 +38,25 @@ vh evidence diff <p1> <p2> [--json]
   builds the packet over [`cli/core/packetseal.js`](../cli/core/packetseal.js), and **either prints the
   seal to stdout (default — writes NOTHING) or writes it to `--out <p>`**. It NEVER writes to cwd without
   `--out`. Exit: **0** ok / **3** seal-build-error / **2** usage / **1** IO.
-- `verify` is **read-only, NO key**. It re-derives the root from the bytes referenced and reports **OK**
-  or exactly which file **CHANGED / MISSING / UNEXPECTED**. Files resolve relative to `--dir` (if given)
+- `verify` is **read-only, NO key**. It re-derives the **content root** from the bytes referenced and reports
+  **OK** or exactly which file **CHANGED / MISSING / UNEXPECTED**. Files resolve relative to `--dir` (if given)
   else the packet file's own directory (the packet stores relPaths relative to the sealed `<dir>`, so the
   portable hand-off ships the files next to the packet). Exit: **0** OK / **3** REJECTED / **2** usage /
-  **1** IO — the SAME offline-recompute posture as `vh verify-seal` / `vh verify-proof`.
+  **1** IO — the SAME offline-recompute posture as `vh verify-seal` / `vh verify-proof`. **`verify` checks
+  the CONTENT, not the signer.** On a SIGNED packet it never reports the claimed signer as trusted: it
+  RECOVERS the signer from the bytes + signature and either **REJECTS a forged signature** OR labels a
+  genuine one **UNVERIFIED-for-pinning**, pointing you at `verify-signed` — it does **NOT** pin the signer to
+  anyone you trust. To prove **WHO** signed, run `verify-signed` (below).
+- `verify-signed` is the **recipient's "prove WHO signed this" step** — the trust check the **paid signed
+  surface exists to enable**, and the command that ACTUALLY checks a signed packet's signer. It is
+  **OFFLINE / key-free / network-free** and **recover-not-trust**: it RECOVERS the public signer address from
+  the embedded canonical seal bytes + signature (**Check 1, ALWAYS**), it never trusts the container's
+  claimed `signer` label. **`--signer <0xaddr>` PINS** the recovered signer to an expected publisher (Check 2),
+  and **`--dir <d>` BINDS** the signature to YOUR OWN bytes by recomputing the canonical seal from that
+  directory (Check 3). The verdict is **ACCEPTED** only when every requested check passes; a
+  forged / tampered / wrong-key signature, a wrong `--signer`, or a wrong `--dir` is a clean **REJECTED** —
+  **NEVER a silent pass**. It leads with the trust caveat and prints each check **PASS / FAIL / [skip]**.
+  Exit: **0** ACCEPTED / **3** REJECTED / **2** usage / **1** IO (mirrors `vh dataset verify-attest`).
 - `diff` is the **recipient-side** companion to `verify`: it compares TWO already-sealed packets and reports
   what **ADDED / REMOVED / CHANGED** between them, OFFLINE, with **no directory and no key**. It is
   **read-only, FREE, key-free** — a diff produces no new sealed/signed artifact, so there is nothing to gate.
@@ -52,9 +69,14 @@ vh evidence diff <p1> <p2> [--json]
 
 | Surface | Tier | Gate |
 | --- | --- | --- |
-| Unsigned baseline seal of up to **25 files** + `verify` | **FREE** | none — try before you buy |
+| Unsigned baseline seal of up to **25 files** + `verify` + `verify-signed` + `diff` | **FREE** | none — try before you buy |
 | `--sign` (wrap the seal in a signed attestation) | **PAID** | `evidence_signed` |
 | Sealing **more than 25 files** in one packet | **PAID** | `evidence_unlimited` |
+
+`verify-signed` is the FREE, key-free **recipient** side of the PAID `--sign` surface: the operator pays to
+PRODUCE a signed packet, and any recipient runs `verify-signed` to PROVE who signed it — no license, no
+vendor, nothing to gate (a recipient checking a signature mints no new artifact). The trust the paid signed
+surface sells is only realized when the recipient runs `verify-signed` to recover + pin + bind the signer.
 
 The free tier stays fully open so a buyer can evaluate the product end-to-end. A paid surface REQUIRES a
 valid `--license <f> --vendor <0xaddr>`, verified **OFFLINE** via [`cli/core/license.js`](../cli/core/license.js)
@@ -100,7 +122,14 @@ on-chain `verifyLeaf` — no new crypto, no second hashing scheme.
 A **signed** packet (`kind: vh.evidence-seal-signed`, the paid `evidence_signed` surface) wraps the EXACT
 canonical bare-seal bytes in `attestation` and attaches a detached EIP-191 `signature` — the SAME
 signed-attestation envelope ([`cli/core/attestation.js`](../cli/core/attestation.js)) the dataset/parcel
-products use. The signature proves **WHO vouched** for the sealed packet; it is **still not a timestamp**.
+products use. The signature is **untrusted transport too**: the container's claimed `signer` is just a label
+until `vh evidence verify-signed` RECOVERS the public address from the bytes + signature and confirms it.
+The recovered signer proves **WHO vouched**, NOT **WHEN**:
+
+> **Signer-vouch, NOT a timestamp (P-3).** A valid signature proves the HOLDER OF `signer`'s key vouched for
+> THIS evidence seal (the embedded root + the full set of (relPath, content) pairs). It does NOT by itself
+> prove a trustworthy TIMESTAMP: "sealed/vouched since a date T" still needs the human-owned signing/timestamp
+> trust-root (needs-human, P-3). It is NOT a legal opinion.
 
 ## Worked example: seal → hand over packet → verify
 
@@ -127,7 +156,13 @@ REJECTED — the files do NOT match the packet:
   CHANGED    report.pdf: sealed 0x… != on-disk 0x…                            # exit 3
 ```
 
-The paid signed flow:
+## Proving WHO signed: `vh evidence verify-signed`
+
+`verify` answers **"are these the exact bytes that were sealed?"** — the content check. It does **NOT** answer
+**"who signed it?"**: on a signed packet `verify` recovers the signer only to flag a forgery or call a genuine
+signer **UNVERIFIED-for-pinning**; it never pins the signer to anyone you trust. The recipient's
+**"prove WHO signed this"** step — the trust check the paid `--sign` surface exists to enable — is a separate
+command, `verify-signed`:
 
 ```
 # Operator (key provisioned outside the loop) seals + signs, gated by an evidence license:
@@ -135,9 +170,33 @@ $ vh evidence seal ./bundle --out ./bundle/b.vhevidence.json \
     --sign --key-env EV_OP_KEY --license evidence.vhlicense.json --vendor 0x<evidence-vendor>
 …  signed by:    0x<operator>
 
-# The signed packet still verifies offline as a tamper-evident seal:
-$ vh evidence verify ./bundle/b.vhevidence.json     # exit 0; reports signed:true
+# The recipient PROVES who signed it — recover (always) + pin (--signer) + bind (--dir), all OFFLINE/key-free:
+$ vh evidence verify-signed ./bundle/b.vhevidence.json --signer 0x<operator> --dir ./bundle
+TRUST: A valid signature proves the HOLDER OF `signer`'s key vouched for THIS evidence seal …       # caveat first
+verify-signed:    ACCEPTED
+recovered signer: 0x<operator>  (from the embedded canonical seal bytes + signature)
+  [PASS] signature recovers to the claimed signer
+  [PASS] recovered signer matches the expected signer (0x<operator>)
+  [PASS] the signature binds YOUR directory …
+ACCEPTED: every requested check passed.                                                              # exit 0
+
+# A WRONG --signer (or a forged/tampered signature, or a --dir that doesn't match) is a clean REJECTED:
+$ vh evidence verify-signed ./bundle/b.vhevidence.json --signer 0x<someone-else>
+…
+REJECTED: failed check(s): signerMatchesExpected.                                                    # exit 3
 ```
+
+**The boundary in one line.** `verify` = does the CONTENT match the seal? (re-derive the root from bytes).
+`verify-signed` = does a TRUSTED signer vouch for it? (recover the signer, then `--signer` to pin and `--dir`
+to bind). Use `verify` when you only hold the files; use `verify-signed` when the packet is signed and you
+need to prove the signer. `verify-signed` is **recover-not-trust**: it never believes the claimed `signer`
+label — it derives the address from the cryptography and (with `--signer`) checks it against the publisher
+you expected.
+
+> **Signer-vouch, NOT a timestamp (P-3).** A valid signature proves the HOLDER OF `signer`'s key vouched for
+> THIS evidence seal (the embedded root + the full set of (relPath, content) pairs). It does NOT by itself
+> prove a trustworthy TIMESTAMP: "sealed/vouched since a date T" still needs the human-owned signing/timestamp
+> trust-root (needs-human, P-3). It is NOT a legal opinion.
 
 ## What changed between two hand-offs? `vh evidence diff`
 

@@ -384,6 +384,85 @@ function verifySignedSeal(params) {
   return coreAttestation.verifySignedAttestation(params);
 }
 
+// The standing trust caveat the signed-verify path LEADS with — reuses EVIDENCE_TRUST_NOTE verbatim (so
+// the caveats can NEVER drift) plus the signing-specific honesty: a valid signature proves WHO vouched,
+// still NOT a timestamp (P-3) and NOT a legal opinion. Mirrors cli/dataset.js › VERIFY_ATTEST_TRUST_NOTE.
+const VERIFY_SIGNED_SEAL_TRUST_NOTE =
+  "A valid signature proves the HOLDER OF `signer`'s key vouched for THIS evidence seal (the embedded " +
+  "root + the full set of (relPath, content) pairs). It does NOT by itself prove a trustworthy " +
+  'TIMESTAMP: "sealed/vouched since a date T" still needs the human-owned signing/timestamp trust-root ' +
+  "(needs-human, P-3). It is NOT a legal opinion. " +
+  EVIDENCE_TRUST_NOTE;
+
+/**
+ * Verify (purely, OFFLINE) a SIGNED evidence-seal container — the STRICT, PURE signed-verify path that
+ * MIRRORS `cli/dataset.js › verifySignedAttestation` EXACTLY. It recovers the signer from the embedded
+ * canonical seal bytes + signature and confirms it equals the container's CLAIMED `signer` (Check 1 —
+ * ALWAYS run); OPTIONALLY pins it to an EXPECTED signer (`expectedSigner` / the CLI `--signer` flag —
+ * Check 2, run ONLY when present); and OPTIONALLY confirms the signature binds a holder's OWN directory
+ * (`dir` / the CLI `--dir` flag) by recomputing the canonical UNSIGNED seal bytes from that directory via
+ * the EXISTING build path (`serializeSeal(buildSeal(loadDirEntries(dir)))`) and requiring them
+ * byte-identical to the embedded payload. The verdict is ACCEPTED only when EVERY requested check passes;
+ * a forged/mismatched/tampered signature is a clean REJECTED — NEVER a silent pass.
+ *
+ * It is OFFLINE / key-free / network-free: it recovers a PUBLIC address from a signature, holds no private
+ * key, and contacts nothing. It writes NOTHING and mutates NEITHER the container NOR the directory (the
+ * `--dir` read is the ONLY I/O, and only when binding is requested). Throws only on an unrecoverable
+ * signature when the scheme is unknown (defense-in-depth — validateSignedSeal already rejects one) or when
+ * the supplied `--dir` cannot be read; a recovered address that simply doesn't match is a clean REJECTED.
+ *
+ * The returned shape is the SIBLING-PARITY verdict shape (byte-for-byte the fields `verifySignedAttestation`
+ * returns, including the `manifestBindsAttestation`/`manifestChecked` field names so a future indexer/UI can
+ * depend on ONE stable verdict shape across the product family).
+ *
+ * @param {object} params
+ * @param {object} params.container        a validated signed-seal container (from validateSignedSeal/readPacket)
+ * @param {string} [params.expectedSigner] OPTIONAL expected signer 0x-address (--signer); Check 2 runs when present
+ * @param {string} [params.dir]            OPTIONAL directory to bind the signature to (--dir); binding runs when present
+ * @returns {{
+ *   verdict: "ACCEPTED"|"REJECTED",
+ *   accepted: boolean,
+ *   recoveredSigner: string,
+ *   claimedSigner: string,
+ *   scheme: string,
+ *   checks: {
+ *     signatureMatchesSigner: boolean,
+ *     signerMatchesExpected: boolean|null,
+ *     manifestBindsAttestation: boolean|null,
+ *   },
+ *   expectedSigner: string|null,
+ *   manifestChecked: boolean,
+ *   failedChecks: string[],
+ * }}
+ */
+function verifySignedSealAttestation(params) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    throw new Error("verifySignedSealAttestation requires { container, [expectedSigner], [dir] }");
+  }
+  const { container, expectedSigner, dir } = params;
+
+  // The ONLY evidence-specific step: the OPTIONAL --dir binding check recomputes the canonical UNSIGNED
+  // seal bytes from the holder's OWN directory via the EXISTING build path (the SAME bytes `vh evidence
+  // seal` embeds), then hands them to the GENERIC core as `expectedCanonical`. The core does the signer
+  // recovery (Check 1, always), the OPTIONAL expected-signer pin (Check 2), and the byte-identity binding
+  // comparison — all product-agnostic. We pass `container` straight through (no copy; the container is only
+  // READ), so this never mutates the caller's input. The returned shape (incl. the field names) is
+  // byte-for-byte what the dataset sibling returns.
+  let expectedCanonical;
+  if (dir !== undefined && dir !== null) {
+    // Recompute the canonical seal bytes from the live directory — the SAME (relPath, content) walk + seal
+    // build the seal path uses. A directory the holder cannot read is a genuine error (re-thrown), never a
+    // silent "binding skipped" — the caller asked to bind to bytes that must exist.
+    const dirAbs = path.resolve(dir);
+    const entries = loadDirEntries(dirAbs);
+    expectedCanonical = serializeSeal(buildSeal(entries));
+  }
+  // Route through the existing `verifySignedSeal` thin wrapper (which calls coreAttestation.
+  // verifySignedAttestation) so this path stays the single, shared verify core — exactly mirroring how the
+  // dataset sibling funnels through coreAttestation.verifySignedAttestation.
+  return verifySignedSeal({ container, expectedSigner, expectedCanonical });
+}
+
 // ---------------------------------------------------------------------------
 // I/O HELPERS — the only filesystem-touching code. Walk a directory into the flat { relPath, bytes }
 // entry list the seal core consumes, REUSING cli/hash.js's listFiles (the SAME path-bound enumeration
@@ -1103,6 +1182,8 @@ module.exports = {
   signSealWith,
   validateSignedSeal,
   verifySignedSeal,
+  verifySignedSealAttestation,
+  VERIFY_SIGNED_SEAL_TRUST_NOTE,
   // license product
   LICENSE_KIND,
   LICENSE_CFG,

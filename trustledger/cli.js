@@ -53,6 +53,7 @@ const path = require("path");
 const ingest = require("./ingest");
 const report = require("./report");
 const corpus = require("./corpus");
+const valueproof = require("./valueproof");
 const policy = require("./policy");
 const close = require("./close");
 const seal = require("./seal");
@@ -196,7 +197,12 @@ function buildSourceMaps(mapFileMaps, mapArgs) {
 
 // Exit codes — shared, documented contract (mirrors the dataset/parcel gates:
 // 0 PASS, 3 data/gate FAIL, 2 usage, 1 IO/input error).
-const EXIT = Object.freeze({ PASS: 0, IO: 1, USAGE: 2, FAIL: 3 });
+//
+// DATA_GAP (4) is value-proof-ONLY (T-45.2): it distinguishes the "fix-my-data
+// and re-run" value-proof outcome from a genuine out-of-trust FAIL (3) so a CI
+// pipeline can gate on the make-or-break difference. The reconcile gate itself
+// still uses only 0/3 — this code never changes a reconcile verdict or exit.
+const EXIT = Object.freeze({ PASS: 0, IO: 1, USAGE: 2, FAIL: 3, DATA_GAP: 4 });
 
 // ---------------------------------------------------------------------------
 // Argument parsing
@@ -1445,6 +1451,616 @@ function cmdCorpus(argv, io = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// `vh trust value-proof <bank> <ledger> <rentroll>` (T-45.2) — the read-only
+// "what your manual close let through" proof, as a CI-gateable command.
+// ---------------------------------------------------------------------------
+//
+// The go-to-market seam. A pilot broker's highest-signal input is a period they
+// ALREADY closed by hand and signed off as CLEAN. This command runs that SAME
+// already-closed period's three files through the EXACT reconcile/buildPacket
+// verdict path the gate uses, then diffs the gate's findings against the manual
+// close via the pure `valueproof.valueProof` lens, and prints — deterministically:
+//
+//   * a one-word OUTCOME (clean_confirmed | out_of_trust_missed | data_gap_only),
+//   * the one-sentence HEADLINE the broker reads to decide, and
+//   * the per-class dollar table (the SAME numbers triage rolled up).
+//
+// Every number is read VERBATIM off the packet's own triage rollup — this command
+// adds NO new severity, finding, verdict, count, or money figure; it is a
+// presentation lens over the gate's existing output. A test drives the SAME inputs
+// through BOTH `reconcile` and `value-proof` and asserts the numbers are identical.
+//
+// EXIT CODE IS THE GATE (a CI pipeline can branch on it):
+//   0 = clean_confirmed   (the gate AGREES the account is not out of trust),
+//   3 = out_of_trust_missed (a genuine shortage the manual close let through — FAIL),
+//   4 = data_gap_only     (no out-of-trust finding, but the data could not fully
+//                          reconcile — fix-and-rerun, distinct from a real FAIL),
+//   2 = usage error (a bad flag), 1 = IO/input error (an unreadable/malformed file).
+//
+// FILESYSTEM HYGIENE: like `inspect` / `corpus`, it is STRICTLY read-only — it
+// writes NOTHING anywhere (no packet, no seal, not even with a path flag), so it
+// is safe to run on a partner's real files in any directory or CI step.
+//
+// THE MANUAL-CLOSE BASELINE: by default the broker is asserting the period was
+// CLEAN (the pilot case). `--asserted-flagged` flips the baseline to "the manual
+// close DID flag this period" (so `agrees` reflects a true positive). `--asserted-net
+// <cents>` echoes the manual close's signed-off net figure as an ANNOTATION ONLY —
+// it never changes the outcome, a verdict, a severity, a count, or any dollar number.
+
+const VALUE_PROOF_CAVEAT =
+  "This is a value-proof over the SAME reconcile gate, not a second opinion or an audit. " +
+  "Every number is read verbatim off the period's reconciliation; it adds no new finding, " +
+  "severity, or verdict. The broker remains the responsible custodian and a CPA review governs.";
+
+// value-proof outcome -> exit code. The outcome strings are valueproof's closed
+// contract (VALUE_OUTCOME); a NULL-prototype map so a forged/unknown outcome can
+// never inherit a bogus code — it falls through to the explicit guard below.
+const VALUE_PROOF_EXIT = Object.freeze(
+  Object.assign(Object.create(null), {
+    [valueproof.VALUE_OUTCOME.CLEAN_CONFIRMED]: EXIT.PASS,
+    [valueproof.VALUE_OUTCOME.OUT_OF_TRUST]: EXIT.FAIL,
+    [valueproof.VALUE_OUTCOME.DATA_GAP]: EXIT.DATA_GAP,
+  })
+);
+
+// Parse `value-proof` argv. Three positional files (bank, ledger, rentroll) in
+// order, plus the SAME packet-shaping flags reconcile accepts (so the period is
+// reconciled IDENTICALLY) plus the manual-close baseline flags. Unknown flags and
+// missing positionals are USAGE errors, matching the rest of the family.
+//
+// VERDICT-EQUIVALENCE (T-45.2 rework). value-proof MUST run the broker's period
+// through the SAME verdict-shaping inputs the production reconcile gate threads,
+// or it is NOT verdict-equivalent to the gate the paying broker actually runs:
+//   * --policy/--state    — the licensed per-state policy that can ESCALATE an
+//                           exception's severity and FLIP the SAME files PASS->FAIL,
+//   * --prior-close       — the prior period's close that seeds opening balances
+//                           and can surface a CONTINUITY_BREAK,
+//   * --license/--vendor  — the license that unlocks the paid policy surface (the
+//                           SAME gate reconcile applies before honoring --policy),
+//   * --map-file/--map    — the per-source column maps so a broker whose real files
+//                           use non-default headers reconciles instead of IO-erroring.
+// Without these, value-proof could confidently print "clean confirmed" / exit 0 on
+// a closed period the broker's OWN licensed gate FAILs — the worst failure mode for
+// a counterparty-facing proof. They are threaded into buildPacket/ingest IDENTICALLY
+// to reconcile, so value-proof is the same verdict path, not a narrower one.
+function parseValueProofArgs(argv) {
+  const opts = {
+    bank: undefined,
+    ledger: undefined,
+    rentroll: undefined,
+    json: false,
+    date: undefined, // override the report date (default: today); MUST be YYYY-MM-DD
+    period: undefined, // optional human label for the closed period
+    openingBank: 0,
+    openingBook: 0,
+    toleranceCents: 0,
+    bankFormat: undefined, // force "csv" | "ofx" for the bank file
+    policyFile: undefined, // explicit per-state policy file (--policy <file>)
+    state: undefined, // bundled per-state policy by its state code (--state <code>)
+    priorClose: undefined, // prior period's close.json to roll forward FROM (--prior-close <file>)
+    license: undefined, // path to a signed *.vhlicense.json unlocking the paid surface
+    vendor: undefined, // 0x-address the license issuer is pinned to
+    mapArgs: [], // repeatable --map <source>:<logical>=<header>
+    mapFile: undefined, // --map-file <json> per-source column maps
+    assertedClean: true, // the manual-close baseline; --asserted-flagged flips it
+    assertedNetCents: undefined, // OPTIONAL echoed annotation (integer cents)
+    _positionals: [],
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      case "--date":
+        opts.date = argv[++i];
+        break;
+      case "--period":
+        opts.period = argv[++i];
+        break;
+      case "--opening-bank":
+        opts.openingBank = parseCentsArg(argv[++i], "--opening-bank");
+        opts.openingBankSet = true;
+        break;
+      case "--opening-book":
+        opts.openingBook = parseCentsArg(argv[++i], "--opening-book");
+        opts.openingBookSet = true;
+        break;
+      case "--tolerance-cents":
+        opts.toleranceCents = parseIntArg(argv[++i], "--tolerance-cents");
+        break;
+      case "--bank-format":
+        opts.bankFormat = argv[++i];
+        break;
+      case "--policy":
+        opts.policyFile = argv[++i];
+        break;
+      case "--state":
+        opts.state = argv[++i];
+        break;
+      case "--prior-close":
+        opts.priorClose = argv[++i];
+        break;
+      case "--license":
+        opts.license = argv[++i];
+        break;
+      case "--vendor":
+        opts.vendor = argv[++i];
+        break;
+      case "--map":
+        // value-proof has three files (like reconcile), so the source is REQUIRED.
+        opts.mapArgs.push(parseMapArg(argv[++i], { requireSource: true }));
+        break;
+      case "--map-file":
+        opts.mapFile = argv[++i];
+        break;
+      case "--asserted-clean":
+        // Explicit form of the default baseline (the period was closed clean).
+        opts.assertedClean = true;
+        break;
+      case "--asserted-flagged":
+        // The manual close DID flag this period (so `agrees` is a true positive).
+        opts.assertedClean = false;
+        break;
+      case "--asserted-net":
+        // A DOLLAR figure (parsed to integer cents, exactly like --opening-bank),
+        // echoed as an annotation only — it NEVER changes the outcome or any number.
+        opts.assertedNetCents = parseCentsArg(argv[++i], "--asserted-net");
+        break;
+      default:
+        if (a && a.startsWith("--")) {
+          const e = new Error(`unknown option: ${a}`);
+          e.usage = true;
+          throw e;
+        }
+        opts._positionals.push(a);
+    }
+  }
+  if (opts._positionals.length > 3) {
+    const e = new Error(
+      `unexpected extra argument: ${opts._positionals[3]} ` +
+        "(value-proof takes exactly three files: <bank> <ledger> <rentroll>)"
+    );
+    e.usage = true;
+    throw e;
+  }
+  [opts.bank, opts.ledger, opts.rentroll] = opts._positionals;
+  return opts;
+}
+
+// Render the human value-proof report. PURE: takes the valueProof result + ctx,
+// returns a string. Leads with the caveat, then the outcome word + the production
+// gate's PASS/FAIL verdict, the headline, the per-class dollar table (the SAME
+// numbers triage rolled up), the totals + the manual-close annotation. Mirrors the
+// inspect/corpus output shape. `ctx.gateVerdict` is the gate's actual verdict under
+// the governing policy/prior-close; `ctx.escalated`/`ctx.tolerated` disclose when the
+// policy/prior-close flipped the verdict relative to the type-based class outcome.
+function renderValueProof(vp, ctx) {
+  const L = [];
+  L.push(`# vh trust value-proof — ${ctx.period == null ? "(period unlabeled)" : ctx.period}`);
+  L.push(VALUE_PROOF_CAVEAT);
+  L.push("");
+  L.push(`outcome:      ${vp.outcome}`);
+  if (ctx.gateVerdict != null) {
+    L.push(`gate verdict: ${ctx.gateVerdict}  (the production reconcile gate's verdict for these inputs)`);
+  }
+  L.push(`headline:     ${vp.headline}`);
+  // Disclose a policy/prior-close-driven divergence between the type-based class
+  // outcome and the gate's actual verdict, so the human is never shown a "clean"
+  // class outcome on a period the licensed gate FAILs (or vice-versa) without a word.
+  if (ctx.escalated) {
+    L.push(
+      "note: the governing policy/prior-close ESCALATED a finding the type-based class " +
+        "outcome treats as benign — the production gate FAILs this period, so this is NOT " +
+        "a clean confirmation. Re-run `vh trust reconcile` with the SAME policy for the full packet."
+    );
+  } else if (ctx.tolerated) {
+    L.push(
+      "note: the governing policy DOWN-graded an out-of-trust-class finding (named in the table " +
+        "below); the production gate PASSes this period under that policy, so this is not failed as " +
+        "out-of-trust here. A CPA should confirm the policy's grading is correct."
+    );
+  }
+  L.push("");
+
+  // Per-class dollar table (already rank-sorted most-urgent-first by triage).
+  const W_CLASS = 18;
+  const W_COUNT = 7;
+  const header =
+    padCell("CLASS", W_CLASS) + "  " + padCell("COUNT", W_COUNT) + "  IMPACT";
+  L.push("findings the manual close did not flag, by root cause:");
+  L.push(header);
+  L.push("-".repeat(header.length));
+  if (vp.missedFindings.byClass.length === 0) {
+    L.push("  (none — the gate found nothing the manual close missed)");
+  } else {
+    for (const c of vp.missedFindings.byClass) {
+      L.push(
+        padCell(c.label, W_CLASS) +
+          "  " +
+          padCell(String(c.count), W_COUNT) +
+          "  " +
+          fmtDollars(c.absImpact)
+      );
+    }
+  }
+  L.push(
+    "-".repeat(header.length) +
+      "\n" +
+      padCell("TOTAL", W_CLASS) +
+      "  " +
+      padCell(String(vp.missedFindings.count), W_COUNT) +
+      "  " +
+      fmtDollars(vp.missedFindings.absImpact)
+  );
+  L.push("");
+
+  // The manual-close baseline + the agreement flag + the optional net annotation.
+  L.push(
+    `manual close asserted: ${vp.manualCloseClean ? "CLEAN" : "FLAGGED"}` +
+      `  (gate ${vp.agrees ? "AGREES" : "DISAGREES"})`
+  );
+  if (vp.assertedNetCents != null) {
+    L.push(`manual close net (annotation only): ${fmtDollars(vp.assertedNetCents)}`);
+  }
+  L.push("");
+  return L.join("\n");
+}
+
+// Format integer cents as a signed dollar string with thousands grouping
+// ("$1,234.56" / "-$1,234.56"), for the human table. Mirrors valueproof's own
+// fmtCents grouping locally so the CLI takes no new dependency on it. PURE.
+function fmtDollars(cents) {
+  const n = Number(cents) || 0;
+  const neg = n < 0;
+  const abs = Math.abs(n);
+  const dollars = Math.floor(abs / 100);
+  const rem = abs % 100;
+  const grouped = String(dollars).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const body = `$${grouped}.${String(rem).padStart(2, "0")}`;
+  return neg ? `-${body}` : body;
+}
+
+// runValueProof reads the three files, runs the SAME ingest + buildPacket verdict
+// path reconcile uses (license gate, --policy/--state, --prior-close, --map-file/--map
+// threaded IDENTICALLY), applies the pure valueProof lens, prints the outcome +
+// headline + per-class dollar table, and returns { code, model, vp }. Read-only —
+// writes NOTHING. The exit code maps the outcome through VALUE_PROOF_EXIT and is then
+// RECONCILED with the gate's actual PASS/FAIL so value-proof never claims "clean
+// confirmed" (exit 0) on a period the broker's OWN licensed gate FAILs.
+function runValueProof(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.bank || !opts.ledger || !opts.rentroll) {
+    writeErr(
+      "error: `vh trust value-proof` requires three files: <bank> <ledger> <rentroll>\n"
+    );
+    return { code: EXIT.USAGE };
+  }
+
+  // Report date: explicit --date wins (keeps output reproducible); else today.
+  let reportDate = opts.date;
+  if (reportDate == null) {
+    reportDate = (io.today || todayISO)();
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(reportDate || ""))) {
+    writeErr(`error: --date must be "YYYY-MM-DD" (got "${reportDate}")\n`);
+    return { code: EXIT.USAGE };
+  }
+
+  if (
+    opts.bankFormat != null &&
+    opts.bankFormat !== "csv" &&
+    opts.bankFormat !== "ofx"
+  ) {
+    writeErr(
+      `error: --bank-format must be "csv" or "ofx" (got "${opts.bankFormat}")\n`
+    );
+    return { code: EXIT.USAGE };
+  }
+
+  // -- LICENSE GATE. IDENTICAL to reconcile (gateReconcile) — the per-state policy
+  //    (--state/--policy) is the SAME license-gated PAID surface here. value-proof
+  //    must REFUSE a policy run without a valid, vendor-pinned license exactly as
+  //    reconcile does; otherwise it would silently run an UNLICENSED policy path that
+  //    the production gate would never grant. The free baseline (no --state/--policy)
+  //    needs no license and is byte-for-byte unchanged.
+  const gate = gateReconcile(opts, reportDate, writeErr);
+  if (gate.code !== EXIT.PASS) return { code: gate.code };
+
+  // -- Resolve the per-state policy (--policy/--state), IDENTICALLY to reconcile.
+  //    Mutually-exclusive flags, an unknown --state, and a malformed/unreadable
+  //    policy file are USAGE errors (a bad flag value), matching reconcile exactly.
+  //    A policy can ESCALATE a finding's severity and FLIP the gate PASS->FAIL on the
+  //    SAME files — which is precisely why value-proof must thread it.
+  let activePolicy = null;
+  if (opts.policyFile != null && opts.state != null) {
+    writeErr(
+      "error: --policy and --state are mutually exclusive (choose an explicit " +
+        "policy file OR a bundled state code, not both)\n"
+    );
+    return { code: EXIT.USAGE };
+  }
+  if (opts.state != null) {
+    try {
+      activePolicy = policy.resolveState(opts.state);
+    } catch (e) {
+      writeErr(`error: ${e.message}\n`);
+      return { code: EXIT.USAGE };
+    }
+  } else if (opts.policyFile != null) {
+    let policyText;
+    try {
+      policyText = fs.readFileSync(path.resolve(opts.policyFile), "utf8");
+    } catch (e) {
+      writeErr(`error: cannot read --policy file ${opts.policyFile}: ${e.message}\n`);
+      return { code: EXIT.USAGE };
+    }
+    try {
+      activePolicy = policy.readPolicy(policyText);
+    } catch (e) {
+      writeErr(`error: invalid --policy file ${opts.policyFile}: ${e.message}\n`);
+      return { code: EXIT.USAGE };
+    }
+  }
+
+  // -- Resolve the prior period's close (--prior-close), IDENTICALLY to reconcile.
+  //    SEED-then-OVERRIDE: the prior close's ending seeds this run's opening unless
+  //    an explicit --opening-bank/--opening-book overrode it (a disagreeing override
+  //    is honored but surfaces as a CONTINUITY_BREAK in the packet, flipping the
+  //    verdict — never silently swallowed). A malformed/unreadable close is a USAGE
+  //    error (a bad flag value), exactly as in reconcile.
+  let priorClose = null;
+  const openingNotes = [];
+  if (opts.priorClose != null) {
+    let closeText;
+    try {
+      closeText = fs.readFileSync(path.resolve(opts.priorClose), "utf8");
+    } catch (e) {
+      writeErr(
+        `error: cannot read --prior-close file ${opts.priorClose}: ${e.message}\n`
+      );
+      return { code: EXIT.USAGE };
+    }
+    try {
+      priorClose = close.readClose(closeText);
+    } catch (e) {
+      writeErr(
+        `error: invalid --prior-close file ${opts.priorClose}: ${e.message}\n`
+      );
+      return { code: EXIT.USAGE };
+    }
+    if (!opts.openingBankSet) {
+      opts.openingBank = priorClose.ending.bank;
+    } else if (opts.openingBank !== priorClose.ending.bank) {
+      openingNotes.push(
+        `note: --opening-bank ${opts.openingBank} overrides the prior close's ` +
+          `ending bank balance ${priorClose.ending.bank}; the roll-forward ` +
+          "continuity check below will flag the resulting gap"
+      );
+    }
+    if (!opts.openingBookSet) {
+      opts.openingBook = priorClose.ending.book;
+    } else if (opts.openingBook !== priorClose.ending.book) {
+      openingNotes.push(
+        `note: --opening-book ${opts.openingBook} overrides the prior close's ` +
+          `ending book balance ${priorClose.ending.book}; the roll-forward ` +
+          "continuity check below will flag the resulting gap"
+      );
+    }
+  }
+  for (const n of openingNotes) writeErr(`${n}\n`);
+
+  // -- Read the three files (IO errors are exit 1, not a crash). -------------
+  // Same error classes + messages as reconcile, so the SAME bad file fails the
+  // SAME way regardless of which command read it.
+  let bankText;
+  let ledgerText;
+  let rentText;
+  try {
+    bankText = fs.readFileSync(path.resolve(opts.bank), "utf8");
+  } catch (e) {
+    writeErr(`error: cannot read bank file ${opts.bank}: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+  try {
+    ledgerText = fs.readFileSync(path.resolve(opts.ledger), "utf8");
+  } catch (e) {
+    writeErr(`error: cannot read ledger file ${opts.ledger}: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+  try {
+    rentText = fs.readFileSync(path.resolve(opts.rentroll), "utf8");
+  } catch (e) {
+    writeErr(`error: cannot read rent-roll file ${opts.rentroll}: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+
+  // -- Resolve the per-source column maps (--map-file + --map), IDENTICALLY to
+  //    reconcile, and validate them up front (a structurally-invalid map is a USAGE
+  //    error, the SAME class as a malformed --map-file). Without this a broker whose
+  //    real files use non-default headers would IO-error here where reconcile loads.
+  let sourceMaps;
+  try {
+    const mapFileMaps = opts.mapFile != null ? readMapFile(opts.mapFile) : null;
+    sourceMaps = buildSourceMaps(mapFileMaps, opts.mapArgs || []);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.USAGE };
+  }
+  try {
+    ingest.validateColumnMapForSource(ingest.SOURCE.BANK, bankText, sourceMaps.bank, {
+      format: opts.bankFormat,
+    });
+    ingest.validateColumnMapForSource(
+      ingest.SOURCE.QUICKBOOKS,
+      ledgerText,
+      sourceMaps.ledger
+    );
+    ingest.validateColumnMapForSource(
+      ingest.SOURCE.RENT_ROLL,
+      rentText,
+      sourceMaps.rentroll
+    );
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.USAGE };
+  }
+
+  // -- Ingest (a malformed row is a clear, located error -> exit 1). The resolved
+  //    column maps thread into the parsers IDENTICALLY to reconcile.
+  let bank;
+  let book;
+  let rentroll;
+  try {
+    bank = ingest.parseBankStatement(bankText, {
+      format: opts.bankFormat,
+      columnMap: sourceMaps.bank,
+    });
+    book = ingest.parseQuickBooksCSV(ledgerText, { columnMap: sourceMaps.ledger });
+    rentroll = ingest.parseRentRollCSV(rentText, {
+      columnMap: sourceMaps.rentroll,
+    });
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+
+  // -- Build the SAME packet model reconcile builds (match + reconcile + triage
+  //    inside), threading policy + priorClose IDENTICALLY to reconcile (cli.js:699).
+  //    value-proof reuses the EXACT verdict path so its numbers — AND its PASS/FAIL
+  //    verdict — EQUAL the reconcile verdict for the same inputs. value-proof writes
+  //    NOTHING, so it never threads emitClosePath (the close-emit is reconcile-only).
+  let model;
+  try {
+    model = report.buildPacket({
+      bank,
+      book,
+      rentroll,
+      reportDate,
+      period: opts.period,
+      opening: { bank: opts.openingBank || 0, book: opts.openingBook || 0 },
+      toleranceCents: opts.toleranceCents || 0,
+      policy: activePolicy,
+      priorClose,
+    });
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+
+  // -- Apply the pure value-proof lens over the gate's already-computed triage.
+  //    A ValueProofError here is an internal/forged-model bug, not a broker
+  //    mistake; surface it as an IO/input error rather than crashing.
+  let vp;
+  try {
+    vp = valueproof.valueProof(model, {
+      assertedClean: opts.assertedClean,
+      assertedNetCents:
+        opts.assertedNetCents != null ? opts.assertedNetCents : undefined,
+      period: opts.period != null ? opts.period : reportDate,
+    });
+  } catch (e) {
+    writeErr(`error: cannot build value-proof: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+
+  // -- Map the outcome to the gateable exit code, then RECONCILE it with the gate's
+  //    actual PASS/FAIL verdict. -------------------------------------------------
+  //
+  // The valueProof OUTCOME keys off the root-cause CLASS (type-based, policy-
+  // INDEPENDENT), so the per-class dollar rollup is faithful no matter the policy.
+  // But a per-state policy (or a prior-close CONTINUITY_BREAK) can ESCALATE a finding
+  // the class lens treats as benign (e.g. an `ambiguous_deposit` graded WARNING->ERROR,
+  // or a `needs_review` note made a hard finding) and FLIP the production gate
+  // PASS->FAIL on the SAME files — WITHOUT changing topClass. If we exited purely on
+  // the class outcome, value-proof could print "clean confirmed" / exit 0 on a period
+  // the broker's OWN licensed gate FAILs: the exact inversion this command must never
+  // make. So when the gate FAILs (model.pass === false) we NEVER report clean/exit 0:
+  // a class-clean outcome under a failing gate is surfaced as a policy-escalated FAIL.
+  // (model.pass FAILs => exit is 3 or 4, always non-zero; PASSes => 0 or 4, never 3.)
+  const baseCode = VALUE_PROOF_EXIT[vp.outcome];
+  if (baseCode === undefined) {
+    writeErr(`error: value-proof produced an unknown outcome "${vp.outcome}"\n`);
+    return { code: EXIT.IO };
+  }
+  const gatePass = model.pass === true;
+  // The gate verdict ANCHORS the exit code, refined by the class diagnosis:
+  //   * gate FAILs + class clean      -> policy/prior-close escalated a hard finding
+  //                                       the type lens calls benign: FAIL (3), never 0.
+  //   * gate PASSes + class out-of-trust -> the policy DOWN-graded an out-of-trust
+  //                                       finding so the licensed gate tolerates it:
+  //                                       the gate PASSes, so we do not FAIL it (->
+  //                                       data_gap/4 when there is also a data gap,
+  //                                       else clean/0). The faithful per-class table
+  //                                       still names the finding; the verdict matches
+  //                                       the gate the broker actually runs.
+  // Otherwise the class outcome already agrees with the gate and rides through.
+  let code = baseCode;
+  let escalated = false; // gate FAILs but the type-based outcome was clean
+  let tolerated = false; // gate PASSes but the type-based outcome was out-of-trust
+  if (!gatePass && code === EXIT.PASS) {
+    code = EXIT.FAIL;
+    escalated = true;
+  } else if (gatePass && code === EXIT.FAIL) {
+    code = vp.dataGap ? EXIT.DATA_GAP : EXIT.PASS;
+    tolerated = true;
+  }
+
+  // The verdict surfaced to the human + JSON is the GATE's verdict, so the
+  // clean/out-of-trust framing can never disagree with the exit code.
+  const gateVerdict = gatePass ? "PASS" : "FAIL";
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ...vp,
+          reportDate,
+          // The production gate's actual verdict for these inputs under the governing
+          // policy/prior-close — what the paying broker's licensed gate would return.
+          gateVerdict,
+          // True iff the policy/prior-close FLIPPED the verdict relative to the
+          // type-based class outcome (escalated a benign-class finding to a FAIL, or
+          // tolerated an out-of-trust-class finding the gate PASSes). Disclosed so a
+          // consumer can see the class outcome and the gate verdict diverged and why.
+          policyEscalated: escalated,
+          policyTolerated: tolerated,
+          code,
+          caveat: VALUE_PROOF_CAVEAT,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(
+      renderValueProof(vp, {
+        period: opts.period,
+        gateVerdict,
+        escalated,
+        tolerated,
+      })
+    );
+  }
+
+  return { code, model, vp };
+}
+
+function cmdValueProof(argv, io = {}) {
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseValueProofArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+  return runValueProof(opts, io).code;
+}
+
+// ---------------------------------------------------------------------------
 // `vh trust verify-seal <sealfile>` (T-26.2) — read-only, OFFLINE seal verify
 // ---------------------------------------------------------------------------
 //
@@ -2432,6 +3048,9 @@ function cmdTrust(argv, io = {}) {
   if (sub === "corpus") {
     return cmdCorpus(rest, io);
   }
+  if (sub === "value-proof") {
+    return cmdValueProof(rest, io);
+  }
   if (sub === "verify-seal") {
     return cmdVerifySeal(rest, io);
   }
@@ -2447,7 +3066,7 @@ function cmdTrust(argv, io = {}) {
   }
   writeErr(
     `error: unknown trust subcommand: ${sub === undefined ? "(none)" : sub} ` +
-      `(expected: reconcile, inspect, corpus, verify-seal, serve, license)\n` +
+      `(expected: reconcile, inspect, corpus, value-proof, verify-seal, serve, license)\n` +
       trustHelp()
   );
   return EXIT.USAGE;
@@ -2483,6 +3102,18 @@ function trustHelp() {
     "      matches its recorded verdict, 3 on ANY mismatch (a gate regression / corpus",
     "      drift). This is the one-command artifact to confirm the gate FAILs the exact",
     "      frauds it claims to catch, without reading test/.",
+    "  value-proof <bank> <ledger> <rentroll> [--state/--policy <f> --license <f> --vendor <0xaddr>]",
+    "             [--prior-close <f>] [--map-file <f>] [--map <src>:<logical>=<header>] [--asserted-flagged]",
+    "             [--asserted-net <dollars>] [--json]",
+    "      run the partner's OWN already-closed period through the SAME reconcile gate and",
+    "      print what their manual close let through: a one-word OUTCOME, the headline, and",
+    "      the per-class dollar table — every number read verbatim off the gate's triage.",
+    "      Threads the SAME verdict-shaping inputs reconcile does: --state/--policy (license-gated,",
+    "      can ESCALATE a finding and FLIP the verdict), --prior-close (continuity), and",
+    "      --map-file/--map (non-default headers). The reported gate verdict + exit code EQUAL the",
+    "      production gate's for the SAME inputs — value-proof never claims clean on a period the",
+    "      licensed gate FAILs. Read-only, writes nothing. Exit 0 clean_confirmed / 3 out_of_trust_missed",
+    "      (a missed shortage) / 4 data_gap_only (fix-and-rerun, distinct from a real FAIL) / 2 usage / 1 IO.",
     "  serve [--port <n>] [--host <h>]",
     "      launch the LOCAL web front-door (default http://127.0.0.1:4173/) so a broker can drop",
     "      the three files in a browser and watch the balances tie out. Files are processed IN",
@@ -2516,6 +3147,12 @@ module.exports = {
   renderCorpus,
   corpusSummaryLine,
   CORPUS_CAVEAT,
+  parseValueProofArgs,
+  runValueProof,
+  cmdValueProof,
+  renderValueProof,
+  VALUE_PROOF_CAVEAT,
+  VALUE_PROOF_EXIT,
   parseVerifySealArgs,
   runVerifySeal,
   cmdVerifySeal,

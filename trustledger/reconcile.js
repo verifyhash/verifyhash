@@ -211,6 +211,20 @@ function isAmbiguousDeposit(rec) {
   return true;
 }
 
+// The canonical, order-independent per-BENEFICIARY key for a record's party.
+// Mirrors the sub-ledger's own normalization (tenantBalances uses the SAME
+// `String(party).trim()` convention) so a deposit and a segregation transfer
+// that name the same tenant bucket together. Case-folded + whitespace-collapsed
+// so "Jones (4B)" and "jones (4b)" are ONE beneficiary. An empty/absent party
+// normalizes to "" — the sentinel for "no attributable beneficiary", which the
+// segregation matcher treats as covering NOTHING on its own. PURE.
+function partyKey(party) {
+  return String(party == null ? "" : party)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 // A canonical, order-independent sort key for a record (date, amount, memo).
 function recKey(r) {
   return `${r.date}|${String(r.amount).padStart(16, "0")}|${(r.memo || "")
@@ -573,28 +587,141 @@ function classifyOwnerDraws(book, subBalances, exceptions) {
   void protectedTotal;
 }
 
+// A segregation movement is an OUTFLOW whose memo/kind references segregation /
+// transfer of the deposit. PURE: free-text classification only.
+function isSegregationMove(r) {
+  const t = `${r.memo || ""} ${r.kind || ""}`.toLowerCase();
+  return (
+    r.amount < 0 &&
+    (/segregat|transfer to (security|escrow|trust)|to security deposit account|escrow/.test(t) ||
+      (isSecurityDeposit(r) && /transfer|segregat|escrow/.test(t)))
+  );
+}
+
+// Tokenize a string into lowercase WHOLE word tokens (alphanumeric runs). The
+// boundary is /[^a-z0-9]+/ so punctuation, spaces, and unit markers separate
+// tokens. Used to make beneficiary-name matching WORD-BOUNDED instead of a raw
+// substring test. PURE.
+function nameTokens(s) {
+  return String(s == null ? "" : s)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t !== "");
+}
+
+// Build a name-matching index over the beneficiary keys ONCE per reconcile pass.
+// The index lets a transfer's memo be matched against beneficiary names in time
+// proportional to the MEMO length (not the number of beneficiaries D), closing
+// the O(D × T) algorithmic-complexity blowup the per-transfer O(D) scan caused on
+// the untrusted-upload endpoint. Structure: a Map from each key's FIRST token to
+// the list of { key, tokens } whose name begins with that token. A memo can then
+// be probed by walking its tokens once and, at each position, checking only the
+// keys that share that starting token. PURE.
+function buildDepositNameIndex(depositKeys) {
+  const byFirstToken = new Map();
+  for (const key of depositKeys) {
+    if (key === "") continue;
+    const tokens = nameTokens(key);
+    if (tokens.length === 0) continue; // a key with no word characters cannot be named in a memo
+    const first = tokens[0];
+    let bucket = byFirstToken.get(first);
+    if (!bucket) {
+      bucket = [];
+      byFirstToken.set(first, bucket);
+    }
+    bucket.push({ key, tokens });
+  }
+  return byFirstToken;
+}
+
+// Does `memoTokens` contain `keyTokens` as a CONTIGUOUS run starting at index i?
+function tokensMatchAt(memoTokens, i, keyTokens) {
+  if (i + keyTokens.length > memoTokens.length) return false;
+  for (let j = 0; j < keyTokens.length; j++) {
+    if (memoTokens[i + j] !== keyTokens[j]) return false;
+  }
+  return true;
+}
+
+// Attribute a segregation transfer to the BENEFICIARY whose deposit it covers.
+// Trust law segregates EACH tenant's deposit SEPARATELY, so a transfer's coverage
+// must be pinned to one beneficiary — it can NEVER spill its excess onto another
+// tenant's un-segregated deposit. Two signals, in priority order:
+//   1. The transfer's own `party` field, if it names a beneficiary that actually
+//      holds a security deposit (the structured, authoritative signal).
+//   2. Failing that, a beneficiary NAME appearing in the transfer's memo (so a
+//      "Transfer Jones security deposit to escrow" line still attributes even
+//      with no party column).
+// A transfer that matches NEITHER is GENERIC (returns "") — it provides only a
+// residual pool that the existing same-amount mirror tests rely on, and is the
+// fail-loud sentinel for an unattributable transfer (it can clear at most a
+// still-uncovered deposit, never silently absorb one tenant's shortage into
+// another's surplus).
+//
+// The memo fallback is WORD-BOUNDED: a key matches only as a contiguous run of
+// WHOLE memo tokens, never as an incidental substring. A raw `memo.includes(key)`
+// mis-pins ordinary surnames to standard segregation vocabulary — "escrow"
+// contains "crow", "transfer" contains "tran" — silently stranding generic
+// coverage on, or falsely clearing, an unrelated real tenant. Whole-token
+// matching makes "Transfer to escrow" attribute to NOBODY (no token equals a
+// beneficiary key), leaving it correctly in the generic residual pool.
+//
+// `index` is the prebuilt Map from buildDepositNameIndex (first token -> keys),
+// so attribution is O(memo tokens), not O(beneficiaries). Among all matching
+// keys the LONGEST (most tokens, then longest string) wins, deterministically, so
+// "jones (4b)" beats a bare "jones". PURE + deterministic.
+function attributeSegregation(transfer, depositKeys, index) {
+  const own = partyKey(transfer.party);
+  if (own !== "" && depositKeys.has(own)) return own;
+  const memoTokens = nameTokens(transfer.memo);
+  if (memoTokens.length === 0) return "";
+  let best = "";
+  let bestTokenLen = 0;
+  for (let i = 0; i < memoTokens.length; i++) {
+    const bucket = index.get(memoTokens[i]);
+    if (!bucket) continue;
+    for (const { key, tokens } of bucket) {
+      if (!tokensMatchAt(memoTokens, i, tokens)) continue;
+      // Longest match wins: more tokens first, then longer key string, so the
+      // tie-break is total and order-independent across the bucket.
+      if (
+        tokens.length > bestTokenLen ||
+        (tokens.length === bestTokenLen && key.length > best.length)
+      ) {
+        best = key;
+        bestTokenLen = tokens.length;
+      }
+    }
+  }
+  return best;
+}
+
 // Security-deposit segregation: every security-deposit RECEIPT recorded in the
 // book must have a corresponding movement OUT to a segregated account (or be
 // flagged as held separately). If a security-deposit inflow is sitting in the
 // operating/pooled book with no offsetting segregation transfer, that is a
 // compliance finding in many states.
+//
+// PER-BENEFICIARY MATCHING (T-40.1). Trust law requires EACH tenant's deposit be
+// held SEPARATELY, so coverage is matched PER BENEFICIARY — never from a single
+// pooled total. Concretely: a segregation transfer attributed to tenant X covers
+// ONLY X's deposits; its excess does NOT spill onto another tenant Y's
+// un-segregated deposit (the false-negative the pooled FIFO produced). This can
+// only ADD or RE-ATTRIBUTE a finding versus the old pooled sum — never remove a
+// real one — so it is STRICTLY non-looser.
 function classifySecurityDeposits(book, bank, exceptions) {
-  // Find security-deposit inflows in the book.
+  // Find security-deposit inflows in the book, grouped by beneficiary key.
   const secDeposits = [...book]
     .filter((r) => isSecurityDeposit(r) && r.amount > 0)
     .sort((x, y) => cmp(recKey(x), recKey(y)));
   if (secDeposits.length === 0) return;
 
-  // A segregation movement is an OUTFLOW whose memo references segregation /
-  // transfer of the deposit.
-  const isSegregationMove = (r) => {
-    const t = `${r.memo || ""} ${r.kind || ""}`.toLowerCase();
-    return (
-      r.amount < 0 &&
-      (/segregat|transfer to (security|escrow|trust)|to security deposit account|escrow/.test(t) ||
-        (isSecurityDeposit(r) && /transfer|segregat|escrow/.test(t)))
-    );
-  };
+  // The set of beneficiary keys that actually hold a security deposit — the only
+  // keys a transfer may attribute to. The name index is built ONCE here so the
+  // per-transfer memo fallback is O(memo length), not O(beneficiaries).
+  const depositKeys = new Set(secDeposits.map((r) => partyKey(r.party)));
+  const depositNameIndex = buildDepositNameIndex(depositKeys);
+
   // CRITICAL: count each segregation transfer from ONE authoritative source —
   // the BOOK — never from both book and bank. A single real segregation transfer
   // is recorded twice (once in QuickBooks, once on the bank statement) because it
@@ -604,18 +731,48 @@ function classifySecurityDeposits(book, bank, exceptions) {
   // finding this product exists to catch. The bank-side copy is the mirror of the
   // same movement (match.js pairs them); it adds no NEW segregation, so it must
   // NOT add coverage. `bank` is therefore intentionally unused for the sum.
-  const segregatedAmount = [...book]
-    .filter(isSegregationMove)
-    .reduce((a, r) => a + Math.abs(r.amount), 0);
   void bank;
 
-  let coveredRemaining = segregatedAmount;
+  // Bucket each book segregation move's coverage by the beneficiary it is
+  // attributed to. A GENERIC (unattributable) transfer (key "") goes into a
+  // residual pool applied ONLY to deposits no attributed transfer covered — it
+  // can clear at most a still-uncovered deposit, never silently net one tenant's
+  // shortage against another tenant's surplus.
+  const coveredByParty = new Map(); // key -> cents available
+  let genericPool = 0;
+  for (const r of [...book]
+    .filter(isSegregationMove)
+    .sort((x, y) => cmp(recKey(x), recKey(y)))) {
+    const key = attributeSegregation(r, depositKeys, depositNameIndex);
+    const cents = Math.abs(r.amount);
+    if (key === "") {
+      genericPool += cents;
+    } else {
+      coveredByParty.set(key, (coveredByParty.get(key) || 0) + cents);
+    }
+  }
+
+  // Apply each beneficiary's OWN coverage to that beneficiary's deposits first;
+  // any deposit still short then draws from the GENERIC residual pool (preserving
+  // the long-standing behavior for transfers that name no tenant). A deposit that
+  // remains short after both is flagged — attributed to the RIGHT beneficiary.
+  const stillShort = [];
   for (const r of secDeposits) {
-    if (coveredRemaining >= r.amount) {
-      coveredRemaining -= r.amount; // this deposit's segregation is accounted for
+    const key = partyKey(r.party);
+    let need = r.amount;
+    const own = coveredByParty.get(key) || 0;
+    const fromOwn = Math.min(own, need);
+    coveredByParty.set(key, own - fromOwn);
+    need -= fromOwn;
+    if (need > 0) stillShort.push({ rec: r, need });
+  }
+  // Generic pool covers whatever remains, in the same deterministic order.
+  for (const { rec: r, need } of stillShort) {
+    if (genericPool >= need) {
+      genericPool -= need;
       continue;
     }
-    // Not (fully) segregated.
+    genericPool = 0; // a partial generic draw is consumed; the rest is a finding
     pushException(exceptions, {
       type: EXCEPTION.SECURITY_DEPOSIT_SEGREGATION,
       amount: r.amount,
@@ -626,7 +783,6 @@ function classifySecurityDeposits(book, bank, exceptions) {
         "separately from operating trust funds.",
       records: [r],
     });
-    coveredRemaining = 0;
   }
 }
 

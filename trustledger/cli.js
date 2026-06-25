@@ -52,6 +52,7 @@ const path = require("path");
 
 const ingest = require("./ingest");
 const report = require("./report");
+const corpus = require("./corpus");
 const policy = require("./policy");
 const close = require("./close");
 const seal = require("./seal");
@@ -1278,6 +1279,172 @@ function cmdInspect(argv, io = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// `vh trust corpus [--json]` (T-44.2) — run the committed out-of-trust corpus
+// ---------------------------------------------------------------------------
+//
+// The one-command, read-only artifact a CPA or broker RUNS to confirm the gate
+// is correct WITHOUT reading test/. It loads the committed corpus, drives every
+// scenario through the REAL reconcile + buildPacket verdict path, and prints a
+// deterministic per-scenario table:
+//
+//   id | control | principle (one sentence) | expected | actual | OK/MISMATCH
+//
+// plus a one-line summary. The exit code is the CI gate: 0 only when EVERY
+// scenario's live verdict matches its recorded verdict; 3 on ANY mismatch (a
+// corpus-drift / engine-regression signal — an out-of-trust case that did NOT
+// FAIL, or a benign case that did NOT PASS). It writes NOTHING. --json carries
+// the structured rows + summary so a pipeline can gate on the data, not the
+// rendered text. The exit contract reuses the family's: 0 ok, 3 gate FAIL, 2
+// usage (an unknown flag), 1 IO (a corpus that cannot be loaded).
+
+const CORPUS_CAVEAT =
+  "This is a CORRECTNESS-CORPUS check, not an audit. It proves the reconciliation " +
+  "gate FAILs the canonical out-of-trust frauds and PASSes their benign twins, on " +
+  "committed fixtures, through the SAME engine path the real reconcile exit uses.";
+
+function parseCorpusArgs(argv) {
+  const opts = { json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--json") {
+      opts.json = true;
+    } else {
+      const e = new Error(
+        `unknown flag for \`vh trust corpus\`: ${a} (expected: [--json])`
+      );
+      e.usage = true;
+      throw e;
+    }
+  }
+  return opts;
+}
+
+// Pad a cell to a fixed width (left-justified) for a stable monospace table.
+function padCell(s, w) {
+  const str = String(s == null ? "" : s);
+  return str.length >= w ? str : str + " ".repeat(w - str.length);
+}
+
+// Render the human table. Columns are fixed-width so the table is deterministic
+// and scannable; the principle is the one-sentence trust-law annotation and is
+// printed in full UNDER each row (not truncated) so the CPA/broker reads the
+// actual rule, while the aligned columns stay readable.
+function renderCorpus(result) {
+  const lines = [];
+  lines.push("vh trust corpus — out-of-trust correctness corpus");
+  lines.push(CORPUS_CAVEAT);
+  lines.push("");
+
+  const W_ID = 38;
+  const W_CTRL = 28;
+  const W_EXP = 8;
+  const W_ACT = 8;
+  const header =
+    padCell("SCENARIO", W_ID) +
+    "  " +
+    padCell("CONTROL", W_CTRL) +
+    "  " +
+    padCell("EXPECT", W_EXP) +
+    "  " +
+    padCell("ACTUAL", W_ACT) +
+    "  RESULT";
+  lines.push(header);
+  lines.push("-".repeat(header.length));
+
+  for (const r of result.rows) {
+    lines.push(
+      padCell(r.id, W_ID) +
+        "  " +
+        padCell(r.control, W_CTRL) +
+        "  " +
+        padCell(r.expected, W_EXP) +
+        "  " +
+        padCell(r.actual, W_ACT) +
+        "  " +
+        (r.match ? "OK" : "MISMATCH")
+    );
+    // The trust-law principle (one sentence), indented under its row.
+    lines.push("    principle: " + r.principle);
+  }
+
+  lines.push("");
+  lines.push(corpusSummaryLine(result));
+  return lines.join("\n") + "\n";
+}
+
+// The one-line, machine-greppable summary. Leads with the verdict word
+// (CORPUS OK / CORPUS DRIFT) so a human and a `grep` agree on the gate state.
+function corpusSummaryLine(result) {
+  if (result.ok) {
+    return `CORPUS OK: ${result.matched}/${result.total} scenarios match their recorded verdict.`;
+  }
+  return (
+    `CORPUS DRIFT: ${result.mismatched}/${result.total} scenario(s) did NOT match ` +
+    `the recorded verdict (a regression in the gate or the corpus) — ` +
+    `${result.matched}/${result.total} matched.`
+  );
+}
+
+function runCorpusCmd(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  // Load + run the whole corpus through the REAL engine path. A corpus that
+  // cannot be loaded (missing/malformed fixtures) is an IO error, never a crash.
+  // `opts.corpusDir` overrides the committed root (used by tests to drive a
+  // deliberately-mislabeled copy and prove the gate is not a rubber stamp); the
+  // shipped command always runs the committed corpus.
+  let result;
+  try {
+    result =
+      opts.corpusDir != null
+        ? corpus.runCorpus(opts.corpusDir)
+        : corpus.runCorpus();
+  } catch (e) {
+    writeErr(`error: cannot run trust corpus: ${e.message}\n`);
+    return { code: EXIT.IO };
+  }
+
+  // Exit code IS the gate: 0 only when every scenario matched; 3 on any drift.
+  const code = result.ok ? EXIT.PASS : EXIT.FAIL;
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          rows: result.rows,
+          total: result.total,
+          matched: result.matched,
+          mismatched: result.mismatched,
+          ok: result.ok,
+          summary: corpusSummaryLine(result),
+          caveat: CORPUS_CAVEAT,
+          code,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(renderCorpus(result));
+  }
+
+  return { code, result };
+}
+
+function cmdCorpus(argv, io = {}) {
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseCorpusArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+  return runCorpusCmd(opts, io).code;
+}
+
+// ---------------------------------------------------------------------------
 // `vh trust verify-seal <sealfile>` (T-26.2) — read-only, OFFLINE seal verify
 // ---------------------------------------------------------------------------
 //
@@ -2262,6 +2429,9 @@ function cmdTrust(argv, io = {}) {
   if (sub === "inspect") {
     return cmdInspect(rest, io);
   }
+  if (sub === "corpus") {
+    return cmdCorpus(rest, io);
+  }
   if (sub === "verify-seal") {
     return cmdVerifySeal(rest, io);
   }
@@ -2277,7 +2447,7 @@ function cmdTrust(argv, io = {}) {
   }
   writeErr(
     `error: unknown trust subcommand: ${sub === undefined ? "(none)" : sub} ` +
-      `(expected: reconcile, inspect, verify-seal, serve, license)\n` +
+      `(expected: reconcile, inspect, corpus, verify-seal, serve, license)\n` +
       trustHelp()
   );
   return EXIT.USAGE;
@@ -2306,6 +2476,13 @@ function trustHelp() {
     "      A valid license + matching --vendor unlocks reconcile's paid surfaces. `vh trust license -h`.",
     "  inspect <file> --as <bank|ledger|rentroll>",
     "      read-only validator/preview of ONE input file (writes nothing).",
+    "  corpus [--json]",
+    "      run the committed out-of-trust corpus and print a per-scenario table",
+    "      (id, control, trust-law principle, expected vs ACTUAL verdict, OK/MISMATCH)",
+    "      + a one-line summary. Read-only, writes nothing. Exit 0 when every scenario",
+    "      matches its recorded verdict, 3 on ANY mismatch (a gate regression / corpus",
+    "      drift). This is the one-command artifact to confirm the gate FAILs the exact",
+    "      frauds it claims to catch, without reading test/.",
     "  serve [--port <n>] [--host <h>]",
     "      launch the LOCAL web front-door (default http://127.0.0.1:4173/) so a broker can drop",
     "      the three files in a browser and watch the balances tie out. Files are processed IN",
@@ -2333,6 +2510,12 @@ module.exports = {
   cmdInspect,
   renderInspect,
   inspectHint,
+  parseCorpusArgs,
+  runCorpusCmd,
+  cmdCorpus,
+  renderCorpus,
+  corpusSummaryLine,
+  CORPUS_CAVEAT,
   parseVerifySealArgs,
   runVerifySeal,
   cmdVerifySeal,

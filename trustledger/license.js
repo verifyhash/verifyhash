@@ -353,6 +353,186 @@ function fulfillOrder(order, catalog) {
   };
 }
 
+// ===========================================================================
+// THE EVENT -> ORDER NORMALIZER + IDEMPOTENCY KEY (T-38.2).
+//
+// fulfillOrder (above) consumes an ORDER already shaped to OUR vocabulary:
+// `{ plan, customer, paidThrough, issuedAt }` with OUR planId and CANONICAL ISO
+// instants. But a billing provider's webhook does NOT fire with that shape. A real
+// Stripe `invoice.paid` / `checkout.session.completed` (or Paddle) event carries:
+//   * the PROVIDER's own price/product id (e.g. `price_...`) — NOT our planId;
+//   * a `customer` reference;
+//   * a period-end as a UNIX EPOCH in SECONDS (`current_period_end`) — NOT the
+//     canonical ISO `fulfillOrder` strictly requires;
+//   * and it is delivered AT-LEAST-ONCE, so the SAME event can arrive twice.
+//
+// normalizeEvent is the PURE seam that closes that gap: it maps a NORMALIZED EVENT
+// ENVELOPE (a provider event already flattened to a single canonical shape by the
+// integrator's thin per-provider extractor) onto the EXACT order fulfillOrder
+// consumes. It:
+//   1. reads `rawEvent.provider` + `rawEvent.priceId` and RESOLVES OUR planId via
+//      the supplied, catalog-validated price BINDING (plans.resolvePlanId) — an
+//      UNMAPPED (provider, priceId) is a NAMED reject, never a silent mis-grant of
+//      the wrong PLAN (the exact class T-38.1 closed one level up);
+//   2. converts the period-end UNIX EPOCH SECONDS -> the canonical ISO `paidThrough`
+//      grammar fulfillOrder requires (a non-integer / negative / out-of-range epoch
+//      is a NAMED reject, never coerced/rounded);
+//   3. derives `customer` (a missing/blank customer is a NAMED reject — a license
+//      with no holder is never silently minted);
+//   4. sets `issuedAt` from `rawEvent.issuedAt` or an explicit `opts.issuedAt` —
+//      with NO hidden clock read, so the module stays PURE/testable (the caller, who
+//      DOES know the wall clock, supplies it; the loop never reads the system clock).
+//
+// PURE + DETERMINISTIC. No filesystem, no clock, no network, no key. The SAME
+// rawEvent + the SAME binding (+ opts) yields a BYTE-IDENTICAL order EVERY time, so
+// `fulfillOrder(normalizeEvent(ev, binding), catalog)` is reproducible end-to-end.
+//
+// IDEMPOTENCY. orderKey(order) returns the DETERMINISTIC `LIC-<issuedAt>-<plan>`
+// seed — the SAME value fulfillOrder defaults the licenseId to. A handler that has
+// already minted (and stored) the license under that key short-circuits a RETRIED
+// delivery of the same event, so a retry re-mints the BYTE-IDENTICAL license, never
+// a second/different one. (Authenticating the inbound webhook — verifying the
+// provider's signing secret — is a HUMAN step; normalizeEvent only maps an
+// ALREADY-AUTHENTICATED event's fields.)
+//
+// HONEST POSTURE. The normalized envelope is OPERATOR/integrator-supplied: this
+// function does NOT call a provider API and does NOT trust an unauthenticated event
+// on its own — it is the pure mapping the handler runs AFTER it authenticates.
+// ===========================================================================
+
+// The period-end epoch is in SECONDS (Stripe/Paddle convention). Guard the integer
+// range so the *1000 ms math stays exact and inside JS's safe-integer window — a
+// fractional, negative, or absurd epoch is a NAMED reject, never silently coerced.
+const _MAX_EPOCH_SECONDS = 8640000000000; // == Date max (ms) / 1000; beyond this toISOString throws.
+
+// Convert a UNIX epoch in SECONDS -> the canonical ISO instant fulfillOrder's
+// grammar requires. STRICT: a non-number/non-integer/negative/out-of-range epoch
+// throws a NAMED LicenseError naming the field. Returns the canonical ISO string.
+function _epochSecondsToCanonicalISO(field, epochSeconds) {
+  if (
+    typeof epochSeconds !== "number" ||
+    !Number.isInteger(epochSeconds) ||
+    epochSeconds < 0 ||
+    epochSeconds > _MAX_EPOCH_SECONDS
+  ) {
+    throw new LicenseError(
+      `event ${field} must be a non-negative INTEGER UNIX epoch in SECONDS ` +
+        `(0..${_MAX_EPOCH_SECONDS}), got: ${String(epochSeconds)}`
+    );
+  }
+  // Exact: epochSeconds is a safe integer in-range, so *1000 is exact and
+  // toISOString re-canonicalizes to "YYYY-MM-DDTHH:MM:SS.mmmZ".
+  return new Date(epochSeconds * 1000).toISOString();
+}
+
+/**
+ * normalizeEvent(rawEvent, binding, opts?) — PURE, DETERMINISTIC map of a NORMALIZED
+ * provider event envelope onto the EXACT `{ plan, customer, paidThrough, issuedAt }`
+ * order fulfillOrder consumes.
+ *
+ * @param {object} rawEvent  the normalized event envelope
+ *   @param {string} rawEvent.provider    the billing provider id (e.g. "stripe") — bound side of the key
+ *   @param {string} [rawEvent.type]      the provider event type (e.g. "invoice.paid"); carried through, advisory
+ *   @param {string} rawEvent.priceId     the PROVIDER's price/product id — resolved to OUR planId via `binding`
+ *   @param {string} rawEvent.customer    who the license is for (non-empty)
+ *   @param {number} rawEvent.periodEnd   the period end as a UNIX epoch in SECONDS -> canonical ISO `paidThrough`
+ *   @param {string} [rawEvent.issuedAt]  canonical ISO instant the license is issued at (or pass `opts.issuedAt`)
+ * @param {object} binding  a VALIDATED price binding (plans.validatePriceBinding output)
+ * @param {object} [opts]
+ *   @param {string} [opts.issuedAt]      explicit canonical ISO issuedAt; WINS over rawEvent.issuedAt
+ * @returns {{ plan, customer, paidThrough, issuedAt }} the EXACT order fulfillOrder consumes.
+ */
+function normalizeEvent(rawEvent, binding, opts) {
+  if (rawEvent == null || typeof rawEvent !== "object" || Array.isArray(rawEvent)) {
+    throw new LicenseError(
+      "normalizeEvent requires a normalized event envelope " +
+        "{ provider, priceId, customer, periodEnd, issuedAt? }"
+    );
+  }
+  if (opts != null && (typeof opts !== "object" || Array.isArray(opts))) {
+    throw new LicenseError("normalizeEvent opts, when given, must be an object { issuedAt? }");
+  }
+
+  // ---- provider + priceId -> OUR planId, via the catalog-validated binding ----
+  // We resolve THROUGH plans.resolvePlanId (the single authority): an unmapped
+  // (provider, priceId) is its NAMED reject. `plans` is required LAZILY inside the
+  // function (never at module top-level) because plans.js requires license.js — a
+  // top-level back-edge would be a cycle. By call time both modules are fully
+  // initialized, so the lazy require is safe and the dependency graph stays acyclic.
+  if (typeof rawEvent.provider !== "string" || rawEvent.provider.trim() === "") {
+    throw new LicenseError("event `provider` must be a non-empty string");
+  }
+  if (typeof rawEvent.priceId !== "string" || rawEvent.priceId.trim() === "") {
+    throw new LicenseError("event `priceId` must be a non-empty string");
+  }
+  // eslint-disable-next-line global-require
+  const plans = require("./plans");
+  let planId;
+  try {
+    planId = plans.resolvePlanId(binding, rawEvent.provider, rawEvent.priceId);
+  } catch (e) {
+    // Surface the binding's NAMED reason verbatim, but as a LicenseError so a
+    // fulfillment handler catches ONE error type across the normalize+fulfill seam.
+    throw new LicenseError(
+      `cannot normalize event: ${e && e.message ? e.message : String(e)}`
+    );
+  }
+
+  // ---- customer (a license with no holder is never silently minted) -----------
+  if (typeof rawEvent.customer !== "string" || rawEvent.customer.length === 0) {
+    throw new LicenseError("event `customer` must be a non-empty string");
+  }
+
+  // ---- period-end UNIX epoch SECONDS -> canonical ISO paidThrough -------------
+  if (!Object.prototype.hasOwnProperty.call(rawEvent, "periodEnd")) {
+    throw new LicenseError("event is missing required field: periodEnd (UNIX epoch seconds)");
+  }
+  const paidThrough = _epochSecondsToCanonicalISO("periodEnd", rawEvent.periodEnd);
+
+  // ---- issuedAt: explicit opts.issuedAt WINS, else rawEvent.issuedAt. NO clock.
+  // We require ONE of them be supplied so the module never has to read the system
+  // clock — it stays pure/testable. The chosen value is held to the canonical grammar so a
+  // malformed instant is a NAMED reject here (rather than a buried fulfillOrder throw).
+  const issuedAt =
+    opts != null && opts.issuedAt != null ? opts.issuedAt : rawEvent.issuedAt;
+  if (issuedAt == null) {
+    throw new LicenseError(
+      "event `issuedAt` is required (supply rawEvent.issuedAt or opts.issuedAt); " +
+        "normalizeEvent never reads the system clock"
+    );
+  }
+  _requireCanonicalInstant("issuedAt", issuedAt);
+
+  // The EXACT order shape fulfillOrder consumes — provider event type is advisory
+  // and intentionally NOT carried into the order (the order is provider-agnostic).
+  return { plan: planId, customer: rawEvent.customer, paidThrough, issuedAt };
+}
+
+/**
+ * orderKey(order) — the DETERMINISTIC `LIC-<issuedAt>-<plan>` idempotency seed.
+ *
+ * This is the SAME value fulfillOrder defaults the licenseId to, so an idempotent
+ * webhook handler dedupes on it: if a license already exists under this key, a
+ * RETRIED delivery of the same event resolves to the SAME order -> the SAME key ->
+ * the handler returns the already-minted, BYTE-IDENTICAL license rather than minting
+ * a second/different one. PURE — derives only from the order's own fields.
+ *
+ * @param {{ plan: string, issuedAt: string }} order  an order (e.g. normalizeEvent output)
+ * @returns {string} `LIC-<issuedAt>-<plan>`
+ */
+function orderKey(order) {
+  if (order == null || typeof order !== "object" || Array.isArray(order)) {
+    throw new LicenseError("orderKey requires an order object { plan, issuedAt }");
+  }
+  if (typeof order.plan !== "string" || order.plan.trim() === "") {
+    throw new LicenseError("order `plan` must be a non-empty planId string");
+  }
+  // issuedAt is held to the canonical grammar so the key is stable + unambiguous
+  // (the same instant always yields the same key).
+  _requireCanonicalInstant("issuedAt", order.issuedAt);
+  return `LIC-${order.issuedAt}-${order.plan}`;
+}
+
 module.exports = {
   LICENSE_KIND,
   LICENSE_SCHEMA_VERSION,
@@ -377,4 +557,7 @@ module.exports = {
   hasEntitlement,
   // order -> license-params mapping (T-37.2)
   fulfillOrder,
+  // event -> order normalizer + idempotency key (T-38.2)
+  normalizeEvent,
+  orderKey,
 };

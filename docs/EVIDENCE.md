@@ -28,6 +28,7 @@ across products.
 ```
 vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign --key-env <VAR>|--key-file <p>] [--json]
 vh evidence verify <p> [--dir <d>] [--json]
+vh evidence diff <p1> <p2> [--json]
 ```
 
 - `seal` walks `<dir>` (reusing the SAME path-bound enumeration as `vh hash <dir>` / `vh dataset build`),
@@ -39,6 +40,13 @@ vh evidence verify <p> [--dir <d>] [--json]
   else the packet file's own directory (the packet stores relPaths relative to the sealed `<dir>`, so the
   portable hand-off ships the files next to the packet). Exit: **0** OK / **3** REJECTED / **2** usage /
   **1** IO — the SAME offline-recompute posture as `vh verify-seal` / `vh verify-proof`.
+- `diff` is the **recipient-side** companion to `verify`: it compares TWO already-sealed packets and reports
+  what **ADDED / REMOVED / CHANGED** between them, OFFLINE, with **no directory and no key**. It is
+  **read-only, FREE, key-free** — a diff produces no new sealed/signed artifact, so there is nothing to gate.
+  Exit: **0** IDENTICAL / **3** DIFFERENT / **2** usage / **1** IO — the SAME exit contract as `vh dataset diff`.
+  A `diff` compares what each packet **CLAIMS**; it does **NOT** re-derive content from bytes (to confirm a
+  packet still matches a real directory, run `vh evidence verify <p> --dir <d>`). It changes no `seal`/`verify`
+  behavior.
 
 ## Free vs paid
 
@@ -130,6 +138,45 @@ $ vh evidence seal ./bundle --out ./bundle/b.vhevidence.json \
 # The signed packet still verifies offline as a tamper-evident seal:
 $ vh evidence verify ./bundle/b.vhevidence.json     # exit 0; reports signed:true
 ```
+
+## What changed between two hand-offs? `vh evidence diff`
+
+`diff` is the **recipient-side** companion to `verify`. You were handed the **v1** packet of a folder, and
+later the **v2** packet of the next hand-off. To see exactly what moved between them, run the diff over the
+two **portable artifacts** — no directory, no key, no network:
+
+```
+$ vh evidence diff ./v1.vhevidence.json ./v2.vhevidence.json
+TRUST: this compares what each evidence packet CLAIMS — it does NOT re-derive content (there is no directory). …
+       (run `vh evidence verify <packet> --dir <d>` against the live tree to re-derive a root from bytes).
+…
+files: DIFFERENT
+  ADDED    new.txt …
+  REMOVED  old.txt …
+  CHANGED  report.pdf  old: 0x… -> new: 0x…
++1 / -1 / ~1 / 2 unchanged                                                    # exit 3 (DIFFERENT)
+```
+
+- **What it reports.** `vh evidence diff v1 v2` reports **ADDED / REMOVED / CHANGED** purely from the two
+  sealed packets, OFFLINE, with **no directory and no key**. The change set is directional: `v1` is the
+  baseline, `v2` is the comparison. Exit **0** when the two packets are IDENTICAL, **3** when DIFFERENT (the
+  SAME exit contract as `vh dataset diff`), **2** usage, **1** IO.
+- **A rename shows as REMOVED + ADDED.** The relPath is bound into each leaf, so moving `old.txt` to
+  `new.txt` (even with byte-identical content) surfaces as **REMOVED(old) + ADDED(new)**, never a single
+  CHANGED.
+- **It compares CLAIMS, NOT content.** A diff compares what each packet **CLAIMS** — it does **NOT** re-derive
+  content from bytes (there is no directory to read). To confirm a packet still matches a **real directory**
+  byte-for-byte, run `vh evidence verify <p> --dir <d>` — that is the bytes-level check. `diff` changes no
+  `seal`/`verify` behavior; it is a purely additive read.
+- **`diff` is FREE / key-free.** It produces no new sealed/signed artifact, so there is **nothing to gate**:
+  no `--license`, no `--vendor`, no entitlement check. A recipient can run it on any two packets they hold —
+  one more fully-open surface in the free-tier funnel (P-7) that a buyer can evaluate before paying for the
+  signed/unlimited paid tiers.
+
+> **Trust boundary (unchanged):** the seal proves **TAMPER-EVIDENCE + OFFLINE-RECOMPUTE**, **NOT a trusted
+> timestamp**. "Sealed at time T" still rides the human-owned signing/timestamp trust-root (`needs-human`,
+> **P-3** in [`STRATEGY.md`](../STRATEGY.md)). A diff inherits this boundary: it tells you what the two
+> packets CLAIM differs, it does not prove WHEN either was sealed.
 
 ## How it reuses the shared cores
 

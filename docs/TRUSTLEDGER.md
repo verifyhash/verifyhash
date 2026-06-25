@@ -158,6 +158,94 @@ You can wire this directly into CI / a monthly automation: a non-zero exit block
 
 ---
 
+## The correctness corpus: `vh trust corpus` — run this to confirm the gate is correct
+
+The single defensible, monetizable claim TrustLedger makes is its **correctness**: *a FAIL means your
+trust account is genuinely out of trust, and a PASS means the canonical frauds were checked and not
+found.* That claim lives in `test/`, which the two humans who gate the money — the **CPA who signs the
+disclaimer** and the **broker deciding to pay** — will never read. The **corpus** makes that claim
+something they can confirm in **one read-only command**, instead of trusting a paragraph:
+
+```
+vh trust corpus [--json]
+```
+
+`corpus` loads a **committed library of out-of-trust scenarios** (`trustledger/fixtures/corpus/`), drives
+**every** scenario through the **REAL** reconcile + verdict path — the **same** `report.buildPacket`
+verdict the live `reconcile` exit code uses (`trustledger/corpus.js` is a faithful caller: no second
+engine, no crypto, no severity rule of its own) — and prints a **deterministic** per-scenario table:
+
+```
+SCENARIO                                CONTROL                       EXPECT  ACTUAL  RESULT
+bank-book-mismatch--out-of-trust        bank_book_mismatch            FAIL    FAIL    OK
+    principle: After outstanding/in-transit items, the adjusted bank balance must equal the book balance.
+…
+CORPUS OK: 12/12 scenarios match their recorded verdict.
+```
+
+Each row names the scenario `id`, the **control** it exercises, the **expected** verdict the fixture
+records, the **actual** verdict the live engine produced, and `OK`/`MISMATCH`; the one-sentence **trust-law
+principle** prints under the row. The **exit code IS the gate**: `0` only when **every** scenario's live
+verdict matches its recorded verdict (`CORPUS OK`); `3` on **any** mismatch (`CORPUS DRIFT` — a regression
+in the gate or in the corpus); `2` on an unknown flag; `1` if the corpus cannot be loaded. The command
+**writes nothing**, and `--json` carries the structured rows + summary so a pipeline can gate on the data.
+
+### The scenarios — each control, in matched out-of-trust / benign-twin pairs
+
+The corpus pairs **every** out-of-trust control with a **benign near-twin** that differs by the **one**
+variable under test, so the corpus proves the gate FAILs the fraud **and** does not over-FAIL its
+innocent look-alike. The committed pairs, by control:
+
+| Control | Out-of-trust scenario (→ FAIL) | Benign twin (→ PASS) | The trust-law principle |
+| --- | --- | --- | --- |
+| `security_deposit_segregation` | a tenant's security-deposit receipt sits in the pooled book with **no** offsetting transfer to a segregated account | the **same** receipt, but a matching transfer moves the deposit out to a segregated escrow | Each tenant's security deposit must be held **separately** from operating trust funds; an un-segregated deposit is commingled trust money — out of trust. |
+| `subledger_out_of_balance` | the book records $1,500 of rent but the per-beneficiary sub-ledger accounts for only $1,000 — a $500 gap belonging to no one's ledger | the sub-ledger records the **full** $1,500 against the beneficiary | The pooled account holds one number that must equal the **sum** of every per-beneficiary sub-ledger; money attributed to no beneficiary is out of trust. |
+| `negative_tenant_ledger` | the pooled sub-ledger SUM ties to the book exactly, but one tenant is credited $1,500 and another **−$500** — one beneficiary robbed to cover another | each tenant is credited their **own** $500; every individual ledger is non-negative and the SUM still ties | A negative **individual** ledger means the broker holds *less than zero* in trust for that person — flagged **regardless of whether the pooled SUM ties**. |
+| `owner_overdraw` | an owner contributes $1,000 of own capital but draws $1,500 — paying itself $500 of tenants' pooled trust money; the pooled SUM still ties (a silent pass before this check) | the owner draws exactly $1,000 — entirely from its **own** capital, touching no tenant money | An owner may be disbursed **only** from that owner's own contributed capital; the over-capital excess is a conversion of trust funds — out of trust **even when the SUM ties**. |
+| `bank_book_mismatch` | the activity lines match but the bank opened **$500 short** of the book: the books say $2,000, the bank holds $1,500 — a genuine cash shortage | the bank opened at the **same** balance as the book; the adjusted bank equals the book exactly | After outstanding/in-transit items, the **adjusted bank** balance must equal the **book**; a bank-SHORT gap is missing cash — the textbook out-of-trust case. |
+| `continuity_break` | the prior period closed at $2,500 / $2,500 but this period opens at **$0 / $0** — a skipped/edited/re-keyed period breaks the chain of custody | this period opens **exactly** where the prior closed ($2,500 / $2,500); the roll-forward is clean | Each period's **opening** must equal the prior period's signed **ending**, to the penny; a non-zero roll-forward gap breaks the chain of custody. |
+
+Three of these — `negative_tenant_ledger`, `owner_overdraw`, and the pooled segregation netting — are the
+**silent-false-pass** cases the corpus exists to make legible: the three-way **pooled SUM ties out
+perfectly**, so a naïve total would PASS, yet the account is genuinely out of trust for an individual
+beneficiary. The corpus is the one-command proof that TrustLedger FAILs each of these **regardless of the
+pooled tie-out** — the exact claim a CPA most needs to confirm and a broker most needs to believe.
+
+### What a green corpus DOES and DOES NOT mean
+
+> **`CORPUS OK` confirms the GATE's behaviour — it does NOT certify a jurisdiction or constitute legal
+> advice.** A green corpus run proves **one** thing, precisely: on the committed fixtures, through the
+> **same** engine path the real `reconcile` exit uses, the gate **FAILs** each canonical out-of-trust
+> fraud and **PASSes** each benign twin — so the correctness claim is checkable in one command rather than
+> on faith. It does **NOT** certify that any **state's** trust-fund rules are satisfied, does **NOT**
+> certify a jurisdiction's severity mapping (that is the still-DRAFT per-state policy a CPA must sign —
+> see **The per-state policy layer**), does **NOT** audit a real broker's books, and does **NOT**
+> constitute legal, accounting, or audit advice. It confirms the **tool's gate is correct**, not that any
+> particular **account is compliant**. The custodian/CPA posture below is unchanged: TrustLedger **aids**
+> reconciliation, the broker remains the **responsible legal trust-account custodian**, a **PASS does not
+> certify legal compliance**, and a qualified **CPA** must still review the packet. Running the corpus
+> replaces "trust our disclaimer" with "run one command and watch the gate catch the exact frauds it
+> claims to" — it does not replace the human review it makes faster.
+
+Because the corpus only ever asserts the **existing** verdict, it adds **no** new behaviour and **no** new
+human gate: if a corpus case ever fails to behave as recorded, that is a **bug to fix in the engine**, never
+a corpus to weaken. It rides the **same** DRAFT / NOT-LEGAL-ADVICE posture the rest of this document carries,
+**verbatim**:
+
+> **DRAFT / NOT LEGAL ADVICE.** The policies that SHIP with TrustLedger
+> (`trustledger/fixtures/policy/*.json`) are **DRAFT skeletons**, not legal advice and **not a claim of
+> regulatory compliance**. The baseline reproduces the built-in defaults verbatim; the example state
+> file carries a **PLACEHOLDER** citation. A qualified **CPA and/or counsel must review and SIGN** the
+> per-state severity mapping and its statute citations for the actual jurisdiction before the gate is
+> relied on. Selecting a policy does **not** make a packet legal advice and does **not** discharge the
+> broker's duty as the responsible legal custodian of trust funds. (STRATEGY.md › P-5 #1/#2.)
+
+The corpus is a **DRAFT** legibility/correctness aid layered over the **same DRAFT** severity policy a CPA
+signs — there is **no** new `needs-human` item beyond the P-5 design-partner / CPA sign-off the rest of this
+document already tracks.
+
+---
+
 ## FAIL triage: what to fix first (the pilot's first-contact legibility)
 
 A bare FAIL is a **count, not a cause**. The verdict line
@@ -1626,12 +1714,18 @@ TrustLedger BUILDS and locally TESTS the reconciliation engine. The steps that t
 into a sellable, compliant product are **human-owned** and tracked in STRATEGY.md (Proposals › **P-5**):
 
 - **CPA / counsel sign-off** on the disclaimer wording and on the explicit statement that a PASS does
-  not imply legal compliance (P-5 #1). The deliverable that review attaches to is now a **SEALED,
-  independently-verifiable artifact**: `--seal` + `verify-seal` (see **Sealing the packet** above) make
-  the audit packet tamper-evident, so the CPA/counsel reviews a packet an examiner can confirm
-  byte-for-byte rather than an editable printout. The human trust-root for "**sealed on date T**"
-  (a signing key and/or trusted timestamp) stays P-3 and is **needs-human** — the seal proves
-  tamper-evidence only, never a timestamp or a legal opinion.
+  not imply legal compliance (P-5 #1). That review now starts from **"run this to confirm the gate is
+  correct"** instead of **"trust our disclaimer"**: have the reviewer run **`vh trust corpus`** (see
+  **The correctness corpus** above) and watch the gate **FAIL** each canonical out-of-trust fraud and
+  **PASS** its benign twin, through the same engine path the real `reconcile` exit uses — a faster,
+  higher-confidence human action than reading prose. The corpus **confirms the gate's behaviour**; it does
+  **not** certify a jurisdiction or constitute legal advice, so the CPA/counsel sign-off it informs is
+  unchanged. The deliverable that review attaches to is also a **SEALED, independently-verifiable
+  artifact**: `--seal` + `verify-seal` (see **Sealing the packet** above) make the audit packet
+  tamper-evident, so the CPA/counsel reviews a packet an examiner can confirm byte-for-byte rather than an
+  editable printout. The human trust-root for "**sealed on date T**" (a signing key and/or trusted
+  timestamp) stays P-3 and is **needs-human** — the seal proves tamper-evidence only, never a timestamp or
+  a legal opinion.
 - **Fill in + have counsel sign the per-state policy TABLE.** The engine **already consumes** a
   reviewed policy as data (see **The per-state policy layer** above) — the human task is now narrow:
   fill in `trustledger/fixtures/policy/<state>.json` in the shipped, validated format (the

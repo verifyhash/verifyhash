@@ -147,6 +147,27 @@ checks it themselves, without trusting us**.
   changed source. (The pilot's reconciliation seal is **unsigned**, so you do not pin `--vendor` for
   it — an unsigned artifact cannot be signer-pinned.)
 
+- **And confirm the GATE itself is correct — run this in place of trusting our disclaimer.** A seal proves
+  the packet is byte-for-byte unaltered; it does **not** tell you whether a **FAIL really means out of
+  trust**. To confirm the reconciliation **gate** is correct — that it FAILs the canonical trust-account
+  frauds and PASSes their benign twins — run the committed **correctness corpus**, one read-only command,
+  no setup:
+
+  ```bash
+  vh trust corpus            # exit 0 = CORPUS OK (every scenario matches); exit 3 = CORPUS DRIFT
+  ```
+
+  It drives a committed library of out-of-trust scenarios (an un-segregated security deposit, a
+  sub-ledger out of balance, a negative individual ledger, an owner over-draw, a bank-short mismatch, a
+  broken roll-forward) **and** their benign near-twins through the **same** engine path the real
+  `reconcile` exit uses, and prints a per-scenario table (control, expected vs **actual** verdict,
+  `OK`/`MISMATCH`) plus the trust-law **principle** under each row. This is what a CPA or broker **runs**
+  to confirm the gate is correct **in place of trusting our disclaimer** (see
+  [`TRUSTLEDGER.md`](TRUSTLEDGER.md) › *The correctness corpus*). It **confirms the gate's behaviour** —
+  it does **NOT** certify a jurisdiction or constitute legal advice; for TrustLedger a PASS does **not**
+  imply legal compliance, the broker remains the responsible legal custodian, and that meaning stays
+  CPA/counsel-reviewed under **P-5** (§5).
+
 ### 3c. The licence (`*.vhlicense.json`)
 
 - **What it proves.** It is the **access credential** that unlocks the paid surface (`evidence

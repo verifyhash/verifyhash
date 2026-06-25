@@ -76,6 +76,31 @@ unlocks it for you so you can watch the whole journey on your real data.)
 > Operator quick reference (knobs, file map, how it can't rot):
 > [`pilot/README.md`](../pilot/README.md).
 
+### Evaluate it with ZERO install first (the 10-second no-clone path)
+
+Before you check out the repo at all, you can drive the **whole** evidence journey — seal → hand-off →
+verify — from **two self-contained files**, with **no clone, no `npm install`, no account, no key** on
+either side. Save [`../verifier/dist/seal-vh-standalone.js`](../verifier/dist/seal-vh-standalone.js) and
+[`../verifier/dist/verify-vh-standalone.js`](../verifier/dist/verify-vh-standalone.js) (each depends on
+nothing but Node core), then:
+
+```bash
+# 1. Seal up to 25 of YOUR OWN files into one tamper-evident packet:
+node seal-vh-standalone.js /path/to/your/folder -o packet.vhevidence.json    # exit 0 = sealed
+
+# 2. Hand packet.vhevidence.json + the folder to a counterparty; they run the FREE verifier:
+node verify-vh-standalone.js packet.vhevidence.json --dir /path/to/your/folder   # 0 = verifies, 3 = REJECTED
+```
+
+That is the same organic loop a real counterparty would run, on your own data, before any sales call. The
+free seal proves **tamper-evidence + offline-recompute** — and **NOT** a trusted "sealed at T" (that still
+requires **P-3** — see §5). The free seal is **UNSIGNED** and **capped at 25 files**; **SIGNING** (so a
+counterparty can pin you with `--vendor`) and **UNLIMITED** sealing are the PAID upgrade —
+`vh evidence seal --sign` / the `evidence_unlimited` entitlement. Full round-trip in
+[`../verifier/README.md`](../verifier/README.md) §0a and
+[`INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md) §0a. The `node pilot/run-pilot.js` kit above
+is the deeper, license-gated evaluation; this zero-install loop is the fastest first taste.
+
 ---
 
 ## 3. What each artifact proves — and where you independently verify it

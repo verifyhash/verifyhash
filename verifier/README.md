@@ -44,6 +44,44 @@ requires **P-3** — see §4). The convenience is in the *install*, never in the
 
 ---
 
+## 0a. Produce your OWN seal in 10 seconds, then hand it off (the free self-service round-trip)
+
+§0 is the FREE **verify** side. There is a matching FREE **produce** side, so you can run the *whole*
+loop yourself — seal your own files, hand the result to a counterparty, watch them verify it — with **no
+clone, no `npm install`, no account, no key**, on either side. Save ONE file —
+[`dist/seal-vh-standalone.js`](dist/seal-vh-standalone.js) — and run it with `node`. Like the verifier,
+it depends on **nothing but Node core** (the keccak provider is the same vendored pure-JS one):
+
+```bash
+# 1. Save the single file dist/seal-vh-standalone.js (optionally check dist/seal-vh-standalone.js.sha256
+#    the same way as the verifier in §0).
+
+# 2. Seal up to 25 of YOUR OWN files into one tamper-evident packet — no install, no key, no account:
+node seal-vh-standalone.js <your-folder> -o packet.vhevidence.json      # exit 0 = sealed
+
+# 3. Hand packet.vhevidence.json + your folder to a counterparty. They run the FREE verifier from §0:
+node verify-vh-standalone.js packet.vhevidence.json --dir <your-folder> # exit 0 = verifies; 3 = REJECTED
+```
+
+That is the entire organic adoption loop, self-service and free on both ends, before any sales call: one
+file to **seal**, one file to **verify**, and the `.vhevidence.json` is the only thing that has to change
+hands. The standalone sealer is built deterministically from these sources and a stale bundle FAILS CI
+(`../test/freeseal.standalone.test.js`); its seal bytes are byte-for-byte identical to the producer's own
+`cli/evidence.js` seal over the same folder, so a free seal is the *same* artifact the paid tool wraps —
+never a toy.
+
+**The honest scope boundary is exactly the same as §0 — and the free seal is *narrower* still.** A
+standalone seal proves **tamper-evidence + offline-recompute** — the referenced files are byte-for-byte
+the ones sealed, independently re-derivable by anyone — and **NOT** a trusted "sealed at T" without
+**P-3** (see §4). On top of that, the FREE seal is **UNSIGNED** (no signer to pin — there is no
+`--sign`/`--license`/`--key` flag here at all) and **capped at 25 files** (a folder of more than 25
+hard-errors and writes nothing). **SIGNING** (an EIP-191 signer-pin so a counterparty can pin you with
+`--vendor`) and **UNLIMITED** sealing are the PAID upgrade — `vh evidence seal --sign` / the
+`evidence_unlimited` entitlement (`--license`), routed through the full producer CLI. The free loop is
+the funnel; the paid upgrade adds *who signed it* and *no file cap*.
+
+---
+
 ## 1. What you have, in one minute
 
 A counterparty (the "producer") ran a paid verifyhash tool over some files and handed you:

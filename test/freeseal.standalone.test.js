@@ -52,6 +52,15 @@ const VERIFY_PATH = path.resolve(__dirname, "..", "verifier", "dist", "verify-vh
 const VERIFY_SHA256_PATH = VERIFY_PATH + ".sha256";
 const INTREE_VERIFIER_PATH = path.resolve(__dirname, "..", "verifier", "verify-vh.js");
 
+// T-36.3 — the three docs that funnel a prospect through the FREE self-service round-trip. Each MUST name
+// the standalone sealer, restate the honest scope boundary, and name the PAID upgrade, so the FREE-tier
+// funnel prose can never rot away from the code the rest of this suite proves.
+const FREESEAL_DOCS = [
+  path.resolve(__dirname, "..", "verifier", "README.md"),
+  path.resolve(__dirname, "..", "docs", "INDEPENDENT-VERIFICATION.md"),
+  path.resolve(__dirname, "..", "docs", "PILOT.md"),
+];
+
 describe("free sealer standalone: single-file, zero-install seal-your-own-folder (T-36.2)", function () {
   // Bundling + child spawns can be a touch slower than a unit test; give generous headroom.
   this.timeout(60000);
@@ -436,6 +445,61 @@ describe("free sealer standalone: single-file, zero-install seal-your-own-folder
       expect(ispecs.sort()).to.deep.equal(
         ["./lib/canonical", "./lib/merkle", "./lib/secp256k1-recover", "fs", "path"].sort()
       );
+    });
+  });
+
+  // ============================================================================================
+  // (6) FREE-TIER FUNNEL DOCS (T-36.3): the three buyer-facing docs that name the 10-second
+  //     zero-install round-trip MUST keep naming the sealer, the honest boundary, and the paid
+  //     upgrade — so the FREE funnel prose can never silently drift from what (1)-(5) prove in code.
+  // ============================================================================================
+  describe("(6) free-tier funnel docs name the sealer, the honest boundary + the paid upgrade (anti-rot)", function () {
+    for (const docPath of FREESEAL_DOCS) {
+      const name = path.relative(path.resolve(__dirname, ".."), docPath);
+
+      it(`${name} documents the zero-install seal round-trip and restates the honest boundary + paid upgrade`, function () {
+        const src = fs.readFileSync(docPath, "utf8");
+
+        // (a) It names the FREE standalone SEALER (the produce half of the loop) AND the verifier (the
+        //     verify half) — the doc must describe the WHOLE self-service round-trip, not just verify.
+        expect(src, `${name} names seal-vh-standalone.js`).to.include("seal-vh-standalone.js");
+        expect(src, `${name} names verify-vh-standalone.js (the verify half of the round-trip)`).to.include(
+          "verify-vh-standalone.js"
+        );
+
+        // (b) It promises the zero-install, self-service nature: no clone, no npm install, no account.
+        expect(src, `${name} says "no clone"`).to.match(/no clone/i);
+        expect(src, `${name} says "no \`npm install\`"`).to.match(/no `?npm install`?/i);
+        expect(src, `${name} says "no account"`).to.match(/no account/i);
+
+        // (c) It RESTATES the honest scope boundary: tamper-evidence + offline-recompute, and explicitly
+        //     NOT a trusted "sealed at T" without P-3. (The funnel must never overclaim.)
+        expect(src, `${name} restates tamper-evidence`).to.match(/tamper-evidence/i);
+        expect(src, `${name} restates offline-recompute`).to.match(/offline.?recompute/i);
+        expect(src, `${name} restates the NOT-sealed-at-T boundary`).to.match(/sealed at T/);
+        expect(src, `${name} ties the time boundary to P-3`).to.match(/P-3/);
+
+        // (d) It names the FREE cap (UNSIGNED + 25 files) and the PAID upgrade that lifts it
+        //     (SIGNING via `vh evidence seal --sign`, UNLIMITED via the `evidence_unlimited` license).
+        expect(src, `${name} says the free seal is UNSIGNED`).to.match(/UNSIGNED/);
+        expect(src, `${name} names the free 25-file cap`).to.match(/25 files/);
+        expect(src, `${name} names the paid signing upgrade`).to.match(/vh evidence seal --sign/);
+        expect(src, `${name} names the paid unlimited entitlement`).to.match(/evidence_unlimited/);
+        // SIGNING + UNLIMITED are explicitly the PAID upgrade (not free).
+        expect(src, `${name} names SIGNING as the paid upgrade`).to.match(/SIGNING/);
+        expect(src, `${name} names UNLIMITED as the paid upgrade`).to.match(/UNLIMITED/);
+      });
+    }
+
+    it("the round-trip the docs promise is the SAME one (1)-(5) prove in code (sealer exists, exit 0)", function () {
+      // Bind the prose to a real run: the file the docs tell a prospect to save actually seals + exits 0.
+      // (Full round-trip incl. verify is exercised by section (3); this is the doc->code anchor.)
+      expect(fs.existsSync(SEAL_PATH), "the documented seal-vh-standalone.js is shipped").to.equal(true);
+      const folder = makeFolder(3);
+      const out = path.join(mkTmp(), "doc-anchor.vhevidence.json");
+      const r = runSeal(SEAL_PATH, [folder, "-o", out]);
+      expect(r.status, `documented seal command exits 0 (stderr: ${r.stderr})`).to.equal(0);
+      expect(JSON.parse(fs.readFileSync(out, "utf8")).kind).to.equal("vh.evidence-seal");
     });
   });
 });

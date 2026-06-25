@@ -896,14 +896,84 @@ byte-for-byte. The order→license mapping (`license.fulfillOrder`) is **pure + 
   `--out` it streams to stdout. `--json` round-trips the public summary (`vendor`, `entitlements`, `issuedAt`,
   `expiresAt`, …) so a webhook handler can script it.
 
+### From a billing event to a license: the webhook adapter
+
+The catch the hand-wave above buries: a billing provider's webhook does **NOT** fire with **OUR** vocabulary.
+A real Stripe `invoice.paid` / `checkout.session.completed` (or a Paddle) event carries the **provider's own
+price/product id** (e.g. `price_...`) — **NOT** our `planId` — a `customer` reference, and a **period-end as a
+UNIX epoch in SECONDS** (`current_period_end`) — **NOT** the canonical ISO `fulfillOrder` strictly requires. And
+it is delivered **at-least-once**, so the *same* event can arrive twice. Two pure seams close that gap so the
+event→license path is a **real, deterministic pipeline**, not glue.
+
+**(1) The `price→plan` binding (`trustledger/plans.js`).** A versioned, strictly-validated JSON file — the
+**one** machine-readable routing table mapping each `(provider, priceId)` onto one of **THIS** catalog's
+`planId`s. `validatePriceBinding(obj, catalog)` checks it **against the catalog** (every `planId` it points at
+must exist), so a price can **never** point at a non-existent plan, and an **unmapped** `(provider, priceId)` is a
+**named reject** — never a silent mis-grant of the wrong *plan* (the same class the catalog closed for
+entitlements, one level up). Every field:
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `kind` | **yes** | string `"trustledger-price-binding"` | Fixes the artifact type, disjoint from a license/seal/catalog. A wrong/missing `kind` is a hard `PriceBindingError`. |
+| `schemaVersion` | **yes** | integer (currently **1**) | Pins the binding shape. Any unsupported version is a hard error — never coerced. |
+| `mappings` | **yes** | non-empty array | The routing rows. Emitted in `(provider, priceId)`-sorted order, deterministically. |
+| `mappings[].provider` | **yes** | non-empty string (no NUL) | The billing provider id the event came from (e.g. `"stripe"`, `"paddle"`). |
+| `mappings[].priceId` | **yes** | non-empty string (no NUL) | The **provider's own** price/product id the event carries (e.g. a Stripe `price_...`). A **duplicate** `(provider, priceId)` is rejected. |
+| `mappings[].planId` | **yes** | non-empty string | One of **this catalog's** `planId`s. A `planId` **absent** from the supplied catalog is a hard error — so the binding can never route a paid event at a plan that does not exist. |
+
+A bundled draft binding (`trustledger/fixtures/plans/price-binding.example.json`) shows the shape:
+`(stripe, price_pro_annual_usd) → pro-annual`, etc. Like the catalog, the **price-ids are YOURS to fill in** —
+the loop ships the **schema + the mapping**, not your real price-ids. Its `_DISCLAIMER` field is ignored by the
+engine.
+
+**(2) The two-line pipeline: `normalizeEvent(rawEvent, binding) → fulfillOrder(order, catalog)`.** `normalizeEvent`
+is the **pure seam** that maps a normalized provider event envelope `{ provider, priceId, customer, periodEnd,
+issuedAt? }` onto the **exact** `{ plan, customer, paidThrough, issuedAt }` order `fulfillOrder` already consumes:
+it resolves `priceId → planId` via the binding (`plans.resolvePlanId`), converts the period-end **epoch seconds →
+canonical ISO `paidThrough`** (a non-integer / negative / out-of-range epoch is a named reject, never coerced),
+carries the `customer` (a missing/blank one is a named reject — a license with no holder is never minted), and
+takes `issuedAt` **only** from the caller (no hidden clock read, so the module stays pure/testable). So the whole
+event→license path is two composed, deterministic calls:
+
+```js
+// your webhook handler, AFTER it has authenticated the provider's signature (see below):
+const order   = normalizeEvent(rawEvent, binding);  // provider event  -> { plan, customer, paidThrough, issuedAt }
+const license = fulfillOrder(order, catalog);        // order           -> the SAME signed-license params the gate accepts
+```
+
+Both calls are **pure + deterministic**: the same `rawEvent` + binding + catalog yields a **byte-identical**
+license every time, so `fulfillOrder(normalizeEvent(ev, binding), catalog)` is reproducible end-to-end (the
+`vh trust license fulfill` command is exactly this pipeline plus reading the vendor key and signing).
+
+**(3) The idempotency rule: `orderKey(order)`.** Providers **retry** (Stripe documents at-least-once delivery), so
+the *same* event can arrive twice. `orderKey(order)` returns the **deterministic** seed **`LIC-<issuedAt>-<plan>`**
+— the **same** value `fulfillOrder` defaults the `licenseId` to. The rule: an idempotent handler **dedupes on
+`orderKey(order)`** — if a license already exists under that key, a retried delivery resolves to the **same** order
+→ the **same** key → the handler returns the **already-minted, byte-identical** license rather than minting a
+second/different one. Because the key derives only from the order's own fields, a retried event is a no-op, not a
+double-grant or a double-delivery.
+
+> **The ONE remaining HUMAN step: verify the provider's webhook SECRET.** `normalizeEvent` maps an
+> **already-authenticated** event — it does not call a provider API and it does not trust an unauthenticated
+> payload on its own. **Verifying the inbound webhook's signature against the provider's signing SECRET** (e.g.
+> `stripe.webhooks.constructEvent(body, sig, endpointSecret)`) is the integrator's job, done with the provider's
+> own SDK **BEFORE** `normalizeEvent` runs — and it needs the **provider's real signing secret**, which the loop
+> **never holds**. The loop ships the **binding + the normalizer + the idempotency key + ephemeral test keys**;
+> **verifying the provider's webhook secret, provisioning the vendor key, setting the price/term column in the
+> catalog, and wiring the actual webhook/billing remain HUMAN-owned outward steps** (STRATEGY.md › P-6 step (3)).
+
 ### The worked flow: `payment-succeeded` webhook → `fulfill` → deliver `*.vhlicense.json`
 
-A billing provider's *payment-succeeded / renewed* webhook fires with a **`planId`** and a **paid-through**
-date. Map that event onto **one** `fulfill` call (or call `fulfillOrder` in-process) and deliver the file:
+A billing provider's *payment-succeeded / renewed* webhook fires with the **provider's** `priceId` and a
+period-end **epoch**. The handler authenticates it (the webhook-secret human step above), then runs the two-line
+`normalizeEvent → fulfillOrder` pipeline — equivalently, **one** `vh trust license fulfill` call — and delivers
+the file:
 
 ```
-# (your webhook handler, on a Stripe/Paddle "payment_succeeded" event)
-#   event -> { plan: "pro-annual", customer: "Acme Realty LLC", paidThrough: "2027-01-01T00:00:00.000Z" }
+# (your webhook handler, on an AUTHENTICATED Stripe/Paddle "payment_succeeded" event)
+#   const order = normalizeEvent(rawEvent, binding);   // { provider, priceId, customer, periodEnd } -> { plan, customer, paidThrough, issuedAt }
+#   const lic   = fulfillOrder(order, catalog);         // -> the same signed-license params the gate accepts
+#   // dedupe on orderKey(order) === `LIC-<issuedAt>-<plan>`: a RETRIED event re-mints the BYTE-IDENTICAL license
 
 $ vh trust license fulfill \
     --plan pro-annual --customer "Acme Realty LLC" \
@@ -926,10 +996,13 @@ VALID — signed by the vendor, in-window; entitlements [seal, multi_state_polic
 ```
 
 So the per-sale human work collapses to **EXACTLY**: (1) fill in **YOUR** price/term per `planId` in the catalog
-(the value column), and (2) point your billing provider's *payment-succeeded / renewed* webhook at `vh trust
-license fulfill` (or call `fulfillOrder` in-process). The loop ships the catalog + the mapping; the **price/term
-column**, the **vendor key**, and the **actual webhook/billing** stay **HUMAN** steps. This adds **no** new
-human gate — it **sharpens** P-6 step (3).
+(the value column) and **YOUR** real price-ids in the `price→plan` binding, and (2) **verify the provider's
+webhook secret** with its SDK, then point your billing provider's *payment-succeeded / renewed* webhook at the
+two-line `normalizeEvent → fulfillOrder` pipeline (or the equivalent `vh trust license fulfill` command).
+The loop ships the catalog + the mapping (the `price→plan` binding + the `normalizeEvent` normalizer + the
+`orderKey` idempotency key); **verifying the provider's webhook secret**, the **price/term column**, the
+**vendor key**, and the **actual webhook/billing** stay **HUMAN** steps. This adds **no** new human gate — it
+**sharpens** P-6 step (3).
 
 ---
 

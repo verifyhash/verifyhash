@@ -59,9 +59,64 @@ Two equalities must hold: **adjusted bank == book** (the bank and the books agre
 accounted for) and **book == sub-ledger total** (the money in the account is fully accounted for to its
 beneficiaries — nothing is commingled or missing). When both hold, the reconciliation **ties out**.
 
-The **security-deposit segregation** check intentionally counts deposit coverage from **one** source so
-it cannot silently clear an un-segregated deposit by netting it against another figure
-(`trustledger/reconcile.js`).
+The **security-deposit segregation** check is deliberately hard to fool. It guards against **two**
+distinct ways an un-segregated deposit could *silently* clear — neither of which it allows
+(`trustledger/reconcile.js`). See **Security-deposit segregation: per-beneficiary, single-source**
+below for the full rule.
+
+---
+
+## Security-deposit segregation: per-beneficiary, single-source
+
+The flagship out-of-trust finding (`security_deposit_segregation`, an **ERROR** that FAILs the gate) is
+the one a broker most needs to be **un-foolable**: a security deposit the broker received but never moved
+to a segregated account is exactly the commingling state regulators sanction for. A naïve "did the
+deposits add up to the transfers?" total has **two** silent-false-pass holes, and TrustLedger closes
+**both**. A segregation transfer's coverage is therefore counted **(1) from a single source** and
+**(2) matched per beneficiary** before any deposit is considered covered.
+
+### Mechanism 1 — single-source counting (one source, not two)
+
+A single real segregation transfer is recorded **twice**: once in the QuickBooks **book** and once on the
+**bank** statement — it is the *same* money movement seen from two sources, and `match.js` pairs the two
+copies. Summing coverage across **both** sources would count one $X transfer as **$2X** of coverage,
+which can silently clear a genuinely un-segregated deposit — a false negative on the very finding the
+product exists to catch. So coverage is counted from **one** authoritative source (**the book**); the
+bank-side copy is the mirror of the same movement and **adds no new segregation**, so it adds no coverage
+(`trustledger/reconcile.js` — the bank list is intentionally unused for the segregation sum). This is the
+"one source" rule: it cannot silently clear an un-segregated deposit by **double-counting one transfer**.
+
+### Mechanism 2 — per-beneficiary matching (no spill between tenants)
+
+Trust law requires **each** tenant's deposit be held **separately**, so coverage is matched **per
+beneficiary** — never from a single pooled total (T-40.1). A transfer attributed to tenant **X** covers
+**only X's** deposits; its excess does **not** spill onto another tenant **Y's** un-segregated deposit.
+A pooled total hides a real shortage whenever one tenant is **over-segregated** and another is
+**under-segregated** by the same amount: the totals net to zero and the naïve check **PASSes**, even
+though tenant Y's deposit is sitting un-segregated. Per-beneficiary matching pins each tenant's surplus
+to **that tenant**, so Y's deposit is correctly **FLAGGED** and the at-risk beneficiary is **named** in
+the finding (T-40.2). A transfer that names **no** recognizable beneficiary stays a **generic residual
+pool** that can clear at most a still-uncovered deposit — it can never silently absorb one tenant's
+shortage into another's surplus. This is the per-beneficiary rule: it cannot silently clear an
+un-segregated deposit by **netting one tenant's shortage against another tenant's surplus**.
+
+Together the two mechanisms make the segregation check **strictly non-looser** than a naïve total: each
+can only **ADD or RE-ATTRIBUTE** a finding, never **remove** a real one. Both are pure, deterministic
+free-text/structured classification in `trustledger/reconcile.js` (`classifySecurityDeposits` /
+`attributeSegregation`): no clock, no I/O, byte-reproducible.
+
+> **DRAFT / NOT LEGAL ADVICE.** The policies that SHIP with TrustLedger
+> (`trustledger/fixtures/policy/*.json`) are **DRAFT skeletons**, not legal advice and **not a claim of
+> regulatory compliance**. The baseline reproduces the built-in defaults verbatim; the example state
+> file carries a **PLACEHOLDER** citation. A qualified **CPA and/or counsel must review and SIGN** the
+> per-state severity mapping and its statute citations for the actual jurisdiction before the gate is
+> relied on. Selecting a policy does **not** make a packet legal advice and does **not** discharge the
+> broker's duty as the responsible legal custodian of trust funds. (STRATEGY.md › P-5 #1/#2.)
+
+Whether a flagged un-segregated deposit is graded ERROR (the baseline) or re-graded by a state is a
+**per-state CPA decision via the existing policy layer** — `security_deposit_segregation` is one of the
+**legal exception types** a reviewed policy MAY re-grade, exactly like every other type, with **no engine
+change** and **no new `needs-human` item** beyond the per-state policy sign-off P-5 #2 already tracks.
 
 ---
 

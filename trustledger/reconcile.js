@@ -66,6 +66,7 @@ const EXCEPTION = Object.freeze({
   OUTSTANDING_CHECK: "outstanding_check", // written in book, not yet cleared bank
   NSF_REVERSAL: "nsf_reversal", // a bounced deposit reversed by the bank
   OWNER_DRAW: "owner_draw", // owner pulled funds (must not dip into tenant money)
+  OWNER_OVERDRAW: "owner_overdraw", // owner drew MORE than their own contributed capital (tenant money)
   SECURITY_DEPOSIT_SEGREGATION: "security_deposit_segregation", // deposit not held separately
   AMBIGUOUS_DEPOSIT: "ambiguous_deposit", // a book deposit whose beneficiary type can't be determined
   TIMING: "timing", // generic date-window timing difference
@@ -92,6 +93,12 @@ const DEFAULT_SEVERITY = Object.freeze({
   [EXCEPTION.TIMING]: SEVERITY.INFO,
   [EXCEPTION.NSF_REVERSAL]: SEVERITY.WARNING,
   [EXCEPTION.OWNER_DRAW]: SEVERITY.WARNING,
+  // An owner that DRAWS more than its OWN contributed capital paid itself out of
+  // other beneficiaries' trust money (the excess). That is a conversion of trust
+  // funds and leaves the account out of trust REGARDLESS of whether the pooled
+  // sum still ties via the owner's negative control bucket, so it is an
+  // ERROR-grade finding by default. A state MAY re-grade it via policy.
+  [EXCEPTION.OWNER_OVERDRAW]: SEVERITY.ERROR,
   [EXCEPTION.SECURITY_DEPOSIT_SEGREGATION]: SEVERITY.ERROR,
   // A deposit whose beneficiary type we cannot determine (no recognizable
   // keyword, not an explicitly-labeled rent/receipt) is a WARNING by default: it
@@ -385,7 +392,7 @@ function reconcile(bank, book, tenants, opts = {}) {
   // -- Classify owner draws and security-deposit segregation across ALL book
   //    activity (not only the unmatched), since these are policy findings about
   //    what the money WAS, independent of whether the line cleared. -----------
-  classifyOwnerDraws(book, subBalances, exceptions);
+  classifyOwnerDraws(book, subBalances, exceptions, cfg.toleranceCents);
   classifySecurityDeposits(book, bank, exceptions);
   // A deposit whose beneficiary type can't be determined is a LOUD WARNING, but
   // only AFTER classifySecurityDeposits has had its say: isAmbiguousDeposit
@@ -576,36 +583,127 @@ function residue(self, other) {
   return out;
 }
 
-// Owner draws: flag every owner-draw line, and ESCALATE to an error if drawing
-// it would leave the pooled balance below the protected (tenant) sub-ledger
-// total — i.e. the owner is being paid out of someone else's money.
-function classifyOwnerDraws(book, subBalances, exceptions) {
-  const protectedTotal = Object.values(subBalances).reduce((a, b) => a + b, 0);
-  for (const r of [...book]
-    .filter(isOwnerDraw)
-    .sort((x, y) => cmp(recKey(x), recKey(y)))) {
-    // Already emitted as OUTSTANDING owner draw above if it was unmatched; emit
-    // the policy-level OWNER_DRAW classification here once, deduped by record.
-    if (
-      exceptions.some(
-        (e) => e.type === EXCEPTION.OWNER_DRAW && e.records[0] && recKey(e.records[0]) === recKey(r)
-      )
-    ) {
-      continue;
+// Owner draws (T-22.3 + T-42.1). TWO findings, computed in ONE pass over the
+// owner activity in the book:
+//
+//   1. OWNER_DRAW (warning, per line) — every owner-draw line is classified so a
+//      human confirms it was paid only from the owner's OWN funds.
+//
+//   2. OWNER_OVERDRAW (ERROR, per owner account) — when an owner DRAWS MORE than
+//      that owner CONTRIBUTED in this period's book, the EXCESS is tenant money:
+//      the owner paid themselves out of someone else's trust funds. This is the
+//      single most-prosecuted residential-PM trust violation (conversion), and
+//      before T-42.1 it was a SILENT PASS whenever the owner was modeled as a
+//      control-account sub-ledger party — the pooled SUM still ties to the book
+//      via the owner's negative bucket, and the EPIC-41 negative-ledger check
+//      deliberately EXCLUDES control/owner accounts (an owner's negative is
+//      structural WHILE it stays within the owner's own contributed capital).
+//      That EPIC-41 exclusion was UNBOUNDED: it also swallowed the negative
+//      BEYOND contributed capital. OWNER_OVERDRAW is the precise INVERSE: EPIC-41
+//      keeps ignoring the negative WITHIN contributed capital (the owner
+//      legitimately deploying their OWN funds, which every existing owner-draw
+//      test exercises and which stays PASS), and this check catches only the
+//      negative BEYOND it.
+//
+// Per owner account (keyed by the draw's party, case-folded):
+//   C = contributed capital = the sum of that account's OWN positive book inflows
+//       in this period (the basis the owner is entitled to draw against).
+//   D = total draws          = the sum of |amount| of that account's owner-draw
+//       lines in the book.
+//   B = the account's sub-ledger balance (how negative the owner actually went).
+// The over-capital excess is `D - C`, BOUNDED by the owner's actual negative
+// `-B` so we never claim more tenant money than is genuinely missing. We only
+// assess overdraw when the owner ESTABLISHED an in-period contribution basis
+// (`C > 0`): absent any in-period contribution, the sub-ledger negative is
+// treated as legitimate OPENING owner capital being deployed (the EPIC-41
+// boundary) and is NOT second-guessed from a name. `toleranceCents` is honored
+// (an excess at or below tolerance is not flagged). This can only ADD a finding,
+// never remove one, so it is STRICTLY non-looser. PURE + order-independent.
+function classifyOwnerDraws(book, subBalances, exceptions, toleranceCents) {
+  const tol = Number.isInteger(toleranceCents) && toleranceCents >= 0 ? toleranceCents : 0;
+
+  // Per-owner-account accumulation of draws (D) and contributed capital (C),
+  // keyed by the case-folded party so a deposit and a draw that name the same
+  // owner account aggregate together. Order-independent.
+  const draws = new Map(); // ownerKey -> total |draw amount|
+  const capital = new Map(); // ownerKey -> total positive book inflow
+  const drawRecords = new Map(); // ownerKey -> the owner-draw record sorted first (for naming)
+
+  const sortedBook = [...book].sort((x, y) => cmp(recKey(x), recKey(y)));
+
+  for (const r of sortedBook) {
+    if (isOwnerDraw(r)) {
+      const key = partyKey(r.party);
+      draws.set(key, (draws.get(key) || 0) + Math.abs(r.amount));
+      if (!drawRecords.has(key)) drawRecords.set(key, r);
+      // Already emitted as OUTSTANDING owner draw above if it was unmatched; emit
+      // the policy-level OWNER_DRAW classification here once, deduped by record.
+      if (
+        exceptions.some(
+          (e) => e.type === EXCEPTION.OWNER_DRAW && e.records[0] && recKey(e.records[0]) === recKey(r)
+        )
+      ) {
+        continue;
+      }
+      pushException(exceptions, {
+        type: EXCEPTION.OWNER_DRAW,
+        amount: r.amount,
+        label: "Owner draw",
+        detail:
+          "A disbursement to the property owner; confirm it is paid only from " +
+          "that owner's own funds and never from tenant or security-deposit money.",
+        records: [r],
+      });
+    } else if (Number.isInteger(r.amount) && r.amount > 0) {
+      // A positive book inflow attributed to a party is that party's contributed
+      // capital basis (only consulted for parties that also have owner draws).
+      const key = partyKey(r.party);
+      if (key !== "") capital.set(key, (capital.get(key) || 0) + r.amount);
     }
+  }
+
+  // The owner's sub-ledger balance per case-folded key (an owner account may be
+  // spelled with different casing in the sub-ledger than in a book line; fold).
+  const ownerBalance = new Map();
+  for (const [party, bal] of Object.entries(subBalances)) {
+    if (!Number.isInteger(bal)) continue;
+    const key = partyKey(party);
+    ownerBalance.set(key, (ownerBalance.get(key) || 0) + bal);
+  }
+
+  // OWNER_OVERDRAW: per owner account, in a stable key-sorted order.
+  for (const key of [...draws.keys()].sort(cmp)) {
+    const D = draws.get(key) || 0;
+    const C = capital.get(key) || 0;
+    if (C <= 0) continue; // no in-period basis: EPIC-41 boundary, not second-guessed
+    const overCapital = D - C;
+    if (overCapital <= 0) continue; // drew at or below contributed capital — fine
+    // Bound by how negative the owner actually went, so we never claim more
+    // tenant money than is genuinely missing (e.g. opening owner capital covered
+    // part of it). When no owner bucket exists, the full over-capital amount is
+    // the unbacked excess.
+    const B = ownerBalance.has(key) ? ownerBalance.get(key) : -overCapital;
+    const shortfall = B < 0 ? -B : 0;
+    const excess = Math.min(overCapital, shortfall);
+    if (excess <= tol) continue; // within tolerance (or fully backed by capital)
+
+    const r = drawRecords.get(key);
+    const who = beneficiaryLabel(r ? r.party : "");
     pushException(exceptions, {
-      type: EXCEPTION.OWNER_DRAW,
-      amount: r.amount,
-      label: "Owner draw",
+      type: EXCEPTION.OWNER_OVERDRAW,
+      amount: excess, // the EXCESS (tenant money consumed), a positive cents figure
+      label: "Owner draw exceeds contributed capital",
       detail:
-        "A disbursement to the property owner; confirm it is paid only from " +
-        "that owner's own funds and never from tenant or security-deposit money.",
-      records: [r],
+        `Owner account ${who} drew ${fmtCentsForDetail(D)} against only ` +
+        `${fmtCentsForDetail(C)} of its OWN contributed capital, so ` +
+        `${fmtCentsForDetail(excess)} of the draw was paid out of other ` +
+        "beneficiaries' trust money. An owner may be disbursed only from their " +
+        "own funds; paying an owner out of tenant or security-deposit money is a " +
+        "conversion of trust funds and leaves the account out of trust. Restore " +
+        `${fmtCentsForDetail(excess)} to the trust account before relying on this packet.`,
+      records: r ? [r] : [],
     });
   }
-  // Note: protectedTotal is used by the bank/book vs sub-ledger tie-out; an
-  // owner draw that breaks segregation surfaces there as SUBLEDGER_OUT_OF_BALANCE.
-  void protectedTotal;
 }
 
 // A segregation movement is an OUTFLOW whose memo/kind references segregation /

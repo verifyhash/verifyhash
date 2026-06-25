@@ -223,8 +223,9 @@ validation error rather than a silently-ignored key. They are:
 
 ```
 outstanding_deposit   outstanding_check   timing
-nsf_reversal          owner_draw          security_deposit_segregation
-ambiguous_deposit     unreconciled_bank   unreconciled_book
+nsf_reversal          owner_draw          owner_overdraw
+security_deposit_segregation   ambiguous_deposit
+unreconciled_bank     unreconciled_book
 subledger_out_of_balance  negative_tenant_ledger  bank_book_mismatch
 continuity_break
 ```
@@ -260,6 +261,27 @@ once). Control/sink accounts (an owner's-own-funds line, an
 line) are excluded — their negative balance is structural, not a tenant shortage.
 Its default severity is `error` (a negative individual ledger is out of trust on
 its own); like every other type, a per-state policy MAY re-grade it.
+
+`owner_overdraw` is raised when an **owner/control account** draws MORE than that
+account's OWN contributed capital in this period — i.e. the owner paid themselves
+out of *other* beneficiaries' trust money (a conversion of trust funds, the single
+most-prosecuted residential-PM trust violation). It is the precise **inverse** of
+the `negative_tenant_ledger` control-account exclusion above: that exclusion keeps
+ignoring an owner's negative *within* its contributed capital (the owner
+legitimately deploying their own funds), and `owner_overdraw` catches only the
+negative *beyond* it. Per owner account (keyed by the draw's party), the engine
+sums the account's own positive book inflows (its **contributed capital**, `C`) and
+its owner-draw lines (`D`), and flags the EXCESS `D − C` — bounded by how negative
+the account actually went so it never claims more tenant money than is genuinely
+missing, and honoring `toleranceCents`. It fires **only** when the account
+established an in-period contribution basis (`C > 0`); absent any in-period
+contribution, the sub-ledger negative is treated as legitimate **opening** owner
+capital being deployed (the same control-account boundary the exclusion above
+respects) and is not second-guessed from a name. Crucially, this fires **even when
+the pooled three-way SUM ties out** — the owner's negative control bucket can
+absorb the overdraw so `tiesOut` stays `true`, yet the account is out of trust.
+Its default severity is `error`; like every other type, a per-state policy MAY
+re-grade it.
 
 **How a line is recognized as a control account (and its failure mode).** Two
 signals exclude a negative line from `negative_tenant_ledger`, in priority order:

@@ -1072,3 +1072,282 @@ describe("T-41.2 trustledger: a NEGATIVE individual ledger gates PASS/FAIL FIRST
     expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
   });
 });
+
+describe("T-42.1 trustledger/reconcile: an owner draw EXCEEDING the owner's own contributed capital is out of trust", function () {
+  function overEx(r) {
+    return r.exceptions.filter((e) => e.type === EXCEPTION.OWNER_OVERDRAW);
+  }
+  function negEx(r) {
+    return r.exceptions.filter((e) => e.type === EXCEPTION.NEGATIVE_TENANT_LEDGER);
+  }
+  function subEx(r) {
+    return r.exceptions.filter((e) => e.type === EXCEPTION.SUBLEDGER_OUT_OF_BALANCE);
+  }
+
+  // The confirmed repro: the owner contributes +$1,000 of its OWN capital and then
+  // draws -$1,500 — $500 BEYOND its contribution, i.e. $500 of TENANT money (Jones'
+  // $5,000 rent sits in the pooled account). The owner is modeled as a control-
+  // account sub-ledger party so the pooled SUM ties to the book via the owner's
+  // -$500 bucket: reconcile() returns tiesOut:true and, before T-42.1, the ONLY
+  // finding was owner_draw/warning — a SILENT PASS of conversion. Now it FAILS.
+  function reproBook() {
+    return [
+      rec("2026-05-01", 100000, "Owner contribution Acme", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Owner Acme",
+      }),
+      rec("2026-05-01", 500000, "rent jones", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Jones (4B)",
+      }),
+      rec("2026-05-10", -150000, "Owner draw - disbursement to owner Acme", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Acme",
+      }),
+    ];
+  }
+  // A bank mirror so adjustedBank == book == subledger (the SUM ties out).
+  function reproBank() {
+    return [
+      rec("2026-05-02", 100000, "owner contribution acme", { kind: "deposit" }),
+      rec("2026-05-02", 500000, "deposit jones", { kind: "deposit" }),
+      rec("2026-05-11", -150000, "owner draw acme", { kind: "check" }),
+    ];
+  }
+  // Owner nets -$500 (contributed $1,000, drew $1,500). Jones holds $5,000. The
+  // pooled SUM = $4,500 = book = bank, so the three-way SUM ties out.
+  const reproTenants = { "Owner Acme": -50000, "Jones (4B)": 500000 };
+
+  it("REPRO (+100000 / -150000 / Jones +500000): the SUM ties out but the owner overdraw now FAILs (was a silent PASS)", function () {
+    const bank = reproBank();
+    const book = reproBook();
+    const m = matchReconcile(bank, book);
+    const r = reconcile(bank, book, reproTenants, { matchResult: m });
+
+    // The pooled three-way SUM ties out perfectly (the control-account negative
+    // absorbs the overdraw), so tiesOut is true...
+    expect(r.balances.book).to.equal(450000);
+    expect(r.balances.subledger).to.equal(450000);
+    expect(r.balances.adjustedBank).to.equal(450000);
+    expect(r.tiesOut).to.equal(true);
+
+    // ...yet the owner-overdraw ERROR fires for the EXCESS (the tenant money).
+    const ex = overEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].severity).to.equal(SEVERITY.ERROR);
+    expect(ex[0].amount).to.equal(50000); // $1,500 drawn - $1,000 contributed
+    expect(ex[0].label).to.match(/exceeds contributed capital/i);
+    expect(ex[0].detail).to.include("Owner Acme");
+    expect(ex[0].detail).to.include("$500.00"); // the excess
+    expect(ex[0].detail).to.include("$1,500.00"); // the draw
+    expect(ex[0].detail).to.include("$1,000.00"); // the contributed capital
+
+    // The downstream verdict is PASS only when there is no ERROR, so the formerly
+    // silent-PASS packet now carries an ERROR-grade finding.
+    expect(r.exceptions.filter((e) => e.severity === SEVERITY.ERROR)).to.have.length(1);
+
+    // The owner control bucket is (correctly) NOT double-flagged as a negative
+    // tenant ledger (it is a control account); the overdraw is the single finding.
+    expect(negEx(r)).to.have.length(0);
+    // The pooled SUM check did not fire (it ties), proving orthogonality.
+    expect(subEx(r)).to.have.length(0);
+  });
+
+  it("an owner drawing AT-OR-BELOW contributed capital raises NOTHING (no overdraw, stays PASS)", function () {
+    // Owner contributes $2,000 and draws only $1,500 — fully within its OWN funds.
+    const book = [
+      rec("2026-05-01", 200000, "Owner contribution Acme", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Owner Acme",
+      }),
+      rec("2026-05-01", 500000, "rent jones", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Jones (4B)",
+      }),
+      rec("2026-05-10", -150000, "Owner draw - disbursement to owner Acme", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Acme",
+      }),
+    ];
+    const tenants = { "Owner Acme": 50000, "Jones (4B)": 500000 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    expect(overEx(r)).to.have.length(0);
+    // The owner-draw warning still classifies the line, but no ERROR is raised.
+    expect(r.exceptions.filter((e) => e.severity === SEVERITY.ERROR)).to.have.length(0);
+  });
+
+  it("an owner drawing EXACTLY its contributed capital raises NOTHING (boundary)", function () {
+    const book = [
+      rec("2026-05-01", 150000, "Owner contribution Acme", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Owner Acme",
+      }),
+      rec("2026-05-10", -150000, "Owner draw - disbursement to owner Acme", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Acme",
+      }),
+    ];
+    const tenants = { "Owner Acme": 0 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    expect(overEx(r)).to.have.length(0);
+  });
+
+  it("an owner draw with NO in-period contribution is NOT second-guessed (EPIC-41 boundary: opening owner capital)", function () {
+    // This is the EXACT shape of the existing 'detects an OWNER DRAW' test: the
+    // owner draws -$500 with no in-period contribution and the sub-ledger models
+    // the -$500 as legitimate opening owner-capital deployment. No basis to assess
+    // overdraw against => no OWNER_OVERDRAW (stays PASS, as it must).
+    const book = [
+      rec("2026-05-01", 150000, "rent smith", { source: "quickbooks", kind: "deposit" }),
+      rec("2026-05-10", -50000, "Owner draw - disbursement to owner Acme", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Acme",
+      }),
+    ];
+    const tenants = { Smith: 150000, "Owner Acme": -50000 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    expect(overEx(r)).to.have.length(0);
+  });
+
+  it("honors toleranceCents: an excess at or below tolerance is NOT flagged; beyond it IS", function () {
+    function bookOver(excessCents) {
+      // contribute $1,000, draw $1,000 + excess.
+      return [
+        rec("2026-05-01", 100000, "Owner contribution Acme", {
+          source: "quickbooks",
+          kind: "deposit",
+          party: "Owner Acme",
+        }),
+        rec("2026-05-10", -(100000 + excessCents), "Owner draw - disbursement to owner Acme", {
+          source: "quickbooks",
+          kind: "check",
+          party: "Owner Acme",
+        }),
+      ];
+    }
+    // Excess of 50 cents, tolerance 50 => not flagged.
+    const within = reconcile([], bookOver(50), { "Owner Acme": -50 }, { toleranceCents: 50 });
+    expect(overEx(within)).to.have.length(0);
+    // Excess of 51 cents, tolerance 50 => flagged for the full 51.
+    const beyond = reconcile([], bookOver(51), { "Owner Acme": -51 }, { toleranceCents: 50 });
+    const ex = overEx(beyond);
+    expect(ex).to.have.length(1);
+    expect(ex[0].amount).to.equal(51);
+  });
+
+  it("aggregates MULTIPLE owner draws against the SAME contribution (sum of draws vs capital)", function () {
+    // Owner contributes $1,000 once, then draws $800 + $800 = $1,600 across two
+    // lines — $600 over capital. The excess is computed on the SUM, not per line.
+    const book = [
+      rec("2026-05-01", 100000, "Owner contribution Acme", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Owner Acme",
+      }),
+      rec("2026-05-05", 500000, "rent jones", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Jones (4B)",
+      }),
+      rec("2026-05-10", -80000, "Owner draw - disbursement to owner Acme", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Acme",
+      }),
+      rec("2026-05-20", -80000, "Owner draw - disbursement to owner Acme #2", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Acme",
+      }),
+    ];
+    const tenants = { "Owner Acme": -60000, "Jones (4B)": 500000 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    const ex = overEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].amount).to.equal(60000); // $1,600 - $1,000
+    expect(ex[0].severity).to.equal(SEVERITY.ERROR);
+  });
+
+  it("flags EACH over-drawing owner account separately, naming each", function () {
+    const book = [
+      rec("2026-05-01", 100000, "Owner contribution Acme", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Owner Acme",
+      }),
+      rec("2026-05-01", 100000, "Owner contribution Beta", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Owner Beta",
+      }),
+      rec("2026-05-01", 800000, "rent jones", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Jones (4B)",
+      }),
+      rec("2026-05-10", -150000, "Owner draw - disbursement to owner Acme", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Acme",
+      }),
+      rec("2026-05-10", -130000, "Owner draw - disbursement to owner Beta", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Beta",
+      }),
+    ];
+    // Acme over by $500, Beta over by $300; Jones holds $8,000. Sum = 8000 - 500 - 300 = 7200.
+    const tenants = { "Owner Acme": -50000, "Owner Beta": -30000, "Jones (4B)": 800000 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    const ex = overEx(r);
+    expect(ex).to.have.length(2);
+    const byAmount = ex.map((e) => e.amount).sort((a, b) => a - b);
+    expect(byAmount).to.deep.equal([30000, 50000]);
+    expect(ex.some((e) => e.detail.includes("Owner Acme"))).to.equal(true);
+    expect(ex.some((e) => e.detail.includes("Owner Beta"))).to.equal(true);
+  });
+
+  it("the over-capital finding is the EXACT INVERSE of the EPIC-41 exclusion (never double-flags the owner bucket)", function () {
+    // The owner bucket is a control account: T-41 excludes its negative as
+    // structural. T-42 raises an OWNER_OVERDRAW for the portion BEYOND capital.
+    // The two never both fire on the same owner account.
+    const book = [
+      rec("2026-05-01", 100000, "Owner contribution Acme", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "Owner Acme",
+      }),
+      rec("2026-05-10", -150000, "Owner draw - disbursement to owner Acme", {
+        source: "quickbooks",
+        kind: "check",
+        party: "Owner Acme",
+      }),
+    ];
+    const tenants = { "Owner Acme": -50000 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    expect(overEx(r)).to.have.length(1);
+    // T-41 still excludes the owner control bucket (no negative-ledger finding).
+    expect(negEx(r)).to.have.length(0);
+  });
+
+  it("is deterministic + order-independent (byte-identical output regardless of book row order)", function () {
+    const bank = reproBank();
+    const book = reproBook();
+    const a = reconcile(bank, book, reproTenants, { matchResult: matchReconcile(bank, book) });
+    const shuffledBook = [book[2], book[0], book[1]];
+    const shuffledBank = [bank[2], bank[1], bank[0]];
+    const b = reconcile(shuffledBank, shuffledBook, reproTenants, {
+      matchResult: matchReconcile(shuffledBank, shuffledBook),
+    });
+    expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
+  });
+});

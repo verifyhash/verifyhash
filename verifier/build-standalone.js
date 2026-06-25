@@ -2,8 +2,15 @@
 "use strict";
 
 // verifier/build-standalone.js — the DETERMINISTIC, OFFLINE, zero-third-party-dependency bundler that
-// inlines the in-tree verifier (verifier/verify-vh.js + verifier/lib/*) into ONE self-contained file,
-// verifier/dist/verify-vh-standalone.js (T-35.2).
+// inlines the in-tree verifier/sealer (verifier/verify-vh.js / verifier/lib/seal-cli.js + verifier/lib/*)
+// into self-contained single files under verifier/dist/ (T-35.2 verify bundle; T-36.2 SEAL bundle).
+//
+// IT EMITS TWO TARGETS (both deterministic, both zero-third-party):
+//   * verify-vh-standalone.js — the free VERIFY half (T-35.2): a counterparty handed ONE sealed packet
+//     saves this and runs it. (Bytes UNCHANGED by T-36.2 — the verify target list/order is untouched.)
+//   * seal-vh-standalone.js   — the free PRODUCE half (T-36.2): a stranger SEALS up to 25 of their OWN
+//     files into a `vh.evidence-seal` the verify bundle then accepts. Together the two close the organic
+//     adoption loop with ZERO install on EITHER side.
 //
 // WHY THIS EXISTS
 //   The free verifier is the FUNNEL: every counterparty who runs it on a partner's seal is a warm lead
@@ -12,6 +19,8 @@
 //   verifier/lib/keccak.js). This bundler removes that last friction: it emits a SINGLE file a skeptic can
 //   save with no clone, no `npm install`, no `node_modules`, no `package.json`, and run with `node` —
 //   and audit in one sitting. It is the strongest possible form of "don't trust us, check it yourself."
+//   T-36.2 applies the SAME bundling discipline to the PRODUCE side so a prospect can both make AND check
+//   a free seal with no install anywhere.
 //
 // WHAT IT GUARANTEES (proven by test/verifier.standalone.test.js)
 //   * DETERMINISTIC — running it twice yields BYTE-IDENTICAL output. There is no timestamp, no randomness,
@@ -46,19 +55,26 @@ const crypto = require("crypto");
 const VERIFIER_DIR = __dirname;
 const DIST_DIR = path.join(VERIFIER_DIR, "dist");
 const OUT_PATH = path.join(DIST_DIR, "verify-vh-standalone.js");
+const SEAL_OUT_PATH = path.join(DIST_DIR, "seal-vh-standalone.js");
 // The PUBLISHED checksum sidecar (T-35.3): the SHA-256 of the committed bundle, in the standard
 // `sha256sum`/`shasum -a 256` line format (`<hex>␠␠<basename>\n`) so a counterparty can run
-// `sha256sum -c verify-vh-standalone.js.sha256` after a one-line `curl`/save, BEFORE running the file.
-// It is a pure function of the (deterministic) bundle bytes, so it never rots: the build re-emits it and
-// the test asserts it equals sha256(committed bundle).
+// `sha256sum -c <bundle>.sha256` after a one-line `curl`/save, BEFORE running the file. It is a pure
+// function of the (deterministic) bundle bytes, so it never rots: the build re-emits it and the test
+// asserts it equals sha256(committed bundle).
 const SHA256_PATH = OUT_PATH + ".sha256";
+const SEAL_SHA256_PATH = SEAL_OUT_PATH + ".sha256";
 const SHA256_BASENAME = path.basename(OUT_PATH);
+const SEAL_SHA256_BASENAME = path.basename(SEAL_OUT_PATH);
 
-// The exact textual contents of the `.sha256` sidecar for a given bundle text. One canonical line, the
-// standard two-space `sha256sum` separator, a trailing newline. Pure function -> deterministic.
-function sha256Sidecar(bundleText) {
+// The exact textual contents of the `.sha256` sidecar for a given bundle text + basename. One canonical
+// line, the standard two-space `sha256sum` separator, a trailing newline. Pure function -> deterministic.
+function sha256SidecarFor(bundleText, basename) {
   const hex = crypto.createHash("sha256").update(Buffer.from(bundleText, "utf8")).digest("hex");
-  return `${hex}  ${SHA256_BASENAME}\n`;
+  return `${hex}  ${basename}\n`;
+}
+// Back-compat alias: the verify bundle's sidecar (the original single-target signature T-35.3 tests call).
+function sha256Sidecar(bundleText) {
+  return sha256SidecarFor(bundleText, SHA256_BASENAME);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,12 +112,20 @@ const KECCAK_SHIM_BODY = [
   "module.exports = { keccak256 };",
 ].join("\n");
 
-const MODULES = [
+// The shared vendored-keccak modules every target inlines first: the pure-JS keccak256 and the "./keccak"
+// shim swapped to use it. Both bundles share these byte-identical entries.
+const SHARED_KECCAK_MODULES = [
   // The pure-JS keccak256 — inlined VERBATIM from the committed vendored source (it already `require`s
   // nothing, so there is no rewrite to apply). The keccak shim below pulls it via __require.
   { id: "keccak256-vendored", file: "lib/keccak256-vendored.js", rewrite: {} },
-  // The keccak provider the rest of the verifier requires as "./keccak" — body SWAPPED to the vendored shim.
+  // The keccak provider the rest of the verifier/sealer requires as "./keccak" — body SWAPPED to the shim.
   { id: "keccak", file: "lib/keccak.js", rewrite: {}, body: KECCAK_SHIM_BODY },
+];
+
+// --- TARGET 1: the VERIFY bundle (verify-vh-standalone.js). Module list/order UNCHANGED by T-36.2 so the
+//     committed verify bundle stays byte-identical. ---
+const VERIFY_MODULES = [
+  ...SHARED_KECCAK_MODULES,
   // The independent merkle / canonical / secp256k1 libs, inlined verbatim with their relative requires
   // rewritten to canonical ids.
   { id: "merkle", file: "lib/merkle.js", rewrite: { "./keccak": "keccak" } },
@@ -116,6 +140,26 @@ const MODULES = [
       "./lib/canonical": "canonical",
       "./lib/secp256k1-recover": "secp256k1-recover",
     },
+    entry: true,
+  },
+];
+
+// Back-compat alias for the original single-target name (some tests reference builder.MODULES).
+const MODULES = VERIFY_MODULES;
+
+// --- TARGET 2: the SEAL bundle (seal-vh-standalone.js). The free PRODUCE half (T-36.2). It needs ONLY the
+//     keccak shim + the merkle convention + the sealer CLI — NO secp256k1 (signing is the paid surface, so
+//     the standalone sealer has no key path at all) and NO canonical (the seal is plain JSON.stringify). ---
+const SEAL_MODULES = [
+  ...SHARED_KECCAK_MODULES,
+  // The independent merkle convention (the SAME the verifier re-derives), so a seal this builds re-derives
+  // to the same root the verify bundle recomputes from the bytes.
+  { id: "merkle", file: "lib/merkle.js", rewrite: { "./keccak": "keccak" } },
+  // The sealer CLI, inlined LAST. Its only relative require ("./merkle") resolves to the canonical id above.
+  {
+    id: "seal-cli",
+    file: "lib/seal-cli.js",
+    rewrite: { "./merkle": "merkle" },
     entry: true,
   },
 ];
@@ -164,57 +208,89 @@ function readSource(rel) {
   return s;
 }
 
-// Build the standalone bundle TEXT deterministically. Pure function of the committed source files.
-function buildBundle() {
+// The fixed, version-free banner (NO timestamp -> deterministic) for each target. Each is a function of
+// nothing — a constant header array — so the emitted bytes stay a pure function of the source files.
+const VERIFY_HEADER = [
+  "// verify-vh-standalone.js — the SINGLE-FILE, ZERO-DEPENDENCY, OFFLINE verifyhash verifier.",
+  "//",
+  "// GENERATED by verifier/build-standalone.js from the in-tree verifier — DO NOT EDIT BY HAND.",
+  "// Re-generate with: node verifier/build-standalone.js   (the build is deterministic; see that file.)",
+  "//",
+  "// HOW TO USE IT (no clone, no `npm install`, no node_modules, no package.json):",
+  "//   1. Save THIS one file somewhere next to the sealed artifact you were handed.",
+  "//   2. Run:  node verify-vh-standalone.js <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]",
+  "//   Exit codes: 0 ok / 3 rejected / 2 usage / 1 IO.   It is READ-ONLY and opens NO network.",
+  "//",
+  "// It RE-DERIVES the keccak Merkle root from the bytes YOU hold and recovers the signer with a",
+  "// pure-JS secp256k1 routine — it never trusts the artifact's own stored hashes, and it requires",
+  "// NOTHING outside Node core. This is the in-tree verifier inlined verbatim, with keccak256 swapped",
+  "// for a byte-identical pure-JS implementation (cross-checked against js-sha3 AND ethers).",
+];
+
+const SEAL_HEADER = [
+  "// seal-vh-standalone.js — the SINGLE-FILE, ZERO-DEPENDENCY, OFFLINE verifyhash SEALER (free tier).",
+  "//",
+  "// GENERATED by verifier/build-standalone.js from the in-tree sealer — DO NOT EDIT BY HAND.",
+  "// Re-generate with: node verifier/build-standalone.js   (the build is deterministic; see that file.)",
+  "//",
+  "// HOW TO USE IT (no clone, no `npm install`, no node_modules, no package.json, no account):",
+  "//   1. Save THIS one file somewhere.",
+  "//   2. Run:  node seal-vh-standalone.js <folder> -o out.vhevidence.json",
+  "//   3. Hand `out.vhevidence.json` (+ your folder) to anyone; they verify it with verify-vh-standalone.js",
+  "//      — also zero-install. Exit codes: 0 sealed / 1 IO / 2 usage (incl. >25 files) / 3 seal-build error.",
+  "//",
+  "// FREE TIER: an UNSIGNED seal of up to 25 files. Sealing MORE files (`evidence_unlimited`) or a SIGNED",
+  "// wrap (`evidence_signed`) is the PAID surface via `vh evidence seal` — this file has NO --sign/--license",
+  "// /--key flag and uses NO key. It is READ-ONLY apart from the -o file you name, and opens NO network. The",
+  "// seal is TAMPER-EVIDENT + OFFLINE-RECOMPUTABLE, NOT a trusted timestamp. keccak256 is the byte-identical",
+  "// pure-JS implementation the verifier uses, so a seal this builds is accepted verbatim by the verifier.",
+];
+
+// The tiny CommonJS shim every target embeds: a module registry + a memoizing __require. Byte-identical
+// across targets.
+const COMMONJS_SHIM = [
+  "// ---- minimal CommonJS module shim (so the inlined modules keep their require() structure) --------",
+  "var __modules = Object.create(null);",
+  "var __cache = Object.create(null);",
+  "function __require(id) {",
+  "  if (id in __cache) return __cache[id].exports;",
+  "  var factory = __modules[id];",
+  "  if (!factory) throw new Error('standalone bundle: unknown module: ' + id);",
+  "  var module = { exports: {} };",
+  "  __cache[id] = module;",
+  "  factory(module, module.exports, __require);",
+  "  return module.exports;",
+  "}",
+];
+
+// The two build targets — each fully describes ONE deterministic bundle (its module list + banner + the
+// human noun used in the boot comment). Both go through the SAME buildTarget() so the seal bundle inherits
+// every zero-dependency / determinism property the verify bundle has.
+const TARGETS = {
+  verify: { name: "verify", modules: VERIFY_MODULES, header: VERIFY_HEADER, cliNoun: "verifier", outPath: OUT_PATH, sha256Path: SHA256_PATH, sha256Basename: SHA256_BASENAME },
+  seal: { name: "seal", modules: SEAL_MODULES, header: SEAL_HEADER, cliNoun: "sealer", outPath: SEAL_OUT_PATH, sha256Path: SEAL_SHA256_PATH, sha256Basename: SEAL_SHA256_BASENAME },
+};
+
+// Build a target's bundle TEXT deterministically. Pure function of the committed source files + the target
+// descriptor (a constant). Same target -> byte-identical output.
+function buildTarget(target) {
   const parts = [];
 
   // --- header: shebang + a fixed, version-free banner (NO timestamp -> deterministic) ---
   parts.push("#!/usr/bin/env node");
   parts.push('"use strict";');
   parts.push("");
-  parts.push(
-    [
-      "// verify-vh-standalone.js — the SINGLE-FILE, ZERO-DEPENDENCY, OFFLINE verifyhash verifier.",
-      "//",
-      "// GENERATED by verifier/build-standalone.js from the in-tree verifier — DO NOT EDIT BY HAND.",
-      "// Re-generate with: node verifier/build-standalone.js   (the build is deterministic; see that file.)",
-      "//",
-      "// HOW TO USE IT (no clone, no `npm install`, no node_modules, no package.json):",
-      "//   1. Save THIS one file somewhere next to the sealed artifact you were handed.",
-      "//   2. Run:  node verify-vh-standalone.js <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]",
-      "//   Exit codes: 0 ok / 3 rejected / 2 usage / 1 IO.   It is READ-ONLY and opens NO network.",
-      "//",
-      "// It RE-DERIVES the keccak Merkle root from the bytes YOU hold and recovers the signer with a",
-      "// pure-JS secp256k1 routine — it never trusts the artifact's own stored hashes, and it requires",
-      "// NOTHING outside Node core. This is the in-tree verifier inlined verbatim, with keccak256 swapped",
-      "// for a byte-identical pure-JS implementation (cross-checked against js-sha3 AND ethers).",
-    ].join("\n")
-  );
+  parts.push(target.header.join("\n"));
   parts.push("");
 
   // --- the tiny CommonJS shim: a module registry + a memoizing __require. ---
-  parts.push(
-    [
-      "// ---- minimal CommonJS module shim (so the inlined modules keep their require() structure) --------",
-      "var __modules = Object.create(null);",
-      "var __cache = Object.create(null);",
-      "function __require(id) {",
-      "  if (id in __cache) return __cache[id].exports;",
-      "  var factory = __modules[id];",
-      "  if (!factory) throw new Error('standalone bundle: unknown module: ' + id);",
-      "  var module = { exports: {} };",
-      "  __cache[id] = module;",
-      "  factory(module, module.exports, __require);",
-      "  return module.exports;",
-      "}",
-    ].join("\n")
-  );
+  parts.push(COMMONJS_SHIM.join("\n"));
   parts.push("");
 
   let entryId = null;
 
   // --- inline each module as a factory in the fixed list order. ---
-  for (const m of MODULES) {
+  for (const m of target.modules) {
     let body;
     if (typeof m.body === "string") {
       // The body is supplied verbatim (the keccak shim). It may itself call __require (e.g. for the
@@ -235,11 +311,11 @@ function buildBundle() {
 
   if (!entryId) throw new Error("build-standalone: no entry module declared");
 
-  // --- boot the entrypoint exactly as verify-vh.js does at the bottom of its own file. ---
-  // The inlined verify-vh.js sets `module.exports = { ..., run }` and has a `require.main === module` CLI
+  // --- boot the entrypoint exactly as the inlined CLI does at the bottom of its own file. ---
+  // The inlined entry module sets `module.exports = { ..., run }` and has a `require.main === module` CLI
   // shim that does NOT fire inside the bundle's factory (its `module` is the shim's, not Node's), so we
   // drive the CLI explicitly here: load the entry module and run it with process.argv, exiting on its code.
-  parts.push("// ---- boot: run the inlined verifier CLI with this process's argv. ----");
+  parts.push(`// ---- boot: run the inlined ${target.cliNoun} CLI with this process's argv. ----`);
   parts.push(`var __entry = __require(${JSON.stringify(entryId)});`);
   parts.push("if (require.main === module) {");
   parts.push("  process.exit(__entry.run(process.argv.slice(2)));");
@@ -250,31 +326,68 @@ function buildBundle() {
   return parts.join("\n");
 }
 
-// Write the bundle to disk (used by the CLI invocation), AND its published `.sha256` checksum sidecar.
-// Creates verifier/dist/ if absent. Returns the emitted text so callers can compare without a re-read.
-function writeBundle() {
-  const text = buildBundle();
+// Build the VERIFY bundle TEXT (the original single-target API; UNCHANGED bytes). Pure function of source.
+function buildBundle() {
+  return buildTarget(TARGETS.verify);
+}
+
+// Build the SEAL bundle TEXT. Pure function of source.
+function buildSealBundle() {
+  return buildTarget(TARGETS.seal);
+}
+
+// Write ONE target's bundle + its `.sha256` sidecar to disk. Creates verifier/dist/ if absent. Returns the
+// emitted text so callers can compare without a re-read.
+function writeTarget(target) {
+  const text = buildTarget(target);
   fs.mkdirSync(DIST_DIR, { recursive: true });
-  fs.writeFileSync(OUT_PATH, text);
+  fs.writeFileSync(target.outPath, text);
   // Re-emit the published checksum so the sidecar can never drift from the bundle it pins.
-  fs.writeFileSync(SHA256_PATH, sha256Sidecar(text));
+  fs.writeFileSync(target.sha256Path, sha256SidecarFor(text, target.sha256Basename));
   return text;
 }
 
+// Write the VERIFY bundle (original single-target API name). Returns its text.
+function writeBundle() {
+  return writeTarget(TARGETS.verify);
+}
+
+// Write BOTH targets. Returns { verify, seal } texts.
+function writeAll() {
+  return { verify: writeTarget(TARGETS.verify), seal: writeTarget(TARGETS.seal) };
+}
+
 if (require.main === module) {
-  const text = writeBundle();
-  process.stdout.write(`wrote ${path.relative(VERIFIER_DIR, OUT_PATH)} (${Buffer.byteLength(text)} bytes)\n`);
-  process.stdout.write(`wrote ${path.relative(VERIFIER_DIR, SHA256_PATH)} (${sha256Sidecar(text).trim()})\n`);
+  for (const target of [TARGETS.verify, TARGETS.seal]) {
+    const text = writeTarget(target);
+    process.stdout.write(
+      `wrote ${path.relative(VERIFIER_DIR, target.outPath)} (${Buffer.byteLength(text)} bytes)\n`
+    );
+    process.stdout.write(
+      `wrote ${path.relative(VERIFIER_DIR, target.sha256Path)} (${sha256SidecarFor(text, target.sha256Basename).trim()})\n`
+    );
+  }
 }
 
 module.exports = {
   buildBundle,
+  buildSealBundle,
+  buildTarget,
   writeBundle,
+  writeAll,
+  writeTarget,
   sha256Sidecar,
+  sha256SidecarFor,
   OUT_PATH,
   SHA256_PATH,
   SHA256_BASENAME,
+  SEAL_OUT_PATH,
+  SEAL_SHA256_PATH,
+  SEAL_SHA256_BASENAME,
   DIST_DIR,
   VERIFIER_DIR,
   MODULES,
+  VERIFY_MODULES,
+  SEAL_MODULES,
+  TARGETS,
 };

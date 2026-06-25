@@ -1,0 +1,12 @@
+{
+  "_DISCLAIMER": "DRAFT / NOT-LEGAL-ADVICE — ILLUSTRATIVE ONLY. This sample grades an `ambiguous_deposit` (a book deposit whose beneficiary type cannot be determined) from the built-in WARNING up to ERROR, to show how a per-state policy can make an undetermined deposit a hard FAIL until it is classified. The citation below is a PLACEHOLDER, not verified legal text. A qualified CPA/broker must edit this for their actual jurisdiction. This tool aids reconciliation; the broker remains the responsible legal custodian of trust funds.",
+  "schemaVersion": 1,
+  "state": "EXAMPLE-STATE (ambiguous-deposit hard-fail)",
+  "severities": {
+    "ambiguous_deposit": "error"
+  },
+  "citations": {
+    "ambiguous_deposit": "EXAMPLE Trust Account Rule §0000(b) (PLACEHOLDER) — every deposit into the trust account must be identifiable to a beneficiary; an unclassifiable deposit may conceal an un-segregated security deposit and is treated as a hard finding, not a warning, until its beneficiary type is established."
+  },
+  "toleranceCents": 0
+}

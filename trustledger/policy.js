@@ -43,7 +43,11 @@ const { EXCEPTION, SEVERITY, compareExceptions } = require("./reconcile");
 const SCHEMA_VERSION = 1;
 
 // The set of legal exception type strings, derived from reconcile.js (NOT
-// re-declared here) so the two can never drift.
+// re-declared here) so the two can never drift. Because it is enum-derived, a
+// new engine exception type (e.g. `ambiguous_deposit`) becomes an accepted
+// `severities`/`citations` key automatically — no re-listing here — so a state
+// can grade it (escalate the default WARNING to a hard ERROR) the day the
+// engine learns to detect it.
 const EXCEPTION_TYPES = Object.freeze(new Set(Object.values(EXCEPTION)));
 // The set of legal severity strings, likewise derived.
 const SEVERITY_VALUES = Object.freeze(new Set(Object.values(SEVERITY)));

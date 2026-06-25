@@ -322,7 +322,12 @@ function buildPacket({
   // PASS only when the three balances tie out AND there is no ERROR-severity
   // exception. An out-of-trust finding (commingling, unsegregated deposit) is a
   // FAIL even if the arithmetic happens to net to zero — the gate must protect
-  // the beneficiaries, not just the totals.
+  // the beneficiaries, not just the totals. This counts.error gate is
+  // exception-TYPE-agnostic: it sees only the post-policy severity, so a policy
+  // that escalates a normally-WARNING finding (e.g. an `ambiguous_deposit` whose
+  // beneficiary type a state requires be established) to ERROR flips this verdict
+  // to FAIL on the SAME files, while with no policy that finding stays a WARNING
+  // and does NOT by itself fail a firm with otherwise-clean, tying-out books.
   const pass = rec.tiesOut && counts.error === 0;
 
   // Disclaimer: the three baseline lines verbatim (so the no-policy packet is

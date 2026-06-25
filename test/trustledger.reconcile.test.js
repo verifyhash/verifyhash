@@ -1351,3 +1351,154 @@ describe("T-42.1 trustledger/reconcile: an owner draw EXCEEDING the owner's own 
     expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
   });
 });
+
+describe("T-42.2 trustledger: an owner over-draw gates PASS/FAIL FIRST-CLASS through report.buildPacket + renders everywhere", function () {
+  const report = require("../trustledger/report");
+  const { validatePolicy, applyPolicy } = require("../trustledger/policy");
+
+  // A book where the owner contributes $1,000 of its OWN capital and then draws
+  // $1,500 — $500 BEYOND its contribution, i.e. $500 of TENANT money (Jones holds
+  // $5,000 rent in the pooled account). The owner is a control-account sub-ledger
+  // party, so the pooled SUM still ties to the book via the owner's -$500 bucket:
+  // the three-way SUM ties out and the ONLY thing that can fail the verdict is the
+  // owner-overdraw ERROR, isolating the verdict flip to that finding.
+  function overdrawBook() {
+    return [
+      rec("2026-05-01", 100000, "Owner contribution Acme", { source: "quickbooks", kind: "deposit", party: "Owner Acme" }),
+      rec("2026-05-01", 500000, "rent jones", { source: "quickbooks", kind: "deposit", party: "Jones (4B)" }),
+      rec("2026-05-10", -150000, "Owner draw - disbursement to owner Acme", { source: "quickbooks", kind: "check", party: "Owner Acme" }),
+    ];
+  }
+  // A rent roll netting the SAME pooled total as the book ($4,500): Jones +$5,000
+  // and the owner control bucket -$500 (contributed $1,000, drew $1,500). So
+  // book == sub-ledger == bank and the three-way SUM ties out.
+  function overdrawRent() {
+    return [
+      rec("2026-05-01", 500000, "rent", { kind: "rent", party: "Jones (4B)", source: "rentroll" }),
+      rec("2026-05-01", 100000, "owner contribution", { kind: "rent", party: "Owner Acme", source: "rentroll" }),
+      rec("2026-05-10", -150000, "owner draw", { kind: "rent", party: "Owner Acme", source: "rentroll" }),
+    ];
+  }
+  function overRows(model) {
+    return model.exceptions.filter((e) => e.type === EXCEPTION.OWNER_OVERDRAW);
+  }
+
+  it("DEFAULT policy: the three balances tie out but the masked owner over-draw FAILs the gate (the formerly-silent PASS)", function () {
+    const model = report.buildPacket({
+      bank: [],
+      book: overdrawBook(),
+      rentroll: overdrawRent(),
+      reportDate: "2026-05-31",
+    });
+    // The pooled three-way SUM ties out perfectly...
+    expect(model.tiesOut).to.equal(true);
+    // ...yet the packet FAILs, because the owner paid itself $500 of tenant money.
+    // This is the verdict/exit-code contract: model.pass=false => CLI maps to
+    // EXIT.FAIL=3. Before owner_overdraw existed this masked case was a silent PASS.
+    expect(model.pass).to.equal(false);
+    expect(model.counts.error).to.be.at.least(1);
+    const over = overRows(model);
+    expect(over).to.have.length(1);
+    expect(over[0].severity).to.equal(SEVERITY.ERROR);
+    // The machine packet row names the owner + the EXCESS (tenant money consumed).
+    expect(over[0].amount).to.equal(50000); // $1,500 drawn - $1,000 contributed
+    expect(over[0].detail).to.include("Owner Acme");
+    expect(over[0].detail).to.include("$500.00");
+  });
+
+  it("the finding renders in BOTH the human report (HTML + CSV) and the machine packet", function () {
+    const model = report.buildPacket({
+      bank: [],
+      book: overdrawBook(),
+      rentroll: overdrawRent(),
+      reportDate: "2026-05-31",
+    });
+    // Machine packet (the model the --json path emits): the row is present.
+    expect(overRows(model)).to.have.length(1);
+
+    // Human HTML report: the verdict reads FAIL and the finding's label/detail show.
+    const html = report.renderHTML(model);
+    expect(html).to.include("FAIL");
+    expect(html).to.include("Owner draw exceeds contributed capital");
+    expect(html).to.include("Owner Acme");
+    expect(html).to.include("$500.00");
+
+    // Human CSV report (the bookkeeper's worksheet): the type + label + party show.
+    const csv = report.renderExceptionsCSV(model);
+    expect(csv).to.include(EXCEPTION.OWNER_OVERDRAW);
+    expect(csv).to.include("Owner draw exceeds contributed capital");
+    expect(csv).to.include("Owner Acme");
+  });
+
+  it("a per-state policy re-grading owner_overdraw to WARNING flips the verdict FAIL -> PASS (same files, ZERO schema change)", function () {
+    // The override lives entirely in the EXISTING severities map — no new field.
+    const policy = validatePolicy({
+      schemaVersion: 1,
+      state: "EXAMPLE-STATE (owner-overdraw re-grade)",
+      severities: { [EXCEPTION.OWNER_OVERDRAW]: SEVERITY.WARNING },
+      citations: { [EXCEPTION.OWNER_OVERDRAW]: "Test Stat. 5.1.2" },
+    });
+    const model = report.buildPacket({
+      bank: [],
+      book: overdrawBook(),
+      rentroll: overdrawRent(),
+      reportDate: "2026-05-31",
+      policy,
+    });
+    const over = overRows(model);
+    expect(over).to.have.length(1);
+    expect(over[0].severity).to.equal(SEVERITY.WARNING);
+    expect(over[0].citation).to.equal("Test Stat. 5.1.2");
+    expect(model.counts.error).to.equal(0);
+    expect(model.pass).to.equal(true);
+    // The named owner + excess detail survives the policy override verbatim.
+    expect(over[0].detail).to.include("Owner Acme");
+    expect(over[0].detail).to.include("$500.00");
+  });
+
+  it("applyPolicy is the SAME path: re-grading owner_overdraw leaves detail/amount/records verbatim, only severity changes", function () {
+    const book = overdrawBook();
+    const raw = reconcile([], book, { "Owner Acme": -50000, "Jones (4B)": 500000 }, {
+      matchResult: matchReconcile([], book),
+    });
+    const beforeRow = raw.exceptions.find((e) => e.type === EXCEPTION.OWNER_OVERDRAW);
+    expect(beforeRow).to.be.an("object");
+    const policy = validatePolicy({
+      schemaVersion: 1,
+      state: "Lenient Overdraw",
+      severities: { [EXCEPTION.OWNER_OVERDRAW]: SEVERITY.WARNING },
+    });
+    const after = applyPolicy(raw, policy);
+    const afterRow = after.exceptions.find((e) => e.type === EXCEPTION.OWNER_OVERDRAW);
+    // Only severity may change; detail/label/amount/records carry through verbatim.
+    expect(afterRow.detail).to.equal(beforeRow.detail);
+    expect(afterRow.label).to.equal(beforeRow.label);
+    expect(afterRow.amount).to.equal(beforeRow.amount);
+    expect(afterRow.records).to.deep.equal(beforeRow.records);
+    expect(afterRow.severity).to.equal(SEVERITY.WARNING);
+  });
+
+  it("a book with NO owner over-draw still PASSes through the report (no false FAIL introduced)", function () {
+    // Owner contributes $2,000 and draws only $1,500 — fully within its OWN funds.
+    const book = [
+      rec("2026-05-01", 200000, "Owner contribution Acme", { source: "quickbooks", kind: "deposit", party: "Owner Acme" }),
+      rec("2026-05-01", 500000, "rent jones", { source: "quickbooks", kind: "deposit", party: "Jones (4B)" }),
+      rec("2026-05-10", -150000, "Owner draw - disbursement to owner Acme", { source: "quickbooks", kind: "check", party: "Owner Acme" }),
+    ];
+    const rentroll = [
+      rec("2026-05-01", 500000, "rent", { kind: "rent", party: "Jones (4B)", source: "rentroll" }),
+      rec("2026-05-01", 200000, "owner contribution", { kind: "rent", party: "Owner Acme", source: "rentroll" }),
+      rec("2026-05-10", -150000, "owner draw", { kind: "rent", party: "Owner Acme", source: "rentroll" }),
+    ];
+    const model = report.buildPacket({ bank: [], book, rentroll, reportDate: "2026-05-31" });
+    expect(overRows(model)).to.have.length(0);
+    expect(model.tiesOut).to.equal(true);
+    expect(model.pass).to.equal(true);
+  });
+
+  it("is deterministic: the same inputs produce a byte-identical packet model", function () {
+    const a = report.buildPacket({ bank: [], book: overdrawBook(), rentroll: overdrawRent(), reportDate: "2026-05-31" });
+    const b = report.buildPacket({ bank: [], book: overdrawBook(), rentroll: overdrawRent(), reportDate: "2026-05-31" });
+    expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
+  });
+});

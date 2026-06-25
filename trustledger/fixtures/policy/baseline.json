@@ -8,6 +8,7 @@
     "timing": "info",
     "nsf_reversal": "warning",
     "owner_draw": "warning",
+    "owner_overdraw": "error",
     "security_deposit_segregation": "error",
     "unreconciled_bank": "warning",
     "unreconciled_book": "warning",

@@ -622,3 +622,171 @@ describe("T-41.2 trustledger/policy: negative_tenant_ledger is FIRST-CLASS — r
     expect(model.pass).to.equal(false);
   });
 });
+
+describe("T-42.2 trustledger/policy: owner_overdraw is FIRST-CLASS — gates PASS/FAIL + re-gradable by state with ZERO schema change", function () {
+  const report = require("../trustledger/report");
+  const policyMod = require("../trustledger/policy");
+
+  // A book in which the owner CONTRIBUTES $1,000 of its OWN capital and then DRAWS
+  // $1,500 — $500 BEYOND its contribution, i.e. $500 of TENANT money (Jones holds
+  // $5,000 rent in the pooled account). The owner is modeled as a control-account
+  // sub-ledger party so the pooled SUM still ties to the book via the owner's
+  // -$500 bucket: the three-way SUM ties out, yet $500 of tenant money was
+  // converted. The ONLY thing that can fail the verdict is the owner-overdraw
+  // ERROR, so the verdict flip we observe is attributable solely to that severity.
+  function overdrawBook() {
+    return [
+      {
+        date: "2026-05-01", amount: 100000, memo: "Owner contribution Acme",
+        kind: "deposit", party: "Owner Acme", source: "quickbooks",
+      },
+      {
+        date: "2026-05-01", amount: 500000, memo: "rent jones",
+        kind: "deposit", party: "Jones (4B)", source: "quickbooks",
+      },
+      {
+        date: "2026-05-10", amount: -150000, memo: "Owner draw - disbursement to owner Acme",
+        kind: "check", party: "Owner Acme", source: "quickbooks",
+      },
+    ];
+  }
+  // A rent roll that nets the SAME pooled total as the book ($4,500): Jones holds
+  // $5,000 and the owner control bucket nets -$500 (contributed $1,000, drew
+  // $1,500). So book == sub-ledger == bank and the three-way SUM ties out, leaving
+  // the owner-overdraw ERROR as the sole driver of the verdict.
+  function overdrawRent() {
+    return [
+      { date: "2026-05-01", amount: 500000, memo: "rent", kind: "rent", party: "Jones (4B)", source: "rentroll" },
+      { date: "2026-05-01", amount: 100000, memo: "owner contribution", kind: "rent", party: "Owner Acme", source: "rentroll" },
+      { date: "2026-05-10", amount: -150000, memo: "owner draw", kind: "rent", party: "Owner Acme", source: "rentroll" },
+    ];
+  }
+  function overRows(result) {
+    return result.exceptions.filter((e) => e.type === EXCEPTION.OWNER_OVERDRAW);
+  }
+
+  it("the legal-type set ALREADY accepts owner_overdraw as a severities key (enum-derived, no schema change)", function () {
+    // No new field, no re-listing: validatePolicy accepts the key because it is
+    // derived from the engine's EXCEPTION enum. Re-grading is a value in the
+    // EXISTING severities map — proof there is zero schema change to make.
+    const p = validatePolicy(
+      goodPolicy({
+        state: "Lenient Overdraw",
+        severities: { [EXCEPTION.OWNER_OVERDRAW]: SEVERITY.WARNING },
+        citations: { [EXCEPTION.OWNER_OVERDRAW]: "Test Stat. 5.1.2" },
+      })
+    );
+    expect(p.severities[EXCEPTION.OWNER_OVERDRAW]).to.equal(SEVERITY.WARNING);
+    expect(p.citations[EXCEPTION.OWNER_OVERDRAW]).to.equal("Test Stat. 5.1.2");
+    // The default is ERROR, so WARNING is a genuine de-escalation.
+    expect(DEFAULT_SEVERITY[EXCEPTION.OWNER_OVERDRAW]).to.equal(SEVERITY.ERROR);
+  });
+
+  it("applyPolicy re-grades owner_overdraw and ONLY it (every other type keeps its default)", function () {
+    const policy = validatePolicy(
+      goodPolicy({
+        state: "Lenient Overdraw",
+        severities: { [EXCEPTION.OWNER_OVERDRAW]: SEVERITY.WARNING },
+      })
+    );
+    const after = applyPolicy(syntheticResult(), policy);
+    for (const ex of after.exceptions) {
+      if (ex.type === EXCEPTION.OWNER_OVERDRAW) {
+        expect(ex.severity).to.equal(SEVERITY.WARNING);
+      } else {
+        expect(ex.severity).to.equal(DEFAULT_SEVERITY[ex.type], `severity for ${ex.type}`);
+      }
+    }
+  });
+
+  it("DEFAULT policy through report.buildPacket: a masked owner over-draw FAILs (pass=false, an ERROR row) — the formerly-silent PASS", function () {
+    const model = report.buildPacket({
+      bank: [],
+      book: overdrawBook(),
+      rentroll: overdrawRent(),
+      reportDate: "2026-05-31",
+    });
+    // The pooled three-way SUM ties out perfectly (the owner control bucket absorbs
+    // the overdraw)...
+    expect(model.tiesOut).to.equal(true);
+    // ...yet the packet FAILs, because the owner paid itself $500 of tenant money.
+    // This is the verdict/exit-code contract: model.pass=false => the CLI maps to
+    // EXIT.FAIL=3. Before owner_overdraw existed this masked case was a silent PASS.
+    expect(model.pass).to.equal(false);
+    expect(model.counts.error).to.be.at.least(1);
+    const over = overRows(model);
+    expect(over).to.have.length(1);
+    expect(over[0].severity).to.equal(SEVERITY.ERROR);
+    // The machine packet row names the owner + the EXCESS (tenant money consumed).
+    expect(over[0].amount).to.equal(50000); // $1,500 drawn - $1,000 contributed
+    expect(over[0].detail).to.include("Owner Acme");
+    expect(over[0].detail).to.include("$500.00");
+  });
+
+  it("a per-state policy re-grading owner_overdraw to WARNING flips the verdict FAIL -> PASS (same files)", function () {
+    const policy = validatePolicy(
+      goodPolicy({
+        state: "EXAMPLE-STATE (owner-overdraw re-grade)",
+        severities: { [EXCEPTION.OWNER_OVERDRAW]: SEVERITY.WARNING },
+        citations: { [EXCEPTION.OWNER_OVERDRAW]: "Test Stat. 5.1.2" },
+      })
+    );
+    const model = report.buildPacket({
+      bank: [],
+      book: overdrawBook(),
+      rentroll: overdrawRent(),
+      reportDate: "2026-05-31",
+      policy,
+    });
+    const over = overRows(model);
+    expect(over).to.have.length(1);
+    // Re-graded to WARNING by policy => no ERROR => PASS, on the IDENTICAL files.
+    expect(over[0].severity).to.equal(SEVERITY.WARNING);
+    expect(over[0].citation).to.equal("Test Stat. 5.1.2");
+    expect(model.counts.error).to.equal(0);
+    expect(model.pass).to.equal(true);
+    // The named owner + excess detail survives the policy override verbatim.
+    expect(over[0].detail).to.include("Owner Acme");
+    expect(over[0].detail).to.include("$500.00");
+    // The packet names the governing policy + carries the override in its meta.
+    expect(model.policy.state).to.equal("EXAMPLE-STATE (owner-overdraw re-grade)");
+    const ov = model.policy.overrides.find((o) => o.type === EXCEPTION.OWNER_OVERDRAW);
+    expect(ov).to.be.an("object");
+    expect(ov.severity).to.equal(SEVERITY.WARNING);
+    expect(ov.citation).to.equal("Test Stat. 5.1.2");
+  });
+
+  it("the bundled `owner-overdraw-example` fixture resolves and de-escalates the finding to WARNING", function () {
+    const resolved = policyMod.resolveState("owner-overdraw-example");
+    expect(resolved.state).to.equal("EXAMPLE-STATE (owner-overdraw re-grade)");
+    expect(resolved.severities[EXCEPTION.OWNER_OVERDRAW]).to.equal(SEVERITY.WARNING);
+    // It changes ONLY the owner-overdraw severity — no other override.
+    expect(Object.keys(resolved.severities)).to.deep.equal([EXCEPTION.OWNER_OVERDRAW]);
+
+    const model = report.buildPacket({
+      bank: [],
+      book: overdrawBook(),
+      rentroll: overdrawRent(),
+      reportDate: "2026-05-31",
+      policy: resolved,
+    });
+    expect(overRows(model)[0].severity).to.equal(SEVERITY.WARNING);
+    expect(model.pass).to.equal(true);
+  });
+
+  it("the shipped baseline fixture grades owner_overdraw at its built-in ERROR default (no behaviour change)", function () {
+    const baseline = readPolicy(readFixture("baseline.json"));
+    expect(baseline.severities[EXCEPTION.OWNER_OVERDRAW]).to.equal(SEVERITY.ERROR);
+    // Applying the baseline leaves the verdict identical to no policy: a masked
+    // owner over-draw still FAILs.
+    const model = report.buildPacket({
+      bank: [],
+      book: overdrawBook(),
+      rentroll: overdrawRent(),
+      reportDate: "2026-05-31",
+      policy: baseline,
+    });
+    expect(overRows(model)[0].severity).to.equal(SEVERITY.ERROR);
+    expect(model.pass).to.equal(false);
+  });
+});

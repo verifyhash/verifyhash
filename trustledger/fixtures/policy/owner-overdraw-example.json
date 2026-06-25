@@ -1,0 +1,12 @@
+{
+  "_DISCLAIMER": "DRAFT / NOT-LEGAL-ADVICE — ILLUSTRATIVE ONLY. This sample RE-GRADES an `owner_overdraw` (an owner account that drew MORE than its own contributed capital, paying itself out of other beneficiaries' trust money) from the built-in ERROR DOWN to WARNING, to show how a per-state policy can decide — with NO schema change, only an entry in the existing severities map — that a documented over-capital owner draw needs a human eye rather than an automatic out-of-trust FAIL. Paying an owner out of tenant or security-deposit money is a conversion of trust funds and is the single most-prosecuted residential-PM trust violation, so the built-in default is ERROR and this DE-escalation is illustrative, NOT a recommendation. The citation below is a PLACEHOLDER, not verified legal text. A qualified CPA/broker must edit this for their actual jurisdiction. This tool aids reconciliation; the broker remains the responsible legal custodian of trust funds.",
+  "schemaVersion": 1,
+  "state": "EXAMPLE-STATE (owner-overdraw re-grade)",
+  "severities": {
+    "owner_overdraw": "warning"
+  },
+  "citations": {
+    "owner_overdraw": "EXAMPLE Trust Account Rule §0000(d) (PLACEHOLDER) — an owner disbursement that temporarily exceeds the owner's own contributed capital within a documented, curable timing window is reviewed by the broker before it is treated as a hard out-of-trust finding; graded a warning pending that review, NOT silently passed."
+  },
+  "toleranceCents": 0
+}

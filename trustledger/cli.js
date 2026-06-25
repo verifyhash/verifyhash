@@ -57,6 +57,7 @@ const close = require("./close");
 const seal = require("./seal");
 const server = require("./server");
 const license = require("./license");
+const plans = require("./plans");
 
 // The three reconcile sources, keyed by the broker-facing label used on the
 // command line (`--map <source>:<logical>=<header>` and the --map-file top-level
@@ -1866,6 +1867,210 @@ async function cmdLicenseIssue(argv, io = {}) {
   return EXIT.PASS;
 }
 
+// ---------------------------------------------------------------------------
+// `vh trust license fulfill` (T-37.2) — the order -> license mapping as a command.
+//
+// The self-serve fulfillment seam: given the planId a customer bought (+ their
+// name, when the period is paid through), resolve it in the plan catalog, copy the
+// plan's entitlements VERBATIM, derive the [issuedAt, expiresAt] window, and emit
+// the SAME signed `*.vhlicense.json` the existing `verify` / reconcile gate already
+// accept — so a billing webhook's fulfillment handler is ONE command per sale.
+//
+// The catalog is the BUNDLED baseline by default (the seller's reviewed price-list,
+// shipped as a DRAFT skeleton — set YOUR price/term per planId), or an explicit
+// `--catalog <file>`. The key is read the EXACT read-used-discarded way `license
+// issue` / `vh dataset sign` read it (EXACTLY ONE of --key-env/--key-file; the loop
+// NEVER holds the key, NEVER echoes it). Entitlements are NEVER hand-typed here —
+// they come ONLY from the resolved plan, so a typo can never mis-entitle a sale.
+// ---------------------------------------------------------------------------
+
+// The bundled DRAFT plan catalog `fulfill` resolves a plan against when no
+// --catalog is given. Read from THIS package's own fixtures dir — never a caller
+// path — so the default resolution is deterministic and self-contained.
+const BUNDLED_CATALOG = path.join(__dirname, "fixtures", "plans", "baseline.json");
+
+// Parse `license fulfill` argv. EXACTLY-ONE-of key sources is enforced downstream
+// by loadSigningWallet (so neither/both error key-free); the parser only collects.
+function parseLicenseFulfillArgs(argv) {
+  const opts = {
+    plan: undefined, // a planId in the catalog
+    customer: undefined,
+    paidThrough: undefined, // OPTIONAL ISO instant; default = issuedAt + plan term
+    issued: undefined, // OPTIONAL ISO instant; default "now" supplied by the command
+    licenseId: undefined, // OPTIONAL; defaulted deterministically by fulfillOrder
+    catalog: undefined, // OPTIONAL path to a plan catalog JSON; default = bundled baseline
+    keyEnv: undefined,
+    keyFile: undefined,
+    out: undefined,
+    json: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const need = () => {
+      const v = argv[++i];
+      if (v === undefined || String(v).startsWith("--")) {
+        const e = new Error(`${a} requires a value`);
+        e.usage = true;
+        throw e;
+      }
+      return v;
+    };
+    switch (a) {
+      case "--plan": opts.plan = need(); break;
+      case "--customer": opts.customer = need(); break;
+      case "--paid-through": opts.paidThrough = need(); break;
+      case "--issued": opts.issued = need(); break;
+      case "--license-id": opts.licenseId = need(); break;
+      case "--catalog": opts.catalog = need(); break;
+      case "--key-env": opts.keyEnv = need(); break;
+      case "--key-file": opts.keyFile = need(); break;
+      case "--out": opts.out = need(); break;
+      case "--json": opts.json = true; break;
+      default: {
+        const e = new Error(`unknown option: ${a}`);
+        e.usage = true;
+        throw e;
+      }
+    }
+  }
+  return opts;
+}
+
+async function cmdLicenseFulfill(argv, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseLicenseFulfillArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // Required order fields (the key sources are validated by loadSigningWallet; the
+  // plan is resolved against the catalog by fulfillOrder).
+  for (const [flag, val] of [
+    ["--plan", opts.plan],
+    ["--customer", opts.customer],
+  ]) {
+    if (val == null) {
+      writeErr(`error: \`vh trust license fulfill\` requires ${flag}\n`);
+      return EXIT.USAGE;
+    }
+  }
+
+  // Load + strictly validate the plan catalog (bundled baseline by default). A
+  // malformed/unreadable catalog is a usage error (a bad data file, not an IO crash).
+  const catalogPath = opts.catalog != null ? path.resolve(opts.catalog) : BUNDLED_CATALOG;
+  let catalog;
+  try {
+    const text = fs.readFileSync(catalogPath, "utf8");
+    catalog = plans.validatePlanCatalog(JSON.parse(text));
+  } catch (e) {
+    writeErr(`error: cannot load plan catalog ${catalogPath}: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // Resolve the HUMAN-supplied key into an in-process Wallet FIRST, BEFORE building
+  // anything — neither/both sources, a missing env var, an unreadable file, or a
+  // malformed/zero key hard-errors here with a KEY-FREE message (the SAME core +
+  // posture as `license issue` / `vh dataset sign`). The loop never holds a key.
+  let wallet;
+  try {
+    ({ wallet } = coreAttestation.loadSigningWallet({ keyEnv: opts.keyEnv, keyFile: opts.keyFile }));
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // issuedAt defaults to the injectable clock (a real ISO instant at runtime; a
+  // pinned one in tests). The order -> license-params mapping is PURE + deterministic.
+  const issuedAt = opts.issued != null ? opts.issued : (io.nowISO || nowISO)();
+  let params;
+  try {
+    params = license.fulfillOrder(
+      {
+        plan: opts.plan,
+        customer: opts.customer,
+        issuedAt,
+        paidThrough: opts.paidThrough != null ? opts.paidThrough : undefined,
+        licenseId: opts.licenseId != null && opts.licenseId !== "" ? opts.licenseId : undefined,
+      },
+      catalog
+    );
+  } catch (e) {
+    // An unknown plan / paidThrough<=issuedAt / malformed date is a usage error —
+    // NEVER echo the key (a mapping error carries only the bad order field).
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // Sign the derived params into the SAME signed container `issue` mints — the
+  // existing verify / gate accept it byte-for-byte. No key handling here; the key
+  // lives only inside `wallet`.
+  let container;
+  try {
+    container = await license.buildLicense(params, wallet);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  const canonical = license.serializeSignedLicense(container);
+  // The PUBLIC vendor address — recovered from the signature, never the key.
+  const vendor = coreAttestation.recoverSigner(container);
+  const payload = JSON.parse(container.attestation);
+
+  let outAbs = null;
+  if (opts.out) {
+    outAbs = path.resolve(opts.out);
+    try {
+      fs.writeFileSync(outAbs, canonical);
+    } catch (e) {
+      writeErr(`error: cannot write --out license file ${opts.out}: ${e.message}\n`);
+      return EXIT.IO;
+    }
+  }
+
+  if (opts.json) {
+    // ONLY public fields: vendor ADDRESS, the license summary, the path — NEVER the
+    // key. With no --out the canonical bytes ride in `container` (artifact parity).
+    write(
+      JSON.stringify(
+        {
+          fulfilled: true,
+          vendor,
+          licenseId: payload.licenseId,
+          customer: payload.customer,
+          plan: payload.plan,
+          entitlements: payload.entitlements,
+          issuedAt: payload.issuedAt,
+          expiresAt: payload.expiresAt,
+          out: outAbs,
+          container: outAbs ? null : canonical,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(`fulfilled TrustLedger license for plan ${payload.plan} by vendor ${vendor}\n`);
+    write(`  licenseId:    ${payload.licenseId}\n`);
+    write(`  customer:     ${payload.customer}\n`);
+    write(`  plan:         ${payload.plan}\n`);
+    write(`  entitlements: ${payload.entitlements.join(", ")}\n`);
+    write(`  issuedAt:     ${payload.issuedAt}\n`);
+    write(`  expiresAt:    ${payload.expiresAt}\n`);
+    if (outAbs) {
+      write(`  written:      ${outAbs}\n`);
+    } else {
+      // No --out: emit the canonical signed bytes after the human header.
+      write(canonical);
+    }
+  }
+  return EXIT.PASS;
+}
+
 // Parse `license verify <file> --vendor <0xaddr> [--json] [--now <iso>]`.
 function parseLicenseVerifyArgs(argv) {
   const opts = { file: undefined, vendor: undefined, json: false, now: undefined, _positionals: [] };
@@ -1973,6 +2178,7 @@ function cmdLicense(argv, io = {}) {
   const writeErr = io.writeErr || ((s) => process.stderr.write(s));
   const [sub, ...rest] = argv;
   if (sub === "issue") return cmdLicenseIssue(rest, io);
+  if (sub === "fulfill") return cmdLicenseFulfill(rest, io);
   if (sub === "verify") return cmdLicenseVerify(rest, io);
   if (sub === "help" || sub === "-h" || sub === "--help") {
     (io.write || ((s) => process.stdout.write(s)))(licenseHelp());
@@ -1980,7 +2186,7 @@ function cmdLicense(argv, io = {}) {
   }
   writeErr(
     `error: unknown license subcommand: ${sub === undefined ? "(none)" : sub} ` +
-      "(expected: issue, verify)\n" +
+      "(expected: issue, fulfill, verify)\n" +
       licenseHelp()
   );
   return EXIT.USAGE;
@@ -1995,6 +2201,14 @@ function licenseHelp() {
     "      Sign a license with a key YOU supply at runtime (read-used-discarded, NEVER",
     "      written/logged/echoed). Prints ONLY the public vendor address + the summary + path.",
     `      Entitlements (closed set): ${license.ENTITLEMENT_FLAGS.join(", ")}.`,
+    "",
+    "  fulfill --plan <id> --customer <name> [--paid-through <ISO>] [--catalog <file>]",
+    "        (--key-env <VAR> | --key-file <path>) [--issued <ISO>] [--license-id <id>] [--out <file>] [--json]",
+    "      The order -> license mapping: resolve <id> in the plan catalog (bundled DRAFT baseline",
+    "      by default, or --catalog), copy that plan's entitlements VERBATIM, derive the window",
+    "      (--paid-through, else issuedAt + the plan's term), and emit the SAME signed license",
+    "      `verify` / the reconcile gate accept. Entitlements are NEVER hand-typed — a typo can't",
+    "      mis-entitle a sale. Same key posture as `issue` (read-used-discarded, never echoed).",
     "",
     "  verify <file> --vendor <0xaddr> [--json] [--now <ISO>]",
     "      Read-only, OFFLINE, key-free. Prints VALID/INVALID + reason + entitlements + expiry.",
@@ -2124,6 +2338,8 @@ module.exports = {
   cmdTrust,
   parseLicenseIssueArgs,
   cmdLicenseIssue,
+  parseLicenseFulfillArgs,
+  cmdLicenseFulfill,
   parseLicenseVerifyArgs,
   cmdLicenseVerify,
   cmdLicense,

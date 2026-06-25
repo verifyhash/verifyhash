@@ -204,6 +204,155 @@ function hasEntitlement(verdict, flag) {
   return coreLicense.hasEntitlement(verdict, flag);
 }
 
+// ---------------------------------------------------------------------------
+// THE ORDER -> LICENSE MAPPING (T-37.2).
+//
+// fulfillOrder turns a normalized ORDER — what a billing webhook knows after a
+// payment succeeds: which `plan` was bought, for which `customer`, when it was
+// `issuedAt`, and through when it is `paidThrough` — into the EXACT params
+// `buildLicensePayload`/`buildLicense` consume. It is the single, deterministic
+// seam a self-serve fulfillment handler calls: resolve the plan in the catalog,
+// copy its entitlements VERBATIM, derive the window, and hand back the params.
+//
+// PURE + DETERMINISTIC. No filesystem, no clock, no network, no key. The SAME
+// { plan, customer, paidThrough, issuedAt } + the SAME catalog yields a
+// byte-identical params object EVERY time (so the signed license bytes are
+// reproducible). The caller resolves + validates the catalog (validatePlanCatalog)
+// and passes it in; we never read it from disk.
+//
+// THE WINDOW.
+//   * issuedAt is REQUIRED and must be a canonical ISO instant (validateLicense's
+//     grammar — millis required, no rolled-over fields).
+//   * expiresAt comes from `paidThrough` when supplied (the billing system's own
+//     period end — the source of truth a renewal extends); otherwise it is DERIVED
+//     as issuedAt + plan.termDays days, so a plan with NO explicit period still
+//     mints a correct window from the catalog's term. Day arithmetic is on the UTC
+//     epoch (termDays * 86_400_000 ms) so it is DST-free and deterministic.
+//   * A paidThrough at or BEFORE issuedAt is a NAMED reject (an empty/negative
+//     window is never silently honored), exactly as validateLicense rejects
+//     expiresAt <= issuedAt.
+//
+// ENTITLEMENTS come ONLY from the resolved plan — never re-typed by the caller —
+// so a typo can never under/over-entitle a paying customer. An unknown `plan` is a
+// NAMED reject naming the known planIds. A malformed issuedAt/paidThrough is a
+// NAMED reject (it flows through validateLicense's strict grammar when the params
+// are built into a payload, and we pre-check the obvious shape here for a clear
+// message). fulfillOrder NEVER signs — it only produces the params; the caller
+// (fulfill) supplies the key and signs via buildLicense.
+// ---------------------------------------------------------------------------
+
+// Strict canonical-ISO check, reused so fulfillOrder's date errors match the
+// validateLicense grammar exactly (millis required, no rolled-over/impossible
+// fields). Returns epoch-ms or throws a LicenseError naming the offending field.
+function _requireCanonicalInstant(field, value) {
+  if (typeof value !== "string" || !coreLicense.ISO_INSTANT_RE.test(value)) {
+    throw new LicenseError(
+      `order ${field} must be an ISO-8601 UTC instant ("YYYY-MM-DDTHH:MM:SS(.mmm)Z"), got: ${String(value)}`
+    );
+  }
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms) || new Date(ms).toISOString() !== value) {
+    throw new LicenseError(
+      `order ${field} must be a canonical ISO-8601 UTC instant ("YYYY-MM-DDTHH:MM:SS.mmmZ", millis required, ` +
+        `no rolled-over/impossible fields), got: ${String(value)}`
+    );
+  }
+  return ms;
+}
+
+// Resolve a planId against a VALIDATED catalog WITHOUT importing plans.js (which
+// already depends on license.js — importing it back would be a require cycle). We
+// read the frozen plansById map the catalog carries; an unknown id is a NAMED
+// reject naming the known plans.
+function _resolvePlan(catalog, planId) {
+  if (
+    catalog == null ||
+    typeof catalog !== "object" ||
+    catalog.plansById == null ||
+    typeof catalog.plansById !== "object"
+  ) {
+    throw new LicenseError("fulfillOrder requires a validated plan catalog (see plans.validatePlanCatalog)");
+  }
+  if (typeof planId !== "string" || planId.trim() === "") {
+    throw new LicenseError("order `plan` must be a non-empty planId string");
+  }
+  if (!Object.prototype.hasOwnProperty.call(catalog.plansById, planId)) {
+    const known = Object.keys(catalog.plansById).sort().join(", ");
+    throw new LicenseError(
+      `unknown plan ${JSON.stringify(planId)}; known plans are: ${known}`
+    );
+  }
+  return catalog.plansById[planId];
+}
+
+/**
+ * fulfillOrder(order, catalog) — PURE, DETERMINISTIC order -> license-params mapping.
+ *
+ * @param {object} order
+ *   @param {string} order.plan         a planId present in `catalog`
+ *   @param {string} order.customer     the customer name (non-empty)
+ *   @param {string} order.issuedAt     REQUIRED canonical ISO instant the license is issued at
+ *   @param {string} [order.paidThrough] OPTIONAL canonical ISO instant the period is paid through;
+ *                                       when omitted, expiresAt = issuedAt + plan.termDays days
+ *   @param {string} [order.licenseId]  OPTIONAL explicit id; defaulted deterministically when omitted
+ * @param {object} catalog a VALIDATED plan catalog (plans.validatePlanCatalog output)
+ * @returns {{ licenseId, customer, plan, entitlements, issuedAt, expiresAt }}
+ *          the EXACT params buildLicensePayload/buildLicense consume.
+ */
+function fulfillOrder(order, catalog) {
+  if (order == null || typeof order !== "object" || Array.isArray(order)) {
+    throw new LicenseError(
+      "fulfillOrder requires an order object { plan, customer, issuedAt, paidThrough?, licenseId? }"
+    );
+  }
+  const plan = _resolvePlan(catalog, order.plan);
+
+  if (typeof order.customer !== "string" || order.customer.length === 0) {
+    throw new LicenseError("order `customer` must be a non-empty string");
+  }
+
+  // issuedAt is REQUIRED and held to the strict canonical grammar up front (a clear
+  // message rather than a buried buildLicensePayload throw).
+  const issuedMs = _requireCanonicalInstant("issuedAt", order.issuedAt);
+
+  // Derive expiresAt: an explicit paidThrough wins (the billing period's own end);
+  // otherwise issuedAt + termDays days on the UTC epoch (DST-free, deterministic).
+  let expiresAt;
+  if (order.paidThrough != null) {
+    const paidMs = _requireCanonicalInstant("paidThrough", order.paidThrough);
+    if (paidMs <= issuedMs) {
+      throw new LicenseError(
+        `order paidThrough (${order.paidThrough}) must be strictly AFTER issuedAt (${order.issuedAt})`
+      );
+    }
+    expiresAt = order.paidThrough;
+  } else {
+    // termDays * one UTC day in ms. termDays is a validated positive integer, so the
+    // result is a real future instant; toISOString re-canonicalizes it.
+    const DAY_MS = 86400000;
+    expiresAt = new Date(issuedMs + plan.termDays * DAY_MS).toISOString();
+  }
+
+  // licenseId: an explicit one wins; else a DETERMINISTIC default derived from the
+  // order (same order => same id => byte-identical params), mirroring license issue.
+  const licenseId =
+    order.licenseId != null && order.licenseId !== ""
+      ? order.licenseId
+      : `LIC-${order.issuedAt}-${plan.planId}`;
+
+  // Entitlements come ONLY from the resolved plan, copied verbatim (a fresh array so
+  // the frozen catalog plan is never handed out by reference). buildLicensePayload
+  // re-canonicalizes order + validates the closed set.
+  return {
+    licenseId,
+    customer: order.customer,
+    plan: plan.planId,
+    entitlements: plan.entitlements.slice(),
+    issuedAt: order.issuedAt,
+    expiresAt,
+  };
+}
+
 module.exports = {
   LICENSE_KIND,
   LICENSE_SCHEMA_VERSION,
@@ -226,4 +375,6 @@ module.exports = {
   readLicense,
   verifyLicense,
   hasEntitlement,
+  // order -> license-params mapping (T-37.2)
+  fulfillOrder,
 };

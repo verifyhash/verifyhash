@@ -67,6 +67,7 @@ const EXCEPTION = Object.freeze({
   NSF_REVERSAL: "nsf_reversal", // a bounced deposit reversed by the bank
   OWNER_DRAW: "owner_draw", // owner pulled funds (must not dip into tenant money)
   SECURITY_DEPOSIT_SEGREGATION: "security_deposit_segregation", // deposit not held separately
+  AMBIGUOUS_DEPOSIT: "ambiguous_deposit", // a book deposit whose beneficiary type can't be determined
   TIMING: "timing", // generic date-window timing difference
   UNRECONCILED_BANK: "unreconciled_bank", // a bank line nothing explains
   UNRECONCILED_BOOK: "unreconciled_book", // a book line nothing explains
@@ -91,6 +92,13 @@ const DEFAULT_SEVERITY = Object.freeze({
   [EXCEPTION.NSF_REVERSAL]: SEVERITY.WARNING,
   [EXCEPTION.OWNER_DRAW]: SEVERITY.WARNING,
   [EXCEPTION.SECURITY_DEPOSIT_SEGREGATION]: SEVERITY.ERROR,
+  // A deposit whose beneficiary type we cannot determine (no recognizable
+  // keyword, not an explicitly-labeled rent/receipt) is a WARNING by default: it
+  // MIGHT be an un-segregated security deposit hiding as a generic deposit, so a
+  // human must look — but absent a security-deposit signal we do NOT escalate it
+  // to the out-of-trust ERROR a confirmed unsegregated deposit gets. A state MAY
+  // re-grade it via policy.
+  [EXCEPTION.AMBIGUOUS_DEPOSIT]: SEVERITY.WARNING,
   [EXCEPTION.UNRECONCILED_BANK]: SEVERITY.WARNING,
   [EXCEPTION.UNRECONCILED_BOOK]: SEVERITY.WARNING,
   [EXCEPTION.SUBLEDGER_OUT_OF_BALANCE]: SEVERITY.ERROR,
@@ -142,6 +150,65 @@ function isNsf(rec) {
   if (rec.kind === "nsf") return true;
   const t = `${rec.memo || ""} ${rec.kind || ""}`.toLowerCase();
   return /\bnsf\b|returned|bounced|insufficient|reversal/.test(t);
+}
+
+// A CLOSED allowlist of purpose keywords that make a book inflow's beneficiary
+// type RECOGNIZABLE. If a deposit's memo/kind matches ANY of these, we know what
+// the money is (rent, an owner contribution, a refund, a fee credit, a payment
+// installment, an explicit transfer, etc.), so it is NOT ambiguous. Security-
+// deposit keywords are handled separately by isSecurityDeposit (which produces
+// the ERROR-grade segregation finding) and so are intentionally NOT here — a
+// recognizable security deposit must never be downgraded to a mere "recognized"
+// inflow. Keeping the list CLOSED means a genuinely-unlabeled "Deposit - 12B
+// Smith" stays LOUD instead of being silently swept into a generic bucket.
+const RECOGNIZED_DEPOSIT_PURPOSE =
+  /\brent\b|\brents?\b|lease|tenant payment|\bpayment\b|\bpaid\b|partial|installment|instalment|\bowner\b|contribution|capital|reserve|distribution|\bdraw\b|\brefund\b|reimburs|\bfee\b|charge|interest|\bnsf\b|returned|bounced|reversal|transfer|segregat|escrow|in transit|in-transit|operating|management|commission|\bproceeds\b|payoff|\bach\b|wire|adjustment|correction|chargeback/;
+
+// An EXPLICIT per-record marker that LABELS the deposit, so a labeled deposit /
+// rent receipt is never flagged as ambiguous even if its free-text memo happens
+// to lack a recognized keyword. Honored markers (any one suffices):
+//   * rec.kind === "rent"                 — an explicit rent receipt
+//   * rec.depositType is a non-empty str  — the beneficiary type was stated
+//   * rec.ambiguous === false             — the caller asserts it is determined
+//   * rec.expected === true               — an expected/known line
+// A marker is a deliberate, structured assertion by the producer of the row —
+// distinct from us GUESSING from free text — so it is authoritative here.
+function hasExplicitDepositLabel(rec) {
+  if (rec.kind === "rent") return true;
+  if (typeof rec.depositType === "string" && rec.depositType.trim() !== "") {
+    return true;
+  }
+  if (rec.ambiguous === false) return true;
+  if (rec.expected === true) return true;
+  return false;
+}
+
+// A book deposit whose BENEFICIARY TYPE cannot be determined: a deposit-scale
+// INFLOW that calls itself a "deposit" (the word, or kind === "deposit") but
+// carries NO recognized purpose keyword and is NOT an explicitly-labeled
+// rent/receipt — so we cannot tell whether it is rent, an owner contribution, or
+// an un-segregated security deposit hiding as a generic deposit. We REQUIRE a
+// party (an attributed beneficiary) so a bare bank-statement "Deposit" line with
+// no counterparty is not over-flagged. A record that already matches
+// isSecurityDeposit is NOT ambiguous — it is a recognized security deposit and is
+// handled (as an ERROR) by classifySecurityDeposits; flagging it here too would
+// double-count the same row. PURE: free-text classification only — no fs, no
+// http, no ethers, no clock.
+function isAmbiguousDeposit(rec) {
+  if (!rec) return false;
+  if (!Number.isInteger(rec.amount) || rec.amount <= 0) return false; // inflow only
+  if (hasExplicitDepositLabel(rec)) return false; // labeled => determined
+  if (isSecurityDeposit(rec)) return false; // recognized sec dep => not ambiguous
+  if (isOwnerDraw(rec) || isNsf(rec)) return false; // recognized otherwise
+  const party = String(rec.party || "").trim();
+  if (party === "") return false; // unattributed bare line: don't over-flag
+  const t = `${rec.memo || ""} ${rec.kind || ""}`.toLowerCase();
+  // It must call itself a deposit (the only signal we have), ...
+  const callsItselfDeposit = /\bdeposit\b/.test(t) || rec.kind === "deposit";
+  if (!callsItselfDeposit) return false;
+  // ... and offer NO recognized purpose to disambiguate it.
+  if (RECOGNIZED_DEPOSIT_PURPOSE.test(t)) return false;
+  return true;
 }
 
 // A canonical, order-independent sort key for a record (date, amount, memo).
@@ -299,6 +366,13 @@ function reconcile(bank, book, tenants, opts = {}) {
   //    what the money WAS, independent of whether the line cleared. -----------
   classifyOwnerDraws(book, subBalances, exceptions);
   classifySecurityDeposits(book, bank, exceptions);
+  // A deposit whose beneficiary type can't be determined is a LOUD WARNING, but
+  // only AFTER classifySecurityDeposits has had its say: isAmbiguousDeposit
+  // excludes anything isSecurityDeposit recognizes, so a confirmed un-segregated
+  // security deposit raises ONLY the ERROR-grade segregation finding (no
+  // double-count), while a previously-silent generic-looking deposit is no
+  // longer swept under the rug.
+  classifyAmbiguousDeposits(book, exceptions);
 
   // -- The three-way tie-out. ----------------------------------------------
   // After reconciling items, adjustedBank should equal book, and book should
@@ -556,6 +630,34 @@ function classifySecurityDeposits(book, bank, exceptions) {
   }
 }
 
+// Ambiguous deposits: every book INFLOW that calls itself a deposit but whose
+// beneficiary type we cannot determine (no recognized purpose keyword, not an
+// explicitly-labeled rent/receipt) becomes a LOUD, gradable WARNING finding
+// rather than passing silently as a generic deposit. A record that already
+// surfaced as a SECURITY_DEPOSIT_SEGREGATION finding is NOT re-flagged here:
+// isAmbiguousDeposit already excludes anything isSecurityDeposit recognizes, so
+// there is no double-count of the same row across the two findings. PURE +
+// deterministic: order-independent (sorted by record key) free-text classification.
+function classifyAmbiguousDeposits(book, exceptions) {
+  for (const r of [...book]
+    .filter(isAmbiguousDeposit)
+    .sort((x, y) => cmp(recKey(x), recKey(y)))) {
+    pushException(exceptions, {
+      type: EXCEPTION.AMBIGUOUS_DEPOSIT,
+      amount: r.amount,
+      label: "Ambiguous deposit (beneficiary type undetermined)",
+      detail:
+        "A book deposit with no recognizable beneficiary-type keyword (it is " +
+        "not clearly rent, an owner contribution, or a labeled security " +
+        "deposit). Confirm what it is: an un-segregated security deposit hiding " +
+        "as a generic deposit is an out-of-trust finding. Label the row " +
+        "(e.g. kind \"rent\", a security-deposit memo, or an explicit deposit " +
+        "type) so this resolves.",
+      records: [r],
+    });
+  }
+}
+
 module.exports = {
   reconcile,
   ReconcileError,
@@ -566,4 +668,5 @@ module.exports = {
   tenantBalances,
   compareExceptions,
   buildContinuityException,
+  isAmbiguousDeposit,
 };

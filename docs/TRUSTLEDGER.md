@@ -149,9 +149,19 @@ validation error rather than a silently-ignored key. They are:
 ```
 outstanding_deposit   outstanding_check   timing
 nsf_reversal          owner_draw          security_deposit_segregation
-unreconciled_bank     unreconciled_book   subledger_out_of_balance
-bank_book_mismatch    continuity_break
+ambiguous_deposit     unreconciled_bank   unreconciled_book
+subledger_out_of_balance                  bank_book_mismatch
+continuity_break
 ```
+
+`ambiguous_deposit` is raised for a book deposit whose beneficiary type cannot be
+determined — a deposit-scale inflow that calls itself a "deposit" but carries no
+recognizable keyword (not clearly rent, an owner contribution, or a labeled
+security deposit) and is not an explicitly-labeled receipt. Its default severity
+is `warning` (it MIGHT be an un-segregated security deposit hiding as a generic
+deposit, so a human must look — but absent a security-deposit signal it is not
+auto-escalated to the out-of-trust `error` a confirmed unsegregated deposit
+gets); like every other type, a per-state policy MAY re-grade it.
 
 `continuity_break` is raised only when a run chains from a prior period's close
 (`--prior-close`) and this period's opening does not roll forward penny-exact from

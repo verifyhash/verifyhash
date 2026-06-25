@@ -161,7 +161,10 @@ security deposit) and is not an explicitly-labeled receipt. Its default severity
 is `warning` (it MIGHT be an un-segregated security deposit hiding as a generic
 deposit, so a human must look — but absent a security-deposit signal it is not
 auto-escalated to the out-of-trust `error` a confirmed unsegregated deposit
-gets); like every other type, a per-state policy MAY re-grade it.
+gets); like every other type, a per-state policy MAY re-grade it. The
+silent-false-pass hazard it exists to close, the WARNING default + the
+explicit-label escape valve, and grading it to ERROR per state are documented in
+**Why `ambiguous_deposit` exists: the silent-false-pass hazard** below.
 
 `continuity_break` is raised only when a run chains from a prior period's close
 (`--prior-close`) and this period's opening does not roll forward penny-exact from
@@ -169,6 +172,83 @@ that prior period's signed ending. Its default severity is `error` (a broken
 roll-forward means the books do not actually continue from the signed prior
 period), and — like every other type — a per-state policy MAY re-grade it (e.g. a
 state that treats a documented timing roll-forward difference as a `warning`).
+
+### Why `ambiguous_deposit` exists: the silent-false-pass hazard
+
+A keyword-only security-deposit detector has a quiet, dangerous failure mode. The
+segregation check that produces the out-of-trust `security_deposit_segregation`
+ERROR only fires when a book inflow **looks like** a security deposit — it matches
+a `security deposit` / `damage deposit` / `deposit held` keyword. That keyword
+match is the **only** signal. So a real, un-segregated security deposit that a
+bookkeeper recorded as a bare **`Deposit - 12B Smith`** — no "security", no
+"damage", just the generic word *deposit* and a tenant — **never trips the
+detector**. It is not rent, not an owner contribution, not a labeled security
+deposit; the keyword-only check simply says nothing, the three balances still tie
+out (the money cleared and sits on the sub-ledger), and the gate **PASSes**. That
+is a **silent false pass**: a possibly out-of-trust deposit slips through *because
+it was mislabeled*, and a keyword-only detector cannot tell the difference between
+"this is definitely fine" and "I could not classify this." The broker gets a green
+PASS that does not mean what they think it means.
+
+`ambiguous_deposit` closes that gap by making **"I could not classify this"** a
+**LOUD, gradable finding** instead of silence. It is raised for a book deposit
+whose beneficiary type cannot be determined — a deposit-scale inflow that calls
+itself a "deposit" (the word, or `kind === "deposit"`), carries an attributed
+party, but offers **no recognizable purpose keyword** (it is not clearly rent, an
+owner contribution, a refund, a fee, a transfer, … — the closed
+`RECOGNIZED_DEPOSIT_PURPOSE` allowlist) **and** is not an explicitly-labeled
+receipt. The predicate is `trustledger/reconcile.js` › `isAmbiguousDeposit` (pure:
+free-text classification only, no fs/http/clock). A row that already matches the
+security-deposit keyword is handled by the segregation ERROR and is **not**
+re-flagged here, so the same row is never double-counted.
+
+**The WARNING default + the explicit-label escape valve.** The default severity is
+`warning`, not `error`. The reasoning is deliberate: an ambiguous deposit *might*
+be an un-segregated security deposit hiding as a generic deposit (so a human must
+look — silence would be the false pass above), but absent any security-deposit
+signal it is **not** auto-escalated to the out-of-trust `error` a *confirmed*
+unsegregated deposit gets. A WARNING does not by itself FAIL the gate, so a firm
+whose three balances tie out and whose only finding is one ambiguous deposit still
+PASSes — it is **not over-FAILed** for a labeling gap. The escape valve is for the
+producer who already knows what the row is: an **explicit per-record label**
+suppresses the finding (`hasExplicitDepositLabel`). Any **one** of these markers
+suffices — `kind: "rent"` (an explicit rent receipt), a non-empty `depositType`
+(the beneficiary type was stated), `ambiguous: false` (the caller asserts it is
+determined), or `expected: true` (a known/expected line). A marker is a
+deliberate, structured assertion by whoever produced the row — distinct from the
+engine *guessing* from free text — so it is authoritative and the deposit is no
+longer flagged. This keeps a genuinely-unlabeled deposit LOUD while letting an
+exporter that knows its own data turn the finding off cleanly, without weakening
+the detector for everyone else.
+
+**Grading it to ERROR is a per-state CPA decision, via the EXISTING policy layer.**
+Whether an unclassifiable deposit should be a mere WARNING or a hard, out-of-trust
+ERROR is **not** a universal fact — it depends on the state's trust-account
+statute, exactly like every other severity. So TrustLedger does **not** bake the
+escalation in. `ambiguous_deposit` is one of the **legal exception types** above, so
+a per-state policy MAY re-grade it through the **same data-not-code** override
+mechanism every other type uses: a reviewed policy with
+`severities.ambiguous_deposit: "error"` flips the verdict on the *same* files (a
+clean-tying account with one ambiguous deposit goes PASS → FAIL, exit `0` → `3`),
+with its statute `citation` carried into the packet. The bundled
+`ambiguous-deposit-example` draft (`vh trust reconcile --state ambiguous-deposit-example`)
+demonstrates exactly this escalation with a **PLACEHOLDER** citation — illustrative
+only, not a real jurisdiction. Because this rides the existing policy layer, the
+**DRAFT / NOT LEGAL ADVICE** posture from that section applies **verbatim**:
+
+> **DRAFT / NOT LEGAL ADVICE.** The policies that SHIP with TrustLedger
+> (`trustledger/fixtures/policy/*.json`) are **DRAFT skeletons**, not legal advice and **not a claim of
+> regulatory compliance**. The baseline reproduces the built-in defaults verbatim; the example state
+> file carries a **PLACEHOLDER** citation. A qualified **CPA and/or counsel must review and SIGN** the
+> per-state severity mapping and its statute citations for the actual jurisdiction before the gate is
+> relied on. Selecting a policy does **not** make a packet legal advice and does **not** discharge the
+> broker's duty as the responsible legal custodian of trust funds. (STRATEGY.md › P-5 #1/#2.)
+
+So deciding that `ambiguous_deposit` should hard-FAIL in a given state is a
+**fill-in-the-table** task for a qualified human (set `severities.ambiguous_deposit`
+to `error` with the statute citation, have a CPA/counsel sign it) — **no engine
+change**, and **no new `needs-human` item** beyond the per-state policy sign-off
+P-5 #2 already tracks.
 
 ### Selecting a policy: `--state` vs `--policy`
 

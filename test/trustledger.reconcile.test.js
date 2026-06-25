@@ -637,3 +637,123 @@ describe("T-40.1 trustledger/reconcile: security-deposit segregation is matched 
     expect(ex[0].records[0].party).to.equal("Smith (4A)");
   });
 });
+
+describe("T-40.2 trustledger/reconcile: the segregation finding NAMES the at-risk beneficiary + uncovered amount", function () {
+  function segTransfer(date, amountCents, party, memo = "Transfer security deposit to escrow") {
+    return rec(date, -Math.abs(amountCents), memo, {
+      source: "quickbooks",
+      kind: "transfer",
+      party,
+    });
+  }
+  function secDeposit(date, amountCents, party) {
+    return rec(date, Math.abs(amountCents), `Security deposit - ${party}`, {
+      source: "quickbooks",
+      kind: "deposit",
+      party,
+    });
+  }
+  function secEx(r) {
+    return r.exceptions.filter(
+      (e) => e.type === EXCEPTION.SECURITY_DEPOSIT_SEGREGATION
+    );
+  }
+
+  it("names the at-risk beneficiary AND the uncovered amount in `detail` (fully un-segregated)", function () {
+    // Smith deposits $1000 and segregates NOTHING -> the WHOLE $1000 is at risk.
+    const book = [secDeposit("2026-05-01", 100000, "Smith (4A)")];
+    const tenants = { "Smith (4A)": 100000 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    const ex = secEx(r);
+    expect(ex).to.have.length(1);
+    // The detail names WHO is exposed and HOW MUCH is uncovered, to the penny.
+    expect(ex[0].detail).to.include("Smith (4A)");
+    expect(ex[0].detail).to.include("$1,000.00");
+    // The headline amount stays the deposit amount (verdict/exit-code contract).
+    expect(ex[0].amount).to.equal(100000);
+    expect(ex[0].records[0].party).to.equal("Smith (4A)");
+  });
+
+  it("reports the GENUINELY-UNCOVERED amount when the generic pool partially covers a deposit", function () {
+    // Smith deposits $1000; a GENERIC $400 sweep (no party) partially covers it.
+    // Only $600 is genuinely un-segregated -> the detail must say $600.00, NOT
+    // the full $1,000.00 (the formerly over-reported number).
+    const book = [
+      secDeposit("2026-05-01", 100000, "Smith (4A)"),
+      rec("2026-05-02", -40000, "Transfer to escrow", {
+        source: "quickbooks",
+        kind: "transfer",
+        party: "",
+      }),
+    ];
+    const tenants = { "Smith (4A)": 100000 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    const ex = secEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].detail).to.include("Smith (4A)");
+    expect(ex[0].detail).to.include("$600.00"); // genuinely uncovered, not $1,000.00
+    expect(ex[0].detail).to.not.include("$1,000.00");
+    // Headline amount remains the full deposit amount (the row a broker scans).
+    expect(ex[0].amount).to.equal(100000);
+  });
+
+  it("names the RIGHT beneficiary in CASE B (the over-segregated tenant does not appear)", function () {
+    // Jones over-segregates; Smith segregates nothing. Smith is the at-risk name.
+    const book = [
+      secDeposit("2026-05-01", 100000, "Jones (4B)"),
+      secDeposit("2026-05-01", 100000, "Smith (4A)"),
+      segTransfer("2026-05-02", 200000, "Jones (4B)"), // over-segregated
+    ];
+    const tenants = { "Jones (4B)": 100000, "Smith (4A)": 100000 };
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    const ex = secEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].detail).to.include("Smith (4A)");
+    expect(ex[0].detail).to.not.include("Jones (4B)");
+    expect(ex[0].detail).to.include("$1,000.00");
+  });
+
+  it("falls back to an explicit sentinel (never a dangling name) for an unattributed deposit", function () {
+    // A bare security-deposit receipt with NO party still produces a complete
+    // sentence — the name slot is filled with an explicit sentinel, not "".
+    const book = [
+      rec("2026-05-01", 75000, "Security deposit received", {
+        source: "quickbooks",
+        kind: "deposit",
+        party: "",
+      }),
+    ];
+    const tenants = {};
+    const r = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    const ex = secEx(r);
+    expect(ex).to.have.length(1);
+    expect(ex[0].detail).to.include("unattributed beneficiary");
+    expect(ex[0].detail).to.include("$750.00");
+  });
+
+  it("the detail stays deterministic + order-independent (byte-identical findings)", function () {
+    // Jones is short $500 (deposits $1500, segregates $1000); Smith segregates
+    // NOTHING ($1000 at risk). BOTH are flagged; the named detail of each must be
+    // byte-identical regardless of input order.
+    const book = [
+      secDeposit("2026-05-01", 150000, "Jones (4B)"),
+      secDeposit("2026-05-01", 100000, "Smith (4A)"),
+      segTransfer("2026-05-02", 100000, "Jones (4B)"),
+    ];
+    const tenants = { "Jones (4B)": 150000, "Smith (4A)": 100000 };
+    const a = reconcile([], book, tenants, { matchResult: matchReconcile([], book) });
+    const shuffled = [book[2], book[0], book[1]];
+    const b = reconcile([], shuffled, tenants, {
+      matchResult: matchReconcile([], shuffled),
+    });
+    expect(JSON.stringify(b.exceptions)).to.equal(JSON.stringify(a.exceptions));
+    // Two distinct findings, each naming its OWN at-risk beneficiary + amount.
+    const aSeg = secEx(a);
+    expect(aSeg).to.have.length(2);
+    const byParty = new Map(aSeg.map((e) => [e.records[0].party, e]));
+    expect(byParty.get("Jones (4B)").detail).to.include("Jones (4B)");
+    expect(byParty.get("Jones (4B)").detail).to.include("$500.00"); // $1500 - $1000
+    expect(byParty.get("Smith (4A)").detail).to.include("Smith (4A)");
+    expect(byParty.get("Smith (4A)").detail).to.include("$1,000.00");
+  });
+});

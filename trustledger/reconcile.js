@@ -772,18 +772,55 @@ function classifySecurityDeposits(book, bank, exceptions) {
       genericPool -= need;
       continue;
     }
+    // The genuinely-UNCOVERED amount is what the generic residual pool could not
+    // cover (`need` minus whatever this draw consumed) — never the full deposit
+    // when the pool partially covered it. This is the number at risk in trust.
+    const uncovered = need - genericPool;
     genericPool = 0; // a partial generic draw is consumed; the rest is a finding
+    // NAME the at-risk beneficiary so the finding (and the report row) says WHO is
+    // exposed, not just that "a" deposit is un-segregated. A deposit with no party
+    // attributed falls back to an explicit "(unattributed beneficiary)" sentinel
+    // rather than an empty string, so the sentence never reads as a dangling name.
+    const who = beneficiaryLabel(r.party);
     pushException(exceptions, {
       type: EXCEPTION.SECURITY_DEPOSIT_SEGREGATION,
       amount: r.amount,
       label: "Security deposit not segregated",
       detail:
-        "A security-deposit receipt with no matching transfer to a segregated " +
-        "deposit account; many states require security deposits be held " +
-        "separately from operating trust funds.",
+        `Security deposit for ${who} is not segregated: ${fmtCentsForDetail(uncovered)} ` +
+        "of this receipt has no matching transfer to a segregated deposit account. " +
+        "Many states require each beneficiary's security deposit be held separately " +
+        "from operating trust funds; transfer the uncovered amount to a segregated " +
+        `account attributed to ${who}.`,
       records: [r],
     });
   }
+}
+
+// A human-readable beneficiary label for a finding sentence. Uses the record's
+// raw party string verbatim when present (so "Jones (4B)" reads naturally), and a
+// loud, explicit sentinel when the deposit names no beneficiary — never an empty
+// string that would leave the sentence dangling. PURE.
+function beneficiaryLabel(party) {
+  const p = String(party == null ? "" : party).trim();
+  return p === "" ? "an unattributed beneficiary" : p;
+}
+
+// Format integer cents as a signed dollar string ("$1,234.56") for embedding in a
+// finding's detail sentence. reconcile.js is the pure core and intentionally does
+// NOT depend on report.js, so this mirrors report.fmtCents's grouping locally with
+// no new dependency. Deterministic; throws on non-integer input (no float money).
+function fmtCentsForDetail(cents) {
+  if (!Number.isInteger(cents)) {
+    throw new ReconcileError("fmtCentsForDetail requires integer cents");
+  }
+  const neg = cents < 0;
+  const abs = Math.abs(cents);
+  const dollars = Math.floor(abs / 100);
+  const rem = abs % 100;
+  const grouped = String(dollars).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const body = `$${grouped}.${String(rem).padStart(2, "0")}`;
+  return neg ? `-${body}` : body;
 }
 
 // Ambiguous deposits: every book INFLOW that calls itself a deposit but whose

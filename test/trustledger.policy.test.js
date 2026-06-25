@@ -343,3 +343,144 @@ describe("trustledger/policy: applyPolicy", function () {
     );
   });
 });
+
+describe("T-40.2 trustledger/policy: segregation verdict/exit-code flow through report, named beneficiary survives policy", function () {
+  const report = require("../trustledger/report");
+  const { reconcile: matchReconcile } = require("../trustledger/match");
+
+  function rec(date, amount, memo, extra = {}) {
+    return {
+      date,
+      amount,
+      memo,
+      kind: extra.kind || "other",
+      party: extra.party || "",
+      source: extra.source || "quickbooks",
+    };
+  }
+  function secDeposit(date, amountCents, party) {
+    return rec(date, Math.abs(amountCents), `Security deposit - ${party}`, {
+      kind: "deposit",
+      party,
+    });
+  }
+  function segTransfer(date, amountCents, party) {
+    return rec(date, -Math.abs(amountCents), "Transfer security deposit to escrow", {
+      kind: "transfer",
+      party,
+    });
+  }
+
+  // CASE B: Jones over-segregates $2000 against a $1000 deposit; Smith segregates
+  // NOTHING against a $1000 deposit. Per-beneficiary matching flags Smith — and
+  // the verdict must FAIL through the WHOLE report path (the formerly-false-PASS).
+  function caseBBook() {
+    return [
+      secDeposit("2026-05-01", 100000, "Jones (4B)"),
+      secDeposit("2026-05-01", 100000, "Smith (4A)"),
+      segTransfer("2026-05-02", 200000, "Jones (4B)"),
+    ];
+  }
+  // A rent roll that ties out arithmetically (book == sub-ledger), so the ONLY
+  // thing that can fail the verdict is the out-of-trust segregation ERROR — this
+  // isolates the verdict to the finding under test (not a balance mismatch).
+  // The CASE B book nets to $0 ($1000 + $1000 deposits - $2000 transfer out), so
+  // the sub-ledger must net to $0 too: Jones +$1000, Smith +$1000, and the
+  // segregated/escrow account holding the -$2000 that left the operating pool.
+  const caseBRent = [
+    rec("2026-05-01", 100000, "rent", { kind: "rent", party: "Jones (4B)" }),
+    rec("2026-05-01", 100000, "rent", { kind: "rent", party: "Smith (4A)" }),
+    rec("2026-05-02", -200000, "segregated escrow", { kind: "rent", party: "Escrow" }),
+  ];
+
+  it("CASE B FAILs through report.buildPacket: pass=false, an ERROR, and the row NAMES Smith + the uncovered amount", function () {
+    const book = caseBBook();
+    const model = report.buildPacket({
+      bank: [],
+      book,
+      rentroll: caseBRent,
+      reportDate: "2026-05-31",
+    });
+    // The three balances tie out arithmetically, but the un-segregated deposit is
+    // an out-of-trust ERROR, so the packet FAILs (the verdict/exit-code contract:
+    // model.pass=false => the CLI maps to EXIT.FAIL=3).
+    expect(model.tiesOut).to.equal(true);
+    expect(model.pass).to.equal(false);
+    expect(model.counts.error).to.be.at.least(1);
+    const segRows = model.exceptions.filter(
+      (e) => e.type === EXCEPTION.SECURITY_DEPOSIT_SEGREGATION
+    );
+    expect(segRows).to.have.length(1);
+    // The REPORT ROW names the at-risk tenant + uncovered amount in its detail.
+    expect(segRows[0].severity).to.equal(SEVERITY.ERROR);
+    expect(segRows[0].detail).to.include("Smith (4A)");
+    expect(segRows[0].detail).to.include("$1,000.00");
+    expect(segRows[0].detail).to.not.include("Jones (4B)");
+    expect(segRows[0].records[0].party).to.equal("Smith (4A)");
+  });
+
+  it("a per-state policy override of the segregation severity still flows through (re-grade to WARNING flips the verdict to PASS)", function () {
+    const book = caseBBook();
+    // A reviewed policy that re-grades the segregation finding to WARNING (no
+    // schema change — same severities map) must flip the verdict to PASS, proving
+    // the policy layer feeds the SAME verdict/exit-code path with the named row
+    // intact.
+    const policy = validatePolicy(
+      goodPolicy({
+        state: "Testlandia (lenient seg)",
+        severities: {
+          [EXCEPTION.SECURITY_DEPOSIT_SEGREGATION]: SEVERITY.WARNING,
+        },
+        citations: {
+          [EXCEPTION.SECURITY_DEPOSIT_SEGREGATION]: "Test Stat. 1.2.3",
+        },
+      })
+    );
+    const model = report.buildPacket({
+      bank: [],
+      book,
+      rentroll: caseBRent,
+      reportDate: "2026-05-31",
+      policy,
+    });
+    const segRows = model.exceptions.filter(
+      (e) => e.type === EXCEPTION.SECURITY_DEPOSIT_SEGREGATION
+    );
+    expect(segRows).to.have.length(1);
+    // Re-graded to WARNING by policy => no ERROR => PASS, exit code path unchanged.
+    expect(segRows[0].severity).to.equal(SEVERITY.WARNING);
+    expect(segRows[0].citation).to.equal("Test Stat. 1.2.3");
+    expect(model.counts.error).to.equal(0);
+    expect(model.pass).to.equal(true);
+    // The named beneficiary detail survives the policy override verbatim.
+    expect(segRows[0].detail).to.include("Smith (4A)");
+    expect(segRows[0].detail).to.include("$1,000.00");
+  });
+
+  it("the named-beneficiary detail survives applyPolicy verbatim (no schema change to the override map)", function () {
+    const book = caseBBook();
+    const matchResult = matchReconcile([], book);
+    const reconcileMod = require("../trustledger/reconcile");
+    const raw = reconcileMod.reconcile([], book, { "Jones (4B)": 100000, "Smith (4A)": 100000 }, {
+      matchResult,
+    });
+    const beforeRow = raw.exceptions.find(
+      (e) => e.type === EXCEPTION.SECURITY_DEPOSIT_SEGREGATION
+    );
+    const policy = validatePolicy(
+      goodPolicy({
+        severities: { [EXCEPTION.SECURITY_DEPOSIT_SEGREGATION]: SEVERITY.WARNING },
+      })
+    );
+    const after = applyPolicy(raw, policy);
+    const afterRow = after.exceptions.find(
+      (e) => e.type === EXCEPTION.SECURITY_DEPOSIT_SEGREGATION
+    );
+    // Only severity (and citation) may change; the detail/label/amount/records are
+    // carried through verbatim — the named beneficiary is not touched by policy.
+    expect(afterRow.detail).to.equal(beforeRow.detail);
+    expect(afterRow.detail).to.include("Smith (4A)");
+    expect(afterRow.amount).to.equal(beforeRow.amount);
+    expect(afterRow.severity).to.equal(SEVERITY.WARNING);
+  });
+});

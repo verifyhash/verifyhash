@@ -1,0 +1,27 @@
+{
+  "_DISCLAIMER": "A price binding is an OPERATOR-MAINTAINED routing table mapping a billing provider's own price/product id (e.g. a Stripe `price_...` id) to one of THIS catalog's planIds. It is NOT a token, NOT tradeable, NOT an appreciating asset, and makes NO claim of regulatory compliance. It does NOT authenticate the inbound webhook (verifying the provider's signing secret is a HUMAN step); it only maps an already-authenticated event's price id onto a plan so fulfillment can never silently mis-grant. The actual subscription agreement governs.",
+  "kind": "trustledger-price-binding",
+  "schemaVersion": 1,
+  "mappings": [
+    {
+      "provider": "stripe",
+      "priceId": "price_solo_monthly_usd",
+      "planId": "solo-monthly"
+    },
+    {
+      "provider": "stripe",
+      "priceId": "price_pro_annual_usd",
+      "planId": "pro-annual"
+    },
+    {
+      "provider": "stripe",
+      "priceId": "price_firm_annual_usd",
+      "planId": "firm-annual"
+    },
+    {
+      "provider": "paddle",
+      "priceId": "pri_01h_pro_annual",
+      "planId": "pro-annual"
+    }
+  ]
+}

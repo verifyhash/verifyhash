@@ -158,6 +158,101 @@ You can wire this directly into CI / a monthly automation: a non-zero exit block
 
 ---
 
+## FAIL triage: what to fix first (the pilot's first-contact legibility)
+
+A bare FAIL is a **count, not a cause**. The verdict line
+(`FAIL: … DO NOT tie out …; N exception(s) [X error, Y warning, Z info]`) tells a broker *how many*
+findings there are, not *which one decides whether their license is at risk*. For a non-technical
+broker meeting the tool for the **first time** — the make-or-break moment of a P-5 #3 design-partner
+pilot — that single missing distinction is the difference between "this tool found a real problem I
+must fix" and "this tool is broken." A FAIL a pilot broker reads as *the tool can't handle my files*
+loses the pilot no matter how correct the math is; a FAIL they read as *fix this one $1,250
+unreconciled deposit, then you're clean* wins it.
+
+The **triage layer** closes that gap. It is a pure, deterministic read over the **same classified
+exceptions** the verdict already carries (`trustledger/reconcile.js` › `triage`, surfaced by
+`trustledger/report.js` › `triageHeadline` / the HTML "Fix first" callout): it partitions every finding
+into a **root-cause class**, rolls each class up by **dollar impact** (summed absolute integer cents),
+and emits **one headline** naming the single highest-priority thing to fix. It reads the verdict; it
+does **not** change it.
+
+### The four root-cause classes
+
+Every exception type maps to exactly **one** of four classes (a closed, enum-derived map with a
+**load-time exhaustiveness guard** — a new or typo'd exception type is a build error, never silently
+unclassified):
+
+| Class | What it means | What the broker should do |
+| --- | --- | --- |
+| **`out_of_trust`** | a real shortage / commingling / conversion — the trust account is **genuinely out of trust** (an un-segregated security deposit, the sub-ledger out of balance, a negative individual ledger, an owner over-draw, a broken roll-forward, or the bank holding **less** cash than the books) | **Fix the trust account.** This is the product delivering its core value, NOT "the tool is broken." |
+| **`data_completeness`** | the tool **could not fully reconcile/classify the data**: an unmatched bank/book line, an undetermined deposit type (`ambiguous_deposit`), or the bank holding **more** than the books record (an unrecorded deposit to write down) | **Fix the data and re-run.** A data-shape gap — NOT (yet) evidence the money is gone. |
+| **`needs_review`** | a real movement that **may be legitimate** but a human must eyeball (an owner draw within the owner's own capital, an NSF reversal) | Confirm it; it does not by itself FAIL the gate. |
+| **`timing`** | a benign, **self-clearing** reconciling item (a deposit in transit, an outstanding check) | Expected; it explains a gap rather than being a finding. |
+
+`bank_book_mismatch` is **directional**: the residual gap `amount = adjustedBank − book` routes by
+sign — **negative** (the bank holds *less* than the books say — cash is missing) is **`out_of_trust`**;
+**non-negative** (the bank holds *more* — an unrecorded deposit/posting omission) is
+**`data_completeness`**. Routing a bank-SHORT shortage to `data_completeness` would emit a
+confidently-wrong, reassuring "FIX YOUR DATA" headline over a real missing-cash shortage, so the sign is
+load-bearing. (`ambiguous_deposit` is `data_completeness` — it *might* hide an un-segregated deposit,
+but as-is it is a classification gap the broker resolves by labeling the row; `continuity_break` is
+`out_of_trust` — a broken chain of custody, not a tidy-up.)
+
+### The headline priority — and the out-of-trust-vs-fix-my-data distinction
+
+The headline names the **single** thing to fix first by a **fixed priority** (most-urgent class first:
+`out_of_trust` → `data_completeness` → `needs_review` → `timing`), and it never blurs the
+**make-or-break distinction**:
+
+1. **Any `out_of_trust` finding** ⇒ the headline **LEADS with "OUT OF TRUST"** (the core product
+   verdict) and names the finding count + total dollars — **even if** data-completeness gaps also exist
+   (those are noted as secondary, never allowed to soften a genuine shortage into a mere data note).
+2. **Else any `data_completeness` gap** ⇒ "**FIX YOUR DATA**: the trust account is **NOT** shown out of
+   trust — the tool could not fully reconcile your data … re-run; **this is not (yet) evidence the money
+   is gone**." A fixable data-shape gap, stated **explicitly NOT** as an out-of-trust claim.
+3. **Else** (only `needs_review` / `timing`, or nothing) ⇒ the account is **not** shown out of trust and
+   the data reconciled; the remainder are review/timing notes for a human to confirm.
+
+That `out_of_trust` vs. `data_completeness` split is the whole point: it lets the pilot broker read a
+FAIL correctly at first contact — *my trust account is short* versus *my export needs one fix and a
+re-run* — instead of as an undifferentiated "the tool is broken."
+
+### Triage EXPLAINS the verdict — it does NOT change it
+
+The triage layer is **strictly additive** and **changes no verdict**. It is a read-only lens over the
+already-classified findings: it computes **no** balance, alters **no** `tiesOut`, **no** severity, **no**
+exception count, **no** PASS/FAIL, and **no** exit code. The verdict line is byte-for-byte what it always
+was; the headline is printed as a **second** human line beneath it (and added as a `triage` object to
+`--json` and a "Fix first" callout to the HTML packet), so a consumer that ignores `triage` is
+unaffected. A finding's **class** is its root cause; its **severity** is still what gates the verdict —
+and a per-state policy that re-grades a severity changes the **gate**, while triage only changes how the
+**same** result is **explained**. In short: triage tells the broker *what to fix first*; it never
+decides *whether they pass*.
+
+### Triage does NOT change the honest custodian/CPA posture
+
+A legible FAIL is still a FAIL of a tool that **AIDS** reconciliation — the triage headline names the
+likeliest first fix, it does **not** certify anything. The broker remains the **legal trust-account
+custodian**, a **PASS does not certify legal compliance**, and a qualified **CPA** must still review the
+packet, exactly as the disclaimer at the top of this document states. The triage classes are a
+**DRAFT** legibility aid layered over the **same DRAFT** severity policy a CPA signs — naming a finding
+`out_of_trust` is the engine's first-contact diagnosis, not a legal determination. The standing
+**DRAFT / NOT LEGAL ADVICE** posture therefore applies to the triage headline **verbatim**:
+
+> **DRAFT / NOT LEGAL ADVICE.** The policies that SHIP with TrustLedger
+> (`trustledger/fixtures/policy/*.json`) are **DRAFT skeletons**, not legal advice and **not a claim of
+> regulatory compliance**. The baseline reproduces the built-in defaults verbatim; the example state
+> file carries a **PLACEHOLDER** citation. A qualified **CPA and/or counsel must review and SIGN** the
+> per-state severity mapping and its statute citations for the actual jurisdiction before the gate is
+> relied on. Selecting a policy does **not** make a packet legal advice and does **not** discharge the
+> broker's duty as the responsible legal custodian of trust funds. (STRATEGY.md › P-5 #1/#2.)
+
+Triage adds **no** new human gate: it explains the verdict the existing gate already produces. It is a
+pure, auto-built legibility layer over the same engine — there is **no** new `needs-human` item beyond
+the P-5 design-partner / CPA sign-off the rest of this document already tracks.
+
+---
+
 ## Exceptions and their severities
 
 Every difference the pipeline finds is emitted as a classified exception. The severities are:

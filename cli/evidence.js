@@ -36,6 +36,9 @@ const packetseal = require("./core/packetseal");
 const coreLicense = require("./core/license");
 const coreAttestation = require("./core/attestation");
 const { listFiles, hashBytes } = require("./hash");
+// REUSE the SAME path-bound file-level diff core the dataset/verify family uses — `diffManifest` — so a
+// rename surfaces as REMOVED+ADDED and a content edit as CHANGED (old→new), with NO new diff logic here.
+const { diffManifest } = require("./receipt");
 
 // Exit contract (shared with the rest of the family): 0 ok / 1 IO / 2 usage / 3 gate-fail (seal-build /
 // verify REJECTED). Mirrors trustledger/cli.js's EXIT so every gate reads the same.
@@ -212,6 +215,131 @@ function readSeal(input) {
 /** The AUTHORITATIVE, PURE verify — recompute per-file + root from the supplied { relPath, bytes } set. */
 function verifySeal(seal, entries) {
   return packetseal.verifySeal(seal, { entries }, SEAL_CFG);
+}
+
+// ---------------------------------------------------------------------------
+// `diffEvidence({ packetA, packetB })` — PURE, OFFLINE, packet-to-packet change report.
+//
+// WHY THIS EXISTS
+//   `vh evidence verify` answers "do these bytes on disk still match this packet?". But a buyer (or a CI
+//   pipeline) often holds TWO sealed evidence packets — version A and version B of the SAME file set —
+//   and no directory at all, and wants to answer "what changed between A and B?" PURELY from the two
+//   portable artifacts: NO directory, NO bytes re-read, NO provider, NO key, NO network. This is the
+//   evidence-product mirror of `cli/dataset.js › runDatasetDiff` — it reuses the EXACT SAME diff core.
+//
+// HOW (no new diff/crypto logic — every primitive is reused VERBATIM)
+//   Each input may be EITHER a parsed seal object OR a packet STRING; BOTH are validated through the
+//   EXISTING strict `readSeal` FIRST (a corrupt/foreign/edited/wrong-`kind` packet is REJECTED before any
+//   diff — never half-accepted). Each packet's `files[]` ({ relPath, contentHash, leaf }) is then mapped
+//   into the `{ path, contentHash, leaf }` shape `cli/receipt.js › diffManifest` expects and diffed by
+//   REUSING that core verbatim. A is the BASELINE ("recorded"), B is the COMPARISON ("current"): so
+//   ADDED = in B not A, REMOVED = in A not B, CHANGED = same relPath with a different leaf (old→new
+//   contentHash). A rename surfaces as REMOVED(old path) + ADDED(new path) — the relPath is bound into
+//   the leaf — never as a single CHANGED.
+//
+//   The diff compares what each packet CLAIMS; it re-derives NOTHING from bytes (there is no directory).
+//   To re-derive a root from bytes, run `vh evidence verify` against the live tree.
+//
+// AUTHORITATIVE VERDICT
+//   The returned `identical` is `diff.identical` — the CHANGE SET (no ADDED/REMOVED/CHANGED), computed
+//   from the per-file LEAVES — NOT root-string equality (mirrors `runDatasetDiff` exactly). So a packet
+//   with a hand-edited `root` whose leaves are unchanged still reports `identical:true`: a hand-edited
+//   `root` cannot flip the verdict. `rootA`/`rootB`/`rootsIdentical` remain DISPLAYED metadata only.
+
+/**
+ * Diff two evidence packets, PURELY and OFFLINE. Accepts EITHER two parsed seal objects OR two packet
+ * strings (or a mix); validates BOTH through the EXISTING strict `readSeal` BEFORE any diff (a
+ * corrupt/foreign/edited/wrong-kind packet is REJECTED, never half-accepted), then reuses
+ * `cli/receipt.js › diffManifest` VERBATIM. Mutates NEITHER input. Order-independent and deterministic.
+ *
+ * @param {object} args
+ * @param {object|string} args.packetA the BASELINE packet (the "from") — a seal object or a packet string
+ * @param {object|string} args.packetB the COMPARISON packet (the "to") — a seal object or a packet string
+ * @returns {{
+ *   rootA: string, rootB: string, rootsIdentical: boolean, identical: boolean,
+ *   added: Array<{path:string,contentHash:string}>,
+ *   removed: Array<{path:string,contentHash:string}>,
+ *   changed: Array<{path:string,oldContentHash:string,newContentHash:string}>,
+ *   unchanged: Array<{path:string,contentHash:string}>,
+ *   counts: { added: number, removed: number, changed: number, unchanged: number }
+ * }}
+ */
+function diffEvidence(args) {
+  if (args == null || typeof args !== "object" || Array.isArray(args)) {
+    throw new packetseal.PacketSealError("diffEvidence requires { packetA, packetB }");
+  }
+  return diffEvidenceSeals(args.packetA, args.packetB);
+}
+
+/**
+ * The `seal`-object (positional) overload of `diffEvidence`. Same contract: each of `packetA`/`packetB`
+ * may be a parsed seal object OR a packet string, both are validated through the strict `readSeal`
+ * first, and the change set is computed by reusing `diffManifest` verbatim with the AUTHORITATIVE,
+ * change-set-driven `identical` (NOT root-string equality). PURE; mutates neither input.
+ *
+ * @param {object|string} packetA the BASELINE packet (a seal object or a packet string)
+ * @param {object|string} packetB the COMPARISON packet (a seal object or a packet string)
+ * @returns {object} see {@link diffEvidence}
+ */
+function diffEvidenceSeals(packetA, packetB) {
+  // STRICT reads FIRST: a corrupt/edited/foreign/wrong-kind packet is REJECTED here (readSeal throws a
+  // PacketSealError), never half-accepted, BEFORE any diff is attempted. readSeal accepts EITHER a parsed
+  // seal object OR a JSON string and validates structure + per-file leaf re-derivation. It returns the
+  // SAME object reference for an object input, so we never mutate the caller's input below (we only READ
+  // `.root`/`.files` and map into a fresh array). Both must be structurally sound to be diffed.
+  const a = readSeal(packetA);
+  const b = readSeal(packetB);
+
+  const rootA = a.root;
+  const rootB = b.root;
+  // The two roots, recorded in the packets, are DISPLAYED metadata only. readSeal/validateSeal re-derives
+  // every leaf == pathLeaf(relPath, contentHash) and the root over those leaves, so for a structurally
+  // valid packet the root DOES summarize its leaves — but we still do NOT let root-string equality decide
+  // the verdict (see `identical` below), so the policy is identical to `runDatasetDiff`: a hand-edited
+  // `root` that survives validation cannot flip the change-set verdict.
+  const rootsIdentical = rootA.toLowerCase() === rootB.toLowerCase();
+
+  // Map each packet's `files` (relPath→path) into the shape diffManifest expects, then REUSE the SAME
+  // diff core VERBATIM. A is the baseline ("recorded"), B is the comparison ("current"): so diffManifest's
+  // ADDED = in B not A, REMOVED = in A not B, CHANGED = same relPath, different leaf (carrying old→new
+  // contentHash). A rename is REMOVED(old path) + ADDED(new path) — the relPath is bound into the leaf.
+  const aManifest = a.files.map((f) => ({
+    path: f.relPath,
+    contentHash: f.contentHash,
+    leaf: f.leaf,
+  }));
+  const bManifest = b.files.map((f) => ({
+    path: f.relPath,
+    contentHash: f.contentHash,
+    leaf: f.leaf,
+  }));
+  const diff = diffManifest(aManifest, bManifest);
+
+  // AUTHORITATIVE verdict is the CHANGE SET, not root-string equality. diffManifest already returns
+  // `identical` (true iff there is no ADDED / REMOVED / CHANGED) from the per-file LEAVES — the same data
+  // the returned changeset is built from. Deriving the verdict from the changeset guarantees `identical`
+  // and the body can never disagree: a packet with a hand-edited `root` (whose leaves are unchanged) still
+  // reports `identical:true` with an empty changeset. rootA/rootB/rootsIdentical remain DISPLAYED metadata.
+  const identical = diff.identical;
+
+  const counts = {
+    added: diff.added.length,
+    removed: diff.removed.length,
+    changed: diff.changed.length,
+    unchanged: diff.unchanged.length,
+  };
+
+  return {
+    rootA,
+    rootB,
+    rootsIdentical,
+    identical,
+    added: diff.added,
+    removed: diff.removed,
+    changed: diff.changed,
+    unchanged: diff.unchanged,
+    counts,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -726,7 +854,170 @@ function runEvidenceVerify(opts, io = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// CLI dispatch: `vh evidence <seal|verify> ...`.
+// `vh evidence diff <packetA> <packetB> [--json]` — read-only, FREE, key-free, OFFLINE change report
+// between TWO already-sealed evidence packets. The CLI surface over the PURE `diffEvidenceSeals` core
+// (T-46.1). It re-derives NOTHING from bytes (there is no directory) — it compares what each packet
+// CLAIMS — and writes NOTHING (a diff produces no sealed artifact, so it needs NO license and never
+// gates). A is the BASELINE ("recorded"), B is the COMPARISON ("current"): ADDED = in B not A,
+// REMOVED = in A not B, CHANGED = same relPath/different content (old→new); a rename surfaces as
+// REMOVED+ADDED. The verdict (and exit code + headline) is the CHANGE SET (`identical`), NOT root-string
+// equality. Exit: 0 IDENTICAL / 3 DIFFERENT / 2 usage / 1 IO (mirrors `vh dataset diff`).
+// ---------------------------------------------------------------------------
+
+function parseDiffArgs(argv) {
+  const opts = { packetA: undefined, packetB: undefined, json: false, _positionals: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--json":
+        opts.json = true;
+        break;
+      default:
+        if (a && a.startsWith("--")) {
+          const e = new Error(`unknown flag: ${a}`);
+          e.usage = true;
+          throw e;
+        }
+        opts._positionals.push(a);
+    }
+  }
+  if (opts._positionals.length > 2) {
+    const e = new Error(
+      `unexpected extra argument: ${opts._positionals[2]} (evidence diff takes exactly two <packet>s)`
+    );
+    e.usage = true;
+    throw e;
+  }
+  opts.packetA = opts._positionals[0];
+  opts.packetB = opts._positionals[1];
+  return opts;
+}
+
+// Render the human diff report. PURE. LEADS with the CLAIMS-not-content TRUST line (a diff compares what
+// each packet CLAIMS — it does NOT re-derive content), prints a deterministic IDENTICAL/DIFFERENT
+// headline, the per-file ADDED/REMOVED/CHANGED block, and a count line driven by the change set. The
+// headline is driven by `result.identical` — the CHANGE SET, not root-string equality — so it can never
+// contradict the per-file body or the exit code. The two recorded roots are DISPLAYED metadata only.
+function renderDiff(result, ctx) {
+  const L = [];
+  // TRUST FIRST: a diff compares what each packet CLAIMS; it does not re-derive content (no directory).
+  L.push(
+    "TRUST: this compares what each evidence packet CLAIMS — it does NOT re-derive content (there is " +
+      "no directory). " +
+      EVIDENCE_TRUST_NOTE
+  );
+  L.push("       (run `vh evidence verify <packet> --dir <d>` against the live tree to re-derive a root from bytes).");
+  L.push("");
+  L.push(`# vh evidence diff — ${ctx.packetA} -> ${ctx.packetB}`);
+  L.push(`packet A root: ${result.rootA}`);
+  L.push(`packet B root: ${result.rootB}`);
+  if (result.identical) {
+    L.push(
+      "files: IDENTICAL — the two packets commit to the SAME set of (relPath, content) pairs " +
+        "(no ADDED / REMOVED / CHANGED)."
+    );
+    L.push(`+0 / -0 / ~0 / ${result.counts.unchanged} unchanged`);
+    // In the evidence product readSeal RE-DERIVES the root over the leaves, so a structurally-valid pair
+    // can NEVER reach here with mismatched roots but identical leaves — a tampered root is rejected
+    // outright before the diff. The roots therefore always agree with the change set on this path; we
+    // surface no "hand-edited root" note (unlike the dataset diff) because that state is unreachable.
+    L.push("");
+    return L.join("\n");
+  }
+  L.push(
+    "files: DIFFERENT — the packets commit to different (relPath, content) sets. Per-file changes (A->B). " +
+      "A rename surfaces as REMOVED(old path) + ADDED(new path) — the path is bound into the leaf — " +
+      "NOT as two unrelated edits."
+  );
+  L.push(
+    `+${result.counts.added} / -${result.counts.removed} / ~${result.counts.changed} / ` +
+      `${result.counts.unchanged} unchanged`
+  );
+  for (const c of result.changed) {
+    L.push(`  CHANGED  ${c.path}`);
+    L.push(`             old: ${c.oldContentHash}`);
+    L.push(`             new: ${c.newContentHash}`);
+  }
+  for (const a of result.added) {
+    L.push(`  ADDED    ${a.path}  (${a.contentHash})   in B, not in A`);
+  }
+  for (const rm of result.removed) {
+    L.push(`  REMOVED  ${rm.path}  (${rm.contentHash})   in A, not in B`);
+  }
+  L.push("");
+  return L.join("\n");
+}
+
+function runEvidenceDiff(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.packetA || !opts.packetB) {
+    writeErr("error: `vh evidence diff` requires exactly two packet paths <packetA> <packetB>\n");
+    return EXIT.USAGE;
+  }
+
+  // Read BOTH packet files (the only I/O — a diff writes NOTHING). A missing/unreadable file is an IO
+  // error (exit 1). We pass the raw bytes through the strict diff core, which re-validates structure +
+  // root re-derivation and REJECTS a corrupt/foreign/wrong-kind/hand-edited packet before any diff.
+  let textA;
+  try {
+    textA = fs.readFileSync(path.resolve(opts.packetA), "utf8");
+  } catch (e) {
+    writeErr(`error: cannot read evidence packet ${opts.packetA}: ${e.message}\n`);
+    return EXIT.IO;
+  }
+  let textB;
+  try {
+    textB = fs.readFileSync(path.resolve(opts.packetB), "utf8");
+  } catch (e) {
+    writeErr(`error: cannot read evidence packet ${opts.packetB}: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  let result;
+  try {
+    result = diffEvidenceSeals(textA, textB);
+  } catch (e) {
+    // A corrupt/foreign/wrong-kind/hand-edited packet (PacketSealError from readSeal) is a runtime/IO
+    // error (exit 1), never a half-accepted diff — exactly like `vh dataset diff`'s corrupt-manifest path.
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          identical: result.identical,
+          rootA: result.rootA,
+          rootB: result.rootB,
+          rootsIdentical: result.rootsIdentical,
+          added: result.added,
+          removed: result.removed,
+          changed: result.changed,
+          unchanged: result.unchanged,
+          counts: result.counts,
+          packetA: opts.packetA,
+          packetB: opts.packetB,
+          note: EVIDENCE_TRUST_NOTE,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(renderDiff(result, { packetA: opts.packetA, packetB: opts.packetB }));
+  }
+
+  // Exit non-zero when the packets DIFFER so CI can branch (mirrors the family's MISMATCH/DIFFERENT).
+  // The verdict is the CHANGE SET (`identical`), not root-string equality, so the exit code can never
+  // disagree with the printed/JSON changeset.
+  return result.identical ? EXIT.OK : EXIT.FAIL;
+}
+
+// ---------------------------------------------------------------------------
+// CLI dispatch: `vh evidence <seal|verify|diff> ...`.
 // ---------------------------------------------------------------------------
 
 async function cmdEvidence(argv, io = {}) {
@@ -752,13 +1043,23 @@ async function cmdEvidence(argv, io = {}) {
     }
     return runEvidenceVerify(opts, io);
   }
+  if (sub === "diff") {
+    let opts;
+    try {
+      opts = parseDiffArgs(rest);
+    } catch (e) {
+      writeErr(`error: ${e.message}\n`);
+      return EXIT.USAGE;
+    }
+    return runEvidenceDiff(opts, io);
+  }
   if (sub === undefined || sub === "-h" || sub === "--help" || sub === "help") {
     io.write
       ? io.write(evidenceUsage())
       : process.stdout.write(evidenceUsage());
     return sub === undefined ? EXIT.USAGE : EXIT.OK;
   }
-  writeErr(`error: unknown evidence subcommand: ${sub} (expected: seal, verify)\n`);
+  writeErr(`error: unknown evidence subcommand: ${sub} (expected: seal, verify, diff)\n`);
   return EXIT.USAGE;
 }
 
@@ -769,10 +1070,13 @@ function evidenceUsage() {
     "Usage:",
     "  vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign] [--json]",
     "  vh evidence verify <p> [--dir <d>] [--json]",
+    "  vh evidence diff <packetA> <packetB> [--json]",
     "",
     "The seal proves TAMPER-EVIDENCE + OFFLINE-RECOMPUTE, NOT a trusted timestamp (\"sealed at T\" rides P-3).",
-    "FREE: an unsigned baseline seal of up to " + SAMPLE_LIMIT + " files + verify (try before buying).",
+    "FREE: an unsigned baseline seal of up to " + SAMPLE_LIMIT + " files + verify + diff (try before buying).",
     "PAID (require --license + --vendor): --sign (signed-attestation wrap) and sealing > " + SAMPLE_LIMIT + " files.",
+    "diff is read-only/FREE/key-free/OFFLINE: it compares what TWO packets CLAIM and writes nothing.",
+    "Exit: diff 0 IDENTICAL / 3 DIFFERENT / 2 usage / 1 IO.",
     "",
   ].join("\n");
 }
@@ -790,6 +1094,8 @@ module.exports = {
   serializeSeal,
   readSeal,
   verifySeal,
+  diffEvidence,
+  diffEvidenceSeals,
   loadDirEntries,
   // signed wrap
   SIGNED_SEAL_KIND,
@@ -809,8 +1115,11 @@ module.exports = {
   // CLI
   parseSealArgs,
   parseVerifyArgs,
+  parseDiffArgs,
   runEvidenceSeal,
   runEvidenceVerify,
+  runEvidenceDiff,
+  renderDiff,
   cmdEvidence,
   evidenceUsage,
 };

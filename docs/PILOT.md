@@ -260,6 +260,36 @@ decision-ready ask, P-8**, in [`STRATEGY.md`](../STRATEGY.md) → *Proposals —
 **deliverable is this very kit**. Read P-8 to see the precise human steps and how running this pilot
 de-risks all four gates at once.
 
+### The pilot success contract (the measured WTP instrument)
+
+A pilot that ends at "the partner liked it" leaves the money question — **"is this worth paying for ON MY
+data?"** — to a relational hunch. The TrustLedger pilot's success contract is therefore a **measured**
+one, run on the partner's **own already-closed period**: **`vh trust value-proof`**. The partner runs a
+month they **already reconciled by hand and signed off**, and the command compares the **same** reconcile
+gate against that manual close and prints **one of three outcomes**, exit-coded so the pilot can read the
+result without interpretation:
+
+```bash
+vh trust value-proof <bank> <ledger> <rentroll> --period <label>
+#   exit 3 = out_of_trust_missed — the dollars the gate caught that the manual close LET THROUGH (the WTP case)
+#   exit 4 = data_gap_only      — fix-my-data-and-re-run; NOT (yet) evidence the money is gone
+#   exit 0 = clean_confirmed    — a signed, independent confirmation of a clean trust account
+```
+
+Every count and dollar figure is read **verbatim** off the period's reconciliation — the **same**
+numbers `vh trust reconcile --json` shows — so the value-proof is the **same** verdict path the paying
+broker's licensed gate runs, not a narrower one. The deeper spec is in
+[`TRUSTLEDGER.md`](TRUSTLEDGER.md) › *The value-proof*. This is the **measured** form of P-5 #3's
+two-month WTP validation: it turns "their willingness to keep using it is the WTP signal" into a dollar
+figure a broker reads on **their own** month.
+
+> **The value-proof COMPARES the gate to the manual close — it does NOT certify a jurisdiction or
+> constitute legal advice.** It quantifies what the gate found that the broker's manual close did not; it
+> does not certify that any state's trust-fund rules are satisfied and is not legal/accounting/audit
+> advice. The standing TrustLedger pilot posture is unchanged: a **PASS does not imply legal compliance**,
+> the broker remains the **responsible legal custodian**, and that meaning stays CPA/counsel-reviewed
+> under **P-5**.
+
 ---
 
 ## 7. Why this is trustworthy to run

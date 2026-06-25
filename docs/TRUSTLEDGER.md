@@ -341,6 +341,111 @@ the P-5 design-partner / CPA sign-off the rest of this document already tracks.
 
 ---
 
+## The value-proof: `vh trust value-proof` — the pilot's willingness-to-pay instrument
+
+The two-month design-partner pilot (P-5 #3, runbook in [`docs/PILOT.md`](PILOT.md)) asks one question
+the whole sale rests on: **"is this worth paying for ON MY data?"** A demo on our fixtures cannot answer
+it; only the partner's **own already-closed period** can. `vh trust value-proof` is the **measured
+instrument** that turns that question into a number — it runs a month the broker **already reconciled by
+hand and signed off on** through the **same** reconcile gate, diffs the gate's findings against that
+manual close, and prints **one of three outcomes** plus the exact dollars the manual close let through:
+
+```
+vh trust value-proof <bank> <ledger> <rentroll> [--state/--policy <f> --license <f> --vendor <0xaddr>]
+                      [--asserted-flagged] [--asserted-net <dollars>] [--period <label>] [--json]
+```
+
+It is a **pure, offline, read-only lens** over the gate's already-computed verdict
+(`trustledger/valueproof.js` › `valueProof`, surfaced by `trustledger/cli.js` › `cmdValueProof`): every
+count and dollar figure it prints is read **verbatim** off the period's reconciliation triage rollup —
+the **same** numbers `reconcile --json` / the HTML packet show. It **writes nothing** (no packet, no
+seal, no file), leaves the cwd untouched, and adds **no** new finding, severity, verdict, or exit-code
+rule of its own. It is a presentation lens for a go-to-market conversation, **not** a second opinion on
+the books.
+
+### The three outcomes (and their exit codes)
+
+The outcome is decided by the **most-urgent root-cause class** the gate found (the same `out_of_trust →
+data_completeness → needs_review → timing` priority triage uses), and the exit code maps it so a pilot
+can gate on it in CI:
+
+| Outcome | Exit | What it means for the pilot |
+| --- | --- | --- |
+| **`out_of_trust_missed`** | `3` | **The WTP case.** The gate found ≥1 genuine out-of-trust finding (a shortage / commingling / conversion) the manual close called clean. The headline names the **count + total abs-cents dollar impact** the manual close **let through** — the concrete figure that justifies the subscription. |
+| **`data_gap_only`** | `4` | The gate found **NO** out-of-trust finding but **could not fully reconcile/classify** the data (a `data_completeness` gap). Stated honestly as a data-shape gap to **fix and re-run** — **not (yet) evidence the money is gone**, and **never** framed as a missed shortage. (A distinct exit code from a real FAIL so a pipeline can tell "fix my data" from "out of trust.") |
+| **`clean_confirmed`** | `0` | The gate **AGREES** with the manual close: no out-of-trust finding and the data reconciled. The broker now has a **signed, independent, one-command confirmation of a clean trust account** to hand their auditor — the recurring deliverable that earns renewal even in a clean month. |
+
+`2` is a usage error and `1` is an IO/input error, matching the rest of the `vh trust` family. The
+manual-close baseline (`--asserted-flagged` flips it from the default "asserted CLEAN" to "the manual
+close also flagged it") drives **only** the `agrees` flag — it **never** changes the outcome, a number,
+or the exit code, which ride the **gate's** verdict, not the broker's assertion. `--asserted-net
+<dollars>` echoes the manual close's signed-off net figure as an **annotation only**; it changes nothing.
+
+### How to run it (the pilot step)
+
+The instrument runs on the partner's **real** historical month, through the **same** verdict-shaping
+inputs the production gate threads — `--state`/`--policy` (the licensed per-state policy that can flip a
+PASS to a FAIL), `--prior-close` (the roll-forward), `--license`/`--vendor` (the paid-policy gate), and
+`--map`/`--map-file` (non-default headers). So the value-proof is **genuinely the same verdict path** the
+paying broker's own gate runs — never a narrower baseline-only path that could confidently print "clean
+confirmed" on a period the licensed gate FAILs. When a policy/prior-close **escalates** a finding the
+type-based class treats as benign, the human output names the gate's **FAIL** verdict and a
+**`gate verdict: FAIL` / `ESCALATED a finding` / NOT a clean confirmation** note, exiting non-zero — it
+never silently inverts the claim.
+
+```
+$ vh trust value-proof bank-2026-05.csv ledger-2026-05.csv rentroll-2026-05.csv --period 2026-05
+outcome:      out_of_trust_missed
+gate verdict: FAIL  (the production reconcile gate's verdict for these inputs)
+headline:     Your manual close signed this period off as clean, but the gate found 1 out-of-trust
+              finding totaling $1,000.00 the manual close let through. Restore the trust account …
+…
+$ echo $?
+3
+```
+
+`--json` carries the full structured result (`outcome`, `code`, `gateVerdict`, `policyEscalated`,
+`missedFindings` `{count, absImpact, byClass}`, `headline`, and the `caveat`) so a pipeline gates on the
+data. Drive the **same** files through `reconcile --json` and `value-proof --json` and the triage
+numbers are **identical** — that equivalence is the whole point and is pinned by the test suite.
+
+### What the value-proof DOES and DOES NOT mean
+
+> **The value-proof COMPARES the gate to the broker's manual close — it does NOT certify a jurisdiction
+> or constitute legal advice.** A value-proof run proves **one** thing, precisely: on the broker's own
+> closed period, through the **same** engine path the real `reconcile` exit uses, **what the gate found
+> that the manual close did not**, quantified in dollars and partitioned by the existing triage
+> root-cause classes. It is a **comparison of the gate against the manual close**, surfaced so a pilot
+> can read the value as a measured number instead of a relational hunch. It does **NOT** certify that any
+> **state's** trust-fund rules are satisfied, does **NOT** certify a jurisdiction's severity mapping
+> (that is the still-DRAFT per-state policy a CPA must sign — see **The per-state policy layer**), does
+> **NOT** audit the broker's books, and does **NOT** constitute legal, accounting, or audit advice. An
+> `out_of_trust_missed` result is the engine's diagnosis that the gate found a finding the manual close
+> let through — **not** a legal determination that the account is out of trust in that jurisdiction. The
+> custodian/CPA posture below is unchanged: TrustLedger **aids** reconciliation, the broker remains the
+> **responsible legal trust-account custodian**, a **PASS does not certify legal compliance**, and a
+> qualified **CPA** must still review the packet. The value-proof replaces "their willingness to keep
+> using it is the WTP signal" with "run one command on your own month and read the dollars the gate
+> caught that your manual close missed" — it does not replace the human review it makes faster.
+
+Because the value-proof only ever reads the **existing** verdict, it adds **no** new behaviour and **no**
+new human gate: every number it reports is the gate's own. It rides the **same** DRAFT / NOT-LEGAL-ADVICE
+posture the rest of this document carries, **verbatim**:
+
+> **DRAFT / NOT LEGAL ADVICE.** The policies that SHIP with TrustLedger
+> (`trustledger/fixtures/policy/*.json`) are **DRAFT skeletons**, not legal advice and **not a claim of
+> regulatory compliance**. The baseline reproduces the built-in defaults verbatim; the example state
+> file carries a **PLACEHOLDER** citation. A qualified **CPA and/or counsel must review and SIGN** the
+> per-state severity mapping and its statute citations for the actual jurisdiction before the gate is
+> relied on. Selecting a policy does **not** make a packet legal advice and does **not** discharge the
+> broker's duty as the responsible legal custodian of trust funds. (STRATEGY.md › P-5 #1/#2.)
+
+The value-proof is a **DRAFT** WTP-measurement lens layered over the **same DRAFT** severity policy a CPA
+signs — there is **no** new `needs-human` item beyond the P-5 design-partner / CPA sign-off the rest of
+this document already tracks.
+
+---
+
 ## Exceptions and their severities
 
 Every difference the pipeline finds is emitted as a classified exception. The severities are:
@@ -1754,7 +1859,14 @@ into a sellable, compliant product are **human-owned** and tracked in STRATEGY.m
 
   That **two-month run IS the willingness-to-pay validation** — it shows the recurring monthly product
   working past month one, which a single-period demo cannot; leading with the **browser** inspect/map UI
-  makes sure month one even gets that far **without the broker ever touching a terminal** (P-5 #3).
+  makes sure month one even gets that far **without the broker ever touching a terminal** (P-5 #3). The
+  measured WTP figure comes from **`vh trust value-proof`** (see **The value-proof** above): run it on a
+  month the broker **already closed by hand and signed off**, and it prints the exact dollars the gate
+  caught that the manual close **let through** (`out_of_trust_missed`), or an honest "fix your data and
+  re-run" (`data_gap_only`), or a signed clean confirmation (`clean_confirmed`) — turning "their
+  willingness to keep using it is the WTP signal" into a number a broker reads on their **own** data. The
+  value-proof **compares the gate to the manual close**; it does **not** certify a jurisdiction or
+  constitute legal advice, so the CPA/counsel sign-off it informs (P-5 #1) is unchanged.
 
 - **Deploying the web front-door.** `vh trust serve` runs the broker-facing browser UI **locally**
   (localhost only by default). Exposing it to others — behind **your** nginx/Cloudflare on **your** own

@@ -707,6 +707,12 @@ function runReconcile(opts, io = {}) {
   }
 
   const summary = report.summaryLine(model);
+  // T-43.2: the ROOT-CAUSE triage headline, printed as a SECOND human line AFTER
+  // the verdict summary (which stays byte-for-byte the existing first line). It
+  // names the make-or-break distinction at first contact — a genuine OUT-OF-TRUST
+  // finding vs. a data-shape gap to fix and re-run vs. nothing to fix. It is
+  // PURELY additive: it never changes the PASS/FAIL verdict or the exit code.
+  const triageLine = report.triageHeadline(model);
   const render = report.renderPacket(model);
   const code = model.pass ? EXIT.PASS : EXIT.FAIL;
 
@@ -880,6 +886,7 @@ function runReconcile(opts, io = {}) {
       );
     } else {
       write(`${summary}\n`);
+      write(`${triageLine}\n`);
       for (const p of written) write(`wrote ${p}\n`);
       if (closeWritten) write(`wrote close ${closeWritten}\n`);
       if (sealWritten) write(`wrote seal ${sealWritten}\n`);
@@ -891,6 +898,7 @@ function runReconcile(opts, io = {}) {
       write(JSON.stringify({ ...model, summary, closeWritten }, null, 2) + "\n");
     } else {
       write(`${summary}\n`);
+      write(`${triageLine}\n`);
       if (closeWritten) write(`wrote close ${closeWritten}\n`);
       const htmlName = report.packetFilenames(reportDate).html;
       write("\n");

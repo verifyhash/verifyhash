@@ -1815,3 +1815,70 @@ describe("T-43.1 trustledger/reconcile: triage classifies findings by ROOT-CAUSE
     expect(classOfException({ type: "constructor", amount: 1 })).to.equal(undefined);
   });
 });
+
+describe("T-43.2 trustledger: the triage is SURFACED on the buildPacket model + the headline helper", function () {
+  const report = require("../trustledger/report");
+
+  // The packet model now carries the SAME triage object reconcile.triage emits
+  // over the post-policy exceptions, so the report/--json/CLI all read ONE
+  // consistent diagnosis. Additive: it never alters the verdict, counts, or
+  // exceptions — only adds the triage roll-up + headline.
+  it("buildPacket attaches a `triage` consistent with calling triage() on the model's exceptions", function () {
+    // A masked-negative: the SUM ties but Jones is negative => an out-of-trust
+    // finding, all through the packet path (so policy/continuity feed in too).
+    const model = report.buildPacket({
+      bank: [],
+      book: [],
+      rentroll: [
+        rec("2026-05-01", -50000, "shortfall", { party: "Jones (4B)", source: "rentroll" }),
+        rec("2026-05-01", 50000, "surplus", { party: "Smith (4A)", source: "rentroll" }),
+      ],
+      reportDate: "2026-05-31",
+    });
+    expect(model.triage).to.be.an("object");
+    // It equals the lens applied directly to the (post-policy) exceptions.
+    const direct = triage({ exceptions: model.exceptions });
+    expect(JSON.stringify(model.triage)).to.equal(JSON.stringify(direct));
+    expect(model.triage.outOfTrust).to.equal(true);
+    expect(model.triage.topClass).to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+  });
+
+  it("attaching triage is ADDITIVE: the verdict, counts, and exceptions are unchanged", function () {
+    const book = [rec("2026-05-01", 150000, "rent", { source: "quickbooks", kind: "deposit" })];
+    const rentroll = [
+      rec("2026-05-01", 150000, "rent", { kind: "rent", party: "Smith (4A)", source: "rentroll" }),
+    ];
+    const bank = [rec("2026-05-02", 150000, "deposit smith", { kind: "deposit" })];
+    const model = report.buildPacket({ bank, book, rentroll, reportDate: "2026-05-31" });
+    // A clean tie-out: PASS, no errors, no exceptions — the triage is empty + clean.
+    expect(model.pass).to.equal(true);
+    expect(model.counts).to.deep.equal({ error: 0, warning: 0, info: 0 });
+    expect(model.exceptions).to.have.length(0);
+    expect(model.triage.classes).to.have.length(0);
+    expect(model.triage.outOfTrust).to.equal(false);
+    expect(model.triage.headline).to.match(/^NO FINDINGS:/);
+  });
+
+  it("triageHeadline reads the model's triage and prefixes 'Triage: ' (the CLI's second line)", function () {
+    const model = report.buildPacket({
+      bank: [],
+      book: [],
+      rentroll: [{ ...rec("2026-05-01", -50000, "short", { party: "Jones (4B)" }), source: "rentroll" }],
+      reportDate: "2026-05-31",
+    });
+    const line = report.triageHeadline(model);
+    expect(line).to.equal(`Triage: ${model.triage.headline}`);
+    expect(line).to.match(/^Triage: /);
+  });
+
+  it("triageHeadline falls back to recomputing for a pre-triage (legacy) model", function () {
+    // An older model object with no `triage` field still yields a headline (the
+    // helper recomputes from `exceptions`) — so it is safe on any packet shape.
+    const legacy = {
+      exceptions: [
+        { type: EXCEPTION.NEGATIVE_TENANT_LEDGER, severity: SEVERITY.ERROR, amount: -50000, records: [] },
+      ],
+    };
+    expect(report.triageHeadline(legacy)).to.match(/^Triage: OUT OF TRUST:/);
+  });
+});

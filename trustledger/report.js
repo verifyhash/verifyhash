@@ -313,6 +313,16 @@ function buildPacket({
     counts[e.severity] += 1;
   }
 
+  // T-43.2: the ROOT-CAUSE triage over THIS run's classified findings. Computed
+  // by the pure reconcile-core lens (reconcile.triage) over the SAME post-policy
+  // exceptions the verdict/counts read, so the packet, --json, and the CLI verdict
+  // line all surface ONE consistent diagnosis: is this a genuine OUT-OF-TRUST
+  // finding (the product's core value) or did the tool merely fail to fully
+  // reconcile/classify the data (a data-shape gap to fix and re-run)? PURELY
+  // additive — it never changes the PASS/FAIL verdict, the counts, or the exit
+  // code; it only makes the existing FAIL legible at first contact.
+  const triage = reconcile.triage({ exceptions: rec.exceptions });
+
   const matchSummary = {
     matched: matchResult.matched.length,
     unmatchedBank: matchResult.unmatchedA.length,
@@ -369,6 +379,10 @@ function buildPacket({
     tiesOut: rec.tiesOut,
     balances: rec.balances,
     counts,
+    // The root-cause triage (T-43.2): the headline + per-class roll-up that names
+    // the make-or-break thing to fix first. Additive: every existing field is
+    // unchanged, so a consumer that ignores `triage` is byte-for-byte unaffected.
+    triage,
     matchSummary,
     beneficiaries,
     exceptions,
@@ -398,6 +412,22 @@ function summaryLine(model) {
   );
 }
 
+// T-43.2: the ROOT-CAUSE triage headline, printed by the CLI as a SECOND line
+// AFTER summaryLine (which stays byte-for-byte the existing first line). It names
+// the make-or-break distinction at first contact — a genuine OUT-OF-TRUST finding
+// vs. a data-shape gap the broker fixes and re-runs vs. nothing to fix. The model
+// already carries the computed triage object (buildPacket -> reconcile.triage), so
+// this is a pure read of `model.triage.headline`; it never re-derives or changes
+// the verdict. Falls back to recomputing from the exceptions if an older model
+// (pre-triage) is passed, so the helper is safe to call on any packet model.
+function triageHeadline(model) {
+  const t =
+    model && model.triage && typeof model.triage.headline === "string"
+      ? model.triage
+      : reconcile.triage({ exceptions: (model && model.exceptions) || [] });
+  return `Triage: ${t.headline}`;
+}
+
 // ---------------------------------------------------------------------------
 // HTML renderer — single self-contained, print-to-PDF-ready document.
 // ---------------------------------------------------------------------------
@@ -406,6 +436,46 @@ function sevBadge(sev) {
   const color =
     sev === "error" ? "#b00020" : sev === "warning" ? "#8a6d00" : "#0a6b2f";
   return `<span class="sev sev-${esc(sev)}" style="color:${color}">${esc(sev.toUpperCase())}</span>`;
+}
+
+// T-43.2: the "fix first" triage callout + per-class roll-up. Rendered right under
+// the verdict so a broker reads the make-or-break distinction at first contact: a
+// genuine OUT-OF-TRUST finding (the product's core value) vs. a data-shape gap to
+// fix and re-run vs. only review/timing notes. The callout's tone follows the top
+// class — RED when out of trust, AMBER when the only blockers are data gaps (and
+// it states plainly this is NOT an out-of-trust finding), GREEN otherwise. The
+// roll-up table lists each present class (most-urgent first, the SAME CLASS_RANK
+// order reconcile.triage emits) with its finding count and total dollar impact.
+// EVERY attacker-controllable value (the headline, the class labels) is HTML-
+// escaped via esc(). Reads model.triage verbatim — it never re-derives a verdict.
+function renderTriageSection(model) {
+  const t = model.triage;
+  if (!t) return ""; // older/forged model with no triage: render nothing (additive)
+  // Tone: out_of_trust => fail (red), data_completeness-only => warn (amber),
+  // else (review/timing/none) => clean (green). Mirrors triage.headline exactly.
+  const tone = t.outOfTrust ? "fail" : t.dataIncomplete ? "warn" : "clean";
+  const rows = (t.classes || [])
+    .map(
+      (c) =>
+        `<tr><td>${esc(c.label)}</td>` +
+        `<td class="num">${esc(String(c.count))}</td>` +
+        `<td class="num">${esc(fmtCents(c.absImpact))}</td></tr>`
+    )
+    .join("\n");
+  const rollup = rows
+    ? `<table>
+<thead><tr><th>Fix first &rarr;</th><th class="num">Findings</th><th class="num">Impact</th></tr></thead>
+<tbody>
+${rows}
+</tbody>
+</table>`
+    : "";
+  return `
+<div class="triage triage-${tone}">
+<strong>Fix first.</strong> ${esc(t.headline)}
+</div>
+${rollup}
+`;
 }
 
 // The roll-forward continuity section: only rendered when this run chained from a
@@ -564,6 +634,11 @@ ${ovRows || '<tr><td colspan="3" class="none">No overrides.</td></tr>'}
              font-weight: 700; margin: 1rem 0; }
   .verdict.pass { background: #e6f4ea; color: #0a6b2f; border: 1px solid #0a6b2f; }
   .verdict.fail { background: #fdeaea; color: #b00020; border: 1px solid #b00020; }
+  .triage { border-radius: 6px; padding: .6rem .9rem; margin: 1rem 0; font-size: .95rem;
+            border-left-width: 5px; border-left-style: solid; }
+  .triage-fail { background: #fdeaea; color: #7a0016; border-left-color: #b00020; }
+  .triage-warn { background: #fff7ea; color: #6b3a00; border-left-color: #e6b800; }
+  .triage-clean { background: #e6f4ea; color: #0a4d22; border-left-color: #0a6b2f; }
   table { border-collapse: collapse; width: 100%; margin: .5rem 0 1rem; }
   th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #eee; vertical-align: top; }
   th { background: #fafafa; font-weight: 600; }
@@ -591,7 +666,7 @@ ${ovRows || '<tr><td colspan="3" class="none">No overrides.</td></tr>'}
   )}</strong></p>
 
 <div class="verdict ${passClass}">${esc(verdict)}</div>
-
+${renderTriageSection(model)}
 <div class="disclaimer">
 <strong>Disclaimer.</strong>
 ${disclaimerHTML}
@@ -798,6 +873,7 @@ module.exports = {
   DISCLAIMER_TEXT,
   buildPacket,
   summaryLine,
+  triageHeadline,
   renderHTML,
   renderExceptionsCSV,
   renderBalancesCSV,

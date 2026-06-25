@@ -816,9 +816,30 @@ function renderVerify(result, ctx) {
     `files: ${result.counts.matched} matched, ${result.counts.changed} changed, ` +
       `${result.counts.missing} missing, ${result.counts.unexpected} unexpected`
   );
+  // SIGNATURE section — only for a SIGNED packet. `verify` re-derives the content root; it does NOT pin the
+  // signer (that is `verify-signed --signer`). But it MUST NOT report a CLAIMED signer as if trusted: it
+  // recovers the signer from the bytes + signature and either REJECTS a forged signature or labels a
+  // genuine one UNVERIFIED-for-pinning, pointing at `verify-signed`. (T-47.2 — close the silent claim.)
+  const sig = ctx.sig;
+  if (sig) {
+    L.push("");
+    if (sig.signatureMatchesSigner) {
+      L.push(`signature:       UNVERIFIED — claimed signer ${sig.claimedSigner} is GENUINE (the signature`);
+      L.push("                 recovers to it), but this command does NOT pin the signer to anyone you trust.");
+      L.push(`                 Run \`vh evidence verify-signed ${ctx.packet} --signer <0xaddr>\` to PIN the signer`);
+      L.push("                 (and --dir to bind the signature to YOUR bytes).");
+    } else {
+      L.push(`signature:       FORGED — REJECTED. The container CLAIMS signer ${sig.claimedSigner} but the`);
+      L.push(`                 signature actually recovers to ${sig.recoveredSigner}. The \`signer\` label is`);
+      L.push("                 UNBACKED. Run `vh evidence verify-signed` for the full per-check verdict.");
+    }
+  }
   L.push("");
-  if (result.accepted) {
+  if (result.accepted && !(sig && !sig.signatureMatchesSigner)) {
     L.push("OK — every sealed file re-derives byte-for-byte and the root matches.");
+    if (sig) {
+      L.push("    (The content matches; the signature is GENUINE but UNVERIFIED-for-pinning — see above.)");
+    }
   } else {
     L.push("REJECTED — the files do NOT match the packet:");
     for (const c of result.changed) {
@@ -838,12 +859,19 @@ function renderVerify(result, ctx) {
     ) {
       L.push("  ROOT       the recomputed root does not equal the sealed root");
     }
+    if (sig && !sig.signatureMatchesSigner) {
+      L.push("  SIGNATURE  the signature is FORGED (recovers to a different address than claimed)");
+    }
   }
   L.push("");
   return L.join("\n");
 }
 
-// Read a packet that may be a BARE seal OR a signed-seal container. Returns { seal, signed, signer }.
+// Read a packet that may be a BARE seal OR a signed-seal container. Returns { seal, signed, container }.
+// For a signed container it returns the validated CONTAINER (so `verify` can run the signature check —
+// `validateSignedSeal` proves the bytes are CANONICAL but NOT that the signature recovers to the claimed
+// `signer`, so the recovery must happen at the call site, never here). It does NOT return a `signer` field:
+// the CLAIMED signer is not trustworthy until the signature is recovered (T-47.2 — close the silent claim).
 function readPacket(text) {
   let obj;
   try {
@@ -852,11 +880,11 @@ function readPacket(text) {
     throw new packetseal.PacketSealError(`evidence packet is not valid JSON: ${e.message}`);
   }
   if (obj && obj.kind === SIGNED_SEAL_KIND) {
-    validateSignedSeal(obj); // strict; rejects a tampered/foreign signed container
+    validateSignedSeal(obj); // strict; rejects a tampered/foreign signed container (but NOT a forged sig)
     const seal = readSeal(obj.attestation); // the embedded canonical seal bytes
-    return { seal, signed: true, signer: obj.signature ? obj.signature.signer : null };
+    return { seal, signed: true, container: obj };
   }
-  return { seal: readSeal(obj), signed: false, signer: null };
+  return { seal: readSeal(obj), signed: false, container: null };
 }
 
 function runEvidenceVerify(opts, io = {}) {
@@ -910,16 +938,59 @@ function runEvidenceVerify(opts, io = {}) {
     return EXIT.IO;
   }
 
-  const code = result.accepted ? EXIT.OK : EXIT.FAIL;
+  // CLOSE THE SILENT CLAIM (T-47.2). For a SIGNED packet, `validateSignedSeal` proved the bytes are
+  // canonical but NOT that the signature recovers to the CLAIMED `signer`. So we recover the signer here
+  // (Check 1 of the verify-signed verdict, ALWAYS run, key-free/offline) and HONESTLY report it:
+  //   * a FORGED signature (recovers to a DIFFERENT address than claimed) is a clean REJECTED — never a
+  //     silent pass that reports the claimed signer as if trusted;
+  //   * a GENUINE signature is labelled UNVERIFIED-for-pinning (the signer is real but NOT pinned to anyone
+  //     the caller trusts) and points at `vh evidence verify-signed` for the full pin/bind verdict.
+  // `verify` never PINS the signer (no --signer here) — pinning + binding is the `verify-signed` command.
+  let sig = null;
+  if (parsed.signed) {
+    const sv = verifySignedSeal({ container: parsed.container }); // recovers signer; no pin, no binding
+    sig = {
+      signed: true,
+      signatureMatchesSigner: sv.checks.signatureMatchesSigner,
+      recoveredSigner: sv.recoveredSigner,
+      claimedSigner: sv.claimedSigner,
+      scheme: sv.scheme,
+    };
+  }
+
+  // A forged signature flips the overall verdict to REJECTED even when the content matches: the packet's
+  // own `signer` label is unbacked, so the artifact as a whole must NOT report OK. Content failures still
+  // reject as before; the two are independent and either alone is sufficient to REJECT.
+  const accepted = result.accepted && !(sig && !sig.signatureMatchesSigner);
+  const code = accepted ? EXIT.OK : EXIT.FAIL;
   if (opts.json) {
     write(
       JSON.stringify(
         {
           ...result,
+          // Overall accepted/verdict accounts for BOTH content re-derivation AND (for a signed packet) the
+          // signature-recovers-to-claimed-signer check. `contentVerdict`/`contentAccepted` preserve the
+          // pure seal-content result a machine reader may still want separately.
+          accepted,
+          verdict: accepted ? "ACCEPTED" : "REJECTED",
+          contentAccepted: result.accepted,
+          contentVerdict: result.verdict,
           packet: opts.packet,
           dir: baseDir,
           signed: parsed.signed,
-          signer: parsed.signer,
+          // The recovered + claimed signer + whether the signature is GENUINE; null for an unsigned packet.
+          // We NEVER expose a bare `signer` that conflates "claimed" with "trusted" (T-47.2).
+          signature: sig
+            ? {
+                signatureMatchesSigner: sig.signatureMatchesSigner,
+                recoveredSigner: sig.recoveredSigner,
+                claimedSigner: sig.claimedSigner,
+                scheme: sig.scheme,
+                // The signer is GENUINE-but-UNVERIFIED-for-pinning here; verify-signed pins/binds it.
+                pinned: false,
+                hint: "run `vh evidence verify-signed <packet> --signer <addr> [--dir <d>]` to pin + bind",
+              }
+            : null,
           note: EVIDENCE_TRUST_NOTE,
         },
         null,
@@ -927,9 +998,210 @@ function runEvidenceVerify(opts, io = {}) {
       ) + "\n"
     );
   } else {
-    write(renderVerify(result, { packet: opts.packet }));
+    write(renderVerify(result, { packet: opts.packet, sig }));
   }
   return code;
+}
+
+// ---------------------------------------------------------------------------
+// `vh evidence verify-signed <signed> [--dir <d>] [--signer <addr>] [--json]` — the OFFLINE, key-free,
+// network-free signed-verify CLI over the PURE `verifySignedSealAttestation` core (T-47.1). It is the
+// command that ACTUALLY CHECKS a signed packet's signature (the closing of the silent claim `vh evidence
+// verify` leaves open): it recovers the signer from the embedded canonical bytes + signature (Check 1,
+// ALWAYS), OPTIONALLY pins it to an expected `--signer` (Check 2), and OPTIONALLY binds it to the holder's
+// OWN `--dir` bytes (Check 3). Leads with the trust caveat; prints per-check PASS/FAIL/skip. The verdict is
+// ACCEPTED only when EVERY REQUESTED check passes; a forged/mismatched/tampered/wrong-key signature is a
+// clean REJECTED — NEVER a silent pass. Writes NOTHING (the --dir read is the only I/O). Exit: 0 ACCEPTED /
+// 3 REJECTED / 2 usage / 1 IO (mirrors `vh dataset verify-attest`).
+// ---------------------------------------------------------------------------
+
+function parseVerifySignedArgs(argv) {
+  const opts = { signed: undefined, dir: undefined, signer: undefined, json: false, _positionals: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const need = (flag) => {
+      const v = argv[++i];
+      if (v === undefined) {
+        const e = new Error(`${flag} requires a value`);
+        e.usage = true;
+        throw e;
+      }
+      return v;
+    };
+    switch (a) {
+      case "--dir":
+        opts.dir = need("--dir");
+        break;
+      case "--signer":
+        opts.signer = need("--signer");
+        break;
+      case "--json":
+        opts.json = true;
+        break;
+      default:
+        if (a && a.startsWith("--")) {
+          const e = new Error(`unknown flag: ${a}`);
+          e.usage = true;
+          throw e;
+        }
+        opts._positionals.push(a);
+    }
+  }
+  if (opts._positionals.length > 1) {
+    const e = new Error(
+      `unexpected extra argument: ${opts._positionals[1]} (evidence verify-signed takes exactly one <signed>)`
+    );
+    e.usage = true;
+    throw e;
+  }
+  opts.signed = opts._positionals[0];
+  return opts;
+}
+
+// Render the human verify-signed report. PURE. LEADS with the signing trust caveat (the SAME standing note
+// the dataset sibling leads with — reuses EVIDENCE_TRUST_NOTE verbatim so the caveats never drift), then the
+// verdict, the recovered/claimed/expected signer, and each requested check with PASS/FAIL (or [skip] when an
+// optional check was not requested). A REJECTED verdict NAMES which check(s) failed.
+function renderVerifySigned(r, ctx) {
+  const L = [];
+  // TRUST caveat FIRST: a valid signature proves WHO vouched, NOT a timestamp (P-3), NOT a legal opinion.
+  L.push("TRUST: " + VERIFY_SIGNED_SEAL_TRUST_NOTE);
+  L.push("");
+  L.push(`# vh evidence verify-signed — ${ctx.signed}`);
+  L.push(`verify-signed:    ${r.verdict}`);
+  L.push(`scheme:           ${r.scheme}`);
+  L.push(`recovered signer: ${r.recoveredSigner}  (from the embedded canonical seal bytes + signature)`);
+  L.push(`claimed signer:   ${r.claimedSigner}  (the container's \`signer\` field)`);
+  // Check 1 (ALWAYS): the signature recovers to the claimed signer.
+  L.push(
+    `  [${r.checks.signatureMatchesSigner ? "PASS" : "FAIL"}] signature recovers to the claimed signer`
+  );
+  // Check 2 (only under --signer): the recovered signer equals the expected signer.
+  if (r.checks.signerMatchesExpected === null) {
+    L.push("  [skip] expected-signer pin: not requested (pass --signer <0xaddr> to pin the signer)");
+  } else {
+    L.push(
+      `  [${r.checks.signerMatchesExpected ? "PASS" : "FAIL"}] recovered signer matches the expected ` +
+        `signer (${r.expectedSigner})`
+    );
+  }
+  // Check 3 (only under --dir): the signature binds the holder's OWN directory bytes.
+  if (r.checks.manifestBindsAttestation === null) {
+    L.push(
+      "  [skip] directory binding: not requested (pass --dir <d> to bind the signature to YOUR bytes)"
+    );
+  } else {
+    L.push(
+      `  [${r.checks.manifestBindsAttestation ? "PASS" : "FAIL"}] the signature binds YOUR directory ` +
+        "(its canonical seal bytes are byte-identical to the signed payload)"
+    );
+  }
+  if (r.accepted) {
+    L.push("ACCEPTED: every requested check passed.");
+  } else {
+    L.push(`REJECTED: failed check(s): ${r.failedChecks.join(", ")}.`);
+    if (r.failedChecks.includes("signatureMatchesSigner")) {
+      L.push(
+        "  forged-signature: the signature does NOT recover to the claimed `signer` — the signer label is"
+      );
+      L.push("  UNBACKED (a forged/tampered/wrong-key signature), NOT a packet you can trust.");
+    }
+    if (r.failedChecks.includes("manifestBindsAttestation")) {
+      L.push(
+        "  binding-mismatch: the signed payload does NOT match YOUR directory — the signature vouches for a"
+      );
+      L.push("  DIFFERENT file set than the one you hold.");
+    }
+  }
+  L.push("");
+  return L.join("\n");
+}
+
+function runEvidenceVerifySigned(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.signed) {
+    writeErr("error: `vh evidence verify-signed` requires a <signed> (signed evidence packet path)\n");
+    return EXIT.USAGE;
+  }
+
+  // Validate the --signer address SHAPE up front (when given) so a malformed expected signer is a usage
+  // error (2), never a runtime throw mid-verify. PURELY OFFLINE — no network here either.
+  if (opts.signer !== undefined && opts.signer !== null) {
+    let isAddress;
+    try {
+      ({ isAddress } = require("ethers"));
+    } catch (_) {
+      isAddress = null;
+    }
+    if (isAddress && !isAddress(opts.signer)) {
+      writeErr(
+        `error: invalid --signer address: ${opts.signer} (expected a 20-byte 0x-hex address)\n`
+      );
+      return EXIT.USAGE;
+    }
+  }
+
+  // Read + STRICT-validate the signed container BEFORE any recovery — a malformed/edited/foreign container
+  // (or a BARE unsigned seal handed here) hard-errors (exit 1), never half-accepted. A forged signature is
+  // NOT a parse error: validateSignedSeal proves the bytes are canonical; the recovery (the verdict) runs
+  // below in the PURE core.
+  let container;
+  try {
+    const text = fs.readFileSync(path.resolve(opts.signed), "utf8");
+    let obj;
+    try {
+      obj = JSON.parse(text);
+    } catch (e) {
+      throw new packetseal.PacketSealError(`signed evidence packet is not valid JSON: ${e.message}`);
+    }
+    if (!obj || obj.kind !== SIGNED_SEAL_KIND) {
+      throw new packetseal.PacketSealError(
+        `not a signed evidence packet (kind ${JSON.stringify(obj && obj.kind)}; expected ` +
+          `${JSON.stringify(SIGNED_SEAL_KIND)}). \`verify-signed\` checks a SIGNED packet; for a bare seal ` +
+          "use `vh evidence verify`."
+      );
+    }
+    container = validateSignedSeal(obj); // strict; rejects a tampered/foreign signed container
+  } catch (e) {
+    writeErr(`error: cannot read signed evidence packet ${opts.signed}: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  // Run the PURE, OFFLINE verify. The ONLY I/O is the optional --dir read (inside the core), and only when
+  // binding is requested. An unreadable --dir is a genuine IO error (1), never a silently-skipped binding.
+  let result;
+  try {
+    result = verifySignedSealAttestation({
+      container,
+      expectedSigner: opts.signer,
+      dir: opts.dir,
+    });
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ...result,
+          signed: opts.signed,
+          dir: opts.dir != null ? path.resolve(opts.dir) : null,
+          note: VERIFY_SIGNED_SEAL_TRUST_NOTE,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(renderVerifySigned(result, { signed: opts.signed }));
+  }
+
+  // Exit non-zero on REJECTED so a buyer's CI can gate (mirrors the family's 0 ACCEPTED / 3 REJECTED).
+  return result.accepted ? EXIT.OK : EXIT.FAIL;
 }
 
 // ---------------------------------------------------------------------------
@@ -1122,6 +1394,16 @@ async function cmdEvidence(argv, io = {}) {
     }
     return runEvidenceVerify(opts, io);
   }
+  if (sub === "verify-signed") {
+    let opts;
+    try {
+      opts = parseVerifySignedArgs(rest);
+    } catch (e) {
+      writeErr(`error: ${e.message}\n`);
+      return EXIT.USAGE;
+    }
+    return runEvidenceVerifySigned(opts, io);
+  }
   if (sub === "diff") {
     let opts;
     try {
@@ -1138,7 +1420,9 @@ async function cmdEvidence(argv, io = {}) {
       : process.stdout.write(evidenceUsage());
     return sub === undefined ? EXIT.USAGE : EXIT.OK;
   }
-  writeErr(`error: unknown evidence subcommand: ${sub} (expected: seal, verify, diff)\n`);
+  writeErr(
+    `error: unknown evidence subcommand: ${sub} (expected: seal, verify, verify-signed, diff)\n`
+  );
   return EXIT.USAGE;
 }
 
@@ -1149,11 +1433,16 @@ function evidenceUsage() {
     "Usage:",
     "  vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign] [--json]",
     "  vh evidence verify <p> [--dir <d>] [--json]",
+    "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--json]",
     "  vh evidence diff <packetA> <packetB> [--json]",
     "",
     "The seal proves TAMPER-EVIDENCE + OFFLINE-RECOMPUTE, NOT a trusted timestamp (\"sealed at T\" rides P-3).",
-    "FREE: an unsigned baseline seal of up to " + SAMPLE_LIMIT + " files + verify + diff (try before buying).",
+    "FREE: an unsigned baseline seal of up to " + SAMPLE_LIMIT + " files + verify + verify-signed + diff (try before buying).",
     "PAID (require --license + --vendor): --sign (signed-attestation wrap) and sealing > " + SAMPLE_LIMIT + " files.",
+    "verify-signed is OFFLINE/key-free/network-free: it RECOVERS the signer + (--signer) pins it + (--dir) binds the bytes.",
+    "  A forged/tampered/wrong-key signature is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO.",
+    "verify on a SIGNED packet no longer trusts the claimed signer: it REJECTS a forged signature OR labels a genuine one",
+    "  UNVERIFIED-for-pinning and points at `verify-signed`.",
     "diff is read-only/FREE/key-free/OFFLINE: it compares what TWO packets CLAIM and writes nothing.",
     "Exit: diff 0 IDENTICAL / 3 DIFFERENT / 2 usage / 1 IO.",
     "",
@@ -1196,10 +1485,14 @@ module.exports = {
   // CLI
   parseSealArgs,
   parseVerifyArgs,
+  parseVerifySignedArgs,
   parseDiffArgs,
   runEvidenceSeal,
   runEvidenceVerify,
+  runEvidenceVerifySigned,
   runEvidenceDiff,
+  renderVerify,
+  renderVerifySigned,
   renderDiff,
   cmdEvidence,
   evidenceUsage,

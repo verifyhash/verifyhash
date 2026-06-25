@@ -56,11 +56,30 @@ A trust account is **in trust** when three independently-derived numbers agree:
 | **Sub-ledger total** | the sum of every per-beneficiary (per-tenant/owner) balance | rent roll |
 
 Two equalities must hold: **adjusted bank == book** (the bank and the books agree once timing items are
-accounted for) and **book == sub-ledger total** (the money in the account is fully accounted for to its
-beneficiaries — nothing is commingled or missing). When both hold, the reconciliation **ties out**.
+accounted for) and **book == sub-ledger total** (the money in the account is, *in total*, accounted for
+to its beneficiaries). When both hold, the three-balance arithmetic **ties out**.
 
-The **security-deposit segregation** check is deliberately hard to fool. It guards against **two**
-distinct ways an un-segregated deposit could *silently* clear — neither of which it allows
+> **A tie-out alone does NOT prove "nothing is commingled or missing."** The second equality is a check
+> on the **pooled SUM** of every per-beneficiary balance, and a sum is necessary but **not sufficient**:
+> one beneficiary's **surplus can exactly mask another beneficiary's deficit**, so the pool ties to the
+> penny while one tenant's trust money has in fact been spent — or used to cover another beneficiary's
+> shortfall. A pooled tie-out therefore proves the *total* is accounted for; it does **not** prove that
+> **each individual** beneficiary's money is intact. (The earlier wording — "nothing is commingled or
+> missing" — overclaimed this and is corrected here.)
+
+So **in trust** requires a third, **per-beneficiary** requirement beyond the two pooled equalities: the
+**no-negative-individual-ledger** rule — **no single beneficiary's own sub-ledger may be negative**.
+A negative individual ledger means the broker is holding *less than zero* in trust for that person
+(their money was spent or used to cover another beneficiary's shortfall), so it is **out of trust on its
+own** even when the pooled sum ties. The pipeline raises that as the **`negative_tenant_ledger`** finding,
+whose default severity is **ERROR** — it FAILs the gate (exit `3`) **independently of whether the SUM
+ties** (both checks can fire at once). It is the per-beneficiary guard that closes the "surplus masks a
+deficit" hole the pooled tie-out leaves open; control/sink accounts are excluded. See
+**`negative_tenant_ledger`** under *The policy file schema* below for the full rule
+(`trustledger/reconcile.js` › `classifyNegativeTenantLedgers`).
+
+The **security-deposit segregation** check is, likewise, deliberately hard to fool. It guards against
+**two** distinct ways an un-segregated deposit could *silently* clear — neither of which it allows
 (`trustledger/reconcile.js`). See **Security-deposit segregation: per-beneficiary, single-source**
 below for the full rule.
 
@@ -148,7 +167,8 @@ Every difference the pipeline finds is emitted as a classified exception. The se
 - **WARNING** — needs a human eye but may be legitimate (an NSF reversal, an owner draw, an
   unreconciled bank/book line).
 - **ERROR** — the trust account is **out of trust**: a real finding that FAILs the gate (an
-  un-segregated security deposit, the sub-ledger out of balance vs. the book, adjusted bank ≠ book).
+  un-segregated security deposit, the sub-ledger out of balance vs. the book, **an individual
+  beneficiary's own ledger negative — `negative_tenant_ledger`**, adjusted bank ≠ book).
 
 > **The severity mapping is policy, not law.** The built-in baseline (security-deposit-not-segregated =
 > ERROR, NSF reversal = WARNING, owner draw = WARNING, …) is a sensible starting point but is

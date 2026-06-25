@@ -164,14 +164,27 @@ Every difference the pipeline finds is emitted as a classified exception. The se
 
 - **INFO** — a benign, self-clearing reconciling item (deposit in transit, outstanding check, generic
   timing). Expected; does not fail the gate on its own.
-- **WARNING** — needs a human eye but may be legitimate (an NSF reversal, an owner draw, an
-  unreconciled bank/book line).
+- **WARNING** — needs a human eye but may be legitimate (an NSF reversal, an owner draw **within that
+  owner's own contributed capital — `owner_draw`**, an unreconciled bank/book line).
 - **ERROR** — the trust account is **out of trust**: a real finding that FAILs the gate (an
   un-segregated security deposit, the sub-ledger out of balance vs. the book, **an individual
-  beneficiary's own ledger negative — `negative_tenant_ledger`**, adjusted bank ≠ book).
+  beneficiary's own ledger negative — `negative_tenant_ledger`**, **an owner draw that exceeds that
+  owner's own contributed capital — `owner_overdraw`, where the excess is other beneficiaries' trust
+  money**, adjusted bank ≠ book).
+
+> **An owner draw splits into a benign part and an out-of-trust part — two distinct findings.** A
+> *benign* owner draw (one paid from that owner's **own** contributed capital) is the `owner_draw`
+> **WARNING** above — a human should confirm it, but it does not FAIL the gate. The **excess** of a draw
+> **beyond** that owner's own contributed capital is the separate **`owner_overdraw` ERROR**: that excess
+> is paid out of *other* beneficiaries' trust money (a conversion of trust funds), so it is out of trust
+> and FAILs the gate. The earlier wording that described an owner draw as **only** a WARNING is corrected
+> here: the benign draw stays a WARNING, but the over-capital **excess** is an ERROR. See **`owner_overdraw`**
+> under *The policy file schema* below for the full per-account rule and its control-account boundary
+> (`trustledger/reconcile.js` › `classifyOwnerDraws`).
 
 > **The severity mapping is policy, not law.** The built-in baseline (security-deposit-not-segregated =
-> ERROR, NSF reversal = WARNING, owner draw = WARNING, …) is a sensible starting point but is
+> ERROR, NSF reversal = WARNING, a benign `owner_draw` = WARNING but an over-capital `owner_overdraw` =
+> ERROR, …) is a sensible starting point but is
 > **state- and CPA-dependent**. It is the default *when you select no policy*; a reviewed per-state
 > policy file overrides it (see **The per-state policy layer** below). The shipped policies are
 > **DRAFTS, not legal advice** — a CPA/counsel must review and sign the per-state mapping before you
@@ -280,8 +293,10 @@ capital being deployed (the same control-account boundary the exclusion above
 respects) and is not second-guessed from a name. Crucially, this fires **even when
 the pooled three-way SUM ties out** — the owner's negative control bucket can
 absorb the overdraw so `tiesOut` stays `true`, yet the account is out of trust.
-Its default severity is `error`; like every other type, a per-state policy MAY
-re-grade it.
+The benign part of the draw — the portion **within** contributed capital — stays
+the `owner_draw` WARNING; only the over-capital **excess** is this ERROR. Its
+default severity is `error`; like every other type, a per-state policy MAY
+re-grade it (`trustledger/reconcile.js` › `classifyOwnerDraws`).
 
 **How a line is recognized as a control account (and its failure mode).** Two
 signals exclude a negative line from `negative_tenant_ledger`, in priority order:

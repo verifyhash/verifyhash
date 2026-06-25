@@ -1,0 +1,25 @@
+{
+  "_DISCLAIMER": "A plan is an ACCESS DESCRIPTION for delivered software value (which paid features a subscription unlocks and for how long). It is NOT a token, NOT tradeable, NOT an appreciating asset, and this catalog makes NO claim of regulatory compliance. The actual subscription agreement governs.",
+  "kind": "trustledger-plan-catalog",
+  "schemaVersion": 1,
+  "plans": [
+    {
+      "planId": "solo-monthly",
+      "displayName": "Solo (monthly)",
+      "entitlements": ["seal"],
+      "termDays": 30
+    },
+    {
+      "planId": "pro-annual",
+      "displayName": "Pro (annual)",
+      "entitlements": ["seal", "multi_state_policy"],
+      "termDays": 365
+    },
+    {
+      "planId": "firm-annual",
+      "displayName": "Firm (annual)",
+      "entitlements": ["seal", "multi_state_policy", "unlimited_reconcile"],
+      "termDays": 365
+    }
+  ]
+}

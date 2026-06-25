@@ -1105,6 +1105,368 @@ function classifyAmbiguousDeposits(book, exceptions) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Triage (T-43.1): classify every finding by ROOT-CAUSE CLASS, roll it up by
+// dollar impact, and name the single most-important thing to fix.
+// ---------------------------------------------------------------------------
+//
+// A FAIL verdict today is a COUNT, not a cause: "N exception(s) [X error, Y
+// warning, Z info]". A broker reading that cannot tell the make-or-break thing
+// at first contact — is the trust account GENUINELY OUT OF TRUST (the product
+// delivering its core value), or did the TOOL simply fail to reconcile/classify
+// THEIR DATA (a data-shape gap to fix and re-run)? `triage` answers exactly that
+// question. It is PURE, DETERMINISTIC, ORDER-INDEPENDENT, mutates nothing, and
+// performs NO I/O — the same property the rest of this core has, for the same
+// reason: a diagnosis a broker acts on and an auditor reads must be reproducible.
+//
+// The FOUR root-cause classes (named in STRATEGY.md "## Direction", EPIC-43):
+//   * out_of_trust       — a real shortage/commingling/conversion. The trust
+//                          account is genuinely out of trust; the product's core
+//                          finding. This is what a pilot broker must read as
+//                          "fix the trust account", NOT "the tool is broken".
+//   * data_completeness  — the tool could not fully reconcile/classify the data:
+//                          an unmatched line, an undetermined deposit type, a
+//                          residual bank/book gap. A data-shape gap to fix and
+//                          re-run — NOT (yet) evidence the money is gone.
+//   * needs_review       — a real movement that may be legitimate but a human
+//                          must eyeball (an owner draw within capital, an NSF).
+//   * timing             — a benign, self-clearing reconciling item (a deposit
+//                          in transit, an outstanding check). Expected; explains
+//                          a gap rather than being a finding.
+//
+// `ROOT_CAUSE_CLASS` is a CLOSED enum and `CLASS_OF` maps EVERY `EXCEPTION` type
+// to exactly one class. An exhaustiveness guard runs AT LOAD TIME (below): if a
+// new EXCEPTION type is ever added without a class — or a class points at a name
+// not in ROOT_CAUSE_CLASS — the module throws on require, so an unclassified
+// finding is a BUILD error, never a silently-misrouted one at runtime.
+
+const ROOT_CAUSE_CLASS = Object.freeze({
+  OUT_OF_TRUST: "out_of_trust",
+  DATA_COMPLETENESS: "data_completeness",
+  NEEDS_REVIEW: "needs_review",
+  TIMING: "timing",
+});
+
+// The order a human reads the classes in: most-urgent first. Used as the stable
+// tie-break for the headline and to order the per-class roll-up array, so the
+// table always leads with the class that decides the verdict.
+const CLASS_RANK = Object.freeze(
+  Object.assign(Object.create(null), {
+    [ROOT_CAUSE_CLASS.OUT_OF_TRUST]: 0,
+    [ROOT_CAUSE_CLASS.DATA_COMPLETENESS]: 1,
+    [ROOT_CAUSE_CLASS.NEEDS_REVIEW]: 2,
+    [ROOT_CAUSE_CLASS.TIMING]: 3,
+  })
+);
+
+// Every EXCEPTION type -> its root-cause class. EXHAUSTIVE by construction (the
+// load-time guard below proves it). The rationale for each non-obvious mapping:
+//   * BANK_BOOK_MISMATCH is DIRECTIONAL — its class is NOT a static entry here
+//     but is decided per-exception by classOfException() (below) from the SIGN of
+//     the residual gap (amount = adjustedBank - book):
+//       - amount < 0 (beyond tolerance): the bank holds LESS cash than the books
+//         say it should — a genuine shortage, the textbook out-of-trust case (the
+//         money is not in the account). Routed to OUT_OF_TRUST.
+//       - amount >= 0: the bank holds MORE than the books record — an UNRECORDED
+//         DEPOSIT / posting omission to write down, the benign "fix this one item
+//         and re-run" data tidy-up. Routed to DATA_COMPLETENESS.
+//     A single static CLASS_OF entry could not express this, and the bank-SHORT
+//     direction routed to DATA_COMPLETENESS would emit a confidently-wrong,
+//     reassuring "FIX YOUR DATA" headline over a real missing-cash shortage — so
+//     BANK_BOOK_MISMATCH is deliberately absent from CLASS_OF and handled in
+//     classOfException, which the load-time guard treats as a valid mapping.
+//   * CONTINUITY_BREAK is OUT_OF_TRUST: a broken roll-forward means the chain of
+//     custody over the trust money is broken — an out-of-trust-grade integrity
+//     failure, not a mere data tidy-up.
+//   * AMBIGUOUS_DEPOSIT is DATA_COMPLETENESS: the tool could not determine the
+//     deposit's beneficiary type. It MIGHT hide an un-segregated security deposit
+//     (which, once labeled, would surface as out_of_trust) — but as-is it is a
+//     classification gap the broker resolves by labeling the row, so it belongs
+//     with the other "fix-my-data" findings, not pre-judged as out of trust.
+//
+// NOTE on the table's PROTOTYPE: this is the ONE lookup table that takes an
+// untrusted key (ex.type, from a possibly hand-built/forged model). It is built
+// on a NULL prototype so that a forged `ex.type` of an Object.prototype member
+// name ("__proto__", "constructor", "hasOwnProperty", "toString", ...) resolves
+// to `undefined` (the rejected-unknown-type path) rather than inheriting a
+// garbage prototype value and bypassing the strict-rejection guard. CLASS_RANK /
+// CLASS_LABEL are keyed by our own ROOT_CAUSE_CLASS values (never untrusted
+// input) but are built the same way for consistency.
+const CLASS_OF = Object.freeze(
+  Object.assign(Object.create(null), {
+    [EXCEPTION.OUTSTANDING_DEPOSIT]: ROOT_CAUSE_CLASS.TIMING,
+    [EXCEPTION.OUTSTANDING_CHECK]: ROOT_CAUSE_CLASS.TIMING,
+    [EXCEPTION.TIMING]: ROOT_CAUSE_CLASS.TIMING,
+    [EXCEPTION.NSF_REVERSAL]: ROOT_CAUSE_CLASS.NEEDS_REVIEW,
+    [EXCEPTION.OWNER_DRAW]: ROOT_CAUSE_CLASS.NEEDS_REVIEW,
+    [EXCEPTION.OWNER_OVERDRAW]: ROOT_CAUSE_CLASS.OUT_OF_TRUST,
+    [EXCEPTION.SECURITY_DEPOSIT_SEGREGATION]: ROOT_CAUSE_CLASS.OUT_OF_TRUST,
+    [EXCEPTION.AMBIGUOUS_DEPOSIT]: ROOT_CAUSE_CLASS.DATA_COMPLETENESS,
+    [EXCEPTION.UNRECONCILED_BANK]: ROOT_CAUSE_CLASS.DATA_COMPLETENESS,
+    [EXCEPTION.UNRECONCILED_BOOK]: ROOT_CAUSE_CLASS.DATA_COMPLETENESS,
+    [EXCEPTION.SUBLEDGER_OUT_OF_BALANCE]: ROOT_CAUSE_CLASS.OUT_OF_TRUST,
+    [EXCEPTION.NEGATIVE_TENANT_LEDGER]: ROOT_CAUSE_CLASS.OUT_OF_TRUST,
+    [EXCEPTION.CONTINUITY_BREAK]: ROOT_CAUSE_CLASS.OUT_OF_TRUST,
+  })
+);
+
+// DIRECTIONAL exception types whose class depends on per-exception data (the sign
+// of the residual gap), NOT a static CLASS_OF entry. These are CLASSIFIED, just
+// not via the flat table — the load-time guard treats membership here as a valid
+// mapping so the closed-table discipline still holds (every EXCEPTION type is
+// EITHER in CLASS_OF OR here; never neither, never both).
+const DIRECTIONAL_TYPES = Object.freeze(
+  Object.assign(Object.create(null), {
+    [EXCEPTION.BANK_BOOK_MISMATCH]: true,
+  })
+);
+
+// Resolve the root-cause class of ONE exception. For a static type this is the
+// CLASS_OF entry; for a DIRECTIONAL type (BANK_BOOK_MISMATCH) it is decided from
+// the sign of amount = adjustedBank - book. Returns undefined for an unknown type
+// (the rejected-unknown-type path) — uses an own-property lookup so a forged
+// prototype-key type can never inherit a bogus class. PURE: a function of
+// (ex.type, ex.amount) only.
+function classOfException(ex) {
+  const type = ex && ex.type;
+  if (type === EXCEPTION.BANK_BOOK_MISMATCH) {
+    // amount = adjustedBank - book. NEGATIVE => bank holds LESS than the books say
+    // (cash is missing relative to the records) => a genuine out-of-trust
+    // shortage. NON-NEGATIVE => bank holds MORE (an unrecorded deposit/posting
+    // omission) => a benign data-completeness item to record and re-run. We read
+    // ex.amount through the SAME integer-cents discipline exceptionImpact uses, so
+    // a non-integer (float) amount is a hard error here too, never coerced to pick
+    // a direction. Zero is impossible past tolerance (the finding would not fire),
+    // but is classed DATA_COMPLETENESS for totality (a non-negative, non-short gap).
+    const a = ex.amount;
+    if (!Number.isInteger(a)) {
+      throw new ReconcileError("triage: exception.amount must be integer cents");
+    }
+    return a < 0 ? ROOT_CAUSE_CLASS.OUT_OF_TRUST : ROOT_CAUSE_CLASS.DATA_COMPLETENESS;
+  }
+  // own-property lookup on the null-prototype table: an unknown / forged
+  // prototype-key type resolves to undefined and is rejected by the caller.
+  return CLASS_OF[type];
+}
+
+// LOAD-TIME EXHAUSTIVENESS GUARD. Proves, on require, that:
+//   1. EVERY EXCEPTION type has a class (none falls through unclassified), and
+//   2. EVERY mapped class is a real ROOT_CAUSE_CLASS member (no typo'd target),
+//   3. EVERY ROOT_CAUSE_CLASS member has a CLASS_RANK (the read order is total).
+// Any violation is a BUILD error (thrown at module load), never a silent runtime
+// mis-route — the same closed-table discipline the entitlement table uses.
+(function assertTriageExhaustive() {
+  const classValues = new Set(Object.values(ROOT_CAUSE_CLASS));
+  for (const type of Object.values(EXCEPTION)) {
+    const directional = DIRECTIONAL_TYPES[type] === true;
+    const inTable = Object.prototype.hasOwnProperty.call(CLASS_OF, type);
+    // EXACTLY-ONE: every EXCEPTION type is classified by EITHER the static table
+    // OR the directional classifier, never neither (a fall-through) and never
+    // both (an ambiguous mapping). Either is a BUILD error.
+    if (!inTable && !directional) {
+      throw new ReconcileError(
+        `triage: EXCEPTION type "${type}" has no root-cause class (neither CLASS_OF nor a directional classifier covers it)`
+      );
+    }
+    if (inTable && directional) {
+      throw new ReconcileError(
+        `triage: EXCEPTION type "${type}" is BOTH a static CLASS_OF entry and a directional type (ambiguous mapping)`
+      );
+    }
+    if (inTable) {
+      const cls = CLASS_OF[type];
+      if (!classValues.has(cls)) {
+        throw new ReconcileError(
+          `triage: EXCEPTION type "${type}" maps to unknown class "${cls}"`
+        );
+      }
+    } else {
+      // A directional type must yield a real class for BOTH sign directions, so
+      // neither direction can silently route to a bogus class.
+      for (const probe of [-1, 1]) {
+        const cls = classOfException({ type, amount: probe });
+        if (!classValues.has(cls)) {
+          throw new ReconcileError(
+            `triage: directional EXCEPTION type "${type}" maps to unknown class "${cls}" for amount ${probe}`
+          );
+        }
+      }
+    }
+  }
+  for (const cls of classValues) {
+    if (CLASS_RANK[cls] === undefined) {
+      throw new ReconcileError(`triage: root-cause class "${cls}" has no CLASS_RANK`);
+    }
+  }
+})();
+
+// A short, human caption + a one-line explanation per class, for the headline.
+const CLASS_LABEL = Object.freeze(
+  Object.assign(Object.create(null), {
+    [ROOT_CAUSE_CLASS.OUT_OF_TRUST]: "Out of trust",
+    [ROOT_CAUSE_CLASS.DATA_COMPLETENESS]: "Fix the data",
+    [ROOT_CAUSE_CLASS.NEEDS_REVIEW]: "Needs review",
+    [ROOT_CAUSE_CLASS.TIMING]: "Timing",
+  })
+);
+
+// Abs-cents impact of one exception. Money figures are integer cents; a
+// non-integer amount is a hard error (the same no-float-money discipline the
+// rest of this core enforces) rather than being silently coerced. We sum the
+// ABSOLUTE value because impact is "how many dollars this finding touches",
+// independent of inflow/outflow sign — a -$500 negative ledger and a +$500
+// unreconciled deposit each represent $500 of exposure to weigh.
+function exceptionImpact(ex) {
+  const a = ex && ex.amount;
+  if (!Number.isInteger(a)) {
+    throw new ReconcileError("triage: exception.amount must be integer cents");
+  }
+  return Math.abs(a);
+}
+
+// triage(model) — classify the findings in a reconcile result OR a buildPacket
+// model by root cause, roll them up, and name the top thing to fix. Accepts
+// anything carrying an `exceptions` array of { type, severity, amount } (both
+// the raw reconcile() result and the report.buildPacket() model qualify), so it
+// is a pure read-only lens over the EXISTING classified findings — it consumes
+// the array, never re-derives or re-classifies the underlying records.
+//
+// Returns (a NEW object; `model` is never mutated):
+//   {
+//     classes: [                      // one row per class that has >=1 finding,
+//       {                             //   in CLASS_RANK (most-urgent-first) order
+//         class:        <ROOT_CAUSE_CLASS>,
+//         label:        <short caption>,
+//         count:        <int>,        // findings in this class
+//         absImpact:    <int cents>,  // summed ABS-cents impact of the class
+//       }, ...
+//     ],
+//     totals: { count, absImpact },   // across ALL findings
+//     outOfTrust:        <bool>,      // is there >=1 out_of_trust finding?
+//     dataIncomplete:    <bool>,      // is there >=1 data_completeness finding?
+//     topClass:          <ROOT_CAUSE_CLASS|null>,  // the class to fix first
+//     headline:          <string>,    // ONE unambiguous sentence: out-of-trust
+//                                      //   vs. fix-my-data vs. clean
+//   }
+//
+// The `headline` is the make-or-break distinction: it says "OUT OF TRUST" only
+// when there is a genuine out_of_trust finding, says "fix your data and re-run"
+// when the only blockers are data_completeness gaps, and says the books are
+// clean when there is nothing in either bucket — so a pilot broker reads a FAIL
+// correctly at first contact instead of as "the tool is broken".
+function triage(model) {
+  if (!model || !Array.isArray(model.exceptions)) {
+    throw new ReconcileError("triage requires a model with an exceptions array");
+  }
+
+  // Accumulate per class. Iterate the (unordered) exceptions and fold into a map
+  // keyed by class — addition + a count is commutative, so the roll-up is
+  // order-independent regardless of how the exceptions array is sorted.
+  const byClass = new Map(); // class -> { count, absImpact }
+  let totalCount = 0;
+  let totalImpact = 0;
+  for (const ex of model.exceptions) {
+    // classOfException resolves the class via the static null-prototype CLASS_OF
+    // table (own-property lookup) OR the directional classifier (BANK_BOOK_MISMATCH
+    // by sign). A forged prototype-key type ("__proto__", "constructor", ...)
+    // resolves to undefined here and is rejected below, never inheriting a bogus
+    // class and bypassing the guard.
+    const cls = classOfException(ex);
+    if (cls === undefined) {
+      // An exception of an unknown type would be silently dropped from the
+      // roll-up — exactly the kind of silent miscount this module exists to
+      // prevent. Fail loud instead. (The load-time guard makes this unreachable
+      // for the built-in EXCEPTION set; it defends a hand-built/forged model.)
+      throw new ReconcileError(
+        `triage: exception of unknown type "${ex.type}" cannot be classified`
+      );
+    }
+    const impact = exceptionImpact(ex);
+    const agg = byClass.get(cls) || { count: 0, absImpact: 0 };
+    agg.count += 1;
+    agg.absImpact += impact;
+    byClass.set(cls, agg);
+    totalCount += 1;
+    totalImpact += impact;
+  }
+
+  // Emit the per-class rows in CLASS_RANK order (most-urgent first), only for
+  // classes that actually have a finding. Deterministic + order-independent.
+  const classes = [...byClass.keys()]
+    .sort((a, b) => CLASS_RANK[a] - CLASS_RANK[b])
+    .map((cls) => ({
+      class: cls,
+      label: CLASS_LABEL[cls],
+      count: byClass.get(cls).count,
+      absImpact: byClass.get(cls).absImpact,
+    }));
+
+  const outOfTrust = byClass.has(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+  const dataIncomplete = byClass.has(ROOT_CAUSE_CLASS.DATA_COMPLETENESS);
+
+  // The top class to fix first = the present class with the lowest CLASS_RANK
+  // (out_of_trust before data_completeness before needs_review before timing).
+  // null when there are no findings at all. `classes` is already rank-sorted, so
+  // the first row is the top class.
+  const topClass = classes.length > 0 ? classes[0].class : null;
+
+  return {
+    classes,
+    totals: { count: totalCount, absImpact: totalImpact },
+    outOfTrust,
+    dataIncomplete,
+    topClass,
+    headline: buildHeadline(byClass, outOfTrust, dataIncomplete),
+  };
+}
+
+// Build the ONE unambiguous headline sentence. PURE. The distinction the pilot
+// turns on is out_of_trust vs. fix-my-data, so the sentence LEADS with whichever
+// applies and never blurs the two:
+//   * ANY out_of_trust finding  => "OUT OF TRUST" leads (the core product
+//     verdict), even if data-completeness gaps also exist — a genuine shortage
+//     is never softened into a mere data note.
+//   * else ANY data_completeness => "the tool could not fully reconcile your
+//     data" — a fixable data-shape gap, explicitly NOT an out-of-trust claim.
+//   * else (only needs_review / timing, or nothing) => the account is NOT shown
+//     out of trust; remaining items are review/timing notes.
+function buildHeadline(byClass, outOfTrust, dataIncomplete) {
+  if (outOfTrust) {
+    const c = byClass.get(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    const also = dataIncomplete
+      ? " There are also data-completeness gaps to fix, but the out-of-trust finding is the priority."
+      : "";
+    return (
+      `OUT OF TRUST: ${countNoun(c.count, "finding")} totaling ${fmtCentsForDetail(c.absImpact)} ` +
+      `show the trust account is genuinely out of trust. Restore the trust account before relying on this packet.` +
+      also
+    );
+  }
+  if (dataIncomplete) {
+    const c = byClass.get(ROOT_CAUSE_CLASS.DATA_COMPLETENESS);
+    return (
+      `FIX YOUR DATA: the trust account is NOT shown out of trust — the tool could not fully reconcile ` +
+      `your data (${countNoun(c.count, "item")} totaling ${fmtCentsForDetail(c.absImpact)}). ` +
+      `Resolve these data gaps and re-run; this is not (yet) evidence the money is gone.`
+    );
+  }
+  const review = byClass.get(ROOT_CAUSE_CLASS.NEEDS_REVIEW);
+  const timing = byClass.get(ROOT_CAUSE_CLASS.TIMING);
+  if (review || timing) {
+    return (
+      `NO OUT-OF-TRUST FINDING: the trust account is not shown out of trust and the data reconciled. ` +
+      `${countNoun((review ? review.count : 0) + (timing ? timing.count : 0), "item")} remain as ` +
+      `review/timing notes for a human to confirm.`
+    );
+  }
+  return "NO FINDINGS: every line reconciled and nothing is out of trust.";
+}
+
+// "1 finding" / "2 findings" — a count noun that pluralizes deterministically.
+function countNoun(n, noun) {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
 module.exports = {
   reconcile,
   ReconcileError,
@@ -1116,4 +1478,9 @@ module.exports = {
   compareExceptions,
   buildContinuityException,
   isAmbiguousDeposit,
+  // T-43.1 triage
+  triage,
+  ROOT_CAUSE_CLASS,
+  CLASS_OF,
+  classOfException,
 };

@@ -8,6 +8,10 @@ const {
   EXCEPTION,
   SEVERITY,
   tenantBalances,
+  triage,
+  ROOT_CAUSE_CLASS,
+  CLASS_OF,
+  classOfException,
 } = require("../trustledger/reconcile");
 
 const { reconcile: matchReconcile } = require("../trustledger/match");
@@ -1500,5 +1504,314 @@ describe("T-42.2 trustledger: an owner over-draw gates PASS/FAIL FIRST-CLASS thr
     const a = report.buildPacket({ bank: [], book: overdrawBook(), rentroll: overdrawRent(), reportDate: "2026-05-31" });
     const b = report.buildPacket({ bank: [], book: overdrawBook(), rentroll: overdrawRent(), reportDate: "2026-05-31" });
     expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
+  });
+});
+
+describe("T-43.1 trustledger/reconcile: triage classifies findings by ROOT-CAUSE CLASS", function () {
+  // A tiny synthetic exception, the minimum triage consumes: { type, severity, amount }.
+  function ex(type, amount, severity) {
+    return { type, severity, amount, label: "", detail: "", records: [] };
+  }
+  function classRow(t, cls) {
+    return t.classes.find((c) => c.class === cls);
+  }
+
+  it("EXHAUSTIVENESS: EVERY EXCEPTION type resolves to a real ROOT_CAUSE_CLASS (no fall-through)", function () {
+    const classValues = new Set(Object.values(ROOT_CAUSE_CLASS));
+    for (const type of Object.values(EXCEPTION)) {
+      // A type is classified by EITHER the static table OR the directional
+      // classifier. For directional types (BANK_BOOK_MISMATCH) we probe BOTH sign
+      // directions; for static types either probe yields the same class.
+      for (const probe of [-1, 1]) {
+        const cls = classOfException({ type, amount: probe });
+        expect(classValues.has(cls), `EXCEPTION ${type} (amount ${probe}) -> known class`).to.equal(true);
+      }
+    }
+    // And the four named classes are exactly the closed set.
+    expect([...classValues].sort()).to.deep.equal(
+      ["data_completeness", "needs_review", "out_of_trust", "timing"]
+    );
+  });
+
+  it("the load-time guard already ran: requiring the module did not throw", function () {
+    // If CLASS_OF were not exhaustive (or a class were misspelled) the module
+    // would have thrown on require above and this whole file would not load.
+    expect(typeof triage).to.equal("function");
+  });
+
+  it("classifies a genuine OUT-OF-TRUST finding and the headline says OUT OF TRUST", function () {
+    const model = {
+      exceptions: [ex(EXCEPTION.NEGATIVE_TENANT_LEDGER, -50000, SEVERITY.ERROR)],
+    };
+    const t = triage(model);
+    expect(t.outOfTrust).to.equal(true);
+    expect(t.dataIncomplete).to.equal(false);
+    expect(t.topClass).to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    const row = classRow(t, ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    expect(row.count).to.equal(1);
+    expect(row.absImpact).to.equal(50000); // abs cents
+    expect(t.totals).to.deep.equal({ count: 1, absImpact: 50000 });
+    expect(t.headline).to.match(/^OUT OF TRUST:/);
+    expect(t.headline).to.include("$500.00");
+  });
+
+  it("classifies a DATA-COMPLETENESS-only FAIL and the headline says FIX YOUR DATA (NOT out of trust)", function () {
+    // A bank-OVER mismatch (amount >= 0: adjustedBank > book) is an UNRECORDED
+    // DEPOSIT to write down — a benign data-completeness item, NOT a shortage. The
+    // bank holds at least as much as the books say, so no beneficiary money is
+    // missing; this is the direction the data-tidy-up headline is honest for.
+    const model = {
+      exceptions: [
+        ex(EXCEPTION.UNRECONCILED_BANK, 125000, SEVERITY.WARNING),
+        ex(EXCEPTION.BANK_BOOK_MISMATCH, 125000, SEVERITY.ERROR), // +ve = bank over = data tidy-up
+      ],
+    };
+    const t = triage(model);
+    expect(t.outOfTrust).to.equal(false);
+    expect(t.dataIncomplete).to.equal(true);
+    expect(t.topClass).to.equal(ROOT_CAUSE_CLASS.DATA_COMPLETENESS);
+    const row = classRow(t, ROOT_CAUSE_CLASS.DATA_COMPLETENESS);
+    expect(row.count).to.equal(2);
+    expect(row.absImpact).to.equal(250000); // 125000 + 125000, abs
+    expect(t.headline).to.match(/^FIX YOUR DATA:/);
+    // The headline does NOT raise the leading "OUT OF TRUST:" claim.
+    expect(t.headline).to.not.match(/^OUT OF TRUST:/);
+    // Explicitly NOT an out-of-trust claim.
+    expect(t.headline).to.include("not (yet) evidence the money is gone");
+  });
+
+  it("DIRECTIONAL DEFECT FIX: a bank-SHORT mismatch (amount < 0) is OUT OF TRUST, never softened to 'fix your data'", function () {
+    // THE TEXTBOOK SHORTAGE the review panel flagged: bank holds $1,000 cash while
+    // book AND sub-ledger BOTH agree the broker owes beneficiaries $1,500
+    // (adjustedBank 100000 < book 150000 == subledger 150000). Book and subledger
+    // agree, so SUBLEDGER_OUT_OF_BALANCE / NEGATIVE_TENANT_LEDGER do NOT fire — the
+    // ONLY error-severity finding is the bank-SHORT mismatch (amount = 100000 -
+    // 150000 = -50000). $500 of beneficiary money is NOT in the account. triage
+    // must name this OUT OF TRUST, not reassure the broker it is a bookkeeping
+    // cleanup.
+    const model = {
+      exceptions: [ex(EXCEPTION.BANK_BOOK_MISMATCH, -50000, SEVERITY.ERROR)],
+    };
+    const t = triage(model);
+    expect(t.outOfTrust).to.equal(true);
+    expect(t.dataIncomplete).to.equal(false);
+    expect(t.topClass).to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    expect(classRow(t, ROOT_CAUSE_CLASS.OUT_OF_TRUST).absImpact).to.equal(50000);
+    expect(t.headline).to.match(/^OUT OF TRUST:/);
+    // It must NOT emit the reassuring data-tidy-up headline.
+    expect(t.headline).to.not.match(/^FIX YOUR DATA:/);
+    expect(t.headline).to.not.include("not (yet) evidence the money is gone");
+  });
+
+  it("DIRECTIONAL: the SAME type with the OPPOSITE sign routes to a DIFFERENT class (sign discriminates)", function () {
+    // Same EXCEPTION type, only the sign of the residual gap differs. The bank-SHORT
+    // case is a shortage (out_of_trust); the bank-OVER case is an unrecorded deposit
+    // (data_completeness). A single static mapping could never tell these apart.
+    const short = triage({ exceptions: [ex(EXCEPTION.BANK_BOOK_MISMATCH, -50000, SEVERITY.ERROR)] });
+    const over = triage({ exceptions: [ex(EXCEPTION.BANK_BOOK_MISMATCH, 50000, SEVERITY.ERROR)] });
+    expect(short.topClass).to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    expect(over.topClass).to.equal(ROOT_CAUSE_CLASS.DATA_COMPLETENESS);
+    // classOfException is the single decision point and agrees in isolation.
+    expect(classOfException({ type: EXCEPTION.BANK_BOOK_MISMATCH, amount: -1 }))
+      .to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    expect(classOfException({ type: EXCEPTION.BANK_BOOK_MISMATCH, amount: 1 }))
+      .to.equal(ROOT_CAUSE_CLASS.DATA_COMPLETENESS);
+  });
+
+  it("DISTINGUISHES the two: out_of_trust ALWAYS leads even when data gaps also exist", function () {
+    // A real shortage AND a data gap in the same packet. The make-or-break
+    // distinction must surface the out-of-trust finding first, never soften it.
+    const model = {
+      exceptions: [
+        ex(EXCEPTION.UNRECONCILED_BANK, 10000, SEVERITY.WARNING), // data
+        ex(EXCEPTION.SECURITY_DEPOSIT_SEGREGATION, 80000, SEVERITY.ERROR), // out of trust
+      ],
+    };
+    const t = triage(model);
+    expect(t.outOfTrust).to.equal(true);
+    expect(t.dataIncomplete).to.equal(true);
+    expect(t.topClass).to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    expect(t.headline).to.match(/^OUT OF TRUST:/);
+    // It acknowledges the data gaps but keeps out-of-trust the priority.
+    expect(t.headline).to.include("data-completeness gaps");
+    // The class rows are ordered most-urgent first.
+    expect(t.classes[0].class).to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+  });
+
+  it("a NEEDS_REVIEW / TIMING-only model is NOT shown out of trust and NOT a data failure", function () {
+    const model = {
+      exceptions: [
+        ex(EXCEPTION.OWNER_DRAW, -50000, SEVERITY.WARNING), // needs_review
+        ex(EXCEPTION.OUTSTANDING_DEPOSIT, 90000, SEVERITY.INFO), // timing
+      ],
+    };
+    const t = triage(model);
+    expect(t.outOfTrust).to.equal(false);
+    expect(t.dataIncomplete).to.equal(false);
+    expect(t.topClass).to.equal(ROOT_CAUSE_CLASS.NEEDS_REVIEW);
+    expect(t.headline).to.match(/^NO OUT-OF-TRUST FINDING:/);
+    expect(classRow(t, ROOT_CAUSE_CLASS.NEEDS_REVIEW).count).to.equal(1);
+    expect(classRow(t, ROOT_CAUSE_CLASS.TIMING).count).to.equal(1);
+  });
+
+  it("an empty model triages to no findings with a clean headline", function () {
+    const t = triage({ exceptions: [] });
+    expect(t.classes).to.have.length(0);
+    expect(t.totals).to.deep.equal({ count: 0, absImpact: 0 });
+    expect(t.outOfTrust).to.equal(false);
+    expect(t.dataIncomplete).to.equal(false);
+    expect(t.topClass).to.equal(null);
+    expect(t.headline).to.match(/^NO FINDINGS:/);
+  });
+
+  it("roll-up sums ABS-cents impact per class and across totals (sign-independent)", function () {
+    const model = {
+      exceptions: [
+        ex(EXCEPTION.NEGATIVE_TENANT_LEDGER, -50000, SEVERITY.ERROR), // out_of_trust
+        ex(EXCEPTION.OWNER_OVERDRAW, 30000, SEVERITY.ERROR), // out_of_trust
+        ex(EXCEPTION.UNRECONCILED_BOOK, -20000, SEVERITY.WARNING), // data
+      ],
+    };
+    const t = triage(model);
+    expect(classRow(t, ROOT_CAUSE_CLASS.OUT_OF_TRUST).absImpact).to.equal(80000); // 50000+30000
+    expect(classRow(t, ROOT_CAUSE_CLASS.OUT_OF_TRUST).count).to.equal(2);
+    expect(classRow(t, ROOT_CAUSE_CLASS.DATA_COMPLETENESS).absImpact).to.equal(20000);
+    expect(t.totals.absImpact).to.equal(100000); // 50000+30000+20000
+    expect(t.totals.count).to.equal(3);
+  });
+
+  it("is PURE/ORDER-INDEPENDENT: shuffling the exceptions yields a byte-identical triage", function () {
+    const exs = [
+      ex(EXCEPTION.SECURITY_DEPOSIT_SEGREGATION, 80000, SEVERITY.ERROR),
+      ex(EXCEPTION.UNRECONCILED_BANK, 12500, SEVERITY.WARNING),
+      ex(EXCEPTION.OUTSTANDING_CHECK, -40000, SEVERITY.INFO),
+      ex(EXCEPTION.OWNER_DRAW, -50000, SEVERITY.WARNING),
+    ];
+    const a = triage({ exceptions: exs });
+    const b = triage({ exceptions: [...exs].reverse() });
+    expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
+  });
+
+  it("MUTATES NOTHING: triage does not touch the model or its exceptions", function () {
+    const model = {
+      exceptions: [ex(EXCEPTION.NEGATIVE_TENANT_LEDGER, -50000, SEVERITY.ERROR)],
+    };
+    const before = JSON.stringify(model);
+    triage(model);
+    expect(JSON.stringify(model)).to.equal(before);
+  });
+
+  it("rejects a bad model and a non-integer (float) money amount", function () {
+    expect(() => triage(null)).to.throw(ReconcileError);
+    expect(() => triage({})).to.throw(ReconcileError);
+    expect(() => triage({ exceptions: "nope" })).to.throw(ReconcileError);
+    // No float money: an over-precise amount is rejected, not coerced.
+    expect(() =>
+      triage({ exceptions: [ex(EXCEPTION.UNRECONCILED_BANK, 1.5, SEVERITY.WARNING)] })
+    ).to.throw(ReconcileError);
+    // An unknown exception type fails loud rather than being silently dropped.
+    expect(() =>
+      triage({ exceptions: [ex("totally_made_up_type", 100, SEVERITY.ERROR)] })
+    ).to.throw(ReconcileError);
+  });
+
+  it("consumes a REAL reconcile() result end-to-end (not just synthetic rows)", function () {
+    // The masked-negative shape: the SUM ties out but Jones is negative => one
+    // out-of-trust finding. triage over the live reconcile result agrees.
+    const r = reconcile([], [], { "Jones (4B)": -50000, "Smith (4A)": 50000 }, {});
+    expect(r.tiesOut).to.equal(true); // the SUM ties...
+    const t = triage(r);
+    expect(t.outOfTrust).to.equal(true); // ...but triage names it out of trust.
+    expect(t.topClass).to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    expect(t.headline).to.match(/^OUT OF TRUST:/);
+    expect(t.headline).to.include("$500.00");
+  });
+
+  it("consumes a REAL buildPacket() model: a bank-SHORT fee scenario is OUT OF TRUST (directional)", function () {
+    const report = require("../trustledger/report");
+    // A residual bank fee the bookkeeper never recorded leaves the bank SHORT of
+    // the books (adjustedBank 147500 < book 150000): a genuine $25 shortage. Book
+    // and rent-roll agree, so the ONLY error-severity finding is the bank-SHORT
+    // BANK_BOOK_MISMATCH (amount = 147500 - 150000 = -2500). The pilot must read
+    // this as OUT OF TRUST, not 'just fix the data'.
+    const bank = [
+      rec("2026-05-02", 150000, "deposit smith", { kind: "deposit" }),
+      rec("2026-05-31", -2500, "monthly service charge", { kind: "fee" }),
+    ];
+    const book = [
+      rec("2026-05-01", 150000, "rent smith", { source: "quickbooks", kind: "deposit" }),
+    ];
+    const rentroll = [
+      rec("2026-05-01", 150000, "rent", { kind: "rent", party: "Smith (4A)", source: "rentroll" }),
+    ];
+    const model = report.buildPacket({ bank, book, rentroll, reportDate: "2026-05-31" });
+    expect(model.pass).to.equal(false);
+    // Sanity: confirm the live model really is the bank-short shape this asserts.
+    const bbm = model.exceptions.find((e) => e.type === EXCEPTION.BANK_BOOK_MISMATCH);
+    expect(bbm, "a BANK_BOOK_MISMATCH must be present").to.not.equal(undefined);
+    expect(bbm.amount).to.be.lessThan(0); // bank SHORT
+    const t = triage(model);
+    expect(t.outOfTrust).to.equal(true);
+    expect(t.topClass).to.equal(ROOT_CAUSE_CLASS.OUT_OF_TRUST);
+    expect(t.headline).to.match(/^OUT OF TRUST:/);
+    expect(t.headline).to.not.match(/^FIX YOUR DATA:/);
+  });
+
+  it("consumes a REAL buildPacket() model: a bank-OVER (unrecorded deposit) scenario is FIX YOUR DATA", function () {
+    const report = require("../trustledger/report");
+    // An extra deposit hit the bank that the bookkeeper never recorded, leaving the
+    // bank OVER the books (adjustedBank 155000 > book 150000). No beneficiary money
+    // is missing — the bank holds MORE than the books say — so the BANK_BOOK_MISMATCH
+    // (amount = +5000) is the benign 'record it and re-run' data tidy-up.
+    const bank = [
+      rec("2026-05-02", 150000, "deposit smith", { kind: "deposit" }),
+      rec("2026-05-20", 5000, "unrecorded misc deposit", { kind: "deposit" }),
+    ];
+    const book = [
+      rec("2026-05-01", 150000, "rent smith", { source: "quickbooks", kind: "deposit" }),
+    ];
+    const rentroll = [
+      rec("2026-05-01", 150000, "rent", { kind: "rent", party: "Smith (4A)", source: "rentroll" }),
+    ];
+    const model = report.buildPacket({ bank, book, rentroll, reportDate: "2026-05-31" });
+    expect(model.pass).to.equal(false);
+    const bbm = model.exceptions.find((e) => e.type === EXCEPTION.BANK_BOOK_MISMATCH);
+    expect(bbm, "a BANK_BOOK_MISMATCH must be present").to.not.equal(undefined);
+    expect(bbm.amount).to.be.greaterThan(0); // bank OVER
+    const t = triage(model);
+    // BANK_BOOK_MISMATCH (+ve) + UNRECONCILED_BANK are both data_completeness.
+    expect(t.outOfTrust).to.equal(false);
+    expect(t.dataIncomplete).to.equal(true);
+    expect(t.topClass).to.equal(ROOT_CAUSE_CLASS.DATA_COMPLETENESS);
+    expect(t.headline).to.match(/^FIX YOUR DATA:/);
+  });
+
+  it("SECURITY: a forged exception with a prototype-key type is REJECTED, never silently accepted", function () {
+    // CLASS_OF is built on a null prototype and looked up via own-property, so a
+    // forged ex.type that names an Object.prototype member ("__proto__",
+    // "constructor", "hasOwnProperty", "toString", "valueOf") resolves to undefined
+    // and hits the strict-rejection path — it can NOT inherit a bogus class and
+    // bypass the guard, inflating the roll-up with a garbage row.
+    for (const evil of ["__proto__", "constructor", "hasOwnProperty", "toString", "valueOf", "prototype"]) {
+      expect(
+        () => triage({ exceptions: [ex(evil, 50000, SEVERITY.ERROR)] }),
+        `forged type "${evil}" must be rejected`
+      ).to.throw(ReconcileError);
+      // And mixed in with a legitimate finding: the WHOLE triage fails loud rather
+      // than silently mis-counting the forged row alongside the real one.
+      expect(
+        () =>
+          triage({
+            exceptions: [
+              ex(evil, 50000, SEVERITY.ERROR),
+              ex(EXCEPTION.SUBLEDGER_OUT_OF_BALANCE, 999, SEVERITY.ERROR),
+            ],
+          }),
+        `forged type "${evil}" mixed with a real finding must be rejected`
+      ).to.throw(ReconcileError);
+    }
+    // classOfException agrees in isolation: a prototype-key type is unknown.
+    expect(classOfException({ type: "__proto__", amount: 1 })).to.equal(undefined);
+    expect(classOfException({ type: "constructor", amount: 1 })).to.equal(undefined);
   });
 });

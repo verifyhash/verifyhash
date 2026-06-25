@@ -816,6 +816,123 @@ address into the License fieldset, select the state, and reconcile.
 
 ---
 
+## Plan catalog & fulfillment
+
+Issuing a license **by hand** for every sale does not scale: a human at a terminal had to remember the
+**exact** entitlement flags a tier grants and **hand-compute** the expiry (`--entitlements multi_state_policy,seal
+--expires 2027-01-01T00:00:00.000Z`). That is error-prone — a typo grants the wrong tier, a mis-keyed expiry
+drifts — and **un-automatable**: a billing provider's *payment-succeeded* event carries a **`planId`** and a
+**paid-through date**, not a comma-list of entitlement flags. The **plan catalog** + **`vh trust license
+fulfill`** close that gap: they turn "issue the right license" into **one deterministic command** a webhook can
+call, with **no hand-authored entitlement list**.
+
+> **Boundary (VERBATIM — read this first).** The loop ships **ONLY** the catalog **schema** + the order→license
+> **mapping** + **ephemeral test keys**. It **NEVER** sets a price, holds a real key, runs a payment processor,
+> or takes a real payment. **Provisioning the vendor key, setting the PRICE/term column in the catalog, and
+> wiring the actual webhook/billing remain HUMAN-owned outward steps** (STRATEGY.md › P-6 step (3)). A plan is an
+> **access description** for delivered software value — which paid features a subscription unlocks and for how
+> long — **NOT a token, NOT tradeable, NOT an appreciating asset**, and the catalog makes **no claim of
+> regulatory compliance**.
+
+### The catalog schema
+
+A plan catalog is a single, **versioned, strictly-validated** JSON file (`trustledger/plans.js` is the source of
+truth: pure `validatePlanCatalog` / `getPlan`, no I/O). It is the **one** machine-readable mapping `planId →
+{ entitlements, term, displayName }` over the **CLOSED** `ENTITLEMENTS` table — so an unknown entitlement or a
+duplicate plan is a **hard build error**, never a silent mis-grant. Every field:
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `kind` | **yes** | string `"trustledger-plan-catalog"` | Fixes the artifact type, disjoint from a license/seal. A wrong/missing `kind` is a hard `PlanCatalogError`. |
+| `schemaVersion` | **yes** | integer (currently **1**) | Pins the catalog shape. Any unsupported version is a hard error — never coerced. |
+| `plans` | **yes** | non-empty array | The plan list. Emitted in `planId`-sorted order, deterministically. |
+| `plans[].planId` | **yes** | non-empty string | The plan id a billing `planId` resolves against. **Duplicate ids are rejected.** |
+| `plans[].displayName` | **yes** | non-empty string | A human label for the tier (shown, not enforced). |
+| `plans[].entitlements` | **yes** | non-empty array of **known** flags | The paid features this plan unlocks — drawn **ONLY** from the closed `ENTITLEMENTS` table (`multi_state_policy`, `seal`, `unlimited_reconcile`). An unknown or duplicate flag is a hard error. This is what `fulfill` copies into the license **verbatim**. |
+| `plans[].termDays` | **yes** | **positive integer** | The subscription term in days. When an order omits an explicit `--paid-through`, `expiresAt = issuedAt + termDays` days. A non-integer or non-positive term is rejected (never rounded/coerced). |
+
+> **The PRICE/term column is the HUMAN fill-in.** The bundled catalog is a **DRAFT skeleton**: it ships the
+> `planId → entitlements/term/displayName` mapping, but **the price and your real term are YOURS to set**.
+> Editing the catalog (a data file in this validated schema) is exactly the narrow human step P-6 names — no
+> engine change is needed. The shipped `_DISCLAIMER` string is ignored by the engine and exists only to keep the
+> access-description posture attached to the file itself.
+
+### The bundled draft skeleton
+
+The catalog `fulfill` resolves against when you pass **no** `--catalog` is the bundled draft
+(`trustledger/fixtures/plans/baseline.json`), read from **this package's own** fixtures dir — never the caller's
+cwd. Its draft plans:
+
+| `planId` | `displayName` | entitlements | `termDays` |
+| --- | --- | --- | --- |
+| `solo-monthly` | Solo (monthly) | `seal` | `30` |
+| `pro-annual` | Pro (annual) | `seal`, `multi_state_policy` | `365` |
+| `firm-annual` | Firm (annual) | `seal`, `multi_state_policy`, `unlimited_reconcile` | `365` |
+
+These are a **skeleton to copy**: keep/rename the plans, set **your** `termDays`, and attach **your** price
+out-of-band. Point `--catalog <file>` at your own catalog to override the bundle entirely.
+
+### `vh trust license fulfill` (the one-command shape)
+
+```
+vh trust license fulfill --plan <planId> --customer <name> [--paid-through <ISO>] [--catalog <file>]
+                         (--key-env <VAR> | --key-file <path>)
+                         [--issued <ISO>] [--license-id <id>] [--out <file>] [--json]
+```
+
+`fulfill` looks the `planId` up in the catalog, copies that plan's **entitlements VERBATIM** (never re-typed),
+derives the window (`--paid-through`, else `issuedAt + termDays`), and emits the **SAME** signed
+`*.vhlicense.json` the existing `vh trust license verify` / `reconcile --license` gate already accept
+byte-for-byte. The order→license mapping (`license.fulfillOrder`) is **pure + deterministic**: the same
+`{ plan, customer, paidThrough, issuedAt }` + the same catalog yields **byte-identical** license fields.
+
+- The vendor key is read **EXACTLY ONE** of `--key-env <VAR>` / `--key-file <path>` and is
+  **read-used-discarded** — the **same** posture as `license issue` / `vh dataset sign`. The loop **never holds**
+  a key; **only the PUBLIC vendor address is echoed**, never the key. Neither/both/missing/malformed key sources
+  hard-error (exit `2`) with a **key-free** message.
+- An **unknown plan**, a `--paid-through` **at or before** `issuedAt`, or a **malformed** `--issued`/`--paid-through`
+  is a **usage error (exit `2`)** — a named reject, never a silent mis-grant.
+- With `--out <file>` the signed container is written to **that** path (and **only** there — never cwd); without
+  `--out` it streams to stdout. `--json` round-trips the public summary (`vendor`, `entitlements`, `issuedAt`,
+  `expiresAt`, …) so a webhook handler can script it.
+
+### The worked flow: `payment-succeeded` webhook → `fulfill` → deliver `*.vhlicense.json`
+
+A billing provider's *payment-succeeded / renewed* webhook fires with a **`planId`** and a **paid-through**
+date. Map that event onto **one** `fulfill` call (or call `fulfillOrder` in-process) and deliver the file:
+
+```
+# (your webhook handler, on a Stripe/Paddle "payment_succeeded" event)
+#   event -> { plan: "pro-annual", customer: "Acme Realty LLC", paidThrough: "2027-01-01T00:00:00.000Z" }
+
+$ vh trust license fulfill \
+    --plan pro-annual --customer "Acme Realty LLC" \
+    --paid-through 2027-01-01T00:00:00.000Z \
+    --key-env VENDOR_KEY --out acme.vhlicense.json
+fulfilled TrustLedger license for plan pro-annual by vendor 0xVENDOR…
+  entitlements: seal, multi_state_policy
+  expiresAt:    2027-01-01T00:00:00.000Z
+  written:      /…/acme.vhlicense.json
+```
+
+Then **deliver** `acme.vhlicense.json` to the paying customer (email/download). They verify it offline against
+your published vendor address and run the paid surface — exactly the
+[issue → verify → reconcile `--license`](#worked-example-issue--verify--reconcile---license) flow above, but the
+license is now **minted with no terminal step per sale**:
+
+```
+$ vh trust license verify acme.vhlicense.json --vendor 0xVENDOR…
+VALID — signed by the vendor, in-window; entitlements [seal, multi_state_policy]
+```
+
+So the per-sale human work collapses to **EXACTLY**: (1) fill in **YOUR** price/term per `planId` in the catalog
+(the value column), and (2) point your billing provider's *payment-succeeded / renewed* webhook at `vh trust
+license fulfill` (or call `fulfillOrder` in-process). The loop ships the catalog + the mapping; the **price/term
+column**, the **vendor key**, and the **actual webhook/billing** stay **HUMAN** steps. This adds **no** new
+human gate — it **sharpens** P-6 step (3).
+
+---
+
 ## Usage
 
 ```

@@ -365,6 +365,7 @@ The bundled policies that ship today (`vh trust reconcile --state <code>`):
 | `baseline` | `BASELINE (built-in defaults)` | Reproduces the built-in defaults verbatim — selecting it is identical to selecting nothing. A reference skeleton to copy. |
 | `ca-example` | `EXAMPLE-STATE (illustrative override)` | **ILLUSTRATIVE ONLY.** Escalates `nsf_reversal` from the baseline WARNING to ERROR, with a **PLACEHOLDER** citation, to demonstrate the override mechanism. Not a real jurisdiction. |
 | `ambiguous-deposit-example` | `EXAMPLE-STATE (ambiguous-deposit hard-fail)` | **ILLUSTRATIVE ONLY.** Escalates `ambiguous_deposit` (a book deposit whose beneficiary type cannot be determined) from the baseline WARNING to ERROR, with a **PLACEHOLDER** citation, so an unclassifiable deposit becomes a hard FAIL until it is classified. Not a real jurisdiction. |
+| `negative-tenant-ledger-example` | `EXAMPLE-STATE (negative-ledger re-grade)` | **ILLUSTRATIVE ONLY.** Re-grades `negative_tenant_ledger` (an individual beneficiary whose own trust sub-ledger is negative) from the baseline ERROR **down** to WARNING, with a **PLACEHOLDER** citation — showing the re-grade is possible by state with **no schema change** (one entry in the existing `severities` map). A negative individual ledger is out of trust in most jurisdictions, so the de-escalation is illustrative, **not** a recommendation. Not a real jurisdiction. |
 
 ### How PASS now depends on the selected policy
 

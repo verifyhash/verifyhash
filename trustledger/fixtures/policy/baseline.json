@@ -12,6 +12,7 @@
     "unreconciled_bank": "warning",
     "unreconciled_book": "warning",
     "subledger_out_of_balance": "error",
+    "negative_tenant_ledger": "error",
     "bank_book_mismatch": "error"
   }
 }

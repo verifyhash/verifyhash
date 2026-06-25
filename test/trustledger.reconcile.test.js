@@ -978,3 +978,97 @@ describe("T-41.1 trustledger/reconcile: a NEGATIVE individual beneficiary ledger
     expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
   });
 });
+
+describe("T-41.2 trustledger: a NEGATIVE individual ledger gates PASS/FAIL FIRST-CLASS through report.buildPacket", function () {
+  const report = require("../trustledger/report");
+
+  // A rent roll where the pooled SUM ties to the (empty) book exactly — Jones is
+  // -$500 and Smith is +$500, netting to $0 = book = bank — so the ONLY thing that
+  // can fail the verdict is the negative individual ledger. This isolates the
+  // verdict to the finding under test (no balance mismatch, no segregation finding).
+  function maskedRent() {
+    return [
+      rec("2026-05-01", -50000, "shortfall", { kind: "rent", party: "Jones (4B)", source: "rentroll" }),
+      rec("2026-05-01", 50000, "rent", { kind: "rent", party: "Smith (4A)", source: "rentroll" }),
+    ];
+  }
+
+  function negRows(model) {
+    return model.exceptions.filter(
+      (e) => e.type === EXCEPTION.NEGATIVE_TENANT_LEDGER
+    );
+  }
+
+  it("DEFAULT policy: the three balances tie out but the masked negative ledger FAILs the gate (the formerly-silent PASS)", function () {
+    const model = report.buildPacket({
+      bank: [],
+      book: [],
+      rentroll: maskedRent(),
+      reportDate: "2026-05-31",
+    });
+    // The pooled three-way SUM ties out perfectly...
+    expect(model.tiesOut).to.equal(true);
+    // ...yet the packet FAILs, because one beneficiary's own ledger is negative.
+    // This is the verdict/exit-code contract: model.pass=false => CLI maps to
+    // EXIT.FAIL=3. Before T-41.x this masked case was a silent PASS.
+    expect(model.pass).to.equal(false);
+    expect(model.counts.error).to.be.at.least(1);
+    const neg = negRows(model);
+    expect(neg).to.have.length(1);
+    expect(neg[0].severity).to.equal(SEVERITY.ERROR);
+    // The machine packet row names the beneficiary + the negative amount.
+    expect(neg[0].amount).to.equal(-50000);
+    expect(neg[0].detail).to.include("Jones (4B)");
+    expect(neg[0].detail).to.include("-$500.00");
+  });
+
+  it("the finding renders in BOTH the human report (HTML + CSV) and the machine packet", function () {
+    const model = report.buildPacket({
+      bank: [],
+      book: [],
+      rentroll: maskedRent(),
+      reportDate: "2026-05-31",
+    });
+    // Machine packet (the model the --json path emits): the row is present.
+    expect(negRows(model)).to.have.length(1);
+
+    // Human HTML report: the verdict reads FAIL and the finding's label/detail show.
+    const html = report.renderHTML(model);
+    expect(html).to.include("FAIL");
+    expect(html).to.include("Beneficiary ledger is negative");
+    expect(html).to.include("Jones (4B)");
+    expect(html).to.include("-$500.00");
+
+    // Human CSV report (the bookkeeper's worksheet): the type + amount + party show.
+    const csv = report.renderExceptionsCSV(model);
+    expect(csv).to.include(EXCEPTION.NEGATIVE_TENANT_LEDGER);
+    expect(csv).to.include("Beneficiary ledger is negative");
+    expect(csv).to.include("Jones (4B)");
+    expect(csv).to.include("-$500.00");
+  });
+
+  it("a clean per-tenant rent roll PASSes (no negative-ledger finding, no false FAIL)", function () {
+    // No beneficiary goes negative: an owner-funds control line is allowed to be
+    // negative (structural), every tenant is non-negative, and the SUM ties.
+    const rentroll = [
+      rec("2026-05-01", 150000, "rent", { kind: "rent", party: "Smith (4A)", source: "rentroll" }),
+      rec("2026-05-01", 150000, "rent", { kind: "rent", party: "Jones (4B)", source: "rentroll" }),
+      rec("2026-05-20", -30000, "owner draw", { kind: "rent", party: "Owner Acme", source: "rentroll" }),
+    ];
+    const book = [
+      rec("2026-05-01", 150000, "rent smith", { source: "quickbooks", kind: "deposit" }),
+      rec("2026-05-01", 150000, "rent jones", { source: "quickbooks", kind: "deposit" }),
+      rec("2026-05-20", -30000, "owner draw", { source: "quickbooks", kind: "check", party: "Owner Acme" }),
+    ];
+    const model = report.buildPacket({ bank: [], book, rentroll, reportDate: "2026-05-31" });
+    expect(negRows(model)).to.have.length(0);
+    expect(model.tiesOut).to.equal(true);
+    expect(model.pass).to.equal(true);
+  });
+
+  it("is deterministic: the same inputs produce a byte-identical packet model", function () {
+    const a = report.buildPacket({ bank: [], book: [], rentroll: maskedRent(), reportDate: "2026-05-31" });
+    const b = report.buildPacket({ bank: [], book: [], rentroll: maskedRent(), reportDate: "2026-05-31" });
+    expect(JSON.stringify(b)).to.equal(JSON.stringify(a));
+  });
+});

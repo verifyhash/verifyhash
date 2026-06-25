@@ -1,0 +1,12 @@
+{
+  "_DISCLAIMER": "DRAFT / NOT-LEGAL-ADVICE — ILLUSTRATIVE ONLY. This sample RE-GRADES a `negative_tenant_ledger` (an individual beneficiary whose own trust sub-ledger is negative) from the built-in ERROR DOWN to WARNING, to show how a per-state policy can decide — with NO schema change, only an entry in the existing severities map — that a documented negative individual ledger needs a human eye rather than an automatic out-of-trust FAIL. A negative individual ledger means the broker is holding less than zero in trust for that beneficiary; most jurisdictions treat that as out-of-trust, so the built-in default is ERROR and this DE-escalation is illustrative, NOT a recommendation. The citation below is a PLACEHOLDER, not verified legal text. A qualified CPA/broker must edit this for their actual jurisdiction. This tool aids reconciliation; the broker remains the responsible legal custodian of trust funds.",
+  "schemaVersion": 1,
+  "state": "EXAMPLE-STATE (negative-ledger re-grade)",
+  "severities": {
+    "negative_tenant_ledger": "warning"
+  },
+  "citations": {
+    "negative_tenant_ledger": "EXAMPLE Trust Account Rule §0000(c) (PLACEHOLDER) — a beneficiary sub-ledger that goes negative within a documented, curable timing window is reviewed by the broker before it is treated as a hard out-of-trust finding; graded a warning pending that review, NOT silently passed."
+  },
+  "toleranceCents": 0
+}

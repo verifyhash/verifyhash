@@ -484,3 +484,141 @@ describe("T-40.2 trustledger/policy: segregation verdict/exit-code flow through 
     expect(afterRow.severity).to.equal(SEVERITY.WARNING);
   });
 });
+
+describe("T-41.2 trustledger/policy: negative_tenant_ledger is FIRST-CLASS — re-gradable by state with ZERO schema change", function () {
+  const report = require("../trustledger/report");
+  const policyMod = require("../trustledger/policy");
+
+  // A rent roll whose pooled SUM ties to the (empty) book but masks a negative
+  // individual ledger: Jones -$500, Smith +$500 => net $0 = book = bank. The ONLY
+  // thing that can fail the verdict is the negative individual ledger, so the
+  // verdict flip we observe is attributable solely to the negative-ledger severity.
+  function maskedRent() {
+    return [
+      { date: "2026-05-01", amount: -50000, memo: "shortfall", kind: "rent", party: "Jones (4B)", source: "rentroll" },
+      { date: "2026-05-01", amount: 50000, memo: "rent", kind: "rent", party: "Smith (4A)", source: "rentroll" },
+    ];
+  }
+  function negRows(result) {
+    return result.exceptions.filter(
+      (e) => e.type === EXCEPTION.NEGATIVE_TENANT_LEDGER
+    );
+  }
+
+  it("the legal-type set ALREADY accepts negative_tenant_ledger as a severities key (enum-derived, no schema change)", function () {
+    // No new field, no re-listing: validatePolicy accepts the key because it is
+    // derived from the engine's EXCEPTION enum. Re-grading is a value in the
+    // EXISTING severities map — proof there is zero schema change to make.
+    const p = validatePolicy(
+      goodPolicy({
+        state: "Lenient Negatives",
+        severities: { [EXCEPTION.NEGATIVE_TENANT_LEDGER]: SEVERITY.WARNING },
+        citations: { [EXCEPTION.NEGATIVE_TENANT_LEDGER]: "Test Stat. 4.1.2" },
+      })
+    );
+    expect(p.severities[EXCEPTION.NEGATIVE_TENANT_LEDGER]).to.equal(SEVERITY.WARNING);
+    expect(p.citations[EXCEPTION.NEGATIVE_TENANT_LEDGER]).to.equal("Test Stat. 4.1.2");
+    // The default is ERROR, so WARNING is a genuine de-escalation.
+    expect(DEFAULT_SEVERITY[EXCEPTION.NEGATIVE_TENANT_LEDGER]).to.equal(SEVERITY.ERROR);
+  });
+
+  it("applyPolicy re-grades negative_tenant_ledger and ONLY it (every other type keeps its default)", function () {
+    const policy = validatePolicy(
+      goodPolicy({
+        state: "Lenient Negatives",
+        severities: { [EXCEPTION.NEGATIVE_TENANT_LEDGER]: SEVERITY.WARNING },
+      })
+    );
+    const after = applyPolicy(syntheticResult(), policy);
+    for (const ex of after.exceptions) {
+      if (ex.type === EXCEPTION.NEGATIVE_TENANT_LEDGER) {
+        expect(ex.severity).to.equal(SEVERITY.WARNING);
+      } else {
+        expect(ex.severity).to.equal(DEFAULT_SEVERITY[ex.type], `severity for ${ex.type}`);
+      }
+    }
+  });
+
+  it("DEFAULT policy through report.buildPacket: a masked negative ledger FAILs (pass=false, an ERROR row)", function () {
+    const model = report.buildPacket({
+      bank: [],
+      book: [],
+      rentroll: maskedRent(),
+      reportDate: "2026-05-31",
+    });
+    expect(model.tiesOut).to.equal(true); // the pooled SUM ties
+    expect(model.pass).to.equal(false); // ...but the negative individual ledger FAILs
+    expect(model.counts.error).to.be.at.least(1);
+    const neg = negRows(model);
+    expect(neg).to.have.length(1);
+    expect(neg[0].severity).to.equal(SEVERITY.ERROR);
+    expect(neg[0].detail).to.include("Jones (4B)");
+  });
+
+  it("a per-state policy re-grading negative_tenant_ledger to WARNING flips the verdict FAIL -> PASS (same files)", function () {
+    const policy = validatePolicy(
+      goodPolicy({
+        state: "EXAMPLE-STATE (negative-ledger re-grade)",
+        severities: { [EXCEPTION.NEGATIVE_TENANT_LEDGER]: SEVERITY.WARNING },
+        citations: { [EXCEPTION.NEGATIVE_TENANT_LEDGER]: "Test Stat. 4.1.2" },
+      })
+    );
+    const model = report.buildPacket({
+      bank: [],
+      book: [],
+      rentroll: maskedRent(),
+      reportDate: "2026-05-31",
+      policy,
+    });
+    const neg = negRows(model);
+    expect(neg).to.have.length(1);
+    // Re-graded to WARNING by policy => no ERROR => PASS, on the IDENTICAL files.
+    expect(neg[0].severity).to.equal(SEVERITY.WARNING);
+    expect(neg[0].citation).to.equal("Test Stat. 4.1.2");
+    expect(model.counts.error).to.equal(0);
+    expect(model.pass).to.equal(true);
+    // The named beneficiary detail survives the policy override verbatim.
+    expect(neg[0].detail).to.include("Jones (4B)");
+    expect(neg[0].detail).to.include("-$500.00");
+    // The packet names the governing policy + carries the override in its meta.
+    expect(model.policy.state).to.equal("EXAMPLE-STATE (negative-ledger re-grade)");
+    const ov = model.policy.overrides.find((o) => o.type === EXCEPTION.NEGATIVE_TENANT_LEDGER);
+    expect(ov).to.be.an("object");
+    expect(ov.severity).to.equal(SEVERITY.WARNING);
+    expect(ov.citation).to.equal("Test Stat. 4.1.2");
+  });
+
+  it("the bundled `negative-tenant-ledger-example` fixture resolves and de-escalates the finding to WARNING", function () {
+    const resolved = policyMod.resolveState("negative-tenant-ledger-example");
+    expect(resolved.state).to.equal("EXAMPLE-STATE (negative-ledger re-grade)");
+    expect(resolved.severities[EXCEPTION.NEGATIVE_TENANT_LEDGER]).to.equal(SEVERITY.WARNING);
+    // It changes ONLY the negative-ledger severity — no other override.
+    expect(Object.keys(resolved.severities)).to.deep.equal([EXCEPTION.NEGATIVE_TENANT_LEDGER]);
+
+    const model = report.buildPacket({
+      bank: [],
+      book: [],
+      rentroll: maskedRent(),
+      reportDate: "2026-05-31",
+      policy: resolved,
+    });
+    expect(negRows(model)[0].severity).to.equal(SEVERITY.WARNING);
+    expect(model.pass).to.equal(true);
+  });
+
+  it("the shipped baseline fixture grades negative_tenant_ledger at its built-in ERROR default (no behaviour change)", function () {
+    const baseline = readPolicy(readFixture("baseline.json"));
+    expect(baseline.severities[EXCEPTION.NEGATIVE_TENANT_LEDGER]).to.equal(SEVERITY.ERROR);
+    // Applying the baseline leaves the verdict identical to no policy: a masked
+    // negative ledger still FAILs.
+    const model = report.buildPacket({
+      bank: [],
+      book: [],
+      rentroll: maskedRent(),
+      reportDate: "2026-05-31",
+      policy: baseline,
+    });
+    expect(negRows(model)[0].severity).to.equal(SEVERITY.ERROR);
+    expect(model.pass).to.equal(false);
+  });
+});

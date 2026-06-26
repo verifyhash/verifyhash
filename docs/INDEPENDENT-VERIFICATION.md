@@ -165,6 +165,16 @@ disclaims everything else.
   our end." No network access occurs (proven mechanically; see §5).
 - **Signer-pin.** *Which key* vouched, pinned to an address you obtained out-of-band, so a different
   key cannot impersonate the producer.
+- **Revocation-aware (opt-in).** With `--revocations <file-or-dir> [--as-of <ISO>]` `verify-vh`
+  consults the producer's signed key revocations and **downgrades** an otherwise-ACCEPTED artifact to
+  **REVOKED** (exit 3) when the signing key was revoked **at or before** the as-of instant (default:
+  now). A revocation dated *after* the as-of leaves the verdict ACCEPTED with an informational
+  later-revoked note; a forged / tampered / third-party revocation is **ignored** with a warning (a
+  revocation only ever *removes* trust, never adds it — a key revokes itself, so a third party cannot
+  grief you into rejecting a good artifact). This reaches the **same** downgrade the producer-stack
+  `vh ... verify-signed --revocations <f> --as-of <T>` reaches on the identical inputs — fully OFFLINE,
+  no producer stack, no network, no key (see [`KEY-LIFECYCLE.md`](KEY-LIFECYCLE.md)). A directory is
+  read as a flat pool of revocation files; a single file may be one revocation or a JSON array.
 
 ### What it does NOT prove
 - **NOT a trusted "sealed at time T."** A signature attests *this key vouched for these bytes* — not
@@ -173,15 +183,6 @@ disclaims everything else.
   [`../STRATEGY.md`](../STRATEGY.md)). For an *independent* time anchor the family ships a separate,
   also-offline **RFC-3161** timestamp path (`vh dataset/parcel verify-timestamp`, P-3 Option B) — that
   is a different deliverable, and `verify-vh` does not assert it.
-- **NOT revocation-aware.** `verify-vh` does not consult key revocations; a signer the producer has
-  revoked still pins as a match. Checking revocation currently requires the producer-stack
-  `vh ... verify-signed --revocations` (see [`KEY-LIFECYCLE.md`](KEY-LIFECYCLE.md)). So if the producer
-  has **publicly, cryptographically revoked** the signing key (compromised / rotated / retired),
-  `verify-vh` will still return a clean ACCEPTED on an artifact that key signed, while the producer's own
-  `vh ... verify-signed --revocations <f> --as-of <T>` would return REVOKED on the identical inputs.
-  Bringing `--revocations [--as-of]` to `verify-vh` so the independent path reaches the SAME downgrade is
-  a tracked, first-class follow-up (STRATEGY.md, EPIC-51 verifier-parity item); until it ships, a
-  counterparty who must account for a possibly-revoked key has to run that one producer-stack command.
 - **NOT a legal/accounting opinion.** A green verdict means the bytes and the signer check out — not
   that the producer's underlying conclusion (a reconciliation result, a dataset's lawful provenance) is
   correct. That judgement stays with the producer and their reviewers.

@@ -615,13 +615,14 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
       expect((res.stdout || "") + (res.stderr || "")).to.match(/NETWORK ACCESS ATTEMPTED/);
     });
 
-    it("the in-tree verifier source (verifier/verify-vh.js) requires only ./lib + Node core (UNCHANGED)", function () {
-      // The task requires the in-tree verifier to be UNCHANGED. We assert its require graph is exactly the
-      // original (./lib/* + fs/path) — the bundler is additive and never edits it.
+    it("the in-tree verifier source (verifier/verify-vh.js) requires only ./lib + Node core", function () {
+      // The in-tree verifier requires ONLY its own ./lib/* siblings + Node core (fs/path) — never ethers/
+      // hardhat or a cli/ back-edge. The bundler is additive and inlines exactly these. T-51.4 adds the
+      // stack-free ./lib/revocation reader to the graph (still pure-JS, still no producer stack).
       const src = fs.readFileSync(INTREE_PATH, "utf8");
       const specs = [...src.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
       expect(specs.sort()).to.deep.equal(
-        ["./lib/canonical", "./lib/merkle", "./lib/secp256k1-recover", "fs", "path"].sort()
+        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "path"].sort()
       );
     });
   });

@@ -27,6 +27,10 @@ const path = require("path");
 // ---------------------------------------------------------------------------
 const read = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
 
+// The verifier's own stack-free revocation lib — importing it fails this suite loudly if T-51.4's surface is
+// ever removed, and lets the docs guards below pin the prose to behaviour the verifier actually has.
+const vrev = require("../verifier/lib/revocation");
+
 // Importing the modules fails this suite loudly if the revocation surface or its caveats are ever removed,
 // and lets us pin the docs to the exact phrases the code exports so they cannot drift.
 const REV = require("../cli/revocation");
@@ -187,6 +191,63 @@ describe("T-51.3 docs: docs/KEY-LIFECYCLE.md + STRATEGY.md + EVIDENCE.md + READM
     });
     it("cross-links docs/KEY-LIFECYCLE.md", function () {
       expect(evidence).to.include("docs/KEY-LIFECYCLE.md");
+    });
+  });
+
+  describe("T-51.4: the verifier docs document `verify-vh --revocations` parity (the 'NOT revocation-aware' caveat is CLOSED)", function () {
+    const indep = read("docs/INDEPENDENT-VERIFICATION.md");
+    const indepLower = indep.toLowerCase();
+    const verifierReadme = read("verifier/README.md");
+    const verifierReadmeLower = verifierReadme.toLowerCase();
+
+    it("the verifier's stack-free revocation lib still exports the surface these guards pin against", function () {
+      // Tripwire: if verifier/lib/revocation.js drops these, the docs guards below describe nothing.
+      expect(vrev.loadAndApply, "loadAndApply export").to.be.a("function");
+      expect(vrev.evaluateTrustAsOf, "evaluateTrustAsOf export").to.be.a("function");
+      expect(vrev.verifyRevocation, "verifyRevocation export").to.be.a("function");
+      expect(vrev.readRevocationsFromPath, "readRevocationsFromPath export").to.be.a("function");
+    });
+
+    it("the now-CLOSED 'NOT revocation-aware' caveat is GONE from both verifier docs", function () {
+      expect(indepLower, "INDEPENDENT-VERIFICATION.md no longer says 'NOT revocation-aware'").to.not.include(
+        "not revocation-aware"
+      );
+      expect(verifierReadmeLower, "verifier/README.md no longer says 'NOT revocation-aware'").to.not.include(
+        "not revocation-aware"
+      );
+    });
+
+    it("docs/INDEPENDENT-VERIFICATION.md §3 documents the new --revocations <file-or-dir> [--as-of] flag + the SAME-downgrade parity", function () {
+      expect(indep).to.include("--revocations <file-or-dir>");
+      expect(indep).to.include("--as-of");
+      expect(indepLower).to.match(/revocation-aware/);
+      expect(indepLower).to.match(/downgrade/);
+      expect(indep).to.include("REVOKED");
+      // The parity claim against the producer stack + the anti-grief (forged ignored) rule.
+      expect(indep).to.include("vh ... verify-signed --revocations");
+      expect(indepLower).to.match(/forged|tampered|third-party|third party/);
+      expect(indepLower).to.match(/ignored\*{0,2} with a warning/);
+      expect(indepLower).to.match(/no producer stack|without installing the producer/);
+    });
+
+    it("verifier/README.md §4 documents the new --revocations <file-or-dir> [--as-of] flag + the SAME-downgrade parity", function () {
+      expect(verifierReadme).to.include("--revocations <file-or-dir>");
+      expect(verifierReadme).to.include("--as-of");
+      expect(verifierReadmeLower).to.match(/revocation-aware/);
+      expect(verifierReadme).to.include("REVOKED");
+      expect(verifierReadme).to.include("vh ... verify-signed --revocations");
+      expect(verifierReadmeLower).to.match(/ignored\*{0,2} with a warning/);
+    });
+
+    it("docs/KEY-LIFECYCLE.md states verify-vh REACHES the same downgrade (no longer 'NOT yet revocation-aware')", function () {
+      expect(klLower, "KEY-LIFECYCLE.md no longer says verify-vh is NOT yet revocation-aware").to.not.match(
+        /not yet revocation-aware|zero revocation awareness/
+      );
+      expect(keyLifecycle).to.include("verify-vh");
+      expect(keyLifecycle).to.include("--revocations <file-or-dir>");
+      expect(klLower).to.match(/same (revoked )?verdict and exit code|same revoked verdict|reaches the \*\*same\*\*|reaches the same/);
+      // It cross-links the parity test so the claim is anchored to a green proof.
+      expect(keyLifecycle).to.include("test/verifier.revocation.test.js");
     });
   });
 

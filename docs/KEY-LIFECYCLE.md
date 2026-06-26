@@ -149,22 +149,22 @@ non-loosening invariant**: with **NO `--revocations` supplied, every existing ve
 byte-for-byte as today** — a revocation can ONLY turn an ACCEPTED into a REVOKED, never the reverse, and a
 **forged / tampered / third-party** revocation is **IGNORED with a warning**, never trusted to downgrade.
 
-## Boundary: the independent verifier (`verify-vh`) is NOT yet revocation-aware
+## The independent verifier (`verify-vh`) is revocation-aware too
 
-The `--revocations` / `--as-of` downgrade above lives **only in the producer stack** (`vh ... verify-signed`,
-which depends on `ethers`). The standalone independent verifier —
-[`verifier/`](../verifier/) (`verify-vh.js` + `dist/verify-vh-standalone.js`), the deliverable that lets a
-counterparty recompute **without installing the producer's stack** — has **zero revocation awareness today**:
-it has no `--revocations`/`--as-of` flag and does not consult revocations at all. So a key the producer has
-**publicly, cryptographically revoked** still pins as a clean ACCEPTED under `verify-vh`, while the producer's
-own `vh ... verify-signed --revocations <f> --as-of <T>` returns **REVOKED** on the identical inputs. A
-counterparty who must account for a possibly-revoked (compromised/rotated) key therefore has to run that one
-producer-stack command for now. Bringing `--revocations [--as-of]` to `verify-vh` — an offline EIP-191
-recovery of the revocation plus the same non-loosening as-of comparison the producer stack uses — is a
-tracked, **first-class follow-up** (STRATEGY.md, EPIC-51 verifier-parity item). This boundary is stated the
-same way in [`docs/INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md) §3 and
-[`verifier/README.md`](../verifier/README.md) §4 so the independent-verification promise never silently
-overstates its coverage.
+The `--revocations <file-or-dir>` / `--as-of <ISO>` downgrade above is **also** in the standalone independent
+verifier — [`verifier/`](../verifier/) (`verify-vh.js` + `dist/verify-vh-standalone.js`), the deliverable that
+lets a counterparty recompute **without installing the producer's stack** (T-51.4). `verify-vh` consults the
+producer's signed revocations with an **offline EIP-191 recovery** of each revocation (its own pure-JS
+secp256k1 — **no `ethers`**) plus the **same non-loosening as-of comparison** the producer stack uses, so on
+identical inputs `verify-vh --revocations <f> --as-of <T>` reaches the **same REVOKED verdict and exit code
+(3)** the producer's `vh ... verify-signed --revocations <f> --as-of <T>` reaches. A revocation dated *after*
+`--as-of` stays ACCEPTED with a later-revoked note; a **forged / tampered / third-party** revocation is
+**IGNORED with a warning**, never trusted to downgrade (a key revokes itself); and with **NO `--revocations`,
+`verify-vh` is byte-for-byte as before**. A directory is read as a flat pool of revocation files; a single
+file may be one revocation or a JSON array. This parity is stated the same way in
+[`docs/INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md) §3 and
+[`verifier/README.md`](../verifier/README.md) §4, and proven in
+[`test/verifier.revocation.test.js`](../test/verifier.revocation.test.js).
 
 ## See also
 

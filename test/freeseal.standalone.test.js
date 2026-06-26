@@ -439,11 +439,13 @@ describe("free sealer standalone: single-file, zero-install seal-your-own-folder
       const vspecs = [...vsrc.matchAll(/(^|[^A-Za-z0-9_$])require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[2]);
       for (const s of vspecs) expect(["fs", "path", "node:fs", "node:path"]).to.include(s);
 
-      // In-tree verifier: require graph exactly the original (./lib/* + fs/path).
+      // In-tree verifier: require graph is exactly its own ./lib/* siblings + Node core (fs/path) — never
+      // ethers/hardhat or a cli/ back-edge. The SEAL bundle (this task) never touches it; T-51.4 added the
+      // stack-free ./lib/revocation reader to the verifier graph (still pure-JS, still no producer stack).
       const isrc = fs.readFileSync(INTREE_VERIFIER_PATH, "utf8");
       const ispecs = [...isrc.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
       expect(ispecs.sort()).to.deep.equal(
-        ["./lib/canonical", "./lib/merkle", "./lib/secp256k1-recover", "fs", "path"].sort()
+        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "path"].sort()
       );
     });
   });

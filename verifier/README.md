@@ -271,6 +271,16 @@ bytes in your hands**:
   §6 and `test/verifier.isolation.test.js`).
 - ✅ **Signer-pin** — *which key* vouched for this artifact, pinned to an address you supply
   out-of-band, so a different key cannot impersonate the producer.
+- ✅ **Revocation-aware (opt-in)** — with `--revocations <file-or-dir> [--as-of <ISO>]` `verify-vh`
+  consults the producer's signed key revocations and **downgrades** an otherwise-ACCEPTED artifact to
+  **REVOKED** (exit 3) when the signing key was revoked **at or before** the as-of instant (default:
+  now). A revocation dated *after* the as-of leaves it ACCEPTED with an informational later-revoked note;
+  a forged / tampered / third-party revocation is **ignored** with a warning (a revocation only ever
+  *removes* trust, never adds it — a key revokes itself). This reaches the **same** downgrade the
+  producer-stack `vh ... verify-signed --revocations <f> --as-of <T>` reaches on the identical inputs —
+  fully OFFLINE, no producer stack, no network, no key (see
+  [`../docs/KEY-LIFECYCLE.md`](../docs/KEY-LIFECYCLE.md)). A directory is read as a flat pool of
+  revocation files; a single file may be one revocation or a JSON array.
 
 It deliberately does **NOT** prove:
 
@@ -279,14 +289,6 @@ It deliberately does **NOT** prove:
   human-owned signing/timestamp trust-root (proposal **P-3** in `../STRATEGY.md`). For an *independent*
   time anchor, the family offers a separate **RFC-3161** timestamp path (`vh … verify-timestamp`,
   also offline) — that is a different deliverable, not something `verify-vh` asserts.
-- ❌ **NOT revocation-aware.** `verify-vh` does not consult key revocations; a signer the producer has
-  revoked still pins as a match. Checking revocation currently requires the producer-stack
-  `vh ... verify-signed --revocations` (see [`../docs/KEY-LIFECYCLE.md`](../docs/KEY-LIFECYCLE.md)). So on
-  an artifact signed by a key the producer has **publicly, cryptographically revoked** (compromised /
-  rotated / retired), `verify-vh` still returns a clean ACCEPTED, while the producer's own
-  `vh ... verify-signed --revocations <f> --as-of <T>` returns REVOKED on the identical inputs. Bringing
-  `--revocations [--as-of]` to `verify-vh` so the independent path reaches the SAME downgrade is a
-  tracked, first-class follow-up (STRATEGY.md, EPIC-51 verifier-parity item).
 - ❌ **A legal or accounting opinion.** A green verdict means the bytes and the signer check out. It is
   not an attestation that the underlying claim (a reconciliation, a model's provenance) is *correct* —
   that judgement belongs to the producer and their reviewers.

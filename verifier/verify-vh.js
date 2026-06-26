@@ -34,6 +34,7 @@ const path = require("path");
 const merkle = require("./lib/merkle");
 const canonical = require("./lib/canonical");
 const { recoverPersonalSignAddress } = require("./lib/secp256k1-recover");
+const revocation = require("./lib/revocation");
 
 // CI-gateable exit contract, mirroring the producer family (vh verify-seal / vh evidence verify):
 //   0 ok / 3 rejected / 2 usage / 1 IO. Stable; a future CI/indexer keys on these.
@@ -83,6 +84,8 @@ function parseArgs(argv) {
     json: false,
     help: false,
     manifest: undefined,
+    revocations: undefined,
+    asOf: undefined,
     _pos: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -101,6 +104,12 @@ function parseArgs(argv) {
         break;
       case "--manifest":
         opts.manifest = need("--manifest");
+        break;
+      case "--revocations":
+        opts.revocations = need("--revocations");
+        break;
+      case "--as-of":
+        opts.asOf = need("--as-of");
         break;
       case "--json":
         opts.json = true;
@@ -122,6 +131,28 @@ function parseArgs(argv) {
     throw new UsageError(
       `--manifest <file> lists the artifacts; do not also pass positional <artifact> args (got: ${opts._pos[0]})`
     );
+  }
+  // Validate the OPTIONAL recipient-side trust-decision flags (--revocations / --as-of, T-51.4) SHAPE up
+  // front so a malformed --as-of (or --as-of without --revocations) is a usage error (2), never a runtime
+  // throw mid-verify. Mirrors `vh evidence verify-signed`'s validateAsOfFlags so the two stacks reject the
+  // same inputs the same way.
+  if (opts.asOf !== undefined && !opts.revocations) {
+    throw new UsageError(
+      "--as-of requires --revocations (it pins the instant the revocation decision is made AS OF)"
+    );
+  }
+  if (opts.asOf !== undefined) {
+    const ms = Date.parse(opts.asOf);
+    if (
+      typeof opts.asOf !== "string" ||
+      !revocation.ISO_INSTANT_RE.test(opts.asOf) ||
+      Number.isNaN(ms) ||
+      new Date(ms).toISOString() !== opts.asOf
+    ) {
+      throw new UsageError(
+        `invalid --as-of: ${opts.asOf} (expected a canonical ISO-8601 UTC instant, e.g. 2026-06-01T00:00:00.000Z)`
+      );
+    }
   }
   // Preserve the SINGLE-artifact contract verbatim: exactly one positional and no --manifest.
   opts.artifact = opts._pos[0];
@@ -726,6 +757,37 @@ function verifyArtifact(opts) {
   };
   if (fileResult.identityOnly) result.identityOnly = true;
   if (fileResult.proof) result.proof = fileResult.proof;
+
+  // OPTIONAL recipient-side TRUST-DECISION-AS-OF (EPIC-51 / T-51.4). Runs ONLY under --revocations — with no
+  // flag the result + code are byte-identical to the pre-T-51.4 baseline (regression-pinned). A signer
+  // revoked-before-as-of downgrades an otherwise-ACCEPTED artifact to REVOKED (exit 3); a later-dated
+  // revocation is informational; a forged/tampered/third-party one is ignored with a warning. OFFLINE /
+  // key-free on the read side; the revocations file/dir is the ONLY new I/O. This reaches the SAME downgrade
+  // `vh ... verify-signed --revocations` does, byte-for-byte on identical inputs.
+  if (opts.revocations) {
+    let applied;
+    try {
+      applied = revocation.loadAndApply({
+        result,
+        revocationsPath: opts.revocations,
+        asOf: opts.asOf,
+        nowISO: opts.nowISO || new Date().toISOString(),
+      });
+    } catch (e) {
+      // A malformed --as-of is caught at parse time; here the only failures are an unreadable path or a
+      // non-JSON single revocations file — a genuine IO error (exit 1), surfaced (never a stack), never a
+      // silently-skipped downgrade.
+      throw new IOError(`cannot evaluate --revocations ${opts.revocations}: ${e.message}`);
+    }
+    // A REVOKED decision flips an otherwise-ACCEPTED verdict to REVOKED (exit 3); an already-REJECTED verdict
+    // is left rejected (the trust-as-of never upgrades). The trustAsOf block + defaulted flag ride along for
+    // the renderer.
+    const downgraded = applied.result;
+    downgraded.trustAsOfDefaulted = applied.defaulted;
+    const newCode = downgraded.accepted ? EXIT.OK : EXIT.REJECTED;
+    return { result: downgraded, code: newCode };
+  }
+
   return { result, code };
 }
 
@@ -776,8 +838,17 @@ function verifyBatch(opts) {
   const results = [];
   for (const e of entries) {
     // Verify each entry through the SAME core. A USAGE/IO problem with any single entry short-circuits the
-    // whole batch with that code (the gate cannot certify a release it could not fully evaluate).
-    const { result } = verifyArtifact({ artifact: e.artifact, vendor: e.vendor, dir: e.dir });
+    // whole batch with that code (the gate cannot certify a release it could not fully evaluate). The
+    // top-level --revocations/--as-of (T-51.4) apply to EVERY entry as a default, so one revocations
+    // file/dir gates a whole release's signed artifacts under one as-of instant.
+    const { result } = verifyArtifact({
+      artifact: e.artifact,
+      vendor: e.vendor,
+      dir: e.dir,
+      revocations: opts.revocations,
+      asOf: opts.asOf,
+      nowISO: opts.nowISO,
+    });
     results.push(result);
   }
   const total = results.length;
@@ -822,9 +893,30 @@ function renderHuman(r) {
     `files: ${r.counts.matched} matched, ${r.counts.changed} changed, ` +
       `${r.counts.missing} missing, ${r.counts.escaped || 0} rejected, ${r.counts.unexpected} unexpected`
   );
+  // OPTIONAL recipient-side TRUST-DECISION-AS-OF block (T-51.4) — printed ONLY when --revocations was
+  // supplied (r.trustAsOf is attached then). With no flag this block is absent, so the output is byte-
+  // identical to the pre-T-51.4 baseline. The block reads the SAME way the producer's verify-signed does.
+  if (r.trustAsOf) {
+    L.push("");
+    for (const line of revocation.renderTrustAsOf(r.trustAsOf, { defaulted: r.trustAsOfDefaulted })) {
+      L.push(line);
+    }
+  }
   L.push("");
   if (r.accepted) {
     L.push("OK — the artifact verifies.");
+  } else if (r.reason === "key_revoked_as_of") {
+    // The signature + bytes checked out, but the signing key was revoked AT OR BEFORE the as-of instant — a
+    // distinct REVOKED verdict (exit 3), matching the producer's verify-signed downgrade.
+    const g = r.trustAsOf && r.trustAsOf.governing;
+    L.push("REVOKED (key_revoked_as_of):");
+    if (g) {
+      L.push(
+        `  key_revoked_as_of: the signing key (${g.vendorAddress}) was REVOKED as of ${g.revokedAt} ` +
+          `(reason: ${g.reason})${g.supersededBy ? `, superseded by ${g.supersededBy}` : ""} — at or before ` +
+          `the as-of instant. The bytes + signature check out, but the key was no longer trustworthy then.`
+      );
+    }
   } else {
     L.push(`REJECTED (${r.reason}):`);
     for (const c of r.changed) {
@@ -901,22 +993,30 @@ function usage() {
     "verify-vh — standalone, read-only, OFFLINE verifier for verifyhash artifacts",
     "",
     "Usage:",
-    "  verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]",
-    "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--dir <d>] [--json]   (batch)",
-    "  verify-vh --manifest <file> [--vendor <0xaddr>] [--dir <d>] [--json]           (batch)",
+    "  verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir> [--as-of <ISO>]] [--json]",
+    "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir>] [--json]   (batch)",
+    "  verify-vh --manifest <file> [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir>] [--json]           (batch)",
     "",
     "Auto-detects the artifact kind (evidence seal, reconciliation seal, dataset attestation, proof",
     "bundle — bare or signed), RE-DERIVES the keccak root from the referenced bytes (siblings resolve",
     "next to the artifact, or under --dir <d>), recovers the signer of a signed artifact, and PINS it",
     "to --vendor <0xaddr> (or reports the recovered signer when no pin is given).",
     "",
+    "REVOCATIONS: --revocations <file-or-dir> [--as-of <ISO>] downgrades an otherwise-ACCEPTED signed",
+    "artifact to REVOKED (exit 3) when its signing key was REVOKED at or before --as-of (default now). The",
+    "file may be one signed revocation or a JSON array; a directory is read as a flat pool of revocation",
+    "files. A revocation dated AFTER --as-of stays ACCEPTED with a later-revoked note; a forged/tampered/",
+    "third-party revocation is IGNORED with a warning. This reaches the SAME downgrade the producer's",
+    "`vh ... verify-signed --revocations` does, OFFLINE — no producer stack, no network, no key.",
+    "",
     "BATCH/MANIFEST: pass several <artifact> args, or --manifest <file> (a newline list or JSON array of",
     "artifact paths, each line/object may carry its own --vendor/--dir). ALL must pass for exit 0; if ANY",
     "is rejected, exit is 3 and the report names which artifact failed and why. --json emits a stable",
     "aggregate { ok, total, passed, failed, results:[...] } whose entries are the single-artifact shape.",
-    "Top-level --vendor/--dir are inherited as defaults a manifest entry may override.",
+    "Top-level --vendor/--dir are inherited as defaults a manifest entry may override; --revocations/--as-of",
+    "apply to every entry.",
     "",
-    "READ-ONLY: holds no key, writes nothing. Exit: 0 ok / 3 rejected / 2 usage / 1 IO.",
+    "READ-ONLY: holds no key, writes nothing. Exit: 0 ok / 3 rejected|revoked / 2 usage / 1 IO.",
     "",
   ].join("\n");
 }
@@ -946,6 +1046,10 @@ function run(argv, io = {}) {
     writeErr(usage());
     return EXIT.USAGE;
   }
+
+  // The recipient's current decision instant (the default --as-of). Injectable via io.nowISO so a test can
+  // pin the clock; otherwise the wall clock. Threaded onto opts for the (optional) revocation evaluation.
+  opts.nowISO = io.nowISO || new Date().toISOString();
 
   // BATCH path: a --manifest file or more than one positional <artifact>. Aggregates per-artifact verdicts
   // under one CI exit code. The single-artifact path below is byte-for-byte the original behavior.
@@ -1021,6 +1125,7 @@ module.exports = {
   verifyDatasetAttestation,
   verifyProofBundle,
   renderHuman,
+  revocation,
   usage,
   run,
 };

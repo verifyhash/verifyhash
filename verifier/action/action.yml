@@ -1,0 +1,145 @@
+name: "verify-vh — sealed-artifact merge gate"
+description: >-
+  Fail the build the instant a sealed verifyhash artifact is tampered, forged, or signed by the wrong
+  key. This composite action installs ONLY the standalone, offline verify-vh verifier (js-sha3 — no
+  ethers, no hardhat, no network) and runs it over your release artifact(s). With `vendor:` set, a green
+  check means "every sealed artifact still matches the bytes the key you pinned signed"; with `vendor:`
+  omitted it is tamper-evidence ONLY and does NOT prove WHO signed. Adoption is one line:
+  `uses: <owner>/<repo>/verifier/action@<ref>`.
+author: "verifyhash"
+
+# Marketplace branding (shown on the GitHub Marketplace listing).
+branding:
+  icon: "shield"
+  color: "green"
+
+# ---------------------------------------------------------------------------------------------------
+# INPUTS — the three knobs a consumer sets. `vendor` pins WHO must have signed (omit for an unsigned
+# evidence seal, which is checked for tamper-evidence only). Provide EITHER `manifest` (gate a whole
+# release in one shot) OR `artifacts` (a space-separated list); `dir` resolves the referenced files.
+# ---------------------------------------------------------------------------------------------------
+inputs:
+  vendor:
+    description: >-
+      The producer's signer address (0x + 20 bytes), obtained out-of-band, that EVERY signed artifact
+      must verify against. Leave empty to verify tamper-evidence only (e.g. an unsigned evidence seal);
+      when set, an artifact signed by any other key is REJECTED (exit 3). SECURITY: gating a SIGNED
+      release artifact WITHOUT `vendor:` accepts an attacker who re-signed a tampered release with their
+      OWN key — a green check then proves only that the bytes match WHATEVER signer the packet
+      self-asserts, NOT who. ALWAYS pin `vendor:` for any signed release.
+    required: false
+    default: ""
+  manifest:
+    description: >-
+      Path to a release manifest (a newline list or JSON array of artifact paths, each entry may carry
+      its own --vendor/--dir) that gates the WHOLE release in one invocation. Set this OR `artifacts`.
+    required: false
+    default: ""
+  artifacts:
+    description: >-
+      Space-separated artifact path(s) to verify when no `manifest` is given (e.g.
+      "dist/a.vhevidence.json dist/b.vhseal"). Set this OR `manifest`.
+    required: false
+    default: ""
+  dir:
+    description: >-
+      Directory holding the files the artifact(s) reference (the sealed packet). Optional; defaults to
+      each artifact's own directory (sibling resolution).
+    required: false
+    default: ""
+  verify-vh:
+    description: >-
+      Path to the standalone verify-vh.js (advanced/testing override). Defaults to the verifier tree
+      BUNDLED WITH this action — resolved at run time via ${{ github.action_path }}, so the consumer
+      NEVER has to vendor `verifier/` into their own repo. Leave empty to use the bundled verifier.
+    required: false
+    default: ""
+  node-version:
+    description: "Node.js version to set up for the offline verifier (>= 18)."
+    required: false
+    default: "20"
+
+# ---------------------------------------------------------------------------------------------------
+# COMPOSITE STEPS — ordered: set up Node, install ONLY the standalone verifier (js-sha3), then run the
+# gate. The action fetches/installs the verifier itself; the consumer NEVER has to vendor the tree.
+#
+# PATH RESOLUTION (load-bearing for a published action): a composite action's `run:` steps execute with
+# the CONSUMER's $GITHUB_WORKSPACE as the working directory, NOT the action's own checkout. So every
+# reference to the bundled verifier tree is resolved against ${{ github.action_path }} (the directory of
+# THIS action, i.e. verifier/action/) — its parent ${{ github.action_path }}/.. is the verifier/ tree.
+# Without this, `working-directory: verifier` and `./verifier/verify-vh.js` would resolve against the
+# consumer's repo (which has no verifier/ tree) and the action would fail to even start the verifier.
+# ---------------------------------------------------------------------------------------------------
+runs:
+  using: "composite"
+  steps:
+    # 1. Node for the offline verifier (no producer toolchain).
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    # 2. Install ONLY the standalone verifier — pulls js-sha3 and NOTHING else (no ethers, no hardhat,
+    #    no @nomicfoundation, no network beyond the registry fetch of js-sha3). Runs in the action's OWN
+    #    bundled verifier tree (${{ github.action_path }}/.. == verifier/), NOT the consumer's workspace.
+    - name: Install standalone verify-vh (js-sha3 only)
+      shell: bash
+      working-directory: ${{ github.action_path }}/..
+      run: npm ci --omit=dev || npm install --omit=dev
+
+    # 3. THE GATE. One invocation, one exit code. The verifier-invocation line below is BYTE-IDENTICAL
+    #    to the one in verifier/ci/verify-vh.generic.sh (the single source of truth — a test asserts
+    #    no drift). verify-vh exits 0 only if EVERY artifact verifies; 3 if any is tampered/forged/
+    #    wrong-issuer; 2 on misconfig; 1 on IO. We propagate that exit code so GitHub Actions fails the
+    #    job on any non-zero — blocking the merge.
+    #
+    #    VERIFY_VH defaults to the action's OWN bundled verify-vh.js, resolved via ${{ github.action_path }}
+    #    so it points at the verifier tree this action shipped — NOT a path in the consumer's workspace.
+    - name: Verify sealed artifacts (fails the build on a bad seal)
+      shell: bash
+      env:
+        VERIFY_VH: ${{ inputs.verify-vh != '' && inputs.verify-vh || format('{0}/../verify-vh.js', github.action_path) }}
+        VH_VENDOR: ${{ inputs.vendor }}
+        VH_MANIFEST: ${{ inputs.manifest }}
+        VH_ARTIFACTS: ${{ inputs.artifacts }}
+        VH_DIR: ${{ inputs.dir }}
+      run: |
+        set -euo pipefail
+        VERIFY_VH="${VERIFY_VH:-./verifier/verify-vh.js}"
+
+        # Build the verify-vh argument list. A MANIFEST gates the whole release in one invocation;
+        # otherwise we pass the artifact list positionally. Either way it is ONE call -> ONE exit code.
+        set -- # reset positional params we will hand to verify-vh
+        if [ -n "${VH_MANIFEST:-}" ]; then
+          set -- --manifest "$VH_MANIFEST"
+        else
+          if [ -z "${VH_ARTIFACTS:-}" ]; then
+            echo "verify-vh gate: set 'manifest' or 'artifacts' (the artifact(s) to verify)." >&2
+            exit 2
+          fi
+          # shellcheck disable=SC2086  # word-splitting VH_ARTIFACTS into separate args is intentional.
+          set -- $VH_ARTIFACTS
+        fi
+
+        # `vendor` is OPTIONAL: pin the signer only when one is supplied (an unsigned evidence seal has
+        # no signer to pin, so verifying tamper-evidence alone must NOT force a vendor). SECURITY NOTE:
+        # without --vendor a SIGNED artifact is accepted on its OWN self-claimed signer — pin the
+        # producer's signer for any signed release (see the README warning + the `vendor` input doc).
+        if [ -n "${VH_VENDOR:-}" ]; then
+          set -- "$@" --vendor "$VH_VENDOR"
+        fi
+        if [ -n "${VH_DIR:-}" ]; then
+          set -- "$@" --dir "$VH_DIR"
+        fi
+
+        # Run the gate. `set -e` would abort on the non-zero exit before we could echo a clear message, so we
+        # capture the code explicitly and pass it through verbatim — preserving the 0/3/2/1 contract for CI.
+        set +e
+        node "$VERIFY_VH" "$@"
+        code=$?
+        set -e
+
+        if [ "$code" -ne 0 ]; then
+          echo "verify-vh gate: FAILED (exit $code) — blocking the merge." >&2
+        fi
+        exit "$code"

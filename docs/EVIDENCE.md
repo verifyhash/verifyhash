@@ -237,6 +237,42 @@ files: DIFFERENT
 > **P-3** in [`STRATEGY.md`](../STRATEGY.md)). A diff inherits this boundary: it tells you what the two
 > packets CLAIM differs, it does not prove WHEN either was sealed.
 
+### Gate the change in CI: `vh evidence diff … --policy <f>`
+
+A bare diff answers *what changed*; a pipeline needs *is this change ALLOWED?* — and a non-zero exit when it
+is not. Pass a small **drift policy** and the exit code becomes the **policy verdict**: a DIFFERENT-but-
+**permitted** change PASSes (exit **0**), a **disallowed** change FAILs (exit **3**). The verdict is computed
+from the *same* change set the diff prints, so it can never disagree with the body.
+
+```
+$ vh evidence diff ./v1.vhevidence.json ./v2.vhevidence.json --policy ./drift.json
+…
+files: DIFFERENT
+  ADDED    new-exhibit.pdf …
+## drift policy
+  verdict: PASS  (rules evaluated: 2)
+  PASS — every change between A and B is permitted by this policy.       # exit 0 (gate PASS)
+```
+
+A drift policy is a JSON object `{ "kind": "vh.evidence-drift-policy", "schemaVersion": 1, … }` with any
+combination of these **optional** rules (a policy with no rules trivially PASSes):
+
+- `"noAdded": true` / `"noRemoved": true` / `"noChanged": true` — forbid *any* ADD / REMOVE / edit.
+  `noRemoved` is the load-bearing **chain-of-custody** guard: an evidence packet that LOSES a file is
+  suspicious. `noRemoved` + `noChanged` together enforce an **append-only** evidence trail.
+- `"allowChangePaths": ["src", …]` — a CHANGED file **outside** every allowed POSIX prefix violates
+  (e.g. only files under `src/` may be edited). The match is **segment-aware**: `src` matches `src/x` and
+  `src`, never `srcfoo`.
+- `"frozenPaths": ["legal", …]` — a file under a frozen prefix that is CHANGED **or** REMOVED violates
+  (those paths may be neither edited nor deleted); **adding** a new file under a frozen prefix is allowed.
+
+A rename is REMOVED(old) + ADDED(new) in the change set, so it is gated as a remove + an add — never a silent
+edit. `--policy --json` carries a `drift` block `{ verdict, rulesEvaluated, violations[] }` (each violation is
+`{ relPath, rule, change }`), so a CI consumer reads the verdict and the exact offending files from the same
+object as the change set. The gate is **OFFLINE / key-free / FREE** like the diff itself — it reuses the pure
+`diffEvidence` change set verbatim and adds no crypto. It mirrors `vh dataset check`'s policy gate, so the two
+read identically.
+
 ## How it reuses the shared cores
 
 The evidence product is a **thin adapter** — it re-implements no crypto:

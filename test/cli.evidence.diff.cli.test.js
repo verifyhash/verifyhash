@@ -281,4 +281,131 @@ describe("cli/evidence T-46.2: `vh evidence diff`", function () {
     expect(fs.readFileSync(A).equals(beforeA)).to.equal(true);
     expect(fs.readFileSync(B).equals(beforeB)).to.equal(true);
   });
+
+  // -------------------------------------------------------------------------
+  // `--policy <f>` — the CI-gateable drift gate over the change set (T-46.1 leverage). With --policy the
+  // exit code becomes the POLICY verdict: a DIFFERENT-but-PERMITTED change PASSes (0), a disallowed change
+  // FAILs (3). The verdict is computed from the SAME change set, so the exit code can never disagree with
+  // the printed/JSON body. A corrupt/foreign policy is an IO error (1), never a half-accepted gate.
+  // -------------------------------------------------------------------------
+  // Write a drift policy JSON under a throwaway temp dir (so the cwd-hygiene afterEach stays green) and
+  // return its absolute path.
+  function writePolicy(rules) {
+    const dir = mkTmp();
+    const p = path.join(dir, "drift-policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify(Object.assign({ kind: "vh.evidence-drift-policy", schemaVersion: 1 }, rules)) + "\n"
+    );
+    return p;
+  }
+
+  it("--policy on a DIFFERENT but PERMITTED change -> exit 0 PASS (append-only growth that only ADDs)", async function () {
+    const A = await sealDir(BASE);
+    const B = await sealDir({ ...BASE, "new.txt": "delta" }); // an ADD only
+    const policy = writePolicy({ noRemoved: true, noChanged: true }); // ADDs are allowed
+    const io = capture();
+    const code = await evidence.cmdEvidence(["diff", A, B, "--policy", policy], io);
+
+    // The packets DIFFER, but the change is PERMITTED, so the GATE passes (exit 0) — the policy verdict
+    // overrides the bare DIFFERENT exit a policy-less diff would return.
+    expect(code).to.equal(evidence.EXIT.OK);
+    const out = io.out();
+    expect(out).to.match(/files: DIFFERENT/); // the diff body still shows the change
+    expect(out).to.match(/## drift policy/);
+    expect(out).to.match(/verdict: PASS {2}\(rules evaluated: 2\)/);
+    expect(io.err()).to.equal("");
+  });
+
+  it("--policy on a DISALLOWED change -> exit 3 FAIL, with the per-violation lines", async function () {
+    const A = await sealDir(BASE);
+    const { "sub/c.txt": _gone, ...rest } = BASE;
+    const B = await sealDir(rest); // a REMOVE
+    const policy = writePolicy({ noRemoved: true });
+    const io = capture();
+    const code = await evidence.cmdEvidence(["diff", A, B, "--policy", policy], io);
+
+    expect(code).to.equal(evidence.EXIT.FAIL);
+    const out = io.out();
+    expect(out).to.match(/## drift policy/);
+    expect(out).to.match(/verdict: FAIL/);
+    expect(out).to.match(/REMOVED.*sub\/c\.txt\s+\[noRemoved\]/);
+  });
+
+  it("--policy on an IDENTICAL pair -> exit 0 PASS (no change, no violation)", async function () {
+    const A = await sealDir(BASE);
+    const B = await sealDir(BASE);
+    const policy = writePolicy({ noRemoved: true, noChanged: true, noAdded: true });
+    const io = capture();
+    const code = await evidence.cmdEvidence(["diff", A, B, "--policy", policy], io);
+
+    expect(code).to.equal(evidence.EXIT.OK);
+    const out = io.out();
+    expect(out).to.match(/files: IDENTICAL/);
+    expect(out).to.match(/verdict: PASS/);
+  });
+
+  it("--policy --json carries the drift block (verdict + rulesEvaluated + violations), exit = verdict", async function () {
+    const A = await sealDir(BASE);
+    const B = await sealDir({ ...BASE, "b.txt": "beta EDITED" }); // a CHANGE
+    const policy = writePolicy({ noChanged: true });
+    const io = capture();
+    const code = await evidence.cmdEvidence(["diff", A, B, "--policy", policy, "--json"], io);
+
+    expect(code).to.equal(evidence.EXIT.FAIL);
+    const obj = JSON.parse(io.out());
+    // The change set still rides in the JSON; the drift block is alongside it.
+    expect(obj.identical).to.equal(false);
+    expect(obj.drift).to.be.an("object");
+    expect(obj.drift.verdict).to.equal("FAIL");
+    expect(obj.drift.rulesEvaluated).to.equal(1);
+    expect(obj.drift.violations).to.deep.equal([
+      { relPath: "b.txt", rule: "noChanged", change: "CHANGED" },
+    ]);
+
+    // Without --policy the drift field is null (the gate is opt-in).
+    const io2 = capture();
+    await evidence.cmdEvidence(["diff", A, B, "--json"], io2);
+    expect(JSON.parse(io2.out()).drift).to.equal(null);
+  });
+
+  it("--policy with a corrupt/foreign policy is an IO error (1), never a half-accepted gate", async function () {
+    const A = await sealDir(BASE);
+    const B = await sealDir({ ...BASE, "x.txt": "x" });
+
+    // A FOREIGN policy kind.
+    const foreignDir = mkTmp();
+    const foreign = path.join(foreignDir, "foreign.json");
+    fs.writeFileSync(foreign, JSON.stringify({ kind: "not-a-drift-policy", schemaVersion: 1 }) + "\n");
+    const io1 = capture();
+    expect(await evidence.cmdEvidence(["diff", A, B, "--policy", foreign], io1)).to.equal(
+      evidence.EXIT.IO
+    );
+    expect(io1.err()).to.match(/not a verifyhash evidence drift policy/);
+
+    // A MALFORMED policy (non-boolean rule).
+    const badDir = mkTmp();
+    const bad = path.join(badDir, "bad.json");
+    fs.writeFileSync(
+      bad,
+      JSON.stringify({ kind: "vh.evidence-drift-policy", schemaVersion: 1, noAdded: "yes" }) + "\n"
+    );
+    const io2 = capture();
+    expect(await evidence.cmdEvidence(["diff", A, B, "--policy", bad], io2)).to.equal(evidence.EXIT.IO);
+    expect(io2.err()).to.match(/must be a boolean/);
+
+    // A MISSING policy file.
+    const io3 = capture();
+    expect(
+      await evidence.cmdEvidence(["diff", A, B, "--policy", "/no/such/policy.json"], io3)
+    ).to.equal(evidence.EXIT.IO);
+    expect(io3.err()).to.match(/cannot read evidence drift policy/);
+  });
+
+  it("--policy without a file argument is a usage error (2)", async function () {
+    const A = await sealDir(BASE);
+    const io = capture();
+    expect(await evidence.cmdEvidence(["diff", A, A, "--policy"], io)).to.equal(evidence.EXIT.USAGE);
+    expect(io.err()).to.match(/--policy requires a <file> argument/);
+  });
 });

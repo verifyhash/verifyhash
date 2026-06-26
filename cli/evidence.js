@@ -347,6 +347,286 @@ function diffEvidenceSeals(packetA, packetB) {
 }
 
 // ---------------------------------------------------------------------------
+// DRIFT POLICY (T-46.1 leverage): a CI-gateable verdict over the change set `diffEvidence` produces.
+//
+// WHY THIS EXISTS (the paying-customer leverage over a bare diff)
+//   A bare A->B change report answers "WHAT changed?". A buyer who pins evidence in a compliance / IP /
+//   chain-of-custody pipeline needs the next question answered automatically: "is this change ALLOWED?"
+//   — and a NON-ZERO exit when it is not, so CI fails the build / blocks the merge / alerts the reviewer.
+//   `evaluateDriftPolicy({ diff, policy })` turns the pure `diffEvidence` change set into a PASS/FAIL
+//   verdict against a small, explicit policy, with a per-change violation list a human (or a ticket) can
+//   read. It mirrors `cli/dataset.js › evaluatePolicy` (the SAME verdict/violation/rulesEvaluated shape,
+//   the SAME PASS/FAIL vocabulary), so the two policy gates read identically across the product family.
+//
+// IT INVENTS NO NEW DIFF/CRYPTO MATH. It consumes the EXACT object `diffEvidence` returns (added /
+//   removed / changed) — no second walk of the packets, no re-hashing — and only CLASSIFIES those
+//   already-computed changes against the policy. So the gate can never disagree with the diff it gates.
+//
+// THE RULES (every field OPTIONAL and combinable; a policy with NO rules trivially PASSes)
+//   - noAdded      : true  -> ANY ADDED file violates (the new packet may not introduce files).
+//   - noRemoved    : true  -> ANY REMOVED file violates (append-only / nothing may disappear — the
+//                             load-bearing rule for an evidence chain-of-custody: a removal is suspicious).
+//   - noChanged    : true  -> ANY CHANGED file (edited content at the same relPath) violates.
+//   - allowChangePaths : [prefixes] -> a CHANGED file whose relPath is NOT under one of these POSIX path
+//                             prefixes violates (e.g. only files under "src/" may be edited). A prefix
+//                             match is segment-aware: "src" matches "src/x" and "src" but never "srcfoo".
+//   - frozenPaths      : [prefixes] -> a file under one of these prefixes that is CHANGED *or* REMOVED
+//                             violates (those paths are FROZEN — neither edited nor deleted). ADDING a new
+//                             file under a frozen prefix is allowed (freezing protects what already exists).
+//   A rename is REMOVED(old)+ADDED(new) in the change set, so it is gated as a remove + an add — never as
+//   a silent edit (consistent with the whole family: the relPath is bound into the leaf).
+//
+// PURE: no I/O, no provider, no key, no network. Deterministic + order-independent: violations are sorted
+//   (relPath, then rule), so two runs over the same diff+policy are byte-identical. Mutates NEITHER input.
+// ---------------------------------------------------------------------------
+
+const DRIFT_POLICY_KIND = "vh.evidence-drift-policy";
+const DRIFT_POLICY_SCHEMA_VERSION = 1;
+const SUPPORTED_DRIFT_POLICY_SCHEMA_VERSIONS = Object.freeze([1]);
+
+// Stable, documented rule identifiers a violation reports in its `rule` field — a consumer can gate on
+// these EXACT strings (mirrors cli/dataset.js › POLICY_RULE).
+const DRIFT_RULE = Object.freeze({
+  NO_ADDED: "noAdded",
+  NO_REMOVED: "noRemoved",
+  NO_CHANGED: "noChanged",
+  ALLOW_CHANGE_PATHS: "allowChangePaths",
+  FROZEN_PATHS: "frozenPaths",
+});
+
+// The boolean rules (each present-and-`true` enables a constraint) and the path-list rules (each, when a
+// non-empty array, constrains by POSIX path prefix). Kept as data so validation, the rule count, and the
+// evaluator never drift in which fields they recognize.
+const DRIFT_BOOL_RULES = Object.freeze([
+  DRIFT_RULE.NO_ADDED,
+  DRIFT_RULE.NO_REMOVED,
+  DRIFT_RULE.NO_CHANGED,
+]);
+const DRIFT_LIST_RULES = Object.freeze([DRIFT_RULE.ALLOW_CHANGE_PATHS, DRIFT_RULE.FROZEN_PATHS]);
+
+// Possible verdicts (same vocabulary as the dataset policy gate, so the family reads identically).
+const DRIFT_VERDICT = Object.freeze({ PASS: "PASS", FAIL: "FAIL" });
+
+// The TRUST one-liner the drift gate LEADS with — stated ONCE so human + JSON agree. A drift PASS is a
+// statement about the CHANGE SET BETWEEN TWO PACKETS, computed from what each packet CLAIMS; it does NOT
+// re-derive content from bytes and is NOT a trusted timestamp or a legal opinion.
+const DRIFT_TRUST_NOTE =
+  "A drift-policy verdict gates the CHANGE SET between two evidence packets (what each packet CLAIMS) — " +
+  "it does NOT re-derive content from a directory, is NOT a trusted timestamp, and is NOT a legal " +
+  "opinion. Run `vh evidence verify <packet> --dir <d>` to re-derive a root from bytes. " +
+  EVIDENCE_TRUST_NOTE;
+
+/**
+ * Strictly validate a parsed drift-policy object. Throws an Error describing the FIRST problem; never
+ * mutates and never fills defaults (mirrors cli/dataset.js › validatePolicy). A wrong kind/schemaVersion,
+ * a non-boolean boolean rule, or a non-array / empty-string-entry path list hard-errors here so a
+ * corrupt/foreign policy is rejected, never half-accepted. Every rule is OPTIONAL and combinable; a
+ * policy with NO rules is valid (and trivially PASSes).
+ * @param {any} obj
+ * @returns {object} the same object, if valid
+ */
+function validateDriftPolicy(obj) {
+  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+    throw new packetseal.PacketSealError("evidence drift policy must be a JSON object");
+  }
+  if (obj.kind !== DRIFT_POLICY_KIND) {
+    throw new packetseal.PacketSealError(
+      `not a verifyhash evidence drift policy (kind: ${JSON.stringify(obj.kind)}; expected ${JSON.stringify(
+        DRIFT_POLICY_KIND
+      )})`
+    );
+  }
+  if (!SUPPORTED_DRIFT_POLICY_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
+    throw new packetseal.PacketSealError(
+      `unsupported evidence drift policy schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
+        `(this build understands ${JSON.stringify(SUPPORTED_DRIFT_POLICY_SCHEMA_VERSIONS)})`
+    );
+  }
+  // Boolean rules: each, WHEN PRESENT, must be a STRICT boolean (reject a truthy string/number that would
+  // silently enable the rule).
+  for (const f of DRIFT_BOOL_RULES) {
+    if (obj[f] !== undefined && typeof obj[f] !== "boolean") {
+      throw new packetseal.PacketSealError(
+        `evidence drift policy ${f} must be a boolean when present, got: ${String(obj[f])}`
+      );
+    }
+  }
+  // Path-list rules: each, WHEN PRESENT, must be an array of non-empty strings. Reject a non-array or an
+  // empty/non-string entry rather than silently coercing.
+  for (const f of DRIFT_LIST_RULES) {
+    if (obj[f] === undefined) continue;
+    if (!Array.isArray(obj[f])) {
+      throw new packetseal.PacketSealError(
+        `evidence drift policy ${f} must be an array of path prefixes when present, got: ${String(obj[f])}`
+      );
+    }
+    obj[f].forEach((v, i) => {
+      if (typeof v !== "string" || v.length === 0) {
+        throw new packetseal.PacketSealError(
+          `evidence drift policy ${f}[${i}] must be a non-empty string, got: ${String(v)}`
+        );
+      }
+    });
+  }
+  return obj;
+}
+
+/**
+ * Count the rules a validated drift policy actually carries — so the verdict can report `rulesEvaluated`
+ * and a no-rules policy is announced clearly. A boolean rule counts only when exactly `true`; a path-list
+ * rule counts only when present AND non-empty (an empty `frozenPaths: []` carries no constraint).
+ * @param {object} policy a validated drift policy object
+ * @returns {number}
+ */
+function _countDriftRules(policy) {
+  let n = 0;
+  for (const f of DRIFT_BOOL_RULES) if (policy[f] === true) n++;
+  for (const f of DRIFT_LIST_RULES) if (Array.isArray(policy[f]) && policy[f].length > 0) n++;
+  return n;
+}
+
+/**
+ * Does `relPath` fall under POSIX path `prefix`? SEGMENT-AWARE so a prefix never matches a sibling whose
+ * name merely starts with it: "src" matches "src" and "src/x" but NOT "srcfoo". A bare prefix equal to the
+ * whole path matches (the file IS that path). Inputs are the relPaths a seal already normalizes to POSIX
+ * forward slashes, so no separator juggling is needed.
+ * @param {string} relPath
+ * @param {string} prefix
+ * @returns {boolean}
+ */
+function _underPrefix(relPath, prefix) {
+  // Normalize a trailing slash on the prefix away ("src/" and "src" mean the same subtree).
+  const p = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+  return relPath === p || relPath.startsWith(p + "/");
+}
+
+/**
+ * Evaluate the change set `diffEvidence` produced against a drift policy, in a PURE, deterministic
+ * function (no I/O, no provider, no key, no network). Consumes the EXACT object `diffEvidence`/
+ * `diffEvidenceSeals` returns — it does NOT re-diff or re-hash — and classifies each already-computed
+ * ADDED/REMOVED/CHANGED entry against the policy's rules. Returns a verdict: PASS (no change violates any
+ * rule) or FAIL with, per violating change, the relPath + which rule it broke + the change KIND that
+ * triggered it. A single file can violate more than one rule (each is its own violation entry).
+ * Violations are sorted by relPath then rule, so two runs over the same inputs are byte-identical.
+ *
+ * Mutates NEITHER input (it only reads `diff.added/removed/changed` and the policy's rule fields).
+ *
+ * @param {object} args
+ * @param {object} args.diff   the object `diffEvidence` returns (added/removed/changed/...)
+ * @param {object} args.policy a validated drift policy object (from `validateDriftPolicy`/`readDriftPolicy`)
+ * @returns {{
+ *   verdict: "PASS"|"FAIL",
+ *   rulesEvaluated: number,
+ *   addedCount: number, removedCount: number, changedCount: number,
+ *   violations: { relPath: string, rule: string, change: "ADDED"|"REMOVED"|"CHANGED" }[],
+ * }}
+ */
+function evaluateDriftPolicy(args) {
+  if (args == null || typeof args !== "object" || Array.isArray(args)) {
+    throw new packetseal.PacketSealError("evaluateDriftPolicy requires { diff, policy }");
+  }
+  const { diff, policy } = args;
+  if (diff == null || typeof diff !== "object") {
+    throw new packetseal.PacketSealError("evaluateDriftPolicy requires a diff (from diffEvidence)");
+  }
+  validateDriftPolicy(policy); // a foreign/corrupt policy is rejected here, never half-evaluated
+
+  const added = Array.isArray(diff.added) ? diff.added : [];
+  const removed = Array.isArray(diff.removed) ? diff.removed : [];
+  const changed = Array.isArray(diff.changed) ? diff.changed : [];
+
+  const noAdded = policy.noAdded === true;
+  const noRemoved = policy.noRemoved === true;
+  const noChanged = policy.noChanged === true;
+  const allowChangePaths =
+    Array.isArray(policy.allowChangePaths) && policy.allowChangePaths.length > 0
+      ? policy.allowChangePaths
+      : null;
+  const frozenPaths =
+    Array.isArray(policy.frozenPaths) && policy.frozenPaths.length > 0 ? policy.frozenPaths : null;
+
+  const violations = [];
+
+  // ADDED files: only `noAdded` constrains them (a new file is allowed under a frozen prefix — freezing
+  // protects what already EXISTS, it does not forbid growth).
+  for (const a of added) {
+    if (noAdded) {
+      violations.push({ relPath: a.path, rule: DRIFT_RULE.NO_ADDED, change: "ADDED" });
+    }
+  }
+
+  // REMOVED files: `noRemoved` forbids any removal; `frozenPaths` forbids removing a file under a frozen
+  // prefix (a frozen path may be neither edited nor deleted).
+  for (const r of removed) {
+    if (noRemoved) {
+      violations.push({ relPath: r.path, rule: DRIFT_RULE.NO_REMOVED, change: "REMOVED" });
+    }
+    if (frozenPaths && frozenPaths.some((p) => _underPrefix(r.path, p))) {
+      violations.push({ relPath: r.path, rule: DRIFT_RULE.FROZEN_PATHS, change: "REMOVED" });
+    }
+  }
+
+  // CHANGED files: `noChanged` forbids any edit; `allowChangePaths`, when set, forbids editing a file NOT
+  // under one of the allowed prefixes; `frozenPaths` forbids editing a file under a frozen prefix.
+  for (const c of changed) {
+    if (noChanged) {
+      violations.push({ relPath: c.path, rule: DRIFT_RULE.NO_CHANGED, change: "CHANGED" });
+    }
+    if (allowChangePaths && !allowChangePaths.some((p) => _underPrefix(c.path, p))) {
+      violations.push({ relPath: c.path, rule: DRIFT_RULE.ALLOW_CHANGE_PATHS, change: "CHANGED" });
+    }
+    if (frozenPaths && frozenPaths.some((p) => _underPrefix(c.path, p))) {
+      violations.push({ relPath: c.path, rule: DRIFT_RULE.FROZEN_PATHS, change: "CHANGED" });
+    }
+  }
+
+  // Deterministic order: by relPath, then by rule (a stable total order, so two runs are byte-identical).
+  violations.sort((x, y) => {
+    if (x.relPath !== y.relPath) return x.relPath < y.relPath ? -1 : 1;
+    return x.rule < y.rule ? -1 : x.rule > y.rule ? 1 : 0;
+  });
+
+  return {
+    verdict: violations.length === 0 ? DRIFT_VERDICT.PASS : DRIFT_VERDICT.FAIL,
+    rulesEvaluated: _countDriftRules(policy),
+    addedCount: added.length,
+    removedCount: removed.length,
+    changedCount: changed.length,
+    violations,
+  };
+}
+
+/**
+ * Read, parse, and STRICTLY validate the drift policy at `policyPath`. Throws on a missing file, invalid
+ * JSON, or ANY schema deviation (a malformed/foreign policy is rejected, never half-accepted) — mirrors
+ * cli/dataset.js › readPolicy.
+ * @param {string} policyPath
+ * @returns {object} the validated drift policy object
+ */
+function readDriftPolicy(policyPath) {
+  if (!policyPath || typeof policyPath !== "string") {
+    throw new packetseal.PacketSealError("readDriftPolicy requires a policy file path");
+  }
+  let raw;
+  try {
+    raw = fs.readFileSync(policyPath, "utf8");
+  } catch (e) {
+    throw new packetseal.PacketSealError(
+      `cannot read evidence drift policy at ${policyPath}: ${e.message}`
+    );
+  }
+  let obj;
+  try {
+    obj = JSON.parse(raw);
+  } catch (e) {
+    throw new packetseal.PacketSealError(
+      `evidence drift policy at ${policyPath} is not valid JSON: ${e.message}`
+    );
+  }
+  return validateDriftPolicy(obj);
+}
+
+// ---------------------------------------------------------------------------
 // SIGNED-attestation WRAP (the PAID `evidence_signed` surface). The seal's CANONICAL bytes become the
 // attestation payload — the SAME shared signing path the rest of the family uses (no new scheme).
 // ---------------------------------------------------------------------------
@@ -1293,13 +1573,29 @@ function runEvidenceVerifySigned(opts, io = {}) {
 // ---------------------------------------------------------------------------
 
 function parseDiffArgs(argv) {
-  const opts = { packetA: undefined, packetB: undefined, json: false, _positionals: [] };
+  const opts = {
+    packetA: undefined,
+    packetB: undefined,
+    policy: undefined,
+    json: false,
+    _positionals: [],
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
       case "--json":
         opts.json = true;
         break;
+      case "--policy": {
+        const v = argv[++i];
+        if (v === undefined || (typeof v === "string" && v.startsWith("--"))) {
+          const e = new Error("--policy requires a <file> argument");
+          e.usage = true;
+          throw e;
+        }
+        opts.policy = v;
+        break;
+      }
       default:
         if (a && a.startsWith("--")) {
           const e = new Error(`unknown flag: ${a}`);
@@ -1349,6 +1645,7 @@ function renderDiff(result, ctx) {
     // can NEVER reach here with mismatched roots but identical leaves — a tampered root is rejected
     // outright before the diff. The roots therefore always agree with the change set on this path; we
     // surface no "hand-edited root" note (unlike the dataset diff) because that state is unreachable.
+    for (const line of _renderDriftSection(ctx.drift)) L.push(line);
     L.push("");
     return L.join("\n");
   }
@@ -1372,8 +1669,37 @@ function renderDiff(result, ctx) {
   for (const rm of result.removed) {
     L.push(`  REMOVED  ${rm.path}  (${rm.contentHash})   in A, not in B`);
   }
+  for (const line of _renderDriftSection(ctx.drift)) L.push(line);
   L.push("");
   return L.join("\n");
+}
+
+// Render the OPTIONAL drift-policy section (printed only when `--policy` was given). LEADS with the
+// SAME UNTRUSTED-change-set caveat the gate carries, states the PASS/FAIL verdict + rules evaluated, and
+// lists each violation (relPath, the rule it broke, and which change KIND triggered it). The verdict can
+// never disagree with the diff above: it is computed from the SAME change set (evaluateDriftPolicy reads
+// `diff.added/removed/changed` directly). Returns [] when no policy was evaluated.
+function _renderDriftSection(drift) {
+  if (!drift) return [];
+  const L = ["", "## drift policy"];
+  L.push(
+    "  TRUST: a drift verdict gates the CHANGE SET above (what each packet CLAIMS) — it does NOT " +
+      "re-derive content."
+  );
+  L.push(`  verdict: ${drift.verdict}  (rules evaluated: ${drift.rulesEvaluated})`);
+  if (drift.rulesEvaluated === 0) {
+    L.push("  This policy declares NO rules, so it trivially PASSes — any change satisfies it.");
+    return L;
+  }
+  if (drift.verdict === DRIFT_VERDICT.PASS) {
+    L.push("  PASS — every change between A and B is permitted by this policy.");
+    return L;
+  }
+  L.push(`  FAIL — ${drift.violations.length} disallowed change(s):`);
+  for (const v of drift.violations) {
+    L.push(`    ${v.change.padEnd(7)} ${v.relPath}  [${v.rule}]`);
+  }
+  return L;
 }
 
 function runEvidenceDiff(opts, io = {}) {
@@ -1413,6 +1739,21 @@ function runEvidenceDiff(opts, io = {}) {
     return EXIT.IO;
   }
 
+  // OPTIONAL drift gate: when `--policy <f>` was given, read it strictly (a corrupt/foreign policy is an
+  // IO error, never half-accepted) and evaluate the SAME change set against it. The policy verdict is
+  // computed from `result` directly (no re-diff), so it can never disagree with the printed/JSON diff.
+  let drift = null;
+  if (opts.policy) {
+    let policy;
+    try {
+      policy = readDriftPolicy(path.resolve(opts.policy));
+    } catch (e) {
+      writeErr(`error: ${e.message}\n`);
+      return EXIT.IO;
+    }
+    drift = evaluateDriftPolicy({ diff: result, policy });
+  }
+
   if (opts.json) {
     write(
       JSON.stringify(
@@ -1428,19 +1769,33 @@ function runEvidenceDiff(opts, io = {}) {
           counts: result.counts,
           packetA: opts.packetA,
           packetB: opts.packetB,
-          note: EVIDENCE_TRUST_NOTE,
+          // The drift verdict (only when --policy was given) rides alongside the change set, so a CI
+          // consumer reads the verdict, the rule count, and the exact violations from the SAME object.
+          drift: drift
+            ? {
+                verdict: drift.verdict,
+                rulesEvaluated: drift.rulesEvaluated,
+                violations: drift.violations,
+              }
+            : null,
+          note: DRIFT_TRUST_NOTE,
         },
         null,
         2
       ) + "\n"
     );
   } else {
-    write(renderDiff(result, { packetA: opts.packetA, packetB: opts.packetB }));
+    write(renderDiff(result, { packetA: opts.packetA, packetB: opts.packetB, drift }));
   }
 
-  // Exit non-zero when the packets DIFFER so CI can branch (mirrors the family's MISMATCH/DIFFERENT).
-  // The verdict is the CHANGE SET (`identical`), not root-string equality, so the exit code can never
-  // disagree with the printed/JSON changeset.
+  // EXIT CODE. Without --policy: exit non-zero when the packets DIFFER (mirrors the family's
+  // MISMATCH/DIFFERENT). WITH --policy: the gate is the POLICY verdict — a buyer who passes a drift policy
+  // is asking "is this change ALLOWED?", so a DIFFERENT-but-PERMITTED change is a PASS (exit 0) and a
+  // disallowed change is a FAIL (exit 3). Either way the verdict is derived from the SAME change set, so
+  // the exit code can never disagree with the printed/JSON body.
+  if (drift) {
+    return drift.verdict === DRIFT_VERDICT.PASS ? EXIT.OK : EXIT.FAIL;
+  }
   return result.identical ? EXIT.OK : EXIT.FAIL;
 }
 
@@ -1772,7 +2127,7 @@ function evidenceUsage() {
     "  vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign] [--json]",
     "  vh evidence verify <p> [--dir <d>] [--json]",
     "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--revocations <f> --as-of <ISO>] [--json]",
-    "  vh evidence diff <packetA> <packetB> [--json]",
+    "  vh evidence diff <packetA> <packetB> [--policy <f>] [--json]",
     "  vh evidence license fulfill --plan <id> --customer <name> [--paid-through <ISO>] [--catalog <f>] (--key-env <VAR>|--key-file <p>) [--issued <ISO>] [--license-id <id>] [--out <f>] [--json]",
     "",
     "The seal proves TAMPER-EVIDENCE + OFFLINE-RECOMPUTE, NOT a trusted timestamp (\"sealed at T\" rides P-3).",
@@ -1785,7 +2140,9 @@ function evidenceUsage() {
     "verify on a SIGNED packet no longer trusts the claimed signer: it REJECTS a forged signature OR labels a genuine one",
     "  UNVERIFIED-for-pinning and points at `verify-signed`.",
     "diff is read-only/FREE/key-free/OFFLINE: it compares what TWO packets CLAIM and writes nothing.",
-    "Exit: diff 0 IDENTICAL / 3 DIFFERENT / 2 usage / 1 IO.",
+    "  With --policy <f> it GATES the change set (noAdded/noRemoved/noChanged/allowChangePaths/frozenPaths):",
+    "  exit is then the policy verdict — a DIFFERENT-but-PERMITTED change PASSes (0), a disallowed change FAILs (3).",
+    "Exit: diff 0 IDENTICAL (or policy PASS) / 3 DIFFERENT (or policy FAIL) / 2 usage / 1 IO.",
     "license fulfill MINTS the signed evidence license the paid surfaces accept: it resolves <id> in the bundled DRAFT catalog",
     "  (or --catalog), copies that plan's entitlements VERBATIM, derives the window (--paid-through wins else the plan's term),",
     "  and signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop sets NO price).",
@@ -1809,6 +2166,15 @@ module.exports = {
   verifySeal,
   diffEvidence,
   diffEvidenceSeals,
+  // drift policy (the CI-gateable verdict over the change set)
+  DRIFT_POLICY_KIND,
+  DRIFT_POLICY_SCHEMA_VERSION,
+  DRIFT_RULE,
+  DRIFT_VERDICT,
+  DRIFT_TRUST_NOTE,
+  validateDriftPolicy,
+  readDriftPolicy,
+  evaluateDriftPolicy,
   loadDirEntries,
   // signed wrap
   SIGNED_SEAL_KIND,

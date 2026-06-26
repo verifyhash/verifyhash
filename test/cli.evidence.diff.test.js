@@ -225,3 +225,271 @@ describe("cli/evidence T-46.1: diffEvidence — pure, offline packet-to-packet d
     expect(B).to.deep.equal(snapB);
   });
 });
+
+// ---------------------------------------------------------------------------
+// `evaluateDriftPolicy({ diff, policy })` (T-46.1 leverage) — the CI-gateable PASS/FAIL verdict over the
+// change set `diffEvidence` produces. This is the paying-customer upgrade over a bare diff: a buyer who
+// pins evidence in a compliance / IP / chain-of-custody pipeline asks "is this change ALLOWED?" and wants
+// a verdict (and, in the CLI, a non-zero exit) when it is not.
+//
+// What these prove:
+//   * PURE / deterministic / order-independent: it consumes the EXACT `diffEvidence` change set (no
+//     re-diff, no re-hash) and never mutates the diff or the policy;
+//   * a NO-rules policy trivially PASSes; the verdict reports `rulesEvaluated` honestly;
+//   * each rule (noAdded / noRemoved / noChanged / allowChangePaths / frozenPaths) fires EXACTLY on the
+//     change kind it governs, with a segment-aware POSIX path-prefix match (never a sibling-name match);
+//   * a RENAME (REMOVED(old)+ADDED(new)) is gated as a remove + an add, never as a silent edit;
+//   * violations are sorted (relPath, then rule) so two runs are byte-identical;
+//   * a corrupt / foreign / wrong-kind policy is REJECTED (PacketSealError), never half-evaluated.
+function driftPolicy(rules) {
+  return Object.assign(
+    { kind: "vh.evidence-drift-policy", schemaVersion: 1 },
+    rules
+  );
+}
+
+describe("cli/evidence T-46.1: evaluateDriftPolicy — CI-gateable verdict over the change set", function () {
+  it("a NO-rules policy trivially PASSes (rulesEvaluated 0), even with a non-empty change set", function () {
+    const A = seal(BASE);
+    const B = seal({ ...BASE, "new.txt": "delta", "b.txt": "beta EDITED" });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({}) });
+    expect(v.verdict).to.equal("PASS");
+    expect(v.rulesEvaluated).to.equal(0);
+    expect(v.violations).to.have.length(0);
+    // The change-kind tallies echo the diff so a consumer reads them from the verdict alone.
+    expect(v.addedCount).to.equal(1);
+    expect(v.changedCount).to.equal(1);
+    expect(v.removedCount).to.equal(0);
+  });
+
+  it("noAdded FAILs on an ADDED file (and ONLY on added — a frozen subtree may still grow)", function () {
+    const A = seal(BASE);
+    const B = seal({ ...BASE, "new.txt": "delta" });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({ noAdded: true }) });
+    expect(v.verdict).to.equal("FAIL");
+    expect(v.rulesEvaluated).to.equal(1);
+    expect(v.violations).to.deep.equal([
+      { relPath: "new.txt", rule: "noAdded", change: "ADDED" },
+    ]);
+
+    // An ADD under a frozen prefix is allowed: freezing protects what already EXISTS, it does not forbid
+    // growth. So `frozenPaths` alone does NOT flag the new file.
+    const v2 = evidence.evaluateDriftPolicy({
+      diff: evidence.diffEvidence({ packetA: seal(BASE), packetB: seal({ ...BASE, "sub/new.txt": "x" }) }),
+      policy: driftPolicy({ frozenPaths: ["sub"] }),
+    });
+    expect(v2.verdict).to.equal("PASS");
+    expect(v2.violations).to.have.length(0);
+  });
+
+  it("noRemoved FAILs on a REMOVED file — the append-only / chain-of-custody guard", function () {
+    const A = seal(BASE);
+    const { "sub/c.txt": _gone, ...rest } = BASE;
+    const B = seal(rest);
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({ noRemoved: true }) });
+    expect(v.verdict).to.equal("FAIL");
+    expect(v.violations).to.deep.equal([
+      { relPath: "sub/c.txt", rule: "noRemoved", change: "REMOVED" },
+    ]);
+  });
+
+  it("noChanged FAILs on an EDITED file (same relPath, different content)", function () {
+    const A = seal(BASE);
+    const B = seal({ ...BASE, "b.txt": "beta EDITED" });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({ noChanged: true }) });
+    expect(v.verdict).to.equal("FAIL");
+    expect(v.violations).to.deep.equal([
+      { relPath: "b.txt", rule: "noChanged", change: "CHANGED" },
+    ]);
+  });
+
+  it("allowChangePaths FAILs an edit OUTSIDE the allowed subtree and PASSes one inside (segment-aware)", function () {
+    // Edit one file under src/ (allowed) and one at the repo root (not allowed).
+    const base = { "src/app.js": "v1", "README.md": "r1", "src/keep.js": "k" };
+    const A = seal(base);
+    const B = seal({ ...base, "src/app.js": "v2", "README.md": "r2" });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({
+      diff,
+      policy: driftPolicy({ allowChangePaths: ["src"] }),
+    });
+    expect(v.verdict).to.equal("FAIL");
+    // Only the OUT-of-subtree edit violates; the in-subtree edit is permitted.
+    expect(v.violations).to.deep.equal([
+      { relPath: "README.md", rule: "allowChangePaths", change: "CHANGED" },
+    ]);
+  });
+
+  it("the path match is SEGMENT-aware: a prefix never matches a sibling whose name merely starts with it", function () {
+    // "src" must NOT match "srcfoo.txt". Editing srcfoo.txt while only src/ is allowed is a violation.
+    const base = { "src/a.js": "1", "srcfoo.txt": "x" };
+    const A = seal(base);
+    const B = seal({ ...base, "srcfoo.txt": "y" });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({
+      diff,
+      policy: driftPolicy({ allowChangePaths: ["src"] }),
+    });
+    expect(v.verdict).to.equal("FAIL");
+    expect(v.violations).to.deep.equal([
+      { relPath: "srcfoo.txt", rule: "allowChangePaths", change: "CHANGED" },
+    ]);
+
+    // A trailing slash on the prefix is equivalent ("src/" === "src" subtree): the in-subtree edit passes.
+    const okDiff = evidence.diffEvidence({
+      packetA: seal(base),
+      packetB: seal({ ...base, "src/a.js": "2" }),
+    });
+    const ok = evidence.evaluateDriftPolicy({
+      diff: okDiff,
+      policy: driftPolicy({ allowChangePaths: ["src/"] }),
+    });
+    expect(ok.verdict).to.equal("PASS");
+  });
+
+  it("frozenPaths forbids a CHANGE *or* a REMOVE under the prefix — but permits an ADD there", function () {
+    const base = { "legal/contract.pdf": "C", "legal/notes.txt": "N", "work/d.txt": "D" };
+    // Edit one frozen file, remove another frozen file, ADD a new frozen-subtree file, edit a non-frozen.
+    const A = seal(base);
+    const { "legal/notes.txt": _removed, ...rest } = base;
+    const B = seal({
+      ...rest,
+      "legal/contract.pdf": "C2", // CHANGED under frozen -> violation
+      "legal/new.txt": "NEW", // ADDED under frozen -> allowed
+      "work/d.txt": "D2", // CHANGED outside frozen -> allowed
+    });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({ frozenPaths: ["legal"] }) });
+    expect(v.verdict).to.equal("FAIL");
+    // Sorted by relPath: the changed contract, then the removed notes. The added legal/new.txt and the
+    // edited work/d.txt are NOT violations.
+    expect(v.violations).to.deep.equal([
+      { relPath: "legal/contract.pdf", rule: "frozenPaths", change: "CHANGED" },
+      { relPath: "legal/notes.txt", rule: "frozenPaths", change: "REMOVED" },
+    ]);
+  });
+
+  it("a RENAME (REMOVED+ADDED) under noRemoved/noAdded is gated as a remove + an add, never a silent edit", function () {
+    const A = seal({ keep: "k", "old.txt": "same bytes" });
+    const B = seal({ keep: "k", "new.txt": "same bytes" });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({
+      diff,
+      policy: driftPolicy({ noRemoved: true, noAdded: true }),
+    });
+    expect(v.verdict).to.equal("FAIL");
+    expect(v.violations).to.deep.equal([
+      { relPath: "new.txt", rule: "noAdded", change: "ADDED" },
+      { relPath: "old.txt", rule: "noRemoved", change: "REMOVED" },
+    ]);
+  });
+
+  it("one file can violate MULTIPLE rules; violations are sorted (relPath, then rule), deterministically", function () {
+    // Edit a frozen file while noChanged is ALSO set: that one CHANGED file breaks both rules.
+    const base = { "f/a.txt": "1", "g/b.txt": "2" };
+    const A = seal(base);
+    const B = seal({ ...base, "f/a.txt": "1x", "g/b.txt": "2x" });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v1 = evidence.evaluateDriftPolicy({
+      diff,
+      policy: driftPolicy({ noChanged: true, frozenPaths: ["f"] }),
+    });
+    expect(v1.verdict).to.equal("FAIL");
+    expect(v1.rulesEvaluated).to.equal(2);
+    // f/a.txt breaks BOTH rules (sorted: frozenPaths < noChanged); g/b.txt breaks only noChanged.
+    expect(v1.violations).to.deep.equal([
+      { relPath: "f/a.txt", rule: "frozenPaths", change: "CHANGED" },
+      { relPath: "f/a.txt", rule: "noChanged", change: "CHANGED" },
+      { relPath: "g/b.txt", rule: "noChanged", change: "CHANGED" },
+    ]);
+    // DETERMINISTIC: a second run is byte-identical.
+    const v2 = evidence.evaluateDriftPolicy({
+      diff,
+      policy: driftPolicy({ noChanged: true, frozenPaths: ["f"] }),
+    });
+    expect(v2).to.deep.equal(v1);
+  });
+
+  it("a PERMITTED change set PASSes — append-only growth that only ADDs satisfies noRemoved+noChanged", function () {
+    const A = seal(BASE);
+    const B = seal({ ...BASE, "d.txt": "delta", "e.txt": "epsilon" });
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+
+    const v = evidence.evaluateDriftPolicy({
+      diff,
+      policy: driftPolicy({ noRemoved: true, noChanged: true }),
+    });
+    expect(v.verdict).to.equal("PASS");
+    expect(v.rulesEvaluated).to.equal(2);
+    expect(v.violations).to.have.length(0);
+  });
+
+  it("MUTATES neither the diff nor the policy, and is ORDER-INDEPENDENT in the change arrays", function () {
+    const A = seal(BASE);
+    const B = seal({ "a.txt": "alpha", "z.txt": "zeta", "b.txt": "beta EDITED" }); // removes sub/c.txt, adds z, edits b
+    const diff = evidence.diffEvidence({ packetA: A, packetB: B });
+    const policy = driftPolicy({ noRemoved: true, noAdded: true, noChanged: true });
+
+    const snapDiff = JSON.parse(JSON.stringify(diff));
+    const snapPolicy = JSON.parse(JSON.stringify(policy));
+    const v = evidence.evaluateDriftPolicy({ diff, policy });
+    expect(diff).to.deep.equal(snapDiff);
+    expect(policy).to.deep.equal(snapPolicy);
+
+    // ORDER-INDEPENDENT: reversing each change array yields the SAME verdict (the evaluator sorts).
+    const shuffled = JSON.parse(JSON.stringify(diff));
+    shuffled.added.reverse();
+    shuffled.removed.reverse();
+    shuffled.changed.reverse();
+    const v2 = evidence.evaluateDriftPolicy({ diff: shuffled, policy });
+    expect(v2).to.deep.equal(v);
+  });
+
+  it("REJECTS a corrupt / foreign / wrong-kind / malformed policy (no half-evaluate)", function () {
+    const A = seal(BASE);
+    const diff = evidence.diffEvidence({ packetA: A, packetB: seal({ ...BASE, "x.txt": "x" }) });
+
+    // FOREIGN kind.
+    expect(() =>
+      evidence.evaluateDriftPolicy({ diff, policy: { kind: "not-a-drift-policy", schemaVersion: 1 } })
+    ).to.throw(PacketSealError, /not a verifyhash evidence drift policy/);
+    // Unsupported schemaVersion.
+    expect(() =>
+      evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({ schemaVersion: 99 }) })
+    ).to.throw(PacketSealError, /schemaVersion/);
+    // A truthy-but-non-boolean rule is rejected (never silently enabled).
+    expect(() =>
+      evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({ noAdded: "yes" }) })
+    ).to.throw(PacketSealError, /must be a boolean/);
+    // A non-array path list is rejected.
+    expect(() =>
+      evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({ frozenPaths: "legal" }) })
+    ).to.throw(PacketSealError, /must be an array/);
+    // An empty-string list entry is rejected.
+    expect(() =>
+      evidence.evaluateDriftPolicy({ diff, policy: driftPolicy({ allowChangePaths: [""] }) })
+    ).to.throw(PacketSealError, /non-empty string/);
+    // Bad args object.
+    expect(() => evidence.evaluateDriftPolicy(null)).to.throw(
+      PacketSealError,
+      /requires \{ diff, policy \}/
+    );
+    expect(() => evidence.evaluateDriftPolicy({ policy: driftPolicy({}) })).to.throw(
+      PacketSealError,
+      /requires a diff/
+    );
+  });
+});

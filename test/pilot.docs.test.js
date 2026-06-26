@@ -284,9 +284,13 @@ describe("T-32.3 docs: buyer-facing pilot runbook (docs/PILOT.md + pilot/README.
 
   describe("STRATEGY.md — P-8 is ONE consolidated, decision-ready ask", function () {
     it("P-8 exists in the needs-human proposals and consolidates the design-partner precondition", function () {
-      expect(strategy).to.match(/##\s*Proposals — needs-human/);
-      const p8 = strategy.indexOf("P-8 (");
-      expect(p8, "P-8 proposal present").to.be.greaterThan(-1);
+      // Anchor the P-8 PROPOSAL inside the `## Proposals — needs-human` section (the test's actual
+      // contract: "P-8 exists in the needs-human proposals"). The `## Direction` log above may legitimately
+      // MENTION "P-8 (…)" in passing — we must not match those, only the real proposal block.
+      const proposalsHeader = strategy.search(/##\s*Proposals — needs-human/);
+      expect(proposalsHeader, "needs-human proposals section present").to.be.greaterThan(-1);
+      const p8 = strategy.indexOf("P-8 (", proposalsHeader);
+      expect(p8, "P-8 proposal present in the needs-human section").to.be.greaterThan(-1);
       const block = strategy.slice(p8, p8 + 4000);
       const blockLower = block.toLowerCase();
       // It is decision-ready and outward-facing (needs-human).

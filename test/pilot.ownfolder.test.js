@@ -131,8 +131,9 @@ describe("pilot/run-pilot.js T-34.1: evidence vertical on a PARTNER-SUPPLIED fol
   it("runPilot(--evidence-dir) drives the FULL journey on the partner's folder to an all-PASS verdict", async function () {
     const folder = makePartnerFolder();
     const ws = mkTmp();
-    const ok = await pilot.runPilot(ws, { evidenceDir: folder });
-    expect(ok).to.equal(true);
+    const result = await pilot.runPilot(ws, { evidenceDir: folder });
+    expect(result.ok).to.equal(true);
+    expect(result.verdict).to.equal("PASS");
 
     // The packet was produced from the partner's data (a real signed evidence-seal container).
     const packet = JSON.parse(
@@ -152,8 +153,8 @@ describe("pilot/run-pilot.js T-34.1: evidence vertical on a PARTNER-SUPPLIED fol
     expect(Object.keys(before).length).to.be.greaterThan(25);
 
     const ws = mkTmp();
-    const ok = await pilot.runPilot(ws, { evidenceDir: folder });
-    expect(ok, "30-file partner folder must reach an all-PASS verdict").to.equal(true);
+    const result = await pilot.runPilot(ws, { evidenceDir: folder });
+    expect(result.ok, "30-file partner folder must reach an all-PASS verdict").to.equal(true);
 
     // A real signed packet was produced from the large folder…
     const packet = JSON.parse(
@@ -194,8 +195,8 @@ describe("pilot/run-pilot.js T-34.1: evidence vertical on a PARTNER-SUPPLIED fol
       const r = pilot.resolveEvidenceSource({});
       expect(r.isPartner).to.equal(true);
       expect(r.source).to.equal(path.resolve(folder));
-      const ok = await pilot.runPilot(ws, {});
-      expect(ok).to.equal(true);
+      const result = await pilot.runPilot(ws, {});
+      expect(result.ok).to.equal(true);
     } finally {
       if (PREV === undefined) delete process.env.PILOT_EVIDENCE_DIR;
       else process.env.PILOT_EVIDENCE_DIR = PREV;
@@ -212,8 +213,8 @@ describe("pilot/run-pilot.js T-34.1: evidence vertical on a PARTNER-SUPPLIED fol
     const before = snapshot(folder);
 
     const ws = mkTmp();
-    const ok = await pilot.runPilot(ws, { evidenceDir: folder });
-    expect(ok).to.equal(true);
+    const result = await pilot.runPilot(ws, { evidenceDir: folder });
+    expect(result.ok).to.equal(true);
 
     const after = snapshot(folder);
     // Same file SET (nothing added/renamed/deleted), and every file's bytes + mtime are identical.
@@ -230,8 +231,8 @@ describe("pilot/run-pilot.js T-34.1: evidence vertical on a PARTNER-SUPPLIED fol
     const before = snapshot(folder);
 
     const ws = mkTmp();
-    const ok = await pilot.runPilot(ws, { evidenceDir: folder });
-    expect(ok).to.equal(true);
+    const result = await pilot.runPilot(ws, { evidenceDir: folder });
+    expect(result.ok).to.equal(true);
 
     // The working copy lives under <workspace>/evidence; exactly one of its files was tampered (so it
     // differs from the original), proving the mutation landed on the COPY, not the source.
@@ -310,8 +311,9 @@ describe("pilot/run-pilot.js T-34.1: evidence vertical on a PARTNER-SUPPLIED fol
       .sort()
       .map((n) => fs.readFileSync(path.join(pilot.SAMPLE_EVIDENCE, n)).toString("hex"));
     const ws = mkTmp();
-    const ok = await pilot.runPilot(ws, {}); // unset -> canned sample
-    expect(ok).to.equal(true);
+    const result = await pilot.runPilot(ws, {}); // unset -> canned sample
+    expect(result.ok).to.equal(true);
+    expect(result.evidenceSource).to.equal("canned");
     // The default run localizes to the historical canned file (access-log.csv) — byte-for-byte journey.
     // (We re-run via the script to assert the printed label is the historical one.)
     const env = Object.assign({}, process.env, { PILOT_OUT: mkTmp() });

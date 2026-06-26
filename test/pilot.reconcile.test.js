@@ -75,8 +75,9 @@ describe("pilot/run-pilot.js T-32.2: OFFLINE ephemeral-key RECONCILE vertical (+
 
   it("runPilot(workspace) drives BOTH verticals to ONE all-PASS verdict, writing only under workspace", async function () {
     const ws = mkTmp();
-    const ok = await pilot.runPilot(ws);
-    expect(ok).to.equal(true);
+    const result = await pilot.runPilot(ws);
+    expect(result.ok).to.equal(true);
+    expect(result.verdict).to.equal("PASS");
 
     // The evidence vertical's artifacts.
     expect(fs.existsSync(path.join(ws, "evidence.vhlicense.json"))).to.equal(true);

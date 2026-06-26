@@ -205,13 +205,58 @@ function parseArgs(argv) {
   return opts;
 }
 
+// ---- the canonical, deterministic PILOT-RESULT record --------------------------------------------
+
+// The schema tag + version stamped onto every record runPilot returns. A consumer (a CI gate, a JSON
+// sink, a future signed-result wrapper) keys off `schema` to know what it holds; `schemaVersion` lets
+// the shape evolve without silently misreading an old record.
+const PILOT_RESULT_SCHEMA = "vh-pilot-result";
+const PILOT_RESULT_SCHEMA_VERSION = 1;
+
+// tallyChecks(checks) — the SINGLE place the combined verdict is derived. `passed`/`total`/`verdict`/`ok`
+// are ALL computed here from the checks array — never tracked in a parallel variable that could drift —
+// so a forced failing check provably flips `verdict` to FAIL (passed < total ⇒ not allOk ⇒ "FAIL").
+function tallyChecks(checks) {
+  const total = checks.length;
+  const passed = checks.reduce((n, c) => n + (c.ok ? 1 : 0), 0);
+  const ok = total > 0 && passed === total;
+  return { passed, total, ok, verdict: ok ? "PASS" : "FAIL" };
+}
+
+// buildPilotResult(checks, meta) — fold the recorded checks into the canonical `vh-pilot-result` record.
+// DETERMINISM CONTRACT: every field is a pure function of `checks` (which carry ONLY {ok, label} — no
+// addresses, exit codes, timings, or temp paths) plus `meta.evidenceSource`, a NORMALIZED category
+// ("canned" | "partner"), never an absolute/temp path. So two runs over identical inputs yield a
+// byte-identical record (after path normalization, which here means: there is no path to normalize away
+// in the first place). The record OMITS the random ephemeral keys, the per-step exit codes, and any
+// clock value — none of that belongs in a reproducible verdict.
+function buildPilotResult(checks, meta) {
+  const tally = tallyChecks(checks);
+  return {
+    schema: PILOT_RESULT_SCHEMA,
+    schemaVersion: PILOT_RESULT_SCHEMA_VERSION,
+    // The combined verdict + counts, all derived from checks[] (single source of truth).
+    verdict: tally.verdict,
+    passed: tally.passed,
+    total: tally.total,
+    ok: tally.ok,
+    // Which source the evidence vertical sealed, as a NORMALIZED category — NOT the absolute folder
+    // (a partner/temp path would make the record non-reproducible across machines/runs).
+    evidenceSource: meta && meta.isPartner ? "partner" : "canned",
+    // The canonical, ordered check list. We re-shape each entry to EXACTLY {ok, label} so no incidental
+    // field (added later to the in-memory check) can leak nondeterminism into the record.
+    checks: checks.map((c) => ({ ok: !!c.ok, label: String(c.label) })),
+  };
+}
+
 // ---- the pilot run -------------------------------------------------------------------------------
 
 // runPilot(workspace, opts) — drive BOTH sellable journeys (evidence + reconcile) inside `workspace` (a
 // caller-owned temp dir) and fold them into ONE combined PASS/FAIL verdict. PURE w.r.t. its inputs: it
 // reads the chosen source folders READ-ONLY (copying each into `workspace`) and writes ONLY under
-// `workspace`. Returns true iff EVERY check across BOTH verticals passed. Injectable so the test can run
-// it against its own throwaway dir.
+// `workspace`. RETURNS a canonical, deterministic `vh-pilot-result` record (see buildPilotResult) whose
+// `verdict`/`passed`/`total`/`ok` are DERIVED from the checks across BOTH verticals — `result.ok` is true
+// iff every check passed. Injectable so the test can run it against its own throwaway dir.
 //
 // opts.evidenceDir (or env PILOT_EVIDENCE_DIR) points the EVIDENCE vertical at a PARTNER'S OWN folder
 // instead of the canned sample. The partner's originals are NEVER written — we operate on a COPY. An
@@ -254,12 +299,14 @@ async function runPilot(workspace, opts) {
   out("  * have a CPA review the reconciliation — the seal proves the bytes, not the legal verdict.");
   hr();
 
-  const passed = checks.filter((c) => c.ok).length;
-  const total = checks.length;
-  const allOk = passed === total;
-  out(`VERDICT: ${allOk ? "PASS" : "FAIL"} — ${passed}/${total} checks passed (evidence + reconcile).`);
+  // Derive the verdict + counts ONCE from the checks (the single source of truth) and print the SAME
+  // numbers the returned record carries — the printed line is byte-for-byte the historical baseline.
+  const result = buildPilotResult(checks, { isPartner });
+  out(
+    `VERDICT: ${result.verdict} — ${result.passed}/${result.total} checks passed (evidence + reconcile).`
+  );
   out("");
-  return allOk;
+  return result;
 }
 
 // ---- VERTICAL A — the EVIDENCE buyer journey ----------------------------------------------------
@@ -774,9 +821,9 @@ async function main(argv) {
     ownTemp = true;
   }
 
-  let ok = false;
+  let result = null;
   try {
-    ok = await runPilot(workspace, opts);
+    result = await runPilot(workspace, opts);
   } finally {
     if (ownTemp && !keep) {
       fs.rmSync(workspace, { recursive: true, force: true });
@@ -784,7 +831,9 @@ async function main(argv) {
       out(`(PILOT_KEEP=1) workspace kept at: ${workspace}`);
     }
   }
-  return ok ? 0 : 1;
+  // runPilot now returns the canonical record; the exit code is driven by its derived `ok` — exit 0 iff
+  // EVERY check passed, exit 1 otherwise. Byte-for-byte the historical exit-code contract.
+  return result && result.ok ? 0 : 1;
 }
 
 // CLI shim: only run when invoked directly (so the module is importable in tests without side effects).
@@ -812,7 +861,11 @@ module.exports = {
   resolveEvidenceSource,
   copyDir,
   countFiles,
+  tallyChecks,
+  buildPilotResult,
   PilotInputError,
+  PILOT_RESULT_SCHEMA,
+  PILOT_RESULT_SCHEMA_VERSION,
   NOW,
   ISSUED,
   EXPIRES,

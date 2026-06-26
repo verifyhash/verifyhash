@@ -77,8 +77,12 @@ describe("pilot/run-pilot.js T-32.1: OFFLINE ephemeral-key evidence pilot kit", 
 
   it("runPilot(workspace) drives the whole journey to an all-PASS verdict, writing only under workspace", async function () {
     const ws = mkTmp();
-    const ok = await pilot.runPilot(ws);
-    expect(ok).to.equal(true);
+    const result = await pilot.runPilot(ws);
+    // runPilot now returns the canonical vh-pilot-result record; its derived `ok`/`verdict` reflect an
+    // all-PASS run (passed === total > 0).
+    expect(result.ok).to.equal(true);
+    expect(result.verdict).to.equal("PASS");
+    expect(result.passed).to.equal(result.total);
 
     // The kit produced its artifacts UNDER the caller-chosen workspace — never elsewhere.
     expect(fs.existsSync(path.join(ws, "evidence.vhlicense.json"))).to.equal(true);

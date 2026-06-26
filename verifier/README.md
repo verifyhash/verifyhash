@@ -37,10 +37,46 @@ deterministically from these sources, and a stale bundle FAILS CI
 and run `verify-vh.js`) stays for auditors who want to read each `lib/*` file on its own; **both compute
 the identical verdict and exit code.** The checksum is a transport-integrity check pinned to a hex you
 get out-of-band from the producer — like `--vendor`; the real trust anchor is the source audit in §6.
+**Don't want to trust our checksum either? Reproduce the bundle from source yourself — see §0b.**
 
 **The easier path changes nothing about what is proven:** whether you run the one-file bundle or the
 split tree, the seal proves **tamper-evidence + signer-pin**, NOT a trusted "sealed at T" (that still
 requires **P-3** — see §4). The convenience is in the *install*, never in the *claim*.
+
+---
+
+## 0b. "Who verifies the verifier?" — reproduce the bundle from source yourself (zero-trust bootstrap)
+
+The published checksum in §0 proves the file survived transport — but it comes **from the same place as
+the bundle**, so on its own it cannot prove the bundle is the source you can read here (if our
+distribution were compromised, both would swap together). The answer to *"who verifies the verifier?"* is
+to **reproduce the bundle from the in-tree source** and confirm the published checksum is exactly what
+that source compiles to. It is offline, Node-core-only (no `npm install`, no `hardhat`), and writes
+nothing:
+
+```bash
+# From the verifier/ tree you can READ end to end (the builder + every lib/*.js it inlines):
+node build-standalone.js --check
+#   -> per-target MATCH/MISMATCH for each bundle, its .sha256 sidecar, AND every inlined source file.
+#   exit 0 = every committed bundle, sidecar, and the build-provenance manifest reproduce byte-for-byte
+#            from source, and every source file hashes to its manifest-pinned sha256.
+#   exit 1 = something does not reproduce — the line NAMES the offending file (bundle, sidecar, or a
+#            specific lib/*.js source).
+```
+
+The build is **deterministic** (no timestamp, no randomness, a hand-fixed module list), so the bundle
+bytes are a pure function of the committed sources. `--check` recompiles both bundles in memory, recomputes
+their checksums, and compares against the committed files — and cross-checks each inlined source against the
+committed **build-provenance manifest**, [`dist/BUILD-PROVENANCE.json`](dist/BUILD-PROVENANCE.json). That
+manifest maps each published bundle's sha256 to the **ordered, individually-hashed** `lib/*.js` files it
+inlines — so you can `sha256` the exact files you audited and find their hashes there, then see they compose
+(in that order) the bundle whose hash is in the `.sha256` sidecar. Trust roots in **reading source**, not in
+trusting our hex.
+
+This proves **build integrity** — the bundle faithfully reproduces the audited source. It is NOT a claim
+that the source's *logic* is correct (read it, and run the conformance corpus, for that), and NOT a trusted
+timestamp/identity (that is **P-3**). `--check` opens **no network** and writes nothing under the tree
+(proven by `../test/verifier.reproduce.test.js`).
 
 ---
 

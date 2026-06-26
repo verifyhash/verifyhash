@@ -1,0 +1,5 @@
+{
+  "packet": "verifyhash-challenge-sample",
+  "purpose": "demonstrate tamper-evident sealing",
+  "files": 3
+}

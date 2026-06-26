@@ -1,0 +1,4 @@
+transfer_id,from,to,amount,currency
+TX-1001,acct-alpha,acct-bravo,250.00,USD
+TX-1002,acct-bravo,acct-charlie,75.50,USD
+TX-1003,acct-charlie,acct-alpha,12.25,USD

@@ -46,6 +46,13 @@ verdict and exit code.
 the seal proves **tamper-evidence + signer-pin**, NOT a trusted "sealed at T" (that still requires
 **P-3** — see §3). The convenience is in the *install*, never in the *claim*.
 
+> **New here? Start with the guided 60-second challenge.** If you were handed a seal cold and want the
+> *fastest* "prove it to me" path — verify a real pre-sealed sample packet, then tamper one byte and watch
+> it get rejected and the changed file named — run [`../challenge/`](../challenge/) (one command, zero
+> install, zero account). It is the cold-prospect entry point to everything specified below, on the
+> **FREE, UNSIGNED** path (so there is no signer to pin in the sample), and it points free-verify →
+> free-produce → **paid-produce**. See [`../challenge/README.md`](../challenge/README.md).
+
 > **On the checksum's trust model — read this so step 2 isn't oversold.** `sha256sum -c` proves the file
 > you saved is bit-for-bit the file whose hash was published; it does **not**, by itself, prove *who*
 > published that hash. The hash is a **transport-integrity** check (did the bundle arrive intact / un-swapped?),

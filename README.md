@@ -582,6 +582,18 @@ specific packet's truth (each packet carries its own proof), **NOT** a trusted t
 [`docs/IDENTITY.md`](docs/IDENTITY.md). Publishing the card uses the same vendor key provisioned for signed
 evidence/licenses (STRATEGY.md › **P-7 step 1** / **P-6 step 1**).
 
+### The 60-second cold-prospect challenge (zero-install, zero-trust)
+
+The fastest way for someone who owes us **nothing** — no account, no `npm install`, no repo build, no
+key, no network — to believe a verifyhash seal is to *test* it on their own machine in under a minute.
+[`challenge/`](challenge/) is that entry point: a real pre-sealed sample packet + its seal + a one-command
+`run.sh`. They VERIFY it (exit 0), TAMPER one byte, and watch the committed standalone verifier REJECT it
+(exit 3) and **name the file they changed** — trusting no server, no producer software, and not us. The
+challenge is the **FREE, UNSIGNED** verify end and points free-verify → free-produce → **paid-produce**
+(signing + unlimited sealing). The boundary is the same one stated everywhere: the seal proves
+tamper-evidence + signer-pin, **NOT** a trusted "sealed at T" (that still requires P-3), and the unsigned
+sample has no signer to pin. Walkthrough: [`challenge/README.md`](challenge/README.md).
+
 ### The independent verifier (`verify-vh`) — a buyer deliverable
 
 A counterparty who is **not** a customer can check any sealed artifact themselves, **offline and for

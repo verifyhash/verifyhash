@@ -11,6 +11,11 @@ no pause, no upgrade path, and it never holds funds. Each content hash can be an
 
 ## Install / Quickstart
 
+> **Adopt in one line.** Want to *receive* and *check* sealed artifacts without an account or our toolchain?
+> The self-serve on-ramp is [`docs/ADOPT.md`](docs/ADOPT.md): `npx --yes verify-vh demo` for a 5-second
+> proof, or a one-line GitHub Action (`uses: <owner>/<repo>/verifier/action@<ref>`) to gate your CI — and
+> the free→paid bridge to issuing **your own** signed, customer-verifiable seals (the paid producer surface).
+
 `verifyhash` ships the `vh` command. You do **not** need to clone the repo to use it.
 
 ```bash

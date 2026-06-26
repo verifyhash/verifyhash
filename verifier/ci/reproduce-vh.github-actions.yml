@@ -1,0 +1,49 @@
+# reproduce-vh.github-actions.yml — copy-paste GitHub Actions gate that answers "WHO VERIFIES THE
+# VERIFIER?" on every build, by reproducing the standalone verifier byte-for-byte from source.
+#
+# WHAT THIS IS
+#   Drop this file at `.github/workflows/reproduce-vh.yml` in the repo that VENDORS the verifyhash
+#   `verifier/` tree. On every push / pull request it runs `node verifier/build-standalone.js --check`,
+#   which RE-COMPILES each standalone bundle from the in-tree source, recomputes its published checksum
+#   and the build-provenance manifest, and cross-checks every inlined lib/*.js source file against the
+#   manifest-pinned sha256 — offline, no network, trusting no checksum we ship. If ANY bundle, sidecar,
+#   manifest, or source file no longer reproduces (a supply-chain swap, a stale bundle, a one-byte
+#   source edit), `--check` exits non-zero and the job FAILS — blocking the merge. A green check now
+#   MEANS "the verifier we depend on is still the exact source we audited."
+#
+#   This is the verifier-integrity twin of verify-vh.github-actions.yml: that one gates your SEALS;
+#   THIS one gates the VERIFIER ITSELF, turning the §0b reproduce-from-source answer into a renewing
+#   control instead of a one-time read.
+#
+# WHAT YOU EDIT: nothing — `--check` is self-contained and reads only the committed verifier/ tree.
+#   (Needs no `npm install`: it depends on nothing but Node core.)
+#
+# NOTE: the loop NEVER runs this file. It is a shipped EXAMPLE. The exact gate command in the `run:`
+# block below is the SAME command verifier/ci/reproduce-vh.generic.sh runs, and a test extracts and
+# executes it to prove it passes on a clean tree and fails (exit 1) when a source byte is flipped.
+
+name: reproduce-vh — who verifies the verifier
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  reproduce-vh:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Your repo, containing the vendored `verifier/` tree (build-standalone.js + lib/ + dist/).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 2. THE GATE. No install step: `--check` depends on nothing but Node core. It re-compiles every
+      #    bundle from source, recomputes every checksum + the manifest, and cross-checks every inlined
+      #    source file's hash. Exit 0 = ALL MATCH (the verifier is the source you audited); exit 1 =
+      #    MISMATCH (the report names the offending bundle/sidecar/manifest/source). `node` propagates
+      #    that exit code, and GitHub Actions fails the job on any non-zero — blocking the merge.
+      - name: Reproduce the standalone verifier from source (fails the build on any drift)
+        run: |
+          node verifier/build-standalone.js --check

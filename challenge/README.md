@@ -53,6 +53,11 @@ walkthrough, the structural cases (rename → `MISSING`, delete → `MISSING`, a
 exit-code contract (**0** verified · **3** rejected · **2** usage · **1** IO) are in
 [`TAMPER-ME.md`](TAMPER-ME.md).
 
+> **"But who verifies the verifier?"** You don't have to trust *us* that `verify-vh-standalone.js` is the
+> source you can read: reproduce that exact file from the in-tree source yourself with `node
+> verifier/build-standalone.js --check` (offline, Node-core-only) — see
+> [`../verifier/README.md`](../verifier/README.md) §0b.
+
 ---
 
 ## What this proves — and what it does NOT (read before you rely on it)

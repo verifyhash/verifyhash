@@ -78,6 +78,30 @@ that the source's *logic* is correct (read it, and run the conformance corpus, f
 timestamp/identity (that is **P-3**). `--check` opens **no network** and writes nothing under the tree
 (proven by `../test/verifier.reproduce.test.js`).
 
+Reproducing the bundle changes **nothing** about the trust boundary in §4: whether you run the one-file
+bundle or the split tree, the seal proves **tamper-evidence + signer-pin**, NOT a trusted "sealed at T"
+(that still requires **P-3** — see §4). The reproduce step moves trust from *our hex* to *the source you
+read*; it does not widen the *claim*.
+
+**Make it a RENEWING control, not a one-time read — wire `--check` into your own CI.** Auditing the
+verifier once is good; re-confirming it on *every* build is better, because a supply-chain swap of the
+verifier itself (a stale bundle, a one-byte source edit) then **fails your pipeline** instead of slipping
+past. Two shipped, copy-paste snippets do exactly that — they run `--check` and pass its exit code
+straight through, so any drift blocks the merge:
+
+- **[`ci/reproduce-vh.generic.sh`](ci/reproduce-vh.generic.sh)** — a portable `set -e` shell gate for
+  GitLab CI, CircleCI, Jenkins, a Makefile recipe, or a git hook. No config, no install: `./verifier/ci/reproduce-vh.generic.sh`.
+- **[`ci/reproduce-vh.github-actions.yml`](ci/reproduce-vh.github-actions.yml)** — a GitHub Actions
+  workflow you drop at `.github/workflows/reproduce-vh.yml`; a green check then *means* "the verifier we
+  depend on is still the exact source we audited."
+
+These are the verifier-integrity twins of the seal-gate snippets in §2b (that gate your *seals*; these
+gate the *verifier*). They are **examples the loop never runs**, but their exact gate command is
+mechanically tested (`../test/verifier.reproduce-ci-snippet.test.js`): it must exit `0` on a clean
+checkout and **non-zero, naming the offending source file,** when one byte of an inlined `lib/*.js`
+changes — so the snippet you copy is known-good, not aspirational. Wiring the gate widens **nothing**
+about the trust boundary in §4; it just makes the §0b reproduce answer *renew* on every build.
+
 ---
 
 ## 0a. Produce your OWN seal in 10 seconds, then hand it off (the free self-service round-trip)

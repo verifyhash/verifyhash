@@ -14,7 +14,10 @@
 //   * EXACTLY-ONE-of-key-source is enforced (neither/both hard-error key-free), and a
 //     missing env var / malformed key / unknown plan / paidThrough<=issuedAt / malformed
 //     --catalog each fail with a NAMED, KEY-FREE message and the documented exit code;
-//   * exit 0 ok / 3 gate-fail / 2 usage / 1 IO mirrors the family;
+//   * fulfill is a PRODUCER: its OWN exit set is {0 ok, 2 usage, 1 IO} — it NEVER returns
+//     exit 3. The exit-3 "gate-fail" belongs to the DOWNSTREAM consumer gate
+//     (`vh evidence seal --sign`), as the unlock test below (a plan lacking evidence_signed
+//     is REFUSED with exit 3) demonstrates;
 //   * the loop NEVER holds a real key (every key is an ephemeral in-process Wallet) and
 //     NEVER sets a price (the bundled catalog is a DRAFT skeleton);
 //   * the existing seal/verify/verify-signed/diff exit codes + behavior are UNCHANGED

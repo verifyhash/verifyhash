@@ -255,6 +255,147 @@ The evidence product is a **thin adapter** — it re-implements no crypto:
 - **Signed wrap** → [`cli/core/attestation.js`](../cli/core/attestation.js), the same EIP-191
   signed-attestation envelope as the dataset/parcel/seal products.
 
+## Issue a license per sale: `vh evidence license fulfill`
+
+The paid surfaces (`--sign`, sealing > 25 files) only unlock for a holder of a valid `*.vhevidence-license.json`.
+Minting one **by hand** for every sale does not scale: a human at a terminal would have to remember the **exact**
+entitlement flags a tier grants and **hand-compute** the expiry. That is error-prone (a typo grants the wrong tier,
+a mis-keyed expiry drifts) and **un-automatable** — a billing provider's *payment-succeeded* event carries a
+**`planId`** and a **paid-through date**, not a comma-list of entitlement flags. **`vh evidence license fulfill`**
++ the **evidence plan catalog** close that gap: they turn "issue the right evidence license" into **one
+deterministic command** a billing webhook can drive, with **no hand-authored entitlement list**. This is the
+seller's **"issue a license per sale"** step — the self-serve fulfillment seam that makes an evidence sale
+machine-driven, NOT a human hand-crafting entitlement flags.
+
+> **Boundary (VERBATIM — read this first).** The loop ships **ONLY** the catalog **schema** + the order→license
+> **mapping** + **ephemeral test keys**. It **NEVER** sets a price, holds a real key, runs a payment processor,
+> or takes a real payment. **Provisioning the evidence vendor key, setting the PRICE/term column in the catalog,
+> and wiring the actual webhook/billing remain HUMAN-owned outward steps** (STRATEGY.md › P-7 steps 1–2). A plan
+> is an **ACCESS DESCRIPTION** for delivered software value — which paid evidence features a subscription unlocks
+> and for how long — **NOT a token, NOT tradeable, NOT an appreciating asset**, and the catalog makes
+> **NO claim of regulatory compliance**. The actual subscription agreement governs.
+
+> **Trust boundary (unchanged).** Fulfilling a license mints an **ACCESS credential**, NOT a trusted timestamp.
+> A minted license proves the holder paid for the named evidence features; it does **NOT** prove **WHEN** any
+> packet was sealed — "sealed at time T" still rides the human-owned signing/timestamp trust-root (`needs-human`,
+> **P-3** in [`STRATEGY.md`](../STRATEGY.md)). The license is verified the SAME way every evidence artifact is —
+> `verifyLicense` RE-DERIVES the signer from the bytes + signature and pins it to `--vendor`; the container's
+> claimed `vendor` is UNTRUSTED transport until then.
+
+### The evidence plan catalog (a DRAFT the human prices)
+
+A plan catalog is a single, **versioned, strictly-validated** JSON file. [`cli/core/evidence-plans.js`](../cli/core/evidence-plans.js)
+is the source of truth (pure `validateEvidencePlanCatalog` / `getEvidencePlan` / `fulfillEvidenceOrder`, **no I/O,
+no clock, no key**). It is the **one** machine-readable mapping `planId → { entitlements, termDays, displayName }`
+over the **CLOSED** evidence entitlement table — so an unknown entitlement or a duplicate plan is a **hard build
+error**, never a silent mis-grant. Every field:
+
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `kind` | **yes** | string `"vh-evidence-plan-catalog"` | Fixes the artifact type, **disjoint** from a license/seal AND from the `trustledger-plan-catalog` kind. A wrong/missing `kind` is a hard `EvidencePlanCatalogError`. |
+| `schemaVersion` | **yes** | integer (currently **1**) | Pins the catalog shape. Any unsupported version is a hard error — never coerced. |
+| `plans` | **yes** | non-empty array | The plan list. Emitted in `planId`-sorted order, deterministically. |
+| `plans[].planId` | **yes** | non-empty string | The plan id a billing `planId` resolves against. **Duplicate ids are rejected.** |
+| `plans[].displayName` | **yes** | non-empty string | A human label for the tier (shown, not enforced). |
+| `plans[].entitlements` | **yes** | non-empty array of **known** flags | The paid features this plan unlocks — drawn **ONLY** from the **closed evidence entitlement table** (`evidence_signed`, `evidence_unlimited`). An unknown or duplicate flag is a hard error. This is what `fulfill` copies into the license **verbatim**. |
+| `plans[].termDays` | **yes** | **positive integer** | The subscription term in days. When an order omits an explicit `--paid-through`, `expiresAt = issuedAt + termDays` days. A non-integer or non-positive term is rejected (never rounded/coerced). |
+
+> **The catalog is a DRAFT the HUMAN prices.** The bundled catalog is a **DRAFT skeleton**: it ships the
+> `planId → entitlements/term/displayName` mapping, but **the PRICE and your real term are YOURS to set** (P-7
+> step 2). Editing the catalog (a data file in this validated schema) is exactly that narrow human step — no
+> engine change is needed. The shipped `_DRAFT` string is ignored by the engine and exists only to keep the
+> access-description posture attached to the file itself.
+
+**The closed entitlement table.** The set of entitlement flags a plan may grant is **exactly** the evidence
+license CFG's closed table (`cli/evidence.js › LICENSE_CFG`), derived via the SAME core
+`entitlementFlags(cfg)` helper the license **gate** uses — never a hard-coded copy — so the catalog and the gate
+that honors a license can **never drift**. The closed table:
+
+| Entitlement flag | Unlocks |
+| --- | --- |
+| `evidence_signed` | wrap the seal in a signed attestation (`vh evidence seal --sign`) |
+| `evidence_unlimited` | seal **more than 25 files** (above the free `SAMPLE_LIMIT`) in one packet |
+
+A flag outside that table is a **hard reject** at catalog-validation time — the evidence catalog can never grant a
+TrustLedger entitlement (nor vice-versa); the two products are **DISJOINT**.
+
+### The bundled draft skeleton
+
+The catalog `fulfill` resolves against when you pass **no** `--catalog` is the bundled draft
+(`cli/core/fixtures/evidence-plans/baseline.json`), read from **this package's own** fixtures dir — never the
+caller's cwd. Its draft plans:
+
+| `planId` | `displayName` | entitlements | `termDays` |
+| --- | --- | --- | --- |
+| `evidence-signed-monthly` | Evidence Signed (monthly) — DRAFT | `evidence_signed` | `30` |
+| `evidence-pro-annual` | Evidence Pro (annual) — DRAFT | `evidence_signed`, `evidence_unlimited` | `365` |
+
+These are a **skeleton to copy**: keep/rename the plans, set **your** `termDays`, and attach **your** price
+out-of-band. Point `--catalog <file>` at your own catalog to override the bundle entirely.
+
+### `vh evidence license fulfill` (the one-command shape)
+
+```
+vh evidence license fulfill --plan <planId> --customer <name> [--paid-through <ISO>] [--catalog <file>]
+                            (--key-env <VAR> | --key-file <path>)
+                            [--issued <ISO>] [--license-id <id>] [--out <file>] [--json]
+```
+
+`fulfill` looks the `planId` up in the catalog, copies that plan's **entitlements VERBATIM** (never re-typed),
+derives the window (`--paid-through`, else `issuedAt + termDays`), and mints the **SAME** signed
+`*.vhevidence-license.json` the existing `verifyLicense` gate accepts byte-for-byte — so it **UNLOCKS**
+`vh evidence seal --sign` (and the > 25-file `evidence_unlimited` surface) end-to-end. The order→license mapping
+(`fulfillEvidenceOrder`) is **pure + deterministic**: the same `{ plan, customer, paidThrough, issuedAt }` + the
+same catalog yields a **byte-identical** license.
+
+- **The key-source rule.** The vendor key is read **EXACTLY ONE** of `--key-env <VAR>` / `--key-file <path>` and is
+  **read-used-discarded** — the **same** posture as `vh evidence seal --sign` / `vh dataset sign`. The loop
+  **never holds** a key; **only the PUBLIC vendor address is echoed**, never the key. Neither/both/missing/malformed
+  key sources hard-error (exit `2`) with a **key-free** message.
+- An **unknown plan**, a `--paid-through` **at or before** `issuedAt`, a **malformed** `--issued`/`--paid-through`,
+  or a **malformed `--catalog`** file is a **usage error (exit `2`)** — a named reject, never a silent mis-grant,
+  and **no file is written** on failure.
+- With `--out <file>` the signed container is written to **that** path (and **only** there — never cwd); without
+  `--out` it streams to stdout. `--json` round-trips the public summary (`vendor`, `entitlements`, `issuedAt`,
+  `expiresAt`, …) so a webhook handler can script it. Exit: **0** ok / **2** usage (unknown plan, bad
+  window/date, bad `--catalog`, key-source error) / **1** IO — `fulfill` is a **producer**: it has **no** exit-3
+  "gate-fail" path of its own. The exit-**3** in the evidence family belongs to the **downstream consumer gate**
+  (`vh evidence seal --sign` / `verify` / `verify-signed` / `diff`), which is where a webhook handler keys
+  retry/alert logic for a *rejected* license — never on `fulfill`, which surfaces a fulfillment reject (typo'd
+  plan, bad window) as a named **exit 2**, distinct from a genuine IO fault (**exit 1**).
+
+### The worked flow: `payment-succeeded` webhook → `fulfill` → deliver `*.vhevidence-license.json`
+
+A billing provider's *payment-succeeded / renewed* webhook fires with a `planId` and a paid-through date. The
+handler authenticates the webhook signature (the provider's own SDK + the provider's signing secret — a
+HUMAN-owned secret the loop **never holds**), then runs **one** `vh evidence license fulfill` call and delivers
+the minted license to the paying customer:
+
+```
+# Your webhook handler, AFTER authenticating the provider's signature, runs ONE command per sale:
+$ vh evidence license fulfill \
+    --plan evidence-pro-annual --customer "Acme Co" \
+    --paid-through 2027-06-01T00:00:00.000Z \
+    --key-env EVIDENCE_VENDOR_KEY \
+    --out ./out/acme.vhevidence-license.json
+fulfilled evidence license for plan evidence-pro-annual by vendor 0x<evidence-vendor>
+  entitlements: evidence_signed, evidence_unlimited
+  written:      /abs/out/acme.vhevidence-license.json                          # exit 0
+
+# Deliver acme.vhevidence-license.json to the paying customer. They run the paid surface OFFLINE,
+# pinning your PUBLISHED vendor address — no per-sale terminal step for you:
+$ vh evidence seal ./bundle --out ./bundle/b.vhevidence.json \
+    --sign --key-env ACME_OP_KEY \
+    --license ./acme.vhevidence-license.json --vendor 0x<evidence-vendor>     # unlocked by the minted license
+```
+
+The per-sale work collapses to **no terminal step per sale**: a renewal re-runs the **same** deterministic
+command with a new `--paid-through`, mints a fresh license, and delivers it — the same machine-driven seam a
+renewal webhook drives. The loop ships the **catalog + the mapping + the fulfill command + ephemeral test keys**;
+**provisioning the vendor key, setting the price/term column, and wiring the actual webhook/billing remain
+HUMAN-owned outward steps** (STRATEGY.md › P-7 steps 1–2). NO new human gate is introduced — the fulfillment
+command automates the *mechanism* of an existing P-7 step, it does not add one.
+
 ## Going to market
 
 Standing up the evidence vendor keypair, the price, and the first design partner are **human steps** —

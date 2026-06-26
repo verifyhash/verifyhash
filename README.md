@@ -126,6 +126,8 @@ vh parcel verify-attest <signed> [--manifest <m>] [--signer <addr>] # OFFLINE-ve
 vh parcel timestamp-request <manifest> # emit the SHA-256 digest your RFC-3161 TSA stamps (P-3 Option B); offline, no key, no network
 vh parcel timestamp-wrap <manifest> --token <p> # wrap a TSA's RFC-3161 token -> verifiable timestamped container; offline, no key, no network
 vh parcel verify-timestamp <container> [--manifest <m>] # OFFLINE-verify an RFC-3161 timestamped parcel attestation (genTime/serial/policy; bind parcel); no key, no network, CI-gateable exit 0/3
+vh identity publish --address <0xaddr> --product-line <line> --claim <text> --non-claim <text> (--key-env <VAR>|--key-file <p>) [--out <p>] # mint a signed producer IDENTITY CARD binding a vendorAddress to a bounded claim set; signs with a key YOU provisioned (reads/never holds it); mints ONLY when the key controls --address; default PRINTS + writes NOTHING; offline, no network
+vh identity verify <card> [--signer <0xaddr>] # OFFLINE/key-free: RECOVER the signer, require it to BE the card's vendorAddress, OPTIONALLY pin --signer + print the claims/non-claims; forged/tampered/wrong-vendor/wrong-signer is a clean REJECTED; exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO
 ```
 
 > **Read commands authenticate the registry by default.** Every read command (`verify` / `show` /
@@ -555,6 +557,30 @@ the SAME `verifyLicense` / named-reject posture as the TrustLedger CLI (a wrong/
 license is a hard refuse, never a silent downgrade). Full schema, free-vs-paid surface, a worked
 seal → hand over → verify example, and the core-reuse map: [`docs/EVIDENCE.md`](docs/EVIDENCE.md). The
 vendor keypair, price, and first design partner are human steps (STRATEGY.md › **P-7**).
+
+### Producer identity card (`vh identity`)
+
+A **signed, offline-verifiable "who is this vendor, and what exactly do they attest?"** card — the
+recipient's / **cold prospect's** pin-point. Every other artifact pins its producer by a vendor **address**
+the recipient must learn out of band; the identity card is the **one** artifact whose job is to answer,
+verifiably, "**does this 0x-address really belong to THIS vendor, and what do they attest / NOT?**" The
+vendor SIGNS — with the **same key** that signs their evidence/licenses — a card binding their
+`vendorAddress` to a bounded `claims[]` set + an honest `nonClaims[]` set.
+
+```
+vh identity publish --address <0xaddr> --product-line <line> --claim <text> --non-claim <text> (--key-env <VAR>|--key-file <p>) [--out <p>] [--json]  # mint the card; signs with a key YOU provisioned, mints ONLY when the key controls --address; default PRINTS + writes NOTHING; offline
+vh identity verify <card> [--signer <0xaddr>] [--json]  # OFFLINE/key-free: recover the signer, require it to BE the card's vendorAddress, optionally pin --signer; exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO
+```
+
+**Pin once, trust across handoffs.** The recipient does the address-to-vendor trust step **ONCE**
+(`vh identity verify vendor.vhidentity.json --signer <addr-you-were-given>` → ACCEPTED), then reuses that
+pinned `vendorAddress` across every later signed handoff (`vh evidence verify-signed <p> --signer <addr>`,
+etc.) — no new out-of-band step. A **forged / tampered / wrong-vendor card, or a wrong `--signer`, is a
+clean REJECTED — never a silent pass**. The card proves **IDENTITY + the claim SET only**: **NOT** any
+specific packet's truth (each packet carries its own proof), **NOT** a trusted timestamp (P-3), and
+**NOT** a legal opinion. Full flow + the pin-once-trust-across-handoffs model:
+[`docs/IDENTITY.md`](docs/IDENTITY.md). Publishing the card uses the same vendor key provisioned for signed
+evidence/licenses (STRATEGY.md › **P-7 step 1** / **P-6 step 1**).
 
 ### The independent verifier (`verify-vh`) — a buyer deliverable
 

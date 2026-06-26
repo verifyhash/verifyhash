@@ -12,3 +12,4 @@ typechain-types/
 # examples/run.js writes its artifacts to an OS temp dir by default; if you point
 # VH_EXAMPLE_OUT at a local path under examples/, keep its output out of the tree.
 examples/.out/
+/public/

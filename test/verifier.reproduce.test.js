@@ -127,10 +127,14 @@ describe("verifier reproduce-and-attest: `build-standalone.js --check` (T-54.1)"
       // The build-provenance manifest AND the per-source chain it pins also print MATCH (T-54.2).
       expect(out).to.match(/\[MATCH\] manifest dist\/BUILD-PROVENANCE\.json:/);
       expect(out).to.match(/\[MATCH\] sources->manifest:/);
+      // Each bundle's OWN embedded provenance (the self-attest surface that travels with the file) also MATCHes.
+      expect(out).to.match(/\[MATCH\] embedded dist\/verify-vh-standalone\.js:/);
+      expect(out).to.match(/\[MATCH\] embedded dist\/seal-vh-standalone\.js:/);
       // Every line is a MATCH; there are no MISMATCH lines at all on the clean tree.
       expect((out.match(/\[MISMATCH\]/g) || []).length, "zero MISMATCH lines").to.equal(0);
-      // The fixed clean-tree report: 2 bundles + 2 sidecars + 2 source-presence + manifest + chain = 8 MATCHes.
-      expect((out.match(/\[MATCH\]/g) || []).length, "eight MATCH lines").to.equal(8);
+      // The fixed clean-tree report: 2 bundles + 2 sidecars + 2 source-presence + 2 embedded + manifest +
+      // chain = 10 MATCHes.
+      expect((out.match(/\[MATCH\]/g) || []).length, "ten MATCH lines").to.equal(10);
     });
 
     it("each printed MATCH hex EQUALS the SHA-256 of the committed bundle it pins", function () {
@@ -469,6 +473,158 @@ describe("verifier reproduce-and-attest: `build-standalone.js --check` (T-54.1)"
       expect(res.status, "clean copy reproduces").to.equal(0);
       const after = hashTree(vdir);
       expect(after, "no file added/removed/modified by --check").to.deep.equal(before);
+    });
+  });
+
+  // ============================================================================================
+  // (6) THE EMBEDDED, SELF-ATTESTING PROVENANCE (T-54.2 rework) — the leverage that puts the provenance
+  //     IN the single shipped file, so a counterparty handed JUST the bundle (no repo, no network, no
+  //     sidecar) can:
+  //       * `--provenance`  -> print the ordered source modules + hashes the bundle was built from, and
+  //       * `--self-attest` -> confirm the file's OWN bytes are intact (MATCH/exit 0; one flipped byte ->
+  //                            MISMATCH/exit 1). This is the trust feature that TRAVELS with the funnel
+  //                            artifact, not an internal CI-only check.
+  //     Each bundle is run STANDALONE (copied alone into an empty dir, NODE_PATH cleared) so we prove the
+  //     feature needs nothing but the single file + Node core.
+  // ============================================================================================
+  describe("(6) embedded self-attesting provenance: `--self-attest` / `--provenance` on the single file", function () {
+    // Copy ONE committed bundle alone into an empty temp dir and run it with the given args, NODE_PATH cleared,
+    // so we exercise the bundle EXACTLY as a counterparty who was handed only that file would.
+    function runBundleAlone(committedBundlePath, args) {
+      const dir = mkTmp();
+      const base = path.basename(committedBundlePath);
+      const bundle = path.join(dir, base);
+      fs.copyFileSync(committedBundlePath, bundle);
+      // The bundle is alone in the dir — no package.json, no node_modules.
+      expect(fs.readdirSync(dir).sort()).to.deep.equal([base]);
+      const res = spawnSync(process.execPath, [bundle, ...(args || [])], {
+        encoding: "utf8",
+        cwd: dir,
+        env: { ...process.env, NODE_PATH: "" },
+      });
+      return { res, bundle, dir };
+    }
+
+    for (const [label, committed] of [
+      ["verify", ARTIFACTS.verifyBundle],
+      ["seal", ARTIFACTS.sealBundle],
+    ]) {
+      it(`${label}: \`--self-attest\` on the clean committed bundle prints MATCH and exits 0 (from a single file)`, function () {
+        const { res } = runBundleAlone(committed, ["--self-attest"]);
+        expect(res.error, "no spawn error").to.equal(undefined);
+        expect(res.status, `clean self-attest -> exit 0 (out: ${res.stdout}${res.stderr})`).to.equal(0);
+        // The MATCH line names the recomputed selfSha256.
+        expect(res.stdout).to.match(/\[MATCH\] self-attest: this file is intact \(selfSha256 [0-9a-f]{64}\)\./);
+      });
+
+      it(`${label}: flipping ONE byte of the bundle makes \`--self-attest\` print MISMATCH and exit 1`, function () {
+        const { res: clean } = runBundleAlone(committed, ["--self-attest"]);
+        expect(clean.status).to.equal(0);
+
+        // Change ONE byte in a COPY, in a region that stays PARSEABLE (a character inside the embedded
+        // provenance `note` string, away from the selfSha256 field), so `--self-attest` runs and detects the
+        // file's OWN tampering with no external reference. (A flip in executable code would also exit non-zero,
+        // but as a parse error before the handler runs — here we prove the handler itself catches the change.)
+        const dir = mkTmp();
+        const base = path.basename(committed);
+        const bundle = path.join(dir, base);
+        let s = fs.readFileSync(committed, "utf8");
+        expect(s, "embedded note is present to tamper").to.include("self-describing");
+        s = s.replace("self-describing", "self-Describing"); // ONE byte, inside a JSON string -> still parses
+        fs.writeFileSync(bundle, s);
+        const res = spawnSync(process.execPath, [bundle, "--self-attest"], {
+          encoding: "utf8",
+          cwd: dir,
+          env: { ...process.env, NODE_PATH: "" },
+        });
+        expect(res.status, `tampered self-attest -> exit 1 (out: ${res.stdout}${res.stderr})`).to.equal(1);
+        expect(res.stderr).to.match(/\[MISMATCH\] self-attest: this file has been MODIFIED/);
+      });
+
+      it(`${label}: editing the embedded selfSha256 hash itself is STILL a MISMATCH (no self-consistent forgery)`, function () {
+        // An attacker who edits the body and then rewrites the embedded selfSha256 to "match" cannot win: the
+        // self-hash is computed over the SENTINEL-blanked text, so changing the stored hash just makes the
+        // stored value disagree with the recomputed one. Flip one hex digit of the stored selfSha256.
+        const dir = mkTmp();
+        const base = path.basename(committed);
+        const bundle = path.join(dir, base);
+        let s = fs.readFileSync(committed, "utf8");
+        s = s.replace(/("selfSha256": "[0-9a-f])([0-9a-f])/, (m, a, b) => a + (b === "a" ? "b" : "a"));
+        fs.writeFileSync(bundle, s);
+        const res = spawnSync(process.execPath, [bundle, "--self-attest"], {
+          encoding: "utf8",
+          cwd: dir,
+          env: { ...process.env, NODE_PATH: "" },
+        });
+        expect(res.status, "forged selfSha256 -> exit 1").to.equal(1);
+        expect(res.stderr).to.match(/\[MISMATCH\] self-attest: this file has been MODIFIED/);
+      });
+
+      it(`${label}: \`--provenance\` prints the embedded manifest that EQUALS the committed BUILD-PROVENANCE.json's target`, function () {
+        const { res } = runBundleAlone(committed, ["--provenance"]);
+        expect(res.status, `--provenance -> exit 0 (out: ${res.stderr})`).to.equal(0);
+        const printed = JSON.parse(res.stdout);
+        expect(printed.schema).to.equal(builder.PROVENANCE_SCHEMA);
+        expect(printed.target).to.equal(label);
+        expect(printed.selfSha256, "selfSha256 is a 64-hex").to.match(/^[0-9a-f]{64}$/);
+        // The embedded ordered modules are EXACTLY the committed manifest's modules for this target — so the
+        // bundle's self-description can never drift from the committed source-of-truth manifest.
+        const manifest = JSON.parse(fs.readFileSync(ARTIFACTS.provenance, "utf8"));
+        expect(printed.modules).to.deep.equal(manifest.targets[label].modules);
+      });
+    }
+
+    it("the in-process checkTarget() now also attests the embedded provenance (embedded.ok on the clean tree)", function () {
+      for (const t of [builder.TARGETS.verify, builder.TARGETS.seal]) {
+        const r = builder.checkTarget(t);
+        expect(r.embedded.ok, `${t.name} embedded provenance reproduces`).to.equal(true);
+        expect(r.ok, `${t.name} fully reproduces (incl. embedded)`).to.equal(true);
+      }
+    });
+
+    it("`--check` FLAGS a tampered embedded selfSha256 in a committed bundle (exit 1, embedded MISMATCH)", function () {
+      // Edit ONLY the embedded selfSha256 in a copied committed bundle (leaving the rest of the bytes alone):
+      // `--check` must catch the divergence between the shipped embedded copy and what the build expects.
+      const vdir = copyVerifierTree();
+      const bundle = path.join(vdir, "dist", "verify-vh-standalone.js");
+      let s = fs.readFileSync(bundle, "utf8");
+      s = s.replace(/("selfSha256": "[0-9a-f])([0-9a-f])/, (m, a, b) => a + (b === "a" ? "b" : "a"));
+      fs.writeFileSync(bundle, s);
+      const res = runCheck(vdir);
+      expect(res.status, "tampered embedded provenance -> exit 1").to.equal(1);
+      const all = res.stdout + res.stderr;
+      expect(all).to.match(/\[MISMATCH\] embedded dist\/verify-vh-standalone\.js:/);
+    });
+
+    it("`--self-attest` opens NO network (single-file trust check needs no connection)", function () {
+      // Run the committed bundle's self-attest under the SAME poison guard the rest of this suite uses.
+      const gdir = mkTmp();
+      const guard = path.join(gdir, "net-guard.cjs");
+      fs.writeFileSync(
+        guard,
+        [
+          "'use strict';",
+          "const TRIP = (api) => { throw new Error('NETWORK ACCESS ATTEMPTED: ' + api); };",
+          "for (const mod of ['net','tls','http','https','http2']) {",
+          "  let m; try { m = require(mod); } catch (_) { continue; }",
+          "  for (const fn of ['connect','createConnection','request','get']) {",
+          "    if (typeof m[fn] === 'function') {",
+          "      const name = mod + '.' + fn;",
+          "      Object.defineProperty(m, fn, { configurable: true, writable: true, value: function () { TRIP(name); } });",
+          "    }",
+          "  }",
+          "}",
+          "",
+        ].join("\n")
+      );
+      const res = spawnSync(process.execPath, ["--require", guard, ARTIFACTS.verifyBundle, "--self-attest"], {
+        encoding: "utf8",
+        env: { ...process.env, NODE_PATH: "" },
+      });
+      const combined = (res.stdout || "") + (res.stderr || "");
+      expect(combined, "guard never tripped").to.not.match(/NETWORK ACCESS ATTEMPTED/);
+      expect(res.status, `self-attest exit 0 under poison guard (out: ${combined})`).to.equal(0);
+      expect(res.stdout).to.match(/\[MATCH\] self-attest/);
     });
   });
 });

@@ -315,8 +315,11 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
       // requires and resolve only against the bundle's own embedded module table.
       const specs = [...src.matchAll(/(^|[^A-Za-z0-9_$])require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[2]);
       expect(specs.length, "the bundle does call require() for Node core").to.be.greaterThan(0);
+      // `crypto` is Node CORE (no node_modules, no install) — the embedded `--self-attest` boot code hashes
+      // the file's own bytes, so it is allowed alongside fs/path. The zero-dependency guarantee (runs from an
+      // empty dir, no `npm install`) is fully preserved; the proof is the empty-dir child-process run below.
       for (const s of specs) {
-        expect(["fs", "path", "node:fs", "node:path"], `forbidden require(${JSON.stringify(s)})`).to.include(s);
+        expect(["fs", "path", "crypto", "node:fs", "node:path", "node:crypto"], `forbidden require(${JSON.stringify(s)})`).to.include(s);
       }
       // Belt-and-suspenders explicit checks the task spells out.
       expect(src, "no require('js-sha3')").to.not.match(/require\(\s*["']js-sha3/);

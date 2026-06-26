@@ -11,6 +11,10 @@
 //   2. Run:  node verify-vh-standalone.js <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]
 //   Exit codes: 0 ok / 3 rejected / 2 usage / 1 IO.   It is READ-ONLY and opens NO network.
 //
+// SELF-DESCRIBING (needs NO second file): this bundle carries its OWN build-provenance.
+//   node verify-vh-standalone.js --self-attest   # confirm THIS file's bytes are intact (0 ok / 1 modified)
+//   node verify-vh-standalone.js --provenance    # print the ordered source modules + sha256 it was built from
+//
 // It RE-DERIVES the keccak Merkle root from the bytes YOU hold and recovers the signer with a
 // pure-JS secp256k1 routine — it never trusts the artifact's own stored hashes, and it requires
 // NOTHING outside Node core. This is the in-tree verifier inlined verbatim, with keccak256 swapped
@@ -2694,9 +2698,105 @@ module.exports = {
 
 };
 
+// ---- embedded build-provenance (this file's own): see `--provenance` / `--self-attest` below. ----
+var __SELF_SHA256_SENTINEL = "0000000000000000000000000000000000000000000000000000000000000000";
+var __PROVENANCE = {
+  "schema": "verifyhash/build-provenance@1",
+  "target": "verify",
+  "note": "This bundle's OWN provenance, embedded so the single file is self-describing. Run `node verify-vh-standalone.js --self-attest` to recompute selfSha256 from these very bytes, or `--provenance` to print the ordered source modules + hashes it was built from. Cross-check against verifier/dist/BUILD-PROVENANCE.json (the same data) with: node verifier/build-standalone.js --check",
+  "selfSha256": "a1d97ed473e6806a6544e7c1c8e85abc71d911d193a8fa7146fd4e4aeb559873",
+  "modules": [
+    {
+      "id": "keccak256-vendored",
+      "synthetic": false,
+      "sourceFile": "verifier/lib/keccak256-vendored.js",
+      "sourceSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+      "inlinedSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+      "entry": false
+    },
+    {
+      "id": "keccak",
+      "synthetic": true,
+      "sourceFile": null,
+      "sourceSha256": null,
+      "inlinedSha256": "7ead489c805c4e62e8338dbcfde77a85ca52076e2a3639e2ba57ce3b2415828e",
+      "note": "swapped body (keccak provider shim) — defined in build-standalone.js, not a source file"
+    },
+    {
+      "id": "merkle",
+      "synthetic": false,
+      "sourceFile": "verifier/lib/merkle.js",
+      "sourceSha256": "1bea7bab4b479962225279f4590c5524fad5295c7c70cf01d4978dbf9f37f34b",
+      "inlinedSha256": "e65be5614998f9a00ca9b58a6c79b05abe7f70ed2e0dad61ece07a41ee5da876",
+      "entry": false
+    },
+    {
+      "id": "canonical",
+      "synthetic": false,
+      "sourceFile": "verifier/lib/canonical.js",
+      "sourceSha256": "edc190dcabd2b34b33c54240fc951141de13d2c7d2759184cacb160dfdf3e764",
+      "inlinedSha256": "edc190dcabd2b34b33c54240fc951141de13d2c7d2759184cacb160dfdf3e764",
+      "entry": false
+    },
+    {
+      "id": "secp256k1-recover",
+      "synthetic": false,
+      "sourceFile": "verifier/lib/secp256k1-recover.js",
+      "sourceSha256": "34bb39eed0afc5f55241419ba827404bf767fa5dde1363dba5ad9c419cf91dab",
+      "inlinedSha256": "c8bab43d54b01dd7e55aeae6bc6d27986b868cbc7ebc1b1279dc70f032dbc122",
+      "entry": false
+    },
+    {
+      "id": "revocation",
+      "synthetic": false,
+      "sourceFile": "verifier/lib/revocation.js",
+      "sourceSha256": "a0508a7b092f67df4f030a4e543ecedbcf6db83e4649df37e5c3af061d232de1",
+      "inlinedSha256": "51376af87e9775c5a1cf9342a174f9fe1e373c02597fe5a43a4f7d6d7f234048",
+      "entry": false
+    },
+    {
+      "id": "verify-vh",
+      "synthetic": false,
+      "sourceFile": "verifier/verify-vh.js",
+      "sourceSha256": "3ebdfaa2e656e145f0a3cf6935d0f4db2afdb6651dec2873a8c023bc89dfa164",
+      "inlinedSha256": "2c7a0e511528a306daa600823801843ee997ae1b00aefd8d2f851127056bb9a2",
+      "entry": true
+    }
+  ]
+};
+function __maybeProvenance(argv) {
+  var wantProv = argv.indexOf('--provenance') !== -1;
+  var wantAttest = argv.indexOf('--self-attest') !== -1;
+  if (!wantProv && !wantAttest) return null;
+  if (wantProv) { process.stdout.write(JSON.stringify(__PROVENANCE, null, 2) + '\n'); }
+  if (wantAttest) {
+    var fs = require('fs');
+    var crypto = require('crypto');
+    var selfText;
+    try { selfText = fs.readFileSync(__filename, 'utf8'); }
+    catch (e) { process.stderr.write('self-attest: cannot read this file: ' + e.message + '\n'); return 1; }
+    // Re-blank our own selfSha256 line back to the sentinel, then hash — reproducing the build's pass-1 hash.
+    var blanked = selfText.replace(
+      '"selfSha256": "' + __PROVENANCE.selfSha256 + '"',
+      '"selfSha256": "' + __SELF_SHA256_SENTINEL + '"'
+    );
+    var got = crypto.createHash('sha256').update(Buffer.from(blanked, 'utf8')).digest('hex');
+    if (got === __PROVENANCE.selfSha256) {
+      process.stdout.write('[MATCH] self-attest: this file is intact (selfSha256 ' + got + ').\n');
+      return 0;
+    }
+    process.stderr.write('[MISMATCH] self-attest: this file has been MODIFIED ' +
+      '(embedded selfSha256 ' + __PROVENANCE.selfSha256 + ' != recomputed ' + got + ').\n');
+    return 1;
+  }
+  return 0;
+}
+
 // ---- boot: run the inlined verifier CLI with this process's argv. ----
 var __entry = __require("verify-vh");
 if (require.main === module) {
+  var __code = __maybeProvenance(process.argv.slice(2));
+  if (__code !== null) process.exit(__code);
   process.exit(__entry.run(process.argv.slice(2)));
 }
 module.exports = __entry;

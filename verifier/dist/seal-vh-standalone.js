@@ -12,6 +12,10 @@
 //   3. Hand `out.vhevidence.json` (+ your folder) to anyone; they verify it with verify-vh-standalone.js
 //      — also zero-install. Exit codes: 0 sealed / 1 IO / 2 usage (incl. >25 files) / 3 seal-build error.
 //
+// SELF-DESCRIBING (needs NO second file): this bundle carries its OWN build-provenance.
+//   node seal-vh-standalone.js --self-attest   # confirm THIS file's bytes are intact (0 ok / 1 modified)
+//   node seal-vh-standalone.js --provenance    # print the ordered source modules + sha256 it was built from
+//
 // FREE TIER: an UNSIGNED seal of up to 25 files. Sealing MORE files (`evidence_unlimited`) or a SIGNED
 // wrap (`evidence_signed`) is the PAID surface via `vh evidence seal` — this file has NO --sign/--license
 // /--key flag and uses NO key. It is READ-ONLY apart from the -o file you name, and opens NO network. The
@@ -789,9 +793,81 @@ if (require.main === module) {
 
 };
 
+// ---- embedded build-provenance (this file's own): see `--provenance` / `--self-attest` below. ----
+var __SELF_SHA256_SENTINEL = "0000000000000000000000000000000000000000000000000000000000000000";
+var __PROVENANCE = {
+  "schema": "verifyhash/build-provenance@1",
+  "target": "seal",
+  "note": "This bundle's OWN provenance, embedded so the single file is self-describing. Run `node seal-vh-standalone.js --self-attest` to recompute selfSha256 from these very bytes, or `--provenance` to print the ordered source modules + hashes it was built from. Cross-check against verifier/dist/BUILD-PROVENANCE.json (the same data) with: node verifier/build-standalone.js --check",
+  "selfSha256": "c11da5bb978de5f2883eab305211cf873748e4bcb0c75a555e4ecf0ca6e1682d",
+  "modules": [
+    {
+      "id": "keccak256-vendored",
+      "synthetic": false,
+      "sourceFile": "verifier/lib/keccak256-vendored.js",
+      "sourceSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+      "inlinedSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+      "entry": false
+    },
+    {
+      "id": "keccak",
+      "synthetic": true,
+      "sourceFile": null,
+      "sourceSha256": null,
+      "inlinedSha256": "7ead489c805c4e62e8338dbcfde77a85ca52076e2a3639e2ba57ce3b2415828e",
+      "note": "swapped body (keccak provider shim) — defined in build-standalone.js, not a source file"
+    },
+    {
+      "id": "merkle",
+      "synthetic": false,
+      "sourceFile": "verifier/lib/merkle.js",
+      "sourceSha256": "1bea7bab4b479962225279f4590c5524fad5295c7c70cf01d4978dbf9f37f34b",
+      "inlinedSha256": "e65be5614998f9a00ca9b58a6c79b05abe7f70ed2e0dad61ece07a41ee5da876",
+      "entry": false
+    },
+    {
+      "id": "seal-cli",
+      "synthetic": false,
+      "sourceFile": "verifier/lib/seal-cli.js",
+      "sourceSha256": "7a68adacb21ace3c3a77a3bc9bc27ec8a4732c77df3e8d6a6c5864d44a7a13bc",
+      "inlinedSha256": "8ba0e03a6a9bcaa5ee400d045fc13c4eb7e99b2d7f4effb307135e7b02d8804d",
+      "entry": true
+    }
+  ]
+};
+function __maybeProvenance(argv) {
+  var wantProv = argv.indexOf('--provenance') !== -1;
+  var wantAttest = argv.indexOf('--self-attest') !== -1;
+  if (!wantProv && !wantAttest) return null;
+  if (wantProv) { process.stdout.write(JSON.stringify(__PROVENANCE, null, 2) + '\n'); }
+  if (wantAttest) {
+    var fs = require('fs');
+    var crypto = require('crypto');
+    var selfText;
+    try { selfText = fs.readFileSync(__filename, 'utf8'); }
+    catch (e) { process.stderr.write('self-attest: cannot read this file: ' + e.message + '\n'); return 1; }
+    // Re-blank our own selfSha256 line back to the sentinel, then hash — reproducing the build's pass-1 hash.
+    var blanked = selfText.replace(
+      '"selfSha256": "' + __PROVENANCE.selfSha256 + '"',
+      '"selfSha256": "' + __SELF_SHA256_SENTINEL + '"'
+    );
+    var got = crypto.createHash('sha256').update(Buffer.from(blanked, 'utf8')).digest('hex');
+    if (got === __PROVENANCE.selfSha256) {
+      process.stdout.write('[MATCH] self-attest: this file is intact (selfSha256 ' + got + ').\n');
+      return 0;
+    }
+    process.stderr.write('[MISMATCH] self-attest: this file has been MODIFIED ' +
+      '(embedded selfSha256 ' + __PROVENANCE.selfSha256 + ' != recomputed ' + got + ').\n');
+    return 1;
+  }
+  return 0;
+}
+
 // ---- boot: run the inlined sealer CLI with this process's argv. ----
 var __entry = __require("seal-cli");
 if (require.main === module) {
+  var __code = __maybeProvenance(process.argv.slice(2));
+  if (__code !== null) process.exit(__code);
   process.exit(__entry.run(process.argv.slice(2)));
 }
 module.exports = __entry;

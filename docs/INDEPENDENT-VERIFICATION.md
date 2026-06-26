@@ -29,6 +29,14 @@ sha256sum -c verify-vh-standalone.js.sha256        # -> "verify-vh-standalone.js
 #    (macOS: `shasum -a 256 -c verify-vh-standalone.js.sha256`. Or eyeball it:
 #     `sha256sum verify-vh-standalone.js` and compare to the published hex.)
 
+# 2b. (Even better — needs NO second file.) The bundle is SELF-DESCRIBING: it carries its own
+#     build-provenance and can check its own bytes. From the ONE file alone:
+node verify-vh-standalone.js --self-attest          # -> "[MATCH] ... this file is intact"; exit 1 if edited
+node verify-vh-standalone.js --provenance           # -> the ordered source modules + sha256 it was built from
+#     `--provenance` lists the exact `verifier/lib/*` files (each pinned by its own sha256) the bundle inlines;
+#     those same hashes are in verifier/dist/BUILD-PROVENANCE.json, which
+#     `node verifier/build-standalone.js --check` reproduces end-to-end from source.
+
 # 3. Run it on the packet — no clone, no `npm install`, no node_modules, no account:
 node verify-vh-standalone.js <packet>.vhevidence.json --vendor 0xPRODUCER_ADDRESS
 #    exit 0 = verifies; exit 3 = REJECTED (and it names the file that changed / the wrong signer).

@@ -182,8 +182,9 @@ const SEAL_MODULES = [
 
 // The require() specifiers a bundled module is ALLOWED to keep verbatim — Node core modules the standalone
 // genuinely uses. Anything else (a bare third-party name, an unlisted relative path) is a build error: the
-// bundle must never silently carry an external dependency.
-const ALLOWED_CORE = new Set(["fs", "path", "node:fs", "node:path"]);
+// bundle must never silently carry an external dependency. `crypto` is Node core too (used by the embedded
+// `--self-attest` boot code that hashes the bundle's own bytes) — all install-free.
+const ALLOWED_CORE = new Set(["fs", "path", "crypto", "node:fs", "node:path", "node:crypto"]);
 
 // Collect every require("…") specifier in a source string.
 function requireSpecifiers(src) {
@@ -260,6 +261,24 @@ function moduleProvenance(m) {
   };
 }
 
+// The provenance record for ONE target: the bundle's published basename/sidecar/size/sha256 + the ORDERED,
+// individually-hashed source modules that compose it. This is the SINGLE source of truth shared verbatim by
+// (a) the committed BUILD-PROVENANCE.json manifest and (b) the copy EMBEDDED inside the bundle itself
+// (T-54.2 rework) — so the artifact a counterparty holds carries its OWN provenance, and `--check` proves the
+// embedded copy equals the manifest's. `bundleSha256` is passed in (the build resolves the self-hash chicken-
+// and-egg via a placeholder, see buildTarget) so this stays a pure function of its inputs -> deterministic.
+function targetProvenance(target, bundleText, bundleSha256) {
+  return {
+    bundle: target.sha256Basename, // the bundle's basename (also the sidecar's pinned name)
+    sidecar: path.basename(target.sha256Path),
+    bundleBytes: Buffer.byteLength(bundleText, "utf8"),
+    bundleSha256,
+    sidecarLine: sha256SidecarFor(bundleText, target.sha256Basename).trim(),
+    // The ORDERED inlined modules — the exact composition a skeptic re-hashes the source against.
+    modules: target.modules.map(moduleProvenance),
+  };
+}
+
 // Build the FULL build-provenance object (the committed BUILD-PROVENANCE.json's content) from source. It maps
 // each target's published bundle hash -> the ordered modules (each pinned by its own source hash) that compose
 // it, plus the bundle's own size + the sidecar line that publishes its hash. Pure function of source + the
@@ -271,15 +290,7 @@ function buildProvenanceObject() {
   for (const key of ["verify", "seal"]) {
     const target = TARGETS[key];
     const bundleText = buildTarget(target);
-    targets[target.name] = {
-      bundle: target.sha256Basename, // the bundle's basename (also the sidecar's pinned name)
-      sidecar: path.basename(target.sha256Path),
-      bundleBytes: Buffer.byteLength(bundleText, "utf8"),
-      bundleSha256: sha256HexOf(bundleText),
-      sidecarLine: sha256SidecarFor(bundleText, target.sha256Basename).trim(),
-      // The ORDERED inlined modules — the exact composition a skeptic re-hashes the source against.
-      modules: target.modules.map(moduleProvenance),
-    };
+    targets[target.name] = targetProvenance(target, bundleText, sha256HexOf(bundleText));
   }
   return {
     schema: PROVENANCE_SCHEMA,
@@ -308,6 +319,10 @@ const VERIFY_HEADER = [
   "//   2. Run:  node verify-vh-standalone.js <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]",
   "//   Exit codes: 0 ok / 3 rejected / 2 usage / 1 IO.   It is READ-ONLY and opens NO network.",
   "//",
+  "// SELF-DESCRIBING (needs NO second file): this bundle carries its OWN build-provenance.",
+  "//   node verify-vh-standalone.js --self-attest   # confirm THIS file's bytes are intact (0 ok / 1 modified)",
+  "//   node verify-vh-standalone.js --provenance    # print the ordered source modules + sha256 it was built from",
+  "//",
   "// It RE-DERIVES the keccak Merkle root from the bytes YOU hold and recovers the signer with a",
   "// pure-JS secp256k1 routine — it never trusts the artifact's own stored hashes, and it requires",
   "// NOTHING outside Node core. This is the in-tree verifier inlined verbatim, with keccak256 swapped",
@@ -325,6 +340,10 @@ const SEAL_HEADER = [
   "//   2. Run:  node seal-vh-standalone.js <folder> -o out.vhevidence.json",
   "//   3. Hand `out.vhevidence.json` (+ your folder) to anyone; they verify it with verify-vh-standalone.js",
   "//      — also zero-install. Exit codes: 0 sealed / 1 IO / 2 usage (incl. >25 files) / 3 seal-build error.",
+  "//",
+  "// SELF-DESCRIBING (needs NO second file): this bundle carries its OWN build-provenance.",
+  "//   node seal-vh-standalone.js --self-attest   # confirm THIS file's bytes are intact (0 ok / 1 modified)",
+  "//   node seal-vh-standalone.js --provenance    # print the ordered source modules + sha256 it was built from",
   "//",
   "// FREE TIER: an UNSIGNED seal of up to 25 files. Sealing MORE files (`evidence_unlimited`) or a SIGNED",
   "// wrap (`evidence_signed`) is the PAID surface via `vh evidence seal` — this file has NO --sign/--license",
@@ -357,6 +376,68 @@ const TARGETS = {
   verify: { name: "verify", modules: VERIFY_MODULES, header: VERIFY_HEADER, cliNoun: "verifier", outPath: OUT_PATH, sha256Path: SHA256_PATH, sha256Basename: SHA256_BASENAME },
   seal: { name: "seal", modules: SEAL_MODULES, header: SEAL_HEADER, cliNoun: "sealer", outPath: SEAL_OUT_PATH, sha256Path: SEAL_SHA256_PATH, sha256Basename: SEAL_SHA256_BASENAME },
 };
+
+// The fixed 64-char sentinel the bundle's EMBEDDED self-hash is computed against (and re-blanked to at
+// runtime). The bundle can't embed sha256(itself) directly — that is a fixed point (writing the hash changes
+// the bytes it hashes). Instead the bundle's `selfSha256` is DEFINED as sha256(bundle text with the selfSha256
+// field set to this sentinel). `--self-attest` re-blanks its own selfSha256 line back to the sentinel and
+// re-hashes, so it can confirm its bytes are intact from the SINGLE file alone — no repo, no network, no
+// sidecar. (The published `.sha256` sidecar still pins sha256(final file) so `sha256sum -c` is unchanged.)
+const SELF_SHA256_SENTINEL = "0".repeat(64);
+
+// The provenance object EMBEDDED in a bundle so the single shipped file carries — and can self-attest — its
+// own provenance. It lists the SAME ordered source modules the manifest records for this target (so `--check`
+// proves the embedded copy == the manifest), PLUS a `selfSha256`. The selfSha256 value is supplied by the
+// caller: during pass 1 of buildTarget it is the SENTINEL (the hash is not yet known); the real hash is
+// substituted in pass 2. Pure function of its inputs -> deterministic.
+function embeddedProvenanceObject(target, selfSha256) {
+  return {
+    schema: PROVENANCE_SCHEMA,
+    target: target.name,
+    note:
+      "This bundle's OWN provenance, embedded so the single file is self-describing. Run " +
+      "`node " + target.sha256Basename + " --self-attest` to recompute selfSha256 from these very bytes, or " +
+      "`--provenance` to print the ordered source modules + hashes it was built from. Cross-check against " +
+      "verifier/dist/BUILD-PROVENANCE.json (the same data) with: node verifier/build-standalone.js --check",
+    selfSha256, // sha256 of THESE bytes with the selfSha256 field blanked to SELF_SHA256_SENTINEL
+    modules: target.modules.map(moduleProvenance),
+  };
+}
+
+// The boot-time handler embedded in every bundle: intercepts `--provenance` / `--self-attest` BEFORE the
+// inlined CLI sees them (it would reject unknown flags). `--provenance` prints the embedded provenance JSON.
+// `--self-attest` re-reads THIS file, blanks its own selfSha256 back to the sentinel, re-hashes, and prints
+// MATCH/MISMATCH — proving (from the single file, no network) that its bytes are exactly what the build
+// produced. Returns an exit code to use, or null to fall through to the normal CLI. Uses only Node core.
+const PROVENANCE_BOOT = [
+  "function __maybeProvenance(argv) {",
+  "  var wantProv = argv.indexOf('--provenance') !== -1;",
+  "  var wantAttest = argv.indexOf('--self-attest') !== -1;",
+  "  if (!wantProv && !wantAttest) return null;",
+  "  if (wantProv) { process.stdout.write(JSON.stringify(__PROVENANCE, null, 2) + '\\n'); }",
+  "  if (wantAttest) {",
+  "    var fs = require('fs');",
+  "    var crypto = require('crypto');",
+  "    var selfText;",
+  "    try { selfText = fs.readFileSync(__filename, 'utf8'); }",
+  "    catch (e) { process.stderr.write('self-attest: cannot read this file: ' + e.message + '\\n'); return 1; }",
+  "    // Re-blank our own selfSha256 line back to the sentinel, then hash — reproducing the build's pass-1 hash.",
+  "    var blanked = selfText.replace(",
+  "      '\"selfSha256\": \"' + __PROVENANCE.selfSha256 + '\"',",
+  "      '\"selfSha256\": \"' + __SELF_SHA256_SENTINEL + '\"'",
+  "    );",
+  "    var got = crypto.createHash('sha256').update(Buffer.from(blanked, 'utf8')).digest('hex');",
+  "    if (got === __PROVENANCE.selfSha256) {",
+  "      process.stdout.write('[MATCH] self-attest: this file is intact (selfSha256 ' + got + ').\\n');",
+  "      return 0;",
+  "    }",
+  "    process.stderr.write('[MISMATCH] self-attest: this file has been MODIFIED ' +",
+  "      '(embedded selfSha256 ' + __PROVENANCE.selfSha256 + ' != recomputed ' + got + ').\\n');",
+  "    return 1;",
+  "  }",
+  "  return 0;",
+  "}",
+];
 
 // Build a target's bundle TEXT deterministically. Pure function of the committed source files + the target
 // descriptor (a constant). Same target -> byte-identical output.
@@ -398,19 +479,103 @@ function buildTarget(target) {
 
   if (!entryId) throw new Error("build-standalone: no entry module declared");
 
+  // --- EMBEDDED self-attesting provenance (T-54.2 rework): the bundle carries its OWN provenance so a
+  //     counterparty handed JUST this one file can (a) `--provenance` to see the ordered source modules +
+  //     hashes it was built from, and (b) `--self-attest` to confirm its own bytes are intact — from the
+  //     single file, no repo / network / sidecar. The selfSha256 is computed below via the sentinel trick. ---
+  parts.push(
+    "// ---- embedded build-provenance (this file's own): see `--provenance` / `--self-attest` below. ----"
+  );
+  parts.push(`var __SELF_SHA256_SENTINEL = ${JSON.stringify(SELF_SHA256_SENTINEL)};`);
+  // Placeholder object emitted with the sentinel; the real selfSha256 is substituted after the full text is
+  // assembled and hashed (see the substitution at the end of this function).
+  parts.push("var __PROVENANCE = __SELF_SHA256_PLACEHOLDER__;");
+  parts.push(PROVENANCE_BOOT.join("\n"));
+  parts.push("");
+
   // --- boot the entrypoint exactly as the inlined CLI does at the bottom of its own file. ---
   // The inlined entry module sets `module.exports = { ..., run }` and has a `require.main === module` CLI
   // shim that does NOT fire inside the bundle's factory (its `module` is the shim's, not Node's), so we
   // drive the CLI explicitly here: load the entry module and run it with process.argv, exiting on its code.
+  // The embedded-provenance flags (`--provenance` / `--self-attest`) are handled FIRST so they never reach
+  // the inlined CLI (which would reject them as unknown). All other argv passes through unchanged.
   parts.push(`// ---- boot: run the inlined ${target.cliNoun} CLI with this process's argv. ----`);
   parts.push(`var __entry = __require(${JSON.stringify(entryId)});`);
   parts.push("if (require.main === module) {");
+  parts.push("  var __code = __maybeProvenance(process.argv.slice(2));");
+  parts.push("  if (__code !== null) process.exit(__code);");
   parts.push("  process.exit(__entry.run(process.argv.slice(2)));");
   parts.push("}");
   parts.push("module.exports = __entry;");
   parts.push(""); // single trailing newline
 
-  return parts.join("\n");
+  // Assemble with a sentinel selfSha256, hash, then substitute the real self-hash in. Two passes resolve the
+  // self-reference: pass 1 computes sha256 over the bytes WITH the sentinel; pass 2 writes that hash in. The
+  // runtime `--self-attest` re-blanks selfSha256 back to the sentinel before re-hashing, so it reproduces the
+  // pass-1 hash exactly. Deterministic: the sentinel + module list are constants.
+  const provWithSentinel = embeddedProvenanceObject(target, SELF_SHA256_SENTINEL);
+  const textWithSentinel = parts
+    .join("\n")
+    .replace("__SELF_SHA256_PLACEHOLDER__", JSON.stringify(provWithSentinel, null, 2));
+  const selfSha256 = sha256HexOf(textWithSentinel);
+  // Substitute the real self-hash for the sentinel selfSha256 (a unique, fixed-length token swap).
+  return textWithSentinel.replace(
+    `"selfSha256": ${JSON.stringify(SELF_SHA256_SENTINEL)}`,
+    `"selfSha256": ${JSON.stringify(selfSha256)}`
+  );
+}
+
+// Compute the EXPECTED embedded provenance object for a target (with its REAL, two-pass-resolved selfSha256),
+// straight from source. This is the canonical "what the bundle's __PROVENANCE should be" the `--check` path
+// compares the committed bundle's embedded copy against. Pure function of source -> deterministic.
+function expectedEmbeddedProvenance(target) {
+  const provWithSentinel = embeddedProvenanceObject(target, SELF_SHA256_SENTINEL);
+  const textWithSentinel = buildTarget(target).replace(
+    new RegExp(`"selfSha256": "[0-9a-f]{64}"`),
+    `"selfSha256": ${JSON.stringify(SELF_SHA256_SENTINEL)}`
+  );
+  const selfSha256 = sha256HexOf(textWithSentinel);
+  return embeddedProvenanceObject(target, selfSha256);
+  // (provWithSentinel is the same shape; we recompute selfSha256 honestly here so this helper is standalone.)
+}
+
+// Extract the embedded __PROVENANCE object from a built/committed bundle's TEXT, so `--check` can read what the
+// SHIPPED file actually carries (not just what we recompute). The bundle assigns `var __PROVENANCE = { ... };`
+// as a pretty-printed JSON literal; we slice that literal out and JSON.parse it. Returns the object, or null if
+// the bundle has no embedded provenance (e.g. a stale/foreign file) so the caller reports a clean MISMATCH.
+function extractEmbeddedProvenance(bundleText) {
+  const marker = "var __PROVENANCE = ";
+  const start = bundleText.indexOf(marker);
+  if (start === -1) return null;
+  // The literal runs from the first "{" after the marker to its matching "}" (brace-balanced; the JSON has no
+  // braces inside string values that aren't balanced, but we scan with a tiny string-aware matcher to be safe).
+  let i = bundleText.indexOf("{", start);
+  if (i === -1) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  let end = -1;
+  for (; i < bundleText.length; i++) {
+    const c = bundleText[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) { end = i + 1; break; }
+    }
+  }
+  if (end === -1) return null;
+  try {
+    return JSON.parse(bundleText.slice(bundleText.indexOf("{", start), end));
+  } catch (_) {
+    return null;
+  }
 }
 
 // Build the VERIFY bundle TEXT (the original single-target API; UNCHANGED bytes). Pure function of source.
@@ -498,6 +663,7 @@ function checkTarget(target) {
     bundle: { ok: false, reason: "" },
     sidecar: { ok: false, reason: "" },
     sources: { ok: true, reason: "", offenders: [] },
+    embedded: { ok: false, reason: "" },
   };
 
   // --- the SOURCE PRESENCE check runs FIRST, BEFORE recompiling — so a MISSING inlined source yields a clean
@@ -570,7 +736,31 @@ function checkTarget(target) {
     }
   }
 
-  result.ok = result.bundle.ok && result.sidecar.ok && result.sources.ok;
+  // --- the EMBEDDED provenance (T-54.2 rework): the committed bundle carries its OWN __PROVENANCE so a holder
+  //     of just the single file can `--provenance` / `--self-attest` it. We assert that embedded copy is
+  //     (a) extractable, (b) IDENTICAL to what the build expects (same ordered modules + selfSha256), so it can
+  //     never silently drift from the source-of-truth it claims to mirror. (When the bundle bytes already
+  //     reproduce, this is implied — but naming it as its own verdict makes the customer-facing self-attest
+  //     surface an explicit, separately-attested guarantee.) ---
+  const expectedEmbedded = expectedEmbeddedProvenance(target);
+  if (!fs.existsSync(target.outPath)) {
+    result.embedded.reason = `committed bundle ${result.bundlePath} is MISSING (no embedded provenance to read)`;
+  } else {
+    const committedText = fs.readFileSync(target.outPath, "utf8");
+    const got = extractEmbeddedProvenance(committedText);
+    if (!got) {
+      result.embedded.reason = `committed bundle carries NO readable embedded __PROVENANCE`;
+    } else if (JSON.stringify(got) !== JSON.stringify(expectedEmbedded)) {
+      result.embedded.reason =
+        `embedded __PROVENANCE does NOT match what the build expects ` +
+        `(embedded selfSha256 ${got.selfSha256 || "?"} vs expected ${expectedEmbedded.selfSha256})`;
+    } else {
+      result.embedded.ok = true;
+      result.embedded.reason = `embedded __PROVENANCE == expected (selfSha256 ${expectedEmbedded.selfSha256})`;
+    }
+  }
+
+  result.ok = result.bundle.ok && result.sidecar.ok && result.sources.ok && result.embedded.ok;
   return result;
 }
 
@@ -685,9 +875,13 @@ function runCheck(io) {
     const bundleTag = r.bundle.ok ? "MATCH" : "MISMATCH";
     const sidecarTag = r.sidecar.ok ? "MATCH" : "MISMATCH";
     const sourcesTag = r.sources.ok ? "MATCH" : "MISMATCH";
+    const embeddedTag = r.embedded.ok ? "MATCH" : "MISMATCH";
     out(`[${bundleTag}] bundle  ${r.bundlePath}: ${r.bundle.reason}\n`);
     out(`[${sidecarTag}] sidecar ${r.sha256Path}: ${r.sidecar.reason}\n`);
     out(`[${sourcesTag}] sources ${r.bundlePath}: ${r.sources.reason}\n`);
+    // The bundle's OWN embedded provenance / self-attest record — the customer-facing trust surface that
+    // travels WITH the single file (see `node <bundle> --self-attest` / `--provenance`).
+    out(`[${embeddedTag}] embedded ${r.bundlePath}: ${r.embedded.reason}\n`);
     if (!r.ok) allOk = false;
   }
 

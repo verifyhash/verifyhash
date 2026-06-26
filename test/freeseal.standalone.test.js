@@ -197,8 +197,11 @@ describe("free sealer standalone: single-file, zero-install seal-your-own-folder
       // against the embedded module table.
       const specs = [...src.matchAll(/(^|[^A-Za-z0-9_$])require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[2]);
       expect(specs.length, "the bundle does call require() for Node core").to.be.greaterThan(0);
+      // `crypto` is Node CORE (no node_modules, no install) — the embedded `--self-attest` boot code hashes
+      // the file's own bytes. It is allowed alongside fs/path; the empty-dir seal run below proves the bundle
+      // still needs no install.
       for (const s of specs) {
-        expect(["fs", "path", "node:fs", "node:path"], `forbidden require(${JSON.stringify(s)})`).to.include(s);
+        expect(["fs", "path", "crypto", "node:fs", "node:path", "node:crypto"], `forbidden require(${JSON.stringify(s)})`).to.include(s);
       }
       // Belt-and-suspenders explicit checks the task spells out.
       expect(src, "no require('ethers')").to.not.match(/require\(\s*["']ethers/);
@@ -437,7 +440,8 @@ describe("free sealer standalone: single-file, zero-install seal-your-own-folder
       // Verify bundle: still requires only fs/path at the Node level.
       const vsrc = fs.readFileSync(VERIFY_PATH, "utf8");
       const vspecs = [...vsrc.matchAll(/(^|[^A-Za-z0-9_$])require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[2]);
-      for (const s of vspecs) expect(["fs", "path", "node:fs", "node:path"]).to.include(s);
+      // fs/path plus Node-core `crypto` (the embedded `--self-attest` self-hash) — all Node core, no install.
+      for (const s of vspecs) expect(["fs", "path", "crypto", "node:fs", "node:path", "node:crypto"]).to.include(s);
 
       // In-tree verifier: require graph is exactly its own ./lib/* siblings + Node core (fs/path) — never
       // ethers/hardhat or a cli/ back-edge. The SEAL bundle (this task) never touches it; T-51.4 added the

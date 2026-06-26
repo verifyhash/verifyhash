@@ -5,9 +5,9 @@
     "verify": {
       "bundle": "verify-vh-standalone.js",
       "sidecar": "verify-vh-standalone.js.sha256",
-      "bundleBytes": 123562,
-      "bundleSha256": "26c9e2ad60cf97c1fb9f2a076e5f381d03c4e38d9fccf272161c2a8fe4e667f9",
-      "sidecarLine": "26c9e2ad60cf97c1fb9f2a076e5f381d03c4e38d9fccf272161c2a8fe4e667f9  verify-vh-standalone.js",
+      "bundleBytes": 128269,
+      "bundleSha256": "9358a657a611a394c7d4981dd1777577c01a96711fa5a6fb2e0da9dc06b4d1ec",
+      "sidecarLine": "9358a657a611a394c7d4981dd1777577c01a96711fa5a6fb2e0da9dc06b4d1ec  verify-vh-standalone.js",
       "modules": [
         {
           "id": "keccak256-vendored",
@@ -70,9 +70,9 @@
     "seal": {
       "bundle": "seal-vh-standalone.js",
       "sidecar": "seal-vh-standalone.js.sha256",
-      "bundleBytes": 35637,
-      "bundleSha256": "44a5c10176299567c4e9bb5924dac7912d62ee2a8f0f240dc595af0c96163163",
-      "sidecarLine": "44a5c10176299567c4e9bb5924dac7912d62ee2a8f0f240dc595af0c96163163  seal-vh-standalone.js",
+      "bundleBytes": 39375,
+      "bundleSha256": "4da9d9332d823d59e5a9aa35ba02cb7cbaf1d0a99cfef850fbf339430c2dd371",
+      "sidecarLine": "4da9d9332d823d59e5a9aa35ba02cb7cbaf1d0a99cfef850fbf339430c2dd371  seal-vh-standalone.js",
       "modules": [
         {
           "id": "keccak256-vendored",

@@ -184,22 +184,64 @@ class PilotInputError extends Error {
   }
 }
 
-// parseArgs(argv) — the kit's tiny CLI: only `--evidence-dir <path>` today (env PILOT_EVIDENCE_DIR is
-// the same knob). Unknown flags are tolerated (the kit is a demo, not a general CLI) but the one knob it
-// owns is parsed strictly so `--evidence-dir` with no value is a usage error, not a silent default.
+// parseArgs(argv) — the kit's tiny CLI. Knobs it OWNS (each parsed strictly: a flag with no/`--`-prefixed
+// value is a usage error, never a silent default):
+//   --evidence-dir <path>     point the EVIDENCE vertical at YOUR folder (env PILOT_EVIDENCE_DIR is the same knob)
+//   --certificate <path>      SEAL the pilot result into a tamper-evident, independently-verifiable
+//                             `*.vhevidence.json` packet at <path> (T-53.2). With NO --certificate the run is
+//                             byte-for-byte the historical pilot (no file written, same stdout, same exit code).
+//   --sign                    (only with --certificate) WRAP the certificate in a signed attestation, vouched
+//                             for by an EPHEMERAL operator key (Wallet.createRandom()) — never a real key.
+//   --vendor <0xaddr>         (only with --certificate --sign) ASSERT the address that must vouch — the kit
+//                             signs with the OPERATOR key (--key-env/--key-file, or the ephemeral key it
+//                             mints) and ENFORCES that --vendor EQUALS that signer, failing loud on a
+//                             mismatch (it never silently re-pins to a different identity). An independent
+//                             `verify-vh --vendor` / `vh evidence verify-signed --signer` then confirms WHO
+//                             vouched. If omitted on a --sign run, the kit pins the operator key it signed
+//                             with (a self-attested certificate).
+//   --key-env <NAME>          (only with --certificate --sign) read the operator signing key from this env var
+//   --key-file <path>         (only with --certificate --sign) read the operator signing key from this file
+// Unknown OTHER flags are tolerated (the kit is a demo, not a general CLI). --sign/--vendor/--key-* are
+// inert without --certificate (the certificate is the only thing they configure), so a stray --sign on a
+// plain run is a no-op, never a crash — preserving the byte-for-byte default contract.
 function parseArgs(argv) {
   const opts = {};
+  const needValue = (i, flag, noun) => {
+    const v = argv[i + 1];
+    if (v === undefined || (typeof v === "string" && v.startsWith("--"))) {
+      throw new PilotInputError(`${flag} requires a ${noun || "<value>"} argument`);
+    }
+    return v;
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--evidence-dir") {
-      const v = argv[i + 1];
-      if (v === undefined || v.startsWith("--")) {
-        throw new PilotInputError("--evidence-dir requires a <path> argument");
-      }
-      opts.evidenceDir = v;
+      opts.evidenceDir = needValue(i, "--evidence-dir", "<path>");
       i++;
     } else if (a.startsWith("--evidence-dir=")) {
       opts.evidenceDir = a.slice("--evidence-dir=".length);
+    } else if (a === "--certificate") {
+      opts.certificate = needValue(i, "--certificate", "<path>");
+      i++;
+    } else if (a.startsWith("--certificate=")) {
+      opts.certificate = a.slice("--certificate=".length);
+    } else if (a === "--sign") {
+      opts.sign = true;
+    } else if (a === "--vendor") {
+      opts.vendor = needValue(i, "--vendor");
+      i++;
+    } else if (a.startsWith("--vendor=")) {
+      opts.vendor = a.slice("--vendor=".length);
+    } else if (a === "--key-env") {
+      opts.keyEnv = needValue(i, "--key-env");
+      i++;
+    } else if (a.startsWith("--key-env=")) {
+      opts.keyEnv = a.slice("--key-env=".length);
+    } else if (a === "--key-file") {
+      opts.keyFile = needValue(i, "--key-file");
+      i++;
+    } else if (a.startsWith("--key-file=")) {
+      opts.keyFile = a.slice("--key-file=".length);
     }
   }
   return opts;
@@ -247,6 +289,214 @@ function buildPilotResult(checks, meta) {
     // field (added later to the in-memory check) can leak nondeterminism into the record.
     checks: checks.map((c) => ({ ok: !!c.ok, label: String(c.label) })),
   };
+}
+
+// ---- T-53.2: the SHAREABLE pilot-result CERTIFICATE ----------------------------------------------
+
+// The basename the result record is sealed under, INSIDE the certificate. The independent verifier
+// resolves this sibling next to the packet (via its --dir) and RE-DERIVES the keccak root from these exact
+// bytes — so this name is part of the certificate's verifiable surface and must stay stable.
+const CERTIFICATE_RESULT_NAME = "pilot-result.json";
+
+// serializeResultForCertificate(result) — the EXACT bytes the certificate seals over. Pretty-printed +
+// newline-terminated so the sealed artifact is human-eyeballable (a procurement reviewer can open it), and
+// DETERMINISTIC because `result` is the canonical, path/clock/key-free record buildPilotResult returns.
+function serializeResultForCertificate(result) {
+  return JSON.stringify(result, null, 2) + "\n";
+}
+
+// writeCertificate(result, certPath, opts, io) — SEAL the pilot result into a tamper-evident,
+// independently-verifiable `*.vhevidence.json` packet at `certPath`, by DOGFOODING the SHIPPED
+// `cli/evidence.js` seal core (NO new crypto / seal / verify logic). The flow:
+//   1. write the canonical result record as a single file (pilot-result.json) into a throwaway seal dir;
+//   2. run the REAL `evidence.runEvidenceSeal` over that dir — producing the exact same packet shape the
+//      paid `vh evidence seal` ships, which the INDEPENDENT verify-vh ACCEPTS (root re-derived from the
+//      result bytes) and REJECTS on a one-byte tamper, localized to pilot-result.json;
+//   3. emit the seal-dir COPY of the result file next to the certificate (as `<cert>.result.json`) so a
+//      counterparty who only receives the certificate can re-derive the root from the bytes it commits to.
+//
+// The OPTIONAL --sign path wraps the seal in a signed attestation vouched-for by an EPHEMERAL operator key
+// (Wallet.createRandom()) — NEVER a real key. Because runEvidenceSeal GATES --sign behind a paid license,
+// we mint a throwaway vendor license granting `evidence_signed` and pin it, EXACTLY as the pilot's own
+// evidence vertical does — all keys are created, used, and discarded in-process.
+//
+// Returns { path, signed, signer, vendor, root, fileCount } describing the written certificate. Throws a
+// PilotInputError on a usage problem (bad --vendor, unwritable path) so the CLI shim prints one clean line.
+//
+// `io.evidence`/`io.now` are injectable so a test can drive the SAME path with a fixed clock; production
+// passes neither (uses the real module + real clock — but the certificate bytes do NOT depend on the clock:
+// the UNSIGNED seal is a pure function of the result bytes, and a signature is over those same bytes).
+async function writeCertificate(result, certPath, opts, io) {
+  io = io || {};
+  const ev = io.evidence || evidence;
+  const now = io.now || new Date();
+  opts = opts || {};
+
+  const certAbs = path.resolve(certPath);
+  const certDirAbs = path.dirname(certAbs) || os.tmpdir();
+
+  // The throwaway license file (used ONLY to satisfy the --sign gate). Declared out here so the `finally`
+  // can always remove it, even if sealing throws. It is written OUTSIDE sealDir (never sealed content).
+  let licenseFile = null;
+
+  // A throwaway dir holding ONLY the result record, which we seal. Lives next to the certificate target so
+  // we never touch cwd/the repo; removed in `finally`. (We deliberately DO NOT reuse the pilot's evidence
+  // workspace — the certificate seals the RESULT record, not the partner's audit files.)
+  const sealDir = fs.mkdtempSync(path.join(certDirAbs, ".vh-pilot-cert-"));
+  try {
+    const resultBytes = serializeResultForCertificate(result);
+    fs.writeFileSync(path.join(sealDir, CERTIFICATE_RESULT_NAME), resultBytes);
+
+    // Capture the seal command's stdout/stderr so the certificate write is SILENT on the pilot transcript
+    // (the run's own verdict line is the only thing that prints by default; the cert is an extra artifact).
+    const capErr = [];
+    const sealIo = {
+      write: () => {},
+      writeErr: (s) => capErr.push(s),
+      now,
+    };
+
+    // Build the seal opts. --sign mints an EPHEMERAL operator key + a throwaway vendor license granting
+    // `evidence_signed`, then pins it — mirroring runEvidencePilot STEP 3 (the shipped paid surface).
+    const sealOpts = {
+      dir: sealDir,
+      out: certAbs,
+      sign: !!opts.sign,
+    };
+
+    let restoreKeyEnv = null;
+    try {
+      if (opts.sign) {
+        // VALIDATE --vendor SHAPE up front (when given) so a malformed pin is a clean usage error, never a
+        // runtime throw mid-seal. --vendor is the SIGNER address the caller EXPECTS to vouch — it is what
+        // the recipient pins with `verify-vh --vendor` / `vh evidence verify-signed --signer`. It does NOT
+        // configure the license gate (the license is an internal throwaway artifact, below). The ACTUAL pin
+        // is the OPERATOR key recovered after sealing; once we know that address we ENFORCE that --vendor
+        // (if supplied) EQUALS it — never silently re-pin to a different identity (see the mismatch guard
+        // after the packet is read back, below).
+        if (opts.vendor != null) {
+          const { isAddress } = require("ethers");
+          if (!isAddress(opts.vendor)) {
+            throw new PilotInputError(
+              `--vendor must be a 20-byte 0x-hex address, got: ${opts.vendor}`
+            );
+          }
+        }
+
+        // The OPERATOR signing key: a HUMAN-supplied key (--key-env / --key-file) when given, else an
+        // EPHEMERAL operator key the kit mints, uses in-process, and discards. The loop itself NEVER holds
+        // a real key; when the caller supplies a key it is read, used, and discarded inside the seal core.
+        let keyEnv = opts.keyEnv;
+        let keyFile = opts.keyFile;
+        if (keyEnv == null && keyFile == null) {
+          const operatorWallet = Wallet.createRandom();
+          keyEnv = "PILOT_CERT_OP_KEY";
+          // Stash the key in a PROCESS-SCOPED env var the seal reads, restored on the way out so we never
+          // leave key material behind in the environment.
+          const PREV = process.env[keyEnv];
+          process.env[keyEnv] = operatorWallet.privateKey;
+          restoreKeyEnv = () => {
+            if (PREV === undefined) delete process.env[keyEnv];
+            else process.env[keyEnv] = PREV;
+          };
+        }
+        sealOpts.keyEnv = keyEnv;
+        sealOpts.keyFile = keyFile;
+
+        // --sign is license-GATED on `evidence_signed`. Mint a THROWAWAY vendor license (a fresh ephemeral
+        // vendor wallet that signs it, pinned to its OWN address) granting the paid entitlements, purely to
+        // satisfy the gate with ephemeral material — no real key, no foreign key. This license is a gate
+        // formality; the certificate's vouching identity is the OPERATOR key recovered on verify, which the
+        // recipient pins via --vendor.
+        const vendorWallet = Wallet.createRandom();
+        const licenseContainer = await ev.buildLicense(
+          {
+            licenseId: "PILOT-CERT-1",
+            customer: "Pilot certificate (ephemeral)",
+            plan: "pro",
+            entitlements: ["evidence_signed", "evidence_unlimited"],
+            issuedAt: "2026-01-01T00:00:00.000Z",
+            expiresAt: "2030-01-01T00:00:00.000Z",
+          },
+          vendorWallet
+        );
+        // CRITICAL: write the license OUTSIDE sealDir (it is a gate formality, NOT sealed content). The
+        // seal must commit to EXACTLY the result record — a stray file in sealDir would land in the seal
+        // and make the independent verifier report it MISSING next to the certificate.
+        licenseFile = path.join(certDirAbs, `.vh-pilot-cert-license-${process.pid}-${Date.now()}.json`);
+        fs.writeFileSync(licenseFile, JSON.stringify(licenseContainer) + "\n");
+        sealOpts.license = licenseFile;
+        sealOpts.vendor = vendorWallet.address;
+      }
+
+      const code = await ev.runEvidenceSeal(sealOpts, sealIo);
+      if (code !== ev.EXIT.OK) {
+        throw new PilotInputError(
+          `failed to seal the pilot certificate (evidence seal exit ${code})` +
+            (capErr.length ? `: ${capErr.join("").trim()}` : "")
+        );
+      }
+    } finally {
+      if (restoreKeyEnv) restoreKeyEnv();
+    }
+
+    // The packet on disk is the certificate. Read it back to surface its kind/root/signer for the caller.
+    // A SIGNED packet WRAPS the seal under `attestation` (root/fileCount live there) and carries the
+    // recovered signer in `signature.signer`; an UNSIGNED packet is the bare seal (root/fileCount at top).
+    const packet = JSON.parse(fs.readFileSync(certAbs, "utf8"));
+    const signed = packet.kind === ev.SIGNED_SEAL_KIND;
+    const inner = signed ? packet.attestation || {} : packet;
+    const signer =
+      signed && packet.signature && typeof packet.signature.signer === "string"
+        ? packet.signature.signer
+        : null;
+
+    // ENFORCE the --vendor PIN: the certificate's vouching identity is the OPERATOR key recovered above
+    // (`signer`). If the caller PINNED a specific `--vendor`, it MUST equal that recovered signer — the kit
+    // signs with the operator key, so a `--vendor` that names a DIFFERENT address can NEVER be honored. We
+    // FAIL LOUD rather than silently re-pin to the operator: a user who supplies a real corporate key plus a
+    // deliberate `--vendor` must not walk away with a certificate vouching for a DIFFERENT identity. The
+    // certificate-on-disk is removed first so a mismatch never leaves a half-written packet that vouches for
+    // the wrong identity. (Address compare is case-insensitive: --vendor may be any 0x-hex casing.)
+    if (signed && opts.vendor != null && signer != null) {
+      if (String(opts.vendor).toLowerCase() !== String(signer).toLowerCase()) {
+        fs.rmSync(certAbs, { force: true });
+        throw new PilotInputError(
+          `--vendor pin mismatch: you asked to pin ${opts.vendor} as the certificate's signer, ` +
+            `but the signing key vouches as ${signer}. The kit signs with the OPERATOR key ` +
+            `(--key-env/--key-file, or the ephemeral key it minted); --vendor must EQUAL that signer. ` +
+            `Supply the key whose address is ${opts.vendor}, or drop --vendor to pin ${signer}.`
+        );
+      }
+    }
+
+    // Emit the sealed result bytes into a DEDICATED sibling directory (`<certBase>.files/`) holding ONLY
+    // the sealed file under the EXACT relPath the certificate commits to (CERTIFICATE_RESULT_NAME). A
+    // counterparty who receives the certificate + this directory re-derives the keccak root with
+    //   verify-vh --dir <certBase>.files <certificate>
+    // and (for a signed certificate) `vh evidence verify-signed --dir <certBase>.files` — because the
+    // directory contains EXACTLY the sealed file, the signed-attestation's OPTIONAL dir-binding (which
+    // re-seals the whole directory) matches too. Putting it in its OWN dir (not loose beside the cert)
+    // keeps that re-seal exact even when several certificates share one folder.
+    const filesDir = certAbs.replace(/\.vhevidence\.json$/i, "") + ".files";
+    fs.mkdirSync(filesDir, { recursive: true });
+    const siblingResult = path.join(filesDir, CERTIFICATE_RESULT_NAME);
+    fs.copyFileSync(path.join(sealDir, CERTIFICATE_RESULT_NAME), siblingResult);
+
+    return {
+      path: certAbs,
+      filesDir,
+      siblingResult,
+      resultName: CERTIFICATE_RESULT_NAME,
+      signed,
+      signer,
+      root: inner.root,
+      fileCount: inner.fileCount,
+    };
+  } finally {
+    fs.rmSync(sealDir, { recursive: true, force: true });
+    if (licenseFile) fs.rmSync(licenseFile, { force: true });
+  }
 }
 
 // ---- the pilot run -------------------------------------------------------------------------------
@@ -831,6 +1081,30 @@ async function main(argv) {
       out(`(PILOT_KEEP=1) workspace kept at: ${workspace}`);
     }
   }
+
+  // T-53.2 — OPTIONAL: seal the pilot result into a SHAREABLE, tamper-evident certificate. This runs ONLY
+  // under --certificate; with NO flag NOTHING here executes, so the run's stdout + exit code stay BYTE-FOR-
+  // BYTE the historical baseline. The seal/note print AFTER the verdict line (an extra trailing artifact),
+  // never inside the regression-pinned transcript. A seal failure is surfaced as a clean usage line by the
+  // CLI shim (the certificate is additive; it does not change the pilot's own PASS/FAIL exit code).
+  if (opts.certificate && result) {
+    const cert = await writeCertificate(result, opts.certificate, opts);
+    out("");
+    out(
+      `PILOT CERTIFICATE — a tamper-evident, independently-verifiable record of THIS run, written to:\n` +
+        `  ${cert.path}\n` +
+        `  ${cert.filesDir}/   (the sealed result bytes; ships ALONGSIDE the certificate)\n` +
+        `Verify it with the INDEPENDENT verifier (js-sha3 only, no producer stack):\n` +
+        `  node verifier/verify-vh.js --dir "${cert.filesDir}"` +
+        (cert.signed ? ` --vendor ${cert.signer}` : "") +
+        ` "${cert.path}"\n` +
+        (cert.signed
+          ? `It is a SIGNED certificate; the recovered signer is ${cert.signer} (an EPHEMERAL key — the\n` +
+            `  loop holds no real key). It proves TAMPER-EVIDENCE + WHO vouched, NOT a trusted timestamp (P-3).`
+          : `It is an UNSIGNED certificate; it proves TAMPER-EVIDENCE (the bytes), NOT who vouched or when (P-3).`)
+    );
+  }
+
   // runPilot now returns the canonical record; the exit code is driven by its derived `ok` — exit 0 iff
   // EVERY check passed, exit 1 otherwise. Byte-for-byte the historical exit-code contract.
   return result && result.ok ? 0 : 1;
@@ -863,6 +1137,9 @@ module.exports = {
   countFiles,
   tallyChecks,
   buildPilotResult,
+  writeCertificate,
+  serializeResultForCertificate,
+  CERTIFICATE_RESULT_NAME,
   PilotInputError,
   PILOT_RESULT_SCHEMA,
   PILOT_RESULT_SCHEMA_VERSION,

@@ -198,6 +198,33 @@ you expected.
 > prove a trustworthy TIMESTAMP: "sealed/vouched since a date T" still needs the human-owned signing/timestamp
 > trust-root (needs-human, P-3). It is NOT a legal opinion.
 
+### Was the signing key still good? `--revocations <f> [--as-of <ISO>]`
+
+A genuine signature proves *who* signed — but a key can be **compromised, rotated, or retired** after it
+signed. `verify-signed` lets the recipient ask the only question that then matters — **"was that key
+trustworthy AS OF the instant this exhibit was sealed?"** — by passing the vendor's signed
+[**key revocation(s)**](KEY-LIFECYCLE.md):
+
+```
+# An exhibit signed under a key the vendor later revoked-BEFORE your as-of instant downgrades to REVOKED:
+$ vh evidence verify-signed ./bundle/b.vhevidence.json --signer 0x<operator> --dir ./bundle \
+    --revocations ./operator.vhrevocation.json --as-of 2026-07-01T00:00:00.000Z
+…
+revocation check (as of 2026-07-01T00:00:00.000Z):
+  [REVOKED] the signing key (0x<operator>) was REVOKED as of 2026-06-26T00:00:00.000Z (reason: rotated) … This artifact is NOT trustworthy as of 2026-07-01T00:00:00.000Z.
+REJECTED: …                                                                                    # exit 3
+```
+
+`--revocations` is **strictly optional and non-loosening**: with NO `--revocations` the verdict + exit code
+are **byte-for-byte** what they are today. A revocation can ONLY turn an ACCEPTED into a **REVOKED**, never
+the reverse; a revocation dated AFTER your `--as-of` keeps the ACCEPTED verdict with an informational
+"later-revoked" note (the exhibit WAS signed while the key was good); and a **forged / tampered /
+third-party** revocation is **IGNORED with a warning**, never trusted to downgrade. Remember the boundary:
+a revocation is a **signed CLAIM** by the key-holder (`revokedAt` is self-asserted), **NOT** a trusted
+wall-clock timestamp without P-3, so `--as-of` is **recipient-chosen evidence, not an oracle**. The
+producer side (`vh revocation publish`) and the full key-lifecycle story:
+[`docs/KEY-LIFECYCLE.md`](KEY-LIFECYCLE.md).
+
 ## What changed between two hand-offs? `vh evidence diff`
 
 `diff` is the **recipient-side** companion to `verify`. You were handed the **v1** packet of a folder, and

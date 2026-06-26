@@ -51,6 +51,7 @@ const {
 const { cmdTrust } = require("../trustledger/cli");
 const { cmdEvidence } = require("./evidence");
 const { cmdIdentity } = require("./identity");
+const { cmdRevocation } = require("./revocation");
 
 function usage() {
   return [
@@ -104,6 +105,8 @@ function usage() {
     "  vh evidence license fulfill --plan <id> --customer <name> [--paid-through <ISO>] [--catalog <f>] (--key-env <VAR>|--key-file <p>) [--issued <ISO>] [--license-id <id>] [--out <f>]  MINT the signed *.vhevidence-license.json the paid surfaces accept: resolve <id> in the bundled DRAFT evidence plan catalog (or --catalog), copy that plan's entitlements VERBATIM, derive the window (--paid-through wins else the plan's term), sign with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop sets NO price). The minted license UNLOCKS `vh evidence seal --sign`. Exit 0 ok / 2 usage (unknown plan, bad window/date/catalog, key-source error) / 1 IO (fulfill is a PRODUCER: no exit-3 of its own; exit 3 is the downstream seal/verify GATE)",
     "  vh identity publish --address <0xaddr> --product-line <line> --claim <text> [--claim ...] --non-claim <text> [--non-claim ...] [--published-at <ISO>] (--key-env <VAR>|--key-file <p>) [--out <p>]  MINT a signed producer IDENTITY CARD binding --address to the bounded --claim set it attests + the --non-claim set it explicitly does NOT. Signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop holds NO key) and MINTS ONLY when the key's address EQUALS --address (else hard-errors BEFORE writing). Default prints the card + writes nothing; --out writes a caller-chosen path (never cwd). Exit 0 ok / 2 usage / 1 IO",
     "  vh identity verify <card> [--signer <0xaddr>] [--revocations <f> --as-of <ISO>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed identity card, confirm the signature backs it AND the recovered signer IS the card's vendorAddress, OPTIONALLY pin --signer, OPTIONALLY check the vendor key was not REVOKED as of --as-of (default now), and print the claims/non-claims + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key card, a wrong --signer, or a key revoked-before-as-of is a clean REJECTED/REVOKED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED|REVOKED / 2 usage / 1 IO",
+    "  vh revocation publish --address <0xaddr> --reason <reason> (--key-env <VAR>|--key-file <p>) [--superseded-by <0xaddr>] [--revoked-at <ISO>] [--out <p>]  MINT a signed producer KEY REVOCATION marking --address REVOKED as of --revoked-at (default now) for --reason (one of [\"compromised\",\"retired\",\"rotated\",\"superseded\"]), OPTIONALLY naming a --superseded-by successor. Signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop holds NO key) and MINTS ONLY when that key's address EQUALS --address — a key revokes ITSELF; a third party cannot revoke a key it does not control (else it hard-errors BEFORE writing). Default prints the revocation + writes nothing; --out writes a caller-chosen path (never cwd). A revocation is a SIGNED CLAIM (revokedAt is self-asserted, NOT a trusted timestamp without P-3). Exit 0 ok / 2 usage / 1 IO",
+    "  vh revocation verify <revocation> [--signer <0xaddr>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed key revocation, confirm the signature backs it AND the recovered signer IS the revocation's vendorAddress (a key revokes ITSELF), OPTIONALLY pin --signer, and print the reason/revokedAt/supersededBy + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key revocation, or a wrong --signer, is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO",
     "",
     "trust inspect options (read-only, writes NOTHING — the onboarding companion to reconcile):",
     "  --as <bank|ledger|rentroll>  REQUIRED: which logical input <file> is (a malformed value is a usage error)",
@@ -3404,6 +3407,8 @@ async function main(argv) {
       return cmdEvidence(rest);
     case "identity":
       return cmdIdentity(rest);
+    case "revocation":
+      return cmdRevocation(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -3455,6 +3460,7 @@ module.exports = {
   cmdTrust,
   cmdEvidence,
   cmdIdentity,
+  cmdRevocation,
   parseVerifyTimestampArgs,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,

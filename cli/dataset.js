@@ -52,6 +52,7 @@ const {
 const coreManifest = require("./core/manifest");
 const coreAttestation = require("./core/attestation");
 const coreTimestamp = require("./core/timestamp");
+const coreTrustAsOf = require("./core/trust-asof");
 
 // On-disk schema discriminators. A dataset manifest carries its OWN kind + version (distinct from the
 // receipt kinds in cli/receipt.js and the proof-artifact kind in cli/proof.js) so a random JSON file,
@@ -2043,12 +2044,35 @@ function runDatasetVerifyAttest(opts) {
     manifest = readManifest(manifestPath);
   }
 
-  const result = verifySignedAttestation({ container, expectedSigner, manifest });
+  let result = verifySignedAttestation({ container, expectedSigner, manifest });
+
+  // OPTIONAL recipient-side TRUST-DECISION-AS-OF (EPIC-51 / T-51.2). Runs ONLY under --revocations — with no
+  // flag `result` is byte-identical to the pre-EPIC baseline. A publisher key revoked-before-as-of downgrades
+  // an otherwise-ACCEPTED attestation to REVOKED (accepted:false => exit 3 via the caller's `accepted ? 0 :
+  // 3` mapping); a later revocation is informational; a forged one is ignored with a warning. OFFLINE /
+  // key-free on the read side. The revocations file is the ONLY new I/O.
+  let defaulted = false;
+  if (opts.revocations) {
+    const applied = coreTrustAsOf.loadAndApply({
+      result,
+      revocationsPath: opts.revocations,
+      asOf: opts.asOf,
+      nowISO: opts.nowISO || new Date().toISOString(),
+      readFile: (p) => fs.readFileSync(path.resolve(p), "utf8"),
+    });
+    result = applied.result;
+    defaulted = applied.defaulted;
+  }
 
   if (opts.json) {
     write(JSON.stringify(result) + "\n");
   } else {
     for (const line of formatVerifyAttest(result)) write(line + "\n");
+    if (result.trustAsOf) {
+      for (const line of coreTrustAsOf.renderTrustAsOf(result.trustAsOf, { indent: "  ", defaulted })) {
+        write(line + "\n");
+      }
+    }
   }
   return result;
 }

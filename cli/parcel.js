@@ -43,6 +43,7 @@ const { diffManifest } = require("./receipt");
 // Merkle/manifest math and — critically — the TRUST_NOTE can NEVER drift between products. The dependency
 // points parcel → core (never the reverse).
 const coreManifest = require("./core/manifest");
+const coreTrustAsOf = require("./core/trust-asof");
 // The GENERIC signed-attestation ENVELOPE engine (the wrap-don't-edit invariant, the supported `scheme`
 // list, signer recovery, the OFFLINE verifier). ProofParcel's attest/verify-attest are THIN adapters over
 // it — the SAME core `vh dataset attest`/`verify-attest` use — so the envelope machinery can never drift
@@ -1081,12 +1082,35 @@ function runParcelVerifyAttest(opts) {
     manifest = readParcelManifest(manifestPath);
   }
 
-  const result = verifySignedParcelAttestation({ container, expectedSigner, manifest });
+  let result = verifySignedParcelAttestation({ container, expectedSigner, manifest });
+
+  // OPTIONAL recipient-side TRUST-DECISION-AS-OF (EPIC-51 / T-51.2). Runs ONLY under --revocations — with no
+  // flag `result` is byte-identical to the pre-EPIC baseline. A sender key revoked-before-as-of downgrades an
+  // otherwise-ACCEPTED parcel attestation to REVOKED (accepted:false => exit 3 via the caller's `accepted ? 0
+  // : 3` mapping); a later revocation is informational; a forged one is ignored with a warning. OFFLINE /
+  // key-free on the read side. The revocations file is the ONLY new I/O.
+  let defaulted = false;
+  if (opts.revocations) {
+    const applied = coreTrustAsOf.loadAndApply({
+      result,
+      revocationsPath: opts.revocations,
+      asOf: opts.asOf,
+      nowISO: opts.nowISO || new Date().toISOString(),
+      readFile: (p) => fs.readFileSync(path.resolve(p), "utf8"),
+    });
+    result = applied.result;
+    defaulted = applied.defaulted;
+  }
 
   if (opts.json) {
     write(JSON.stringify(result) + "\n");
   } else {
     for (const line of formatParcelVerifyAttest(result)) write(line + "\n");
+    if (result.trustAsOf) {
+      for (const line of coreTrustAsOf.renderTrustAsOf(result.trustAsOf, { indent: "  ", defaulted })) {
+        write(line + "\n");
+      }
+    }
   }
   return result;
 }

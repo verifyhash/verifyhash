@@ -44,6 +44,7 @@
 const fs = require("fs");
 const path = require("path");
 const coreAttestation = require("./core/attestation");
+const coreTrustAsOf = require("./core/trust-asof");
 const { getAddress, isAddress } = require("ethers");
 
 // On-disk schema discriminators. The identity card carries its OWN kind + version (distinct from every
@@ -714,7 +715,14 @@ async function runIdentityPublish(opts, io = {}) {
 
 // Parse `identity verify` argv. Takes exactly one positional <card> + OPTIONAL --signer/--json.
 function parseVerifyArgs(argv) {
-  const opts = { card: undefined, signer: undefined, json: false, _positionals: [] };
+  const opts = {
+    card: undefined,
+    signer: undefined,
+    revocations: undefined,
+    asOf: undefined,
+    json: false,
+    _positionals: [],
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const need = (flag) => {
@@ -729,6 +737,12 @@ function parseVerifyArgs(argv) {
     switch (a) {
       case "--signer":
         opts.signer = need("--signer");
+        break;
+      case "--revocations":
+        opts.revocations = need("--revocations");
+        break;
+      case "--as-of":
+        opts.asOf = need("--as-of");
         break;
       case "--json":
         opts.json = true;
@@ -830,6 +844,29 @@ function renderVerify(r, card, ctx) {
  * PASS/FAIL. A forged/tampered/wrong-key card, or a wrong --signer, is a clean REJECTED — NEVER a silent
  * pass. Writes NOTHING. Exit: 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO.
  */
+// Shared up-front shape validation for the OPTIONAL recipient-side trust-decision flags (--revocations /
+// --as-of, T-51.2). Returns null when fine, else a usage-error message. A malformed --as-of is a usage error
+// (never a runtime throw mid-verify); --as-of without --revocations is a usage error. Mirrors the trust-asof
+// core's canonical-instant grammar.
+function validateAsOfFlags(opts) {
+  if (opts.asOf !== undefined && !opts.revocations) {
+    return "--as-of requires --revocations (it pins the instant the revocation decision is made AS OF)";
+  }
+  if (opts.asOf !== undefined) {
+    const re = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+    const ms = Date.parse(opts.asOf);
+    if (
+      typeof opts.asOf !== "string" ||
+      !re.test(opts.asOf) ||
+      Number.isNaN(ms) ||
+      new Date(ms).toISOString() !== opts.asOf
+    ) {
+      return `invalid --as-of: ${opts.asOf} (expected a canonical ISO-8601 UTC instant, e.g. 2026-06-01T00:00:00.000Z)`;
+    }
+  }
+  return null;
+}
+
 function runIdentityVerify(opts, io = {}) {
   const write = io.write || ((s) => process.stdout.write(s));
   const writeErr = io.writeErr || ((s) => process.stderr.write(s));
@@ -844,6 +881,16 @@ function runIdentityVerify(opts, io = {}) {
   if (opts.signer !== undefined && opts.signer !== null) {
     if (!isAddress(opts.signer)) {
       writeErr(`error: invalid --signer address: ${opts.signer} (expected a 20-byte 0x-hex address)\n`);
+      return EXIT.USAGE;
+    }
+  }
+
+  // Validate the OPTIONAL trust-decision flags (--revocations/--as-of, T-51.2) SHAPE up front so a malformed
+  // --as-of (or --as-of without --revocations) is a usage error (2), never a runtime throw mid-verify.
+  {
+    const asOfErr = validateAsOfFlags(opts);
+    if (asOfErr) {
+      writeErr(`error: ${asOfErr}\n`);
       return EXIT.USAGE;
     }
   }
@@ -871,6 +918,29 @@ function runIdentityVerify(opts, io = {}) {
   }
   const card = JSON.parse(container.attestation); // the validated embedded card (claims/nonClaims/etc.)
 
+  // OPTIONAL recipient-side TRUST-DECISION-AS-OF (EPIC-51 / T-51.2). Runs ONLY under --revocations — with no
+  // flag the result is byte-identical to the pre-EPIC baseline. A card whose vendor key was revoked-before-
+  // as-of downgrades an otherwise-ACCEPTED card to REVOKED (exit 3); a later revocation is informational; a
+  // forged one is ignored with a warning. OFFLINE / key-free on the read side. The revocations file is the
+  // ONLY new I/O. The subject is the card's RECOVERED signer (== its vendorAddress on an ACCEPTED card).
+  let defaulted = false;
+  if (opts.revocations) {
+    try {
+      const applied = coreTrustAsOf.loadAndApply({
+        result,
+        revocationsPath: opts.revocations,
+        asOf: opts.asOf,
+        nowISO: io.nowISO || new Date().toISOString(),
+        readFile: (p) => fs.readFileSync(path.resolve(p), "utf8"),
+      });
+      result = applied.result;
+      defaulted = applied.defaulted;
+    } catch (e) {
+      writeErr(`error: cannot evaluate --revocations ${opts.revocations}: ${e.message}\n`);
+      return EXIT.IO;
+    }
+  }
+
   if (opts.json) {
     write(
       JSON.stringify(
@@ -889,10 +959,14 @@ function runIdentityVerify(opts, io = {}) {
       ) + "\n"
     );
   } else {
-    write(renderVerify(result, card, { card: opts.card }));
+    let out = renderVerify(result, card, { card: opts.card });
+    if (result.trustAsOf) {
+      out += coreTrustAsOf.renderTrustAsOf(result.trustAsOf, { defaulted }).join("\n") + "\n";
+    }
+    write(out);
   }
 
-  // Exit non-zero on REJECTED so a buyer's CI can gate (0 ACCEPTED / 3 REJECTED — the family's read contract).
+  // Exit non-zero on REJECTED/REVOKED so a buyer's CI can gate (0 ACCEPTED / 3 not-OK — the family's read contract).
   return result.accepted ? EXIT.OK : EXIT.FAIL;
 }
 
@@ -904,7 +978,7 @@ function identityUsage() {
     "  vh identity publish --address <0xaddr> --product-line <line> --claim <text> [--claim ...]",
     "        --non-claim <text> [--non-claim ...] [--published-at <ISO>]",
     "        (--key-env <VAR> | --key-file <path>) [--out <p>] [--json]",
-    "  vh identity verify <card> [--signer <0xaddr>] [--json]",
+    "  vh identity verify <card> [--signer <0xaddr>] [--revocations <f> --as-of <ISO>] [--json]",
     "",
     "publish MINTS a signed card binding --address to the --claim set it attests + the --non-claim set it",
     "  explicitly does NOT. It signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file,",
@@ -914,9 +988,10 @@ function identityUsage() {
     "  Default prints the card + writes NOTHING; --out writes to a caller-chosen path (never cwd).",
     "  Exit: 0 ok / 2 usage (missing/invalid field, key-source error, key does not control --address) / 1 IO.",
     "verify is OFFLINE/key-free/network-free: it RECOVERS the signer, confirms the signature backs it AND that",
-    "  the recovered signer IS the card's vendorAddress, OPTIONALLY pins --signer, and prints the claims/",
-    "  non-claims + per-check PASS/FAIL. A forged/tampered/wrong-key card or a wrong --signer is a clean",
-    "  REJECTED — never a silent pass. Exit: 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO.",
+    "  the recovered signer IS the card's vendorAddress, OPTIONALLY pins --signer, OPTIONALLY checks the vendor",
+    "  key was not REVOKED as of --as-of (default now) via --revocations, and prints the claims/non-claims +",
+    "  per-check PASS/FAIL. A forged/tampered/wrong-key card, a wrong --signer, or a key revoked-before-as-of is",
+    "  a clean REJECTED/REVOKED — never a silent pass. Exit: 0 ACCEPTED / 3 REJECTED|REVOKED / 2 usage / 1 IO.",
     "",
     "A card proves IDENTITY + the claim SET only: NOT any specific sealed packet (each carries its own proof),",
     "NOT a trusted TIMESTAMP (P-3), and NOT a legal opinion.",

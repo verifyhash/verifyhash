@@ -99,11 +99,11 @@ function usage() {
     "  vh trust serve [--port <n>] [--host <h>]  launch the LOCAL web front-door (default http://127.0.0.1:4173/): drop the three files in a browser, watch the balances tie out; files processed in-memory, nothing persisted server-side; exposing it is a HUMAN deploy step (never auto-deployed)",
     "  vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign --key-env <VAR>|--key-file <p>]  product-agnostic tamper-evident evidence packet (*.vhevidence.json) over the file set; default prints the seal + writes nothing. FREE: unsigned baseline seal of up to 25 files + verify. PAID (require --license + --vendor): --sign (signed-attestation wrap) and sealing > 25 files. Exit 0 ok / 3 seal-build-error / 2 usage / 1 IO",
     "  vh evidence verify <p> [--dir <d>]  read-only, NO key: RE-DERIVE the root from the bytes referenced + report OK / which file CHANGED/MISSING/UNEXPECTED (the offline-recompute posture of `vh verify-seal`). On a SIGNED packet it no longer trusts the claimed signer: it REJECTS a forged signature OR labels a genuine one UNVERIFIED-for-pinning and points at `verify-signed`. Exit 0 OK / 3 REJECTED / 2 usage / 1 IO",
-    "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed evidence packet (Check 1, always), (--signer) PIN it to an expected signer, (--dir) BIND the signature to YOUR bytes; leads with the trust caveat + prints per-check PASS/FAIL. A forged/tampered/wrong-key signature is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO",
+    "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--revocations <f> --as-of <ISO>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed evidence packet (Check 1, always), (--signer) PIN it to an expected signer, (--dir) BIND the signature to YOUR bytes, (--revocations) check the signer was not REVOKED as of --as-of (default now); leads with the trust caveat + prints per-check PASS/FAIL. A forged/tampered/wrong-key signature, or a key revoked-before-as-of, is a clean REJECTED/REVOKED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED|REVOKED / 2 usage / 1 IO",
     "  vh evidence diff <packetA> <packetB>  read-only, FREE, key-free, OFFLINE change report between TWO sealed evidence packets: leads with the CLAIMS-not-content TRUST line, prints IDENTICAL/DIFFERENT + per-file ADDED/REMOVED/CHANGED + a count line. Compares what each packet CLAIMS (no tree/key/net); a rename surfaces as REMOVED+ADDED; writes nothing; needs NO license. Exit 0 IDENTICAL / 3 DIFFERENT / 2 usage / 1 IO",
     "  vh evidence license fulfill --plan <id> --customer <name> [--paid-through <ISO>] [--catalog <f>] (--key-env <VAR>|--key-file <p>) [--issued <ISO>] [--license-id <id>] [--out <f>]  MINT the signed *.vhevidence-license.json the paid surfaces accept: resolve <id> in the bundled DRAFT evidence plan catalog (or --catalog), copy that plan's entitlements VERBATIM, derive the window (--paid-through wins else the plan's term), sign with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop sets NO price). The minted license UNLOCKS `vh evidence seal --sign`. Exit 0 ok / 2 usage (unknown plan, bad window/date/catalog, key-source error) / 1 IO (fulfill is a PRODUCER: no exit-3 of its own; exit 3 is the downstream seal/verify GATE)",
     "  vh identity publish --address <0xaddr> --product-line <line> --claim <text> [--claim ...] --non-claim <text> [--non-claim ...] [--published-at <ISO>] (--key-env <VAR>|--key-file <p>) [--out <p>]  MINT a signed producer IDENTITY CARD binding --address to the bounded --claim set it attests + the --non-claim set it explicitly does NOT. Signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop holds NO key) and MINTS ONLY when the key's address EQUALS --address (else hard-errors BEFORE writing). Default prints the card + writes nothing; --out writes a caller-chosen path (never cwd). Exit 0 ok / 2 usage / 1 IO",
-    "  vh identity verify <card> [--signer <0xaddr>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed identity card, confirm the signature backs it AND the recovered signer IS the card's vendorAddress, OPTIONALLY pin --signer, and print the claims/non-claims + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key card or a wrong --signer is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO",
+    "  vh identity verify <card> [--signer <0xaddr>] [--revocations <f> --as-of <ISO>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed identity card, confirm the signature backs it AND the recovered signer IS the card's vendorAddress, OPTIONALLY pin --signer, OPTIONALLY check the vendor key was not REVOKED as of --as-of (default now), and print the claims/non-claims + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key card, a wrong --signer, or a key revoked-before-as-of is a clean REJECTED/REVOKED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED|REVOKED / 2 usage / 1 IO",
     "",
     "trust inspect options (read-only, writes NOTHING — the onboarding companion to reconcile):",
     "  --as <bank|ledger|rentroll>  REQUIRED: which logical input <file> is (a malformed value is a usage error)",
@@ -410,6 +410,11 @@ function usage() {
     "                             signed payload (a binding mismatch REJECTS).",
     "  --signer <addr>            OPTIONAL: pin the EXPECTED publisher — require the RECOVERED signer to equal",
     "                             this address (so a buyer pins WHO must have signed, not just that someone did)",
+    "  --revocations <path>       OPTIONAL: a signed key-revocation file (one container or a JSON array). If the",
+    "                             publisher's key is REVOKED as of --as-of, the verdict is REVOKED (exit 3); a",
+    "                             later-dated or forged/invalid revocation never downgrades (forged ones warn).",
+    "  --as-of <ISO>              OPTIONAL (needs --revocations): the instant the revocation decision is made AS",
+    "                             OF (default: now). 'was this key trustworthy when this exhibit was sealed?'",
     "  --json                     emit a machine verdict { verdict, recoveredSigner, expectedSigner, checks, ... }",
     "  Reads the container strictly (a malformed/edited/foreign one is rejected), recovers the signing address",
     "  from the embedded canonical bytes + signature per the declared scheme (eip191-personal-sign), and",
@@ -417,7 +422,7 @@ function usage() {
     "  --manifest it also confirms the signature binds the dataset you hold. Prints ACCEPTED only when EVERY",
     "  requested check passes, else REJECTED naming which failed. A valid signature proves the key-holder",
     "  vouched for this dataset IDENTITY — NOT a timestamp ('unaltered since date T' still needs P-3) and NOT",
-    "  that the license/source hints are correct. Exit 0 ACCEPTED, 3 REJECTED; usage error 2; corrupt input 1.",
+    "  that the license/source hints are correct. Exit 0 ACCEPTED, 3 REJECTED/REVOKED; usage error 2; corrupt input 1.",
     "",
     "dataset prove options (OFFLINE set-membership of ONE file; NO key, NO network):",
     "  --file <path>              REQUIRED: the single file to prove was a member of the dataset",
@@ -493,10 +498,15 @@ function usage() {
     "  --manifest <path>          OPTIONAL: bind the signature to YOUR parcel — recompute the canonical UNSIGNED",
     "                             bytes from this manifest and require them byte-identical to the signed payload",
     "  --signer <addr>            OPTIONAL: pin the expected SENDER (recovered signer must equal this address)",
+    "  --revocations <path>       OPTIONAL: a signed key-revocation file (one container or a JSON array). If the",
+    "                             sender's key is REVOKED as of --as-of, the verdict is REVOKED (exit 3); a",
+    "                             later-dated or forged/invalid revocation never downgrades (forged ones warn).",
+    "  --as-of <ISO>              OPTIONAL (needs --revocations): the instant the revocation decision is made AS",
+    "                             OF (default: now).",
     "  --json                     emit the machine-readable verdict (recovered signer + per-check booleans)",
     "  Recovers the signer over the SAME core as `vh dataset verify-attest`; the parcel signed-container kind",
     "  (verifyhash.parcel-attestation-signed) means a DATASET signed-container does NOT cross-verify. A valid",
-    "  signature is NOT a delivery timestamp (STRATEGY.md P-3). Exit 0 ACCEPTED, 3 REJECTED; usage 2; runtime 1.",
+    "  signature is NOT a delivery timestamp (STRATEGY.md P-3). Exit 0 ACCEPTED, 3 REJECTED/REVOKED; usage 2; runtime 1.",
     "",
   ].join("\n");
 }
@@ -1990,15 +2000,46 @@ function parseSignArgs(argv) {
   return opts;
 }
 
+// Shared up-front shape validation for the OPTIONAL recipient-side trust-decision flags (--revocations /
+// --as-of, EPIC-51 / T-51.2) on the dataset + parcel verify-attest commands. Returns null when fine, else a
+// usage-error message (so the caller emits exit 2). A malformed --as-of is a usage error here (never a
+// runtime throw mid-verify); --as-of without --revocations is a usage error (the flag would silently do
+// nothing). The canonical-instant check mirrors the trust-asof core's grammar.
+function validateVerifyAsOfFlags(opts) {
+  if (opts.asOf !== undefined && !opts.revocations) {
+    return "--as-of requires --revocations (it pins the instant the revocation decision is made AS OF)";
+  }
+  if (opts.asOf !== undefined) {
+    const re = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+    const ms = Date.parse(opts.asOf);
+    if (
+      typeof opts.asOf !== "string" ||
+      !re.test(opts.asOf) ||
+      Number.isNaN(ms) ||
+      new Date(ms).toISOString() !== opts.asOf
+    ) {
+      return `invalid --as-of: ${opts.asOf} (expected a canonical ISO-8601 UTC instant, e.g. 2026-06-01T00:00:00.000Z)`;
+    }
+  }
+  return null;
+}
+
 /**
- * Parse `dataset verify-attest` argv into { signed, manifest, signer, json }. Takes EXACTLY one positional
- * <signed> container path, an optional --manifest <m>, an optional --signer <addr>, and an optional --json.
- * Throws on a missing/extra positional or an unknown/incomplete flag, so a typo never silently verifies the
- * wrong (or no) container, binds a surprise manifest, or pins a surprise signer (parser parity with the
- * other dataset subcommands).
+ * Parse `dataset verify-attest` argv into { signed, manifest, signer, revocations, asOf, json }. Takes
+ * EXACTLY one positional <signed> container path, an optional --manifest <m>, an optional --signer <addr>, an
+ * optional --revocations <f> / --as-of <ISO>, and an optional --json. Throws on a missing/extra positional or
+ * an unknown/incomplete flag, so a typo never silently verifies the wrong (or no) container, binds a surprise
+ * manifest, or pins a surprise signer (parser parity with the other dataset subcommands).
  */
 function parseDatasetVerifyAttestArgs(argv) {
-  const opts = { signed: undefined, manifest: undefined, signer: undefined, json: false };
+  const opts = {
+    signed: undefined,
+    manifest: undefined,
+    signer: undefined,
+    revocations: undefined,
+    asOf: undefined,
+    json: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
@@ -2012,6 +2053,14 @@ function parseDatasetVerifyAttestArgs(argv) {
       case "--signer":
         opts.signer = argv[++i];
         if (opts.signer === undefined) throw new Error("--signer requires a value");
+        break;
+      case "--revocations":
+        opts.revocations = argv[++i];
+        if (opts.revocations === undefined) throw new Error("--revocations requires a value");
+        break;
+      case "--as-of":
+        opts.asOf = argv[++i];
+        if (opts.asOf === undefined) throw new Error("--as-of requires a value");
         break;
       default:
         if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
@@ -2269,7 +2318,14 @@ function parseParcelAttestArgs(argv) {
  * verify-attest`).
  */
 function parseParcelVerifyAttestArgs(argv) {
-  const opts = { signed: undefined, manifest: undefined, signer: undefined, json: false };
+  const opts = {
+    signed: undefined,
+    manifest: undefined,
+    signer: undefined,
+    revocations: undefined,
+    asOf: undefined,
+    json: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
@@ -2283,6 +2339,14 @@ function parseParcelVerifyAttestArgs(argv) {
       case "--signer":
         opts.signer = argv[++i];
         if (opts.signer === undefined) throw new Error("--signer requires a value");
+        break;
+      case "--revocations":
+        opts.revocations = argv[++i];
+        if (opts.revocations === undefined) throw new Error("--revocations requires a value");
+        break;
+      case "--as-of":
+        opts.asOf = argv[++i];
+        if (opts.asOf === undefined) throw new Error("--as-of requires a value");
         break;
       default:
         if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
@@ -2712,6 +2776,16 @@ function cmdDatasetVerifyAttest(argv) {
       return 2;
     }
   }
+  // Validate the --as-of SHAPE up front (when given) so a malformed decision instant is a usage error (2),
+  // never a runtime throw mid-verify. --as-of only matters under --revocations; pinning it without
+  // --revocations is a usage error (the flag would silently do nothing otherwise).
+  {
+    const asOfErr = validateVerifyAsOfFlags(opts);
+    if (asOfErr) {
+      process.stderr.write(`error: ${asOfErr}\n\n` + usage());
+      return 2;
+    }
+  }
 
   let result;
   try {
@@ -2719,6 +2793,8 @@ function cmdDatasetVerifyAttest(argv) {
       signed: opts.signed,
       manifest: opts.manifest,
       signer: opts.signer,
+      revocations: opts.revocations,
+      asOf: opts.asOf,
       json: opts.json,
     });
   } catch (e) {
@@ -3158,6 +3234,15 @@ function cmdParcelVerifyAttest(argv) {
       return 2;
     }
   }
+  // Validate the --as-of SHAPE up front (when given) so a malformed decision instant is a usage error (2),
+  // never a runtime throw mid-verify. --as-of only matters under --revocations.
+  {
+    const asOfErr = validateVerifyAsOfFlags(opts);
+    if (asOfErr) {
+      process.stderr.write(`error: ${asOfErr}\n\n` + usage());
+      return 2;
+    }
+  }
 
   let result;
   try {
@@ -3165,6 +3250,8 @@ function cmdParcelVerifyAttest(argv) {
       signed: opts.signed,
       manifest: opts.manifest,
       signer: opts.signer,
+      revocations: opts.revocations,
+      asOf: opts.asOf,
       json: opts.json,
     });
   } catch (e) {

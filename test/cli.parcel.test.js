@@ -24,6 +24,7 @@ const os = require("os");
 const path = require("path");
 
 const { hashDir } = require("../cli/hash");
+const coreRevocation = require("../cli/core/revocation");
 const {
   PARCEL_MANIFEST_KIND,
   PARCEL_TRUST_NOTE,
@@ -799,6 +800,100 @@ describe("cli/parcel.js — ProofParcel attest + verify-attest (T-18.3)", functi
     it("unknown parcel subcommand still hard-errors (exit 2) now that attest/verify-attest exist", async function () {
       const code = await capture(() => main(["parcel", "frobnicate"])).then((c) => c.ret);
       expect(code).to.equal(2);
+    });
+
+    // EPIC-51 / T-51.2 — the OPTIONAL recipient-side trust-decision flags (--revocations / --as-of). A
+    // sender KEY revoked-before-as-of downgrades an otherwise-ACCEPTED parcel attestation to REVOKED; with
+    // NO flag the verdict + exit code are byte-identical to the pre-EPIC baseline.
+    async function writeRevocation(wallet, { revokedAt, reason = "compromised", supersededBy } = {}) {
+      const params = { vendorAddress: wallet.address, reason, revokedAt };
+      if (supersededBy !== undefined) params.supersededBy = supersededBy;
+      const container = await coreRevocation.buildRevocation(params, wallet);
+      const p = path.join(tmp2("pva-asof-rev-"), "revocation.json");
+      fs.writeFileSync(p, coreRevocation.serializeSignedRevocation(container));
+      return p;
+    }
+
+    it("T-51.2: a sender key REVOKED-before-as-of verifies REVOKED (exit 3, names reason + revokedAt)", async function () {
+      const fx = await signFixture(THREE, "pva-asof-revoked");
+      const rev = await writeRevocation(fx.wallet, { revokedAt: "2026-01-01T00:00:00.000Z", reason: "rotated" });
+      let out = "";
+      const r = runParcelVerifyAttest({
+        signed: fx.signedPath,
+        revocations: rev,
+        asOf: "2026-06-01T00:00:00.000Z",
+        stdout: (s) => (out += s),
+      });
+      expect(r.accepted).to.equal(false);
+      expect(r.verdict).to.equal("REVOKED");
+      expect(r.trustAsOf.status).to.equal("REVOKED");
+      expect(out).to.include("rotated");
+      expect(out).to.include("2026-01-01T00:00:00.000Z");
+    });
+
+    it("T-51.2: a later-dated revocation leaves the parcel ACCEPTED (a later-revoked note, exit-0 mapping)", async function () {
+      const fx = await signFixture(THREE, "pva-asof-later");
+      const rev = await writeRevocation(fx.wallet, { revokedAt: "2026-12-01T00:00:00.000Z" });
+      let out = "";
+      const r = runParcelVerifyAttest({
+        signed: fx.signedPath,
+        revocations: rev,
+        asOf: "2026-06-01T00:00:00.000Z",
+        stdout: (s) => (out += s),
+      });
+      expect(r.accepted).to.equal(true);
+      expect(r.trustAsOf.status).to.equal("OK");
+      expect(out).to.match(/\[note\]/);
+    });
+
+    it("T-51.2: a FORGED revocation is IGNORED with a warning, never downgrades (accepted stays true)", async function () {
+      const fx = await signFixture(THREE, "pva-asof-forged");
+      const attacker = Wallet.createRandom();
+      const real = await coreRevocation.buildRevocation(
+        { vendorAddress: attacker.address, reason: "compromised", revokedAt: "2026-01-01T00:00:00.000Z" },
+        attacker
+      );
+      const tampered = JSON.parse(real.attestation);
+      tampered.vendorAddress = fx.wallet.address.toLowerCase();
+      const forged = { ...real, attestation: JSON.stringify(tampered) + "\n" };
+      const rev = path.join(tmp2("pva-asof-forged-"), "forged.json");
+      fs.writeFileSync(rev, JSON.stringify(forged) + "\n");
+      let out = "";
+      const r = runParcelVerifyAttest({
+        signed: fx.signedPath,
+        revocations: rev,
+        asOf: "2026-06-01T00:00:00.000Z",
+        stdout: (s) => (out += s),
+      });
+      expect(r.accepted).to.equal(true);
+      expect(r.trustAsOf.status).to.equal("OK");
+      expect(out).to.match(/\[warning\]/);
+    });
+
+    it("T-51.2: with NO --revocations flag the verdict + exit code are byte-identical to the baseline", async function () {
+      const fx = await signFixture(THREE, "pva-asof-noflag");
+      let a = "";
+      const ra = runParcelVerifyAttest({ signed: fx.signedPath, stdout: (s) => (a += s) });
+      let b = "";
+      const rb = runParcelVerifyAttest({ signed: fx.signedPath, stdout: (s) => (b += s) });
+      expect(ra.accepted).to.equal(true);
+      expect(a).to.equal(b);
+      expect(a).to.not.match(/revocation check/);
+      expect(rb).to.not.have.property("trustAsOf");
+    });
+
+    it("T-51.2: --as-of without --revocations is a usage error (2); a malformed --as-of is a usage error (2)", async function () {
+      const fx = await signFixture(THREE, "pva-asof-usage");
+      const c1 = await capture(() =>
+        main(["parcel", "verify-attest", fx.signedPath, "--as-of", "2026-06-01T00:00:00.000Z"])
+      ).then((c) => c.ret);
+      expect(c1).to.equal(2);
+      const rev = path.join(tmp2("pva-asof-usage-rev-"), "rev.json");
+      fs.writeFileSync(rev, "[]");
+      const c2 = await capture(() =>
+        main(["parcel", "verify-attest", fx.signedPath, "--revocations", rev, "--as-of", "bad"])
+      ).then((c) => c.ret);
+      expect(c2).to.equal(2);
     });
   });
 });

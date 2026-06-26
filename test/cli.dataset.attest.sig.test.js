@@ -629,6 +629,32 @@ describe("cli: vh dataset verify-attest (T-17.2) — OFFLINE signed-attestation 
       const code = cmdDatasetVerifyAttest([p]);
       expect(code).to.equal(1);
     });
+
+    // EPIC-51 / T-51.2: the OPTIONAL --revocations / --as-of flags. With NEITHER flag, behavior is
+    // byte-identical to the pre-EPIC baseline (regression pin); malformed flag uses are usage errors (2).
+    it("T-51.2: with NO --revocations flag the verdict + exit code are byte-identical to the baseline", async function () {
+      const fx = await signFixture({ "a.txt": "AAA", "b.txt": "BBB" }, "va-asof-noflag");
+      let a = "";
+      const ra = runDatasetVerifyAttest({ signed: fx.signedPath, stdout: (s) => (a += s) });
+      let b = "";
+      const rb = runDatasetVerifyAttest({ signed: fx.signedPath, stdout: (s) => (b += s) });
+      expect(ra.accepted).to.equal(true);
+      expect(a).to.equal(b);
+      expect(a).to.not.match(/revocation check/); // no new block leaks into the no-flag output
+      expect(rb).to.not.have.property("trustAsOf"); // no new field on the no-flag result
+    });
+    it("T-51.2: --as-of without --revocations is a usage error (exit 2)", async function () {
+      const fx = await signFixture({ "a.txt": "AAA" }, "va-asof-noremvoc");
+      const code = cmdDatasetVerifyAttest([fx.signedPath, "--as-of", "2026-06-01T00:00:00.000Z"]);
+      expect(code).to.equal(2);
+    });
+    it("T-51.2: a malformed --as-of is a usage error (exit 2, caught before any work)", async function () {
+      const fx = await signFixture({ "a.txt": "AAA" }, "va-asof-bad");
+      const rev = path.join(tmp("va-asof-bad-rev-"), "rev.json");
+      fs.writeFileSync(rev, "[]");
+      const code = cmdDatasetVerifyAttest([fx.signedPath, "--revocations", rev, "--as-of", "not-a-date"]);
+      expect(code).to.equal(2);
+    });
   });
 
   describe("parser parity: unknown/incomplete flags hard-error (a typo never silently passes)", function () {
@@ -651,10 +677,14 @@ describe("cli: vh dataset verify-attest (T-17.2) — OFFLINE signed-attestation 
       );
     });
     it("a well-formed argv parses cleanly", function () {
+      // The OPTIONAL recipient-side trust-decision flags (--revocations/--as-of, T-51.2) default to
+      // undefined; with neither flag present the parsed shape is otherwise unchanged.
       expect(parseDatasetVerifyAttestArgs(["s.json", "--manifest", "m.json", "--signer", "0xabc", "--json"])).to.deep.equal({
         signed: "s.json",
         manifest: "m.json",
         signer: "0xabc",
+        revocations: undefined,
+        asOf: undefined,
         json: true,
       });
     });

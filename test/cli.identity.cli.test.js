@@ -37,6 +37,7 @@ const { Wallet, getAddress } = require("ethers");
 
 const ID = require("../cli/identity");
 const vh = require("../cli/vh");
+const coreRevocation = require("../cli/core/revocation");
 
 function capture() {
   const out = [];
@@ -539,5 +540,100 @@ describe("cli/identity T-49.2: `vh identity publish` + `vh identity verify`", fu
       process.stderr.write = origWrite;
     }
     expect(code).to.equal(2);
+  });
+
+  // ===================================================================================================
+  // EPIC-51 / T-51.2 — the OPTIONAL recipient-side trust-decision flags (--revocations / --as-of) on
+  // `vh identity verify`. A card whose vendor KEY was revoked-before-as-of verifies REVOKED; with NO flag
+  // the verdict + exit code are byte-identical to the pre-EPIC baseline.
+  // ===================================================================================================
+
+  // Mint + write a genuine signed revocation for `wallet` (its own key — self-control holds) under a temp dir.
+  async function writeRevocation(wallet, { revokedAt, reason = "compromised", supersededBy } = {}) {
+    const params = { vendorAddress: wallet.address, reason, revokedAt };
+    if (supersededBy !== undefined) params.supersededBy = supersededBy;
+    const container = await coreRevocation.buildRevocation(params, wallet);
+    const p = path.join(mkTmp(), "revocation.json");
+    fs.writeFileSync(p, coreRevocation.serializeSignedRevocation(container));
+    return p;
+  }
+
+  it("T-51.2: a card whose vendor key was REVOKED-before-as-of verifies REVOKED (exit 3, names reason + revokedAt)", async function () {
+    const w = ephemeralKey();
+    const { cardPath } = await publishCardToFile(w);
+    const rev = await writeRevocation(w, { revokedAt: "2026-01-01T00:00:00.000Z", reason: "compromised" });
+    const io = capture();
+    const code = await ID.cmdIdentity(
+      ["verify", cardPath, "--revocations", rev, "--as-of", "2026-06-01T00:00:00.000Z"],
+      io
+    );
+    expect(code).to.equal(ID.EXIT.FAIL);
+    expect(io.out()).to.match(/REVOKED/);
+    expect(io.out()).to.include("compromised");
+    expect(io.out()).to.include("2026-01-01T00:00:00.000Z");
+  });
+
+  it("T-51.2: a later-dated revocation leaves the card ACCEPTED (exit 0) with a later-revoked note", async function () {
+    const w = ephemeralKey();
+    const { cardPath } = await publishCardToFile(w);
+    const rev = await writeRevocation(w, { revokedAt: "2026-12-01T00:00:00.000Z" });
+    const io = capture();
+    const code = await ID.cmdIdentity(
+      ["verify", cardPath, "--revocations", rev, "--as-of", "2026-06-01T00:00:00.000Z"],
+      io
+    );
+    expect(code).to.equal(ID.EXIT.OK);
+    expect(io.out()).to.match(/\[note\]/);
+  });
+
+  it("T-51.2: a FORGED revocation is IGNORED with a warning, never downgrades (exit 0)", async function () {
+    const w = ephemeralKey();
+    const { cardPath } = await publishCardToFile(w);
+    // A revocation signed by an attacker but claiming the victim's vendorAddress — fails self-control.
+    const attacker = Wallet.createRandom();
+    const real = await coreRevocation.buildRevocation(
+      { vendorAddress: attacker.address, reason: "compromised", revokedAt: "2026-01-01T00:00:00.000Z" },
+      attacker
+    );
+    const tampered = JSON.parse(real.attestation);
+    tampered.vendorAddress = w.address.toLowerCase();
+    const forged = { ...real, attestation: JSON.stringify(tampered) + "\n" };
+    const rev = path.join(mkTmp(), "forged.json");
+    fs.writeFileSync(rev, JSON.stringify(forged) + "\n");
+    const io = capture();
+    const code = await ID.cmdIdentity(
+      ["verify", cardPath, "--revocations", rev, "--as-of", "2026-06-01T00:00:00.000Z"],
+      io
+    );
+    expect(code).to.equal(ID.EXIT.OK);
+    expect(io.out()).to.match(/\[warning\]/);
+  });
+
+  it("T-51.2: with NO --revocations flag the verdict + exit code are byte-identical to the baseline", async function () {
+    const w = ephemeralKey();
+    const { cardPath } = await publishCardToFile(w);
+    const a = capture();
+    const ca = await ID.cmdIdentity(["verify", cardPath], { ...a, nowISO: NOW_ISO });
+    const b = capture();
+    const cb = await ID.cmdIdentity(["verify", cardPath], { ...b, nowISO: NOW_ISO });
+    expect(ca).to.equal(ID.EXIT.OK);
+    expect(cb).to.equal(ID.EXIT.OK);
+    expect(a.out()).to.equal(b.out());
+    expect(a.out()).to.not.match(/revocation check/);
+  });
+
+  it("T-51.2: --as-of without --revocations is a usage error (2); a malformed --as-of is a usage error (2)", async function () {
+    const w = ephemeralKey();
+    const { cardPath } = await publishCardToFile(w);
+    const io1 = capture();
+    expect(
+      await ID.cmdIdentity(["verify", cardPath, "--as-of", "2026-06-01T00:00:00.000Z"], io1)
+    ).to.equal(ID.EXIT.USAGE);
+    const rev = path.join(mkTmp(), "rev.json");
+    fs.writeFileSync(rev, "[]");
+    const io2 = capture();
+    expect(
+      await ID.cmdIdentity(["verify", cardPath, "--revocations", rev, "--as-of", "bad-date"], io2)
+    ).to.equal(ID.EXIT.USAGE);
   });
 });

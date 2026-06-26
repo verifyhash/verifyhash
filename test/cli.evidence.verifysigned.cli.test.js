@@ -416,4 +416,41 @@ describe("cli/evidence T-47.2: `vh evidence verify-signed` + close the silent cl
       expect(io.err()).to.contain("verify-signed");
     });
   });
+
+  // EPIC-51 / T-51.2: the OPTIONAL --revocations / --as-of flags. With NO --revocations the output + exit
+  // code are byte-identical to the pre-EPIC baseline; malformed flag uses are usage errors (2).
+  it("T-51.2: with NO --revocations flag the verdict + exit code are byte-identical to the baseline", async function () {
+    const { root, dir } = mkDir();
+    const fx = await writeSignedPacket(root, dir);
+    const a = capture();
+    const ca = await evidence.cmdEvidence(["verify-signed", fx.packetPath], a);
+    const b = capture();
+    const cb = await evidence.cmdEvidence(["verify-signed", fx.packetPath], b);
+    expect(ca).to.equal(evidence.EXIT.OK);
+    expect(cb).to.equal(evidence.EXIT.OK);
+    expect(a.out()).to.equal(b.out());
+    expect(a.out()).to.not.match(/revocation check/); // no new block leaks into the no-flag output
+  });
+  it("T-51.2: --as-of without --revocations is a usage error (exit 2)", async function () {
+    const { root, dir } = mkDir();
+    const fx = await writeSignedPacket(root, dir);
+    const io = capture();
+    const code = await evidence.cmdEvidence(
+      ["verify-signed", fx.packetPath, "--as-of", "2026-06-01T00:00:00.000Z"],
+      io
+    );
+    expect(code).to.equal(evidence.EXIT.USAGE);
+  });
+  it("T-51.2: a malformed --as-of is a usage error (exit 2)", async function () {
+    const { root, dir } = mkDir();
+    const fx = await writeSignedPacket(root, dir);
+    const rev = path.join(root, "rev.json");
+    fs.writeFileSync(rev, "[]");
+    const io = capture();
+    const code = await evidence.cmdEvidence(
+      ["verify-signed", fx.packetPath, "--revocations", rev, "--as-of", "nope"],
+      io
+    );
+    expect(code).to.equal(evidence.EXIT.USAGE);
+  });
 });

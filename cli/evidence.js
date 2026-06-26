@@ -35,6 +35,7 @@ const path = require("path");
 const packetseal = require("./core/packetseal");
 const coreLicense = require("./core/license");
 const coreAttestation = require("./core/attestation");
+const coreTrustAsOf = require("./core/trust-asof");
 const { listFiles, hashBytes } = require("./hash");
 // REUSE the SAME path-bound file-level diff core the dataset/verify family uses — `diffManifest` — so a
 // rename surfaces as REMOVED+ADDED and a content edit as CHANGED (old→new), with NO new diff logic here.
@@ -1019,7 +1020,15 @@ function runEvidenceVerify(opts, io = {}) {
 // ---------------------------------------------------------------------------
 
 function parseVerifySignedArgs(argv) {
-  const opts = { signed: undefined, dir: undefined, signer: undefined, json: false, _positionals: [] };
+  const opts = {
+    signed: undefined,
+    dir: undefined,
+    signer: undefined,
+    revocations: undefined,
+    asOf: undefined,
+    json: false,
+    _positionals: [],
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const need = (flag) => {
@@ -1037,6 +1046,12 @@ function parseVerifySignedArgs(argv) {
         break;
       case "--signer":
         opts.signer = need("--signer");
+        break;
+      case "--revocations":
+        opts.revocations = need("--revocations");
+        break;
+      case "--as-of":
+        opts.asOf = need("--as-of");
         break;
       case "--json":
         opts.json = true;
@@ -1120,6 +1135,29 @@ function renderVerifySigned(r, ctx) {
   return L.join("\n");
 }
 
+// Shared up-front shape validation for the OPTIONAL recipient-side trust-decision flags (--revocations /
+// --as-of, T-51.2). Returns null when fine, else a usage-error message. A malformed --as-of is a usage error
+// (never a runtime throw mid-verify); --as-of without --revocations is a usage error (it would silently do
+// nothing). Mirrors the trust-asof core's canonical-instant grammar.
+function validateAsOfFlags(opts) {
+  if (opts.asOf !== undefined && !opts.revocations) {
+    return "--as-of requires --revocations (it pins the instant the revocation decision is made AS OF)";
+  }
+  if (opts.asOf !== undefined) {
+    const re = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+    const ms = Date.parse(opts.asOf);
+    if (
+      typeof opts.asOf !== "string" ||
+      !re.test(opts.asOf) ||
+      Number.isNaN(ms) ||
+      new Date(ms).toISOString() !== opts.asOf
+    ) {
+      return `invalid --as-of: ${opts.asOf} (expected a canonical ISO-8601 UTC instant, e.g. 2026-06-01T00:00:00.000Z)`;
+    }
+  }
+  return null;
+}
+
 function runEvidenceVerifySigned(opts, io = {}) {
   const write = io.write || ((s) => process.stdout.write(s));
   const writeErr = io.writeErr || ((s) => process.stderr.write(s));
@@ -1142,6 +1180,16 @@ function runEvidenceVerifySigned(opts, io = {}) {
       writeErr(
         `error: invalid --signer address: ${opts.signer} (expected a 20-byte 0x-hex address)\n`
       );
+      return EXIT.USAGE;
+    }
+  }
+
+  // Validate the OPTIONAL trust-decision flags (--revocations/--as-of, T-51.2) SHAPE up front so a malformed
+  // --as-of (or --as-of without --revocations) is a usage error (2), never a runtime throw mid-verify.
+  {
+    const asOfErr = validateAsOfFlags(opts);
+    if (asOfErr) {
+      writeErr(`error: ${asOfErr}\n`);
       return EXIT.USAGE;
     }
   }
@@ -1186,6 +1234,28 @@ function runEvidenceVerifySigned(opts, io = {}) {
     return EXIT.IO;
   }
 
+  // OPTIONAL recipient-side TRUST-DECISION-AS-OF (EPIC-51 / T-51.2). Runs ONLY under --revocations — with no
+  // flag the result is byte-identical to the pre-EPIC baseline. A key revoked-before-as-of downgrades an
+  // otherwise-ACCEPTED packet to REVOKED (exit 3); a later-dated revocation is informational; a forged one is
+  // ignored with a warning. OFFLINE / key-free on the read side. The revocations file is the ONLY new I/O.
+  let defaulted = false;
+  if (opts.revocations) {
+    try {
+      const applied = coreTrustAsOf.loadAndApply({
+        result,
+        revocationsPath: opts.revocations,
+        asOf: opts.asOf,
+        nowISO: io.nowISO || new Date().toISOString(),
+        readFile: (p) => fs.readFileSync(path.resolve(p), "utf8"),
+      });
+      result = applied.result;
+      defaulted = applied.defaulted;
+    } catch (e) {
+      writeErr(`error: cannot evaluate --revocations ${opts.revocations}: ${e.message}\n`);
+      return EXIT.IO;
+    }
+  }
+
   if (opts.json) {
     write(
       JSON.stringify(
@@ -1200,10 +1270,14 @@ function runEvidenceVerifySigned(opts, io = {}) {
       ) + "\n"
     );
   } else {
-    write(renderVerifySigned(result, { signed: opts.signed }));
+    let out = renderVerifySigned(result, { signed: opts.signed });
+    if (result.trustAsOf) {
+      out += coreTrustAsOf.renderTrustAsOf(result.trustAsOf, { defaulted }).join("\n") + "\n";
+    }
+    write(out);
   }
 
-  // Exit non-zero on REJECTED so a buyer's CI can gate (mirrors the family's 0 ACCEPTED / 3 REJECTED).
+  // Exit non-zero on REJECTED/REVOKED so a buyer's CI can gate (mirrors the family's 0 ACCEPTED / 3 not-OK).
   return result.accepted ? EXIT.OK : EXIT.FAIL;
 }
 
@@ -1697,15 +1771,17 @@ function evidenceUsage() {
     "Usage:",
     "  vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign] [--json]",
     "  vh evidence verify <p> [--dir <d>] [--json]",
-    "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--json]",
+    "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--revocations <f> --as-of <ISO>] [--json]",
     "  vh evidence diff <packetA> <packetB> [--json]",
     "  vh evidence license fulfill --plan <id> --customer <name> [--paid-through <ISO>] [--catalog <f>] (--key-env <VAR>|--key-file <p>) [--issued <ISO>] [--license-id <id>] [--out <f>] [--json]",
     "",
     "The seal proves TAMPER-EVIDENCE + OFFLINE-RECOMPUTE, NOT a trusted timestamp (\"sealed at T\" rides P-3).",
     "FREE: an unsigned baseline seal of up to " + SAMPLE_LIMIT + " files + verify + verify-signed + diff (try before buying).",
     "PAID (require --license + --vendor): --sign (signed-attestation wrap) and sealing > " + SAMPLE_LIMIT + " files.",
-    "verify-signed is OFFLINE/key-free/network-free: it RECOVERS the signer + (--signer) pins it + (--dir) binds the bytes.",
-    "  A forged/tampered/wrong-key signature is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO.",
+    "verify-signed is OFFLINE/key-free/network-free: it RECOVERS the signer + (--signer) pins it + (--dir) binds the bytes",
+    "  + (--revocations) checks the signer was not REVOKED as of --as-of (default now).",
+    "  A forged/tampered/wrong-key signature, or a key revoked-before-as-of, is a clean REJECTED/REVOKED — never a silent pass.",
+    "  Exit 0 ACCEPTED / 3 REJECTED|REVOKED / 2 usage / 1 IO.",
     "verify on a SIGNED packet no longer trusts the claimed signer: it REJECTS a forged signature OR labels a genuine one",
     "  UNVERIFIED-for-pinning and points at `verify-signed`.",
     "diff is read-only/FREE/key-free/OFFLINE: it compares what TWO packets CLAIM and writes nothing.",

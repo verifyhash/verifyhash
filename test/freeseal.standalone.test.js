@@ -437,19 +437,22 @@ describe("free sealer standalone: single-file, zero-install seal-your-own-folder
     });
 
     it("the verify bundle + in-tree verifier are UNCHANGED by this task (require graphs intact)", function () {
-      // Verify bundle: still requires only fs/path at the Node level.
+      // Verify bundle: still requires only Node core at the Node level.
       const vsrc = fs.readFileSync(VERIFY_PATH, "utf8");
       const vspecs = [...vsrc.matchAll(/(^|[^A-Za-z0-9_$])require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[2]);
-      // fs/path plus Node-core `crypto` (the embedded `--self-attest` self-hash) — all Node core, no install.
-      for (const s of vspecs) expect(["fs", "path", "crypto", "node:fs", "node:path", "node:crypto"]).to.include(s);
+      // fs/path plus Node-core `crypto` (the embedded `--self-attest` self-hash) and `os` (the T-55.2 `demo`
+      // quickstart's `os.tmpdir()`) — all Node core, no install.
+      for (const s of vspecs)
+        expect(["fs", "path", "crypto", "os", "node:fs", "node:path", "node:crypto", "node:os"]).to.include(s);
 
-      // In-tree verifier: require graph is exactly its own ./lib/* siblings + Node core (fs/path) — never
+      // In-tree verifier: require graph is exactly its own ./lib/* siblings + Node core (fs/path/os) — never
       // ethers/hardhat or a cli/ back-edge. The SEAL bundle (this task) never touches it; T-51.4 added the
-      // stack-free ./lib/revocation reader to the verifier graph (still pure-JS, still no producer stack).
+      // stack-free ./lib/revocation reader to the verifier graph, T-55.2 added `os` for the demo (both still
+      // pure-JS, still no producer stack).
       const isrc = fs.readFileSync(INTREE_VERIFIER_PATH, "utf8");
       const ispecs = [...isrc.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
-      expect(ispecs.sort()).to.deep.equal(
-        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "path"].sort()
+      expect([...new Set(ispecs)].sort()).to.deep.equal(
+        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "os", "path"].sort()
       );
     });
   });

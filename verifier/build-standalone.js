@@ -184,7 +184,18 @@ const SEAL_MODULES = [
 // genuinely uses. Anything else (a bare third-party name, an unlisted relative path) is a build error: the
 // bundle must never silently carry an external dependency. `crypto` is Node core too (used by the embedded
 // `--self-attest` boot code that hashes the bundle's own bytes) — all install-free.
-const ALLOWED_CORE = new Set(["fs", "path", "crypto", "node:fs", "node:path", "node:crypto"]);
+// `os` is Node core too (the T-55.2 `demo` quickstart uses `os.tmpdir()` for its throwaway working dir) —
+// all install-free.
+const ALLOWED_CORE = new Set([
+  "fs",
+  "path",
+  "crypto",
+  "os",
+  "node:fs",
+  "node:path",
+  "node:crypto",
+  "node:os",
+]);
 
 // Collect every require("…") specifier in a source string.
 function requireSpecifiers(src) {

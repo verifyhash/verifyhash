@@ -45,6 +45,56 @@ requires **P-3** — see §4). The convenience is in the *install*, never in the
 
 ---
 
+## 0z. The 5-second proof — one command, no flags, no key (`demo`)
+
+**Never run this tool before? Start here.** Before you have a packet, an address, or any idea what a "seal"
+is, run the **zero-config demo** — it takes a brand-new user from *nothing* to a *verified packet* in one
+command, with **no flags, no `--vendor` to paste, and no key knowledge**:
+
+```bash
+node verify-vh-standalone.js demo      # (or, from the split tree: node verify-vh.js demo)
+#    or, with nothing checked out at all:  npx --yes <package> demo
+```
+
+It ships a tiny, **genuinely-signed** evidence packet baked into the file, plays it through the **exact same
+verify path** every real check uses, and prints the honest verdict:
+
+```
+STEP 1 — verify the genuine packet (signer recovered from the bytes, then pinned):
+  ACCEPT — the artifact verifies. signer: 0x70997970c51812dc3a010c7d01b50e0d17dc79c8
+  ...
+STEP 2 — tamper ONE byte of a referenced file, then re-verify the SAME packet:
+  REJECT (CHANGED) — the tampered copy is caught:
+    CHANGED  model-card.md: sealed 0x1aeca0… != on-disk 0xb71fba…
+```
+
+A genuine packet is **ACCEPTED and its signer named**; a one-byte change is **REJECTED**. The demo's signature
+is a real EIP-191 signature by a **fixed, well-known TEST-ONLY key** (hardhat account #1 — never a real key,
+never real funds); the address above is genuinely *recovered* from the bytes by the same pure-JS secp256k1
+routine a real verify uses, not echoed. The demo writes only a throwaway temp dir it deletes, opens **no
+network**, and exits `0`. It proves exactly what §4 says — **tamper-evidence + signer-pin**, NOT a trusted
+"sealed at T" — and nothing more.
+
+**Want to poke at it with your own hands?** The bare `demo` runs in a throwaway dir and is gone when it exits —
+you can *watch* it but not *touch* it. Add a directory name and it **writes the same genuinely-signed packet
+into a folder you keep**, then prints the exact copy-paste commands to verify, tamper, and restore it yourself:
+
+```bash
+node verify-vh-standalone.js demo ./vh-demo     # writes ./vh-demo/{demo-packet.vhevidence.json, model-card.md, weights.txt}
+# It then prints, ready to paste:
+node verify-vh-standalone.js ./vh-demo/demo-packet.vhevidence.json --vendor 0x7099...79C8   # exit 0 = ACCEPT
+printf 'X' >> ./vh-demo/model-card.md                                                        # tamper one byte
+node verify-vh-standalone.js ./vh-demo/demo-packet.vhevidence.json --vendor 0x7099...79C8   # exit 3 = REJECT (CHANGED)
+```
+
+That is the working on-ramp from *watched a demo* to *verified my own bytes on disk* — the packet it writes is
+the same real artifact a producer would hand you (`mechanically tested in ../test/verifier.demo.test.js`), not a
+toy. Once it clicks, point the tool at a **real** packet you were handed
+(`node verify-vh.js <packet> --vendor 0xPRODUCER_ADDRESS`); and when you want a counterparty to be able to pin
+**you**, that is the paid producer side — **sign your own files** with `vh evidence seal --sign` (see §0a).
+
+---
+
 ## 0b. "Who verifies the verifier?" — reproduce the bundle from source yourself (zero-trust bootstrap)
 
 The published checksum in §0 proves the file survived transport — but it comes **from the same place as

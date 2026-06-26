@@ -316,10 +316,14 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
       const specs = [...src.matchAll(/(^|[^A-Za-z0-9_$])require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[2]);
       expect(specs.length, "the bundle does call require() for Node core").to.be.greaterThan(0);
       // `crypto` is Node CORE (no node_modules, no install) — the embedded `--self-attest` boot code hashes
-      // the file's own bytes, so it is allowed alongside fs/path. The zero-dependency guarantee (runs from an
-      // empty dir, no `npm install`) is fully preserved; the proof is the empty-dir child-process run below.
+      // the file's own bytes, so it is allowed alongside fs/path. `os` is Node CORE too — the T-55.2 `demo`
+      // quickstart uses `os.tmpdir()` for its throwaway working dir. The zero-dependency guarantee (runs from
+      // an empty dir, no `npm install`) is fully preserved; the proof is the empty-dir child-process run below.
       for (const s of specs) {
-        expect(["fs", "path", "crypto", "node:fs", "node:path", "node:crypto"], `forbidden require(${JSON.stringify(s)})`).to.include(s);
+        expect(
+          ["fs", "path", "crypto", "os", "node:fs", "node:path", "node:crypto", "node:os"],
+          `forbidden require(${JSON.stringify(s)})`
+        ).to.include(s);
       }
       // Belt-and-suspenders explicit checks the task spells out.
       expect(src, "no require('js-sha3')").to.not.match(/require\(\s*["']js-sha3/);
@@ -624,8 +628,9 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
       // stack-free ./lib/revocation reader to the graph (still pure-JS, still no producer stack).
       const src = fs.readFileSync(INTREE_PATH, "utf8");
       const specs = [...src.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
-      expect(specs.sort()).to.deep.equal(
-        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "path"].sort()
+      // De-dupe: `os` (T-55.2 demo `os.tmpdir()`) is a second Node-core sibling alongside fs/path.
+      expect([...new Set(specs)].sort()).to.deep.equal(
+        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "os", "path"].sort()
       );
     });
   });

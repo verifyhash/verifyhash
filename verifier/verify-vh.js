@@ -29,6 +29,7 @@
 //   `vh verify-seal` / `vh evidence verify`: 0 ok / 3 rejected / 2 usage / 1 IO.
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const merkle = require("./lib/merkle");
@@ -988,14 +989,280 @@ function renderBatchHuman(agg) {
   return L.join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// `demo` — the ZERO-CONFIG, zero-flag, zero-key-knowledge quickstart (T-55.2).
+//
+// WHY THIS EXISTS
+//   A cold prospect should be able to go from NOTHING to a VERIFIED packet in one command — `verify-vh demo`
+//   (or `npx … demo`) — with NO flags, NO `--vendor` to paste, and NO key knowledge. The whole sales promise
+//   ("don't trust us — verify it yourself, offline") is unfalsifiable until they have RUN the tool once and
+//   watched it ACCEPT a genuine packet, name the signer, then REJECT a one-byte-tampered copy. `demo` IS that
+//   first run: it ships a tiny, self-contained, GENUINELY-SIGNED evidence packet baked into this file, plays
+//   it through the EXACT same `verifyArtifact` core every real verify uses, and prints the honest verdict.
+//
+// HOW IT STAYS HONEST (no special-case verify path)
+//   The fixture below is a REAL `vh.evidence-seal-signed` container: a keccak Merkle seal over two referenced
+//   files, signed with a FIXED, well-known TEST-ONLY key (NEVER a real key, NEVER real funds — its address is
+//   the standard hardhat account #1, published precisely so no one mistakes it for a production signer). The
+//   signature was produced once with the family's real EIP-191 personal-sign path; the demo RECOVERS it with
+//   the SAME vendored secp256k1 recovery a real verify uses, so the signer address printed is genuinely
+//   recovered from the bytes — not echoed. `demo` materializes the packet + its two files into a throwaway
+//   temp dir, runs the real `verifyArtifact` twice (genuine -> ACCEPT pinned to the recovered signer; a
+//   one-byte-tampered copy -> REJECT/CHANGED), then deletes the temp dir. It writes NOTHING under cwd.
+// ---------------------------------------------------------------------------
+
+// The fixed TEST-ONLY signer (hardhat account #1). Published so it can NEVER be confused with a real key.
+const DEMO_SIGNER = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+
+// The two referenced files the demo seal commits to, by relPath -> exact UTF-8 content.
+const DEMO_FILES = Object.freeze({
+  "model-card.md": "# Demo model card\nThis file is sealed by the verify-vh demo.\n",
+  "weights.txt": "0.10 0.20 0.30\n",
+});
+
+// The GENUINELY-SIGNED evidence container. `attestation` is the EXACT bytes the signature is over (the same
+// plain serialization the producer's evidence path emits for the embedded seal); the signature is a real
+// 65-byte EIP-191 personal-sign over those bytes by DEMO_SIGNER. Re-derived from DEMO_FILES (a build-time
+// check would re-seal the same bytes), so the root binds the real file content above.
+const DEMO_CONTAINER = Object.freeze({
+  kind: "vh.evidence-seal-signed",
+  attestation:
+    '{"kind":"vh.evidence-seal","files":[{"relPath":"model-card.md","contentHash":"0x1aeca0ad922f53e9c30186234c5d1a62ffda62a828988bdd266fa93240675db0","leaf":"0xbbb3052a7359188aed3f114e15b721cf5d707a8bdf09109d1d51ec5765b3c58c"},{"relPath":"weights.txt","contentHash":"0x7716d380e062d1daf7ca58897b55f6b58900ed4fd1eda79445956c5c3d336cdf","leaf":"0x34ce488c6fb49a32d356a2553196dc817a439c13a03ce9a2a2ff2710fcf9eea2"}],"root":"0x621a5eb924a9887f88d4b05ccdf19834cdae2f4ed2399921acc7b8a45d48da9b"}',
+  signature: {
+    scheme: "eip191-personal-sign",
+    signer: DEMO_SIGNER,
+    signature:
+      "0x1aabba1530df192e87498bbf1a26f63a7e30d84d72c14bf5d08b2d872df9810b672efcf26f30ec6a38a00ffc158be53633daeff9e99f344b6c1a2e99522d61a01b",
+  },
+});
+
+// The packet filename the demo materializes (shared by the throwaway-temp round-trip and the `demo <dir>`
+// keepable scaffold) so the "NEXT" command the demo prints names the file it actually wrote.
+const DEMO_PACKET_NAME = "demo-packet.vhevidence.json";
+
+// Materialize the demo packet + its referenced files into `dir`. Returns the packet path.
+function writeDemoFixture(dir) {
+  for (const [rel, content] of Object.entries(DEMO_FILES)) {
+    fs.writeFileSync(path.join(dir, rel), content);
+  }
+  const packetPath = path.join(dir, DEMO_PACKET_NAME);
+  fs.writeFileSync(packetPath, JSON.stringify(DEMO_CONTAINER, null, 2));
+  return packetPath;
+}
+
+// Run the zero-config demo: seal -> ACCEPT (pinned to the recovered signer) -> tamper -> REJECT. Uses the
+// REAL verifyArtifact core for BOTH runs (no bespoke verify path), so the verdicts are exactly what a real
+// counterparty would see. Returns the EXIT-contract code (0 only when the whole demo behaved as designed).
+function runDemo(write, writeErr) {
+  // A throwaway temp dir so the demo needs no input and writes NOTHING under cwd. Cleaned in finally.
+  let tmp;
+  try {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "verify-vh-demo-"));
+  } catch (e) {
+    writeErr(`error: demo could not create a temp working dir: ${e.message}\n`);
+    return EXIT.IO;
+  }
+  try {
+    const packetPath = writeDemoFixture(tmp);
+
+    const L = [];
+    L.push(TRUST_NOTE);
+    L.push("");
+    L.push("# verify-vh demo — a self-contained, GENUINELY-SIGNED packet, verified OFFLINE with zero config.");
+    L.push("# (No flags, no key to paste: the demo ships a real signed seal + its files and checks them for you.)");
+    L.push(`# Working dir (throwaway, deleted on exit): ${tmp}`);
+    L.push("");
+
+    // (1) GENUINE packet: recover the signer first, then PIN it (so the demo proves both recovery AND the
+    //     vendor-pin path) — exactly what a real counterparty does once they learn the producer's address.
+    const recovered = tryRecover(DEMO_CONTAINER.attestation, DEMO_CONTAINER.signature.signature);
+    if (recovered !== DEMO_SIGNER) {
+      writeErr(
+        `error: demo fixture is corrupt — embedded signature recovered ${String(recovered)} != ${DEMO_SIGNER}\n`
+      );
+      return EXIT.IO;
+    }
+    L.push("STEP 1 — verify the genuine packet (signer recovered from the bytes, then pinned):");
+    const good = verifyArtifact({ artifact: packetPath, vendor: recovered, dir: tmp });
+    if (!good.result.accepted || good.code !== EXIT.OK) {
+      // Should never happen for the shipped fixture; treat as an internal fault, not a silent pass.
+      writeErr(`error: demo genuine packet did NOT verify (reason: ${good.result.reason})\n`);
+      write(renderHuman(good.result));
+      return EXIT.IO;
+    }
+    L.push(`  ACCEPT — the artifact verifies. signer: ${good.result.recoveredSigner}`);
+    L.push(`  sealed root:     ${good.result.sealedRoot}`);
+    L.push(`  recomputed root: ${good.result.recomputedRoot}  (re-derived from the bytes on disk)`);
+    L.push(`  files: ${good.result.counts.matched} matched, 0 changed, 0 missing.`);
+    L.push("");
+
+    // (2) TAMPER one byte of a referenced file, re-verify the SAME packet -> a clean REJECT naming the file.
+    const victim = path.join(tmp, "model-card.md");
+    fs.writeFileSync(victim, DEMO_FILES["model-card.md"] + "X"); // one extra byte
+    L.push("STEP 2 — tamper ONE byte of a referenced file, then re-verify the SAME packet:");
+    const bad = verifyArtifact({ artifact: packetPath, vendor: recovered, dir: tmp });
+    if (bad.result.accepted || bad.code !== EXIT.REJECTED) {
+      writeErr(`error: demo tampered packet was NOT rejected (reason: ${bad.result.reason})\n`);
+      return EXIT.IO;
+    }
+    L.push(`  REJECT (${bad.result.reason}) — the tampered copy is caught:`);
+    for (const c of bad.result.changed) {
+      L.push(`    CHANGED  ${c.relPath}: sealed ${c.expectedContentHash} != on-disk ${c.actualContentHash}`);
+    }
+    L.push("");
+
+    L.push("That is the whole promise: a genuine packet is ACCEPTED and its signer named, while a one-byte");
+    L.push("change is REJECTED — re-derived from the bytes you hold, offline, with no producer stack.");
+    L.push("");
+    // The bare demo is a closed loop in a temp dir — gone the instant it exits. Hand the user the ONE command
+    // that turns "I watched a demo" into "I have a real packet on disk I can poke at": `demo <dir>` writes the
+    // same genuine packet somewhere they KEEP, with copy-paste verify/tamper/restore commands. That is the
+    // working on-ramp from the canned proof to verifying their OWN bytes (where the paid `--sign` pull begins).
+    // NOTE: we name the command literally (NOT process.argv[1]) so the bare-demo output is byte-identical
+    // whether run in-process, as `node verify-vh.js`, or from the standalone bundle — the demo's own
+    // determinism is a tested invariant (the standalone must byte-match the in-tree demo).
+    L.push("TRY IT YOURSELF: keep a copy you can tamper with by hand —");
+    L.push("  node verify-vh.js demo ./vh-demo     # writes the same signed packet + files into ./vh-demo,");
+    L.push("                                       # then prints the exact verify / tamper / restore commands.");
+    L.push("");
+    L.push("NEXT: run it on a REAL packet you were handed:");
+    L.push("  node verify-vh.js <packet> --vendor 0xPRODUCER_ADDRESS   (exit 0 = verifies; 3 = REJECTED)");
+    L.push("");
+    write(L.join("\n"));
+    return EXIT.OK;
+  } catch (e) {
+    writeErr(`error: demo failed unexpectedly: ${e.message}\n`);
+    return EXIT.IO;
+  } finally {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    } catch (_) {
+      /* best-effort cleanup; the OS reaps temp dirs anyway */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// `demo <dir>` — the KEEPABLE scaffold (T-55.2 rework). The bare `demo` proves the round-trip in a throwaway
+// temp dir and is GONE the instant it exits — a closed loop the prospect can WATCH but cannot TOUCH. That is
+// the funnel dead-end the review panel flagged: the demo's own "NEXT: run it on a REAL packet" is unactionable
+// because a brand-new user HAS no packet yet. `demo <dir>` closes that gap: it MATERIALIZES the same genuine
+// signed packet + its two referenced files into a directory the user names and KEEPS, then prints the exact,
+// copy-pasteable REAL commands to (a) verify it with the real (non-canned) verify path, (b) tamper one byte
+// and watch the real REJECT, and (c) restore and re-ACCEPT. The prospect's FIRST hands-on artifact is now one
+// they hold on disk and can poke at with the production code path — the working on-ramp from "watched a demo"
+// to "verified my own bytes", which is where the free→paid pull (sign YOUR OWN files: `vh evidence seal
+// --sign` / the `evidence_unlimited` upgrade) actually begins.
+//
+// It is a PURE SUPERSET of the flagless quickstart: it engages ONLY when a single <dir> token follows `demo`
+// (`verify-vh demo` with no token stays the byte-identical throwaway round-trip above). It WRITES — by design,
+// into the dir the user explicitly named — so it is never reached by the bare flagless path the "writes
+// nothing under cwd" contract pins. The packet it writes is byte-identical to the round-trip's, signed by the
+// same fixed TEST-ONLY key (hardhat #1 — never a real key / real funds).
+// ---------------------------------------------------------------------------
+
+function runDemoEmit(targetDir, write, writeErr) {
+  // Confirm the shipped fixture is internally sound BEFORE writing anything (recover the signer from the
+  // embedded bytes, exactly as a real verify does) — a corrupt fixture is an internal fault, not a scaffold.
+  const recovered = tryRecover(DEMO_CONTAINER.attestation, DEMO_CONTAINER.signature.signature);
+  if (recovered !== DEMO_SIGNER) {
+    writeErr(
+      `error: demo fixture is corrupt — embedded signature recovered ${String(recovered)} != ${DEMO_SIGNER}\n`
+    );
+    return EXIT.IO;
+  }
+
+  const dir = path.resolve(targetDir);
+  // mkdir -p the target. We create the user-named dir if absent; an existing dir is fine (we only add files).
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    writeErr(`error: demo could not create ${targetDir}: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  let packetPath;
+  try {
+    packetPath = writeDemoFixture(dir);
+  } catch (e) {
+    writeErr(`error: demo could not write the scaffold into ${targetDir}: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  // Verify the just-written packet through the REAL core (no canned path), so the scaffold is proven good on
+  // disk before we tell the user to trust it — and so the ACCEPT line the user will reproduce is the truth.
+  const good = verifyArtifact({ artifact: packetPath, vendor: recovered, dir });
+  if (!good.result.accepted || good.code !== EXIT.OK) {
+    writeErr(`error: demo scaffold did NOT verify after writing (reason: ${good.result.reason})\n`);
+    return EXIT.IO;
+  }
+
+  // The command name as the user invoked us (verify-vh.js in-tree, verify-vh-standalone.js as the bundle), so
+  // the copy-paste commands below name the EXACT file they ran — not a guessed path.
+  // Name the command the user actually ran (verify-vh.js in-tree, verify-vh-standalone.js as the bundle) so the
+  // copy-paste lines below name the EXACT file they invoked. If argv[1] is not one of our scripts (e.g. running
+  // in-process under a test harness), fall back to the canonical name rather than printing the harness binary.
+  const argv1 = path.basename(process.argv[1] || "");
+  const self = /verify-vh/.test(argv1) ? argv1 : "verify-vh.js";
+  // Print a path that is copy-pasteable from the user's CURRENT shell: the relative path when the target sits
+  // at/under cwd (the common `demo ./vh-demo` case -> a tidy `vh-demo/...`), else the absolute path (a `../../`
+  // chain to a far-off dir is unreadable and brittle — the absolute path always resolves).
+  const rel = (p) => {
+    const r = path.relative(process.cwd(), p);
+    return r && !r.startsWith("..") && !path.isAbsolute(r) ? r : p;
+  };
+  const pkt = rel(packetPath);
+  const card = rel(path.join(dir, "model-card.md"));
+
+  const L = [];
+  L.push(TRUST_NOTE);
+  L.push("");
+  L.push(`# verify-vh demo — wrote a real, KEEPABLE signed packet you can verify yourself, hands-on.`);
+  L.push(`# Signed by a fixed TEST-ONLY key (hardhat #1 — never a real key / real funds).`);
+  L.push("");
+  L.push(`Wrote into ${dir}:`);
+  L.push(`  ${DEMO_PACKET_NAME}   (a genuinely-signed evidence packet)`);
+  for (const r of Object.keys(DEMO_FILES)) L.push(`  ${r}`);
+  L.push(`  signer (recovered from the bytes): ${recovered}`);
+  L.push("");
+  L.push("It already VERIFIES — run it yourself (the real verify path, no canned demo):");
+  L.push(`  node ${self} ${pkt} --vendor ${recovered}`);
+  L.push("  # exit 0 = ACCEPT (root re-derived from YOUR bytes on disk; signer pinned).");
+  L.push("");
+  L.push("Now PROVE tamper-evidence with your own hands — change one byte, then re-verify:");
+  L.push(`  printf 'X' >> ${card}`);
+  L.push(`  node ${self} ${pkt} --vendor ${recovered}   # exit 3 = REJECT (CHANGED ${path.basename(card)})`);
+  L.push("");
+  L.push("Restore it and watch it ACCEPT again (the change was the ONLY reason it rejected):");
+  L.push(`  node ${self} ${pkt} --vendor ${recovered}   # after restoring the byte`);
+  L.push("");
+  L.push("NEXT — verify a packet someone handed YOU (same command, their address):");
+  L.push(`  node ${self} <their-packet> --vendor 0xTHEIR_ADDRESS`);
+  L.push("");
+  L.push("Want to SIGN your OWN files so a counterparty can pin YOU? That is the paid producer side:");
+  L.push("  vh evidence seal <your-folder> --sign        (an EIP-191 signer-pin; the `evidence_unlimited`");
+  L.push("                                                upgrade lifts the free 25-file cap) — see verifier/README.md §0a.");
+  L.push("");
+  write(L.join("\n"));
+  return EXIT.OK;
+}
+
 function usage() {
   return [
     "verify-vh — standalone, read-only, OFFLINE verifier for verifyhash artifacts",
     "",
     "Usage:",
+    "  verify-vh demo                                                                                   (zero-config quickstart)",
+    "  verify-vh demo <dir>                                                                              (write a keepable signed packet you can verify yourself)",
     "  verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir> [--as-of <ISO>]] [--json]",
     "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir>] [--json]   (batch)",
     "  verify-vh --manifest <file> [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir>] [--json]           (batch)",
+    "",
+    "DEMO: `verify-vh demo` runs a self-contained, genuinely-signed packet through the real verify path —",
+    "NO flags, NO key, NO install state: it ACCEPTs the packet (naming the signer), then REJECTs a one-byte-",
+    "tampered copy. The single command that takes a brand-new user from nothing to a verified packet.",
+    "`verify-vh demo <dir>` goes one step further: it WRITES that same genuine signed packet + its files into",
+    "<dir> (which you keep) and prints copy-paste commands so you verify, tamper, and re-verify it by hand.",
     "",
     "Auto-detects the artifact kind (evidence seal, reconciliation seal, dataset attestation, proof",
     "bundle — bare or signed), RE-DERIVES the keccak root from the referenced bytes (siblings resolve",
@@ -1039,6 +1306,34 @@ function run(argv, io = {}) {
   if (opts.help) {
     write(usage());
     return EXIT.OK;
+  }
+  // DEMO: the zero-config quickstart (T-55.2). `verify-vh demo` — a SINGLE bare positional `demo`, with NO
+  // other args at all (no flags, no second positional, no manifest) — runs the self-contained signed packet
+  // through the real verify path. We require the LONE argument to be exactly `demo` so the quickstart contract
+  // is unambiguous: `demo` with any extra token falls through to the normal path (where it is a clean error),
+  // never a silently-flag-ignoring run. It is a pure SUPERSET of the existing contract: `demo` was never a
+  // valid artifact path before (there is no file named `demo`, so a lone `demo` was a clean IO error), so
+  // intercepting it here shifts no existing caller.
+  if (argv.length === 1 && opts.artifact === "demo") {
+    return runDemo(write, writeErr);
+  }
+  // DEMO SCAFFOLD: `verify-vh demo <dir>` — a pure SUPERSET (T-55.2 rework). When `demo` is followed by exactly
+  // ONE more bare token (a target directory) and NO flags, write the same genuine signed packet + its files
+  // into that dir the user KEEPS, and print copy-paste verify/tamper/restore commands. This is the actionable
+  // on-ramp the bare demo (a throwaway temp dir, gone on exit) cannot give. We require EXACTLY two bare
+  // positionals and no flags so the contract stays unambiguous; `demo <dir> --anything` falls through to the
+  // normal path (where a file literally named `demo` is a clean IO error, byte-identically to before).
+  if (
+    argv.length === 2 &&
+    argv[0] === "demo" &&
+    opts._pos.length === 2 &&
+    opts._pos[0] === "demo" &&
+    !opts.json &&
+    opts.manifest === undefined &&
+    opts.vendor === undefined &&
+    opts.dir === undefined
+  ) {
+    return runDemoEmit(opts._pos[1], write, writeErr);
   }
   // No artifact AND no manifest → the same usage error as before (the batch additions are a pure superset).
   if (opts.artifact === undefined && opts.manifest === undefined) {
@@ -1128,4 +1423,10 @@ module.exports = {
   revocation,
   usage,
   run,
+  runDemo,
+  runDemoEmit,
+  DEMO_SIGNER,
+  DEMO_FILES,
+  DEMO_CONTAINER,
+  DEMO_PACKET_NAME,
 };

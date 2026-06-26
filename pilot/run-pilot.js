@@ -1098,6 +1098,9 @@ async function main(argv) {
         `  node verifier/verify-vh.js --dir "${cert.filesDir}"` +
         (cert.signed ? ` --vendor ${cert.signer}` : "") +
         ` "${cert.path}"\n` +
+        `Then READ the verdict out of the bytes you just verified (it is INSIDE the certified surface):\n` +
+        `  node -e 'const r=require("${path.join(cert.filesDir, cert.resultName)}");` +
+        `console.log(r.verdict+" — "+r.passed+"/"+r.total+" checks; evidenceSource="+r.evidenceSource)'\n` +
         (cert.signed
           ? `It is a SIGNED certificate; the recovered signer is ${cert.signer} (an EPHEMERAL key — the\n` +
             `  loop holds no real key). It proves TAMPER-EVIDENCE + WHO vouched, NOT a trusted timestamp (P-3).`

@@ -183,6 +183,69 @@ checks it themselves, without trusting us**.
 - **What it is NOT.** Not a token, not tradeable, not an appreciating asset. Income is a subscription
   / licence for delivered software value — the credential is just the key to the door.
 
+### 3d. The pilot result certificate — your SHAREABLE deliverable (`--certificate`)
+
+When you run the pilot on your own folder (§2), the terminal `VERDICT: PASS` is the proof *on your
+machine*. To turn "the demo passed on my machine" into a **forwardable, tamper-evident record** your
+security and procurement teams can check for themselves, add one flag and the kit seals the run into a
+portable `*.vhevidence.json` **certificate**:
+
+```bash
+node pilot/run-pilot.js --evidence-dir /path/to/your/folder --certificate ./pilot-result.vhevidence.json
+```
+
+This writes two things alongside each other — the certificate `pilot-result.vhevidence.json` and its
+companion `pilot-result.files/` directory (the sealed result bytes). **Forward both together.** Anyone
+you hand them to verifies the certificate **independently**, with **no clone, no `npm install`, no
+account, no key**, using the zero-install single-file verifier
+[`../verifier/dist/verify-vh-standalone.js`](../verifier/dist/verify-vh-standalone.js):
+
+```bash
+# they save verify-vh-standalone.js, then run it on the bytes you forwarded:
+node verify-vh-standalone.js --dir ./pilot-result.files ./pilot-result.vhevidence.json   # exit 0 = ACCEPT, 3 = REJECT
+```
+
+Exit **0** = the certificate's keccak root re-derives from the bytes on disk — the result record is
+exactly what the pilot produced; exit **3** = REJECTED, localized to the byte that changed. The kit
+prints the precise verify command (and, for a signed certificate, the operator address to pin with
+`--vendor`) after the verdict line. That is what turns a one-off demo into a record your team can carry
+into a procurement review and confirm without trusting you — or us.
+
+**Then READ the verdict out of the bytes you just verified — the certificate is a self-contained
+procurement record, not just a checksum.** The whole point of a forwardable certificate is that the
+reviewer who confirmed exit `0` does **not** then have to take a sales claim about *what the run checked*
+on faith: the **machine-readable result record** — `verdict`, the `passed`/`total` counts, and the full
+**labelled checklist** of every gate the pilot exercised — lives **inside** `pilot-result.files/pilot-result.json`,
+which is the **exact byte stream the keccak root commits to**. So once verify-vh ACCEPTs, the contents of
+that file are *part of what was proven unaltered*. Read the headline with one Node-only line (no extra
+install, no `jq` needed):
+
+```bash
+# the same file the certificate's root commits to — its contents are part of what you just verified:
+node -e 'const r=require("./pilot-result.files/pilot-result.json"); console.log(r.verdict+" — "+r.passed+"/"+r.total+" checks; evidenceSource="+r.evidenceSource)'
+# → PASS — 24/24 checks; evidenceSource=partner
+
+# and read the FULL labelled checklist of what was actually exercised (open it, or list the labels):
+node -e 'require("./pilot-result.files/pilot-result.json").checks.forEach(c=>console.log((c.ok?"[PASS] ":"[FAIL] ")+c.label))'
+```
+
+`evidenceSource` reads `partner` when the pilot ran on the partner's **own** folder (§2) and `canned` on
+the committed sample — so a procurement reviewer can see at a glance whether the forwarded certificate was
+produced on real data or the demo set, **from the verified bytes themselves**. (`jq -r '.verdict' pilot-result.files/pilot-result.json`
+works identically if your reviewer prefers it.) This is the leverage of the certificate over a bare
+PASS/FAIL screenshot: the verdict, the counts, and the precise list of checks are a tamper-evident,
+forwardable **artifact** a security/procurement team reads and re-confirms on its own — the screenshot is
+not.
+
+**The HONEST boundary (read this before you forward it).** The certificate proves WHAT the pilot run
+checked and that the result bytes are unaltered — it is tamper-evidence over the run record, NOT a
+trusted "the pilot ran at time T" without P-3, and NOT a legal/compliance verdict. The pilot signs
+with **ephemeral throwaway keys only**, so any date inside the record is self-asserted input, not an
+independent attestation of *when* — a trusted "ran at time T" still requires the human-owned trust-root
+of **P-3** (§5). And it is tamper-evidence over a run record, not an opinion: it makes no legal or
+compliance claim (for TrustLedger a PASS does not imply legal compliance — that meaning stays
+CPA/counsel-reviewed under **P-5**, §5).
+
 ---
 
 ## 4. Wire it into your pipeline (this is how the pilot lives in your release process)

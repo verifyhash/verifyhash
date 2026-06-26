@@ -282,6 +282,105 @@ describe("T-32.3 docs: buyer-facing pilot runbook (docs/PILOT.md + pilot/README.
     });
   });
 
+  // -------------------------------------------------------------------------------------------------
+  // T-53.3 — the pilot RESULT CERTIFICATE is the pilot's SHAREABLE deliverable. The docs must keep three
+  // load-bearing, partner-facing claims in sync with the shipped `--certificate` flag (T-53.2):
+  //   (1) docs/PILOT.md names `--certificate`, describes the verify-with-your-team flow through the
+  //       zero-install verify-vh-standalone.js, and states the honest boundary VERBATIM;
+  //   (2) pilot/README.md carries the operator note (the flag + the forwardable-record purpose);
+  //   (3) STRATEGY.md P-8 step 3c→4 gains a one-line POINTER (no change to the ask, no new needs-human).
+  // -------------------------------------------------------------------------------------------------
+  describe("T-53.3 — the pilot result certificate is documented as the shareable deliverable", function () {
+    it("the kit actually exposes the --certificate flag + writer the docs describe (tripwire)", function () {
+      expect(pilot.writeCertificate, "writeCertificate").to.be.a("function");
+      expect(pilot.parseArgs(["--certificate", "/x/c.vhevidence.json"]).certificate)
+        .to.equal("/x/c.vhevidence.json");
+    });
+
+    it("docs/PILOT.md names --certificate and the *.vhevidence.json deliverable", function () {
+      expect(pilotDoc).to.include("--certificate");
+      expect(pilotDoc).to.include(".vhevidence.json");
+      // The one-command own-folder + certificate invocation the partner copies.
+      expect(pilotDoc).to.match(/run-pilot\.js[\s\S]{0,120}--certificate/);
+    });
+
+    it("docs/PILOT.md describes the verify-WITH-YOUR-TEAM flow via the zero-install standalone verifier", function () {
+      // Independently verifiable by the prospect's security/procurement team, no install.
+      expect(pilotDocLower).to.match(/security|procurement/);
+      expect(pilotDoc).to.include("verify-vh-standalone.js");
+      // Zero-install: no clone, no npm install, no key.
+      expect(pilotDocLower).to.match(/no clone/);
+      expect(pilotDocLower).to.match(/no .*npm install|npm install.*no/);
+      // The accept/reject contract on the forwarded bytes.
+      expect(pilotDocLower).to.match(/exit\s*\*{0,2}0\*{0,2}/);
+      expect(pilotDocLower).to.match(/exit\s*\*{0,2}3\*{0,2}/);
+      // Turning "the demo passed on my machine" into a forwardable record.
+      expect(pilotDocLower).to.match(/forward/);
+    });
+
+    it("docs/PILOT.md teaches READING the verdict/checklist out of the VERIFIED certificate bytes (the leverage over a screenshot)", function () {
+      // The high-leverage claim a procurement reviewer relies on: the verdict + counts + labelled
+      // checklist live INSIDE the byte stream the keccak root commits to, so after verify-vh ACCEPTs they
+      // are part of what was proven unaltered — a self-contained record, not a checksum the reviewer must
+      // pair with a separate sales claim about "what the run checked".
+      expect(pilotDoc).to.include("pilot-result.files/pilot-result.json");
+      // It names the machine-readable fields the reviewer reads out (the record schema, not prose).
+      expect(pilotDoc).to.match(/\bverdict\b/);
+      expect(pilotDoc).to.match(/passed\b[\s\S]{0,40}\btotal\b|\btotal\b[\s\S]{0,40}passed\b/);
+      expect(pilotDoc).to.include("evidenceSource");
+      // It states WHY this is trustworthy: the read file is inside the certified/verified surface.
+      expect(pilotDocLower).to.match(/inside (the )?(certified|verified)|part of what (you|was) (just )?(verified|proven)/);
+      // A concrete, install-free recipe (Node one-liner; jq is offered only as an alternative).
+      expect(pilotDoc).to.match(/node -e/);
+    });
+
+    it("the kit PRINTS the read-the-verdict hint after the verify command (the docs claim stays honest)", function () {
+      // Drive the SAME write path the operator runs and assert the printed certificate note teaches the
+      // next step — so the docs ('the kit prints the precise verify command') do not over-promise.
+      const certBlock = String(read("pilot/run-pilot.js"));
+      expect(certBlock).to.match(/READ the verdict out of the bytes you just verified/);
+      // The printed recipe surfaces the verdict + counts + evidenceSource the docs describe.
+      expect(certBlock).to.include("r.verdict");
+      expect(certBlock).to.include("evidenceSource");
+    });
+
+    it("docs/PILOT.md states the honest certificate boundary VERBATIM", function () {
+      // The exact task-mandated boundary sentence (tolerant of soft-wrap whitespace and of the leading
+      // article's sentence-capitalisation only — every load-bearing clause is matched word-for-word).
+      const verbatim =
+        "certificate proves WHAT the pilot run checked and that the result bytes are unaltered " +
+        "— it is tamper-evidence over the run record, NOT a trusted \"the pilot ran at time T\" without P-3, " +
+        "and NOT a legal/compliance verdict.";
+      const norm = (s) => s.replace(/\s+/g, " ");
+      expect(norm(pilotDoc)).to.include(norm(verbatim));
+    });
+
+    it("pilot/README.md carries the operator note (the --certificate flag + forwardable-record purpose)", function () {
+      expect(pilotReadme).to.include("--certificate");
+      expect(pilotReadmeLower).to.match(/forward/);
+      expect(pilotReadme).to.include("verify-vh-standalone.js");
+      // Points at the buyer-facing section.
+      expect(pilotReadme).to.match(/docs\/PILOT\.md/);
+    });
+
+    it("STRATEGY.md P-8 step 3c→4 gains a one-line POINTER with NO new needs-human item", function () {
+      const p8 = strategy.indexOf("P-8 (2026");
+      expect(p8, "P-8 proposal present").to.be.greaterThan(-1);
+      const block = strategy.slice(p8, p8 + 12000);
+      const blockLower = block.toLowerCase();
+      // The pointer names the certificate as the forwardable end of the pilot.
+      expect(block).to.include("--certificate");
+      expect(blockLower).to.match(/forwardable/);
+      expect(block).to.include("verify-vh-standalone.js");
+      // It is a POINTER, explicitly no new gate, and re-states the honest boundary.
+      expect(blockLower).to.match(/no new gate/);
+      expect(blockLower).to.match(/tamper-evidence over the run record/);
+      expect(blockLower).to.match(/not a trusted "ran at time t"|without p-3/);
+      // Tripwire: T-53.3 must NOT introduce a new consolidated needs-human ask (P-9).
+      expect(strategy).to.not.match(/P-9 \(/);
+    });
+  });
+
   describe("STRATEGY.md — P-8 is ONE consolidated, decision-ready ask", function () {
     it("P-8 exists in the needs-human proposals and consolidates the design-partner precondition", function () {
       // Anchor the P-8 PROPOSAL inside the `## Proposals — needs-human` section (the test's actual

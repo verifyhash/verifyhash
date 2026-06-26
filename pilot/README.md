@@ -29,6 +29,7 @@ Knobs (all optional):
 | `PILOT_OUT=<dir>` | write the run's artifacts to `<dir>` instead of a fresh OS temp dir |
 | `PILOT_KEEP=1` | keep the temp workspace after the run so you can inspect the artifacts |
 | `--evidence-dir <path>` / `PILOT_EVIDENCE_DIR=<path>` | run the **evidence** vertical on **your own** folder instead of the canned sample |
+| `--certificate <path>` | additionally SEAL the run into a forwardable, tamper-evident `*.vhevidence.json` certificate at `<path>` (+ a sibling `*.files/` dir of the sealed bytes) |
 
 To watch the evidence journey on a partner's **own** data in one command:
 
@@ -45,6 +46,17 @@ The run **never** writes into the repo working tree. The committed sample under
 [`sample-evidence/`](sample-evidence/), the TrustLedger fixtures it reuses, **and any `--evidence-dir`
 folder you supply** are **READ-ONLY**; the tamper step always mutates a throwaway **copy** in the
 workspace.
+
+**Operator note — emit a forwardable certificate.** Add `--certificate <path>` to seal the run into a
+portable `*.vhevidence.json` the prospect can hand their security/procurement team to verify
+**independently** with the zero-install [`../verifier/dist/verify-vh-standalone.js`](../verifier/dist/verify-vh-standalone.js)
+(no clone, no `npm install`, no key) — turning the terminal `VERDICT: PASS` into a tamper-evident record
+they can forward. After verifying, the reviewer also **reads the verdict, counts, and the full labelled
+checklist straight out of the certified bytes** (`<cert>.files/pilot-result.json` — the exact stream the
+keccak root commits to), so the certificate is a self-contained, machine-readable procurement record, not
+just a checksum; the kit prints that read-it-out command right after the verify command. The buyer-facing
+flow + the honest boundary (tamper-evidence over the run record, **not** a trusted "ran at time T" without
+**P-3**, **not** a legal verdict) is documented in [`docs/PILOT.md`](../docs/PILOT.md) §3d.
 
 ## What each vertical demonstrates
 

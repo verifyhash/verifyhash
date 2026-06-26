@@ -98,3 +98,16 @@ The deeper specification of the verifier you just ran — the exact bytes verifi
 no-network/no-back-edge posture, and how its independence is proven mechanically — is in
 [`../docs/INDEPENDENT-VERIFICATION.md`](../docs/INDEPENDENT-VERIFICATION.md); the counterparty quickstart
 is [`../verifier/README.md`](../verifier/README.md).
+
+---
+
+## Want more than one byte? Run the adversarial conformance corpus
+
+You just tampered **one** byte on **one** packet. To watch every shipped verifier of the unsigned
+content-integrity seal REJECT one poisoning per enumerated tamper class, across finance / ai-data / legal /
+software packets, in one read-only command — `node ../challenge/corpus/run-corpus.js` (exit 0 = PASS, every
+poisoned input REJECTED) — and to read exactly what an all-REJECT run proves and what it does **not** (it
+proves REJECT of every *enumerated* class, NOT the absence of unknown ones; a REJECT is tamper-evidence,
+NOT a trusted "sealed at T" without **P-3**; and it covers the unsigned content-integrity surface only, so
+it does NOT red-team the signer-pin `--vendor` path — the PAID upgrade), see
+[`../docs/CONFORMANCE.md`](../docs/CONFORMANCE.md).

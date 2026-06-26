@@ -130,6 +130,11 @@ checks it themselves, without trusting us**.
   it is byte-for-byte the same verifier and proves the same **tamper-evidence + signer-pin**, NOT a
   trusted "sealed at T" (that still requires **P-3**). See [`verifier/README.md`](../verifier/README.md)
   §0 and [`INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md) §0.
+- **And confirm the VERIFIER itself rejects what it should** — run the adversarial conformance corpus
+  (`node challenge/corpus/run-corpus.js`, exit 0 = every poisoned input REJECTED by every shipped
+  verifier) in place of trusting our claim; it proves REJECT of every *enumerated* tamper class (NOT the
+  absence of unknown ones, and a REJECT is tamper-evidence NOT a trusted timestamp without **P-3**). See
+  [`CONFORMANCE.md`](CONFORMANCE.md).
 
 ### 3b. The TrustLedger reconciliation seal
 

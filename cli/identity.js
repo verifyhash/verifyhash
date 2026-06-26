@@ -41,8 +41,10 @@
 //   same inputs always yield byte-identical bytes + verdict. PRODUCT-AGNOSTIC: this module requires the
 //   GENERIC attestation core, never the reverse — no back-edge.
 
+const fs = require("fs");
+const path = require("path");
 const coreAttestation = require("./core/attestation");
-const { getAddress } = require("ethers");
+const { getAddress, isAddress } = require("ethers");
 
 // On-disk schema discriminators. The identity card carries its OWN kind + version (distinct from every
 // seal/license/manifest kind) so a random JSON file, a license, or a seal is never misread as a card.
@@ -479,6 +481,484 @@ function verifyIdentityCard(params) {
   };
 }
 
+// ===========================================================================
+// THE CLI SURFACE — `vh identity publish` (mint) + `vh identity verify` (check + pin).
+//
+// `vh identity publish` MINTS the signed producer identity card the family's recipients verify. It signs
+// with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded via the SHARED
+// loadSigningWallet — the loop NEVER generates/persists/logs a key). It mints ONLY when the provisioned
+// key's address EQUALS the caller's --address (the buildIdentityCard mint invariant), so a card can never
+// assert an identity the key does not control. Default prints the card + writes NOTHING; --out writes to a
+// caller-chosen path (never silently to cwd).
+//
+// `vh identity verify <card>` is the OFFLINE / key-free / network-free read path. It LEADS with the trust
+// line, prints the claims/non-claims + per-check PASS/FAIL, and OPTIONALLY pins --signer. ACCEPT/REJECT/
+// usage exits map 0/3/2/1 (mirrors the family's read commands).
+//
+// The CLI is a THIN I/O shell over the PURE core above: all crypto/validation lives in buildIdentityCard/
+// verifyIdentityCard; this layer only parses argv, reads/writes files, and renders.
+// ===========================================================================
+
+// Exit contract shared with the rest of the family: 0 ok/ACCEPTED / 1 IO / 2 usage / 3 gate-fail
+// (verify REJECTED). Mirrors cli/evidence.js's EXIT so every gate reads the same.
+const EXIT = Object.freeze({ OK: 0, IO: 1, USAGE: 2, FAIL: 3 });
+
+// Parse `identity publish` argv. --claim/--non-claim are REPEATABLE (each occurrence appends, preserving
+// order — the order is part of the published card). EXACTLY-ONE-of key sources is enforced downstream by
+// loadSigningWallet (so neither/both error key-free); the parser only collects flags. A flag without its
+// value, or an unknown flag, is a usage error (e.usage=true) — a typo never silently changes the card.
+function parsePublishArgs(argv) {
+  const opts = {
+    address: undefined,
+    productLine: undefined,
+    claims: [],
+    nonClaims: [],
+    publishedAt: undefined,
+    keyEnv: undefined,
+    keyFile: undefined,
+    out: undefined,
+    json: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const need = (flag) => {
+      const v = argv[++i];
+      if (v === undefined) {
+        const e = new Error(`${flag} requires a value`);
+        e.usage = true;
+        throw e;
+      }
+      return v;
+    };
+    switch (a) {
+      case "--address":
+        opts.address = need("--address");
+        break;
+      case "--product-line":
+        opts.productLine = need("--product-line");
+        break;
+      case "--claim":
+        opts.claims.push(need("--claim"));
+        break;
+      case "--non-claim":
+        opts.nonClaims.push(need("--non-claim"));
+        break;
+      case "--published-at":
+        opts.publishedAt = need("--published-at");
+        break;
+      case "--key-env":
+        opts.keyEnv = need("--key-env");
+        break;
+      case "--key-file":
+        opts.keyFile = need("--key-file");
+        break;
+      case "--out":
+        opts.out = need("--out");
+        break;
+      case "--json":
+        opts.json = true;
+        break;
+      default: {
+        const e = new Error(`unknown flag: ${a} (identity publish takes no positional arguments)`);
+        e.usage = true;
+        throw e;
+      }
+    }
+  }
+  return opts;
+}
+
+// Real "now" as a canonical ISO-8601 UTC instant — the publish default clock, isolated + injectable
+// (io.nowISO) so the command stays deterministic under test. publishedAt defaults to this when omitted.
+function nowISO() {
+  return new Date().toISOString();
+}
+
+/**
+ * `vh identity publish` — MINT a signed identity card. PURE core + the only I/O being the OPTIONAL --out
+ * write (the signing is offline/key-free in the sense that the loop holds no key; the human's key lives
+ * ONLY inside the in-process Wallet loadSigningWallet builds and is discarded).
+ *
+ * The mint is REFUSED (HARD error, BEFORE any write) when the provisioned key's address != --address — so
+ * a card can never assert an identity the key does not control. The output LEADS with the trust line.
+ *
+ * Exit: 0 ok / 2 usage (missing/invalid field, key-source error, mint-control mismatch) / 1 IO (--out write).
+ */
+async function runIdentityPublish(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  // Required order fields up front (a missing one is a clean usage error, never a confusing core throw).
+  if (opts.address == null) {
+    writeErr("error: `vh identity publish` requires --address <0xaddr> (the vendor address the card binds)\n");
+    return EXIT.USAGE;
+  }
+  if (opts.productLine == null) {
+    writeErr(
+      `error: \`vh identity publish\` requires --product-line <line> (one of ${JSON.stringify(PRODUCT_LINE_SET)})\n`
+    );
+    return EXIT.USAGE;
+  }
+  if (opts.claims.length === 0) {
+    writeErr("error: `vh identity publish` requires at least one --claim <text> (what the vendor attests)\n");
+    return EXIT.USAGE;
+  }
+  if (opts.nonClaims.length === 0) {
+    writeErr(
+      "error: `vh identity publish` requires at least one --non-claim <text> " +
+        "(the honest boundary: what the vendor explicitly does NOT attest)\n"
+    );
+    return EXIT.USAGE;
+  }
+
+  // Validate the --address SHAPE up front so a malformed address is a usage error (2), never a runtime
+  // throw mid-mint. buildIdentityCardPayload also normalizes/validates, but failing fast here gives the
+  // clean exit-2 the contract promises. (isAddress accepts checksummed/lowercase 0x-addresses.)
+  if (!isAddress(opts.address)) {
+    writeErr(`error: invalid --address: ${opts.address} (expected a 20-byte 0x-hex address)\n`);
+    return EXIT.USAGE;
+  }
+
+  // Resolve the HUMAN-supplied key into an in-process Wallet FIRST — neither/both sources, a missing env
+  // var, an unreadable file, or a malformed/zero key HARD-ERRORS here with a KEY-FREE message (the SAME
+  // core + posture as `vh evidence seal --sign`). The loop NEVER holds/generates/persists/logs a key.
+  let wallet;
+  try {
+    ({ wallet } = coreAttestation.loadSigningWallet({ keyEnv: opts.keyEnv, keyFile: opts.keyFile }));
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // publishedAt defaults to the injectable clock (a real ISO instant at runtime; a pinned one in tests).
+  const publishedAt = opts.publishedAt != null ? opts.publishedAt : (io.nowISO || nowISO)();
+
+  // Build + sign + enforce the mint invariant in the PURE core. A malformed field (out-of-set productLine,
+  // empty/duplicate claim, non-canonical date) OR the key NOT controlling --address throws IdentityCardError
+  // — a usage error (2), BEFORE any --out write. The message never includes the key.
+  let container;
+  try {
+    container = await buildIdentityCard(
+      {
+        vendorAddress: opts.address,
+        productLine: opts.productLine,
+        claims: opts.claims,
+        nonClaims: opts.nonClaims,
+        publishedAt,
+      },
+      wallet
+    );
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  const canonical = serializeSignedIdentityCard(container);
+  const payload = JSON.parse(container.attestation);
+  // The PUBLIC vendor address — recovered from the signature, never the key. By the mint invariant it
+  // equals payload.vendorAddress; we recover it to PROVE that (and to print "signed by" from the signature).
+  const signedBy = coreAttestation.recoverSigner(container);
+
+  // Write to --out (caller-chosen path; NEVER cwd) or print to stdout (writes nothing).
+  let outAbs = null;
+  if (opts.out) {
+    outAbs = path.resolve(opts.out);
+    try {
+      fs.writeFileSync(outAbs, canonical);
+    } catch (e) {
+      writeErr(`error: cannot write --out file ${opts.out}: ${e.message}\n`);
+      return EXIT.IO;
+    }
+  }
+
+  if (opts.json) {
+    // ONLY public fields: the vendor ADDRESS (recovered), the card summary, the path — NEVER the key. With
+    // no --out the canonical bytes ride in `container` so --json never drops the artifact (family parity).
+    write(
+      JSON.stringify(
+        {
+          published: true,
+          note: IDENTITY_CARD_TRUST_NOTE,
+          kind: SIGNED_IDENTITY_CARD_KIND,
+          vendorAddress: payload.vendorAddress,
+          signer: signedBy,
+          productLine: payload.productLine,
+          claims: payload.claims,
+          nonClaims: payload.nonClaims,
+          publishedAt: payload.publishedAt,
+          out: outAbs,
+          container: outAbs ? null : canonical,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(IDENTITY_CARD_TRUST_NOTE + "\n\n");
+    write(`published a signed identity card for ${payload.vendorAddress} (signed by ${signedBy})\n`);
+    write(`  productLine:  ${payload.productLine}\n`);
+    write(`  publishedAt:  ${payload.publishedAt}\n`);
+    write(`  claims (${payload.claims.length}):\n`);
+    for (const c of payload.claims) write(`    + ${c}\n`);
+    write(`  nonClaims (${payload.nonClaims.length}):\n`);
+    for (const c of payload.nonClaims) write(`    - ${c}\n`);
+    if (outAbs) {
+      write(`  written:      ${outAbs}\n`);
+    } else {
+      // Default: print the card bytes so a publisher can eyeball/redirect them — still writes nothing.
+      write(canonical);
+    }
+  }
+  return EXIT.OK;
+}
+
+// Parse `identity verify` argv. Takes exactly one positional <card> + OPTIONAL --signer/--json.
+function parseVerifyArgs(argv) {
+  const opts = { card: undefined, signer: undefined, json: false, _positionals: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const need = (flag) => {
+      const v = argv[++i];
+      if (v === undefined) {
+        const e = new Error(`${flag} requires a value`);
+        e.usage = true;
+        throw e;
+      }
+      return v;
+    };
+    switch (a) {
+      case "--signer":
+        opts.signer = need("--signer");
+        break;
+      case "--json":
+        opts.json = true;
+        break;
+      default:
+        if (a && a.startsWith("--")) {
+          const e = new Error(`unknown flag: ${a}`);
+          e.usage = true;
+          throw e;
+        }
+        opts._positionals.push(a);
+    }
+  }
+  if (opts._positionals.length > 1) {
+    const e = new Error(
+      `unexpected extra argument: ${opts._positionals[1]} (identity verify takes exactly one <card>)`
+    );
+    e.usage = true;
+    throw e;
+  }
+  opts.card = opts._positionals[0];
+  return opts;
+}
+
+// The standing trust line the verify path LEADS with — reuses the SIGNED-card note verbatim (so the human
+// + JSON caveats can NEVER drift). It is the load-bearing honesty of the read: an ACCEPT proves IDENTITY +
+// the claim SET, NOT any specific packet, NOT a timestamp (P-3), NOT a legal opinion.
+const VERIFY_TRUST_NOTE = SIGNED_IDENTITY_CARD_TRUST_NOTE;
+
+// Render the human verify report. PURE. LEADS with the trust line, prints the verdict, the recovered/
+// claimed/vendor address, the per-check PASS/FAIL (Check 1 + the vendorAddress identity check ALWAYS; the
+// --signer pin only when requested), then the published CLAIMS + NON-CLAIMS. A REJECTED verdict NAMES the
+// failing check(s). The claims/non-claims are rendered FROM THE RECOVERED, validated card (never trusted
+// blindly: a REJECTED card's claims are shown but the verdict makes clear they are NOT backed).
+function renderVerify(r, card, ctx) {
+  const L = [];
+  // TRUST FIRST.
+  L.push("TRUST: " + VERIFY_TRUST_NOTE);
+  L.push("");
+  L.push(`# vh identity verify — ${ctx.card}`);
+  L.push(`identity:         ${r.verdict}`);
+  L.push(`scheme:           ${r.scheme}`);
+  L.push(`vendorAddress:    ${r.vendorAddress}  (the address the card BINDS to the signing key)`);
+  L.push(`recovered signer: ${r.recoveredSigner}  (from the embedded canonical card bytes + signature)`);
+  L.push(`claimed signer:   ${r.claimedSigner}  (the container's \`signer\` field)`);
+  L.push(`productLine:      ${card.productLine}`);
+  L.push(`publishedAt:      ${card.publishedAt}`);
+  // Check 1 (ALWAYS): the signature recovers to the claimed signer.
+  L.push(`  [${r.checks.signatureMatchesSigner ? "PASS" : "FAIL"}] signature recovers to the claimed signer`);
+  // The load-bearing identity check (ALWAYS): the recovered signer IS the card's own vendorAddress.
+  L.push(
+    `  [${r.checks.vendorAddressMatchesSigner ? "PASS" : "FAIL"}] the recovered signer IS the card's ` +
+      "vendorAddress (the key controls the address it claims)"
+  );
+  // Check 3 (only under --signer): the recovered signer equals the expected, out-of-band signer.
+  if (r.checks.signerMatchesExpected === null) {
+    L.push("  [skip] expected-signer pin: not requested (pass --signer <0xaddr> to pin the signer)");
+  } else {
+    L.push(
+      `  [${r.checks.signerMatchesExpected ? "PASS" : "FAIL"}] recovered signer matches the expected ` +
+        `signer (${r.expectedSigner})`
+    );
+  }
+  // The published CLAIMS + NON-CLAIMS — the WHOLE point of the card (what the vendor attests + does NOT).
+  L.push(`claims (${card.claims.length}) — what this vendor attests:`);
+  for (const c of card.claims) L.push(`    + ${c}`);
+  L.push(`nonClaims (${card.nonClaims.length}) — what this vendor explicitly does NOT attest:`);
+  for (const c of card.nonClaims) L.push(`    - ${c}`);
+  if (r.accepted) {
+    L.push("ACCEPTED: every requested check passed — this card's identity + claim set are backed by the signer.");
+  } else {
+    L.push(`REJECTED: failed check(s): ${r.failedChecks.join(", ")}.`);
+    if (r.failedChecks.includes("signatureMatchesSigner")) {
+      L.push(
+        "  forged/tampered: the signature does NOT recover to the claimed `signer` — the card's claims are UNBACKED."
+      );
+    }
+    if (r.failedChecks.includes("vendorAddressMatchesSigner")) {
+      L.push(
+        "  vendor-mismatch: the recovered signer is NOT the card's vendorAddress — the card asserts an identity"
+      );
+      L.push("  the signing key does NOT control. Its claims are NOT backed by the address it names.");
+    }
+    if (r.failedChecks.includes("signerMatchesExpected")) {
+      L.push(
+        "  pin-mismatch: the signature is genuine but the signer is NOT the address you pinned with --signer."
+      );
+    }
+  }
+  L.push("");
+  return L.join("\n");
+}
+
+/**
+ * `vh identity verify <card> [--signer <0xaddr>] [--json]` — OFFLINE / key-free / network-free. RECOVERS
+ * the signer from a signed identity card and confirms (1) the signature backs the claimed signer, (2) the
+ * recovered signer IS the card's own vendorAddress (the load-bearing identity check), and OPTIONALLY (3)
+ * pins it to an expected --signer. LEADS with the trust line; prints the claims/non-claims + per-check
+ * PASS/FAIL. A forged/tampered/wrong-key card, or a wrong --signer, is a clean REJECTED — NEVER a silent
+ * pass. Writes NOTHING. Exit: 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO.
+ */
+function runIdentityVerify(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.card) {
+    writeErr("error: `vh identity verify` requires a <card> (a signed identity-card file path)\n");
+    return EXIT.USAGE;
+  }
+
+  // Validate the --signer SHAPE up front (when given) so a malformed pin is a usage error (2), never a
+  // runtime throw inside verifyIdentityCard (which normalizes via getAddress and would throw). OFFLINE.
+  if (opts.signer !== undefined && opts.signer !== null) {
+    if (!isAddress(opts.signer)) {
+      writeErr(`error: invalid --signer address: ${opts.signer} (expected a 20-byte 0x-hex address)\n`);
+      return EXIT.USAGE;
+    }
+  }
+
+  // Read + STRICT-validate the container BEFORE any recovery — a malformed/edited/foreign container (or a
+  // non-card file) hard-errors (exit 1), never half-accepted. A forged signature is NOT a parse error:
+  // readIdentityCard proves the bytes are canonical; the recovery (the verdict) runs below in the PURE core.
+  let container;
+  try {
+    const text = fs.readFileSync(path.resolve(opts.card), "utf8");
+    container = readIdentityCard(text);
+  } catch (e) {
+    writeErr(`error: cannot read signed identity card ${opts.card}: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  // Run the PURE, OFFLINE verify. No I/O, no key, no network. A structurally-sound-but-forged/mismatched
+  // card is a clean REJECTED verdict (not a throw); only a genuinely broken read would throw (caught above).
+  let result;
+  try {
+    result = verifyIdentityCard({ container, expectedSigner: opts.signer });
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.IO;
+  }
+  const card = JSON.parse(container.attestation); // the validated embedded card (claims/nonClaims/etc.)
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ...result,
+          // The published claim set the verdict is about (so a machine reader gets identity + claims in one).
+          productLine: card.productLine,
+          claims: card.claims,
+          nonClaims: card.nonClaims,
+          publishedAt: card.publishedAt,
+          card: opts.card,
+          note: VERIFY_TRUST_NOTE,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(renderVerify(result, card, { card: opts.card }));
+  }
+
+  // Exit non-zero on REJECTED so a buyer's CI can gate (0 ACCEPTED / 3 REJECTED — the family's read contract).
+  return result.accepted ? EXIT.OK : EXIT.FAIL;
+}
+
+function identityUsage() {
+  return [
+    "vh identity — publish + verify a producer IDENTITY CARD (bind a vendor address to a bounded claim set)",
+    "",
+    "Usage:",
+    "  vh identity publish --address <0xaddr> --product-line <line> --claim <text> [--claim ...]",
+    "        --non-claim <text> [--non-claim ...] [--published-at <ISO>]",
+    "        (--key-env <VAR> | --key-file <path>) [--out <p>] [--json]",
+    "  vh identity verify <card> [--signer <0xaddr>] [--json]",
+    "",
+    "publish MINTS a signed card binding --address to the --claim set it attests + the --non-claim set it",
+    "  explicitly does NOT. It signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file,",
+    "  read-used-discarded; the loop sets/holds NO key) and MINTS ONLY when that key's address EQUALS",
+    "  --address (else it hard-errors BEFORE writing). --product-line is one of " +
+      JSON.stringify(PRODUCT_LINE_SET) + ".",
+    "  Default prints the card + writes NOTHING; --out writes to a caller-chosen path (never cwd).",
+    "  Exit: 0 ok / 2 usage (missing/invalid field, key-source error, key does not control --address) / 1 IO.",
+    "verify is OFFLINE/key-free/network-free: it RECOVERS the signer, confirms the signature backs it AND that",
+    "  the recovered signer IS the card's vendorAddress, OPTIONALLY pins --signer, and prints the claims/",
+    "  non-claims + per-check PASS/FAIL. A forged/tampered/wrong-key card or a wrong --signer is a clean",
+    "  REJECTED — never a silent pass. Exit: 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO.",
+    "",
+    "A card proves IDENTITY + the claim SET only: NOT any specific sealed packet (each carries its own proof),",
+    "NOT a trusted TIMESTAMP (P-3), and NOT a legal opinion.",
+    "",
+  ].join("\n");
+}
+
+/**
+ * CLI dispatch: `vh identity <publish|verify> ...`. An UNKNOWN subcommand is a USAGE error (2) — the loop
+ * never silently accepts a typo'd subcommand. `-h`/`--help`/`help`/no-subcommand prints usage.
+ */
+async function cmdIdentity(argv, io = {}) {
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  const [sub, ...rest] = argv;
+  if (sub === "publish") {
+    let opts;
+    try {
+      opts = parsePublishArgs(rest);
+    } catch (e) {
+      writeErr(`error: ${e.message}\n`);
+      return EXIT.USAGE;
+    }
+    return runIdentityPublish(opts, io);
+  }
+  if (sub === "verify") {
+    let opts;
+    try {
+      opts = parseVerifyArgs(rest);
+    } catch (e) {
+      writeErr(`error: ${e.message}\n`);
+      return EXIT.USAGE;
+    }
+    return runIdentityVerify(opts, io);
+  }
+  if (sub === undefined || sub === "-h" || sub === "--help" || sub === "help") {
+    io.write ? io.write(identityUsage()) : process.stdout.write(identityUsage());
+    return sub === undefined ? EXIT.USAGE : EXIT.OK;
+  }
+  writeErr(`error: unknown identity subcommand: ${sub} (expected: publish, verify)\n`);
+  return EXIT.USAGE;
+}
+
 module.exports = {
   // kinds + closed sets
   IDENTITY_CARD_KIND,
@@ -503,4 +983,15 @@ module.exports = {
   serializeSignedIdentityCard,
   readIdentityCard,
   verifyIdentityCard,
+  // CLI surface
+  EXIT,
+  nowISO,
+  VERIFY_TRUST_NOTE,
+  parsePublishArgs,
+  parseVerifyArgs,
+  runIdentityPublish,
+  runIdentityVerify,
+  renderVerify,
+  identityUsage,
+  cmdIdentity,
 };

@@ -50,6 +50,7 @@ const {
 } = require("./parcel");
 const { cmdTrust } = require("../trustledger/cli");
 const { cmdEvidence } = require("./evidence");
+const { cmdIdentity } = require("./identity");
 
 function usage() {
   return [
@@ -101,6 +102,8 @@ function usage() {
     "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed evidence packet (Check 1, always), (--signer) PIN it to an expected signer, (--dir) BIND the signature to YOUR bytes; leads with the trust caveat + prints per-check PASS/FAIL. A forged/tampered/wrong-key signature is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO",
     "  vh evidence diff <packetA> <packetB>  read-only, FREE, key-free, OFFLINE change report between TWO sealed evidence packets: leads with the CLAIMS-not-content TRUST line, prints IDENTICAL/DIFFERENT + per-file ADDED/REMOVED/CHANGED + a count line. Compares what each packet CLAIMS (no tree/key/net); a rename surfaces as REMOVED+ADDED; writes nothing; needs NO license. Exit 0 IDENTICAL / 3 DIFFERENT / 2 usage / 1 IO",
     "  vh evidence license fulfill --plan <id> --customer <name> [--paid-through <ISO>] [--catalog <f>] (--key-env <VAR>|--key-file <p>) [--issued <ISO>] [--license-id <id>] [--out <f>]  MINT the signed *.vhevidence-license.json the paid surfaces accept: resolve <id> in the bundled DRAFT evidence plan catalog (or --catalog), copy that plan's entitlements VERBATIM, derive the window (--paid-through wins else the plan's term), sign with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop sets NO price). The minted license UNLOCKS `vh evidence seal --sign`. Exit 0 ok / 2 usage (unknown plan, bad window/date/catalog, key-source error) / 1 IO (fulfill is a PRODUCER: no exit-3 of its own; exit 3 is the downstream seal/verify GATE)",
+    "  vh identity publish --address <0xaddr> --product-line <line> --claim <text> [--claim ...] --non-claim <text> [--non-claim ...] [--published-at <ISO>] (--key-env <VAR>|--key-file <p>) [--out <p>]  MINT a signed producer IDENTITY CARD binding --address to the bounded --claim set it attests + the --non-claim set it explicitly does NOT. Signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop holds NO key) and MINTS ONLY when the key's address EQUALS --address (else hard-errors BEFORE writing). Default prints the card + writes nothing; --out writes a caller-chosen path (never cwd). Exit 0 ok / 2 usage / 1 IO",
+    "  vh identity verify <card> [--signer <0xaddr>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed identity card, confirm the signature backs it AND the recovered signer IS the card's vendorAddress, OPTIONALLY pin --signer, and print the claims/non-claims + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key card or a wrong --signer is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO",
     "",
     "trust inspect options (read-only, writes NOTHING — the onboarding companion to reconcile):",
     "  --as <bank|ledger|rentroll>  REQUIRED: which logical input <file> is (a malformed value is a usage error)",
@@ -3312,6 +3315,8 @@ async function main(argv) {
       return cmdTrust(rest);
     case "evidence":
       return cmdEvidence(rest);
+    case "identity":
+      return cmdIdentity(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -3362,6 +3367,7 @@ module.exports = {
   cmdParcelVerifyTimestamp,
   cmdTrust,
   cmdEvidence,
+  cmdIdentity,
   parseVerifyTimestampArgs,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,

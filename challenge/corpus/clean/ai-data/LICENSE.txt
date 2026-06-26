@@ -1,0 +1,3 @@
+Dataset license: CC-BY-4.0.
+Source: curated public-domain corpus, attribution required.
+Every sample in samples.jsonl is cleared for training under this license.

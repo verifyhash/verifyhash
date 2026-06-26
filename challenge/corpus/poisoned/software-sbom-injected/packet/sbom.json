@@ -1,0 +1,16 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "components": [
+    {
+      "name": "evil-pad",
+      "version": "1.3.0",
+      "license": "WTFPL"
+    },
+    {
+      "name": "tiny-json",
+      "version": "2.1.4",
+      "license": "MIT"
+    }
+  ]
+}

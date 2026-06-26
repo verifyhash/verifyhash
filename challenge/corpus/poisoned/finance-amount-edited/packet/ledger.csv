@@ -1,0 +1,4 @@
+entry_id,date,account,debit_cents,credit_cents,memo
+L-0001,2026-01-04,trust:operating,0,250100,deposit received
+L-0002,2026-01-07,trust:operating,75000,0,vendor payout
+L-0003,2026-01-11,trust:reserve,0,50000,security deposit

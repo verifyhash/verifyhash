@@ -1,0 +1,141 @@
+{
+  "kind": "vh.challenge-corpus",
+  "corpusVersion": 1,
+  "note": "Versioned adversarial CONFORMANCE corpus for the verifyhash standalone evidence-seal verifier (verifier/dist/verify-vh-standalone.js). Each class is one CLEAN business packet plus EXACTLY ONE documented mutation that the verifier must REJECT. `expectedExit` is the standalone verifier's own contract: 3 = REJECTED (tamper: CHANGED / MISSING / forged root), 2 = usage (unrecognized seal kind). Regenerate with `node challenge/corpus/generate.js`; the output is deterministic (byte-for-byte stable).",
+  "exitCodes": {
+    "0": "VERIFIED",
+    "2": "usage (unrecognized artifact kind)",
+    "3": "REJECTED (tamper: CHANGED / MISSING / forged root)"
+  },
+  "verticals": [
+    "ai-data",
+    "finance",
+    "legal",
+    "software"
+  ],
+  "classCount": 11,
+  "classes": [
+    {
+      "id": "finance-amount-edited",
+      "vertical": "finance",
+      "cleanFixture": "clean/finance",
+      "poisonedPacket": "poisoned/finance-amount-edited/packet",
+      "seal": "poisoned/finance-amount-edited/seal.vhevidence.json",
+      "mutation": "Flip one digit in a ledger credit amount (250000 -> 250100 cents).",
+      "mutationOp": "edit-content",
+      "mutationTarget": "ledger.csv",
+      "expectedExit": 3
+    },
+    {
+      "id": "finance-tie-out-dropped",
+      "vertical": "finance",
+      "cleanFixture": "clean/finance",
+      "poisonedPacket": "poisoned/finance-tie-out-dropped/packet",
+      "seal": "poisoned/finance-tie-out-dropped/seal.vhevidence.json",
+      "mutation": "Delete the bank tie-out file (reconciliation.json) the seal still references.",
+      "mutationOp": "delete-file",
+      "mutationTarget": "reconciliation.json",
+      "expectedExit": 3
+    },
+    {
+      "id": "ai-data-sample-swapped",
+      "vertical": "ai-data",
+      "cleanFixture": "clean/ai-data",
+      "poisonedPacket": "poisoned/ai-data-sample-swapped/packet",
+      "seal": "poisoned/ai-data-sample-swapped/seal.vhevidence.json",
+      "mutation": "Relabel one training sample in samples.jsonl (label animal -> fruit).",
+      "mutationOp": "edit-content",
+      "mutationTarget": "samples.jsonl",
+      "expectedExit": 3
+    },
+    {
+      "id": "ai-data-license-stripped",
+      "vertical": "ai-data",
+      "cleanFixture": "clean/ai-data",
+      "poisonedPacket": "poisoned/ai-data-license-stripped/packet",
+      "seal": "poisoned/ai-data-license-stripped/seal.vhevidence.json",
+      "mutation": "Truncate LICENSE.txt to empty (strip the provenance license).",
+      "mutationOp": "truncate-file",
+      "mutationTarget": "LICENSE.txt",
+      "expectedExit": 3
+    },
+    {
+      "id": "ai-data-file-renamed",
+      "vertical": "ai-data",
+      "cleanFixture": "clean/ai-data",
+      "poisonedPacket": "poisoned/ai-data-file-renamed/packet",
+      "seal": "poisoned/ai-data-file-renamed/seal.vhevidence.json",
+      "mutation": "Rename provenance.json -> provenance.bak (the sealed path is now MISSING).",
+      "mutationOp": "rename-file",
+      "mutationTarget": "provenance.json",
+      "renamedTo": "provenance.bak",
+      "expectedExit": 3
+    },
+    {
+      "id": "software-sbom-injected",
+      "vertical": "software",
+      "cleanFixture": "clean/software",
+      "poisonedPacket": "poisoned/software-sbom-injected/packet",
+      "seal": "poisoned/software-sbom-injected/seal.vhevidence.json",
+      "mutation": "Inject an undeclared dependency line into sbom.json.",
+      "mutationOp": "edit-content",
+      "mutationTarget": "sbom.json",
+      "expectedExit": 3
+    },
+    {
+      "id": "software-checksum-edited",
+      "vertical": "software",
+      "cleanFixture": "clean/software",
+      "poisonedPacket": "poisoned/software-checksum-edited/packet",
+      "seal": "poisoned/software-checksum-edited/seal.vhevidence.json",
+      "mutation": "Alter one published artifact checksum digit in checksums.txt.",
+      "mutationOp": "edit-content",
+      "mutationTarget": "checksums.txt",
+      "expectedExit": 3
+    },
+    {
+      "id": "legal-clause-altered",
+      "vertical": "legal",
+      "cleanFixture": "clean/legal",
+      "poisonedPacket": "poisoned/legal-clause-altered/packet",
+      "seal": "poisoned/legal-clause-altered/seal.vhevidence.json",
+      "mutation": "Alter the fee amount in agreement.txt (USD 10,000 -> USD 1,000 per month).",
+      "mutationOp": "edit-content",
+      "mutationTarget": "agreement.txt",
+      "expectedExit": 3
+    },
+    {
+      "id": "legal-signature-page-dropped",
+      "vertical": "legal",
+      "cleanFixture": "clean/legal",
+      "poisonedPacket": "poisoned/legal-signature-page-dropped/packet",
+      "seal": "poisoned/legal-signature-page-dropped/seal.vhevidence.json",
+      "mutation": "Delete the executed signature-page.txt the seal references.",
+      "mutationOp": "delete-file",
+      "mutationTarget": "signature-page.txt",
+      "expectedExit": 3
+    },
+    {
+      "id": "seal-root-forged",
+      "vertical": "finance",
+      "cleanFixture": "clean/finance",
+      "poisonedPacket": "poisoned/seal-root-forged/packet",
+      "seal": "poisoned/seal-root-forged/seal.vhevidence.json",
+      "mutation": "Forge the seal's Merkle root (packet bytes untouched); the verifier RE-DERIVES the root and rejects.",
+      "mutationOp": "edit-seal-root",
+      "mutationTarget": null,
+      "expectedExit": 3
+    },
+    {
+      "id": "seal-kind-corrupted",
+      "vertical": "software",
+      "cleanFixture": "clean/software",
+      "poisonedPacket": "poisoned/seal-kind-corrupted/packet",
+      "seal": "poisoned/seal-kind-corrupted/seal.vhevidence.json",
+      "mutation": "Corrupt the seal's `kind` to an unrecognized value; the verifier cannot classify it (usage error).",
+      "mutationOp": "edit-seal-kind",
+      "mutationTarget": null,
+      "expectedExit": 2
+    }
+  ]
+}

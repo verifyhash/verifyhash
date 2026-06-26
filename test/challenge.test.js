@@ -136,7 +136,12 @@ describe("cold-prospect CHALLENGE bundle: verify a real sealed packet, then tamp
       expect(run, "run.sh must reference the committed standalone verifier").to.match(
         /verify-vh-standalone\.js/
       );
-      // No forked verifier lives in challenge/: the only *.js under challenge/ (if any) must not be a copy.
+      // No FORKED VERIFIER lives in challenge/. A helper .js MAY live here (e.g. the corpus
+      // generator, challenge/corpus/generate.js) PROVIDED it does not REIMPLEMENT the verifier's
+      // crypto — it must drive the committed standalone tools, never fork their keccak/Merkle/verify
+      // logic. We assert that concretely: every .js under challenge/ (a) vendors NO keccak/Merkle
+      // hashing of its own, and (b) does NOT recompute a verify verdict in-process — any sealing it
+      // does goes THROUGH the committed standalone sealer/verifier by reference.
       const jsInChallenge = [];
       const walk = (abs) => {
         for (const name of fs.readdirSync(abs)) {
@@ -146,7 +151,41 @@ describe("cold-prospect CHALLENGE bundle: verify a real sealed packet, then tamp
         }
       };
       walk(CHALLENGE_DIR);
-      expect(jsInChallenge, "challenge/ must NOT carry a forked verifier .js").to.deep.equal([]);
+      // Forbidden: a hand-rolled keccak/Merkle hash or a forked verify routine living in challenge/.
+      const FORK_MARKERS = [
+        /\bkeccak(?:256|F|256Bytes)?\s*\(/, // a keccak primitive call (a hashing reimplementation)
+        /\bbuildTree\s*\(/, // the Merkle tree builder
+        /\bpathLeaf\s*\(/, // the path-bound leaf hash
+        /DIR_LEAF_DOMAIN/, // the verifier's domain-separation constant
+        /require\(["'].*verify-vh-standalone["']\)/, // importing the verifier's source as a module = a fork vector
+      ];
+      const offenders = [];
+      for (const jsPath of jsInChallenge) {
+        const src = fs.readFileSync(jsPath, "utf8");
+        const hits = FORK_MARKERS.filter((re) => re.test(src)).map((re) => re.source);
+        if (hits.length) offenders.push(`${path.relative(CHALLENGE_DIR, jsPath)} :: ${hits.join(", ")}`);
+      }
+      expect(
+        offenders,
+        `a .js under challenge/ forks the verifier's crypto instead of referencing the committed standalone tools: ${JSON.stringify(
+          offenders
+        )}`
+      ).to.deep.equal([]);
+
+      // Positive: any .js that DOES seal/verify must reference a committed standalone tool by path.
+      for (const jsPath of jsInChallenge) {
+        const src = fs.readFileSync(jsPath, "utf8");
+        const sealsOrVerifies = /seal|verify/i.test(src);
+        if (sealsOrVerifies) {
+          expect(
+            /(verify-vh-standalone|seal-vh-standalone)\.js/.test(src),
+            `${path.relative(
+              CHALLENGE_DIR,
+              jsPath
+            )} touches sealing/verifying but does not reference a committed standalone tool`
+          ).to.equal(true);
+        }
+      }
     });
   });
 

@@ -1,0 +1,19 @@
+{
+  "_DRAFT": "DRAFT / SAMPLE evidence plan catalog. The human fills in the real PRICE and TERM for each tier before selling — the loop sets NO price. A plan is an ACCESS DESCRIPTION for delivered software value (which paid evidence features a subscription unlocks and for how long). It is NOT a token, NOT tradeable, NOT an appreciating asset, and this catalog makes NO claim of regulatory compliance. The actual subscription agreement governs.",
+  "kind": "vh-evidence-plan-catalog",
+  "schemaVersion": 1,
+  "plans": [
+    {
+      "planId": "evidence-signed-monthly",
+      "displayName": "Evidence Signed (monthly) — DRAFT",
+      "entitlements": ["evidence_signed"],
+      "termDays": 30
+    },
+    {
+      "planId": "evidence-pro-annual",
+      "displayName": "Evidence Pro (annual) — DRAFT",
+      "entitlements": ["evidence_signed", "evidence_unlimited"],
+      "termDays": 365
+    }
+  ]
+}

@@ -33,7 +33,11 @@ const ID = require("../cli/identity");
 describe("T-49.3 docs: docs/IDENTITY.md + STRATEGY.md + README document the producer identity card", function () {
   const idDoc = read("docs/IDENTITY.md");
   const idLower = idDoc.toLowerCase();
-  const strategy = read("STRATEGY.md");
+  // The live P-1..P-8 proposals stay in STRATEGY.md; the SUPERSEDED `## Direction` planning notes (incl. the
+  // EPIC-49 note this suite checks) were relocated byte-for-byte to docs/STRATEGY-ARCHIVE.md by T-56.2. Read
+  // both so the historical disclaimer is still found wherever it now lives. STRATEGY.md comes first, so the
+  // P-6/P-7/P-8 proposal `indexOf` slices below still resolve to the proposals section.
+  const strategy = read("STRATEGY.md") + "\n" + read("docs/STRATEGY-ARCHIVE.md");
   const readme = read("README.md");
   const readmeLower = readme.toLowerCase();
 

@@ -45,7 +45,11 @@ describe("T-51.3 docs: docs/KEY-LIFECYCLE.md + STRATEGY.md + EVIDENCE.md + READM
   const keyLifecycle = read("docs/KEY-LIFECYCLE.md");
   const klLower = keyLifecycle.toLowerCase();
   const evidence = read("docs/EVIDENCE.md");
-  const strategy = read("STRATEGY.md");
+  // The live P-1..P-8 proposals stay in STRATEGY.md; the SUPERSEDED `## Direction` planning notes (incl. the
+  // EPIC-51 note this suite checks) were relocated byte-for-byte to docs/STRATEGY-ARCHIVE.md by T-56.2. Read
+  // both so the historical disclaimer is still found wherever it now lives. STRATEGY.md comes first, so the
+  // P-7/P-8 proposal `indexOf` slices below still resolve to the proposals section.
+  const strategy = read("STRATEGY.md") + "\n" + read("docs/STRATEGY-ARCHIVE.md");
   const readme = read("README.md");
   const readmeLower = readme.toLowerCase();
 

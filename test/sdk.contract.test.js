@@ -284,6 +284,102 @@ describe("T-57.2 API contract: the public SDK ABI is pinned (semver guard) + doc
       expect(tail.includes("verdict")).to.equal(false);
     });
 
+    // --- SIGNED-VERIFY SURFACE (T-58.2) — the pin CARRIES the signed symbols + arities, and the drift
+    //     detector STILL fails on a fabricated extra / renamed key on that new surface. The signed path is
+    //     the paid embed (EPIC-58); a silent add/rename/arity-change there must be as loud as anywhere else.
+
+    it("the pin CARRIES the signed-verify symbols + their arities (a name-only guard would under-specify these)", function () {
+      // The flat + namespaced signed-verify symbols, each with its pinned arity — the load-bearing ABI the
+      // paid embed integrates against. If any of these silently changed, the pin must catch it.
+      const signedLines = [
+        "signSealWith : function/2",
+        "validateSignedSeal : function/1",
+        "verifySignedSeal : function/1",
+        "verifySignedSealAttestation : function/1",
+        "recoverSigner : function/1",
+        "verifySignedAttestation : function/1",
+        "signed : namespace",
+        "signed.signSealWith : function/2",
+        "signed.validateSignedSeal : function/1",
+        "signed.verifySignedSeal : function/1",
+        "signed.verifySignedSealAttestation : function/1",
+        "signed.recoverSigner : function/1",
+        "signed.verifySignedAttestation : function/1",
+        'signed.KIND : string="vh.evidence-seal-signed"',
+      ];
+      for (const line of signedLines) {
+        expect(EXPECTED_SURFACE, `pin is missing signed-verify line: ${line}`).to.include(line);
+        expect(hasLine(EXPECTED_SURFACE, line), `pin line not present as a WHOLE line: ${line}`).to.equal(true);
+      }
+    });
+
+    it("ADDING an extra `signed` namespace member (nested signed drift) WOULD FAIL the pin", function () {
+      const mutated = cloneSurface();
+      mutated.signed = { ...mutated.signed, sneakySignedExtra: function () {} };
+      const drifted = serializeSurface(mutated);
+      expect(drifted).to.not.equal(liveSurface);
+      expect(drifted).to.not.equal(EXPECTED_SURFACE);
+      expect(hasLine(drifted, "signed.sneakySignedExtra : function/0")).to.equal(true);
+    });
+
+    it("RENAMING a `signed` namespace member (verifySignedSeal -> verifySigned) WOULD FAIL the pin", function () {
+      const mutated = cloneSurface();
+      mutated.signed = { ...mutated.signed };
+      mutated.signed.verifySigned = mutated.signed.verifySignedSeal; // typo/rename
+      delete mutated.signed.verifySignedSeal;
+      const drifted = serializeSurface(mutated);
+      expect(drifted).to.not.equal(EXPECTED_SURFACE);
+      expect(hasLine(drifted, "signed.verifySigned : function/1")).to.equal(true);
+      // The namespaced signed line is gone; the flat `verifySignedSeal` (a separate key) still exists.
+      expect(hasLine(drifted, "signed.verifySignedSeal : function/1")).to.equal(false);
+    });
+
+    it("RENAMING a FLAT signed symbol (signSealWith -> signSeal) WOULD FAIL the pin", function () {
+      const mutated = cloneSurface();
+      mutated.signSeal = mutated.signSealWith; // rename the flat convenience export
+      delete mutated.signSealWith;
+      const drifted = serializeSurface(mutated);
+      expect(drifted).to.not.equal(EXPECTED_SURFACE);
+      expect(hasLine(drifted, "signSeal : function/2")).to.equal(true);
+      // The flat top-level `signSealWith` line is gone; the namespaced `signed.signSealWith` still exists.
+      expect(hasLine(drifted, "signSealWith : function/2")).to.equal(false);
+      expect(hasLine(drifted, "signed.signSealWith : function/2")).to.equal(true);
+    });
+
+    it("GROWING a signed function's ARITY (signSealWith 2 -> 3) WOULD FAIL the pin — a name-only guard MISSES this", function () {
+      const mutated = cloneSurface();
+      // Same name, same kind, but now a THIRD required arg — a breaking call-signature change on the paid path.
+      const grown = function (seal, signer, opts) {
+        return { seal, signer, opts };
+      };
+      mutated.signSealWith = grown;
+      mutated.signed = { ...mutated.signed, signSealWith: grown };
+      const drifted = serializeSurface(mutated);
+      expect(drifted).to.not.equal(EXPECTED_SURFACE);
+      expect(hasLine(drifted, "signSealWith : function/3")).to.equal(true);
+      expect(hasLine(drifted, "signed.signSealWith : function/3")).to.equal(true);
+      expect(hasLine(drifted, "signSealWith : function/2")).to.equal(false);
+    });
+
+    it("CHANGING the frozen signed-container KIND tag WOULD FAIL the pin — a name-only guard MISSES this", function () {
+      const mutated = cloneSurface();
+      mutated.signed = { ...mutated.signed, KIND: "vh.evidence-seal-signed-v2" };
+      const drifted = serializeSurface(mutated);
+      expect(drifted).to.not.equal(EXPECTED_SURFACE);
+      expect(hasLine(drifted, 'signed.KIND : string="vh.evidence-seal-signed-v2"')).to.equal(true);
+      expect(hasLine(drifted, 'signed.KIND : string="vh.evidence-seal-signed"')).to.equal(false);
+    });
+
+    it("REMOVING a flat signed symbol (verifySignedSeal) WOULD FAIL the pin", function () {
+      const mutated = cloneSurface();
+      delete mutated.verifySignedSeal;
+      const drifted = serializeSurface(mutated);
+      expect(drifted).to.not.equal(EXPECTED_SURFACE);
+      expect(hasLine(drifted, "verifySignedSeal : function/1")).to.equal(false);
+      // The namespaced counterpart is a distinct key and remains.
+      expect(hasLine(drifted, "signed.verifySignedSeal : function/1")).to.equal(true);
+    });
+
     it("does NOT trip on a benign VALUE change (apiVersion bump / bugfix inside a function body)", function () {
       // The version string is the ONE value intentionally allowed to move without a surface change: a
       // patch/minor release bumps apiVersion. To keep that from spuriously failing the pin, the descriptor
@@ -372,6 +468,30 @@ describe("T-57.2 API contract: the public SDK ABI is pinned (semver guard) + doc
       for (const name of names) {
         expect(prose, `docs/SDK.md prose does not document symbol "${name}"`).to.include(name);
       }
+    });
+
+    it("documents EVERY new SIGNED-VERIFY symbol by name in the prose/table (T-58.2)", function () {
+      // The signed-verify surface is the paid embed; SDK.md must NAME each new symbol in human prose (a
+      // table/paragraph), not merely carry it in the machine block. Assert each appears OUTSIDE the block.
+      const begin = sdk.indexOf(gen.MARKER);
+      const end = sdk.indexOf(gen.END_MARKER) + gen.END_MARKER.length;
+      const prose = sdk.slice(0, begin) + sdk.slice(end);
+      const signedSymbols = [
+        "signed",
+        "signSealWith",
+        "validateSignedSeal",
+        "verifySignedSeal",
+        "verifySignedSealAttestation",
+        "recoverSigner",
+        "verifySignedAttestation",
+      ];
+      for (const name of signedSymbols) {
+        expect(prose, `docs/SDK.md prose does not document signed-verify symbol "${name}"`).to.include(name);
+      }
+      // The signed-container KIND tag is documented as the pinned wire value.
+      expect(prose).to.include("vh.evidence-seal-signed");
+      // The signed path's trust boundary is stated (a signature proves WHO vouched, not WHEN).
+      expect(prose.toLowerCase()).to.match(/who vouched|vouched for/);
     });
 
     it("documents the SEMVER POLICY (major on breaking surface change; patch/minor safe)", function () {

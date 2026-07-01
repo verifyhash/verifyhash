@@ -1,4 +1,49 @@
-# verifyhash — runnable end-to-end example
+# verifyhash — runnable examples
+
+Two committed, self-checking, fully-offline examples. Zero setup, one command each.
+
+## `sdk-verify.js` — embed the SDK exactly as an external developer would
+
+```bash
+node examples/sdk-verify.js
+```
+
+This is the **consumer** example: it imports the package **only** through its single public entrypoint,
+`require("verifyhash")` (plus `ethers`, verifyhash's **own** declared dependency, used only to mint an
+**ephemeral throwaway** signing key that stands in for a real, out-of-band vendor key) — **no** deep
+`cli/core/...` reach-in, no network, no third-party non-core dependency, no real key. It runs **two acts**:
+the free-tier tamper-evidence path, and the paid, revenue-relevant **signed + vendor-pinned verify gate**.
+
+**Act 1 — UNSIGNED tamper-evidence (free tier):**
+
+1. **`buildSeal`** — seal an in-memory `{ relPath, bytes }` file set (no directory, no disk).
+2. **`verifySeal`** (untouched bytes) → **ACCEPTED** — the root is re-derived from the bytes you hold.
+3. **`verifySeal`** (one byte flipped) → **REJECTED** — and it prints the per-file **diff** the verdict is
+   built from (which `relPath` changed, expected vs. actual hash).
+4. **`serializeSeal` / `readSeal`** — the canonical, byte-deterministic packet a counterparty can re-read.
+
+**Act 2 — SIGNED + vendor-PINNED verify gate (the paid embed).** This is the integration a downstream
+service pays for: **verify in-process that a packet was signed by _our_ published vendor address**, with
+**no** shell-out to the `vh` binary (STRATEGY.md **P-9** / EPIC-58 — "verified by verifyhash, signed &
+pinned, inside _your_ product").
+
+5. **`signSealWith`** — a publisher signs the seal (ephemeral key here; a real out-of-band key in prod).
+6. **`verifySignedSeal`** pinned to **our** vendor address → **ACCEPTED**.
+7. **`verifySignedSeal`** pinned to a **different** vendor → **REJECTED** — the signature is *genuine*; only
+   the **pin** fails. "Signed by someone, but not by us" must reject; that is the security property a paying
+   integrator's gate enforces (it is **not** tamper-evidence — the bytes are fine).
+8. **`verifySignedSeal`** on a one-byte-tampered signature → **REJECTED** (recovered signer ≠ claimed).
+
+It leads with the standing **trust note** (a seal proves *tamper-evidence*; a valid **signature** proves
+*who vouched* — the pinned address's key-holder — for those bytes; **neither** proves a trusted timestamp
+and **neither** is a legal opinion — timestamping rides the human-owned trust-root, `needs-human`, P-3 in
+[`STRATEGY.md`](../STRATEGY.md)), prints a clear **PASS** summary naming both acts, and exits 0. The only
+key it ever uses is an **ephemeral, in-memory throwaway** (never persisted, funded, or logged). It is
+test-gated by [`test/sdk.example.test.js`](../test/sdk.example.test.js) on every `npx hardhat test` — a grep
+there asserts the example uses **only** the public surface (`require("verifyhash")` + `ethers`, no deep
+`cli/*` import), so the "public API stands alone" claim can never silently rot.
+
+## `run.js` — the end-to-end DataLedger + ProofParcel buyer pipeline
 
 One command, zero setup, fully offline:
 

@@ -702,6 +702,28 @@ package root (deep `cli/…` internals) carry no stability guarantee. This examp
 ([`test/sdk.index.test.js`](test/sdk.index.test.js)); the signed path is gated by
 [`test/sdk.signed.test.js`](test/sdk.signed.test.js), so it can never silently rot.
 
+### Verify continuously over time (`vh journal`)
+
+Every verify above answers *"do these bytes match RIGHT NOW?"* and exits. The **integrity journal** proves an
+artifact has verified **continuously across runs**: an **append-only, hash-chained** log of verify verdicts
+that is **itself tamper-evident** — a deleted / edited / reordered / inserted past entry **breaks the chain**
+and `vh journal verify` **localizes the first break**.
+
+```bash
+vh journal append <artifact> --to <journalfile> [--dir <d>] [--ts <ISO>]  # record ONE verdict (strictly additive)
+vh journal verify <journalfile>   # exit 0 PASS (unbroken + every observation ACCEPTED) / 3 broken-or-drifted / 2 usage / 1 IO
+```
+
+Each CI run appends this build's verdict, then verifies the whole chain — a green pipeline MEANS "the artifact
+has verified continuously across every recorded run, and the record itself is tamper-evident." It reuses the
+**same** keccak hash-chain the project already trusts for seals (no new crypto). The `ts` on each entry is
+**self-asserted** (the verifier's own wall clock), **NOT a trusted timestamp** — the journal never claims
+*"unaltered since date T"* on its own; that claim rides the human-owned trust-root (STRATEGY.md **P-3**).
+Schema, chain guarantee, the 0/3 contract, and the honesty boundary:
+[`docs/INTEGRITY-JOURNAL.md`](docs/INTEGRITY-JOURNAL.md); drop-in CI recipes in
+[`examples/journal-ci.js`](examples/journal-ci.js) and
+[`verifier/ci/journal.generic.sh`](verifier/ci/journal.generic.sh).
+
 ## Develop
 
 ```

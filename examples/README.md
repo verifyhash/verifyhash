@@ -61,6 +61,25 @@ and the trust boundary. It is test-gated by
 [`test/verify-service.example.test.js`](../test/verify-service.example.test.js) on every `npx hardhat test`,
 so it can never silently rot.
 
+## `journal-ci.js` — continuous-integrity CI step (the `vh journal` integrity journal)
+
+```bash
+node examples/journal-ci.js
+```
+
+The **continuous-integrity** example: it treats the `vh journal` **append-only, hash-chained integrity
+journal** as a drop-in CI step. It **builds** a seal with `require("verifyhash")`, writes the sealed bytes +
+packet to a throwaway workdir, then shells out to `vh journal append` **twice** (recording two hash-chained
+verdicts, strictly additively), runs `vh journal verify` (reporting an **unbroken chain**, exit 0), and exits
+0. It imports **only** `require("verifyhash")`, the `vh` **command** (spawned from the package's own `bin.vh`),
+and Node built-ins (`fs`, `os`, `path`, `child_process`) — **no** deep `cli/*` reach-in (not even the pure
+journal core) and **no** third-party dependency. The `ts` on each entry is **self-asserted**, **not** a
+trusted timestamp — the journal never claims *"unaltered since date T"* on its own (STRATEGY.md **P-3**). See
+[`docs/INTEGRITY-JOURNAL.md`](../docs/INTEGRITY-JOURNAL.md) for the schema, the chain guarantee, the 0/3
+contract, and the honesty boundary. It is test-gated by
+[`test/journal.example.test.js`](../test/journal.example.test.js) on every `npx hardhat test`, so it can
+never silently rot.
+
 ## `sdk-verify-signed.js` — the SIGNED + vendor-PINNED verify gate, in-process
 
 ```bash

@@ -259,6 +259,33 @@ Drop it in with:
 - a shell CI gate — [`verifier/ci/verify-service.generic.sh`](../verifier/ci/verify-service.generic.sh);
 - a GitHub Actions gate — [`verifier/ci/verify-service.github-actions.yml`](../verifier/ci/verify-service.github-actions.yml).
 
+## Verify continuously over time (`vh journal`)
+
+The SDK and the service both answer *"do these bytes match RIGHT NOW?"* and exit. To prove an artifact has
+verified **continuously across runs**, verifyhash ships an **append-only, hash-chained integrity journal**:
+each run appends one verify verdict, and the log is **itself tamper-evident** — a deleted / edited /
+reordered / inserted past entry **breaks the chain** and `vh journal verify` **localizes the first break**.
+
+```bash
+vh journal append <artifact> --to <journalfile> [--dir <d>] [--ts <ISO>]  # record ONE verdict (additive)
+vh journal verify <journalfile>                                           # PASS / BROKEN / DRIFTED
+# exit 0 PASS (unbroken + every observation ACCEPTED) / 3 broken-or-drifted / 2 usage / 1 IO
+```
+
+It reuses the **same** keccak/Merkle hashing documented above — no fork, no new crypto — and the core
+(`cli/journal.js`) is **pure** (no disk I/O, no socket, no key). The `ts` on each entry is **self-asserted**
+(the verifier's own wall clock), **NOT a trusted timestamp** — the journal never claims *"unaltered since date
+T"* on its own; that claim rides the human-owned trust-root (STRATEGY.md **P-3**). The schema, the chain
+guarantee, the 0/3 contract, and the full honesty boundary are documented in
+**[docs/INTEGRITY-JOURNAL.md](./INTEGRITY-JOURNAL.md)**.
+
+Drop it in with:
+
+- a dependency-free runnable step — [`examples/journal-ci.js`](../examples/journal-ci.js)
+  (appends two hash-chained entries, verifies an unbroken chain, exits 0);
+- a shell CI gate — [`verifier/ci/journal.generic.sh`](../verifier/ci/journal.generic.sh);
+- a GitHub Actions gate — [`verifier/ci/journal.github-actions.yml`](../verifier/ci/journal.github-actions.yml).
+
 ## Trust boundary (unchanged from the CLI — the SDK adds nothing)
 
 A seal proves **tamper-evidence + offline re-compute** ("these exact bytes are what was sealed"), NOT a

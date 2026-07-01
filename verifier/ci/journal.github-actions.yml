@@ -1,0 +1,99 @@
+# journal.github-actions.yml — copy-paste GitHub Actions CONTINUOUS-INTEGRITY gate built on the `vh journal`
+# append-only, hash-chained integrity journal (T-60.3).
+#
+# WHAT THIS IS
+#   Drop this file at `.github/workflows/integrity-journal.yml` in the repo that produces sealed verifyhash
+#   artifacts. On every push / pull request it APPENDS this build's verify verdict to a STANDING append-only
+#   journal, then VERIFIES the whole chain and FAILS the job unless the chain is UNBROKEN and every recorded
+#   observation was ACCEPTED. A green check now MEANS "the artifact has verified CONTINUOUSLY across every
+#   recorded run, and the record itself is tamper-evident."
+#
+# WHY APPEND-THEN-VERIFY (the continuous-integrity shape, not a one-shot verify)
+#   `vh journal append` records THIS run's verdict as ONE new hash-chained line — STRICTLY ADDITIVELY (prior
+#   lines are never rewritten). Recording a REJECTED verdict is a SUCCESSFUL append; the drift then surfaces
+#   at `vh journal verify` time. So a tampered artifact records a REJECT this run and `vh journal verify`
+#   reports the chain as DRIFTED (exit 3) — failing the job. A deleted / reordered / inserted / hand-edited
+#   PAST line BREAKS the chain and verify LOCALIZES the first break (also exit 3).
+#
+# PERSIST THE JOURNAL BETWEEN RUNS (where the continuous value lives)
+#   The chain only GROWS if the SAME journal file survives across runs. The step below persists it with
+#   actions/cache using a ROLLING key (`…-${{ github.run_id }}`) + a `restore-keys` prefix fallback: each run
+#   RESTORES the most-recent prior journal and SAVES a fresh immutable cache under its own key, so the chain
+#   truly accumulates. A STATIC key would be a trap — GitHub caches are immutable, so a static-key HIT after
+#   run 1 SKIPS the post-job save and the journal would silently never grow past its first entry while the job
+#   stayed green. Alternatively commit the journal file to the repo or upload/download it as a build artifact.
+#   A fresh journal each run only ever proves a single observation. `append` creates the file on the first run.
+#
+# TRUST BOUNDARY: a PASS proves ORDERING + CONTINUITY of the verifier's OWN observations + tamper-evidence of
+#   the record. The `ts` on each entry is SELF-ASSERTED (the verifier's own wall clock), NOT a trusted
+#   timestamp — the journal NEVER claims "unaltered since date T" on its own; that claim needs a trust-root
+#   that signs/timestamps the `ts` (STRATEGY.md P-3). See docs/INTEGRITY-JOURNAL.md.
+#
+# WHAT YOU EDIT (near the top of the run steps):
+#   - how the seal ARTIFACT is produced for your release (the SDK's buildSeal/serializeSeal, or your tooling).
+#     The example below writes a tiny in-line one. Replace with your real artifacts + their referenced files.
+#
+# NOTE: the loop NEVER runs this file. It is a shipped EXAMPLE. The exact gate (append then verify, exit-code
+# passthrough) is the SAME logic verifier/ci/journal.generic.sh ships, and a test drives that gate against the
+# real `vh journal` command to prove it exits 0 on an unbroken chain and non-zero (3) after a tampered artifact
+# appends a REJECT.
+
+name: integrity-journal continuous-integrity gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  integrity-journal:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Your repo (containing the sealed artifacts + the verifyhash package, or add a download/install
+      #    step for however your release publishes them).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 2. Install verifyhash (provides the `vh journal` command + the SDK to build the seal artifact).
+      - name: Install verifyhash
+        run: npm ci || npm install
+
+      # 3. PERSIST the standing journal across runs so the hash-chain GROWS. Without this the chain restarts
+      #    every build and can only ever prove a single observation. (Commit the file or use an artifact
+      #    upload/download instead, if a cache does not fit your flow.)
+      #    The key MUST rotate per run: `key` embeds ${{ github.run_id }} so every run is a cache MISS and
+      #    therefore SAVES a new immutable cache; `restore-keys` (a prefix) then RESTORES the most-recent
+      #    prior journal so the chain accumulates. A static key would HIT every run after the first and,
+      #    caches being immutable, SKIP the save — leaving the journal frozen at one entry while staying green.
+      - name: Restore the standing integrity journal
+        uses: actions/cache@v4
+        with:
+          path: integrity.jsonl
+          key: vh-integrity-journal-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            vh-integrity-journal-${{ github.ref_name }}-
+
+      # 4. Produce THIS build's seal artifact. Here we build a tiny seal with the SDK and write its referenced
+      #    file to disk (append RE-DERIVES the root from these bytes). Replace with your real release artifacts.
+      - name: Build the seal artifact for this run
+        run: |
+          mkdir -p dist
+          node -e '
+            const vh = require("verifyhash");
+            const fs = require("fs");
+            const path = require("path");
+            const entries = [{ relPath: "dist/app.js", bytes: Buffer.from("console.log(1)\n") }];
+            for (const e of entries) { fs.mkdirSync(path.dirname(e.relPath), { recursive: true }); fs.writeFileSync(e.relPath, e.bytes); }
+            fs.writeFileSync("dist/release.vhevidence.json", vh.serializeSeal(vh.buildSeal(entries)));
+          '
+
+      # 5. THE GATE. APPEND this run's verdict to the standing journal (strictly additive), then VERIFY the
+      #    whole chain. Exit 0 PASS (unbroken + every observation ACCEPTED) -> the job passes; exit 3 (broken
+      #    chain OR a recorded REJECT) -> the job FAILS -> the merge is blocked. This is the SAME append-then-
+      #    verify logic verifier/ci/journal.generic.sh ships; the last command's exit code is the gate verdict.
+      - name: Record + verify continuous integrity (fails the build on a broken chain or a recorded drift)
+        run: |
+          npx vh journal append dist/release.vhevidence.json --to integrity.jsonl --dir .
+          npx vh journal verify integrity.jsonl

@@ -54,6 +54,7 @@ const { cmdIdentity } = require("./identity");
 const { cmdRevocation } = require("./revocation");
 const { cmdJournal } = require("./journal-cli");
 const serveVerifyHttp = require("./serve-verify-http");
+const fulfillWebhookHttp = require("./fulfill-webhook-http");
 
 function usage() {
   return [
@@ -112,6 +113,7 @@ function usage() {
     "  vh journal append <artifact> --to <journalfile> [--dir <d>] [--ts <ISO>]  VERIFY a *.vhevidence.json seal/signed container through the EXISTING composed verify path and record the verdict as ONE new, hash-chained line — STRICTLY ADDITIVELY (prior lines are never rewritten). Recording a REJECTED verdict is a successful append; the journal faithfully records what it saw. Integrity OVER TIME: a standing, tamper-evident record you re-run. Exit 0 appended / 2 usage / 1 IO",
     "  vh journal verify <journalfile>  walk the on-disk hash-chain: a deleted/reordered/inserted/hand-edited past line BREAKS the chain and this LOCALIZES the first break — naming the drifted artifact + the seq where it drifted + brokenAt. The `ts` is SELF-ASSERTED (never claims \"unaltered since date T\" until a trust-root signs it). Exit 0 PASS (unbroken) / 3 BROKEN / 2 usage / 1 IO — the SHARED 0/3 verify contract",
     "  vh serve-verify [--port <n>] [--host <h>] [--max-body <bytes>]  launch a tiny loopback-only (default 127.0.0.1:4180) Node-core HTTP VERIFY server (ZERO new dependency). POST /verify a seal or signed container -> JSON verdict on a CI-mappable status (200 ACCEPTED / 422 REJECTED / 400 bad request / 413 over --max-body); GET /healthz -> { ok:true }. VERIFY-ONLY: it never signs, holds NO key, writes NO file. Binds loopback by default; exposing it publicly is a HUMAN deploy step (never auto-deployed). A verified seal is NOT a timestamp (P-3). Press Ctrl-C to stop; a bad flag exits 2, a bind failure exits 1",
+    "  vh fulfill-webhook [--port <n>] [--host <h>] [--max-body <bytes>] [--tolerance <sec>] --secret-env <VAR> --binding <file> (--key-env <VAR>|--key-file <p>) --out <dir> [--catalog <f>]  launch a tiny loopback-only (default 127.0.0.1:4190) Node-core HTTP FULFILLMENT webhook (ZERO new dependency): the DROP-IN that removes the human's last CODE step. POST /fulfill a Stripe-shaped paid event -> AUTHENTICATE it (HMAC over --secret-env, fail-closed), MAP its price to a plan via --binding, MINT the signed license the paid gate accepts, and DELIVER it IDEMPOTENTLY to --out (a re-delivered event returns the SAME licenseId, 200 { delivered, licenseId }; unsigned/forged/stale -> 401/400, unmappable -> 422, over --max-body -> 413). The vendor key (--key-env/--key-file) is held in memory only; the key/secret are NEVER written to disk or logs. Binds loopback by default; exposing it (real secret, real key, your domain+TLS) is a HUMAN deploy step. A license is an ACCESS credential, NOT a token (P-3). Press Ctrl-C to stop; a bad flag/config exits 2, a bind failure exits 1",
     "",
     "trust inspect options (read-only, writes NOTHING — the onboarding companion to reconcile):",
     "  --as <bank|ledger|rentroll>  REQUIRED: which logical input <file> is (a malformed value is a usage error)",
@@ -535,6 +537,34 @@ function usage() {
     "  seal proves set-membership / that a signer vouched — NOT a trusted timestamp (\"sealed since date T\"",
     "  still needs the human-owned signing/timestamp trust-root, P-3). It LISTENS until killed (Ctrl-C); a bad",
     "  flag exits 2 BEFORE binding, a bind failure (EADDRINUSE / EACCES / bad --host) exits 1.",
+    "",
+    "fulfill-webhook options (a tiny loopback-only Node-core HTTP FULFILLMENT webhook; ZERO new dependency):",
+    "  --secret-env <VAR>         REQUIRED: env var holding the provider's webhook SIGNING SECRET (the HMAC key",
+    "                             the provider signs each delivery with). Read from process.env[VAR]; NEVER written.",
+    "  --binding <file>           REQUIRED: a validated price->plan binding JSON (kind vh-evidence-price-binding):",
+    "                             maps each (provider, priceId) onto ONE of YOUR evidence planIds. Unmapped price = 422.",
+    "  --key-env <VAR> | --key-file <p>  REQUIRED (EXACTLY ONE): the VENDOR signing key (read-used-held-in-memory,",
+    "                             NEVER written to disk or logs). It signs each delivered license; the loop sets NO price.",
+    "  --out <dir>                REQUIRED: an EXISTING directory the delivered *.vhlicense.json files are written to.",
+    "                             Never cwd; delivery is idempotent (keyed on the event) so a retry writes no duplicate.",
+    "  --catalog <file>           OPTIONAL evidence plan catalog (default: the bundled DRAFT). The binding's planIds",
+    "                             are checked against it; entitlements are copied from the resolved plan VERBATIM.",
+    "  --port <n>                 TCP port to bind (0..65535; 0 = an OS-chosen ephemeral port). Default 4190.",
+    "  --host <h>                 interface to bind. Default 127.0.0.1 (LOOPBACK) — a non-loopback interface is NOT",
+    "                             served by default; pass e.g. --host 0.0.0.0 to bind all interfaces (your explicit choice).",
+    "  --max-body <bytes>         reject a request body larger than this many bytes with HTTP 413 (default 256 KiB).",
+    "  --tolerance <sec>          signature replay window in seconds (default 300, Stripe's own). A t outside it = 401.",
+    "  Route: POST /fulfill  -> reads the RAW body, verifyProviderSignature (fail-closed: unsigned/forged/stale/",
+    "          malformed = 401/400 with the localized reason, NOTHING delivered) -> parseEvidenceEvent ->",
+    "          normalizeEvidenceEvent (via --binding) -> fulfillEvidenceOrder -> sign -> deliver. On success 200",
+    "          { delivered, licenseId }; a re-delivered event returns the SAME licenseId (idempotent, no duplicate).",
+    "          GET /healthz -> 200 { ok:true }.",
+    "  POSTURE (fail-closed + loopback + access-credential + human-deploy): it AUTHENTICATES then DELIVERS a signed",
+    "  license; it holds the vendor key IN MEMORY and writes NO key/secret to disk or logs, and makes NO outbound",
+    "  request. It binds loopback by default; exposing it (your provider's real secret, your real key, your domain +",
+    "  TLS) is an explicit HUMAN deploy step — NEVER auto-deployed. A delivered license is an ACCESS credential for",
+    "  delivered software value — NOT a token/coin/NFT, not tradeable, and NOT a trusted timestamp (P-3). It LISTENS",
+    "  until killed (Ctrl-C); a bad flag/config exits 2 BEFORE binding, a bind failure exits 1.",
     "",
   ].join("\n");
 }
@@ -3512,6 +3542,234 @@ function cmdServeVerify(argv, io = {}) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// `vh fulfill-webhook ... --secret-env <VAR> --binding <file> (--key-env|--key-file) --out <dir>` (T-62.2)
+// ---------------------------------------------------------------------------
+//
+// A tiny, dependency-free (Node-core `http` ONLY) loopback-only HTTP FULFILLMENT webhook. It wires the pure
+// intake core (cli/core/fulfill-intake.js) to the shipped evidence license fulfiller: on each authenticated
+// POST it MINTS the signed license `vh evidence license fulfill` would mint and DELIVERS it to --out,
+// idempotently. This is the CLI plumbing (parse flags, load the key/secret/binding/catalog, bind, print,
+// propagate exit codes); the transport + fulfillment live in cli/fulfill-webhook-http.js.
+//
+// KEY / SECRET HYGIENE: the signing secret comes ONLY from --secret-env and the vendor key ONLY from EXACTLY
+// ONE of --key-env/--key-file (via the SAME read-used-discarded loadSigningWallet the sign path uses). The
+// raw key string exists only long enough to build an in-process Wallet; neither the key nor the secret is
+// ever written to disk or logged (error messages name only the SOURCE var/path, never the material).
+
+// Parse `fulfill-webhook` argv. Flags only (no positionals). A --port must be an integer in 0..65535 (0 =
+// ephemeral); --max-body / --tolerance are validated numerics. An unknown flag, a positional, or a bad
+// numeric value is a USAGE error, never silently coerced. Required-flag presence is checked in run (so a
+// missing --secret-env/--binding/--out/key-source is a clean usage error with the full flag list).
+function parseFulfillWebhookArgs(argv) {
+  const opts = {
+    port: undefined,
+    host: undefined,
+    maxBody: undefined,
+    tolerance: undefined,
+    secretEnv: undefined,
+    binding: undefined,
+    keyEnv: undefined,
+    keyFile: undefined,
+    out: undefined,
+    catalog: undefined,
+  };
+  const positionals = [];
+  const intFlag = (raw, flag, { allowZero }) => {
+    const s = String(raw == null ? "" : raw);
+    if (!/^\d+$/.test(s)) throw new Error(`${flag} must be a non-negative integer (got "${raw}")`);
+    const n = Number(s);
+    if (!allowZero && n === 0) throw new Error(`${flag} must be a positive integer (got "${raw}")`);
+    return n;
+  };
+  const need = (flag, i) => {
+    const v = argv[i];
+    if (v === undefined) throw new Error(`${flag} requires a value`);
+    return v;
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--port": {
+        const n = intFlag(need("--port", ++i), "--port", { allowZero: true });
+        if (n > 65535) throw new Error(`--port must be in 0..65535 (got "${argv[i]}")`);
+        opts.port = n;
+        break;
+      }
+      case "--host":
+        opts.host = need("--host", ++i);
+        break;
+      case "--max-body":
+        opts.maxBody = intFlag(need("--max-body", ++i), "--max-body", { allowZero: false });
+        break;
+      case "--tolerance":
+        opts.tolerance = intFlag(need("--tolerance", ++i), "--tolerance", { allowZero: true });
+        break;
+      case "--secret-env":
+        opts.secretEnv = need("--secret-env", ++i);
+        break;
+      case "--binding":
+        opts.binding = need("--binding", ++i);
+        break;
+      case "--key-env":
+        opts.keyEnv = need("--key-env", ++i);
+        break;
+      case "--key-file":
+        opts.keyFile = need("--key-file", ++i);
+        break;
+      case "--out":
+        opts.out = need("--out", ++i);
+        break;
+      case "--catalog":
+        opts.catalog = need("--catalog", ++i);
+        break;
+      default:
+        if (a && a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        positionals.push(a);
+    }
+  }
+  if (positionals.length > 0) {
+    throw new Error(`unexpected argument: ${positionals[0]} (fulfill-webhook takes no positionals)`);
+  }
+  return opts;
+}
+
+// runFulfillWebhook: validate config (required flags, secret, binding, catalog, key, --out dir), build the
+// handler config, then bind + print. Resolves to { code, server, url } once listening (or on a config/bind
+// failure). ALL config errors resolve BEFORE any socket is bound. `io` is injectable so a test can supply a
+// createServer / write sinks / an injected `now` clock and confirm the wiring; the default builds + listens
+// on a real loopback socket. On a config error it resolves { code: 2 }; on a bind error { code: 1 }.
+function runFulfillWebhook(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  const fs = require("fs");
+  const path = require("path");
+  const coreAttestation = require("./core/attestation");
+  const evidencePlans = require("./core/evidence-plans");
+  const fulfillIntake = require("./core/fulfill-intake");
+  const evidence = require("./evidence");
+
+  // ---- required flags (a clear, key-free message per missing one) ----------
+  for (const [flag, val] of [
+    ["--secret-env", opts.secretEnv],
+    ["--binding", opts.binding],
+    ["--out", opts.out],
+  ]) {
+    if (val == null) {
+      writeErr(`error: \`vh fulfill-webhook\` requires ${flag}\n`);
+      return Promise.resolve({ code: 2 });
+    }
+  }
+
+  // ---- the signing SECRET (from --secret-env only; name the VAR, never the value) ----
+  const secret = process.env[opts.secretEnv];
+  if (secret === undefined || secret === "") {
+    writeErr(`error: environment variable ${opts.secretEnv} is not set (or empty); it must hold the webhook signing secret\n`);
+    return Promise.resolve({ code: 2 });
+  }
+
+  // ---- the plan catalog (bundled DRAFT by default) + the price binding -------
+  let catalog;
+  try {
+    const catalogPath = opts.catalog != null ? path.resolve(opts.catalog) : evidence.BUNDLED_EVIDENCE_CATALOG;
+    catalog = evidencePlans.validateEvidencePlanCatalog(JSON.parse(fs.readFileSync(catalogPath, "utf8")));
+  } catch (e) {
+    writeErr(`error: cannot load evidence plan catalog: ${e.message}\n`);
+    return Promise.resolve({ code: 2 });
+  }
+  let binding;
+  try {
+    binding = fulfillIntake.validateEvidencePriceBinding(
+      JSON.parse(fs.readFileSync(path.resolve(opts.binding), "utf8")),
+      catalog
+    );
+  } catch (e) {
+    writeErr(`error: cannot load --binding ${opts.binding}: ${e.message}\n`);
+    return Promise.resolve({ code: 2 });
+  }
+
+  // ---- the VENDOR key (EXACTLY ONE of --key-env/--key-file; read-used-held-in-memory, never persisted) ----
+  let wallet;
+  try {
+    ({ wallet } = coreAttestation.loadSigningWallet({ keyEnv: opts.keyEnv, keyFile: opts.keyFile }));
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return Promise.resolve({ code: 2 });
+  }
+
+  // ---- --out must be an EXISTING directory (never cwd; fail loudly on a typo) ----
+  const outDir = path.resolve(opts.out);
+  try {
+    if (!fs.statSync(outDir).isDirectory()) throw new Error("not a directory");
+  } catch (_e) {
+    writeErr(`error: --out ${opts.out} must be an existing directory (create it first; the loop never writes to cwd)\n`);
+    return Promise.resolve({ code: 2 });
+  }
+
+  const port = opts.port == null ? fulfillWebhookHttp.DEFAULT_PORT : opts.port;
+  const host = opts.host == null ? fulfillWebhookHttp.DEFAULT_HOST : opts.host;
+  const maxBodyBytes = opts.maxBody == null ? fulfillWebhookHttp.DEFAULT_MAX_BODY_BYTES : opts.maxBody;
+
+  const handlerOpts = {
+    wallet,
+    secret,
+    binding,
+    catalog,
+    outDir,
+    maxBodyBytes,
+    toleranceSec: opts.tolerance,
+    now: io.now, // injectable clock (ms); the http layer defaults to Date.now
+  };
+
+  let srv;
+  try {
+    srv = (io.createServer || fulfillWebhookHttp.createServer)(handlerOpts);
+  } catch (e) {
+    // A programmer/config error building the handler (never leaks the key/secret).
+    writeErr(`error: cannot start vh fulfill-webhook: ${e.message}\n`);
+    return Promise.resolve({ code: 2 });
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    srv.on("error", (e) => {
+      if (settled) return;
+      settled = true;
+      writeErr(`error: cannot start vh fulfill-webhook: ${e.message}\n`);
+      resolve({ code: 1, server: srv, url: null, error: e });
+    });
+    srv.listen(port, host, () => {
+      if (settled) return;
+      settled = true;
+      const bound = srv.address();
+      const realPort = bound && typeof bound === "object" ? bound.port : port;
+      const url = `http://${host}:${realPort}/`;
+      write(fulfillWebhookHttp.banner(url, host, outDir));
+      resolve({ code: 0, server: srv, url });
+    });
+  });
+}
+
+// cmdFulfillWebhook: parse argv, then validate + bind + print. Resolves to a NUMBER: a bad flag or config
+// resolves to 2 (usage) BEFORE binding; a bind failure resolves to 1 (IO); on success it binds, prints the
+// banner, and returns a Promise that NEVER resolves — the open socket keeps the door up until Ctrl-C. Tests
+// call `runFulfillWebhook` directly (it resolves with the live { server } handle) so they can hit + close it.
+function cmdFulfillWebhook(argv, io = {}) {
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseFulfillWebhookArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n\n` + usage());
+    return Promise.resolve(2);
+  }
+  return runFulfillWebhook(opts, io).then((res) => {
+    if (res.code !== 0) return res.code;
+    return new Promise(() => {});
+  });
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -3555,6 +3813,8 @@ async function main(argv) {
       return cmdJournal(rest);
     case "serve-verify":
       return cmdServeVerify(rest);
+    case "fulfill-webhook":
+      return cmdFulfillWebhook(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -3611,6 +3871,9 @@ module.exports = {
   cmdServeVerify,
   runServeVerify,
   parseServeVerifyArgs,
+  cmdFulfillWebhook,
+  runFulfillWebhook,
+  parseFulfillWebhookArgs,
   parseVerifyTimestampArgs,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,

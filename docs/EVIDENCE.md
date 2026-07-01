@@ -459,6 +459,55 @@ renewal webhook drives. The loop ships the **catalog + the mapping + the fulfill
 HUMAN-owned outward steps** (STRATEGY.md › P-7 steps 1–2). NO new human gate is introduced — the fulfillment
 command automates the *mechanism* of an existing P-7 step, it does not add one.
 
+## Reference self-serve fulfillment webhook: `vh fulfill-webhook`
+
+The worked flow above still asks the human to **write** the webhook handler — the code that authenticates the
+provider's signature, maps the price to a plan, and shells out to `vh evidence license fulfill`. **`vh
+fulfill-webhook`** ships **that handler**, tested, as a tiny loopback-only Node-core HTTP server (**ZERO new
+dependency**), so the human's **last CODE step becomes a config step**: run it, point your billing provider's
+webhook at it, and every paid event delivers a license — no handler to author.
+
+It wires the pure **fulfillment-intake core** ([`cli/core/fulfill-intake.js`](../cli/core/fulfill-intake.js))
+to the fulfiller: on each POST it runs `verifyProviderSignature` → `parseEvidenceEvent` →
+`normalizeEvidenceEvent` → `fulfillEvidenceOrder` → `evidence.buildLicense`, reusing every seam **verbatim**.
+
+```
+vh fulfill-webhook [--port <n>] [--host <h>] [--max-body <bytes>] [--tolerance <sec>] \
+                   --secret-env <VAR> --binding <file> (--key-env <VAR> | --key-file <p>) \
+                   --out <dir> [--catalog <file>]
+```
+
+- **`--secret-env <VAR>`** — the env var holding the provider's **webhook signing secret** (the HMAC key it
+  signs each delivery with). Read from `process.env[VAR]`; **never written to disk or logs**.
+- **`--binding <file>`** — a validated **price→plan binding** (`kind: vh-evidence-price-binding`) mapping each
+  `(provider, priceId)` onto one of **your** evidence `planId`s. An unmapped price is a NAMED **422**, never a
+  silent default plan.
+- **`--key-env <VAR>` | `--key-file <p>`** — **EXACTLY ONE**: the **vendor signing key**. It is
+  read-used-**held-in-memory** to sign each delivered license and is **NEVER written to disk or logs** (the
+  same `loadSigningWallet` read the sign path uses; the loop sets **no price**).
+- **`--out <dir>`** — an **existing** directory the delivered `*.vhlicense.json` files are written to (**never
+  cwd**). Delivery is **idempotent**, keyed on the event, so an at-least-once retry writes **no duplicate**.
+- **`--catalog <file>`** — OPTIONAL evidence plan catalog (default: the bundled **DRAFT**). Entitlements are
+  copied from the resolved plan **verbatim**.
+
+**On each `POST /fulfill`:** it reads the RAW body (bounded by `--max-body` → **413**), **authenticates** it
+with `verifyProviderSignature` (**fail-closed**: an **unsigned** request is **401**, a **malformed** signature
+header is **400**, a **forged** signature or **stale/replayed** timestamp is **401** — each with the localized
+reason, delivering **NOTHING**), maps its price to a plan via `--binding`, mints the signed license the paid
+gate accepts, and **delivers** it. On success it responds **`200 { delivered, licenseId }`**; a **re-delivered
+event returns the SAME `licenseId`** (idempotent, no duplicate). An authenticated event that maps to no plan
+is **422**. `GET /healthz` → `200 { ok:true }`.
+
+It **binds loopback (127.0.0.1) by default** — a non-loopback interface is not served unless you pass
+`--host` — makes **no outbound network request**, holds the vendor key **in memory only**, and writes
+**neither the key nor the secret** to disk or logs.
+
+> **Boundary (VERBATIM — read this first).**
+>
+> The loop ships this reference handler and its OFFLINE tests (a synthetic signing secret and an ephemeral `Wallet.createRandom()` vendor key); provisioning the REAL provider webhook secret, the REAL vendor key, and DEPLOYING the endpoint behind your own URL/TLS remain the human-owned steps.
+>
+> A delivered license is an ACCESS credential for delivered software value — NOT a token/coin/NFT, and not tradeable.
+
 ## Going to market
 
 Standing up the evidence vendor keypair, the price, and the first design partner are **human steps** —

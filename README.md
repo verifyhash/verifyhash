@@ -659,6 +659,42 @@ independently verifies it, and the consolidated go-to-market ask (**P-8**) — i
 [`docs/PILOT.md`](docs/PILOT.md); the operator quick reference is [`pilot/README.md`](pilot/README.md).
 The journey and the runbook are both test-gated, so they can never silently rot.
 
+### Embed it: the programmatic API (SDK)
+
+Everything the CLI does is available as a library. `require("verifyhash")` (or `require("../index.js")`
+from a checkout) exposes a single, documented, semver-guarded entrypoint — a **thin re-export** of the
+exact same functions `vh` runs (no fork, no second implementation, no new crypto). The embedded seal
+path is byte-identical to `vh evidence seal` / `vh evidence verify`: build a seal, verify it (ACCEPT),
+and a one-byte tamper is REJECTED.
+
+```js
+const vh = require("verifyhash"); // from a checkout: require("./index.js")
+
+// Build a tamper-evident seal over an in-memory { relPath, bytes } file set.
+const entries = [
+  { relPath: "data/a.txt", bytes: Buffer.from("alpha\n") },
+  { relPath: "data/b.txt", bytes: Buffer.from("bravo\n") },
+];
+const seal = vh.buildSeal(entries);
+
+// Verify the SAME bytes: ACCEPTED (root re-derived from the bytes you hold, not the seal's own hashes).
+console.log(vh.verifySeal(seal, entries).verdict); // "ACCEPTED"
+
+// Tamper one byte and re-verify: REJECTED.
+const tampered = [entries[0], { relPath: "data/b.txt", bytes: Buffer.from("bravX\n") }];
+console.log(vh.verifySeal(seal, tampered).verdict); // "REJECTED"
+
+// Serialize to canonical, byte-deterministic JSON you can hand to a counterparty:
+const json = vh.serializeSeal(seal);
+console.log(vh.readSeal(json).root === seal.root); // true
+```
+
+The surface also re-exports the receipt codec (`buildReceipt`, `readReceipt`, `diffManifest`, …), the
+keccak/Merkle hashing primitives (`hashBytes`, `hashEntries`, `buildTree`, …), and `apiVersion` (the
+semver-guarded stability marker, mirroring `package.json`). Symbols **not** re-exported from the
+package root (deep `cli/…` internals) carry no stability guarantee. This example is test-gated
+([`test/sdk.index.test.js`](test/sdk.index.test.js)), so it can never silently rot.
+
 ## Develop
 
 ```

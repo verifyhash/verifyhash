@@ -320,18 +320,36 @@ describe("T-52.3 docs: the adversarial conformance corpus is in the buyer trust 
   });
 
   // -----------------------------------------------------------------------
-  // GLOBAL: T-52.3 introduced NO new needs-human ITEM anywhere. The "Proposals — needs-human" section
-  // must still contain exactly the SAME proposal set (P-1..P-8) — no fresh P-<n> ask.
+  // T-52.3 introduced NO new needs-human ITEM: its conformance-corpus pointer work must NOT have spawned a
+  // fresh needs-human proposal. The original proxy ("max proposal number is still P-8") was task-agnostic and
+  // went stale the moment a LATER, UNRELATED proposal (P-9, the EMBEDDABLE-SDK distribution ask on a different
+  // axis) was legitimately added. We assert the real contract instead: T-52.3's SUBJECT (the adversarial
+  // conformance corpus) is NOT the basis of any proposal beyond P-8 — later proposals are about other things.
   // -----------------------------------------------------------------------
   describe("T-52.3 introduces NO new needs-human proposal", function () {
-    it("the highest proposal number in the Proposals section is still P-8 (no P-9+ added)", function () {
+    it("no proposal beyond P-8 is the T-52.3 conformance-corpus ask (later proposals are unrelated)", function () {
       const secStart = strategy.indexOf("## Proposals — needs-human");
       expect(secStart, "Proposals section present").to.be.greaterThan(-1);
       const section = strategy.slice(secStart);
-      const proposalHeaders = section.match(/^- \*\*P-(\d+)\b/gm) || [];
-      const nums = proposalHeaders.map((h) => parseInt(h.match(/P-(\d+)/)[1], 10));
-      expect(nums.length, "the section declares proposals").to.be.greaterThan(0);
-      expect(Math.max(...nums), "no proposal beyond P-8 was added by T-52.3").to.equal(8);
+      // Slice the section into per-proposal blocks so we can inspect each one's subject.
+      const headerRe = /^- \*\*P-(\d+)\b/gm;
+      const heads = [];
+      let m;
+      while ((m = headerRe.exec(section)) !== null) heads.push({ n: parseInt(m[1], 10), idx: m.index });
+      expect(heads.length, "the section declares proposals").to.be.greaterThan(0);
+      // The baseline P-1..P-8 set must still be present (no proposal text was lost).
+      const nums = heads.map((h) => h.n);
+      for (let n = 1; n <= 8; n++) expect(nums).to.include(n, `baseline proposal P-${n} must remain`);
+      // Any proposal beyond P-8 must NOT be the conformance-corpus ask T-52.3 is about.
+      for (let i = 0; i < heads.length; i++) {
+        if (heads[i].n <= 8) continue;
+        const end = i + 1 < heads.length ? heads[i + 1].idx : section.length;
+        const body = section.slice(heads[i].idx, end).toLowerCase();
+        expect(
+          /run-corpus\.js|conformance corpus|adversarial (conformance )?corpus/.test(body),
+          `proposal P-${heads[i].n} must NOT be the T-52.3 conformance-corpus ask`
+        ).to.equal(false);
+      }
     });
   });
 });

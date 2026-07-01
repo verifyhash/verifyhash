@@ -217,7 +217,9 @@ describe("T-38.3 docs: TrustLedger webhook adapter documented (docs/TRUSTLEDGER.
 
     it("does NOT introduce a brand-new P-9 proposal as part of this task", function () {
       // T-38.3 must not invent a new needs-human proposal — P-6's step (3) is SHARPENED in place.
-      expect(strategy, "no new P-9 proposal introduced by this task").to.not.match(
+      // Scoped to the P-6 block (this task's subject), not the whole file: a LATER, UNRELATED proposal
+      // (e.g. P-9, the EMBEDDABLE-SDK distribution ask on a different axis) may legitimately exist elsewhere.
+      expect(p6, "this task's P-6 block must not spawn a new P-9 proposal").to.not.match(
         /^\s*-\s+\*\*P-9 \(/m
       );
     });

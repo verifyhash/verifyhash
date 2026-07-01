@@ -257,7 +257,9 @@ describe("T-48.3 docs: `vh evidence license fulfill` + evidence plan catalog doc
       const lower = p7.toLowerCase();
       expect(lower).to.match(/no new human gate/);
       // T-48.3 must not invent a new needs-human proposal — P-7's step 2 is SHARPENED in place.
-      expect(strategy, "no new P-9 proposal introduced by this task").to.not.match(
+      // Scoped to the P-7 block (this task's subject), not the whole file: a LATER, UNRELATED proposal
+      // (e.g. P-9, the EMBEDDABLE-SDK distribution ask on a different axis) may legitimately exist elsewhere.
+      expect(p7, "this task's P-7 block must not spawn a new P-9 proposal").to.not.match(
         /^\s*-\s+\*\*P-9 \(/m
       );
     });

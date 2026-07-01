@@ -3,10 +3,16 @@
   "version": "0.1.0",
   "description": "Tamper-evident, permissionless on-chain registry of code-contribution hashes, plus an offline data-provenance toolkit (the `vh` CLI).",
   "license": "Apache-2.0",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "vh": "cli/vh.js"
   },
   "files": [
+    "index.js",
     "cli/",
     "trustledger/",
     "README.md",

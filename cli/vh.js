@@ -52,6 +52,7 @@ const { cmdTrust } = require("../trustledger/cli");
 const { cmdEvidence } = require("./evidence");
 const { cmdIdentity } = require("./identity");
 const { cmdRevocation } = require("./revocation");
+const serveVerifyHttp = require("./serve-verify-http");
 
 function usage() {
   return [
@@ -107,6 +108,7 @@ function usage() {
     "  vh identity verify <card> [--signer <0xaddr>] [--revocations <f> --as-of <ISO>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed identity card, confirm the signature backs it AND the recovered signer IS the card's vendorAddress, OPTIONALLY pin --signer, OPTIONALLY check the vendor key was not REVOKED as of --as-of (default now), and print the claims/non-claims + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key card, a wrong --signer, or a key revoked-before-as-of is a clean REJECTED/REVOKED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED|REVOKED / 2 usage / 1 IO",
     "  vh revocation publish --address <0xaddr> --reason <reason> (--key-env <VAR>|--key-file <p>) [--superseded-by <0xaddr>] [--revoked-at <ISO>] [--out <p>]  MINT a signed producer KEY REVOCATION marking --address REVOKED as of --revoked-at (default now) for --reason (one of [\"compromised\",\"retired\",\"rotated\",\"superseded\"]), OPTIONALLY naming a --superseded-by successor. Signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop holds NO key) and MINTS ONLY when that key's address EQUALS --address — a key revokes ITSELF; a third party cannot revoke a key it does not control (else it hard-errors BEFORE writing). Default prints the revocation + writes nothing; --out writes a caller-chosen path (never cwd). A revocation is a SIGNED CLAIM (revokedAt is self-asserted, NOT a trusted timestamp without P-3). Exit 0 ok / 2 usage / 1 IO",
     "  vh revocation verify <revocation> [--signer <0xaddr>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed key revocation, confirm the signature backs it AND the recovered signer IS the revocation's vendorAddress (a key revokes ITSELF), OPTIONALLY pin --signer, and print the reason/revokedAt/supersededBy + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key revocation, or a wrong --signer, is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO",
+    "  vh serve-verify [--port <n>] [--host <h>] [--max-body <bytes>]  launch a tiny loopback-only (default 127.0.0.1:4180) Node-core HTTP VERIFY server (ZERO new dependency). POST /verify a seal or signed container -> JSON verdict on a CI-mappable status (200 ACCEPTED / 422 REJECTED / 400 bad request / 413 over --max-body); GET /healthz -> { ok:true }. VERIFY-ONLY: it never signs, holds NO key, writes NO file. Binds loopback by default; exposing it publicly is a HUMAN deploy step (never auto-deployed). A verified seal is NOT a timestamp (P-3). Press Ctrl-C to stop; a bad flag exits 2, a bind failure exits 1",
     "",
     "trust inspect options (read-only, writes NOTHING — the onboarding companion to reconcile):",
     "  --as <bank|ledger|rentroll>  REQUIRED: which logical input <file> is (a malformed value is a usage error)",
@@ -510,6 +512,26 @@ function usage() {
     "  Recovers the signer over the SAME core as `vh dataset verify-attest`; the parcel signed-container kind",
     "  (verifyhash.parcel-attestation-signed) means a DATASET signed-container does NOT cross-verify. A valid",
     "  signature is NOT a delivery timestamp (STRATEGY.md P-3). Exit 0 ACCEPTED, 3 REJECTED/REVOKED; usage 2; runtime 1.",
+    "",
+    "serve-verify options (a tiny loopback-only Node-core HTTP VERIFY server; ZERO new dependency; verify-ONLY):",
+    "  --port <n>                 TCP port to bind (0..65535; 0 = an OS-chosen ephemeral port). Default 4180.",
+    "  --host <h>                 interface to bind. Default 127.0.0.1 (LOOPBACK) — a non-loopback interface is",
+    "                             NOT served by default; pass e.g. --host 0.0.0.0 to bind all interfaces (your",
+    "                             explicit, deliberate choice — exposing it is a HUMAN deploy step).",
+    "  --max-body <bytes>         reject a request body larger than this many bytes with HTTP 413 (default: the",
+    "                             core's own byte cap). Belt-and-braces against a hostile/accidental giant body.",
+    "  Routes: POST /verify  -> the SAME pure verify core as the SDK, wrapped as JSON over HTTP. Body is",
+    "          { kind:\"verify-seal\", seal, entries:[{relPath,content,encoding}] } (UNSIGNED) OR",
+    "          { kind:\"verify-signed-seal\", container, expectedSigner?, entries? } (SIGNED). It maps the",
+    "          verdict to a CI-gateable status: 200 ACCEPTED / 422 REJECTED / 400 bad-or-malformed request",
+    "          (invalid JSON, unknown kind, corrupt seal) / 413 body over --max-body. GET /healthz -> 200",
+    "          { ok:true } for a liveness probe.",
+    "  POSTURE (verify-only + loopback + P-3 + human-deploy): this server VERIFIES seals; it NEVER signs, holds",
+    "  NO private key, and writes NO file. It binds loopback by default; exposing it publicly (your nginx/",
+    "  Cloudflare, your domain, TLS) is an explicit HUMAN deploy step — it is NEVER auto-deployed. A verified",
+    "  seal proves set-membership / that a signer vouched — NOT a trusted timestamp (\"sealed since date T\"",
+    "  still needs the human-owned signing/timestamp trust-root, P-3). It LISTENS until killed (Ctrl-C); a bad",
+    "  flag exits 2 BEFORE binding, a bind failure (EADDRINUSE / EACCES / bad --host) exits 1.",
     "",
   ].join("\n");
 }
@@ -3370,6 +3392,123 @@ function cmdParcelVerifyTimestamp(argv) {
   return result.accepted ? 0 : 3;
 }
 
+// ---------------------------------------------------------------------------
+// `vh serve-verify [--port <n>] [--host <h>] [--max-body <bytes>]` (T-59.2)
+// ---------------------------------------------------------------------------
+//
+// A tiny, dependency-free (Node-core `http` ONLY) loopback-only HTTP VERIFY server. It fronts the PURE
+// `verifyRequest` core (cli/serve-verify.js) — POST /verify a seal / signed container, get a JSON verdict
+// on a CI-mappable status (200 ACCEPTED / 422 REJECTED / 400 bad request); GET /healthz -> { ok:true }.
+//
+// VERIFY-ONLY: it never signs, holds NO private key, and writes NO file (the whole request path is I/O-free
+// but for the socket). It binds LOOPBACK (127.0.0.1) by default — a non-loopback interface is NOT served
+// unless the operator explicitly passes --host. Exposing it publicly is a HUMAN deploy step (never
+// auto-deployed). A verified seal is NOT a timestamp (P-3). The transport + banner live in
+// cli/serve-verify-http.js; this is only the CLI plumbing (parse flags, bind, print, propagate exit codes).
+
+// Parse `serve-verify` argv into { port, host, maxBody }. Flags only (no positionals). A --port must be an
+// integer in 0..65535 (0 = OS-chosen ephemeral port); a --max-body must be a positive integer. An unknown
+// flag, a positional, or a bad numeric value is a USAGE error (exit 2), never silently coerced.
+function parseServeVerifyArgs(argv) {
+  const opts = { port: undefined, host: undefined, maxBody: undefined };
+  const positionals = [];
+  const intFlag = (raw, flag, { allowZero }) => {
+    const s = String(raw == null ? "" : raw);
+    if (!/^\d+$/.test(s)) throw new Error(`${flag} must be a non-negative integer (got "${raw}")`);
+    const n = Number(s);
+    if (!allowZero && n === 0) throw new Error(`${flag} must be a positive integer (got "${raw}")`);
+    return n;
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case "--port": {
+        const raw = argv[++i];
+        if (raw === undefined) throw new Error("--port requires a value");
+        const n = intFlag(raw, "--port", { allowZero: true });
+        if (n > 65535) throw new Error(`--port must be in 0..65535 (got "${raw}")`);
+        opts.port = n;
+        break;
+      }
+      case "--host":
+        opts.host = argv[++i];
+        if (opts.host === undefined) throw new Error("--host requires a value");
+        break;
+      case "--max-body": {
+        const raw = argv[++i];
+        if (raw === undefined) throw new Error("--max-body requires a value");
+        opts.maxBody = intFlag(raw, "--max-body", { allowZero: false });
+        break;
+      }
+      default:
+        if (a && a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+        positionals.push(a);
+    }
+  }
+  if (positionals.length > 0) {
+    throw new Error(`unexpected argument: ${positionals[0]} (serve-verify takes no positionals)`);
+  }
+  return opts;
+}
+
+// runServeVerify binds the server and prints the banner. It does NOT block; it resolves to
+// { code, server, url } once listening (or on a bind failure). `io` is injectable so a test can supply a
+// createServer / write sink and confirm the wiring; the default builds + listens on a real loopback socket.
+function runServeVerify(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  const port = opts.port == null ? serveVerifyHttp.DEFAULT_PORT : opts.port;
+  const host = opts.host == null ? serveVerifyHttp.DEFAULT_HOST : opts.host;
+  const maxBodyBytes = opts.maxBody == null ? serveVerifyHttp.DEFAULT_MAX_BODY_BYTES : opts.maxBody;
+
+  const srv = (io.createServer || serveVerifyHttp.createServer)({ maxBodyBytes });
+
+  return new Promise((resolve) => {
+    let settled = false;
+    // Surface a bind failure (EADDRINUSE / EACCES / bad --host) as a clear IO error AND resolve with code 1
+    // so the failure propagates to the process exit code (without this resolve the Promise would hang; the
+    // failed server holds no handles, so Node would exit 0 on its own — collapsing the IO(1) failure class).
+    srv.on("error", (e) => {
+      if (settled) return;
+      settled = true;
+      writeErr(`error: cannot start vh serve-verify: ${e.message}\n`);
+      resolve({ code: 1, server: srv, url: null, error: e });
+    });
+    srv.listen(port, host, () => {
+      if (settled) return;
+      settled = true;
+      // When --port 0 was given the OS chose the actual port; report the real one.
+      const bound = srv.address();
+      const realPort = bound && typeof bound === "object" ? bound.port : port;
+      const url = `http://${host}:${realPort}/`;
+      write(serveVerifyHttp.banner(url, host));
+      resolve({ code: 0, server: srv, url });
+    });
+  });
+}
+
+// cmdServeVerify: parse argv, then bind + print. The dispatcher awaits a PLAIN exit code, so this resolves
+// to a NUMBER: a bad flag resolves immediately to 2 (usage) BEFORE binding; a bind failure resolves to 1
+// (IO); on success it binds, prints the banner, and returns a Promise that NEVER resolves — the open socket
+// keeps the event loop alive so the door stays up until the operator kills it (Ctrl-C), like a normal
+// server. Tests call `runServeVerify` directly (which resolves with the live { server } handle) so they can
+// hit it and close it; the bind-failure path is exercised through cmdServeVerify to assert the exit code.
+function cmdServeVerify(argv, io = {}) {
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  let opts;
+  try {
+    opts = parseServeVerifyArgs(argv);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n\n` + usage());
+    return Promise.resolve(2);
+  }
+  return runServeVerify(opts, io).then((res) => {
+    if (res.code !== 0) return res.code;
+    return new Promise(() => {});
+  });
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -3409,6 +3548,8 @@ async function main(argv) {
       return cmdIdentity(rest);
     case "revocation":
       return cmdRevocation(rest);
+    case "serve-verify":
+      return cmdServeVerify(rest);
     case undefined:
     case "-h":
     case "--help":
@@ -3461,6 +3602,9 @@ module.exports = {
   cmdEvidence,
   cmdIdentity,
   cmdRevocation,
+  cmdServeVerify,
+  runServeVerify,
+  parseServeVerifyArgs,
   parseVerifyTimestampArgs,
   parseParcelBuildArgs,
   parseParcelVerifyArgs,

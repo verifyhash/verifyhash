@@ -2107,6 +2107,10 @@ async function cmdEvidence(argv, io = {}) {
   if (sub === "license") {
     return cmdEvidenceLicense(rest, io);
   }
+  if (sub === "go-live-preflight") {
+    // Lazily required to avoid a require cycle (go-live-preflight requires THIS module's exports).
+    return require("./core/go-live-preflight").cmdGoLivePreflight(rest, io);
+  }
   if (sub === undefined || sub === "-h" || sub === "--help" || sub === "help") {
     io.write
       ? io.write(evidenceUsage())
@@ -2114,7 +2118,7 @@ async function cmdEvidence(argv, io = {}) {
     return sub === undefined ? EXIT.USAGE : EXIT.OK;
   }
   writeErr(
-    `error: unknown evidence subcommand: ${sub} (expected: seal, verify, verify-signed, diff, license)\n`
+    `error: unknown evidence subcommand: ${sub} (expected: seal, verify, verify-signed, diff, license, go-live-preflight)\n`
   );
   return EXIT.USAGE;
 }
@@ -2129,6 +2133,7 @@ function evidenceUsage() {
     "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--revocations <f> --as-of <ISO>] [--json]",
     "  vh evidence diff <packetA> <packetB> [--policy <f>] [--json]",
     "  vh evidence license fulfill --plan <id> --customer <name> [--paid-through <ISO>] [--catalog <f>] (--key-env <VAR>|--key-file <p>) [--issued <ISO>] [--license-id <id>] [--out <f>] [--json]",
+    "  vh evidence go-live-preflight --binding <f> [--catalog <f>] [--secret-env <VAR>] (--key-env <VAR>|--key-file <p>) [--json]",
     "",
     "The seal proves TAMPER-EVIDENCE + OFFLINE-RECOMPUTE, NOT a trusted timestamp (\"sealed at T\" rides P-3).",
     "FREE: an unsigned baseline seal of up to " + SAMPLE_LIMIT + " files + verify + verify-signed + diff (try before buying).",
@@ -2147,6 +2152,11 @@ function evidenceUsage() {
     "  (or --catalog), copies that plan's entitlements VERBATIM, derives the window (--paid-through wins else the plan's term),",
     "  and signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop sets NO price).",
     "  The minted license UNLOCKS `vh evidence seal --sign`. Exit: 0 ok / 3 gate-fail / 2 usage / 1 IO.",
+    "go-live-preflight VALIDATES the operator's OWN --binding + --catalog + vendor key end-to-end OFFLINE so a config typo",
+    "  cannot silently cause 'customer PAID, no license delivered': for every price it RESOLVES the plan (an unmapped/duplicate/",
+    "  typo'd price is NAMED, never a silent default), MINTS a signed license, and confirms it PASSES the paid `vh evidence seal",
+    "  --sign` gate (a plan lacking `evidence_signed` is caught, never PASS). With --secret-env it exercises your REAL webhook",
+    "  secret (fail-closed). No network, no deploy; a throwaway workspace is removed on exit. Exit: 0 all-deliver / 2 config / 3 a price would not deliver.",
     "",
   ].join("\n");
 }

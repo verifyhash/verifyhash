@@ -52,6 +52,7 @@ const { cmdTrust } = require("../trustledger/cli");
 const { cmdEvidence } = require("./evidence");
 const { cmdIdentity } = require("./identity");
 const { cmdRevocation } = require("./revocation");
+const { cmdJournal } = require("./journal-cli");
 const serveVerifyHttp = require("./serve-verify-http");
 
 function usage() {
@@ -108,6 +109,8 @@ function usage() {
     "  vh identity verify <card> [--signer <0xaddr>] [--revocations <f> --as-of <ISO>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed identity card, confirm the signature backs it AND the recovered signer IS the card's vendorAddress, OPTIONALLY pin --signer, OPTIONALLY check the vendor key was not REVOKED as of --as-of (default now), and print the claims/non-claims + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key card, a wrong --signer, or a key revoked-before-as-of is a clean REJECTED/REVOKED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED|REVOKED / 2 usage / 1 IO",
     "  vh revocation publish --address <0xaddr> --reason <reason> (--key-env <VAR>|--key-file <p>) [--superseded-by <0xaddr>] [--revoked-at <ISO>] [--out <p>]  MINT a signed producer KEY REVOCATION marking --address REVOKED as of --revoked-at (default now) for --reason (one of [\"compromised\",\"retired\",\"rotated\",\"superseded\"]), OPTIONALLY naming a --superseded-by successor. Signs with a HUMAN-provisioned key (EXACTLY ONE of --key-env/--key-file, read-used-discarded; the loop holds NO key) and MINTS ONLY when that key's address EQUALS --address — a key revokes ITSELF; a third party cannot revoke a key it does not control (else it hard-errors BEFORE writing). Default prints the revocation + writes nothing; --out writes a caller-chosen path (never cwd). A revocation is a SIGNED CLAIM (revokedAt is self-asserted, NOT a trusted timestamp without P-3). Exit 0 ok / 2 usage / 1 IO",
     "  vh revocation verify <revocation> [--signer <0xaddr>]  OFFLINE/key-free/network-free: RECOVER the signer from a signed key revocation, confirm the signature backs it AND the recovered signer IS the revocation's vendorAddress (a key revokes ITSELF), OPTIONALLY pin --signer, and print the reason/revokedAt/supersededBy + per-check PASS/FAIL. Leads with the trust line. A forged/tampered/wrong-key revocation, or a wrong --signer, is a clean REJECTED — never a silent pass. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO",
+    "  vh journal append <artifact> --to <journalfile> [--dir <d>] [--ts <ISO>]  VERIFY a *.vhevidence.json seal/signed container through the EXISTING composed verify path and record the verdict as ONE new, hash-chained line — STRICTLY ADDITIVELY (prior lines are never rewritten). Recording a REJECTED verdict is a successful append; the journal faithfully records what it saw. Integrity OVER TIME: a standing, tamper-evident record you re-run. Exit 0 appended / 2 usage / 1 IO",
+    "  vh journal verify <journalfile>  walk the on-disk hash-chain: a deleted/reordered/inserted/hand-edited past line BREAKS the chain and this LOCALIZES the first break — naming the drifted artifact + the seq where it drifted + brokenAt. The `ts` is SELF-ASSERTED (never claims \"unaltered since date T\" until a trust-root signs it). Exit 0 PASS (unbroken) / 3 BROKEN / 2 usage / 1 IO — the SHARED 0/3 verify contract",
     "  vh serve-verify [--port <n>] [--host <h>] [--max-body <bytes>]  launch a tiny loopback-only (default 127.0.0.1:4180) Node-core HTTP VERIFY server (ZERO new dependency). POST /verify a seal or signed container -> JSON verdict on a CI-mappable status (200 ACCEPTED / 422 REJECTED / 400 bad request / 413 over --max-body); GET /healthz -> { ok:true }. VERIFY-ONLY: it never signs, holds NO key, writes NO file. Binds loopback by default; exposing it publicly is a HUMAN deploy step (never auto-deployed). A verified seal is NOT a timestamp (P-3). Press Ctrl-C to stop; a bad flag exits 2, a bind failure exits 1",
     "",
     "trust inspect options (read-only, writes NOTHING — the onboarding companion to reconcile):",
@@ -3548,6 +3551,8 @@ async function main(argv) {
       return cmdIdentity(rest);
     case "revocation":
       return cmdRevocation(rest);
+    case "journal":
+      return cmdJournal(rest);
     case "serve-verify":
       return cmdServeVerify(rest);
     case undefined:
@@ -3602,6 +3607,7 @@ module.exports = {
   cmdEvidence,
   cmdIdentity,
   cmdRevocation,
+  cmdJournal,
   cmdServeVerify,
   runServeVerify,
   parseServeVerifyArgs,

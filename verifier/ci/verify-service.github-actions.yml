@@ -1,0 +1,88 @@
+# verify-service.github-actions.yml — copy-paste GitHub Actions MERGE GATE that calls the `vh serve-verify`
+# HTTP endpoint (T-59.3).
+#
+# WHAT THIS IS
+#   Drop this file at `.github/workflows/verify-service.yml` in the repo that produces sealed verifyhash
+#   artifacts. On every push / pull request it BOOTS the `vh serve-verify` service (loopback-only, on a
+#   fixed port), POSTs a prepared verify REQUEST BODY to it, and FAILS the job unless the service answers
+#   200 ACCEPTED. If the sealed bytes were tampered/forged, the service answers 422 / 400 and the gate
+#   exits non-zero — so the merge is blocked. A green check now MEANS "the verify service ACCEPTED the
+#   sealed artifact."
+#
+# WHY BOOT-THEN-POST (the "CI plugin that imports rather than shells out")
+#   Unlike verify-vh.generic.sh (which runs the standalone binary per artifact), this recipe stands the
+#   verifier UP as a SERVICE once and gates by HTTP. That is the drop-in shape another microservice or a
+#   fan-out CI matrix consumes: boot once, POST many seals, read ACCEPT/REJECT — no per-artifact process
+#   spawn. The service is VERIFY-ONLY (it never signs, holds no key, writes nothing) and binds LOOPBACK.
+#
+# WHAT YOU EDIT (near the top of the run steps):
+#   - how the verify REQUEST BODY (verify-request.json) is produced for your release (the SDK's
+#     buildSeal/serializeSeal, or your own tooling). The example below writes a tiny in-line one.
+#   - the artifacts / checkout for your release flow.
+#
+# NOTE: the loop NEVER runs this file. It is a shipped EXAMPLE. The exact gate command in the `run:` block
+# below is the SAME command verifier/ci/verify-service.generic.sh runs (curl POST -> HTTP-status exit code),
+# and a test boots the real service and executes that gate to prove it passes on a clean seal and fails
+# (exit 3) on a tampered one.
+
+name: verify-service merge gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify-service:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Your repo (containing the sealed artifacts + the verifyhash package, or add a download/install
+      #    step for however your release publishes them).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 2. Install verifyhash (provides the `vh serve-verify` service + the SDK to build the request body).
+      - name: Install verifyhash
+        run: npm ci || npm install
+
+      # 3. BOOT the verify service on loopback (a fixed port), in the background. It is verify-only, holds
+      #    no key, and writes nothing. We wait for /healthz to answer before gating.
+      - name: Boot vh serve-verify (loopback-only)
+        run: |
+          npx vh serve-verify --port 4180 --host 127.0.0.1 &
+          for i in $(seq 1 50); do
+            if curl -sf http://127.0.0.1:4180/healthz >/dev/null; then break; fi
+            sleep 0.2
+          done
+          curl -sf http://127.0.0.1:4180/healthz
+
+      # 4. Produce the verify REQUEST BODY for your release. Here we build a tiny seal with the SDK and write
+      #    the request body the service expects (see docs/VERIFY-SERVICE.md). Replace with your real artifacts.
+      - name: Build the verify request body
+        run: |
+          node -e '
+            const vh = require("verifyhash");
+            const fs = require("fs");
+            const entries = [{ relPath: "dist/app.js", bytes: Buffer.from("console.log(1)\n") }];
+            const seal = vh.serializeSeal(vh.buildSeal(entries));
+            const wire = entries.map(e => ({ relPath: e.relPath, content: Buffer.from(e.bytes).toString("base64"), encoding: "base64" }));
+            fs.writeFileSync("verify-request.json", JSON.stringify({ kind: "verify-seal", seal, entries: wire }));
+          '
+
+      # 5. THE GATE. POST the request body to the booted service; map the HTTP status to an exit code. 200
+      #    ACCEPTED -> pass; 422 REJECTED / 400 bad request -> non-zero -> the job FAILS -> the merge is
+      #    blocked. This is the SAME logic verifier/ci/verify-service.generic.sh ships.
+      - name: Verify the sealed artifact via the service (fails the build on a bad seal)
+        env:
+          VH_VERIFY_URL: "http://127.0.0.1:4180"
+          VH_REQUEST: "verify-request.json"
+        run: |
+          status=$(curl -s -o /tmp/vh-verify-body.json -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            --data-binary "@${VH_REQUEST}" \
+            "${VH_VERIFY_URL%/}/verify")
+          echo "verify-service gate: HTTP ${status}"
+          cat /tmp/vh-verify-body.json
+          test "${status}" = "200"

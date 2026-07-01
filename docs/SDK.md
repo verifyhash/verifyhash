@@ -235,6 +235,30 @@ writeReceipt : function/2
 
 ---
 
+## Consume the verifier over HTTP (`vh serve-verify`)
+
+The SDK verifies **in-process**. For a CI pipeline or another microservice that would rather **POST a seal
+and read an ACCEPT/REJECT** — the *"CI plugin that imports rather than shells out"* — verifyhash ships a
+tiny, dependency-free (Node-core `http` only) **verify service**:
+
+```bash
+vh serve-verify [--port <n>] [--host <h>]   # default 127.0.0.1:4180, loopback-only, verify-only
+# POST /verify  -> JSON verdict on a CI-mappable status (200 ACCEPTED / 422 REJECTED / 400 bad request)
+# GET  /healthz -> { ok: true, ... }
+```
+
+It reuses the **same** `verifySeal` / `verifySignedSeal` cores documented above — no fork. It is
+**verify-only** (never signs, holds no key, writes nothing) and binds **loopback** by default; exposing it
+publicly is a **human** deploy step (STRATEGY.md **P-9**). The request/response schema, the full status
+mapping, and the trust boundary are documented in **[docs/VERIFY-SERVICE.md](./VERIFY-SERVICE.md)**.
+
+Drop it in with:
+
+- a dependency-free client — [`examples/verify-service-client.js`](../examples/verify-service-client.js)
+  (boots the service, POSTs a clean seal → ACCEPT, then a tampered one → REJECT, exits 0);
+- a shell CI gate — [`verifier/ci/verify-service.generic.sh`](../verifier/ci/verify-service.generic.sh);
+- a GitHub Actions gate — [`verifier/ci/verify-service.github-actions.yml`](../verifier/ci/verify-service.github-actions.yml).
+
 ## Trust boundary (unchanged from the CLI — the SDK adds nothing)
 
 A seal proves **tamper-evidence + offline re-compute** ("these exact bytes are what was sealed"), NOT a

@@ -43,6 +43,24 @@ test-gated by [`test/sdk.example.test.js`](../test/sdk.example.test.js) on every
 there asserts the example uses **only** the public surface (`require("verifyhash")` + `ethers`, no deep
 `cli/*` import), so the "public API stands alone" claim can never silently rot.
 
+## `verify-service-client.js` — call the `vh serve-verify` HTTP endpoint as a drop-in dependency
+
+```bash
+node examples/verify-service-client.js
+```
+
+The **verify-service client** example: it boots the `vh serve-verify` HTTP endpoint (the *"CI plugin that
+imports rather than shells out"*), then treats it as a drop-in dependency. It **builds** a seal with
+`require("verifyhash")`, **POSTs** a clean seal to the booted service (HTTP **200 ACCEPTED** → prints
+`ACCEPT`), then **POSTs** the same seal with **one byte flipped** (HTTP **422 REJECTED** → prints `REJECT`),
+tears the service down, and exits 0. It imports **only** `require("verifyhash")`, the `vh` **command**
+(spawned from the package's own `bin.vh`), and Node built-ins (`http`, `child_process`, `path`) — **no**
+deep `cli/*` reach-in and **no** third-party dependency. See
+[`docs/VERIFY-SERVICE.md`](../docs/VERIFY-SERVICE.md) for the request/response schema, the status mapping,
+and the trust boundary. It is test-gated by
+[`test/verify-service.example.test.js`](../test/verify-service.example.test.js) on every `npx hardhat test`,
+so it can never silently rot.
+
 ## `sdk-verify-signed.js` — the SIGNED + vendor-PINNED verify gate, in-process
 
 ```bash

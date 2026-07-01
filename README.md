@@ -689,11 +689,18 @@ const json = vh.serializeSeal(seal);
 console.log(vh.readSeal(json).root === seal.root); // true
 ```
 
-The surface also re-exports the receipt codec (`buildReceipt`, `readReceipt`, `diffManifest`, …), the
-keccak/Merkle hashing primitives (`hashBytes`, `hashEntries`, `buildTree`, …), and `apiVersion` (the
+The surface also re-exports the **signed / vendor-pinned verify path** (the `signed` namespace:
+`signSealWith`, `validateSignedSeal`, `verifySignedSeal`, `verifySignedSealAttestation`, `recoverSigner`,
+`verifySignedAttestation`) — the embedded twin of `vh evidence verify-signed`. So an embedder can verify a
+**signed, address-pinned** seal in-process (ACCEPT under the matching `--signer`; REJECT under a wrong
+expected signer or a one-byte-tampered container) with **no shell-out** to the `vh` binary. A valid
+signature proves *who* vouched, not *when* (a trusted timestamp still rides the human-owned trust-root,
+STRATEGY.md P-3). It also re-exports the receipt codec (`buildReceipt`, `readReceipt`, `diffManifest`, …),
+the keccak/Merkle hashing primitives (`hashBytes`, `hashEntries`, `buildTree`, …), and `apiVersion` (the
 semver-guarded stability marker, mirroring `package.json`). Symbols **not** re-exported from the
 package root (deep `cli/…` internals) carry no stability guarantee. This example is test-gated
-([`test/sdk.index.test.js`](test/sdk.index.test.js)), so it can never silently rot.
+([`test/sdk.index.test.js`](test/sdk.index.test.js)); the signed path is gated by
+[`test/sdk.signed.test.js`](test/sdk.signed.test.js), so it can never silently rot.
 
 ## Develop
 

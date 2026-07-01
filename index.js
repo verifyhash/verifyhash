@@ -11,7 +11,11 @@
 //
 //   The embedded ("SDK") path and the CLI path are therefore the same code path: a seal built via
 //   `sdk.buildSeal(...)` verifies (ACCEPT) with `sdk.verifySeal(...)`, and a one-byte tamper is REJECTED
-//   — identical to `vh evidence seal` / `vh evidence verify`.
+//   — identical to `vh evidence seal` / `vh evidence verify`. The SAME holds for the SIGNED / vendor-pinned
+//   path: a seal signed via `sdk.signSealWith(...)` verifies (ACCEPT) with `sdk.verifySignedSeal(...)` under
+//   the matching expected signer, and a WRONG expected signer or a one-byte-tampered container is REJECTED
+//   — byte-identical to `vh evidence verify-signed`. So an embedder can verify a SIGNED, address-pinned
+//   packet in-process, with no shell-out to the `vh` binary.
 //
 // TRUST BOUNDARY (unchanged from the CLI — this wrapper adds nothing)
 //   A seal proves TAMPER-EVIDENCE + OFFLINE RE-COMPUTE ("these exact bytes are what was sealed"), NOT a
@@ -33,6 +37,7 @@ const pkg = require("./package.json");
 const evidence = require("./cli/evidence");
 const receipt = require("./cli/receipt");
 const packetseal = require("./cli/core/packetseal");
+const attestation = require("./cli/core/attestation");
 const hash = require("./cli/hash");
 
 // ---------------------------------------------------------------------------
@@ -57,6 +62,36 @@ const seal = Object.freeze({
   verifySeal: evidence.verifySeal,
   // The generic, product-agnostic seal core the above are bound to (advanced / custom products).
   PacketSealError: packetseal.PacketSealError,
+});
+
+// (1b) SIGNED / vendor-pinned verify SDK — the embedded twin of `vh evidence verify-signed`. This is the
+//      SAME code the CLI runs (identity re-exports of the already-green, already-CLI-shipped functions),
+//      so a signed packet a buyer verifies in-process is byte-identical to the `vh evidence verify-signed`
+//      path — no shelling out to the binary to verify a SIGNED, vendor-address-pinned seal.
+//
+//      signSealWith(seal, signer)               -> a signed-seal container (WRAPS the canonical seal bytes)
+//      validateSignedSeal(container)            -> strict structural validation of a signed container
+//      verifySignedSeal({container,expectedSigner,expectedCanonical})
+//                                               -> the PURE core verdict (recover signer; optional pin/bind)
+//      verifySignedSealAttestation({container,expectedSigner,dir})
+//                                               -> the strict signed-verify the CLI runs (--signer / --dir)
+//      recoverSigner(container)                 -> the address the signature recovers to (offline, key-free)
+//      verifySignedAttestation(params)          -> the generic, product-agnostic signed-attestation verifier
+//
+//   TRUST BOUNDARY: a valid signature proves WHO vouched (the holder of `signer`'s key) for THIS sealed
+//   packet — NOT a trusted timestamp ("signed since T" rides the human-owned trust-root, STRATEGY.md P-3)
+//   and NOT a legal opinion. Verification is OFFLINE / key-free: it recovers a PUBLIC address, holds no
+//   private key, and contacts nothing.
+const signed = Object.freeze({
+  KIND: evidence.SIGNED_SEAL_KIND,
+  TRUST_NOTE: evidence.VERIFY_SIGNED_SEAL_TRUST_NOTE,
+  signSealWith: evidence.signSealWith,
+  validateSignedSeal: evidence.validateSignedSeal,
+  verifySignedSeal: evidence.verifySignedSeal,
+  verifySignedSealAttestation: evidence.verifySignedSealAttestation,
+  // The generic, product-agnostic signed-attestation core the evidence path is bound to.
+  recoverSigner: attestation.recoverSigner,
+  verifySignedAttestation: attestation.verifySignedAttestation,
 });
 
 // (2) Receipts — the anchor/claim receipt codec + the path-bound manifest diff.
@@ -90,6 +125,7 @@ module.exports = Object.freeze({
 
   // Grouped namespaces.
   seal,
+  signed,
   receipts,
   hashing,
 
@@ -101,6 +137,13 @@ module.exports = Object.freeze({
   readSeal: evidence.readSeal,
   verifySeal: evidence.verifySeal,
   PacketSealError: packetseal.PacketSealError,
+  // --- signed / vendor-pinned verify SDK (the embedded twin of `vh evidence verify-signed`) ---
+  signSealWith: evidence.signSealWith,
+  validateSignedSeal: evidence.validateSignedSeal,
+  verifySignedSeal: evidence.verifySignedSeal,
+  verifySignedSealAttestation: evidence.verifySignedSealAttestation,
+  recoverSigner: attestation.recoverSigner,
+  verifySignedAttestation: attestation.verifySignedAttestation,
   // --- receipts ---
   buildReceipt: receipt.buildReceipt,
   buildAnchorReceipt: receipt.buildAnchorReceipt,

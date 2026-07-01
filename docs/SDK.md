@@ -76,11 +76,14 @@ top-level names (`buildSeal`, `verifySeal`, …) are the same objects as the gro
 | --- | --- | --- |
 | `apiVersion` | string | Semver version of this public surface; mirrors `package.json` `version`. |
 | `seal` | namespace | The evidence-seal SDK (see below). |
+| `signed` | namespace | The SIGNED / vendor-pinned verify SDK — the embedded twin of `vh evidence verify-signed` (see below). |
 | `receipts` | namespace | The anchor/claim receipt codec + manifest diff (see below). |
 | `hashing` | namespace | The keccak/Merkle hashing primitives (see below). |
 
-The flat convenience re-exports at the top level are exactly the members of the three namespaces:
+The flat convenience re-exports at the top level are exactly the members of the four namespaces:
 `buildSeal`, `validateSeal`, `serializeSeal`, `readSeal`, `verifySeal`, `PacketSealError` (from `seal`);
+`signSealWith`, `validateSignedSeal`, `verifySignedSeal`, `verifySignedSealAttestation`, `recoverSigner`,
+`verifySignedAttestation` (from `signed`);
 `buildReceipt`, `buildAnchorReceipt`, `writeReceipt`, `readReceipt`, `diffManifest` (from `receipts`);
 `hashBytes`, `hashFile`, `hashEntries`, `hashDir`, `hashPath`, `buildTree` (from `hashing`).
 
@@ -97,6 +100,29 @@ The flat convenience re-exports at the top level are exactly the members of the 
 | `seal.readSeal` | function | `readSeal(jsonOrObject)` → parsed + strictly validated seal. |
 | `seal.verifySeal` | function | `verifySeal(seal, entries)` → `{ verdict, accepted, … }`; RE-DERIVES the root. |
 | `seal.PacketSealError` | function | The error class the generic seal core throws (advanced / custom products). |
+
+### `signed` — verify a SIGNED / vendor-address-pinned seal in-process
+
+The embedded twin of `vh evidence verify-signed`: identity re-exports of the already-shipped, CLI-run
+signed-verify functions, so an embedder verifies a **signed, address-pinned** seal in-process with **no
+shell-out** to the `vh` binary — the same code path, so it accepts / rejects byte-identically.
+
+| Symbol | Kind | Meaning |
+| --- | --- | --- |
+| `signed.KIND` | string | The signed-seal container kind tag (`vh.evidence-seal-signed`). |
+| `signed.TRUST_NOTE` | string | The one-line signed-verify trust-boundary note (a signature proves WHO vouched, not WHEN). |
+| `signed.signSealWith` | function | `signSealWith(seal, signer)` → a signed-seal container WRAPPING the canonical seal bytes. |
+| `signed.validateSignedSeal` | function | `validateSignedSeal(container)` → strict structural validation of a signed container. |
+| `signed.verifySignedSeal` | function | `verifySignedSeal({container, expectedSigner, expectedCanonical})` → the PURE core verdict (recover signer; optional pin/bind). |
+| `signed.verifySignedSealAttestation` | function | `verifySignedSealAttestation({container, expectedSigner, dir})` → the strict signed-verify the CLI runs (`--signer` / `--dir`). |
+| `signed.recoverSigner` | function | `recoverSigner(container)` → the address the signature recovers to (offline, key-free). |
+| `signed.verifySignedAttestation` | function | The generic, product-agnostic signed-attestation verifier the evidence path is bound to. |
+
+**Trust boundary (signed path).** A valid signature proves the holder of `signer`'s key **vouched for
+THIS sealed packet** — it is **NOT** a trusted timestamp ("signed since T" rides the human-owned trust-root,
+[STRATEGY.md](../STRATEGY.md) P-3) and **NOT** a legal opinion. Verification is offline / key-free: it
+recovers a **public** address from the signature, holds no private key, and contacts nothing. Pin the
+`expectedSigner` to the vendor address you trust out-of-band (e.g. a published `vh identity` card).
 
 ### `receipts` — anchor/claim receipt codec + path-bound manifest diff
 
@@ -174,6 +200,7 @@ receipts.buildReceipt : function/1
 receipts.diffManifest : function/2
 receipts.readReceipt : function/1
 receipts.writeReceipt : function/2
+recoverSigner : function/1
 seal : namespace
 seal.KIND : string="vh.evidence-seal"
 seal.PacketSealError : function/1
@@ -185,8 +212,22 @@ seal.serializeSeal : function/1
 seal.validateSeal : function/1
 seal.verifySeal : function/2
 serializeSeal : function/1
+signSealWith : function/2
+signed : namespace
+signed.KIND : string="vh.evidence-seal-signed"
+signed.TRUST_NOTE : string="A valid signature proves the HOLDER OF `signer`'s key vouched for THIS evidence seal (the embedded root + the full set of (relPath, content) pairs). It does NOT by itself prove a trustworthy TIMESTAMP: \"sealed/vouched since a date T\" still needs the human-owned signing/timestamp trust-root (needs-human, P-3). It is NOT a legal opinion. This evidence seal is TAMPER-EVIDENT + OFFLINE-RECOMPUTABLE, NOT a trusted timestamp. Its Merkle `root` commits to the full set of (relPath, content) pairs in the directory: any edit, rename, add, or remove changes the root, and verify RE-DERIVES the root from the bytes you hold and LOCALIZES the change to the exact file (MATCH / CHANGED / MISSING / UNEXPECTED). It does NOT prove WHEN the sealing happened (\"sealed at T\" rides the human-owned signing/timestamp trust-root, STRATEGY.md P-3) and it is NOT a legal opinion. The packet is an UNTRUSTED transport container: verify never trusts the packet's own stored hashes."
+signed.recoverSigner : function/1
+signed.signSealWith : function/2
+signed.validateSignedSeal : function/1
+signed.verifySignedAttestation : function/1
+signed.verifySignedSeal : function/1
+signed.verifySignedSealAttestation : function/1
 validateSeal : function/1
+validateSignedSeal : function/1
 verifySeal : function/2
+verifySignedAttestation : function/1
+verifySignedSeal : function/1
+verifySignedSealAttestation : function/1
 writeReceipt : function/2
 #verifySeal.result : accepted,changed,counts,matched,missing,recomputedRoot,rootMatches,sealedRoot,unexpected,verdict
 ```

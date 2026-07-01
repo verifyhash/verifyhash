@@ -28,6 +28,7 @@ const apiByName = require("verifyhash"); // resolves through package.json "expor
 const evidence = require("../cli/evidence");
 const receipt = require("../cli/receipt");
 const packetseal = require("../cli/core/packetseal");
+const attestation = require("../cli/core/attestation");
 const hash = require("../cli/hash");
 
 const pkg = require("../package.json");
@@ -46,6 +47,16 @@ describe("T-57.1 public API: index.js is a thin, semver-guarded re-export of the
       verifySeal: evidence.verifySeal,
       PacketSealError: packetseal.PacketSealError,
     };
+    // The SIGNED / vendor-pinned verify path (T-58.1) — a thin identity re-export, guarded in full by
+    // test/sdk.signed.test.js; registered here too so the "no re-implementation" sweep below recognizes it.
+    const SIGNED_SDK = {
+      signSealWith: evidence.signSealWith,
+      validateSignedSeal: evidence.validateSignedSeal,
+      verifySignedSeal: evidence.verifySignedSeal,
+      verifySignedSealAttestation: evidence.verifySignedSealAttestation,
+      recoverSigner: attestation.recoverSigner,
+      verifySignedAttestation: attestation.verifySignedAttestation,
+    };
     const RECEIPTS = {
       buildReceipt: receipt.buildReceipt,
       buildAnchorReceipt: receipt.buildAnchorReceipt,
@@ -62,7 +73,7 @@ describe("T-57.1 public API: index.js is a thin, semver-guarded re-export of the
       buildTree: hash.buildTree,
     };
 
-    const ALL = { ...SEAL_SDK, ...RECEIPTS, ...HASHING };
+    const ALL = { ...SEAL_SDK, ...SIGNED_SDK, ...RECEIPTS, ...HASHING };
 
     it("re-exports every promised symbol as the SAME object as its source (no fork)", function () {
       for (const [name, source] of Object.entries(ALL)) {
@@ -107,7 +118,12 @@ describe("T-57.1 public API: index.js is a thin, semver-guarded re-export of the
       // Every top-level FUNCTION property must trace to one of the cli/* source objects. This forbids a
       // sneaky in-file re-implementation slipping into the public surface.
       const knownFns = new Set(
-        [...Object.values(SEAL_SDK), ...Object.values(RECEIPTS), ...Object.values(HASHING)]
+        [
+          ...Object.values(SEAL_SDK),
+          ...Object.values(SIGNED_SDK),
+          ...Object.values(RECEIPTS),
+          ...Object.values(HASHING),
+        ]
       );
       for (const [name, val] of Object.entries(api)) {
         if (typeof val === "function") {

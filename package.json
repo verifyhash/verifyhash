@@ -24,6 +24,7 @@
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
+    "go-live": "node scripts/go-live-check.js",
     "sdk:surface": "node scripts/gen-sdk-surface.cjs",
     "node": "hardhat node",
     "deploy:amoy": "hardhat run scripts/deploy.js --network amoy"

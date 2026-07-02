@@ -55,7 +55,10 @@ double-click it; the page opens with the **60-second challenge built in**: click
 packet & verify"** (ACCEPT), then change ONE character of the editable sample file and re-verify
 (**REJECT** — the page names the file you changed) — then drag a REAL packet + its files in and read
 the same verdict + per-file localization this README describes (optional vendor pin and revocations
-drop included). The page contains **NO network API at all** (no `fetch`, no `XMLHttpRequest`, no
+drop included). The page also carries a built-in **agent-session demo** (§2c): a sample
+`*.vhagent.json` packet with one tool_call payload already REDACTED behind its hash commitment —
+load it (ACCEPT — redaction is not tamper), tamper one payload byte in the page, and watch the
+REJECT name the offending event `seq`. The page contains **NO network API at all** (no `fetch`, no `XMLHttpRequest`, no
 WebSocket), so your packet bytes never leave your machine — check the browser **devtools Network tab**:
 it stays empty. Like the node bundle, it is built deterministically from these same sources
 (`node build-standalone-html.js --check` reproduces it byte-for-byte, pinned in
@@ -356,6 +359,47 @@ the snippet you copy is known-good, not aspirational.
 **producer's** paid sealing surface; your pipeline gates on the proofs for free. A green gate is a
 *renewing* dependency precisely because checking the producer's seal never costs you anything, while
 producing a valid one is what the producer pays for.
+
+---
+
+## 2c. Verify an AGENT-SESSION packet (`*.vhagent.json`) — AgentTrace, free
+
+The producer's `vh agent seal` turns an ordered AI-agent session log (prompts, completions, tool
+calls/results, notes) into ONE tamper-evident, selectively-REDACTABLE packet. `verify-vh`
+auto-detects it like every other artifact kind — same command, same exit codes, zero install via the
+standalone bundle or the offline browser page (§0y has a built-in agent demo):
+
+```bash
+node verify-vh.js session.vhagent.json                      # unsigned packet (the FREE surface)
+node verify-vh.js session.vhagent.json --vendor 0xPRODUCER  # signed packet, signer pinned
+```
+
+What is INDEPENDENTLY re-derived (this verifier imports **nothing** from the producer stack — the
+whole convention is re-implemented against the verifier's own keccak):
+
+- **Every event leaf.** For a FULL event the payload's keccak-256 hash commitment is recomputed from
+  the payload bytes (and cross-checked against the carried commitment); for a REDACTED event the
+  well-formed carried commitment is what the tree binds. A one-byte payload edit — or a **forged
+  commitment on a redacted event** — is a REJECT that **names the offending event `seq`**. The
+  payload's UTF-8 encoding matches the producer **byte-for-byte** (a lone low surrogate encodes to its
+  literal 3-byte form; only a lone HIGH surrogate — which has no UTF-8 encoding — is rejected), so a
+  genuine packet the producer sealed is never falsely rejected here.
+- **The ordered head.** An RFC-6962-style, position-bound Merkle root (leaf `0x00` / node `0x01`
+  domain separation, children in tree order — NEVER sorted) over the event leaves. Reordering,
+  dropping, or inserting events changes the root: `root_mismatch`.
+- **The head signature, when present.** A signed packet carries a detached EIP-191 attestation over
+  the HEAD `{ size, root }` (so ONE signature stays valid for every redacted copy). The signer is
+  recovered with the same vendored secp256k1 routine and pinned to `--vendor`; a signature pasted
+  from a different session is `head_not_bound`, a forged one `bad_signature`, and a `--vendor` pin
+  on an UNSIGNED packet is a clean REJECT (`unsigned_cannot_pin_vendor`) — a stripped signature
+  never passes a pinned verify.
+
+The packet is SELF-CONTAINED (no sibling files, so `--dir` is irrelevant), and REDACTION IS NOT
+TAMPER: a packet whose payloads were withheld behind their commitments still verifies with the
+IDENTICAL head — the verdict lists exactly which seqs are withheld. The same honest boundary as
+everything else here: ACCEPT proves the LOG is unaltered since seal — **not** that the log
+faithfully records what the agent actually did, not a trusted timestamp, and `ts` fields are
+self-asserted (the packet's own in-band trust note says the same).
 
 ---
 

@@ -293,18 +293,23 @@ function extractDemoFixture() {
   const src = readSource("verify-vh.js");
   const start = src.indexOf("const DEMO_SIGNER =");
   const nameAt = src.indexOf("const DEMO_PACKET_NAME =");
-  if (start === -1 || nameAt === -1 || nameAt <= start) {
+  // T-68.3: the demo constants now END at the agent-demo tamper pair (the last demo const). The slice
+  // still holds ONLY const declarations (+ comments) — self-contained, no requires, no I/O.
+  const agentEndAt = src.indexOf("const DEMO_AGENT_TAMPER_TO =");
+  if (start === -1 || nameAt === -1 || agentEndAt === -1 || nameAt <= start || agentEndAt <= nameAt) {
     throw new Error("build-standalone-html: verify-vh.js demo fixture anchors not found (or out of order)");
   }
-  const declEnd = src.indexOf(";", nameAt);
+  const declEnd = src.indexOf(";", agentEndAt);
   if (declEnd === -1) {
-    throw new Error("build-standalone-html: verify-vh.js DEMO_PACKET_NAME declaration is unterminated");
+    throw new Error("build-standalone-html: verify-vh.js DEMO_AGENT_TAMPER_TO declaration is unterminated");
   }
-  // The slice holds ONLY const declarations (+ comments) — self-contained, no requires, no I/O.
   const decl = src.slice(start, declEnd + 1);
   const out = vm.runInNewContext(
     decl +
-      "\n;({ signer: DEMO_SIGNER, files: DEMO_FILES, container: DEMO_CONTAINER, packetName: DEMO_PACKET_NAME });",
+      "\n;({ signer: DEMO_SIGNER, files: DEMO_FILES, container: DEMO_CONTAINER, packetName: DEMO_PACKET_NAME," +
+      " agentPacketName: DEMO_AGENT_PACKET_NAME, agentPacketText: DEMO_AGENT_PACKET_TEXT," +
+      " agentTamperSeq: DEMO_AGENT_TAMPER_SEQ, agentTamperFrom: DEMO_AGENT_TAMPER_FROM," +
+      " agentTamperTo: DEMO_AGENT_TAMPER_TO });",
     {},
     { filename: "verify-vh-demo-fixture.js" }
   );
@@ -320,6 +325,25 @@ function extractDemoFixture() {
     typeof out.packetName !== "string"
   ) {
     throw new Error("build-standalone-html: extracted demo fixture has an unexpected shape");
+  }
+  // Agent-demo sanity (T-68.3): a genuine agent-session packet with ONE redacted event, whose tamper
+  // FROM-substring occurs EXACTLY once (so the page's "tamper one byte" edit is well-defined).
+  let agentPacket;
+  try {
+    agentPacket = JSON.parse(out.agentPacketText);
+  } catch (_) {
+    agentPacket = null;
+  }
+  if (
+    typeof out.agentPacketName !== "string" ||
+    !agentPacket ||
+    agentPacket.kind !== "vh.agent-session-packet" ||
+    !Number.isInteger(out.agentTamperSeq) ||
+    typeof out.agentTamperFrom !== "string" ||
+    typeof out.agentTamperTo !== "string" ||
+    out.agentPacketText.split(out.agentTamperFrom).length !== 2
+  ) {
+    throw new Error("build-standalone-html: extracted agent demo fixture has an unexpected shape");
   }
   return out;
 }
@@ -341,12 +365,26 @@ function challengeFixtureBody() {
     `var CONTAINER_TEXT = ${JSON.stringify(JSON.stringify(demo.container))};`,
     `var FILES = ${JSON.stringify(demo.files)};`,
     `var TAMPER_FILE = ${JSON.stringify(TAMPER_FILE)};`,
+    "// The AGENT-SESSION demo packet (T-68.3): the verifier's shipped DEMO_AGENT_* constants, inlined",
+    "// VERBATIM — a genuine `vh.agent-session-packet` with one tool_call payload REDACTED behind its",
+    "// hash commitment (it STILL verifies). The TAMPER_FROM/TO pair is a one-byte payload edit that",
+    "// occurs exactly once in the packet text, so the page's agent challenge is deterministic.",
+    `var AGENT_PACKET_NAME = ${JSON.stringify(demo.agentPacketName)};`,
+    `var AGENT_PACKET_TEXT = ${JSON.stringify(demo.agentPacketText)};`,
+    `var AGENT_TAMPER_SEQ = ${JSON.stringify(demo.agentTamperSeq)};`,
+    `var AGENT_TAMPER_FROM = ${JSON.stringify(demo.agentTamperFrom)};`,
+    `var AGENT_TAMPER_TO = ${JSON.stringify(demo.agentTamperTo)};`,
     "module.exports = {",
     "  SIGNER: SIGNER,",
     "  PACKET_NAME: PACKET_NAME,",
     "  CONTAINER_TEXT: CONTAINER_TEXT,",
     "  FILES: FILES,",
     "  TAMPER_FILE: TAMPER_FILE,",
+    "  AGENT_PACKET_NAME: AGENT_PACKET_NAME,",
+    "  AGENT_PACKET_TEXT: AGENT_PACKET_TEXT,",
+    "  AGENT_TAMPER_SEQ: AGENT_TAMPER_SEQ,",
+    "  AGENT_TAMPER_FROM: AGENT_TAMPER_FROM,",
+    "  AGENT_TAMPER_TO: AGENT_TAMPER_TO,",
     "};",
   ].join("\n");
 }
@@ -391,7 +429,34 @@ const CHALLENGE_BODY = [
   "    packetName: fixture.PACKET_NAME,",
   "  };",
   "}",
-  "module.exports = { runChallenge: runChallenge, verifyContents: verifyContents, fixture: fixture };",
+  "// The AGENT-SESSION challenge (T-68.3): the SAME engine verifies the embedded *.vhagent.json",
+  "// packet — SELF-CONTAINED, so the files map is empty. genuine -> ACCEPT (one payload redacted,",
+  "// still verifies); a one-byte payload tamper -> REJECT naming the offending event seq.",
+  "function verifyAgentText(packetText) {",
+  "  return engine.verifyArtifactFromBytes({",
+  "    artifactText: packetText,",
+  "    files: {},",
+  "    artifactName: fixture.AGENT_PACKET_NAME,",
+  "  });",
+  "}",
+  "function runAgentChallenge() {",
+  "  var genuine = verifyAgentText(fixture.AGENT_PACKET_TEXT);",
+  "  var tamperedText = fixture.AGENT_PACKET_TEXT.replace(fixture.AGENT_TAMPER_FROM, fixture.AGENT_TAMPER_TO);",
+  "  var tampered = verifyAgentText(tamperedText);",
+  "  return {",
+  "    genuine: genuine,",
+  "    tampered: tampered,",
+  "    tamperSeq: fixture.AGENT_TAMPER_SEQ,",
+  "    packetName: fixture.AGENT_PACKET_NAME,",
+  "  };",
+  "}",
+  "module.exports = {",
+  "  runChallenge: runChallenge,",
+  "  verifyContents: verifyContents,",
+  "  runAgentChallenge: runAgentChallenge,",
+  "  verifyAgentText: verifyAgentText,",
+  "  fixture: fixture,",
+  "};",
 ].join("\n");
 
 // ---------------------------------------------------------------------------
@@ -588,10 +653,35 @@ function pageBodyText() {
     "</div>",
     "</section>",
     "",
+    '<section id="agent-section">',
+    "<h2>1b — The agent-session demo (AgentTrace, built in)</h2>",
+    '<p class="note">A sample <code>*.vhagent.json</code> AGENT-SESSION packet is embedded in this page:',
+    "an ordered prompt/tool_call/tool_result/completion log under one RFC-6962-style Merkle head, with",
+    "the tool_call payload REDACTED behind its hash commitment — and it STILL verifies (redaction can",
+    "withhold, never silently alter). Load it, watch it ACCEPT, then change ONE byte of a payload below",
+    "and watch the verifier REJECT it and name the offending event seq.</p>",
+    '<div class="row">',
+    '<button id="load-agent-sample" class="primary" type="button">Load the sample agent packet &amp; verify</button>',
+    "</div>",
+    '<div id="agent-sample-area" style="display:none">',
+    '<p class="kv"><b>packet</b><span id="agent-sample-name" class="mono"></span></p>',
+    '<p class="note">The editable packet bytes (self-contained — no sibling files) — change ANY one',
+    "payload character, then re-verify:</p>",
+    '<textarea id="agent-editor" rows="7" spellcheck="false"></textarea>',
+    '<div class="row">',
+    '<button id="agent-verify" class="primary" type="button">Re-verify the agent packet</button>',
+    '<button id="agent-tamper" type="button">Tamper one byte for me</button>',
+    '<button id="agent-restore" type="button">Restore the original bytes</button>',
+    "</div>",
+    '<div id="agent-verdict"></div>',
+    "</div>",
+    "</section>",
+    "",
     '<section id="verify-section">',
     "<h2>2 — Verify a packet YOU were handed</h2>",
     '<p class="note">Drop the sealed artifact (<code>*.vhevidence.json</code> / <code>*.vhseal</code> /',
-    "attestation / proof bundle) together with the files it references — or pick them below (the folder",
+    "attestation / proof bundle / <code>*.vhagent.json</code> agent-session packet) together with the",
+    "files it references (an agent packet is self-contained) — or pick them below (the folder",
     "picker keeps sub-directory paths). Nothing is uploaded; the page reads the bytes locally.</p>",
     '<div id="drop-zone" class="drop">Drag the packet + its files (or a whole folder) here</div>',
     '<div class="row">',
@@ -684,6 +774,16 @@ function uiScriptText() {
     '    if (r.sealedRoot != null) box.appendChild(kv("sealed root", r.sealedRoot));',
     '    if (r.recomputedRoot != null) box.appendChild(kv("recomputed root", r.recomputedRoot));',
     '    if (r.rootMatches != null) box.appendChild(kv("root matches", r.rootMatches ? "yes" : "NO"));',
+    "    if (r.agent) {",
+    '      box.appendChild(kv("declared head", "{ size: " + r.agent.head.size + ", root: " + r.agent.head.root + " }"));',
+    "      if (r.agent.counts) {",
+    '        box.appendChild(kv("events", r.agent.counts.events + " (" + r.agent.counts.full + " full, " + r.agent.counts.redacted + " redacted)"));',
+    '        box.appendChild(kv("withheld seqs", r.agent.withheld.length === 0 ? "(none — every payload disclosed)" : r.agent.withheld.join(", ")));',
+    "      }",
+    "      if (!r.accepted && r.agent.seq != null) {",
+    '        box.appendChild(kv("offending event seq", String(r.agent.seq) + (r.agent.reason ? "  (" + r.agent.reason + ")" : "")));',
+    "      }",
+    "    }",
     '    box.appendChild(kv("files", r.counts.matched + " matched, " + r.counts.changed + " changed, " +',
     '      r.counts.missing + " missing, " + (r.counts.escaped || 0) + " rejected"));',
     "    if (!r.accepted) {",
@@ -731,6 +831,27 @@ function uiScriptText() {
     "    runSampleVerify();",
     "  };",
     "",
+    "  // ---------- section 1b: the built-in agent-session demo (T-68.3) ----------",
+    "  function runAgentSampleVerify() {",
+    '    renderVerdict($("agent-verdict"), C.verifyAgentText($("agent-editor").value));',
+    "  }",
+    '  $("load-agent-sample").onclick = function () {',
+    '    $("agent-sample-area").style.display = "";',
+    '    $("agent-sample-name").textContent = C.fixture.AGENT_PACKET_NAME;',
+    '    $("agent-editor").value = C.fixture.AGENT_PACKET_TEXT;',
+    "    runAgentSampleVerify();",
+    "  };",
+    '  $("agent-verify").onclick = runAgentSampleVerify;',
+    '  $("agent-tamper").onclick = function () {',
+    "    // One deterministic byte flip inside a payload (a substring that occurs exactly once).",
+    '    $("agent-editor").value = $("agent-editor").value.replace(C.fixture.AGENT_TAMPER_FROM, C.fixture.AGENT_TAMPER_TO);',
+    "    runAgentSampleVerify();",
+    "  };",
+    '  $("agent-restore").onclick = function () {',
+    '    $("agent-editor").value = C.fixture.AGENT_PACKET_TEXT;',
+    "    runAgentSampleVerify();",
+    "  };",
+    "",
     "  // ---------- section 2: verify a real packet ----------",
     "  var held = {}; // relPath -> Uint8Array",
     "  var revocationsText = null;",
@@ -760,7 +881,7 @@ function uiScriptText() {
     '    sel.textContent = "";',
     "    var cands = artifactCandidates();",
     "    if (cands.length === 0) {",
-    '      var opt = el("option", null, "(drop a *.vhevidence.json / *.vhseal / attestation / proof first)");',
+    '      var opt = el("option", null, "(drop a *.vhevidence.json / *.vhseal / attestation / proof / *.vhagent.json first)");',
     '      opt.value = "";',
     "      sel.appendChild(opt);",
     "      return;",

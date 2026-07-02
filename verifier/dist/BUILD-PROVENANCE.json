@@ -5,9 +5,9 @@
     "verify": {
       "bundle": "verify-vh-standalone.js",
       "sidecar": "verify-vh-standalone.js.sha256",
-      "bundleBytes": 164142,
-      "bundleSha256": "793125a8de58cea35e1e1cd1bb7d1b315c93c59f9045af8a4b1152a443b452ac",
-      "sidecarLine": "793125a8de58cea35e1e1cd1bb7d1b315c93c59f9045af8a4b1152a443b452ac  verify-vh-standalone.js",
+      "bundleBytes": 199362,
+      "bundleSha256": "371b904b0275ed85606510472570c49a99fc70a5f4e258e7d8fd0e52a26c30bd",
+      "sidecarLine": "371b904b0275ed85606510472570c49a99fc70a5f4e258e7d8fd0e52a26c30bd  verify-vh-standalone.js",
       "modules": [
         {
           "id": "keccak256-vendored",
@@ -69,8 +69,8 @@
           "id": "verify-vh",
           "synthetic": false,
           "sourceFile": "verifier/verify-vh.js",
-          "sourceSha256": "3c0ea1611e9d13c990dacbafb388d3b162e64cd8e690cb77f1921bb3dfe40b8c",
-          "inlinedSha256": "837d0b0b49ac8fd2a7fafdb87fe1e3cf1ee48e8e0b66c7e4f0c2767240fbe6bb",
+          "sourceSha256": "0e948e5973cd0faf3acda4fb14640feed13fde6190e345b2aea083addeb4b662",
+          "inlinedSha256": "ad89a1d71240c725255633f27f7f3298c8c9718b33eea7c640cae8d62eea8054",
           "entry": true
         }
       ]
@@ -119,9 +119,9 @@
     "verify-html": {
       "bundle": "verify-vh-standalone.html",
       "sidecar": "verify-vh-standalone.html.sha256",
-      "bundleBytes": 122245,
-      "bundleSha256": "019f54886a4836a1f5bdaef62284ad8fb46bd42122a31d0f55fb90e5a9e3e4e1",
-      "sidecarLine": "019f54886a4836a1f5bdaef62284ad8fb46bd42122a31d0f55fb90e5a9e3e4e1  verify-vh-standalone.html",
+      "bundleBytes": 158889,
+      "bundleSha256": "2e0ea39b9e79ae469adf980c0978c8172ad89fe69f35d33df9e041ade5fc5e23",
+      "sidecarLine": "2e0ea39b9e79ae469adf980c0978c8172ad89fe69f35d33df9e041ade5fc5e23  verify-vh-standalone.html",
       "modules": [
         {
           "id": "vh-buffer",
@@ -183,8 +183,8 @@
           "id": "verify-vh-engine",
           "synthetic": false,
           "sourceFile": "verifier/verify-vh.js",
-          "sourceSha256": "3c0ea1611e9d13c990dacbafb388d3b162e64cd8e690cb77f1921bb3dfe40b8c",
-          "inlinedSha256": "40d5fc8edb714aea7a06592b19bcb17b3ade2434aef1cb1ac47f4d201b5088c4",
+          "sourceSha256": "0e948e5973cd0faf3acda4fb14640feed13fde6190e345b2aea083addeb4b662",
+          "inlinedSha256": "0e7069b4e04d7602110fed07f90a086822750040054da07335b8bbae16c945c0",
           "entry": true,
           "note": "the marked T-66.1 pure-engine slice of verifier/verify-vh.js (the bytes between its BEGIN/END engine markers), wrapped in a build-generated __require preamble + exports postamble; sourceSha256 pins the WHOLE verify-vh.js source file"
         },
@@ -193,7 +193,7 @@
           "synthetic": true,
           "sourceFile": null,
           "sourceSha256": null,
-          "inlinedSha256": "5e8dcf433701ce4733939e9357060ba784bcfab05b9bb619a431a1a203ae818b",
+          "inlinedSha256": "8db0c9080d5f5904ebc2f4c8c26cf80c4012cd9c05e74a5c78ebf970f8f3f462",
           "note": "the verifier's shipped demo packet (DEMO_SIGNER/DEMO_FILES/DEMO_CONTAINER/DEMO_PACKET_NAME), extracted verbatim at build time from verifier/verify-vh.js (pinned by the verify-vh-engine record's sourceSha256) — defined in build-standalone-html.js"
         },
         {
@@ -201,7 +201,7 @@
           "synthetic": true,
           "sourceFile": null,
           "sourceSha256": null,
-          "inlinedSha256": "4ed703d81bc64da05cd874d3f60186fbc33124504742a1488f51cdb063ecbf9e",
+          "inlinedSha256": "e037b92fa4225cd2375547537195dffe366e124bbfa6db51785b431a40784693",
           "note": "the built-in 60-second-challenge runner over the embedded demo fixture — defined in build-standalone-html.js, not a source file"
         }
       ]

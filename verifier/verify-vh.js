@@ -75,6 +75,7 @@ const KINDS = Object.freeze({
   DATASET_ATTESTATION_SIGNED: "verifyhash.dataset-attestation-signed",
   DATASET_ATTESTATION_TIMESTAMPED: "verifyhash.dataset-attestation-timestamped",
   PROOF: "verifyhash.merkle-proof",
+  AGENT_PACKET: "vh.agent-session-packet",
 });
 
 const TRUST_NOTE =
@@ -384,6 +385,620 @@ function verifyProofBundle(art) {
 }
 
 // ---------------------------------------------------------------------------
+// Verify an AGENT-SESSION packet (T-68.3 — the AgentTrace funnel leg, FREE surface only).
+//
+// A `*.vhagent.json` packet is SELF-CONTAINED: it carries its ordered event list (full and/or
+// REDACTED), a per-event leaf expectation list, and an RFC-6962-style ordered Merkle head
+// { size, root } — there are NO sibling files to read, so `readEntry` is never consulted. This block
+// RE-DERIVES every event leaf and the root from the events the packet holds, exactly as the producer's
+// `vh agent verify` does, but from an INDEPENDENT implementation surface: everything below is written
+// against the verifier's OWN dependency-free keccak (merkle.hashBytes) — it imports NOTHING from cli/.
+//
+// THE CONVENTION (must match cli/core/agent-session.js + cli/journal-log.js VERBATIM):
+//   * payloadHash  = keccak256(utf8(payload))                                (the payload COMMITMENT)
+//   * event leaf   = keccak256(utf8(JSON.stringify([
+//                      LEAF_DOMAIN, seq, ts, actor, type, payloadHash, canonicalMetaJson|null ])))
+//     — the payload participates ONLY via its commitment, so a FULL event and its REDACTED twin
+//     (payload dropped, commitment carried, `redacted: true`) derive the IDENTICAL leaf: redaction
+//     changes neither the leaves nor the root (it can WITHHOLD, never silently ALTER).
+//   * the ordered tree (RFC 6962, position-bound, NO sorting — the OPPOSITE of the evidence tree):
+//       leaf node = keccak256(0x00 || leaf)      interior = keccak256(0x01 || left || right)
+//       MTH(D[0:n]) = interior(MTH(D[0:k]), MTH(D[k:n])), k = largest power of two < n
+//       empty log root = keccak256(utf8("vh.journal-log/v1:empty-root"))
+//   * a SIGNED packet carries `headAttestation`: a detached EIP-191 personal-sign over the EXACT
+//     canonical head-payload bytes (the embedded `attestation` string). The signature wraps the HEAD,
+//     so ONE signature stays valid for every redacted copy of the same sealed session.
+//
+// VERDICTS: event-level tamper (a payload that no longer matches its carried commitment — including a
+// REDACTED event whose commitment was forged — or a leaf that no longer matches its expectation) is a
+// REJECT NAMING THE SEQ; a tampered head is `root_mismatch`; a forged signature is `bad_signature`; a
+// sound signature by the wrong signer under a --vendor pin is `wrong_issuer`; a --vendor pin on an
+// UNSIGNED packet is `unsigned_cannot_pin_vendor` (a stripped signature never passes a pinned verify).
+// The recompute is AUTHORITATIVE: the packet is an untrusted container and its stored hashes are only
+// EXPECTATIONS checked against.
+// ---------------------------------------------------------------------------
+
+// The producer's in-band trust note, REQUIRED verbatim (the packetseal discipline: the caveat may not
+// drift; a packet whose note was edited is structurally invalid, exactly as `vh agent verify` treats it).
+const AGENT_TRUST_NOTE =
+  "This agent-session packet is TAMPER-EVIDENT + OFFLINE-RECOMPUTABLE, NOT a trusted timestamp and " +
+  "NOT a claim the agent behaved well. Its ordered Merkle `head` {size, root} (RFC-6962-style, " +
+  "position-bound) commits to every event: verify RE-DERIVES each event leaf — recomputing the " +
+  "payload hash commitment for a FULL event, checking the carried commitment for a REDACTED one — " +
+  "and the root from the events you hold, and a REJECT names the first offending event seq. " +
+  "Redaction WITHHOLDS a payload behind its hash commitment without changing any leaf or the root: " +
+  "it can hide, never silently alter. Event `ts` fields are SELF-ASSERTED metadata (recorded, never " +
+  'verified against any clock); "sealed at time T" rides the human-owned signing/timestamp ' +
+  "trust-root (STRATEGY.md P-3). Garbage-in is out of scope: the head proves the LOG is intact and " +
+  "append-only, not that the log faithfully records what the agent actually did. The packet is an " +
+  "UNTRUSTED transport container: verify never trusts the packet's own stored hashes.";
+
+const AGENT_SIGNED_HEAD_TRUST_NOTE =
+  "This is a SIGNED agent-session HEAD attestation: it WRAPS (never edits) the EXACT canonical head " +
+  "bytes in `attestation` and attaches a detached EIP-191 signature. It asserts the holder of the " +
+  "`signer` key vouched for THIS session head {size, root} at signing time. Because event leaves " +
+  "are redaction-safe, the SAME signature stays valid for every redacted copy of the sealed session " +
+  "(redaction changes neither leaves nor root). It does NOT prove a timestamp (no \"sealed since " +
+  "T\" — still the human trust-root P-3) and is NOT a legal opinion. Every caveat of the packet " +
+  "applies. " +
+  AGENT_TRUST_NOTE;
+
+const AGENT_HEAD_KIND = "vh.agent-head";
+const AGENT_SIGNED_HEAD_KIND = "vh.agent-head-signed";
+const AGENT_PACKET_SCHEMA_VERSIONS = Object.freeze([1]);
+const AGENT_EVENT_TYPES = Object.freeze(["prompt", "completion", "tool_call", "tool_result", "note"]);
+const AGENT_EVENT_FIELDS = Object.freeze([
+  "seq",
+  "ts",
+  "actor",
+  "type",
+  "payload",
+  "payloadHash",
+  "redacted",
+  "meta",
+]);
+const AGENT_LEAF_DOMAIN = "vh.agent-session/v1:event-leaf";
+const AGENT_EMPTY_ROOT_DOMAIN = "vh.journal-log/v1:empty-root";
+const AGENT_META_MAX_DEPTH = 32;
+const AGENT_META_MAX_NODES = 100000;
+
+// Canonical-case wire shapes (the producer emits lowercase-only hex; mixed case is a foreign artifact).
+const AGENT_HEX32_LC_RE = /^0x[0-9a-f]{64}$/;
+const AGENT_ADDRESS_LC_RE = /^0x[0-9a-f]{40}$/;
+const AGENT_SIG_LC_RE = /^0x[0-9a-f]{130}$/;
+
+// STRICT UTF-8 encoder that MIRRORS the producer's ethers `toUtf8Bytes` byte-for-byte (verified over
+// the whole 0x0000..0xFFFF code-unit space + surrogate edge cases). ethers' default error mode THROWS
+// only on a lone HIGH surrogate (an unfinished pair, no code point) — so this returns null there — but
+// it ENCODES a lone LOW surrogate as its literal 3-byte sequence (U+DC00 -> ed b0 80), NOT an error;
+// so a lone low surrogate falls straight through to the c<0x10000 branch below (matching the producer,
+// whose commitment over such a payload is well-defined). Pure JS; no TextEncoder (which would silently
+// substitute U+FFFD and DIVERGE from the producer). null => the event's commitment is undefined here
+// exactly as it is for the producer, so both sides reject in lockstep (fail-closed, never a mismatch).
+function agentUtf8Bytes(str) {
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    let c = str.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const lo = i + 1 < str.length ? str.charCodeAt(i + 1) : -1;
+      if (lo < 0xdc00 || lo > 0xdfff) return null; // lone HIGH surrogate (ethers THROWS; no code point)
+      c = (c - 0xd800) * 0x400 + (lo - 0xdc00) + 0x10000;
+      i++;
+    }
+    // A lone LOW surrogate (0xdc00..0xdfff) is NOT special-cased: ethers encodes it as its 3-byte form
+    // via the c<0x10000 branch, so we do too — deleting the old lone-low `return null` that FALSELY
+    // rejected genuine packets carrying truncated-UTF-16 / arbitrary-tool-result bytes.
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return new Uint8Array(out);
+}
+
+// 0x-hex -> bytes, and a tiny concat — the only byte plumbing the ordered tree needs.
+function agentHexToBytes(hex) {
+  const s = hex.slice(2);
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+function agentConcatBytes(list) {
+  let total = 0;
+  for (const b of list) total += b.length;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const b of list) {
+    out.set(b, off);
+    off += b.length;
+  }
+  return out;
+}
+
+// RFC-6962 domain-separated hashing over the verifier's OWN keccak (merkle.hashBytes — the same
+// independent primitive every other artifact family here is re-derived with). Children fold in TREE
+// ORDER (never sorted): position IS meaning in an ordered session log.
+function agentLeafNodeHash(leafHex) {
+  return merkle.hashBytes(agentConcatBytes([Uint8Array.of(0x00), agentHexToBytes(leafHex)]));
+}
+function agentInteriorHash(leftHex, rightHex) {
+  return merkle.hashBytes(
+    agentConcatBytes([Uint8Array.of(0x01), agentHexToBytes(leftHex), agentHexToBytes(rightHex)])
+  );
+}
+
+// MTH (RFC 6962 §2.1) over the ORDERED leaf values; the empty log has a domain-separated constant root.
+function agentTreeRoot(leaves) {
+  if (leaves.length === 0) return merkle.hashBytes(agentUtf8Bytes(AGENT_EMPTY_ROOT_DOMAIN));
+  function mth(lo, hi) {
+    const n = hi - lo;
+    if (n === 1) return agentLeafNodeHash(leaves[lo]);
+    let k = 1;
+    while (k * 2 < n) k *= 2;
+    return agentInteriorHash(mth(lo, lo + k), mth(lo + k, hi));
+  }
+  return mth(0, leaves.length);
+}
+
+// A "plain" JSON-shaped object (prototype Object.prototype or null) — the same strictness the producer
+// applies, so what is hashed is exactly what could be written to disk and read back.
+function agentIsPlainObject(v) {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+}
+
+// Canonical JSON for `meta`: keys SORTED, only JSON-representable values, depth capped, and a TOTAL
+// work budget so a shared-reference DAG can never hang the verifier. Returns the canonical text or
+// null (reject) — byte-identical to the producer's canonicalization for every accepted value.
+function agentCanonicalJson(value, depth, budget) {
+  if (depth > AGENT_META_MAX_DEPTH) return null;
+  if (++budget.n > AGENT_META_MAX_NODES) return null;
+  if (value === null) return "null";
+  const t = typeof value;
+  if (t === "boolean") return value ? "true" : "false";
+  if (t === "number") return Number.isFinite(value) ? JSON.stringify(value) : null;
+  if (t === "string") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    const parts = [];
+    for (const item of value) {
+      const p = agentCanonicalJson(item, depth + 1, budget);
+      if (p === null) return null;
+      parts.push(p);
+    }
+    return "[" + parts.join(",") + "]";
+  }
+  if (agentIsPlainObject(value)) {
+    const keys = Object.keys(value).sort();
+    const parts = [];
+    for (const k of keys) {
+      const p = agentCanonicalJson(value[k], depth + 1, budget);
+      if (p === null) return null;
+      parts.push(JSON.stringify(k) + ":" + p);
+    }
+    return "{" + parts.join(",") + "}";
+  }
+  return null;
+}
+
+// The payload COMMITMENT: keccak256 over the payload's UTF-8 bytes. null on a non-string or a string
+// with no UTF-8 encoding (a lone HIGH surrogate — where ethers throws) — TOTAL, mirrors the producer
+// exactly (a lone LOW surrogate IS encodable, so it commits rather than rejecting).
+function agentPayloadHash(payload) {
+  if (typeof payload !== "string") return null;
+  const bytes = agentUtf8Bytes(payload);
+  return bytes === null ? null : merkle.hashBytes(bytes);
+}
+
+// STRICT validation of one canonical event — an INDEPENDENT re-implementation of the producer's rules
+// (closed field set; exactly the FULL or REDACTED shape; a carried commitment on a full event must
+// equal the recomputed one). Never throws; every failure is a named { ok:false, reason, field? } (the
+// commitment-mismatch reject also carries carried/recomputed so the caller can localize the change).
+function agentValidateEvent(event) {
+  try {
+    if (!agentIsPlainObject(event)) return { ok: false, reason: "EVENT_NOT_OBJECT" };
+    for (const k of Object.keys(event)) {
+      if (!AGENT_EVENT_FIELDS.includes(k)) return { ok: false, reason: "EVENT_UNKNOWN_FIELD", field: k };
+    }
+    if (!Number.isSafeInteger(event.seq) || event.seq < 0) {
+      return { ok: false, reason: "EVENT_BAD_SEQ", field: "seq" };
+    }
+    if (typeof event.ts !== "string") return { ok: false, reason: "EVENT_BAD_TS", field: "ts" };
+    if (typeof event.actor !== "string" || event.actor.length === 0) {
+      return { ok: false, reason: "EVENT_BAD_ACTOR", field: "actor" };
+    }
+    if (!AGENT_EVENT_TYPES.includes(event.type)) return { ok: false, reason: "EVENT_BAD_TYPE", field: "type" };
+    const hasPayload = "payload" in event;
+    const hasHash = "payloadHash" in event;
+    if (hasPayload && typeof event.payload !== "string") {
+      return { ok: false, reason: "EVENT_BAD_PAYLOAD", field: "payload" };
+    }
+    if (hasHash && !(typeof event.payloadHash === "string" && merkle.HEX32_RE.test(event.payloadHash))) {
+      return { ok: false, reason: "EVENT_BAD_PAYLOAD_HASH", field: "payloadHash" };
+    }
+    if ("redacted" in event && typeof event.redacted !== "boolean") {
+      return { ok: false, reason: "EVENT_BAD_REDACTED_FLAG", field: "redacted" };
+    }
+    if (!hasPayload && !hasHash) return { ok: false, reason: "EVENT_MISSING_PAYLOAD", field: "payload" };
+    if (event.redacted === true && hasPayload) {
+      return { ok: false, reason: "EVENT_REDACTED_WITH_PAYLOAD", field: "redacted" };
+    }
+    if (event.redacted === true && !hasHash) {
+      return { ok: false, reason: "EVENT_BAD_PAYLOAD_HASH", field: "payloadHash" };
+    }
+    if (!hasPayload && event.redacted !== true) {
+      return { ok: false, reason: "EVENT_UNFLAGGED_REDACTION", field: "redacted" };
+    }
+    let commitment;
+    if (hasPayload) {
+      commitment = agentPayloadHash(event.payload);
+      if (commitment === null) return { ok: false, reason: "EVENT_BAD_PAYLOAD", field: "payload" };
+      if (hasHash && commitment !== event.payloadHash.toLowerCase()) {
+        return {
+          ok: false,
+          reason: "EVENT_PAYLOAD_HASH_MISMATCH",
+          field: "payloadHash",
+          carried: event.payloadHash.toLowerCase(),
+          recomputed: commitment,
+        };
+      }
+    } else {
+      commitment = event.payloadHash.toLowerCase();
+    }
+    let metaJson = null;
+    if ("meta" in event) {
+      metaJson = agentCanonicalJson(event.meta, 0, { n: 0 });
+      if (metaJson === null) return { ok: false, reason: "EVENT_BAD_META", field: "meta" };
+    }
+    return { ok: true, redacted: !hasPayload, payloadHash: commitment, metaJson };
+  } catch (_) {
+    return { ok: false, reason: "HOSTILE_INPUT" };
+  }
+}
+
+// The redaction-safe LEAF VALUE of one validated event: the fixed-position JSON array preimage with
+// the payload represented ONLY by its commitment (so a full event and its redacted twin derive the
+// identical leaf). Returns null only for an encoding fault (kept total).
+function agentEventLeaf(event, validated) {
+  const encoded = JSON.stringify([
+    AGENT_LEAF_DOMAIN,
+    event.seq,
+    event.ts,
+    event.actor,
+    event.type,
+    validated.payloadHash,
+    validated.metaJson,
+  ]);
+  const bytes = agentUtf8Bytes(encoded);
+  return bytes === null ? null : merkle.hashBytes(bytes);
+}
+
+// The shared { size, root } head shape. Throws IOError (a malformed/foreign artifact, exit 1 — the same
+// class `vh agent verify` gives a structurally invalid packet).
+function validateAgentHeadShape(head, label) {
+  if (head == null || typeof head !== "object" || Array.isArray(head)) {
+    throw new IOError(`${label} \`head\` must be a { size, root } object`);
+  }
+  for (const k of Object.keys(head)) {
+    if (k !== "size" && k !== "root") {
+      throw new IOError(`${label} head has unknown field: ${JSON.stringify(k)}`);
+    }
+  }
+  if (!Number.isSafeInteger(head.size) || head.size < 0) {
+    throw new IOError(`${label} head.size must be a non-negative integer, got: ${String(head.size)}`);
+  }
+  if (typeof head.root !== "string" || !AGENT_HEX32_LC_RE.test(head.root)) {
+    throw new IOError(
+      `${label} head.root must be a LOWERCASE 0x-bytes32 hex string, got: ${String(head.root)}`
+    );
+  }
+}
+
+// STRICT structural validation of the OPTIONAL signed-head container: the exact canonical embedded
+// bytes, a known scheme, lowercase signer/signature, and an embedded head payload in canonical form.
+// Returns { embeddedHead } for the binding check. Throws IOError on any structural defect.
+function validateAgentSignedHead(container) {
+  const label = "agent-session packet headAttestation";
+  if (container == null || typeof container !== "object" || Array.isArray(container)) {
+    throw new IOError(`${label} must be a JSON object`);
+  }
+  const KNOWN = ["kind", "schemaVersion", "note", "attestation", "signature"];
+  for (const k of Object.keys(container)) {
+    if (!KNOWN.includes(k)) throw new IOError(`${label} has unknown field: ${JSON.stringify(k)}`);
+  }
+  if (container.kind !== AGENT_SIGNED_HEAD_KIND) {
+    throw new IOError(
+      `${label} kind must be ${JSON.stringify(AGENT_SIGNED_HEAD_KIND)}, got: ${JSON.stringify(container.kind)}`
+    );
+  }
+  if (container.schemaVersion !== 1) {
+    throw new IOError(`${label} has unsupported schemaVersion: ${JSON.stringify(container.schemaVersion)}`);
+  }
+  if (container.note !== AGENT_SIGNED_HEAD_TRUST_NOTE) {
+    throw new IOError(`${label} note must be the standing signed-head trust note (caveat must not drift)`);
+  }
+  if (typeof container.attestation !== "string") {
+    throw new IOError(`${label} must embed the canonical UNSIGNED head bytes as a string \`attestation\``);
+  }
+  let embedded;
+  try {
+    embedded = JSON.parse(container.attestation);
+  } catch (e) {
+    throw new IOError(`${label} embedded attestation is not valid JSON: ${e.message}`);
+  }
+  if (
+    embedded == null ||
+    typeof embedded !== "object" ||
+    Array.isArray(embedded) ||
+    embedded.kind !== AGENT_HEAD_KIND ||
+    embedded.schemaVersion !== 1 ||
+    embedded.note !== AGENT_TRUST_NOTE
+  ) {
+    throw new IOError(`${label} embedded payload is not a canonical ${JSON.stringify(AGENT_HEAD_KIND)} payload`);
+  }
+  validateAgentHeadShape(embedded.head, `${label} embedded payload`);
+  // The embedded string must be the EXACT canonical serialization (the byte-unambiguous signed message);
+  // an insignificant-whitespace/reordered variant is a foreign artifact.
+  const canonicalText =
+    JSON.stringify({
+      kind: embedded.kind,
+      schemaVersion: embedded.schemaVersion,
+      note: embedded.note,
+      head: { size: embedded.head.size, root: embedded.head.root },
+    }) + "\n";
+  if (container.attestation !== canonicalText) {
+    throw new IOError(`${label} embedded attestation is not in canonical form (the signed-over bytes are ambiguous)`);
+  }
+  const sig = container.signature;
+  if (sig == null || typeof sig !== "object" || Array.isArray(sig)) {
+    throw new IOError(`${label} signature must be a { scheme, signer, signature } object`);
+  }
+  if (sig.scheme !== "eip191-personal-sign") {
+    throw new IOError(
+      `${label} has unsupported signature scheme: ${JSON.stringify(sig.scheme)} (this verifier understands eip191-personal-sign)`
+    );
+  }
+  if (typeof sig.signer !== "string" || !AGENT_ADDRESS_LC_RE.test(sig.signer)) {
+    throw new IOError(`${label} signer must be a LOWERCASE 0x-prefixed 20-byte hex address`);
+  }
+  if (typeof sig.signature !== "string" || !AGENT_SIG_LC_RE.test(sig.signature)) {
+    throw new IOError(`${label} signature must be a 65-byte (r||s||v) LOWERCASE 0x-hex string`);
+  }
+  return { embeddedHead: { size: embedded.head.size, root: embedded.head.root } };
+}
+
+// STRICT structural validation of a parsed packet (SHAPE only — the per-event/leaf/root RECOMPUTE is
+// verifyAgentSeal's job, so event-level tamper stays a NAMED verdict naming the seq, never a throw).
+// Mirrors the producer's validatePacketShape defect-for-defect. Throws IOError.
+function validateAgentPacketStructure(obj) {
+  const label = "agent-session packet";
+  const KNOWN = ["kind", "schemaVersion", "note", "head", "counts", "events", "leaves", "headAttestation"];
+  for (const k of Object.keys(obj)) {
+    if (!KNOWN.includes(k)) throw new IOError(`${label} has unknown field: ${JSON.stringify(k)}`);
+  }
+  if (!AGENT_PACKET_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
+    throw new IOError(
+      `unsupported ${label} schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
+        `(this verifier understands ${JSON.stringify(AGENT_PACKET_SCHEMA_VERSIONS)})`
+    );
+  }
+  if (obj.note !== AGENT_TRUST_NOTE) {
+    throw new IOError(`${label} \`note\` must be the standing trust note (caveat must not drift)`);
+  }
+  validateAgentHeadShape(obj.head, label);
+  if (obj.counts == null || typeof obj.counts !== "object" || Array.isArray(obj.counts)) {
+    throw new IOError(`${label} \`counts\` must be a { events, full, redacted } object`);
+  }
+  for (const k of Object.keys(obj.counts)) {
+    if (!["events", "full", "redacted"].includes(k)) {
+      throw new IOError(`${label} counts has unknown field: ${JSON.stringify(k)}`);
+    }
+  }
+  for (const k of ["events", "full", "redacted"]) {
+    if (!Number.isSafeInteger(obj.counts[k]) || obj.counts[k] < 0) {
+      throw new IOError(`${label} counts.${k} must be a non-negative integer, got: ${String(obj.counts[k])}`);
+    }
+  }
+  if (!Array.isArray(obj.events)) throw new IOError(`${label} \`events\` must be an array`);
+  if (!Array.isArray(obj.leaves) || obj.leaves.length !== obj.events.length) {
+    throw new IOError(`${label} \`leaves\` must be an array with EXACTLY one leaf expectation per event`);
+  }
+  obj.leaves.forEach((l, i) => {
+    if (typeof l !== "string" || !AGENT_HEX32_LC_RE.test(l)) {
+      throw new IOError(`${label} leaves[${i}] must be a LOWERCASE 0x-bytes32 hex string, got: ${String(l)}`);
+    }
+  });
+  if (obj.head.size !== obj.events.length) {
+    throw new IOError(
+      `${label} head.size (${obj.head.size}) does not match the events length (${obj.events.length})`
+    );
+  }
+  if (obj.counts.events !== obj.events.length || obj.counts.full + obj.counts.redacted !== obj.counts.events) {
+    throw new IOError(
+      `${label} \`counts\` is internally inconsistent (events must equal the events length; full + redacted must equal events)`
+    );
+  }
+  let signedHead = null;
+  if (obj.headAttestation !== undefined) signedHead = validateAgentSignedHead(obj.headAttestation);
+  return { packet: obj, signedHead };
+}
+
+// The AUTHORITATIVE per-event/leaf/root/counts RECOMPUTE over a shape-validated packet. Returns the
+// engine's standard fileResult shape (matched/changed/... + roots) PLUS an `agent` sub-verdict block
+// and a `reasonKind` in the verifier's reason vocabulary. Event faults are localized to the FIRST
+// offending seq, exactly as the producer's verify names it. Never throws.
+function verifyAgentSeal(packet) {
+  const matched = [];
+  const changed = [];
+  const withheld = [];
+  const agent = {
+    head: { size: packet.head.size, root: packet.head.root },
+    recomputedHead: null,
+    counts: null,
+    withheld: null,
+    seq: null,
+    reason: null,
+  };
+  const base = {
+    matched,
+    changed,
+    missing: [],
+    escaped: [],
+    unexpected: [],
+    sealedRoot: packet.head.root,
+    recomputedRoot: null,
+    rootMatches: null,
+    filesOk: false,
+    reasonKind: null,
+    agent,
+  };
+  const events = packet.events;
+  const leaves = [];
+  for (let i = 0; i < events.length; i++) {
+    const v = agentValidateEvent(events[i]);
+    if (!v.ok) {
+      agent.seq = i;
+      agent.reason = v.reason;
+      if (v.field !== undefined) agent.field = v.field;
+      if (v.reason === "EVENT_PAYLOAD_HASH_MISMATCH") {
+        // The payload no longer matches its carried commitment: a CONTENT change localized to its seq
+        // (this is also how a REDACTED event's FORGED commitment surfaces once its leaf is checked).
+        changed.push({ relPath: `events[${i}]`, expectedContentHash: v.carried, actualContentHash: v.recomputed });
+        base.reasonKind = "CHANGED";
+      } else {
+        base.reasonKind = "event_invalid";
+      }
+      return base;
+    }
+    if (events[i].seq !== i) {
+      agent.seq = i;
+      agent.reason = "SESSION_SEQ_NOT_CONTIGUOUS";
+      base.reasonKind = "event_invalid";
+      return base;
+    }
+    const leaf = agentEventLeaf(events[i], v);
+    if (leaf === null || leaf !== packet.leaves[i]) {
+      // A bound-field edit (ts/actor/type/meta) or a forged redacted commitment: the re-derived leaf no
+      // longer matches the packet's own expectation — named by seq, recompute authoritative.
+      agent.seq = i;
+      agent.reason = "EVENT_LEAF_MISMATCH";
+      changed.push({ relPath: `events[${i}]`, expectedContentHash: packet.leaves[i], actualContentHash: leaf });
+      base.reasonKind = "CHANGED";
+      return base;
+    }
+    leaves.push(leaf);
+    matched.push({ relPath: `events[${i}]`, contentHash: leaf });
+    if (v.redacted) withheld.push(i);
+  }
+  const recomputedRoot = agentTreeRoot(leaves);
+  base.recomputedRoot = recomputedRoot;
+  agent.recomputedHead = { size: leaves.length, root: recomputedRoot };
+  base.rootMatches = leaves.length === packet.head.size && recomputedRoot === packet.head.root;
+  if (!base.rootMatches) {
+    agent.reason = "HEAD_MISMATCH";
+    base.reasonKind = "root_mismatch";
+    return base;
+  }
+  const full = events.length - withheld.length;
+  agent.counts = { events: events.length, full, redacted: withheld.length };
+  agent.withheld = withheld;
+  if (packet.counts.full !== full || packet.counts.redacted !== withheld.length) {
+    agent.reason = "COUNTS_MISMATCH";
+    base.reasonKind = "counts_mismatch";
+    return base;
+  }
+  base.filesOk = true;
+  return base;
+}
+
+// The artifact-level orchestrator for KINDS.AGENT_PACKET — both entrypoints (disk + bytes) route here
+// through verifyParsedArtifact, so the two paths' verdicts are one code path (deep-equal by
+// construction). Precedence mirrors the producer's `vh agent verify`: event/leaf/head/counts faults
+// (naming the seq) dominate; then head binding, signature genuineness, and the vendor pin.
+function verifyAgentPacketArtifact({ artifact, obj, pinned }) {
+  const { signedHead } = validateAgentPacketStructure(obj); // throws IOError on a malformed/foreign packet
+  const fileResult = verifyAgentSeal(obj);
+  const agent = fileResult.agent;
+
+  const signed = obj.headAttestation !== undefined;
+  let recoveredSigner = null;
+  let claimedSigner = null;
+  let signatureOk = null;
+  let signerMatchesVendor = null;
+  let headBound = null;
+  if (signed) {
+    claimedSigner = obj.headAttestation.signature.signer; // lowercase, structurally enforced
+    recoveredSigner = tryRecover(obj.headAttestation.attestation, obj.headAttestation.signature.signature);
+    signatureOk = recoveredSigner != null && recoveredSigner === claimedSigner;
+    if (agent.recomputedHead != null) {
+      // The signature must vouch for THIS session's RECOMPUTED head — a signature pasted from a
+      // different session recovers fine but binds a different { size, root }.
+      headBound =
+        signedHead.embeddedHead.size === agent.recomputedHead.size &&
+        signedHead.embeddedHead.root === agent.recomputedHead.root;
+    }
+    if (signatureOk && pinned != null) signerMatchesVendor = recoveredSigner === pinned;
+  }
+
+  let accepted = true;
+  let reason = "OK";
+  if (!fileResult.filesOk) {
+    accepted = false;
+    reason = fileResult.reasonKind;
+  } else if (signed && headBound === false) {
+    accepted = false;
+    reason = "head_not_bound";
+    agent.reason = "HEAD_NOT_BOUND";
+  } else if (signed && !signatureOk) {
+    accepted = false;
+    reason = "bad_signature";
+    agent.reason = "SIGNATURE_FORGED";
+  } else if (signed && pinned != null && signerMatchesVendor !== true) {
+    accepted = false;
+    reason = "wrong_issuer";
+    agent.reason = "WRONG_VENDOR";
+  } else if (!signed && pinned != null) {
+    // Fail-closed pin: a stripped signature can never pass a pinned verify.
+    accepted = false;
+    reason = "unsigned_cannot_pin_vendor";
+    agent.reason = "NOT_SIGNED";
+  }
+
+  const result = {
+    artifact,
+    kind: KINDS.AGENT_PACKET,
+    payloadKind: KINDS.AGENT_PACKET,
+    signed,
+    verdict: accepted ? "OK" : "REJECTED",
+    reason,
+    accepted,
+    recoveredSigner,
+    claimedSigner,
+    pinnedVendor: pinned,
+    signatureOk,
+    signerMatchesVendor,
+    sealedRoot: fileResult.sealedRoot,
+    recomputedRoot: fileResult.recomputedRoot,
+    rootMatches: fileResult.rootMatches,
+    counts: {
+      matched: fileResult.matched.length,
+      changed: fileResult.changed.length,
+      missing: 0,
+      escaped: 0,
+      unexpected: 0,
+    },
+    matched: fileResult.matched,
+    changed: fileResult.changed,
+    missing: [],
+    escaped: [],
+    unexpected: [],
+    agent,
+    note: TRUST_NOTE,
+  };
+  return { result, code: accepted ? EXIT.OK : EXIT.REJECTED };
+}
+
+// ---------------------------------------------------------------------------
 // The core verify orchestration over an ALREADY-PARSED artifact object + an injected file source. This
 // is the ONE engine BOTH entrypoints drive — `verifyArtifact` (disk: the CLI contract, byte-identical to
 // before this seam existed) and `verifyArtifactFromBytes` (in-memory map). It auto-detects the artifact
@@ -395,6 +1010,12 @@ function verifyProofBundle(art) {
 function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
   const kind = obj.kind;
   const pinned = vendor != null ? normalizeAddress(vendor, "--vendor") : null;
+
+  // AGENT-SESSION packet (T-68.3): SELF-CONTAINED — no sibling bytes, its own leaf/root convention and
+  // its own in-packet signed head. Routed to the dedicated orchestrator above (`readEntry` unused).
+  if (kind === KINDS.AGENT_PACKET) {
+    return verifyAgentPacketArtifact({ artifact, obj, pinned });
+  }
 
   // Detect signed vs bare and the underlying payload kind. A signed container wraps the embedded payload.
   let signed = false;
@@ -1152,6 +1773,19 @@ function renderHuman(r) {
     `files: ${r.counts.matched} matched, ${r.counts.changed} changed, ` +
       `${r.counts.missing} missing, ${r.counts.escaped || 0} rejected, ${r.counts.unexpected} unexpected`
   );
+  // AGENT-SESSION packet block (T-68.3) — present ONLY for r.agent results, so every other kind's
+  // output stays byte-identical.
+  if (r.agent) {
+    L.push(`declared head:   { size: ${r.agent.head.size}, root: ${r.agent.head.root} }`);
+    if (r.agent.counts) {
+      L.push(
+        `events:          ${r.agent.counts.events} (${r.agent.counts.full} full, ${r.agent.counts.redacted} redacted)`
+      );
+      L.push(
+        `withheld seqs:   ${r.agent.withheld.length === 0 ? "(none — every payload disclosed)" : r.agent.withheld.join(", ")}`
+      );
+    }
+  }
   // OPTIONAL recipient-side TRUST-DECISION-AS-OF block (T-51.4) — printed ONLY when --revocations was
   // supplied (r.trustAsOf is attached then). With no flag this block is absent, so the output is byte-
   // identical to the pre-T-51.4 baseline. The block reads the SAME way the producer's verify-signed does.
@@ -1210,6 +1844,27 @@ function renderHuman(r) {
         "  path_escape: the artifact references a file OUTSIDE its own directory (absolute path, `..` " +
           "traversal, or an out-of-tree symlink). A genuine artifact never does this; refused to read it."
       );
+    }
+    // AGENT-SESSION packet reject details (T-68.3): name the first offending event seq + the named fault.
+    if (r.agent) {
+      if (r.agent.seq !== null && r.agent.seq !== undefined) {
+        L.push(`  first offending event seq: ${r.agent.seq}${r.agent.reason ? ` (${r.agent.reason})` : ""}`);
+      }
+      if (r.reason === "event_invalid") {
+        L.push(
+          `  event_invalid: an event failed strict canonical validation` +
+            `${r.agent.field ? ` (field: ${r.agent.field})` : ""} — the packet cannot be trusted.`
+        );
+      }
+      if (r.reason === "counts_mismatch") {
+        L.push("  counts_mismatch: the packet's declared full/redacted counts do not match a recount.");
+      }
+      if (r.reason === "head_not_bound") {
+        L.push(
+          "  head_not_bound: the headAttestation signs a DIFFERENT { size, root } than this packet's " +
+            "events derive — the signature belongs to another session."
+        );
+      }
     }
   }
   L.push("");
@@ -1297,6 +1952,23 @@ const DEMO_CONTAINER = Object.freeze({
 // The packet filename the demo materializes (shared by the throwaway-temp round-trip and the `demo <dir>`
 // keepable scaffold) so the "NEXT" command the demo prints names the file it actually wrote.
 const DEMO_PACKET_NAME = "demo-packet.vhevidence.json";
+
+// ---------------------------------------------------------------------------
+// The DEMO AGENT-SESSION packet (T-68.3): a small, GENUINE `vh.agent-session-packet` produced by the
+// REAL `vh agent seal` + `vh agent redact` path (never re-authored by hand) — a 4-event session
+// (prompt -> tool_call -> tool_result -> completion) whose tool_call payload (seq 1) is REDACTED
+// behind its hash commitment, so the fixture demonstrates the load-bearing property: a redacted
+// packet STILL VERIFIES (identical leaves + root). UNSIGNED — the whole agent verify surface is the
+// FREE funnel leg. The standalone HTML page inlines these constants verbatim (next to DEMO_FILES /
+// DEMO_CONTAINER above) for its built-in agent demo: click -> ACCEPT; tamper ONE byte of a payload in
+// the page -> REJECT naming event seq DEMO_AGENT_TAMPER_SEQ. The TAMPER_FROM/TO pair is a one-byte
+// substring edit that occurs EXACTLY once in the packet text (pinned by test/verifier.agent.test.js).
+// ---------------------------------------------------------------------------
+const DEMO_AGENT_PACKET_NAME = "demo-session.vhagent.json";
+const DEMO_AGENT_PACKET_TEXT = "{\"kind\":\"vh.agent-session-packet\",\"schemaVersion\":1,\"note\":\"This agent-session packet is TAMPER-EVIDENT + OFFLINE-RECOMPUTABLE, NOT a trusted timestamp and NOT a claim the agent behaved well. Its ordered Merkle `head` {size, root} (RFC-6962-style, position-bound) commits to every event: verify RE-DERIVES each event leaf — recomputing the payload hash commitment for a FULL event, checking the carried commitment for a REDACTED one — and the root from the events you hold, and a REJECT names the first offending event seq. Redaction WITHHOLDS a payload behind its hash commitment without changing any leaf or the root: it can hide, never silently alter. Event `ts` fields are SELF-ASSERTED metadata (recorded, never verified against any clock); \\\"sealed at time T\\\" rides the human-owned signing/timestamp trust-root (STRATEGY.md P-3). Garbage-in is out of scope: the head proves the LOG is intact and append-only, not that the log faithfully records what the agent actually did. The packet is an UNTRUSTED transport container: verify never trusts the packet's own stored hashes.\",\"head\":{\"size\":4,\"root\":\"0xd455ad3f8050f1d863d65003532055326629bf92574cf8919b022222abdf66d1\"},\"counts\":{\"events\":4,\"full\":3,\"redacted\":1},\"events\":[{\"seq\":0,\"ts\":\"2026-07-01T09:00:00.000Z\",\"actor\":\"user\",\"type\":\"prompt\",\"payload\":\"Summarize the vendor contract and flag any auto-renewal clause.\",\"payloadHash\":\"0x1e2d99e683d2623c77a82721f633f27206cd8051be8c848509f63bb570bd5be4\"},{\"seq\":1,\"ts\":\"2026-07-01T09:00:01.000Z\",\"actor\":\"agent:assistant\",\"type\":\"tool_call\",\"payloadHash\":\"0x32133a5998ab97eaef8850a7a47cec6e1056b964a050e6e5561f97ec22b24498\",\"redacted\":true,\"meta\":{\"tool\":\"contract_search\"}},{\"seq\":2,\"ts\":\"2026-07-01T09:00:02.000Z\",\"actor\":\"tool:contract_search\",\"type\":\"tool_result\",\"payload\":\"Section 12.3: renews automatically for successive 12-month terms unless cancelled 60 days prior.\",\"payloadHash\":\"0x57bed64393fb6ed461a5b00143cc239cf705e4a1ea5d0ee84a8f5f7ecc85bdc1\"},{\"seq\":3,\"ts\":\"2026-07-01T09:00:03.000Z\",\"actor\":\"agent:assistant\",\"type\":\"completion\",\"payload\":\"Flagged: Section 12.3 auto-renews for successive 12-month terms and requires 60 days cancellation notice.\",\"payloadHash\":\"0x43649f64cb62093be040484c6858b80f0973e6aa2bd9bc4df75c0c725dcd5bb4\"}],\"leaves\":[\"0x5a3354160c02d09a5b653227ebd35d8f0a1ade1284e402049b91c4f8acd873e3\",\"0x57ac83bf53104a1d952cf9d00e904f15e31d4cc17bc6ff0aedacd1b6ca40904a\",\"0xb3ee61a8dc496b92e05db48b990edee212bda46ca29e5480efb056a5c2cf817f\",\"0x1000b07e45f6151bcf49be6266358cec551a690654f22dc5dae279e7d6bfb7d1\"]}\n";
+const DEMO_AGENT_TAMPER_SEQ = 0;
+const DEMO_AGENT_TAMPER_FROM = "\"payload\":\"Summarize the vendor contract";
+const DEMO_AGENT_TAMPER_TO = "\"payload\":\"SUMMARIZE the vendor contract";
 
 // Materialize the demo packet + its referenced files into `dir`. Returns the packet path.
 function writeDemoFixture(dir) {
@@ -1523,9 +2195,12 @@ function usage() {
     "<dir> (which you keep) and prints copy-paste commands so you verify, tamper, and re-verify it by hand.",
     "",
     "Auto-detects the artifact kind (evidence seal, reconciliation seal, dataset attestation, proof",
-    "bundle — bare or signed), RE-DERIVES the keccak root from the referenced bytes (siblings resolve",
-    "next to the artifact, or under --dir <d>), recovers the signer of a signed artifact, and PINS it",
-    "to --vendor <0xaddr> (or reports the recovered signer when no pin is given).",
+    "bundle — bare or signed — or an agent-session packet *.vhagent.json), RE-DERIVES the keccak root",
+    "from the referenced bytes (siblings resolve next to the artifact, or under --dir <d>), recovers",
+    "the signer of a signed artifact, and PINS it to --vendor <0xaddr> (or reports the recovered signer",
+    "when no pin is given). An agent-session packet is SELF-CONTAINED: every event leaf + the ordered",
+    "RFC-6962-style head are re-derived from the events in the packet (REDACTED payloads are checked by",
+    "their hash commitments), and a REJECT names the first offending event seq.",
     "",
     "REVOCATIONS: --revocations <file-or-dir> [--as-of <ISO>] downgrades an otherwise-ACCEPTED signed",
     "artifact to REVOKED (exit 3) when its signing key was REVOKED at or before --as-of (default now). The",
@@ -1678,6 +2353,8 @@ module.exports = {
   verifyTrustSeal,
   verifyDatasetAttestation,
   verifyProofBundle,
+  verifyAgentSeal,
+  AGENT_TRUST_NOTE,
   renderHuman,
   revocation,
   usage,
@@ -1688,5 +2365,10 @@ module.exports = {
   DEMO_FILES,
   DEMO_CONTAINER,
   DEMO_PACKET_NAME,
+  DEMO_AGENT_PACKET_NAME,
+  DEMO_AGENT_PACKET_TEXT,
+  DEMO_AGENT_TAMPER_SEQ,
+  DEMO_AGENT_TAMPER_FROM,
+  DEMO_AGENT_TAMPER_TO,
   MAX_RELPATH_CHARS,
 };

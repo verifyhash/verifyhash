@@ -567,6 +567,35 @@ license is a hard refuse, never a silent downgrade). Full schema, free-vs-paid s
 seal → hand over → verify example, and the core-reuse map: [`docs/EVIDENCE.md`](docs/EVIDENCE.md). The
 vendor keypair, price, and first design partner are human steps (STRATEGY.md › **P-7**).
 
+### Agent-session evidence (`vh agent`) — AgentTrace
+
+**Tamper-evident, selectively-REDACTABLE, independently-verifiable AI-agent session records** — the
+agent-evidence vertical for the record-keeping / audit / incident-forensics buyer. `vh agent seal` turns
+an ordered session event log (prompts, completions, tool calls/results, notes) into ONE
+`*.vhagent.json` packet under an RFC-6962-style ordered Merkle head with **redaction-safe** leaves:
+withhold any payload behind its hash commitment and the packet **still verifies with the identical
+head**; disclose + check any ONE event offline; prove a later packet extends a mid-session checkpoint
+**append-only** (a rewritten past is a REJECT naming the seq). All **offline, no network**.
+
+```
+vh agent seal <session.jsonl> [--out <p>] [--sign --license <f> --vendor <0xaddr> ...] [--json]   # free unsigned; --sign is the PAID surface
+vh agent verify <packet> [--vendor <0xaddr>] [--json]   # re-derive every leaf + the root; exit 0 ACCEPTED / 3 named REJECT (+ seq)
+vh agent redact <packet> --seq <list> --out <p>          # withhold payloads; head UNCHANGED — redaction is not tamper
+vh agent prove / verify-proof / checkpoint / verify-growth   # single-event disclosure + append-only growth, offline
+```
+
+The honest boundary, carried **in-band** in every packet's trust note: it proves the LOG is unaltered
+since seal, any disclosed event verbatim as recorded, append-only growth across checkpoints, and that
+redaction can only withhold — **NOT** that the log faithfully records what the agent actually did
+(garbage-in is out of scope), `ts` fields are self-asserted, and it is **NOT** a trusted timestamp
+without the human-owned trust-root (P-3). Verify/redact/prove are FREE; `--sign` (a detached head
+attestation one signature of which stays valid across every redacted copy) is license-gated via the
+DRAFT `agent_signed` capability — the same fail-closed mechanism as `vh evidence`. A counterparty
+verifies with the independent `verify-vh` (CLI, zero-install bundle, or the offline browser page —
+[`verifier/README.md`](verifier/README.md) §2c). Buyer-facing spec:
+[`docs/AGENTTRACE.md`](docs/AGENTTRACE.md); a committed third-party-transcript example proving adoption
+is a ~20-line mapping: [`examples/agent-session/`](examples/agent-session/).
+
 ### Producer identity card (`vh identity`)
 
 A **signed, offline-verifiable "who is this vendor, and what exactly do they attest?"** card — the
@@ -767,6 +796,13 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   verification re-derives), the free-vs-paid surface (free unsigned baseline of up to 25 files + verify;
   paid `--sign` wrap and over-sample sealing gated by `vh-evidence-license` entitlements), a worked
   seal → hand over → verify example, and how it reuses the shared packetseal/license/attestation cores.
+- [`docs/AGENTTRACE.md`](docs/AGENTTRACE.md) — the buyer-facing AgentTrace product spec (`vh agent`,
+  `*.vhagent.json`): what a packet PROVES (log unaltered since seal; disclosed events verbatim;
+  append-only growth across checkpoints; redaction withholds — never silently alters) and does NOT
+  (garbage-in out of scope; `ts` self-asserted; not a trusted timestamp without P-3), the free-vs-paid
+  line (`--sign` gated by the DRAFT `agent_signed` capability), where a counterparty independently
+  verifies, and the committed [`examples/agent-session/`](examples/agent-session/) worked example
+  (a third-party OpenAI-style transcript mapped in ~20 lines, then map → seal → redact → verify → prove).
 - [`docs/KEY-LIFECYCLE.md`](docs/KEY-LIFECYCLE.md) — the producer-key lifecycle: publish → pin → verify, and
   how a vendor honestly RETIRES a pinned key with a signed `vh revocation publish|verify` (a key revokes
   ITSELF; a third party cannot revoke a key it does not control). The recipient `--revocations <f>`

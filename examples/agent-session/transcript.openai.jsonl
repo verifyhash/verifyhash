@@ -1,0 +1,9 @@
+{"ts":"2026-06-30T14:03:07Z","role":"system","content":"You are the Acme Home Goods support agent. Look orders up with your tools before promising anything, and follow the refund policy exactly."}
+{"ts":"2026-06-30T14:03:09Z","role":"user","content":"My order #A-1042 arrived with the glass carafe shattered. I want a refund."}
+{"ts":"2026-06-30T14:03:11Z","role":"assistant","content":null,"tool_calls":[{"id":"call_8f2Kq1","type":"function","function":{"name":"lookup_order","arguments":"{\"order_id\":\"A-1042\"}"}}]}
+{"ts":"2026-06-30T14:03:12Z","role":"tool","tool_call_id":"call_8f2Kq1","name":"lookup_order","content":"{\"order_id\":\"A-1042\",\"status\":\"delivered\",\"delivered_on\":\"2026-06-28\",\"total\":\"$129.00\",\"items\":[{\"sku\":\"CARAFE-GL-1L\",\"qty\":1}],\"customer_email\":\"pat.jensen@example.com\",\"shipping_address\":\"14 Birch Lane, Portland OR\"}"}
+{"ts":"2026-06-30T14:03:14Z","role":"assistant","content":null,"tool_calls":[{"id":"call_9zQ3vT","type":"function","function":{"name":"issue_refund","arguments":"{\"order_id\":\"A-1042\",\"amount\":\"129.00\",\"reason\":\"item damaged in transit\"}"}}]}
+{"ts":"2026-06-30T14:03:16Z","role":"tool","tool_call_id":"call_9zQ3vT","name":"issue_refund","content":"{\"refund_id\":\"R-77031\",\"order_id\":\"A-1042\",\"amount\":\"129.00\",\"state\":\"issued\"}"}
+{"ts":"2026-06-30T14:03:18Z","role":"assistant","content":"I'm sorry the carafe arrived shattered. I've issued a full refund of $129.00 to your original payment method — reference R-77031. It should appear within 3–5 business days. Is there anything else I can help with?"}
+{"ts":"2026-06-30T14:03:41Z","role":"user","content":"That's all, thanks."}
+{"ts":"2026-06-30T14:03:43Z","role":"assistant","content":"You're welcome! Thanks for your patience, and enjoy the replacement if you decide to reorder."}

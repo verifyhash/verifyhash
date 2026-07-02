@@ -26,6 +26,14 @@ verifyhash turns "a set of files, byte-for-byte unaltered, and who vouched for t
 Both ride the **same** provenance core and the **same** independent verifier, so confidence in one
 transfers to the other.
 
+> A third, packet-shaped journey — **AgentTrace** agent-session evidence (`vh agent`: seal an ordered
+> AI-agent session log into one tamper-evident, selectively-redactable `*.vhagent.json`) — rides that
+> same core and the same independent verifier, though this kit's script does not drive it. Its
+> buyer-facing spec, honest trust boundary (log unaltered since seal; NOT what the agent actually did;
+> not a trusted timestamp without **P-3**), and a committed map → seal → redact → verify → prove
+> example are in [`AGENTTRACE.md`](AGENTTRACE.md) and
+> [`../examples/agent-session/`](../examples/agent-session/).
+
 ---
 
 ## 2. Run the kit (zero setup)

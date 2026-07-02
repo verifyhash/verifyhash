@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 33,
-  "totalBytes": 981055,
+  "totalBytes": 985141,
   "files": [
     {
       "path": "LICENSE",
@@ -25,8 +25,8 @@
     {
       "path": "docs/ADOPT.md",
       "source": "docs/ADOPT.md",
-      "bytes": 9668,
-      "sha256": "0561b787ac91af80398506c46f1b530052cf03a05d0a8038281551692ba7f165"
+      "bytes": 10093,
+      "sha256": "faeeb8c7f9612a97edd5e8adf21570c6f50551539117c5d8d6c5ba73dee0df56"
     },
     {
       "path": "docs/CONFORMANCE.md",
@@ -85,8 +85,8 @@
     {
       "path": "docs/PILOT.md",
       "source": "docs/PILOT.md",
-      "bytes": 28410,
-      "sha256": "33375b81f355a1f1f483a6649abdc6f03d37624ea2b2d8cc59571be9a3d746e6"
+      "bytes": 29038,
+      "sha256": "627b93f504b8aedd3519cdeedd06767524f91529930314805297f1e42f226b5b"
     },
     {
       "path": "docs/PROOFPARCEL.md",
@@ -145,8 +145,8 @@
     {
       "path": "docs/overview.md",
       "source": "README.md",
-      "bytes": 65073,
-      "sha256": "94bd509fd5bb2867e3d87f1bb4b362cd2e34b6dfe4119c814a7a75546cd3b1c9"
+      "bytes": 68106,
+      "sha256": "8fb5963d3a8edfad0a939151a251a0bd1bc4a47d875a6077619d8f5b4c1992fb"
     },
     {
       "path": "docs/pilot-README.md",

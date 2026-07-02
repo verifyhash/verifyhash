@@ -5,9 +5,9 @@
     "verify": {
       "bundle": "verify-vh-standalone.js",
       "sidecar": "verify-vh-standalone.js.sha256",
-      "bundleBytes": 146708,
-      "bundleSha256": "d4af1f53100180ca56251c83f12b32858a754f08f4abd2fb8012a59a3a1a1cbd",
-      "sidecarLine": "d4af1f53100180ca56251c83f12b32858a754f08f4abd2fb8012a59a3a1a1cbd  verify-vh-standalone.js",
+      "bundleBytes": 164142,
+      "bundleSha256": "793125a8de58cea35e1e1cd1bb7d1b315c93c59f9045af8a4b1152a443b452ac",
+      "sidecarLine": "793125a8de58cea35e1e1cd1bb7d1b315c93c59f9045af8a4b1152a443b452ac  verify-vh-standalone.js",
       "modules": [
         {
           "id": "keccak256-vendored",
@@ -50,19 +50,27 @@
           "entry": false
         },
         {
+          "id": "revocation-core",
+          "synthetic": false,
+          "sourceFile": "verifier/lib/revocation-core.js",
+          "sourceSha256": "99377291d5455b7a01a3eca313cd1289f6df8ce76a37bcb0aacc68ebe70601b1",
+          "inlinedSha256": "6a426132b56560771fc187caaeee308cd4aaaf87b211aff87dff04cbc622bd2e",
+          "entry": false
+        },
+        {
           "id": "revocation",
           "synthetic": false,
           "sourceFile": "verifier/lib/revocation.js",
-          "sourceSha256": "a0508a7b092f67df4f030a4e543ecedbcf6db83e4649df37e5c3af061d232de1",
-          "inlinedSha256": "51376af87e9775c5a1cf9342a174f9fe1e373c02597fe5a43a4f7d6d7f234048",
+          "sourceSha256": "538b09ca210e47b51319b89fc681229ee16873425f2635855dc0d6f0dc57374f",
+          "inlinedSha256": "ba7ae1d7600289d7584e998f02fffb82eaa03dfb55e2e2373bda374144ce9d44",
           "entry": false
         },
         {
           "id": "verify-vh",
           "synthetic": false,
           "sourceFile": "verifier/verify-vh.js",
-          "sourceSha256": "e31c1d2533fca3c930bb8c84d414a4b2f3930f460b0e90adf6af679cc5d3b4ec",
-          "inlinedSha256": "5e8285d7d4b61f597b0b4012ea195c6e1cd3b4fa949bf7e45f2c95fdbe9ab203",
+          "sourceSha256": "3c0ea1611e9d13c990dacbafb388d3b162e64cd8e690cb77f1921bb3dfe40b8c",
+          "inlinedSha256": "837d0b0b49ac8fd2a7fafdb87fe1e3cf1ee48e8e0b66c7e4f0c2767240fbe6bb",
           "entry": true
         }
       ]

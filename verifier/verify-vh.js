@@ -27,6 +27,14 @@
 // POSTURE — READ-ONLY. It holds NO key, opens nothing for write, and NEVER writes the cwd (or anywhere).
 //   It reads ONLY the artifact and the sibling files it references. Same exit-code contract as
 //   `vh verify-seal` / `vh evidence verify`: 0 ok / 3 rejected / 2 usage / 1 IO.
+//
+// FILE-SOURCE SEAM (T-66.1). The verify cores are written against ONE tiny abstraction — a `readEntry`
+//   function `(relPath) -> { status: "ok", bytes } | { status: "missing" } | { status: "escaped" }` — so
+//   the SAME engine verifies from the DISK (the CLI path below, byte-identical to before) or from an
+//   IN-MEMORY `{ relPath: Uint8Array }` map (`verifyArtifactFromBytes`, the seam a browser page / vm
+//   sandbox drives with ZERO fs/os/path/process on its code path). The whole pure engine sits between the
+//   BEGIN/END markers below; test/verifier.browser-core.test.js proves (statically AND dynamically) that
+//   no impure builtin use is reachable from the bytes entry, and that disk/bytes verdicts are DEEP-EQUAL.
 
 const fs = require("fs");
 const os = require("os");
@@ -36,6 +44,16 @@ const merkle = require("./lib/merkle");
 const canonical = require("./lib/canonical");
 const { recoverPersonalSignAddress } = require("./lib/secp256k1-recover");
 const revocation = require("./lib/revocation");
+
+// ============================ BEGIN VERIFY-VH PURE ENGINE (T-66.1) ============================
+// EVERYTHING between this marker and the matching END marker is the PURE verify engine: it performs NO
+// I/O of its own and never touches fs / os / path / process / child_process — every byte it verifies
+// arrives through the injected `readEntry` seam (or as an argument). Its only outside references are the
+// four module bindings above, all of which resolve to PURE modules for the functions used here:
+// `merkle`, `canonical`, `recoverPersonalSignAddress`, and the PURE decision half of `revocation`
+// (./lib/revocation-core.js re-exports — never the fs-backed readRevocationsFromPath/loadAndApply).
+// test/verifier.browser-core.test.js enforces all of this mechanically; the markers also make the block
+// mechanically extractable (vm / browser bundling, EPIC-66).
 
 // CI-gateable exit contract, mirroring the producer family (vh verify-seal / vh evidence verify):
 //   0 ok / 3 rejected / 2 usage / 1 IO. Stable; a future CI/indexer keys on these.
@@ -63,6 +81,638 @@ const TRUST_NOTE =
   "verify-vh is an INDEPENDENT, read-only, OFFLINE verifier. It RE-DERIVES the keccak root from the " +
   "bytes you hold and recovers the signer with no producer stack. It proves TAMPER-EVIDENCE + WHO " +
   "vouched — NOT a trusted timestamp and NOT a legal opinion.";
+
+// ---------------------------------------------------------------------------
+// Address normalization + recovery helpers. The verifier compares addresses as LOWERCASE 0x-hex (the
+// canonical byte-deterministic form the producer records); a caller may paste an EIP-55-checksummed
+// --vendor and we lowercase it (a checksum mismatch is not our concern — we compare 20 raw bytes).
+// ---------------------------------------------------------------------------
+
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+function normalizeAddress(addr, label) {
+  if (typeof addr !== "string" || !ADDRESS_RE.test(addr)) {
+    throw new UsageError(`${label} must be a 0x-prefixed 20-byte hex address, got: ${String(addr)}`);
+  }
+  return addr.toLowerCase();
+}
+
+// Recover the EIP-191 signer over the embedded canonical bytes. A tampered/corrupt signature can be
+// UNRECOVERABLE (no valid curve point) — that throws, which the caller turns into a `bad_signature`
+// REJECTED verdict, never a crash. Returns lowercase 0x-hex, or null if recovery failed.
+function tryRecover(message, signature) {
+  try {
+    return recoverPersonalSignAddress(message, signature);
+  } catch (_) {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Signed-container decoding. A signed artifact carries the embedded UNSIGNED payload as the EXACT
+// canonical bytes (a STRING) in `attestation`, plus a { scheme, signer, signature } block. The signed
+// MESSAGE is that embedded string verbatim, so signer recovery runs over `container.attestation`.
+// ---------------------------------------------------------------------------
+
+function decodeSigned(container) {
+  const sig = container && container.signature;
+  if (sig == null || typeof sig !== "object" || Array.isArray(sig)) {
+    throw new IOError("signed artifact is missing a { scheme, signer, signature } signature block");
+  }
+  if (sig.scheme !== "eip191-personal-sign") {
+    throw new IOError(
+      `unsupported signature scheme: ${JSON.stringify(sig.scheme)} ` +
+        "(this verifier understands eip191-personal-sign)"
+    );
+  }
+  if (typeof container.attestation !== "string") {
+    throw new IOError("signed artifact must embed the canonical UNSIGNED bytes as a string `attestation`");
+  }
+  if (typeof sig.signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(sig.signature)) {
+    throw new IOError("signed artifact signature must be a 65-byte (r||s||v) 0x-hex string");
+  }
+  if (typeof sig.signer !== "string" || !ADDRESS_RE.test(sig.signer)) {
+    throw new IOError("signed artifact signer must be a 0x-prefixed 20-byte hex address");
+  }
+  let embedded;
+  try {
+    embedded = JSON.parse(container.attestation);
+  } catch (e) {
+    throw new IOError(`embedded attestation is not valid JSON: ${e.message}`);
+  }
+  return { embedded, message: container.attestation, claimedSigner: sig.signer.toLowerCase(), signature: sig.signature };
+}
+
+// ---------------------------------------------------------------------------
+// Per-file re-derivation, shared by every seal kind AND by both file sources. Given the sealed
+// { relPath, contentHash } entries and a `readEntry` source, fetch each referenced file's bytes through
+// the source, recompute its contentHash, and localize the outcome to MATCH / CHANGED / MISSING /
+// ESCAPED; a file present under a sealed relPath that is NOT in the seal cannot occur here (we only read
+// sealed relPaths) — UNEXPECTED is reported only for seals where the producer enumerates a directory
+// (evidence seal verify re-walks the dir). For artifact verification we follow the producer's read
+// model: read exactly the relPaths the artifact names from the source.
+//
+// SECURITY — CONFINEMENT LIVES IN THE SOURCE. `relPath` values come straight from the attacker-controlled
+// artifact JSON (the threat model is attacker-controls-the-input, victim-runs-on-their-own-machine: a
+// malicious producer hands a counterparty a "verify me" artifact, hoping its relPaths probe the
+// counterparty's filesystem). Each source therefore CONFINES every read BEFORE touching its backing
+// store and answers `{ status: "escaped" }` for a hostile relPath (absolute, a `..` traversal component,
+// or — for the disk source — a resolved/realpath escape of baseDir). An escaped entry is recorded ONLY by
+// relPath (the attacker's string) — we NEVER hash it and NEVER emit an actualContentHash for it, so the
+// verdict can never become a content-confirmation / hash-disclosure oracle over a file outside the
+// source. A `path_escape` entry is a hard REJECTED verdict.
+// ---------------------------------------------------------------------------
+
+function classifyFilesWith(sealedEntries, readEntry) {
+  const changed = [];
+  const missing = [];
+  const matched = [];
+  const escaped = []; // { relPath } only — NEVER a hash; a confinement reject, read nothing
+  const flat = []; // { relPath, contentHash } actually-present, for the root re-derivation
+
+  for (const e of sealedEntries) {
+    const relPath = e.relPath;
+    const r = readEntry(relPath);
+    if (r.status === "escaped") {
+      escaped.push({ relPath: String(relPath) });
+      continue;
+    }
+    if (r.status === "missing") {
+      missing.push({ relPath });
+      continue;
+    }
+    const actual = merkle.hashBytes(r.bytes);
+    flat.push({ relPath, contentHash: actual });
+    if (actual.toLowerCase() === String(e.contentHash).toLowerCase()) {
+      matched.push({ relPath, contentHash: actual });
+    } else {
+      changed.push({ relPath, expectedContentHash: e.contentHash, actualContentHash: actual });
+    }
+  }
+  return { matched, changed, missing, escaped, flat };
+}
+
+// ---------------------------------------------------------------------------
+// Verify an EVIDENCE seal (bare or the embedded seal of a signed container). The seal lists `files`
+// [{ relPath, contentHash, leaf }] + `root`. We re-derive the root from the bytes the source holds and
+// localize any tamper. NO header (evidence seals bind only the file set). UNEXPECTED files (present
+// under a sealed-sibling tree but not named) are NOT scanned here — the artifact names exactly what it
+// commits to; the producer's `vh evidence verify` re-walks the dir, but the standalone verifier verifies
+// what the artifact REFERENCES (read-only, no directory walk). NOTE an "extra" file is still caught
+// structurally: the sealed root commits to the FULL file set, so a seal doctored to omit an entry can
+// never keep its root (root_mismatch), and a signed seal edited that way breaks its signature.
+// ---------------------------------------------------------------------------
+
+function verifyEvidenceSealWith(seal, readEntry) {
+  if (!Array.isArray(seal.files) || seal.files.length === 0) {
+    throw new IOError("evidence seal `files` must be a non-empty array");
+  }
+  if (typeof seal.root !== "string" || !merkle.HEX32_RE.test(seal.root)) {
+    throw new IOError("evidence seal `root` must be a 0x-prefixed 32-byte hex string");
+  }
+  const { matched, changed, missing, escaped, flat } = classifyFilesWith(seal.files, readEntry);
+
+  // The AUTHORITATIVE root is re-derived from the bytes actually held — never the seal's stored root.
+  // A partial/changed set yields a different root; rootMatches goes false.
+  let recomputedRoot = null;
+  if (flat.length > 0) {
+    try {
+      recomputedRoot = merkle.rootFromFlat(flat);
+    } catch (_) {
+      recomputedRoot = null;
+    }
+  }
+  const rootMatches =
+    missing.length === 0 &&
+    changed.length === 0 &&
+    escaped.length === 0 &&
+    recomputedRoot != null &&
+    recomputedRoot.toLowerCase() === seal.root.toLowerCase();
+
+  return {
+    matched,
+    changed,
+    missing,
+    escaped,
+    unexpected: [],
+    sealedRoot: seal.root,
+    recomputedRoot,
+    rootMatches,
+    filesOk: changed.length === 0 && missing.length === 0 && escaped.length === 0 && rootMatches,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Verify a TRUST (reconciliation) seal (bare or embedded). The seal lists `inputs` (role+relPath+
+// contentHash+leaf) and `outputs` (relPath+contentHash+leaf), plus a `verdict` + `root`. The root commits
+// to all inputs + outputs PLUS a synthetic verdict/role HEADER leaf. We re-derive the root from the held
+// bytes AND the header content recomputed from the seal's OWN verdict + input role bindings — so a
+// verdict/role edit (which lives in the seal, not a file) still changes the recomputed root. Inputs are
+// sealed by basename and resolve through the source (the portable handoff ships sources next to the seal).
+// ---------------------------------------------------------------------------
+
+function verifyTrustSealWith(seal, readEntry) {
+  if (!Array.isArray(seal.inputs) || seal.inputs.length === 0) {
+    throw new IOError("trust seal `inputs` must be a non-empty array");
+  }
+  if (!Array.isArray(seal.outputs) || seal.outputs.length === 0) {
+    throw new IOError("trust seal `outputs` must be a non-empty array");
+  }
+  if (typeof seal.root !== "string" || !merkle.HEX32_RE.test(seal.root)) {
+    throw new IOError("trust seal `root` must be a 0x-prefixed 32-byte hex string");
+  }
+  if (seal.verdict == null || typeof seal.verdict !== "object") {
+    throw new IOError("trust seal is missing its `verdict` block");
+  }
+
+  const sealedEntries = [
+    ...seal.inputs.map((e) => ({ relPath: e.relPath, contentHash: e.contentHash, role: e.role })),
+    ...seal.outputs.map((e) => ({ relPath: e.relPath, contentHash: e.contentHash, role: null })),
+  ];
+  const { matched, changed, missing, escaped, flat } = classifyFilesWith(sealedEntries, readEntry);
+
+  // Re-derive the root: the held file leaves PLUS the verdict/role HEADER leaf (content recomputed
+  // from the seal's own verdict + input role bindings). The header is folded in as one more (relPath,
+  // content) pair under the reserved header relPath — exactly the producer's binding.
+  let recomputedRoot = null;
+  // Only attempt the root re-derivation when no file is MISSING or ESCAPED (a partial set can never
+  // re-derive the sealed root anyway, and the header binds the FULL committed structure).
+  if (missing.length === 0 && escaped.length === 0 && flat.length === seal.inputs.length + seal.outputs.length) {
+    try {
+      const headerBytes = canonical.trustSealHeaderBytes(
+        seal.verdict,
+        seal.inputs.map((e) => ({ role: e.role, relPath: e.relPath }))
+      );
+      const committed = [
+        ...flat,
+        { relPath: canonical.TRUST_SEAL_HEADER_RELPATH, contentHash: merkle.hashBytes(headerBytes) },
+      ];
+      recomputedRoot = merkle.rootFromFlat(committed);
+    } catch (_) {
+      recomputedRoot = null;
+    }
+  }
+  const rootMatches =
+    escaped.length === 0 &&
+    recomputedRoot != null &&
+    recomputedRoot.toLowerCase() === seal.root.toLowerCase();
+
+  return {
+    matched,
+    changed,
+    missing,
+    escaped,
+    unexpected: [],
+    sealedRoot: seal.root,
+    recomputedRoot,
+    rootMatches,
+    filesOk: changed.length === 0 && missing.length === 0 && escaped.length === 0 && rootMatches,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Verify a DATASET attestation (bare/signed/timestamped). A dataset attestation commits to the dataset
+// IDENTITY (root, fileCount, manifestDigest) — it does NOT carry the per-file list, so there are no
+// sibling bytes to re-derive a Merkle root from without the original manifest. The independent verifier
+// therefore confirms the embedded identity is well-formed + (for signed) recovers/pins the signer; the
+// `root` is the dataset's, carried as-is. (`vh dataset verify <dir> --manifest` is the path that
+// re-derives a root from a live tree; the attestation alone has no tree to re-walk.)
+// ---------------------------------------------------------------------------
+
+function verifyDatasetAttestation(att) {
+  for (const f of ["root", "manifestDigest"]) {
+    if (typeof att[f] !== "string" || !merkle.HEX32_RE.test(att[f])) {
+      throw new IOError(`dataset attestation ${f} must be a 0x-prefixed 32-byte hex string`);
+    }
+  }
+  if (!Number.isInteger(att.fileCount) || att.fileCount < 1) {
+    throw new IOError("dataset attestation fileCount must be a positive integer");
+  }
+  return {
+    matched: [],
+    changed: [],
+    missing: [],
+    escaped: [],
+    unexpected: [],
+    sealedRoot: att.root,
+    recomputedRoot: null,
+    rootMatches: null, // no sibling bytes to re-derive a root from (identity-only artifact)
+    filesOk: true, // structural identity is sound; the binding is via the signature for signed variants
+    identityOnly: true,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Verify a PROOF bundle. A proof artifact carries { root, leaf, contentHash, relPath, proof[] }. We
+// RE-DERIVE the leaf from relPath + contentHash, then fold leafHash(leaf) up through the proof siblings
+// with nodeHash and confirm it reproduces `root` — byte-identically to the on-chain verifyLeaf, but
+// fully OFFLINE. (The on-chain "is this root anchored" check is out of scope for the offline verifier.)
+// ---------------------------------------------------------------------------
+
+function verifyProofBundle(art) {
+  for (const f of ["root", "leaf", "contentHash"]) {
+    if (typeof art[f] !== "string" || !merkle.HEX32_RE.test(art[f])) {
+      throw new IOError(`proof artifact ${f} must be a 0x-prefixed 32-byte hex string`);
+    }
+  }
+  if (typeof art.relPath !== "string" || art.relPath.length === 0) {
+    throw new IOError("proof artifact relPath must be a non-empty string");
+  }
+  if (!Array.isArray(art.proof)) {
+    throw new IOError("proof artifact `proof` must be an array of 0x 32-byte hex siblings");
+  }
+  const derivedLeaf = merkle.pathLeaf(art.relPath, art.contentHash);
+  const leafMatches = derivedLeaf.toLowerCase() === art.leaf.toLowerCase();
+  let computed = merkle.leafHash(art.leaf);
+  for (const sib of art.proof) {
+    computed = merkle.nodeHash(computed, sib);
+  }
+  const foldsToRoot = computed.toLowerCase() === art.root.toLowerCase();
+  return {
+    matched: leafMatches && foldsToRoot ? [{ relPath: art.relPath, contentHash: art.contentHash }] : [],
+    changed:
+      leafMatches && foldsToRoot ? [] : [{ relPath: art.relPath, expectedContentHash: art.root, actualContentHash: computed }],
+    missing: [],
+    escaped: [],
+    unexpected: [],
+    sealedRoot: art.root,
+    recomputedRoot: computed,
+    rootMatches: leafMatches && foldsToRoot,
+    filesOk: leafMatches && foldsToRoot,
+    proof: { derivedLeaf, leafMatches, foldsToRoot },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The core verify orchestration over an ALREADY-PARSED artifact object + an injected file source. This
+// is the ONE engine BOTH entrypoints drive — `verifyArtifact` (disk: the CLI contract, byte-identical to
+// before this seam existed) and `verifyArtifactFromBytes` (in-memory map). It auto-detects the artifact
+// kind, decodes a signed container (recovering + pinning the signer), re-derives the root from
+// referenced bytes, and assembles a deterministic verdict. PURE: every read goes through `readEntry`.
+// Returns { result, code } — code is the EXIT-contract integer.
+// ---------------------------------------------------------------------------
+
+function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
+  const kind = obj.kind;
+  const pinned = vendor != null ? normalizeAddress(vendor, "--vendor") : null;
+
+  // Detect signed vs bare and the underlying payload kind. A signed container wraps the embedded payload.
+  let signed = false;
+  let recoveredSigner = null;
+  let claimedSigner = null;
+  let signatureOk = null; // null = no signature on this artifact
+  let payload = obj; // the (possibly embedded) thing whose root we re-derive
+  let payloadKind = kind;
+
+  if (
+    kind === KINDS.EVIDENCE_SEAL_SIGNED ||
+    kind === KINDS.TRUST_SEAL_SIGNED ||
+    kind === KINDS.DATASET_ATTESTATION_SIGNED ||
+    kind === KINDS.DATASET_ATTESTATION_TIMESTAMPED
+  ) {
+    signed = true;
+    const dec = decodeSigned(obj);
+    payload = dec.embedded;
+    payloadKind = dec.embedded.kind;
+    claimedSigner = dec.claimedSigner;
+    recoveredSigner = tryRecover(dec.message, dec.signature);
+    // signatureOk: the signature recovers AND matches the CLAIMED signer recorded in the container.
+    signatureOk = recoveredSigner != null && recoveredSigner === claimedSigner;
+  } else if (!Object.values(KINDS).includes(kind)) {
+    throw new UsageError(
+      `unrecognized artifact kind: ${JSON.stringify(kind)} ` +
+        "(verify-vh understands evidence seals, reconciliation seals, dataset attestations, and proof bundles)"
+    );
+  }
+
+  // Re-derive the root from the referenced bytes per the (underlying) kind.
+  let fileResult;
+  if (payloadKind === KINDS.EVIDENCE_SEAL) {
+    fileResult = verifyEvidenceSealWith(payload, readEntry);
+  } else if (payloadKind === KINDS.TRUST_SEAL) {
+    fileResult = verifyTrustSealWith(payload, readEntry);
+  } else if (payloadKind === KINDS.DATASET_ATTESTATION) {
+    fileResult = verifyDatasetAttestation(payload);
+  } else if (payloadKind === KINDS.PROOF) {
+    fileResult = verifyProofBundle(payload);
+  } else {
+    throw new UsageError(
+      `unrecognized embedded artifact kind: ${JSON.stringify(payloadKind)}`
+    );
+  }
+
+  // --- Decide the verdict + the deterministic reason. ---
+  // Precedence: a structural file tamper (CHANGED/MISSING/root mismatch) is a clean REJECTED. For a
+  // SIGNED artifact, a broken signature is `bad_signature`; a recovered signer that does not equal the
+  // pinned --vendor is `wrong_issuer`. Both are clean REJECTED verdicts (exit 3), never a crash.
+  let reason = "OK";
+  let accepted = true;
+
+  const escaped = fileResult.escaped || [];
+  if (!fileResult.filesOk) {
+    accepted = false;
+    // path_escape DOMINATES: an artifact that tries to read outside its source is malicious by
+    // construction (the threat model is a hostile producer probing the counterparty's filesystem), so it
+    // is reported FIRST — never as a benign CHANGED/MISSING, and never with a leaked out-of-tree content
+    // hash.
+    if (escaped.length > 0) reason = "path_escape";
+    else if (fileResult.changed.length > 0) reason = "CHANGED";
+    else if (fileResult.missing.length > 0) reason = "MISSING";
+    else if (fileResult.unexpected.length > 0) reason = "UNEXPECTED";
+    else reason = "root_mismatch";
+  }
+
+  // Signature checks (only for signed artifacts). A bad signature dominates the "issuer" check (you
+  // cannot trust an issuer you cannot recover).
+  let signerMatchesVendor = null;
+  if (signed) {
+    if (!signatureOk) {
+      accepted = false;
+      // bad_signature is the dominant reason ONLY if files were otherwise OK; if a file also changed we
+      // still surface bad_signature because the signature is the trust root of a signed artifact.
+      reason = "bad_signature";
+    } else if (pinned != null) {
+      signerMatchesVendor = recoveredSigner === pinned;
+      if (!signerMatchesVendor) {
+        accepted = false;
+        // wrong_issuer only when the signature itself is sound but the signer is not the pinned vendor.
+        if (fileResult.filesOk) reason = "wrong_issuer";
+        else if (reason === "OK") reason = "wrong_issuer";
+      }
+    }
+  } else if (pinned != null) {
+    // A --vendor pin on an UNSIGNED artifact cannot be satisfied (there is no signer to recover); this is
+    // a clean REJECTED wrong_issuer-style verdict so a CI gate expecting a signed-by-vendor artifact fails.
+    accepted = false;
+    reason = "unsigned_cannot_pin_vendor";
+  }
+
+  const verdict = accepted ? "OK" : "REJECTED";
+  const code = accepted ? EXIT.OK : EXIT.REJECTED;
+
+  const result = {
+    artifact,
+    kind,
+    payloadKind,
+    signed,
+    verdict,
+    reason,
+    accepted,
+    recoveredSigner,
+    claimedSigner,
+    pinnedVendor: pinned,
+    signatureOk,
+    signerMatchesVendor,
+    sealedRoot: fileResult.sealedRoot,
+    recomputedRoot: fileResult.recomputedRoot,
+    rootMatches: fileResult.rootMatches,
+    counts: {
+      matched: fileResult.matched.length,
+      changed: fileResult.changed.length,
+      missing: fileResult.missing.length,
+      escaped: escaped.length,
+      unexpected: fileResult.unexpected.length,
+    },
+    matched: fileResult.matched,
+    changed: fileResult.changed,
+    missing: fileResult.missing,
+    escaped,
+    unexpected: fileResult.unexpected,
+    note: TRUST_NOTE,
+  };
+  if (fileResult.identityOnly) result.identityOnly = true;
+  if (fileResult.proof) result.proof = fileResult.proof;
+
+  return { result, code };
+}
+
+// ---------------------------------------------------------------------------
+// The PURE revocation fold for the bytes path. Semantically identical to revocation.loadAndApply (the
+// disk integration) once the entries are in hand: resolve the as-of instant (defaulting to nowISO),
+// normalize the caller-supplied revocations input (a JSON string, a container object, or an array of
+// either), fold the decision onto the result, and recompute the exit code. Uses ONLY the pure decision
+// functions (./lib/revocation-core.js via the revocation re-exports) — never the fs-backed reader.
+// ---------------------------------------------------------------------------
+
+function applyRevocationsDecision(result, revocationsInput, asOf, nowISO) {
+  const resolved = revocation.resolveAsOf(asOf, nowISO);
+  const entries = revocation.normalizeRevocationsInput(revocationsInput);
+  const downgraded = revocation.applyToVerifyResult({ result, revocations: entries, asOf: resolved.asOf });
+  downgraded.trustAsOfDefaulted = resolved.defaulted;
+  return { result: downgraded, code: downgraded.accepted ? EXIT.OK : EXIT.REJECTED };
+}
+
+// ---------------------------------------------------------------------------
+// THE IN-MEMORY FILE SOURCE + BYTES ENTRYPOINT (T-66.1).
+//
+// `verifyArtifactFromBytes({ artifactText, files, vendor, revocationsText, asOf, nowISO, artifactName })`
+// drives the EXACT engine above over caller-supplied bytes:
+//   * `artifactText` — the artifact JSON as a STRING (what a browser read out of a dropped file);
+//   * `files`        — a plain `{ relPath: Uint8Array|Buffer }` map of the packet's referenced bytes;
+//   * `vendor`       — optional 0x-address pin (same semantics as `--vendor`);
+//   * `revocationsText` — optional revocations input (JSON text / container / array; same semantics as
+//     the CONTENT of a `--revocations` file), with optional `asOf` (canonical ISO instant) + `nowISO`;
+//   * `artifactName` — optional label used verbatim as `result.artifact` (defaults below).
+//
+// CONTRACT — NEVER THROWS. Hostile input (non-JSON artifact text, an oversized / absolute / `..` map
+// key, a non-bytes map value, a malformed vendor or asOf) is NAMED-rejected: the return value is
+//   { ok, code, result, error }
+// where a computed verdict carries `result` (the SAME structured shape `verifyArtifact` returns — the
+// two are DEEP-EQUAL on identical inputs) + `error: null`, and an input problem carries `result: null` +
+// `error: { name: "UsageError"|"IOError", code, message }` with the exact defect named. The verdict
+// classes (missing / extra / content-mismatch / wrong-vendor / tampered-signature / path_escape /
+// revoked) derive from the MAP exactly as the disk path derives them from the directory.
+// ---------------------------------------------------------------------------
+
+// The largest relPath key the in-memory map accepts. Sealed relPaths are short; a multi-kilobyte "key"
+// is hostile input (an attempted resource-exhaustion / log-flooding vector), rejected by NAME up front.
+const MAX_RELPATH_CHARS = 4096;
+
+// PURE string-level confinement for an in-memory relPath — the map-source mirror of the disk source's
+// string checks (absolute anywhere, or any `..` traversal component, is hostile). Windows-style drive
+// and UNC prefixes are treated as absolute here too: an in-memory map NEVER has a legitimate absolute
+// key, whatever platform authored the artifact.
+function isTraversalOrAbsoluteRelPath(relPath) {
+  if (typeof relPath !== "string" || relPath.length === 0) return true;
+  if (relPath.charAt(0) === "/" || relPath.charAt(0) === "\\") return true;
+  if (/^[A-Za-z]:[\\/]/.test(relPath)) return true;
+  if (relPath.split(/[\\/]/).includes("..")) return true;
+  return false;
+}
+
+// Validate the caller's `{ relPath: bytes }` map SHAPE up front so a hostile map is NAMED-rejected
+// before any verification work (and before any key is dereferenced). Throws UsageError; the entrypoint
+// converts that into the structured `{ error }` return — never an uncaught throw.
+function validateFilesMap(files) {
+  if (files == null || typeof files !== "object" || Array.isArray(files)) {
+    throw new UsageError(
+      "verifyArtifactFromBytes requires `files` as a plain { relPath: Uint8Array|Buffer } object map"
+    );
+  }
+  for (const key of Object.keys(files)) {
+    if (key.length === 0) {
+      throw new UsageError("files map contains an empty relPath key");
+    }
+    if (key.length > MAX_RELPATH_CHARS) {
+      throw new UsageError(
+        `files map key exceeds ${MAX_RELPATH_CHARS} characters (oversized relPath, starts: ` +
+          `${JSON.stringify(key.slice(0, 64))})`
+      );
+    }
+    if (isTraversalOrAbsoluteRelPath(key)) {
+      throw new UsageError(
+        `files map key is not a confined relative path: ${JSON.stringify(key.slice(0, 256))}`
+      );
+    }
+    const v = files[key];
+    if (!(v instanceof Uint8Array)) {
+      throw new UsageError(
+        `files map value for ${JSON.stringify(key.slice(0, 256))} must be a Uint8Array/Buffer of the file's bytes`
+      );
+    }
+  }
+}
+
+// The in-memory `readEntry` source over an (already-validated) map: a hostile relPath from the ARTIFACT
+// is `escaped` (the same string-level rules as the disk source — so absolute/`..` seal entries produce
+// the identical path_escape verdict), an absent key is `missing`, and a present key answers its bytes.
+// Lookups use an own-property check so `__proto__`/`constructor` style keys can never smuggle
+// prototype-chain values in as file bytes.
+function makeMapReadEntry(files) {
+  return function readEntry(relPath) {
+    if (isTraversalOrAbsoluteRelPath(relPath)) return { status: "escaped" };
+    if (!Object.prototype.hasOwnProperty.call(files, relPath)) return { status: "missing" };
+    return { status: "ok", bytes: files[relPath] };
+  };
+}
+
+function verifyArtifactFromBytes(params) {
+  try {
+    if (params == null || typeof params !== "object" || Array.isArray(params)) {
+      throw new UsageError(
+        "verifyArtifactFromBytes requires a params object: " +
+          "{ artifactText, files, vendor?, revocationsText?, asOf?, nowISO?, artifactName? }"
+      );
+    }
+    const { artifactText, files, vendor, revocationsText, asOf, nowISO, artifactName } = params;
+    if (typeof artifactText !== "string") {
+      throw new UsageError("verifyArtifactFromBytes requires `artifactText` (the artifact JSON as a string)");
+    }
+    validateFilesMap(files);
+
+    // Mirror the CLI's flag-shape gate (parseArgs): asOf only means something alongside revocations, and
+    // must be a canonical ISO-8601 UTC instant — a malformed one is a NAMED usage rejection up front,
+    // never a mid-verify throw.
+    if (asOf !== undefined && asOf !== null && (revocationsText === undefined || revocationsText === null)) {
+      throw new UsageError(
+        "asOf requires revocationsText (it pins the instant the revocation decision is made AS OF)"
+      );
+    }
+    if (asOf !== undefined && asOf !== null) {
+      const ms = Date.parse(asOf);
+      if (
+        typeof asOf !== "string" ||
+        !revocation.ISO_INSTANT_RE.test(asOf) ||
+        Number.isNaN(ms) ||
+        new Date(ms).toISOString() !== asOf
+      ) {
+        throw new UsageError(
+          `invalid asOf: ${String(asOf)} (expected a canonical ISO-8601 UTC instant, e.g. 2026-06-01T00:00:00.000Z)`
+        );
+      }
+    }
+
+    const label = artifactName != null ? String(artifactName) : "(in-memory artifact)";
+    let obj;
+    try {
+      obj = JSON.parse(artifactText);
+    } catch (e) {
+      throw new IOError(`artifact ${label} is not valid JSON: ${e.message}`);
+    }
+    if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+      throw new IOError(`artifact ${label} must be a JSON object`);
+    }
+
+    const { result, code } = verifyParsedArtifact({
+      artifact: label,
+      obj,
+      vendor,
+      readEntry: makeMapReadEntry(files),
+    });
+
+    // OPTIONAL recipient-side TRUST-DECISION-AS-OF, from caller-supplied revocations INPUT (never a
+    // filesystem read). Same downgrade math as the disk path's revocation.loadAndApply, so the two
+    // paths' results stay deep-equal on identical inputs.
+    if (revocationsText !== undefined && revocationsText !== null) {
+      let applied;
+      try {
+        applied = applyRevocationsDecision(result, revocationsText, asOf, nowISO || new Date().toISOString());
+      } catch (e) {
+        // A non-JSON / wrong-shape revocations input is the bytes-path analogue of an unreadable
+        // --revocations file: a NAMED IO-class rejection, never a silently-skipped downgrade.
+        throw new IOError(`cannot evaluate revocations: ${e.message}`);
+      }
+      return { ok: applied.result.accepted, code: applied.code, result: applied.result, error: null };
+    }
+
+    return { ok: result.accepted, code, result, error: null };
+  } catch (e) {
+    const isUsage = e instanceof UsageError;
+    const code = isUsage ? EXIT.USAGE : EXIT.IO;
+    return {
+      ok: false,
+      code,
+      result: null,
+      error: {
+        name: isUsage ? "UsageError" : "IOError",
+        code,
+        message: String(e && e.message ? e.message : e),
+      },
+    };
+  }
+}
+
+// ============================= END VERIFY-VH PURE ENGINE (T-66.1) =============================
 
 // ---------------------------------------------------------------------------
 // Argument parsing.
@@ -250,85 +900,15 @@ function parseManifest(text, manifestPath) {
 }
 
 // ---------------------------------------------------------------------------
-// Address normalization + recovery helpers. The verifier compares addresses as LOWERCASE 0x-hex (the
-// canonical byte-deterministic form the producer records); a caller may paste an EIP-55-checksummed
-// --vendor and we lowercase it (a checksum mismatch is not our concern — we compare 20 raw bytes).
-// ---------------------------------------------------------------------------
-
-const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
-
-function normalizeAddress(addr, label) {
-  if (typeof addr !== "string" || !ADDRESS_RE.test(addr)) {
-    throw new UsageError(`${label} must be a 0x-prefixed 20-byte hex address, got: ${String(addr)}`);
-  }
-  return addr.toLowerCase();
-}
-
-// Recover the EIP-191 signer over the embedded canonical bytes. A tampered/corrupt signature can be
-// UNRECOVERABLE (no valid curve point) — that throws, which the caller turns into a `bad_signature`
-// REJECTED verdict, never a crash. Returns lowercase 0x-hex, or null if recovery failed.
-function tryRecover(message, signature) {
-  try {
-    return recoverPersonalSignAddress(message, signature);
-  } catch (_) {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Signed-container decoding. A signed artifact carries the embedded UNSIGNED payload as the EXACT
-// canonical bytes (a STRING) in `attestation`, plus a { scheme, signer, signature } block. The signed
-// MESSAGE is that embedded string verbatim, so signer recovery runs over `container.attestation`.
-// ---------------------------------------------------------------------------
-
-function decodeSigned(container) {
-  const sig = container && container.signature;
-  if (sig == null || typeof sig !== "object" || Array.isArray(sig)) {
-    throw new IOError("signed artifact is missing a { scheme, signer, signature } signature block");
-  }
-  if (sig.scheme !== "eip191-personal-sign") {
-    throw new IOError(
-      `unsupported signature scheme: ${JSON.stringify(sig.scheme)} ` +
-        "(this verifier understands eip191-personal-sign)"
-    );
-  }
-  if (typeof container.attestation !== "string") {
-    throw new IOError("signed artifact must embed the canonical UNSIGNED bytes as a string `attestation`");
-  }
-  if (typeof sig.signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(sig.signature)) {
-    throw new IOError("signed artifact signature must be a 65-byte (r||s||v) 0x-hex string");
-  }
-  if (typeof sig.signer !== "string" || !ADDRESS_RE.test(sig.signer)) {
-    throw new IOError("signed artifact signer must be a 0x-prefixed 20-byte hex address");
-  }
-  let embedded;
-  try {
-    embedded = JSON.parse(container.attestation);
-  } catch (e) {
-    throw new IOError(`embedded attestation is not valid JSON: ${e.message}`);
-  }
-  return { embedded, message: container.attestation, claimedSigner: sig.signer.toLowerCase(), signature: sig.signature };
-}
-
-// ---------------------------------------------------------------------------
-// Per-file re-derivation, shared by every seal kind. Given the sealed { relPath, contentHash } entries
-// and a base directory, read each referenced file's bytes, recompute its contentHash, and localize the
-// outcome to MATCH / CHANGED / MISSING; a file present on disk under a sealed relPath that is NOT in the
-// seal cannot occur here (we only read sealed relPaths) — UNEXPECTED is reported only for seals where the
-// producer enumerates a directory (evidence seal verify re-walks the dir). For artifact verification we
-// follow the producer's read model: read exactly the relPaths the artifact names from `baseDir`.
-//
-// SECURITY — PATH CONFINEMENT. `relPath` values come straight from the attacker-controlled artifact JSON
-// (the threat model is attacker-controls-the-input, victim-runs-on-their-own-machine: a malicious producer
-// hands a counterparty a "verify me" artifact, hoping its relPaths probe the counterparty's filesystem).
-// We therefore CONFINE every read to baseDir before touching the disk:
-//   * an ABSOLUTE relPath, or any relPath with a `..` path COMPONENT, is REJECTED unread;
-//   * a resolved path that ESCAPES baseDir (string-wise, against the realpath of baseDir) is REJECTED;
-//   * after opening a present file we realpath it and re-assert containment, defeating a sibling that is a
-//     SYMLINK pointing out of baseDir (fs.readFileSync follows symlinks regardless of the string check).
-// An escaped entry is recorded ONLY by relPath (the attacker's string) — we NEVER hash it and NEVER emit
-// an actualContentHash for it, so the verdict can never become a content-confirmation / hash-disclosure
-// oracle over a file outside baseDir. A `path_escape` entry is a hard REJECTED verdict.
+// THE DISK FILE SOURCE — the CLI's `readEntry` implementation, carrying the FULL path-confinement
+// discipline the disk path always had (byte-identical classification):
+//   (1) string-level confinement, BEFORE any filesystem access: an ABSOLUTE relPath, or any relPath with
+//       a `..` path COMPONENT, is REJECTED unread;
+//   (2) resolved-path confinement: a resolved path that ESCAPES baseDir (string-wise, against the
+//       realpath of baseDir) is REJECTED;
+//   (3) post-open symlink confinement: after opening a present file we realpath it and re-assert
+//       containment, defeating a sibling that is a SYMLINK pointing out of baseDir (fs.readFileSync
+//       follows symlinks regardless of the string check) — the just-read bytes are DROPPED, never hashed.
 // ---------------------------------------------------------------------------
 
 // True when a resolved absolute path escapes the (already realpath'd) base directory. A path equal to the
@@ -338,13 +918,7 @@ function escapesBase(baseReal, abs) {
   return rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel);
 }
 
-function classifyFiles(sealedEntries, baseDir, relResolver) {
-  const changed = [];
-  const missing = [];
-  const matched = [];
-  const escaped = []; // { relPath } only — NEVER a hash; a confinement reject, read nothing
-  const flat = []; // { relPath, contentHash } actually-on-disk, for the root re-derivation
-
+function makeDiskReadEntry(baseDir) {
   // Anchor confinement on the REALPATH of baseDir so a symlinked baseDir itself (e.g. /tmp -> /private/tmp
   // on macOS) does not spuriously trip the containment check on otherwise-legitimate siblings.
   let baseReal;
@@ -354,40 +928,31 @@ function classifyFiles(sealedEntries, baseDir, relResolver) {
     baseReal = path.resolve(baseDir);
   }
 
-  for (const e of sealedEntries) {
-    const relPath = e.relPath;
-
-    // (1) String-level confinement, BEFORE any filesystem access: reject absolute paths and any `..`
-    //     traversal component outright. These never reach the disk.
+  return function readEntry(relPath) {
+    // (1) String-level confinement, BEFORE any filesystem access.
     if (
       typeof relPath !== "string" ||
       relPath.length === 0 ||
       path.isAbsolute(relPath) ||
       relPath.split(/[\\/]/).includes("..")
     ) {
-      escaped.push({ relPath: String(relPath) });
-      continue;
+      return { status: "escaped" };
     }
 
     // (2) Resolved-path confinement: the resolved absolute path must stay under baseReal.
     const abs = path.resolve(baseDir, relPath);
     if (escapesBase(baseReal, abs)) {
-      escaped.push({ relPath });
-      continue;
+      return { status: "escaped" };
     }
 
     let bytes;
     try {
       bytes = fs.readFileSync(abs);
     } catch (_) {
-      missing.push({ relPath });
-      continue;
+      return { status: "missing" };
     }
 
-    // (3) Post-open symlink confinement: a sibling that EXISTS but is a symlink (or lies under one) pointing
-    //     out of baseReal would have been followed by readFileSync above despite passing the string checks.
-    //     Realpath the opened path and re-assert containment; if it escapes, treat it as a path_escape and
-    //     DROP the bytes we just read — never hash them, never report a content hash.
+    // (3) Post-open symlink confinement.
     let real;
     try {
       real = fs.realpathSync(abs);
@@ -395,217 +960,31 @@ function classifyFiles(sealedEntries, baseDir, relResolver) {
       real = abs;
     }
     if (escapesBase(baseReal, real)) {
-      escaped.push({ relPath });
-      continue;
+      return { status: "escaped" };
     }
 
-    const actual = merkle.hashBytes(bytes);
-    flat.push({ relPath, contentHash: actual });
-    if (actual.toLowerCase() === String(e.contentHash).toLowerCase()) {
-      matched.push({ relPath, contentHash: actual });
-    } else {
-      changed.push({ relPath, expectedContentHash: e.contentHash, actualContentHash: actual });
-    }
-  }
-  return { matched, changed, missing, escaped, flat };
+    return { status: "ok", bytes };
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Verify an EVIDENCE seal (bare or the embedded seal of a signed container). The seal lists `files`
-// [{ relPath, contentHash, leaf }] + `root`. We re-derive the root from the bytes on disk (the sealed
-// relPaths resolve relative to baseDir) and localize any tamper. NO header (evidence seals bind only the
-// file set). UNEXPECTED files (on disk under a sealed-sibling tree but not named) are NOT scanned here —
-// the artifact names exactly what it commits to; the producer's `vh evidence verify` re-walks the dir,
-// but the standalone verifier verifies what the artifact REFERENCES (read-only, no directory walk).
-// ---------------------------------------------------------------------------
+// The original disk-shaped helpers, kept with their exact signatures + behavior (thin wrappers over the
+// engine with a disk source). `relResolver` was always accepted-and-unused on classifyFiles; retained so
+// the signature does not shift.
+function classifyFiles(sealedEntries, baseDir, relResolver) { // eslint-disable-line no-unused-vars
+  return classifyFilesWith(sealedEntries, makeDiskReadEntry(baseDir));
+}
 
 function verifyEvidenceSeal(seal, baseDir) {
-  if (!Array.isArray(seal.files) || seal.files.length === 0) {
-    throw new IOError("evidence seal `files` must be a non-empty array");
-  }
-  if (typeof seal.root !== "string" || !merkle.HEX32_RE.test(seal.root)) {
-    throw new IOError("evidence seal `root` must be a 0x-prefixed 32-byte hex string");
-  }
-  const resolver = (rel) => path.resolve(baseDir, rel);
-  const { matched, changed, missing, escaped, flat } = classifyFiles(seal.files, baseDir, resolver);
-
-  // The AUTHORITATIVE root is re-derived from the bytes actually on disk — never the seal's stored root.
-  // A partial/changed set yields a different root; rootMatches goes false.
-  let recomputedRoot = null;
-  if (flat.length > 0) {
-    try {
-      recomputedRoot = merkle.rootFromFlat(flat);
-    } catch (_) {
-      recomputedRoot = null;
-    }
-  }
-  const rootMatches =
-    missing.length === 0 &&
-    changed.length === 0 &&
-    escaped.length === 0 &&
-    recomputedRoot != null &&
-    recomputedRoot.toLowerCase() === seal.root.toLowerCase();
-
-  return {
-    matched,
-    changed,
-    missing,
-    escaped,
-    unexpected: [],
-    sealedRoot: seal.root,
-    recomputedRoot,
-    rootMatches,
-    filesOk: changed.length === 0 && missing.length === 0 && escaped.length === 0 && rootMatches,
-  };
+  return verifyEvidenceSealWith(seal, makeDiskReadEntry(baseDir));
 }
-
-// ---------------------------------------------------------------------------
-// Verify a TRUST (reconciliation) seal (bare or embedded). The seal lists `inputs` (role+relPath+
-// contentHash+leaf) and `outputs` (relPath+contentHash+leaf), plus a `verdict` + `root`. The root commits
-// to all inputs + outputs PLUS a synthetic verdict/role HEADER leaf. We re-derive the root from the bytes
-// on disk AND the header content recomputed from the seal's OWN verdict + input role bindings — so a
-// verdict/role edit (which lives in the seal, not a file) still changes the recomputed root. Inputs are
-// sealed by basename and resolve relative to baseDir (the portable handoff ships sources next to the seal).
-// ---------------------------------------------------------------------------
 
 function verifyTrustSeal(seal, baseDir) {
-  if (!Array.isArray(seal.inputs) || seal.inputs.length === 0) {
-    throw new IOError("trust seal `inputs` must be a non-empty array");
-  }
-  if (!Array.isArray(seal.outputs) || seal.outputs.length === 0) {
-    throw new IOError("trust seal `outputs` must be a non-empty array");
-  }
-  if (typeof seal.root !== "string" || !merkle.HEX32_RE.test(seal.root)) {
-    throw new IOError("trust seal `root` must be a 0x-prefixed 32-byte hex string");
-  }
-  if (seal.verdict == null || typeof seal.verdict !== "object") {
-    throw new IOError("trust seal is missing its `verdict` block");
-  }
-
-  const sealedEntries = [
-    ...seal.inputs.map((e) => ({ relPath: e.relPath, contentHash: e.contentHash, role: e.role })),
-    ...seal.outputs.map((e) => ({ relPath: e.relPath, contentHash: e.contentHash, role: null })),
-  ];
-  const resolver = (rel) => path.resolve(baseDir, rel);
-  const { matched, changed, missing, escaped, flat } = classifyFiles(sealedEntries, baseDir, resolver);
-
-  // Re-derive the root: the on-disk file leaves PLUS the verdict/role HEADER leaf (content recomputed
-  // from the seal's own verdict + input role bindings). The header is folded in as one more (relPath,
-  // content) pair under the reserved header relPath — exactly the producer's binding.
-  let recomputedRoot = null;
-  // Only attempt the root re-derivation when no file is MISSING or ESCAPED (a partial set can never
-  // re-derive the sealed root anyway, and the header binds the FULL committed structure).
-  if (missing.length === 0 && escaped.length === 0 && flat.length === seal.inputs.length + seal.outputs.length) {
-    try {
-      const headerBytes = canonical.trustSealHeaderBytes(
-        seal.verdict,
-        seal.inputs.map((e) => ({ role: e.role, relPath: e.relPath }))
-      );
-      const committed = [
-        ...flat,
-        { relPath: canonical.TRUST_SEAL_HEADER_RELPATH, contentHash: merkle.hashBytes(headerBytes) },
-      ];
-      recomputedRoot = merkle.rootFromFlat(committed);
-    } catch (_) {
-      recomputedRoot = null;
-    }
-  }
-  const rootMatches =
-    escaped.length === 0 &&
-    recomputedRoot != null &&
-    recomputedRoot.toLowerCase() === seal.root.toLowerCase();
-
-  return {
-    matched,
-    changed,
-    missing,
-    escaped,
-    unexpected: [],
-    sealedRoot: seal.root,
-    recomputedRoot,
-    rootMatches,
-    filesOk: changed.length === 0 && missing.length === 0 && escaped.length === 0 && rootMatches,
-  };
+  return verifyTrustSealWith(seal, makeDiskReadEntry(baseDir));
 }
 
 // ---------------------------------------------------------------------------
-// Verify a DATASET attestation (bare/signed/timestamped). A dataset attestation commits to the dataset
-// IDENTITY (root, fileCount, manifestDigest) — it does NOT carry the per-file list, so there are no
-// sibling bytes to re-derive a Merkle root from without the original manifest. The independent verifier
-// therefore confirms the embedded identity is well-formed + (for signed) recovers/pins the signer; the
-// `root` is the dataset's, carried as-is. (`vh dataset verify <dir> --manifest` is the path that
-// re-derives a root from a live tree; the attestation alone has no tree to re-walk.)
-// ---------------------------------------------------------------------------
-
-function verifyDatasetAttestation(att) {
-  for (const f of ["root", "manifestDigest"]) {
-    if (typeof att[f] !== "string" || !merkle.HEX32_RE.test(att[f])) {
-      throw new IOError(`dataset attestation ${f} must be a 0x-prefixed 32-byte hex string`);
-    }
-  }
-  if (!Number.isInteger(att.fileCount) || att.fileCount < 1) {
-    throw new IOError("dataset attestation fileCount must be a positive integer");
-  }
-  return {
-    matched: [],
-    changed: [],
-    missing: [],
-    escaped: [],
-    unexpected: [],
-    sealedRoot: att.root,
-    recomputedRoot: null,
-    rootMatches: null, // no sibling bytes to re-derive a root from (identity-only artifact)
-    filesOk: true, // structural identity is sound; the binding is via the signature for signed variants
-    identityOnly: true,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Verify a PROOF bundle. A proof artifact carries { root, leaf, contentHash, relPath, proof[] }. We
-// RE-DERIVE the leaf from relPath + contentHash, then fold leafHash(leaf) up through the proof siblings
-// with nodeHash and confirm it reproduces `root` — byte-identically to the on-chain verifyLeaf, but
-// fully OFFLINE. (The on-chain "is this root anchored" check is out of scope for the offline verifier.)
-// ---------------------------------------------------------------------------
-
-function verifyProofBundle(art) {
-  for (const f of ["root", "leaf", "contentHash"]) {
-    if (typeof art[f] !== "string" || !merkle.HEX32_RE.test(art[f])) {
-      throw new IOError(`proof artifact ${f} must be a 0x-prefixed 32-byte hex string`);
-    }
-  }
-  if (typeof art.relPath !== "string" || art.relPath.length === 0) {
-    throw new IOError("proof artifact relPath must be a non-empty string");
-  }
-  if (!Array.isArray(art.proof)) {
-    throw new IOError("proof artifact `proof` must be an array of 0x 32-byte hex siblings");
-  }
-  const derivedLeaf = merkle.pathLeaf(art.relPath, art.contentHash);
-  const leafMatches = derivedLeaf.toLowerCase() === art.leaf.toLowerCase();
-  let computed = merkle.leafHash(art.leaf);
-  for (const sib of art.proof) {
-    computed = merkle.nodeHash(computed, sib);
-  }
-  const foldsToRoot = computed.toLowerCase() === art.root.toLowerCase();
-  return {
-    matched: leafMatches && foldsToRoot ? [{ relPath: art.relPath, contentHash: art.contentHash }] : [],
-    changed:
-      leafMatches && foldsToRoot ? [] : [{ relPath: art.relPath, expectedContentHash: art.root, actualContentHash: computed }],
-    missing: [],
-    escaped: [],
-    unexpected: [],
-    sealedRoot: art.root,
-    recomputedRoot: computed,
-    rootMatches: leafMatches && foldsToRoot,
-    filesOk: leafMatches && foldsToRoot,
-    proof: { derivedLeaf, leafMatches, foldsToRoot },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// The core verify orchestration. Reads + JSON-parses the artifact, auto-detects its kind, decodes a
-// signed container (recovering + pinning the signer), re-derives the root from referenced bytes, and
-// assembles a deterministic verdict. PURE w.r.t. side effects beyond reading the artifact + siblings.
-// Returns { result, code } — code is the EXIT-contract integer.
+// The DISK verify entrypoint — the original CLI contract, byte-identical: reads + JSON-parses the
+// artifact, then drives the SAME pure engine with the disk file source. Returns { result, code }.
 // ---------------------------------------------------------------------------
 
 function verifyArtifact(opts) {
@@ -628,136 +1007,15 @@ function verifyArtifact(opts) {
     throw new IOError(`artifact ${opts.artifact} must be a JSON object`);
   }
 
-  const kind = obj.kind;
   // The base directory siblings resolve against: --dir override else the artifact's own directory.
   const baseDir = opts.dir != null ? path.resolve(opts.dir) : path.dirname(artifactPath);
-  const pinned = opts.vendor != null ? normalizeAddress(opts.vendor, "--vendor") : null;
 
-  // Detect signed vs bare and the underlying payload kind. A signed container wraps the embedded payload.
-  let signed = false;
-  let recoveredSigner = null;
-  let claimedSigner = null;
-  let signatureOk = null; // null = no signature on this artifact
-  let payload = obj; // the (possibly embedded) thing whose root we re-derive
-  let payloadKind = kind;
-
-  if (
-    kind === KINDS.EVIDENCE_SEAL_SIGNED ||
-    kind === KINDS.TRUST_SEAL_SIGNED ||
-    kind === KINDS.DATASET_ATTESTATION_SIGNED ||
-    kind === KINDS.DATASET_ATTESTATION_TIMESTAMPED
-  ) {
-    signed = true;
-    const dec = decodeSigned(obj);
-    payload = dec.embedded;
-    payloadKind = dec.embedded.kind;
-    claimedSigner = dec.claimedSigner;
-    recoveredSigner = tryRecover(dec.message, dec.signature);
-    // signatureOk: the signature recovers AND matches the CLAIMED signer recorded in the container.
-    signatureOk = recoveredSigner != null && recoveredSigner === claimedSigner;
-  } else if (!Object.values(KINDS).includes(kind)) {
-    throw new UsageError(
-      `unrecognized artifact kind: ${JSON.stringify(kind)} ` +
-        "(verify-vh understands evidence seals, reconciliation seals, dataset attestations, and proof bundles)"
-    );
-  }
-
-  // Re-derive the root from the referenced bytes per the (underlying) kind.
-  let fileResult;
-  if (payloadKind === KINDS.EVIDENCE_SEAL) {
-    fileResult = verifyEvidenceSeal(payload, baseDir);
-  } else if (payloadKind === KINDS.TRUST_SEAL) {
-    fileResult = verifyTrustSeal(payload, baseDir);
-  } else if (payloadKind === KINDS.DATASET_ATTESTATION) {
-    fileResult = verifyDatasetAttestation(payload);
-  } else if (payloadKind === KINDS.PROOF) {
-    fileResult = verifyProofBundle(payload);
-  } else {
-    throw new UsageError(
-      `unrecognized embedded artifact kind: ${JSON.stringify(payloadKind)}`
-    );
-  }
-
-  // --- Decide the verdict + the deterministic reason. ---
-  // Precedence: a structural file tamper (CHANGED/MISSING/root mismatch) is a clean REJECTED. For a
-  // SIGNED artifact, a broken signature is `bad_signature`; a recovered signer that does not equal the
-  // pinned --vendor is `wrong_issuer`. Both are clean REJECTED verdicts (exit 3), never a crash.
-  let reason = "OK";
-  let accepted = true;
-
-  const escaped = fileResult.escaped || [];
-  if (!fileResult.filesOk) {
-    accepted = false;
-    // path_escape DOMINATES: an artifact that tries to read outside baseDir is malicious by construction
-    // (the threat model is a hostile producer probing the counterparty's filesystem), so it is reported
-    // FIRST — never as a benign CHANGED/MISSING, and never with a leaked out-of-tree content hash.
-    if (escaped.length > 0) reason = "path_escape";
-    else if (fileResult.changed.length > 0) reason = "CHANGED";
-    else if (fileResult.missing.length > 0) reason = "MISSING";
-    else if (fileResult.unexpected.length > 0) reason = "UNEXPECTED";
-    else reason = "root_mismatch";
-  }
-
-  // Signature checks (only for signed artifacts). A bad signature dominates the "issuer" check (you
-  // cannot trust an issuer you cannot recover).
-  let signerMatchesVendor = null;
-  if (signed) {
-    if (!signatureOk) {
-      accepted = false;
-      // bad_signature is the dominant reason ONLY if files were otherwise OK; if a file also changed we
-      // still surface bad_signature because the signature is the trust root of a signed artifact.
-      reason = "bad_signature";
-    } else if (pinned != null) {
-      signerMatchesVendor = recoveredSigner === pinned;
-      if (!signerMatchesVendor) {
-        accepted = false;
-        // wrong_issuer only when the signature itself is sound but the signer is not the pinned vendor.
-        if (fileResult.filesOk) reason = "wrong_issuer";
-        else if (reason === "OK") reason = "wrong_issuer";
-      }
-    }
-  } else if (pinned != null) {
-    // A --vendor pin on an UNSIGNED artifact cannot be satisfied (there is no signer to recover); this is
-    // a clean REJECTED wrong_issuer-style verdict so a CI gate expecting a signed-by-vendor artifact fails.
-    accepted = false;
-    reason = "unsigned_cannot_pin_vendor";
-  }
-
-  const verdict = accepted ? "OK" : "REJECTED";
-  const code = accepted ? EXIT.OK : EXIT.REJECTED;
-
-  const result = {
+  const { result, code } = verifyParsedArtifact({
     artifact: opts.artifact,
-    kind,
-    payloadKind,
-    signed,
-    verdict,
-    reason,
-    accepted,
-    recoveredSigner,
-    claimedSigner,
-    pinnedVendor: pinned,
-    signatureOk,
-    signerMatchesVendor,
-    sealedRoot: fileResult.sealedRoot,
-    recomputedRoot: fileResult.recomputedRoot,
-    rootMatches: fileResult.rootMatches,
-    counts: {
-      matched: fileResult.matched.length,
-      changed: fileResult.changed.length,
-      missing: fileResult.missing.length,
-      escaped: escaped.length,
-      unexpected: fileResult.unexpected.length,
-    },
-    matched: fileResult.matched,
-    changed: fileResult.changed,
-    missing: fileResult.missing,
-    escaped,
-    unexpected: fileResult.unexpected,
-    note: TRUST_NOTE,
-  };
-  if (fileResult.identityOnly) result.identityOnly = true;
-  if (fileResult.proof) result.proof = fileResult.proof;
+    obj,
+    vendor: opts.vendor,
+    readEntry: makeDiskReadEntry(baseDir),
+  });
 
   // OPTIONAL recipient-side TRUST-DECISION-AS-OF (EPIC-51 / T-51.4). Runs ONLY under --revocations — with no
   // flag the result + code are byte-identical to the pre-T-51.4 baseline (regression-pinned). A signer
@@ -1412,6 +1670,7 @@ module.exports = {
   parseArgs,
   parseManifest,
   verifyArtifact,
+  verifyArtifactFromBytes,
   verifyBatch,
   buildBatchEntries,
   renderBatchHuman,
@@ -1429,4 +1688,5 @@ module.exports = {
   DEMO_FILES,
   DEMO_CONTAINER,
   DEMO_PACKET_NAME,
+  MAX_RELPATH_CHARS,
 };

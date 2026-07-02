@@ -143,9 +143,12 @@ const VERIFY_MODULES = [
   { id: "merkle", file: "lib/merkle.js", rewrite: { "./keccak": "keccak" } },
   { id: "canonical", file: "lib/canonical.js", rewrite: {} },
   { id: "secp256k1-recover", file: "lib/secp256k1-recover.js", rewrite: { "./keccak": "keccak" } },
-  // The stack-free recipient-side revocation reader + as-of decision (T-51.4). It require()s only
-  // ./secp256k1-recover (rewritten) + Node core fs/path (kept verbatim, both allowed-core).
-  { id: "revocation", file: "lib/revocation.js", rewrite: { "./secp256k1-recover": "secp256k1-recover" } },
+  // The stack-free recipient-side revocation decision (T-51.4), split by T-66.1 into the PURE core
+  // (revocation-core: validation/recovery/as-of decision; require()s only ./secp256k1-recover) and the
+  // thin fs-backed reader wrapper (revocation: readRevocationsFromPath/loadAndApply; Node core fs/path
+  // kept verbatim, both allowed-core).
+  { id: "revocation-core", file: "lib/revocation-core.js", rewrite: { "./secp256k1-recover": "secp256k1-recover" } },
+  { id: "revocation", file: "lib/revocation.js", rewrite: { "./revocation-core": "revocation-core" } },
   // The entrypoint, inlined LAST. Its relative requires resolve to the canonical ids above.
   {
     id: "verify-vh",

@@ -101,6 +101,42 @@ counterparty can pin you with `--vendor`) and **UNLIMITED** sealing are the PAID
 [`INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md) §0a. The `node pilot/run-pilot.js` kit above
 is the deeper, license-gated evaluation; this zero-install loop is the fastest first taste.
 
+### Zero-install: the offline app (TrustLedger — email them ONE file)
+
+The TrustLedger vertical has an even shorter zero-install path — **no terminal at all, on either
+side**. You **email ONE file** to the design partner (or hand it over on a USB stick):
+[`../trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html).
+The partner **double-clicks** it — it opens as an ordinary page in their browser — then **drags their
+REAL exports** onto the page's three file inputs (the **bank statement**, the **QuickBooks trust
+ledger**, and the **rent roll**; the same in-page "Check this file" inspect/map onboarding fixes a
+file that won't load), and **reads the same tie-out report** the installed product produces: the
+PASS/FAIL verdict, the three balances, the exceptions, and the downloadable HTML + CSV audit packet.
+
+Run **month-1**'s three files, then **month-2**'s — **two INDEPENDENT monthly tie-outs on real
+data**, a FREE, zero-install willingness-to-pay signal that the recurring monthly product ties out on
+the partner's own exports (part of the sharpened P-5 ask's "run their REAL month-1 + month-2 files"
+step). The offline app runs **each month independently** — its UI has only the three file pickers, so
+the **machine-checked continuity roll-forward** (month-1's signed close carried into month 2 with **no
+`CONTINUITY_BREAK`**, via `--emit-close` / `--prior-close`) is **not** in the offline app; it stays an
+**installed-CLI** capability. The engine inlined in the file is pinned **byte-identical** to the
+installed one — *including* on exactly that two-month **prior-close** clean roll-forward at the
+**payload level**, which proves the bundle's *engine* supports the roll-forward, not that the app's UI
+delivers it ([`../test/trustledger.standalone.test.js`](../test/trustledger.standalone.test.js)).
+
+The privacy claim — the #1 objection with live trust-account data — is **honest and verifiable, not
+a promise**: the page makes **NO network request**, because the file **contains no network API at
+all** (no `fetch(`, no `XMLHttpRequest`, no `WebSocket`/`EventSource`/`sendBeacon`, no dynamic
+`import(`) — **check the browser devtools Network tab yourself**: it stays empty, so the partner's
+trust-account data **never leaves their machine**. A recipient can confirm the received file is the
+published one with `sha256sum -c trustledger-standalone.html.sha256`.
+
+The honesty boundary, stated plainly: the offline app is the FREE funnel tier — per-state policy
+tables, sealing, and licensing/fulfillment run in the installed product, and P-5's CPA/counsel
+review, vendor-key provisioning, pricing, and publishing steps remain HUMAN-OWNED and UNCHANGED (no
+new needs-human item, no relaxed gate). Requesting a paid surface in the offline app yields the
+**same named `license_required` refusal** the web door gives — the gate is reused, never weakened.
+The deeper spec is in [`TRUSTLEDGER.md`](TRUSTLEDGER.md) › *Zero-install: the offline app*.
+
 ---
 
 ## 3. What each artifact proves — and where you independently verify it

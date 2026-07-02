@@ -40,6 +40,16 @@ human steps last. If it is green, the software is ready; only the human steps be
 4. **Deploy.** Stand the endpoint up behind your own domain, TLS, and auth/ops posture. The loop binds
    **loopback only** and **never deploys**.
 
+## The pilot fallback (TrustLedger, P-5)
+
+If the self-serve evidence channel stalls, the **fallback** is the heavier TrustLedger design-partner
+pilot (P-5: CPA/counsel review, a per-state policy table, a two-month broker tie-out — see
+[`docs/DECIDE.md`](DECIDE.md) and `STRATEGY.md`; every one of those steps stays human-owned and
+unchanged). Its zero-install pilot path is ONE emailed file —
+[`trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html): the
+partner double-clicks it, drags their real exports in, and the page makes **no network request** (see
+[`docs/TRUSTLEDGER.md`](TRUSTLEDGER.md) › *Zero-install: the offline app*).
+
 ## Revenue integrity (the hard line)
 
 Income comes from **delivering value to paying customers** — a license is an **ACCESS credential for delivered

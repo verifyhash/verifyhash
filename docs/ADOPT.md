@@ -150,3 +150,6 @@ time T") is a separate, human-gated step (see
 - [`docs/EVIDENCE.md`](EVIDENCE.md) — the **paid** producer surface: the signed evidence packet schema, the
   free-vs-paid line, the closed entitlement table, and the worked **webhook → `license fulfill` → deliver**
   flow that turns an adopter into a paying customer.
+- [`docs/TRUSTLEDGER.md`](TRUSTLEDGER.md) › *Zero-install: the offline app* — the TrustLedger pilot path with
+  **zero** install: email ONE file ([`trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html)),
+  the partner double-clicks it, drags their real exports in, and the page makes **no network request** (free tier only).

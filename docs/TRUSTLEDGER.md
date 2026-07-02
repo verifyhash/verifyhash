@@ -1231,6 +1231,80 @@ Because the server persists nothing, a single instance is stateless and safe to 
 
 ---
 
+## Zero-install: the offline app (`trustledger-standalone.html`)
+
+Even `vh trust serve` still asks the design partner to install Node + this repository and to trust a
+locally-running server with live trust-account data — the exact step where a pilot with a broker of
+record dies. The **zero-install pilot path** removes it entirely: the whole engine + the drag-drop UI
+above are emitted as **ONE self-contained HTML file**,
+[`trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html).
+**You email that ONE file** to the design partner (or hand it over on a USB stick); there is nothing
+else to send and nothing to install.
+
+### The flow (what the partner actually does)
+
+1. **Double-click** `trustledger-standalone.html`. It opens as an ordinary page in their browser —
+   no install, no terminal, no server starts, no account.
+2. **Drag their REAL exports** onto the page's three file inputs — the **bank statement**, the
+   **QuickBooks trust ledger**, and the **rent roll** — the same drag-drop three-file flow as the web
+   door, including the in-page **"Check this file"** inspect/map onboarding (a file that won't load
+   shows its columns and a dropdown to map the missing field, exactly as described above).
+3. **Read the same tie-out report** the CLI and web door produce: the PASS/FAIL verdict, the three
+   balances, the exception list, and the downloadable audit-ready HTML + CSV packet.
+
+### The privacy claim (honest AND verifiable — not a promise)
+
+The page makes **NO network request**. That is not a policy statement to take on trust; it is a
+property of the file itself: the emitted file **contains no network API at all** — no `fetch(`, no
+`XMLHttpRequest`, no `WebSocket`, no `EventSource`, no `sendBeacon`, no dynamic `import(` —
+so **check the browser devtools Network tab yourself** while you use it: it stays empty, and the
+trust-account data **never leaves the machine**. That token-level absence is pinned by
+[`test/trustledger.standalone.test.js`](../test/trustledger.standalone.test.js), which scans every
+emitted byte. A recipient can also confirm the file they received is the published one
+(`sha256sum -c trustledger-standalone.html.sha256`), and the bundle rebuilds **byte-identically**
+from the committed sources (`node trustledger/build-standalone.js --check` — a stale bundle fails CI).
+
+### Two INDEPENDENT monthly tie-outs on real data (the free, zero-install pilot surface)
+
+The sharpened P-5 ask's riskiest step was *"have the design partner run their REAL month-1 +
+month-2 files"* — which used to require Node, this repository, and `vh trust serve`. With the offline
+app, that step becomes **"email them ONE file"**: **month 1** — drag the three real files, read the
+tie-out; **month 2** — drag that month's three files, read the tie-out. That is **two INDEPENDENT
+monthly tie-outs on real data** — a FREE, zero-install willingness-to-pay signal that the recurring
+monthly product ties out on the partner's *own* exports (see **What stays a human step** below).
+
+**What the offline app does NOT do — the machine-checked continuity roll-forward stays CLI-only.**
+The offline app runs each month as an **independent single-month reconcile**: its UI has only the
+**three file pickers** (bank / ledger / rent roll) plus the state and license fields — there is **no
+prior-close input and no close-download**, faithful to the web door, which is also continuity-less.
+So it does **not** perform the *roll-forward* of P-5 step 3(b): carrying month-1's signed close into
+month 2 and machine-checking that the opening rolls forward penny-exact with **no `CONTINUITY_BREAK`**.
+That flag-driven close chain (`--emit-close` / `--prior-close`, see **Period-close continuity** above)
+lives **only in the installed product's CLI** — it is a distinct, installed capability, NOT part of
+the free zero-install surface.
+
+The engine inside the file is the **same door core** the web door runs (inlined **verbatim**, not
+re-implemented), and it is pinned **byte-identical** to the installed engine
+([`test/trustledger.standalone.test.js`](../test/trustledger.standalone.test.js)) — *including* on the
+exact two-month **`--prior-close` clean roll-forward** recipe the CLI close tests pin, driven through
+the bundle's engine at the **payload level**. That pin proves the bundle's *engine* faithfully
+supports the roll-forward (byte-for-byte with the installed one); it does **not** mean the offline
+app's UI delivers it — the UI exposes no way to feed a prior close, so a partner using the app gets
+the two independent monthly tie-outs above, and the continuity check remains a CLI step.
+
+### The honesty boundary (free tier ONLY — nothing human-owned moved)
+
+The offline app is the FREE funnel tier — per-state policy tables, sealing, and licensing/fulfillment
+run in the installed product, and P-5's CPA/counsel review, vendor-key provisioning, pricing, and
+publishing steps remain HUMAN-OWNED and UNCHANGED (no new needs-human item, no relaxed gate).
+Concretely: requesting a paid surface in the offline app (a per-state policy or a seal) yields the
+**same named `license_required` refusal** the web door gives, and a pasted license is refused
+**fail-closed** (`license_invalid`, pointing at the installed product) — the offline bundle cannot
+verify a license at all, so it can never grant a paid surface. The gate is **reused verbatim, never
+weakened**.
+
+---
+
 ## Entitlements & licensing
 
 TrustLedger is **free to try** and **licensed for the paid surface**. The baseline three-way reconcile
@@ -1867,6 +1941,19 @@ into a sellable, compliant product are **human-owned** and tracked in STRATEGY.m
   willingness to keep using it is the WTP signal" into a number a broker reads on their **own** data. The
   value-proof **compares the gate to the manual close**; it does **not** certify a jurisdiction or
   constitute legal advice, so the CPA/counsel sign-off it informs (P-5 #1) is unchanged.
+
+  **Zero-install variant of the two-month step.** If the partner will not install anything at all,
+  the sharpened ask's step (2) is amendable to **"or hand them the offline app"**: email the ONE file
+  [`trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html)
+  (see **Zero-install: the offline app** above) and have them drag the same real month-1 and month-2
+  files onto the page. The offline app delivers step (2)'s **(a)** both months tie out and **(c)** the
+  exceptions read correctly — as **two INDEPENDENT monthly tie-outs**, FREE and zero-install; but its
+  UI has only the three file pickers, so the **machine-checked roll-forward of step (2)(b)** (no
+  `CONTINUITY_BREAK` via `--emit-close` / `--prior-close`) is **not** part of the offline surface and
+  stays an **installed-CLI** capability. So the zero-install variant changes the **delivery** of the
+  free tie-out surface **and narrows it** to the two independent monthly tie-outs (dropping the
+  continuity check). The CPA/counsel review (P-5 #1), the per-state policy table (P-5 #2), and the
+  design-partner WTP read (P-5 #3) stay exactly the human steps listed here, unchanged.
 
 - **Deploying the web front-door.** `vh trust serve` runs the broker-facing browser UI **locally**
   (localhost only by default). Exposing it to others — behind **your** nginx/Cloudflare on **your** own

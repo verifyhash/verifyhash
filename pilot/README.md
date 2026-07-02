@@ -9,6 +9,12 @@ no TSA, no RPC, and no network**, and prints **one combined PASS/FAIL verdict**.
 > "what each artifact proves, where they independently verify it, and the honest trust boundary" —
 > lives in [`docs/PILOT.md`](../docs/PILOT.md). This file is the operator's quick reference for
 > *running* the kit. Read `docs/PILOT.md` to *explain* it.
+>
+> **Zero-install TrustLedger path:** if the partner will not install anything, email them ONE file —
+> [`../trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html) —
+> they double-click it, drag their real exports in, and read the same tie-out report with
+> **no network request** (see [`docs/PILOT.md`](../docs/PILOT.md) › *Zero-install: the offline app*
+> and [`docs/TRUSTLEDGER.md`](../docs/TRUSTLEDGER.md) › *Zero-install: the offline app*).
 
 ## Run it (zero setup)
 

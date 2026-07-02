@@ -1,8 +1,8 @@
 {
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
-  "fileCount": 31,
-  "totalBytes": 774614,
+  "fileCount": 33,
+  "totalBytes": 906054,
   "files": [
     {
       "path": "LICENSE",
@@ -25,8 +25,8 @@
     {
       "path": "docs/ADOPT.md",
       "source": "docs/ADOPT.md",
-      "bytes": 8426,
-      "sha256": "d2ef119cda33ff528b3a805d49f562902821c10a6ebfaf374a863d37412dcede"
+      "bytes": 9668,
+      "sha256": "0561b787ac91af80398506c46f1b530052cf03a05d0a8038281551692ba7f165"
     },
     {
       "path": "docs/CONFORMANCE.md",
@@ -61,8 +61,8 @@
     {
       "path": "docs/INDEPENDENT-VERIFICATION.md",
       "source": "docs/INDEPENDENT-VERIFICATION.md",
-      "bytes": 21265,
-      "sha256": "3dd2fab4ce7b5a6b87198be619523e7e807279acfbbed0caeddbb64dd59e23dd"
+      "bytes": 22034,
+      "sha256": "f23048a1fb6dd4782b67da0c703b2767422daab2be81720a58aa40d9c46df71a"
     },
     {
       "path": "docs/KEY-LIFECYCLE.md",
@@ -85,8 +85,8 @@
     {
       "path": "docs/PILOT.md",
       "source": "docs/PILOT.md",
-      "bytes": 26646,
-      "sha256": "9bdd49550da71d1e1e7e991475a8fbbaac0794f9dd3c914c03f53de9585a3c5e"
+      "bytes": 28410,
+      "sha256": "33375b81f355a1f1f483a6649abdc6f03d37624ea2b2d8cc59571be9a3d746e6"
     },
     {
       "path": "docs/PROOFPARCEL.md",
@@ -133,8 +133,8 @@
     {
       "path": "docs/challenge-README.md",
       "source": "challenge/README.md",
-      "bytes": 6884,
-      "sha256": "9b4cb5b34920f5b81ac3e3d227db3d16cc95ef1bdcd88e8e213986865a66e756"
+      "bytes": 9756,
+      "sha256": "b8844c93a4efc8af18da61ab2c668e442fa1c281bb49f3c60ab5d725a6eb8017"
     },
     {
       "path": "docs/examples-README.md",
@@ -157,14 +157,14 @@
     {
       "path": "docs/verifier-README.md",
       "source": "verifier/README.md",
-      "bytes": 27354,
-      "sha256": "71d1a057e9c4f59cd005f04886483ed6f376ecc8d423c6c8544d3b52474c7f9a"
+      "bytes": 29155,
+      "sha256": "868176dcccc244297dd35836751b91d197b8135d75f0c34608b308ca9b40773d"
     },
     {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 4587,
-      "sha256": "382dbef50ada98b3a3c8245118bf1b84210cc9bb39d1605e7b7e6c81a4637995"
+      "bytes": 5242,
+      "sha256": "1744cea31400767ec6f755497bf3be11927a7339b7ecf5373649c60d15e47509"
     },
     {
       "path": "seal-vh-standalone.js",
@@ -177,6 +177,18 @@
       "source": "verifier/dist/seal-vh-standalone.js.sha256",
       "bytes": 88,
       "sha256": "88dcd2d749a63de3c6f9cf2caeec095cf627c54db0969d91265c166f51e503e0"
+    },
+    {
+      "path": "verify-vh-standalone.html",
+      "source": "verifier/dist/verify-vh-standalone.html",
+      "bytes": 122245,
+      "sha256": "019f54886a4836a1f5bdaef62284ad8fb46bd42122a31d0f55fb90e5a9e3e4e1"
+    },
+    {
+      "path": "verify-vh-standalone.html.sha256",
+      "source": "verifier/dist/verify-vh-standalone.html.sha256",
+      "bytes": 92,
+      "sha256": "4c3ce1c23504e3a2e82304c781611264d77afd805e81a3eb936aad085dc59cff"
     },
     {
       "path": "verify-vh-standalone.js",

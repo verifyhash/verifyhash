@@ -24,6 +24,16 @@
      don't take our word, and you don't call our server (there isn't one).</p>
 
   <div class="box">
+    <h2>0. No terminal? Run the 60-second challenge in your browser</h2>
+    <p><a href="/verify-vh-standalone.html">verify-vh-standalone.html</a>
+       (<a href="/verify-vh-standalone.html.sha256">sha256</a>) — save this one fully offline page and
+       open it: click the built-in sample packet (ACCEPT), change one character and re-verify (REJECT,
+       naming the file), then drag a real sealed packet + its files in. The page contains no network API
+       at all — your bytes never leave your machine; watch the devtools Network tab stay empty. For
+       CI/production gating use the node standalone below.</p>
+  </div>
+
+  <div class="box">
     <h2>1. Get the verifier (one file, zero dependencies)</h2>
     <pre>curl -O https://verifyhash.com/verify-vh-standalone.js
 curl -O https://verifyhash.com/verify-vh-standalone.js.sha256

@@ -6,6 +6,8 @@
     "LICENSE": "LICENSE",
     "NOTICE": "NOTICE",
     "build-provenance.json": "verifier/dist/BUILD-PROVENANCE.json",
+    "verify-vh-standalone.html": "verifier/dist/verify-vh-standalone.html",
+    "verify-vh-standalone.html.sha256": "verifier/dist/verify-vh-standalone.html.sha256",
     "verify-vh-standalone.js": "verifier/dist/verify-vh-standalone.js",
     "verify-vh-standalone.js.sha256": "verifier/dist/verify-vh-standalone.js.sha256",
     "seal-vh-standalone.js": "verifier/dist/seal-vh-standalone.js",

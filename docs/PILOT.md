@@ -76,6 +76,22 @@ unlocks it for you so you can watch the whole journey on your real data.)
 > Operator quick reference (knobs, file map, how it can't rot):
 > [`pilot/README.md`](../pilot/README.md).
 
+### The link-shaped first contact (evidence vertical — one page in their browser, no Node)
+
+The very first touch does not even need a terminal — on either side. Send the prospect **one committed
+file**, [`../verifier/dist/verify-vh-standalone.html`](../verifier/dist/verify-vh-standalone.html)
+(it is also in the verifyhash.com site publish set — `site/publish-set.json`; uploading the assembled
+webroot to the live site remains the standing human-owned deploy step). They double-click it and the
+page opens in their browser with the **60-second challenge built in**: click **"Load the sample packet
+& verify"** (**ACCEPT**), change ONE character of the editable sample file on the page, re-verify
+(**REJECT** — the page names the file changed) — then drag a REAL sealed packet + its files in for the
+same verdict + per-file tamper localization the CLI prints. The privacy claim is verifiable, not a
+promise: the file contains **no network API at all**, so their bytes never leave their machine — the
+browser **devtools Network tab** stays empty. The boundary is §5's, unchanged and stated on the page
+itself; for CI/production gating use the node standalone (`verify-vh-standalone.js`) — the §4 merge
+gate, not the browser page, is what lives in a pipeline. The guided walkthrough (browser path first,
+node path as the CI-shaped variant) is [`../challenge/README.md`](../challenge/README.md).
+
 ### Evaluate it with ZERO install first (the 10-second no-clone path)
 
 Before you check out the repo at all, you can drive the **whole** evidence journey — seal → hand-off →
@@ -363,6 +379,11 @@ delivery + pricing, P-7 evidence vertical go-to-market). It is now **consolidate
 decision-ready ask, P-8**, in [`STRATEGY.md`](../STRATEGY.md) → *Proposals — needs-human*, whose
 **deliverable is this very kit**. Read P-8 to see the precise human steps and how running this pilot
 de-risks all four gates at once.
+
+The first artifact that ask sends a cold prospect can now be **link-shaped**: the browser challenge
+page in §2 — one file, `verify-vh-standalone.html`, no Node, no install, nothing to type — with the
+node standalone as the CI-shaped follow-up. That changes the *first contact*, not the ask: every human
+step above stays human-owned and unchanged.
 
 ### The pilot success contract (the measured WTP instrument)
 

@@ -85,12 +85,25 @@ const EXPECTED_PUBLISHED = [
   "index.html",
   "seal-vh-standalone.js",
   "seal-vh-standalone.js.sha256",
+  "verify-vh-standalone.html",
+  "verify-vh-standalone.html.sha256",
   "verify-vh-standalone.js",
   "verify-vh-standalone.js.sha256",
 ];
 
+// What the 2026-06-26 deploy actually served (the site/DEPLOYED.json snapshot). The publish set has
+// since GROWN (T-66.3 added the browser challenge page + sidecar), and the deployed snapshot
+// legitimately LAGS the publish set until the human runs the upload flow — so the snapshot is pinned
+// to its own frozen list, never to today's EXPECTED_PUBLISHED. This list changes ONLY via the T-67.2
+// `--mark-deployed` flow.
+const DEPLOYED_PUBLISHED = EXPECTED_PUBLISHED.filter(
+  (p) => p !== "verify-vh-standalone.html" && p !== "verify-vh-standalone.html.sha256"
+);
+
 // The bundle entries that MUST come from the committed verifier/dist (acceptance clause 2).
 const DIST_PINS = {
+  "verify-vh-standalone.html": "verifier/dist/verify-vh-standalone.html",
+  "verify-vh-standalone.html.sha256": "verifier/dist/verify-vh-standalone.html.sha256",
   "verify-vh-standalone.js": "verifier/dist/verify-vh-standalone.js",
   "verify-vh-standalone.js.sha256": "verifier/dist/verify-vh-standalone.js.sha256",
   "seal-vh-standalone.js": "verifier/dist/seal-vh-standalone.js",
@@ -242,7 +255,7 @@ describe("T-67.1: scripts/site-release.js — deterministic site-release assembl
       sr.writeAssembly(outDir, sr.assemble(REPO));
     });
 
-    it("the publish set is EXACTLY the expected 31 published paths", function () {
+    it("the publish set is EXACTLY the expected 33 published paths", function () {
       const set = sr.loadPublishSet(REPO);
       expect(Object.keys(set.publish).sort()).to.deep.equal(EXPECTED_PUBLISHED);
     });
@@ -506,7 +519,7 @@ describe("T-67.1: scripts/site-release.js — deterministic site-release assembl
       const snap = sr.loadDeployedSnapshot(REPO); // throws on any malformation
       expect(snap.generatedFrom).to.include("public/");
       expect(snap.deployedAtNote).to.include("2026-06-26");
-      expect(Object.keys(snap.files).sort()).to.deep.equal(EXPECTED_PUBLISHED);
+      expect(Object.keys(snap.files).sort()).to.deep.equal(DEPLOYED_PUBLISHED);
       for (const [rel, hash] of Object.entries(snap.files)) {
         expect(hash, `bad sha256 for ${rel}`).to.match(/^[0-9a-f]{64}$/);
       }

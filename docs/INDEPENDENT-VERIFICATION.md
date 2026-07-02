@@ -61,6 +61,15 @@ the seal proves **tamper-evidence + signer-pin**, NOT a trusted "sealed at T" (t
 > **FREE, UNSIGNED** path (so there is no signer to pin in the sample), and it points free-verify →
 > free-produce → **paid-produce**. See [`../challenge/README.md`](../challenge/README.md).
 
+> **No Node on the machine? Run that challenge in your browser.** The same engine also ships as ONE
+> committed, fully offline HTML page —
+> [`../verifier/dist/verify-vh-standalone.html`](../verifier/dist/verify-vh-standalone.html): open it,
+> click the built-in sample packet (**ACCEPT**), change one character of the sample file on the page and
+> re-verify (**REJECT**, naming the file), then drag a real packet + its files in for the same verdict +
+> per-file localization specified below. The file contains **no network API at all** — check the browser
+> **devtools Network tab**: it stays empty, so your bytes never leave your machine. The boundary is the
+> one in §3, unchanged; for CI/production gating use the node standalone (`verify-vh-standalone.js`).
+
 > **On the checksum's trust model — read this so step 2 isn't oversold.** `sha256sum -c` proves the file
 > you saved is bit-for-bit the file whose hash was published; it does **not**, by itself, prove *who*
 > published that hash. The hash is a **transport-integrity** check (did the bundle arrive intact / un-swapped?),

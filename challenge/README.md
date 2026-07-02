@@ -1,7 +1,8 @@
 # The 60-second challenge — verify a real sealed packet, then try to fool it
 
 > **Audience: a cold prospect who owes us nothing.** No account. No `npm install`. No repo build.
-> No key. No network. No sales call. You need only **`node` (>= 18)** on your PATH. This folder is the
+> No key. No network. No sales call. You need only **`node` (>= 18)** on your PATH — or **no Node at
+> all**: the same challenge runs as one offline page in your browser (first section below). This folder is the
 > **zero-install, zero-trust entry point** to verifyhash: in under a minute you VERIFY a real, pre-sealed
 > packet on your own machine, then TAMPER one byte and watch an independent, offline verifier REJECT it
 > and name the file you changed — **trusting no server, no producer software, and not us.**
@@ -13,6 +14,38 @@ The whole pitch is one testable claim. Don't trust it — *test* it:
 
 If that holds on *your* machine, against a verifier you can read in one sitting, you have all the
 evidence you need that the seal is real. That is the point of starting here.
+
+---
+
+## No Node? Do it in your browser (the same challenge, zero terminal)
+
+No `node` on your PATH — or none allowed on this machine? The whole challenge also ships as **ONE
+committed, fully offline HTML file**: save
+[`../verifier/dist/verify-vh-standalone.html`](../verifier/dist/verify-vh-standalone.html) (integrity
+sidecar: [`../verifier/dist/verify-vh-standalone.html.sha256`](../verifier/dist/verify-vh-standalone.html.sha256))
+and double-click it — it opens as an ordinary page in your browser. No install, no account, no server.
+Then:
+
+1. Click **"Load the sample packet & verify"** → the page verifies its built-in sample packet and shows
+   **ACCEPT** — and, because that sample is *signed*, it also names the **signer** it pinned. That sample
+   is the verifier's **same committed demo packet**, inlined verbatim: the genuinely-**signed** demo the
+   node standalone runs as `verify-vh-standalone.js demo` — a *different* fixture from the **UNSIGNED**
+   `sample-packet/` that the node three-commands flow below verifies, so the browser challenge
+   *additionally* demonstrates **signer-pin** ("WHO vouched"). The verdict comes from the **same engine**
+   the node standalone runs, built deterministically from the same `verifier/` sources (reproduce it
+   yourself, offline: `node verifier/build-standalone-html.js --check`).
+2. Change **any ONE character** of the editable sample file shown on the page, re-verify, and watch it
+   **REJECT** — naming the file you changed. That is this folder's whole tamper walkthrough, with zero setup.
+
+The privacy claim is checkable, not a promise: the file contains **NO network API at all** (no `fetch`,
+no `XMLHttpRequest`, no WebSocket) — open your browser **devtools Network tab** and watch it stay
+empty; your bytes never leave your machine.
+
+The page states its own honest boundary, verbatim: **ACCEPT is tamper-evidence that these exact bytes
+match the seal — and, for a signed seal, WHO vouched (signer recovery + optional vendor pin). It is NOT
+a trusted timestamp and NOT proof of WHEN without the P-3 trust-root. For CI/production gating use the
+node standalone (`verify-vh-standalone.js`).** The rest of *this README* — the three-commands flow below
+— is exactly that node-shaped, CI-scriptable variant of the same challenge (over its own unsigned sample).
 
 ---
 
@@ -66,16 +99,20 @@ Be precise about what a green verdict buys you. Whether you run the one-file bun
 the seal proves **tamper-evidence + signer-pin**, NOT a trusted "sealed at T" (that still requires
 **P-3** — see [`../docs/INDEPENDENT-VERIFICATION.md`](../docs/INDEPENDENT-VERIFICATION.md) §3).
 
-Two honest narrowings apply to **this challenge specifically**, because it is the **FREE, UNSIGNED**
-path:
+Two honest narrowings apply. The first is specific to the **node three-commands flow above**
+(`sample-packet/` + `seal.vhevidence.json`), because *that* sample is the **FREE, UNSIGNED** path — the
+browser challenge's sample, by contrast, *is* signed and does pin a signer. The second applies to
+**every** verifyhash seal, signed or not:
 
-- **The sample seal is UNSIGNED, so there is no signer to pin here.** The challenge proves the
-  **tamper-evidence + offline-recompute** half — *these are exactly those files, independently
-  re-derivable by anyone*. The **signer-pin** half (an EIP-191 signature you check with `--vendor`) is
-  the PAID upgrade — see the funnel below.
-- **It is NOT a trusted "sealed at T."** A seal says *these are the bytes*, not *when*. An independent
-  time anchor rides the human-owned signing/timestamp trust-root (proposal **P-3** in
-  [`../STRATEGY.md`](../STRATEGY.md)), and a green verdict is **not** a legal or accounting opinion.
+- **(node unsigned sample) The `sample-packet/` seal is UNSIGNED, so there is no signer to pin in that
+  flow.** It proves the **tamper-evidence + offline-recompute** half — *these are exactly those files,
+  independently re-derivable by anyone*. The **signer-pin** half (an EIP-191 signature you check with
+  `--vendor`) is the PAID upgrade — see the funnel below. (The browser challenge above already exercises
+  signer-pin, on a signed demo sample run through the **same engine**.)
+- **(every seal) It is NOT a trusted "sealed at T."** A seal says *these are the bytes*, not *when* — even
+  a *signed* one. An independent time anchor rides the human-owned signing/timestamp trust-root (proposal
+  **P-3** in [`../STRATEGY.md`](../STRATEGY.md)), and a green verdict is **not** a legal or accounting
+  opinion.
 
 This is the same trust boundary every verifyhash seal carries — stated once, verbatim, so the cold-start
 demo never over-promises.

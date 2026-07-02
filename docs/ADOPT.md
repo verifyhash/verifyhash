@@ -6,6 +6,7 @@ Pick the row that matches where you are, copy the one line, and run it. The **fr
 
 | You want to… | Copy this one line | Price |
 |---|---|---|
+| **No Node/terminal at all? Verify in your browser** (the 60-second challenge built in) | open [`verifier/dist/verify-vh-standalone.html`](../verifier/dist/verify-vh-standalone.html) | free |
 | **See it work in 5 seconds** (no clone, no flags, no key) | `npx --yes verify-vh demo` | free |
 | **Gate your CI on tampered/forged seals** (GitHub Actions) | `uses: <owner>/<repo>/verifier/action@<ref>` | free |
 | **Issue signed, customer-verifiable seals of your own** (the paid producer surface) | `vh evidence seal <dir> --sign --license <f> --vendor 0xYOU` | **paid** |
@@ -13,6 +14,21 @@ Pick the row that matches where you are, copy the one line, and run it. The **fr
 The on-ramp is **deliberately one direction**: the free rows convince you the verdict is real, then the
 paid row is the **only** part that turns into revenue — and the line below it (price, key, the sale) is a
 **human** step, never the loop's. Each path is detailed below.
+
+---
+
+## 0. The no-terminal path — one offline page in your browser
+
+The browser row needs **no Node, no terminal, no install, no account**: save the ONE committed file
+[`verifier/dist/verify-vh-standalone.html`](../verifier/dist/verify-vh-standalone.html) and double-click
+it. The page opens with the **60-second challenge built in** — click **"Load the sample packet &
+verify"** (**ACCEPT**), change one character of the editable sample file on the page and re-verify
+(**REJECT**, naming the file you changed) — then drag a REAL sealed packet + its files in for the same
+verdict the CLI prints. It contains **no network API at all**, so your bytes never leave your machine —
+check the browser **devtools Network tab**: it stays empty. Honest scope, same as every row here:
+tamper-evidence (+ signer-pin for a signed seal), NOT a trusted "sealed at T"; for CI/production gating
+use the node standalone (`verify-vh-standalone.js`) — that is row two and §2 below. The guided walkthrough
+is [`challenge/README.md`](../challenge/README.md).
 
 ---
 

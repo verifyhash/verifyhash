@@ -45,6 +45,30 @@ requires **P-3** — see §4). The convenience is in the *install*, never in the
 
 ---
 
+## 0y. No Node at all? Verify (and try to fool it) in your browser — one offline page
+
+Everything in §0 still assumes `node` on a PATH. If you — or the counterparty you are convincing —
+have **no terminal at all**, the same verifier ships as **one committed, fully offline HTML file**:
+[`dist/verify-vh-standalone.html`](dist/verify-vh-standalone.html) (integrity sidecar:
+[`dist/verify-vh-standalone.html.sha256`](dist/verify-vh-standalone.html.sha256)). Save it and
+double-click it; the page opens with the **60-second challenge built in**: click **"Load the sample
+packet & verify"** (ACCEPT), then change ONE character of the editable sample file and re-verify
+(**REJECT** — the page names the file you changed) — then drag a REAL packet + its files in and read
+the same verdict + per-file localization this README describes (optional vendor pin and revocations
+drop included). The page contains **NO network API at all** (no `fetch`, no `XMLHttpRequest`, no
+WebSocket), so your packet bytes never leave your machine — check the browser **devtools Network tab**:
+it stays empty. Like the node bundle, it is built deterministically from these same sources
+(`node build-standalone-html.js --check` reproduces it byte-for-byte, pinned in
+[`dist/BUILD-PROVENANCE.json`](dist/BUILD-PROVENANCE.json)).
+
+The boundary on the page is the same one this README carries, verbatim: **ACCEPT is tamper-evidence
+that these exact bytes match the seal — and, for a signed seal, WHO vouched (signer recovery + optional
+vendor pin). It is NOT a trusted timestamp and NOT proof of WHEN without the P-3 trust-root. For
+CI/production gating use the node standalone (`verify-vh-standalone.js`).** The browser page is the
+first-contact convenience; your pipeline gates on the node standalone (§2b).
+
+---
+
 ## 0z. The 5-second proof — one command, no flags, no key (`demo`)
 
 **Never run this tool before? Start here.** Before you have a packet, an address, or any idea what a "seal"

@@ -9,6 +9,8 @@ The registry contract (`contracts/ContributionRegistry.sol`) is deliberately own
 no pause, no upgrade path, and it never holds funds. Each content hash can be anchored exactly once
 (first-writer-wins) and can never be altered or deleted. That immutability is the product.
 
+> **Ready to charge for it?** [`docs/GO-LIVE.md`](docs/GO-LIVE.md) is the decision-ready "first dollar" page (`npm run go-live`): the **self-serve evidence license** is the recommended default; the design-partner **pilot** is the enterprise fallback.
+
 ## Install / Quickstart
 
 > **Adopt in one line.** Want to *receive* and *check* sealed artifacts without an account or our toolchain?

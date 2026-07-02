@@ -157,3 +157,65 @@ describe("T-61.1: scripts/go-live-check.js — the go-live readiness proof", fun
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-61.2: the readiness proof above is only worth anything if a repo visitor
+// can FIND the page that frames it. This block guards the DISCOVERABILITY
+// CONTRACT — the one README front-door pointer to docs/GO-LIVE.md — so the
+// single most revenue-critical page (the "first dollar" decision page) cannot
+// silently rot out of the front door and cannot point at a gutted target:
+//   * the front-door markdown link to docs/GO-LIVE.md is present (the pointer
+//     can't be deleted without turning this test red);
+//   * it keeps the load-bearing framing — self-serve is the RECOMMENDED DEFAULT,
+//     the pilot is the ENTERPRISE FALLBACK — so a future edit can't quietly
+//     invert the recommended path;
+//   * it keeps citing `npm run go-live`, the exact proof this file exercises,
+//     so the pointer and the proof can't drift apart;
+//   * the LINKED page still carries the readiness command + its ordered human
+//     steps + the needs-human / P-7 gate, so the pointer can't lead to an empty
+//     or a relaxed-guardrail page.
+//
+// This is the same rot-guard the ADOPT.md funnel already has
+// (test/adopt.docs.test.js › "README.md links to docs/ADOPT.md"); GO-LIVE.md is
+// the more revenue-critical funnel and previously had none. Pure: reads the two
+// files, opens no network, spawns nothing.
+// ---------------------------------------------------------------------------
+describe("T-61.2: docs/GO-LIVE.md is DISCOVERABLE + accurate from the repo front door", function () {
+  const README = fs.readFileSync(path.join(REPO, "README.md"), "utf8");
+  const GOLIVE = fs.readFileSync(path.join(REPO, "docs", "GO-LIVE.md"), "utf8");
+
+  // The single front-door pointer line — the one README line that links the page.
+  const pointer = README.split("\n").find((l) => /\]\(docs\/GO-LIVE\.md\)/.test(l));
+
+  it("the README front door carries a markdown link to docs/GO-LIVE.md", function () {
+    expect(pointer, "README must have a line linking docs/GO-LIVE.md").to.be.a("string");
+  });
+
+  it("the pointer frames SELF-SERVE as the recommended default and the PILOT as the enterprise fallback", function () {
+    expect(pointer, "pointer names the self-serve path").to.match(/self-serve/i);
+    expect(pointer, "pointer marks self-serve the recommended default").to.match(/recommended default/i);
+    expect(pointer, "pointer names the pilot path").to.match(/pilot/i);
+    expect(pointer, "pointer marks the pilot the enterprise fallback").to.match(/enterprise fallback/i);
+  });
+
+  it("the pointer frames the page as the decision-ready 'first dollar' page", function () {
+    expect(pointer, "pointer marks the page decision-ready").to.match(/decision-ready/i);
+    expect(pointer, "pointer frames it as the first-dollar page").to.match(/first[ -]dollar/i);
+  });
+
+  it("the pointer cites `npm run go-live` — the exact proof this suite exercises (they can't drift apart)", function () {
+    expect(pointer, "pointer cites npm run go-live").to.match(/npm run go-live/);
+  });
+
+  it("the LINKED page still cites the readiness proof and keeps its ordered human steps (no rot to a gutted page)", function () {
+    expect(GOLIVE, "GO-LIVE.md cites npm run go-live").to.match(/npm run go-live/);
+    expect(GOLIVE, "GO-LIVE.md keeps its ordered human-steps section").to.match(/##\s+The human steps/);
+    expect(GOLIVE, "step 1 (provision the vendor keypair) present").to.match(/1\.\s+\*\*Provision the vendor keypair/);
+    expect(GOLIVE, "step 4 (deploy) present").to.match(/4\.\s+\*\*Deploy/);
+  });
+
+  it("the linked page keeps its needs-human / P-7 gate (the discoverability change never relaxes the human step)", function () {
+    expect(GOLIVE, "GO-LIVE.md keeps its needs-human tag").to.match(/needs-human/);
+    expect(GOLIVE, "GO-LIVE.md keeps the P-7 pointer").to.match(/P-7/);
+  });
+});

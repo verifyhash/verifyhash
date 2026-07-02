@@ -39,16 +39,27 @@
 // custodian disclaimer the CLI packet does (it is the identical renderHTML output).
 // The web door changes HOW the broker reaches the engine, not WHAT it claims — it
 // AIDS reconciliation; the broker remains the responsible trust-account custodian.
+//
+// T-65.2: the PURE payload→result core (HttpError, the T-29.3 license gate, and
+// the reconcilePayload / inspectPayload handlers) now lives in ./door-core so the
+// OFFLINE single-file app (trustledger/build-standalone.js) can inline the SAME
+// functions verbatim. This file keeps ONLY the HTTP transport (routes, body cap,
+// JSON envelope, static page) and RE-EXPORTS the core under the same names, so
+// the door's observable behavior — statuses, error names, bytes — is unchanged
+// and the two surfaces can never drift.
 
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
-const ingest = require("./ingest");
-const report = require("./report");
-const policy = require("./policy");
-const close = require("./close");
-const license = require("./license");
+const doorCore = require("./door-core");
+const {
+  HttpError,
+  WEB_PAID_FEATURE_ENTITLEMENTS,
+  gatePayload,
+  reconcilePayload,
+  inspectPayload,
+} = doorCore;
 
 // Hard cap on the POST body. Three monthly exports (bank CSV/OFX, QuickBooks CSV,
 // rent roll CSV) are tiny — kilobytes to low single-digit megabytes. 16 MiB is a
@@ -57,406 +68,12 @@ const license = require("./license");
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
-// A named, HTTP-status-bearing error for the request layer. Carries a stable
-// machine `error` code (snake_case) plus the human `message`, so the JSON body
-// is { error, message } — a named error, never a stack trace.
+// The payload→result core — HttpError, the T-29.3 license gate (gatePayload +
+// WEB_PAID_FEATURE_ENTITLEMENTS), reconcilePayload, and the T-28.1 inspectPayload
+// (which reuses ingest.diagnoseSource VERBATIM) — lives in ./door-core (T-65.2)
+// and is re-exported below unchanged. See that file for the full contracts; this
+// file is ONLY the HTTP transport around it.
 // ---------------------------------------------------------------------------
-
-class HttpError extends Error {
-  constructor(status, code, message) {
-    super(message);
-    this.name = "HttpError";
-    this.status = status;
-    this.code = code;
-  }
-}
-
-// Map an engine error to a stable snake_case machine code. The engine's own
-// named errors (IngestError / ReportError / PolicyError / CloseError) carry the
-// precise, already-located human message; we only need a coarse machine label.
-function engineErrorCode(err) {
-  switch (err && err.name) {
-    case "IngestError":
-      return "ingest_error";
-    case "ReportError":
-      return "report_error";
-    case "PolicyError":
-      return "policy_error";
-    case "CloseError":
-      return "close_error";
-    default:
-      return "reconcile_error";
-  }
-}
-
-// ---------------------------------------------------------------------------
-// T-29.3: the WEB door's LICENSE GATE — the SAME gate the CLI `gateReconcile`
-// applies, threaded through HTTP. A request that asks for a PAID surface
-// (`state`/`policy` => multi-state policy packs, or `seal` => the reconciliation
-// seal) WITHOUT a valid, vendor-pinned license is REFUSED with a NAMED 4xx; the
-// FREE inspect + baseline reconcile routes stay open and behave byte-for-byte as
-// before. The server holds NO key and verifies OFFLINE: `verifyLicense` needs only
-// the pinned vendor ADDRESS + the supplied container (no network, no signing key).
-//
-// The flag->entitlement mapping is the SAME contract the CLI uses (so the two gates
-// can never drift): `state`/`policy` need `multi_state_policy`; `seal` needs `seal`.
-// A refusal carries the PRECISE reason verifyLicense returns (wrong_issuer /
-// expired / not_yet_valid / bad_signature / malformed), so a wrong/expired license
-// NEVER silently downgrades to a free run — it is reported, not ignored.
-// ---------------------------------------------------------------------------
-
-// Which entitlement each paid WEB surface requires. Mirrors the CLI's
-// PAID_FEATURE_ENTITLEMENTS exactly (state/policy => multi_state_policy; seal =>
-// seal), keyed off the request payload's own field names.
-const WEB_PAID_FEATURE_ENTITLEMENTS = Object.freeze([
-  {
-    requested: (p) =>
-      (p.state != null && String(p.state).trim() !== "") ||
-      (p.policy != null && String(p.policy).trim() !== ""),
-    entitlement: "multi_state_policy",
-    label: "multi-state policy packs (state)",
-  },
-  {
-    requested: (p) => p.seal === true,
-    entitlement: "seal",
-    label: "the tamper-evident reconciliation seal (seal)",
-  },
-]);
-
-// Apply the license gate to an already-parsed request payload. Returns silently
-// when the request is permitted (free tier, or a valid license covering every
-// requested paid feature). Throws a NAMED HttpError otherwise:
-//   * license_required (402) — a paid surface was requested with NO license at all
-//   * license_invalid  (403) — a license WAS supplied but is invalid for this run
-//       (malformed / bad_signature / wrong_issuer / expired / not_yet_valid, or a
-//        valid license that does not carry the required entitlement)
-// `now` is the injected report date so the verdict is deterministic. The license
-// container + vendorAddress come from the request body; the server holds no key.
-function gatePayload(payload, now) {
-  const needed = WEB_PAID_FEATURE_ENTITLEMENTS.filter((f) => f.requested(payload));
-  if (needed.length === 0) {
-    // FREE TIER: no paid surface requested — proceed unchanged. A stray
-    // license/vendorAddress with no paid feature costs nothing and is ignored.
-    return;
-  }
-
-  const featureList = needed.map((f) => f.label).join(" and ");
-  const hasLicense = payload.license != null;
-  const hasVendor = payload.vendorAddress != null;
-
-  // Both must travel together: a license is worthless without the vendor address
-  // to PIN it to, and a vendor with no license is nothing to verify.
-  if (!hasLicense && !hasVendor) {
-    throw new HttpError(
-      402,
-      "license_required",
-      `${featureList} ${needed.length > 1 ? "are" : "is"} a paid feature and requires a license; ` +
-        "supply { license, vendorAddress } in the request body. " +
-        "The free tier — baseline-policy reconcile + file inspect — needs no license."
-    );
-  }
-  if (!hasLicense || !hasVendor) {
-    throw new HttpError(
-      402,
-      "license_required",
-      'both "license" and "vendorAddress" must be supplied together (a license is verified by ' +
-        "pinning it to the vendor address)"
-    );
-  }
-
-  // Parse + validate the supplied container (a JSON string OR an already-parsed
-  // object). A malformed container is a license_invalid 403 — never half-trusted.
-  let container;
-  try {
-    container = license.readLicense(payload.license);
-  } catch (e) {
-    throw new HttpError(
-      403,
-      "license_invalid",
-      `the supplied license is not a valid signed license container: ${e.message}`
-    );
-  }
-
-  // Verify OFFLINE against the pinned vendor, dated at the run's reportDate. A
-  // malformed vendorAddress is a request error (the address could not be parsed).
-  let verdict;
-  try {
-    verdict = license.verifyLicense(container, { now, vendorAddress: payload.vendorAddress });
-  } catch (e) {
-    // verifyLicense throws only for a garbage vendorAddress / now — a request bug.
-    throw new HttpError(400, "bad_request", e.message);
-  }
-
-  if (!verdict.valid) {
-    // Report the PRECISE reason — never silently downgrade to a free run.
-    throw new HttpError(
-      403,
-      "license_invalid",
-      `${featureList} requires a valid license, but the supplied license is invalid ` +
-        `(reason: ${verdict.reason}); the free baseline reconcile remains available without state/policy/seal.`
-    );
-  }
-
-  // Valid + in-window + correct issuer. Require EACH requested feature's
-  // entitlement to actually be granted — a license never grants what it was not sold.
-  for (const f of needed) {
-    if (!license.hasEntitlement(verdict, f.entitlement)) {
-      throw new HttpError(
-        403,
-        "license_invalid",
-        `the supplied license is valid but does not include the "${f.entitlement}" entitlement ` +
-          `needed for ${f.label}; this license grants only [${verdict.entitlements.join(", ")}]. ` +
-          "The free baseline reconcile remains available."
-      );
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// The pure core: take the already-parsed request payload (strings + optional
-// state/priorClose) and produce the response shape. NO I/O. Throws HttpError on
-// any bad input (a malformed file, an unknown state, a bad prior-close) so the
-// caller maps it straight to an HTTP status + named JSON body. `reportDate` is
-// injected (the caller supplies today) so this function stays deterministic.
-// ---------------------------------------------------------------------------
-
-// Read the OPTIONAL per-file `maps` object (T-28.2). Returns a frozen
-// { bank, ledger, rentroll } where each entry is either a plain object (the
-// `columnMap` to thread into that file's strict parser) or `undefined` (so the
-// parser is called with `columnMap: undefined` — the byte-identical no-map path).
-// STRICT on shape: `maps` (when present) must be a plain object, and each named
-// per-file entry (when present) must be a plain object — anything else is a named
-// 400, never a coercion. Unknown keys inside `maps` are ignored (only the three
-// file keys are honoured), and the deep validity of each map (unknown logical
-// field, or a header absent from the file) is left to the strict parser, which
-// raises the SAME located IngestError it always would.
-function readOptionalMaps(raw) {
-  const empty = Object.freeze({ bank: undefined, ledger: undefined, rentroll: undefined });
-  if (raw == null) return empty;
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new HttpError(
-      400,
-      "invalid_maps",
-      '"maps" must be an object of { bank?, ledger?, rentroll? } column maps'
-    );
-  }
-  const out = {};
-  for (const key of ["bank", "ledger", "rentroll"]) {
-    const m = raw[key];
-    if (m == null) {
-      out[key] = undefined;
-      continue;
-    }
-    if (typeof m !== "object" || Array.isArray(m)) {
-      throw new HttpError(
-        400,
-        "invalid_maps",
-        `"maps.${key}" must be an object of { <logicalField>: <headerName> }`
-      );
-    }
-    out[key] = m;
-  }
-  return Object.freeze(out);
-}
-
-function reconcilePayload(payload, reportDate) {
-  if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new HttpError(400, "bad_request", "request body must be a JSON object");
-  }
-
-  // The three file CONTENTS are REQUIRED and must be strings. A missing or
-  // non-string field is a named 400 — never a coercion of, say, a number to "".
-  for (const key of ["bank", "ledger", "rentroll"]) {
-    if (typeof payload[key] !== "string") {
-      throw new HttpError(
-        400,
-        "missing_file",
-        `"${key}" is required and must be the file contents as a text string`
-      );
-    }
-  }
-
-  // LICENSE GATE (T-29.3). Apply the SAME paid-surface gate the CLI uses BEFORE any
-  // paid feature is resolved, so a gated request (state/policy/seal) without a valid
-  // license is refused with a NAMED license_required/license_invalid — never folded
-  // into a downstream policy_error and never silently downgraded to a free run.
-  gatePayload(payload, reportDate);
-
-  // Optional per-state policy. An unknown code is a named 400 (PolicyError's
-  // message names the available codes), not a silent fall-through to baseline.
-  let activePolicy = null;
-  if (payload.state != null && String(payload.state).trim() !== "") {
-    try {
-      activePolicy = policy.resolveState(String(payload.state));
-    } catch (e) {
-      throw new HttpError(400, "policy_error", e.message);
-    }
-  }
-
-  // Optional roll-forward from a prior period's close artifact (its JSON TEXT).
-  // Seeds this run's opening balances; a malformed close is a named 400.
-  let priorClose = null;
-  let opening = { bank: 0, book: 0 };
-  if (payload.priorClose != null && String(payload.priorClose).trim() !== "") {
-    try {
-      priorClose = close.readClose(String(payload.priorClose));
-    } catch (e) {
-      throw new HttpError(400, "close_error", e.message);
-    }
-    opening = { bank: priorClose.ending.bank, book: priorClose.ending.book };
-  }
-
-  // Optional per-file column maps (T-28.2). A mapping the broker fixed in the
-  // inspect flow is threaded back here so the REAL run honours it — the same
-  // `{ <logicalField>: <headerName> }` shape the strict parsers' `columnMap`
-  // already accepts, keyed by the SAME three file keys. When `maps` is absent (or
-  // a per-file map is absent) behaviour is BYTE-FOR-BYTE the no-map path: each
-  // parser is called with `columnMap: undefined`, exactly as before. A bad shape
-  // (not a plain object, or a per-file entry that is not a plain object) is a
-  // named 400 — never a silent coercion.
-  const maps = readOptionalMaps(payload.maps);
-
-  // Ingest the three files (STRICT — the first malformed row raises a located
-  // IngestError, which we surface as a named 400 rather than dropping the row).
-  let bank;
-  let book;
-  let rentroll;
-  try {
-    bank = ingest.parseBankStatement(payload.bank, { columnMap: maps.bank });
-    book = ingest.parseQuickBooksCSV(payload.ledger, { columnMap: maps.ledger });
-    rentroll = ingest.parseRentRollCSV(payload.rentroll, { columnMap: maps.rentroll });
-  } catch (e) {
-    throw new HttpError(400, engineErrorCode(e), e.message);
-  }
-
-  // Build the deterministic packet model (match + reconcile + report inside),
-  // then render the SAME HTML + CSV artifacts the CLI emits — but keep them in
-  // memory and return them in the JSON response. Nothing is written to disk.
-  let model;
-  let reportHtml;
-  let reportCsv;
-  try {
-    model = report.buildPacket({
-      bank,
-      book,
-      rentroll,
-      reportDate,
-      opening,
-      policy: activePolicy,
-      priorClose,
-    });
-    reportHtml = report.renderHTML(model);
-    reportCsv = report.renderExceptionsCSV(model);
-  } catch (e) {
-    throw new HttpError(400, engineErrorCode(e), e.message);
-  }
-
-  return {
-    tiesOut: model.tiesOut,
-    pass: model.pass,
-    balances: model.balances,
-    exceptions: model.exceptions,
-    summary: report.summaryLine(model),
-    reportHtml,
-    reportCsv,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// T-28.1: the read-only DIAGNOSTIC core. Maps a broker-facing `source` spelling
-// (the SAME file keys /api/reconcile uses, plus the `quickbooks` synonym) to the
-// engine's SOURCE.*, then calls ingest.diagnoseSource VERBATIM and returns its
-// report shape. UNLIKE reconcilePayload this does NOT fail closed: a well-formed
-// file with unmatched columns returns 200 with `requiredMissing` populated — that
-// is a self-service finding the UI renders, not a server error. It throws an
-// HttpError 400 ONLY for a request that is itself malformed: an unknown source, a
-// missing/non-string `text`, or a malformed `columnMap` (the SAME named IngestError
-// the strict parser/indexHeader gives, raised EARLY via validateColumnMapForSource
-// so a bad map is a 400 rather than being folded into the diagnose error list).
-// PURE / I-O-free, exactly like reconcilePayload — the server never writes to disk.
-// ---------------------------------------------------------------------------
-
-// Broker-facing `source` spelling -> engine SOURCE.*. Accepts the SAME keys
-// /api/reconcile uses for its three files (bank / ledger / rentroll) plus the
-// natural `quickbooks` / `rent_roll` synonyms, so the door names sources the way
-// the CLI's `--as` does without forcing the browser to know the engine's enum.
-const INSPECT_SOURCE = Object.freeze({
-  bank: ingest.SOURCE.BANK,
-  ledger: ingest.SOURCE.QUICKBOOKS,
-  quickbooks: ingest.SOURCE.QUICKBOOKS,
-  rentroll: ingest.SOURCE.RENT_ROLL,
-  rent_roll: ingest.SOURCE.RENT_ROLL,
-});
-
-function inspectPayload(payload) {
-  if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new HttpError(400, "bad_request", "request body must be a JSON object");
-  }
-
-  // The `source` selects which of the three logical types to diagnose. An unknown
-  // (or missing) spelling is a named 400 that NAMES the accepted spellings, so the
-  // caller can self-correct without reading source.
-  const source = INSPECT_SOURCE[String(payload.source)];
-  if (!source) {
-    throw new HttpError(
-      400,
-      "unknown_source",
-      `"source" must be one of: ${Object.keys(INSPECT_SOURCE).join(", ")}`
-    );
-  }
-
-  // The file CONTENTS are REQUIRED and must be a string — a missing or non-string
-  // `text` is a named 400, never a coercion (diagnoseSource treats a null text as
-  // a file-level "no input" finding, but over the door an absent body field is a
-  // client mistake, so we reject it up front with a clear message).
-  if (typeof payload.text !== "string") {
-    throw new HttpError(
-      400,
-      "missing_text",
-      `"text" is required and must be the file contents as a text string`
-    );
-  }
-
-  // Optional column-map override. Validate it EARLY against this file's real
-  // header so a malformed map (unknown logical key, or a header absent from the
-  // file) is a named 400 with the SAME IngestError message the strict parser gives
-  // — rather than being folded into the diagnose report's error list. A bad shape
-  // (not a plain object) is likewise a named 400.
-  let columnMap = null;
-  if (payload.columnMap != null) {
-    if (typeof payload.columnMap !== "object" || Array.isArray(payload.columnMap)) {
-      throw new HttpError(
-        400,
-        "invalid_column_map",
-        '"columnMap" must be an object of { <logicalField>: <headerName> }'
-      );
-    }
-    columnMap = payload.columnMap;
-    try {
-      ingest.validateColumnMapForSource(source, payload.text, columnMap);
-    } catch (e) {
-      throw new HttpError(400, engineErrorCode(e), e.message);
-    }
-  }
-
-  // Call the EXISTING diagnostic VERBATIM (no re-implementation of parsing) and
-  // return EXACTLY the diagnose report shape the CLI `vh trust inspect` consumes.
-  // diagnoseSource is pure and only throws on an unknown source (already guarded);
-  // every file/row problem is reported in the structure, not thrown.
-  const report = ingest.diagnoseSource(source, payload.text, { columnMap });
-
-  return {
-    source: report.source,
-    format: report.format,
-    header: report.header,
-    mapped: report.mapped,
-    requiredMissing: report.requiredMissing,
-    rowCount: report.rowCount,
-    okCount: report.okCount,
-    sample: report.sample,
-    errors: report.errors,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // HTTP plumbing
@@ -758,6 +375,9 @@ if (require.main === module) {
 module.exports = {
   createServer,
   makeHandler,
+  // Re-exported from ./door-core (T-65.2) under the SAME names, so every existing
+  // consumer — the CLI `vh trust serve`, the tests, an embedding app — is
+  // untouched by the factoring.
   reconcilePayload,
   gatePayload,
   WEB_PAID_FEATURE_ENTITLEMENTS,

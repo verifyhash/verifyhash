@@ -1,0 +1,99 @@
+{
+  "schema": "verifyhash/build-provenance@1",
+  "description": "Maps the published TrustLedger standalone offline app's sha256 to the ordered, individually-hashed in-tree source files it inlines. Reproduce + attest the whole chain offline with: node trustledger/build-standalone.js --check",
+  "targets": {
+    "trustledger-standalone": {
+      "bundle": "trustledger-standalone.html",
+      "sidecar": "trustledger-standalone.html.sha256",
+      "bundleBytes": 273125,
+      "bundleSha256": "1afa0e08c9624505ad967ab88c91553c6af00b0e5e0f2b790ddf315741ed1742",
+      "sidecarLine": "1afa0e08c9624505ad967ab88c91553c6af00b0e5e0f2b790ddf315741ed1742  trustledger-standalone.html",
+      "page": {
+        "sourceFile": "trustledger/public/index.html",
+        "sourceSha256": "eee5780a7e7cc62dd4e4baf2bcbb2af47fb68babd95d4ad2d4fe1e54b0fee9d4"
+      },
+      "modules": [
+        {
+          "id": "sha256-vendored",
+          "synthetic": false,
+          "sourceFile": "trustledger/lib/sha256-vendored.js",
+          "sourceSha256": "9aa8ca87a66261e36b2468d0bf20f0598b97f818d3dfb3308b9452eb1b5eacbb",
+          "inlinedSha256": "9aa8ca87a66261e36b2468d0bf20f0598b97f818d3dfb3308b9452eb1b5eacbb",
+          "entry": false
+        },
+        {
+          "id": "policy-bundled-loader",
+          "synthetic": true,
+          "sourceFile": null,
+          "sourceSha256": null,
+          "inlinedSha256": "693cadeb0fb79f339532fd0df91bb655ae5c5055b32fd2644017a9fc86c135cb",
+          "note": "swapped body (bundled-policy loader shim; inlines trustledger/fixtures/policy/*.json) — defined in build-standalone.js, not a source file"
+        },
+        {
+          "id": "reconcile",
+          "synthetic": false,
+          "sourceFile": "trustledger/reconcile.js",
+          "sourceSha256": "0177964804e3e993891a3cca617b1a0421f14579ce4a5407741ab902eab44322",
+          "inlinedSha256": "0177964804e3e993891a3cca617b1a0421f14579ce4a5407741ab902eab44322",
+          "entry": false
+        },
+        {
+          "id": "policy",
+          "synthetic": false,
+          "sourceFile": "trustledger/policy.js",
+          "sourceSha256": "a07cf5252991281441e251df31c6336057a61bc0fe45aa81e5321f88b8353b74",
+          "inlinedSha256": "ce3f2b8902d7a94d7e5190808696f53f649fc1357c2c512e2c80884db4823b5e",
+          "entry": false
+        },
+        {
+          "id": "match",
+          "synthetic": false,
+          "sourceFile": "trustledger/match.js",
+          "sourceSha256": "e06f9bc39c66ee748b422270e4edddc67640d8ebdda27838b95ece0e0ba09988",
+          "inlinedSha256": "e06f9bc39c66ee748b422270e4edddc67640d8ebdda27838b95ece0e0ba09988",
+          "entry": false
+        },
+        {
+          "id": "ingest",
+          "synthetic": false,
+          "sourceFile": "trustledger/ingest.js",
+          "sourceSha256": "6076b1f88e05ee175ff134f2ba018454885c71659ce40fbb91f4fb96e2944920",
+          "inlinedSha256": "6076b1f88e05ee175ff134f2ba018454885c71659ce40fbb91f4fb96e2944920",
+          "entry": false
+        },
+        {
+          "id": "close",
+          "synthetic": false,
+          "sourceFile": "trustledger/close.js",
+          "sourceSha256": "ef9312871b59763d76de48e7b6e1225e920577d813e98c25bff66c95fc276134",
+          "inlinedSha256": "10f83eaa35167ef076cd03c03781480b660fb87e97d319a56ba1dd6a731a1f94",
+          "entry": false
+        },
+        {
+          "id": "report",
+          "synthetic": false,
+          "sourceFile": "trustledger/report.js",
+          "sourceSha256": "4fc13974d2b85482c972f2f9617f402a4e6ced04c712042b6bb727f146134bc6",
+          "inlinedSha256": "6e5623fd5f4560925b2dc06d135a1fcab9170b503b37ecfc1b7295f47de0a7c8",
+          "entry": false
+        },
+        {
+          "id": "license",
+          "synthetic": true,
+          "sourceFile": null,
+          "sourceSha256": null,
+          "inlinedSha256": "b9efa9635ddfd6c4beb6f8bf10f268b5b896a72898b42ba3ec73c5b50811380a",
+          "note": "swapped body (fail-closed offline license shim) — defined in build-standalone.js, not a source file"
+        },
+        {
+          "id": "door-core",
+          "synthetic": false,
+          "sourceFile": "trustledger/door-core.js",
+          "sourceSha256": "7c04cb3fbe338f3fd97059974b14d2977828434bd649ff23bef4c85ee57f5b46",
+          "inlinedSha256": "d3b2672104c4c2ed9a97f292f569c4f013bfa120c8085f33f9f054cf47c98654",
+          "entry": true
+        }
+      ]
+    }
+  }
+}

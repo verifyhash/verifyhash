@@ -49,10 +49,14 @@
 </head>
 <body>
 <h1>TrustLedger — Three-Way Trust-Account Reconciliation</h1>
+<!-- __TL_TRANSPORT_SEAM:NOTE:BEGIN__ (T-65.2: the offline single-file build,
+     trustledger/build-standalone.js, swaps this server-transport claim for the
+     honest offline one; the served page below is unchanged) -->
 <p class="note">Drop your three monthly files. Your browser reads them and sends
 their contents to this server; the reconciliation runs in memory and nothing is
 stored on disk. The result, including the downloadable HTML and CSV audit packet,
 comes straight back to your browser.</p>
+<!-- __TL_TRANSPORT_SEAM:NOTE:END__ -->
 <div class="disclaimer"><strong>Disclaimer.</strong> This tool AIDS reconciliation.
 The broker remains the legal trust-account custodian and is solely responsible for
 the accuracy of the trust-account records. It is tamper-evidence and a reconciliation
@@ -84,11 +88,15 @@ substitute for a CPA's review.</div>
   </fieldset>
   <fieldset>
     <legend>License (only needed for paid features)</legend>
+    <!-- __TL_TRANSPORT_SEAM:LICENSE_NOTE:BEGIN__ (T-65.2: the offline build swaps
+         this note — the offline app is the FREE tier and cannot verify a license;
+         the served page below is unchanged) -->
     <p class="note">Per-state policy packs and the tamper-evident seal are paid
     features. Paste the signed <code>*.vhlicense.json</code> your vendor sent you and
     the vendor address it is pinned to. The baseline reconcile and file inspection
     need no license. Verification happens offline against the vendor address — the
     server never holds a key.</p>
+    <!-- __TL_TRANSPORT_SEAM:LICENSE_NOTE:END__ -->
     <label for="license">Signed license (the contents of your *.vhlicense.json)</label>
     <textarea id="license" rows="4" style="width:100%;font:inherit" placeholder="paste your signed license JSON here (optional)"></textarea>
     <label for="vendorAddress">Vendor address (0x…)</label>
@@ -165,6 +173,9 @@ substitute for a CPA's review.</div>
   function postInspect(source, text, columnMap) {
     var body = { source: source, text: text };
     if (columnMap) { body.columnMap = columnMap; }
+    // __TL_TRANSPORT_SEAM:INSPECT:BEGIN__ (T-65.2: the offline single-file build
+    // replaces this transport with a direct in-page call into the SAME door core
+    // — trustledger/door-core.js — the server routes this POST to.)
     return fetch("/api/inspect", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -172,6 +183,7 @@ substitute for a CPA's review.</div>
     }).then(function (resp) {
       return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
     });
+    // __TL_TRANSPORT_SEAM:INSPECT:END__
   }
 
   // ---- render the diagnose report in a clear, non-technical layout. ----------
@@ -448,13 +460,17 @@ substitute for a CPA's review.</div>
         if (pendingMaps[s]) { maps[s] = pendingMaps[s]; any = true; }
       });
       if (any) { body.maps = maps; }
+      // __TL_TRANSPORT_SEAM:RECONCILE:BEGIN__ (T-65.2: the offline single-file
+      // build replaces this transport with a direct in-page call into the SAME
+      // door core — trustledger/door-core.js — the server routes this POST to.)
       return fetch("/api/reconcile", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
+      }).then(function (resp) {
+        return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
       });
-    }).then(function (resp) {
-      return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
+      // __TL_TRANSPORT_SEAM:RECONCILE:END__
     }).then(function (r) {
       go.disabled = false;
       if (!r.ok) {

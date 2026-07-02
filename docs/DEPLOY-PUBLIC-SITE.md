@@ -26,8 +26,13 @@ A **static, read-only** site publishing verifyhash's independent-verification ar
 - the single-file, zero-dependency, **offline** verifier `verify-vh-standalone.js` + its `sha256`,
 - the companion offline **sealer** `seal-vh-standalone.js` + `sha256`,
 - the **build-provenance manifest** `build-provenance.json`,
-- a hand-written **landing page** (download links, verify one-liner, reproduce-from-source steps, honest boundary),
-- ~21 **prospect-facing docs** (CONFORMANCE, PILOT, KEY-LIFECYCLE, INDEPENDENT-VERIFICATION, …).
+- the version-controlled **landing page** (`site/index.html` — download links, verify one-liner, reproduce-from-source steps, honest boundary),
+- the **prospect-facing docs** (CONFORMANCE, PILOT, KEY-LIFECYCLE, INDEPENDENT-VERIFICATION, …),
+- a generated **`RELEASE-MANIFEST.json`** (sorted paths, per-file sha256 + source, total bytes) so the upload can be verified file-by-file.
+
+The exact publish set is the committed allowlist **`site/publish-set.json`** (published path → committed
+repo source). `scripts/site-release.js` assembles the webroot from EXACTLY that mapping — nothing outside
+it can enter `public/`, which makes the "must NEVER be served" table below *structural*, not just prose.
 
 **NOT** in scope (deliberately): no backend, no uploads, no API, no DB, no key, no payment, no token.
 The product's trust model is *offline* verification — a server that "verifies for you" would weaken it.
@@ -75,48 +80,71 @@ keys, no mnemonics, no API keys anywhere. The only risk is *where nginx points*.
 
 ## 3. Deploy the webroot (replaces the old site)
 
-The loop has **pre-built and integrity-verified** the exact webroot at
-**`/home/loopdev/verifyhash/public/`** (26 files: the 5 dist assets, `index.html`, and `docs/*.md`).
-Easiest path is to deploy that directly.
+**The upload step is:** run `node scripts/site-release.js`, upload `public/`, verify against
+`RELEASE-MANIFEST.json`. The assembler regenerates `public/` **deterministically** from the committed
+allowlist `site/publish-set.json` (nothing outside the allowlist can enter the webroot), and
+`--check` re-proves byte-for-byte integrity before you copy anything.
 
-### 3a — integrity gate, then atomic replace
+### 3a — assemble + integrity gate, then atomic replace
 
 ```bash
 set -euo pipefail
 REPO=/home/loopdev/verifyhash
-SRC="$REPO/public"                      # the prebuilt, vetted webroot
+SRC="$REPO/public"                      # the assembled, allowlist-only webroot
 WEBROOT=/var/www/verifyhash.com/html
 
-# 1) INTEGRITY GATE — refuse to deploy a tampered/stale verifier (offline, writes nothing)
+# 1) ASSEMBLE the webroot from the committed publish set (deterministic; writes only inside the repo)
+node "$REPO/scripts/site-release.js"
+
+# 2) INTEGRITY GATE — refuse to deploy a tampered/stale webroot (offline, writes nothing)
+node "$REPO/scripts/site-release.js" --check               # MUST print OK and exit 0
 ( cd "$REPO/verifier/dist" && sha256sum -c verify-vh-standalone.js.sha256 && sha256sum -c seal-vh-standalone.js.sha256 )
 node "$REPO/verifier/build-standalone.js" --check          # MUST print all-MATCH and exit 0
-# and confirm the prebuilt copy matches the published hash too:
 ( cd "$SRC" && sha256sum -c verify-vh-standalone.js.sha256 && sha256sum -c seal-vh-standalone.js.sha256 )
 
-# 2) back up the OLD site once, then REPLACE it (—delete removes the old index.html + js/)
+# 3) back up the OLD site once, then REPLACE it (—delete removes anything not in the publish set)
 sudo cp -a "$WEBROOT" "/var/www/verifyhash.com/html.bak.$(date +%Y%m%d-%H%M%S)" || true
 sudo rsync -a --delete "$SRC"/ "$WEBROOT"/
 
-# 3) ownership nginx expects
+# 4) ownership nginx expects
 sudo chown -R www-data:www-data "$WEBROOT"
+
+# 5) VERIFY THE UPLOAD against the manifest that shipped inside it (per-file sha256, all must match)
+( cd "$WEBROOT" && node -e '
+  const fs=require("fs"),c=require("crypto");
+  const m=JSON.parse(fs.readFileSync("RELEASE-MANIFEST.json","utf8"));let bad=0;
+  for(const f of m.files){const h=c.createHash("sha256").update(fs.readFileSync(f.path)).digest("hex");
+    if(h!==f.sha256){bad++;console.error("MISMATCH "+f.path);}}
+  console.log(bad?"UPLOAD BROKEN — do not announce":"upload verified: "+m.files.length+" files match RELEASE-MANIFEST.json");
+  process.exit(bad?1:0);' )
 
 echo "Deployed. Old site backed up to /var/www/verifyhash.com/html.bak.*"
 ```
 
-> If you'd rather rebuild from source instead of trusting `public/`, the generator is the exact script
-> the loop ran: copy `verifier/dist/{verify,seal}-vh-standalone.js` (+`.sha256`) and `BUILD-PROVENANCE.json`
-> (→ `build-provenance.json`, lowercase) into a staging dir, copy the 21 explicit prospect docs (README →
-> `docs/overview.md`; `docs/{INDEPENDENT-VERIFICATION,CONFORMANCE,TRUST-BOUNDARIES,MERKLE-LEAVES,PROOFS,
-> KEY-LIFECYCLE,EVIDENCE,RECEIPTS,PILOT,IDENTITY,LINEAGE,REPUTATION,DATALEDGER,PROOFPARCEL,TRUSTLEDGER}.md`;
-> `verifier/README.md`→`verifier-README.md`; `challenge/README.md`→`challenge-README.md`; `challenge/TAMPER-ME.md`;
-> `examples/README.md`→`examples-README.md`; `pilot/README.md`→`pilot-README.md`) into `docs/`, write the
-> §3b landing page, then `rsync --delete` that staging dir in. **Never glob `docs/*.md` — it contains internal files.**
+> There is no hand-copy recipe anymore — the publish set lives in **`site/publish-set.json`**
+> (published path → committed source, incl. the renames like `challenge/README.md` →
+> `docs/challenge-README.md`) and `scripts/site-release.js` is the only generator. To change what the
+> site serves, edit the allowlist, re-run the assembler, and commit the regenerated
+> `site/RELEASE-MANIFEST.json`. **Never glob `docs/*.md` into the webroot — it contains internal files;
+> the assembler refuses forbidden entries (`.git*`, env/key-shaped names, this runbook, ops telemetry) by construction.**
+> After the upload, record what went live in `site/DEPLOYED.json` (the drift baseline).
 
 ### 3b — the landing page
 
-The prebuilt `public/index.html` already carries the verifyhash.com URLs, the real sha256
-(`9358a657…`), the verify one-liner, the reproduce-from-source steps, and the honest boundary. If you
-want to set a real producer address in the example, edit the `0x<…>` placeholder in §2 of that page.
+The landing page is **version-controlled at `site/index.html`** (the assembler stages it as
+`public/index.html`). It carries the verifyhash.com URLs, the published sha256, the verify one-liner,
+the reproduce-from-source steps, and the honest boundary. To change it, edit `site/index.html`,
+re-run `node scripts/site-release.js`, and commit. If you want to set a real producer address in the
+example, edit the `0x<…>` placeholder in §2 of that page (in `site/index.html`, then re-assemble).
+
+> ⚠️ **Whenever the verifier bundle changes, update the page's `Published SHA-256:` to match.** The
+> page's whole pitch is "don't trust us — download `verify-vh-standalone.js` and compare its hash
+> yourself", so its advertised hash must equal the sha256 of the `verify-vh-standalone.js` this release
+> ships (and the `.sha256` sidecar). If you rebuild the bundle but forget the page, the assembled
+> webroot would fail its own cross-check — a false "tampered?" signal for buyers. **`node
+> scripts/site-release.js` now REFUSES to assemble (and `--check` goes RED, naming `LANDING PAGE DRIFT`)
+> when the page's `Published SHA-256:` ≠ the shipped bundle's sha256**, so this drift can never ship
+> silently — but fix it at the source by editing `site/index.html`'s `Published SHA-256:` value.
 
 ---
 
@@ -186,8 +214,11 @@ curl -fsS -o /tmp/v.js "$D/verify-vh-standalone.js"
 curl -fsS -o /tmp/v.js.sha256 "$D/verify-vh-standalone.js.sha256"
 ( cd /tmp && sha256sum -c v.js.sha256 )            # must say: verify-vh-standalone.js: OK
 
-# b) landing page is the NEW site (provenance), not the old JSON-storage one
-curl -fsS "$D/" | grep -q 9358a657 && echo "landing OK (new site)"
+# b) landing page is the NEW site (provenance), not the old JSON-storage one, and its advertised
+#    Published SHA-256 matches the bundle you just uploaded (read the served sidecar's hash and
+#    confirm the landing page advertises that exact string — no hard-coded hash to go stale)
+VERIFY_SHA=$(curl -fsS "$D/verify-vh-standalone.js.sha256" | cut -d' ' -f1)
+curl -fsS "$D/" | grep -q "$VERIFY_SHA" && echo "landing OK (advertises the shipped bundle hash)" || echo "STOP: landing page hash != shipped bundle"
 curl -fsS "$D/" | grep -qi "JSON Storage Network" && echo "STOP: old site still served" || echo "old site gone OK"
 
 # c) the dead backend is detached — /api/ must NOT proxy anymore
@@ -232,16 +263,13 @@ fix, re-run. Once clean, the old-site backup `/var/www/verifyhash.com/html.bak.*
 
 ---
 
-## Appendix — file inventory & hashes (canonical 2026-06-26)
+## Appendix — file inventory & hashes
 
-| Webroot path | Source | Bytes | SHA-256 |
-|---|---|---|---|
-| `/verify-vh-standalone.js` | `verifier/dist/verify-vh-standalone.js` | 128269 | `9358a657a611a394c7d4981dd1777577c01a96711fa5a6fb2e0da9dc06b4d1ec` |
-| `/seal-vh-standalone.js` | `verifier/dist/seal-vh-standalone.js` | 39375 | `4da9d9332d823d59e5a9aa35ba02cb7cbaf1d0a99cfef850fbf339430c2dd371` |
-| `/build-provenance.json` | `verifier/dist/BUILD-PROVENANCE.json` | 4891 | pins both bundle hashes; verify with `--check` |
-| `/verify-vh-standalone.js.sha256`, `/seal-vh-standalone.js.sha256` | committed sidecars | — | the published-hash source of truth |
-| `/index.html` | `public/index.html` (prebuilt) | — | — |
-| `/docs/*.md` | 21 explicit prospect docs | — | — |
+The canonical inventory is **generated, not hand-typed**: `site/RELEASE-MANIFEST.json` (committed twin;
+the same bytes ship inside the webroot as `public/RELEASE-MANIFEST.json`) lists every published path,
+its committed source path, its byte count, and its SHA-256, in sorted order. The allowlist it is built
+from is `site/publish-set.json`; the snapshot of what is believed live is `site/DEPLOYED.json`.
 
-**Always re-derive hashes from the committed sidecars + `--check`; don't trust this table if it drifts.**
-Prebuilt webroot to deploy: **`/home/loopdev/verifyhash/public/`** → **`/var/www/verifyhash.com/html`**.
+**Always re-derive hashes from `node scripts/site-release.js --check` + the committed sidecars; never
+trust a hand-copied table.** Assembled webroot to deploy: **`/home/loopdev/verifyhash/public/`** →
+**`/var/www/verifyhash.com/html`**.

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>verifyhash — independent, offline verification</title>
+<meta name="description" content="Cryptographic provenance you can check yourself — offline, with zero trust in the producer. A single-file verifier you can reproduce from source.">
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.6 -apple-system, system-ui, Segoe UI, Roboto, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1.2rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre { background: #1113; padding: .8rem 1rem; border-radius: 8px; overflow-x: auto; }
+  .hash { word-break: break-all; font-size: .85em; }
+  h2 { margin-top: 2.2rem; }
+  .box { border: 1px solid #8884; border-radius: 8px; padding: 1rem 1.2rem; margin: 1rem 0; }
+  a { color: inherit; }
+  footer { margin-top: 3rem; font-size: .85em; opacity: .7; }
+</style>
+</head>
+<body>
+  <h1>verifyhash</h1>
+  <p><strong>Cryptographic provenance you can check yourself — offline, with zero trust in us.</strong>
+     A sealed artifact carries its own proof. You re-derive it from the bytes on your own machine; you
+     don't take our word, and you don't call our server (there isn't one).</p>
+
+  <div class="box">
+    <h2>1. Get the verifier (one file, zero dependencies)</h2>
+    <pre>curl -O https://verifyhash.com/verify-vh-standalone.js
+curl -O https://verifyhash.com/verify-vh-standalone.js.sha256
+sha256sum -c verify-vh-standalone.js.sha256     # macOS: shasum -a 256 -c …</pre>
+    <p>Published SHA-256:</p>
+    <p class="hash"><code>793125a8de58cea35e1e1cd1bb7d1b315c93c59f9045af8a4b1152a443b452ac</code></p>
+    <p>It opens no network, needs only Node core, and exits <code>0</code> = accepted / <code>3</code> = rejected.</p>
+  </div>
+
+  <div class="box">
+    <h2>2. Verify a sealed packet someone sent you</h2>
+    <pre>node verify-vh-standalone.js &lt;packet.vhevidence.json&gt; --vendor 0x&lt;the address the producer told you to pin&gt;</pre>
+    <p>It recomputes every hash from the packet's own bytes and confirms the signer address you pinned.</p>
+  </div>
+
+  <div class="box">
+    <h2>3. Don't trust our checksum — reproduce the verifier from source</h2>
+    <p>Read the source in <code>verifier/</code>, then rebuild the bundle in memory and confirm it is
+       byte-for-byte what we published — offline, writing nothing:</p>
+    <pre>node verifier/build-standalone.js --check        # exit 0 = every bundle, sidecar &amp; source hash MATCH</pre>
+    <p>The <a href="/build-provenance.json">build-provenance manifest</a> maps each published hash back to
+       the exact, individually-hashed source modules it inlines, so you can root trust in source you read.</p>
+  </div>
+
+  <div class="box">
+    <h2>4. The honest trust boundary — read before you rely on it</h2>
+    <p>A seal proves <strong>tamper-evidence + signer-pin</strong>: the bytes are unaltered and were signed
+       by the key whose address you pinned. It is <strong>NOT</strong> a trusted "sealed at time&nbsp;T"
+       (that needs an external timestamp authority or anchor), and reproducing the verifier proves
+       <strong>build integrity</strong> — that our bundle is faithfully built from its source — <strong>NOT</strong>
+       that the source's logic is correct (read it, and run the conformance corpus, for that), and
+       <strong>NOT</strong> a trusted timestamp or identity. Verification is free; producing seals is the paid surface.</p>
+  </div>
+
+  <h2>Also available</h2>
+  <ul>
+    <li><a href="/seal-vh-standalone.js">seal-vh-standalone.js</a>
+        (<a href="/seal-vh-standalone.js.sha256">sha256</a>) — the free offline sealer, so you can produce your own and feel the round-trip.</li>
+    <li>Docs: <a href="/docs/INDEPENDENT-VERIFICATION.md">Independent verification</a> ·
+        <a href="/docs/CONFORMANCE.md">Conformance corpus</a> ·
+        <a href="/docs/TRUST-BOUNDARIES.md">Trust boundaries</a> ·
+        <a href="/docs/KEY-LIFECYCLE.md">Key lifecycle</a> ·
+        <a href="/docs/PILOT.md">Pilot</a> ·
+        <a href="/docs/EVIDENCE.md">Evidence packets</a></li>
+  </ul>
+
+  <footer>verifyhash — verification is free, sealing is the paid surface. No accounts, no tracking, no server-side verification.<br>
+    &copy; 2026 verifyhash.com · Open source under the <a href="/LICENSE">Apache License 2.0</a> (<a href="/NOTICE">NOTICE</a>) — every downloadable file above carries this license.</footer>
+</body>
+</html>

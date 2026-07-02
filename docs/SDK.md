@@ -279,6 +279,14 @@ T"* on its own; that claim rides the human-owned trust-root (STRATEGY.md **P-3**
 guarantee, the 0/3 contract, and the full honesty boundary are documented in
 **[docs/INTEGRITY-JOURNAL.md](./INTEGRITY-JOURNAL.md)**.
 
+The journal also carries **transparency-log proofs** (RFC-6962 / Certificate-Transparency lineage):
+`vh journal tree-head` publishes a `{ size, root }` head, `prove-inclusion` / `prove-consistency` emit
+compact proof artifacts, and `vh journal check-proof` verifies them **offline** (no journal, no key, no
+network — though today via the **producer package**, not the standalone, zero-dependency `verifier/` bundle a
+seal enjoys) — the head is **self-asserted** until a P-3 trust-root signs it. See
+[docs/INTEGRITY-JOURNAL.md](./INTEGRITY-JOURNAL.md) § "Transparency-log proofs (publish a tree head;
+auditors verify offline)".
+
 Drop it in with:
 
 - a dependency-free runnable step — [`examples/journal-ci.js`](../examples/journal-ci.js)

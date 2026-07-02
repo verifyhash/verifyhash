@@ -726,6 +726,16 @@ Schema, chain guarantee, the 0/3 contract, and the honesty boundary:
 [`examples/journal-ci.js`](examples/journal-ci.js) and
 [`verifier/ci/journal.generic.sh`](verifier/ci/journal.generic.sh).
 
+The journal also carries **transparency-log proofs** (RFC-6962 / Certificate-Transparency lineage):
+`vh journal tree-head` publishes a single `{ size, root }` head committing to the whole ordered log,
+`prove-inclusion` / `prove-consistency` emit compact self-contained proof artifacts, and
+`vh journal check-proof` lets a third-party auditor verify them **offline** — no journal, no key, no
+network (though today via the **producer package**, which installs ethers — **not** the standalone,
+zero-dependency `verifier/` bundle a seal enjoys). The head is **self-asserted** until a P-3 trust-root
+signs it. See
+[`docs/INTEGRITY-JOURNAL.md`](docs/INTEGRITY-JOURNAL.md) § "Transparency-log proofs (publish a tree head;
+auditors verify offline)".
+
 ## Develop
 
 ```

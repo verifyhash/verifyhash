@@ -112,6 +112,159 @@ record itself is tamper-evident."
 
 ---
 
+## Transparency-log proofs (publish a tree head; auditors verify offline)
+
+The chain above answers *"is my copy of the whole log intact?"* — but the checker must hold (and re-walk)
+the **entire** journal. The transparency-log surface adds the second half a real transparency log needs: an
+**RFC-6962 / Certificate-Transparency-style ordered Merkle tree** over the journal's entry hashes — the same
+lineage as CT's certificate logs and Sigstore's **Rekor** — so that:
+
+- a single **tree head** `{ size, root }` (one 32-byte root + a count) commits to the **whole ordered log**;
+- **inclusion** of any one entry under that head is provable with an O(log n) path — the auditor never needs
+  the log;
+- **consistency** between an old head (size *m*) and a new head (size *n*) is provable with an O(log n)
+  path — proving the size-*n* log is an **append-only extension** of the size-*m* log, i.e. **no history was
+  rewritten** between the two heads. A hash-chain alone cannot prove that compactly.
+
+**This is a deliberately different tree from the file-set tree in `cli/hash.js`.** The seal tree is a
+*sorted-leaf, sorted-pair* Merkle root: it commits to a **SET** of files and is intentionally
+order-independent. A journal is the opposite — **order is meaning** — so the log tree is
+**position-preserving**: leaves stay at their `seq`, interior nodes fold their children in tree order
+(never min/max-sorted), with RFC-6962 domain separation (`leaf = keccak256(0x00 ‖ entryHash)`,
+`node = keccak256(0x01 ‖ left ‖ right)`). Only a position-binding tree can prove
+inclusion-at-a-position or append-only consistency. Same `keccak256` primitive as everything else here —
+**no new crypto**; the core is the pure [`cli/journal-log.js`](../cli/journal-log.js) (no fs, no socket,
+no key, no clock).
+
+### The four commands
+
+```bash
+vh journal tree-head <journalfile> [--json]                                 # print the publishable head { size, root }
+vh journal prove-inclusion <journalfile> --seq <i> [--out <f>] [--json]     # emit an inclusion-proof artifact
+vh journal prove-consistency <journalfile> --from <m> [--out <f>] [--json]  # emit a consistency-proof artifact
+vh journal check-proof <prooffile> [--json]                                 # OFFLINE auditor: ACCEPTED / REJECTED
+```
+
+All four are **read-only** and **verify-only** (the only write is the `--out` proof artifact you name); they
+hold **no key** and bind **no network**. `tree-head` / `prove-*` first re-verify the hash chain and **refuse**
+(exit 3, `BROKEN`) to emit anything over a tampered journal. `check-proof` is the **third-party AUDITOR**
+command: it reads **only** the proof artifact — never the journal, never a key, never a socket — so you can
+hand an auditor a published tree head plus a proof file and they confirm inclusion / append-only-ness
+**without ever holding your log**.
+
+> **What "OFFLINE" means here (independence caveat — read this before selling `check-proof` as "independent").**
+> `check-proof` — and `tree-head` / `prove-*` — run in the **producer package**
+> (`cli/journal-cli.js` → [`cli/journal-log.js`](../cli/journal-log.js), which `require`s **ethers**), so
+> `npm i verifyhash` pulls in the producer stack. "OFFLINE" here means **no network and no log** (the auditor
+> holds only the proof artifact) — it does **NOT** mean "no producer stack." These self-contained proof
+> artifacts are **not yet** checkable with the zero-dependency standalone [`verifier/`](../verifier/) bundle a
+> **seal** enjoys, so a counterparty's security team cannot (today) verify a proof with a light/independent
+> client the way a CT/Rekor client can. See the
+> [**Independence scope**](#independence-scope--journal-verification-currently-needs-the-producer-package)
+> section below.
+
+All four ride the **same 0/3 exit contract** as the table above: `0` = head printed / proof emitted /
+proof `ACCEPTED`; `3` = `BROKEN` chain or `REJECTED` proof (fail closed — a forged, edited, or unknown-kind
+artifact is always `REJECTED`, never a silent pass); `2` = usage; `1` = IO.
+
+### The proof-artifact schemas
+
+`prove-inclusion` emits `kind: "vh-journal-inclusion"` — everything `check-proof` needs, and **nothing of
+the log itself**:
+
+```json
+{ "kind": "vh-journal-inclusion",
+  "journal": "journal.jsonl",
+  "leaf": "0x…(the entryHash being proven)",
+  "seq": 1,
+  "size": 3,
+  "root": "0x…(the head this proof verifies against)",
+  "path": ["0x…", "0x…"],
+  "note": "…the self-asserted-head note, verbatim…" }
+```
+
+`prove-consistency` emits `kind: "vh-journal-consistency"` — the two heads plus the RFC-6962 §2.1.2 proof
+that the first is a prefix of the second:
+
+```json
+{ "kind": "vh-journal-consistency",
+  "journal": "journal.jsonl",
+  "first":  { "size": 3, "root": "0x…" },
+  "second": { "size": 5, "root": "0x…" },
+  "proof": ["0x…", "0x…", "0x…", "0x…"],
+  "note": "…the self-asserted-head note, verbatim…" }
+```
+
+`check-proof` dispatches on `kind`, re-derives the root(s) from the artifact's own fields, and prints
+`ACCEPTED` (exit 0) only when the proof verifies against the head **embedded in the artifact** — so the
+auditor must compare that embedded head against a head they trust. Every accept carries this reminder,
+verbatim:
+
+> ACCEPTED means the proof verifies against the head EMBEDDED in the artifact; compare that head (size + root) against a tree head you trust (e.g. one the operator published/signed) before relying on it
+
+### Worked example (copy-pasteable, end-to-end)
+
+```bash
+# 0) something to observe: seal a directory into an evidence packet (any *.vhevidence.json works)
+mkdir -p bundle && printf 'hello\n' > bundle/a.txt && printf 'world\n' > bundle/b.txt
+vh evidence seal ./bundle --out ./bundle/release.vhevidence.json
+
+# 1) append THREE observations (three hash-chained verify verdicts)
+vh journal append ./bundle/release.vhevidence.json --to journal.jsonl
+vh journal append ./bundle/release.vhevidence.json --to journal.jsonl
+vh journal append ./bundle/release.vhevidence.json --to journal.jsonl
+
+# 2) publish the head — one { size, root } line commits to the whole ordered log
+vh journal tree-head journal.jsonl
+#   tree head of journal.jsonl: { size: 3, root: 0x49714d…e409d2 }
+
+# 3) prove entry seq 1 is committed at that position under that head
+vh journal prove-inclusion journal.jsonl --seq 1 --out seq1.inclusion.json
+
+# 4) the AUDITOR checks it OFFLINE — the proof file is ALL they get (no journal, no key, no network;
+#    "OFFLINE" = no network/log, still the PRODUCER package (installs ethers), NOT the standalone verifier/ —
+#    see "Independence scope" below)
+vh journal check-proof seq1.inclusion.json        # ACCEPTED (exit 0)
+
+# 5) keep working: append TWO more observations (the log grows 3 → 5)
+vh journal append ./bundle/release.vhevidence.json --to journal.jsonl
+vh journal append ./bundle/release.vhevidence.json --to journal.jsonl
+
+# 6) prove the size-5 log is an APPEND-ONLY extension of the size-3 log the auditor already saw
+vh journal prove-consistency journal.jsonl --from 3 --out 3-to-5.consistency.json
+
+# 7) the auditor checks THAT offline too — no history was rewritten between the two heads
+vh journal check-proof 3-to-5.consistency.json    # ACCEPTED (exit 0)
+```
+
+(Your `root` values will differ from any printed here: every `entryHash` folds in the self-asserted `ts` of
+that run. Tamper with any byte of a proof artifact — or hand `check-proof` a proof forged against a
+different head — and it prints `REJECTED`, exit 3.)
+
+### Honesty boundary — the head is SELF-ASSERTED (what these proofs do and do NOT mean)
+
+- **Inclusion** proves an observation is **committed at a position (`seq`) under a given head** — nothing
+  more.
+- **Consistency** proves the log is **append-only between two heads** — the second head's log extends the
+  first head's log without rewriting it.
+- The **tree head itself is SELF-ASSERTED** — it is the verifier's (the log holder's) **own** commitment,
+  exactly like the journal's `ts`. Every `tree-head` / `prove-*` output carries this note, verbatim:
+
+> this tree head is SELF-ASSERTED (the log holder's own commitment to its journal as it stands now); it does NOT by itself prove "existed at / unaltered since date T" until a trust-root signs/timestamps the head (P-3)
+
+So a tree head does **not** prove *"existed / unaltered since date T"* on its own — that claim still requires
+the **STRATEGY.md P-3** signing/timestamp trust-root, exactly as for the journal's `ts` below. What the
+tree head changes is **how little** P-3 has to sign: signing the head **is** the P-3 collapse of
+"sign the whole log" down to "sign 32 bytes" — once a trust-root signs/timestamps one head, every inclusion
+and consistency proof under it inherits that anchor. This is **NO new gate and NO relaxed gate**:
+P-3's and P-9's human-owned steps are **unchanged**; the loop still never holds a real key.
+
+The whole surface is test-gated by [`test/journal-log.core.test.js`](../test/journal-log.core.test.js),
+[`test/cli.journal-log.test.js`](../test/cli.journal-log.test.js), and the docs-rot guard
+[`test/journal-log.docs.test.js`](../test/journal-log.docs.test.js) on every `npx hardhat test`.
+
+---
+
 ## Honesty boundary — the `ts` is SELF-ASSERTED, and is NOT a timestamp
 
 The journal proves **ordering + continuity of the verifier's OWN observations** and the **tamper-evidence of
@@ -142,17 +295,24 @@ A **seal** is independently re-verifiable **offline** with the **zero-dependency
 ([`verifier/verify-vh.js`](../verifier/verify-vh.js) + its vendored keccak) — no ethers, no hardhat, no
 producer stack; that is the "check it yourself" promise of the [`verifier/`](../verifier/) tree.
 
-**A journal does not yet inherit that.** The `vh journal append` / `vh journal verify` commands live in the
-**producer package** (`cli/journal.js`), and `npm i verifyhash` installs **ethers** as a runtime dependency.
-So today a recipient who **re-runs** a journal is running the **producer's** package, **not** the buyer-
-installable standalone verifier — the standalone tree has **no journal capability yet**. Be honest about this
-when you hand a journal to a counterparty: *the chain is verifiable, but with the producer package, not (yet)
-with the independent offline bundle a seal enjoys.*
+**A journal does not yet inherit that.** The `vh journal append` / `vh journal verify` commands — **and the
+four transparency-log commands `tree-head` / `prove-inclusion` / `prove-consistency` / `check-proof`** — live
+in the **producer package** (`cli/journal.js`, and `cli/journal-cli.js` →
+[`cli/journal-log.js`](../cli/journal-log.js), which `require`s **ethers**), and `npm i verifyhash` installs
+**ethers** as a runtime dependency. So today a recipient who **re-runs** a journal — **or an auditor who runs
+`check-proof` on a self-contained proof artifact** — is running the **producer's** package, **not** the buyer-
+installable standalone verifier — the standalone tree has **no journal or transparency-log capability yet**. In
+particular `check-proof` is **OFFLINE** only in the sense of *no network and no log*, **not** in the sense of
+*no producer stack*: the proof artifacts a seal's [`verifier/`](../verifier/) bundle would let a counterparty
+check with **zero dependencies** are **not yet** checkable that way. Be honest about this when you hand a
+journal — or a proof — to a counterparty: *the chain / proof is verifiable, but with the producer package, not
+(yet) with the independent offline bundle a seal enjoys.*
 
-The chain is plain `keccak256` over canonical bytes — both of which the standalone tree **already vendors** —
-so this gap is closeable: a follow-up adding `verify-vh journal verify` to the standalone tree would give the
-journal the same offline, no-ethers independence as seals. Until then, treat "re-runs the journal" as
-"re-runs it with `verifyhash` installed."
+The chain — and the RFC-6962 tree the proofs ride on — is plain `keccak256` over canonical bytes, both of
+which the standalone tree **already vendors**, so this gap is closeable: a follow-up adding
+`verify-vh journal verify` and a standalone `check-proof` to the [`verifier/`](../verifier/) tree would give
+the journal and its transparency-log proofs the same offline, no-ethers independence as seals. Until then,
+treat "re-runs the journal" and "checks a proof" as "does so with `verifyhash` installed."
 
 ---
 

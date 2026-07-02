@@ -18,9 +18,11 @@
 // PURE + DETERMINISTIC. `buildClose(model)` derives the artifact purely from the
 // report packet model (no clock, no I/O, no randomness). Given the same model it
 // returns a byte-identical artifact — including a deterministic `inputsDigest`
-// (a SHA-256 over the normalized inputs the packet already holds, via Node's
-// built-in `crypto` — NO new dependency) that BINDS the close to the data it
-// summarizes, so a tampered or swapped close is detectable.
+// (a SHA-256 over the normalized inputs the packet already holds, via the
+// vendored pure-JS SHA-256 in ./lib/sha256-vendored — NO new dependency, NO
+// Node-only builtin, so this module is browser-portable; the vendored digest is
+// proven byte-identical to Node's `crypto` by test) that BINDS the close to the
+// data it summarizes, so a tampered or swapped close is detectable.
 //
 // HONEST POSTURE — the close is an UNTRUSTED CONVENIENCE HINT.
 // Consistent with the codebase's standing trust boundary (docs/TRUST-BOUNDARIES.md
@@ -34,7 +36,7 @@
 // it rides the human trust-root (the broker remains the legal custodian and a CPA
 // review still governs). It does not, and cannot, replace that review.
 
-const crypto = require("crypto");
+const { sha256HexUtf8 } = require("./lib/sha256-vendored");
 
 // ---------------------------------------------------------------------------
 // Schema version. Bumped only on a breaking shape change. `validateClose`
@@ -84,7 +86,9 @@ function isBalancePair(v) {
 // already summarizes — the period, report date, opening, ending, subledger, and
 // the input record counts — so the digest is reproducible to the byte for the
 // same model and CHANGES if any of those summarized facts change. This binds the
-// close to its data without pulling in a new dependency: Node's built-in crypto.
+// close to its data without pulling in a new dependency: the vendored pure-JS
+// SHA-256 (./lib/sha256-vendored), byte-identical to Node's built-in crypto by
+// test, and portable to a browser where the Node `crypto` builtin does not exist.
 //
 // NOTE: this is a convenience integrity tag over the SUMMARY the close carries,
 // NOT a cryptographic proof of the underlying source files (which are the
@@ -113,10 +117,11 @@ function canonicalInputs(parts) {
 }
 
 function digestInputs(parts) {
-  return crypto
-    .createHash("sha256")
-    .update(canonicalInputs(parts), "utf8")
-    .digest("hex");
+  // Exactly crypto.createHash("sha256").update(canonicalInputs(parts), "utf8")
+  // .digest("hex"), computed by the vendored pure-JS SHA-256 so the browser
+  // path needs no Node builtin. Byte-identity with node:crypto is pinned by
+  // test/trustledger.browser-core.test.js (incl. the committed close fixtures).
+  return sha256HexUtf8(canonicalInputs(parts));
 }
 
 // ---------------------------------------------------------------------------

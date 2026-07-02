@@ -1,0 +1,90 @@
+{
+  "clean": {
+    "schemaVersion": "trustledger.period-close/v1",
+    "period": null,
+    "reportDate": "2026-06-24",
+    "opening": {
+      "bank": 0,
+      "book": 0
+    },
+    "ending": {
+      "bank": 330000,
+      "book": 300000
+    },
+    "subledger": 300000,
+    "tiesOut": true,
+    "pass": true,
+    "inputs": {
+      "bankRecords": 3,
+      "bookRecords": 5,
+      "rentrollRecords": 5
+    },
+    "inputsDigest": "be6947fdb07305ba21968c178b32a05ddbed2ad2158cfe3e2673dacead00f84f"
+  },
+  "cleanWithPeriod": {
+    "schemaVersion": "trustledger.period-close/v1",
+    "period": "2026-06",
+    "reportDate": "2026-06-24",
+    "opening": {
+      "bank": 0,
+      "book": 0
+    },
+    "ending": {
+      "bank": 330000,
+      "book": 300000
+    },
+    "subledger": 300000,
+    "tiesOut": true,
+    "pass": true,
+    "inputs": {
+      "bankRecords": 3,
+      "bookRecords": 5,
+      "rentrollRecords": 5
+    },
+    "inputsDigest": "d23ecbc1b6bac7ff48a50b680da424447382a6303c2b422768a2b933fa3a9688"
+  },
+  "nsf": {
+    "schemaVersion": "trustledger.period-close/v1",
+    "period": null,
+    "reportDate": "2026-06-24",
+    "opening": {
+      "bank": 0,
+      "book": 0
+    },
+    "ending": {
+      "bank": 330000,
+      "book": 300000
+    },
+    "subledger": 300000,
+    "tiesOut": true,
+    "pass": true,
+    "inputs": {
+      "bankRecords": 3,
+      "bookRecords": 7,
+      "rentrollRecords": 7
+    },
+    "inputsDigest": "973d15a0729bbfe35ae14d8f58c8d315d2bfd7b535b9524d7e4ffbb4f4de817e"
+  },
+  "short": {
+    "schemaVersion": "trustledger.period-close/v1",
+    "period": null,
+    "reportDate": "2026-06-24",
+    "opening": {
+      "bank": 0,
+      "book": 0
+    },
+    "ending": {
+      "bank": 330000,
+      "book": 300000
+    },
+    "subledger": 250000,
+    "tiesOut": false,
+    "pass": false,
+    "inputs": {
+      "bankRecords": 3,
+      "bookRecords": 5,
+      "rentrollRecords": 4
+    },
+    "inputsDigest": "742f1f19886e71d85fd07fed82773b52b3424158a70b85d2652164c3025574d5"
+  }
+}

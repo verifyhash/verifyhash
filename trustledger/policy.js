@@ -27,15 +27,16 @@
 // -----------------
 //   * PURE: readPolicy/validatePolicy/applyPolicy have no clock, no I/O, no
 //     hidden state; the same inputs always produce byte-identical output.
+//     LOADING this module executes NO impure require at all (browser-portable);
+//     the ONLY filesystem code — the bundled-fixture loader — is isolated in
+//     ./lib/policy-bundled-loader and required LAZILY, only when a caller
+//     actually asks for bundled policies (see the loader section below).
 //   * STRICT: a wrong schemaVersion, an unknown exception type key, a severity
 //     not in {info,warning,error}, or a malformed toleranceCents is a NAMED
 //     hard error — never a silent no-op or partial accept.
 //   * GROUNDED IN reconcile.js: the legal exception type strings and severity
 //     values are REUSED from EXCEPTION/SEVERITY, so a typo'd type is a
 //     validation error rather than a silently-ignored key.
-
-const fs = require("fs");
-const path = require("path");
 
 const { EXCEPTION, SEVERITY, compareExceptions } = require("./reconcile");
 
@@ -297,8 +298,15 @@ function applyPolicy(reconcileResult, policy) {
 // of this module that touches the filesystem, and it reads only from the
 // package's own bundled fixtures directory — never a caller path — so the result
 // stays deterministic and the rest of the module stays pure.
-
-const BUNDLED_DIR = path.join(__dirname, "fixtures", "policy");
+//
+// ISOLATED IMPURE SEAM (T-65.1). The actual fs/path calls live in ONE separate
+// module, ./lib/policy-bundled-loader, and that module is required LAZILY
+// inside bundledPolicies() — never at this file's top level. So loading
+// policy.js on the browser path executes no impure require, and a bundler can
+// shim the loader (e.g. inline the fixture JSON) without touching the pure
+// functions above. Validation, sorting, and PolicyError naming all remain HERE,
+// so the loader is raw I/O only and the observable behavior is byte-identical
+// to when the fs calls were inline.
 
 // Normalize a state code/label for comparison: lowercase, collapse runs of
 // non-alphanumerics to a single space, trim. So "California", "california",
@@ -318,17 +326,21 @@ function normStateCode(s) {
 function bundledPolicies() {
   let names;
   try {
-    names = fs.readdirSync(BUNDLED_DIR).filter((n) => n.endsWith(".json"));
+    // LAZY require of the isolated impure seam: fs/path load only when a
+    // caller actually asks for bundled policies, never when policy.js loads.
+    names = require("./lib/policy-bundled-loader").listBundledPolicyNames();
   } catch (e) {
     throw new PolicyError(`cannot read bundled policy directory: ${e.message}`);
   }
   return names
     .sort()
     .map((file) => {
-      const full = path.join(BUNDLED_DIR, file);
+      let full;
       let policy;
       try {
-        policy = readPolicy(fs.readFileSync(full, "utf8"));
+        const loaded = require("./lib/policy-bundled-loader").readBundledPolicyFile(file);
+        full = loaded.full;
+        policy = readPolicy(loaded.text);
       } catch (e) {
         throw new PolicyError(`bundled policy ${file} is invalid: ${e.message}`);
       }
@@ -367,7 +379,6 @@ module.exports = {
   validatePolicy,
   applyPolicy,
   // bundled per-state fixtures + --state resolution
-  BUNDLED_DIR,
   bundledPolicies,
   resolveState,
   normStateCode,
@@ -375,3 +386,13 @@ module.exports = {
   EXCEPTION_TYPES,
   SEVERITY_VALUES,
 };
+
+// BUNDLED_DIR stays on the export surface (same value as always) but resolves
+// LAZILY through the isolated loader, so exporting it does not drag fs/path
+// into the browser path at load time.
+Object.defineProperty(module.exports, "BUNDLED_DIR", {
+  enumerable: true,
+  get() {
+    return require("./lib/policy-bundled-loader").BUNDLED_DIR;
+  },
+});

@@ -788,7 +788,7 @@ A close artifact is a single JSON object (`trustledger/close.js` is the single s
 | `tiesOut` | boolean | Whether the emitting run's three balances tied out. | **hint** (asserted verdict) |
 | `pass` | boolean | The emitting run's PASS/FAIL verdict (tiesOut AND zero error-severity findings). | **hint** (asserted verdict) |
 | `inputs` | `{ bankRecords, bookRecords, rentrollRecords }` non-negative integers | The input record counts the emitting run saw — context, and part of the digest. | **hint** |
-| `inputsDigest` | 64-char lowercase hex | A **SHA-256 digest** over a canonical, order-stable projection of the fields above (via Node's built-in `crypto`, **no new dependency**). It **binds** the close to the summary it carries, so a hand-edited field is detectable. | **digest** |
+| `inputsDigest` | 64-char lowercase hex | A **SHA-256 digest** over a canonical, order-stable projection of the fields above (via the vendored pure-JS SHA-256 in `trustledger/lib/sha256-vendored.js` — **no new dependency**, browser-portable, and proven byte-identical to Node's built-in `crypto` by test). It **binds** the close to the summary it carries, so a hand-edited field is detectable. | **digest** |
 
 Every value-bearing field is an **asserted hint** (a convenience the next run re-derives), `schemaVersion`
 is **mechanical**, and `inputsDigest` is a **convenience integrity tag** over the *summary the close

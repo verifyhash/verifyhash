@@ -442,6 +442,44 @@ function fulfillEvidenceOrder(order, catalog) {
   };
 }
 
+// ===========================================================================
+// T-68.2 — the DRAFT `agent_signed` CAPABILITY (AgentTrace, EPIC-68). STRICTLY ADDITIVE.
+//
+// WHAT THIS IS. The AgentTrace paid surface — `vh agent seal --sign` — is gated by the
+// SAME license mechanism the evidence product already sells through (cli/core/license.js
+// + the `vh-evidence-license` kind, reused VERBATIM: same vendor key, same offline
+// verify, same named-refusal shape, NO new needs-human step), keyed to the DRAFT
+// capability flag below. The capability is declared HERE, next to the plan catalog, so
+// this module stays the single place a plan/capability reader looks.
+//
+// WHAT THIS IS NOT (the additivity contract, pinned by tests).
+//   * The EVIDENCE product's closed table (evidence.LICENSE_CFG.entitlements) is
+//     UNTOUCHED: ALLOWED_ENTITLEMENT_FLAGS above stays EXACTLY {evidence_signed,
+//     evidence_unlimited}, the bundled DRAFT catalog is byte-unchanged, existing
+//     licenses/plans/tests keep their bytes, and `vh evidence go-live-preflight`
+//     behaves identically.
+//   * NO price is set anywhere — the capability is DRAFT; pricing stays the human's
+//     P-7 step (STRATEGY.md). A license is an ACCESS credential for delivered software
+//     value — NOT a token/coin/NFT, not tradeable, not an appreciating asset.
+//
+// The agent CLI (cli/agent.js) folds this table into ITS OWN license framing — a
+// SUPERSET of the evidence entitlement table under the SAME license kind — so ONE
+// vendor key + ONE license mechanism serves both products. An existing evidence
+// license still validates under that framing; it simply does not CARRY `agent_signed`,
+// so `vh agent seal --sign` refuses it (fail-closed), with the same named-refusal
+// shape the evidence gate emits.
+// ===========================================================================
+
+const AGENT_SIGNED_CAPABILITY = "agent_signed";
+
+// The DRAFT capability table for the AgentTrace paid surface: flag -> human meaning.
+// Shaped exactly like an entitlements table so a license cfg can spread it verbatim.
+const AGENT_CAPABILITIES = Object.freeze({
+  [AGENT_SIGNED_CAPABILITY]:
+    "Wrap a sealed agent-session packet's head in a signed attestation " +
+    "(`vh agent seal --sign`). DRAFT — no price set; pricing stays the human P-7 step.",
+});
+
 module.exports = {
   EVIDENCE_PLAN_CATALOG_KIND,
   EVIDENCE_PLAN_CATALOG_SCHEMA_VERSION,
@@ -451,4 +489,7 @@ module.exports = {
   validateEvidencePlanCatalog,
   getEvidencePlan,
   fulfillEvidenceOrder,
+  // T-68.2 — the DRAFT AgentTrace capability (strictly additive; see the block above).
+  AGENT_SIGNED_CAPABILITY,
+  AGENT_CAPABILITIES,
 };

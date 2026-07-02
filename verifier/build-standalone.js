@@ -306,6 +306,14 @@ function buildProvenanceObject() {
     const bundleText = buildTarget(target);
     targets[target.name] = targetProvenance(target, bundleText, sha256HexOf(bundleText));
   }
+  // T-66.2: the OFFLINE HTML page target (verify-vh-standalone.html), built by the sibling builder
+  // verifier/build-standalone-html.js and recorded in this SAME manifest so ONE committed file pins every
+  // published bundle. Lazily required so neither builder observes the other's exports mid-load (this
+  // function only runs at build/check time, never at module load). The record shape is identical
+  // (bundle/sidecar/bytes/sha256/sidecarLine + ordered per-module source sha256s), so the chain check
+  // below attests the html page's sources — including verify-vh.js itself — exactly like the JS bundles'.
+  const htmlBuilder = require("./build-standalone-html");
+  targets[htmlBuilder.HTML_TARGET_NAME] = htmlBuilder.htmlTargetProvenance();
   return {
     schema: PROVENANCE_SCHEMA,
     description:

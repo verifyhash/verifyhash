@@ -115,6 +115,96 @@
           "entry": true
         }
       ]
+    },
+    "verify-html": {
+      "bundle": "verify-vh-standalone.html",
+      "sidecar": "verify-vh-standalone.html.sha256",
+      "bundleBytes": 122245,
+      "bundleSha256": "019f54886a4836a1f5bdaef62284ad8fb46bd42122a31d0f55fb90e5a9e3e4e1",
+      "sidecarLine": "019f54886a4836a1f5bdaef62284ad8fb46bd42122a31d0f55fb90e5a9e3e4e1  verify-vh-standalone.html",
+      "modules": [
+        {
+          "id": "vh-buffer",
+          "synthetic": true,
+          "sourceFile": null,
+          "sourceSha256": null,
+          "inlinedSha256": "9ad808104bafe9808e00f854f093b355373b6cc77816b15fdaef1a90886b2b14",
+          "note": "pure-JS browser Buffer subset shim — defined in build-standalone-html.js, not a source file"
+        },
+        {
+          "id": "keccak256-vendored",
+          "synthetic": false,
+          "sourceFile": "verifier/lib/keccak256-vendored.js",
+          "sourceSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+          "inlinedSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+          "entry": false
+        },
+        {
+          "id": "keccak",
+          "synthetic": true,
+          "sourceFile": null,
+          "sourceSha256": null,
+          "inlinedSha256": "ed26685779b189ecc7e62daf2a17ce366de3c64f2198cd4b64f8dbc40b68c86d",
+          "note": "swapped body (keccak provider shim over the vendored pure-JS keccak256, returning vh-buffer Buffers) — defined in build-standalone-html.js, not a source file"
+        },
+        {
+          "id": "merkle",
+          "synthetic": false,
+          "sourceFile": "verifier/lib/merkle.js",
+          "sourceSha256": "1bea7bab4b479962225279f4590c5524fad5295c7c70cf01d4978dbf9f37f34b",
+          "inlinedSha256": "e65be5614998f9a00ca9b58a6c79b05abe7f70ed2e0dad61ece07a41ee5da876",
+          "entry": false
+        },
+        {
+          "id": "canonical",
+          "synthetic": false,
+          "sourceFile": "verifier/lib/canonical.js",
+          "sourceSha256": "edc190dcabd2b34b33c54240fc951141de13d2c7d2759184cacb160dfdf3e764",
+          "inlinedSha256": "edc190dcabd2b34b33c54240fc951141de13d2c7d2759184cacb160dfdf3e764",
+          "entry": false
+        },
+        {
+          "id": "secp256k1-recover",
+          "synthetic": false,
+          "sourceFile": "verifier/lib/secp256k1-recover.js",
+          "sourceSha256": "34bb39eed0afc5f55241419ba827404bf767fa5dde1363dba5ad9c419cf91dab",
+          "inlinedSha256": "c8bab43d54b01dd7e55aeae6bc6d27986b868cbc7ebc1b1279dc70f032dbc122",
+          "entry": false
+        },
+        {
+          "id": "revocation-core",
+          "synthetic": false,
+          "sourceFile": "verifier/lib/revocation-core.js",
+          "sourceSha256": "99377291d5455b7a01a3eca313cd1289f6df8ce76a37bcb0aacc68ebe70601b1",
+          "inlinedSha256": "6a426132b56560771fc187caaeee308cd4aaaf87b211aff87dff04cbc622bd2e",
+          "entry": false
+        },
+        {
+          "id": "verify-vh-engine",
+          "synthetic": false,
+          "sourceFile": "verifier/verify-vh.js",
+          "sourceSha256": "3c0ea1611e9d13c990dacbafb388d3b162e64cd8e690cb77f1921bb3dfe40b8c",
+          "inlinedSha256": "40d5fc8edb714aea7a06592b19bcb17b3ade2434aef1cb1ac47f4d201b5088c4",
+          "entry": true,
+          "note": "the marked T-66.1 pure-engine slice of verifier/verify-vh.js (the bytes between its BEGIN/END engine markers), wrapped in a build-generated __require preamble + exports postamble; sourceSha256 pins the WHOLE verify-vh.js source file"
+        },
+        {
+          "id": "challenge-fixture",
+          "synthetic": true,
+          "sourceFile": null,
+          "sourceSha256": null,
+          "inlinedSha256": "5e8dcf433701ce4733939e9357060ba784bcfab05b9bb619a431a1a203ae818b",
+          "note": "the verifier's shipped demo packet (DEMO_SIGNER/DEMO_FILES/DEMO_CONTAINER/DEMO_PACKET_NAME), extracted verbatim at build time from verifier/verify-vh.js (pinned by the verify-vh-engine record's sourceSha256) — defined in build-standalone-html.js"
+        },
+        {
+          "id": "challenge",
+          "synthetic": true,
+          "sourceFile": null,
+          "sourceSha256": null,
+          "inlinedSha256": "4ed703d81bc64da05cd874d3f60186fbc33124504742a1488f51cdb063ecbf9e",
+          "note": "the built-in 60-second-challenge runner over the embedded demo fixture — defined in build-standalone-html.js, not a source file"
+        }
+      ]
     }
   }
 }

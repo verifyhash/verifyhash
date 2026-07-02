@@ -40,6 +40,14 @@ human steps last. If it is green, the software is ready; only the human steps be
 4. **Deploy.** Stand the endpoint up behind your own domain, TLS, and auth/ops posture. The loop binds
    **loopback only** and **never deploys**.
 
+5. **Keep the public site fresh (`STRATEGY.md` › P-11).** verifyhash.com is the funnel's front door and
+   serves a pinned copy of the verifier artifacts, so it goes stale as the repo moves. Run
+   `node scripts/site-release.js --diff` to see, per file, what the live site is missing (a decision
+   signal — it exits `0` either way); the ~10-minute refresh is the REPLACE-mode runbook
+   [`docs/DEPLOY-PUBLIC-SITE.md`](DEPLOY-PUBLIC-SITE.md) §3c: **release → upload → `--mark-deployed` →
+   `--diff` clean**. Boundary (verbatim): the loop assembles and diffs INSIDE the repo only; uploading
+   to the live host is the human-owned P-11 step — never auto-executed.
+
 ## The pilot fallback (TrustLedger, P-5)
 
 If the self-serve evidence channel stalls, the **fallback** is the heavier TrustLedger design-partner

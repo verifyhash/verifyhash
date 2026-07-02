@@ -127,7 +127,8 @@ echo "Deployed. Old site backed up to /var/www/verifyhash.com/html.bak.*"
 > site serves, edit the allowlist, re-run the assembler, and commit the regenerated
 > `site/RELEASE-MANIFEST.json`. **Never glob `docs/*.md` into the webroot — it contains internal files;
 > the assembler refuses forbidden entries (`.git*`, env/key-shaped names, this runbook, ops telemetry) by construction.**
-> After the upload, record what went live in `site/DEPLOYED.json` (the drift baseline).
+> After the upload, record what went live: `node scripts/site-release.js --mark-deployed` rewrites
+> `site/DEPLOYED.json` (the drift baseline) — see §3c.
 
 ### 3b — the landing page
 
@@ -145,6 +146,31 @@ example, edit the `0x<…>` placeholder in §2 of that page (in `site/index.html
 > scripts/site-release.js` now REFUSES to assemble (and `--check` goes RED, naming `LANDING PAGE DRIFT`)
 > when the page's `Published SHA-256:` ≠ the shipped bundle's sha256**, so this drift can never ship
 > silently — but fix it at the source by editing `site/index.html`'s `Published SHA-256:` value.
+
+### 3c — close the loop: `--mark-deployed`, then keep `--diff` clean (the P-11 refresh)
+
+The full refresh flow is: **release → upload → `--mark-deployed` → `--diff` clean.**
+
+1. **release** — `node scripts/site-release.js` assembles `public/` + writes both manifests (§3a step 1),
+   and `--check` gates it (§3a step 2).
+2. **upload** — the rsync + upload-verify of §3a steps 3–5. This is the human-owned step.
+3. **`--mark-deployed`** — `node scripts/site-release.js --mark-deployed` rewrites `site/DEPLOYED.json`
+   to the manifest you just uploaded + an ISO date note (`markedDeployedAt`). **Commit it.** This is the
+   ONE command you run AFTER uploading — it records what went live so the next `--diff` is truthful.
+   It records only; it never uploads anything.
+4. **`--diff` clean** — `node scripts/site-release.js --diff` compares `site/DEPLOYED.json` (what is
+   believed LIVE) against a fresh assembly and prints a per-file `ADDED`/`CHANGED`/`REMOVED`/`UNCHANGED`
+   table + a one-line verdict. Right after a correct upload + `--mark-deployed` it must print
+   `live site matches the current release`. From then on, whenever it prints
+   `live site is stale: N of M published files differ — refresh per P-11`, redo this section.
+   Staleness is a HUMAN decision signal, not a CI failure: `--diff` exits `0` whether stale or clean;
+   only a malformed/missing `site/DEPLOYED.json` exits `3` (with a named error). The standing test
+   suite pins the committed `site/RELEASE-MANIFEST.json` to a fresh assembly (so the drift signal can
+   never itself go stale), but a stale `site/DEPLOYED.json` never fails the suite.
+
+**Boundary (verbatim):** the loop assembles and diffs INSIDE the repo only; uploading to the live host
+is the human-owned P-11 step — never auto-executed. (P-11 in `STRATEGY.md` is the recurring ~10-minute
+refresh action this section implements.)
 
 ---
 

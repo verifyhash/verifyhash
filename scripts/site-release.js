@@ -20,19 +20,31 @@
 //                             into public/ (ships with the upload) AND as the committed twin
 //                             site/RELEASE-MANIFEST.json (the drift pin).
 //     site/DEPLOYED.json      the committed snapshot of what is believed LIVE (per-file sha256) —
-//                             read/updated by the T-67.2 `--diff` / `--mark-deployed` flow.
+//                             read by `--diff`, rewritten ONLY by `--mark-deployed` (T-67.2).
 //
 // USAGE
-//   node scripts/site-release.js            # assemble public/ deterministically + write both manifests
-//   node scripts/site-release.js --check    # WRITE NOTHING; exit 1 naming every offender when public/,
-//                                           #   a source, or the committed manifest drifts from a fresh
-//                                           #   assembly, a NON-allowlisted file appears in public/, or
-//                                           #   the landing page's advertised "Published SHA-256:" no
-//                                           #   longer equals the shipped verify-vh-standalone.js/sidecar
+//   node scripts/site-release.js                  # assemble public/ deterministically + write both manifests
+//   node scripts/site-release.js --check          # WRITE NOTHING; exit 1 naming every offender when public/,
+//                                                 #   a source, or the committed manifest drifts from a fresh
+//                                                 #   assembly, a NON-allowlisted file appears in public/, or
+//                                                 #   the landing page's advertised "Published SHA-256:" no
+//                                                 #   longer equals the shipped verify-vh-standalone.js/sidecar
+//   node scripts/site-release.js --diff           # WRITE NOTHING; compare site/DEPLOYED.json (what is believed
+//                                                 #   LIVE) against a fresh assembly and print a per-file
+//                                                 #   ADDED/CHANGED/REMOVED/UNCHANGED table + a one-line verdict.
+//                                                 #   Staleness is a HUMAN decision signal, NOT a CI failure:
+//                                                 #   exit 0 whether stale or clean; exit 3 (named error) ONLY
+//                                                 #   on a malformed/missing snapshot.
+//   node scripts/site-release.js --mark-deployed  # the ONE command the human runs AFTER uploading public/ to
+//                                                 #   the live host: rewrite site/DEPLOYED.json to the current
+//                                                 #   manifest + an ISO date note, so the next --diff is truthful.
+//
+// EXIT CODES: 0 ok/clean/stale-signal · 1 check RED or fatal · 2 usage · 3 malformed/missing DEPLOYED snapshot.
 //
 // GUARDRAILS: node-core only (fs/path/crypto). NO network, NO key, NO child process. The CLI writes
-//   ONLY <repo>/public and <repo>/site/RELEASE-MANIFEST.json — never outside the repo. Uploading the
-//   assembled webroot to the live host is the HUMAN-owned step in docs/DEPLOY-PUBLIC-SITE.md.
+//   ONLY <repo>/public, <repo>/site/RELEASE-MANIFEST.json and (via --mark-deployed) <repo>/site/DEPLOYED.json
+//   — never outside the repo. BOUNDARY (verbatim): the loop assembles and diffs INSIDE the repo only;
+//   uploading to the live host is the human-owned P-11 step — never auto-executed.
 // =================================================================================================
 
 const fs = require("fs");
@@ -472,6 +484,10 @@ function loadDeployedSnapshot(repoRoot) {
       throw new Error(`${DEPLOYED_REL}: "${field}" must be a non-empty string`);
     }
   }
+  // optional — present iff the snapshot was written by --mark-deployed (the 2026-06-26 baseline predates it)
+  if ("markedDeployedAt" in json && !isIsoUtc(json.markedDeployedAt)) {
+    throw new Error(`${DEPLOYED_REL}: "markedDeployedAt" must be an ISO-8601 UTC timestamp (got ${JSON.stringify(json.markedDeployedAt)})`);
+  }
   const files = json.files;
   if (files === null || typeof files !== "object" || Array.isArray(files) || Object.keys(files).length === 0) {
     throw new Error(`${DEPLOYED_REL}: "files" must be a non-empty object mapping relPath -> sha256`);
@@ -486,42 +502,164 @@ function loadDeployedSnapshot(repoRoot) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// --diff / --mark-deployed — make live-site DRIFT visible and the human refresh DECISION-READY.
+//
+//   The repo's ONLY deployed outward asset is verifyhash.com, and the repo cannot see it. What it
+//   CAN see is the committed record of what was uploaded last (site/DEPLOYED.json) and what a fresh
+//   release of today's sources would publish. `--diff` compares the two and prints a per-file
+//   ADDED/CHANGED/REMOVED/UNCHANGED table + a one-line verdict — a HUMAN decision signal (exit 0
+//   whether stale or clean; ONLY a malformed/missing snapshot is an error, exit 3). After the human
+//   uploads (the P-11 step the loop must never take), `--mark-deployed` rewrites the snapshot to the
+//   current manifest + an ISO date note so the next `--diff` is truthful.
+//
+//   BOUNDARY (verbatim): the loop assembles and diffs INSIDE the repo only; uploading to the live
+//   host is the human-owned P-11 step — never auto-executed.
+// ---------------------------------------------------------------------------------------------
+
+function isIsoUtc(s) {
+  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(s);
+}
+
+// diffDeployed(repoRoot) -> { rows, total, differing, stale, verdict }. rows are sorted by published
+// path over the UNION of (fresh release manifest, deployed snapshot); each is { path, status, live,
+// release } with status one of ADDED (published now, not on the live site yet) / CHANGED (both, hash
+// differs) / REMOVED (still recorded live, no longer published) / UNCHANGED. Throws with
+// err.snapshotError=true when site/DEPLOYED.json is missing/malformed (the CLI maps that to exit 3).
+function diffDeployed(repoRoot) {
+  let snapshot;
+  try {
+    snapshot = loadDeployedSnapshot(repoRoot);
+  } catch (err) {
+    err.snapshotError = true;
+    throw err;
+  }
+  const assembly = assemble(repoRoot);
+  const releaseByPath = new Map(assembly.manifest.files.map((f) => [f.path, f.sha256]));
+  const paths = [...new Set([...releaseByPath.keys(), ...Object.keys(snapshot.files)])].sort();
+  const rows = paths.map((p) => {
+    const release = releaseByPath.has(p) ? releaseByPath.get(p) : null;
+    const live = Object.prototype.hasOwnProperty.call(snapshot.files, p) ? snapshot.files[p] : null;
+    const status = release === null ? "REMOVED" : live === null ? "ADDED" : live === release ? "UNCHANGED" : "CHANGED";
+    return { path: p, status, live, release };
+  });
+  const differing = rows.filter((r) => r.status !== "UNCHANGED").length;
+  const stale = differing > 0;
+  const verdict = stale
+    ? `live site is stale: ${differing} of ${rows.length} published files differ — refresh per P-11 (release → upload per docs/DEPLOY-PUBLIC-SITE.md → \`--mark-deployed\`)`
+    : `live site matches the current release (${rows.length} published files, per ${DEPLOYED_REL})`;
+  return { rows, total: rows.length, differing, stale, verdict };
+}
+
+// markDeployed(repoRoot, nowIso?) -> the snapshot it wrote to site/DEPLOYED.json: the current fresh
+// assembly's per-file sha256 map + an ISO date note. The ONE command the human runs AFTER uploading
+// public/ to the live host — it records, it does NOT upload. Refuses (like release()) to record a
+// self-contradicting release (landing page hash != shipped bundle) as LIVE.
+function markDeployed(repoRoot, nowIso) {
+  const iso = nowIso === undefined ? new Date().toISOString() : nowIso;
+  if (!isIsoUtc(iso)) throw new Error(`markDeployed: nowIso must be an ISO-8601 UTC timestamp (got ${JSON.stringify(iso)})`);
+  const assembly = assemble(repoRoot);
+  const drift = landingConsistencyProblems(assembly);
+  if (drift.length) {
+    throw new Error(`site-release --mark-deployed: refusing to record a self-contradicting release as LIVE:\n  - ${drift.join("\n  - ")}`);
+  }
+  const files = {};
+  for (const e of assembly.entries) files[e.path] = e.sha256;
+  const snapshot = {
+    generatedFrom: `public/ (assembled deterministically from ${PUBLISH_SET_REL}; recorded by \`node scripts/site-release.js --mark-deployed\`)`,
+    deployedAtNote: `Operator ran --mark-deployed at ${iso} AFTER uploading the assembled public/ webroot to the live host per docs/DEPLOY-PUBLIC-SITE.md (the human-owned P-11 step — the loop never uploads). This snapshot is what --diff treats as LIVE until the next upload.`,
+    markedDeployedAt: iso,
+    files,
+  };
+  fs.writeFileSync(path.join(repoRoot, DEPLOYED_REL), JSON.stringify(snapshot, null, 2) + "\n");
+  return snapshot;
+}
+
+// ---------------------------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------------------------
 
-const USAGE = `usage: node scripts/site-release.js [--check]
-  (no flag)  assemble public/ deterministically from ${PUBLISH_SET_REL} and write
-             public/${MANIFEST_NAME} + the committed twin ${MANIFEST_REL}
-  --check    write NOTHING; exit 1 naming every offender if public/, a source, or the
-             committed manifest differs from a fresh assembly, or a non-allowlisted
-             file appears in public/`;
+const USAGE = `usage: node scripts/site-release.js [--check | --diff | --mark-deployed]
+  (no flag)        assemble public/ deterministically from ${PUBLISH_SET_REL} and write
+                   public/${MANIFEST_NAME} + the committed twin ${MANIFEST_REL}
+  --check          write NOTHING; exit 1 naming every offender if public/, a source, or the
+                   committed manifest differs from a fresh assembly, or a non-allowlisted
+                   file appears in public/
+  --diff           write NOTHING; compare ${DEPLOYED_REL} (what is believed LIVE) against a
+                   fresh assembly and print a per-file ADDED/CHANGED/REMOVED/UNCHANGED table
+                   + a one-line verdict. Staleness is a HUMAN decision signal, not a CI
+                   failure: exit 0 whether stale or clean; exit 3 (named error) ONLY on a
+                   malformed/missing snapshot
+  --mark-deployed  AFTER you uploaded public/ per docs/DEPLOY-PUBLIC-SITE.md, rewrite
+                   ${DEPLOYED_REL} to the current manifest + an ISO date note (then commit
+                   it) so the next --diff is truthful. Records only — NEVER uploads:
+                   the loop assembles and diffs INSIDE the repo only; uploading to the
+                   live host is the human-owned P-11 step — never auto-executed`;
 
-function main(argv) {
+const CLI_FLAGS = new Set(["--check", "--diff", "--mark-deployed"]);
+
+function main(argv, repoRootOverride) {
+  const repoRoot = repoRootOverride === undefined ? REPO_ROOT : path.resolve(repoRootOverride);
   const args = argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(USAGE + "\n");
     return 0;
   }
-  if (args.length > 1 || (args.length === 1 && args[0] !== "--check")) {
+  if (args.length > 1 || (args.length === 1 && !CLI_FLAGS.has(args[0]))) {
     process.stderr.write(USAGE + "\n");
     return 2;
   }
 
   if (args[0] === "--check") {
-    const res = check(REPO_ROOT);
+    const res = check(repoRoot);
     if (!res.ok) {
       process.stderr.write(`site-release --check: RED — ${res.problems.length} problem(s):\n`);
       for (const p of res.problems) process.stderr.write(`  - ${p}\n`);
       return 1;
     }
-    const assembly = assemble(REPO_ROOT);
+    const assembly = assemble(repoRoot);
     process.stdout.write(
       `site-release --check: OK — ${WEBROOT_REL}/ matches the committed publish set (${assembly.manifest.fileCount} files, ${assembly.manifest.totalBytes} bytes)\n`
     );
     return 0;
   }
 
-  const assembly = release(REPO_ROOT);
+  if (args[0] === "--diff") {
+    let diff;
+    try {
+      diff = diffDeployed(repoRoot);
+    } catch (err) {
+      if (!err.snapshotError) throw err;
+      process.stderr.write(`site-release --diff: SNAPSHOT ERROR — ${err.message}\n`);
+      process.stderr.write(`site-release --diff: fix ${DEPLOYED_REL} (or restore it from git), then re-run\n`);
+      return 3;
+    }
+    process.stdout.write(`site-release --diff: fresh release (from ${PUBLISH_SET_REL}) vs ${DEPLOYED_REL} (what is believed LIVE)\n`);
+    const width = Math.max(...diff.rows.map((r) => r.path.length));
+    for (const r of diff.rows) {
+      const detail =
+        r.status === "CHANGED"
+          ? `live ${r.live.slice(0, 12)}… → release ${r.release.slice(0, 12)}…`
+          : r.status === "ADDED"
+            ? `not on the live site yet (release ${r.release.slice(0, 12)}…)`
+            : r.status === "REMOVED"
+              ? `still recorded live (${r.live.slice(0, 12)}…) but no longer in the publish set`
+              : "";
+      process.stdout.write(`  ${r.status.padEnd(9)}  ${r.path.padEnd(width)}  ${detail}\n`.replace(/ +\n$/, "\n"));
+    }
+    process.stdout.write(`site-release --diff: ${diff.verdict}\n`);
+    return 0;
+  }
+
+  if (args[0] === "--mark-deployed") {
+    const snap = markDeployed(repoRoot);
+    process.stdout.write(
+      `site-release --mark-deployed: wrote ${DEPLOYED_REL} — ${Object.keys(snap.files).length} files recorded as LIVE (at ${snap.markedDeployedAt})\n`
+    );
+    process.stdout.write(`site-release --mark-deployed: commit ${DEPLOYED_REL}; \`--diff\` should now print the clean verdict\n`);
+    return 0;
+  }
+
+  const assembly = release(repoRoot);
   process.stdout.write(
     `site-release: assembled ${WEBROOT_REL}/ from ${PUBLISH_SET_REL} — ${assembly.manifest.fileCount} files, ${assembly.manifest.totalBytes} bytes\n`
   );
@@ -565,5 +703,8 @@ module.exports = {
   release,
   check,
   loadDeployedSnapshot,
+  isIsoUtc,
+  diffDeployed,
+  markDeployed,
   main,
 };

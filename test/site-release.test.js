@@ -1,6 +1,8 @@
 "use strict";
 
-// test/site-release.test.js — acceptance suite for the DETERMINISTIC SITE-RELEASE assembler (T-67.1).
+// test/site-release.test.js — acceptance suite for the DETERMINISTIC SITE-RELEASE assembler (T-67.1)
+// and the DRIFT-VISIBILITY / DECISION-READY-REFRESH flow `--diff` / `--mark-deployed` (T-67.2, at the
+// bottom of this file).
 //
 // WHAT THIS PROVES (mapped to the task's acceptance clauses)
 //   (1) DETERMINISM + --check: two assemblies of the same tree are BYTE-IDENTICAL; `--check` is GREEN on
@@ -113,7 +115,10 @@ const DIST_PINS = {
 
 // PRE-regeneration pins for site/DEPLOYED.json (acceptance clause 4). d4af1f53… is the verifier hash the
 // 2026-06-26 landing page PUBLISHED (the staging bundle as uploaded) — NOT today's committed dist. These
-// frozen constants change ONLY via the T-67.2 `--mark-deployed` flow (which owns updating this test).
+// frozen constants apply while the snapshot is still the 2026-06-26 BASELINE; the moment the human runs
+// the sanctioned `node scripts/site-release.js --mark-deployed` (T-67.2) the snapshot gains a
+// `markedDeployedAt` stamp and the baseline-only pins below stand down (the schema pins never do) — so
+// the ONE sanctioned refresh flow can never turn the suite red.
 const DEPLOYED_VERIFIER_SHA = "d4af1f53100180ca56251c83f12b32858a754f08f4abd2fb8012a59a3a1a1cbd";
 const DEPLOYED_INDEX_SHA = "eedc12e68d49be554adccb59ca32e3116c150782afc5c995d359d4f572e4f676";
 
@@ -518,15 +523,26 @@ describe("T-67.1: scripts/site-release.js — deterministic site-release assembl
     it("exists and is schema-valid ({generatedFrom, deployedAtNote, files:{relPath: sha256}})", function () {
       const snap = sr.loadDeployedSnapshot(REPO); // throws on any malformation
       expect(snap.generatedFrom).to.include("public/");
-      expect(snap.deployedAtNote).to.include("2026-06-26");
-      expect(Object.keys(snap.files).sort()).to.deep.equal(DEPLOYED_PUBLISHED);
       for (const [rel, hash] of Object.entries(snap.files)) {
         expect(hash, `bad sha256 for ${rel}`).to.match(/^[0-9a-f]{64}$/);
+      }
+      if (!("markedDeployedAt" in snap)) {
+        // still the frozen 2026-06-26 baseline (no --mark-deployed run yet)
+        expect(snap.deployedAtNote).to.include("2026-06-26");
+        expect(Object.keys(snap.files).sort()).to.deep.equal(DEPLOYED_PUBLISHED);
+      } else {
+        // rewritten by the sanctioned T-67.2 flow: the ISO stamp is the record
+        expect(sr.isIsoUtc(snap.markedDeployedAt)).to.equal(true);
       }
     });
 
     it("was captured from the PRE-regeneration staging bytes (the OLD published verifier hash, not today's dist)", function () {
       const snap = sr.loadDeployedSnapshot(REPO);
+      if ("markedDeployedAt" in snap) {
+        // the human has since run --mark-deployed: the 2026-06-26 baseline pins no longer apply
+        this.skip();
+        return;
+      }
       // d4af1f53… is the hash the deployed 2026-06-26 landing page itself published for the verifier.
       expect(snap.files["verify-vh-standalone.js"]).to.equal(DEPLOYED_VERIFIER_SHA);
       expect(snap.files["index.html"]).to.equal(DEPLOYED_INDEX_SHA);
@@ -666,6 +682,354 @@ describe("T-67.1: scripts/site-release.js — deterministic site-release assembl
       // the default fake repo (a.txt, docs/b.md, index.html) ships no verifier → zero cross-check problems
       const fake = makeFakeRepo(scratch);
       expect(sr.landingConsistencyProblems(sr.assemble(fake))).to.deep.equal([]);
+    });
+  });
+});
+
+// =================================================================================================
+// T-67.2 — make site DRIFT visible and the human refresh DECISION-READY
+//
+// WHAT THIS PROVES (mapped to the task's acceptance clauses)
+//   (1) `--diff` on the COMMITTED tree (fresh release vs the recorded 2026-06-26 snapshot) prints the
+//       CHANGED/ADDED rows proving the recorded live-site drift and exits 0; after a simulated
+//       `--mark-deployed` in a TEMP COPY, `--diff` prints the clean verdict (the real tree is never
+//       touched). `--diff` writes NOTHING.
+//   (2) a malformed/missing site/DEPLOYED.json → exit 3 with a NAMED error (and an assembler failure
+//       is NOT misreported as exit 3).
+//   (3) the STANDING manifest-freshness test: committed site/RELEASE-MANIFEST.json equals a fresh
+//       assembly — green on the committed tree, RED (proven in a temp copy) when a published source
+//       is edited without re-running the release — while a stale (or even malformed) DEPLOYED.json
+//       must NEVER fail `--check`/the suite: staleness is a HUMAN decision signal, not a CI failure.
+//   (4) docs/DEPLOY-PUBLIC-SITE.md + docs/GO-LIVE.md carry the flow ("release → upload →
+//       `--mark-deployed` → `--diff` clean"), the P-11 pointer, and the boundary VERBATIM.
+//
+// POSTURE: no network, no keys; child processes only run this repo's own script/module. All surgery
+// happens in throwaway temp copies under the OS temp dir (removed in after()).
+// =================================================================================================
+
+// The boundary sentence, VERBATIM (task clause d) — pinned against BOTH docs and the script itself.
+const BOUNDARY_VERBATIM =
+  "the loop assembles and diffs INSIDE the repo only; uploading to the live host is the human-owned P-11 step — never auto-executed";
+
+// runCliAt(root, args) — run the REAL CLI surface (main() incl. its printing + exit codes) against an
+// arbitrary repo root, mirroring the require.main wrapper's FATAL handling, in a child process.
+function runCliAt(root, args) {
+  const code =
+    `const sr = require(${JSON.stringify(SCRIPT)});\n` +
+    `try { process.exit(sr.main(["node", "site-release.js"].concat(${JSON.stringify(args || [])}), ${JSON.stringify(root)})); }\n` +
+    `catch (err) { process.stderr.write("site-release: FATAL — " + err.message + "\\n"); process.exit(1); }`;
+  const res = spawnSync(process.execPath, ["-e", code], { encoding: "utf8", cwd: root });
+  return { status: res.status === null ? 1 : res.status, stdout: res.stdout || "", stderr: res.stderr || "" };
+}
+
+// makeReleaseCopy(scratch) — a temp copy of the REAL release inputs: the committed publish set, both
+// committed site/ pins (RELEASE-MANIFEST.json + DEPLOYED.json), and every publish-set source file,
+// byte-identical at their real relative paths. Lets --mark-deployed / source-edit surgery run against
+// the real data WITHOUT mutating the repo.
+function makeReleaseCopy(scratch) {
+  const root = fs.mkdtempSync(path.join(scratch, "release-copy-"));
+  const set = sr.loadPublishSet(REPO);
+  const toCopy = new Set(Object.values(set.publish));
+  toCopy.add("site/publish-set.json");
+  toCopy.add("site/RELEASE-MANIFEST.json");
+  toCopy.add("site/DEPLOYED.json");
+  for (const rel of toCopy) {
+    const dst = path.join(root, rel);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(path.join(REPO, rel), dst);
+  }
+  return root;
+}
+
+describe("T-67.2: --diff / --mark-deployed — site drift visible, the refresh decision-ready", function () {
+  this.timeout(120000);
+
+  let scratch;
+  before(function () {
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), "vh-site-diff-test-"));
+  });
+  after(function () {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  });
+
+  describe("CLI surface", function () {
+    it("--help documents --diff and --mark-deployed (incl. the exit-3 snapshot contract)", function () {
+      const res = runCli(["--help"]);
+      expect(res.status).to.equal(0);
+      expect(res.stdout).to.include("--diff");
+      expect(res.stdout).to.include("--mark-deployed");
+      expect(res.stdout).to.include("exit 3");
+      expect(res.stdout.replace(/\s+/g, " ")).to.include(BOUNDARY_VERBATIM);
+    });
+
+    it("two flags at once → usage (exit 2)", function () {
+      const res = runCli(["--diff", "--check"]);
+      expect(res.status).to.equal(2);
+      expect(res.stderr).to.include("usage:");
+    });
+  });
+
+  describe("(1) --diff on the COMMITTED tree — the recorded 2026-06-26 drift is visible, exit 0", function () {
+    // The whole block only applies while the committed snapshot is still the 2026-06-26 baseline;
+    // after a sanctioned human --mark-deployed the drift legitimately collapses to clean.
+    const isBaseline = !("markedDeployedAt" in sr.loadDeployedSnapshot(REPO));
+
+    it("prints CHANGED/ADDED rows + the stale verdict with truthful counts, and exits 0", function () {
+      if (!isBaseline) this.skip();
+      const res = runCli(["--diff"]);
+      expect(res.status, res.stderr).to.equal(0);
+      // the two files T-66.2/66.3 added AFTER the 2026-06-26 upload → ADDED
+      expect(res.stdout).to.match(/^\s*ADDED\s+verify-vh-standalone\.html\s/m);
+      expect(res.stdout).to.match(/^\s*ADDED\s+verify-vh-standalone\.html\.sha256\s/m);
+      // the verifier bundle the live site pins is the OLD d4af1f53… → CHANGED (names both hashes)
+      expect(res.stdout).to.match(/^\s*CHANGED\s+verify-vh-standalone\.js\s/m);
+      expect(res.stdout).to.include(DEPLOYED_VERIFIER_SHA.slice(0, 12));
+      // the verdict counts must equal an independent recomputation from the two committed inputs
+      const snap = sr.loadDeployedSnapshot(REPO);
+      const fresh = new Map(sr.assemble(REPO).manifest.files.map((f) => [f.path, f.sha256]));
+      const union = new Set([...fresh.keys(), ...Object.keys(snap.files)]);
+      let differ = 0;
+      for (const p of union) if (fresh.get(p) !== snap.files[p]) differ++;
+      expect(differ, "the committed tree must actually record drift").to.be.greaterThan(0);
+      expect(res.stdout).to.include(`live site is stale: ${differ} of ${union.size} published files differ — refresh per P-11`);
+    });
+
+    it("the library agrees: diffDeployed(REPO) rows are UNION-sorted, statuses recompute, stale=true", function () {
+      if (!isBaseline) this.skip();
+      const d = sr.diffDeployed(REPO);
+      expect(d.stale).to.equal(true);
+      expect(d.total).to.equal(d.rows.length);
+      expect(d.rows.map((r) => r.path)).to.deep.equal(d.rows.map((r) => r.path).slice().sort());
+      const snap = sr.loadDeployedSnapshot(REPO);
+      const fresh = new Map(sr.assemble(REPO).manifest.files.map((f) => [f.path, f.sha256]));
+      for (const r of d.rows) {
+        const expected =
+          !fresh.has(r.path) ? "REMOVED" : !(r.path in snap.files) ? "ADDED" : fresh.get(r.path) === snap.files[r.path] ? "UNCHANGED" : "CHANGED";
+        expect(r.status, `status wrong for ${r.path}`).to.equal(expected);
+      }
+      expect(d.differing).to.equal(d.rows.filter((r) => r.status !== "UNCHANGED").length);
+      expect(d.verdict).to.include("refresh per P-11");
+    });
+
+    it("--diff writes NOTHING (site/ + public/ byte-identical before and after)", function () {
+      const fingerprint = () => {
+        const out = [];
+        for (const dir of ["site", "public"]) {
+          const abs = path.join(REPO, dir);
+          if (fs.existsSync(abs)) walk(abs, dir, out);
+        }
+        return out.map((rel) => rel + ":" + sha256(fs.readFileSync(path.join(REPO, rel))));
+      };
+      const before = fingerprint();
+      const res = runCli(["--diff"]);
+      expect(res.status).to.equal(0);
+      expect(fingerprint()).to.deep.equal(before);
+    });
+
+    it("staleness is a SIGNAL, not a CI failure: --diff says stale while --check is GREEN on the same tree", function () {
+      if (!isBaseline) this.skip();
+      expect(sr.diffDeployed(REPO).stale).to.equal(true);
+      expect(runCli(["--check"]).status, "--check must stay green despite the stale snapshot").to.equal(0);
+      expect(runCli(["--diff"]).status, "--diff must exit 0 despite staleness").to.equal(0);
+    });
+  });
+
+  describe("(1) --mark-deployed in a TEMP COPY — closes the loop; the next --diff is clean", function () {
+    it("simulated flow: stale --diff → --mark-deployed → clean --diff; the REAL tree is untouched", function () {
+      const realSnapshotBytes = fs.readFileSync(path.join(REPO, "site", "DEPLOYED.json"));
+      const copy = makeReleaseCopy(scratch);
+
+      // before: the copy carries the real (drifted) snapshot → stale verdict
+      const beforeRes = runCliAt(copy, ["--diff"]);
+      expect(beforeRes.status, beforeRes.stderr).to.equal(0);
+      expect(beforeRes.stdout).to.include("live site is stale:");
+
+      // the ONE post-upload command
+      const mark = runCliAt(copy, ["--mark-deployed"]);
+      expect(mark.status, mark.stderr).to.equal(0);
+      expect(mark.stdout).to.include("wrote site/DEPLOYED.json");
+
+      // the rewritten snapshot: schema-valid, ISO-stamped, files == the current manifest exactly
+      const snap = sr.loadDeployedSnapshot(copy);
+      expect(sr.isIsoUtc(snap.markedDeployedAt)).to.equal(true);
+      expect(snap.deployedAtNote).to.include(snap.markedDeployedAt);
+      expect(snap.deployedAtNote).to.include("P-11");
+      const fresh = sr.assemble(copy);
+      const expected = {};
+      for (const e of fresh.entries) expected[e.path] = e.sha256;
+      expect(snap.files).to.deep.equal(expected);
+
+      // after: the clean verdict, still exit 0, and NO drift row of any kind
+      const afterRes = runCliAt(copy, ["--diff"]);
+      expect(afterRes.status, afterRes.stderr).to.equal(0);
+      expect(afterRes.stdout).to.include("live site matches the current release");
+      expect(afterRes.stdout).to.not.match(/\b(ADDED|CHANGED|REMOVED)\b/); // UNCHANGED rows only
+      expect(sr.diffDeployed(copy).stale).to.equal(false);
+
+      // and the real repo's committed snapshot was never touched
+      expect(fs.readFileSync(path.join(REPO, "site", "DEPLOYED.json")).equals(realSnapshotBytes)).to.equal(true);
+    });
+
+    it("markDeployed() accepts an injected ISO stamp, rejects a non-ISO one", function () {
+      const copy = makeReleaseCopy(scratch);
+      const snap = sr.markDeployed(copy, "2026-07-02T12:00:00Z");
+      expect(snap.markedDeployedAt).to.equal("2026-07-02T12:00:00Z");
+      expect(sr.loadDeployedSnapshot(copy).markedDeployedAt).to.equal("2026-07-02T12:00:00Z");
+      expect(() => sr.markDeployed(copy, "yesterday-ish")).to.throw(/ISO-8601/);
+    });
+
+    it("markDeployed() REFUSES to record a self-contradicting release as LIVE (landing-page drift)", function () {
+      const { root } = makeFakeVerifierRepo(scratch, { pageHash: "e".repeat(64) });
+      expect(() => sr.markDeployed(root)).to.throw(/LANDING PAGE DRIFT/);
+      // …and a consistent release round-trips: mark → schema-valid snapshot → clean diff
+      const ok = makeFakeVerifierRepo(scratch);
+      sr.markDeployed(ok.root);
+      expect(sr.diffDeployed(ok.root).stale).to.equal(false);
+    });
+  });
+
+  describe("(2) malformed/missing snapshot → exit 3, NAMED error (never conflated with other failures)", function () {
+    it("missing site/DEPLOYED.json → exit 3, error names the file", function () {
+      const fake = makeFakeRepo(scratch); // has no DEPLOYED.json at all
+      const res = runCliAt(fake, ["--diff"]);
+      expect(res.status).to.equal(3);
+      expect(res.stderr).to.include("SNAPSHOT ERROR");
+      expect(res.stderr).to.include("site/DEPLOYED.json");
+    });
+
+    it("non-sha256 entry → exit 3, error names the offending field", function () {
+      const fake = makeFakeRepo(scratch);
+      fs.writeFileSync(
+        path.join(fake, "site", "DEPLOYED.json"),
+        JSON.stringify({ generatedFrom: "x", deployedAtNote: "y", files: { "a.txt": "not-a-sha" } }, null, 2)
+      );
+      const res = runCliAt(fake, ["--diff"]);
+      expect(res.status).to.equal(3);
+      expect(res.stderr).to.include("SNAPSHOT ERROR");
+      expect(res.stderr).to.include("files.a.txt");
+      expect(res.stderr).to.include("sha256");
+    });
+
+    it("not-an-object / unparseable / bad markedDeployedAt → exit 3, each with a named reason", function () {
+      const cases = [
+        { bytes: "[]\n", why: /not a JSON object/ },
+        { bytes: "{ nope", why: /cannot read\/parse/ },
+        {
+          bytes: JSON.stringify({ generatedFrom: "x", deployedAtNote: "y", markedDeployedAt: 42, files: { "a.txt": "0".repeat(64) } }),
+          why: /markedDeployedAt/,
+        },
+        { bytes: JSON.stringify({ generatedFrom: "", deployedAtNote: "y", files: { "a.txt": "0".repeat(64) } }), why: /generatedFrom/ },
+      ];
+      for (const c of cases) {
+        const fake = makeFakeRepo(scratch);
+        fs.writeFileSync(path.join(fake, "site", "DEPLOYED.json"), c.bytes);
+        const res = runCliAt(fake, ["--diff"]);
+        expect(res.status, `exit 3 expected for: ${c.bytes.slice(0, 40)}`).to.equal(3);
+        expect(res.stderr).to.match(c.why);
+      }
+    });
+
+    it("an ASSEMBLER failure during --diff is NOT misreported as exit 3 (it is the usual FATAL exit 1)", function () {
+      const fake = makeFakeRepo(scratch);
+      fs.writeFileSync(
+        path.join(fake, "site", "DEPLOYED.json"),
+        JSON.stringify({ generatedFrom: "x", deployedAtNote: "y", files: { "a.txt": "0".repeat(64) } }, null, 2)
+      );
+      fs.rmSync(path.join(fake, "assets", "a.txt")); // break a publish-set SOURCE, not the snapshot
+      const res = runCliAt(fake, ["--diff"]);
+      expect(res.status).to.equal(1);
+      expect(res.stderr).to.include("FATAL");
+      expect(res.stderr).to.not.include("SNAPSHOT ERROR");
+    });
+  });
+
+  describe("(3) the STANDING manifest-freshness signal chain", function () {
+    it("STANDING: the committed site/RELEASE-MANIFEST.json equals a fresh assembly byte-for-byte", function () {
+      // THE standing pin: edit any published source without re-running the release and this line —
+      // and --check — go RED, which is exactly what keeps the --diff staleness signal truthful.
+      const fresh = sr.assemble(REPO).manifestJson;
+      expect(fs.readFileSync(path.join(REPO, "site", "RELEASE-MANIFEST.json"), "utf8")).to.equal(fresh);
+    });
+
+    it("RED in a temp copy: editing a published source WITHOUT re-running the release breaks the pin", function () {
+      const copy = makeReleaseCopy(scratch);
+      sr.writeAssembly(path.join(copy, "public"), sr.assemble(copy)); // stage the pre-edit webroot
+      expect(sr.check(copy).problems).to.deep.equal([]); // green baseline — the copy mirrors the committed tree
+
+      fs.appendFileSync(path.join(copy, "docs", "PILOT.md"), "\nEDITED WITHOUT A RELEASE\n");
+
+      const committedManifest = fs.readFileSync(path.join(copy, "site", "RELEASE-MANIFEST.json"), "utf8");
+      expect(sr.assemble(copy).manifestJson, "a fresh assembly must now disagree with the committed manifest").to.not.equal(committedManifest);
+      const res = sr.check(copy);
+      expect(res.ok).to.equal(false);
+      expect(res.problems.join("\n")).to.match(/SOURCE DRIFT: "docs\/PILOT\.md"/);
+      expect(runCliAt(copy, ["--check"]).status).to.equal(1);
+    });
+
+    it("a STALE — or even MALFORMED — site/DEPLOYED.json NEVER fails --check (decoupled by design)", function () {
+      const copy = makeReleaseCopy(scratch);
+      sr.writeAssembly(path.join(copy, "public"), sr.assemble(copy));
+      // arbitrarily stale but schema-valid snapshot
+      fs.writeFileSync(
+        path.join(copy, "site", "DEPLOYED.json"),
+        JSON.stringify({ generatedFrom: "public/ (ancient)", deployedAtNote: "long ago", files: { "index.html": "0".repeat(64) } }, null, 2) + "\n"
+      );
+      expect(sr.check(copy).ok).to.equal(true);
+      expect(runCliAt(copy, ["--check"]).status).to.equal(0);
+      expect(runCliAt(copy, ["--diff"]).stdout).to.include("live site is stale:");
+      // outright malformed: --diff exits 3, but --check STILL does not care
+      fs.writeFileSync(path.join(copy, "site", "DEPLOYED.json"), "not json at all");
+      expect(sr.check(copy).ok).to.equal(true);
+      expect(runCliAt(copy, ["--check"]).status).to.equal(0);
+      expect(runCliAt(copy, ["--diff"]).status).to.equal(3);
+    });
+  });
+
+  describe("(4) the docs carry the flow, the P-11 pointer, and the boundary VERBATIM", function () {
+    let deployDoc, goLiveDoc;
+    before(function () {
+      deployDoc = fs.readFileSync(path.join(REPO, "docs", "DEPLOY-PUBLIC-SITE.md"), "utf8");
+      goLiveDoc = fs.readFileSync(path.join(REPO, "docs", "GO-LIVE.md"), "utf8");
+    });
+
+    it("docs/DEPLOY-PUBLIC-SITE.md documents the flow: release → upload → --mark-deployed → --diff clean", function () {
+      expect(deployDoc).to.include("release → upload → `--mark-deployed` → `--diff` clean");
+      expect(deployDoc).to.include("node scripts/site-release.js --mark-deployed");
+      expect(deployDoc).to.include("node scripts/site-release.js --diff");
+      expect(deployDoc).to.include("live site matches the current release");
+      expect(deployDoc).to.include("live site is stale: N of M published files differ — refresh per P-11");
+      // the exit-code contract is stated: signal exits 0, only a broken snapshot exits 3
+      expect(deployDoc.replace(/\s+/g, " ")).to.match(/exits `0` whether stale or clean/);
+      expect(deployDoc.replace(/\s+/g, " ")).to.match(/malformed\/missing `site\/DEPLOYED\.json` exits `3`/);
+    });
+
+    it("both docs carry the boundary sentence VERBATIM + the P-11 pointer", function () {
+      for (const [rel, text] of [
+        ["docs/DEPLOY-PUBLIC-SITE.md", deployDoc],
+        ["docs/GO-LIVE.md", goLiveDoc],
+      ]) {
+        expect(text.replace(/\s+/g, " "), `${rel} must carry the boundary verbatim`).to.include(BOUNDARY_VERBATIM);
+        expect(text, `${rel} must point at P-11`).to.include("P-11");
+      }
+      // …and the script itself states the same boundary (greppable at the tool, not just the docs)
+      const script = fs.readFileSync(SCRIPT, "utf8");
+      expect(script.replace(/\s+/g, " ")).to.include(BOUNDARY_VERBATIM);
+    });
+
+    it("docs/GO-LIVE.md's runbook section points at the refresh runbook + --diff", function () {
+      expect(goLiveDoc).to.match(/##\s+The human steps/);
+      expect(goLiveDoc).to.include("(DEPLOY-PUBLIC-SITE.md)");
+      expect(goLiveDoc).to.include("node scripts/site-release.js --diff");
+      expect(goLiveDoc).to.include("release → upload → `--mark-deployed` →");
+    });
+
+    it("T-67.2 relaxed NOTHING already pinned: the safety rules + upload step + landing-drift warning survive", function () {
+      expect(deployDoc).to.include("CRITICAL SAFETY RULES");
+      expect(deployDoc).to.include("**Must NEVER be served:**");
+      expect(deployDoc.replace(/\s+/g, " ")).to.include(
+        "run `node scripts/site-release.js`, upload `public/`, verify against `RELEASE-MANIFEST.json`"
+      );
+      expect(deployDoc).to.include("LANDING PAGE DRIFT");
     });
   });
 });

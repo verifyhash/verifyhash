@@ -30,10 +30,38 @@ const {
   canonicalize,
   JournalError,
 } = require("./journal");
+const journalLog = require("./journal-log");
 
 // The shared verify exit-code contract (0 ok / 3 drift / 2 usage / 1 IO). Re-declared from the SAME values
 // evidence.EXIT / the CLI verbs use so a test can assert parity rather than trusting a comment.
 const JOURNAL_EXIT = Object.freeze({ OK: 0, IO: 1, USAGE: 2, DRIFT: 3 });
+
+// ---------------------------------------------------------------------------------------------------
+// T-63.2 — the transparency-log surface over the T-63.1 ordered Merkle-log core (cli/journal-log.js).
+// Four STRICTLY-ADDITIVE, VERIFY-ONLY subcommands: tree-head / prove-inclusion / prove-consistency /
+// check-proof. All four are read-only (the ONLY write is the --out proof artifact the caller names),
+// hold NO key, and bind NO network. `check-proof` is the OFFLINE third-party AUDITOR path: it reads
+// ONLY the proof artifact — NEVER the journal — so an auditor can confirm inclusion/append-only-ness
+// without ever holding the log (a test runs it with NO journal present under an fs+network guard).
+// ---------------------------------------------------------------------------------------------------
+
+// The self-describing proof-artifact kinds (documented schema; T-64.2's witness path consumes these).
+const JOURNAL_INCLUSION_PROOF_KIND = "vh-journal-inclusion";
+const JOURNAL_CONSISTENCY_PROOF_KIND = "vh-journal-consistency";
+
+// The SAME honesty boundary the journal already carries, applied to the tree head: the head is the log
+// holder's OWN commitment. It proves ordering + append-only-ness only RELATIVE to itself; it does NOT
+// prove "existed at / unaltered since date T" until a P-3 trust-root signs/timestamps the 32-byte head.
+const SELF_ASSERTED_HEAD_NOTE =
+  "this tree head is SELF-ASSERTED (the log holder's own commitment to its journal as it stands now); " +
+  'it does NOT by itself prove "existed at / unaltered since date T" until a trust-root signs/timestamps the head (P-3)';
+
+// What a check-proof ACCEPT does — and does NOT — mean: the proof verifies RELATIVE to the head embedded
+// in the artifact. The auditor must compare that head against one they trust (e.g. a published/signed
+// tree head) before relying on it; check-proof itself never sees the journal.
+const CHECK_PROOF_NOTE =
+  "ACCEPTED means the proof verifies against the head EMBEDDED in the artifact; compare that head " +
+  "(size + root) against a tree head you trust (e.g. one the operator published/signed) before relying on it";
 // ---------------------------------------------------------------------------------------------------
 // buildVerifyBodyFromSeal — read an evidence-seal packet file from disk, load the bytes it REFERENCES,
 // and construct the `verifyRequest` transport body. REUSES the existing evidence readers verbatim; the
@@ -414,6 +442,448 @@ function firstRecordedDrift(entries) {
 }
 
 // ---------------------------------------------------------------------------------------------------
+// Transparency-log helpers (T-63.2): the ordered LEAVES the Merkle log commits to are the journal's
+// entry hashes IN FILE ORDER, and every log-shaped command refuses to operate over a broken chain —
+// a head/proof over a tampered journal would be a false attestation, so it fails CLOSED on exit 3.
+// ---------------------------------------------------------------------------------------------------
+
+/** The ordered Merkle-log leaves of a parsed journal: its entry hashes, in file order. */
+function entryLeaves(entries) {
+  return entries.map((e) => e.entryHash);
+}
+
+// Load + chain-verify a journal for the tree-head/prove-* commands.
+// Returns { ok:true, entries } or { ok:false, code, io?, reason, brokenAt } — the caller formats output.
+function loadIntactEntries(journalPath) {
+  const abs = path.resolve(journalPath);
+  if (!fs.existsSync(abs)) {
+    return { ok: false, code: JOURNAL_EXIT.IO, io: true, reason: `journal ${journalPath} does not exist` };
+  }
+  let entries;
+  try {
+    entries = readJournalFile(journalPath);
+  } catch (e) {
+    // A non-JSON line means a past line was hand-edited — a tamper, on the shared drift exit (3).
+    return { ok: false, code: JOURNAL_EXIT.DRIFT, reason: e.message, brokenAt: null };
+  }
+  const result = verifyJournal(entries);
+  if (!result.ok) {
+    return { ok: false, code: JOURNAL_EXIT.DRIFT, reason: result.reason, brokenAt: result.brokenAt };
+  }
+  return { ok: true, entries };
+}
+
+// Shared failure emitter for the load-and-verify preamble of tree-head/prove-*: an absent journal is a
+// plain IO error; a broken chain is a BROKEN verdict on exit 3 (JSON when asked) that REFUSES the verb.
+function emitLoadFailure(verbLabel, journal, res, opts, io) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  if (res.io) {
+    writeErr(`error: ${res.reason}\n`);
+    return res.code;
+  }
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ok: false,
+          verdict: "BROKEN",
+          journal,
+          brokenAt: res.brokenAt === undefined ? null : res.brokenAt,
+          reason: `refusing to ${verbLabel} over a broken chain: ${res.reason}`,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    writeErr(
+      `FAIL: journal ${journal} is BROKEN — refusing to ${verbLabel} over a broken chain (${res.reason})\n`
+    );
+  }
+  return res.code;
+}
+
+// Write a proof artifact to a caller-named path (pretty JSON + trailing newline). Throws on IO failure.
+function writeProofArtifact(artifact, outPath) {
+  fs.writeFileSync(path.resolve(outPath), JSON.stringify(artifact, null, 2) + "\n", "utf8");
+}
+
+// ---------------------------------------------------------------------------------------------------
+// runJournalTreeHead(opts, io) — print the publishable Signed-Tree-Head-SHAPED commitment { size, root }
+// over the journal's ordered entry hashes. Read-only; carries the self-asserted-head honesty note.
+// Exit 0 head printed / 3 broken chain / 2 usage / 1 IO.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * @param {object} opts { journal, json? }
+ * @param {object} io   { write, writeErr }
+ * @returns {number} exit code
+ */
+function runJournalTreeHead(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.journal) {
+    writeErr("error: `vh journal tree-head` requires a <journalfile>\n");
+    return JOURNAL_EXIT.USAGE;
+  }
+  const res = loadIntactEntries(opts.journal);
+  if (!res.ok) return emitLoadFailure("compute a tree head", opts.journal, res, opts, io);
+
+  const head = journalLog.treeHead(entryLeaves(res.entries));
+  if (head.root === null) {
+    // Unreachable over an intact chain (verifyJournal validated every entryHash), but fail CLOSED.
+    writeErr(`error: journal ${opts.journal} yielded malformed entry hashes — no head computed\n`);
+    return JOURNAL_EXIT.DRIFT;
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ok: true,
+          verdict: "HEAD",
+          journal: opts.journal,
+          size: head.size,
+          root: head.root,
+          note: SELF_ASSERTED_HEAD_NOTE,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    write(
+      `tree head of ${opts.journal}: { size: ${head.size}, root: ${head.root} }\n` +
+        `NOTE: ${SELF_ASSERTED_HEAD_NOTE}\n`
+    );
+  }
+  return JOURNAL_EXIT.OK;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// runJournalProveInclusion(opts, io) — emit a compact, SELF-CONTAINED inclusion-proof artifact
+// { kind:"vh-journal-inclusion", leaf, seq, size, root, path[] } for the entry at --seq. Read-only
+// except the --out file the caller names. Exit 0 proved / 3 broken chain / 2 usage / 1 IO.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * @param {object} opts { journal, seq, out?, json? }
+ * @param {object} io   { write, writeErr }
+ * @returns {number} exit code
+ */
+function runJournalProveInclusion(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.journal) {
+    writeErr("error: `vh journal prove-inclusion` requires a <journalfile>\n");
+    return JOURNAL_EXIT.USAGE;
+  }
+  if (opts.seq === undefined) {
+    writeErr("error: `vh journal prove-inclusion` requires --seq <i> (the entry to prove)\n");
+    return JOURNAL_EXIT.USAGE;
+  }
+  if (!/^\d+$/.test(String(opts.seq))) {
+    writeErr(`error: --seq must be a non-negative integer, got ${JSON.stringify(opts.seq)}\n`);
+    return JOURNAL_EXIT.USAGE;
+  }
+  const seq = Number(opts.seq);
+
+  const res = loadIntactEntries(opts.journal);
+  if (!res.ok) return emitLoadFailure("prove inclusion", opts.journal, res, opts, io);
+
+  const leaves = entryLeaves(res.entries);
+  if (leaves.length === 0) {
+    writeErr(`error: journal ${opts.journal} has 0 entries — nothing to prove inclusion of\n`);
+    return JOURNAL_EXIT.USAGE;
+  }
+  if (seq >= leaves.length) {
+    writeErr(
+      `error: --seq ${seq} is out of range — journal ${opts.journal} has ${leaves.length} ` +
+        `entr${leaves.length === 1 ? "y" : "ies"} (valid seq: 0..${leaves.length - 1})\n`
+    );
+    return JOURNAL_EXIT.USAGE;
+  }
+
+  const head = journalLog.treeHead(leaves);
+  const proof = journalLog.inclusionProof(leaves, seq);
+  if (head.root === null || proof === null) {
+    writeErr(`error: journal ${opts.journal} yielded malformed entry hashes — no proof emitted\n`);
+    return JOURNAL_EXIT.DRIFT;
+  }
+
+  // The self-contained, documented artifact: everything check-proof needs, and NOTHING of the log itself.
+  const artifact = {
+    kind: JOURNAL_INCLUSION_PROOF_KIND,
+    journal: opts.journal,
+    leaf: proof.leaf,
+    seq,
+    size: head.size,
+    root: head.root,
+    path: proof.path,
+    note: SELF_ASSERTED_HEAD_NOTE,
+  };
+
+  if (opts.out) {
+    try {
+      writeProofArtifact(artifact, opts.out);
+    } catch (e) {
+      writeErr(`error: cannot write proof to ${opts.out}: ${e.message}\n`);
+      return JOURNAL_EXIT.IO;
+    }
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ok: true,
+          verdict: "PROVED",
+          kind: JOURNAL_INCLUSION_PROOF_KIND,
+          journal: opts.journal,
+          seq,
+          size: head.size,
+          root: head.root,
+          out: opts.out || null,
+          artifact,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else if (opts.out) {
+    write(
+      `wrote inclusion proof for seq ${seq} of ${opts.journal} to ${opts.out}\n` +
+        `  head { size: ${head.size}, root: ${head.root} }\n` +
+        `  NOTE: ${SELF_ASSERTED_HEAD_NOTE}\n`
+    );
+  } else {
+    write(JSON.stringify(artifact, null, 2) + "\n");
+  }
+  return JOURNAL_EXIT.OK;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// runJournalProveConsistency(opts, io) — emit a SELF-CONTAINED consistency-proof artifact
+// { kind:"vh-journal-consistency", first:{size:m,root}, second:{size:n,root}, proof[] } proving the
+// current size-n log is an APPEND-ONLY extension of its size---from prefix. Read-only except --out.
+// Exit 0 proved / 3 broken chain / 2 usage / 1 IO.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * @param {object} opts { journal, from, out?, json? }
+ * @param {object} io   { write, writeErr }
+ * @returns {number} exit code
+ */
+function runJournalProveConsistency(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.journal) {
+    writeErr("error: `vh journal prove-consistency` requires a <journalfile>\n");
+    return JOURNAL_EXIT.USAGE;
+  }
+  if (opts.from === undefined) {
+    writeErr("error: `vh journal prove-consistency` requires --from <oldSize> (the older tree size)\n");
+    return JOURNAL_EXIT.USAGE;
+  }
+  if (!/^\d+$/.test(String(opts.from)) || Number(opts.from) < 1) {
+    writeErr(`error: --from must be an integer >= 1, got ${JSON.stringify(opts.from)}\n`);
+    return JOURNAL_EXIT.USAGE;
+  }
+  const m = Number(opts.from);
+
+  const res = loadIntactEntries(opts.journal);
+  if (!res.ok) return emitLoadFailure("prove consistency", opts.journal, res, opts, io);
+
+  const leaves = entryLeaves(res.entries);
+  const n = leaves.length;
+  if (m > n) {
+    writeErr(
+      `error: --from ${m} is out of range — journal ${opts.journal} has ${n} ` +
+        `entr${n === 1 ? "y" : "ies"} (valid --from: 1..${n})\n`
+    );
+    return JOURNAL_EXIT.USAGE;
+  }
+
+  const firstHead = journalLog.treeHead(leaves.slice(0, m));
+  const secondHead = journalLog.treeHead(leaves);
+  const proof = journalLog.consistencyProof(leaves, m, n);
+  if (firstHead.root === null || secondHead.root === null || proof === null) {
+    writeErr(`error: journal ${opts.journal} yielded malformed entry hashes — no proof emitted\n`);
+    return JOURNAL_EXIT.DRIFT;
+  }
+
+  const artifact = {
+    kind: JOURNAL_CONSISTENCY_PROOF_KIND,
+    journal: opts.journal,
+    first: { size: m, root: firstHead.root },
+    second: { size: n, root: secondHead.root },
+    proof: proof.path,
+    note: SELF_ASSERTED_HEAD_NOTE,
+  };
+
+  if (opts.out) {
+    try {
+      writeProofArtifact(artifact, opts.out);
+    } catch (e) {
+      writeErr(`error: cannot write proof to ${opts.out}: ${e.message}\n`);
+      return JOURNAL_EXIT.IO;
+    }
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ok: true,
+          verdict: "PROVED",
+          kind: JOURNAL_CONSISTENCY_PROOF_KIND,
+          journal: opts.journal,
+          first: artifact.first,
+          second: artifact.second,
+          out: opts.out || null,
+          artifact,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else if (opts.out) {
+    write(
+      `wrote consistency proof for ${opts.journal} to ${opts.out}\n` +
+        `  first  { size: ${m}, root: ${firstHead.root} }\n` +
+        `  second { size: ${n}, root: ${secondHead.root} }\n` +
+        `  NOTE: ${SELF_ASSERTED_HEAD_NOTE}\n`
+    );
+  } else {
+    write(JSON.stringify(artifact, null, 2) + "\n");
+  }
+  return JOURNAL_EXIT.OK;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// runJournalCheckProof(opts, io) — the OFFLINE third-party AUDITOR command. Reads ONLY the proof
+// artifact (NO journal, NO key, NO network) and calls verifyInclusion / verifyConsistency for the
+// artifact's kind. ACCEPTED (exit 0) iff the proof verifies; REJECTED (exit 3) on ANY tamper, forge,
+// unknown kind, or malformed artifact — fail CLOSED, never a silent pass. 2 usage / 1 IO.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * @param {object} opts { proof, json? }
+ * @param {object} io   { write, writeErr }
+ * @returns {number} exit code (0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO)
+ */
+function runJournalCheckProof(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.proof) {
+    writeErr("error: `vh journal check-proof` requires a <prooffile>\n");
+    return JOURNAL_EXIT.USAGE;
+  }
+
+  // NOTE this function touches EXACTLY ONE file: the proof artifact. It never opens the journal (it has
+  // no idea where the journal is) and never opens a socket — a test runs it with NO journal present
+  // under a guard that trips on any journal/fs-path or network access.
+  let text;
+  try {
+    text = fs.readFileSync(path.resolve(opts.proof), "utf8");
+  } catch (e) {
+    writeErr(`error: cannot read proof ${opts.proof}: ${e.message}\n`);
+    return JOURNAL_EXIT.IO;
+  }
+
+  const reject = (reason, extra = {}) => {
+    if (opts.json) {
+      write(
+        JSON.stringify({ ok: false, verdict: "REJECTED", proof: opts.proof, reason, ...extra }, null, 2) + "\n"
+      );
+    } else {
+      writeErr(`REJECTED: proof ${opts.proof} — ${reason}\n`);
+    }
+    return JOURNAL_EXIT.DRIFT;
+  };
+  const accept = (summary, extra = {}) => {
+    if (opts.json) {
+      write(
+        JSON.stringify(
+          { ok: true, verdict: "ACCEPTED", proof: opts.proof, ...extra, note: CHECK_PROOF_NOTE },
+          null,
+          2
+        ) + "\n"
+      );
+    } else {
+      write(`ACCEPTED: ${summary}\n  NOTE: ${CHECK_PROOF_NOTE}\n`);
+    }
+    return JOURNAL_EXIT.OK;
+  };
+
+  let artifact;
+  try {
+    artifact = JSON.parse(text);
+  } catch (e) {
+    // A proof file that does not even parse is a tampered/foreign artifact — REJECTED, never an accept.
+    return reject(`not valid JSON: ${e.message}`);
+  }
+  if (artifact === null || typeof artifact !== "object" || Array.isArray(artifact)) {
+    return reject("proof artifact must be a JSON object");
+  }
+
+  if (artifact.kind === JOURNAL_INCLUSION_PROOF_KIND) {
+    // Rebuild the exact core-shaped proof + head from the self-contained artifact. verifyInclusion is
+    // TOTAL on hostile input (returns false, never throws), so a mangled field is a clean REJECT.
+    const ok = journalLog.verifyInclusion(
+      { leaf: artifact.leaf, leafIndex: artifact.seq, treeSize: artifact.size, path: artifact.path },
+      { size: artifact.size, root: artifact.root }
+    );
+    const detail = { kind: artifact.kind, leaf: artifact.leaf, seq: artifact.seq, size: artifact.size, root: artifact.root };
+    if (!ok) {
+      return reject(
+        "inclusion proof does NOT verify against its own head — a byte of leaf/root/path/seq/size was edited, or the proof is forged",
+        detail
+      );
+    }
+    return accept(
+      `inclusion proof verifies — leaf ${artifact.leaf} is entry seq ${artifact.seq} under head { size: ${artifact.size}, root: ${artifact.root} }`,
+      detail
+    );
+  }
+
+  if (artifact.kind === JOURNAL_CONSISTENCY_PROOF_KIND) {
+    const first = artifact.first;
+    const second = artifact.second;
+    const ok = journalLog.verifyConsistency(
+      {
+        firstSize: first !== null && typeof first === "object" ? first.size : undefined,
+        secondSize: second !== null && typeof second === "object" ? second.size : undefined,
+        path: artifact.proof,
+      },
+      first,
+      second
+    );
+    const detail = { kind: artifact.kind, first, second };
+    if (!ok) {
+      return reject(
+        "consistency proof does NOT verify — the second head is NOT an append-only extension of the first (a past entry was rewritten, or the proof was edited/forged)",
+        detail
+      );
+    }
+    return accept(
+      `consistency proof verifies — head { size: ${second && second.size}, root: ${second && second.root} } is an append-only extension of head { size: ${first && first.size}, root: ${first && first.root} }`,
+      detail
+    );
+  }
+
+  return reject(
+    `unknown proof kind ${JSON.stringify(artifact.kind)} (expected ${JSON.stringify(JOURNAL_INCLUSION_PROOF_KIND)} or ${JSON.stringify(JOURNAL_CONSISTENCY_PROOF_KIND)})`,
+    { kind: artifact.kind === undefined ? null : artifact.kind }
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------
 // Argument parsing + the `vh journal` dispatcher.
 // ---------------------------------------------------------------------------------------------------
 
@@ -469,6 +939,50 @@ function parseJournalVerifyArgs(argv) {
   return opts;
 }
 
+// Shared shape for the single-positional-plus-flags T-63.2 verbs. `positional` names the slot for error
+// messages; `valueFlags` maps a flag (e.g. "--seq") to the opts key it fills. Throws on a bad flag.
+function _parsePositionalWithFlags(argv, positional, valueFlags) {
+  const opts = { [positional]: undefined, json: false };
+  for (const key of Object.values(valueFlags)) opts[key] = undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--json") {
+      opts.json = true;
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(valueFlags, a)) {
+      const key = valueFlags[a];
+      opts[key] = argv[++i];
+      if (opts[key] === undefined) throw new Error(`${a} requires a value`);
+      continue;
+    }
+    if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+    if (opts[positional] !== undefined) throw new Error(`unexpected extra argument: ${a}`);
+    opts[positional] = a;
+  }
+  return opts;
+}
+
+/** Parse `journal tree-head` argv into { journal, json }. Throws on a bad flag. */
+function parseTreeHeadArgs(argv) {
+  return _parsePositionalWithFlags(argv, "journal", {});
+}
+
+/** Parse `journal prove-inclusion` argv into { journal, seq, out, json }. Throws on a bad flag. */
+function parseProveInclusionArgs(argv) {
+  return _parsePositionalWithFlags(argv, "journal", { "--seq": "seq", "--out": "out" });
+}
+
+/** Parse `journal prove-consistency` argv into { journal, from, out, json }. Throws on a bad flag. */
+function parseProveConsistencyArgs(argv) {
+  return _parsePositionalWithFlags(argv, "journal", { "--from": "from", "--out": "out" });
+}
+
+/** Parse `journal check-proof` argv into { proof, json }. Throws on a bad flag. */
+function parseCheckProofArgs(argv) {
+  return _parsePositionalWithFlags(argv, "proof", {});
+}
+
 function journalUsage() {
   return [
     "vh journal — an APPEND-ONLY, HASH-CHAINED integrity journal of verify verdicts (integrity OVER TIME)",
@@ -476,6 +990,10 @@ function journalUsage() {
     "Usage:",
     "  vh journal append <artifact> --to <journalfile> [--dir <d>] [--ts <ISO>] [--json]",
     "  vh journal verify <journalfile> [--json]",
+    "  vh journal tree-head <journalfile> [--json]",
+    "  vh journal prove-inclusion <journalfile> --seq <i> [--out <f>] [--json]",
+    "  vh journal prove-consistency <journalfile> --from <oldSize> [--out <f>] [--json]",
+    "  vh journal check-proof <prooffile> [--json]",
     "",
     "append VERIFIES <artifact> (a *.vhevidence.json seal / signed container) through the EXISTING composed",
     "  verify path and records the verdict as ONE new, hash-chained line — STRICTLY ADDITIVELY (prior lines",
@@ -484,6 +1002,20 @@ function journalUsage() {
     "verify walks the on-disk chain: a deleted / reordered / inserted / hand-edited past line BREAKS the chain",
     "  and it LOCALIZES the first break — naming the drifted artifact + the seq where it drifted + brokenAt.",
     "  Exit: 0 PASS (unbroken) / 3 BROKEN / 2 usage / 1 IO — the SHARED 0/3 verify contract.",
+    "tree-head prints the publishable Signed-Tree-Head-SHAPED commitment { size, root } — the RFC-6962",
+    "  ordered Merkle head over the journal's entry hashes. The head is SELF-ASSERTED until a trust-root",
+    "  signs/timestamps it. Read-only. Exit: 0 head / 3 broken chain / 2 usage / 1 IO.",
+    "prove-inclusion emits a compact, SELF-CONTAINED artifact { kind:\"vh-journal-inclusion\", leaf, seq,",
+    "  size, root, path[] } proving entry --seq is committed under the current head. Read-only (only the",
+    "  --out file is written). Exit: 0 proved / 3 broken chain / 2 usage / 1 IO.",
+    "prove-consistency emits { kind:\"vh-journal-consistency\", first:{size,root}, second:{size,root},",
+    "  proof[] } proving the current log is an APPEND-ONLY extension of its size---from prefix — the",
+    "  \"no history was rewritten\" guarantee, compact. Exit: 0 proved / 3 broken chain / 2 usage / 1 IO.",
+    "check-proof is the OFFLINE third-party AUDITOR command: it reads ONLY the proof artifact (NO journal,",
+    "  NO key, NO network) and verifies it for its kind. Hand an auditor a tree head + a proof file and",
+    "  they confirm inclusion/append-only-ness WITHOUT your log. ACCEPTED means the proof verifies against",
+    "  the head EMBEDDED in the artifact — compare that head against one you trust before relying on it.",
+    "  Exit: 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO — the SHARED 0/3 verify contract.",
     "The `ts` is SELF-ASSERTED (the verifier's own wall clock); the journal proves ORDERING + CONTINUITY of",
     "  its OWN observations, and never claims \"unaltered since date T\" until a trust-root signs/timestamps it.",
     "",
@@ -521,11 +1053,31 @@ function cmdJournal(argv, io = {}) {
     }
     return runJournalVerify(opts, io);
   }
+  // The T-63.2 transparency-log verbs: same parse-then-run shape, same shared exit contract.
+  const logVerbs = {
+    "tree-head": [parseTreeHeadArgs, runJournalTreeHead],
+    "prove-inclusion": [parseProveInclusionArgs, runJournalProveInclusion],
+    "prove-consistency": [parseProveConsistencyArgs, runJournalProveConsistency],
+    "check-proof": [parseCheckProofArgs, runJournalCheckProof],
+  };
+  if (Object.prototype.hasOwnProperty.call(logVerbs, sub)) {
+    const [parse, run] = logVerbs[sub];
+    let opts;
+    try {
+      opts = parse(rest);
+    } catch (e) {
+      writeErr(`error: ${e.message}\n`);
+      return JOURNAL_EXIT.USAGE;
+    }
+    return run(opts, io);
+  }
   if (sub === undefined || sub === "-h" || sub === "--help" || sub === "help") {
     write(journalUsage());
     return sub === undefined ? JOURNAL_EXIT.USAGE : JOURNAL_EXIT.OK;
   }
-  writeErr(`error: unknown journal subcommand: ${sub} (expected: append, verify)\n`);
+  writeErr(
+    `error: unknown journal subcommand: ${sub} (expected: append, verify, tree-head, prove-inclusion, prove-consistency, check-proof)\n`
+  );
   return JOURNAL_EXIT.USAGE;
 }
 
@@ -541,4 +1093,18 @@ module.exports = {
   parseJournalVerifyArgs,
   journalUsage,
   cmdJournal,
+  // T-63.2 — the transparency-log surface (tree-head / prove-inclusion / prove-consistency / check-proof).
+  JOURNAL_INCLUSION_PROOF_KIND,
+  JOURNAL_CONSISTENCY_PROOF_KIND,
+  SELF_ASSERTED_HEAD_NOTE,
+  CHECK_PROOF_NOTE,
+  entryLeaves,
+  runJournalTreeHead,
+  runJournalProveInclusion,
+  runJournalProveConsistency,
+  runJournalCheckProof,
+  parseTreeHeadArgs,
+  parseProveInclusionArgs,
+  parseProveConsistencyArgs,
+  parseCheckProofArgs,
 };

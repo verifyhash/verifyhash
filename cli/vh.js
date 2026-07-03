@@ -54,6 +54,7 @@ const { cmdAgent } = require("./agent");
 const { cmdIdentity } = require("./identity");
 const { cmdRevocation } = require("./revocation");
 const { cmdJournal } = require("./journal-cli");
+const { cmdAnchorArtifact, cmdVerifyAnchored } = require("./anchor-artifact");
 const serveVerifyHttp = require("./serve-verify-http");
 const fulfillWebhookHttp = require("./fulfill-webhook-http");
 
@@ -68,6 +69,8 @@ function usage() {
     "  vh claim <path> [opts]     front-running-resistant attribution via commit-reveal (one-shot)",
     "  vh commit <path> [opts]    commit-reveal step 1: commit + write a resumable claim receipt",
     "  vh reveal --receipt <p>    commit-reveal step 2: resume from a receipt and reveal",
+    "  vh anchor-artifact <sealed-file> --contract <addr> --rpc <url> (--key-env <VAR>|--key-file <p>) [--author-bound] [--uri <s>] [--out <receipt>] [--json] [--i-understand-mainnet]  ANCHOR a sealed product artifact's ONE canonical digest on-chain (the T-70.1 closed table: evidence seal / agent-session packet / journal tree-head / trustledger seal / dataset|parcel attestation — each re-validated through its own shipped validator first) and emit the canonical vh-anchored-receipt@1 container binding digest + derivation + the read-back chain facts. Default is the ONE-SHOT anchor() (record NOT author-bound: first broadcaster wins); --author-bound runs the commit-reveal claim (D-1: front-run-resistant; the record reads back authorBound:true). FREE verb (no gate; gas is the caller's own). The signing key comes ONLY from --key-env/--key-file (read-used-discarded, never generated/persisted/logged); a non-testnet chainId refuses without --i-understand-mainnet (the EXISTING guard); --out writes the receipt to a caller-chosen path (never silently cwd; without --out it prints to stdout). Exit 0 anchored / 3 named reject (invalid artifact, or the registry's own revert e.g. AlreadyAnchored) / 2 usage / 1 IO-network-key",
+    "  vh verify-anchored <receipt> <sealed-file> [--rpc <url> --contract <addr>] [--json]  OFFLINE by default (NO key, NO network): strictly validate the anchored receipt and RECOMPUTE the artifact's digest through the same closed table — any deviation is a SPECIFIC named reject (digest-mismatch / kind-mismatch / how-mismatch / bad-receipt / the artifact's own named reject). With BOTH --rpc + --contract it ADDITIONALLY authenticates the registry FIRST (the EXISTING EPIC-11 identity probe: wrong address / non-registry / wrong chain each refuse) and re-checks the receipt's chain facts against the chain (contributor / authorBound / blockNumber / blockTime / txHash — each mismatch a named reject). It NEVER signs and needs NO key. Exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO — the SHARED 0/3 verify contract",
     "  vh verify <path> [opts]    recompute the hash, read the registry, print MATCH / MISMATCH",
     "  vh prove <file> [opts]     Merkle-prove a file against an anchored repo root via verifyLeaf",
     "  vh verify-proof <p> [opts] independently verify a portable proof artifact (offline + on-chain)",
@@ -3787,6 +3790,10 @@ async function main(argv) {
       return cmdHash(rest);
     case "anchor":
       return cmdAnchor(rest);
+    case "anchor-artifact":
+      return cmdAnchorArtifact(rest);
+    case "verify-anchored":
+      return cmdVerifyAnchored(rest);
     case "claim":
       return cmdClaim(rest);
     case "commit":
@@ -3881,6 +3888,8 @@ module.exports = {
   cmdIdentity,
   cmdRevocation,
   cmdJournal,
+  cmdAnchorArtifact,
+  cmdVerifyAnchored,
   cmdServeVerify,
   runServeVerify,
   parseServeVerifyArgs,

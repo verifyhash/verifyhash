@@ -839,10 +839,17 @@ describe("T-67.2: --diff / --mark-deployed — site drift visible, the refresh d
       const realSnapshotBytes = fs.readFileSync(path.join(REPO, "site", "DEPLOYED.json"));
       const copy = makeReleaseCopy(scratch);
 
-      // before: the copy carries the real (drifted) snapshot → stale verdict
+      // Force drift IN THE COPY deterministically (the same published-source mutation discipline
+      // block (3) uses): after a sanctioned human upload + --mark-deployed lands (e.g. the
+      // 2026-07-03 supervisor publish), the COMMITTED snapshot is legitimately CLEAN, so this
+      // simulation must create its own stale precondition rather than assume the real tree drifted.
+      fs.appendFileSync(path.join(copy, "docs", "PILOT.md"), "\nEDITED FOR THE STALE->CLEAN SIMULATION\n");
+
+      // before: the copy's snapshot no longer matches a fresh assembly → stale verdict
       const beforeRes = runCliAt(copy, ["--diff"]);
       expect(beforeRes.status, beforeRes.stderr).to.equal(0);
       expect(beforeRes.stdout).to.include("live site is stale:");
+      expect(beforeRes.stdout).to.match(/^\s*CHANGED\s+docs\/PILOT\.md\s/m);
 
       // the ONE post-upload command
       const mark = runCliAt(copy, ["--mark-deployed"]);

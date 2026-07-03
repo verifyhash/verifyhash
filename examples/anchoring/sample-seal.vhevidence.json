@@ -1,0 +1,19 @@
+{
+  "kind": "vh.evidence-seal",
+  "schemaVersion": 1,
+  "note": "This evidence seal is TAMPER-EVIDENT + OFFLINE-RECOMPUTABLE, NOT a trusted timestamp. Its Merkle `root` commits to the full set of (relPath, content) pairs in the directory: any edit, rename, add, or remove changes the root, and verify RE-DERIVES the root from the bytes you hold and LOCALIZES the change to the exact file (MATCH / CHANGED / MISSING / UNEXPECTED). It does NOT prove WHEN the sealing happened (\"sealed at T\" rides the human-owned signing/timestamp trust-root, STRATEGY.md P-3) and it is NOT a legal opinion. The packet is an UNTRUSTED transport container: verify never trusts the packet's own stored hashes.",
+  "root": "0x8e7a9d416fcc570e7944fb61cf7fe6f8a93228ab858b3f435bbfc094eecc589e",
+  "fileCount": 2,
+  "files": [
+    {
+      "relPath": "report/data.csv",
+      "contentHash": "0x64d1aca6e83285a8d26868a2e8a4b3eb331dce56e23186d5a1745ddd68557795",
+      "leaf": "0x472993dbef24453e9ce4189c93d6fb1c481871fb4ad806d0f338995954735066"
+    },
+    {
+      "relPath": "report/summary.md",
+      "contentHash": "0x732db84a5d89da6e46656cfeee0b5678cd673abc087788ad4d7d606037ceceed",
+      "leaf": "0xb4f3379164694d33d50c08a12e0b440f289af11d1d40b6b6966f7acfd916709b"
+    }
+  ]
+}

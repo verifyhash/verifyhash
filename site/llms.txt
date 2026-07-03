@@ -47,3 +47,6 @@ Browser, no terminal (fully offline; drop a packet in):
 ## Links
 - Site: https://verifyhash.com
 - License: Apache-2.0 — https://verifyhash.com/LICENSE (https://verifyhash.com/NOTICE)
+
+## Contact
+- hello@verifyhash.com (a human reads this)

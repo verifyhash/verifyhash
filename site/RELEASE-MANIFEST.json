@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1023391,
+  "totalBytes": 1023503,
   "files": [
     {
       "path": "LICENSE",
@@ -163,14 +163,14 @@
     {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 32283,
-      "sha256": "445c483e9f1d8800cb3682ab30c6608bdb90b548a8c4fc0ad47162ce5d2f7266"
+      "bytes": 32339,
+      "sha256": "5fd8c31800d426517d1076c9cea2bf5e378e98c0649dd1d198739f31b4ee9c5e"
     },
     {
       "path": "llms.txt",
       "source": "site/llms.txt",
-      "bytes": 2801,
-      "sha256": "01a6c194529659193f6f8a5e0dabfa8c219d159f6cd5566ce8496797ea0b4952"
+      "bytes": 2857,
+      "sha256": "aeb4904fb21556ebb67255309190169db9ccbc53b4b53c392d9416d36703bacb"
     },
     {
       "path": "seal-vh-standalone.js",

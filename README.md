@@ -9,6 +9,11 @@ The registry contract (`contracts/ContributionRegistry.sol`) is deliberately own
 no pause, no upgrade path, and it never holds funds. Each content hash can be anchored exactly once
 (first-writer-wins) and can never be altered or deleted. That immutability is the product.
 
+**Live deployment — Polygon mainnet (chain id 137):**
+[`0x77d8eF881D5aeEda64788968D13f9146fE1A609B`](https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B)
+(deployed 2026-07-03; ownerless — the deploying key holds no special power over it). Pin this address
+out-of-band; `vh` reads/writes against it with `--registry 0x77d8eF881D5aeEda64788968D13f9146fE1A609B`.
+
 > **Ready to charge for it?** [`docs/GO-LIVE.md`](docs/GO-LIVE.md) is the decision-ready "first dollar" page (`npm run go-live`): the **self-serve evidence license** is the recommended default; the design-partner **pilot** is the enterprise fallback.
 
 ## Install / Quickstart
@@ -137,6 +142,8 @@ vh identity publish --address <0xaddr> --product-line <line> --claim <text> --no
 vh identity verify <card> [--signer <0xaddr>] # OFFLINE/key-free: RECOVER the signer, require it to BE the card's vendorAddress, OPTIONALLY pin --signer + print the claims/non-claims; forged/tampered/wrong-vendor/wrong-signer is a clean REJECTED; exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO
 vh revocation publish --address <0xaddr> --reason <reason> (--key-env <VAR>|--key-file <p>) [--superseded-by <0xaddr>] [--revoked-at <ISO>] [--out <p>] # mint a signed producer KEY REVOCATION marking --address REVOKED for --reason; signs with a key YOU provisioned (reads/never holds it); mints ONLY when the key controls --address (a key revokes ITSELF); default PRINTS + writes NOTHING; a SIGNED CLAIM, NOT a trusted timestamp without P-3; offline
 vh revocation verify <revocation> [--signer <0xaddr>] # OFFLINE/key-free: RECOVER the signer, require it to BE the revocation's vendorAddress, OPTIONALLY pin --signer + print reason/revokedAt/supersededBy; forged/tampered/third-party is a clean REJECTED; exit 0 ACCEPTED / 3 REJECTED / 2 usage / 1 IO
+vh anchor-artifact <sealed-file> --contract <a> --rpc <url> (--key-env <VAR>|--key-file <p>) [--author-bound] [--out <receipt>] # anchor ANY sealed artifact's ONE canonical digest on-chain (evidence/agent/journal/trustledger/dataset/parcel) -> portable vh-anchored-receipt@1; FREE (gas is your own); --author-bound = commit-reveal (D-1, authorBound:true)
+vh verify-anchored <receipt> <sealed-file> [--rpc <url> --contract <a>] # OFFLINE by default (no key, no network): recompute the digest through the same closed table, every deviation a named reject; with --rpc+--contract also authenticate the registry + re-check the receipt's chain facts; exit 0/3, CI-gateable
 ```
 
 > **Read commands authenticate the registry by default.** Every read command (`verify` / `show` /
@@ -815,6 +822,15 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   verifies, the commit-binding leg (`commit-claim` / `verify-commit` — containment, not causation),
   and the committed [`examples/agent-session/`](examples/agent-session/) worked example
   (a third-party OpenAI-style transcript mapped in ~20 lines, then map → seal → redact → verify → prove).
+- [`docs/ANCHORING.md`](docs/ANCHORING.md) — anchoring ANY sealed artifact on-chain (`vh anchor-artifact` /
+  `vh verify-anchored`): the closed six-kind digest table, the `vh-anchored-receipt@1` container, what an
+  anchored receipt PROVES (an on-chain registry record binds this exact digest at a block whose timestamp
+  BOUNDS existence — as trustworthy as the chain + YOUR pinned contract address; `--author-bound` =
+  front-run-resistant first-claimant attribution per D-1) and does NOT (a receipt from a LOCAL dev chain
+  proves MECHANISM only — worth nothing publicly until a human deploys per STRATEGY.md P-2; not the
+  artifact's truth; not attribution beyond the anchoring key; not legal advice), the free line (both verbs
+  FREE; gas is your own), and the worked local flow with committed offline fixtures
+  ([`examples/anchoring/`](examples/anchoring/)).
 - [`docs/KEY-LIFECYCLE.md`](docs/KEY-LIFECYCLE.md) — the producer-key lifecycle: publish → pin → verify, and
   how a vendor honestly RETIRES a pinned key with a signed `vh revocation publish|verify` (a key revokes
   ITSELF; a third party cannot revoke a key it does not control). The recipient `--revocations <f>`

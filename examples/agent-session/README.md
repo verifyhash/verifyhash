@@ -51,3 +51,38 @@ trusted timestamp without the human-owned P-3 trust-root.
 
 This flow is test-gated end to end by
 [`test/cli.agent.docs.test.js`](../../test/cli.agent.docs.test.js), so it cannot silently rot.
+
+## Binding the session to a git commit (map → commit-claim → seal → redact-all-but-claim → verify-commit)
+
+[`commit-bound-session.js`](commit-bound-session.js) scripts the commit-binding flow end-to-end —
+Node core + git + the shipped CLI only, offline, against a git checkout YOU name:
+
+```bash
+W=$(mktemp -d)   # a scratch workspace — nothing here writes to the repo or cwd
+node examples/agent-session/commit-bound-session.js --repo /path/to/your/git/checkout --workdir "$W"
+```
+
+1. **MAP** the committed transcript into canonical events (`events.jsonl`);
+2. **`vh agent commit-claim --repo <repo> --seq <next>`** — derive the commit **oid** + the
+   `vh hash --git` **tracked-set root** from YOUR checkout and append the ONE canonical claim event
+   line (`session.jsonl`);
+3. **`vh agent seal`** the claim-bearing log (`session.vhagent.json`);
+4. **`vh agent redact`** EVERY event EXCEPT the claim (`session.redacted.vhagent.json`) — leaves and
+   head UNCHANGED, the claim stays disclosed;
+5. **`vh agent verify-commit`** the redacted packet against the checkout — the auditor leg: FULL
+   packet verification FIRST, then oid + root re-derived from the clone; ACCEPTED only if the
+   disclosed claim matches.
+
+Exit 0 on ACCEPT (one JSON summary line on stdout); 3 when `verify-commit` REJECTs (the named reason
+— `packet-invalid` / `no-disclosed-claim` / `oid-mismatch` / `root-mismatch` — is printed); 2 usage;
+1 any other step failure. Every artifact lands under `--workdir` (or a fresh temp dir, printed on
+stderr) — never the current directory.
+
+**Honest boundary — containment, NOT causation:** the sealed packet proves the unaltered log CONTAINS
+a claim to exactly that commit oid + tracked-set root — it does NOT prove the session's events
+produced the commit. And the auditor leg needs git + a clone: the zero-install page verifies the
+PACKET; `vh agent verify-commit` is the auditor tool for the commit-fact leg. Full boundary:
+[`../../docs/AGENTTRACE.md`](../../docs/AGENTTRACE.md) › *Binding a session to a git commit*.
+
+This scripted flow (plus its tamper/dirty-checkout negatives) is test-gated end to end by
+[`test/cli.agent.commit.docs.test.js`](../../test/cli.agent.commit.docs.test.js).

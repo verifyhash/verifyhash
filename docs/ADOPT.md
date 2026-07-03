@@ -169,7 +169,11 @@ time T") is a separate, human-gated step (see
 - [`docs/AGENTTRACE.md`](AGENTTRACE.md) — sealing **AI-agent session logs** (`vh agent`, `*.vhagent.json`):
   tamper-evident, selectively-redactable session records the same free `verify-vh` paths on this page
   verify. Adoption is a ~20-line mapping over the transcript you already have — the committed example is
-  [`examples/agent-session/`](../examples/agent-session/) (map → seal → redact → verify → prove).
+  [`examples/agent-session/`](../examples/agent-session/) (map → seal → redact → verify → prove). A session
+  can also be BOUND to a git commit (`vh agent commit-claim` / `verify-commit`, free + key-less;
+  containment, not causation — the auditor re-derives the oid + tracked-set root from their OWN clone):
+  see *Binding a session to a git commit* in [`AGENTTRACE.md`](AGENTTRACE.md) and the scripted flow
+  [`examples/agent-session/commit-bound-session.js`](../examples/agent-session/commit-bound-session.js).
 - [`docs/TRUSTLEDGER.md`](TRUSTLEDGER.md) › *Zero-install: the offline app* — the TrustLedger pilot path with
   **zero** install: email ONE file ([`trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html)),
   the partner double-clicks it, drags their real exports in, and the page makes **no network request** (free tier only).

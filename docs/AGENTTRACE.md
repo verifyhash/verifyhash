@@ -69,6 +69,10 @@ vh agent prove <packet> --seq <n> [--out <p>] [--json]         # disclose ONE ev
 vh agent verify-proof <proof> [--root <hex>] [--json]          # check a disclosure offline against a head you trust
 vh agent checkpoint <session.jsonl> [--out <p>] [--json]       # commit the head so far (mid-session)
 vh agent verify-growth <earlier-head-or-packet> <later-packet> [--json]  # append-only extension or REJECT
+vh agent commit-claim --repo <dir> [--ref <ref=HEAD>] --seq <n> [--ts <iso>] [--actor <s>] [--out <p>] [--json]
+                                                               # bind the session to a git commit (FREE, key-less)
+vh agent verify-commit <packet> --repo <dir> [--ref <ref>] [--vendor <0xaddr>] [--json]
+                                                               # auditor re-derives oid + root from THEIR OWN clone
 ```
 
 The input is JSONL (or a JSON array) of canonical events — a **closed** five-type schema:
@@ -118,6 +122,84 @@ node verifier/verify-vh.js session.vhagent.json --vendor 0xPRODUCER  # signed pa
 Exit 0 = ACCEPTED, 3 = REJECTED naming the reason (and the offending event seq when event-local); a
 `--vendor` pin on an unsigned packet is a clean REJECT, so a stripped signature never passes a pinned
 verify. Details: [`verifier/README.md`](../verifier/README.md) §2c.
+
+---
+
+## Binding a session to a git commit (`commit-claim` / `verify-commit`)
+
+The first question the AI-code-governance / IP-provenance / audit buyer asks of an agent-session
+record is: *which code change does this session correspond to — and can I check the record wasn't
+doctored?* The commit-binding verbs answer it with machinery the family already ships. A
+**commit-claim** is an ORDINARY `note` event whose payload is a canonical claim string naming exactly
+ONE git **commit oid** plus that commit's **tracked-set root** — the same clone-reproducible Merkle
+root `vh hash <repo> --git` computes over the files git tracks. Appended to the session log *before*
+`vh agent seal`, the claim becomes one more redaction-safe leaf under the same head: no new packet
+kind, no new crypto, no new dependency.
+
+```bash
+# producer (FREE, key-less): derive oid + tracked-set root from YOUR repo, emit ONE JSONL claim event
+vh agent commit-claim --repo . --seq <next-seq> >> session.jsonl    # then: vh agent seal session.jsonl …
+
+# auditor (FREE, key-less): re-derive BOTH facts from THEIR OWN clone and check the sealed claim
+vh agent verify-commit session.vhagent.json --repo /their/clone     # exit 0 ACCEPTED / 3 named REJECT
+```
+
+### What a commit-bound packet PROVES
+
+- **The sealed, unaltered log contains a claim to exactly commit oid X with tracked-set root R at
+  position k.** The claim is an ordinary event leaf under the same head: editing, moving, or dropping
+  it — or doctoring any event around it — is the same named REJECT as any other tamper, and `k` (the
+  claim's `seq`) is bound by tree position, not by self-asserted metadata.
+- **Anyone with a clean checkout of X re-derives R via the shipped `vh hash <repo> --git` machinery.**
+  `vh agent verify-commit` FIRST re-runs the full packet verification (a tampered or forged packet —
+  including a failed `--vendor` pin — never reaches the claim check), THEN re-resolves the oid and
+  RECOMPUTES the tracked-set root from the auditor's OWN clone; it never trusts the packet's stored
+  facts. A REJECT names the failed check: `packet-invalid` / `no-disclosed-claim` / `oid-mismatch` /
+  `root-mismatch`. Because `hashGit` reads work-tree bytes, a dirty checkout of the right commit is an
+  HONEST `root-mismatch` (the named fix: check out the claimed commit in a CLEAN tree), never a false
+  ACCEPT.
+- **Redaction of any other payload leaves the claim checkable.** Leaves are redaction-safe, so the
+  producer can withhold every prompt/completion/tool payload and hand over a packet that still proves
+  the commit binding; redacting the CLAIM itself is, by definition, `no-disclosed-claim` — a withheld
+  claim is committed-to but not disclosable.
+
+### What it does NOT prove
+
+- **Containment, NOT causation — it does NOT prove the session's events produced the commit.** The
+  packet proves the sealed log CONTAINS the claim at position k; whether the recorded session actually
+  authored commit X is a real-world fact no hash can witness.
+- **Not faithful recording.** The boundary above is unchanged: garbage-in is out of scope — if the
+  software that wrote the log lied before sealing, the packet faithfully preserves the lie, claim
+  included.
+- **The claim's `ts` is self-asserted**, like every event `ts`: recorded verbatim, never verified
+  against any clock.
+- **NOT a trusted timestamp.** "This session (or claim) existed at time T" still rides the human-owned
+  **P-3** trust-root ([`STRATEGY.md`](../STRATEGY.md) › Proposals — needs-human); a signed head proves
+  *who vouched* for the head, not *when*.
+
+**The same wording rides in-band**: every `commit-claim` emission and every `verify-commit` verdict
+carries this boundary as its `note`. Verbatim:
+
+> A commit-claim is an ORDINARY session event binding a claim to EXACTLY one git commit oid and its tracked-set root (the `vh hash --git` work-tree root over the files git tracks at that commit). Sealed into a packet it proves CONTAINMENT, NOT CAUSATION: the unaltered log CONTAINS this claim — it does NOT prove the session's events PRODUCED that commit. The auditor re-derives BOTH facts from THEIR OWN clone via `vh agent verify-commit` (free, read-only, key-less); because hashGit reads WORK-TREE bytes, a dirty checkout is an HONEST root mismatch, never a false ACCEPT. `scope` is an UNVERIFIED hint; `ts` is SELF-ASSERTED metadata like every event ts. Every caveat of the agent-session packet applies (see `vh agent verify`).
+
+### Free vs. paid, and where each leg verifies
+
+`commit-claim` and `verify-commit` are **FREE**, read-only, and key-less end-to-end — the whole
+commit-binding surface joins the free verify tier above. **`--sign` is unchanged behind the existing
+gate** (the DRAFT `agent_signed` capability, same fail-closed license mechanism as above): commit
+binding adds no new paid surface and no new human gate.
+
+**The standalone-page boundary, honestly:** the zero-install page verifies the PACKET — seal, leaves,
+head, signature, and the disclosed claim bytes; re-deriving the COMMIT facts requires git + a clone,
+i.e. the CLI (`vh agent verify-commit`) is the auditor tool for that leg. A counterparty without git
+can still check the packet is unaltered and read the claim; only the re-derivation leg needs a
+checkout.
+
+The scripted worked flow — map → `commit-claim` → seal → redact-all-but-claim → `verify-commit` — is
+committed at
+[`examples/agent-session/commit-bound-session.js`](../examples/agent-session/commit-bound-session.js)
+and driven end-to-end (plus the tamper/dirty-checkout negatives) by
+[`test/cli.agent.commit.docs.test.js`](../test/cli.agent.commit.docs.test.js), so it cannot rot.
 
 ---
 

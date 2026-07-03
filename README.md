@@ -596,6 +596,17 @@ verifies with the independent `verify-vh` (CLI, zero-install bundle, or the offl
 [`docs/AGENTTRACE.md`](docs/AGENTTRACE.md); a committed third-party-transcript example proving adoption
 is a ~20-line mapping: [`examples/agent-session/`](examples/agent-session/).
 
+**Commit-bound sessions** — `vh agent commit-claim` emits ONE ordinary claim event binding the session
+to exactly one git commit (the oid + the `vh hash --git` tracked-set root), sealed under the same head;
+`vh agent verify-commit <packet> --repo <dir>` is the auditor leg: full packet verification FIRST, then
+BOTH facts re-derived from the auditor's OWN clone, with every REJECT named (`packet-invalid` /
+`no-disclosed-claim` / `oid-mismatch` / `root-mismatch`). Both FREE, read-only, key-less; redact every
+other payload and the claim stays checkable. **Containment, NOT causation** — it does NOT prove the
+session's events produced the commit. Spec + honest boundary: [`docs/AGENTTRACE.md`](docs/AGENTTRACE.md)
+› *Binding a session to a git commit*; the scripted flow (map → commit-claim → seal →
+redact-all-but-claim → verify-commit):
+[`examples/agent-session/commit-bound-session.js`](examples/agent-session/commit-bound-session.js).
+
 ### Producer identity card (`vh identity`)
 
 A **signed, offline-verifiable "who is this vendor, and what exactly do they attest?"** card — the
@@ -801,7 +812,8 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   append-only growth across checkpoints; redaction withholds — never silently alters) and does NOT
   (garbage-in out of scope; `ts` self-asserted; not a trusted timestamp without P-3), the free-vs-paid
   line (`--sign` gated by the DRAFT `agent_signed` capability), where a counterparty independently
-  verifies, and the committed [`examples/agent-session/`](examples/agent-session/) worked example
+  verifies, the commit-binding leg (`commit-claim` / `verify-commit` — containment, not causation),
+  and the committed [`examples/agent-session/`](examples/agent-session/) worked example
   (a third-party OpenAI-style transcript mapped in ~20 lines, then map → seal → redact → verify → prove).
 - [`docs/KEY-LIFECYCLE.md`](docs/KEY-LIFECYCLE.md) — the producer-key lifecycle: publish → pin → verify, and
   how a vendor honestly RETIRES a pinned key with a signed `vh revocation publish|verify` (a key revokes

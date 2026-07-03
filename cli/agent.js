@@ -17,7 +17,13 @@
 //     * `vh agent prove / verify-proof`   disclose + check ONE event OFFLINE against the head;
 //     * `vh agent checkpoint`             print/emit the head so far (a mid-session commitment);
 //     * `vh agent verify-growth`          prove a later packet is an APPEND-ONLY extension of an
-//                                         earlier checkpoint/packet head (rewritten past = REJECT).
+//                                         earlier checkpoint/packet head (rewritten past = REJECT);
+//     * `vh agent commit-claim`           emit ONE canonical JSONL claim event binding the session to
+//                                         a git commit oid + tracked-set root derived from YOUR work
+//                                         tree (T-69.2, over the pure cli/core/agent-commit.js core);
+//     * `vh agent verify-commit`          the AUDITOR leg: full packet verify FIRST, then re-derive
+//                                         oid + root from THEIR OWN clone and match a DISCLOSED claim
+//                                         (containment, not causation — see COMMIT_CLAIM_TRUST_NOTE).
 //
 // FREE vs PAID (the same posture as `vh evidence`).
 //   Sealing, verifying, redacting, proving, checkpointing and growth-verifying are FREE — the whole
@@ -56,10 +62,13 @@ const path = require("path");
 const { getAddress } = require("ethers");
 
 const agentSession = require("./core/agent-session");
+const agentCommit = require("./core/agent-commit");
 const coreAttestation = require("./core/attestation");
 const coreLicense = require("./core/license");
 const evidencePlans = require("./core/evidence-plans");
 const evidence = require("./evidence");
+const git = require("./git");
+const { hashGit } = require("./hash");
 
 const {
   REASONS,
@@ -135,6 +144,19 @@ const SIGNED_HEAD_TRUST_NOTE =
   "T\" — still the human trust-root P-3) and is NOT a legal opinion. Every caveat of the packet " +
   "applies. " +
   AGENT_TRUST_NOTE;
+
+// The commit-claim trust line (T-69.2) — stated ONCE so the producer verb, the auditor verb, and
+// their --json envelopes agree and the caveat can never drift. The load-bearing honesty:
+// CONTAINMENT, not CAUSATION (the T-69.1 core's documented boundary, carried into every output).
+const COMMIT_CLAIM_TRUST_NOTE =
+  "A commit-claim is an ORDINARY session event binding a claim to EXACTLY one git commit oid and " +
+  "its tracked-set root (the `vh hash --git` work-tree root over the files git tracks at that " +
+  "commit). Sealed into a packet it proves CONTAINMENT, NOT CAUSATION: the unaltered log CONTAINS " +
+  "this claim — it does NOT prove the session's events PRODUCED that commit. The auditor re-derives " +
+  "BOTH facts from THEIR OWN clone via `vh agent verify-commit` (free, read-only, key-less); " +
+  "because hashGit reads WORK-TREE bytes, a dirty checkout is an HONEST root mismatch, never a " +
+  "false ACCEPT. `scope` is an UNVERIFIED hint; `ts` is SELF-ASSERTED metadata like every event " +
+  "ts. Every caveat of the agent-session packet applies (see `vh agent verify`).";
 
 // A dedicated, NAMED error type for malformed/foreign agent artifacts (the packetseal discipline:
 // strict validation raises a named error, callers map it to a named CLI reject — never a throw that
@@ -837,6 +859,33 @@ function parseAgentVerifyGrowthArgs(argv) {
   const opts = _parse(argv, {}, 2, "agent verify-growth takes exactly <earlier> <later>");
   opts.earlier = opts._positionals[0];
   opts.later = opts._positionals[1];
+  return opts;
+}
+
+function parseAgentCommitClaimArgs(argv) {
+  return _parse(
+    argv,
+    {
+      "--repo": "repo",
+      "--ref": "ref",
+      "--seq": "seq",
+      "--ts": "ts",
+      "--actor": "actor",
+      "--out": "out",
+    },
+    0,
+    "agent commit-claim takes no positional arguments — the facts come from --repo/--ref"
+  );
+}
+
+function parseAgentVerifyCommitArgs(argv) {
+  const opts = _parse(
+    argv,
+    { "--repo": "repo", "--ref": "ref", "--vendor": "vendor" },
+    1,
+    "agent verify-commit takes exactly one <packet>"
+  );
+  opts.packet = opts._positionals[0];
   return opts;
 }
 
@@ -1603,7 +1652,390 @@ function runAgentVerifyGrowth(opts, io = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// CLI dispatch: `vh agent <seal|verify|redact|prove|verify-proof|checkpoint|verify-growth> ...`.
+// `vh agent commit-claim` / `vh agent verify-commit` (T-69.2) — the CLI verbs over the PURE
+// commit-claim core (cli/core/agent-commit.js, T-69.1). Both FREE, read-only, key-less. The
+// producer emits ONE canonical JSONL claim event whose git facts are derived from the operator's
+// OWN work tree; the auditor re-derives BOTH facts from THEIR OWN clone and accepts only a packet
+// that (a) fully verifies via the EXISTING verifyPacket path (signature/vendor-pin included) AND
+// (b) discloses a claim matching the re-derived facts.
+// ---------------------------------------------------------------------------
+
+// A single non-negative safe-integer --seq (the claim event's position in the session log).
+// Deliberately NOT the redact/prove list parser: a claim rides at exactly ONE seq.
+function _parseClaimSeq(raw) {
+  const t = String(raw == null ? "" : raw).trim();
+  if (!/^\d+$/.test(t) || !Number.isSafeInteger(Number(t))) {
+    const e = new Error(
+      `--seq must be a single non-negative integer (the claim event's position in the session log), got: ${JSON.stringify(String(raw))}`
+    );
+    e.usage = true;
+    throw e;
+  }
+  return Number(t);
+}
+
+/**
+ * Derive the git facts BOTH verbs bind/check: the full commit oid (cli/git.js resolveCommit,
+ * REUSED VERBATIM) and the tracked-set work-tree root + vantage-point scope (cli/hash.js hashGit,
+ * REUSED VERBATIM — the same engine as `vh hash --git`, so the root is byte-identical to what any
+ * clean checkout of the commit re-derives). Every failure is one of those modules' EXISTING named,
+ * actionable errors (not a work tree, unknown ref, zero tracked files, tracked file missing) —
+ * surfaced by the callers as an exit-1 IO error, never a stack trace.
+ *
+ * @param {string} repoAbs absolute path to (or inside) the work tree
+ * @param {string|undefined} ref the ref to resolve (default HEAD)
+ * @returns {{ commit: string, root: string, scope: string }}
+ */
+function deriveGitFacts(repoAbs, ref) {
+  // hashGit first: its repoRoot guard yields the clear "not a git repository" error for a non-repo
+  // --repo (resolveCommit alone would blame the ref). Then resolveCommit — the acceptance's named
+  // oid source — with a cross-check: both resolve the same ref back-to-back, so a mismatch means
+  // the repo moved mid-derivation (named, not silent).
+  const derived = hashGit(repoAbs, { ref });
+  const oid = git.resolveCommit(repoAbs, ref);
+  if (oid !== derived.commit) {
+    throw new Error(
+      `the repository changed while deriving the git facts (${ref || "HEAD"} resolved to both ` +
+        `${derived.commit} and ${oid}); re-run against a quiescent repo`
+    );
+  }
+  return { commit: oid, root: derived.root, scope: derived.scope };
+}
+
+// ---------------------------------------------------------------------------
+// `vh agent commit-claim --repo <dir> [--ref <ref>] --seq <n> [--ts <iso>] [--actor <s>]
+//                        [--out <p>] [--json]`
+// ---------------------------------------------------------------------------
+
+function runAgentCommitClaim(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+  const now = io.now || new Date();
+
+  if (!opts.repo) {
+    writeErr(
+      "error: `vh agent commit-claim` requires --repo <dir> — the git work tree the claim's facts are derived from\n"
+    );
+    return EXIT.USAGE;
+  }
+  if (opts.seq === undefined) {
+    writeErr(
+      "error: `vh agent commit-claim` requires --seq <n> — the claim event's position in the session log\n"
+    );
+    return EXIT.USAGE;
+  }
+  let seq;
+  try {
+    seq = _parseClaimSeq(opts.seq);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  // Derive the facts from the operator's OWN work tree — resolveCommit + hashGit reused verbatim;
+  // their existing named git errors surface as exit-1 IO errors, never a stack trace.
+  let facts;
+  try {
+    facts = deriveGitFacts(path.resolve(opts.repo), opts.ref);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  // `ts` is SELF-ASSERTED metadata (recorded, never verified against any clock) — the same posture
+  // as every event ts. --ts wins verbatim; otherwise the injectable clock stamps it.
+  const ts = opts.ts !== undefined ? String(opts.ts) : now.toISOString();
+  const base = { seq, ts, commit: facts.commit, gitRoot: facts.root };
+  if (opts.actor !== undefined) base.actor = String(opts.actor);
+
+  // Build the canonical claim EVENT via the PURE core. The vantage-point scope rides along as the
+  // OPTIONAL unverified hint when --repo pointed inside a subtree ("." — the repo root — is not a
+  // valid scope and simply means "no hint"); a scope the canonical schema cannot represent (e.g. a
+  // control-character path segment) drops the HINT rather than blocking the FACTS.
+  let built = agentCommit.buildCommitClaimEvent(
+    facts.scope !== "." ? { ...base, scope: facts.scope } : base
+  );
+  if (!built.ok && built.reason === agentCommit.REASONS.CLAIM_BAD_SCOPE) {
+    built = agentCommit.buildCommitClaimEvent(base);
+  }
+  if (!built.ok) {
+    writeErr(
+      `error: cannot build commit-claim event: ${built.reason}${built.field ? ` (field: ${built.field})` : ""}\n`
+    );
+    return EXIT.FAIL;
+  }
+
+  // ONE canonical JSONL event line, ready to append to the session log BEFORE `vh agent seal`.
+  const line = JSON.stringify(built.event) + "\n";
+  let outAbs = null;
+  if (opts.out) {
+    const emitted = emitArtifact(line, opts.out, write, writeErr);
+    if (emitted.code !== EXIT.OK) return emitted.code;
+    outAbs = emitted.outAbs;
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ok: true,
+          note: COMMIT_CLAIM_TRUST_NOTE,
+          kind: agentCommit.CLAIM_KIND,
+          seq,
+          ts,
+          actor: built.event.actor,
+          commit: facts.commit,
+          gitRoot: facts.root,
+          scope: "scope" in built.claim ? built.claim.scope : null,
+          claim: built.claim,
+          event: built.event,
+          out: outAbs,
+          // With NO --out the line rides in `artifact` so --json never drops it (family parity).
+          artifact: outAbs ? null : line,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+    return EXIT.OK;
+  }
+
+  const summary =
+    `commit-claim event (seq ${seq}) — commit ${facts.commit}, tracked-set root ${facts.root}` +
+    ("scope" in built.claim ? `, scope ${built.claim.scope}` : "") +
+    "\n  append it to your session log BEFORE `vh agent seal`\n";
+  if (outAbs) {
+    write(COMMIT_CLAIM_TRUST_NOTE + "\n\n" + summary + `  written:      ${outAbs}\n`);
+  } else {
+    // stdout carries EXACTLY the one JSONL line (so `vh agent commit-claim ... >> session.jsonl`
+    // appends cleanly); the trust note + summary ride stderr, never corrupting the stream.
+    writeErr(COMMIT_CLAIM_TRUST_NOTE + "\n\n" + summary);
+    write(line);
+  }
+  return EXIT.OK;
+}
+
+// ---------------------------------------------------------------------------
+// `vh agent verify-commit <packet> --repo <dir> [--ref <ref>] [--vendor <0xaddr>] [--json]`
+// ---------------------------------------------------------------------------
+
+function runAgentVerifyCommit(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.packet) {
+    writeErr("error: `vh agent verify-commit` requires a <packet>\n");
+    return EXIT.USAGE;
+  }
+  if (!opts.repo) {
+    writeErr(
+      "error: `vh agent verify-commit` requires --repo <dir> — the AUDITOR'S OWN clone the facts are re-derived from\n"
+    );
+    return EXIT.USAGE;
+  }
+  let vendor;
+  try {
+    vendor = _normalizeVendorFlag(opts.vendor);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+
+  let packet;
+  try {
+    packet = readPacketFile(path.resolve(opts.packet));
+  } catch (e) {
+    writeErr(`error: invalid agent-session packet ${opts.packet}: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  const refLabel = opts.ref || "HEAD";
+  function emit(result) {
+    const code = result.accepted ? EXIT.OK : EXIT.FAIL;
+    if (opts.json) {
+      write(
+        JSON.stringify(
+          { ...result, note: COMMIT_CLAIM_TRUST_NOTE, packet: opts.packet, repo: opts.repo, ref: refLabel },
+          null,
+          2
+        ) + "\n"
+      );
+      return code;
+    }
+    write(COMMIT_CLAIM_TRUST_NOTE + "\n\n");
+    write(`# vh agent verify-commit — ${opts.packet} vs ${opts.repo} @ ${refLabel}\n`);
+    if (result.expected) {
+      write(`re-derived (YOUR clone): commit ${result.expected.commit}\n`);
+      write(`                         root   ${result.expected.gitRoot}\n`);
+    }
+    if (result.accepted) {
+      write(`packet:    ACCEPTED — head { size: ${result.head.size}, root: ${result.head.root} }`);
+      if (result.signed) {
+        write(
+          `, signed by ${result.signature.recoveredSigner}` +
+            (result.signature.vendorPinned ? ` (PINNED to vendor ${result.signature.vendorPinned})` : " (UNPINNED)")
+        );
+      } else {
+        write(", unsigned");
+      }
+      write("\n");
+      write(
+        `claim:     seq ${result.matched.seq} — commit ${result.matched.claim.commit}, root ${result.matched.claim.gitRoot}` +
+          ("scope" in result.matched.claim ? `, scope ${result.matched.claim.scope} (an UNVERIFIED hint)` : "") +
+          "\n"
+      );
+      write(
+        "\nACCEPTED — the sealed packet verifies AND a disclosed claim matches the facts re-derived from your own clone.\n"
+      );
+    } else {
+      write(`\nREJECTED — ${result.reason}\n`);
+      if (result.detail) write(`  ${result.detail}\n`);
+    }
+    return code;
+  }
+
+  // (1) FIRST: the FULL EXISTING packet verification, verbatim — every leaf + the root re-derived,
+  //     counts recounted, and the signature/vendor-pin handling of `vh agent verify` (fail-closed:
+  //     --vendor on an unsigned packet is NOT_SIGNED). A tampered/forged packet can NEVER reach the
+  //     claim check.
+  const pre = verifyPacket(packet, { vendorAddress: vendor });
+  if (!pre.accepted) {
+    return emit({
+      verdict: "REJECTED",
+      accepted: false,
+      reason: "packet-invalid",
+      packetReason: pre.reason,
+      packetSeq: pre.seq,
+      detail:
+        `packet verification REJECTED: ${pre.reason}` +
+        (pre.seq !== null ? ` at event seq ${pre.seq}` : "") +
+        (pre.detail ? ` — ${pre.detail}` : ""),
+      expected: null,
+      claims: null,
+      matched: null,
+      head: null,
+      counts: null,
+      signed: pre.signed,
+      signature: pre.signature,
+    });
+  }
+
+  // (2) Re-derive the facts FROM THE AUDITOR'S OWN CLONE (resolveCommit + hashGit verbatim). The
+  //     packet's own claim is never trusted as a fact source; git trouble is an IO error (exit 1).
+  let facts;
+  try {
+    facts = deriveGitFacts(path.resolve(opts.repo), opts.ref);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.IO;
+  }
+  const expected = { commit: facts.commit, gitRoot: facts.root };
+
+  // (3) Find every DISCLOSED claim (a REDACTED claim withholds its payload bytes and is by
+  //     definition not disclosable) and accept only if one matches the re-derived facts.
+  const found = agentCommit.findCommitClaims(packet.events);
+  const common = {
+    expected,
+    head: pre.head,
+    counts: pre.counts,
+    signed: pre.signed,
+    signature: pre.signature,
+  };
+  if (!found.ok) {
+    // Unreachable after verifyPacket ACCEPTed (the session already validated); kept total + named.
+    return emit({
+      verdict: "REJECTED",
+      accepted: false,
+      reason: "packet-invalid",
+      detail: `session re-validation failed: ${found.reason}`,
+      claims: null,
+      matched: null,
+      ...common,
+    });
+  }
+  const claims = found.claims.map((c) => ({ seq: c.seq, claim: c.claim }));
+  if (found.claims.length === 0) {
+    return emit({
+      verdict: "REJECTED",
+      accepted: false,
+      reason: "no-disclosed-claim",
+      detail:
+        "the packet contains no DISCLOSED commit-claim event (a REDACTED claim is not disclosable — " +
+        "ask the packet holder for a copy that discloses the claim event; redacting any OTHER event " +
+        "leaves the head unchanged)",
+      claims,
+      matched: null,
+      ...common,
+    });
+  }
+
+  let rootMismatch = null;
+  let oidMismatch = null;
+  for (const c of found.claims) {
+    const v = agentCommit.verifyCommitClaim({ event: c.event, expected });
+    if (v.ok) {
+      return emit({
+        verdict: "ACCEPTED",
+        accepted: true,
+        reason: null,
+        claims,
+        matched: { seq: c.seq, claim: c.claim },
+        ...common,
+      });
+    }
+    if (v.reason === agentCommit.REASONS.ROOT_MISMATCH && rootMismatch === null) rootMismatch = { c, v };
+    if (v.reason === agentCommit.REASONS.OID_MISMATCH && oidMismatch === null) oidMismatch = { c, v };
+  }
+  // root-mismatch (right commit, wrong bytes) is the most actionable verdict, so it wins the
+  // naming when both kinds of near-miss exist across multiple claims.
+  if (rootMismatch) {
+    const { c, v } = rootMismatch;
+    return emit({
+      verdict: "REJECTED",
+      accepted: false,
+      reason: agentCommit.REASONS.ROOT_MISMATCH,
+      detail:
+        `the claim at seq ${c.seq} names commit ${c.claim.commit} (which matches your clone) but its ` +
+        `tracked-set root ${v.claimed} does not match the re-derived root ${v.expected}. ` +
+        "Check out the claimed commit in a CLEAN tree and re-run: hashGit reads WORK-TREE bytes, so " +
+        "a dirty checkout is an HONEST mismatch, not a false ACCEPT.",
+      claims,
+      matched: null,
+      ...common,
+    });
+  }
+  if (oidMismatch) {
+    const { c, v } = oidMismatch;
+    return emit({
+      verdict: "REJECTED",
+      accepted: false,
+      reason: agentCommit.REASONS.OID_MISMATCH,
+      detail:
+        `no disclosed claim names your clone's commit: the claim at seq ${c.seq} names ${v.claimed} ` +
+        `but ${refLabel} re-resolves to ${v.expected}` +
+        (found.claims.length > 1 ? ` (${found.claims.length} disclosed claims checked)` : "") +
+        " — check out the claimed commit (e.g. `git checkout <oid>`) and re-run",
+      claims,
+      matched: null,
+      ...common,
+    });
+  }
+  // Unreachable: a disclosed, parseable claim can only match, oid-mismatch, or root-mismatch
+  // against well-formed expected facts. Kept total + named.
+  return emit({
+    verdict: "REJECTED",
+    accepted: false,
+    reason: "packet-invalid",
+    detail: "claim verification returned an unexpected verdict",
+    claims,
+    matched: null,
+    ...common,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CLI dispatch: `vh agent <seal|verify|redact|prove|verify-proof|checkpoint|verify-growth|
+//                          commit-claim|verify-commit> ...`.
 // ---------------------------------------------------------------------------
 
 async function cmdAgent(argv, io = {}) {
@@ -1617,6 +2049,8 @@ async function cmdAgent(argv, io = {}) {
     "verify-proof": [parseAgentVerifyProofArgs, runAgentVerifyProof],
     checkpoint: [parseAgentCheckpointArgs, runAgentCheckpoint],
     "verify-growth": [parseAgentVerifyGrowthArgs, runAgentVerifyGrowth],
+    "commit-claim": [parseAgentCommitClaimArgs, runAgentCommitClaim],
+    "verify-commit": [parseAgentVerifyCommitArgs, runAgentVerifyCommit],
   };
   if (Object.prototype.hasOwnProperty.call(dispatch, sub)) {
     const [parse, run] = dispatch[sub];
@@ -1635,7 +2069,8 @@ async function cmdAgent(argv, io = {}) {
   }
   writeErr(
     `error: unknown agent subcommand: ${sub} ` +
-      "(expected: seal, verify, redact, prove, verify-proof, checkpoint, verify-growth)\n"
+      "(expected: seal, verify, redact, prove, verify-proof, checkpoint, verify-growth, " +
+      "commit-claim, verify-commit)\n"
   );
   return EXIT.USAGE;
 }
@@ -1652,6 +2087,8 @@ function agentUsage() {
     "  vh agent verify-proof <proof> [--root <hex>] [--json]",
     "  vh agent checkpoint <session.jsonl> [--out <p>] [--json]",
     "  vh agent verify-growth <earlier-head-or-packet> <later-packet> [--json]",
+    "  vh agent commit-claim --repo <dir> [--ref <ref=HEAD>] --seq <n> [--ts <iso>] [--actor <s>] [--out <p>] [--json]",
+    "  vh agent verify-commit <packet> --repo <dir> [--ref <ref=HEAD>] [--vendor <0xaddr>] [--json]",
     "",
     "A packet commits an ORDERED agent-session event log (JSONL: prompt/completion/tool_call/tool_result/note)",
     "under one RFC-6962-style Merkle head {size, root} with REDACTION-SAFE leaves: redacting a payload withholds",
@@ -1660,7 +2097,19 @@ function agentUsage() {
     "seq; prove/verify-proof disclose + check ONE event offline; checkpoint prints the head so far and",
     "verify-growth proves a later packet extends it APPEND-ONLY (a rewritten past is REJECTED).",
     "",
-    "FREE: seal (unsigned) + verify + redact + prove + verify-proof + checkpoint + verify-growth.",
+    "commit-claim binds a session to a git commit: it derives the facts from YOUR work tree (cli/git.js",
+    "resolveCommit + the `vh hash --git` engine hashGit, reused verbatim) and prints ONE canonical JSONL claim",
+    "event — append it to the session log BEFORE `vh agent seal` (with no --out, stdout is EXACTLY the line, so",
+    "`>> session.jsonl` appends cleanly; the trust note rides stderr). verify-commit FIRST re-runs the FULL",
+    "packet verification (signature/vendor-pin handling included — a tampered/forged packet never reaches the",
+    "claim check), THEN re-resolves the oid + RECOMPUTES the tracked-set root from the AUDITOR'S OWN clone and",
+    "ACCEPTs only if a DISCLOSED claim matches; a REJECT names the failed check: packet-invalid /",
+    "no-disclosed-claim / oid-mismatch / root-mismatch (root-mismatch => check out the claimed commit in a CLEAN",
+    "tree: hashGit reads work-tree bytes, so a dirty checkout is an HONEST mismatch). CONTAINMENT, not causation:",
+    "a matching claim does NOT prove the session's events PRODUCED the commit. Both verbs FREE, key-less.",
+    "",
+    "FREE: seal (unsigned) + verify + redact + prove + verify-proof + checkpoint + verify-growth +",
+    "  commit-claim + verify-commit.",
     "PAID (requires --license + --vendor carrying the DRAFT `agent_signed` capability): --sign — a detached",
     "  EIP-191 attestation over the HEAD, so ONE signature stays valid for every redacted copy. The gate is the",
     "  SAME offline license mechanism as `vh evidence seal --sign` (fail-closed; never silently downgraded).",
@@ -1684,6 +2133,7 @@ module.exports = {
   MAX_INPUT_BYTES,
   AGENT_TRUST_NOTE,
   SIGNED_HEAD_TRUST_NOTE,
+  COMMIT_CLAIM_TRUST_NOTE,
   AgentPacketError,
   // license framing (the evidence mechanism, extended by the DRAFT agent capability)
   AGENT_LICENSE_CFG,
@@ -1707,6 +2157,8 @@ module.exports = {
   parseAgentVerifyProofArgs,
   parseAgentCheckpointArgs,
   parseAgentVerifyGrowthArgs,
+  parseAgentCommitClaimArgs,
+  parseAgentVerifyCommitArgs,
   runAgentSeal,
   runAgentVerify,
   runAgentRedact,
@@ -1714,6 +2166,8 @@ module.exports = {
   runAgentVerifyProof,
   runAgentCheckpoint,
   runAgentVerifyGrowth,
+  runAgentCommitClaim,
+  runAgentVerifyCommit,
   cmdAgent,
   agentUsage,
 };

@@ -3,93 +3,508 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>verifyhash — independent, offline verification</title>
 <meta name="description" content="Cryptographic provenance you can check yourself — offline, with zero trust in the producer. A single-file verifier you can reproduce from source.">
+<meta name="theme-color" content="#0B0E13">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%225%22 fill=%22none%22 stroke=%22%235AD2E0%22 stroke-width=%222%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%221.6%22 fill=%22%235AD2E0%22/%3E%3C/svg%3E">
+<title>verifyhash — verify it yourself</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font: 16px/1.6 -apple-system, system-ui, Segoe UI, Roboto, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1.2rem; }
-  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  pre { background: #1113; padding: .8rem 1rem; border-radius: 8px; overflow-x: auto; }
-  .hash { word-break: break-all; font-size: .85em; }
-  h2 { margin-top: 2.2rem; }
-  .box { border: 1px solid #8884; border-radius: 8px; padding: 1rem 1.2rem; margin: 1rem 0; }
-  a { color: inherit; }
-  footer { margin-top: 3rem; font-size: .85em; opacity: .7; }
+  :root{
+    --ink:#0B0E13; --ink2:#0E131B; --panel:#151B25; --panel2:#1A222E;
+    --line:#232C3A; --line-soft:#1B222D;
+    --fg:#E8EDF4; --muted:#8A94A6; --faint:#5C6675;
+    --accent:#5AD2E0; --accent-deep:#123840;
+    --match:#5BE59B; --mismatch:#FF6E86;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --wrap:64rem;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--ink); color:var(--fg);
+    font-family:var(--sans); font-size:16px; line-height:1.6;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+  ::selection{background:rgba(90,210,224,.28)}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+
+  .wrap{width:100%;max-width:var(--wrap);margin-inline:auto;padding-inline:1.5rem}
+  .mono{font-family:var(--mono)}
+  .eyebrow{
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.24em;text-transform:uppercase;
+    color:var(--muted);font-weight:500;
+  }
+
+  /* ---- top bar ---- */
+  header.bar{
+    position:sticky;top:0;z-index:50;
+    background:color-mix(in srgb,var(--ink) 82%,transparent);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-soft);
+  }
+  .bar .row{display:flex;align-items:center;gap:1.5rem;height:60px}
+  .brand{font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:1.02rem;display:flex;align-items:center;gap:.55rem}
+  .brand .tick{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(90,210,224,.14)}
+  .bar nav{display:flex;gap:1.6rem;margin-left:auto;font-family:var(--mono);font-size:.82rem;color:var(--muted)}
+  .bar nav a:hover{color:var(--fg)}
+  .btn{
+    font-family:var(--mono);font-size:.83rem;font-weight:600;letter-spacing:.01em;
+    padding:.5rem .95rem;border-radius:7px;border:1px solid transparent;cursor:pointer;
+    display:inline-flex;align-items:center;gap:.5rem;transition:transform .12s ease,background .15s ease,border-color .15s ease;
+  }
+  .btn-primary{background:var(--accent);color:#04171b;border-color:var(--accent)}
+  .btn-primary:hover{background:#7ee0eb;transform:translateY(-1px)}
+  .btn-ghost{background:transparent;color:var(--fg);border-color:var(--line)}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .bar .btn{padding:.42rem .8rem}
+  @media(max-width:720px){.bar nav{display:none}}
+
+  /* ---- hero ---- */
+  .hero{position:relative;padding:clamp(2.6rem,7vw,5.2rem) 0 clamp(2rem,5vw,3.4rem)}
+  .hero::before{
+    content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(120% 90% at 50% -10%,rgba(90,210,224,.10),transparent 55%),
+      linear-gradient(transparent 0 39px,var(--line-soft) 39px 40px),
+      linear-gradient(90deg,transparent 0 39px,var(--line-soft) 39px 40px);
+    background-size:auto,40px 40px,40px 40px;
+    -webkit-mask-image:linear-gradient(var(--ink),transparent 78%);
+    mask-image:linear-gradient(var(--ink),transparent 78%);
+    opacity:.5;
+  }
+  .hero h1{
+    font-family:var(--mono);font-weight:600;letter-spacing:-.03em;text-wrap:balance;
+    font-size:clamp(2.15rem,6vw,3.7rem);line-height:1.02;margin:.9rem 0 0;
+  }
+  .hero h1 .off{color:var(--muted)}
+  .lede{max-width:40rem;color:var(--muted);font-size:clamp(1.02rem,2.2vw,1.18rem);margin:1.15rem 0 0}
+  .lede strong{color:var(--fg);font-weight:600}
+  .hero-cta{display:flex;flex-wrap:wrap;gap:.7rem;margin-top:1.6rem}
+
+  .reveal{opacity:0;transform:translateY(14px);animation:rise .7s cubic-bezier(.2,.7,.2,1) forwards}
+  .reveal.d1{animation-delay:.05s}.reveal.d2{animation-delay:.14s}.reveal.d3{animation-delay:.23s}.reveal.d4{animation-delay:.32s}
+  @keyframes rise{to{opacity:1;transform:none}}
+
+  /* ---- instrument ---- */
+  .instrument{
+    margin-top:clamp(2rem,5vw,3rem);
+    border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    background:linear-gradient(180deg,var(--panel),var(--ink2));
+    box-shadow:0 40px 90px -50px rgba(0,0,0,.9),0 0 0 1px rgba(90,210,224,.04) inset;
+  }
+  .inst-head{
+    display:flex;align-items:center;gap:.8rem;padding:.75rem 1rem;
+    border-bottom:1px solid var(--line);background:rgba(255,255,255,.015);
+    font-family:var(--mono);font-size:.74rem;letter-spacing:.06em;color:var(--muted);
+  }
+  .inst-head .dot{width:8px;height:8px;border-radius:50%;background:var(--match);box-shadow:0 0 8px var(--match)}
+  .inst-head .net{margin-left:auto;display:flex;align-items:center;gap:.45rem;color:var(--faint)}
+  .inst-head .net b{color:var(--match);font-weight:600}
+  .inst-body{display:grid;grid-template-columns:1.1fr .9fr;gap:0}
+  @media(max-width:760px){.inst-body{grid-template-columns:1fr}}
+  .inst-in{padding:1.1rem 1.15rem;border-right:1px solid var(--line)}
+  @media(max-width:760px){.inst-in{border-right:0;border-bottom:1px solid var(--line)}}
+  .inst-in label{display:block;font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-bottom:.5rem}
+  #payload{
+    width:100%;min-height:112px;resize:vertical;
+    background:var(--ink);color:var(--fg);border:1px solid var(--line);border-radius:9px;
+    font-family:var(--mono);font-size:.92rem;line-height:1.55;padding:.7rem .8rem;
+  }
+  #payload:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(90,210,224,.12)}
+  .hint{margin:.7rem 0 0;font-size:.82rem;color:var(--faint);font-family:var(--sans)}
+  .hint kbd{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:.05rem .35rem;color:var(--muted);font-size:.78rem}
+
+  .inst-out{padding:1.1rem 1.15rem;display:flex;flex-direction:column;gap:.85rem}
+  .digest-label{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+  .digest{
+    font-family:var(--mono);font-size:.82rem;line-height:1.55;word-break:break-all;
+    color:var(--muted);background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:.7rem .8rem;min-height:3.1em;
+    transition:color .2s ease,border-color .2s ease;
+  }
+  .digest .lead{color:var(--accent)}
+  .pinned{font-family:var(--mono);font-size:.76rem;color:var(--faint);word-break:break-all}
+  .pinned b{color:var(--muted);font-weight:500}
+  .verdict{
+    margin-top:auto;display:flex;align-items:center;gap:.75rem;
+    font-family:var(--mono);font-weight:600;letter-spacing:.02em;font-size:1.05rem;
+    padding:.7rem .85rem;border-radius:9px;border:1px solid var(--line);
+    transition:all .22s ease;
+  }
+  .verdict .glyph{font-size:1.15rem;line-height:1}
+  .verdict .exit{margin-left:auto;font-size:.72rem;font-weight:500;color:var(--faint);letter-spacing:.05em}
+  .verdict.ok{color:var(--match);border-color:color-mix(in srgb,var(--match) 45%,var(--line));background:color-mix(in srgb,var(--match) 9%,transparent)}
+  .verdict.ok .exit{color:color-mix(in srgb,var(--match) 70%,var(--faint))}
+  .verdict.bad{color:var(--mismatch);border-color:color-mix(in srgb,var(--mismatch) 45%,var(--line));background:color-mix(in srgb,var(--mismatch) 9%,transparent)}
+  .verdict.bad .exit{color:color-mix(in srgb,var(--mismatch) 70%,var(--faint))}
+
+  /* ---- section scaffolding ---- */
+  section{padding:clamp(3rem,7vw,5rem) 0;border-top:1px solid var(--line-soft)}
+  .sec-head{max-width:44rem}
+  .sec-head h2{font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:clamp(1.5rem,3.5vw,2.1rem);line-height:1.1;margin:.6rem 0 0;text-wrap:balance}
+  .sec-head p{color:var(--muted);margin:.8rem 0 0}
+
+  /* ---- proof grid ---- */
+  .props{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:2rem;background:var(--line-soft);border:1px solid var(--line-soft);border-radius:12px;overflow:hidden}
+  @media(max-width:760px){.props{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:420px){.props{grid-template-columns:1fr}}
+  .prop{background:var(--ink);padding:1.3rem 1.2rem;display:flex;flex-direction:column;gap:.4rem}
+  .prop .k{font-family:var(--mono);font-size:1.6rem;font-weight:600;letter-spacing:-.02em;color:var(--fg)}
+  .prop .k small{font-size:.9rem;color:var(--accent)}
+  .prop .t{font-weight:600;font-size:.95rem}
+  .prop .d{color:var(--muted);font-size:.86rem;line-height:1.5}
+
+  /* ---- start / code ---- */
+  .starts{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-top:2rem}
+  @media(max-width:820px){.starts{grid-template-columns:1fr}}
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden;display:flex;flex-direction:column}
+  .card .top{padding:1rem 1.1rem .3rem;display:flex;align-items:center;gap:.6rem}
+  .card .num{font-family:var(--mono);font-size:.72rem;color:var(--accent);border:1px solid var(--accent-deep);border-radius:5px;padding:.1rem .4rem}
+  .card h3{font-family:var(--mono);font-size:.98rem;font-weight:600;margin:0}
+  .card p{color:var(--muted);font-size:.87rem;margin:.15rem 1.1rem .2rem}
+  pre{margin:.6rem 1.1rem 1.1rem;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:.75rem .85rem;overflow-x:auto}
+  pre code{font-family:var(--mono);font-size:.82rem;line-height:1.65;color:var(--fg)}
+  pre code .c{color:var(--faint)}
+  pre code .a{color:var(--accent)}
+  .soon{font-family:var(--mono);font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:.08rem .4rem;margin-left:auto}
+  .pubhash{margin:.1rem 1.1rem 1.1rem;font-family:var(--mono);font-size:.7rem;line-height:1.5}
+  .pubhash span{color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+  .pubhash code{display:block;color:var(--muted);word-break:break-all;margin-top:.25rem}
+  .repro-note{margin:1.4rem 0 0;font-size:.9rem;color:var(--muted);line-height:1.65;max-width:54rem}
+  .repro-note code{font-family:var(--mono);font-size:.82rem;color:var(--accent);background:var(--ink2);border:1px solid var(--line);border-radius:5px;padding:.1rem .42rem}
+  .repro-note a{color:var(--fg);text-decoration:underline;text-underline-offset:2px}
+
+  /* ---- boundary panel (signature) ---- */
+  .boundary{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin-top:2rem;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  @media(max-width:680px){.boundary{grid-template-columns:1fr}}
+  .bcol{background:var(--ink2);padding:1.5rem}
+  .bcol.proves{background:linear-gradient(180deg,color-mix(in srgb,var(--match) 6%,var(--ink2)),var(--ink2))}
+  .bcol.not{background:linear-gradient(180deg,color-mix(in srgb,var(--mismatch) 6%,var(--ink2)),var(--ink2))}
+  .bcol .h{font-family:var(--mono);font-size:.74rem;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:.5rem;margin-bottom:1rem}
+  .bcol.proves .h{color:var(--match)}
+  .bcol.not .h{color:var(--mismatch)}
+  .bcol ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.85rem}
+  .bcol li{display:flex;gap:.65rem;font-size:.92rem;line-height:1.5}
+  .bcol li .m{font-family:var(--mono);flex:0 0 auto;margin-top:.05rem}
+  .bcol.proves li .m{color:var(--match)}
+  .bcol.not li .m{color:var(--mismatch)}
+  .bcol li b{color:var(--fg);font-weight:600}
+  .bcol li span{color:var(--muted)}
+
+  /* ---- on-chain ---- */
+  .chain{border:1px solid var(--line);border-radius:12px;background:linear-gradient(115deg,var(--panel),var(--ink2));padding:1.6rem;margin-top:2rem;display:flex;flex-wrap:wrap;gap:1.2rem;align-items:center}
+  .chain .meta{flex:1 1 16rem}
+  .chain .badge{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  .chain h3{font-family:var(--mono);font-weight:600;margin:.4rem 0 .3rem;font-size:1.1rem}
+  .chain p{color:var(--muted);font-size:.9rem;margin:0}
+  .addr{flex:1 1 20rem}
+  .addr a{display:block;font-family:var(--mono);font-size:.84rem;word-break:break-all;color:var(--fg);background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:.7rem .8rem;transition:border-color .15s}
+  .addr a:hover{border-color:var(--accent);color:var(--accent)}
+  .addr .cap{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:.55rem 0 0;display:flex;justify-content:space-between}
+
+  /* ---- pricing ---- */
+  .tiers{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:2rem}
+  @media(max-width:680px){.tiers{grid-template-columns:1fr}}
+  .tier{border:1px solid var(--line);border-radius:12px;padding:1.5rem;background:var(--ink2);display:flex;flex-direction:column;gap:.7rem}
+  .tier.paid{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 7%,var(--ink2)),var(--ink2))}
+  .tier .tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .tier.paid .tag{color:var(--accent)}
+  .tier .price{font-family:var(--mono);font-size:1.5rem;font-weight:600;letter-spacing:-.02em}
+  .tier ul{list-style:none;margin:.2rem 0 0;padding:0;display:flex;flex-direction:column;gap:.55rem}
+  .tier li{display:flex;gap:.55rem;font-size:.9rem;color:var(--muted)}
+  .tier li .m{color:var(--accent);font-family:var(--mono)}
+
+  footer{border-top:1px solid var(--line-soft);padding:2.5rem 0 3rem;color:var(--muted)}
+  .foot{display:flex;flex-wrap:wrap;gap:1rem 2rem;align-items:baseline}
+  .foot .brand{color:var(--fg)}
+  .foot nav{display:flex;gap:1.3rem;font-family:var(--mono);font-size:.82rem;margin-left:auto}
+  .foot nav a{color:var(--muted)}.foot nav a:hover{color:var(--fg)}
+  .foot .lic{width:100%;font-size:.8rem;color:var(--faint);border-top:1px solid var(--line-soft);padding-top:1.2rem;margin-top:1.4rem}
+  .foot .lic a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+
+  @media(prefers-reduced-motion:reduce){
+    .reveal{animation:none;opacity:1;transform:none}
+    *{transition-duration:.01ms!important}
+  }
 </style>
 </head>
 <body>
-  <h1>verifyhash</h1>
-  <p><strong>Cryptographic provenance you can check yourself — offline, with zero trust in us.</strong>
-     A sealed artifact carries its own proof. You re-derive it from the bytes on your own machine; you
-     don't take our word, and you don't call our server (there isn't one).</p>
+<header class="bar">
+  <div class="wrap row">
+    <a class="brand" href="#top"><span class="tick" aria-hidden="true"></span>verifyhash</a>
+    <nav>
+      <a href="#verify">Verify</a>
+      <a href="#reproduce">Guarantees</a>
+      <a href="#onchain">On-chain</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+    <a class="btn btn-primary" href="#start">Get the verifier</a>
+  </div>
+</header>
 
-  <div class="box">
-    <h2>0. No terminal? Run the 60-second challenge in your browser</h2>
-    <p><a href="/verify-vh-standalone.html">verify-vh-standalone.html</a>
-       (<a href="/verify-vh-standalone.html.sha256">sha256</a>) — save this one fully offline page and
-       open it: click the built-in sample packet (ACCEPT), change one character and re-verify (REJECT,
-       naming the file), then drag a real sealed packet + its files in. The page contains no network API
-       at all — your bytes never leave your machine; watch the devtools Network tab stay empty. For
-       CI/production gating use the node standalone below.</p>
+<main id="top">
+  <!-- HERO -->
+  <div class="hero">
+    <div class="wrap">
+      <p class="eyebrow reveal d1">Offline · Zero-trust · Reproducible from source</p>
+      <h1 class="reveal d2">Don't trust us.<br><span class="off">Verify it yourself.</span></h1>
+      <p class="lede reveal d3">A sealed artifact carries its own proof. You re-derive it from the bytes on
+        <strong>your own machine</strong> — you don't take our word, and you don't call our server.
+        There isn't one.</p>
+      <div class="hero-cta reveal d3">
+        <a class="btn btn-primary" href="#start">Start in 30 seconds</a>
+        <a class="btn btn-ghost" href="#reproduce">What it proves — and what it doesn't</a>
+      </div>
+
+      <!-- LIVE INSTRUMENT -->
+      <div class="instrument reveal d4" id="verify">
+        <div class="inst-head">
+          <span class="dot" aria-hidden="true"></span> LIVE SHA-256 · COMPUTED IN THIS PAGE
+          <span class="net">requests sent: <b id="netcount">0</b></span>
+        </div>
+        <div class="inst-body">
+          <div class="inst-in">
+            <label for="payload">Payload — edit anything</label>
+            <textarea id="payload" spellcheck="false" aria-describedby="verdicthint">verifyhash: a proof you can check without trusting the producer.</textarea>
+            <p class="hint" id="verdicthint">This box is pinned to the digest of its original text. Change one
+              character and watch it flip to <kbd>REJECT</kbd> — that's the entire product, running with zero network.</p>
+          </div>
+          <div class="inst-out">
+            <div>
+              <div class="digest-label"><span>Recomputed digest</span><span>sha256</span></div>
+              <div class="digest" id="digest">…</div>
+            </div>
+            <div class="pinned"><b>pinned&nbsp;→</b> <span id="pinned">…</span></div>
+            <div class="verdict ok" id="verdict" role="status" aria-live="polite">
+              <span class="glyph" id="vglyph">✓</span><span id="vtext">ACCEPT — bytes match the pin</span>
+              <span class="exit" id="vexit">exit 0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="box">
-    <h2>1. Get the verifier (one file, zero dependencies)</h2>
-    <pre>curl -O https://verifyhash.com/verify-vh-standalone.js
-curl -O https://verifyhash.com/verify-vh-standalone.js.sha256
-sha256sum -c verify-vh-standalone.js.sha256     # macOS: shasum -a 256 -c …</pre>
-    <p>Published SHA-256:</p>
-    <p class="hash"><code>371b904b0275ed85606510472570c49a99fc70a5f4e258e7d8fd0e52a26c30bd</code></p>
-    <p>It opens no network, needs only Node core, and exits <code>0</code> = accepted / <code>3</code> = rejected.</p>
+  <!-- PROOF PROPERTIES -->
+  <section>
+    <div class="wrap">
+      <p class="eyebrow">Why it's trustworthy</p>
+      <div class="sec-head"><h2>The trust model is: there is no trust.</h2></div>
+      <div class="props">
+        <div class="prop"><div class="k">0</div><div class="t">Servers to trust</div><div class="d">Verification is a pure function of the bytes. Nothing is phoned home; there is no backend to compromise or subpoena.</div></div>
+        <div class="prop"><div class="k">0</div><div class="t">Accounts, keys, tracking</div><div class="d">Download one file and run it. No signup, no telemetry, no API key to check a proof.</div></div>
+        <div class="prop"><div class="k">0<small>/3</small></div><div class="t">A plain exit code</div><div class="d">Exit <code>0</code> accepted, <code>3</code> rejected. Drop it into CI and gate a build on real provenance.</div></div>
+        <div class="prop"><div class="k">1:1</div><div class="t">Reproducible bundle</div><div class="d">Rebuild the verifier from source in memory and confirm it's byte-for-byte what we published.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- START -->
+  <section id="start">
+    <div class="wrap">
+      <p class="eyebrow">Three ways to start</p>
+      <div class="sec-head"><h2>Check a sealed packet in under a minute.</h2>
+        <p>Someone sends you a <code>.vhevidence.json</code> packet and the address they signed with. You confirm the bytes are unaltered and the signer is who they claim — offline.</p></div>
+      <div class="starts">
+        <div class="card">
+          <div class="top"><span class="num">01</span><h3>In your browser</h3></div>
+          <p>No terminal. Save one offline page, drop the packet in, watch ACCEPT / REJECT.</p>
+          <pre><code><span class="c"># fully offline, nothing leaves the tab</span>
+open <span class="a">verify-vh-standalone.html</span></code></pre>
+        </div>
+        <div class="card">
+          <div class="top"><span class="num">02</span><h3>In the terminal</h3></div>
+          <p>One file, zero dependencies, Node core only. Built for CI gating.</p>
+          <pre><code>curl -O https://verifyhash.com/<span class="a">verify-vh-standalone.js</span>
+node verify-vh-standalone.js <span class="a">packet.json</span> --vendor 0x…</code></pre>
+          <p class="pubhash"><span>Published SHA-256:</span><code>371b904b0275ed85606510472570c49a99fc70a5f4e258e7d8fd0e52a26c30bd</code></p>
+        </div>
+        <div class="card">
+          <div class="top"><span class="num">03</span><h3>From npm</h3><span class="soon">soon</span></div>
+          <p>Install the full <code>vh</code> toolchain — hash, anchor, seal, verify.</p>
+          <pre><code><span class="c"># publishing shortly</span>
+npx <span class="a">verifyhash</span> --help</code></pre>
+        </div>
+      </div>
+      <p class="repro-note"><b style="color:var(--fg);font-weight:600">Don't trust our checksum either.</b>
+        Rebuild the verifier from source in memory and confirm it's byte-for-byte what we published —
+        <code>node verifier/build-standalone.js --check</code>. The <a href="/build-provenance.json">build-provenance
+        manifest</a> maps every published hash back to the exact source modules it inlines, so you can root trust in code you read.</p>
+    </div>
+  </section>
+
+  <!-- REPRODUCE + BOUNDARY -->
+  <section id="reproduce">
+    <div class="wrap">
+      <p class="eyebrow">The honest part</p>
+      <div class="sec-head"><h2>What a seal proves — and what it does not.</h2>
+        <p>Most tools oversell. A verifyhash seal makes exactly two guarantees, and we lead with the four it doesn't, so nobody builds on a promise we never made.</p></div>
+      <div class="boundary">
+        <div class="bcol proves">
+          <div class="h"><span>✓</span> It proves</div>
+          <ul>
+            <li><span class="m">→</span><span><b>Tamper-evidence.</b> Every byte re-derives to the same root, or the check fails and names the file that drifted.</span></li>
+            <li><span class="m">→</span><span><b>Signer-pin.</b> The packet was signed by the exact key whose address you pinned — a forged or swapped signature is rejected, never silently passed.</span></li>
+            <li><span class="m">→</span><span><b>Build integrity.</b> The published verifier is faithfully built from the source you can read.</span></li>
+          </ul>
+        </div>
+        <div class="bcol not">
+          <div class="h"><span>✗</span> It does NOT prove</div>
+          <ul>
+            <li><span class="m">→</span><span><b>A trusted timestamp.</b> "Sealed at time T" needs an external anchor — a seal alone can't date itself.</span></li>
+            <li><span class="m">→</span><span><b>That the logic is correct.</b> Reproducibility proves the build, not that the source does what you want. Read it; run the conformance corpus.</span></li>
+            <li><span class="m">→</span><span><b>Real-world identity.</b> A pinned address is a key, not a legal person.</span></li>
+            <li><span class="m">→</span><span><b>Anything about the producer's intent.</b> It attests bytes, not honesty of the URI they attached.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ON-CHAIN -->
+  <section id="onchain">
+    <div class="wrap">
+      <p class="eyebrow">Permissionless anchoring</p>
+      <div class="sec-head"><h2>An ownerless registry, live on Polygon.</h2>
+        <p>Anchor a file or repository hash on-chain; anyone can later prove content is byte-for-byte what was anchored — trusting no server, admin, or key.</p></div>
+      <div class="chain">
+        <div class="meta">
+          <div class="badge">Polygon mainnet · chain 137</div>
+          <h3>ContributionRegistry</h3>
+          <p>No admin. No pause. No upgrade path. It never holds funds. Each hash anchors once, first-writer-wins, and can never be altered or deleted. That immutability is the product.</p>
+        </div>
+        <div class="addr">
+          <a href="https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B" target="_blank" rel="noopener">0x77d8eF881D5aeEda64788968D13f9146fE1A609B</a>
+          <div class="cap"><span>Pin this out-of-band</span><span>view on polygonscan →</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section id="pricing">
+    <div class="wrap">
+      <p class="eyebrow">Pricing</p>
+      <div class="sec-head"><h2>Verifying is free. Forever.</h2>
+        <p>Checking proofs never costs anything — that's what makes the trust story true. You pay only to <em>produce</em> signed seals at scale.</p></div>
+      <div class="tiers">
+        <div class="tier">
+          <span class="tag">Free</span>
+          <div class="price">$0</div>
+          <ul>
+            <li><span class="m">✓</span> Verify any sealed packet, offline</li>
+            <li><span class="m">✓</span> The browser + Node standalone verifiers</li>
+            <li><span class="m">✓</span> Produce your own unsigned seals</li>
+            <li><span class="m">✓</span> Anchor & read the on-chain registry</li>
+          </ul>
+        </div>
+        <div class="tier paid">
+          <span class="tag">Producer</span>
+          <div class="price">Sealing</div>
+          <ul>
+            <li><span class="m">→</span> Signed, customer-verifiable seals</li>
+            <li><span class="m">→</span> Offline license mint &amp; enforcement</li>
+            <li><span class="m">→</span> Batch &amp; policy-gated evidence packets</li>
+            <li><span class="m">→</span> Bring your own signing key — we never hold it</li>
+          </ul>
+          <a class="btn btn-primary" href="#start" style="margin-top:.6rem;align-self:flex-start">See the go-live path</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#top"><span class="tick" aria-hidden="true"></span>verifyhash</a>
+    <nav>
+      <a href="#reproduce">Independent verification</a>
+      <a href="#onchain">Registry</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+    <p class="lic">Verification is free; sealing is the paid surface. No accounts, no tracking, no server-side verification.<br>
+      © 2026 verifyhash.com · Open source under the <a href="/LICENSE">Apache License 2.0</a> (<a href="/NOTICE">NOTICE</a>) — every downloadable file carries this license.</p>
   </div>
+</footer>
 
-  <div class="box">
-    <h2>2. Verify a sealed packet someone sent you</h2>
-    <pre>node verify-vh-standalone.js &lt;packet.vhevidence.json&gt; --vendor 0x&lt;the address the producer told you to pin&gt;</pre>
-    <p>It recomputes every hash from the packet's own bytes and confirms the signer address you pinned.</p>
-  </div>
+<script>
+(function(){
+  "use strict";
+  // Compact, dependency-free SHA-256 (UTF-8) — a fallback so the demo works even where crypto.subtle is unavailable.
+  function sha256utf8(str){
+    function rr(v,a){return (v>>>a)|(v<<(32-a));}
+    var bytes=unescape(encodeURIComponent(str));
+    var h=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+    var k=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+    var l=bytes.length, bl=l*8, i;
+    var w=[];
+    for(i=0;i<l;i++){ w[i>>2]|=bytes.charCodeAt(i)<<((3-(i%4))*8); }
+    w[l>>2]|=0x80<<((3-(l%4))*8);
+    w[((l+8)>>6)*16+15]=bl;
+    for(var jj=0;jj<w.length;jj+=16){
+      var a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7],t;
+      var s=[];
+      for(i=0;i<64;i++){
+        if(i<16){ s[i]=w[jj+i]|0; }
+        else{
+          var x=s[i-15],y=s[i-2];
+          s[i]=(s[i-16]+(rr(x,7)^rr(x,18)^(x>>>3))+s[i-7]+(rr(y,17)^rr(y,19)^(y>>>10)))|0;
+        }
+        var S1=rr(e,6)^rr(e,11)^rr(e,25);
+        var ch=(e&f)^((~e)&g);
+        var t1=(hh+S1+ch+k[i]+s[i])|0;
+        var S0=rr(a,2)^rr(a,13)^rr(a,22);
+        var maj=(a&b)^(a&c)^(b&c);
+        var t2=(S0+maj)|0;
+        hh=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0;
+      }
+      h[0]=(h[0]+a)|0;h[1]=(h[1]+b)|0;h[2]=(h[2]+c)|0;h[3]=(h[3]+d)|0;
+      h[4]=(h[4]+e)|0;h[5]=(h[5]+f)|0;h[6]=(h[6]+g)|0;h[7]=(h[7]+hh)|0;
+    }
+    var out="";
+    for(i=0;i<8;i++){ out+=("00000000"+(h[i]>>>0).toString(16)).slice(-8); }
+    return out;
+  }
+  async function hashHex(str){
+    try{
+      if(window.crypto&&crypto.subtle&&crypto.subtle.digest){
+        var buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(str));
+        return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
+      }
+    }catch(e){}
+    return sha256utf8(str);
+  }
 
-  <div class="box">
-    <h2>3. Don't trust our checksum — reproduce the verifier from source</h2>
-    <p>Read the source in <code>verifier/</code>, then rebuild the bundle in memory and confirm it is
-       byte-for-byte what we published — offline, writing nothing:</p>
-    <pre>node verifier/build-standalone.js --check        # exit 0 = every bundle, sidecar &amp; source hash MATCH</pre>
-    <p>The <a href="/build-provenance.json">build-provenance manifest</a> maps each published hash back to
-       the exact, individually-hashed source modules it inlines, so you can root trust in source you read.</p>
-  </div>
+  var el=document.getElementById("payload");
+  var dEl=document.getElementById("digest");
+  var pEl=document.getElementById("pinned");
+  var vEl=document.getElementById("verdict");
+  var vGlyph=document.getElementById("vglyph");
+  var vText=document.getElementById("vtext");
+  var vExit=document.getElementById("vexit");
+  var pinned=null;
 
-  <div class="box">
-    <h2>4. The honest trust boundary — read before you rely on it</h2>
-    <p>A seal proves <strong>tamper-evidence + signer-pin</strong>: the bytes are unaltered and were signed
-       by the key whose address you pinned. It is <strong>NOT</strong> a trusted "sealed at time&nbsp;T"
-       (that needs an external timestamp authority or anchor), and reproducing the verifier proves
-       <strong>build integrity</strong> — that our bundle is faithfully built from its source — <strong>NOT</strong>
-       that the source's logic is correct (read it, and run the conformance corpus, for that), and
-       <strong>NOT</strong> a trusted timestamp or identity. Verification is free; producing seals is the paid surface.</p>
-  </div>
+  function shorten(hex){ return hex.slice(0,32)+"…"+hex.slice(-8); }
 
-  <div class="box">
-    <h2>On-chain — the contribution registry is live on Polygon mainnet</h2>
-    <p>The ownerless <code>ContributionRegistry</code> is deployed on <strong>Polygon mainnet</strong> (chain&nbsp;137) at
-       <a href="https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B" class="hash"><code>0x77d8eF881D5aeEda64788968D13f9146fE1A609B</code></a>.
-       Anchor a file or repository hash on-chain, then anyone can prove content is byte-for-byte what was anchored — trusting no
-       server, admin, or key. It is ownerless (no admin, no pause, no upgrade, and it holds no funds); pin the address out-of-band
-       and read/write against it with <code>vh … --registry 0x77d8eF881D5aeEda64788968D13f9146fE1A609B</code>.</p>
-  </div>
-
-  <h2>Also available</h2>
-  <ul>
-    <li><a href="/seal-vh-standalone.js">seal-vh-standalone.js</a>
-        (<a href="/seal-vh-standalone.js.sha256">sha256</a>) — the free offline sealer, so you can produce your own and feel the round-trip.</li>
-    <li>Docs: <a href="/docs/INDEPENDENT-VERIFICATION.md">Independent verification</a> ·
-        <a href="/docs/CONFORMANCE.md">Conformance corpus</a> ·
-        <a href="/docs/TRUST-BOUNDARIES.md">Trust boundaries</a> ·
-        <a href="/docs/KEY-LIFECYCLE.md">Key lifecycle</a> ·
-        <a href="/docs/PILOT.md">Pilot</a> ·
-        <a href="/docs/EVIDENCE.md">Evidence packets</a></li>
-  </ul>
-
-  <footer>verifyhash — verification is free, sealing is the paid surface. No accounts, no tracking, no server-side verification.<br>
-    &copy; 2026 verifyhash.com · Open source under the <a href="/LICENSE">Apache License 2.0</a> (<a href="/NOTICE">NOTICE</a>) — every downloadable file above carries this license.</footer>
+  async function render(){
+    var cur=await hashHex(el.value);
+    // highlight the leading run that still matches the pin
+    var match=0; if(pinned){ while(match<cur.length&&cur[match]===pinned[match]) match++; }
+    dEl.innerHTML='<span class="lead">'+cur.slice(0,match)+'</span>'+cur.slice(match);
+    var ok=(cur===pinned);
+    vEl.className="verdict "+(ok?"ok":"bad");
+    vGlyph.textContent=ok?"✓":"✗";
+    vText.textContent=ok?"ACCEPT — bytes match the pin":"REJECT — bytes do not match the pin";
+    vExit.textContent=ok?"exit 0":"exit 3";
+  }
+  (async function(){
+    pinned=await hashHex(el.value);
+    pEl.textContent=shorten(pinned);
+    await render();
+    el.addEventListener("input",render);
+  })();
+})();
+</script>
 </body>
 </html>

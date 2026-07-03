@@ -85,6 +85,7 @@ const EXPECTED_PUBLISHED = [
   "docs/pilot-README.md",
   "docs/verifier-README.md",
   "index.html",
+  "llms.txt",
   "seal-vh-standalone.js",
   "seal-vh-standalone.js.sha256",
   "verify-vh-standalone.html",

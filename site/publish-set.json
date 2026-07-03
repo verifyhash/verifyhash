@@ -3,6 +3,7 @@
   "description": "The COMPLETE allowlist of what verifyhash.com serves: published webroot path -> committed repo source path. scripts/site-release.js assembles public/ from EXACTLY this mapping (nothing else can enter the webroot) and refuses any entry that matches the forbidden set (.git*, .env*, keys, internal ops docs). Edit this file to change the publish set; the committed site/RELEASE-MANIFEST.json and test/site-release.test.js pin the result.",
   "publish": {
     "index.html": "site/index.html",
+    "llms.txt": "site/llms.txt",
     "LICENSE": "LICENSE",
     "NOTICE": "NOTICE",
     "build-provenance.json": "verifier/dist/BUILD-PROVENANCE.json",

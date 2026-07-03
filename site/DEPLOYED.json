@@ -1,7 +1,7 @@
 {
   "generatedFrom": "public/ (assembled deterministically from site/publish-set.json; recorded by `node scripts/site-release.js --mark-deployed`)",
-  "deployedAtNote": "Operator ran --mark-deployed at 2026-07-03T16:44:36.419Z AFTER uploading the assembled public/ webroot to the live host per docs/DEPLOY-PUBLIC-SITE.md (the human-owned P-11 step — the loop never uploads). This snapshot is what --diff treats as LIVE until the next upload.",
-  "markedDeployedAt": "2026-07-03T16:44:36.419Z",
+  "deployedAtNote": "Operator ran --mark-deployed at 2026-07-03T16:55:26.546Z AFTER uploading the assembled public/ webroot to the live host per docs/DEPLOY-PUBLIC-SITE.md (the human-owned P-11 step — the loop never uploads). This snapshot is what --diff treats as LIVE until the next upload.",
+  "markedDeployedAt": "2026-07-03T16:55:26.546Z",
   "files": {
     "LICENSE": "dc610387d3ac73fb870d710e5315d24d2ed814b68f12b18d3413c9728e8f5caa",
     "NOTICE": "f2bf597ab5de1973890e588d4c8c1f3e2a79720d7a82723ca68d30dc284a4e1b",
@@ -29,7 +29,8 @@
     "docs/overview.md": "e4aeba5a241597a2baac0d0ea3871a6815c9cb2e6d0586d916e85bc7f2922a30",
     "docs/pilot-README.md": "3c130b90d2fdb5edcba6aa45faf9d01ca4d6098d6381dbb8fea1a7397a39c775",
     "docs/verifier-README.md": "5560c968e74b09cefbacf13554f9681b6d7ad7044134a323328cb559b560692e",
-    "index.html": "94aa7dfb6a7770a8a07089c804fb47d66e4aefc59b07c13016b343ae8f707031",
+    "index.html": "445c483e9f1d8800cb3682ab30c6608bdb90b548a8c4fc0ad47162ce5d2f7266",
+    "llms.txt": "01a6c194529659193f6f8a5e0dabfa8c219d159f6cd5566ce8496797ea0b4952",
     "seal-vh-standalone.js": "6e61e8638464475870e12760f326d30c7eefb5858ad1bccd2fdcd721b1b8a0c6",
     "seal-vh-standalone.js.sha256": "88dcd2d749a63de3c6f9cf2caeec095cf627c54db0969d91265c166f51e503e0",
     "verify-vh-standalone.html": "2e0ea39b9e79ae469adf980c0978c8172ad89fe69f35d33df9e041ade5fc5e23",

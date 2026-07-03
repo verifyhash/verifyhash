@@ -174,6 +174,12 @@
   .repro-note{margin:1.4rem 0 0;font-size:.9rem;color:var(--muted);line-height:1.65;max-width:54rem}
   .repro-note code{font-family:var(--mono);font-size:.82rem;color:var(--accent);background:var(--ink2);border:1px solid var(--line);border-radius:5px;padding:.1rem .42rem}
   .repro-note a{color:var(--fg);text-decoration:underline;text-underline-offset:2px}
+  .agent-box{position:relative;margin-top:2rem;border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
+  .agent-box pre{margin:0;background:transparent;border:0;border-radius:0;padding:1.25rem 1.35rem}
+  .agent-box code{font-family:var(--mono);font-size:.86rem;line-height:1.75;color:var(--fg);white-space:pre-wrap}
+  .agent-box code .a{color:var(--accent)}
+  .copybtn{position:absolute;top:.7rem;right:.7rem;font-family:var(--mono);font-size:.74rem;font-weight:600;color:var(--accent);background:var(--ink);border:1px solid var(--line);border-radius:6px;padding:.35rem .7rem;cursor:pointer;transition:border-color .15s,color .15s}
+  .copybtn:hover{border-color:var(--accent)}
 
   /* ---- boundary panel (signature) ---- */
   .boundary{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin-top:2rem;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -236,6 +242,7 @@
     <nav>
       <a href="#verify">Verify</a>
       <a href="#reproduce">Guarantees</a>
+      <a href="#agents">Agents</a>
       <a href="#onchain">On-chain</a>
       <a href="#pricing">Pricing</a>
     </nav>
@@ -331,6 +338,24 @@ npx <span class="a">verifyhash</span> --help</code></pre>
         Rebuild the verifier from source in memory and confirm it's byte-for-byte what we published —
         <code>node verifier/build-standalone.js --check</code>. The <a href="/build-provenance.json">build-provenance
         manifest</a> maps every published hash back to the exact source modules it inlines, so you can root trust in code you read.</p>
+    </div>
+  </section>
+
+  <!-- FOR AGENTS -->
+  <section id="agents">
+    <div class="wrap">
+      <p class="eyebrow">For your coding assistant</p>
+      <div class="sec-head"><h2>Let your AI agent wire it up.</h2>
+        <p>Paste this into Claude Code, Cursor, or any coding agent. It reads the machine-readable
+          <a href="/llms.txt">llms.txt</a> and sets verifyhash up in your project — download, CI gate, and all — while keeping the honest trust boundary intact.</p></div>
+      <div class="agent-box">
+        <button class="copybtn" id="copyprompt" type="button" aria-label="Copy the agent prompt">Copy</button>
+        <pre><code id="agentprompt">Add verifyhash (read <span class="a">https://verifyhash.com/llms.txt</span>) to this project:
+1. download the standalone verifier and check its published SHA-256,
+2. add a CI step that runs it on any *.vhevidence.json artifacts and fails the build on exit 3,
+3. show me how to seal our build outputs.
+Keep verifyhash's trust boundary intact — a seal proves tamper-evidence + signer-pin, not time or identity.</code></pre>
+      </div>
     </div>
   </section>
 
@@ -504,6 +529,18 @@ npx <span class="a">verifyhash</span> --help</code></pre>
     await render();
     el.addEventListener("input",render);
   })();
+})();
+</script>
+<script>
+(function(){
+  var b=document.getElementById("copyprompt"),c=document.getElementById("agentprompt");
+  if(!b||!c)return;
+  b.addEventListener("click",function(){
+    var t=c.textContent;
+    var done=function(){b.textContent="Copied ✓";setTimeout(function(){b.textContent="Copy";},1600);};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,done);}
+    else{try{var ta=document.createElement("textarea");ta.value=t;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);done();}catch(e){}}
+  });
 })();
 </script>
 </body>

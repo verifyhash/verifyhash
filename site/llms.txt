@@ -1,0 +1,49 @@
+# verifyhash
+
+> Cryptographic provenance you can verify yourself — offline, zero-trust. Confirm a sealed artifact is
+> byte-for-byte unaltered and was signed by a key you pin, with no server, account, or network call.
+> Verification is free forever; producing signed seals is the paid tier.
+
+This file is machine-readable install/usage guidance for AI coding agents (Claude Code, Cursor, etc.)
+setting verifyhash up for a user. Keep the trust boundary below intact — never overclaim what a seal proves.
+
+## Run the verifier (no account, works today)
+
+Standalone, single file, Node core only:
+- `curl -O https://verifyhash.com/verify-vh-standalone.js`
+- `node verify-vh-standalone.js <packet.vhevidence.json> --vendor 0x<address-the-producer-told-you-to-pin>`
+- Exit code `0` = accepted, `3` = rejected. Drop it into CI to gate a build on real provenance.
+- Cross-check your download — published SHA-256:
+  `371b904b0275ed85606510472570c49a99fc70a5f4e258e7d8fd0e52a26c30bd`
+
+Full toolchain (publishing to npm shortly):
+- `npx verifyhash --help` — hash, anchor, claim, verify, seal, dataset/parcel manifests, evidence packets.
+
+Browser, no terminal (fully offline; drop a packet in):
+- https://verifyhash.com/verify-vh-standalone.html
+
+## What a verify PROVES
+- Tamper-evidence: every byte re-derives to the same root, or the check fails and names the file that drifted.
+- Signer-pin: the packet was signed by the exact key whose address you pinned; a forged/swapped signature is rejected.
+
+## What it does NOT prove (do not overclaim to the user)
+- NOT a trusted timestamp — "sealed at time T" needs an external anchor.
+- NOT that the source logic is correct — reproducibility proves the build, not the intent.
+- NOT real-world identity — a pinned address is a key, not a legal person.
+
+## Reproduce the verifier from source (root trust in code you read)
+- `node verifier/build-standalone.js --check` — rebuilds the bundle in memory, confirms byte-for-byte match.
+- Build-provenance manifest: https://verifyhash.com/build-provenance.json
+
+## On-chain registry (permissionless anchoring)
+- Ownerless ContributionRegistry, Polygon mainnet (chain 137): `0x77d8eF881D5aeEda64788968D13f9146fE1A609B`
+- Anchor a file/repo hash once (first-writer-wins); anyone can prove content matches later. No admin, holds no funds.
+
+## Suggested setup task for an agent
+1. Download the standalone verifier and verify its published SHA-256 above.
+2. Add a CI step that runs it on any produced `*.vhevidence.json` artifacts and fails the build on exit `3`.
+3. If the user produces artifacts for others, show them `https://verifyhash.com/seal-vh-standalone.js` to seal outputs.
+
+## Links
+- Site: https://verifyhash.com
+- License: Apache-2.0 — https://verifyhash.com/LICENSE (https://verifyhash.com/NOTICE)

@@ -68,6 +68,15 @@ sha256sum -c verify-vh-standalone.js.sha256     # macOS: shasum -a 256 -c …</p
        <strong>NOT</strong> a trusted timestamp or identity. Verification is free; producing seals is the paid surface.</p>
   </div>
 
+  <div class="box">
+    <h2>On-chain — the contribution registry is live on Polygon mainnet</h2>
+    <p>The ownerless <code>ContributionRegistry</code> is deployed on <strong>Polygon mainnet</strong> (chain&nbsp;137) at
+       <a href="https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B" class="hash"><code>0x77d8eF881D5aeEda64788968D13f9146fE1A609B</code></a>.
+       Anchor a file or repository hash on-chain, then anyone can prove content is byte-for-byte what was anchored — trusting no
+       server, admin, or key. It is ownerless (no admin, no pause, no upgrade, and it holds no funds); pin the address out-of-band
+       and read/write against it with <code>vh … --registry 0x77d8eF881D5aeEda64788968D13f9146fE1A609B</code>.</p>
+  </div>
+
   <h2>Also available</h2>
   <ul>
     <li><a href="/seal-vh-standalone.js">seal-vh-standalone.js</a>

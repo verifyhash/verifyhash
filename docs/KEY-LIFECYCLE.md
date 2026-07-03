@@ -173,3 +173,7 @@ file may be one revocation or a JSON array. This parity is stated the same way i
 - [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md) — what each artifact proves and does not.
 - **STRATEGY.md P-7 step 1** — where the evidence-product vendor key is generated, pinned, and (now)
   honestly retired via a revocation.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

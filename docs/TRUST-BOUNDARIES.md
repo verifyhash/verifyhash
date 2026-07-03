@@ -329,3 +329,7 @@ stating the threat (a wrong/rogue RPC+address can fabricate verdicts), the defen
 cross-check), the residual caveat (the ID is a "right interface" signal verified alongside bytecode +
 chainId, NOT a sole root of trust — a fork can reuse it, so pin the address out-of-band for a SPECIFIC
 deployment), and the loud `--skip-identity-check` opt-out.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

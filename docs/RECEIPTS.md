@@ -335,3 +335,7 @@ The `MISMATCH` is decided by the recomputed root vs the on-chain record; the dif
   caveat.
 - `test/cli.receipt.docs.test.js` is a docs-rot guard: it asserts this file and the README keep the
   schema, the resume lifecycle, and the untrusted/localizes-not-decides caveats in sync with the code.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

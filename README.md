@@ -877,3 +877,7 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   boundary (tamper-evidence + signer-pin, **no trusted "sealed at T" without P-3**), and the
   consolidated go-to-market ask (**P-8**). Operator quick reference: [`pilot/README.md`](pilot/README.md).
 - [`docs/AUDIT.md`](docs/AUDIT.md) — security audit findings and the fix tasks they spawned.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

@@ -153,3 +153,7 @@ proves REJECT of every *enumerated* class, NOT the absence of unknown ones; a RE
 NOT a trusted "sealed at T" without **P-3**; and it covers the unsigned content-integrity surface only, so
 it does NOT red-team the signer-pin `--vendor` path — the PAID upgrade), see
 [`../docs/CONFORMANCE.md`](../docs/CONFORMANCE.md).
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

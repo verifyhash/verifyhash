@@ -122,3 +122,7 @@ claims drift, the suite fails.
 This kit **is** the deliverable every revenue gate was waiting on. The consolidated, decision-ready
 ask that folds the shared "land a design partner / run a pilot" precondition of P-3/P-5/P-6/P-7 into
 one place is **P-8** in [`../STRATEGY.md`](../STRATEGY.md) → *Proposals — needs-human*.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

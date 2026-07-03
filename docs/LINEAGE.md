@@ -301,3 +301,7 @@ every other field in [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md).
   including the `--git` scope used to make a revision's root reproducible.
 - [`docs/RECEIPTS.md`](RECEIPTS.md) — how the resumable `vh commit`/`vh reveal` split carries a
   `--parent` in the claim receipt (schema v4, B-10.1) and the receipt trust posture.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

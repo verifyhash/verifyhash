@@ -371,3 +371,7 @@ which is part of the standard `npx hardhat test` suite:
 
 This is what lets a counterparty audit the verifier in an afternoon and then rely on its verdict
 without relying on us.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

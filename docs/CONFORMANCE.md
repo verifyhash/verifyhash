@@ -101,3 +101,7 @@ buyer-facing trust story can never silently drift from the taxonomy it claims to
   [`INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md).
 - The buyer pilot runbook [`PILOT.md`](PILOT.md) points at this corpus as the procurement-grade
   conformance check a security reviewer runs before relying on the verifier.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

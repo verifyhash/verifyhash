@@ -152,3 +152,7 @@ anchor-only and root vs revision breakdowns, that it is a non-transferable deriv
 any tradeable layer is D-2/P-1), what it does NOT prove, and the anti-sybil note that the meaningful
 signal is the `authorBound` count — pinned to the caveats `cli/reputation.js` / `cli/list.js` export so
 the prose can't silently drift from the implementation.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

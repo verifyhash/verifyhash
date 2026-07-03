@@ -438,3 +438,7 @@ figure a broker reads on **their own** month.
   [`test/pilot.reconcile.test.js`](../test/pilot.reconcile.test.js), and this runbook's claims are
   gated by [`test/pilot.docs.test.js`](../test/pilot.docs.test.js), all under the project's unchanged
   `npx hardhat test`. If the behaviour or the claims drift, the suite fails.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

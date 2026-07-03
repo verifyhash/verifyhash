@@ -221,3 +221,7 @@ P-3 Option (B)'s human handoff collapses to: **(1)** pick a TSA you trust; **(2)
 See [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md) and DataLedger's
 [trust posture](DATALEDGER.md) — ProofParcel reuses the SAME in-band `TRUST_NOTE` verbatim so the
 caveats never drift between products.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

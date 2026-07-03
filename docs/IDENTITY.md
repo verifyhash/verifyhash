@@ -117,3 +117,7 @@ signed license use. The publish/verify core lives in [`cli/identity.js`](../cli/
 Provisioning the real vendor key, setting the price, and landing the first design partner remain **human
 steps** — the producer publishes their card with the same key they provision for signed evidence/licenses
 (STRATEGY.md › **P-7 step 1** / **P-6 step 1**).
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

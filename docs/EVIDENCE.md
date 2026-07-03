@@ -513,3 +513,7 @@ It **binds loopback (127.0.0.1) by default** — a non-loopback interface is not
 Standing up the evidence vendor keypair, the price, and the first design partner are **human steps** —
 see **P-7 (needs-human)** in [`STRATEGY.md`](../STRATEGY.md). The loop builds and locally tests; it never
 holds a vendor key, never sets a price, and never deploys.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

@@ -632,3 +632,7 @@ truth of any `{source, license}` hint. Both require the human-owned signing/time
 - [`docs/MERKLE-LEAVES.md`](MERKLE-LEAVES.md) — the exact path-bound leaf/root construction the
   manifest commits to (DataLedger reuses it unchanged).
 - [`docs/PROOFS.md`](PROOFS.md) — the portable proof-artifact schema membership proofs reuse.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

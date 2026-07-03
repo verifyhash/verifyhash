@@ -179,3 +179,7 @@ and [`docs/PROOFPARCEL.md`](../docs/PROOFPARCEL.md).
 `test/cli.examples.test.js` runs this example end-to-end against the committed sample on every
 `npx hardhat test`, asserting the pipeline completes, the policy violation is flagged, the tamper is
 caught, and the run leaves the working tree clean.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

@@ -256,3 +256,7 @@ boundary:
 `test/cli.proofs.docs.test.js` is the docs-rot guard for this file + the README CLI block: it pins the
 schema fields, the `kind`/`schemaVersion`, the verification stages, and the trust caveats to the real
 `cli/proof.js` exports, so the prose cannot silently drift from the code.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

@@ -107,3 +107,7 @@ See `test/cli.hash.test.js`:
   against the deployed `ContributionRegistry.verifyLeaf`,
 - "pathLeaf matches the explicit keccak256(domain ‖ relPath ‖ 0x00 ‖ content) formula" pins the
   encoding.
+
+
+---
+<sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

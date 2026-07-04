@@ -317,7 +317,10 @@
       <div class="starts">
         <div class="card">
           <div class="top"><span class="num">01</span><h3>In your browser</h3></div>
-          <p>No terminal. Save one offline page, drop the packet in, watch ACCEPT / REJECT.</p>
+          <p>No terminal. Save <a href="/verify-vh-standalone.html">one offline page</a>
+            (<a href="/verify-vh-standalone.html.sha256">SHA-256 sidecar</a>), drop the packet in, watch
+            ACCEPT / REJECT. The page contains no network API at all — the devtools Network tab stays
+            empty. For CI/production gating use the node standalone, card 02.</p>
           <pre><code><span class="c"># fully offline, nothing leaves the tab</span>
 open <span class="a">verify-vh-standalone.html</span></code></pre>
         </div>

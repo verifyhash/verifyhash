@@ -178,6 +178,14 @@ time T") is a separate, human-gated step (see
   **zero** install: email ONE file ([`trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html)),
   the partner double-clicks it, drags their real exports in, and the page makes **no network request** (free tier only).
 
+## Anchor a sealed artifact on-chain — and verify the receipt offline (free)
+
+Both anchoring verbs are free and gate-less: `vh anchor-artifact` writes a sealed artifact's digest into a
+ContributionRegistry deployment (your own RPC, your own key — the only cost is your own gas), and
+`vh verify-anchored` re-proves the receipt fully offline, needing no key at all. Honest boundary up front: a
+receipt from a LOCAL dev chain proves MECHANISM only — what an anchored receipt does and does not prove, the
+worked commands, and the committed fixtures you can verify right now with zero setup live in
+[`ANCHORING.md`](ANCHORING.md) and [`examples/anchoring/`](../examples/anchoring/).
 
 ---
 <sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

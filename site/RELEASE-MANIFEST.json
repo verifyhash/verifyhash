@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1023917,
+  "totalBytes": 1024884,
   "files": [
     {
       "path": "LICENSE",
@@ -25,8 +25,8 @@
     {
       "path": "docs/ADOPT.md",
       "source": "docs/ADOPT.md",
-      "bytes": 10739,
-      "sha256": "4a5e9b3abaf6acc76f1bb5bb4d66f4aae8f6b224cfc392c8c9e04efc1fa6fa81"
+      "bytes": 11423,
+      "sha256": "bd752ace9c78cff6adea980ccd84cf72cc7ece69ad517e69653b0e386d8806ac"
     },
     {
       "path": "docs/CONFORMANCE.md",
@@ -43,8 +43,8 @@
     {
       "path": "docs/DECIDE.md",
       "source": "docs/DECIDE.md",
-      "bytes": 2603,
-      "sha256": "084ed6259b024a45ebba1761e9934b599d241ab011be35529cef01fd9088f34c"
+      "bytes": 2602,
+      "sha256": "8a4e76f81c8d23fff1e35f5323d404c8f387ab73cba1df806a33daaf6011338d"
     },
     {
       "path": "docs/EVIDENCE.md",
@@ -163,8 +163,8 @@
     {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 32723,
-      "sha256": "ecced3c44e78f0cc2c15a13029050ca49f38aee0006870e6329707cfc5547cb2"
+      "bytes": 33007,
+      "sha256": "b323fae2a92c1c8981d0b4ae86ceac1197e4bc0c640d1d973f490b0c18f668e0"
     },
     {
       "path": "llms.txt",

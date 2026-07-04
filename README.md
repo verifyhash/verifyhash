@@ -12,7 +12,7 @@ no pause, no upgrade path, and it never holds funds. Each content hash can be an
 **Live deployment — Polygon mainnet (chain id 137):**
 [`0x77d8eF881D5aeEda64788968D13f9146fE1A609B`](https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B)
 (deployed 2026-07-03; ownerless — the deploying key holds no special power over it). Pin this address
-out-of-band; `vh` reads/writes against it with `--registry 0x77d8eF881D5aeEda64788968D13f9146fE1A609B`.
+out-of-band; `vh` reads/writes against it with `--contract 0x77d8eF881D5aeEda64788968D13f9146fE1A609B`.
 
 > **Ready to charge for it?** [`docs/GO-LIVE.md`](docs/GO-LIVE.md) is the decision-ready "first dollar" page (`npm run go-live`): the **self-serve evidence license** is the recommended default; the design-partner **pilot** is the enterprise fallback.
 

@@ -16,7 +16,18 @@
     "cli/",
     "trustledger/",
     "README.md",
-    "docs/"
+    "docs/",
+    "!docs/METRICS.jsonl",
+    "!docs/USAGE-BUDGET.json",
+    "!docs/ENGINE-LEDGER.json",
+    "!docs/LOOP-AUDIT-*.json",
+    "!docs/LOOP-HARDENING-PLAN.md",
+    "!docs/SUPERVISOR-RUNBOOK.md",
+    "!docs/DECISIONS-PENDING.md",
+    "!docs/STRATEGY-ARCHIVE.md",
+    "!docs/MORNING.md",
+    "!docs/ADOPTION.json",
+    "!docs/DECIDE.md"
   ],
   "engines": {
     "node": ">=18"

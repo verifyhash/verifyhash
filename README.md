@@ -26,7 +26,7 @@ out-of-band; `vh` reads/writes against it with `--registry 0x77d8eF881D5aeEda647
 `verifyhash` ships the `vh` command. You do **not** need to clone the repo to use it.
 
 ```bash
-# from a published package (publishing to npm is a human step — see below):
+# published on npm — https://www.npmjs.com/package/verifyhash
 npm install -g verifyhash      # puts `vh` on your PATH
 # or run it without installing:
 npx verifyhash --help

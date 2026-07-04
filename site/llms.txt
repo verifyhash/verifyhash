@@ -16,8 +16,8 @@ Standalone, single file, Node core only:
 - Cross-check your download — published SHA-256:
   `371b904b0275ed85606510472570c49a99fc70a5f4e258e7d8fd0e52a26c30bd`
 
-Full toolchain (publishing to npm shortly):
-- `npx verifyhash --help` — hash, anchor, claim, verify, seal, dataset/parcel manifests, evidence packets.
+Full toolchain — live on npm:
+- `npm install -g verifyhash` (puts `vh` on your PATH) or `npx verifyhash --help` — hash, anchor, claim, verify, seal, dataset/parcel manifests, evidence packets.
 
 Browser, no terminal (fully offline; drop a packet in):
 - https://verifyhash.com/verify-vh-standalone.html

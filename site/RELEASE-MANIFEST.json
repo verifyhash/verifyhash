@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1077889,
+  "totalBytes": 1078535,
   "files": [
     {
       "path": "LICENSE",
@@ -43,8 +43,8 @@
     {
       "path": "docs/DECIDE.md",
       "source": "docs/DECIDE.md",
-      "bytes": 2602,
-      "sha256": "8a4e76f81c8d23fff1e35f5323d404c8f387ab73cba1df806a33daaf6011338d"
+      "bytes": 3248,
+      "sha256": "4d871844878b834b3880a5370d7600022dbd942c324d024dd8f85d8f7f54f282"
     },
     {
       "path": "docs/EVIDENCE.md",
@@ -170,7 +170,7 @@
       "path": "llms.txt",
       "source": "site/llms.txt",
       "bytes": 2901,
-      "sha256": "e535434f0dc0f9bc661c5a81a6d78fa1e4d0e55a0d790ce66744df9ec5a3606a"
+      "sha256": "aa5f92fc33d590659c02914ea432175e0449b7eb76d64df30504dc5457fcbd3d"
     },
     {
       "path": "seal-vh-standalone.js",

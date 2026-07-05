@@ -106,4 +106,45 @@ describe("T-3.1 design doc: docs/REPUTATION-SBT-DESIGN.md (reputation keyed to v
       expect(doc).to.match(/an attestation, not an asset/i);
     });
   });
+
+  // The T-3.1 rework raised the doc's leverage: the design is no longer paper-only. It now names a pure,
+  // runnable-today off-chain reference (the conformance oracle for T-3.2 and the composable consumer
+  // filter). This block pins the doc's claims to the module that actually ships, so they can't drift.
+  describe("is grounded in a runnable off-chain reference (not paper-only)", function () {
+    const rp = require("../cli/core/reputation-points");
+
+    it("the reference module exists and exports the projection surface the doc names", function () {
+      expect(rp.projectPoints, "projectPoints export").to.be.a("function");
+      expect(rp.pointsOf, "pointsOf export").to.be.a("function");
+      expect(rp.hasAtLeast, "hasAtLeast export").to.be.a("function");
+      expect(rp.POINT_MEANING, "POINT_MEANING export").to.be.a("string");
+    });
+
+    it("the doc points at cli/core/reputation-points.js and names its projection helpers", function () {
+      expect(doc).to.include("cli/core/reputation-points.js");
+      expect(doc).to.include("projectPoints");
+      expect(doc).to.include("pointsOf");
+      expect(doc).to.include("hasAtLeast");
+    });
+
+    it("frames the reference as the conformance oracle T-3.2's points(addr) must equal", function () {
+      expect(docLower).to.match(/conformance oracle/);
+      expect(doc).to.match(/points\(addr\)[\s\S]{0,80}must equal[\s\S]{0,40}pointsOf/i);
+    });
+
+    it("has a consumer-value section: composable filter, runnable with NO deploy, and NOT itself sold", function () {
+      expect(doc).to.match(/^##\s+5\.\s+Consumer value/m);
+      expect(docLower).to.match(/no deploy|without any deploy|zero deploy|ahead of\b[\s\S]{0,40}deploy/);
+      // The honest revenue-integrity boundary: reputation is infrastructure the products CONSUME, not sold.
+      expect(doc).to.match(/consume[s]?,? not (a thing that is )?sold|not a thing that is sold/i);
+    });
+
+    it("the doc's honest boundary matches the module's single-source POINT_MEANING string", function () {
+      // Both must say the same thing: a floor of verifiable ACTIVITY, never proof of MERIT. Pinning them
+      // together means the prose can't soften while the code's exported boundary stays honest (or vice versa).
+      expect(rp.POINT_MEANING.toLowerCase()).to.match(/never a proof of merit/);
+      expect(rp.POINT_MEANING.toLowerCase()).to.include("front-running-resistant");
+      expect(doc).to.match(/floor of verifiable \*activity\*, never a proof of \*merit\*/i);
+    });
+  });
 });

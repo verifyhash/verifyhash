@@ -72,6 +72,18 @@ paging, plus event logs indexers can follow. If the two ever disagree, the regis
 common source both derive from — are authoritative; `points(addr)` can lag (records whose mint nobody
 has paid gas for yet) but can never exceed the address's `authorBound` record count.
 
+**A runnable off-chain reference exists NOW (no deploy required).** The exact per-address `points`
+balance an on-chain `ReputationSBT` would hold is already computable — with zero deploy, zero key, and
+zero custody — by the pure module [`cli/core/reputation-points.js`](../cli/core/reputation-points.js)
+(`projectPoints` / `pointsOf` / `hasAtLeast`). It applies the rules of this section verbatim
+(authorBound-only, one point per `contentHash`, credited to `record.contributor`, monotonic) over the
+same records the shipping read path (`cli/reputation.js › readContributorRecords`) already fetches. This
+module is BOTH (a) the executable **conformance oracle** T-3.2's contract is held to —
+`points(addr)` on the deployed contract must equal `pointsOf(records, addr)` here for the same records —
+and (b) the capability a paying consumer can use *today*, ahead of any P-2 deploy (see §5). The
+projection's honest one-line boundary lives in exactly one place, the module's exported `POINT_MEANING`
+string, so this doc, the future NatSpec, and the code cannot drift.
+
 **Interface shape: minimal soulbound points, not ERC-721.** The contract exposes balance reads,
 the mint path, and lock-signalling events in the spirit of ERC-5192 (everything permanently locked),
 but is NOT a full ERC-721: no `tokenId`s, no `transferFrom`/`approve`/`setApprovalForAll` surface at
@@ -169,7 +181,42 @@ balances only ever change via mint.
   balances match the EPIC-12 derived view's `authorBound` count after minting all records; ABI
   contains no transfer/approve/operator functions; docs-rot guard keeps this doc, the NatSpec, and
   [`docs/REPUTATION.md`](REPUTATION.md) consistent.
+- **Conformance to the off-chain oracle.** For any record set, the deployed contract's `points(addr)`
+  MUST equal [`cli/core/reputation-points.js`](../cli/core/reputation-points.js)'s `pointsOf(records,
+  addr)`, and `totalPoints` its `projectPoints(records).totalPoints`. T-3.2's suite should assert this
+  equivalence directly (mint every record, then diff on-chain balances against the pure projection) so
+  the contract can never silently diverge from the spec this document already made executable.
 - No deployment anywhere, per the standing guardrails; P-2 remains the only path to a public chain.
+
+---
+
+## 5. Consumer value — why a paying customer cares, and what runs before any deploy
+
+The reputation layer is **infrastructure the income products consume, not a thing that is sold** (revenue
+stays with evidence, licensing, and verification per the REVENUE INTEGRITY rule; §3.3). Its concrete
+value is **composability**: it turns "who provably contributed, and how much" from an off-chain,
+per-UI recomputation into a single reusable read.
+
+**The buyer-facing use case.** A verification or evidence integration frequently wants to *weight or
+gate* on contributor standing — e.g. "only auto-honor a claimed contribution when the claiming address
+holds ≥ N proven, front-running-resistant (`authorBound`) contributions," routing everything below the
+threshold to manual review. Today each such integration must page `getRecordsByContributor` and
+re-implement the authorBound/anchorOnly split itself. This layer exposes it once:
+
+- **On-chain (post-P-2):** another contract reads `points(addr)` in O(1) and branches on it — no paging,
+  no trust in an off-chain indexer.
+- **Off-chain (today, no deploy):** a consumer calls
+  [`cli/core/reputation-points.js`](../cli/core/reputation-points.js) `hasAtLeast(records, addr, n)` over
+  the records the shipping read path already fetches. Pure, re-derivable, no token, no key, no custody.
+  The exact same predicate the contract will later enforce is available *now*, so the reputation
+  capability delivers value **ahead of** the human-gated deploy, not only after it.
+
+**Why this is honest leverage and not scope creep.** The predicate is a filter over records that already
+exist; it invents no new asset, opens no license gate, and touches no funds. It is the smallest surface
+that lets the paying products treat "proven contribution history" as a first-class, composable input —
+and, because §2's boundary holds, every consumer is told plainly that a high point count is a floor of
+verifiable *activity*, never a proof of *merit*, and that a load-bearing sybil decision must still weight
+points by inspecting their backing records.
 
 ---
 <sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

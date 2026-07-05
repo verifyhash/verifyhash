@@ -12,6 +12,13 @@ This directory proves the AgentTrace adoption claim with committed, runnable fil
   mapper into the canonical `vh agent` event schema. The entire mapping lives between its
   `MAPPING BEGIN`/`MAPPING END` markers — about twenty lines, and a test pins that size so the claim
   cannot rot.
+- [`transcript.claude-code.jsonl`](transcript.claude-code.jsonl) — the same idea for **Claude Code**:
+  a realistic session transcript in the host's native JSONL shape (`user`/`assistant` message lines
+  with `tool_use` + `tool_result` content blocks, plus non-message lines like `summary` and
+  `file-history-snapshot`). You don't even need the mapping step there: the shipped `vh-agent-hook`
+  bin seals every session automatically at `SessionEnd` — the zero-config path documented in
+  [`../../docs/AGENT-HOOK.md`](../../docs/AGENT-HOOK.md) and test-gated against this fixture by
+  [`test/cli.agent-hook.test.js`](../../test/cli.agent-hook.test.js).
 
 ## The end-to-end flow (map → seal → redact → verify → prove)
 

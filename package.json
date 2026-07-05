@@ -9,7 +9,8 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "vh": "cli/vh.js"
+    "vh": "cli/vh.js",
+    "vh-agent-hook": "cli/agent-hook.js"
   },
   "files": [
     "index.js",

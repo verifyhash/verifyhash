@@ -84,6 +84,7 @@ const INTERNAL_FILES = new Set([
   "docs/AUDIT.md", // internal audit notes
   "docs/VENDOR-PROVENANCE.md", // vendor-ops doc; its lead command is a maintainer script (scripts/), never shipped
   "docs/STRATEGY-ARCHIVE.md", // internal roadmap history
+  "docs/DECISIONS-ARCHIVE.md", // internal decision history (curated out of STRATEGY.md)
   "STRATEGY.md",
   "BACKLOG.md",
   "HANDOFF.md",

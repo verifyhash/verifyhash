@@ -4586,6 +4586,39 @@ function writeDemoFixture(dir) {
   return packetPath;
 }
 
+// ---------------------------------------------------------------------------
+// T-74.1 — CHANNEL-AWARE self-naming for every copy-paste command the demo prints. The demo's whole job
+// is to hand the user next-step commands that run VERBATIM in their shell; a wrong command name at that
+// moment is a crash at the point of highest intent. Three channels, decided from process.argv[1]:
+//   * bin      — the user reached us through the npm bin shim: `npx --yes verify-vh …` (npx cache), a
+//                global install (`/usr/local/bin/verify-vh`), or any installed copy under a node_modules
+//                tree. There is NO verify-vh.js file in their cwd, so a printed `node verify-vh…` line
+//                would crash for them; the re-runnable form is `npx --yes verify-vh <args>` (which also
+//                resolves a global/local install without a network fetch).
+//   * file     — the user ran one of our script files directly (`node verify-vh.js …`,
+//                `node verify-vh-standalone.js …`): name the EXACT basename they invoked.
+//   * fallback — argv[1] is not ours (an in-process test harness): the canonical `node verify-vh.js`,
+//                which keeps in-process output deterministic.
+// The output stays a pure function of the invocation channel (no absolute paths, no randomness), so the
+// bare-demo byte-determinism invariant still holds per channel; the invariant test canonicalizes the
+// self-name across channels before its byte compare.
+// ---------------------------------------------------------------------------
+function selfCommand() {
+  const argv1 = String(process.argv[1] || "");
+  const base = path.basename(argv1);
+  // Not one of OUR entrypoints (an in-process test harness, a foreign runner — e.g. mocha's own cli.js):
+  // fall back to the canonical name, which keeps in-process output deterministic.
+  if (!/^verify-vh(\.js|-\S*\.js)?$/.test(base)) return "node verify-vh.js";
+  // Ours. The extension-less bin shim (`verify-vh` — npx cache, global install, node_modules/.bin), or
+  // ANY installed copy under a node_modules/_npx tree, re-runs portably as `npx --yes verify-vh`.
+  const segments = argv1.split(/[\\/]+/);
+  if (base === "verify-vh" || segments.includes("node_modules") || segments.includes("_npx")) {
+    return "npx --yes verify-vh";
+  }
+  // A script file the user ran directly: name the EXACT file they invoked.
+  return `node ${base}`;
+}
+
 // Run the zero-config demo: seal -> ACCEPT (pinned to the recovered signer) -> tamper -> REJECT. Uses the
 // REAL verifyArtifact core for BOTH runs (no bespoke verify path), so the verdicts are exactly what a real
 // counterparty would see. Returns the EXIT-contract code (0 only when the whole demo behaved as designed).
@@ -4654,15 +4687,19 @@ function runDemo(write, writeErr) {
     // that turns "I watched a demo" into "I have a real packet on disk I can poke at": `demo <dir>` writes the
     // same genuine packet somewhere they KEEP, with copy-paste verify/tamper/restore commands. That is the
     // working on-ramp from the canned proof to verifying their OWN bytes (where the paid `--sign` pull begins).
-    // NOTE: we name the command literally (NOT process.argv[1]) so the bare-demo output is byte-identical
-    // whether run in-process, as `node verify-vh.js`, or from the standalone bundle — the demo's own
-    // determinism is a tested invariant (the standalone must byte-match the in-tree demo).
+    // T-74.1: the command is named CHANNEL-AWARE via selfCommand() — an npx/global-bin user is told
+    // `npx --yes verify-vh …` (a printed `node verify-vh…` would crash for them: they hold no such file), a
+    // script-file user is told `node <the exact file they ran>`. The output remains deterministic PER
+    // CHANNEL (a pure function of the channel, nothing else); the byte-determinism invariant test
+    // canonicalizes the self-name before comparing the in-tree and standalone runs.
+    const cmd = selfCommand();
     L.push("TRY IT YOURSELF: keep a copy you can tamper with by hand —");
-    L.push("  node verify-vh.js demo ./vh-demo     # writes the same signed packet + files into ./vh-demo,");
-    L.push("                                       # then prints the exact verify / tamper / restore commands.");
+    L.push(`  ${cmd} demo ./vh-demo`);
+    L.push("  # writes the same signed packet + files into ./vh-demo, then prints");
+    L.push("  # the exact verify / tamper / restore commands.");
     L.push("");
     L.push("NEXT: run it on a REAL packet you were handed:");
-    L.push("  node verify-vh.js <packet> --vendor 0xPRODUCER_ADDRESS   (exit 0 = verifies; 3 = REJECTED)");
+    L.push(`  ${cmd} <packet> --vendor 0xPRODUCER_ADDRESS   # exit 0 = verifies; 3 = REJECTED`);
     L.push("");
     write(L.join("\n"));
     return EXIT.OK;
@@ -4733,13 +4770,12 @@ function runDemoEmit(targetDir, write, writeErr) {
     return EXIT.IO;
   }
 
-  // The command name as the user invoked us (verify-vh.js in-tree, verify-vh-standalone.js as the bundle), so
-  // the copy-paste commands below name the EXACT file they ran — not a guessed path.
-  // Name the command the user actually ran (verify-vh.js in-tree, verify-vh-standalone.js as the bundle) so the
-  // copy-paste lines below name the EXACT file they invoked. If argv[1] is not one of our scripts (e.g. running
-  // in-process under a test harness), fall back to the canonical name rather than printing the harness binary.
-  const argv1 = path.basename(process.argv[1] || "");
-  const self = /verify-vh/.test(argv1) ? argv1 : "verify-vh.js";
+  // T-74.1: name the command EXACTLY as this user can re-run it, channel-aware. A bin-style invocation
+  // (npx cache / global install / any node_modules copy) is told `npx --yes verify-vh`; a direct script
+  // run is told `node <the exact basename they invoked>` (verify-vh.js in-tree, verify-vh-standalone.js as
+  // the bundle); an in-process harness falls back to the canonical `node verify-vh.js`. NEVER
+  // `node verify-vh` — the bin user holds no such file, so that line would crash at peak intent.
+  const cmd = selfCommand();
   // Print a path that is copy-pasteable from the user's CURRENT shell: the relative path when the target sits
   // at/under cwd (the common `demo ./vh-demo` case -> a tidy `vh-demo/...`), else the absolute path (a `../../`
   // chain to a far-off dir is unreadable and brittle — the absolute path always resolves).
@@ -4762,22 +4798,28 @@ function runDemoEmit(targetDir, write, writeErr) {
   L.push(`  signer (recovered from the bytes): ${recovered}`);
   L.push("");
   L.push("It already VERIFIES — run it yourself (the real verify path, no canned demo):");
-  L.push(`  node ${self} ${pkt} --vendor ${recovered}`);
+  L.push(`  ${cmd} ${pkt} --vendor ${recovered}`);
   L.push("  # exit 0 = ACCEPT (root re-derived from YOUR bytes on disk; signer pinned).");
   L.push("");
   L.push("Now PROVE tamper-evidence with your own hands — change one byte, then re-verify:");
   L.push(`  printf 'X' >> ${card}`);
-  L.push(`  node ${self} ${pkt} --vendor ${recovered}   # exit 3 = REJECT (CHANGED ${path.basename(card)})`);
+  L.push(`  ${cmd} ${pkt} --vendor ${recovered}   # exit 3 = REJECT (CHANGED ${path.basename(card)})`);
   L.push("");
-  L.push("Restore it and watch it ACCEPT again (the change was the ONLY reason it rejected):");
-  L.push(`  node ${self} ${pkt} --vendor ${recovered}   # after restoring the byte`);
+  // A REAL, copy-pasteable restore command (T-74.1): rewrite the file's exact original bytes straight from
+  // the shipped fixture (single source of truth — DEMO_FILES; its content is single-quote/percent/backslash-
+  // free, so the printf line below reproduces it byte-for-byte), so the whole ACCEPT -> REJECT -> ACCEPT
+  // loop runs verbatim from this transcript.
+  L.push("Restore the original bytes and watch it ACCEPT again (the change was the ONLY reason it rejected):");
+  L.push(`  printf '${DEMO_FILES["model-card.md"].replace(/\n/g, "\\n")}' > ${card}`);
+  L.push(`  ${cmd} ${pkt} --vendor ${recovered}   # exit 0 again — the restored bytes verify`);
   L.push("");
   L.push("NEXT — verify a packet someone handed YOU (same command, their address):");
-  L.push(`  node ${self} <their-packet> --vendor 0xTHEIR_ADDRESS`);
+  L.push(`  ${cmd} <their-packet> --vendor 0xTHEIR_ADDRESS`);
   L.push("");
   L.push("Want to SIGN your OWN files so a counterparty can pin YOU? That is the paid producer side:");
   L.push("  vh evidence seal <your-folder> --sign        (an EIP-191 signer-pin; the `evidence_unlimited`");
-  L.push("                                                upgrade lifts the free 25-file cap) — see verifier/README.md §0a.");
+  L.push("                                                upgrade lifts the free 25-file cap)");
+  L.push("  How-to (§0a of the verifier README): https://verifyhash.com/docs/verifier-README.md");
   L.push("");
   write(L.join("\n"));
   return EXIT.OK;
@@ -5017,7 +5059,7 @@ var __PROVENANCE = {
   "schema": "verifyhash/build-provenance@1",
   "target": "verify",
   "note": "This bundle's OWN provenance, embedded so the single file is self-describing. Run `node verify-vh-standalone.js --self-attest` to recompute selfSha256 from these very bytes, or `--provenance` to print the ordered source modules + hashes it was built from. Cross-check against verifier/dist/BUILD-PROVENANCE.json (the same data) with: node verifier/build-standalone.js --check",
-  "selfSha256": "a5b6a93c77bdf14959bf6a786a242989646bda20afbe7bdc4a173b73e8ffa38c",
+  "selfSha256": "13a4f4899055bb2483593bb63788ec7f2519b8d697a30e1ea90f2ba39528485c",
   "modules": [
     {
       "id": "keccak256-vendored",
@@ -5079,8 +5121,8 @@ var __PROVENANCE = {
       "id": "verify-vh",
       "synthetic": false,
       "sourceFile": "verifier/verify-vh.js",
-      "sourceSha256": "35e04d3adc1f66125f282c76553a33d5551f6c9783948d410c6a52ffa401a807",
-      "inlinedSha256": "fd2eb607800118cafc0d5a79c077150cbe9eb03f5de4a8898cbd30031d412ccc",
+      "sourceSha256": "4fb63e1fe5fba8ef83635b36e9cf229e73380cd9569d3a48922f524de98bb3f4",
+      "inlinedSha256": "65d546ad7cfa1ccd587e0f9957db5631235cfdf7312b93f7e63a1741471b5c5e",
       "entry": true
     }
   ]

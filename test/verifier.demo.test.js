@@ -94,6 +94,11 @@ describe("verifier demo: zero-config `verify-vh demo` quickstart (T-55.2)", func
       expect(res.stdout).to.match(/ACCEPT — the artifact verifies\./);
       expect(res.stdout).to.include(DEMO_SIGNER);
       expect(res.stdout).to.match(/REJECT \(CHANGED\)/);
+      // T-74.1: run as a script FILE, the next-step lines name that exact file (channel-aware self-naming).
+      expect(res.stdout, "names the script file the user actually ran").to.include(
+        "  node verify-vh.js demo ./vh-demo"
+      );
+      expect(res.stdout, "a file-channel run never advises the npx form").to.not.include("npx --yes verify-vh");
     });
 
     it("the demo's embedded signature genuinely RECOVERS to the advertised signer (not echoed)", function () {
@@ -117,15 +122,33 @@ describe("verifier demo: zero-config `verify-vh demo` quickstart (T-55.2)", func
   // (2) The STANDALONE bundle exposes the SAME demo.
   // ============================================================================================
   describe("(2) the standalone bundle exposes the SAME demo (byte-identical stdout + exit code)", function () {
-    it("`node verify-vh-standalone.js demo` matches the in-tree verifier stdout + exit code", function () {
+    it("`node verify-vh-standalone.js demo` matches the in-tree verifier stdout + exit code (self-name canonicalized)", function () {
       const oracle = runInTree(["demo"]);
       const sa = runChild(STANDALONE_PATH, ["demo"]);
       expect(sa.error, "no spawn error").to.equal(undefined);
       expect(sa.status, `exit code matches (in-tree ${oracle.code}, stderr: ${sa.stderr})`).to.equal(oracle.code);
-      // The standalone's stdout must equal the in-tree's stdout byte-for-byte EXCEPT the throwaway temp-dir
-      // path line (which is randomized per run); normalize that single line away before comparing.
-      const norm = (s) => s.replace(/^# Working dir .*$/m, "# Working dir <tmp>");
-      expect(norm(sa.stdout), "stdout matches the in-tree verifier (mod the temp-dir line)").to.equal(
+      // T-74.1 pins the NEW canonical per-channel output first: the demo's copy-paste lines name the EXACT
+      // command each user can re-run. The in-tree/in-process run names the canonical script file; the
+      // standalone names ITSELF (a bundle user holds no verify-vh.js, so that line must not appear there).
+      expect(oracle.out, "in-tree demo names the canonical script file").to.include(
+        "  node verify-vh.js demo ./vh-demo"
+      );
+      expect(sa.stdout, "the standalone names ITSELF in its copy-paste lines").to.include(
+        "  node verify-vh-standalone.js demo ./vh-demo"
+      );
+      expect(sa.stdout, "the standalone never tells its user to run a file they do not have").to.not.include(
+        "node verify-vh.js"
+      );
+      // BYTE-DETERMINISM invariant (updated for T-74.1, not deleted): the output is a pure function of the
+      // invocation channel — nothing else. Normalize away the two channel-legitimate differences (the
+      // randomized throwaway temp-dir line and the channel-aware self-name) and the two transcripts must
+      // still match BYTE-FOR-BYTE.
+      const norm = (s) =>
+        s
+          .replace(/^# Working dir .*$/m, "# Working dir <tmp>")
+          .split("node verify-vh-standalone.js")
+          .join("node verify-vh.js");
+      expect(norm(sa.stdout), "stdout matches the in-tree verifier (mod temp-dir + self-name)").to.equal(
         norm(oracle.out)
       );
     });
@@ -224,6 +247,15 @@ describe("verifier demo: zero-config `verify-vh demo` quickstart (T-55.2)", func
       expect(out, "names the recovered signer").to.include(DEMO_SIGNER);
       // It pulls toward the PAID producer side (the free→paid funnel the rework exists to widen).
       expect(out, "pulls toward the paid signing upgrade").to.match(/vh evidence seal .*--sign/);
+      // T-74.1: the producer-side pointer is a REACHABLE URL (an npx/standalone user has no local
+      // verifier/README.md, so a bare `see verifier/README.md §0a` was a dead end).
+      expect(out, "the §0a pointer is a reachable URL").to.include(
+        "https://verifyhash.com/docs/verifier-README.md"
+      );
+      // T-74.1: the transcript prints a REAL restore command (the exact original bytes), so the whole
+      // ACCEPT -> tamper REJECT -> restore ACCEPT loop is runnable verbatim from the printed lines.
+      const restoreLine = `  printf '${verifyvh.DEMO_FILES["model-card.md"].replace(/\n/g, "\\n")}' > `;
+      expect(out, "prints a copy-paste restore command built from the fixture bytes").to.include(restoreLine);
     });
 
     it("what it WROTE verifies through the REAL public core — ACCEPT, signer pinned", function () {

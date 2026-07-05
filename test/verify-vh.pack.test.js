@@ -217,4 +217,132 @@ describe("T-73.3 verify-vh publish-readiness: `npm pack` verifier/ → the tarba
     expect(bad.stdout, "the REJECT must name the changed file").to.match(/CHANGED\s+weights\.txt/);
     expect(bad.stdout, "a rejected run must not also claim OK").to.not.include("OK — the artifact verifies.");
   });
+
+  // =================================================================================================
+  // T-74.1 — CHANNEL-AWARE COPY-PASTE COMMANDS, proven the hard way: lay the packed tarball out exactly
+  // as `npm install` would (node_modules/verify-vh + the node_modules/.bin/verify-vh shim), invoke the
+  // demo THROUGH THE BIN with a real `npx --yes verify-vh demo` (resolved OFFLINE from the local .bin —
+  // npx never needs the registry when the bin already exists), then EXECUTE every command line the demo
+  // output prints, VERBATIM, in printed order: ACCEPT exit 0 → tamper → REJECT exit 3 → restore →
+  // ACCEPT exit 0. A bin-invoked demo must never print `node verify-vh…`: the npx/global-install user
+  // holds no such file, so that line is a crash at the moment of highest intent — the exact
+  // cold-stranger failure the 2026-07-05 DX audit caught.
+  // =================================================================================================
+  describe("T-74.1 bin channel: bin-invoked demo prints npx-form commands and EVERY printed line runs verbatim", function () {
+    let proj; // the npm-install-shaped project: <proj>/node_modules/{verify-vh/, .bin/verify-vh}
+    let bareOut; // stdout of the bin-invoked bare demo (`npx --yes verify-vh demo`)
+    let scaffoldOut; // stdout of the bare demo's own TRY IT line, executed verbatim (the `demo <dir>` transcript)
+
+    // Env for bin-channel runs: repo-isolated like extractedEnv(), plus npm forced OFFLINE so a
+    // regression could never make `npx` phone home (the bin must resolve from the LOCAL node_modules/.bin).
+    function binEnv() {
+      return {
+        ...extractedEnv(),
+        npm_config_offline: "true",
+        npm_config_update_notifier: "false",
+        npm_config_audit: "false",
+        npm_config_fund: "false",
+        npm_config_loglevel: "error",
+      };
+    }
+
+    // Execute ONE printed line VERBATIM — exactly as the user would: pasted into a POSIX shell in the
+    // directory they ran the demo from. (Trailing `# …` annotations are ordinary shell comments.)
+    function shVerbatim(line) {
+      return spawnSync("sh", ["-c", line], { cwd: proj, encoding: "utf8", maxBuffer: MAX_BUF, env: binEnv() });
+    }
+
+    // The transcript's EXECUTABLE command lines, in printed order: the two-space-indented npx/printf
+    // copy-paste surface, minus `<placeholder>` templates (instructions for later, not runnable now).
+    function commandLines(transcript) {
+      return transcript
+        .split("\n")
+        .filter((l) => /^ {2}(npx --yes verify-vh|printf )/.test(l) && !l.includes("<"));
+    }
+
+    before(function () {
+      // Provision <proj> exactly as `npm install <tarball>` lays it out: the extracted package under
+      // node_modules/verify-vh (its js-sha3 dep already provisioned inside by the outer before()), plus
+      // the executable .bin shim npm creates for package.json's `"bin": {"verify-vh": "verify-vh.js"}`.
+      proj = path.join(tmpRoot, "npx-proj");
+      fs.mkdirSync(path.join(proj, "node_modules", ".bin"), { recursive: true });
+      fs.cpSync(pkgDir, path.join(proj, "node_modules", "verify-vh"), { recursive: true });
+      fs.chmodSync(path.join(proj, "node_modules", "verify-vh", "verify-vh.js"), 0o755);
+      fs.symlinkSync(
+        path.join("..", "verify-vh", "verify-vh.js"),
+        path.join(proj, "node_modules", ".bin", "verify-vh")
+      );
+
+      // The BIN-INVOKED bare demo — a real `npx --yes verify-vh demo`, resolved offline from ./node_modules/.bin.
+      const bare = spawnSync("npx", ["--yes", "verify-vh", "demo"], {
+        cwd: proj,
+        encoding: "utf8",
+        maxBuffer: MAX_BUF,
+        env: binEnv(),
+      });
+      expect(bare.error, `npx failed to spawn: ${bare.error && bare.error.message}`).to.equal(undefined);
+      expect(bare.status, `bin-invoked demo exited ${bare.status}:\n${bare.stdout}\n${bare.stderr}`).to.equal(0);
+      bareOut = bare.stdout;
+
+      // The bare demo's ONE executable next step is the npx-form TRY IT line; run it VERBATIM to
+      // materialize the keepable scaffold (./vh-demo under the project dir).
+      const tryIt = commandLines(bareOut);
+      expect(tryIt, `the bare demo must print exactly one executable next step:\n${bareOut}`).to.deep.equal([
+        "  npx --yes verify-vh demo ./vh-demo",
+      ]);
+      const scaffold = shVerbatim(tryIt[0]);
+      expect(
+        scaffold.status,
+        `the printed TRY IT line exited ${scaffold.status}:\n${scaffold.stdout}\n${scaffold.stderr}`
+      ).to.equal(0);
+      scaffoldOut = scaffold.stdout;
+    });
+
+    it("NO printed line contains `node verify-vh` when invoked via the bin (bare demo AND demo <dir>)", function () {
+      for (const [name, out] of [["bare demo", bareOut], ["demo <dir>", scaffoldOut]]) {
+        expect(out, `${name}: a bin-invoked transcript advised \`node verify-vh…\` — that file does not exist ` +
+            `for an npx/global-install user:\n${out}`).to.not.include("node verify-vh");
+        expect(out, `${name}: the self-command must be the npx form`).to.include("npx --yes verify-vh");
+      }
+    });
+
+    it("the producer-side §0a pointer is a REACHABLE URL, not a local file the npx user does not have", function () {
+      expect(scaffoldOut, "must link the hosted verifier README").to.include(
+        "https://verifyhash.com/docs/verifier-README.md"
+      );
+      expect(scaffoldOut, "the dangling local-path pointer is gone").to.not.include("see verifier/README.md");
+    });
+
+    it("EVERY printed command line runs VERBATIM, in order: ACCEPT 0 → tamper → REJECT 3 → restore → ACCEPT 0", function () {
+      const lines = commandLines(scaffoldOut);
+      // Shape pin: verify / tamper / verify / restore / verify — exactly these, in exactly this order.
+      expect(
+        lines.map((l) => (/^ {2}npx --yes verify-vh /.test(l) ? "verify" : "printf")),
+        `unexpected executable-line shape in the scaffold transcript:\n${scaffoldOut}`
+      ).to.deep.equal(["verify", "printf", "verify", "printf", "verify"]);
+
+      const card = path.join(proj, "vh-demo", "model-card.md");
+      const originalBytes = fs.readFileSync(card);
+
+      const expected = [0, 0, 3, 0, 0];
+      const results = lines.map((l) => shVerbatim(l));
+      results.forEach((r, i) => {
+        expect(
+          r.status,
+          `printed line ${i + 1} exited ${r.status} (want ${expected[i]}): ${lines[i]}\n${r.stdout}\n${r.stderr}`
+        ).to.equal(expected[i]);
+      });
+
+      // The verdicts behind those exit codes are the real ones: ACCEPT, then a REJECT NAMING the file,
+      // then ACCEPT again — and the printed restore command restored the EXACT original bytes.
+      expect(results[0].stdout, "genuine bytes must verify").to.include("OK — the artifact verifies.");
+      expect(results[2].stdout, "the tampered copy must be REJECTED").to.match(/REJECTED \(/);
+      expect(results[2].stdout, "the REJECT must name the changed file").to.match(/CHANGED\s+model-card\.md/);
+      expect(results[4].stdout, "the restored bytes must verify again").to.include("OK — the artifact verifies.");
+      expect(
+        fs.readFileSync(card).equals(originalBytes),
+        "the printed restore command must reproduce the original file byte-for-byte"
+      ).to.equal(true);
+    });
+  });
 });

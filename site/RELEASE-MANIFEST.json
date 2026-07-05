@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1078535,
+  "totalBytes": 1081586,
   "files": [
     {
       "path": "LICENSE",
@@ -20,7 +20,7 @@
       "path": "build-provenance.json",
       "source": "verifier/dist/BUILD-PROVENANCE.json",
       "bytes": 9676,
-      "sha256": "34eb3c186b99432b3b0a2ce906990f0d18ccd0c3e56a7d273e65970f80a012bc"
+      "sha256": "5abe5620c06f22a1f45ffbe0ca46a1c1b6e8b84c9587aadd58ecafdc21ef173a"
     },
     {
       "path": "docs/ADOPT.md",
@@ -164,13 +164,13 @@
       "path": "index.html",
       "source": "site/index.html",
       "bytes": 33007,
-      "sha256": "552056b65435eb64964eba10d0f87bf19aa4d32d2c622313c52a1b7a9f40372e"
+      "sha256": "f9384ef90b9673657f5442e2a8329744b455949bd3c371c24f6c9a206dae0385"
     },
     {
       "path": "llms.txt",
       "source": "site/llms.txt",
       "bytes": 2901,
-      "sha256": "aa5f92fc33d590659c02914ea432175e0449b7eb76d64df30504dc5457fcbd3d"
+      "sha256": "83b7ea00c4910e698816e9697e68aede39e1b4fc1c94024a0747938730685856"
     },
     {
       "path": "seal-vh-standalone.js",
@@ -199,14 +199,14 @@
     {
       "path": "verify-vh-standalone.js",
       "source": "verifier/dist/verify-vh-standalone.js",
-      "bytes": 247462,
-      "sha256": "6de719e11e3885c733aca329a10e4d25f0dff1e5f24d85934a43b3f766d4c0b0"
+      "bytes": 250513,
+      "sha256": "86f8262317539a48324de8733bf974134938213ae66f7e43b6aac6965bc1fba3"
     },
     {
       "path": "verify-vh-standalone.js.sha256",
       "source": "verifier/dist/verify-vh-standalone.js.sha256",
       "bytes": 90,
-      "sha256": "285d488b1b2a9b3e671c6fddb045cad68693796086513bb36708d1095bf399fd"
+      "sha256": "43893b42ab27830db2bb5120267b5b44bb955025549f77afb7541c2c3a3daae8"
     }
   ]
 }

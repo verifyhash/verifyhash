@@ -14,7 +14,7 @@ Standalone, single file, Node core only:
 - `node verify-vh-standalone.js <packet.vhevidence.json> --vendor 0x<address-the-producer-told-you-to-pin>`
 - Exit code `0` = accepted, `3` = rejected. Drop it into CI to gate a build on real provenance.
 - Cross-check your download — published SHA-256:
-  `c73f7953ca44a8fd568bece449dde0f69f2013416a11682036bbdb1bb008d386`
+  `6de719e11e3885c733aca329a10e4d25f0dff1e5f24d85934a43b3f766d4c0b0`
 
 Full toolchain — live on npm:
 - `npm install -g verifyhash` (puts `vh` on your PATH) or `npx verifyhash --help` — hash, anchor, claim, verify, seal, dataset/parcel manifests, evidence packets.

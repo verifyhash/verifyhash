@@ -15,6 +15,14 @@
     "index.js",
     "cli/",
     "trustledger/",
+    "verifier/",
+    "examples/README.md",
+    "examples/run.js",
+    "examples/sample-dataset/",
+    "examples/sample-dataset.hints.json",
+    "examples/policy.lenient.json",
+    "examples/policy.strict.json",
+    "examples/sample-parcel/",
     "README.md",
     "docs/",
     "!docs/METRICS.jsonl",
@@ -27,7 +35,9 @@
     "!docs/STRATEGY-ARCHIVE.md",
     "!docs/MORNING.md",
     "!docs/ADOPTION.json",
-    "!docs/DECIDE.md"
+    "!docs/DECIDE.md",
+    "!docs/DEPLOY-PUBLIC-SITE.md",
+    "!docs/AUDIT.md"
   ],
   "engines": {
     "node": ">=18"

@@ -186,6 +186,18 @@ balances only ever change via mint.
   addr)`, and `totalPoints` its `projectPoints(records).totalPoints`. T-3.2's suite should assert this
   equivalence directly (mint every record, then diff on-chain balances against the pure projection) so
   the contract can never silently diverge from the spec this document already made executable.
+- **On-chain composable gate + reference consumer (the T-3.2 rework's leverage).** Beyond the raw
+  `points(address)` read, `ReputationSBT` ships `meetsThreshold(account, minPoints)` — the O(1)
+  on-chain analogue of the off-chain `hasAtLeast(records, addr, n)` — so a consumer branches on ONE
+  boolean call instead of re-reading the count and re-deriving the threshold (and its semantics)
+  itself. `contracts/ReputationGate.sol` is the shipped reference consumer that inherits this gate: it
+  pins one identity-probed `ReputationSBT` + an immutable threshold and FAILS CLOSED — below the bar
+  `autoHonor` / `requireReputation` revert `InsufficientReputation(account, have, required)` so the
+  caller routes to manual review; at or above the bar the action is honored. Tests pin `meetsThreshold`
+  byte-for-boolean to the off-chain `hasAtLeast` across a range of thresholds, and prove the soulbound
+  tie survives composition: a stranger who pays gas to mint another address's points still cannot pass
+  the gate for themselves (the point was credited to the backing record's contributor, never the
+  caller). This turns the design's "composability" from prose into shipped, tested, copyable code.
 - No deployment anywhere, per the standing guardrails; P-2 remains the only path to a public chain.
 
 ---
@@ -203,8 +215,15 @@ holds ≥ N proven, front-running-resistant (`authorBound`) contributions," rout
 threshold to manual review. Today each such integration must page `getRecordsByContributor` and
 re-implement the authorBound/anchorOnly split itself. This layer exposes it once:
 
-- **On-chain (post-P-2):** another contract reads `points(addr)` in O(1) and branches on it — no paging,
-  no trust in an off-chain indexer.
+- **On-chain (post-P-2):** a consumer contract calls `meetsThreshold(addr, N)` — the O(1) gate
+  `ReputationSBT` ships for exactly this — and branches on the boolean, with no paging and no trust in an
+  off-chain indexer. `contracts/ReputationGate.sol` is the shipped reference consumer that inherits it:
+  it pins one identity-probed `ReputationSBT` + an immutable threshold and FAILS CLOSED (below the bar it
+  reverts `InsufficientReputation` and the caller routes to manual review; at or above it honors the
+  action). Because every point is credited to the backing record's contributor — never to whoever paid
+  gas to mint it — a stranger cannot buy their way past the gate; only the address that provably
+  contributed clears it. The predicate is defined ONCE, so every integration enforces the same
+  definition instead of hand-rolling `points(addr) >= N` and its semantics.
 - **Off-chain (today, no deploy):** a consumer calls
   [`cli/core/reputation-points.js`](../cli/core/reputation-points.js) `hasAtLeast(records, addr, n)` over
   the records the shipping read path already fetches. Pure, re-derivable, no token, no key, no custody.

@@ -514,6 +514,88 @@ describe("ReputationSBT (T-3.2): soulbound, non-transferable contribution points
   });
 
   // -------------------------------------------------------------------------------------------
+  // On-chain composable gate: meetsThreshold — the design §5 buyer predicate, made real on-chain and
+  // pinned to the off-chain oracle's hasAtLeast so the two gates can never diverge. This is the
+  // difference between the layer EXPOSING a raw count (which every consumer must re-compare) and
+  // DELIVERING the composable decision once, so contracts/ReputationGate.sol can branch in O(1).
+  // -------------------------------------------------------------------------------------------
+  describe("meetsThreshold: the on-chain composable gate mirrors off-chain hasAtLeast", function () {
+    // Page every record out of the registry, shaped for the pure projection module.
+    async function allRecords(registry) {
+      const out = [];
+      const page = 100n;
+      for (let start = 0n; ; start += page) {
+        const [hashes, records] = await registry.getRecords(start, page);
+        for (let i = 0; i < hashes.length; i++) {
+          out.push({
+            contentHash: hashes[i],
+            contributor: records[i].contributor,
+            authorBound: records[i].authorBound,
+          });
+        }
+        if (BigInt(hashes.length) < page) break;
+      }
+      return out;
+    }
+
+    it("a zero threshold admits everyone — even an address with no points (floor of zero)", async function () {
+      const { sbt, alice } = await loadFixture(deploy);
+      expect(await sbt.points(alice.address)).to.equal(0n);
+      expect(await sbt.meetsThreshold(alice.address, 0n)).to.equal(true);
+      // ...but any positive bar refuses a zero-point address.
+      expect(await sbt.meetsThreshold(alice.address, 1n)).to.equal(false);
+    });
+
+    it("is INCLUSIVE at the boundary and tracks points as they are minted", async function () {
+      const { registry, sbt, alice, bob } = await loadFixture(deploy);
+      const a1 = h("mt-a1");
+      const a2 = h("mt-a2");
+      await commitReveal(registry, alice, a1, "mt-a1");
+      await commitReveal(registry, alice, a2, "mt-a2");
+      // Before minting: alice is still at zero on-chain (points lag until someone pays gas).
+      expect(await sbt.meetsThreshold(alice.address, 1n)).to.equal(false);
+      await sbt.connect(bob).mint(a1);
+      expect(await sbt.meetsThreshold(alice.address, 1n)).to.equal(true); // inclusive: 1 >= 1
+      expect(await sbt.meetsThreshold(alice.address, 2n)).to.equal(false);
+      await sbt.connect(bob).mint(a2);
+      expect(await sbt.meetsThreshold(alice.address, 2n)).to.equal(true);
+    });
+
+    it("is a read-only view (cannot change a balance; adds no mutating surface)", async function () {
+      const { sbt } = await loadFixture(deploy);
+      const frag = sbt.interface.getFunction("meetsThreshold");
+      expect(frag.stateMutability).to.equal("view");
+      expect(frag.payable).to.equal(false);
+    });
+
+    it("CONFORMANCE: on-chain meetsThreshold equals off-chain hasAtLeast for every address across a range of thresholds", async function () {
+      const ctx = await loadFixture(deploy);
+      const { registry, sbt, deployer, alice, bob, carol } = ctx;
+      // alice: 2 authorBound; bob: 1 authorBound; carol: anchorOnly only (0 points).
+      await commitReveal(registry, alice, h("g-a1"), "g-a1");
+      await commitReveal(registry, alice, h("g-a2"), "g-a2");
+      await commitReveal(registry, bob, h("g-b1"), "g-b1");
+      await registry.connect(carol).anchor(h("g-c1"), "g-c1");
+
+      const records = await allRecords(registry);
+      await sbt.connect(deployer).mintBatch(rp.projectPoints(records).minted);
+
+      for (const who of [alice, bob, carol, deployer]) {
+        for (const n of [0, 1, 2, 3]) {
+          expect(
+            await sbt.meetsThreshold(who.address, n),
+            `meetsThreshold(${who.address}, ${n}) must equal off-chain hasAtLeast`
+          ).to.equal(rp.hasAtLeast(records, who.address, n));
+        }
+      }
+      // Concretely: alice clears a bar of 2, bob does not; carol clears only a bar of 0.
+      expect(await sbt.meetsThreshold(alice.address, 2n)).to.equal(true);
+      expect(await sbt.meetsThreshold(bob.address, 2n)).to.equal(false);
+      expect(await sbt.meetsThreshold(carol.address, 1n)).to.equal(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
   // Docs-rot guard: the honest boundary lives in ONE place and every surface restates it.
   // -------------------------------------------------------------------------------------------
   describe("docs-rot guard: NatSpec, POINT_MEANING, design doc and REPUTATION.md stay consistent", function () {

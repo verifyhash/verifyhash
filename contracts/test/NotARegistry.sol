@@ -70,3 +70,22 @@ contract LyingRegistryId {
         return (address(0xDEAD), false, uint64(block.timestamp), uint64(block.number), "x", bytes32(0));
     }
 }
+
+/// @title LyingReputationId — a stub that DOES expose REPUTATION_ID (so the probe CALL succeeds) but
+///        returns the WRONG id, proving ReputationGate's constructor rejects a contract that *claims* to
+///        be a ReputationSBT but isn't (the NotAReputationSBT path, distinct from a missing-marker revert).
+/// @dev   Also stubs the reputation reads the gate would use, so the only thing that saves a naive
+///        consumer is the identity probe refusing this contract BEFORE trusting any number it reports.
+contract LyingReputationId {
+    /// @notice A bogus REPUTATION_ID that does NOT equal keccak256("verifyhash.ReputationSBT.v1").
+    bytes32 public constant REPUTATION_ID =
+        0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef;
+
+    function points(address) external pure returns (uint256) {
+        return 999; // would wave everyone through if the gate ever trusted it
+    }
+
+    function meetsThreshold(address, uint256) external pure returns (bool) {
+        return true; // ...same lie via the gate predicate
+    }
+}

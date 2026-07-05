@@ -208,6 +208,38 @@ contract ReputationSBT {
         }
     }
 
+    /// @notice The COMPOSABLE, O(1) reputation GATE this layer exists to provide
+    ///         (docs/REPUTATION-SBT-DESIGN.md §5): the on-chain analogue of the off-chain oracle's
+    ///         `hasAtLeast(records, addr, n)` (cli/core/reputation-points.js). A consumer contract asks
+    ///         ONE question — "does `account` hold at least `minPoints` proven, front-running-resistant
+    ///         (commit-reveal) contributions?" — and branches on the boolean, INSTEAD OF reading the raw
+    ///         count and re-deriving the threshold comparison (and its semantics) itself. This is the
+    ///         difference between the layer merely EXPOSING a number and actually DELIVERING the
+    ///         composability it promises: the predicate lives here, once, so every integration shares the
+    ///         same definition and cannot drift from it. See contracts/ReputationGate.sol for a reference
+    ///         consumer that fails CLOSED on this gate.
+    /// @dev    Pure `view` over `points` — adds NO state and touches NONE of the monotonic mint
+    ///         invariants; it cannot change any balance. `minPoints == 0` is always `true` (a floor of
+    ///         zero admits everyone), byte-for-byte matching the off-chain `hasAtLeast` (`n == 0`); a
+    ///         test pins on-chain `meetsThreshold` == off-chain `hasAtLeast` for the same records across a
+    ///         range of thresholds, so the two gates can never silently diverge.
+    /// @notice HONEST BOUNDARY (unchanged; docs/REPUTATION-SBT-DESIGN.md §2): a passing gate means
+    ///         `account` provably made at least `minPoints` front-running-resistant claims — a floor of
+    ///         verifiable activity, NEVER a proof of merit, and the defenses here do not make raw point
+    ///         counts sybil-proof. A consumer for whom sybil resistance is load-bearing MUST still weight
+    ///         the decision by inspecting the backing records (the PointMinted log /
+    ///         registry.getRecordsByContributor), never by trusting this boolean alone.
+    /// @param  account   the address whose proven-contribution balance is tested.
+    /// @param  minPoints the INCLUSIVE threshold `n`: `true` iff `points[account] >= minPoints`.
+    /// @return met       whether `account` holds at least `minPoints` points.
+    function meetsThreshold(address account, uint256 minPoints)
+        external
+        view
+        returns (bool met)
+    {
+        return points[account] >= minPoints;
+    }
+
     /// @dev Shared mint logic for `mint` and `mintBatch` — the ONLY place any balance ever changes,
     ///      and it only ever increments (monotonic; non-transferability by absence of any other
     ///      mutator). Credits the record's own `contributor`, never `msg.sender`.

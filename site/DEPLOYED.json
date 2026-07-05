@@ -1,11 +1,11 @@
 {
   "generatedFrom": "public/ (assembled deterministically from site/publish-set.json; recorded by `node scripts/site-release.js --mark-deployed`)",
-  "deployedAtNote": "Operator ran --mark-deployed at 2026-07-05T03:04:44.968Z AFTER uploading the assembled public/ webroot to the live host per docs/DEPLOY-PUBLIC-SITE.md (the human-owned P-11 step — the loop never uploads). This snapshot is what --diff treats as LIVE until the next upload.",
-  "markedDeployedAt": "2026-07-05T03:04:44.968Z",
+  "deployedAtNote": "Operator ran --mark-deployed at 2026-07-05T08:27:29.548Z AFTER uploading the assembled public/ webroot to the live host per docs/DEPLOY-PUBLIC-SITE.md (the human-owned P-11 step — the loop never uploads). This snapshot is what --diff treats as LIVE until the next upload.",
+  "markedDeployedAt": "2026-07-05T08:27:29.548Z",
   "files": {
     "LICENSE": "dc610387d3ac73fb870d710e5315d24d2ed814b68f12b18d3413c9728e8f5caa",
     "NOTICE": "f2bf597ab5de1973890e588d4c8c1f3e2a79720d7a82723ca68d30dc284a4e1b",
-    "build-provenance.json": "e1778782c075fab41d75d191a14c329b25ec885016e6c662f2cf8b8c6f13e96e",
+    "build-provenance.json": "34eb3c186b99432b3b0a2ce906990f0d18ccd0c3e56a7d273e65970f80a012bc",
     "docs/ADOPT.md": "6ae36b3abcf83e69fe6f749481e86c734bf39e0485f10a2abeb9289e11dd17f0",
     "docs/CONFORMANCE.md": "282f518508b994ee4febdbc08bbbaec83f8097493e0a4023b54be51ab41985ec",
     "docs/DATALEDGER.md": "f043be38d6a96aa62cfd36a69897afd0e00a709e9722ec49ba97311509238adf",
@@ -28,14 +28,14 @@
     "docs/examples-README.md": "5a12e6ed7d4792f2406c27268f1dcab830ab8fbb45a4a26e52d3e919d721788d",
     "docs/overview.md": "01da1b0effc344d7fa644a2c24f917cb7bf82f823f6c84548753c62e988e40c1",
     "docs/pilot-README.md": "3c130b90d2fdb5edcba6aa45faf9d01ca4d6098d6381dbb8fea1a7397a39c775",
-    "docs/verifier-README.md": "5560c968e74b09cefbacf13554f9681b6d7ad7044134a323328cb559b560692e",
-    "index.html": "b323fae2a92c1c8981d0b4ae86ceac1197e4bc0c640d1d973f490b0c18f668e0",
-    "llms.txt": "88098147a9122a9ec827bccbe502826ed1fd45d35d553c1c1d155ca2acb6d828",
+    "docs/verifier-README.md": "98b37800d41a3e453fb95e5340b4427357298ddc9c8fcd1d69108a618bee1c5f",
+    "index.html": "552056b65435eb64964eba10d0f87bf19aa4d32d2c622313c52a1b7a9f40372e",
+    "llms.txt": "e535434f0dc0f9bc661c5a81a6d78fa1e4d0e55a0d790ce66744df9ec5a3606a",
     "seal-vh-standalone.js": "6e61e8638464475870e12760f326d30c7eefb5858ad1bccd2fdcd721b1b8a0c6",
     "seal-vh-standalone.js.sha256": "88dcd2d749a63de3c6f9cf2caeec095cf627c54db0969d91265c166f51e503e0",
     "verify-vh-standalone.html": "2e0ea39b9e79ae469adf980c0978c8172ad89fe69f35d33df9e041ade5fc5e23",
     "verify-vh-standalone.html.sha256": "05fb6d356fa447707d5b2a0210ac3da2a0270950f94039cd10a1b0a5860ecf3c",
-    "verify-vh-standalone.js": "371b904b0275ed85606510472570c49a99fc70a5f4e258e7d8fd0e52a26c30bd",
-    "verify-vh-standalone.js.sha256": "6b39d72413222526e9ec06fb191c2a83fb9232ae9f9f114ea0d1ec99772348fb"
+    "verify-vh-standalone.js": "6de719e11e3885c733aca329a10e4d25f0dff1e5f24d85934a43b3f766d4c0b0",
+    "verify-vh-standalone.js.sha256": "285d488b1b2a9b3e671c6fddb045cad68693796086513bb36708d1095bf399fd"
   }
 }

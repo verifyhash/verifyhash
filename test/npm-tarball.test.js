@@ -206,6 +206,20 @@ describe("T-73.2 npm tarball: manifest gate (`npm pack --dry-run --json`, offlin
     }
   });
 
+  it("ships NO archived engine copy (docs/engine-archive/* — the internal build-loop brain, md5-addressed and rotating)", function () {
+    // The pre-run-gate archives up to ARCHIVE_KEEP=10 md5-content-addressed copies of the internal
+    // build-loop ORCHESTRATION ENGINE (build-loop.workflow.js / build-loop.prev.js) under
+    // docs/engine-archive/. The filenames are content hashes that ROTATE, so we pin the SUBTREE
+    // PREFIX (not enumerable names): ANY docs/engine-archive/* re-entering the pack is a leak — the
+    // exact "internal operational surface in a paying customer's install" class that once shipped in
+    // verifyhash@0.1.0. package.json negates it AND site-release forbids the subtree (see DE-DRIFT).
+    const leaked = [...shipped].filter((p) => p.startsWith("docs/engine-archive/"));
+    expect(
+      leaked,
+      `ARCHIVED ENGINE LEAKED into the tarball (docs/engine-archive/* — internal build-loop source): ${leaked.join(", ")}`
+    ).to.have.length(0);
+  });
+
   it("still ships the user-facing docs (dropping docs/ wholesale is a FAIL, not a fix)", function () {
     for (const p of USER_DOCS_ALLOWLIST) {
       expect(shipped.has(p), `user-facing doc MISSING from the tarball: ${p}`).to.equal(true);
@@ -314,6 +328,10 @@ describe("T-73.2 npm tarball: pack → extract OUTSIDE the repo → the document
     const docsDir = path.join(pkgDir, "docs");
     const audits = fs.readdirSync(docsDir).filter((f) => f.startsWith("LOOP-AUDIT-"));
     expect(audits, `LOOP-AUDIT snapshots extracted from the tarball: ${audits.join(", ")}`).to.have.length(0);
+    // The rotating internal build-loop engine archive must not materialize on disk from an install.
+    const archiveDir = path.join(docsDir, "engine-archive");
+    const archived = fs.existsSync(archiveDir) ? fs.readdirSync(archiveDir) : [];
+    expect(archived, `docs/engine-archive/ extracted from the tarball (internal build-loop copies): ${archived.join(", ")}`).to.have.length(0);
     for (const p of USER_DOCS_ALLOWLIST) {
       expect(fs.existsSync(path.join(pkgDir, p)), `user-facing doc missing after extraction: ${p}`).to.equal(true);
     }

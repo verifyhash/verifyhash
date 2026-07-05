@@ -435,6 +435,8 @@ describe("T-67.1: scripts/site-release.js — deterministic site-release assembl
         "BACKLOG.md",
         "team.json",
         "build-loop.workflow.js",
+        "docs/engine-archive", // the internal engine-archive subtree itself
+        "docs/engine-archive/807969e0c3cb8e07dad057cae8501795.js", // an md5-addressed archived engine copy
         "secrets/server.key",
         "cert.pem",
         "id_rsa",

@@ -107,6 +107,13 @@ const INTERNAL_TREES = new Set([
   "scripts", // build internals (incl. this file)
 ]);
 
+// NESTED internal trees: subtrees that live UNDER an otherwise-published top-level dir, so the
+// top-level INTERNAL_TREES check (split("/")[0]) can't reach them. Each is forbidden as a whole,
+// prefix-matched. docs/ is published, but docs/engine-archive/ holds md5-addressed rotating copies
+// of the internal build-loop ORCHESTRATION ENGINE (the loop's brain) — never publish anywhere. The
+// content-addressed filenames rotate, so we forbid the SUBTREE, not enumerable names.
+const INTERNAL_TREE_PREFIXES = ["docs/engine-archive"];
+
 const FORBIDDEN_RULES = [
   {
     reason: "hidden/dot path (.git*, .env*, .claude*, ...) — never published",
@@ -119,6 +126,10 @@ const FORBIDDEN_RULES = [
   {
     reason: "internal tree (never a publish source or target)",
     test: (p) => INTERNAL_TREES.has(p.split("/")[0]),
+  },
+  {
+    reason: "internal engine-archive subtree (rotating build-loop engine copies) — never published",
+    test: (p) => INTERNAL_TREE_PREFIXES.some((pre) => p === pre || p.startsWith(pre + "/")),
   },
   {
     reason: "key/credential/env-shaped filename — never published",

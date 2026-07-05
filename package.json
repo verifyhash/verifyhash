@@ -29,6 +29,8 @@
     "!docs/METRICS.jsonl",
     "!docs/USAGE-BUDGET.json",
     "!docs/ENGINE-LEDGER.json",
+    "!docs/engine-archive/",
+    "!docs/engine-archive/**",
     "!docs/LOOP-AUDIT-*.json",
     "!docs/LOOP-HARDENING-PLAN.md",
     "!docs/SUPERVISOR-RUNBOOK.md",

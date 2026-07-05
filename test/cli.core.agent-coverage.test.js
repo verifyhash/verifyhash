@@ -44,10 +44,12 @@ const {
   MAX_CLAIMS,
   MAX_PACKET_LABEL_LENGTH,
   MAX_REPORT_LENGTH,
+  MAX_LISTED_FAILURES,
   REASONS,
   evaluateCoverage,
   serializeCoverageReport,
   parseCoverageReport,
+  summarizeCoverage,
 } = core;
 
 // ---------------------------------------------------------------------------------------------------
@@ -914,6 +916,189 @@ describe("cli/core/agent-coverage.js — pure fleet-coverage core (T-71.1)", fun
       // deep-nested arrays are structurally invalid long before any recursion could matter
       const deep = "[".repeat(1000) + "]".repeat(1000);
       expect(parseCoverageReport(deep).reason).to.equal(REASONS.REPORT_NOT_OBJECT);
+    });
+  });
+
+  // =================================================================================================
+  describe("(5) summarizeCoverage: the buyer-facing projection (stable headline + honest text)", function () {
+    // The exact boundary sentence that MUST ride the rendered output in-band.
+    const BOUNDARY =
+      "boundary: coverage is containment, NOT causation — an uncovered commit proves NOTHING about how it " +
+      "was authored; this is an INVENTORY control, not an authorship detector.";
+
+    it("pins the PIN_INPUT summary headline (the stable --json / dashboard contract)", function () {
+      const s = summarizeCoverage(reportOf(PIN_INPUT));
+      expect(s.ok, JSON.stringify(s)).to.equal(true);
+      expect(s.summary).to.deep.equal({
+        kind: REPORT_KIND,
+        totalCommits: 2,
+        coveredCommits: 1,
+        coveragePercent: 50, // floor(1*100/2)
+        deepCovered: 1,
+        oidOnlyCovered: 0,
+        discrepancies: 0,
+        unverifiablePackets: 0,
+        uncoveredCommits: 1,
+        policy: { requireAll: true, requireSince: null },
+        pass: false,
+        failureCount: 1,
+        fullyCovered: false,
+      });
+    });
+
+    it("the human text is deterministic, names PASS/FAIL, lists the gating failure, and carries the boundary IN-BAND", function () {
+      const report = reportOf(PIN_INPUT);
+      const a = summarizeCoverage(report);
+      const b = summarizeCoverage(report);
+      expect(a.text).to.be.a("string");
+      expect(a.text).to.equal(b.text); // byte-deterministic (no clock/locale)
+      expect(a.text).to.equal(
+        "AgentTrace coverage — FAIL\n" +
+          "range: 2 commit(s); covered: 1 (50%)\n" +
+          "  covered-verified (root re-derived): 1\n" +
+          "  covered-oid-only (root not re-derived): 0\n" +
+          "  claim-root-mismatch (DISCREPANCY): 0\n" +
+          "  claim-unverified-packet (not coverage): 0\n" +
+          "  uncovered (no claim): 1\n" +
+          "policy: require-all\n" +
+          "verdict: FAIL — 1 commit(s) lack a verifiable session record:\n" +
+          "  - " + O2 + " (uncovered)\n" +
+          BOUNDARY
+      );
+      // the verbatim boundary phrases the family pins also travel with the RENDERED answer
+      expect(a.text).to.include("containment, NOT causation");
+      expect(a.text).to.include("not an authorship detector");
+    });
+
+    it("counts always reconcile to the commit total, on the five-way and other fixtures", function () {
+      const inputs = [
+        fiveWayInput(),
+        PIN_INPUT,
+        { commits: [], claims: [] },
+        {
+          commits: commitsOf(O1, O2, O3, O4),
+          claims: [claim(O1, { rootVerified: true }), claim(O3)],
+          policy: { requireSince: O2 },
+        },
+      ];
+      for (const input of inputs) {
+        const s = summarizeCoverage(reportOf(input));
+        expect(s.ok).to.equal(true);
+        const m = s.summary;
+        expect(m.coveredCommits).to.equal(m.deepCovered + m.oidOnlyCovered);
+        expect(
+          m.coveredCommits + m.discrepancies + m.unverifiablePackets + m.uncoveredCommits
+        ).to.equal(m.totalCommits);
+        expect(m.fullyCovered).to.equal(m.coveredCommits === m.totalCommits);
+        expect(m.pass).to.equal(s.summary.failureCount === 0);
+        // every count is a non-negative safe integer (clean for JSON / a dashboard)
+        for (const k of [
+          "totalCommits",
+          "coveredCommits",
+          "coveragePercent",
+          "deepCovered",
+          "oidOnlyCovered",
+          "discrepancies",
+          "unverifiablePackets",
+          "uncoveredCommits",
+          "failureCount",
+        ]) {
+          expect(Number.isSafeInteger(m[k]), k).to.equal(true);
+          expect(m[k] >= 0, k).to.equal(true);
+        }
+        expect(m.coveragePercent).to.be.at.most(100);
+      }
+    });
+
+    it("coveragePercent FLOORS — it never rounds up to 100 while a commit is uncovered; empty range = 100", function () {
+      // 2 of 3 covered -> floor(66.6) = 66, NOT 67 and never 100
+      const twoOfThree = summarizeCoverage(
+        reportOf({
+          commits: commitsOf(O1, O2, O3),
+          claims: [claim(O1, { rootVerified: true }), claim(O2)],
+        })
+      );
+      expect(twoOfThree.summary.coveragePercent).to.equal(66);
+      expect(twoOfThree.summary.fullyCovered).to.equal(false);
+      // empty range: vacuously 100%, fully covered, report-only pass
+      const empty = summarizeCoverage(reportOf({ commits: [], claims: [] }));
+      expect(empty.summary.coveragePercent).to.equal(100);
+      expect(empty.summary.fullyCovered).to.equal(true);
+      expect(empty.text).to.include("AgentTrace coverage — PASS");
+      expect(empty.text).to.include("verdict: report-only (no policy gate).");
+      // fully covered under require-all -> PASS text, no failure list
+      const allCovered = summarizeCoverage(
+        reportOf({
+          commits: commitsOf(O1, O2),
+          claims: [claim(O1, { rootVerified: true }), claim(O2)],
+          policy: { requireAll: true },
+        })
+      );
+      expect(allCovered.summary.coveragePercent).to.equal(100);
+      expect(allCovered.text).to.include("verdict: PASS — every required commit is covered.");
+    });
+
+    it("require-since renders its anchor; the failure list is CAPPED at MAX_LISTED_FAILURES with an overflow note", function () {
+      const since = summarizeCoverage(
+        reportOf({
+          commits: commitsOf(O1, O2, O3, O4),
+          claims: [claim(O1, { rootVerified: true })],
+          policy: { requireSince: O2 },
+        })
+      );
+      expect(since.text).to.include("policy: require-since " + O2);
+
+      // a large all-uncovered range under require-all: every commit fails, text lists only the cap
+      const n = MAX_LISTED_FAILURES + 10;
+      const bigCommits = Array.from({ length: n }, (_, i) => ({ oid: oid(0x1000 + i) }));
+      const big = summarizeCoverage(
+        reportOf({ commits: bigCommits, claims: [], policy: { requireAll: true } })
+      );
+      expect(big.summary.failureCount).to.equal(n);
+      const bulletLines = big.text.split("\n").filter((l) => l.startsWith("  - "));
+      expect(bulletLines).to.have.length(MAX_LISTED_FAILURES);
+      expect(big.text).to.include("  ... and 10 more");
+    });
+
+    it("STRICT: a forged/inconsistent report is the SAME named reject as serialize — a summary can never dress a lie", function () {
+      // the parse/serialize side already proves this rule; assert the summary path inherits it verbatim
+      const base = reportOf({
+        commits: commitsOf(O1),
+        claims: [claim(O1, { packetVerified: false, rootVerified: true })],
+        policy: { requireAll: true },
+      });
+      const forged = copy(base);
+      forged.commits[0].status = "covered-verified";
+      forged.commits[0].claims[0].status = "covered-verified";
+      forged.totals["claim-unverified-packet"] = 0;
+      forged.totals["covered-verified"] = 1;
+      forged.verdict = { pass: true, failures: [] };
+      const r = summarizeCoverage(forged);
+      expect(r.ok).to.equal(false);
+      expect(r.reason).to.equal(REASONS.REPORT_INCONSISTENT);
+
+      // shape rejects propagate too (unchanged named contract)
+      const wrongKind = copy(reportOf(PIN_INPUT));
+      wrongKind.kind = "vh-agent-coverage@2";
+      expect(summarizeCoverage(wrongKind).reason).to.equal(REASONS.REPORT_BAD_KIND);
+      for (const bad of [null, undefined, 42, "x", [], new Map()]) {
+        expect(summarizeCoverage(bad).reason).to.equal(REASONS.REPORT_NOT_OBJECT);
+      }
+    });
+
+    it("hostile exotica are contained: HOSTILE_INPUT, never a throw", function () {
+      const trap = copy(reportOf(PIN_INPUT));
+      Object.defineProperty(trap, "totals", {
+        enumerable: true,
+        get() {
+          throw new Error("boom");
+        },
+      });
+      expect(summarizeCoverage(trap).reason).to.be.oneOf([
+        REASONS.HOSTILE_INPUT,
+        REASONS.REPORT_MISSING_FIELD,
+        REASONS.REPORT_BAD_FIELD,
+      ]);
     });
   });
 });

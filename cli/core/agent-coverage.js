@@ -63,6 +63,21 @@
 //   bytes, or forged statuses/totals/verdicts are each a NAMED reject) — so a report that parses
 //   is one this core could itself have produced.
 //
+// THE BUYER-FACING PROJECTION (d): summarizeCoverage — turn the report into the ANSWER
+//   `evaluateCoverage`/`serialize`/`parse` are the machine contract; a governance buyer running this
+//   as a CI merge-gate reads an ANSWER, not a report object. `summarizeCoverage(report)` is the pure,
+//   deterministic VIEW that closes that gap: it returns `{ ok, summary, text }` where `summary` is a
+//   stable, additive, integer-only headline every front-end / indexer / dashboard field can depend on
+//   (total vs covered commits, a FLOORED coverage percent that never rounds up to "100%" while a
+//   commit is missing, the per-class counts in buyer language incl. the loud `discrepancies` alarm,
+//   the normalized policy, and `pass`/`failureCount`/`fullyCovered`) and `text` is a byte-deterministic
+//   human block (no clock, no locale) that lists the gating failures and carries the honest boundary
+//   IN-BAND — the same "containment, NOT causation / not an authorship detector" caveat rides the
+//   rendered output, not just the doc. It is a READ-ONLY projection: it adds NO fact and mutates
+//   nothing, and it accepts ONLY a report this core could itself have produced — it validates through
+//   `serializeCoverageReport`, so a forged/inconsistent report is the SAME named reject and a summary
+//   can never make an unverifiable packet look covered.
+//
 // TRUST BOUNDARY (honest — carried into docs by T-71.3)
 //   Coverage is an INVENTORY control, not an authorship detector: a covered commit means an
 //   unaltered sealed session CONTAINS a disclosed claim to that oid (containment, NOT causation);
@@ -148,6 +163,9 @@ const MAX_COMMITS = 100000;
 const MAX_CLAIMS = 100000;
 const MAX_PACKET_LABEL_LENGTH = 4096;
 const MAX_REPORT_LENGTH = 64 * 1024 * 1024; // 64 MiB
+// The human `text` block lists at most this many gating failures verbatim, then "... and N more",
+// so the rendered answer stays O(cap) and bounded even on a maximal (100k-commit) failing range.
+const MAX_LISTED_FAILURES = 50;
 
 // Stable, named reason codes — the verdict contract callers (and the T-71.2 CLI) rely on.
 const REASONS = Object.freeze({
@@ -697,6 +715,115 @@ function parseCoverageReport(s) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------------
+// (d) summarizeCoverage — the buyer-facing PROJECTION of a report.
+// ---------------------------------------------------------------------------------------------------
+
+// Render the deterministic human `text` block from a computed summary + the report's failure list.
+// Pure string work only: ASCII, fixed format, no clock/locale, failure list capped at MAX_LISTED_FAILURES.
+function _renderSummaryText(s, failures) {
+  const lines = [];
+  lines.push("AgentTrace coverage — " + (s.pass ? "PASS" : "FAIL"));
+  lines.push(
+    "range: " + s.totalCommits + " commit(s); covered: " + s.coveredCommits + " (" + s.coveragePercent + "%)"
+  );
+  lines.push("  covered-verified (root re-derived): " + s.deepCovered);
+  lines.push("  covered-oid-only (root not re-derived): " + s.oidOnlyCovered);
+  lines.push("  claim-root-mismatch (DISCREPANCY): " + s.discrepancies);
+  lines.push("  claim-unverified-packet (not coverage): " + s.unverifiablePackets);
+  lines.push("  uncovered (no claim): " + s.uncoveredCommits);
+
+  if (s.policy.requireAll) {
+    lines.push("policy: require-all");
+  } else if (s.policy.requireSince !== null) {
+    lines.push("policy: require-since " + s.policy.requireSince);
+  } else {
+    lines.push("policy: none (report-only)");
+  }
+
+  if (s.policy.requireAll || s.policy.requireSince !== null) {
+    if (s.pass) {
+      lines.push("verdict: PASS — every required commit is covered.");
+    } else {
+      lines.push("verdict: FAIL — " + s.failureCount + " commit(s) lack a verifiable session record:");
+      const shown = Math.min(failures.length, MAX_LISTED_FAILURES);
+      for (let i = 0; i < shown; i++) {
+        lines.push("  - " + failures[i].oid + " (" + failures[i].status + ")");
+      }
+      if (failures.length > shown) {
+        lines.push("  ... and " + (failures.length - shown) + " more");
+      }
+    }
+  } else {
+    lines.push("verdict: report-only (no policy gate).");
+  }
+
+  lines.push(
+    "boundary: coverage is containment, NOT causation — an uncovered commit proves NOTHING about how it " +
+      "was authored; this is an INVENTORY control, not an authorship detector."
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Project a coverage report into the buyer-facing ANSWER: a stable structured `summary` headline
+ * (the `--json` / dashboard / indexer contract) plus a byte-deterministic human `text` block that
+ * carries the honest boundary in-band. READ-ONLY: adds no fact, mutates nothing. STRICT: accepts
+ * ONLY a report this core could itself have produced — it validates through serializeCoverageReport,
+ * so a shape-invalid, non-canonical-value, or forged/inconsistent report is the SAME named reject
+ * (a summary can never make an unverifiable packet look covered). TOTAL: never throws.
+ *
+ * @param {object} report an evaluateCoverage(...).report (or a deep-equal reconstruction).
+ * @returns {{ ok: true, summary: object, text: string }
+ *          | { ok: false, reason: string, field?: string, detail?: string }}
+ *   On ok, `summary` is:
+ *     { kind, totalCommits, coveredCommits, coveragePercent,   // percent is FLOORED (never rounds up to 100 while a commit is uncovered; empty range = 100)
+ *       deepCovered, oidOnlyCovered, discrepancies, unverifiablePackets, uncoveredCommits,
+ *       policy: { requireAll, requireSince }, pass, failureCount, fullyCovered }
+ *   All counts are non-negative safe integers and reconcile:
+ *     coveredCommits + discrepancies + unverifiablePackets + uncoveredCommits === totalCommits.
+ */
+function summarizeCoverage(report) {
+  try {
+    // Reuse the strict serializer as the gate: only a shape-valid, internally-consistent, canonical
+    // report gets past here, so summarize inherits every anti-forgery reject verbatim.
+    const ser = serializeCoverageReport(report);
+    if (!ser.ok) return ser;
+
+    const t = report.totals;
+    const deepCovered = t["covered-verified"];
+    const oidOnlyCovered = t["covered-oid-only"];
+    const discrepancies = t["claim-root-mismatch"];
+    const unverifiablePackets = t["claim-unverified-packet"];
+    const uncoveredCommits = t["uncovered"];
+    const totalCommits = report.commits.length;
+    const coveredCommits = deepCovered + oidOnlyCovered;
+    // FLOOR so a range with any missing commit can never read "100%"; an empty range is vacuously 100.
+    const coveragePercent =
+      totalCommits === 0 ? 100 : Math.floor((coveredCommits * 100) / totalCommits);
+
+    const summary = {
+      kind: REPORT_KIND,
+      totalCommits,
+      coveredCommits,
+      coveragePercent,
+      deepCovered,
+      oidOnlyCovered,
+      discrepancies,
+      unverifiablePackets,
+      uncoveredCommits,
+      policy: { requireAll: report.policy.requireAll, requireSince: report.policy.requireSince },
+      pass: report.verdict.pass,
+      failureCount: report.verdict.failures.length,
+      fullyCovered: coveredCommits === totalCommits,
+    };
+
+    return { ok: true, summary, text: _renderSummaryText(summary, report.verdict.failures) };
+  } catch (_) {
+    return { ok: false, reason: REASONS.HOSTILE_INPUT };
+  }
+}
+
 module.exports = {
   // Schema + verdict contract.
   REPORT_KIND,
@@ -709,9 +836,12 @@ module.exports = {
   MAX_CLAIMS,
   MAX_PACKET_LABEL_LENGTH,
   MAX_REPORT_LENGTH,
+  MAX_LISTED_FAILURES,
   REASONS,
   // The core operations.
   evaluateCoverage,
   serializeCoverageReport,
   parseCoverageReport,
+  // The buyer-facing read-only projection.
+  summarizeCoverage,
 };

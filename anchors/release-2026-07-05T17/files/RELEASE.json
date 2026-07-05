@@ -1,0 +1,13 @@
+{
+  "kind": "verifyhash-release-attestation",
+  "date": "2026-07-05T17",
+  "gitCommit": "80045ce",
+  "repo": "https://github.com/verifyhash/verifyhash",
+  "npm": {
+    "verifyhash@0.1.3": {
+      "shasum": "89c0dd585a2e72fcc862562ef6fa2cc2b51435d6"
+    }
+  },
+  "note": "0.1.3: agent-coverage core VERIFIED (T-71.1) + REPUTATION-SBT-DESIGN.md (T-3.1, first post-D-2 EPIC-3 artifact); site unchanged from the 08Z deploy",
+  "vendorAddress": "0x7cb4d3DC6C52996B6386473Bfb32f898263412f7"
+}

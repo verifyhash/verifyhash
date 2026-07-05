@@ -40,6 +40,13 @@ const DOCS = [
   ["docs/ADOPT.md", path.join(REPO, "docs", "ADOPT.md")],
 ];
 
+// The public landing page is the OTHER copy-paste front door a stranger meets first (verifyhash.com,
+// card 03). We lint the COMMITTED source `site/index.html`; scripts/site-release.js assembles public/
+// from it and its own --check guarantees public/ matches byte-for-byte, so the source is the twin to
+// pin. This closes the exact drift the 2026-07-05 audit found: the README was fixed but the identical
+// broken `npx verifyhash` survived on the live front door, invisible to a markdown-only lint.
+const LANDING_PAGES = [["site/index.html", path.join(REPO, "site", "index.html")]];
+
 // ---------------------------------------------------------------------------------------------------
 // 1. Extraction — every fenced `vh …` line, comment-stripped, continuation-joined, bracket-normalized
 // ---------------------------------------------------------------------------------------------------
@@ -364,6 +371,40 @@ function parseNpxInvocation(rest) {
   return { packages, target: i < tokens.length ? tokens[i] : null };
 }
 
+// The landing page tucks its copy-paste commands inside <pre><code> blocks with <span> markup and a
+// few HTML entities, and (card 03) hides an ALTERNATIVE invocation inside a shell comment
+// (`# or, no install: npx …`). So — UNLIKE the markdown extractor — we must NOT strip `# …` comments
+// here (the npx lives inside one) and we must strip the span tags + decode entities first. We then
+// match `npx …` ANYWHERE on a code line. Same downstream rule (lintNpxInvocations) as the markdown
+// front door, so the two surfaces are held to ONE standard and can't drift apart again.
+function decodeHtmlEntities(s) {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&amp;/g, "&"); // last, so a literal `&amp;lt;` is not double-decoded
+}
+
+// extractLandingNpxInvocations(html, docName) -> [{ doc, line, raw, rest }] for every `npx …` line
+// inside a <pre><code> … </code></pre> block (tags stripped, entities decoded, comments PRESERVED).
+function extractLandingNpxInvocations(html, docName) {
+  const out = [];
+  const blockRe = /<pre><code[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/g;
+  let bm;
+  while ((bm = blockRe.exec(html)) !== null) {
+    const blockStartLine = html.slice(0, bm.index).split(/\r?\n/).length;
+    const innerLines = bm[1].split(/\r?\n/);
+    for (let i = 0; i < innerLines.length; i++) {
+      const text = decodeHtmlEntities(innerLines[i].replace(/<[^>]+>/g, "")).trim();
+      const m = text.match(/(?:^|\s)npx\s+(.+)$/);
+      if (!m) continue;
+      out.push({ doc: docName, line: blockStartLine + i, raw: text, rest: m[1].trim() });
+    }
+  }
+  return out;
+}
+
 // lintNpxInvocations(invocations) -> [problem strings] (empty = every fenced npx line could really run).
 function lintNpxInvocations(invocations) {
   const problems = [];
@@ -504,6 +545,7 @@ describe("docs paved road: every fenced `vh …` line in README/ADOPT is a real,
 
 describe("docs paved road: every fenced `npx …` line names a runnable bin + the README's publish state is self-consistent (T-74.2)", function () {
   const npxByDoc = new Map();
+  const landingNpxByDoc = new Map();
   let readmeText;
 
   before(function () {
@@ -512,17 +554,24 @@ describe("docs paved road: every fenced `npx …` line names a runnable bin + th
       npxByDoc.set(name, extractFencedInvocations(text, name, "npx"));
       if (name === "README.md") readmeText = text;
     }
+    for (const [name, file] of LANDING_PAGES) {
+      landingNpxByDoc.set(name, extractLandingNpxInvocations(fs.readFileSync(file, "utf8"), name));
+    }
   });
 
-  it("EXTRACTOR-ROT GUARD: extracts at least one fenced `npx …` invocation from EACH front-door doc", function () {
+  it("EXTRACTOR-ROT GUARD: extracts at least one `npx …` invocation from EACH front-door surface (markdown docs AND the landing page)", function () {
     for (const [name] of DOCS) {
       const got = npxByDoc.get(name);
       expect(got.length, `${name} must yield at least one fenced \`npx …\` invocation (extractor rot?)`).to.be.greaterThan(0);
     }
+    for (const [name] of LANDING_PAGES) {
+      const got = landingNpxByDoc.get(name);
+      expect(got.length, `${name} must yield at least one <pre><code> \`npx …\` invocation (extractor rot?)`).to.be.greaterThan(0);
+    }
   });
 
-  it("every fenced `npx <pkg> …` invocation names a bin present in that package's bin map (npx could really run it)", function () {
-    const all = [...npxByDoc.values()].flat();
+  it("every `npx <pkg> …` invocation names a bin present in that package's bin map (markdown docs AND the landing page — npx could really run it)", function () {
+    const all = [...npxByDoc.values(), ...landingNpxByDoc.values()].flat();
     const problems = lintNpxInvocations(all);
     expect(problems, `npx front-door drift:\n  - ${problems.join("\n  - ")}`).to.deep.equal([]);
   });
@@ -557,6 +606,25 @@ describe("docs paved road: every fenced `npx …` line names a runnable bin + th
       "the corrected `-p verifyhash vh` form and the single-bin `verify-vh` form must NOT be flagged"
     ).to.deep.equal([]);
     expect(problems.length, "exactly the two planted defects must be detected").to.equal(2);
+  });
+
+  it("NEGATIVE SELF-TEST: the landing-page extractor catches a broken `# or: npx verifyhash` hidden inside a <pre><code> comment span (the exact card-03 shape) and passes the corrected `-p verifyhash vh` form", function () {
+    // The card-03 bug the truth pass exists to kill: the broken npx lives INSIDE a shell-comment span,
+    // so a markdown-style comment-stripping extractor would drop it entirely. The landing extractor must
+    // still see it, strip the <span> markup, and the shared lint must reject it.
+    const brokenCard =
+      '<pre><code>npm i -g <span class="a">verifyhash</span>   <span class="c"># or: npx verifyhash</span>\nvh --help</code></pre>';
+    const brokenInv = extractLandingNpxInvocations(brokenCard, "landing-synthetic");
+    expect(brokenInv.length, "must extract the npx hiding inside the comment span").to.equal(1);
+    expect(lintNpxInvocations(brokenInv).join("\n"), "plain `npx verifyhash` on the landing page must be DETECTED too").to.match(
+      /landing-synthetic:.*npx verifyhash.*cannot resolve an executable/
+    );
+
+    const fixedCard =
+      '<pre><code>npm i -g <span class="a">verifyhash</span>   <span class="c"># or, no install: npx --yes -p verifyhash vh</span>\nvh --help</code></pre>';
+    const fixedInv = extractLandingNpxInvocations(fixedCard, "landing-synthetic");
+    expect(fixedInv.length, "must extract the corrected npx line").to.equal(1);
+    expect(lintNpxInvocations(fixedInv), "the corrected `-p verifyhash vh` form must NOT be flagged").to.deep.equal([]);
   });
 
   it("the README never simultaneously claims PUBLISHED and NOT-published (and it does claim published, agreeing with site card 03)", function () {

@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1082150,
+  "totalBytes": 1082174,
   "files": [
     {
       "path": "LICENSE",
@@ -163,8 +163,8 @@
     {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 33007,
-      "sha256": "f9384ef90b9673657f5442e2a8329744b455949bd3c371c24f6c9a206dae0385"
+      "bytes": 33031,
+      "sha256": "f4da5586759c87b8d670e3a5b9734f2ea3bc3b7356a8077b9449b5c0bad1a768"
     },
     {
       "path": "llms.txt",

@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1070937,
+  "totalBytes": 1075412,
   "files": [
     {
       "path": "LICENSE",
@@ -20,7 +20,7 @@
       "path": "build-provenance.json",
       "source": "verifier/dist/BUILD-PROVENANCE.json",
       "bytes": 9676,
-      "sha256": "53dc5e538f62bb1fe12bf69a98b187980817d401c918eca9d5186c3fbdb6a525"
+      "sha256": "34eb3c186b99432b3b0a2ce906990f0d18ccd0c3e56a7d273e65970f80a012bc"
     },
     {
       "path": "docs/ADOPT.md",
@@ -157,14 +157,14 @@
     {
       "path": "docs/verifier-README.md",
       "source": "verifier/README.md",
-      "bytes": 34215,
-      "sha256": "3753dc75b22e6ab43a4217f1b413b9b1053883fc523a6fed540280111c0ab8d5"
+      "bytes": 34561,
+      "sha256": "98b37800d41a3e453fb95e5340b4427357298ddc9c8fcd1d69108a618bee1c5f"
     },
     {
       "path": "index.html",
       "source": "site/index.html",
       "bytes": 33007,
-      "sha256": "b88fb154e9f7e1014ad412f239c24918957da93f778e046ac056071ad51d9ab2"
+      "sha256": "552056b65435eb64964eba10d0f87bf19aa4d32d2c622313c52a1b7a9f40372e"
     },
     {
       "path": "llms.txt",
@@ -199,14 +199,14 @@
     {
       "path": "verify-vh-standalone.js",
       "source": "verifier/dist/verify-vh-standalone.js",
-      "bytes": 243333,
-      "sha256": "c73f7953ca44a8fd568bece449dde0f69f2013416a11682036bbdb1bb008d386"
+      "bytes": 247462,
+      "sha256": "6de719e11e3885c733aca329a10e4d25f0dff1e5f24d85934a43b3f766d4c0b0"
     },
     {
       "path": "verify-vh-standalone.js.sha256",
       "source": "verifier/dist/verify-vh-standalone.js.sha256",
       "bytes": 90,
-      "sha256": "20b5ba3e4101eed06e2816f88cdd7f9dd9efeb5fbdaabe0b146ad17606867eda"
+      "sha256": "285d488b1b2a9b3e671c6fddb045cad68693796086513bb36708d1095bf399fd"
     }
   ]
 }

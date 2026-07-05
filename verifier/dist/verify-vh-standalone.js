@@ -3753,6 +3753,62 @@ const ANCHOR_OFFLINE_NOTE =
   "re-checked (this standalone verifier opens no network). Confirm them against the chain with the " +
   "producer cli: vh verify-anchored <receipt> <sealed-file> --rpc <url> --contract <addr>.";
 
+// ---------------------------------------------------------------------------------------------------
+// CHAIN-CLASS trust guidance for the OFFLINE leg. The offline binding leg proves the receipt binds
+// THIS artifact; it can NEVER (offline, by definition) confirm the digest is actually anchored on any
+// chain. But it CAN classify the chain the receipt CLAIMS — and that classification is the single most
+// load-bearing thing a counterparty needs to avoid this vertical's worst overclaim: mistaking a
+// receipt from a worthless LOCAL DEV chain (STRATEGY.md P-2 — a local-chain anchor proves MECHANISM
+// only and is worth NOTHING publicly) for a public-chain proof. Surfacing it HERE puts the check in
+// the INDEPENDENT verifier a counterparty actually runs, not only in the producer's prose, and makes
+// it MACHINE-GATEABLE (`chainClass` / `publiclyMeaningful` in --json — a stable, additive contract a
+// future indexer/UI keys on). The id sets MIRROR the producer's cli/anchor.js KNOWN_TESTNET_CHAIN_IDS
+// (test/verifier.standalone.test.js pins them against it byte-for-byte so the two sides cannot drift):
+// the two generic dev chains are LOCAL-DEV, the remaining known ids are PUBLIC TESTNETS, and every
+// other id is UNKNOWN (a chain — possibly a mainnet — whose weight this offline leg cannot judge).
+//
+// This guidance is STRICTLY ADDITIVE: it never changes the accept/reject decision (a bound receipt is
+// still ACCEPTED at exit 0) and it never touches the pure `verifyAnchoredReceipt` verdict object,
+// which stays a byte-faithful port of the producer core. It is presentation-layer trust context only.
+const ANCHOR_LOCAL_DEV_CHAIN_IDS = Object.freeze([31337, 1337]);
+const ANCHOR_PUBLIC_TESTNET_CHAIN_IDS = Object.freeze([
+  80002, 80001, 11155111, 17000, 5, 11155420, 84532, 421614,
+]);
+
+// Classify the chainId a receipt CLAIMS into { chainClass, publiclyMeaningful, advisory }. TOTAL — a
+// non-integer/out-of-set id falls through to the honest "unknown" bucket (never throws). `chainId`
+// arrives already strict-validated (a positive safe integer) from anchorCheckChain.
+function anchorClassifyChainId(chainId) {
+  if (ANCHOR_LOCAL_DEV_CHAIN_IDS.includes(chainId)) {
+    return {
+      chainClass: "local-dev",
+      publiclyMeaningful: false,
+      advisory:
+        `this receipt's chain (chainId ${chainId}) is a LOCAL DEV chain: the anchor proves MECHANISM ` +
+        `ONLY and is worth NOTHING publicly until a human deploys the registry to a public chain ` +
+        `(STRATEGY.md P-2). Do NOT treat a local-dev receipt as a public proof.`,
+    };
+  }
+  if (ANCHOR_PUBLIC_TESTNET_CHAIN_IDS.includes(chainId)) {
+    return {
+      chainClass: "public-testnet",
+      publiclyMeaningful: false,
+      advisory:
+        `this receipt's chain (chainId ${chainId}) is a PUBLIC TESTNET: an anchor there demonstrates ` +
+        `the mechanism on a public chain but carries NO economic finality — treat it as a testnet ` +
+        `proof, never a mainnet one.`,
+    };
+  }
+  return {
+    chainClass: "unknown",
+    publiclyMeaningful: null,
+    advisory:
+      `this receipt's chainId ${chainId} is outside this verifier's known local/testnet set (it may ` +
+      `be a mainnet): the OFFLINE leg cannot weigh the chain — re-check the anchor against that chain ` +
+      `before relying on it.`,
+  };
+}
+
 function anchorReadJson(label, filePath) {
   let text;
   try {
@@ -3799,6 +3855,9 @@ function runVerifyAnchoredOffline(opts, write, writeErr) {
     return EXIT.REJECTED;
   }
 
+  // Classify the chain the receipt CLAIMS (additive trust context — never changes the ACCEPT verdict).
+  const cls = anchorClassifyChainId(v.chain.chainId);
+
   if (opts.json) {
     write(
       JSON.stringify(
@@ -3809,6 +3868,9 @@ function runVerifyAnchoredOffline(opts, write, writeErr) {
           digest: v.digest,
           artifactKind: receipt.artifactKind,
           chain: v.chain,
+          chainClass: cls.chainClass,
+          publiclyMeaningful: cls.publiclyMeaningful,
+          chainAdvisory: cls.advisory,
           registry: null,
           note: ANCHOR_OFFLINE_NOTE,
         },
@@ -3826,6 +3888,10 @@ function runVerifyAnchoredOffline(opts, write, writeErr) {
         `block ${c.blockNumber}, blockTime ${c.blockTime}, contributor ${c.contributor}, ` +
         `authorBound ${c.authorBound}\n`
     );
+    write(`  chain class:  ${cls.chainClass} (publiclyMeaningful: ${cls.publiclyMeaningful})\n`);
+    // For anything not proven publicly meaningful, lead with a WARNING so a counterparty cannot skim
+    // past the caveat; a local-dev receipt (the committed-fixture case) is worth NOTHING publicly.
+    write(`  ${cls.publiclyMeaningful === true ? "ADVISORY" : "WARNING"}:  ${cls.advisory}\n`);
     write(
       "  NOTE: the OFFLINE binding leg only — the chain facts above are the anchorer's CLAIM, not " +
         "re-checked against any chain. Confirm them with the producer cli: " +
@@ -4919,6 +4985,9 @@ module.exports = {
   ANCHOR_ARTIFACT_KINDS,
   ANCHOR_JOURNAL_TREE_HEAD_KIND,
   ANCHOR_JOURNAL_EMPTY_ROOT,
+  ANCHOR_LOCAL_DEV_CHAIN_IDS,
+  ANCHOR_PUBLIC_TESTNET_CHAIN_IDS,
+  anchorClassifyChainId,
   anchorArtifactDigest,
   verifyAnchoredReceipt,
   runVerifyAnchoredOffline,
@@ -4948,7 +5017,7 @@ var __PROVENANCE = {
   "schema": "verifyhash/build-provenance@1",
   "target": "verify",
   "note": "This bundle's OWN provenance, embedded so the single file is self-describing. Run `node verify-vh-standalone.js --self-attest` to recompute selfSha256 from these very bytes, or `--provenance` to print the ordered source modules + hashes it was built from. Cross-check against verifier/dist/BUILD-PROVENANCE.json (the same data) with: node verifier/build-standalone.js --check",
-  "selfSha256": "6a26d3115c8ae86c934d59b82075333ecc2b37d9b4905e6c27cd2db0ac6add13",
+  "selfSha256": "a5b6a93c77bdf14959bf6a786a242989646bda20afbe7bdc4a173b73e8ffa38c",
   "modules": [
     {
       "id": "keccak256-vendored",
@@ -5010,8 +5079,8 @@ var __PROVENANCE = {
       "id": "verify-vh",
       "synthetic": false,
       "sourceFile": "verifier/verify-vh.js",
-      "sourceSha256": "a11f0a5c19b52da15c28362371d93e03000f6572072cdafe50b0791d37ac2573",
-      "inlinedSha256": "e0207947e6a7e5a8d95662d7219b50798b87f7996c8665ed2f5343e4abe9047d",
+      "sourceSha256": "35e04d3adc1f66125f282c76553a33d5551f6c9783948d410c6a52ffa401a807",
+      "inlinedSha256": "fd2eb607800118cafc0d5a79c077150cbe9eb03f5de4a8898cbd30031d412ccc",
       "entry": true
     }
   ]

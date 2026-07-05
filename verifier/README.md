@@ -421,9 +421,13 @@ journal tree head, TrustLedger reconciliation seal, dataset/parcel attestation �
 through a strict, dependency-free port of its shipped validator first). ACCEPT is exit `0`; any
 deviation is the specific named reject — `digest-mismatch` / `kind-mismatch` / `how-mismatch` /
 `bad-receipt` / the artifact's own named reject — exit `3`, matching the producer cli's verdicts on
-the same inputs. **The honest boundary:** this is the OFFLINE binding leg ONLY — the receipt's
-`chain` facts remain the *anchorer's claim* until re-checked against the chain, which needs a chain
-endpoint by definition and stays with the producer cli (`vh verify-anchored --rpc --contract`). See
+the same inputs. On ACCEPT the verdict also **classifies the chain the receipt claims** — `chainClass`
+(`local-dev` / `public-testnet` / `unknown`) and a `publiclyMeaningful` boolean in `--json`, plus a
+leading `WARNING`/`ADVISORY` line — so a receipt from a **local dev chain** (worth nothing publicly,
+STRATEGY.md P-2) is never mistaken for a public proof. **The honest boundary:** this is the OFFLINE
+binding leg ONLY — the receipt's `chain` facts remain the *anchorer's claim* until re-checked against
+the chain, which needs a chain endpoint by definition and stays with the producer cli
+(`vh verify-anchored --rpc --contract`). See
 [`docs/ANCHORING.md`](../docs/ANCHORING.md) for what an anchored receipt proves and does NOT.
 
 ---

@@ -116,6 +116,16 @@ producer cli's on the same inputs: ACCEPTED exit `0`, or the specific named reje
 (`digest-mismatch` / `kind-mismatch` / `how-mismatch` / `bad-receipt` / the artifact's own named
 reject) exit `3` — the packaging gap disclosed here before T-70.4 is **closed**.
 
+**Chain-class guidance (so a local-dev receipt is never mistaken for a public proof).** On ACCEPT the
+standalone also classifies the chain the receipt *claims* and surfaces it as a stable, machine-gateable
+part of the `--json` contract — `chainClass` (`local-dev` / `public-testnet` / `unknown`) plus a
+`publiclyMeaningful` boolean (and a leading human-readable `WARNING`/`ADVISORY` line). The offline leg
+cannot (by definition) confirm the digest is actually on-chain, but it *can* tell a counterparty that a
+receipt from a **local dev chain** proves mechanism only and is worth nothing publicly (STRATEGY.md
+**P-2**) — the committed `chainId 31337` fixture is flagged exactly that way. The classification never
+changes the accept/reject decision; it is additive trust context the counterparty's own tooling can
+gate on. The id sets mirror the producer's `cli/anchor.js` known-testnet set (pinned by a drift guard).
+
 **The honest remaining boundary.** The standalone checks the OFFLINE **binding leg only**: the
 receipt's `chain` facts remain the **anchorer's claim** until re-checked against the chain, and that
 re-check needs a chain endpoint by definition — it stays with the producer cli

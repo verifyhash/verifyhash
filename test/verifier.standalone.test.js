@@ -1015,5 +1015,101 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
       expect(u).to.contain("--anchored-artifact <sealed-file>");
       expect(u).to.contain("ANCHORED RECEIPTS (T-70.4)");
     });
+
+    // ------------------------------------------------------------------------------------------------
+    // CHAIN-CLASS TRUST GUIDANCE — the offline leg cannot (by definition) confirm the digest is
+    // actually on-chain, but it CLASSIFIES the chain the receipt CLAIMS so a counterparty running the
+    // INDEPENDENT verifier is never fooled into treating a worthless LOCAL-DEV receipt (STRATEGY P-2 —
+    // proves MECHANISM only, worth NOTHING publicly) as a public-chain proof. The classification is
+    // MACHINE-GATEABLE (`chainClass`/`publiclyMeaningful` in --json) and STRICTLY ADDITIVE (it never
+    // flips the accept/reject verdict). The id sets are pinned against the producer's own known set.
+    // ------------------------------------------------------------------------------------------------
+    it("CHAIN-CLASS: the id sets MIRROR the producer's cli/anchor.js KNOWN_TESTNET_CHAIN_IDS (no drift)", function () {
+      const anchor = require("../cli/anchor");
+      // LOCAL-DEV is exactly the two generic dev chains (Hardhat + Ganache/generic).
+      expect([...verifyvh.ANCHOR_LOCAL_DEV_CHAIN_IDS].sort((a, b) => a - b)).to.deep.equal([1337, 31337]);
+      // local-dev ∪ public-testnet == the producer's known-testnet set (as numbers), and the two
+      // buckets are DISJOINT — so the standalone classifies every chain the producer allows by default.
+      const union = [...verifyvh.ANCHOR_LOCAL_DEV_CHAIN_IDS, ...verifyvh.ANCHOR_PUBLIC_TESTNET_CHAIN_IDS];
+      const producer = [...anchor.KNOWN_TESTNET_CHAIN_IDS].map((n) => Number(n));
+      expect(new Set(union), "union == producer known set").to.deep.equal(new Set(producer));
+      expect(union.length, "no id appears in both buckets").to.equal(new Set(union).size);
+      expect(union.length, "same cardinality as the producer set").to.equal(producer.length);
+    });
+
+    it("CHAIN-CLASS: anchorClassifyChainId buckets local-dev / public-testnet / unknown honestly (TOTAL)", function () {
+      const dev = verifyvh.anchorClassifyChainId(31337);
+      expect(dev.chainClass).to.equal("local-dev");
+      expect(dev.publiclyMeaningful).to.equal(false);
+      expect(dev.advisory).to.contain("MECHANISM ONLY").and.to.contain("worth NOTHING publicly");
+      const testnet = verifyvh.anchorClassifyChainId(80002); // Polygon Amoy
+      expect(testnet.chainClass).to.equal("public-testnet");
+      expect(testnet.publiclyMeaningful).to.equal(false);
+      // 137 (Polygon PoS mainnet) is NOT in the known set: honestly "unknown", weight unjudged offline.
+      const unknown = verifyvh.anchorClassifyChainId(137);
+      expect(unknown.chainClass).to.equal("unknown");
+      expect(unknown.publiclyMeaningful).to.equal(null);
+      expect(unknown.advisory).to.contain("cannot weigh the chain");
+    });
+
+    it("CHAIN-CLASS OUTPUT: the committed LOCAL-DEV fixture is flagged worthless-publicly (human WARNING + --json contract)", function () {
+      const { code, out } = runInTree([FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL]);
+      expect(code).to.equal(0);
+      expect(out).to.match(/chain class:\s+local-dev \(publiclyMeaningful: false\)/);
+      expect(out).to.contain("WARNING:");
+      expect(out).to.contain("proves MECHANISM ONLY");
+      expect(out).to.contain("worth NOTHING publicly");
+      // --json: the additive, machine-gateable contract — `chain` stays the SAME seven facts verbatim.
+      const j = runInTree([FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL, "--json"]);
+      const parsed = JSON.parse(j.out);
+      expect(parsed.chainClass).to.equal("local-dev");
+      expect(parsed.publiclyMeaningful).to.equal(false);
+      expect(parsed.chainAdvisory).to.be.a("string").and.to.contain("MECHANISM ONLY");
+      expect(parsed.chain).to.deep.equal(chainFacts());
+      expect(parsed.verdict, "guidance never flips the ACCEPT decision").to.equal("ACCEPTED");
+    });
+
+    it("CHAIN-CLASS OUTPUT: a receipt CLAIMING a public testnet / an unknown (mainnet) chain classifies end-to-end", function () {
+      // Re-chain the committed receipt (the binding is chain-INDEPENDENT — digest/kind/how do not
+      // depend on chainId — so it still ACCEPTs) to prove the classification tracks the CLAIMED chain.
+      const rechain = (chainId) => {
+        const r = readFixture(FIXTURE_RECEIPT);
+        r.chain = { ...r.chain, chainId };
+        return writeJson(r);
+      };
+      const amoy = runInTree([rechain(80002), "--anchored-artifact", FIXTURE_SEAL, "--json"]);
+      expect(amoy.code).to.equal(0);
+      const amoyJson = JSON.parse(amoy.out);
+      expect(amoyJson.chainClass).to.equal("public-testnet");
+      expect(amoyJson.publiclyMeaningful).to.equal(false);
+      expect(amoyJson.verdict).to.equal("ACCEPTED");
+      const mainnetish = runInTree([rechain(137), "--anchored-artifact", FIXTURE_SEAL, "--json"]);
+      expect(mainnetish.code).to.equal(0);
+      const mainJson = JSON.parse(mainnetish.out);
+      expect(mainJson.chainClass).to.equal("unknown");
+      expect(mainJson.publiclyMeaningful).to.equal(null);
+      expect(mainJson.verdict).to.equal("ACCEPTED");
+    });
+
+    it("CHAIN-CLASS: the DIST BUNDLE surfaces the same guidance from an EMPTY dir (byte-identical to in-tree)", function () {
+      const empty = mkTmp();
+      const bundle = path.join(empty, "verify-vh-standalone.js");
+      fs.copyFileSync(STANDALONE_PATH, bundle);
+      for (const args of [
+        [FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL],
+        [FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL, "--json"],
+      ]) {
+        const oracle = runInTree(args);
+        const sa = runStandalone(bundle, args, { cwd: empty });
+        expect(sa.status, `exit matches (stderr: ${sa.stderr})`).to.equal(oracle.code);
+        expect(sa.stdout, "the chain-class guidance is in the shipped bundle too").to.equal(oracle.out);
+      }
+      // The guidance lines are actually present in the bundle's stdout (not silently dropped).
+      const sa = runStandalone(bundle, [FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL], { cwd: empty });
+      expect(sa.stdout).to.contain("chain class:  local-dev");
+      expect(sa.stdout).to.contain("worth NOTHING publicly");
+      // READ-ONLY: the anchored leg wrote nothing next to the bundle.
+      expect(fs.readdirSync(empty).sort()).to.deep.equal(["verify-vh-standalone.js"]);
+    });
   });
 });

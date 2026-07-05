@@ -176,6 +176,13 @@ time T") is a separate, human-gated step (see
   containment, not causation — the auditor re-derives the oid + tracked-set root from their OWN clone):
   see *Binding a session to a git commit* in [`AGENTTRACE.md`](AGENTTRACE.md) and the scripted flow
   [`examples/agent-session/commit-bound-session.js`](../examples/agent-session/commit-bound-session.js).
+  Fleet-wide, `vh agent coverage` is the FREE CI gate: which commits in a range carry a verifiable
+  claim, `--require-all` failing the build when one doesn't (coverage is an INVENTORY control, not an
+  authorship detector — an uncovered commit proves NOTHING about how it was authored): see *Coverage:
+  prove it fleet-wide* in [`AGENTTRACE.md`](AGENTTRACE.md), the scripted fail-then-pass flow
+  [`examples/agent-session/fleet-coverage.js`](../examples/agent-session/fleet-coverage.js), and the
+  CI recipes [`verifier/ci/agent-coverage.generic.sh`](../verifier/ci/agent-coverage.generic.sh) +
+  [`verifier/ci/agent-coverage.github-actions.yml`](../verifier/ci/agent-coverage.github-actions.yml).
 - [`docs/TRUSTLEDGER.md`](TRUSTLEDGER.md) › *Zero-install: the offline app* — the TrustLedger pilot path with
   **zero** install: email ONE file ([`trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html)),
   the partner double-clicks it, drags their real exports in, and the page makes **no network request** (free tier only).

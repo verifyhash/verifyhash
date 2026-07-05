@@ -32,7 +32,11 @@ transfers to the other.
 > buyer-facing spec, honest trust boundary (log unaltered since seal; NOT what the agent actually did;
 > not a trusted timestamp without **P-3**), and a committed map → seal → redact → verify → prove
 > example are in [`AGENTTRACE.md`](AGENTTRACE.md) and
-> [`../examples/agent-session/`](../examples/agent-session/).
+> [`../examples/agent-session/`](../examples/agent-session/). Its fleet leg — `vh agent coverage`, the
+> FREE CI gate reporting which commits in a range carry a verifiable session claim (an INVENTORY
+> control, not an authorship detector) — is specced in [`AGENTTRACE.md`](AGENTTRACE.md) › *Coverage:
+> prove it fleet-wide*, with the scripted fail-then-pass flow at
+> [`../examples/agent-session/fleet-coverage.js`](../examples/agent-session/fleet-coverage.js).
 
 ---
 

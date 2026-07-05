@@ -591,6 +591,7 @@ vh agent seal <session.jsonl> [--out <p>] [--sign --license <f> --vendor <0xaddr
 vh agent verify <packet> [--vendor <0xaddr>] [--json]   # re-derive every leaf + the root; exit 0 ACCEPTED / 3 named REJECT (+ seq)
 vh agent redact <packet> --seq <list> --out <p>          # withhold payloads; head UNCHANGED — redaction is not tamper
 vh agent prove / verify-proof / checkpoint / verify-growth   # single-event disclosure + append-only growth, offline
+vh agent coverage --repo <dir> --range <rev-range> --packets <dir> [--deep] [--require-all] [--json]   # the fleet gate (FREE)
 ```
 
 The honest boundary, carried **in-band** in every packet's trust note: it proves the LOG is unaltered
@@ -615,6 +616,20 @@ session's events produced the commit. Spec + honest boundary: [`docs/AGENTTRACE.
 › *Binding a session to a git commit*; the scripted flow (map → commit-claim → seal →
 redact-all-but-claim → verify-commit):
 [`examples/agent-session/commit-bound-session.js`](examples/agent-session/commit-bound-session.js).
+
+**Fleet coverage (`vh agent coverage`)** — the CI gate over commit-bound sessions: enumerate a commit
+range, FULLY re-verify every `*.vhagent.json` under `--packets` through the shipped verify path, and
+report per-commit coverage from a closed vocabulary; `--require-all` / `--require-since` gate exit 3
+when a commit lacks a verifiable claim, and `--deep` re-derives each claimed commit's tracked-set root
+in a throwaway local clone (offline, cleaned up on every exit path). FREE, read-only, key-less; the
+`--out` report is deterministic, byte-diffable, and sealable with the existing `vh evidence seal`.
+Honest boundary (in-band in every verdict): coverage is an INVENTORY control, not an authorship
+detector — a covered commit proves containment, NOT causation, and an uncovered commit proves NOTHING
+about how it was authored. Spec: [`docs/AGENTTRACE.md`](docs/AGENTTRACE.md) › *Coverage: prove it
+fleet-wide*; the scripted fail-then-pass fleet flow:
+[`examples/agent-session/fleet-coverage.js`](examples/agent-session/fleet-coverage.js); CI recipes:
+[`verifier/ci/agent-coverage.generic.sh`](verifier/ci/agent-coverage.generic.sh) +
+[`verifier/ci/agent-coverage.github-actions.yml`](verifier/ci/agent-coverage.github-actions.yml).
 
 ### Producer identity card (`vh identity`)
 

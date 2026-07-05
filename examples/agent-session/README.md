@@ -93,3 +93,41 @@ PACKET; `vh agent verify-commit` is the auditor tool for the commit-fact leg. Fu
 
 This scripted flow (plus its tamper/dirty-checkout negatives) is test-gated end to end by
 [`test/cli.agent.commit.docs.test.js`](../../test/cli.agent.commit.docs.test.js).
+
+## Fleet coverage (fixture repo → two sessions → claims → seal → coverage, failing then passing)
+
+[`fleet-coverage.js`](fleet-coverage.js) scripts the FLEET gate end-to-end — Node core + git + the
+shipped CLI only, offline, inside a throwaway fixture it builds itself (never your checkout):
+
+```bash
+W=$(mktemp -d)   # a scratch workspace — nothing here writes to the repo or cwd
+node examples/agent-session/fleet-coverage.js --workdir "$W"
+```
+
+1. **FIXTURE REPO** — a fresh git repo under `--workdir` with pinned identity + dates (every run
+   derives the SAME oids: the flow is deterministic);
+2. **SESSION A** — commit 1 is made; its session is claimed (`vh agent commit-claim`) and sealed
+   (`vh agent seal`) into `packets/session-a.vhagent.json`;
+3. **THE GAP** — commit 2 is made with NO session sealed;
+4. **COVERAGE #1** — `vh agent coverage --require-all` exits **3**, NAMING commit 2 `uncovered`:
+   the gate BLOCKS, exactly what your CI would do;
+5. **SESSION B** — commit 2's session is claimed + sealed the same way;
+6. **COVERAGE #2** — `vh agent coverage --deep --require-all --out coverage-report.json` exits
+   **0**: both commits `covered-verified` (each tracked-set root RE-DERIVED in a throwaway local
+   clone), and the canonical `vh-agent-coverage@1` report — deterministic, byte-diffable, sealable
+   with the existing `vh evidence seal` — is written under `--workdir`.
+
+Exit 0 when the documented fail-then-pass flow holds (one JSON summary line on stdout); 2 usage;
+1 any other failure — the script never fakes a PASS. Every artifact (fixture repo included) lands
+under `--workdir` (or a fresh temp dir, printed on stderr) — never the current directory.
+
+**Honest boundary — an INVENTORY control, not an authorship detector:** a covered commit means the
+unaltered sealed log CONTAINS a disclosed claim naming exactly that commit (containment, NOT
+causation — it does NOT prove the session's events produced the commit), and an uncovered commit
+proves NOTHING about how it was authored. Full boundary + the CI recipes
+([`verifier/ci/agent-coverage.generic.sh`](../../verifier/ci/agent-coverage.generic.sh),
+[`verifier/ci/agent-coverage.github-actions.yml`](../../verifier/ci/agent-coverage.github-actions.yml)):
+[`../../docs/AGENTTRACE.md`](../../docs/AGENTTRACE.md) › *Coverage: prove it fleet-wide*.
+
+This scripted flow is test-gated end to end by
+[`test/cli.agent.coverage.docs.test.js`](../../test/cli.agent.coverage.docs.test.js).

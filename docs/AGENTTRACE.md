@@ -73,6 +73,8 @@ vh agent commit-claim --repo <dir> [--ref <ref=HEAD>] --seq <n> [--ts <iso>] [--
                                                                # bind the session to a git commit (FREE, key-less)
 vh agent verify-commit <packet> --repo <dir> [--ref <ref>] [--vendor <0xaddr>] [--json]
                                                                # auditor re-derives oid + root from THEIR OWN clone
+vh agent coverage --repo <dir> --range <rev-range> --packets <dir> [--deep] [--require-all] [--require-since <oid>] [--out <report>] [--json]
+                                                               # the fleet gate: which commits carry a verifiable claim (FREE)
 ```
 
 The input is JSONL (or a JSON array) of canonical events — a **closed** five-type schema:
@@ -200,6 +202,83 @@ committed at
 [`examples/agent-session/commit-bound-session.js`](../examples/agent-session/commit-bound-session.js)
 and driven end-to-end (plus the tamper/dirty-checkout negatives) by
 [`test/cli.agent.commit.docs.test.js`](../test/cli.agent.commit.docs.test.js), so it cannot rot.
+
+---
+
+## Coverage: prove it fleet-wide (`vh agent coverage`)
+
+The commit-binding verbs answer the question for ONE packet. The fleet question — the one the
+AI-code-governance / audit buyer actually gates a pipeline on — is: *across this commit range, WHICH
+changes carry a verifiable agent-session record — and fail my build when one doesn't?* `vh agent
+coverage` answers it with machinery this page already documented: it enumerates the range's commits
+oldest-first (`git rev-list --reverse`), FULLY re-verifies every `*.vhagent.json` under `--packets`
+through the same shipped `vh agent verify` path FIRST, extracts each VERIFIED packet's disclosed
+commit-claims verbatim, and gives every commit a status from a CLOSED vocabulary:
+`covered-verified` / `covered-oid-only` / `claim-unverified-packet` / `claim-root-mismatch` /
+`uncovered`.
+
+```bash
+vh agent coverage --repo . --range origin/main..HEAD --packets ./packets --require-all   # the CI gate: exit 3 on any gap
+vh agent coverage --repo . --range HEAD~10..HEAD --packets ./packets --deep --out coverage-report.json --json
+```
+
+### What a coverage report PROVES
+
+- **For each covered commit, an UNALTERED sealed session contains a disclosed claim to exactly that
+  oid.** Every packet goes through the FULL shipped verify path BEFORE its claims count; a packet
+  that does not verify proves nothing, so its claims count ONLY as `claim-unverified-packet` (never
+  coverage) and the packet is NAMED in the report.
+- **Under `--deep`, to exactly that re-derived tracked-set root.** Each claimed in-range commit's
+  `vh hash --git` root is RE-DERIVED with the shipped engine inside a throwaway LOCAL clone (fully
+  offline — a local-path clone opens no network; the clone is removed on every exit path), and a
+  mismatch is the NAMED `claim-root-mismatch` discrepancy — never coverage. Without `--deep` a
+  verified claim is `covered-oid-only` at best, and the human-readable output SAYS
+  root-not-re-derived.
+- **The report is deterministic and sealable with the existing `vh evidence seal`.** `--out <report>`
+  writes the canonical sorted-key `vh-agent-coverage@1` bytes — byte-diffable across runs, round-tripping
+  through the strict parser — and the report file is an ordinary artifact the existing
+  `vh evidence seal` seals like any other (no new seal code, no new packet kind).
+
+### What it does NOT prove
+
+- **Containment, NOT causation — per commit.** A covered commit means the UNALTERED sealed log
+  CONTAINS a disclosed claim naming exactly that commit; it does NOT prove the session's events produced the commit.
+- **An uncovered commit proves NOTHING about how it was authored: coverage is an INVENTORY control, not an authorship detector.**
+  An uncovered commit is a gap in your record-keeping — it is NOT evidence the change was
+  hand-written, agent-written, or anything else.
+- **A redacted claim is not disclosable.** A withheld claim is committed-to but cannot be read, so
+  it can never count toward coverage — redact everything BUT the claim and coverage still works.
+- **The claim's `ts` is self-asserted**, like every event `ts`: recorded verbatim, never verified
+  against any clock — and the report is **NOT a trusted timestamp** without the human-owned **P-3**
+  trust-root ([`STRATEGY.md`](../STRATEGY.md) › Proposals — needs-human).
+
+**The same wording rides in-band**: every `vh agent coverage` verdict — human-readable and `--json`
+— leads with this boundary as its `note`. Verbatim:
+
+> A coverage report is an INVENTORY control, NOT an authorship detector: a covered commit means an UNALTERED sealed session packet CONTAINS a disclosed claim naming exactly that commit oid (containment, NOT causation — it does not prove the session's events PRODUCED the commit), and an uncovered commit proves NOTHING about how it was authored. Every packet is FIRST re-verified through the FULL shipped `vh agent verify` path; a packet that does not verify proves nothing, so its claims count ONLY as claim-unverified-packet (never coverage). Without --deep a claim's tracked-set root is NOT re-derived (covered-oid-only); --deep re-derives it with the shipped `vh hash --git` engine in a throwaway LOCAL clone (offline; removed on every exit path) and a mismatch is the NAMED claim-root-mismatch discrepancy (never coverage). Event `ts` fields are SELF-ASSERTED; nothing here is a trusted timestamp (P-3). Every caveat of the agent-session packet applies (see `vh agent verify`).
+
+### Free vs. paid, and the CI gate
+
+**Coverage and the CI gate are FREE** — read-only, key-less end-to-end, on the same free verify tier
+as everything above. **`--sign` is unchanged behind the existing gate** (the DRAFT `agent_signed`
+capability, the same fail-closed license mechanism documented above): coverage adds no new paid
+surface and no new human gate.
+
+Gating a pipeline is the exit-code contract: report-only (no policy flag) ALWAYS exits 0;
+`--require-all` / `--require-since <oid>` gate exit 3 when a policed commit lacks a verifiable claim
+(2 usage / 1 IO — the family contract). The committed CI recipes —
+[`verifier/ci/agent-coverage.generic.sh`](../verifier/ci/agent-coverage.generic.sh) (any CI, an
+env-var contract) and
+[`verifier/ci/agent-coverage.github-actions.yml`](../verifier/ci/agent-coverage.github-actions.yml)
+(a workflow example; the loop never runs it) — fail the build when a commit in the pushed range
+lacks a verifiable claim.
+
+The scripted worked fleet flow — fixture repo → two sessions → claims → seal → coverage
+(`--require-all` FAILING on the uncovered commit, then PASSING once its session is sealed, plus
+`--deep` root re-derivation and the sealable `--out` report) — is committed at
+[`examples/agent-session/fleet-coverage.js`](../examples/agent-session/fleet-coverage.js) and driven
+end-to-end by [`test/cli.agent.coverage.docs.test.js`](../test/cli.agent.coverage.docs.test.js), so
+it cannot rot.
 
 ---
 

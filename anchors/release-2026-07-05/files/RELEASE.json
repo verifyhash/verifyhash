@@ -1,0 +1,19 @@
+{
+  "kind": "verifyhash-release-attestation",
+  "date": "2026-07-05",
+  "gitCommit": "5217a90",
+  "repo": "https://github.com/verifyhash/verifyhash",
+  "npm": {
+    "verifyhash@0.1.1": {
+      "shasum": "b34d99dc824ec387b45be6e6cbca11e0720b3a2c"
+    },
+    "verify-vh@0.1.0": {
+      "shasum": "8da5d3a97a04a3fe0809bc6e75dd844c3af1c3e0"
+    }
+  },
+  "site": {
+    "manifest": "RELEASE-MANIFEST.json (sealed alongside; binds all 34 published files)",
+    "deployedAt": "2026-07-05T03:04:44.968Z"
+  },
+  "vendorAddress": "0x7cb4d3DC6C52996B6386473Bfb32f898263412f7"
+}

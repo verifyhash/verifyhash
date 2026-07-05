@@ -559,6 +559,14 @@ describe("cli/agent T-71.2: `vh agent coverage` — the fleet gate + CI recipes"
       expect(src).to.match(/CONTAINMENT, not\s+causation/i);
       expect(src).to.include("P-3");
       expect(src).to.include("claim-unverified-packet");
+      // Honest-posture consistency (mirrors journal.generic.sh): this producer-stack recipe must
+      // NOT be conflated with the zero-install standalone verifier. It carries the INDEPENDENCE NOTE
+      // naming what needs the producer package, and points the packet-verification leg at the
+      // standalone bundle (verifier/README.md §2c).
+      expect(src).to.include("INDEPENDENCE NOTE");
+      expect(src).to.match(/PRODUCER package/);
+      expect(src).to.match(/NOT part of the zero-install independent verifier/);
+      expect(src).to.match(/verifier\/README\.md §2c/);
     });
 
     it("runs GREEN (exit 0) against the fully-covered fixture repo (the CI recipe, end-to-end)", function () {
@@ -622,6 +630,12 @@ describe("cli/agent T-71.2: `vh agent coverage` — the fleet gate + CI recipes"
       expect(yml).to.include("claim-unverified-packet");
       // The loop never executes workflows; the file is an example whose gate logic IS tested here.
       expect(yml).to.match(/the loop NEVER runs this file/);
+      // Honest-posture consistency: the example must carry the same INDEPENDENCE NOTE as the generic
+      // recipe — this producer-stack gate is NOT the zero-install standalone verifier.
+      expect(yml).to.include("INDEPENDENCE NOTE");
+      expect(yml).to.match(/PRODUCER package/);
+      expect(yml).to.match(/NOT part of the zero-install independent verifier/);
+      expect(yml).to.match(/verifier\/README\.md §2c/);
     });
   });
 

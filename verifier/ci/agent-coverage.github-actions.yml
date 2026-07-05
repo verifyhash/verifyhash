@@ -31,6 +31,15 @@
 #   LOCAL clone — offline, removed on every exit path — so a lying gitRoot surfaces as the NAMED
 #   `claim-root-mismatch`; without it a verified claim is `covered-oid-only` (root not re-derived).
 #
+# INDEPENDENCE NOTE: unlike the ZERO-DEPENDENCY standalone `verify-vh` bundle in verifier/ (which
+# vendors its own keccak and needs no ethers), THIS coverage gate runs the PRODUCER package (the
+# `Install verifyhash` step below pulls it, ethers included). It is
+# NOT part of the zero-install independent verifier — range enumeration (`git rev-list`), commit-claim
+# extraction, and (with --deep) hashGit tracked-set root re-derivation do not live in the standalone.
+# The PACKET-verification leg IS independently checkable with the standalone bundle
+# (verifier/README.md §2c), but the coverage gate AS A WHOLE is producer-stack. See verifier/README.md
+# §6 ("Why you can trust this verifier itself").
+#
 # NOTE: the loop NEVER runs this file. It is a shipped EXAMPLE. The exact gate (range enumeration,
 # full packet verify, --require-all exit-3 policy, exit-code passthrough) is the SAME logic
 # verifier/ci/agent-coverage.generic.sh ships, and a test drives that gate against the real

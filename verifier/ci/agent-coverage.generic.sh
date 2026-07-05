@@ -32,6 +32,14 @@
 #   runtime dependency), `git`, and a POSIX shell — no hardhat (a devDep, never installed for
 #   consumers) and NO NETWORK (rev-list, packet verify, and the --deep local-path clone are all
 #   pure-local operations).
+#   INDEPENDENCE NOTE: unlike the ZERO-DEPENDENCY standalone `verify-vh` bundle in verifier/ (which
+#   vendors its own keccak and needs no ethers), THIS coverage gate runs the PRODUCER package and is
+#   NOT part of the zero-install independent verifier — range enumeration (`git rev-list`), commit-claim
+#   extraction, and (with --deep) hashGit tracked-set root re-derivation do not live in the standalone.
+#   The PACKET-verification leg IS independently checkable with the standalone bundle
+#   (verifier/README.md §2c), but the coverage gate AS A WHOLE is producer-stack. See
+#   verifier/README.md §6 ("Why you can trust this verifier itself") for the standalone's independence
+#   scope.
 #
 # CONFIGURE VIA ENVIRONMENT (so this file is literal copy-paste; no in-file editing required):
 #   VH_BIN            the `vh` command                    (default: vh — on PATH via npm; or a path)

@@ -1,0 +1,20 @@
+{
+  "kind": "verifyhash-release-attestation",
+  "date": "2026-07-05T08",
+  "gitCommit": "bf30259",
+  "repo": "https://github.com/verifyhash/verifyhash",
+  "npm": {
+    "verifyhash@0.1.2": {
+      "shasum": "c18899a29e8a8a38eb946c5faf0dd6e11764c962"
+    },
+    "verify-vh@0.1.2": {
+      "shasum": "2330d04d091975e6af5645ac6de18160e602c418"
+    }
+  },
+  "site": {
+    "manifestSha256": "fc148a56991943379749c0322aa04285e7986372e2379ed3a63146086f7cdfce",
+    "deployedAt": "2026-07-05T08:27:29Z"
+  },
+  "note": "verify-vh 0.1.2 adds vh-anchored-receipt@1 verification to the standalone verifier (T-70.4)",
+  "vendorAddress": "0x7cb4d3DC6C52996B6386473Bfb32f898263412f7"
+}

@@ -57,6 +57,13 @@ function tmp(prefix) {
   return d;
 }
 
+// The set of `vh-vendor-pack-*` dirs currently in the OS tmpdir — the prefix the script mkdtemps
+// its disposable `npm pack` destination under. Snapshotted before/after the run to prove the
+// script leaves NONE behind (the packDest is cleaned up on every exit path).
+function packDirs() {
+  return new Set(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("vh-vendor-pack-")));
+}
+
 function runVh(args) {
   return spawnSync(NODE, [VH, ...args], { cwd: REPO, env: ENV, encoding: "utf8" });
 }
@@ -79,9 +86,11 @@ describe("T-73.5 vendor self-provenance packet builder (scripts/vendor-provenanc
   let res; // the script's spawnSync result
   let unsignedPath, signedPath, licensePath, payloadDir, receiptPath;
   let anchorTokens; // the emitted anchor command, tokenized ("vh", "anchor-artifact", ...)
+  let packDirsBefore; // OS-tmpdir vh-vendor-pack-* set BEFORE the run (leak-hygiene baseline)
 
   before(function () {
     outDir = path.join(tmp("vh-vendor-prov-"), "packet");
+    packDirsBefore = packDirs();
     res = spawnSync(NODE, [SCRIPT, "--key-env", KEY_ENV, "--out", outDir], {
       cwd: REPO,
       env: ENV,
@@ -147,6 +156,22 @@ describe("T-73.5 vendor self-provenance packet builder (scripts/vendor-provenanc
     expect(identity.tarball.scope).to.include("NOT asserted to equal the npm registry");
     expect(identity.statement).to.include("SELF-ASSERTED");
     expect(identity.statement).to.include("never WHEN");
+
+    // DIRTY-TREE HONESTY: the SEALED, publishable prose must not drift from the sibling
+    // git.dirtyWorkingTree field. A dirty pack is of the WORKING TREE, not the commit's bytes, so
+    // when dirty the statement must SAY so; when clean it may claim the commit. Asserted against
+    // whatever state this suite actually runs in (typically dirty — new/edited files present).
+    if (identity.git.dirtyWorkingTree) {
+      expect(identity.statement, "dirty-tree statement must flag UNCOMMITTED changes").to.include("UNCOMMITTED");
+      expect(identity.statement, "dirty-tree statement must disclaim commit-exactness").to.include(
+        "NOT exactly that commit"
+      );
+      expect(identity.tarball.scope, "dirty-tree scope must disclaim commit-exactness").to.include(
+        "NOT exactly the commit"
+      );
+    } else {
+      expect(identity.statement, "clean-tree statement may claim the commit").to.include("clean working tree");
+    }
   });
 
   it("`vh evidence verify` exits 0 on BOTH artifacts; `vh evidence verify-signed --signer <ephemeral>` ACCEPTs", function () {
@@ -251,5 +276,13 @@ describe("T-73.5 vendor self-provenance packet builder (scripts/vendor-provenanc
     // The script source is node-core + spawned CLIs only: it never imports a network module.
     const src = fs.readFileSync(SCRIPT, "utf8");
     expect(src).to.not.match(/require\(["'](node:)?(https?|net|dns|tls|dgram)["']\)/);
+  });
+
+  it("leaves NO temp packDest behind in the OS tmpdir (filesystem hygiene — clean pass-or-fail)", function () {
+    // The script mkdtemps a `vh-vendor-pack-*` dir for `npm pack`, copies the ~1 MB tarball into the
+    // packet's payload dir, and must remove the temp dir on EVERY exit path. Compare the OS-tmpdir
+    // set captured before the run against now: the script must have added NONE that survive.
+    const leaked = [...packDirs()].filter((n) => !packDirsBefore.has(n));
+    expect(leaked, `script leaked npm-pack temp dir(s) into ${os.tmpdir()}: ${leaked.join(", ")}`).to.have.length(0);
   });
 });

@@ -38,7 +38,8 @@
     "!docs/ADOPTION.json",
     "!docs/DECIDE.md",
     "!docs/DEPLOY-PUBLIC-SITE.md",
-    "!docs/AUDIT.md"
+    "!docs/AUDIT.md",
+    "!docs/VENDOR-PROVENANCE.md"
   ],
   "engines": {
     "node": ">=18"

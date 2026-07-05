@@ -30,9 +30,14 @@ node scripts/vendor-provenance.cjs --key-env <VAR> --out <dir>
    `vh evidence verify-signed` pinned to the derived address), then **prints** — never runs — the
    exact anchor command and the numbered human steps.
 
-The script is node-core plus spawned `vh` CLIs. It never dials any endpoint, never anchors, never
-reads the key's value itself (only the env var **name** is passed to the CLIs' read-used-discarded
-key path), and never persists key material.
+The script is node-core plus spawned `vh` CLIs. It never dials any endpoint, never anchors, and
+never prints, persists, or forwards key material — it reads the `--key-env` var's value **only to
+reject an empty one**, then discards it; only the env var **name** is passed to the CLIs'
+read-used-discarded key path.
+
+> This is a **maintainer / vendor-ops** doc, not a product feature: its lead command is a repo
+> script (`scripts/vendor-provenance.cjs`), so it is deliberately excluded from the published npm
+> tarball (pinned by `test/npm-tarball.test.js` via `scripts/site-release.js`'s `INTERNAL_FILES`).
 
 ## The boundary — what each artifact proves, exactly
 
@@ -54,7 +59,10 @@ key path), and never persists key material.
 - **The digests are of THIS locally packed tarball — never asserted equal to the npm registry's.**
   The script packs the local tree and says so. Whether the published artifact on npm has the same
   bytes is a **network question the script refuses to answer**; confirming it is human step 1
-  below, and the identity statement carries the same scope language in-band.
+  below, and the identity statement carries the same scope language in-band. If the working tree is
+  **dirty** at pack time, the sealed `statement` says so **explicitly** — a dirty pack is of the
+  working tree, not the named commit's bytes, so the publishable prose never claims more than the
+  bytes prove. For the real published packet, pack from a **clean** checkout of the released tag.
 
 ## The human steps (the script prints these; it performs none of them)
 

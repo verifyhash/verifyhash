@@ -82,6 +82,7 @@ const INTERNAL_FILES = new Set([
   "docs/METRICS.jsonl", // loop run telemetry
   "docs/MORNING.md", // internal ops briefing
   "docs/AUDIT.md", // internal audit notes
+  "docs/VENDOR-PROVENANCE.md", // vendor-ops doc; its lead command is a maintainer script (scripts/), never shipped
   "docs/STRATEGY-ARCHIVE.md", // internal roadmap history
   "STRATEGY.md",
   "BACKLOG.md",

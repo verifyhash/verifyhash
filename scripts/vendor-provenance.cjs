@@ -28,9 +28,10 @@
 // WHAT IT NEVER DOES (the boundary, exactly)
 //   - It NEVER touches the network: no registry read, no RPC, no anchor. `npm pack` packs the
 //     LOCAL tree; the anchor command is PRINTED for a human, never executed.
-//   - It NEVER reads, prints, or persists key material: the caller supplies an ENV VAR NAME
+//   - It NEVER prints, persists, or FORWARDS key material: the caller supplies an ENV VAR NAME
 //     (--key-env) and only that NAME is passed to the shipped CLIs, whose one read-used-discarded
-//     path holds the key in-process. This script presence-checks the var and never reads its value.
+//     path holds the key in-process. This script reads the var's value ONLY to reject an empty one
+//     (a friendly early failure) — it never retains, logs, or forwards the value itself.
 //   - It NEVER claims the local tarball equals the npm registry's artifact. Confirming that is
 //     HUMAN STEP 1 (network). The identity statement is SELF-asserted: the seal proves WHAT bytes
 //     and WHO signed — never WHEN — and pins nothing until the vendor address is PUBLISHED on an
@@ -117,9 +118,11 @@ function parseArgs(argv) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
 
-  // Presence-check ONLY — the key VALUE is never read into this process's variables.
+  // Presence + non-empty check. The value is read ONLY for this emptiness test — never retained,
+  // logged, or forwarded; downstream, only the env var NAME goes to the shipped CLIs, which read
+  // and consume the key in-process.
   if (!Object.prototype.hasOwnProperty.call(process.env, opts.keyEnv) || process.env[opts.keyEnv] === "") {
-    fail(`the --key-env variable ${opts.keyEnv} is not set (this script never reads its value; the shipped CLIs do)`, EXIT.IO);
+    fail(`the --key-env variable ${opts.keyEnv} is unset or empty (its value is read here ONLY for this check, never retained or forwarded; the shipped CLIs consume the key)`, EXIT.IO);
   }
 
   const outDir = path.resolve(opts.out);
@@ -136,6 +139,18 @@ function main() {
 
   // ---- 1. pack the LOCAL tree (no registry access; lifecycle scripts disabled) ----
   const packDest = fs.mkdtempSync(path.join(os.tmpdir(), "vh-vendor-pack-"));
+  // packDest holds ONLY a disposable copy of the tarball (the durable copy lives in payloadDir).
+  // Remove it on EVERY exit path — success AND the fail()/process.exit legs. A bare try/finally is
+  // not enough: process.exit() does NOT unwind finally blocks, so an early fail() between the pack
+  // and the copy would leak the dir. An exit handler fires on all of them; rmSync(force) is
+  // idempotent, so the explicit removal after the copy below just frees the ~1 MB sooner.
+  process.on("exit", () => {
+    try {
+      fs.rmSync(packDest, { recursive: true, force: true });
+    } catch (_) {
+      /* best-effort cleanup — never mask the real exit code */
+    }
+  });
   const packEnv = { ...process.env, NPM_CONFIG_UPDATE_NOTIFIER: "false", NO_UPDATE_NOTIFIER: "1" };
   const packOut = run(
     "npm pack (local tree; offline)",
@@ -173,12 +188,25 @@ function main() {
 
   // ---- 4. the payload dir: tarball + the SELF-ASSERTED identity statement ----
   fs.copyFileSync(tarballTmp, path.join(payloadDir, tarballName));
+  fs.rmSync(packDest, { recursive: true, force: true }); // packDest is disposable once copied
+
+  // The packed-from clause is CONDITIONAL on tree cleanliness: a DIRTY pack is of the WORKING TREE,
+  // NOT that commit's bytes, so the sealed, publishable prose must not flatly claim "from the git
+  // commit below" when git.dirtyWorkingTree is true — the sibling field would refute it. Honest in
+  // both states; the real published packet should be packed from a CLEAN checkout of the released tag.
+  const packedFrom = gitDirty
+    ? `from the WORKING TREE at git commit ${gitCommit}, which had UNCOMMITTED changes when packed — ` +
+      "so the tarball is NOT exactly that commit's bytes (see git.dirtyWorkingTree below)"
+    : `from git commit ${gitCommit} (a clean working tree)`;
+  const packScope = gitDirty
+    ? "npm pack of the WORKING TREE, which had uncommitted changes at pack time — NOT exactly the commit above"
+    : "npm pack of the working tree at the clean commit above";
   const identity = {
     kind: "vh.vendor-provenance-identity",
     schemaVersion: 1,
     statement:
       `The vendor signing address ${vendorAddress} self-asserts: it packed and sealed the ` +
-      `${pkg.name}@${pkg.version} release tarball named below from the git commit named below. ` +
+      `${pkg.name}@${pkg.version} release tarball named below ${packedFrom}. ` +
       "This statement is SELF-ASSERTED identity, not proof: the enclosing evidence seal proves " +
       "WHAT bytes were sealed and (once signed) WHO signed the packet — never WHEN. A later " +
       "on-chain anchor of the UNSIGNED seal proves the packet existed no-later-than the anchoring " +
@@ -193,8 +221,8 @@ function main() {
       sha512Sri,
       keccak256,
       scope:
-        "These are digests of THIS LOCALLY PACKED tarball (npm pack of the working tree at the " +
-        "commit above) ONLY. They are NOT asserted to equal the npm registry's published artifact. " +
+        `These are digests of THIS LOCALLY PACKED tarball (${packScope}) ONLY. ` +
+        "They are NOT asserted to equal the npm registry's published artifact. " +
         "Confirming registry equality requires the network (`npm view " + pkg.name + " dist.integrity` " +
         "vs sha512Sri above) and is a HUMAN step; on mismatch, re-pack from the published tag.",
     },

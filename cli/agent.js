@@ -23,7 +23,11 @@
 //                                         tree (T-69.2, over the pure cli/core/agent-commit.js core);
 //     * `vh agent verify-commit`          the AUDITOR leg: full packet verify FIRST, then re-derive
 //                                         oid + root from THEIR OWN clone and match a DISCLOSED claim
-//                                         (containment, not causation — see COMMIT_CLAIM_TRUST_NOTE).
+//                                         (containment, not causation — see COMMIT_CLAIM_TRUST_NOTE);
+//     * `vh agent coverage`               the FLEET gate (T-71.2, over the pure T-71.1 core): which
+//                                         commits in a rev-range carry a verifiable session claim —
+//                                         report-only by default, a CI exit-3 gate under
+//                                         --require-all/--require-since (see COVERAGE_TRUST_NOTE).
 //
 // FREE vs PAID (the same posture as `vh evidence`).
 //   Sealing, verifying, redacting, proving, checkpointing and growth-verifying are FREE — the whole
@@ -58,11 +62,13 @@
 // structurally invalid artifact. Side-effect files land ONLY at an explicit --out path — never cwd.
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { getAddress } = require("ethers");
 
 const agentSession = require("./core/agent-session");
 const agentCommit = require("./core/agent-commit");
+const agentCoverage = require("./core/agent-coverage");
 const coreAttestation = require("./core/attestation");
 const coreLicense = require("./core/license");
 const evidencePlans = require("./core/evidence-plans");
@@ -887,6 +893,23 @@ function parseAgentVerifyCommitArgs(argv) {
   );
   opts.packet = opts._positionals[0];
   return opts;
+}
+
+function parseAgentCoverageArgs(argv) {
+  return _parse(
+    argv,
+    {
+      "--repo": "repo",
+      "--range": "range",
+      "--packets": "packets",
+      "--deep": true,
+      "--require-all": true,
+      "--require-since": "requireSince",
+      "--out": "out",
+    },
+    0,
+    "agent coverage takes no positional arguments — the facts come from --repo/--range/--packets"
+  );
 }
 
 // Normalize a --vendor flag to a lowercase 0x-address (accepts checksummed). Usage error on garbage.
@@ -2034,8 +2057,401 @@ function runAgentVerifyCommit(opts, io = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// `vh agent coverage --repo <dir> --range <rev-range> --packets <dir> [--deep] [--require-all]
+//                    [--require-since <oid>] [--out <report>] [--json]` (T-71.2)
+//
+// The FLEET gate over the PURE coverage core (cli/core/agent-coverage.js, T-71.1): "across this
+// commit range, WHICH changes carry a verifiable agent-session record — and fail my pipeline when
+// one doesn't." This verb derives the FACTS the pure core aggregates:
+//   (a) the ORDERED commit list: cli/git.js listCommits — `git rev-list --reverse` (OLDEST-FIRST,
+//       the order the core's requireSince policy is defined over); an unknown --range is that
+//       helper's NAMED git error at exit 2 (the flag VALUE is what is wrong);
+//   (b) the claims: every `*.vhagent.json` under --packets is FULLY verified through the SAME
+//       shipped verifyPacket path `vh agent verify` runs, FIRST; a packet that VERIFIES has its
+//       disclosed claims extracted via the T-69.1 agentCommit.findCommitClaims VERBATIM, while a
+//       packet that does NOT verify proves nothing — its disclosed claims are still counted, but
+//       ONLY as `claim-unverified-packet` (NEVER coverage), and the packet is NAMED in the report;
+//   (c) --deep: for each claimed in-range oid (from a VERIFIED packet), the tracked-set root is
+//       RE-DERIVED with the SHIPPED `vh hash --git` engine (hashGit, verbatim) inside ONE throwaway
+//       LOCAL clone under the OS temp dir — fully offline (a local-path clone opens no network) —
+//       and the temp clone is removed on EVERY exit path (success and failure, via try/finally);
+//       without --deep no root is re-derived and a verified claim is `covered-oid-only` (the
+//       human output SAYS so). A re-derived root that does not match the claim's gitRoot is the
+//       NAMED `claim-root-mismatch` discrepancy — never coverage.
+//
+// FREE-SURFACE-BEGIN (vh agent coverage) — grep-guarded by the T-71.2 test: NOTHING between this
+// marker and the matching END marker consults any paid gate. The whole verb is free, read-only,
+// key-less.
+// ---------------------------------------------------------------------------
+
+// The coverage trust line — stated ONCE so the human and --json paths agree (the T-71.1 core's
+// documented boundary, carried into every output; T-71.3 carries it into the docs).
+const COVERAGE_TRUST_NOTE =
+  "A coverage report is an INVENTORY control, NOT an authorship detector: a covered commit means an " +
+  "UNALTERED sealed session packet CONTAINS a disclosed claim naming exactly that commit oid " +
+  "(containment, NOT causation — it does not prove the session's events PRODUCED the commit), and an " +
+  "uncovered commit proves NOTHING about how it was authored. Every packet is FIRST re-verified " +
+  "through the FULL shipped `vh agent verify` path; a packet that does not verify proves nothing, so " +
+  "its claims count ONLY as claim-unverified-packet (never coverage). Without --deep a claim's " +
+  "tracked-set root is NOT re-derived (covered-oid-only); --deep re-derives it with the shipped " +
+  "`vh hash --git` engine in a throwaway LOCAL clone (offline; removed on every exit path) and a " +
+  "mismatch is the NAMED claim-root-mismatch discrepancy (never coverage). Event `ts` fields are " +
+  "SELF-ASSERTED; nothing here is a trusted timestamp (P-3). Every caveat of the agent-session " +
+  "packet applies (see `vh agent verify`).";
+
+// How many per-commit / per-packet lines the HUMAN output lists verbatim before "... and N more"
+// (the core's own text block caps its failure list the same way, at its MAX_LISTED_FAILURES).
+const COVERAGE_MAX_LISTED = 50;
+
+/**
+ * Enumerate every `*.vhagent.json` under `dirAbs` (recursive), as SORTED dir-relative POSIX paths —
+ * a deterministic packet inventory. lstat is used so a symlink is never followed out of the tree.
+ * Throws a NAMED error (not a stack trace) when the directory cannot be read.
+ */
+function listCoveragePacketFiles(dirAbs) {
+  let st;
+  try {
+    st = fs.statSync(dirAbs);
+  } catch (e) {
+    throw new Error(`cannot read --packets directory ${dirAbs}: ${e.message}`);
+  }
+  if (!st.isDirectory()) {
+    throw new Error(`--packets must name a DIRECTORY holding *.vhagent.json packets, got: ${dirAbs}`);
+  }
+  const found = [];
+  const walk = (rel) => {
+    const abs = rel === "" ? dirAbs : path.join(dirAbs, ...rel.split("/"));
+    let names;
+    try {
+      names = fs.readdirSync(abs).sort(); // sorted: the inventory (and the report) is deterministic
+    } catch (e) {
+      throw new Error(`cannot read --packets directory ${abs}: ${e.message}`);
+    }
+    for (const name of names) {
+      const childRel = rel === "" ? name : `${rel}/${name}`;
+      const childAbs = path.join(dirAbs, ...childRel.split("/"));
+      const s = fs.lstatSync(childAbs);
+      if (s.isDirectory()) walk(childRel);
+      else if (s.isFile() && name.endsWith(".vhagent.json")) found.push(childRel);
+    }
+  };
+  walk("");
+  return found;
+}
+
+/**
+ * Tolerant disclosed-claim scan for a packet that FAILED the full verify: findCommitClaims requires
+ * a VALID session, which a tampered packet no longer is — but the acceptance still needs the gap
+ * NAMED as `claim-unverified-packet` rather than dissolving into `uncovered`. So each event is
+ * inspected individually: a `note` event whose string payload parses as a canonical claim (the
+ * STRICT T-69.1 parseCommitClaim, reused verbatim) yields a claim row. The rows are counted ONLY
+ * as `claim-unverified-packet` by the caller — an unverifiable packet proves nothing, whatever its
+ * claims assert. Never throws; anything unparseable is simply skipped.
+ */
+function scanDisclosedClaims(events) {
+  const rows = [];
+  if (!Array.isArray(events)) return rows;
+  for (const e of events) {
+    if (!isPlainObject(e)) continue;
+    if (e.type !== agentCommit.CLAIM_EVENT_TYPE) continue;
+    if (typeof e.payload !== "string") continue;
+    const p = agentCommit.parseCommitClaim(e.payload);
+    if (!p.ok) continue;
+    rows.push({ seq: Number.isSafeInteger(e.seq) ? e.seq : null, claim: p.claim });
+  }
+  return rows;
+}
+
+/**
+ * --deep root re-derivation: clone the LOCAL repo path ONCE into a throwaway temp dir, then for
+ * each oid `git checkout --detach` it and run the SHIPPED hashGit VERBATIM (the exact `vh hash
+ * --git` engine, so the derived root is byte-identical to what any clean checkout re-derives).
+ * Fully offline — a local-path clone opens no network. The temp dir is removed on EVERY exit path
+ * (success and failure) by the try/finally. `io.onTempClone(tmpRoot)` is a test-observation hook
+ * (it receives the temp path BEFORE any git work, so a test can both record it and inject a fault).
+ *
+ * @param {string} repoAbs absolute path to (or inside) the source work tree
+ * @param {string[]} oids the FULL 40-hex commit oids to derive roots for
+ * @param {{ onTempClone?: (tmpRoot: string) => void }} [io]
+ * @returns {Map<string, string>} oid -> derived 0x-bytes32 tracked-set root
+ */
+function deriveRootsViaTempClone(repoAbs, oids, io = {}) {
+  const roots = new Map();
+  if (oids.length === 0) return roots;
+  const srcRoot = git.repoRoot(repoAbs);
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "vh-agent-coverage-"));
+  if (io.onTempClone) io.onTempClone(tmpRoot);
+  try {
+    const cloneDir = path.join(tmpRoot, "clone");
+    // A LOCAL-PATH clone (argv array, no shell, no network) of the caller's own repo.
+    git.runGit(srcRoot, ["clone", "--quiet", "--no-hardlinks", "--", srcRoot, cloneDir]);
+    for (const oid of oids) {
+      git.runGit(cloneDir, ["checkout", "--quiet", "--force", "--detach", oid]);
+      roots.set(oid, hashGit(cloneDir, { ref: oid }).root);
+    }
+    return roots;
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+function runAgentCoverage(opts, io = {}) {
+  const write = io.write || ((s) => process.stdout.write(s));
+  const writeErr = io.writeErr || ((s) => process.stderr.write(s));
+
+  if (!opts.repo) {
+    writeErr(
+      "error: `vh agent coverage` requires --repo <dir> — the git work tree the commit range is enumerated from\n"
+    );
+    return EXIT.USAGE;
+  }
+  if (!opts.range) {
+    writeErr(
+      "error: `vh agent coverage` requires --range <rev-range> — e.g. origin/main..HEAD, HEAD~5..HEAD, or a ref\n"
+    );
+    return EXIT.USAGE;
+  }
+  if (!opts.packets) {
+    writeErr(
+      "error: `vh agent coverage` requires --packets <dir> — the directory holding the sealed *.vhagent.json packets\n"
+    );
+    return EXIT.USAGE;
+  }
+
+  // (0) --repo must be inside a git work tree — the same named guard the sibling verbs use (exit 1).
+  const repoAbs = path.resolve(opts.repo);
+  try {
+    git.repoRoot(repoAbs);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  // (a) Enumerate the range OLDEST-FIRST. An unknown --range is the NAMED git error at exit 2:
+  //     the flag's VALUE is what is wrong (parity with every other bad-flag-value usage error).
+  let oids;
+  try {
+    oids = git.listCommits(repoAbs, opts.range);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.USAGE;
+  }
+  const inRange = new Set(oids);
+
+  // --require-since accepts any ref/short-oid and resolves it to the full oid (better DX than
+  // demanding 40-hex); an unresolvable value is a usage error with the existing named git error.
+  let requireSince = null;
+  if (opts.requireSince !== undefined) {
+    try {
+      requireSince = git.resolveCommit(repoAbs, opts.requireSince);
+    } catch (e) {
+      writeErr(`error: --require-since: ${e.message}\n`);
+      return EXIT.USAGE;
+    }
+  }
+
+  // (b) Packet intake: FULL shipped verify FIRST, then claim extraction.
+  const packetsAbs = path.resolve(opts.packets);
+  let packetFiles;
+  try {
+    packetFiles = listCoveragePacketFiles(packetsAbs);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  const packets = []; // the per-packet inventory (NAMES every unverifiable packet)
+  const claims = []; // the fact rows handed to the pure core
+  for (const rel of packetFiles) {
+    const abs = path.join(packetsAbs, ...rel.split("/"));
+    let packet;
+    try {
+      packet = readPacketFile(abs);
+    } catch (e) {
+      // Not even a structurally valid packet: no claim can be extracted, but the file is still
+      // NAMED in the inventory so the gap never disappears silently.
+      packets.push({ packet: rel, verified: false, reason: "INVALID_ARTIFACT", seq: null, claims: 0, detail: e.message });
+      continue;
+    }
+    const v = verifyPacket(packet);
+    let rows;
+    if (v.accepted) {
+      const found = agentCommit.findCommitClaims(packet.events); // T-69.1, VERBATIM
+      rows = found.ok ? found.claims : [];
+    } else {
+      rows = scanDisclosedClaims(packet.events);
+    }
+    for (const c of rows) {
+      claims.push({
+        oid: c.claim.commit,
+        gitRoot: c.claim.gitRoot,
+        packetLabel: rel,
+        packetVerified: v.accepted,
+        rootVerified: null,
+      });
+    }
+    packets.push({
+      packet: rel,
+      verified: v.accepted,
+      reason: v.accepted ? null : v.reason,
+      seq: v.accepted ? null : v.seq,
+      claims: rows.length,
+    });
+  }
+  const ignoredClaims = claims.filter((c) => !inRange.has(c.oid)).length;
+
+  // (c) --deep: re-derive each claimed in-range oid's tracked-set root in ONE throwaway clone.
+  //     Claims from an UNVERIFIED packet are skipped: they can never count as coverage anyway, and
+  //     deriving roots for them would spend git work to no verdict effect.
+  if (opts.deep) {
+    const need = [
+      ...new Set(claims.filter((c) => c.packetVerified && inRange.has(c.oid)).map((c) => c.oid)),
+    ];
+    let derived;
+    try {
+      derived = deriveRootsViaTempClone(repoAbs, need, io);
+    } catch (e) {
+      writeErr(`error: --deep root re-derivation failed: ${e.message}\n`);
+      return EXIT.IO;
+    }
+    for (const c of claims) {
+      if (!c.packetVerified) continue;
+      const root = derived.get(c.oid);
+      if (root !== undefined) c.rootVerified = c.gitRoot === root;
+    }
+  }
+
+  // (d) Evaluate via the PURE core, then serialize + summarize (both strict, both total).
+  const policy = {};
+  if (opts.requireAll) policy.requireAll = true;
+  if (requireSince !== null) policy.requireSince = requireSince;
+  const evaluated = agentCoverage.evaluateCoverage({
+    commits: oids.map((oid) => ({ oid })),
+    claims,
+    policy,
+  });
+  if (!evaluated.ok) {
+    if (evaluated.reason === agentCoverage.REASONS.POLICY_SINCE_NOT_IN_RANGE) {
+      writeErr(
+        `error: --require-since ${requireSince} is not IN the --range ${opts.range} — the policy ` +
+          "cannot anchor to a commit outside the evaluated range\n"
+      );
+      return EXIT.USAGE;
+    }
+    if (
+      evaluated.reason === agentCoverage.REASONS.COMMITS_TOO_MANY ||
+      evaluated.reason === agentCoverage.REASONS.CLAIMS_TOO_MANY
+    ) {
+      writeErr(
+        `error: the range/packet set is too large to evaluate (${evaluated.reason}: the coverage ` +
+          `core caps at ${agentCoverage.MAX_COMMITS} commits / ${agentCoverage.MAX_CLAIMS} claims) — ` +
+          "narrow --range\n"
+      );
+      return EXIT.USAGE;
+    }
+    writeErr(`error: cannot evaluate coverage: ${evaluated.reason}\n`);
+    return EXIT.IO; // unexpected — kept total, never a stack trace
+  }
+  const report = evaluated.report;
+  const ser = agentCoverage.serializeCoverageReport(report);
+  const sum = ser.ok ? agentCoverage.summarizeCoverage(report) : ser;
+  if (!ser.ok || !sum.ok) {
+    // Unreachable for a report the core itself just produced; kept total + named.
+    writeErr(`error: cannot serialize coverage report: ${(ser.ok ? sum : ser).reason}\n`);
+    return EXIT.IO;
+  }
+
+  // --out writes EXACTLY the canonical report bytes (no trailing newline): the file byte-diffs
+  // across runs, round-trips through parseCoverageReport, and is sealable with `vh evidence seal`.
+  let outAbs = null;
+  if (opts.out) {
+    const emitted = emitArtifact(ser.json, opts.out, write, writeErr);
+    if (emitted.code !== EXIT.OK) return emitted.code;
+    outAbs = emitted.outAbs;
+  }
+
+  // The gate: report-only (no policy) ALWAYS exits 0; a set policy gates exit 3 on failure.
+  const gated = report.policy.requireAll || report.policy.requireSince !== null;
+  const code = !gated || report.verdict.pass ? EXIT.OK : EXIT.FAIL;
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ok: code === EXIT.OK,
+          note: COVERAGE_TRUST_NOTE,
+          kind: agentCoverage.REPORT_KIND,
+          repo: repoAbs,
+          range: opts.range,
+          packetsDir: packetsAbs,
+          deep: opts.deep === true,
+          summary: sum.summary,
+          packets,
+          ignoredClaims,
+          report,
+          out: outAbs,
+          // With NO --out the canonical report bytes ride in `artifact` (family parity).
+          artifact: outAbs ? null : ser.json,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+    return code;
+  }
+
+  write(COVERAGE_TRUST_NOTE + "\n\n");
+  write(`# vh agent coverage — ${opts.range} in ${opts.repo} vs ${packetFiles.length} packet(s) under ${opts.packets}\n`);
+  write(
+    opts.deep
+      ? "mode: DEEP — each claimed in-range commit's tracked-set root re-derived in a throwaway local clone (removed afterwards)\n"
+      : "mode: OID-ONLY — roots NOT re-derived this run (a verified claim is covered-oid-only at best; pass --deep to re-derive each claimed commit's tracked-set root)\n"
+  );
+  write("\n" + sum.text + "\n");
+
+  // The actionable per-commit lines: every commit that is NOT covered, capped like the core's list.
+  const notCovered = report.commits.filter((c) => !agentCoverage.COVERED_STATUSES.includes(c.status));
+  if (notCovered.length > 0) {
+    write("\nnot covered:\n");
+    const shown = Math.min(notCovered.length, COVERAGE_MAX_LISTED);
+    for (let i = 0; i < shown; i++) {
+      const c = notCovered[i];
+      const labels = [...new Set(c.claims.map((cl) => cl.packetLabel))];
+      write(`  - ${c.oid}  ${c.status}${labels.length > 0 ? `  (claimed by: ${labels.join(", ")})` : ""}\n`);
+    }
+    if (notCovered.length > shown) write(`  ... and ${notCovered.length - shown} more\n`);
+  }
+
+  // The packet inventory: every unverifiable packet is NAMED (it proves nothing).
+  write(`\npackets (${packetFiles.length}):\n`);
+  if (packetFiles.length === 0) {
+    write("  (none — no *.vhagent.json under --packets, so every commit is uncovered)\n");
+  } else {
+    const shown = Math.min(packets.length, COVERAGE_MAX_LISTED);
+    for (let i = 0; i < shown; i++) {
+      const p = packets[i];
+      write(
+        p.verified
+          ? `  - ${p.packet}  VERIFIED (${p.claims} disclosed claim${p.claims === 1 ? "" : "s"})\n`
+          : `  - ${p.packet}  UNVERIFIABLE — ${p.reason}${p.seq !== null && p.seq !== undefined ? ` at event seq ${p.seq}` : ""} (its ${p.claims} claim${p.claims === 1 ? "" : "s"} count only as claim-unverified-packet, never coverage)\n`
+      );
+    }
+    if (packets.length > shown) write(`  ... and ${packets.length - shown} more\n`);
+  }
+  if (ignoredClaims > 0) {
+    write(`\nnote: ${ignoredClaims} disclosed claim(s) name commits OUTSIDE the range (ignored by this report)\n`);
+  }
+  if (outAbs) write(`\nreport written: ${outAbs}\n`);
+  return code;
+}
+
+// ---------------------------------------------------------------------------
+// FREE-SURFACE-END (vh agent coverage)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // CLI dispatch: `vh agent <seal|verify|redact|prove|verify-proof|checkpoint|verify-growth|
-//                          commit-claim|verify-commit> ...`.
+//                          commit-claim|verify-commit|coverage> ...`.
 // ---------------------------------------------------------------------------
 
 async function cmdAgent(argv, io = {}) {
@@ -2051,6 +2467,7 @@ async function cmdAgent(argv, io = {}) {
     "verify-growth": [parseAgentVerifyGrowthArgs, runAgentVerifyGrowth],
     "commit-claim": [parseAgentCommitClaimArgs, runAgentCommitClaim],
     "verify-commit": [parseAgentVerifyCommitArgs, runAgentVerifyCommit],
+    coverage: [parseAgentCoverageArgs, runAgentCoverage],
   };
   if (Object.prototype.hasOwnProperty.call(dispatch, sub)) {
     const [parse, run] = dispatch[sub];
@@ -2070,7 +2487,7 @@ async function cmdAgent(argv, io = {}) {
   writeErr(
     `error: unknown agent subcommand: ${sub} ` +
       "(expected: seal, verify, redact, prove, verify-proof, checkpoint, verify-growth, " +
-      "commit-claim, verify-commit)\n"
+      "commit-claim, verify-commit, coverage)\n"
   );
   return EXIT.USAGE;
 }
@@ -2089,6 +2506,7 @@ function agentUsage() {
     "  vh agent verify-growth <earlier-head-or-packet> <later-packet> [--json]",
     "  vh agent commit-claim --repo <dir> [--ref <ref=HEAD>] --seq <n> [--ts <iso>] [--actor <s>] [--out <p>] [--json]",
     "  vh agent verify-commit <packet> --repo <dir> [--ref <ref=HEAD>] [--vendor <0xaddr>] [--json]",
+    "  vh agent coverage --repo <dir> --range <rev-range> --packets <dir> [--deep] [--require-all] [--require-since <oid>] [--out <report>] [--json]",
     "",
     "A packet commits an ORDERED agent-session event log (JSONL: prompt/completion/tool_call/tool_result/note)",
     "under one RFC-6962-style Merkle head {size, root} with REDACTION-SAFE leaves: redacting a payload withholds",
@@ -2108,8 +2526,22 @@ function agentUsage() {
     "tree: hashGit reads work-tree bytes, so a dirty checkout is an HONEST mismatch). CONTAINMENT, not causation:",
     "a matching claim does NOT prove the session's events PRODUCED the commit. Both verbs FREE, key-less.",
     "",
+    "coverage is the FLEET gate: it enumerates the range's commits OLDEST-FIRST (git rev-list --reverse), FULLY",
+    "verifies every *.vhagent.json under --packets through the SAME verify path as `vh agent verify` (an",
+    "unverifiable packet's claims count ONLY as claim-unverified-packet — never coverage — and the packet is",
+    "NAMED in the report), extracts the disclosed commit-claims, and reports each commit from the CLOSED",
+    "vocabulary: covered-verified / covered-oid-only / claim-root-mismatch / claim-unverified-packet /",
+    "uncovered. --deep re-derives each claimed commit's tracked-set root (the `vh hash --git` engine, hashGit)",
+    "in a throwaway LOCAL clone — offline, removed on every exit path — so a lying gitRoot surfaces as the",
+    "NAMED claim-root-mismatch; without --deep roots are NOT re-derived (covered-oid-only, and the output says",
+    "so). Report-only default exits 0; --require-all / --require-since <oid> gate exit 3 when a required commit",
+    "lacks a verifiable claim; an unknown --range is a NAMED usage error (exit 2). --out writes the canonical,",
+    "byte-diffable vh-agent-coverage@1 report — sealable with the existing `vh evidence seal`. Coverage is an",
+    "INVENTORY control, not an authorship detector — containment, NOT causation. FREE, read-only, key-less.",
+    "CI recipes: verifier/ci/agent-coverage.generic.sh + verifier/ci/agent-coverage.github-actions.yml.",
+    "",
     "FREE: seal (unsigned) + verify + redact + prove + verify-proof + checkpoint + verify-growth +",
-    "  commit-claim + verify-commit.",
+    "  commit-claim + verify-commit + coverage.",
     "PAID (requires --license + --vendor carrying the DRAFT `agent_signed` capability): --sign — a detached",
     "  EIP-191 attestation over the HEAD, so ONE signature stays valid for every redacted copy. The gate is the",
     "  SAME offline license mechanism as `vh evidence seal --sign` (fail-closed; never silently downgraded).",
@@ -2134,6 +2566,7 @@ module.exports = {
   AGENT_TRUST_NOTE,
   SIGNED_HEAD_TRUST_NOTE,
   COMMIT_CLAIM_TRUST_NOTE,
+  COVERAGE_TRUST_NOTE,
   AgentPacketError,
   // license framing (the evidence mechanism, extended by the DRAFT agent capability)
   AGENT_LICENSE_CFG,
@@ -2159,6 +2592,7 @@ module.exports = {
   parseAgentVerifyGrowthArgs,
   parseAgentCommitClaimArgs,
   parseAgentVerifyCommitArgs,
+  parseAgentCoverageArgs,
   runAgentSeal,
   runAgentVerify,
   runAgentRedact,
@@ -2168,6 +2602,9 @@ module.exports = {
   runAgentVerifyGrowth,
   runAgentCommitClaim,
   runAgentVerifyCommit,
+  runAgentCoverage,
+  deriveRootsViaTempClone,
+  listCoveragePacketFiles,
   cmdAgent,
   agentUsage,
 };

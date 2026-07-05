@@ -154,6 +154,49 @@ function listTrackedFiles(dir, ref) {
 }
 
 /**
+ * List the FULL 40-hex commit oids selected by a `git rev-list` <rev-range>, OLDEST-FIRST.
+ *
+ * Uses `git rev-list --reverse --end-of-options <range>`:
+ *   - `--reverse` emits the commits OLDEST-FIRST — the order the T-71.2 coverage CLI feeds the pure
+ *     coverage core (cli/core/agent-coverage.js), whose `requireSince` policy is defined over that
+ *     order ("since that commit, inclusive"),
+ *   - `--end-of-options` stops a range that begins with `-` from being mis-parsed as a flag (the
+ *     same injection discipline as `resolveCommit`),
+ *   - the range is a single literal argv element (e.g. `origin/main..HEAD`, `HEAD~5..HEAD`, or a
+ *     lone ref meaning "everything reachable from it") — never a shell string.
+ * An unknown/garbled range is a NAMED error carrying git's own first line (same discipline as
+ * `resolveCommit`/`listTrackedFiles`); output rides the existing MAX_GIT_OUTPUT stdout cap. Every
+ * returned line is verified to be a 40-hex lowercase oid before returning. An EMPTY range (e.g.
+ * `HEAD..HEAD`) is valid and returns [].
+ *
+ * @param {string} dir a directory inside the repo
+ * @param {string} range a rev-list range or ref, passed verbatim as one argv element
+ * @returns {string[]} full 40-hex commit oids, OLDEST-FIRST
+ */
+function listCommits(dir, range) {
+  const r = range === undefined || range === null ? "" : String(range);
+  if (r.trim() === "") {
+    throw new Error("empty git rev-range: pass e.g. origin/main..HEAD, HEAD~5..HEAD, or a ref");
+  }
+  let out;
+  try {
+    out = runGit(dir, ["rev-list", "--reverse", "--end-of-options", r]);
+  } catch (e) {
+    throw new Error(
+      `unknown git range: ${r}\n  (git rev-list could not enumerate it: ${firstLine(e.message)})`
+    );
+  }
+  const oids = out.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+  for (const oid of oids) {
+    if (!/^[0-9a-f]{40}$/.test(oid)) {
+      // rev-list of a commit range always yields 40-hex oids; anything else is anomalous.
+      throw new Error(`git rev-list emitted a non-oid line for range '${r}' (got: ${oid})`);
+    }
+  }
+  return oids;
+}
+
+/**
  * Resolve the GIT PROVENANCE of a directory: the full commit oid at `ref`, and the repo-relative,
  * POSIX-slashed "scope" — the path of `dir` relative to the repository top-level. The scope is "."
  * when `dir` IS the repo root.
@@ -215,6 +258,7 @@ module.exports = {
   repoRoot,
   resolveCommit,
   listTrackedFiles,
+  listCommits,
   gitProvenance,
   repoRelativeScope,
 };

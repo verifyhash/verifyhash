@@ -1,0 +1,76 @@
+# agent-coverage.github-actions.yml — copy-paste GitHub Actions FLEET-COVERAGE gate built on
+# `vh agent coverage` (T-71.2, EPIC-71 "AgentTrace coverage").
+#
+# WHAT THIS IS
+#   Drop this file at `.github/workflows/agent-coverage.yml` in the repo whose commits should each
+#   carry a verifiable agent-session record (a sealed *.vhagent.json packet containing a disclosed
+#   commit-claim). On every push / pull request it runs `vh agent coverage --require-all` over the
+#   pushed commit range and FAILS the job (exit 3) when any commit in the range lacks a claim from a
+#   packet that passes the FULL shipped verify path. A green check now MEANS "every commit in this
+#   range is covered by a verifiable sealed session claim."
+#
+# HOW THE RANGE IS CHOSEN
+#   For a pull request: base.sha..head.sha (exactly the commits the PR adds). For a push:
+#   `event.before..sha` (the pushed range). `fetch-depth: 0` matters — the gate enumerates the range
+#   with `git rev-list`, which needs the real history, not a shallow tip.
+#
+# WHERE THE PACKETS COME FROM
+#   The example expects the sealed packets committed under `.vhagent/` in the repo (the simplest paved
+#   road: `vh agent commit-claim ... >> session.jsonl && vh agent seal session.jsonl --out
+#   .vhagent/<name>.vhagent.json` before pushing). A download/build-artifact step works just as well —
+#   point --packets wherever your flow stores them.
+#
+# TRUST BOUNDARY (this gate will not let you overclaim)
+#   Coverage is an INVENTORY control, NOT an authorship detector: a covered commit means an UNALTERED
+#   sealed session CONTAINS a disclosed claim naming exactly that commit oid — CONTAINMENT, not causation;
+#   an uncovered commit proves NOTHING about how it was authored. An unverifiable
+#   (tampered/forged) packet NEVER counts as coverage — its claims count only as
+#   `claim-unverified-packet` and the packet is NAMED in the report. Event `ts` fields are
+#   SELF-ASSERTED, and nothing here is a trusted timestamp (STRATEGY.md P-3). Add `--deep` to also
+#   re-derive each claimed commit's tracked-set root (the `vh hash --git` engine) in a throwaway
+#   LOCAL clone — offline, removed on every exit path — so a lying gitRoot surfaces as the NAMED
+#   `claim-root-mismatch`; without it a verified claim is `covered-oid-only` (root not re-derived).
+#
+# NOTE: the loop NEVER runs this file. It is a shipped EXAMPLE. The exact gate (range enumeration,
+# full packet verify, --require-all exit-3 policy, exit-code passthrough) is the SAME logic
+# verifier/ci/agent-coverage.generic.sh ships, and a test drives that gate against the real
+# `vh agent coverage` command to prove it exits 0 on a fully-covered range and non-zero (3) when a
+# commit lacks a verifiable claim.
+
+name: agent-coverage fleet gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  agent-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. The repo, with FULL history: `git rev-list <range>` needs real ancestry, not a shallow tip.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 2. Install verifyhash (provides the `vh agent coverage` command).
+      - name: Install verifyhash
+        run: npm ci || npm install
+
+      # 3. THE GATE. Compute the pushed range, then require EVERY commit in it to carry a claim from
+      #    a packet that passes the full shipped verify path. Exit 0 -> the job passes; exit 3 (an
+      #    uncovered commit, an unverifiable packet, or — with --deep — a root mismatch) -> the job
+      #    FAILS -> the merge is blocked. Add --deep to also re-derive each claimed commit's
+      #    tracked-set root in a throwaway local clone (offline; removed on every exit path).
+      - name: Agent-session fleet-coverage gate (fails when a commit lacks a verifiable claim)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          echo "gating range: $RANGE"
+          npx vh agent coverage --repo . --range "$RANGE" --packets .vhagent --require-all

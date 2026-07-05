@@ -737,6 +737,82 @@ function parseAnchorArgs(argv) {
   return opts;
 }
 
+// ---------------------------------------------------------------------------
+// KEY HYGIENE for the tx-submitting verbs (anchor / claim / commit / reveal / prove --anchor).
+//
+// THE INVARIANT: private-key material must never be able to reach stdout/stderr (and therefore
+// shell scrollback, CI logs, or crash reports). Two layers enforce it:
+//   (1) loadEnvSigner — the ONLY way these verbs turn process.env.PRIVATE_KEY into a signer. It
+//       trims the raw value and routes Wallet construction through the SAME hardened loader that
+//       already guards the offline attestation sign-path (cli/core/attestation.js
+//       loadSigningWallet), whose failure messages name ONLY the source (`env:PRIVATE_KEY`) —
+//       never the value. A raw `new ethers.Wallet(process.env.PRIVATE_KEY)` is FORBIDDEN on these
+//       paths: with any non-hex byte in the var (e.g. the trailing newline from
+//       `export PRIVATE_KEY=$(cat keyfile)`) ethers throws `invalid BytesLike value (…,
+//       value="0x…\n", …)` — echoing the FULL key into the error message.
+//   (2) scrubSigningError — the catch handlers on these verbs' submit paths run every caught
+//       message through this scrubber before writing it, so a value-echoing ethers message from
+//       ANY depth of the signing path is replaced with a fixed, value-free string.
+// ---------------------------------------------------------------------------
+
+/**
+ * Return a SAFE message for an error caught on a signing/wallet path. ethers'
+ * assertArgument-style errors serialize the offending VALUE verbatim into `e.message`, e.g.
+ *   invalid BytesLike value (argument="value", value="0xac09…\n", code=INVALID_ARGUMENT, version=6.x)
+ * and on a signing path that value can BE the private key. Any message of that shape (the
+ * BytesLike wording, or an embedded `value=` payload tagged INVALID_ARGUMENT) is replaced
+ * WHOLESALE with a fixed, value-free string — excising just the value would be one regex bug away
+ * from leaking a key. Everything else — revert reasons, RPC/network errors, our own source-only
+ * loader messages — passes through untouched so real failures stay diagnosable.
+ * @param {*} e the caught error (anything throwable)
+ * @returns {string} a message guaranteed to carry no key material
+ */
+function scrubSigningError(e) {
+  const msg = String(e && e.message !== undefined && e.message !== null ? e.message : e);
+  const echoesValue =
+    /invalid BytesLike value/i.test(msg) || (/\bvalue=/.test(msg) && /INVALID_ARGUMENT/.test(msg));
+  if (echoesValue) {
+    return (
+      "invalid signing input: an argument was rejected before submission (the underlying ethers " +
+      "message is withheld because it can embed private-key material). Check PRIVATE_KEY and the " +
+      "flag values you passed."
+    );
+  }
+  return msg;
+}
+
+/**
+ * Build the on-chain signer from process.env.PRIVATE_KEY, connected to `provider`.
+ *
+ * The raw env value is `.trim()`ed FIRST, so a whitespace-only value gets the same actionable,
+ * verb-specific `missingMsg` guidance as a missing var (it carries no usable key either way — and
+ * must never be echoed). A present key is then loaded via loadSigningWallet, which re-trims
+ * (making `export PRIVATE_KEY=$(cat keyfile)` with a trailing newline WORK instead of exploding
+ * inside ethers), accepts a bare 64-hex key, rejects the all-zero key, and on ANY malformed key
+ * throws a fixed message naming only the SOURCE (`env:PRIVATE_KEY`) — never the value.
+ *
+ * @param {object} provider   ethers Provider the returned Wallet is connected to
+ * @param {string} missingMsg verb-specific stderr line for a missing/blank PRIVATE_KEY
+ * @returns {object|null} the connected Wallet, or null after writing a key-free error to stderr
+ */
+function loadEnvSigner(provider, missingMsg) {
+  const pk = (process.env.PRIVATE_KEY || "").trim();
+  if (!pk) {
+    process.stderr.write(missingMsg);
+    return null;
+  }
+  const { loadSigningWallet } = require("./core/attestation");
+  try {
+    const { wallet } = loadSigningWallet({ keyEnv: "PRIVATE_KEY" });
+    return wallet.connect(provider);
+  } catch (e) {
+    // loadSigningWallet messages are key-free by contract (they name only `env:PRIVATE_KEY`);
+    // scrub anyway so a future loader change can never open a leak here.
+    process.stderr.write(`error: ${scrubSigningError(e)}\n`);
+    return null;
+  }
+}
+
 async function cmdAnchor(argv) {
   let opts;
   try {
@@ -783,17 +859,15 @@ async function cmdAnchor(argv) {
     );
     return 1;
   }
-  const pk = process.env.PRIVATE_KEY;
-  if (!pk) {
-    process.stderr.write(
-      "error: no PRIVATE_KEY in the environment; cannot sign. Use --dry-run to preview.\n"
-    );
-    return 1;
-  }
-
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const signer = new ethers.Wallet(pk, provider);
+    // KEY HYGIENE: signer comes from the hardened env loader (trim + validate + source-only
+    // errors) — never from a raw `new ethers.Wallet(process.env.PRIVATE_KEY)`.
+    const signer = loadEnvSigner(
+      provider,
+      "error: no PRIVATE_KEY in the environment; cannot sign. Use --dry-run to preview.\n"
+    );
+    if (signer === null) return 1;
     await runAnchor({
       path: opts.path,
       uri: opts.uri,
@@ -808,7 +882,7 @@ async function cmdAnchor(argv) {
       ethers,
     });
   } catch (e) {
-    process.stderr.write(`error: ${e.message}\n`);
+    process.stderr.write(`error: ${scrubSigningError(e)}\n`);
     return 1;
   }
   return 0;
@@ -972,17 +1046,15 @@ async function cmdClaim(argv) {
     );
     return 1;
   }
-  const pk = process.env.PRIVATE_KEY;
-  if (!pk) {
-    process.stderr.write(
-      "error: no PRIVATE_KEY in the environment; cannot sign. Use --dry-run to preview.\n"
-    );
-    return 1;
-  }
-
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const signer = new ethers.Wallet(pk, provider);
+    // KEY HYGIENE: signer comes from the hardened env loader (trim + validate + source-only
+    // errors) — never from a raw `new ethers.Wallet(process.env.PRIVATE_KEY)`.
+    const signer = loadEnvSigner(
+      provider,
+      "error: no PRIVATE_KEY in the environment; cannot sign. Use --dry-run to preview.\n"
+    );
+    if (signer === null) return 1;
     await runClaim({
       path: opts.path,
       uri: opts.uri,
@@ -999,7 +1071,7 @@ async function cmdClaim(argv) {
       ethers,
     });
   } catch (e) {
-    process.stderr.write(`error: ${e.message}\n`);
+    process.stderr.write(`error: ${scrubSigningError(e)}\n`);
     return 1;
   }
   return 0;
@@ -1040,17 +1112,15 @@ async function cmdCommit(argv) {
     );
     return 1;
   }
-  const pk = process.env.PRIVATE_KEY;
-  if (!pk) {
-    process.stderr.write(
-      "error: no PRIVATE_KEY in the environment; cannot sign the commit.\n"
-    );
-    return 1;
-  }
-
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const signer = new ethers.Wallet(pk, provider);
+    // KEY HYGIENE: signer comes from the hardened env loader (trim + validate + source-only
+    // errors) — never from a raw `new ethers.Wallet(process.env.PRIVATE_KEY)`.
+    const signer = loadEnvSigner(
+      provider,
+      "error: no PRIVATE_KEY in the environment; cannot sign the commit.\n"
+    );
+    if (signer === null) return 1;
     await runCommit({
       path: opts.path,
       uri: opts.uri,
@@ -1067,7 +1137,7 @@ async function cmdCommit(argv) {
       ethers,
     });
   } catch (e) {
-    process.stderr.write(`error: ${e.message}\n`);
+    process.stderr.write(`error: ${scrubSigningError(e)}\n`);
     return 1;
   }
   return 0;
@@ -1094,17 +1164,15 @@ async function cmdReveal(argv) {
     );
     return 1;
   }
-  const pk = process.env.PRIVATE_KEY;
-  if (!pk) {
-    process.stderr.write(
-      "error: no PRIVATE_KEY in the environment; cannot sign the reveal.\n"
-    );
-    return 1;
-  }
-
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const signer = new ethers.Wallet(pk, provider);
+    // KEY HYGIENE: signer comes from the hardened env loader (trim + validate + source-only
+    // errors) — never from a raw `new ethers.Wallet(process.env.PRIVATE_KEY)`.
+    const signer = loadEnvSigner(
+      provider,
+      "error: no PRIVATE_KEY in the environment; cannot sign the reveal.\n"
+    );
+    if (signer === null) return 1;
     await runReveal({
       receiptPath: opts.receipt,
       iUnderstandMainnet: opts.iUnderstandMainnet,
@@ -1113,7 +1181,7 @@ async function cmdReveal(argv) {
       ethers,
     });
   } catch (e) {
-    process.stderr.write(`error: ${e.message}\n`);
+    process.stderr.write(`error: ${scrubSigningError(e)}\n`);
     return 1;
   }
   return 0;
@@ -1313,16 +1381,15 @@ async function cmdProve(argv) {
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     // Only the --anchor path needs to sign; verifying a proof is read-only.
+    // KEY HYGIENE: signer comes from the hardened env loader (trim + validate + source-only
+    // errors) — never from a raw `new ethers.Wallet(process.env.PRIVATE_KEY)`.
     let signer;
     if (opts.anchor) {
-      const pk = process.env.PRIVATE_KEY;
-      if (!pk) {
-        process.stderr.write(
-          "error: --anchor needs a PRIVATE_KEY in the environment to submit the root\n"
-        );
-        return 1;
-      }
-      signer = new ethers.Wallet(pk, provider);
+      signer = loadEnvSigner(
+        provider,
+        "error: --anchor needs a PRIVATE_KEY in the environment to submit the root\n"
+      );
+      if (signer === null) return 1;
     }
     result = await runProve({
       file: opts.file,
@@ -1336,7 +1403,7 @@ async function cmdProve(argv) {
       ethers,
     });
   } catch (e) {
-    process.stderr.write(`error: ${e.message}\n`);
+    process.stderr.write(`error: ${scrubSigningError(e)}\n`);
     return 1;
   }
 
@@ -2805,7 +2872,8 @@ async function cmdDatasetSign(argv) {
       json: opts.json,
     });
   } catch (e) {
-    process.stderr.write(`error: ${e.message}\n`);
+    // Signing path: scrub value-echoing ethers messages (key hygiene; see scrubSigningError).
+    process.stderr.write(`error: ${scrubSigningError(e)}\n`);
     return 1;
   }
   return 0;
@@ -3265,7 +3333,8 @@ async function cmdParcelSign(argv) {
       json: opts.json,
     });
   } catch (e) {
-    process.stderr.write(`error: ${e.message}\n`);
+    // Signing path: scrub value-echoing ethers messages (key hygiene; see scrubSigningError).
+    process.stderr.write(`error: ${scrubSigningError(e)}\n`);
     return 1;
   }
   return 0;
@@ -3924,5 +3993,7 @@ module.exports = {
   parseShowArgs,
   parseLineageArgs,
   parseReputationArgs,
+  loadEnvSigner,
+  scrubSigningError,
   usage,
 };

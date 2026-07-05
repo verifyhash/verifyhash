@@ -5,8 +5,9 @@
 //
 // WHY THIS TEST EXISTS
 //   verifyhash ships a marketplace-shaped composite Action at verifier/action/action.yml so a consumer
-//   adopts the merge gate in ONE line — `uses: <owner>/<repo>/verifier/action@<ref>` with `vendor:` and
-//   (`manifest:` | `artifacts:`) inputs. An Action whose gate DRIFTS from the verifier's real behaviour
+//   adopts the merge gate in ONE line — `uses: verifyhash/verifyhash/verifier/action@<full-sha>` (pinned,
+//   re-pin to a SHA you trust) with `vendor:` and (`manifest:` | `artifacts:`) inputs. An Action whose
+//   gate DRIFTS from the verifier's real behaviour
 //   is worse than none: it gives a partner false confidence. So this suite does NOT re-implement the
 //   gate. It:
 //     * PARSES action.yml and asserts it is a VALID composite action (runs.using: "composite", declared
@@ -529,7 +530,9 @@ describe("verify-vh composite GitHub Action (T-55.1)", function () {
     it("ships and shows the `uses:` adoption line + names the no-drift source of truth", function () {
       expect(fs.existsSync(ACTION_README)).to.equal(true);
       const md = fs.readFileSync(ACTION_README, "utf8");
-      expect(md).to.match(/uses:\s*<owner>\/<repo>\/verifier\/action@<ref>/);
+      // T-73.1: the adoption line is PINNED to the real slug + a FULL 40-hex commit SHA — the old
+      // `<owner>/<repo>@<ref>` placeholder (or a mutable/short ref) must never come back.
+      expect(md).to.match(/uses:\s*verifyhash\/verifyhash\/verifier\/action@[0-9a-f]{40}/);
       expect(md).to.contain("vendor:");
       expect(md).to.match(/manifest:|artifacts:/);
       // It must point at the single source of truth so the docs cannot silently diverge from the gate.

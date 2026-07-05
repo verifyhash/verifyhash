@@ -8,7 +8,7 @@ Pick the row that matches where you are, copy the one line, and run it. The **fr
 |---|---|---|
 | **No Node/terminal at all? Verify in your browser** (the 60-second challenge built in) | open [`verifier/dist/verify-vh-standalone.html`](../verifier/dist/verify-vh-standalone.html) | free |
 | **See it work in 5 seconds** (no clone, no flags, no key) | `npx --yes verify-vh demo` | free |
-| **Gate your CI on tampered/forged seals** (GitHub Actions) | `uses: <owner>/<repo>/verifier/action@<ref>` | free |
+| **Gate your CI on tampered/forged seals** (GitHub Actions) | `uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a` | free |
 | **Issue signed, customer-verifiable seals of your own** (the paid producer surface) | `vh evidence seal <dir> --sign --license <f> --vendor 0xYOU` | **paid** |
 
 The on-ramp is **deliberately one direction**: the free rows convince you the verdict is real, then the
@@ -69,7 +69,7 @@ see [`verifier/README.md`](../verifier/README.md).
 
 ---
 
-## 2. Gate your CI in one line — `uses: <owner>/<repo>/verifier/action@<ref>`
+## 2. Gate your CI in one line — the pinned `uses:` gate
 
 Drop this workflow at `.github/workflows/verify-vh.yml` in the repo that **receives** sealed verifyhash
 artifacts. Every push / pull request then fails the build the instant any artifact is tampered, forged, or
@@ -84,14 +84,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: <owner>/<repo>/verifier/action@<ref>
+      - uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a
         with:
           vendor: "0xYOUR_PRODUCER_SIGNER_ADDRESS"   # the key that must have signed (omit to check tamper only)
           manifest: "release.manifest"               # OR set `artifacts:` instead
 ```
 
-Replace `<owner>/<repo>` with this repository's slug and `<ref>` with a tag or commit SHA you trust (pin a
-SHA for supply-chain safety). The composite action installs **only** the standalone verifier (`js-sha3`) and
+The `uses:` line is pre-pinned to this repository's real slug (`verifyhash/verifyhash`) and a full 40-hex
+commit SHA reachable from `main`, so it works exactly as pasted. Supply-chain hygiene: **re-pin `@<sha>` to
+a commit SHA you have audited and trust** — keep the full-SHA form (a mutable ref like `@main` can change
+under you). The composite action installs **only** the standalone verifier (`js-sha3`) and
 resolves its bundled `verifier/` tree via `${{ github.action_path }}` at run time — so you do **not** vendor
 `verifier/` into your repo. The action lives at [`verifier/action/`](../verifier/action/action.yml); its full
 input table and exit-code contract are in [`verifier/action/README.md`](../verifier/action/README.md).

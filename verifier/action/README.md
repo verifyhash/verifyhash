@@ -28,14 +28,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: <owner>/<repo>/verifier/action@<ref>
+      - uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a
         with:
           vendor: "0xYOUR_PRODUCER_SIGNER_ADDRESS"   # the key that must have signed (omit to check tamper only)
           manifest: "release.manifest"               # OR set `artifacts:` instead
 ```
 
-> Replace `<owner>/<repo>` with this repository's slug and `<ref>` with a tag or commit SHA you trust
-> (pin a SHA for supply-chain safety). GitHub fetches this action's own tree when you reference it with
+> The `uses:` line is pre-pinned to this repository's real slug (`verifyhash/verifyhash`) and a full
+> 40-hex commit SHA reachable from `main` — it works exactly as pasted. Supply-chain hygiene: re-pin
+> `@<sha>` to a commit SHA **you** have audited and trust (keep the full-SHA form; a mutable ref like
+> `@main` can change under you). GitHub fetches this action's own tree when you reference it with
 > `uses:`, and the action resolves the bundled `verifier/` via `${{ github.action_path }}` at run time
 > (it does NOT run from your `$GITHUB_WORKSPACE`). So you do **not** need to vendor `verifier/` into your
 > repo — your `actions/checkout` brings only your artifacts, not the verifier.

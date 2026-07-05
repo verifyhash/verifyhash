@@ -5,13 +5,15 @@
 // WHY THIS TEST EXISTS
 //   docs/ADOPT.md is the FIRST-CLASS, copy-paste "adopt in one line" path: a cold prospect runs ONE
 //   command and is either watching the verifier work (`npx --yes verify-vh demo`) or gating their CI
-//   (`uses: <owner>/<repo>/verifier/action@<ref>`). A copy-paste line that has rotted away from the real
-//   tool is worse than no line — it sends the prospect a command that no longer works. So this suite does
-//   NOT trust the prose; it PROVES, against the REAL sources, that:
+//   (`uses: verifyhash/verifyhash/verifier/action@<full-sha>`). A copy-paste line that has rotted away
+//   from the real tool is worse than no line — it sends the prospect a command that no longer works. So
+//   this suite does NOT trust the prose; it PROVES, against the REAL sources, that:
 //     * ADOPT.md contains the LITERAL `npx … demo` line, and that line names the verifier package's REAL
 //       bin (`verify-vh`) and a REAL subcommand (`demo`) of verifier/verify-vh.js — not a stale name;
-//     * ADOPT.md contains the LITERAL `uses: …/verifier/action@<ref>` line, and the path it embeds is the
-//       ACTUAL on-disk location of the composite action.yml (verifier/action/) — not a stale path;
+//     * every adoption doc pins the `uses:` line to the REAL repository slug + a FULL 40-hex commit SHA
+//       reachable from origin/main (T-73.1) — a drift back to the old `<owner>/<repo>@<ref>` placeholder,
+//       a mutable `@main`, or a short ref FAILS — and the path it embeds is the ACTUAL on-disk location
+//       of the composite action.yml (verifier/action/), not a stale path;
 //     * the honest-boundary sentence ("tamper-evidence + signer-pin", NOT a trusted "sealed at T") is
 //       present, so the funnel never over-promises;
 //     * README.md links to docs/ADOPT.md (the funnel is discoverable from the front door);
@@ -22,11 +24,13 @@
 const { expect } = require("chai");
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const REPO = path.resolve(__dirname, "..");
 const ADOPT = path.join(REPO, "docs", "ADOPT.md");
 const PUBLIC_ADOPT = path.join(REPO, "public", "docs", "ADOPT.md");
 const README = path.join(REPO, "README.md");
+const ACTION_README = path.join(REPO, "verifier", "action", "README.md");
 const ACTION_YML = path.join(REPO, "verifier", "action", "action.yml");
 const VERIFY_VH = path.join(REPO, "verifier", "verify-vh.js");
 const VERIFIER_PKG = path.join(REPO, "verifier", "package.json");
@@ -59,7 +63,32 @@ const actionDirRel = path
   .join("/");
 
 const EXPECTED_NPX_LINE = `npx --yes ${verifierBin} demo`;
-const EXPECTED_USES_LINE = `uses: <owner>/<repo>/${actionDirRel}@<ref>`;
+
+// T-73.1: the copy-paste `uses:` line must be PINNED to this repository's REAL slug plus a FULL 40-hex
+// commit SHA — never the old `<owner>/<repo>@<ref>` placeholder, never a mutable `@main`, never a short
+// ref. A cold prospect must be able to paste the line UNEDITED, and the docs must tell adopters to
+// re-pin to a SHA they trust. (The SHA itself is not hardcoded here — re-pinning is legitimate — but
+// its SHAPE, the slug, cross-file agreement, and origin/main ancestry are all pinned below.)
+const REAL_SLUG = "verifyhash/verifyhash";
+const FULL_SHA_RE = /^[0-9a-f]{40}$/;
+const EXPECTED_USES_RE = new RegExp(`uses: ${REAL_SLUG}/${actionDirRel}@[0-9a-f]{40}`);
+// Every `<slug>/verifier/action@<ref>` occurrence, whatever the slug/ref shape — placeholders, branch
+// names, and short refs all MATCH here and are then rejected by the shape assertions.
+const USES_OCCURRENCE_RE = /([A-Za-z0-9._<>-]+\/[A-Za-z0-9._<>-]+)\/verifier\/action@([A-Za-z0-9._<>-]+)/g;
+
+// The three committed adoption docs + the public web mirror + the composite action's OWN metadata that
+// must all carry the pinned line. action.yml's `description:` is the GitHub Marketplace-facing summary —
+// the first surface a stranger meets — so it is held to the SAME no-placeholder, real-slug + full-SHA
+// pin as the prose docs (a broken `uses:` line there is the same front-door failure, relocated).
+// NOTE: the re-pin-note sweep below indexes PINNED_DOCS[0] and PINNED_DOCS[2] by position, so any new
+// entry must be APPENDED (never inserted before verifier/action/README.md) to keep those indices stable.
+const PINNED_DOCS = [
+  ["docs/ADOPT.md", ADOPT],
+  ["README.md", README],
+  ["verifier/action/README.md", ACTION_README],
+  ["public/docs/ADOPT.md", PUBLIC_ADOPT],
+  ["verifier/action/action.yml", ACTION_YML],
+];
 
 // The PAID producer surface the free→paid bridge points at (T-55.3 rework). These literal copy-paste
 // lines must name verbs the CLI REALLY exposes and a plan id the bundled catalog REALLY contains — so a
@@ -92,22 +121,83 @@ describe("self-serve adoption funnel docs/ADOPT.md (T-55.3)", function () {
     expect(cli, "verify-vh.js must implement a `demo` subcommand").to.match(/["']demo["']/);
   });
 
-  it("contains the LITERAL `uses: …/verifier/action@<ref>` line, and the path matches the real action.yml location", function () {
+  it("contains the PINNED `uses: verifyhash/verifyhash/verifier/action@<full-sha>` line, and the path matches the real action.yml location", function () {
     const md = fs.readFileSync(ADOPT, "utf8");
 
     // 1. The composite action actually exists on disk where the line claims.
     expect(fs.existsSync(ACTION_YML), "verifier/action/action.yml must be shipped").to.equal(true);
     expect(actionDirRel, "the action dir must be verifier/action").to.equal("verifier/action");
 
-    // 2. The literal one-line `uses:` adoption line is present and embeds that exact path.
-    expect(md, `ADOPT.md must contain the literal "${EXPECTED_USES_LINE}"`).to.contain(EXPECTED_USES_LINE);
-
-    // 3. NO-DRIFT cross-check: the action.yml itself advertises the SAME adoption path in its description,
-    //    so the doc, the action, and the on-disk location all agree on one string.
-    const yml = fs.readFileSync(ACTION_YML, "utf8");
-    expect(yml, "action.yml should advertise the same /verifier/action@<ref> adoption path").to.match(
-      /<owner>\/<repo>\/verifier\/action@<ref>/
+    // 2. The one-line `uses:` adoption line is present, embeds that exact path, and is pinned to the
+    //    REAL slug + a FULL 40-hex commit SHA (a stranger pastes it unedited — no placeholder to edit).
+    expect(md, `ADOPT.md must contain the pinned "uses: ${REAL_SLUG}/${actionDirRel}@<40-hex sha>" line`).to.match(
+      EXPECTED_USES_RE
     );
+
+    // 3. NO-DRIFT cross-check: the action.yml itself advertises the SAME pinned adoption line in its
+    //    Marketplace-facing `description:` — the REAL slug + a FULL 40-hex SHA at the real action path,
+    //    with NO `<owner>/<repo>` placeholder. This is the most-public front door; a stranger who lands
+    //    on the Marketplace listing before the README must still get a `uses:` line that resolves as
+    //    pasted. (A loosened substring match here previously let the placeholder persist unguarded.)
+    const yml = fs.readFileSync(ACTION_YML, "utf8");
+    expect(yml, "action.yml must not carry the <owner>/<repo> placeholder on the Marketplace surface").to.not.contain(
+      "<owner>/<repo>"
+    );
+    expect(
+      yml,
+      `action.yml's description must pin "uses: ${REAL_SLUG}/${actionDirRel}@<40-hex sha>" (not the <owner>/<repo> placeholder)`
+    ).to.match(EXPECTED_USES_RE);
+  });
+
+  it("pins the REAL slug + a FULL 40-hex commit SHA in EVERY adoption doc (placeholder / @main / short-ref drift FAILS)", function () {
+    const refs = new Set();
+    for (const [name, file] of PINNED_DOCS) {
+      const md = fs.readFileSync(file, "utf8");
+
+      // 1. The old copy-paste placeholder may never come back.
+      expect(md, `${name} must not contain the <owner>/<repo> placeholder`).to.not.contain("<owner>/<repo>");
+
+      // 2. Every `…/verifier/action@<ref>` occurrence uses the REAL slug and a FULL 40-hex SHA — so a
+      //    drift back to a placeholder slug, a mutable `@main`, or a short ref fails by shape.
+      const occurrences = [...md.matchAll(USES_OCCURRENCE_RE)];
+      expect(occurrences.length, `${name} must carry at least one …/verifier/action@<ref> adoption line`).to.be.greaterThan(0);
+      for (const [, slug, ref] of occurrences) {
+        expect(slug, `${name}: the uses: slug must be the real repository slug`).to.equal(REAL_SLUG);
+        expect(
+          FULL_SHA_RE.test(ref),
+          `${name}: the uses: ref must be a FULL 40-hex commit SHA (got "@${ref}" — no <ref> placeholder, no @main, no short ref)`
+        ).to.equal(true);
+        refs.add(ref);
+      }
+    }
+
+    // 3. All docs pin the SAME SHA (a partial re-pin is drift too).
+    expect([...refs].length, `all adoption docs must pin ONE identical SHA (found: ${[...refs].join(", ")})`).to.equal(1);
+
+    // 4. The docs must tell adopters to re-pin to a SHA they trust (the supply-chain honesty note).
+    for (const [name, file] of [PINNED_DOCS[0], PINNED_DOCS[2]]) {
+      expect(fs.readFileSync(file, "utf8"), `${name} must tell adopters to re-pin to a SHA they trust`).to.match(/re-pin/i);
+    }
+  });
+
+  it("the pinned SHA is reachable from origin/main (offline git ancestry; skips only when origin/main is absent)", function () {
+    const md = fs.readFileSync(ADOPT, "utf8");
+    const occurrence = [...md.matchAll(USES_OCCURRENCE_RE)][0];
+    expect(occurrence, "ADOPT.md must carry a pinned uses: line").to.not.equal(undefined);
+    const sha = occurrence[2];
+
+    // Offline, read-only git: no fetch, no network — origin/main is the local remote-tracking ref.
+    const probe = spawnSync("git", ["rev-parse", "--verify", "--quiet", "origin/main"], { cwd: REPO });
+    if (probe.error || probe.status !== 0) {
+      // Not a clone with origin/main (e.g. an exported tarball) — the shape/slug pins above still hold.
+      this.skip();
+      return;
+    }
+    const ancestry = spawnSync("git", ["merge-base", "--is-ancestor", sha, "origin/main"], { cwd: REPO });
+    expect(
+      ancestry.status,
+      `the pinned SHA ${sha} must be reachable from origin/main (re-pin the docs to a commit that is)`
+    ).to.equal(0);
   });
 
   it("states the honest boundary (tamper-evidence + signer-pin, NOT a trusted timestamp)", function () {
@@ -192,7 +282,7 @@ describe("self-serve adoption funnel docs/ADOPT.md (T-55.3)", function () {
   it("public/docs/ADOPT.md carries the SAME literal adoption lines (the mirror cannot diverge)", function () {
     const md = fs.readFileSync(PUBLIC_ADOPT, "utf8");
     expect(md, "public mirror must contain the npx line").to.contain(EXPECTED_NPX_LINE);
-    expect(md, "public mirror must contain the uses: line").to.contain(EXPECTED_USES_LINE);
+    expect(md, "public mirror must contain the pinned uses: line").to.match(EXPECTED_USES_RE);
     // The revenue-closing lines must mirror too — the paid path is the highest-value line in the funnel,
     // so the web copy can never silently drop it.
     expect(md, "public mirror must contain the paid seal line").to.contain(EXPECTED_PAID_SEAL_LINE);

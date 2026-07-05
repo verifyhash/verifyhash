@@ -20,7 +20,9 @@ out-of-band; `vh` reads/writes against it with `--contract 0x77d8eF881D5aeEda647
 
 > **Adopt in one line.** Want to *receive* and *check* sealed artifacts without an account or our toolchain?
 > The self-serve on-ramp is [`docs/ADOPT.md`](docs/ADOPT.md): `npx --yes verify-vh demo` for a 5-second
-> proof, or a one-line GitHub Action (`uses: <owner>/<repo>/verifier/action@<ref>`) to gate your CI — and
+> proof, or a one-line GitHub Action
+> (`uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a` — pinned to a
+> real commit on `main`; re-pin to a full commit SHA **you** trust) to gate your CI — and
 > the free→paid bridge to issuing **your own** signed, customer-verifiable seals (the paid producer surface).
 
 `verifyhash` ships the `vh` command. You do **not** need to clone the repo to use it.

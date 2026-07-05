@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1025271,
+  "totalBytes": 1070937,
   "files": [
     {
       "path": "LICENSE",
@@ -20,7 +20,7 @@
       "path": "build-provenance.json",
       "source": "verifier/dist/BUILD-PROVENANCE.json",
       "bytes": 9676,
-      "sha256": "e1778782c075fab41d75d191a14c329b25ec885016e6c662f2cf8b8c6f13e96e"
+      "sha256": "53dc5e538f62bb1fe12bf69a98b187980817d401c918eca9d5186c3fbdb6a525"
     },
     {
       "path": "docs/ADOPT.md",
@@ -157,20 +157,20 @@
     {
       "path": "docs/verifier-README.md",
       "source": "verifier/README.md",
-      "bytes": 32520,
-      "sha256": "5560c968e74b09cefbacf13554f9681b6d7ad7044134a323328cb559b560692e"
+      "bytes": 34215,
+      "sha256": "3753dc75b22e6ab43a4217f1b413b9b1053883fc523a6fed540280111c0ab8d5"
     },
     {
       "path": "index.html",
       "source": "site/index.html",
       "bytes": 33007,
-      "sha256": "b323fae2a92c1c8981d0b4ae86ceac1197e4bc0c640d1d973f490b0c18f668e0"
+      "sha256": "b88fb154e9f7e1014ad412f239c24918957da93f778e046ac056071ad51d9ab2"
     },
     {
       "path": "llms.txt",
       "source": "site/llms.txt",
       "bytes": 2901,
-      "sha256": "88098147a9122a9ec827bccbe502826ed1fd45d35d553c1c1d155ca2acb6d828"
+      "sha256": "e535434f0dc0f9bc661c5a81a6d78fa1e4d0e55a0d790ce66744df9ec5a3606a"
     },
     {
       "path": "seal-vh-standalone.js",
@@ -199,14 +199,14 @@
     {
       "path": "verify-vh-standalone.js",
       "source": "verifier/dist/verify-vh-standalone.js",
-      "bytes": 199362,
-      "sha256": "371b904b0275ed85606510472570c49a99fc70a5f4e258e7d8fd0e52a26c30bd"
+      "bytes": 243333,
+      "sha256": "c73f7953ca44a8fd568bece449dde0f69f2013416a11682036bbdb1bb008d386"
     },
     {
       "path": "verify-vh-standalone.js.sha256",
       "source": "verifier/dist/verify-vh-standalone.js.sha256",
       "bytes": 90,
-      "sha256": "6b39d72413222526e9ec06fb191c2a83fb9232ae9f9f114ea0d1ec99772348fb"
+      "sha256": "20b5ba3e4101eed06e2816f88cdd7f9dd9efeb5fbdaabe0b146ad17606867eda"
     }
   ]
 }

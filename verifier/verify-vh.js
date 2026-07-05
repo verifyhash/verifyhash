@@ -39,6 +39,10 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+// Node CORE sha256 (no npm dependency — the same zero-install class as fs/path; the bundle already
+// allows `crypto` for its embedded --self-attest). Used ONLY by the T-70.4 anchored-receipt section
+// below (the dataset/parcel attestation digest legs), which lives OUTSIDE the pure engine block.
+const nodeCrypto = require("crypto");
 
 const merkle = require("./lib/merkle");
 const canonical = require("./lib/canonical");
@@ -1335,6 +1339,868 @@ function verifyArtifactFromBytes(params) {
 
 // ============================= END VERIFY-VH PURE ENGINE (T-66.1) =============================
 
+// ===================================================================================================
+// ANCHORED-RECEIPT OFFLINE BINDING VERIFY (T-70.4) — `verify-vh <receipt> --anchored-artifact <seal>`.
+//
+// WHY THIS EXISTS
+//   `vh anchor-artifact` (EPIC-70) emits a canonical `vh-anchored-receipt@1` container binding ONE
+//   sealed artifact's digest to an on-chain registry record. Its OFFLINE binding leg is pure hashing —
+//   but until T-70.4 it ran ONLY through the producer `cli/` stack (which loads `ethers` at module
+//   load), so the family's zero-install "verify without the producer's stack" promise did not reach
+//   the receipt. This section closes that gap: it is an INDEPENDENT, dependency-free port of the
+//   producer core `cli/core/anchor-binding.js` — the receipt container validation, the CLOSED
+//   six-kind digest table, and the binding verdict — written entirely against the verifier's OWN
+//   primitives (lib/merkle keccak, lib/canonical, Node-core sha256). NO `ethers`, NO `cli/` import.
+//
+// WHAT IT CHECKS (and what it does NOT)
+//   OFFLINE binding leg ONLY: the receipt is validated STRICTLY (unknown/missing fields, a drifted
+//   trust note, malformed chain facts — each a named `bad-receipt`), the artifact's ONE canonical
+//   digest is RECOMPUTED through the SAME closed kind table the producer uses (each leg re-validating
+//   the artifact through a strict port of its shipped validator first), and the full
+//   { kind, digest, how } triple must match — `kind-mismatch` / `digest-mismatch` / `how-mismatch`
+//   are the specific named rejects, exactly the producer's verdict vocabulary. The receipt's `chain`
+//   facts remain the ANCHORER'S CLAIM: re-checking them against the chain needs a chain endpoint by
+//   definition and stays with the producer cli (`vh verify-anchored --rpc --contract`).
+//
+// PARITY DISCIPLINE (pinned by test/verifier.standalone.test.js)
+//   Every wire-format constant here (the receipt kind, the verbatim ANCHOR_TRUST_NOTE, the reason
+//   codes, the closed kind list, the per-kind derivation-rule `how` strings) MUST equal the producer
+//   core's byte-for-byte, and the verdicts on identical inputs MUST match the producer's — the test
+//   asserts both mechanically, so neither side can drift alone. TOTAL: hostile input yields a named
+//   { ok:false, reason, field?, detail? }, never a throw.
+// ===================================================================================================
+
+// The container kind + the standing trust note, VERBATIM the producer's (cli/core/anchor-binding.js).
+const ANCHORED_RECEIPT_KIND = "vh-anchored-receipt@1";
+
+const ANCHOR_TRUST_NOTE =
+  "This anchored receipt binds the artifact digest above to an on-chain registry record. A receipt " +
+  "from a LOCAL dev chain proves MECHANISM only and is worth NOTHING publicly until a human deploys " +
+  "the registry (STRATEGY.md P-2). On a public chain it proves ONLY that an on-chain record binds " +
+  "this exact digest at a block whose timestamp BOUNDS existence — as trustworthy as the chain + " +
+  "YOUR pinned contract address — NOT the artifact's truth, NOT faithful recording, NOT attribution " +
+  "beyond the anchoring key. The `chain` facts in this receipt are the anchorer's claim until " +
+  "re-checked against the chain (`vh verify-anchored --rpc`).";
+
+// The stable, named reason codes — the producer's verdict contract, byte-for-byte.
+const ANCHOR_REASONS = Object.freeze({
+  NOT_AN_OBJECT: "not-an-object",
+  UNKNOWN_KIND: "unknown-kind",
+  EVIDENCE_SEAL_INVALID: "evidence-seal-invalid",
+  AGENT_PACKET_INVALID: "agent-packet-invalid",
+  JOURNAL_TREE_HEAD_INVALID: "journal-tree-head-invalid",
+  TRUSTLEDGER_SEAL_INVALID: "trustledger-seal-invalid",
+  DATASET_ATTESTATION_INVALID: "dataset-attestation-invalid",
+  PARCEL_ATTESTATION_INVALID: "parcel-attestation-invalid",
+  BAD_ARGS: "bad-args",
+  BAD_DIGEST: "bad-digest",
+  BAD_HOW: "bad-how",
+  BAD_LABEL: "bad-label",
+  BAD_CHAIN: "bad-chain",
+  BAD_RECEIPT: "bad-receipt",
+  DIGEST_MISMATCH: "digest-mismatch",
+  KIND_MISMATCH: "kind-mismatch",
+  HOW_MISMATCH: "how-mismatch",
+});
+
+// The two closed-table kinds this verifier did not already name (the other four reuse KINDS above).
+const ANCHOR_JOURNAL_TREE_HEAD_KIND = "vh.journal-tree-head";
+const ANCHOR_PARCEL_ATTESTATION_KIND = "verifyhash.parcel-attestation";
+
+// The CLOSED, frozen kind table — same six kinds, same order as the producer core.
+const ANCHOR_ARTIFACT_KINDS = Object.freeze([
+  KINDS.EVIDENCE_SEAL, // "vh.evidence-seal"
+  KINDS.AGENT_PACKET, // "vh.agent-session-packet"
+  ANCHOR_JOURNAL_TREE_HEAD_KIND, // "vh.journal-tree-head"
+  KINDS.TRUST_SEAL, // "trustledger.reconcile-seal"
+  KINDS.DATASET_ATTESTATION, // "verifyhash.dataset-attestation"
+  ANCHOR_PARCEL_ATTESTATION_KIND, // "verifyhash.parcel-attestation"
+]);
+
+// Canonical-case wire shapes (the receipt is canonical LOWERCASE; artifacts may carry mixed-case hex
+// exactly where the producer validators accept it).
+const ANCHOR_HEX32_LC_RE = /^0x[0-9a-f]{64}$/;
+const ANCHOR_ADDRESS_LC_RE = /^0x[0-9a-f]{40}$/;
+const ANCHOR_CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/;
+const ANCHOR_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function anchorIsPlainObject(v) {
+  return v != null && typeof v === "object" && !Array.isArray(v);
+}
+
+// The per-kind derivation rules (`how`) — VERBATIM the producer's HOW_FIXED table. These are WIRE
+// FORMAT (bound into every receipt), so they name the producer's files even though THIS verifier
+// re-derives the digest with its own independent code: the rule describes the derivation, and the
+// parity test pins these strings against the producer core byte-for-byte.
+const ANCHOR_HOW_FIXED = Object.freeze({
+  [KINDS.EVIDENCE_SEAL]:
+    "digest = the evidence packet's `root` (sorted-pair Merkle root over its path-bound file leaves), " +
+    "re-derived by cli/evidence.js readSeal before extraction",
+  [KINDS.AGENT_PACKET]:
+    "digest = the agent-session packet's verified head `root` (RFC-6962 ordered Merkle root over the " +
+    "event leaves), re-derived by cli/agent.js verifyPacket before extraction",
+  [KINDS.TRUST_SEAL]:
+    "digest = the TrustLedger sealfile's `root` (Merkle root over its committed input/output leaves + " +
+    "verdict header), re-derived by trustledger/seal.js readSeal before extraction",
+  [KINDS.DATASET_ATTESTATION]:
+    "digest = 0x + sha256 over the canonical UNSIGNED dataset-attestation bytes, exactly as " +
+    "`vh dataset timestamp-request` computes it (cli/core/timestamp.js sha256Hex)",
+  [ANCHOR_PARCEL_ATTESTATION_KIND]:
+    "digest = 0x + sha256 over the canonical UNSIGNED parcel-attestation bytes, exactly as " +
+    "`vh parcel timestamp-request` computes it (cli/core/timestamp.js sha256Hex)",
+});
+
+function anchorJournalHow(size) {
+  return (
+    `digest = the journal tree head \`root\` (RFC-6962 ordered Merkle root, cli/journal-log.js ` +
+    `treeHead) over ${size} entries; the head size is bound into this derivation rule`
+  );
+}
+
+const ANCHOR_JOURNAL_HOW_RE =
+  /^digest = the journal tree head `root` \(RFC-6962 ordered Merkle root, cli\/journal-log\.js treeHead\) over (0|[1-9][0-9]*) entries; the head size is bound into this derivation rule$/;
+
+function anchorHowValidFor(kind, how) {
+  if (typeof how !== "string") return false;
+  if (kind === ANCHOR_JOURNAL_TREE_HEAD_KIND) {
+    const m = ANCHOR_JOURNAL_HOW_RE.exec(how);
+    return m !== null && Number.isSafeInteger(Number(m[1]));
+  }
+  return how === ANCHOR_HOW_FIXED[kind];
+}
+
+function anchorOk(digest, kind, how) {
+  return { ok: true, digest, kind, how };
+}
+function anchorNo(reason, detail) {
+  return detail === undefined ? { ok: false, reason } : { ok: false, reason, detail };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The per-kind STRICT validators + digest extraction — independent ports of the artifacts' shipped
+// validators (the messages mirror the producers' so the named verdict a counterparty reads is the
+// same either way). Each leg is TOTAL: a defect is a named reject, never a throw out of this section.
+// ---------------------------------------------------------------------------------------------------
+
+// vh.evidence-seal — a strict port of cli/core/packetseal.js validateSeal under the evidence config
+// (kind/schemaVersion/note pinned, per-entry leaf self-consistency, NO header, and the LOAD-BEARING
+// root re-derivation from the seal's OWN (relPath, contentHash) leaves via the verifier's merkle lib).
+const ANCHOR_EVIDENCE_TRUST_NOTE =
+  "This evidence seal is TAMPER-EVIDENT + OFFLINE-RECOMPUTABLE, NOT a trusted timestamp. Its Merkle " +
+  "`root` commits to the full set of (relPath, content) pairs in the directory: any edit, rename, add, " +
+  "or remove changes the root, and verify RE-DERIVES the root from the bytes you hold and LOCALIZES the " +
+  "change to the exact file (MATCH / CHANGED / MISSING / UNEXPECTED). It does NOT prove WHEN the sealing " +
+  'happened ("sealed at T" rides the human-owned signing/timestamp trust-root, STRATEGY.md P-3) and it ' +
+  "is NOT a legal opinion. The packet is an UNTRUSTED transport container: verify never trusts the " +
+  "packet's own stored hashes.";
+const ANCHOR_EVIDENCE_SCHEMA_VERSIONS = Object.freeze([1]);
+
+// Shared strict per-entry + root checks for the two packetseal-family legs. `label` carries the
+// product wording; `headerLeaf` (when non-null) is folded into the root as the reserved header entry.
+function anchorCheckSealEntries(entries, label, where, seenRelPath, flat, headerRelPath) {
+  entries.forEach((entry, i) => {
+    if (!anchorIsPlainObject(entry)) {
+      throw new Error(`${label} ${where}[${i}] must be an object`);
+    }
+    if (typeof entry.relPath !== "string" || entry.relPath.length === 0) {
+      throw new Error(`${label} ${where}[${i}].relPath must be a non-empty string`);
+    }
+    if (headerRelPath !== null && entry.relPath === headerRelPath) {
+      throw new Error(
+        `${label} ${where}[${i}].relPath ${JSON.stringify(entry.relPath)} is reserved for the seal header`
+      );
+    }
+    if (seenRelPath.has(entry.relPath)) {
+      throw new Error(`${label} has a duplicate relPath across the file set: ${JSON.stringify(entry.relPath)}`);
+    }
+    seenRelPath.add(entry.relPath);
+    for (const f of ["contentHash", "leaf"]) {
+      if (typeof entry[f] !== "string" || !merkle.HEX32_RE.test(entry[f])) {
+        throw new Error(
+          `${label} ${where}[${i}].${f} must be a 0x-prefixed 32-byte hex string, got: ${String(entry[f])}`
+        );
+      }
+    }
+    const expectedLeaf = merkle.pathLeaf(entry.relPath, entry.contentHash);
+    if (entry.leaf.toLowerCase() !== expectedLeaf.toLowerCase()) {
+      throw new Error(
+        `${label} ${where}[${i}].leaf is inconsistent with its relPath+contentHash ` +
+          `(expected ${expectedLeaf}, got ${entry.leaf})`
+      );
+    }
+    flat.push({ relPath: entry.relPath, contentHash: entry.contentHash });
+  });
+}
+
+function anchorValidateEvidenceSeal(obj) {
+  const label = "evidence seal";
+  if (!anchorIsPlainObject(obj)) throw new Error(`${label} must be a JSON object`);
+  if (obj.kind !== KINDS.EVIDENCE_SEAL) {
+    throw new Error(`not a ${label} (kind: ${JSON.stringify(obj.kind)}; expected ${JSON.stringify(KINDS.EVIDENCE_SEAL)})`);
+  }
+  if (!ANCHOR_EVIDENCE_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
+    throw new Error(
+      `unsupported ${label} schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
+        `(this build understands ${JSON.stringify(ANCHOR_EVIDENCE_SCHEMA_VERSIONS)})`
+    );
+  }
+  if (obj.note !== ANCHOR_EVIDENCE_TRUST_NOTE) {
+    throw new Error(`${label} \`note\` must be the standing trust note (caveat must not drift)`);
+  }
+  if (typeof obj.root !== "string" || !merkle.HEX32_RE.test(obj.root)) {
+    throw new Error(`${label} root must be a 0x-prefixed 32-byte hex string, got: ${String(obj.root)}`);
+  }
+  if (!Array.isArray(obj.files) || obj.files.length === 0) {
+    throw new Error(`${label} \`files\` must be a non-empty array`);
+  }
+  const flat = [];
+  anchorCheckSealEntries(obj.files, label, "files", new Set(), flat, null);
+  if (obj.fileCount !== undefined && obj.fileCount !== obj.files.length) {
+    throw new Error(`${label} fileCount (${String(obj.fileCount)}) does not match the files length (${obj.files.length})`);
+  }
+  if (obj.header !== undefined) {
+    throw new Error(`${label} carries a header but its config declares none`);
+  }
+  const rederived = merkle.rootFromFlat(flat);
+  if (rederived.toLowerCase() !== obj.root.toLowerCase()) {
+    throw new Error(
+      `${label} root does not re-derive from its listed entries ` +
+        `(expected ${rederived}, got ${obj.root}) — the seal is internally inconsistent ` +
+        "(a file was edited without updating the root)"
+    );
+  }
+  return obj;
+}
+
+function anchorEvidenceDigest(artifact) {
+  try {
+    anchorValidateEvidenceSeal(artifact);
+  } catch (e) {
+    return anchorNo(ANCHOR_REASONS.EVIDENCE_SEAL_INVALID, e && e.message ? e.message : String(e));
+  }
+  return anchorOk(artifact.root.toLowerCase(), KINDS.EVIDENCE_SEAL, ANCHOR_HOW_FIXED[KINDS.EVIDENCE_SEAL]);
+}
+
+// vh.agent-session-packet — REUSES this verifier's OWN independent agent engine verbatim: the strict
+// packet-structure validation + the authoritative per-event/leaf/root/counts recompute, PLUS (when a
+// headAttestation is present) the head-binding and signature-genuineness checks — the exact facts the
+// producer's `agent.verifyPacket` gates the digest on (a vendor pin is not part of digest extraction).
+function anchorAgentDigest(artifact) {
+  let structure;
+  try {
+    structure = validateAgentPacketStructure(artifact);
+  } catch (e) {
+    return anchorNo(ANCHOR_REASONS.AGENT_PACKET_INVALID, e && e.message ? e.message : String(e));
+  }
+  const fileResult = verifyAgentSeal(artifact);
+  const agent = fileResult.agent;
+  const seqOf = () => (agent.seq !== null && agent.seq !== undefined ? ` at seq ${agent.seq}` : "");
+  if (!fileResult.filesOk) {
+    const reason = agent.reason || fileResult.reasonKind || "REJECTED";
+    return anchorNo(ANCHOR_REASONS.AGENT_PACKET_INVALID, `packet verify REJECTED: ${reason}${seqOf()}`);
+  }
+  if (artifact.headAttestation !== undefined) {
+    const embedded = structure.signedHead.embeddedHead;
+    const bound =
+      embedded.size === agent.recomputedHead.size && embedded.root === agent.recomputedHead.root;
+    if (!bound) {
+      return anchorNo(ANCHOR_REASONS.AGENT_PACKET_INVALID, "packet verify REJECTED: HEAD_NOT_BOUND");
+    }
+    const claimed = artifact.headAttestation.signature.signer; // lowercase, structurally enforced
+    const recovered = tryRecover(artifact.headAttestation.attestation, artifact.headAttestation.signature.signature);
+    if (recovered == null || recovered !== claimed) {
+      return anchorNo(ANCHOR_REASONS.AGENT_PACKET_INVALID, "packet verify REJECTED: SIGNATURE_FORGED");
+    }
+  }
+  return anchorOk(fileResult.recomputedRoot, KINDS.AGENT_PACKET, ANCHOR_HOW_FIXED[KINDS.AGENT_PACKET]);
+}
+
+// vh.journal-tree-head — the bare { size, root } commitment or its kind-tagged twin. The empty-root
+// constant is re-derived HERE from the family's domain string with the verifier's own keccak (equal
+// to cli/journal-log.js EMPTY_ROOT — pinned by the parity test).
+const ANCHOR_JOURNAL_EMPTY_ROOT = merkle.hashBytes(Buffer.from(AGENT_EMPTY_ROOT_DOMAIN, "utf8"));
+
+function anchorJournalHeadDigest(artifact, tagged) {
+  const allowed = tagged ? ["kind", "size", "root"] : ["size", "root"];
+  for (const k of Object.keys(artifact)) {
+    if (!allowed.includes(k)) {
+      return anchorNo(
+        ANCHOR_REASONS.JOURNAL_TREE_HEAD_INVALID,
+        `journal tree head has unknown field: ${JSON.stringify(k)}`
+      );
+    }
+  }
+  if (!Number.isSafeInteger(artifact.size) || artifact.size < 0) {
+    return anchorNo(
+      ANCHOR_REASONS.JOURNAL_TREE_HEAD_INVALID,
+      `journal tree head size must be a non-negative integer, got: ${String(artifact.size)}`
+    );
+  }
+  if (typeof artifact.root !== "string" || !ANCHOR_HEX32_LC_RE.test(artifact.root)) {
+    return anchorNo(
+      ANCHOR_REASONS.JOURNAL_TREE_HEAD_INVALID,
+      `journal tree head root must be a LOWERCASE 0x-bytes32 hex string, got: ${String(artifact.root)}`
+    );
+  }
+  if (artifact.size === 0 && artifact.root !== ANCHOR_JOURNAL_EMPTY_ROOT) {
+    return anchorNo(
+      ANCHOR_REASONS.JOURNAL_TREE_HEAD_INVALID,
+      `an EMPTY journal tree head (size 0) must carry the documented empty root ${ANCHOR_JOURNAL_EMPTY_ROOT}`
+    );
+  }
+  if (artifact.size > 0 && artifact.root === ANCHOR_JOURNAL_EMPTY_ROOT) {
+    return anchorNo(
+      ANCHOR_REASONS.JOURNAL_TREE_HEAD_INVALID,
+      "a non-empty journal tree head cannot carry the domain-separated EMPTY root"
+    );
+  }
+  return anchorOk(artifact.root, ANCHOR_JOURNAL_TREE_HEAD_KIND, anchorJournalHow(artifact.size));
+}
+
+// trustledger.reconcile-seal — a strict port of trustledger/seal.js validateSeal: the verdict/role/
+// inputs/outputs checks, per-entry leaf self-consistency, and the LOAD-BEARING root re-derivation from
+// the seal's OWN leaves PLUS the synthetic verdict/role HEADER leaf (content re-derived from the
+// seal's recorded verdict + input role bindings via the verifier's own lib/canonical port).
+const ANCHOR_TRUST_SEAL_NOTE =
+  "This reconciliation seal is TAMPER-EVIDENT, not a trusted timestamp and not a legal opinion. Its " +
+  "Merkle `root` commits to the full set of (relPath, content) pairs across the source inputs AND " +
+  "every emitted packet file, PLUS a reserved HEADER leaf binding the recorded verdict " +
+  "(pass/reportDate/period) and each input's logical role: any edit, rename, add, or remove of a " +
+  "file — or any edit of the verdict/date/period or swap of an input role — changes the root, and " +
+  "verifySeal localizes a file change to the exact file and a verdict/role change to the header. It " +
+  "does NOT prove WHEN the sealing actually happened (the bound reportDate cannot be edited " +
+  "undetected, but a self-asserted date still rides the human trust-root P-3 — standing up a real " +
+  "signing key or timestamp anchor is needs-human) and it does NOT validate the legal MEANING of " +
+  "the reconciliation (the CPA review still governs). The seal is an UNTRUSTED transport container: " +
+  "verifySeal RE-DERIVES the root from the bytes you supply — it never trusts the seal's own hashes.";
+const ANCHOR_TRUST_SEAL_SCHEMA_VERSIONS = Object.freeze([1]);
+const ANCHOR_TRUST_SEAL_INPUT_ROLES = Object.freeze(["bank", "book", "rentroll"]);
+const ANCHOR_TRUST_SEAL_CORE_LABEL = "trustledger reconciliation seal";
+
+function anchorValidateTrustSeal(obj) {
+  if (!anchorIsPlainObject(obj)) throw new Error("seal must be a JSON object");
+  if (obj.kind !== KINDS.TRUST_SEAL) {
+    throw new Error(
+      `not a trustledger reconciliation seal (kind: ${JSON.stringify(obj.kind)}; expected ` +
+        `${JSON.stringify(KINDS.TRUST_SEAL)})`
+    );
+  }
+  if (!ANCHOR_TRUST_SEAL_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
+    throw new Error(
+      `unsupported seal schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
+        `(this build understands ${JSON.stringify(ANCHOR_TRUST_SEAL_SCHEMA_VERSIONS)})`
+    );
+  }
+  if (obj.note !== ANCHOR_TRUST_SEAL_NOTE) {
+    throw new Error("seal `note` must be the standing SEAL_TRUST_NOTE (caveat must not drift)");
+  }
+  if (typeof obj.root !== "string" || !merkle.HEX32_RE.test(obj.root)) {
+    throw new Error(`seal root must be a 0x-prefixed 32-byte hex string, got: ${String(obj.root)}`);
+  }
+  if (!anchorIsPlainObject(obj.verdict)) {
+    throw new Error("seal is missing `verdict` { pass, reportDate }");
+  }
+  if (typeof obj.verdict.pass !== "boolean") {
+    throw new Error("seal verdict.pass must be a boolean");
+  }
+  if (!ANCHOR_DATE_RE.test(String(obj.verdict.reportDate || ""))) {
+    throw new Error('seal verdict.reportDate must be a "YYYY-MM-DD" string');
+  }
+  if (!("period" in obj.verdict)) {
+    throw new Error("seal verdict is missing `period` (may be null)");
+  }
+  if (obj.verdict.period !== null && typeof obj.verdict.period !== "string") {
+    throw new Error("seal verdict.period must be a string or null");
+  }
+  if (!Array.isArray(obj.inputs) || obj.inputs.length === 0) {
+    throw new Error("seal `inputs` must be a non-empty array");
+  }
+  if (!Array.isArray(obj.outputs) || obj.outputs.length === 0) {
+    throw new Error("seal `outputs` must be a non-empty array");
+  }
+
+  const seenRelPath = new Set();
+  const seenRole = new Set();
+  const flat = [];
+  // Per-entry checks use the trustledger wording (`seal inputs[0]...`); the reserved-header check uses
+  // the core-config label, exactly as the producer's core-delegated view reports it.
+  const checkEntries = (entries, where) => {
+    entries.forEach((entry, i) => {
+      if (!anchorIsPlainObject(entry)) throw new Error(`seal ${where}[${i}] must be an object`);
+      if (typeof entry.relPath !== "string" || entry.relPath.length === 0) {
+        throw new Error(`seal ${where}[${i}].relPath must be a non-empty string`);
+      }
+      if (entry.relPath === canonical.TRUST_SEAL_HEADER_RELPATH) {
+        throw new Error(
+          `${ANCHOR_TRUST_SEAL_CORE_LABEL} files[${flat.length}].relPath ` +
+            `${JSON.stringify(entry.relPath)} is reserved for the seal header`
+        );
+      }
+      if (seenRelPath.has(entry.relPath)) {
+        throw new Error(`seal has a duplicate relPath across the file set: ${JSON.stringify(entry.relPath)}`);
+      }
+      seenRelPath.add(entry.relPath);
+      for (const f of ["contentHash", "leaf"]) {
+        if (typeof entry[f] !== "string" || !merkle.HEX32_RE.test(entry[f])) {
+          throw new Error(
+            `seal ${where}[${i}].${f} must be a 0x-prefixed 32-byte hex string, got: ${String(entry[f])}`
+          );
+        }
+      }
+      const expectedLeaf = merkle.pathLeaf(entry.relPath, entry.contentHash);
+      if (entry.leaf.toLowerCase() !== expectedLeaf.toLowerCase()) {
+        throw new Error(
+          `seal ${where}[${i}].leaf is inconsistent with its relPath+contentHash ` +
+            `(expected ${expectedLeaf}, got ${entry.leaf})`
+        );
+      }
+      flat.push({ relPath: entry.relPath, contentHash: entry.contentHash });
+    });
+  };
+  checkEntries(obj.inputs, "inputs");
+  obj.inputs.forEach((entry, i) => {
+    if (!ANCHOR_TRUST_SEAL_INPUT_ROLES.includes(entry.role)) {
+      throw new Error(
+        `seal inputs[${i}].role must be one of ${JSON.stringify(ANCHOR_TRUST_SEAL_INPUT_ROLES)}, got: ` +
+          `${JSON.stringify(entry.role)}`
+      );
+    }
+    if (seenRole.has(entry.role)) {
+      throw new Error(`seal has a duplicate input role: ${JSON.stringify(entry.role)}`);
+    }
+    seenRole.add(entry.role);
+  });
+  checkEntries(obj.outputs, "outputs");
+  obj.outputs.forEach((entry, i) => {
+    if (entry.role !== undefined && entry.role !== null) {
+      throw new Error(
+        `seal outputs[${i}] must not carry a role (roles partition INPUTS only), got: ` +
+          `${JSON.stringify(entry.role)}`
+      );
+    }
+  });
+  const total = obj.inputs.length + obj.outputs.length;
+  if (obj.fileCount !== undefined && obj.fileCount !== total) {
+    throw new Error(`seal fileCount (${String(obj.fileCount)}) does not match the entry total (${total})`);
+  }
+
+  // THE LOAD-BEARING CHECK: re-derive the root from the listed leaves PLUS the verdict/role HEADER leaf.
+  const headerBytes = canonical.trustSealHeaderBytes(
+    obj.verdict,
+    obj.inputs.map((e) => ({ role: e.role, relPath: e.relPath }))
+  );
+  const committed = [
+    ...flat,
+    { relPath: canonical.TRUST_SEAL_HEADER_RELPATH, contentHash: merkle.hashBytes(headerBytes) },
+  ];
+  const rederived = merkle.rootFromFlat(committed);
+  if (rederived.toLowerCase() !== obj.root.toLowerCase()) {
+    throw new Error(
+      "seal root does not re-derive from its listed entries + verdict/role header " +
+        "(the seal is internally inconsistent: a file, the verdict, or an input role was edited " +
+        "without updating the root)"
+    );
+  }
+  return obj;
+}
+
+function anchorTrustledgerDigest(artifact) {
+  try {
+    anchorValidateTrustSeal(artifact);
+  } catch (e) {
+    return anchorNo(ANCHOR_REASONS.TRUSTLEDGER_SEAL_INVALID, e && e.message ? e.message : String(e));
+  }
+  return anchorOk(artifact.root.toLowerCase(), KINDS.TRUST_SEAL, ANCHOR_HOW_FIXED[KINDS.TRUST_SEAL]);
+}
+
+// verifyhash.dataset-attestation / verifyhash.parcel-attestation — strict ports of the shipped
+// validators (cli/dataset.js validateAttestation / cli/parcel.js validateParcelAttestation), then the
+// SAME canonical bytes the producers serialize (via the verifier's own lib/canonical port — the two
+// attestation shapes share the identical canonical key order), hashed with Node-core sha256. The
+// closed field set is enforced FIRST, exactly as the producer core does: an unknown key would ride
+// along unbound by the digest, so it is rejected rather than silently dropped.
+const ANCHOR_ATTESTATION_FIELDS = Object.freeze([
+  "kind",
+  "schemaVersion",
+  "note",
+  "root",
+  "fileCount",
+  "manifestDigest",
+  "signed",
+  "signature",
+]);
+const ANCHOR_ATTESTATION_SCHEMA_VERSIONS = Object.freeze([1]);
+
+function anchorValidateAttestation(obj, kind, noun) {
+  if (!anchorIsPlainObject(obj)) throw new Error(`${noun} attestation must be a JSON object`);
+  if (obj.kind !== kind) {
+    throw new Error(
+      `not a verifyhash ${noun} attestation (kind: ${JSON.stringify(obj.kind)}; expected ${JSON.stringify(kind)})`
+    );
+  }
+  if (!ANCHOR_ATTESTATION_SCHEMA_VERSIONS.includes(obj.schemaVersion)) {
+    throw new Error(
+      `unsupported ${noun} attestation schemaVersion: ${JSON.stringify(obj.schemaVersion)} ` +
+        `(this build understands ${JSON.stringify(ANCHOR_ATTESTATION_SCHEMA_VERSIONS)})`
+    );
+  }
+  for (const f of ["root", "manifestDigest"]) {
+    if (typeof obj[f] !== "string" || !merkle.HEX32_RE.test(obj[f])) {
+      throw new Error(`${noun} attestation ${f} must be a 0x-prefixed 32-byte hex string, got: ${String(obj[f])}`);
+    }
+  }
+  if (!Number.isInteger(obj.fileCount) || obj.fileCount < 1) {
+    throw new Error(`${noun} attestation fileCount must be a positive integer, got: ${String(obj.fileCount)}`);
+  }
+  if (obj.signed !== false) {
+    throw new Error(
+      `${noun} attestation signed must be false (this build emits/reads only the UNSIGNED payload; ` +
+        `attaching a real signature is the human-owned trust-root, P-3), got: ${String(obj.signed)}`
+    );
+  }
+  if (obj.signature !== null) {
+    throw new Error(`${noun} attestation signature must be null in the UNSIGNED payload, got: ${String(obj.signature)}`);
+  }
+  return obj;
+}
+
+function anchorAttestationDigest(artifact, kind, noun, reason) {
+  for (const k of Object.keys(artifact)) {
+    if (!ANCHOR_ATTESTATION_FIELDS.includes(k)) {
+      return anchorNo(reason, `attestation has unknown field ${JSON.stringify(k)} (the canonical bytes would not bind it)`);
+    }
+  }
+  let canonicalBytes;
+  try {
+    anchorValidateAttestation(artifact, kind, noun);
+    // The verifier's own canonical serializer: the SAME fixed key order + trailing newline the
+    // producer emits (dataset and parcel attestations share the identical canonical shape).
+    canonicalBytes = canonical.serializeUnsignedDatasetAttestation(artifact);
+  } catch (e) {
+    return anchorNo(reason, e && e.message ? e.message : String(e));
+  }
+  const digest = "0x" + nodeCrypto.createHash("sha256").update(canonicalBytes, "utf8").digest("hex");
+  return anchorOk(digest, kind, ANCHOR_HOW_FIXED[kind]);
+}
+
+/**
+ * Extract the ONE canonical 32-byte digest a chain record binds for `artifact` — the standalone port
+ * of the producer core's artifactDigest, dispatching over the SAME closed kind table. TOTAL.
+ */
+function anchorArtifactDigest(artifact) {
+  try {
+    if (!anchorIsPlainObject(artifact)) {
+      return anchorNo(ANCHOR_REASONS.NOT_AN_OBJECT, "artifact must be a parsed JSON object");
+    }
+    const kind = artifact.kind;
+    if (kind === undefined) {
+      if ("size" in artifact || "root" in artifact) {
+        return anchorJournalHeadDigest(artifact, false);
+      }
+      return anchorNo(
+        ANCHOR_REASONS.UNKNOWN_KIND,
+        "artifact carries no `kind` and is not a { size, root } journal tree head"
+      );
+    }
+    if (typeof kind !== "string") {
+      return anchorNo(ANCHOR_REASONS.UNKNOWN_KIND, "artifact `kind` must be a string");
+    }
+    switch (kind) {
+      case KINDS.EVIDENCE_SEAL:
+        return anchorEvidenceDigest(artifact);
+      case KINDS.AGENT_PACKET:
+        return anchorAgentDigest(artifact);
+      case ANCHOR_JOURNAL_TREE_HEAD_KIND:
+        return anchorJournalHeadDigest(artifact, true);
+      case KINDS.TRUST_SEAL:
+        return anchorTrustledgerDigest(artifact);
+      case KINDS.DATASET_ATTESTATION:
+        return anchorAttestationDigest(
+          artifact,
+          KINDS.DATASET_ATTESTATION,
+          "dataset",
+          ANCHOR_REASONS.DATASET_ATTESTATION_INVALID
+        );
+      case ANCHOR_PARCEL_ATTESTATION_KIND:
+        return anchorAttestationDigest(
+          artifact,
+          ANCHOR_PARCEL_ATTESTATION_KIND,
+          "parcel",
+          ANCHOR_REASONS.PARCEL_ATTESTATION_INVALID
+        );
+      default:
+        return anchorNo(
+          ANCHOR_REASONS.UNKNOWN_KIND,
+          `unknown artifact kind ${JSON.stringify(kind)} (the closed table: ${ANCHOR_ARTIFACT_KINDS.join(", ")})`
+        );
+    }
+  } catch (e) {
+    return anchorNo(ANCHOR_REASONS.NOT_AN_OBJECT, e && e.message ? e.message : String(e));
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Receipt validation + the binding verdict — verbatim ports of the producer core's _validateReceipt /
+// verifyAnchoredReceipt (strict form checks; every deviation a named `bad-receipt` naming the field).
+// ---------------------------------------------------------------------------------------------------
+
+const ANCHOR_CHAIN_FIELDS = Object.freeze([
+  "authorBound",
+  "blockNumber",
+  "blockTime",
+  "chainId",
+  "contract",
+  "contributor",
+  "txHash",
+]);
+const ANCHOR_RECEIPT_FIELDS = Object.freeze(["artifactKind", "artifactLabel", "chain", "digest", "how", "kind", "note"]);
+const ANCHOR_RECEIPT_REQUIRED = Object.freeze(["artifactKind", "chain", "digest", "how", "kind", "note"]);
+
+function anchorBadReceipt(field, detail) {
+  return { ok: false, reason: ANCHOR_REASONS.BAD_RECEIPT, field, detail };
+}
+
+function anchorCheckChain(chain) {
+  if (!anchorIsPlainObject(chain)) {
+    return { ok: false, field: "chain", detail: "chain must be an object of the seven recorded chain facts" };
+  }
+  for (const k of Object.keys(chain)) {
+    if (!ANCHOR_CHAIN_FIELDS.includes(k)) {
+      return { ok: false, field: `chain.${k}`, detail: `chain has unknown field: ${JSON.stringify(k)}` };
+    }
+  }
+  for (const k of ANCHOR_CHAIN_FIELDS) {
+    if (!(k in chain)) {
+      return { ok: false, field: `chain.${k}`, detail: `chain is missing required field: ${JSON.stringify(k)}` };
+    }
+  }
+  if (typeof chain.authorBound !== "boolean") {
+    return { ok: false, field: "chain.authorBound", detail: "authorBound must be a boolean" };
+  }
+  for (const k of ["blockNumber", "blockTime"]) {
+    if (!Number.isSafeInteger(chain[k]) || chain[k] < 0) {
+      return { ok: false, field: `chain.${k}`, detail: `${k} must be a non-negative integer, got: ${String(chain[k])}` };
+    }
+  }
+  if (!Number.isSafeInteger(chain.chainId) || chain.chainId < 1) {
+    return { ok: false, field: "chain.chainId", detail: `chainId must be a positive integer, got: ${String(chain.chainId)}` };
+  }
+  for (const k of ["contract", "contributor"]) {
+    if (typeof chain[k] !== "string" || !ANCHOR_ADDRESS_LC_RE.test(chain[k])) {
+      return {
+        ok: false,
+        field: `chain.${k}`,
+        detail: `${k} must be a LOWERCASE 0x-address (canonical case), got: ${String(chain[k])}`,
+      };
+    }
+  }
+  if (typeof chain.txHash !== "string" || !ANCHOR_HEX32_LC_RE.test(chain.txHash)) {
+    return {
+      ok: false,
+      field: "chain.txHash",
+      detail: `txHash must be a LOWERCASE 0x-bytes32 hex string, got: ${String(chain.txHash)}`,
+    };
+  }
+  return { ok: true };
+}
+
+function anchorCanonicalChain(chain) {
+  return {
+    authorBound: chain.authorBound,
+    blockNumber: chain.blockNumber,
+    blockTime: chain.blockTime,
+    chainId: chain.chainId,
+    contract: chain.contract,
+    contributor: chain.contributor,
+    txHash: chain.txHash,
+  };
+}
+
+function anchorValidateReceipt(receipt) {
+  if (!anchorIsPlainObject(receipt)) {
+    return anchorBadReceipt("receipt", "receipt must be a parsed JSON object");
+  }
+  for (const k of Object.keys(receipt)) {
+    if (!ANCHOR_RECEIPT_FIELDS.includes(k)) {
+      return anchorBadReceipt(k, `receipt has unknown field: ${JSON.stringify(k)}`);
+    }
+  }
+  for (const k of ANCHOR_RECEIPT_REQUIRED) {
+    if (!(k in receipt)) {
+      return anchorBadReceipt(k, `receipt is missing required field: ${JSON.stringify(k)}`);
+    }
+  }
+  if (receipt.kind !== ANCHORED_RECEIPT_KIND) {
+    return anchorBadReceipt(
+      "kind",
+      `not an anchored receipt this build understands (kind: ${JSON.stringify(receipt.kind)}; expected ${JSON.stringify(ANCHORED_RECEIPT_KIND)})`
+    );
+  }
+  if (receipt.note !== ANCHOR_TRUST_NOTE) {
+    return anchorBadReceipt("note", "receipt `note` must be the standing trust note VERBATIM (the caveat must not drift)");
+  }
+  if (typeof receipt.digest !== "string" || !ANCHOR_HEX32_LC_RE.test(receipt.digest)) {
+    return anchorBadReceipt("digest", `receipt digest must be a LOWERCASE 0x-bytes32 hex string, got: ${String(receipt.digest)}`);
+  }
+  if (typeof receipt.artifactKind !== "string" || !ANCHOR_ARTIFACT_KINDS.includes(receipt.artifactKind)) {
+    return anchorBadReceipt(
+      "artifactKind",
+      `receipt artifactKind ${JSON.stringify(receipt.artifactKind)} is not in the closed table (${ANCHOR_ARTIFACT_KINDS.join(", ")})`
+    );
+  }
+  if (!anchorHowValidFor(receipt.artifactKind, receipt.how)) {
+    return anchorBadReceipt("how", `receipt \`how\` is not the documented derivation rule for ${receipt.artifactKind}`);
+  }
+  if (receipt.artifactLabel !== undefined) {
+    const l = receipt.artifactLabel;
+    if (typeof l !== "string" || l.length === 0 || l.length > 200 || ANCHOR_CONTROL_CHAR_RE.test(l)) {
+      return anchorBadReceipt(
+        "artifactLabel",
+        "artifactLabel, when present, must be a 1..200-char string with no control characters"
+      );
+    }
+  }
+  const c = anchorCheckChain(receipt.chain);
+  if (!c.ok) return anchorBadReceipt(c.field, c.detail);
+  return { ok: true };
+}
+
+/**
+ * Verify that `receipt` is a well-formed `vh-anchored-receipt@1` AND that it binds EXACTLY the
+ * supplied `artifact` — the OFFLINE binding leg, standalone: the digest is RECOMPUTED from the
+ * artifact via the closed table (never trusted from either side) and the full { kind, digest, how }
+ * triple must match. NEVER consults a network; the receipt's chain facts are returned as the
+ * anchorer's CLAIM. TOTAL: named rejects, no throws. Same verdicts as the producer core.
+ *
+ * @param {object} args { receipt, artifact } — both caller-supplied PARSED objects
+ * @returns {{ ok:true, digest:string, chain:object } |
+ *           { ok:false, reason:string, field?:string, detail?:string }}
+ */
+function verifyAnchoredReceipt(args) {
+  try {
+    if (!anchorIsPlainObject(args)) {
+      return anchorNo(ANCHOR_REASONS.BAD_ARGS, "verifyAnchoredReceipt requires { receipt, artifact }");
+    }
+    const r = anchorValidateReceipt(args.receipt);
+    if (!r.ok) return r;
+    const d = anchorArtifactDigest(args.artifact);
+    if (!d.ok) return d; // the artifact's OWN named validation reject, propagated verbatim
+    const receipt = args.receipt;
+    if (d.kind !== receipt.artifactKind) {
+      return anchorNo(
+        ANCHOR_REASONS.KIND_MISMATCH,
+        `receipt anchors a ${receipt.artifactKind} but the supplied artifact is a ${d.kind}`
+      );
+    }
+    if (d.digest !== receipt.digest) {
+      return anchorNo(
+        ANCHOR_REASONS.DIGEST_MISMATCH,
+        `recomputed digest ${d.digest} != receipt digest ${receipt.digest} — this receipt does not bind this artifact`
+      );
+    }
+    if (d.how !== receipt.how) {
+      return anchorNo(ANCHOR_REASONS.HOW_MISMATCH, `recomputed derivation rule != receipt \`how\` (recomputed: ${d.how})`);
+    }
+    return { ok: true, digest: d.digest, chain: anchorCanonicalChain(receipt.chain) };
+  } catch (e) {
+    return anchorNo(ANCHOR_REASONS.BAD_ARGS, e && e.message ? e.message : String(e));
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The anchored-receipt CLI leg: read + parse the two files, run the pure binding verify, render the
+// stable human/JSON verdict. READ-ONLY (no receipt/temp/side-effect file is ever written); exit
+// contract 0 ACCEPTED / 3 REJECTED (named) / 2 usage / 1 IO — the family's shared verify contract.
+// ---------------------------------------------------------------------------------------------------
+
+// The in-band honesty of the offline leg, stated once for both output shapes.
+const ANCHOR_OFFLINE_NOTE =
+  "OFFLINE binding check: the receipt binds this exact artifact, but its chain facts were NOT " +
+  "re-checked (this standalone verifier opens no network). Confirm them against the chain with the " +
+  "producer cli: vh verify-anchored <receipt> <sealed-file> --rpc <url> --contract <addr>.";
+
+function anchorReadJson(label, filePath) {
+  let text;
+  try {
+    text = fs.readFileSync(path.resolve(filePath), "utf8");
+  } catch (e) {
+    throw new IOError(`cannot read ${label} ${filePath}: ${e.message}`);
+  }
+  let obj;
+  try {
+    obj = JSON.parse(text);
+  } catch (e) {
+    throw new IOError(`${label} ${filePath} is not valid JSON: ${e.message}`);
+  }
+  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+    throw new IOError(`${label} ${filePath} must be a JSON object`);
+  }
+  return obj;
+}
+
+function runVerifyAnchoredOffline(opts, write, writeErr) {
+  let receipt;
+  let artifact;
+  try {
+    receipt = anchorReadJson("receipt", opts.artifact);
+    artifact = anchorReadJson("artifact", opts.anchoredArtifact);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
+    return EXIT.IO;
+  }
+
+  const v = verifyAnchoredReceipt({ receipt, artifact });
+  if (!v.ok) {
+    if (opts.json) {
+      write(
+        JSON.stringify(
+          { ok: false, verdict: "REJECTED", mode: "offline", reason: v.reason, field: v.field, detail: v.detail },
+          null,
+          2
+        ) + "\n"
+      );
+    } else {
+      writeErr(`verify-vh anchored-receipt: REJECTED (${v.reason})${v.detail ? `: ${v.detail}` : ""}\n`);
+    }
+    return EXIT.REJECTED;
+  }
+
+  if (opts.json) {
+    write(
+      JSON.stringify(
+        {
+          ok: true,
+          verdict: "ACCEPTED",
+          mode: "offline",
+          digest: v.digest,
+          artifactKind: receipt.artifactKind,
+          chain: v.chain,
+          registry: null,
+          note: ANCHOR_OFFLINE_NOTE,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } else {
+    const c = v.chain;
+    write("verify-vh anchored-receipt: ACCEPTED (offline binding check)\n");
+    write(`  digest:       ${v.digest}\n`);
+    write(`  kind:         ${receipt.artifactKind}\n`);
+    write(
+      `  chain CLAIM:  chainId ${c.chainId}, contract ${c.contract}, tx ${c.txHash}, ` +
+        `block ${c.blockNumber}, blockTime ${c.blockTime}, contributor ${c.contributor}, ` +
+        `authorBound ${c.authorBound}\n`
+    );
+    write(
+      "  NOTE: the OFFLINE binding leg only — the chain facts above are the anchorer's CLAIM, not " +
+        "re-checked against any chain. Confirm them with the producer cli: " +
+        "vh verify-anchored <receipt> <sealed-file> --rpc <url> --contract <addr>.\n"
+    );
+  }
+  return EXIT.OK;
+}
+
 // ---------------------------------------------------------------------------
 // Argument parsing.
 //   SINGLE-ARTIFACT (the original, byte-for-byte unchanged contract):
@@ -1358,6 +2224,7 @@ function parseArgs(argv) {
     manifest: undefined,
     revocations: undefined,
     asOf: undefined,
+    anchoredArtifact: undefined,
     _pos: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -1379,6 +2246,9 @@ function parseArgs(argv) {
         break;
       case "--revocations":
         opts.revocations = need("--revocations");
+        break;
+      case "--anchored-artifact":
+        opts.anchoredArtifact = need("--anchored-artifact");
         break;
       case "--as-of":
         opts.asOf = need("--as-of");
@@ -1425,6 +2295,33 @@ function parseArgs(argv) {
         `invalid --as-of: ${opts.asOf} (expected a canonical ISO-8601 UTC instant, e.g. 2026-06-01T00:00:00.000Z)`
       );
     }
+  }
+  // ANCHORED-RECEIPT leg (T-70.4): `--anchored-artifact <sealed-file>` pairs ONE receipt positional
+  // with ONE sealed artifact. It is a dedicated two-file binding check, so the sibling-verify flags
+  // (--vendor/--dir/--revocations/--as-of) and the batch/manifest modes do not compose with it — each
+  // incompatible combination is a NAMED usage error up front, never a silently-ignored flag.
+  if (opts.anchoredArtifact !== undefined) {
+    if (opts.manifest !== undefined) {
+      throw new UsageError("--anchored-artifact verifies ONE receipt; it cannot be combined with --manifest");
+    }
+    for (const [flag, val] of [
+      ["--vendor", opts.vendor],
+      ["--dir", opts.dir],
+      ["--revocations", opts.revocations],
+      ["--as-of", opts.asOf],
+    ]) {
+      if (val !== undefined) {
+        throw new UsageError(
+          `${flag} does not apply to the anchored-receipt binding check (--anchored-artifact reads exactly two files: the receipt and the sealed artifact)`
+        );
+      }
+    }
+    if (opts._pos.length !== 1) {
+      throw new UsageError(
+        "--anchored-artifact requires exactly ONE <receipt> positional: verify-vh <receipt> --anchored-artifact <sealed-file>"
+      );
+    }
+    opts.batch = false;
   }
   // Preserve the SINGLE-artifact contract verbatim: exactly one positional and no --manifest.
   opts.artifact = opts._pos[0];
@@ -1626,6 +2523,15 @@ function verifyArtifact(opts) {
   }
   if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
     throw new IOError(`artifact ${opts.artifact} must be a JSON object`);
+  }
+
+  // A bare anchored receipt reached the sibling-verify path: point the caller at the two-file binding
+  // check instead of the generic "unrecognized kind" (a receipt alone carries nothing to re-derive).
+  if (obj.kind === ANCHORED_RECEIPT_KIND) {
+    throw new UsageError(
+      `${opts.artifact} is a ${ANCHORED_RECEIPT_KIND} anchored receipt — verify its OFFLINE binding ` +
+        "leg against the sealed artifact it anchors: verify-vh <receipt> --anchored-artifact <sealed-file>"
+    );
   }
 
   // The base directory siblings resolve against: --dir override else the artifact's own directory.
@@ -2187,6 +3093,7 @@ function usage() {
     "  verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir> [--as-of <ISO>]] [--json]",
     "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir>] [--json]   (batch)",
     "  verify-vh --manifest <file> [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir>] [--json]           (batch)",
+    "  verify-vh <receipt> --anchored-artifact <sealed-file> [--json]                    (anchored-receipt binding check)",
     "",
     "DEMO: `verify-vh demo` runs a self-contained, genuinely-signed packet through the real verify path —",
     "NO flags, NO key, NO install state: it ACCEPTs the packet (naming the signer), then REJECTs a one-byte-",
@@ -2208,6 +3115,15 @@ function usage() {
     "files. A revocation dated AFTER --as-of stays ACCEPTED with a later-revoked note; a forged/tampered/",
     "third-party revocation is IGNORED with a warning. This reaches the SAME downgrade the producer's",
     "`vh ... verify-signed --revocations` does, OFFLINE — no producer stack, no network, no key.",
+    "",
+    "ANCHORED RECEIPTS (T-70.4): a `vh-anchored-receipt@1` produced by `vh anchor-artifact` verifies",
+    "here WITHOUT the producer stack: --anchored-artifact <sealed-file> re-derives the sealed artifact's",
+    "digest through the SAME closed kind table (evidence seal, agent-session packet, journal tree head,",
+    "TrustLedger seal, dataset/parcel attestation), validates the receipt strictly (a drifted trust note",
+    "is a named bad-receipt), and confirms the receipt binds EXACTLY those bytes — ACCEPTED exit 0, or",
+    "the specific named reject (digest-mismatch / kind-mismatch / how-mismatch / bad-receipt / the",
+    "artifact's own named reject) exit 3. OFFLINE binding leg ONLY: the receipt's `chain` facts remain",
+    "the anchorer's CLAIM — re-check them on chain with the producer cli (`vh verify-anchored --rpc`).",
     "",
     "BATCH/MANIFEST: pass several <artifact> args, or --manifest <file> (a newline list or JSON array of",
     "artifact paths, each line/object may carry its own --vendor/--dir). ALL must pass for exit 0; if ANY",
@@ -2273,6 +3189,12 @@ function run(argv, io = {}) {
     writeErr("error: verify-vh requires an <artifact>\n\n");
     writeErr(usage());
     return EXIT.USAGE;
+  }
+
+  // ANCHORED-RECEIPT binding check (T-70.4): a dedicated two-file leg — parseArgs already guaranteed
+  // exactly one <receipt> positional and no incompatible flag. READ-ONLY; exit 0/3/2/1 as everywhere.
+  if (opts.anchoredArtifact !== undefined) {
+    return runVerifyAnchoredOffline(opts, write, writeErr);
   }
 
   // The recipient's current decision instant (the default --as-of). Injectable via io.nowISO so a test can
@@ -2355,6 +3277,17 @@ module.exports = {
   verifyProofBundle,
   verifyAgentSeal,
   AGENT_TRUST_NOTE,
+  // ANCHORED-RECEIPT surface (T-70.4) — wire-format constants + the pure binding verify, exported so
+  // the parity test can pin them against the producer core (cli/core/anchor-binding.js) byte-for-byte.
+  ANCHORED_RECEIPT_KIND,
+  ANCHOR_TRUST_NOTE,
+  ANCHOR_REASONS,
+  ANCHOR_ARTIFACT_KINDS,
+  ANCHOR_JOURNAL_TREE_HEAD_KIND,
+  ANCHOR_JOURNAL_EMPTY_ROOT,
+  anchorArtifactDigest,
+  verifyAnchoredReceipt,
+  runVerifyAnchoredOffline,
   renderHuman,
   revocation,
   usage,

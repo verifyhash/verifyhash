@@ -403,6 +403,31 @@ self-asserted (the packet's own in-band trust note says the same).
 
 ---
 
+## 2d. Verify an ANCHORED RECEIPT's binding (`vh-anchored-receipt@1`) — zero producer stack (T-70.4)
+
+The producer's `vh anchor-artifact` binds a sealed artifact's ONE canonical digest into an on-chain
+registry record and emits a canonical **`vh-anchored-receipt@1`** container. The receipt's OFFLINE
+**binding leg** verifies here — same zero-install posture, no `ethers`, no producer code:
+
+```bash
+node verify-vh.js receipt.vhanchored.json --anchored-artifact packet.vhevidence.json
+# same flags on the single-file bundle: node verify-vh-standalone.js <receipt> --anchored-artifact <sealed-file>
+```
+
+The receipt is validated STRICTLY (unknown/missing fields, malformed chain facts, or an edited
+in-band trust note are each a named `bad-receipt`), and the sealed artifact's digest is RECOMPUTED
+through the SAME closed six-kind table the producer core uses (evidence seal, agent-session packet,
+journal tree head, TrustLedger reconciliation seal, dataset/parcel attestation — each re-validated
+through a strict, dependency-free port of its shipped validator first). ACCEPT is exit `0`; any
+deviation is the specific named reject — `digest-mismatch` / `kind-mismatch` / `how-mismatch` /
+`bad-receipt` / the artifact's own named reject — exit `3`, matching the producer cli's verdicts on
+the same inputs. **The honest boundary:** this is the OFFLINE binding leg ONLY — the receipt's
+`chain` facts remain the *anchorer's claim* until re-checked against the chain, which needs a chain
+endpoint by definition and stays with the producer cli (`vh verify-anchored --rpc --contract`). See
+[`docs/ANCHORING.md`](../docs/ANCHORING.md) for what an anchored receipt proves and does NOT.
+
+---
+
 ## 3. The exact bytes verified, and the scheme
 
 Nothing here is magic; it is two standard primitives you can re-implement in an afternoon.

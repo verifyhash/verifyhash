@@ -43,11 +43,12 @@ logged), and a chainId outside the known local/testnet set refuses without `--i-
 Exit contract: `0` anchored / `3` named reject (an invalid artifact, or the registry's own revert
 such as `AlreadyAnchored`) / `2` usage / `1` IO-network-key.
 
-`verify-anchored` is **OFFLINE by default** — no key, no network (but it runs through the producer
-`cli/` stack, which loads `ethers`; "OFFLINE" here means **no key and no network**, NOT "no producer
-stack" — the standalone `verifier/` tree does not yet verify anchored receipts, see **Independent
-verification** below): it validates the receipt strictly and **recomputes** the artifact's digest
-through the same closed table; any deviation is a specific named reject (`digest-mismatch` /
+`verify-anchored` is **OFFLINE by default** — no key, no network. The same offline binding leg also
+runs with **zero producer stack**: the standalone `verifier/` tree recognizes `vh-anchored-receipt@1`
+(`verify-vh <receipt> --anchored-artifact <sealed-file>`, see **Independent verification** below), so
+"verify without installing the producer's stack" now covers the receipt too. Either way the check is
+the same: the receipt is validated strictly and the artifact's digest is **recomputed** through the
+same closed table; any deviation is a specific named reject (`digest-mismatch` /
 `kind-mismatch` / `how-mismatch` / `bad-receipt` / the artifact's own named reject). With **both** `--rpc` and `--contract` it additionally authenticates the registry
 (the standing identity probe — no record is believed until the contract self-identifies) and
 re-checks every chain fact the receipt claims. Exit `0` ACCEPTED / `3` REJECTED / `2` / `1` — the
@@ -86,31 +87,41 @@ Spelled out:
   `timestamp-request`/`timestamp-wrap`/`verify-timestamp`) is a third party's *existed-by-genTime*
   attestation. An on-chain anchor (C) complements them; it does not replace them.
 
-## Independent verification — the one axis this does NOT yet cover
+## Independent verification — the anchored receipt verifies standalone too (T-70.4)
 
 The verifyhash family's headline is that a counterparty can verify a sealed artifact **OFFLINE,
 without installing the producer's stack**: the standalone `verifier/` bundle
 ([`../verifier/dist/verify-vh-standalone.js`](../verifier/dist/verify-vh-standalone.js)) is a single,
 dependency-free file — **no `ethers`, no `npm install`** — that re-derives an evidence packet's or
-agent packet's digest by itself. That promise **DOES** cover the **sealed artifact underneath** an
+agent packet's digest by itself. That promise DOES cover the **sealed artifact underneath** an
 anchored receipt: hand a counterparty the `*.vhevidence.json` (or any closed-table artifact) and they
 verify it standalone, exactly as before, with no producer code.
 
-It does **NOT yet extend to the anchored receipt itself.** `vh verify-anchored` — including its
-OFFLINE binding leg — runs **only through the producer `cli/` stack, which loads `ethers` at module
-load** (`cli/anchor-artifact.js` → `cli/core/attestation.js`); and `vh-anchored-receipt@1` is **NOT a
-recognized kind** in the standalone `verifier/verify-vh.js` tree, which scopes itself to sealed
-artifacts and explicitly puts on-chain anchoring out of scope. So the family's zero-install
-"verify without the producer's stack" promise **does not YET reach the anchored-receipt binding
-leg**: a counterparty who wants to check the receipt's binding today must run the producer cli
-(`node cli/vh.js verify-anchored`).
+Since **T-70.4** it also covers the **anchored receipt's OFFLINE binding leg itself**:
+`vh-anchored-receipt@1` **IS a recognized kind in the standalone `verifier/verify-vh.js` tree**. A
+counterparty handed a receipt plus the sealed artifact it anchors checks the binding with zero
+producer code — from this repo, or from the single-file bundle:
 
-This is a **packaging gap, not a proof gap.** (1) The binding check is pure hashing — the standalone
-verifier already re-derives evidence-seal and agent-packet digests with no `ethers` — so
-`vh-anchored-receipt@1` can be added to the standalone tree to actually close it (tracked as
-**T-70.4**). (2) The `--rpc` chain re-check needs the chain anyway, so the offline binding leg's
-standalone value is limited until then. Until T-70.4 lands: verify the **sealed artifact** standalone
-(zero-install, independent), and verify the **anchor** via the producer cli.
+```bash
+node verifier/verify-vh.js examples/anchoring/anchored-receipt.local.json \
+  --anchored-artifact examples/anchoring/sample-seal.vhevidence.json
+# zero-install, same command: node verify-vh-standalone.js <receipt> --anchored-artifact <sealed-file>
+```
+
+The standalone validates the receipt strictly (an edited in-band trust note is the named
+`bad-receipt`) and **recomputes** the artifact's digest through the SAME closed kind table the
+producer core uses — each leg re-validating the artifact through a strict, `ethers`-free port of its
+shipped validator, over the verifier's own dependency-free keccak/sha256. The verdicts match the
+producer cli's on the same inputs: ACCEPTED exit `0`, or the specific named reject
+(`digest-mismatch` / `kind-mismatch` / `how-mismatch` / `bad-receipt` / the artifact's own named
+reject) exit `3` — the packaging gap disclosed here before T-70.4 is **closed**.
+
+**The honest remaining boundary.** The standalone checks the OFFLINE **binding leg only**: the
+receipt's `chain` facts remain the **anchorer's claim** until re-checked against the chain, and that
+re-check needs a chain endpoint by definition — it stays with the producer cli
+(`vh verify-anchored --rpc <url> --contract <addr>`, whose `cli/` stack loads `ethers` at module
+load: `cli/anchor-artifact.js` → `cli/core/attestation.js`). What a receipt proves — and does NOT
+prove — is unchanged either way (see the trust note above).
 
 ## The free line
 

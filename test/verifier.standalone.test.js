@@ -625,12 +625,14 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
     it("the in-tree verifier source (verifier/verify-vh.js) requires only ./lib + Node core", function () {
       // The in-tree verifier requires ONLY its own ./lib/* siblings + Node core (fs/path) — never ethers/
       // hardhat or a cli/ back-edge. The bundler is additive and inlines exactly these. T-51.4 adds the
-      // stack-free ./lib/revocation reader to the graph (still pure-JS, still no producer stack).
+      // stack-free ./lib/revocation reader to the graph (still pure-JS, still no producer stack); T-70.4
+      // adds Node-core `crypto` (sha256 for the anchored-receipt attestation digest legs — still
+      // zero-install, no node_modules).
       const src = fs.readFileSync(INTREE_PATH, "utf8");
       const specs = [...src.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
       // De-dupe: `os` (T-55.2 demo `os.tmpdir()`) is a second Node-core sibling alongside fs/path.
       expect([...new Set(specs)].sort()).to.deep.equal(
-        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "os", "path"].sort()
+        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "crypto", "fs", "os", "path"].sort()
       );
     });
   });
@@ -758,6 +760,260 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
           }
         });
       }
+    });
+  });
+
+  // ============================================================================================
+  // (6) ANCHORED RECEIPTS (T-70.4) — the standalone verifies `vh-anchored-receipt@1`'s OFFLINE
+  //     binding leg with ZERO producer stack, and its verdicts MATCH the producer core's.
+  //   * WIRE-FORMAT PARITY: every constant the receipt format depends on (kind, the verbatim
+  //     ANCHOR_TRUST_NOTE, the reason codes, the closed six-kind table, the journal empty root)
+  //     equals the producer core's byte-for-byte — neither side can drift alone.
+  //   * FIXTURES: the committed examples/anchoring/ pair ACCEPTs (exit 0), and the acceptance's
+  //     three tampers (flipped artifact byte / substituted-valid-artifact / edited note) are each
+  //     the SPECIFIC named reject (exit 3) — DEEP-EQUAL to the producer core's verdict object.
+  //   * FULL-TABLE PARITY: for every closed-table kind, an accept + a tamper verdict from the
+  //     standalone deep-equals the producer core's on identical inputs.
+  //   * The DIST BUNDLE produces byte-identical stdout + exit codes from an empty dir.
+  //   * Filesystem hygiene: scratch files land in temp dirs (cleaned in afterEach); the anchored
+  //     leg itself writes NOTHING (asserted).
+  // ============================================================================================
+  describe("(6) anchored receipts (T-70.4): standalone binding leg == producer core verdicts", function () {
+    const binding = require("../cli/core/anchor-binding");
+    const journalLog = require("../cli/journal-log");
+
+    const FIXTURE_RECEIPT = path.resolve(__dirname, "..", "examples", "anchoring", "anchored-receipt.local.json");
+    const FIXTURE_SEAL = path.resolve(__dirname, "..", "examples", "anchoring", "sample-seal.vhevidence.json");
+    const readFixture = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
+    // Chain facts reused for synthetic receipts across the kind battery (strict-form-valid; the
+    // offline leg treats them as the anchorer's CLAIM by design).
+    const chainFacts = () => readFixture(FIXTURE_RECEIPT).chain;
+
+    function writeJson(obj) {
+      const file = path.join(mkTmp(), "scratch.json");
+      fs.writeFileSync(file, JSON.stringify(obj, null, 2) + "\n");
+      return file;
+    }
+
+    // Build a producer-core receipt for an artifact (the honest way: digest extracted by the
+    // producer's own closed table, receipt assembled by its own builder).
+    function producerReceiptFor(artifact) {
+      const d = binding.artifactDigest(artifact);
+      expect(d.ok, JSON.stringify(d)).to.equal(true);
+      const built = binding.buildAnchoredReceipt({ digest: d.digest, kind: d.kind, how: d.how, chain: chainFacts() });
+      expect(built.ok, JSON.stringify(built)).to.equal(true);
+      return built.receipt;
+    }
+
+    // Assert the standalone's pure verdict DEEP-EQUALS the producer core's on the same objects.
+    function assertVerdictParity(receipt, artifact, label) {
+      const standalone = verifyvh.verifyAnchoredReceipt({ receipt, artifact });
+      const producer = binding.verifyAnchoredReceipt({ receipt, artifact });
+      expect(standalone, `${label}: standalone verdict == producer core verdict`).to.deep.equal(producer);
+      return standalone;
+    }
+
+    it("WIRE-FORMAT PARITY: kind, trust note, reason codes, closed table, journal empty root", function () {
+      expect(verifyvh.ANCHORED_RECEIPT_KIND).to.equal(binding.ANCHORED_RECEIPT_KIND);
+      expect(verifyvh.ANCHOR_TRUST_NOTE).to.equal(binding.ANCHOR_TRUST_NOTE);
+      expect({ ...verifyvh.ANCHOR_REASONS }).to.deep.equal({ ...binding.REASONS });
+      expect([...verifyvh.ANCHOR_ARTIFACT_KINDS]).to.deep.equal([...binding.ARTIFACT_KINDS]);
+      expect(verifyvh.ANCHOR_JOURNAL_TREE_HEAD_KIND).to.equal(binding.JOURNAL_TREE_HEAD_KIND);
+      expect(verifyvh.ANCHOR_JOURNAL_EMPTY_ROOT).to.equal(journalLog.EMPTY_ROOT);
+    });
+
+    it("ACCEPTS the committed fixtures: exit 0, digest recomputed, chain facts labeled a CLAIM", function () {
+      const { code, out } = runInTree([FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL]);
+      expect(code).to.equal(0);
+      expect(out).to.match(/ACCEPTED \(offline binding check\)/);
+      expect(out).to.contain(readFixture(FIXTURE_SEAL).root.toLowerCase());
+      expect(out).to.contain("chain CLAIM");
+      // --json: the stable machine shape (ok/verdict/mode/digest/artifactKind/chain/registry/note).
+      const j = runInTree([FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL, "--json"]);
+      expect(j.code).to.equal(0);
+      const parsed = JSON.parse(j.out);
+      expect(parsed.ok).to.equal(true);
+      expect(parsed.verdict).to.equal("ACCEPTED");
+      expect(parsed.mode).to.equal("offline");
+      expect(parsed.digest).to.equal(readFixture(FIXTURE_SEAL).root.toLowerCase());
+      expect(parsed.artifactKind).to.equal("vh.evidence-seal");
+      expect(parsed.chain).to.deep.equal(chainFacts());
+      expect(parsed.registry).to.equal(null);
+      // ...and the pure verdict deep-equals the producer core's on the same fixtures.
+      const v = assertVerdictParity(readFixture(FIXTURE_RECEIPT), readFixture(FIXTURE_SEAL), "fixtures");
+      expect(v.ok).to.equal(true);
+    });
+
+    it("the DIST BUNDLE from an EMPTY dir: byte-identical stdout + exit code to the in-tree verifier", function () {
+      const empty = mkTmp();
+      const bundle = path.join(empty, "verify-vh-standalone.js");
+      fs.copyFileSync(STANDALONE_PATH, bundle);
+      expect(fs.readdirSync(empty).sort()).to.deep.equal(["verify-vh-standalone.js"]);
+      for (const args of [
+        [FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL],
+        [FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL, "--json"],
+      ]) {
+        const oracle = runInTree(args);
+        const sa = runStandalone(bundle, args, { cwd: empty });
+        expect(sa.error, "no spawn error").to.equal(undefined);
+        expect(sa.status, `exit code matches (stderr: ${sa.stderr})`).to.equal(oracle.code);
+        expect(sa.stdout, "stdout matches the in-tree verifier byte-for-byte").to.equal(oracle.out);
+      }
+      // READ-ONLY: the anchored leg wrote nothing next to the bundle.
+      expect(fs.readdirSync(empty).sort()).to.deep.equal(["verify-vh-standalone.js"]);
+    });
+
+    it("TAMPER (acceptance triple) 1/3: a flipped artifact byte -> the artifact's OWN named reject, exit 3", function () {
+      const artifact = readFixture(FIXTURE_SEAL);
+      const flip = (h) => (h.endsWith("0") ? h.slice(0, -1) + "1" : h.slice(0, -1) + "0");
+      artifact.files[0].contentHash = flip(artifact.files[0].contentHash);
+      const v = assertVerdictParity(readFixture(FIXTURE_RECEIPT), artifact, "flipped byte");
+      expect(v.ok).to.equal(false);
+      expect(v.reason).to.equal("evidence-seal-invalid");
+      // The CLI contract: exit 3, the named reason on stderr, nothing on stdout.
+      const c = cap();
+      const code = verifyvh.run([FIXTURE_RECEIPT, "--anchored-artifact", writeJson(artifact)], c.io);
+      expect(code).to.equal(3);
+      expect(c.err()).to.match(/REJECTED \(evidence-seal-invalid\)/);
+      expect(c.out()).to.equal("");
+    });
+
+    it("TAMPER 2/3: a DIFFERENT (perfectly valid) sealed artifact -> digest-mismatch, exit 3", function () {
+      const other = evidence.buildSeal([
+        { relPath: "report/summary.md", bytes: Buffer.from("# a different, equally valid report\n") },
+      ]);
+      const v = assertVerdictParity(readFixture(FIXTURE_RECEIPT), other, "substituted artifact");
+      expect(v.ok).to.equal(false);
+      expect(v.reason).to.equal("digest-mismatch");
+      const c = cap();
+      const code = verifyvh.run([FIXTURE_RECEIPT, "--anchored-artifact", writeJson(other)], c.io);
+      expect(code).to.equal(3);
+      expect(c.err()).to.match(/REJECTED \(digest-mismatch\)/);
+    });
+
+    it("TAMPER 3/3: an edited receipt trust note -> bad-receipt, exit 3 (the caveat cannot drift)", function () {
+      const receipt = readFixture(FIXTURE_RECEIPT);
+      receipt.note = receipt.note.replace("MECHANISM only", "mechanism only");
+      const v = assertVerdictParity(receipt, readFixture(FIXTURE_SEAL), "edited note");
+      expect(v.ok).to.equal(false);
+      expect(v.reason).to.equal("bad-receipt");
+      const c = cap();
+      const code = verifyvh.run([writeJson(receipt), "--anchored-artifact", FIXTURE_SEAL], c.io);
+      expect(code).to.equal(3);
+      expect(c.err()).to.match(/REJECTED \(bad-receipt\)/);
+    });
+
+    it("FULL-TABLE PARITY: accept + tamper verdicts deep-equal the producer core's for every kind", async function () {
+      // vh.agent-session-packet — the shipped demo packet (REAL producer output, one redacted event).
+      const agentPacket = JSON.parse(verifyvh.DEMO_AGENT_PACKET_TEXT);
+      const agentReceipt = producerReceiptFor(agentPacket);
+      expect(assertVerdictParity(agentReceipt, agentPacket, "agent accept").ok).to.equal(true);
+      const agentBad = JSON.parse(
+        verifyvh.DEMO_AGENT_PACKET_TEXT.replace(verifyvh.DEMO_AGENT_TAMPER_FROM, verifyvh.DEMO_AGENT_TAMPER_TO)
+      );
+      const agentVerdict = assertVerdictParity(agentReceipt, agentBad, "agent tamper");
+      expect(agentVerdict.reason).to.equal("agent-packet-invalid");
+
+      // vh.journal-tree-head — bare and kind-tagged; an edited size is the named how-mismatch.
+      const head = { size: 3, root: "0x" + "ab".repeat(32) };
+      const headReceipt = producerReceiptFor(head);
+      expect(assertVerdictParity(headReceipt, head, "journal accept").ok).to.equal(true);
+      expect(
+        assertVerdictParity(headReceipt, { kind: "vh.journal-tree-head", size: 3, root: head.root }, "journal tagged").ok
+      ).to.equal(true);
+      const sizeEdited = assertVerdictParity(headReceipt, { size: 4, root: head.root }, "journal size edit");
+      expect(sizeEdited.reason).to.equal("how-mismatch");
+      const emptyOk = { size: 0, root: journalLog.EMPTY_ROOT };
+      expect(assertVerdictParity(producerReceiptFor(emptyOk), emptyOk, "journal empty").ok).to.equal(true);
+
+      // trustledger.reconcile-seal — a REAL producer seal; a verdict edit breaks the header binding.
+      const tl = trustSeal.buildSeal({
+        files: {
+          inputs: [
+            { role: "bank", relPath: "bank.csv", bytes: Buffer.from("date,amount\n2026-06-01,100\n") },
+            { role: "book", relPath: "book.csv", bytes: Buffer.from("date,amount\n2026-06-01,100\n") },
+          ],
+          outputs: [{ relPath: "report.html", bytes: Buffer.from("<html>ok</html>") }],
+        },
+        verdict: { pass: true, reportDate: "2026-06-24", period: "2026-Q2" },
+      });
+      const tlReceipt = producerReceiptFor(tl);
+      expect(assertVerdictParity(tlReceipt, tl, "trust accept").ok).to.equal(true);
+      const tlBad = JSON.parse(JSON.stringify(tl));
+      tlBad.verdict.pass = false;
+      const tlVerdict = assertVerdictParity(tlReceipt, tlBad, "trust verdict edit");
+      expect(tlVerdict.reason).to.equal("trustledger-seal-invalid");
+
+      // dataset + parcel attestations — canonical sha256 digests; an unknown field is rejected
+      // (it would ride along unbound), a field edit is digest-mismatch.
+      const datasetAtt = {
+        kind: "verifyhash.dataset-attestation",
+        schemaVersion: 1,
+        note: "fixture note (the attestation digest binds whatever note the producer emitted)",
+        root: "0x" + "ab".repeat(32),
+        fileCount: 7,
+        manifestDigest: "0x" + "cd".repeat(32),
+        signed: false,
+        signature: null,
+      };
+      const datasetReceipt = producerReceiptFor(datasetAtt);
+      expect(assertVerdictParity(datasetReceipt, datasetAtt, "dataset accept").ok).to.equal(true);
+      const dsUnknown = assertVerdictParity(datasetReceipt, { ...datasetAtt, extra: 1 }, "dataset unknown field");
+      expect(dsUnknown.reason).to.equal("dataset-attestation-invalid");
+      const dsEdited = assertVerdictParity(datasetReceipt, { ...datasetAtt, fileCount: 8 }, "dataset field edit");
+      expect(dsEdited.reason).to.equal("digest-mismatch");
+      const parcelAtt = { ...datasetAtt, kind: "verifyhash.parcel-attestation" };
+      const parcelReceipt = producerReceiptFor(parcelAtt);
+      expect(assertVerdictParity(parcelReceipt, parcelAtt, "parcel accept").ok).to.equal(true);
+      // kind-mismatch: the dataset receipt against the parcel attestation (same digest bytes even).
+      const kindMismatch = assertVerdictParity(datasetReceipt, parcelAtt, "kind mismatch");
+      expect(kindMismatch.reason).to.equal("kind-mismatch");
+    });
+
+    it("USAGE contract: a bare receipt is pointed at --anchored-artifact; incompatible flags are named (exit 2)", function () {
+      // A receipt WITHOUT --anchored-artifact: a NAMED usage error naming the two-file command.
+      const bare = cap();
+      expect(verifyvh.run([FIXTURE_RECEIPT], bare.io)).to.equal(2);
+      expect(bare.err()).to.match(/--anchored-artifact <sealed-file>/);
+      // Incompatible flags are named up front, never silently ignored.
+      for (const extra of [
+        ["--vendor", "0x" + "11".repeat(20)],
+        ["--dir", "."],
+        ["--revocations", "nope.json"],
+      ]) {
+        const c = cap();
+        expect(
+          verifyvh.run([FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL, ...extra], c.io),
+          `${extra[0]} rejected`
+        ).to.equal(2);
+        expect(c.err()).to.contain(extra[0]);
+      }
+      // Two positionals cannot pair with one --anchored-artifact.
+      const two = cap();
+      expect(verifyvh.run([FIXTURE_RECEIPT, FIXTURE_RECEIPT, "--anchored-artifact", FIXTURE_SEAL], two.io)).to.equal(2);
+      expect(two.err()).to.match(/exactly ONE <receipt> positional/);
+      // --manifest cannot combine either.
+      const man = cap();
+      expect(verifyvh.run(["--manifest", "m.txt", "--anchored-artifact", FIXTURE_SEAL], man.io)).to.equal(2);
+      expect(man.err()).to.match(/cannot be combined with --manifest/);
+    });
+
+    it("IO contract: an unreadable / non-JSON receipt or artifact is exit 1, never a stack", function () {
+      const missing = path.join(mkTmp(), "nope.json");
+      const c1 = cap();
+      expect(verifyvh.run([missing, "--anchored-artifact", FIXTURE_SEAL], c1.io)).to.equal(1);
+      expect(c1.err()).to.match(/cannot read receipt/);
+      const notJson = path.join(mkTmp(), "bad.json");
+      fs.writeFileSync(notJson, "not json {");
+      const c2 = cap();
+      expect(verifyvh.run([FIXTURE_RECEIPT, "--anchored-artifact", notJson], c2.io)).to.equal(1);
+      expect(c2.err()).to.match(/is not valid JSON/);
+    });
+
+    it("usage() documents the anchored-receipt leg (the flag a doc reader will copy-paste exists)", function () {
+      const u = verifyvh.usage();
+      expect(u).to.contain("--anchored-artifact <sealed-file>");
+      expect(u).to.contain("ANCHORED RECEIPTS (T-70.4)");
     });
   });
 });

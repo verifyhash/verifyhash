@@ -506,7 +506,9 @@ describe("verifier in-memory file-source seam (T-66.1)", function () {
     it("verify-vh.js module scope binds ONLY the pinned require set (no new specifier smuggled in for the seam)", function () {
       const specs = [...src.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
       expect([...new Set(specs)].sort()).to.deep.equal(
-        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "os", "path"].sort()
+        // T-70.4 adds Node-core `crypto` (sha256 for the anchored-receipt attestation digest legs) —
+        // bound at module scope OUTSIDE the engine block; the block-level purity checks above still hold.
+        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "crypto", "fs", "os", "path"].sort()
       );
     });
   });

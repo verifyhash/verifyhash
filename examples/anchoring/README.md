@@ -15,6 +15,13 @@ Verify the binding **offline** — no chain, no key, no network — from the rep
 node cli/vh.js verify-anchored examples/anchoring/anchored-receipt.local.json examples/anchoring/sample-seal.vhevidence.json
 ```
 
+Or with **zero producer stack** — the standalone, dependency-free verifier tree (T-70.4; the
+single-file bundle `verify-vh-standalone.js` accepts the same flags):
+
+```bash
+node verifier/verify-vh.js examples/anchoring/anchored-receipt.local.json --anchored-artifact examples/anchoring/sample-seal.vhevidence.json
+```
+
 Expected: `ACCEPTED (offline binding check)`, exit `0` — the receipt's digest is **recomputed** from
 the packet bytes through the packet's own validator, never trusted from either file. Change one byte
 of either file and re-run: a **named** reject, exit `3`.

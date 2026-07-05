@@ -447,12 +447,13 @@ describe("free sealer standalone: single-file, zero-install seal-your-own-folder
 
       // In-tree verifier: require graph is exactly its own ./lib/* siblings + Node core (fs/path/os) — never
       // ethers/hardhat or a cli/ back-edge. The SEAL bundle (this task) never touches it; T-51.4 added the
-      // stack-free ./lib/revocation reader to the verifier graph, T-55.2 added `os` for the demo (both still
-      // pure-JS, still no producer stack).
+      // stack-free ./lib/revocation reader to the verifier graph, T-55.2 added `os` for the demo, and
+      // T-70.4 added Node-core `crypto` (sha256 for the anchored-receipt attestation digest legs) — all
+      // still pure-JS/Node-core, still no producer stack.
       const isrc = fs.readFileSync(INTREE_VERIFIER_PATH, "utf8");
       const ispecs = [...isrc.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
       expect([...new Set(ispecs)].sort()).to.deep.equal(
-        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "fs", "os", "path"].sort()
+        ["./lib/canonical", "./lib/merkle", "./lib/revocation", "./lib/secp256k1-recover", "crypto", "fs", "os", "path"].sort()
       );
     });
   });

@@ -14,6 +14,25 @@
   "engines": {
     "node": ">=18"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/verifyhash/verifyhash.git",
+    "directory": "verifier"
+  },
+  "homepage": "https://github.com/verifyhash/verifyhash/tree/main/verifier#readme",
+  "bugs": {
+    "url": "https://github.com/verifyhash/verifyhash/issues"
+  },
+  "keywords": [
+    "verify",
+    "merkle",
+    "keccak",
+    "provenance",
+    "tamper-evident",
+    "attestation",
+    "offline",
+    "evidence"
+  ],
   "dependencies": {
     "js-sha3": "^0.8.0"
   }

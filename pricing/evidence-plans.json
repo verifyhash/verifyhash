@@ -1,0 +1,28 @@
+{
+  "_doc": "LIVE evidence plan catalog — prices CONFIRMED by the project owner 2026-07-05 (default accepted from docs/DECISIONS-PENDING.md decision #2, executed by the supervisor at explicit user direction). A plan is an ACCESS DESCRIPTION for delivered software value (which paid evidence features a subscription unlocks and for how long). It is NOT a token, NOT tradeable, NOT an appreciating asset, and this catalog makes NO claim of regulatory compliance. The actual subscription agreement governs. Vendor signing address: 0x7cb4d3DC6C52996B6386473Bfb32f898263412f7 (identity card: identity/verifyhash-evidence.vhidentity.json).",
+  "kind": "vh-evidence-plan-catalog",
+  "schemaVersion": 1,
+  "plans": [
+    {
+      "planId": "evidence-signed-monthly",
+      "displayName": "Evidence Signed (monthly) — USD $29/month",
+      "priceUsd": 29,
+      "billingPeriod": "monthly",
+      "entitlements": [
+        "evidence_signed"
+      ],
+      "termDays": 30
+    },
+    {
+      "planId": "evidence-pro-annual",
+      "displayName": "Evidence Pro (annual) — USD $290/year",
+      "priceUsd": 290,
+      "billingPeriod": "annual",
+      "entitlements": [
+        "evidence_signed",
+        "evidence_unlimited"
+      ],
+      "termDays": 365
+    }
+  ]
+}

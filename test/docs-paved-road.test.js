@@ -1,6 +1,7 @@
 "use strict";
 
-// test/docs-paved-road.test.js — the OFFLINE docs-flag lint for the copy-paste front door (T-73.1).
+// test/docs-paved-road.test.js — the OFFLINE docs lint for the copy-paste front door
+// (T-73.1: fenced `vh …` lines; T-74.2: fenced `npx …` lines + README publish-state consistency).
 //
 // WHY THIS TEST EXISTS
 //   The paved road IS the product surface a stranger meets first: fenced `vh …` lines in README.md and
@@ -43,14 +44,15 @@ const DOCS = [
 // 1. Extraction — every fenced `vh …` line, comment-stripped, continuation-joined, bracket-normalized
 // ---------------------------------------------------------------------------------------------------
 
-// extractFencedVhInvocations(markdown, docName) -> [{ doc, line, raw, rest }] for every line inside a
-// ``` / ~~~ fence that (after joining trailing-`\` continuations and stripping `# …` comments) invokes
-// `vh …` (an optional leading `$ ` prompt is tolerated).
-function extractFencedVhInvocations(markdown, docName) {
+// extractFencedInvocations(markdown, docName, cmdWord) -> [{ doc, line, raw, rest }] for every line
+// inside a ``` / ~~~ fence that (after joining trailing-`\` continuations and stripping `# …` comments)
+// invokes `<cmdWord> …` (an optional leading `$ ` prompt is tolerated).
+function extractFencedInvocations(markdown, docName, cmdWord) {
   const out = [];
   const lines = markdown.split(/\r?\n/);
   let inFence = false;
   let pending = null; // accumulates `\`-continued lines
+  const invokeRe = new RegExp("^\\s*(?:\\$\\s+)?" + cmdWord + "\\s+(.*)$");
   for (let n = 0; n < lines.length; n++) {
     const line = lines[n];
     if (/^\s*(```|~~~)/.test(line)) {
@@ -66,11 +68,15 @@ function extractFencedVhInvocations(markdown, docName) {
       continue;
     }
     text = text.replace(/(^|\s)#.*$/, "$1"); // strip a shell comment
-    const m = text.match(/^\s*(?:\$\s+)?vh\s+(.*)$/);
+    const m = text.match(invokeRe);
     if (!m) continue;
     out.push({ doc: docName, line: n + 1, raw: line.trim(), rest: m[1] });
   }
   return out;
+}
+
+function extractFencedVhInvocations(markdown, docName) {
+  return extractFencedInvocations(markdown, docName, "vh");
 }
 
 // Usage-notation brackets/alternation (`[--out <p>]`, `(--key-env <VAR>|--key-file <p>)`) are
@@ -284,6 +290,159 @@ function lintInvocations(help, frags, invocations) {
   return problems;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// 4. npx front door (T-74.2) — every fenced `npx <pkg> …` must name a runnable bin, OFFLINE
+//
+//    History: the README's install block advertised `npx verifyhash --help`. The `verifyhash` package
+//    ships TWO bins (`vh`, `vh-agent-hook`) and none named `verifyhash`, so npx errors with "could not
+//    determine executable to run" — a broken command at the exact moment of highest stranger intent.
+//    The rule npm itself applies: `npx <pkg>` resolves only when the package has exactly ONE bin or a
+//    bin named after the (unscoped) package; `npx -p <pkg> <cmd>` runs <cmd>, which must be one of the
+//    package's bin names. This lint applies the same rule to every fenced `npx …` doc line, resolving
+//    each package's bin map OFFLINE (this repo's own package.json files + node_modules — no network).
+// ---------------------------------------------------------------------------------------------------
+
+// Packages whose package.json lives in THIS repo (not under node_modules).
+const LOCAL_PKG_JSON = new Map([
+  ["verifyhash", path.join(REPO, "package.json")],
+  ["verify-vh", path.join(REPO, "verifier", "package.json")],
+]);
+
+// "@scope/name@^1.2.3" -> "@scope/name"; "name@1.2.3" -> "name".
+function pkgNameOf(spec) {
+  const at = spec.indexOf("@", spec.startsWith("@") ? 1 : 0);
+  return at === -1 ? spec : spec.slice(0, at);
+}
+
+function unscopedNameOf(name) {
+  const slash = name.lastIndexOf("/");
+  return slash === -1 ? name : name.slice(slash + 1);
+}
+
+// binMapOf(name) -> { binName: relPath, … } | null when the package can't be resolved offline.
+// A string `bin` means one bin named after the unscoped package name (npm's own rule).
+function binMapOf(name) {
+  let file = LOCAL_PKG_JSON.get(name);
+  if (!file) {
+    const inNodeModules = path.join(REPO, "node_modules", ...name.split("/"), "package.json");
+    if (fs.existsSync(inNodeModules)) file = inNodeModules;
+  }
+  if (!file) return null;
+  const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (typeof pkg.bin === "string") return { [unscopedNameOf(pkg.name || name)]: pkg.bin };
+  return pkg.bin || {};
+}
+
+// parseNpxInvocation("--yes -p verifyhash vh --help") -> { packages: ["verifyhash"], target: "vh" }.
+// `packages` are the -p/--package specs; `target` is the first non-flag token — the PACKAGE in the
+// plain `npx <pkg> …` form, or the COMMAND in the `npx -p <pkg> <cmd> …` form.
+const NPX_VALUE_FLAGS = new Set(["-p", "--package", "-c", "--call", "--node-arg", "-n"]);
+function parseNpxInvocation(rest) {
+  const tokens = rest.split(/\s+/).filter((t) => t.length > 0);
+  const packages = [];
+  let i = 0;
+  for (; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t === "--") {
+      i++;
+      break;
+    }
+    const eq = t.match(/^(--[A-Za-z][A-Za-z0-9-]*)=(.*)$/);
+    if (eq) {
+      if (eq[1] === "--package") packages.push(eq[2]);
+      continue;
+    }
+    if (t.startsWith("-")) {
+      if (NPX_VALUE_FLAGS.has(t)) {
+        const v = tokens[++i];
+        if ((t === "-p" || t === "--package") && v) packages.push(v);
+      }
+      continue;
+    }
+    break; // first non-flag token
+  }
+  return { packages, target: i < tokens.length ? tokens[i] : null };
+}
+
+// lintNpxInvocations(invocations) -> [problem strings] (empty = every fenced npx line could really run).
+function lintNpxInvocations(invocations) {
+  const problems = [];
+  for (const inv of invocations) {
+    const loc = `${inv.doc}:${inv.line}`;
+    const { packages, target } = parseNpxInvocation(inv.rest);
+    if (packages.length > 0) {
+      // `npx -p <pkg> <cmd> …` — <cmd> must be a bin NAME in (one of) the named package(s).
+      if (!target) {
+        problems.push(`${loc}: \`npx -p …\` with no command to run — raw: ${inv.raw}`);
+        continue;
+      }
+      const bins = new Set();
+      let unresolved = null;
+      for (const spec of packages) {
+        const name = pkgNameOf(spec);
+        const binMap = binMapOf(name);
+        if (binMap === null) {
+          unresolved = name;
+          break;
+        }
+        for (const b of Object.keys(binMap)) bins.add(b);
+      }
+      if (unresolved) {
+        problems.push(`${loc}: cannot resolve package \`${unresolved}\` offline to check its bin map — raw: ${inv.raw}`);
+      } else if (!bins.has(target)) {
+        problems.push(
+          `${loc}: \`${target}\` is NOT a bin of ${packages.join(", ")} (bins: ${[...bins].sort().join(", ") || "none"}) — raw: ${inv.raw}`
+        );
+      }
+      continue;
+    }
+    if (!target) {
+      problems.push(`${loc}: bare \`npx\` with no package — raw: ${inv.raw}`);
+      continue;
+    }
+    // Plain `npx <pkg> …` — npm runs it only if the package has ONE bin or a bin named after the package.
+    const name = pkgNameOf(target);
+    const binMap = binMapOf(name);
+    if (binMap === null) {
+      problems.push(`${loc}: cannot resolve package \`${name}\` offline to check its bin map — raw: ${inv.raw}`);
+      continue;
+    }
+    const binNames = Object.keys(binMap);
+    if (binNames.length !== 1 && !binNames.includes(unscopedNameOf(name))) {
+      problems.push(
+        `${loc}: \`npx ${name}\` cannot resolve an executable — package \`${name}\` has bins [${binNames.sort().join(", ")}] and none is named \`${unscopedNameOf(name)}\`; write \`npx --yes -p ${name} <bin> …\` instead — raw: ${inv.raw}`
+      );
+    }
+  }
+  return problems;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// 5. Publish-state consistency (T-74.2) — the README must never claim published AND not-published
+//    (the exact contradiction the 2026-07-05 cold-stranger audit found: "# published on npm" in the
+//    install block vs "intentionally not performed … until then, use the local install path" below it).
+// ---------------------------------------------------------------------------------------------------
+
+const PUBLISHED_CLAIM = /\bpublished on npm\b|npmjs\.com\/package\/verifyhash|\bis published\b/i;
+const NOT_PUBLISHED_CLAIMS = [
+  /\bnot (?:yet )?published\b/i,
+  /\bintentionally not performed\b/i,
+  /\buntil then, use the local\b/i,
+  /\bnot (?:yet )?on (?:the )?(?:public )?npm\b/i,
+];
+
+function publicationClaims(text) {
+  // Normalize the way a reader does: blockquote markers drop, line wraps become spaces — so a phrase
+  // that happens to wrap across lines ("… is intentionally\n> not performed …") still matches.
+  const t = text.replace(/\n>\s*/g, " ").replace(/\s+/g, " ");
+  const notPublishedMatches = NOT_PUBLISHED_CLAIMS.filter((re) => re.test(t)).map(String);
+  return {
+    published: PUBLISHED_CLAIM.test(t),
+    notPublished: notPublishedMatches.length > 0,
+    notPublishedMatches,
+  };
+}
+
 describe("docs paved road: every fenced `vh …` line in README/ADOPT is a real, accepted invocation (T-73.1)", function () {
   this.timeout(120000); // two short node subprocesses (help + probe driver); generous for slow CI boxes
 
@@ -340,5 +499,88 @@ describe("docs paved road: every fenced `vh …` line in README/ADOPT is a real,
       "the known-good `vh hash ./f --git` must NOT be flagged"
     ).to.deep.equal([]);
     expect(problems.length, "exactly the three planted defects must be detected").to.equal(3);
+  });
+});
+
+describe("docs paved road: every fenced `npx …` line names a runnable bin + the README's publish state is self-consistent (T-74.2)", function () {
+  const npxByDoc = new Map();
+  let readmeText;
+
+  before(function () {
+    for (const [name, file] of DOCS) {
+      const text = fs.readFileSync(file, "utf8");
+      npxByDoc.set(name, extractFencedInvocations(text, name, "npx"));
+      if (name === "README.md") readmeText = text;
+    }
+  });
+
+  it("EXTRACTOR-ROT GUARD: extracts at least one fenced `npx …` invocation from EACH front-door doc", function () {
+    for (const [name] of DOCS) {
+      const got = npxByDoc.get(name);
+      expect(got.length, `${name} must yield at least one fenced \`npx …\` invocation (extractor rot?)`).to.be.greaterThan(0);
+    }
+  });
+
+  it("every fenced `npx <pkg> …` invocation names a bin present in that package's bin map (npx could really run it)", function () {
+    const all = [...npxByDoc.values()].flat();
+    const problems = lintNpxInvocations(all);
+    expect(problems, `npx front-door drift:\n  - ${problems.join("\n  - ")}`).to.deep.equal([]);
+  });
+
+  it("NEGATIVE SELF-TEST: `npx verifyhash` (multi-bin package, no bin named `verifyhash`) is DETECTED; the corrected `-p verifyhash vh` form and single-bin `verify-vh` pass", function () {
+    // Precondition of the whole check: the verifyhash package really has multiple bins, none named
+    // `verifyhash` — the shape that makes plain `npx verifyhash` unrunnable.
+    const vhBins = Object.keys(binMapOf("verifyhash"));
+    expect(vhBins, "verifyhash's bin map must contain `vh`").to.include("vh");
+    expect(vhBins.length, "verifyhash must have multiple bins (else `npx verifyhash` would work)").to.be.greaterThan(1);
+    expect(vhBins, "no bin is named after the package").to.not.include("verifyhash");
+
+    const synthetic = [
+      "```bash",
+      "npx verifyhash --help", // the historical front-door bug: npx cannot pick an executable
+      "npx --yes -p verifyhash vh --help", // the corrected form: `vh` IS in verifyhash's bin map
+      "npx --yes verify-vh demo", // single bin named after the package — resolvable as-is
+      "npx -p verify-vh frobnicate", // planted: a -p command that is NOT a bin of verify-vh
+      "```",
+    ].join("\n");
+    const invocations = extractFencedInvocations(synthetic, "synthetic", "npx");
+    expect(invocations.length, "the synthetic doc must extract all four npx lines").to.equal(4);
+
+    const problems = lintNpxInvocations(invocations);
+    const text = problems.join("\n");
+    expect(text, "the checker must detect that plain `npx verifyhash` cannot resolve an executable").to.match(
+      /synthetic:2:.*npx verifyhash.*cannot resolve an executable/
+    );
+    expect(text, "the checker must detect the -p command that is not a bin").to.match(/synthetic:5:.*frobnicate.*NOT a bin/);
+    expect(
+      problems.filter((p) => p.startsWith("synthetic:3:") || p.startsWith("synthetic:4:")),
+      "the corrected `-p verifyhash vh` form and the single-bin `verify-vh` form must NOT be flagged"
+    ).to.deep.equal([]);
+    expect(problems.length, "exactly the two planted defects must be detected").to.equal(2);
+  });
+
+  it("the README never simultaneously claims PUBLISHED and NOT-published (and it does claim published, agreeing with site card 03)", function () {
+    const claims = publicationClaims(readmeText);
+    expect(claims.published, "README must state that `verifyhash` IS published on npm (site card 03 says so)").to.equal(true);
+    expect(
+      claims.notPublished,
+      `README claims published AND not-published at once — contradicting markers: ${claims.notPublishedMatches.join(" , ")}`
+    ).to.equal(false);
+  });
+
+  it("NEGATIVE SELF-TEST: the publish-state detector catches the historical README contradiction", function () {
+    const stale =
+      "# published on npm — https://www.npmjs.com/package/verifyhash\n" +
+      "> Publishing `verifyhash` to the public npm registry is a **human action** and is intentionally\n" +
+      "> not performed by the build. Until then, use the local install path above.\n";
+    // The planted text line-wraps between "intentionally" and "not performed" — the detector's own
+    // normalization must still catch it.
+    const claims = publicationClaims(stale);
+    expect(claims.published, "the stale README claimed published (install block)").to.equal(true);
+    expect(claims.notPublished, "the stale README ALSO claimed not-published (the caveat)").to.equal(true);
+
+    const clean = publicationClaims("`verifyhash` **is published** on the public npm registry.");
+    expect(clean.published).to.equal(true);
+    expect(clean.notPublished, "a consistent README must not trip the not-published markers").to.equal(false);
   });
 });

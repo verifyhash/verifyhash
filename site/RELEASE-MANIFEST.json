@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1081586,
+  "totalBytes": 1082150,
   "files": [
     {
       "path": "LICENSE",
@@ -145,8 +145,8 @@
     {
       "path": "docs/overview.md",
       "source": "README.md",
-      "bytes": 72791,
-      "sha256": "e5bb1cc08a09717514e7c01a8b1ab360338919c7c27d7667049a325216de1b50"
+      "bytes": 73355,
+      "sha256": "eebe6cc0361a90c49be13f9b5a624168f2705b975d5da99e526a9c2edd3674cd"
     },
     {
       "path": "docs/pilot-README.md",

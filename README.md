@@ -1,5 +1,7 @@
 # verifyhash
 
+**Prove a file, folder, or dataset is byte-for-byte unaltered with one offline command — no account, no key, no chain required: `npx --yes -p verifyhash vh hash ./myfile.txt`.**
+
 A tamper-evident, permissionless, immutable on-chain registry of code-contribution hashes
 (Polygon-targeted). Anchor the hash of a file or an entire repository on-chain; anyone can later
 prove that some content is byte-for-byte what was anchored — without trusting any server, any
@@ -8,13 +10,6 @@ admin, or any private key to read.
 The registry contract (`contracts/ContributionRegistry.sol`) is deliberately ownerless: no admin,
 no pause, no upgrade path, and it never holds funds. Each content hash can be anchored exactly once
 (first-writer-wins) and can never be altered or deleted. That immutability is the product.
-
-**Live deployment — Polygon mainnet (chain id 137):**
-[`0x77d8eF881D5aeEda64788968D13f9146fE1A609B`](https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B)
-(deployed 2026-07-03; ownerless — the deploying key holds no special power over it). Pin this address
-out-of-band; `vh` reads/writes against it with `--contract 0x77d8eF881D5aeEda64788968D13f9146fE1A609B`.
-
-> **Ready to charge for it?** [`docs/GO-LIVE.md`](docs/GO-LIVE.md) is the decision-ready "first dollar" page (`npm run go-live`): the **self-serve evidence license** is the recommended default; the design-partner **pilot** is the enterprise fallback.
 
 ## Install / Quickstart
 
@@ -30,8 +25,8 @@ out-of-band; `vh` reads/writes against it with `--contract 0x77d8eF881D5aeEda647
 ```bash
 # published on npm — https://www.npmjs.com/package/verifyhash
 npm install -g verifyhash      # puts `vh` on your PATH
-# or run it without installing:
-npx verifyhash --help
+# or run it without installing (the package's executable is named `vh`, so name it):
+npx --yes -p verifyhash vh --help
 
 vh --help                      # the full usage block
 vh hash ./myfile.txt           # keccak256 of a file (offline, no key, no network)
@@ -65,7 +60,7 @@ read/write commands (`vh anchor/claim/verify/list/show/lineage/reputation`) addi
 need an RPC endpoint; the registry ABI is bundled in the package, so they run from a clean
 install without any compile step.
 
-**Local install (works today, no registry needed):** from a checkout of this repo,
+**Offline / from-source alternative (no registry needed):** from a checkout of this repo,
 
 ```bash
 npm install          # installs dependencies (incl. devDependencies)
@@ -73,9 +68,21 @@ npm install -g .      # OR: npm link  — both create a global `vh` from this ch
 vh --help
 ```
 
-> Publishing `verifyhash` to the public npm registry (so `npm install -g verifyhash`
-> resolves remotely) is a **human action** and is intentionally not performed by the build.
-> Until then, use the local install path above.
+> `verifyhash` **is published** on the public npm registry —
+> [npmjs.com/package/verifyhash](https://www.npmjs.com/package/verifyhash), latest `0.1.4` at the time
+> of writing — the same "From npm" install the [verifyhash.com](https://verifyhash.com) landing page
+> shows (card 03). Publishing a **new** version stays a human action (the build never runs
+> `npm publish`); the from-source checkout above is the alternative when you want to work fully
+> offline or audit the exact source you run.
+
+### On-chain anchoring (optional)
+
+**Live deployment — Polygon mainnet (chain id 137):**
+[`0x77d8eF881D5aeEda64788968D13f9146fE1A609B`](https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B)
+(deployed 2026-07-03; ownerless — the deploying key holds no special power over it). Pin this address
+out-of-band; `vh` reads/writes against it with `--contract 0x77d8eF881D5aeEda64788968D13f9146fE1A609B`.
+
+> **Ready to charge for it?** [`docs/GO-LIVE.md`](docs/GO-LIVE.md) is the decision-ready "first dollar" page (`npm run go-live`): the **self-serve evidence license** is the recommended default; the design-partner **pilot** is the enterprise fallback.
 
 ## What it proves (and what it does NOT)
 

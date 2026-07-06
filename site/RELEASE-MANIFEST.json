@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1091005,
+  "totalBytes": 1090359,
   "files": [
     {
       "path": "LICENSE",
@@ -43,8 +43,8 @@
     {
       "path": "docs/DECIDE.md",
       "source": "docs/DECIDE.md",
-      "bytes": 3248,
-      "sha256": "4d871844878b834b3880a5370d7600022dbd942c324d024dd8f85d8f7f54f282"
+      "bytes": 2602,
+      "sha256": "8a4e76f81c8d23fff1e35f5323d404c8f387ab73cba1df806a33daaf6011338d"
     },
     {
       "path": "docs/EVIDENCE.md",

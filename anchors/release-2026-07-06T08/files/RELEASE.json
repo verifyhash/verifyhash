@@ -1,0 +1,16 @@
+{
+  "kind": "verifyhash-release-attestation",
+  "date": "2026-07-06T08",
+  "gitCommit": "b22a607",
+  "repo": "https://github.com/verifyhash/verifyhash",
+  "npm": {
+    "verifyhash@0.1.7": {
+      "shasum": "4d50976df9245499591437195ecac96d05a2cb81"
+    },
+    "verify-vh@0.1.6": {
+      "shasum": "39e874a6cceb0f3e2fa73c22d00fddd6375e13fa"
+    }
+  },
+  "milestone": "FIRST release shipping the full 4-language independent verifier suite (verifier-py + verifier-go + verifier-rs + verify-vectors, per docs/INDEPENDENT-VERIFICATION.md §6) — JS/Python/Go/Rust all conformance-verified byte-identical. Also: EPIC-75 security hardening (fail-closed verify, canonical-vendor paid gate, --exact-dir CI gate, merkle-proof honesty).",
+  "vendorAddress": "0x7cb4d3DC6C52996B6386473Bfb32f898263412f7"
+}

@@ -93,7 +93,9 @@ const PINNED_DOCS = [
 // The PAID producer surface the free→paid bridge points at (T-55.3 rework). These literal copy-paste
 // lines must name verbs the CLI REALLY exposes and a plan id the bundled catalog REALLY contains — so a
 // PAYING prospect is never sent at a verb or plan that does not exist.
-const EXPECTED_PAID_SEAL_LINE = "vh evidence seal <dir> --sign --license <f> --vendor 0xYOU";
+// T-75.3: the license is verified against the CANONICAL vendor identity, so the copy-paste paid line no
+// longer carries a --vendor (a caller --vendor can no longer re-pin the gate).
+const EXPECTED_PAID_SEAL_LINE = "vh evidence seal <dir> --sign --license <f>";
 const EXPECTED_FULFILL_PREFIX = "vh evidence license fulfill --plan ";
 
 // Pull the catalog's real plan ids; the funnel's `--plan <id>` example must name one of THESE verbatim.

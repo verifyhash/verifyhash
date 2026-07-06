@@ -195,7 +195,8 @@ describe("verify-vh composite GitHub Action (T-55.1)", function () {
     try {
       code = await evidence.runEvidenceSeal(
         { dir, out: packetPath, sign: true, keyEnv, license: licFile, vendor: attacker.address, now: NOW },
-        { ...c.io, now: NOW }
+        // T-75.3: the ephemeral key is THIS run's CANONICAL vendor identity (programmatic seam).
+        { ...c.io, now: NOW, canonicalVendor: attacker.address }
       );
     } finally {
       delete process.env[keyEnv];

@@ -9,7 +9,7 @@ Pick the row that matches where you are, copy the one line, and run it. The **fr
 | **No Node/terminal at all? Verify in your browser** (the 60-second challenge built in) | open [`verifier/dist/verify-vh-standalone.html`](../verifier/dist/verify-vh-standalone.html) | free |
 | **See it work in 5 seconds** (no clone, no flags, no key) | `npx --yes verify-vh demo` | free |
 | **Gate your CI on tampered/forged seals** (GitHub Actions) | `uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a` | free |
-| **Issue signed, customer-verifiable seals of your own** (the paid producer surface) | `vh evidence seal <dir> --sign --license <f> --vendor 0xYOU` | **paid** |
+| **Issue signed, customer-verifiable seals of your own** (the paid producer surface) | `vh evidence seal <dir> --sign --license <f>` | **paid** |
 
 The on-ramp is **deliberately one direction**: the free rows convince you the verdict is real, then the
 paid row is the **only** part that turns into revenue — and the line below it (price, key, the sale) is a
@@ -152,8 +152,14 @@ no per-sale terminal step for you:
 
 ```bash
 # Your paying customer runs the PAID producer surface, gated by the license you minted:
-vh evidence seal <dir> --sign --license <f> --vendor 0xYOU
+vh evidence seal <dir> --sign --license <f>
 ```
+
+> **How the gate pins.** The license is verified OFFLINE against the **canonical vendor identity** — a
+> committed constant (`cli/core/vendor-identity.js`), **never** a caller-supplied `--vendor` (which must
+> EQUAL it and can not re-pin the gate; that would let anyone self-mint a license for free). Running your
+> **own** instance as the producer? Set your own identity: `VH_CANONICAL_VENDOR=0xYOU` — an honest
+> self-hosting boundary, not DRM ([`docs/LICENSING.md`](LICENSING.md)).
 
 > The **needs-human** line, on purpose: the **price** on each plan, the **vendor signing key**, and the
 > actual **sale/subscription agreement** are all human steps (the loop builds and tests the mechanism but

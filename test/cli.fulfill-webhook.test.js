@@ -285,6 +285,8 @@ describe("cli/fulfill-webhook T-62.2: the loopback-only HTTP fulfillment webhook
         write: (s) => out.push(s),
         writeErr: (s) => out.push(s),
         now: IN_WINDOW,
+        // T-75.3: the ephemeral webhook vendor is THIS run's CANONICAL identity (programmatic seam).
+        canonicalVendor: wallet.address,
       };
       let code;
       try {

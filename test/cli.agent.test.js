@@ -444,31 +444,46 @@ describe("cli/agent T-68.2: `vh agent` — seal/verify/redact/prove/verify-proof
       const code = await agent.cmdAgent(["seal", sess, "--sign"], io);
       expect(code).to.equal(2);
       // The SAME shape the evidence gate emits: "<feature> is a PAID surface and requires a
-      // license; pass --license <file> --vendor <0xaddr>." plus the free-tier pointer.
+      // license; pass --license <file>." plus the canonical-pin pointer + the free-tier pointer.
       expect(io.err()).to.match(
-        /error: .* is a PAID surface and requires a license; pass --license <file> --vendor <0xaddr>\./
+        /error: .* is a PAID surface and requires a license; pass --license <file>\./
       );
+      expect(io.err()).to.include("CANONICAL vendor identity");
       expect(io.err()).to.include("the signed head attestation (--sign)");
       expect(io.err()).to.include("The FREE tier");
     });
 
-    it("--license without --vendor (and vice versa) is REFUSED with the paired-flags message", async function () {
+    it("T-75.3: --vendor can NOT re-pin the gate; --license alone is verified against the CANONICAL identity", async function () {
       const dir = tmp();
       const sess = writeSession(dir, fixtureEvents());
-      const { file } = await mintLicense(dir, ["agent_signed"]);
-      for (const extra of [["--license", file], ["--vendor", Wallet.createRandom().address]]) {
-        const io = capture();
-        const code = await agent.cmdAgent(["seal", sess, "--sign", ...extra], io);
-        expect(code).to.equal(2);
-        expect(io.err()).to.include("--license and --vendor must be supplied together");
-      }
+
+      // (a) The SELF-MINT attack: a self-minted license + a --vendor naming the attacker's own key is a
+      //     NAMED usage refusal — the caller-supplied pin never re-pins the gate.
+      const attacker = Wallet.createRandom();
+      const selfMinted = await mintLicense(dir, ["agent_signed"], attacker);
+      const io1 = capture();
+      const c1 = await agent.cmdAgent(
+        ["seal", sess, "--sign", "--license", selfMinted.file, "--vendor", attacker.address],
+        io1
+      );
+      expect(c1).to.equal(2);
+      expect(io1.err()).to.include("does not match the canonical vendor identity");
+      expect(io1.err()).to.include("cannot re-pin an entitlement gate");
+
+      // (b) --license ALONE is complete usage: it verifies against the canonical identity (here, the
+      //     committed published identity, so the self-minted license is the named wrong_issuer reject).
+      const io2 = capture();
+      const c2 = await agent.cmdAgent(["seal", sess, "--sign", "--license", selfMinted.file], io2);
+      expect(c2).to.equal(3);
+      expect(io2.err()).to.match(/requires a VALID license, but the supplied license is wrong_issuer/);
     });
 
     it("a VALID license that does NOT carry `agent_signed` (an evidence-only license) is REFUSED naming the capability — never silently downgraded", async function () {
       const dir = tmp();
       const sess = writeSession(dir, fixtureEvents());
       const { file, vendor } = await mintLicense(dir, ["evidence_signed", "evidence_unlimited"]);
-      const io = capture();
+      // The ephemeral vendor is THIS run's canonical identity (programmatic seam; --vendor asserts it).
+      const io = capture({ canonicalVendor: vendor });
       const code = await agent.cmdAgent(["seal", sess, "--sign", "--license", file, "--vendor", vendor], io);
       expect(code).to.equal(3);
       expect(io.err()).to.include('does NOT include the "agent_signed" entitlement');
@@ -482,7 +497,7 @@ describe("cli/agent T-68.2: `vh agent` — seal/verify/redact/prove/verify-proof
 
       const vendor = Wallet.createRandom();
       const other = await mintLicense(dir, ["agent_signed"], Wallet.createRandom());
-      const io1 = capture();
+      const io1 = capture({ canonicalVendor: vendor.address });
       const c1 = await agent.cmdAgent(
         ["seal", sess, "--sign", "--license", other.file, "--vendor", vendor.address],
         io1
@@ -494,7 +509,7 @@ describe("cli/agent T-68.2: `vh agent` — seal/verify/redact/prove/verify-proof
         issuedAt: "2025-01-01T00:00:00.000Z",
         expiresAt: "2025-02-01T00:00:00.000Z",
       });
-      const io2 = capture();
+      const io2 = capture({ canonicalVendor: vendor.address });
       const c2 = await agent.cmdAgent(
         ["seal", sess, "--sign", "--license", expired.file, "--vendor", vendor.address],
         io2
@@ -511,7 +526,7 @@ describe("cli/agent T-68.2: `vh agent` — seal/verify/redact/prove/verify-proof
       process.env[KEY_ENV] = vendorW.privateKey;
 
       const packetPath = path.join(dir, "signed.vhagent.json");
-      const io1 = capture();
+      const io1 = capture({ canonicalVendor: vendorW.address });
       const c1 = await agent.cmdAgent(
         ["seal", sess, "--sign", "--license", file, "--vendor", vendorW.address, "--key-env", KEY_ENV, "--out", packetPath, "--json"],
         io1
@@ -576,7 +591,7 @@ describe("cli/agent T-68.2: `vh agent` — seal/verify/redact/prove/verify-proof
       const packetPath = path.join(dir, "signed.vhagent.json");
       await agent.cmdAgent(
         ["seal", sess, "--sign", "--license", file, "--vendor", vendorW.address, "--key-env", KEY_ENV, "--out", packetPath],
-        capture()
+        capture({ canonicalVendor: vendorW.address })
       );
       const redactedPath = path.join(dir, "signed-redacted.vhagent.json");
       const io1 = capture();

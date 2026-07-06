@@ -42,6 +42,17 @@
 //   actual subscription agreement governs. The license gates FEATURES; it never replaces the SLA.
 
 const coreLicense = require("../cli/core/license");
+const vendorIdentity = require("../cli/core/vendor-identity");
+
+// THE CANONICAL VENDOR IDENTITY (T-75.3) — the ONE committed address an ENTITLEMENT GATE pins license
+// verification to. This is the published verifyhash vendor identity (cli/core/vendor-identity.js): the
+// SAME owner-held vendor key mints TrustLedger licenses and evidence licenses. Gate-side verification
+// must pin HERE (via `resolveVendorPin` below), never to a caller-supplied `--vendor` — a caller-chosen
+// pin would let anyone self-mint a license and unlock the paid surface for free. The read-only
+// `vh trust license verify --vendor <addr>` inspection verb keeps its explicit caller pin (it answers
+// "did THIS key sign it?", it unlocks nothing). Self-hosted operators set their OWN identity
+// (docs/LICENSING.md "Paid-gate vendor pinning").
+const CANONICAL_VENDOR_ADDRESS = vendorIdentity.VERIFYHASH_VENDOR_ADDRESS;
 
 // ---------------------------------------------------------------------------
 // Identity. The license has its OWN `kind`/`schemaVersion`, disjoint from the seal/dataset/parcel
@@ -127,6 +138,8 @@ const CFG = Object.freeze({
   supportedSchemaVersions: SUPPORTED_LICENSE_SCHEMA_VERSIONS,
   note: LICENSE_TRUST_NOTE,
   entitlements: ENTITLEMENTS,
+  // the COMMITTED canonical vendor identity gate-side verification pins to (T-75.3)
+  canonicalVendor: CANONICAL_VENDOR_ADDRESS,
   // signed-container framing
   signedKind: SIGNED_LICENSE_KIND,
   signedSchemaVersion: SIGNED_LICENSE_SCHEMA_VERSION,
@@ -202,6 +215,16 @@ function verifyLicense(container, opts) {
 /** PURE entitlement gate — true only for a present flag on a VALID verdict (product-agnostic). */
 function hasEntitlement(verdict, flag) {
   return coreLicense.hasEntitlement(verdict, flag);
+}
+
+/**
+ * resolveVendorPin(callerVendor?) — the ONE address a TrustLedger ENTITLEMENT GATE may pin license
+ * verification to: the CANONICAL vendor identity (T-75.3), never a caller-supplied address. A
+ * caller-asserted vendor is accepted ONLY when it EQUALS the canonical identity; a mismatch is a NAMED
+ * LicenseError (never a silent re-pin). Returns the checksummed canonical address to hand verifyLicense.
+ */
+function resolveVendorPin(callerVendor) {
+  return coreLicense.resolveVendorPin(CFG, callerVendor);
 }
 
 // ---------------------------------------------------------------------------
@@ -555,6 +578,9 @@ module.exports = {
   readLicense,
   verifyLicense,
   hasEntitlement,
+  // the canonical vendor pin (T-75.3)
+  CANONICAL_VENDOR_ADDRESS,
+  resolveVendorPin,
   // order -> license-params mapping (T-37.2)
   fulfillOrder,
   // event -> order normalizer + idempotency key (T-38.2)

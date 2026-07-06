@@ -8,8 +8,9 @@
 //   * editing a file in the dir makes verify report EXACTLY that file CHANGED with a non-zero exit;
 //   * a packet stores a GENERIC product kind (`vh.evidence-seal`) — no trust-reconcile vocabulary;
 //   * the PAID surface (the signed wrap; sealing > the free sample) 4xx/exit-REJECTS WITHOUT a valid
-//     license and SUCCEEDS WITH an ephemeral-key license pinned to the matching vendor;
-//   * a license signed by a DIFFERENT key is wrong_issuer (the gate refuses, never downgrades);
+//     license and SUCCEEDS WITH a license minted by the run's CANONICAL vendor key (declared for these
+//     ephemeral-key tests via the programmatic io.canonicalVendor seam — never argv; T-75.3);
+//   * a license signed by a NON-canonical key is wrong_issuer (the gate refuses, never downgrades);
 //   * --json round-trips (seal --json artifact verifies; verify --json carries the structured verdict);
 //   * the output LEADS with the TRUST-BOUNDARIES one-liner;
 //   * every write lands under a throwaway temp dir; the working tree (cwd) is left CLEAN.
@@ -156,19 +157,22 @@ describe("cli/evidence T-30.3: `vh evidence seal|verify`", function () {
     expect(io.err()).to.not.match(/0x[0-9a-fA-F]{40,}/); // never echoes a key
   });
 
-  it("PAID --sign SUCCEEDS with a valid license pinned to the matching vendor", async function () {
+  it("PAID --sign SUCCEEDS with a valid license minted by the CANONICAL vendor key", async function () {
     const dir = mkDir(2);
     const lroot = mkTmp();
     const wallet = Wallet.createRandom();
     const { file: licFile, vendor } = await mintLicense(lroot, ["evidence_signed"], wallet);
     const out = path.join(lroot, "signed.vhevidence.json");
 
-    // Sign with a SEPARATE ephemeral operator key (read from env, used, discarded).
+    // Sign with a SEPARATE ephemeral operator key (read from env, used, discarded). The gate pins the
+    // license to the CANONICAL vendor identity (T-75.3); this test IS its own instance, so it declares
+    // the ephemeral vendor canonical via the programmatic `io.canonicalVendor` seam (never argv). The
+    // matching --vendor assertion is also passed — it must be ACCEPTED (it EQUALS the canonical).
     const opWallet = Wallet.createRandom();
     const prev = process.env.EV_OP_KEY;
     process.env.EV_OP_KEY = opWallet.privateKey;
     try {
-      const io = capture();
+      const io = capture({ canonicalVendor: vendor });
       const code = await evidence.runEvidenceSeal(
         { dir, out, sign: true, keyEnv: "EV_OP_KEY", license: licFile, vendor },
         io
@@ -193,25 +197,28 @@ describe("cli/evidence T-30.3: `vh evidence seal|verify`", function () {
     expect(v.verdict).to.equal("ACCEPTED");
   });
 
-  it("a license signed by a DIFFERENT key is wrong_issuer (gate refuses, never downgrades)", async function () {
+  it("a license signed by a NON-canonical key is wrong_issuer (gate refuses, never downgrades)", async function () {
     const dir = mkDir(2);
     const lroot = mkTmp();
-    // Mint with key A, but pin the gate to a DIFFERENT vendor address B.
+    // Mint with key A; the gate's CANONICAL identity for this run is a DIFFERENT address B (T-75.3 —
+    // the pin is the canonical identity, never whatever key signed the file).
     const { file: licFile } = await mintLicense(lroot, ["evidence_signed"], Wallet.createRandom());
-    const wrongVendor = Wallet.createRandom().address;
+    const wrongCanonical = Wallet.createRandom().address;
     const out = path.join(lroot, "nope.vhevidence.json");
 
     const opWallet = Wallet.createRandom();
     const prev = process.env.EV_OP_KEY;
     process.env.EV_OP_KEY = opWallet.privateKey;
     try {
-      const io = capture();
+      const io = capture({ canonicalVendor: wrongCanonical });
       const code = await evidence.runEvidenceSeal(
-        { dir, out, sign: true, keyEnv: "EV_OP_KEY", license: licFile, vendor: wrongVendor },
+        { dir, out, sign: true, keyEnv: "EV_OP_KEY", license: licFile },
         io
       );
       expect(code).to.equal(evidence.EXIT.FAIL);
       expect(io.err()).to.match(/requires a VALID license, but the supplied license is wrong_issuer/);
+      // The named refusal explains the self-mint defense + the honest self-hosting story.
+      expect(io.err()).to.match(/minted by the canonical vendor key/);
       expect(fs.existsSync(out)).to.equal(false); // nothing written on a refused gate
     } finally {
       if (prev === undefined) delete process.env.EV_OP_KEY;
@@ -232,10 +239,10 @@ describe("cli/evidence T-30.3: `vh evidence seal|verify`", function () {
     expect(io1.err()).to.match(/more than the free sample size/);
     expect(fs.existsSync(out)).to.equal(false);
 
-    // (b) WITH a valid license carrying evidence_unlimited -> succeeds.
+    // (b) WITH a valid canonical-vendor license carrying evidence_unlimited -> succeeds.
     const wallet = Wallet.createRandom();
     const { file: licFile, vendor } = await mintLicense(lroot, ["evidence_unlimited"], wallet);
-    const io2 = capture();
+    const io2 = capture({ canonicalVendor: vendor });
     const code2 = await evidence.runEvidenceSeal({ dir, out, license: licFile, vendor }, io2);
     expect(code2).to.equal(evidence.EXIT.OK);
     const packet = JSON.parse(fs.readFileSync(out, "utf8"));
@@ -243,7 +250,7 @@ describe("cli/evidence T-30.3: `vh evidence seal|verify`", function () {
 
     // (c) A valid license WITHOUT the needed entitlement is refused (valid but under-entitled).
     const { file: wrongLic, vendor: v2 } = await mintLicense(lroot, ["evidence_signed"], Wallet.createRandom());
-    const io3 = capture();
+    const io3 = capture({ canonicalVendor: v2 });
     const out3 = path.join(lroot, "big3.vhevidence.json");
     const code3 = await evidence.runEvidenceSeal({ dir, out: out3, license: wrongLic, vendor: v2 }, io3);
     expect(code3).to.equal(evidence.EXIT.FAIL);

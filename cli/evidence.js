@@ -13,8 +13,9 @@
 //
 // FREE vs PAID.
 //   The FREE tier — an UNSIGNED baseline seal + verify over a free SAMPLE size — stays open so a buyer
-//   can try before buying. The PAID surface is GATED behind a valid `--license <f> --vendor <addr>`,
-//   verified OFFLINE via `cli/core/license.js` against a NEW, distinct EVIDENCE-PRODUCT entitlement table
+//   can try before buying. The PAID surface is GATED behind a valid `--license <f>`, verified OFFLINE
+//   against the CANONICAL vendor identity (cli/core/vendor-identity.js; NEVER a caller-supplied
+//   `--vendor` — T-75.3), via `cli/core/license.js` against a NEW, distinct EVIDENCE-PRODUCT entitlement table
 //   (its OWN `kind`, NOT `trustledger-license` — a separate sellable product). The paid surface is:
 //     * `evidence_signed`   — wrap the seal in a signed attestation (a vendor/operator vouches for it);
 //     * `evidence_unlimited`— seal MORE than the free SAMPLE_LIMIT files in one packet.
@@ -34,6 +35,7 @@ const path = require("path");
 
 const packetseal = require("./core/packetseal");
 const coreLicense = require("./core/license");
+const vendorIdentity = require("./core/vendor-identity");
 const coreAttestation = require("./core/attestation");
 const coreTrustAsOf = require("./core/trust-asof");
 const { listFiles, hashBytes } = require("./hash");
@@ -92,6 +94,28 @@ const LICENSE_KIND = "vh-evidence-license";
 const LICENSE_SCHEMA_VERSION = 1;
 const SUPPORTED_LICENSE_SCHEMA_VERSIONS = Object.freeze([1]);
 
+// THE CANONICAL VENDOR IDENTITY the paid gate pins license verification to (T-75.3). This is the
+// published verifyhash vendor identity — a COMMITTED constant (cli/core/vendor-identity.js), NEVER the
+// caller-supplied `--vendor`: a gate that pinned to argv would let anyone self-mint a license with
+// their own key and unlock the paid surface for free. `--vendor` is still accepted as an explicit
+// assertion, but it must EQUAL this identity (a mismatch is a NAMED refusal, never a re-pin).
+// SELF-HOSTING (honest boundary, not DRM — docs/LICENSING.md "Paid-gate vendor pinning"): an operator
+// running their OWN instance sets their OWN identity — fork-edit the constant, export
+// VH_CANONICAL_VENDOR, or pass the programmatic `io.canonicalVendor` seam (not reachable from argv).
+const CANONICAL_VENDOR_ADDRESS = vendorIdentity.VERIFYHASH_VENDOR_ADDRESS;
+const CANONICAL_VENDOR_ENV = vendorIdentity.CANONICAL_VENDOR_ENV;
+
+// Resolve the canonical vendor identity for a run: io.canonicalVendor (programmatic embedder/test seam)
+// > VH_CANONICAL_VENDOR (self-hosted operator config) > the committed published identity. The result is
+// validated at the gate via coreLicense.resolveVendorPin, so a garbage configured value is a NAMED
+// usage error — never a silent unlock.
+function resolveCanonicalVendor(io) {
+  return vendorIdentity.resolveCanonicalVendor({
+    override: io && io.canonicalVendor,
+    env: process.env,
+  });
+}
+
 // THE CLOSED ENTITLEMENT TABLE for the EVIDENCE product. Disjoint from TrustLedger's. An unknown flag is
 // a hard build error in the core (never silently honored).
 const ENTITLEMENTS = Object.freeze({
@@ -136,6 +160,8 @@ const LICENSE_CFG = Object.freeze({
   supportedSchemaVersions: SUPPORTED_LICENSE_SCHEMA_VERSIONS,
   note: LICENSE_TRUST_NOTE,
   entitlements: ENTITLEMENTS,
+  // the COMMITTED canonical vendor identity the paid gate pins to (T-75.3; see resolveVendorPin)
+  canonicalVendor: CANONICAL_VENDOR_ADDRESS,
   // signed-container framing
   signedKind: SIGNED_LICENSE_KIND,
   signedSchemaVersion: SIGNED_LICENSE_SCHEMA_VERSION,
@@ -772,11 +798,12 @@ function loadDirEntries(dirAbs) {
 }
 
 // ---------------------------------------------------------------------------
-// `vh evidence seal <dir> [--out <p>] [--license <f> --vendor <addr>]`
+// `vh evidence seal <dir> [--out <p>] [--license <f>]`
 //
 // Walks <dir>, builds the *.vhevidence.json seal, and either prints it (default; writes NOTHING) or
 // writes it to --out. NEVER writes to cwd without --out. The PAID surface (signed wrap, or sealing more
-// than the free SAMPLE_LIMIT) is GATED behind a valid --license/--vendor verified OFFLINE. The output
+// than the free SAMPLE_LIMIT) is GATED behind a valid --license verified OFFLINE against the CANONICAL
+// vendor identity (T-75.3; --vendor is accepted only as an assertion that must EQUAL it). The output
 // LEADS with the TRUST-BOUNDARIES one-liner. Exit: 0 ok / 3 seal-build-error / 2 usage / 1 IO.
 // ---------------------------------------------------------------------------
 
@@ -846,30 +873,46 @@ function parseSealArgs(argv) {
 }
 
 // The license GATE for the paid evidence surfaces. Returns { ok, code?, verdict? }: a clean { ok:true }
-// when NO paid surface is requested (FREE tier, no license needed), else REQUIRES a VALID, vendor-pinned
-// license carrying the matching entitlement and reports the precise verifyLicense reason on reject. The
-// reject NEVER silently downgrades to a free run. `now` dates the window check.
-function gatePaid(opts, requested, now, writeErr) {
+// when NO paid surface is requested (FREE tier, no license needed), else REQUIRES a VALID license
+// carrying the matching entitlement and reports the precise verifyLicense reason on reject. The reject
+// NEVER silently downgrades to a free run. `now` dates the window check.
+//
+// THE PIN (T-75.3): the license is verified against `canonicalVendor` — the CANONICAL vendor identity
+// resolved OUTSIDE argv (committed constant / VH_CANONICAL_VENDOR / io.canonicalVendor) — NEVER against
+// the caller-supplied `--vendor`. A `--vendor` that does not EQUAL the canonical identity is a NAMED
+// usage refusal (a caller must not re-pin the gate); a license minted by any OTHER key is the NAMED
+// `wrong_issuer` reject. Only licenses minted by the real vendor key unlock paid entitlements.
+function gatePaid(opts, requested, now, writeErr, canonicalVendor) {
   if (requested.length === 0) {
     return { ok: true, verdict: null }; // FREE tier
   }
   const featureList = requested.map((r) => r.label).join(" and ");
 
-  const hasLicense = opts.license != null;
-  const hasVendor = opts.vendor != null;
-  if (!hasLicense && !hasVendor) {
+  if (opts.license == null) {
+    // NOTE: this refusal stays ADDRESS-FREE (no 0x hex at all) so the "never echoes key material"
+    // guard stays trivially auditable; the canonical identity itself is printed by `vh evidence -h`.
     writeErr(
       `error: ${featureList} ${requested.length > 1 ? "are" : "is"} a PAID surface and ` +
-        "requires a license; pass --license <file> --vendor <0xaddr>. " +
+        "requires a license; pass --license <file>. Licenses are verified OFFLINE against the " +
+        "CANONICAL vendor identity (see `vh evidence -h`) — only a license minted by that vendor key " +
+        "unlocks the paid surface. " +
         `The FREE tier — an unsigned baseline seal of up to ${SAMPLE_LIMIT} files + verify — needs no license.\n`
     );
     return { ok: false, code: EXIT.USAGE };
   }
-  if (hasLicense !== hasVendor) {
-    writeErr(
-      "error: --license and --vendor must be supplied together (a license file is verified by " +
-        "pinning it to the vendor key); pass BOTH --license <file> --vendor <0xaddr>\n"
-    );
+
+  // Resolve the ONE pin the gate verifies against. An optional --vendor is accepted ONLY as an explicit
+  // assertion that must EQUAL the canonical identity — a mismatch (the self-mint re-pin) or a garbage
+  // canonical/asserted address is a NAMED usage refusal from the core, never a silent re-pin.
+  const cfg =
+    canonicalVendor === CANONICAL_VENDOR_ADDRESS
+      ? LICENSE_CFG
+      : Object.freeze({ ...LICENSE_CFG, canonicalVendor });
+  let pin;
+  try {
+    pin = coreLicense.resolveVendorPin(cfg, opts.vendor);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
     return { ok: false, code: EXIT.USAGE };
   }
 
@@ -883,19 +926,25 @@ function gatePaid(opts, requested, now, writeErr) {
     return { ok: false, code: EXIT.USAGE };
   }
 
-  // Verify OFFLINE against the pinned vendor. A malformed --vendor is thrown by verifyLicense.
+  // Verify OFFLINE against the CANONICAL pin resolved above.
   let verdict;
   try {
-    verdict = verifyLicense(container, { now, vendorAddress: opts.vendor });
+    verdict = verifyLicense(container, { now, vendorAddress: pin });
   } catch (e) {
     writeErr(`error: ${e.message}\n`);
     return { ok: false, code: EXIT.USAGE };
   }
   if (!verdict.valid) {
+    const selfMintNote =
+      verdict.reason === "wrong_issuer"
+        ? " Paid entitlements unlock ONLY with a license minted by the canonical vendor key; a " +
+          "self-minted license signed by any other key is refused. Running your OWN instance? Set " +
+          "your OWN canonical vendor identity — see docs/LICENSING.md."
+        : "";
     writeErr(
       `error: ${featureList} requires a VALID license, but the supplied license is ` +
         `${verdict.reason} (recovered ${verdict.recoveredSigner || "(unrecoverable)"}, ` +
-        `pinned to ${verdict.vendorAddress}).\n`
+        `pinned to ${verdict.vendorAddress}).${selfMintNote}\n`
     );
     return { ok: false, code: EXIT.FAIL };
   }
@@ -960,7 +1009,7 @@ async function runEvidenceSeal(opts, io = {}) {
       label: `sealing more than the free sample size (${SAMPLE_LIMIT} files; this dir has ${entries.length})`,
     });
   }
-  const gate = gatePaid(opts, requested, now, writeErr);
+  const gate = gatePaid(opts, requested, now, writeErr, resolveCanonicalVendor(io));
   if (!gate.ok) return gate.code;
 
   // Build the bare seal over the GENERIC core. A build error (e.g. a duplicate path) is a 3, never a crash.
@@ -2183,7 +2232,7 @@ function evidenceUsage() {
     "vh evidence — product-agnostic, license-gated, tamper-evident evidence packets",
     "",
     "Usage:",
-    "  vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign] [--json]",
+    "  vh evidence seal <dir> [--out <p>] [--license <f>] [--sign] [--json]",
     "  vh evidence verify <p> [--dir <d>] [--json]",
     "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--strict] [--revocations <f> --as-of <ISO>] [--json]",
     "  vh evidence diff <packetA> <packetB> [--policy <f>] [--json]",
@@ -2192,7 +2241,11 @@ function evidenceUsage() {
     "",
     "The seal proves TAMPER-EVIDENCE + OFFLINE-RECOMPUTE, NOT a trusted timestamp (\"sealed at T\" rides P-3).",
     "FREE: an unsigned baseline seal of up to " + SAMPLE_LIMIT + " files + verify + verify-signed + diff (try before buying).",
-    "PAID (require --license + --vendor): --sign (signed-attestation wrap) and sealing > " + SAMPLE_LIMIT + " files.",
+    "PAID (requires --license <f>): --sign (signed-attestation wrap) and sealing > " + SAMPLE_LIMIT + " files.",
+    "  The license is verified OFFLINE against the CANONICAL vendor identity " + CANONICAL_VENDOR_ADDRESS + ";",
+    "  only a license minted by that vendor key unlocks the paid surface. --vendor <0xaddr> is accepted only as an",
+    "  explicit assertion that must EQUAL that identity — it can NOT re-pin the gate (self-mint defense). Running",
+    "  your OWN instance? Set your OWN identity via " + CANONICAL_VENDOR_ENV + " (see docs/LICENSING.md).",
     "verify-signed is OFFLINE/key-free/network-free: it RECOVERS the signer + (--signer) pins it + (--dir) binds the bytes",
     "  + (--revocations) checks the signer was not REVOKED as of --as-of (default now).",
     "  A forged/tampered/wrong-key signature, or a key revoked-before-as-of, is a clean REJECTED/REVOKED — never a silent pass.",
@@ -2262,6 +2315,10 @@ module.exports = {
   verifyLicense,
   hasEntitlement,
   serializeSignedLicense,
+  // the canonical vendor pin (T-75.3)
+  CANONICAL_VENDOR_ADDRESS,
+  CANONICAL_VENDOR_ENV,
+  resolveCanonicalVendor,
   // license fulfillment
   BUNDLED_EVIDENCE_CATALOG,
   nowISO,

@@ -104,7 +104,8 @@ describe("verifier revocation parity: verify-vh --revocations == producer verify
     try {
       code = await evidence.runEvidenceSeal(
         { dir, out: packetPath, sign: true, keyEnv, license: licFile, vendor: vendorWallet.address, now: NOW },
-        { ...c.io, now: NOW }
+        // T-75.3: the ephemeral key is THIS run's CANONICAL vendor identity (programmatic seam).
+        { ...c.io, now: NOW, canonicalVendor: vendorWallet.address }
       );
     } finally {
       delete process.env[keyEnv];

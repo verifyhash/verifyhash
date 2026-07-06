@@ -13,7 +13,8 @@
 //   VERTICAL A — EVIDENCE (the security/audit-evidence packet; pilot/sample-evidence/):
 //     1. ISSUE   an evidence LICENSE signed by an ephemeral VENDOR key (Wallet.createRandom()).
 //     2. GATE    prove the PAID `evidence seal --sign` surface is REFUSED with no license (usage exit),
-//                and REFUSED again when the license is pinned to the WRONG vendor (a clean gate reject).
+//                and REFUSED again when the license was minted by a NON-canonical key (wrong_issuer — the
+//                gate pins to the CANONICAL vendor identity, T-75.3; a clean gate reject).
 //     3. SIGN    run the SAME paid surface WITH the valid license + a SEPARATE ephemeral operator key,
 //                and confirm it succeeds (a signed *.vhevidence.json packet).
 //     4. HAND OFF only the PACKET (+ its sibling files) to the INDEPENDENT verifier (verifier/verify-vh.js
@@ -404,10 +405,13 @@ async function writeCertificate(result, certPath, opts, io) {
         sealOpts.keyFile = keyFile;
 
         // --sign is license-GATED on `evidence_signed`. Mint a THROWAWAY vendor license (a fresh ephemeral
-        // vendor wallet that signs it, pinned to its OWN address) granting the paid entitlements, purely to
-        // satisfy the gate with ephemeral material — no real key, no foreign key. This license is a gate
-        // formality; the certificate's vouching identity is the OPERATOR key recovered on verify, which the
-        // recipient pins via --vendor.
+        // vendor wallet that signs it) granting the paid entitlements, purely to satisfy the gate with
+        // ephemeral material — no real key, no foreign key. The gate pins license verification to the
+        // CANONICAL vendor identity (T-75.3), so this self-contained kit declares the ephemeral vendor as
+        // THIS run's canonical identity via the programmatic `io.canonicalVendor` seam (the documented
+        // self-hosting hook — the kit IS its own throwaway instance; argv can never do this). The license
+        // stays a gate formality; the certificate's vouching identity is the OPERATOR key recovered on
+        // verify, which the recipient pins via --vendor.
         const vendorWallet = Wallet.createRandom();
         const licenseContainer = await ev.buildLicense(
           {
@@ -426,7 +430,7 @@ async function writeCertificate(result, certPath, opts, io) {
         licenseFile = path.join(certDirAbs, `.vh-pilot-cert-license-${process.pid}-${Date.now()}.json`);
         fs.writeFileSync(licenseFile, JSON.stringify(licenseContainer) + "\n");
         sealOpts.license = licenseFile;
-        sealOpts.vendor = vendorWallet.address;
+        sealIo.canonicalVendor = vendorWallet.address;
       }
 
       const code = await ev.runEvidenceSeal(sealOpts, sealIo);
@@ -640,15 +644,19 @@ async function runEvidencePilot(workspace, checks, src) {
     );
   }
 
-  // (b) A license pinned to the WRONG vendor -> a clean gate reject (exit 3, wrong_issuer), nothing written.
+  // (b) A license minted by a NON-CANONICAL key -> a clean gate reject (exit 3, wrong_issuer), nothing
+  //     written. The gate pins verification to the CANONICAL vendor identity (T-75.3) — here a DIFFERENT
+  //     ephemeral identity than the key that signed the license — so a self-minted license is refused,
+  //     never honored (the exact self-mint leak the canonical pin closes).
   {
-    const wrongVendor = Wallet.createRandom().address; // a DIFFERENT key than the one that signed the license
+    const wrongCanonical = Wallet.createRandom().address; // a DIFFERENT identity than the license's signer
     const wrongOut = path.join(workspace, "should-not-exist.vhevidence.json");
     const opWallet = Wallet.createRandom();
     const PREV = process.env.PILOT_OP_KEY;
     process.env.PILOT_OP_KEY = opWallet.privateKey;
     try {
       const io = capture();
+      io.canonicalVendor = wrongCanonical;
       const code = await evidence.runEvidenceSeal(
         {
           dir: evidenceDir,
@@ -656,12 +664,11 @@ async function runEvidencePilot(workspace, checks, src) {
           sign: true,
           keyEnv: "PILOT_OP_KEY",
           license: licenseFile,
-          vendor: wrongVendor,
         },
         io
       );
       check(checks,
-        "license pinned to the WRONG vendor is REFUSED (wrong_issuer), nothing written",
+        "license minted by a NON-canonical key is REFUSED (wrong_issuer), nothing written",
         code === evidence.EXIT.FAIL &&
           /wrong_issuer/.test(io.err()) &&
           !fs.existsSync(wrongOut),
@@ -685,7 +692,11 @@ async function runEvidencePilot(workspace, checks, src) {
     const PREV = process.env.PILOT_OP_KEY;
     process.env.PILOT_OP_KEY = operatorWallet.privateKey;
     try {
+      // This self-contained demo IS its own instance: the ephemeral vendor that minted the license is
+      // declared as the run's CANONICAL identity via the programmatic seam (T-75.3; the documented
+      // self-hosting hook). `--vendor` may still ASSERT that identity — it must EQUAL it.
       const io = capture();
+      io.canonicalVendor = vendorAddress;
       const code = await evidence.runEvidenceSeal(
         {
           dir: evidenceDir,

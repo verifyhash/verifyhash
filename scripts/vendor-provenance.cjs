@@ -83,8 +83,8 @@ function run(step, cmd, args, opts) {
 }
 
 /** Spawn the shipped vh CLI (the ONLY way this script does crypto). */
-function vh(step, args) {
-  return run(step, NODE, [VH, ...args]);
+function vh(step, args, opts) {
+  return run(step, NODE, [VH, ...args], opts);
 }
 
 function parseArgs(argv) {
@@ -233,6 +233,11 @@ function main() {
   //         bytes ARE the UNSIGNED `vh.evidence-seal` packet (same root, byte-for-byte) ----
   const signedPath = path.join(outDir, "vendor-provenance.signed.vhevidence.json");
   const unsignedPath = path.join(outDir, "vendor-provenance.vhevidence.json");
+  // The paid gate pins license verification to the CANONICAL vendor identity (T-75.3). This packet is
+  // SELF-issued with the caller's own key, so THAT derived address is this run's canonical identity —
+  // declared via the documented VH_CANONICAL_VENDOR config channel for the spawned CLI (a rehearsal
+  // with a throwaway key is its own throwaway instance; the real vendor key matches the committed
+  // default anyway). `--vendor` is passed only as the matching assertion.
   vh("vh evidence seal --sign", [
     "evidence", "seal", payloadDir,
     "--sign",
@@ -240,7 +245,7 @@ function main() {
     "--license", licensePath,
     "--vendor", vendorAddress,
     "--out", signedPath,
-  ]);
+  ], { env: { ...process.env, VH_CANONICAL_VENDOR: vendorAddress } });
   const signedContainer = JSON.parse(fs.readFileSync(signedPath, "utf8"));
   if (typeof signedContainer.attestation !== "string") {
     fail("signed container carries no embedded canonical attestation string", EXIT.IO);

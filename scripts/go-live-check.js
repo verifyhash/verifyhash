@@ -152,7 +152,11 @@ function legGate(ws) {
   const data = seedData(path.join(ws, "leg2-data"));
   const wallet = Wallet.createRandom();
   const keyVar = "VH_GOLIVE_VENDOR_KEY_2";
-  const env = { [keyVar]: wallet.privateKey };
+  // The paid gate pins license verification to the CANONICAL vendor identity (T-75.3). This check
+  // validates an OPERATOR instance end-to-end with an EPHEMERAL vendor key, so it declares that key as
+  // the child CLI's canonical identity via VH_CANONICAL_VENDOR — the documented self-hosting config
+  // channel (docs/LICENSING.md), NOT a --vendor re-pin (argv can never re-pin the gate).
+  const env = { [keyVar]: wallet.privateKey, VH_CANONICAL_VENDOR: wallet.address };
   const lic = path.join(ws, "leg2-license.vhevidence-license.json");
 
   // ISSUE — mint a signed license with the EPHEMERAL vendor key (key passed only via env, never on disk).
@@ -186,7 +190,9 @@ function legGate(ws) {
     return fail("GATE NOT FAIL-CLOSED: paid `--sign` was accepted WITHOUT a license", noLic);
   }
 
-  // ACCEPT-WITH — the same surface must be ACCEPTED with the valid license (fault: wrong pinned vendor).
+  // ACCEPT-WITH — the same surface must be ACCEPTED with the valid license. The fault injection asserts
+  // a WRONG --vendor: under the canonical pin that is a NAMED re-pin refusal (usage exit, nothing
+  // written) — the gate must fail loud, proving --vendor can no longer re-pin verification (T-75.3).
   const vendorArg = INJECT === "gate" ? Wallet.createRandom().address : wallet.address;
   const withLic = node(
     VH,
@@ -210,7 +216,9 @@ function legFulfill(ws) {
   const data = seedData(path.join(ws, "leg3-data"));
   const wallet = Wallet.createRandom();
   const keyVar = "VH_GOLIVE_VENDOR_KEY_3";
-  const env = { [keyVar]: wallet.privateKey };
+  // As in leg 2: the ephemeral operator key is declared as the child CLI's canonical vendor identity
+  // via the documented VH_CANONICAL_VENDOR config channel (T-75.3) — never a --vendor re-pin.
+  const env = { [keyVar]: wallet.privateKey, VH_CANONICAL_VENDOR: wallet.address };
   const lic = path.join(ws, "leg3-license.vhevidence-license.json");
 
   // FULFILL — a sample paid order resolved against the bundled DRAFT catalog (billing-webhook -> fulfill).

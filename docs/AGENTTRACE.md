@@ -62,7 +62,7 @@ standing in-band note, verbatim:
 ## The command surface
 
 ```
-vh agent seal <session.jsonl> [--out <p>] [--sign (--key-env <VAR>|--key-file <p>) --license <f> --vendor <0xaddr>] [--json]
+vh agent seal <session.jsonl> [--out <p>] [--sign (--key-env <VAR>|--key-file <p>) --license <f>] [--json]
 vh agent verify <packet> [--vendor <0xaddr>] [--json]          # exit 0 ACCEPTED / 3 named REJECT (+ offending seq)
 vh agent redact <packet> --seq <list> [--out <p>] [--json]     # withhold payloads; head UNCHANGED, still verifies
 vh agent prove <packet> --seq <n> [--out <p>] [--json]         # disclose ONE event + its inclusion proof
@@ -92,9 +92,12 @@ with `seq` contiguous from 0 (the tree position). Exit codes are the family cont
 - **PAID — `--sign`:** wrapping the packet's head in a detached EIP-191 attestation ("this key vouches
   for THIS session head"), so a recipient can pin YOUR published address with `--vendor`. Because
   leaves are redaction-safe, ONE signature stays valid for every redacted copy. `--sign` is gated
-  OFFLINE behind a valid `--license <f> --vendor <0xaddr>` carrying the DRAFT **`agent_signed`**
+  OFFLINE behind a valid `--license <f>` carrying the DRAFT **`agent_signed`**
   capability — the SAME fail-closed license mechanism as `vh evidence seal --sign` (`vh-evidence-license`
-  kind; a missing/invalid/under-entitled license is a named refusal, never a silent downgrade).
+  kind; a missing/invalid/under-entitled license is a named refusal, never a silent downgrade). The
+  license is verified against the CANONICAL vendor identity (T-75.3; `cli/core/vendor-identity.js`) —
+  a caller `--vendor` must EQUAL it and can NOT re-pin the gate (self-hosters set their own identity;
+  see `docs/LICENSING.md`).
 
 The `agent_signed` capability is DRAFT and priceless in the bundled catalog: the vendor key, the price,
 and the sale remain the standing human-owned go-live steps of the evidence vertical (P-7/P-8 in

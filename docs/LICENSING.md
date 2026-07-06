@@ -44,3 +44,45 @@ has been applied.
 
 The `*.vhlicense.json` entitlement (`cli/core/license.js`, `trustledger/license.js`) is a signed,
 offline-verifiable **paid-tier access credential** — unrelated to this copyright license.
+It is an ACCESS credential only: never a token/coin/NFT, never tradeable, never an appreciating asset.
+
+## Paid-gate vendor pinning (T-75.3) — the canonical vendor identity
+
+The paid surfaces (`vh evidence seal --sign`, sealing beyond the free sample via
+`evidence_unlimited`, `vh agent seal --sign`) verify the supplied `--license` **against a CANONICAL
+vendor identity that is a committed constant**, not against a caller-supplied address:
+
+- The committed identity is the **published verifyhash vendor address**
+  `0x7cb4d3DC6C52996B6386473Bfb32f898263412f7` (single source:
+  [`cli/core/vendor-identity.js`](../cli/core/vendor-identity.js); it matches the signed identity card
+  at [`identity/verifyhash-evidence.vhidentity.json`](../identity/verifyhash-evidence.vhidentity.json)).
+- **`--vendor` cannot re-pin the gate.** It is still accepted as an explicit assertion, but it must
+  EQUAL the canonical identity; a mismatch is a named usage refusal. Before this change the gate
+  verified against whatever `--vendor` the caller passed, so anyone could self-mint a license with
+  their own key and unlock the paid surface for free (a revenue-only leak — not impersonation: their
+  seals were still signed by their own key). A license minted by any non-canonical key is the named
+  `wrong_issuer` reject.
+- The **read-only inspection verb** (`vh trust license verify <file> --vendor <addr>`) keeps its
+  explicit caller pin: it answers "did THIS key sign it?" and unlocks nothing.
+- Honest scope note: the **TrustLedger reconcile gate** (`vh trust reconcile --license <f> --vendor
+  <addr>`) still takes an explicit operator-supplied `--vendor` today; its canonical identity constant
+  and pin helper (`trustledger/license.js` → `CANONICAL_VENDOR_ADDRESS`, `resolveVendorPin`) are
+  committed and tested, ready for that gate to adopt the same pin.
+- The **offline verify path for already-signed packets** (`vh evidence verify` / `verify-signed`,
+  `verify-vh`) is untouched: it never consults the canonical pin.
+
+### Self-hosting — an honest boundary, not DRM
+
+This repo is Apache-2.0, so the gate makes **no DRM claim**: an operator running their **own**
+instance legitimately sets their **own** canonical vendor identity, and their own licenses then unlock
+their own instance. Three equivalent ways, in precedence order:
+
+1. **Programmatic** — pass `io.canonicalVendor` to the run functions (what `go-live-preflight` uses to
+   validate an operator's own key end-to-end; not reachable from argv).
+2. **Config** — export `VH_CANONICAL_VENDOR=0xYourVendorAddress` for the CLI.
+3. **Fork** — edit the constant in `cli/core/vendor-identity.js`.
+
+What the pin actually protects is the **hosted vendor's paid surface in the shipped default**: a
+self-minted license no longer unlocks the stock build. An operator who re-points the identity is
+running *their* instance — their artifacts and licenses no longer verify against the published
+verifyhash identity, which is what their downstream verifiers pin (`verify-vh --vendor 0x7cb4…`).

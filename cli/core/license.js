@@ -83,6 +83,13 @@ function _requireCfg(cfg) {
       "license core requires a { kind, schemaVersion, supportedSchemaVersions, note, entitlements, signedKind, signedSchemaVersion, supportedSignedSchemaVersions, signedNote } config"
     );
   }
+  // OPTIONAL: the product's CANONICAL vendor identity (T-75.3) — the ONE committed address an
+  // entitlement GATE pins license verification to (see resolveVendorPin below). When present it must be
+  // a non-empty string; address validity is enforced where it is consumed so the error is a named
+  // cfg.ErrorClass, not a raw core Error.
+  if (cfg.canonicalVendor !== undefined && (typeof cfg.canonicalVendor !== "string" || cfg.canonicalVendor.length === 0)) {
+    throw new Error("license core config `canonicalVendor`, when present, must be a non-empty 0x-address string");
+  }
   if (typeof cfg.kind !== "string" || cfg.kind.length === 0) {
     throw new Error("license core config requires a non-empty string `kind`");
   }
@@ -503,6 +510,70 @@ function verifyLicense(container, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// resolveVendorPin(cfg, callerVendor) — PURE. Resolve the ONE address an ENTITLEMENT GATE may pin
+// license verification to: the product's CANONICAL vendor identity (`cfg.canonicalVendor`, a COMMITTED
+// constant/config), never a caller-supplied address.
+//
+// WHY (T-75.3, the self-mint leak). A gate that verifies a license against "whatever address the caller
+// passes as --vendor" is no gate at all: anyone can mint a license with their OWN key and pass their OWN
+// address, unlocking the paid surface for free. The pin an entitlement gate verifies against must
+// therefore be a committed constant the CALLER cannot choose. A caller-supplied vendor is still ACCEPTED
+// as an explicit assertion — but ONLY when it EQUALS the canonical identity; a mismatch is a NAMED
+// cfg.ErrorClass, never a silent re-pin and never a silent downgrade.
+//
+// HONEST BOUNDARY — this is NOT DRM. The source is open (Apache-2.0): an operator running their OWN
+// instance legitimately sets their OWN canonical vendor identity (their committed constant / config),
+// and their licenses unlock THEIR instance. What this closes is the shipped default free-riding a HOSTED
+// vendor: the stock build's paid surface honors ONLY licenses minted by the published vendor key.
+// (See docs/LICENSING.md "Paid-gate vendor pinning".)
+//
+// NOTE: the read-only license-inspection verb (`license verify --vendor <addr>`) is NOT a gate — it
+// answers "did THIS key sign it?" for any address, so it keeps calling verifyLicense with an explicit
+// caller pin. Only ENTITLEMENT-UNLOCK paths route through resolveVendorPin.
+//
+// @param {object} cfg           the product's license framing; MUST carry `canonicalVendor`
+// @param {string} [callerVendor] optional caller-asserted vendor address; must EQUAL the canonical
+// @returns {string} the checksummed canonical vendor address (the pin to hand verifyLicense)
+// ---------------------------------------------------------------------------
+
+function resolveVendorPin(cfg, callerVendor) {
+  _requireCfg(cfg);
+  const Err = _errClass(cfg);
+  if (typeof cfg.canonicalVendor !== "string" || cfg.canonicalVendor.length === 0) {
+    throw new Err(
+      "resolveVendorPin requires cfg.canonicalVendor (the product's COMMITTED canonical vendor identity); " +
+        "an entitlement gate must never pin license verification to a caller-supplied address"
+    );
+  }
+  let canonical;
+  try {
+    canonical = getAddress(cfg.canonicalVendor);
+  } catch (_e) {
+    throw new Err(
+      `license cfg canonicalVendor is not a valid 0x-address: ${String(cfg.canonicalVendor)}`
+    );
+  }
+  if (callerVendor == null) return canonical;
+  let caller;
+  try {
+    caller = getAddress(callerVendor);
+  } catch (_e) {
+    throw new Err(
+      `the supplied vendor pin is not a valid 0x-address: ${String(callerVendor)}`
+    );
+  }
+  if (caller !== canonical) {
+    throw new Err(
+      `the supplied vendor pin (${caller}) does not match the canonical vendor identity (${canonical}) ` +
+        "this build pins paid entitlements to. A caller-supplied vendor cannot re-pin an entitlement gate " +
+        "(that would let anyone self-mint a license and unlock the paid surface for free). " +
+        "Running your OWN instance? Set your OWN canonical vendor identity instead — see docs/LICENSING.md."
+    );
+  }
+  return canonical;
+}
+
+// ---------------------------------------------------------------------------
 // hasEntitlement(verdict, flag) — PURE. True ONLY when the verdict is `valid` AND `flag` is present in
 // its entitlements. False for ANY non-valid verdict (a rejected/expired/wrong-issuer license entitles
 // NOTHING) and for an unknown/absent flag. This is product-AGNOSTIC (it reads only the verdict), so it
@@ -530,5 +601,6 @@ module.exports = {
   serializeSignedLicense,
   readLicense,
   verifyLicense,
+  resolveVendorPin,
   hasEntitlement,
 };

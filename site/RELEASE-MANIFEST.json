@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1106422,
+  "totalBytes": 1107663,
   "files": [
     {
       "path": "LICENSE",
@@ -25,8 +25,8 @@
     {
       "path": "docs/ADOPT.md",
       "source": "docs/ADOPT.md",
-      "bytes": 13942,
-      "sha256": "6a12f25a0c778334796a74fa210ebfae358700ab433d67a37fb1157bfd085cfd"
+      "bytes": 14402,
+      "sha256": "d812f33a526bac63dc844aacc5cfd677359d1f2f196fbb4955e52161337bdca2"
     },
     {
       "path": "docs/CONFORMANCE.md",
@@ -49,8 +49,8 @@
     {
       "path": "docs/EVIDENCE.md",
       "source": "docs/EVIDENCE.md",
-      "bytes": 36615,
-      "sha256": "342781568985bc16ac0a45c60811a90f363e4bf882f10282c6e87f3bb46bd8ad"
+      "bytes": 37396,
+      "sha256": "12ce2d51b6c005a94b2f395392b4484852446a07cba06b7a4db83d3a6272582d"
     },
     {
       "path": "docs/IDENTITY.md",

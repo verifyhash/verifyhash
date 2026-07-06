@@ -198,7 +198,8 @@ describe("pilot/run-pilot.js T-32.1: OFFLINE ephemeral-key evidence pilot kit", 
       const PREV = process.env.GATE_OP_KEY;
       process.env.GATE_OP_KEY = opWallet.privateKey;
       try {
-        const io = { write: () => {}, writeErr: () => {}, now: NOW };
+        // The ephemeral vendor is THIS run's CANONICAL identity (T-75.3 programmatic seam).
+        const io = { write: () => {}, writeErr: () => {}, now: NOW, canonicalVendor: vendorWallet.address };
         const code = await evidence.runEvidenceSeal(
           { dir, out, sign: true, keyEnv: "GATE_OP_KEY", license: licFile, vendor: vendorWallet.address },
           io
@@ -247,7 +248,8 @@ describe("pilot/run-pilot.js T-32.1: OFFLINE ephemeral-key evidence pilot kit", 
       const PREV = process.env.CP_OP_KEY;
       process.env.CP_OP_KEY = opWallet.privateKey;
       try {
-        const io = { write: () => {}, writeErr: () => {}, now: pilot.NOW };
+        // The ephemeral vendor is THIS run's CANONICAL identity (T-75.3 programmatic seam).
+        const io = { write: () => {}, writeErr: () => {}, now: pilot.NOW, canonicalVendor: vendorWallet.address };
         const code = await evidence.runEvidenceSeal(
           {
             dir,

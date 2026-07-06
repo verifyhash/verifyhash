@@ -150,7 +150,8 @@ describe("verifier standalone: single-file, zero-install bundle (T-35.2)", funct
     try {
       code = await evidence.runEvidenceSeal(
         { dir, out: packetPath, sign: true, keyEnv, license: licFile, vendor: vendorWallet.address, now: NOW },
-        { ...c.io, now: NOW }
+        // T-75.3: the ephemeral key is THIS run's CANONICAL vendor identity (programmatic seam).
+        { ...c.io, now: NOW, canonicalVendor: vendorWallet.address }
       );
     } finally {
       delete process.env[keyEnv];

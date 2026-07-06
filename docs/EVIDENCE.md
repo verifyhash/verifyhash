@@ -28,7 +28,7 @@ across products.
 ## Commands
 
 ```
-vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign --key-env <VAR>|--key-file <p>] [--json]
+vh evidence seal <dir> [--out <p>] [--license <f>] [--sign --key-env <VAR>|--key-file <p>] [--json]
 vh evidence verify <p> [--dir <d>] [--json]
 vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--json]
 vh evidence diff <p1> <p2> [--json]
@@ -79,11 +79,21 @@ vendor, nothing to gate (a recipient checking a signature mints no new artifact)
 surface sells is only realized when the recipient runs `verify-signed` to recover + pin + bind the signer.
 
 The free tier stays fully open so a buyer can evaluate the product end-to-end. A paid surface REQUIRES a
-valid `--license <f> --vendor <0xaddr>`, verified **OFFLINE** via [`cli/core/license.js`](../cli/core/license.js)
+valid `--license <f>`, verified **OFFLINE** via [`cli/core/license.js`](../cli/core/license.js)
 against the **evidence-product** entitlement table (`kind: vh-evidence-license` — a **separate** product
 from `trustledger-license`). The gate reuses the **same `verifyLicense` / named-reject posture** as the
 TrustLedger CLI: a missing/expired/`wrong_issuer`/under-entitled license is a hard refuse that **never
 silently downgrades to a free run**, and the packet is never written when the gate fails.
+
+**The pin is CANONICAL, never caller-chosen (T-75.3).** The gate verifies the license against the
+committed **canonical vendor identity** `0x7cb4d3DC6C52996B6386473Bfb32f898263412f7`
+([`cli/core/vendor-identity.js`](../cli/core/vendor-identity.js)) — only a license minted by that
+vendor key unlocks the paid surface. `--vendor <0xaddr>` is still accepted, but only as an explicit
+assertion that must EQUAL that identity: it can **not** re-pin the gate (that would let anyone
+self-mint a license and unlock the paid surface for free). Self-hosted operators set their **own**
+canonical identity (`VH_CANONICAL_VENDOR`, or the programmatic `io.canonicalVendor` seam) — an honest
+boundary against free-riding the hosted vendor, not a DRM claim; see
+[`docs/LICENSING.md`](./LICENSING.md) "Paid-gate vendor pinning".
 
 ## The evidence-packet schema (every field UNTRUSTED transport)
 

@@ -34,7 +34,8 @@
 //   read/verify surface stays open so any third party can check a packet without paying anyone.
 //   The PAID surface is `--sign`: wrapping the packet's HEAD in a detached EIP-191 attestation (the
 //   operator vouches for THIS session head). It is gated OFFLINE behind a valid
-//   `--license <f> --vendor <addr>` carrying the DRAFT `agent_signed` capability
+//   `--license <f>` carrying the DRAFT `agent_signed` capability (verified against the CANONICAL
+//   vendor identity — cli/core/vendor-identity.js — never a caller-supplied `--vendor`; T-75.3)
 //   (cli/core/evidence-plans.js), through the SAME license mechanism `vh evidence seal --sign`
 //   uses — cli/core/license.js reused VERBATIM under the SAME `vh-evidence-license` kind, with the
 //   entitlement table extended (a strict SUPERSET) by the agent capability. Fail-closed: a missing/
@@ -680,30 +681,44 @@ function emitArtifact(artifactStr, outOpt, write, writeErr) {
 // evidence gate emits (cli/evidence.js gatePaid), evaluated OFFLINE against AGENT_LICENSE_CFG.
 // Fail-closed: no license, an unreadable/malformed one, an invalid/wrong-issuer/expired one, or a
 // VALID one that does not CARRY the capability is REFUSED — never silently downgraded to free.
+//
+// THE PIN (T-75.3, mirrors cli/evidence.js gatePaid): the license is verified against the CANONICAL
+// vendor identity (`canonicalVendor`, resolved OUTSIDE argv), NEVER against the caller-supplied
+// `--vendor` — a caller-chosen pin would let anyone self-mint a license and unlock the paid surface
+// for free. `--vendor` is accepted only as an assertion that must EQUAL the canonical identity.
 // ---------------------------------------------------------------------------
 
-function gateAgentPaid(opts, requested, now, writeErr) {
+function gateAgentPaid(opts, requested, now, writeErr, canonicalVendor) {
   if (requested.length === 0) {
     return { ok: true, verdict: null }; // FREE tier
   }
   const featureList = requested.map((r) => r.label).join(" and ");
 
-  const hasLicense = opts.license != null;
-  const hasVendor = opts.vendor != null;
-  if (!hasLicense && !hasVendor) {
+  if (opts.license == null) {
+    // NOTE: this refusal stays ADDRESS-FREE (no 0x hex at all) so the "never echoes key material"
+    // guard stays trivially auditable; the canonical identity itself is printed by `vh agent -h`.
     writeErr(
       `error: ${featureList} ${requested.length > 1 ? "are" : "is"} a PAID surface and ` +
-        "requires a license; pass --license <file> --vendor <0xaddr>. " +
+        "requires a license; pass --license <file>. Licenses are verified OFFLINE against the " +
+        "CANONICAL vendor identity (see `vh agent -h`) — only a license minted by that vendor key " +
+        "unlocks the paid surface. " +
         "The FREE tier — unsigned seal + verify + redact + prove + verify-proof + checkpoint + " +
         "verify-growth — needs no license.\n"
     );
     return { ok: false, code: EXIT.USAGE };
   }
-  if (hasLicense !== hasVendor) {
-    writeErr(
-      "error: --license and --vendor must be supplied together (a license file is verified by " +
-        "pinning it to the vendor key); pass BOTH --license <file> --vendor <0xaddr>\n"
-    );
+
+  // Resolve the ONE pin the gate verifies against (a --vendor mismatch / garbage address is a NAMED
+  // usage refusal from the core — never a silent re-pin).
+  const cfg =
+    canonicalVendor === evidence.CANONICAL_VENDOR_ADDRESS
+      ? AGENT_LICENSE_CFG
+      : Object.freeze({ ...AGENT_LICENSE_CFG, canonicalVendor });
+  let pin;
+  try {
+    pin = coreLicense.resolveVendorPin(cfg, opts.vendor);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
     return { ok: false, code: EXIT.USAGE };
   }
 
@@ -717,12 +732,12 @@ function gateAgentPaid(opts, requested, now, writeErr) {
     return { ok: false, code: EXIT.USAGE };
   }
 
-  // Verify OFFLINE against the pinned vendor. A malformed --vendor is thrown by verifyLicense.
+  // Verify OFFLINE against the CANONICAL pin resolved above.
   let verdict;
   try {
     verdict = coreLicense.verifyLicense(container, {
       now,
-      vendorAddress: opts.vendor,
+      vendorAddress: pin,
       cfg: AGENT_LICENSE_CFG,
     });
   } catch (e) {
@@ -730,10 +745,16 @@ function gateAgentPaid(opts, requested, now, writeErr) {
     return { ok: false, code: EXIT.USAGE };
   }
   if (!verdict.valid) {
+    const selfMintNote =
+      verdict.reason === "wrong_issuer"
+        ? " Paid entitlements unlock ONLY with a license minted by the canonical vendor key; a " +
+          "self-minted license signed by any other key is refused. Running your OWN instance? Set " +
+          "your OWN canonical vendor identity — see docs/LICENSING.md."
+        : "";
     writeErr(
       `error: ${featureList} requires a VALID license, but the supplied license is ` +
         `${verdict.reason} (recovered ${verdict.recoveredSigner || "(unrecoverable)"}, ` +
-        `pinned to ${verdict.vendorAddress}).\n`
+        `pinned to ${verdict.vendorAddress}).${selfMintNote}\n`
     );
     return { ok: false, code: EXIT.FAIL };
   }
@@ -966,7 +987,7 @@ async function runAgentSeal(opts, io = {}) {
       label: "the signed head attestation (--sign)",
     });
   }
-  const gate = gateAgentPaid(opts, requested, now, writeErr);
+  const gate = gateAgentPaid(opts, requested, now, writeErr, evidence.resolveCanonicalVendor(io));
   if (!gate.ok) return gate.code;
 
   // Read + parse the session log (named line-located parse errors; size-capped).
@@ -2497,7 +2518,7 @@ function agentUsage() {
     "vh agent — tamper-evident, selectively-REDACTABLE agent-session evidence packets (AgentTrace)",
     "",
     "Usage:",
-    "  vh agent seal <session.jsonl> [--out <p>] [--sign (--key-env <VAR>|--key-file <p>) --license <f> --vendor <0xaddr>] [--json]",
+    "  vh agent seal <session.jsonl> [--out <p>] [--sign (--key-env <VAR>|--key-file <p>) --license <f>] [--json]",
     "  vh agent verify <packet> [--vendor <0xaddr>] [--json]",
     "  vh agent redact <packet> --seq <list> [--out <p>] [--json]",
     "  vh agent prove <packet> --seq <n> [--out <p>] [--json]",
@@ -2542,9 +2563,12 @@ function agentUsage() {
     "",
     "FREE: seal (unsigned) + verify + redact + prove + verify-proof + checkpoint + verify-growth +",
     "  commit-claim + verify-commit + coverage.",
-    "PAID (requires --license + --vendor carrying the DRAFT `agent_signed` capability): --sign — a detached",
+    "PAID (requires --license <f> carrying the DRAFT `agent_signed` capability): --sign — a detached",
     "  EIP-191 attestation over the HEAD, so ONE signature stays valid for every redacted copy. The gate is the",
-    "  SAME offline license mechanism as `vh evidence seal --sign` (fail-closed; never silently downgraded).",
+    "  SAME offline license mechanism as `vh evidence seal --sign` (fail-closed; never silently downgraded),",
+    "  verified against the CANONICAL vendor identity " + evidence.CANONICAL_VENDOR_ADDRESS + " — a caller",
+    "  --vendor must EQUAL it, it can NOT re-pin the gate (self-mint defense; self-hosters set their own",
+    "  identity via " + evidence.CANONICAL_VENDOR_ENV + " — docs/LICENSING.md).",
     "",
     "The packet proves the LOG is unaltered since seal and append-only across checkpoints — NOT that the log",
     "faithfully records what the agent actually did; `ts` is SELF-ASSERTED; not a trusted timestamp (P-3).",

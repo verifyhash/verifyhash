@@ -156,7 +156,8 @@ describe("verifier isolation: no producer stack, no network back-edge (T-31.3)",
       try {
         code = await evidence.runEvidenceSeal(
           { dir, out: packet, sign: true, keyEnv, license: licFile, vendor: vendorWallet.address, now },
-          { write: () => {}, writeErr: () => {}, now }
+          // T-75.3: the ephemeral key is THIS run's CANONICAL vendor identity (programmatic seam).
+          { write: () => {}, writeErr: () => {}, now, canonicalVendor: vendorWallet.address }
         );
       } finally {
         delete process.env[keyEnv];

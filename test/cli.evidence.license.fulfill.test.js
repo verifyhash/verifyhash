@@ -180,7 +180,8 @@ describe("T-48.2: `vh evidence license fulfill` mints a license the evidence gat
     const signWallet = Wallet.createRandom();
     const signEnv = "VH_EV_TEST_SIGN_KEY";
     process.env[signEnv] = signWallet.privateKey;
-    const io = Object.assign(capture(), { now: IN_WINDOW });
+    // T-75.3: the ephemeral fulfillment vendor is THIS run's CANONICAL identity (programmatic seam).
+    const io = Object.assign(capture(), { now: IN_WINDOW, canonicalVendor: vendor });
     let code;
     try {
       code = await evidence.cmdEvidence(
@@ -232,7 +233,8 @@ describe("T-48.2: `vh evidence license fulfill` mints a license the evidence gat
     const signWallet = Wallet.createRandom();
     const signEnv = "VH_EV_TEST_SIGN_KEY2";
     process.env[signEnv] = signWallet.privateKey;
-    const io = Object.assign(capture(), { now: IN_WINDOW });
+    // T-75.3: the ephemeral fulfillment vendor is THIS run's CANONICAL identity (programmatic seam).
+    const io = Object.assign(capture(), { now: IN_WINDOW, canonicalVendor: vendor });
     let code;
     try {
       code = await evidence.cmdEvidence(

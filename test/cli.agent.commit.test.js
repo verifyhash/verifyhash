@@ -143,8 +143,9 @@ describe("cli/agent T-69.2: `vh agent commit-claim` / `vh agent verify-commit`",
   }
 
   // Producer flow: n fixture events + the claim line at seq n, sealed to an explicit --out path.
+  // `ioExtra` merges into the seal's io (e.g. the T-75.3 canonicalVendor seam for a --sign run).
   // Returns { packetPath, sessionPath, claimSeq, claimJson }.
-  async function sealSessionWithClaim(repo, artifactsDir, n = 5, sealExtra = []) {
+  async function sealSessionWithClaim(repo, artifactsDir, n = 5, sealExtra = [], ioExtra = {}) {
     const claimJson = await emitClaim(repo, n);
     const sessionPath = path.join(artifactsDir, "session.jsonl");
     fs.writeFileSync(
@@ -152,7 +153,7 @@ describe("cli/agent T-69.2: `vh agent commit-claim` / `vh agent verify-commit`",
       fixtureEvents(n).map((e) => JSON.stringify(e)).join("\n") + "\n" + claimJson.artifact
     );
     const packetPath = path.join(artifactsDir, "session.vhagent.json");
-    const io = capture();
+    const io = capture(ioExtra);
     const code = await agent.cmdAgent(["seal", sessionPath, "--out", packetPath, ...sealExtra], io);
     expect(code, io.err()).to.equal(0);
     return { packetPath, sessionPath, claimSeq: n, claimJson };
@@ -440,12 +441,14 @@ describe("cli/agent T-69.2: `vh agent commit-claim` / `vh agent verify-commit`",
       fs.writeFileSync(keyFile, vendorWallet.privateKey + "\n");
 
       const signedDir = tmp();
-      const { packetPath: signedPacket } = await sealSessionWithClaim(repo, signedDir, 4, [
-        "--sign",
-        "--key-file", keyFile,
-        "--license", licenseFile,
-        "--vendor", vendorWallet.address,
-      ]);
+      // T-75.3: the ephemeral vendor is THIS run's CANONICAL identity (programmatic seam).
+      const { packetPath: signedPacket } = await sealSessionWithClaim(
+        repo,
+        signedDir,
+        4,
+        ["--sign", "--key-file", keyFile, "--license", licenseFile, "--vendor", vendorWallet.address],
+        { canonicalVendor: vendorWallet.address }
+      );
 
       // Correct pin: packet verifies AND the claim matches => ACCEPTED, signer pinned.
       const io2 = capture();

@@ -269,6 +269,10 @@ async function _preflightPrice(mapping, index, ctx, ws) {
   // (4) GATE — run the delivered license through the EXISTING paid gate: `vh evidence seal --sign`
   //     requires `evidence_signed`. A plan that LACKS the paid entitlement is caught HERE (FAIL, never
   //     PASS). We drive the real command in-process, capturing its output so it never leaks to our stdout.
+  //     The gate pins license verification to the CANONICAL vendor identity (T-75.3); this preflight
+  //     validates the OPERATOR'S OWN instance end-to-end, so the operator's key IS that instance's
+  //     canonical identity — declared via the programmatic `io.canonicalVendor` seam (the exact
+  //     self-hosting hook docs/LICENSING.md documents), never by re-pinning through `--vendor`.
   let capturedErr = "";
   const sealOut = path.join(ws, `seal-${index}.vhevidence.json`);
   let gateCode;
@@ -283,7 +287,12 @@ async function _preflightPrice(mapping, index, ctx, ws) {
         keyFile: ctx.keyFile,
         out: sealOut,
       },
-      { write: () => {}, writeErr: (s) => { capturedErr += s; }, now: ctx.today }
+      {
+        write: () => {},
+        writeErr: (s) => { capturedErr += s; },
+        now: ctx.today,
+        canonicalVendor: ctx.wallet.address,
+      }
     );
   } catch (e) {
     return fail(`price ${label} crashed the paid gate: ${e && e.message ? e.message : String(e)}`);

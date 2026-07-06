@@ -4,7 +4,7 @@ A clean-room re-implementation of the verifyhash **evidence-seal** verifier in p
 Rust. It shares **zero code, zero crates, zero hash library, zero EC library** with
 the shipped JS verifier (`verifier/verify-vh.js`), the Python verifier
 (`verifier-py/verify_vh.py`), and the Go verifier (`verifier-go/`). It was written
-from `../SPEC.md` (the extracted format spec) plus black-box runs of the reference
+from `../verifier-py/SPEC.md` (the extracted format spec) plus black-box runs of the reference
 CLI — not translated from any of the other three codebases.
 
 - **ZERO external crates.** `Cargo.toml` has no `[dependencies]` section at all, and
@@ -47,15 +47,14 @@ byte-comparable across all four implementations.
 
 ## Building with the pinned offline toolchain
 
-The binary here was built and conformance-tested with **rustc 1.79.0
-(129f3b996 2024-06-10), x86_64-unknown-linux-gnu** — the pinned toolchain
-installed under this scratchpad's `rustup`/`cargo` homes. The build is fully
+These sources were built and conformance-tested with **rustc 1.79.0
+(129f3b996 2024-06-10), x86_64-unknown-linux-gnu**. The build is fully
 offline; because there are zero dependencies, `--offline` succeeding *proves*
 nothing is ever fetched:
 
 ```sh
-export RUSTUP_HOME=/path/to/pinned/rustup     # scratchpad: ../../rustup
-export CARGO_HOME=/path/to/pinned/cargo       # scratchpad: ../../cargo
+export RUSTUP_HOME=/path/to/pinned/rustup     # optional: a pinned toolchain
+export CARGO_HOME=/path/to/pinned/cargo       # optional: a pinned toolchain
 export CARGO_NET_OFFLINE=true
 export PATH="$CARGO_HOME/bin:$PATH"
 cd verifier-rs
@@ -67,10 +66,10 @@ Any Rust toolchain ≥ the 2021 edition reproduces the build; pin the exact
 toolchain (rustc 1.79.0 + its published SHA-256) when the binary itself must be
 attestable.
 
-## 4-way conformance result (`../conformance-4way.py` over the frozen vectors)
+## 4-way conformance result (`../verify-vectors/conformance-4way.py` over the frozen vectors)
 
 The harness runs JS, Python, Go, and Rust against every frozen vector
-(`../../go-verifier/vectors/`) and requires a byte-identical verdict + exit
+(`../verify-vectors/`) and requires a byte-identical verdict + exit
 across all four, reporting each against the vector's frozen expected outcome.
 Both the Go and Rust release binaries were already present (the harness
 self-builds them, offline, if missing). Current result: **PASS (harness exit 0)

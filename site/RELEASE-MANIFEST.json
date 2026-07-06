@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1122458,
+  "totalBytes": 1128646,
   "files": [
     {
       "path": "LICENSE",
@@ -61,8 +61,8 @@
     {
       "path": "docs/INDEPENDENT-VERIFICATION.md",
       "source": "docs/INDEPENDENT-VERIFICATION.md",
-      "bytes": 23049,
-      "sha256": "3de8046c3ff495757c05f5d2831cb5e4d38ead3b89080dcce3a3fd3280108d94"
+      "bytes": 29237,
+      "sha256": "b9005895a04fadb1699a8e1dc1443e4792ca1b42a1884fe1a8020a3891b5e029"
     },
     {
       "path": "docs/KEY-LIFECYCLE.md",

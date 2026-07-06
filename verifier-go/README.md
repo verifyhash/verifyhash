@@ -3,7 +3,7 @@
 A clean-room re-implementation of the verifyhash **evidence-seal** verifier in pure Go.
 It shares **zero code, zero hash library, zero EC library** with the shipped JS verifier
 (`verifier/verify-vh.js`) and the Python verifier (`verifier-py/verify_vh.py`). It was
-written from `../SPEC.md` (the extracted format spec) plus black-box runs of the
+written from `../verifier-py/SPEC.md` (the extracted format spec) plus black-box runs of the
 reference CLI — not translated from either codebase.
 
 - **Zero dependencies.** `go.mod` has no `require` block at all. keccak256 (the
@@ -35,9 +35,8 @@ so verdicts are byte-comparable across implementations.
 
 ## Building with the pinned toolchain
 
-`go.mod` pins the language level (`go 1.22`). The binary here was built and
-conformance-tested with **go1.22.5 linux/amd64** (the pinned toolchain unpacked at
-`../../go-toolchain/go` in this scratchpad). Hermetic build — no network, no module
+`go.mod` pins the language level (`go 1.22`). These sources were built and
+conformance-tested with **go1.22.5 linux/amd64**. Hermetic build — no network, no module
 proxy, reproducible output:
 
 ```sh
@@ -52,12 +51,15 @@ GOPROXY=off GOFLAGS=-mod=mod CGO_ENABLED=0 go build -trimpath -o verify-vh .
 reproduces the build; pin the exact toolchain (e.g. go1.22.5 + its published SHA-256)
 when the binary itself must be attestable.
 
-## 3-way conformance result (`../conformance-3way.py` over `../vectors/`)
+## Conformance (frozen vectors: `../verify-vectors/`)
 
-The harness runs JS, Python, and Go against every frozen vector and requires
-byte-identical verdict + exit across all three AND agreement with the vector's
-frozen expected outcome. Current result: **FAIL (harness exit 1), 5/6 conformant**
-— and the failure is the interesting part.
+The canonical harness is now `../verify-vectors/conformance-4way.py` (JS, Python, Go,
+Rust — every implementation present on the machine), and the repo's CI runs the same
+matrix on every test run (`../test/conformance-multilang.test.js`). The table below
+records the ORIGINAL 3-way (JS/Python/Go) run this implementation landed with — it
+required byte-identical verdict + exit across all three AND agreement with the
+vector's frozen expected outcome, and came back **5/6 conformant** — the failure
+being the interesting part (since CLOSED; see below).
 
 ```
 CASE             | EXPECTED  | JS        | PY        | GO        | STATUS

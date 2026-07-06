@@ -122,6 +122,50 @@ const VERIFIER_ALLOWLIST = [
   "verifier/dist/verify-vh-standalone.html",
 ];
 
+// T-77.2 — the 4-language independent-verifier suite docs/INDEPENDENT-VERIFICATION.md §6 sells:
+// an npm installer must actually GET the alternate implementations + the frozen conformance
+// vectors, or the "verify with up to FOUR independent implementations" pitch is a clone-only claim.
+const ALT_IMPL_ALLOWLIST = [
+  // Python — one stdlib-only file + the extracted format spec an auditor writes a 5th impl from.
+  "verifier-py/verify_vh.py",
+  "verifier-py/SPEC.md",
+  "verifier-py/DEPENDENCIES.md",
+  "verifier-py/README.md",
+  // Go — every .go source + go.mod (required for `go run .` / `go build .`).
+  "verifier-go/go.mod",
+  "verifier-go/main.go",
+  "verifier-go/verify.go",
+  "verifier-go/merkle.go",
+  "verifier-go/keccak.go",
+  "verifier-go/secp256k1.go",
+  // Rust — src/ + Cargo.toml (+ Cargo.lock: its 1-package emptiness IS the supply-chain claim).
+  "verifier-rs/Cargo.toml",
+  "verifier-rs/Cargo.lock",
+  "verifier-rs/src/main.rs",
+  "verifier-rs/src/keccak.rs",
+  "verifier-rs/src/secp256k1.rs",
+  "verifier-rs/src/field.rs",
+  "verifier-rs/src/merkle.rs",
+  "verifier-rs/src/json.rs",
+  // The frozen vector suite + the runnable 4-way harness.
+  "verify-vectors/vectors.json",
+  "verify-vectors/SHA256SUMS",
+  "verify-vectors/README.md",
+  "verify-vectors/conformance-4way.py",
+];
+
+// The scratch-era Python differential harness is NOT shipped: it hard-codes internal absolute
+// paths (/home/loopdev/…, the operator self-license + vendor-key file locations) — exactly the
+// internal-operational-surface class the denylist exists to keep out of a customer install.
+const ALT_IMPL_DENYLIST = ["verifier-py/conformance.py"];
+
+// npm tarballs cannot carry symlinks (npm-packlist silently drops them). The symlinked-artifact
+// vector's `alias.json` IS a symlink, so it is expected ABSENT from the pack — and docs/
+// INDEPENDENT-VERIFICATION.md §6 documents the one-line `ln -s` restore. Pinned here so an npm
+// behavior change (symlinks suddenly shipping, or — worse — shipping as a file COPY that would
+// silently defeat the vector's symlink-vs-lexical point) is caught, not discovered by a customer.
+const VECTOR_SYMLINK_TARBALL_PATH = "verify-vectors/cases/symlinked-artifact/files/alias.json";
+
 // Repo-internal trees that must never ship at all (the loop's build surface, not the product's).
 const FORBIDDEN_ROOT_PREFIXES = ["test/", "scripts/", "site/", "artifacts/", "cache/", "contracts/"];
 
@@ -266,6 +310,39 @@ describe("T-73.2 npm tarball: manifest gate (`npm pack --dry-run --json`, offlin
     }
   });
 
+  it("T-77.2: ships the 4-language suite — every Python/Go/Rust source + the frozen vectors", function () {
+    for (const p of ALT_IMPL_ALLOWLIST) {
+      expect(shipped.has(p), `alternate-implementation source MISSING from the tarball: ${p}`).to.equal(true);
+    }
+    // The vector CASES ship COMPLETELY (enumerated from disk, so the frozen tree cannot drift out
+    // of the tarball) — except symlinks, which npm cannot carry (asserted separately below).
+    const onDisk = walk("verify-vectors").filter(
+      (p) => !fs.lstatSync(path.join(REPO, p)).isSymbolicLink()
+    );
+    expect(onDisk.length, "verify-vectors/ unexpectedly empty on disk").to.be.greaterThan(0);
+    for (const p of onDisk) {
+      expect(shipped.has(p), `frozen conformance-vector file MISSING from the tarball: ${p}`).to.equal(true);
+    }
+  });
+
+  it("T-77.2: ships NO scratch-era harness with internal absolute paths (verifier-py/conformance.py)", function () {
+    for (const p of ALT_IMPL_DENYLIST) {
+      expect(shipped.has(p), `INTERNAL scratch harness LEAKED into the tarball: ${p}`).to.equal(false);
+    }
+  });
+
+  it("T-77.2: the symlinked vector entry stays OUT of the pack (npm cannot ship symlinks — the documented `ln -s` restore covers it)", function () {
+    // Sanity: the symlink really exists on disk (the in-repo vector suite is complete) …
+    const abs = path.join(REPO, VECTOR_SYMLINK_TARBALL_PATH);
+    expect(fs.lstatSync(abs).isSymbolicLink(), `${VECTOR_SYMLINK_TARBALL_PATH} must be a symlink on disk`).to.equal(true);
+    // … and npm drops it. If this ever flips, re-decide DELIBERATELY: a symlink shipped as a plain
+    // COPY would silently defeat the vector's lexical-vs-resolving point.
+    expect(
+      shipped.has(VECTOR_SYMLINK_TARBALL_PATH),
+      `npm now packs the vector symlink (${VECTOR_SYMLINK_TARBALL_PATH}) — update docs/INDEPENDENT-VERIFICATION.md §6's restore note AND check it ships as a real symlink, not a copy`
+    ).to.equal(false);
+  });
+
   it("ships no repo-internal trees (test/, scripts/, site/, artifacts/, cache/, contracts/)", function () {
     for (const prefix of FORBIDDEN_ROOT_PREFIXES) {
       const leaked = [...shipped].filter((p) => p.startsWith(prefix));
@@ -335,6 +412,133 @@ describe("T-73.2 npm tarball: pack → extract OUTSIDE the repo → the document
     for (const p of USER_DOCS_ALLOWLIST) {
       expect(fs.existsSync(path.join(pkgDir, p)), `user-facing doc missing after extraction: ${p}`).to.equal(true);
     }
+  });
+
+  it("T-77.2: the 4-language suite really extracts, and carries NO internal-loop path (string-scanned, not just filename-listed)", function () {
+    for (const p of ALT_IMPL_ALLOWLIST) {
+      expect(fs.existsSync(path.join(pkgDir, p)), `alternate-implementation source missing after extraction: ${p}`).to.equal(true);
+    }
+    for (const p of ALT_IMPL_DENYLIST) {
+      expect(fs.existsSync(path.join(pkgDir, p)), `INTERNAL scratch harness extracted from the tarball: ${p}`).to.equal(false);
+    }
+    // Filename gates catch a leaked FILE; this catches leaked CONTENT: no shipped byte of the new
+    // trees may reference the loop's home or its key/license file locations (the exact strings the
+    // excluded scratch harness contains — the class that once shipped in verifyhash@0.1.0).
+    const FORBIDDEN_STRINGS = ["/home/loopdev", ".verifyhash-selflicense", ".verifyhash-vendor-key", ".verifyhash-deploy-key"];
+    const scanRoots = ["verifier-py", "verifier-go", "verifier-rs", "verify-vectors"];
+    for (const root of scanRoots) {
+      const stack = [path.join(pkgDir, root)];
+      while (stack.length) {
+        const dir = stack.pop();
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const abs = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            stack.push(abs);
+            continue;
+          }
+          const text = fs.readFileSync(abs, "utf8");
+          for (const s of FORBIDDEN_STRINGS) {
+            expect(
+              text.includes(s),
+              `INTERNAL-loop string "${s}" leaked into the shipped file ${path.relative(pkgDir, abs)}`
+            ).to.equal(false);
+          }
+        }
+      }
+    }
+  });
+
+  it("T-77.2: the documented one-line symlink restore makes the extracted frozen vectors BYTE-COMPLETE (SHA256SUMS verifies in full)", function () {
+    const vecDir = path.join(pkgDir, "verify-vectors");
+    const aliasAbs = path.join(vecDir, "cases", "symlinked-artifact", "files", "alias.json");
+    // npm dropped the symlink (pinned in Part 1); restore it EXACTLY as §6 documents:
+    //   ln -s packet.vhevidence.json verify-vectors/cases/symlinked-artifact/files/alias.json
+    expect(fs.existsSync(aliasAbs), "alias.json must be absent from the extracted tarball before the restore").to.equal(false);
+    fs.symlinkSync("packet.vhevidence.json", aliasAbs);
+    expect(fs.lstatSync(aliasAbs).isSymbolicLink()).to.equal(true);
+
+    // Now EVERY line of the frozen SHA256SUMS must verify against the extracted bytes — the same
+    // property `sha256sum -c SHA256SUMS` checks, computed here directly so the gate needs no
+    // external binary. One missing or drifted byte in the shipped vector suite fails HERE.
+    const crypto = require("crypto");
+    const lines = fs
+      .readFileSync(path.join(vecDir, "SHA256SUMS"), "utf8")
+      .split("\n")
+      .filter((l) => l.trim().length > 0);
+    expect(lines.length, "SHA256SUMS unexpectedly empty").to.be.greaterThan(0);
+    for (const line of lines) {
+      const m = /^([0-9a-f]{64})[ *]+(.+)$/.exec(line.trim());
+      expect(m, `unparseable SHA256SUMS line: ${line}`).to.not.equal(null);
+      const [, want, rel] = m;
+      const bytes = fs.readFileSync(path.join(vecDir, rel)); // follows the restored symlink
+      const got = crypto.createHash("sha256").update(bytes).digest("hex");
+      expect(got, `extracted vector file drifted from the frozen SHA256SUMS pin: ${rel}`).to.equal(want);
+    }
+  });
+
+  it("T-77.2: the SECOND implementation runs from the EXTRACTED tree — Python ACCEPTs the genuine vector (0) and REJECTs the tampered one (3)", function () {
+    // The pitch is "an npm installer GETS a working alternate implementation" — prove it on the
+    // shipped frozen vectors with the shipped Python verifier, zero setup. Skip (visibly) only
+    // when the machine has no python3 — same probe contract as test/conformance-multilang.test.js.
+    const probe = spawnSync("python3", ["--version"], { encoding: "utf8" });
+    if (probe.error || probe.status !== 0) {
+      this.skip(); // no python3 on this machine — the Go/Rust/JS legs are covered elsewhere
+      return;
+    }
+    const vecDir = path.join(pkgDir, "verify-vectors");
+    const vendor = "0x7cb4d3dc6c52996b6386473bfb32f898263412f7"; // vectors.json issuerUnderTest (a PUBLIC address)
+    const py = (caseName) =>
+      spawnSync(
+        "python3",
+        [
+          path.join(pkgDir, "verifier-py", "verify_vh.py"),
+          `cases/${caseName}/packet.vhevidence.json`,
+          "--vendor",
+          vendor,
+          "--dir",
+          `cases/${caseName}/files`,
+        ],
+        { cwd: vecDir, encoding: "utf8", maxBuffer: MAX_BUF }
+      );
+
+    const good = py("genuine-single");
+    expect(good.status, `python3 verify_vh.py (genuine) exited ${good.status}:\n${good.stdout}\n${good.stderr}`).to.equal(0);
+    expect(good.stdout, "the genuine vector must ACCEPT").to.include("OK — the artifact verifies.");
+
+    const bad = py("tampered-file");
+    expect(bad.status, `python3 verify_vh.py (tampered) exited ${bad.status} (want 3):\n${bad.stdout}\n${bad.stderr}`).to.equal(3);
+    expect(bad.stdout, "the tampered vector must REJECT, localized").to.include("REJECTED");
+    expect(bad.stdout, "the REJECT must localize the tampered file").to.include("data/records.csv");
+  });
+
+  it("T-77.2: the shipped 4-way conformance harness PASSES from the EXTRACTED tree (post-restore) — exit 0, present impls agree", function () {
+    this.timeout(300000);
+    const probe = spawnSync("python3", ["--version"], { encoding: "utf8" });
+    if (probe.error || probe.status !== 0) {
+      this.skip(); // the harness itself is Python
+      return;
+    }
+    // Prerequisite: the symlink-restore test above has run (mocha runs its in declaration order).
+    const aliasAbs = path.join(pkgDir, "verify-vectors", "cases", "symlinked-artifact", "files", "alias.json");
+    expect(fs.lstatSync(aliasAbs).isSymbolicLink(), "restore-symlink test must run first").to.equal(true);
+    // The harness resolves the repo root from __file__, so from the extracted package it uses the
+    // SHIPPED JS + Python verifiers (Go/Rust legs skip when no toolchain). js-sha3 for the JS leg
+    // resolves from THIS repo's node_modules via NODE_PATH; node itself is pinned via VH_NODE_BIN.
+    const res = spawnSync(
+      "python3",
+      [path.join(pkgDir, "verify-vectors", "conformance-4way.py")],
+      {
+        cwd: pkgDir,
+        encoding: "utf8",
+        maxBuffer: MAX_BUF,
+        env: { ...extractedEnv(), VH_NODE_BIN: NODE },
+      }
+    );
+    expect(
+      res.status,
+      `conformance-4way.py exited ${res.status} from the extracted tree:\n${res.stdout}\n${res.stderr}`
+    ).to.equal(0);
+    expect(res.stdout, "the harness must report an explicit PASS").to.include("VERDICT: PASS");
   });
 
   it("ADOPT quickstart from the EXTRACTED tree: `verify-vh demo` exits 0 — genuine ACCEPT, tampered REJECT", function () {

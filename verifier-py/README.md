@@ -4,7 +4,7 @@
 
 A second, **independent** implementation of the verifyhash evidence-seal verifier, in
 Python, that cross-checks the JS verdict. `verify_vh.py` is a clean-room port written
-against `../SPEC.md` (which was itself derived from `verifier/verify-vh.js` and its
+against `SPEC.md` (which was itself derived from `verifier/verify-vh.js` and its
 libs, then confirmed by executing the real verifier). It does the same job as
 `verify-vh`:
 
@@ -33,20 +33,19 @@ python3 verify_vh.py <packet.vhevidence.json> --vendor 0xYourVendorAddr [--dir <
 echo $?   # 0 = ACCEPT, 3 = REJECT
 ```
 
-Run the differential conformance harness (needs `node` + the verifyhash repo, because
-it seals a fresh genuine packet via `node cli/vh.js evidence seal` and then runs BOTH
-verifiers on identical inputs):
+Run the cross-implementation conformance harness over the frozen vector suite (it
+compares every implementation present on the machine — JS always, plus Python/Go/Rust
+when their toolchains exist — against `../verify-vectors/vectors.json`):
 
 ```sh
-python3 conformance.py
-echo $?   # 0 = all cases agree AND match expectations; 1 = any divergence
+python3 ../verify-vectors/conformance-4way.py
+echo $?   # 0 = every present implementation agrees AND matches the vector expected; 1 = divergence
 ```
 
-The harness is self-contained: each run builds a fresh workspace under
-`../conformance-ws/`, seals a genuine signed packet, derives the four cases from it,
-runs both verifiers with `--json`, and compares (a) the ACCEPT/REJECT decision, (b) the
-process exit code, and (c) the machine-readable `verdict` + `reason` strings. It writes
-only under the `py-verifier/` tree and only reads/executes files from the repo.
+The same matrix runs in the repo's CI on every test run
+(`../test/conformance-multilang.test.js`). The earlier two-way (JS↔Python) scratch
+harness, `conformance.py`, is kept in the repo for history but is superseded by the
+4-way harness and is not shipped with the npm package.
 
 ## Conformance result: PASS — no divergence
 

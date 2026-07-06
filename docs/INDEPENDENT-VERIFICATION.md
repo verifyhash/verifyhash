@@ -381,6 +381,102 @@ which is part of the standard `npx hardhat test` suite:
 This is what lets a counterparty audit the verifier in an afternoon and then rely on its verdict
 without relying on us.
 
+---
+
+## 6. Verify with up to FOUR independent implementations (JS · Python · Go · Rust)
+
+Everything above removes the need to trust the *producer*. This section removes the need to trust
+any single *implementation of the verifier*. The repo — and the published `verifyhash` npm package —
+ships **four clean-room implementations** of the evidence-seal verifier, in four languages, with
+**zero shared code, zero shared hash library, zero shared EC library, and zero external
+dependencies** in any of them:
+
+| # | implementation | language | source tree | external deps |
+|---|----------------|----------|-------------|---------------|
+| 1 | `verify-vh` (reference) | JS (Node) | [`../verifier/`](../verifier/) | `js-sha3` only (or **none** in the standalone bundle, §0) |
+| 2 | `verify_vh.py` | Python ≥ 3.10 | [`../verifier-py/`](../verifier-py/) | **none** — pure stdlib; keccak-f[1600] + secp256k1 recovery hand-rolled in one file |
+| 3 | `verify-vh` (Go) | Go ≥ 1.22 | [`../verifier-go/`](../verifier-go/) | **none** — `go.mod` has no `require` block at all |
+| 4 | `verify-vh` (Rust) | Rust ≥ 1.56 | [`../verifier-rs/`](../verifier-rs/) | **none** — no `[dependencies]`; `Cargo.lock` contains exactly one package (itself) |
+
+All four expose the **same CLI and the same `0/3/2/1` exit contract**:
+
+```
+<verifier> <packet>.vhevidence.json [--vendor <0xaddr>] [--dir <files>] [--exact-dir] [--json]
+```
+
+**Exact run commands** (shown against the shipped frozen conformance vectors, so you can copy-paste
+them and see a real ACCEPT with no setup; substitute your own packet/dir/vendor for a real verify):
+
+```bash
+cd verify-vectors   # the frozen vector suite ships alongside the verifiers
+
+# 2) Python — one file, stock CPython 3.10+, nothing installed:
+python3 ../verifier-py/verify_vh.py cases/genuine-single/packet.vhevidence.json \
+        --vendor 0x7cb4d3dc6c52996b6386473bfb32f898263412f7 --dir cases/genuine-single/files
+echo $?   # 0 = ACCEPT; 3 = REJECT
+
+# 3) Go — run from source (module fetch is impossible: there are no modules to fetch) …
+cd ../verifier-go
+GOPROXY=off GOFLAGS=-mod=readonly go run . ../verify-vectors/cases/genuine-single/packet.vhevidence.json \
+        --vendor 0x7cb4d3dc6c52996b6386473bfb32f898263412f7 --dir ../verify-vectors/cases/genuine-single/files
+#    … or build a static binary once and keep it:
+GOPROXY=off CGO_ENABLED=0 go build -trimpath -o verify-vh .
+./verify-vh <packet> --vendor 0xPRODUCER --dir <files>
+
+# 4) Rust — zero crates, so --offline is guaranteed to succeed:
+cd ../verifier-rs
+cargo run --release --offline -- ../verify-vectors/cases/genuine-single/packet.vhevidence.json \
+        --vendor 0x7cb4d3dc6c52996b6386473bfb32f898263412f7 --dir ../verify-vectors/cases/genuine-single/files
+#    … or build once: cargo build --release --offline   ->   target/release/verify-vh
+```
+
+**Why this matters (the pitch, in one sentence).** Four languages, zero shared dependencies, one
+frozen vector suite — a bug or a backdoor would have to be reproduced **identically, four times, in
+four unrelated codebases** to go unnoticed, and your own auditor can write a **fifth**
+implementation against [`../verify-vectors/`](../verify-vectors/) + the extracted format spec
+([`../verifier-py/SPEC.md`](../verifier-py/SPEC.md)) and know it is a verifyhash verifier the moment
+it passes every case.
+
+**The frozen conformance vectors** ([`../verify-vectors/`](../verify-vectors/)) are the
+language-agnostic ground truth: seven cases (genuine single/multi, tampered byte, wrong pinned
+vendor, missing file, injected extra file, symlinked-artifact alias), each pinning the exact
+verdict + exit every implementation must reproduce in both `--dir` and `--exact-dir` modes.
+Check their integrity with `sha256sum -c SHA256SUMS` from `verify-vectors/`; run the cross-check
+yourself with:
+
+```bash
+python3 verify-vectors/conformance-4way.py    # exit 0 = every present implementation agrees
+```
+
+A missing toolchain SKIPS that leg with a visible notice (you can cross-check with two or three
+implementations, not all four); a real divergence between two present implementations fails loudly,
+naming the case. The repo's CI runs the same matrix on every test run
+([`../test/conformance-multilang.test.js`](../test/conformance-multilang.test.js)).
+
+> **npm install note (one symlink).** The `symlinked-artifact` vector needs `alias.json` to be a
+> real symlink, and npm tarballs cannot carry symlinks, so that one entry is omitted from the
+> published package. Restore it (then `sha256sum -c SHA256SUMS` passes in full):
+> `ln -s packet.vhevidence.json verify-vectors/cases/symlinked-artifact/files/alias.json`.
+> From a git clone nothing is missing.
+
+**The honest scope — read before relying on this:**
+
+- **Evidence-seal path only.** The alternate implementations verify `vh.evidence-seal` /
+  `vh.evidence-seal-signed` packets — the deliverable this whole document specifies. Other artifact
+  kinds (trust seal, dataset/parcel attestations, proof bundles, agent packets, anchored receipts)
+  are verified by the reference JS verifier only.
+- **The SAME trust boundary as `verify-vh` (§3), unchanged.** Each re-derives the keccak-256 root
+  from the bytes you hold and recovers the EIP-191 signer with no producer stack: that proves
+  **tamper-evidence + signer-pin** — **NOT** a trusted "sealed at time T" (that still requires
+  **P-3**; see §3), and not a legal opinion. More implementations remove *implementation* trust;
+  they add **no new trust root** beyond the vendor address you pin out-of-band.
+- **keccak256 is not a FIPS-approved hash.** All four implement Ethereum's keccak256 (domain byte
+  `0x01`, NOT NIST SHA3-256's `0x06`), because that is what the seal format uses. If a FIPS-mode
+  seal variant is ever added, the standard libraries are ready for it in Python (`hashlib.sha256`
+  / `hashlib.sha3_256`) and Go (`crypto/sha256`; SHA-3 via the extended `golang.org/x/crypto/sha3`);
+  Rust's std ships no hash primitives, so a FIPS variant there would be hand-rolled in-tree and
+  vector-checked exactly as keccak is today. Until such a variant exists, none of these verifiers
+  makes any FIPS claim.
 
 ---
 <sub>© 2026 verifyhash.com · Licensed under Apache-2.0 (SPDX-License-Identifier: Apache-2.0) — see the [LICENSE](https://verifyhash.com/LICENSE) and [NOTICE](https://verifyhash.com/NOTICE) served with this file.</sub>

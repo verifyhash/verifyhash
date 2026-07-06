@@ -5428,11 +5428,20 @@ const WEB_PAID_FEATURE_ENTITLEMENTS = Object.freeze([
 // requested paid feature). Throws a NAMED HttpError otherwise:
 //   * license_required (402) — a paid surface was requested with NO license at all
 //   * license_invalid  (403) — a license WAS supplied but is invalid for this run
-//       (malformed / bad_signature / wrong_issuer / expired / not_yet_valid, or a
-//        valid license that does not carry the required entitlement)
+//       (malformed / bad_signature / wrong_issuer / expired / not_yet_valid, a
+//        valid license that does not carry the required entitlement, OR a
+//        vendorAddress assertion that does not EQUAL the canonical identity)
 // `now` is the injected report date so the verdict is deterministic. The license
-// container + vendorAddress come from the request body; the server holds no key.
-function gatePayload(payload, now) {
+// container comes from the request body; the server holds no key.
+//
+// THE PIN (T-75.3): verification pins to the CANONICAL vendor identity (`canonicalVendor`, resolved
+// server-side OUTSIDE the request body — io.canonicalVendor / VH_CANONICAL_VENDOR / committed default),
+// NEVER against `payload.vendorAddress`. This is the textbook "free-ride a HOSTED vendor" surface: a gate
+// that pinned to the request body's own vendorAddress would let anyone POST a self-minted license (signed
+// by their own key, naming their own address) and unlock the paid web surface for free. `vendorAddress`
+// is now OPTIONAL and accepted only as an assertion that must EQUAL the canonical identity (a mismatch is
+// a NAMED license_invalid, never a silent re-pin).
+function gatePayload(payload, now, canonicalVendor) {
   const needed = WEB_PAID_FEATURE_ENTITLEMENTS.filter((f) => f.requested(payload));
   if (needed.length === 0) {
     // FREE TIER: no paid surface requested — proceed unchanged. A stray
@@ -5441,31 +5450,25 @@ function gatePayload(payload, now) {
   }
 
   const featureList = needed.map((f) => f.label).join(" and ");
-  const hasLicense = payload.license != null;
-  const hasVendor = payload.vendorAddress != null;
 
-  // Both must travel together: a license is worthless without the vendor address
-  // to PIN it to, and a vendor with no license is nothing to verify.
-  if (!hasLicense && !hasVendor) {
+  // A paid surface REQUIRES a license. vendorAddress is OPTIONAL now: the gate pins to the CANONICAL
+  // identity (below), not to a caller-chosen address, so a bare vendorAddress is nothing to verify.
+  if (payload.license == null) {
     throw new HttpError(
       402,
       "license_required",
       `${featureList} ${needed.length > 1 ? "are" : "is"} a paid feature and requires a license; ` +
-        "supply { license, vendorAddress } in the request body. " +
+        "supply { license } in the request body. Licenses are verified OFFLINE against the CANONICAL " +
+        "vendor identity — only a license minted by that vendor key unlocks the paid surface. " +
         "The free tier — baseline-policy reconcile + file inspect — needs no license."
     );
   }
-  if (!hasLicense || !hasVendor) {
-    throw new HttpError(
-      402,
-      "license_required",
-      'both "license" and "vendorAddress" must be supplied together (a license is verified by ' +
-        "pinning it to the vendor address)"
-    );
-  }
 
-  // Parse + validate the supplied container (a JSON string OR an already-parsed
-  // object). A malformed container is a license_invalid 403 — never half-trusted.
+  // Parse + validate the supplied container (a JSON string OR an already-parsed object) FIRST. A
+  // malformed container is a license_invalid 403 — never half-trusted. NOTE: readLicense precedes pin
+  // resolution BY DESIGN — in the OFFLINE standalone bundle the license module is a fail-closed shim
+  // whose readLicense throws here (the named license_invalid pointing at the installed product), so the
+  // gate never reaches the pin resolution offline and stays fail-closed + REUSED (never weakened).
   let container;
   try {
     container = license.readLicense(payload.license);
@@ -5477,23 +5480,39 @@ function gatePayload(payload, now) {
     );
   }
 
-  // Verify OFFLINE against the pinned vendor, dated at the run's reportDate. A
-  // malformed vendorAddress is a request error (the address could not be parsed).
+  // Resolve the ONE pin the gate verifies against — the CANONICAL vendor identity, NEVER the request
+  // body. An optional payload.vendorAddress is accepted only as an assertion that must EQUAL the
+  // canonical identity; a mismatch (the free-ride re-pin) or a garbage address is a NAMED license_invalid
+  // refusal from the core, never a silent re-pin.
+  let pin;
+  try {
+    pin = license.resolveVendorPin(payload.vendorAddress, canonicalVendor);
+  } catch (e) {
+    throw new HttpError(403, "license_invalid", e.message);
+  }
+
+  // Verify OFFLINE against the CANONICAL pin, dated at the run's reportDate. verifyLicense throws only
+  // for a garbage `now` (server-injected, always valid) — a request bug if it ever fires.
   let verdict;
   try {
-    verdict = license.verifyLicense(container, { now, vendorAddress: payload.vendorAddress });
+    verdict = license.verifyLicense(container, { now, vendorAddress: pin });
   } catch (e) {
-    // verifyLicense throws only for a garbage vendorAddress / now — a request bug.
     throw new HttpError(400, "bad_request", e.message);
   }
 
   if (!verdict.valid) {
-    // Report the PRECISE reason — never silently downgrade to a free run.
+    // Report the PRECISE reason — never silently downgrade to a free run. A wrong_issuer here is the
+    // self-mint / free-ride case: a license signed by a NON-canonical key never unlocks the paid surface.
+    const selfMintNote =
+      verdict.reason === "wrong_issuer"
+        ? " Paid entitlements unlock ONLY with a license minted by the canonical vendor key; a " +
+          "self-minted license signed by any other key is refused."
+        : "";
     throw new HttpError(
       403,
       "license_invalid",
       `${featureList} requires a valid license, but the supplied license is invalid ` +
-        `(reason: ${verdict.reason}); the free baseline reconcile remains available without state/policy/seal.`
+        `(reason: ${verdict.reason}); the free baseline reconcile remains available without state/policy/seal.${selfMintNote}`
     );
   }
 
@@ -5559,7 +5578,7 @@ function readOptionalMaps(raw) {
   return Object.freeze(out);
 }
 
-function reconcilePayload(payload, reportDate) {
+function reconcilePayload(payload, reportDate, canonicalVendor) {
   if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
     throw new HttpError(400, "bad_request", "request body must be a JSON object");
   }
@@ -5579,8 +5598,9 @@ function reconcilePayload(payload, reportDate) {
   // LICENSE GATE (T-29.3). Apply the SAME paid-surface gate the CLI uses BEFORE any
   // paid feature is resolved, so a gated request (state/policy/seal) without a valid
   // license is refused with a NAMED license_required/license_invalid — never folded
-  // into a downstream policy_error and never silently downgraded to a free run.
-  gatePayload(payload, reportDate);
+  // into a downstream policy_error and never silently downgraded to a free run. The pin is the CANONICAL
+  // vendor identity resolved OUTSIDE the request body (canonicalVendor), never payload.vendorAddress.
+  gatePayload(payload, reportDate, canonicalVendor);
 
   // Optional per-state policy. An unknown code is a named 400 (PolicyError's
   // message names the available codes), not a silent fall-through to baseline.

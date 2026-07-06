@@ -44,6 +44,11 @@ const OVERRIDE = path.join(POL, "ca-example.json");
 
 const DATE = "2026-06-24"; // pinned so output is byte-reproducible
 
+// T-75.3: the paid --policy/--state gate pins to the CANONICAL vendor identity, resolved OUTSIDE argv.
+// The suite mints its shared license with an EPHEMERAL vendor key, so it declares that key canonical via
+// the programmatic io.canonicalVendor seam (set in before()); ignored on free-tier ios.
+let CANON;
+
 function capture() {
   const out = [];
   const err = [];
@@ -51,6 +56,7 @@ function capture() {
     write: (s) => out.push(s),
     writeErr: (s) => err.push(s),
     today: () => DATE,
+    canonicalVendor: CANON,
     out: () => out.join(""),
     err: () => err.join(""),
   };
@@ -105,6 +111,8 @@ describe("trustledger CLI: `vh trust reconcile --policy/--state`", function () {
     fs.writeFileSync(file, licenseMod.serializeSignedLicense(container));
     LIC = { license: file, vendor: vendor.address };
     LICFLAGS = ["--license", file, "--vendor", vendor.address];
+    // Declare the ephemeral vendor canonical for every gated run in this suite (T-75.3).
+    CANON = vendor.address;
   });
   after(function () {
     if (licDir) fs.rmSync(licDir, { recursive: true, force: true });

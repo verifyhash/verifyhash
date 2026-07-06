@@ -41,6 +41,12 @@ const RENT = path.join(FIX, "rentroll.csv");
 const DATE = "2026-06-24"; // pinned so packet/seal filenames are deterministic
 const SEAL_NAME = `reconciliation-${DATE}-seal.json`;
 
+// T-75.3: the paid --seal gate pins to the CANONICAL vendor identity, resolved OUTSIDE argv. The suite
+// mints its shared license with an EPHEMERAL vendor key, so it declares that key canonical via the
+// programmatic io.canonicalVendor seam (set in before()); a bare `canonicalVendor` on a free-tier io is
+// simply ignored.
+let CANON;
+
 function capture() {
   const out = [];
   const err = [];
@@ -48,6 +54,7 @@ function capture() {
     write: (s) => out.push(s),
     writeErr: (s) => err.push(s),
     today: () => DATE,
+    canonicalVendor: CANON,
     out: () => out.join(""),
     err: () => err.join(""),
   };
@@ -81,6 +88,8 @@ describe("trustledger T-26.2: `vh trust reconcile --seal` + `verify-seal`", func
     const file = path.join(licDir, "test.vhlicense.json");
     fs.writeFileSync(file, licenseMod.serializeSignedLicense(container));
     LICENSE_FLAGS = ["--license", file, "--vendor", vendor.address];
+    // Declare the ephemeral vendor canonical for every gated run in this suite (T-75.3).
+    CANON = vendor.address;
   });
   after(function () {
     if (licDir) fs.rmSync(licDir, { recursive: true, force: true });

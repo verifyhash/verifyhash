@@ -313,7 +313,9 @@ describe("trustledger T-37.2: `vh trust license fulfill` round-trips through ver
     // solo-monthly grants [seal] (no multi_state_policy) — its term covers DATE.
     const { vendor, file } = await fulfill(dir, { plan: "solo-monthly", issued: `${DATE}T00:00:00.000Z` });
     const outDir = path.join(dir, "packet");
-    const io = capture();
+    // T-75.3: the gate pins to the CANONICAL identity — declare this ephemeral vendor canonical via the
+    // programmatic io.canonicalVendor seam (matching the --vendor assertion below).
+    const io = capture({ canonicalVendor: vendor });
     const code = cmdTrust(
       [
         "reconcile", BANK, BOOK, RENT,
@@ -359,7 +361,9 @@ describe("trustledger T-37.2: `vh trust license fulfill` round-trips through ver
     expect(fcode).to.equal(EXIT.PASS);
 
     const outDir = path.join(dir, "packet");
-    const io = capture();
+    // T-75.3: pin canonical to this ephemeral vendor so the license is VALID but under-entitled (proving
+    // the gate refuses on the MISSING entitlement, not on a vendor mismatch).
+    const io = capture({ canonicalVendor: vendor });
     const code = cmdTrust(
       [
         "reconcile", BANK, BOOK, RENT,

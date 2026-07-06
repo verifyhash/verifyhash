@@ -48,9 +48,11 @@ It is an ACCESS credential only: never a token/coin/NFT, never tradeable, never 
 
 ## Paid-gate vendor pinning (T-75.3) — the canonical vendor identity
 
-The paid surfaces (`vh evidence seal --sign`, sealing beyond the free sample via
-`evidence_unlimited`, `vh agent seal --sign`) verify the supplied `--license` **against a CANONICAL
-vendor identity that is a committed constant**, not against a caller-supplied address:
+The paid surfaces — `vh evidence seal --sign`, sealing beyond the free sample via
+`evidence_unlimited`, `vh agent seal --sign`, the **TrustLedger reconcile / value-proof gate**
+(`vh trust reconcile --state/--policy/--seal`), and the **hosted TrustLedger web door** (`vh trust
+serve`, `POST /api/reconcile`) — verify the supplied license **against a CANONICAL vendor identity that
+is a committed constant**, not against a caller-supplied address:
 
 - The committed identity is the **published verifyhash vendor address**
   `0x7cb4d3DC6C52996B6386473Bfb32f898263412f7` (single source:
@@ -64,10 +66,14 @@ vendor identity that is a committed constant**, not against a caller-supplied ad
   `wrong_issuer` reject.
 - The **read-only inspection verb** (`vh trust license verify <file> --vendor <addr>`) keeps its
   explicit caller pin: it answers "did THIS key sign it?" and unlocks nothing.
-- Honest scope note: the **TrustLedger reconcile gate** (`vh trust reconcile --license <f> --vendor
-  <addr>`) still takes an explicit operator-supplied `--vendor` today; its canonical identity constant
-  and pin helper (`trustledger/license.js` → `CANONICAL_VENDOR_ADDRESS`, `resolveVendorPin`) are
-  committed and tested, ready for that gate to adopt the same pin.
+- The **TrustLedger gates are pinned too (T-75.3).** Both the CLI reconcile/value-proof gate
+  (`trustledger/cli.js` → `gateReconcile`) and the hosted web door (`trustledger/door-core.js` →
+  `gatePayload`, reached by `vh trust serve` / `POST /api/reconcile`) now resolve the pin via
+  `trustledger/license.js` → `resolveVendorPin` **outside** any caller channel — `--vendor` on the CLI
+  and `vendorAddress` in the request body are optional assertions that must EQUAL the canonical identity,
+  and the web door resolves its canonical identity **server-side** (never from the request body), closing
+  the textbook "free-ride a hosted vendor" leak. A license minted by any non-canonical key is the named
+  `wrong_issuer` reject.
 - The **offline verify path for already-signed packets** (`vh evidence verify` / `verify-signed`,
   `verify-vh`) is untouched: it never consults the canonical pin.
 
@@ -78,9 +84,16 @@ instance legitimately sets their **own** canonical vendor identity, and their ow
 their own instance. Three equivalent ways, in precedence order:
 
 1. **Programmatic** — pass `io.canonicalVendor` to the run functions (what `go-live-preflight` uses to
-   validate an operator's own key end-to-end; not reachable from argv).
-2. **Config** — export `VH_CANONICAL_VENDOR=0xYourVendorAddress` for the CLI.
+   validate an operator's own key end-to-end; not reachable from argv). For the hosted TrustLedger door,
+   pass `createServer({ canonicalVendor })`.
+2. **Config** — export `VH_CANONICAL_VENDOR=0xYourVendorAddress` for the CLI **and** the `vh trust serve`
+   web door (both resolve the pin through the same precedence: programmatic seam > `VH_CANONICAL_VENDOR` >
+   committed default).
 3. **Fork** — edit the constant in `cli/core/vendor-identity.js`.
+
+An operator running their **own** TrustLedger instance (self-hosted CLI or web door) sets their **own**
+canonical vendor constant this way — this is a gate against free-riding a **hosted** vendor's paid
+surface, **not** a DRM claim.
 
 What the pin actually protects is the **hosted vendor's paid surface in the shipped default**: a
 self-minted license no longer unlocks the stock build. An operator who re-points the identity is

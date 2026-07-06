@@ -46,13 +46,33 @@ const vendorIdentity = require("../cli/core/vendor-identity");
 
 // THE CANONICAL VENDOR IDENTITY (T-75.3) — the ONE committed address an ENTITLEMENT GATE pins license
 // verification to. This is the published verifyhash vendor identity (cli/core/vendor-identity.js): the
-// SAME owner-held vendor key mints TrustLedger licenses and evidence licenses. Gate-side verification
-// must pin HERE (via `resolveVendorPin` below), never to a caller-supplied `--vendor` — a caller-chosen
-// pin would let anyone self-mint a license and unlock the paid surface for free. The read-only
-// `vh trust license verify --vendor <addr>` inspection verb keeps its explicit caller pin (it answers
-// "did THIS key sign it?", it unlocks nothing). Self-hosted operators set their OWN identity
-// (docs/LICENSING.md "Paid-gate vendor pinning").
+// SAME owner-held vendor key mints TrustLedger licenses and evidence licenses. Both live paid gates
+// PIN HERE, never to a caller-supplied `--vendor`/`vendorAddress` — a caller-chosen pin would let anyone
+// self-mint a license and unlock the paid surface for free:
+//   * the CLI reconcile/value-proof gate (trustledger/cli.js `gateReconcile`), and
+//   * the HOSTED web door (trustledger/door-core.js `gatePayload`, `vh trust serve`).
+// Both resolve the pin via `resolveVendorPin` below (which resolves OUTSIDE argv/the request body), so a
+// caller `--vendor`/`vendorAddress` is accepted ONLY as an assertion that must EQUAL the canonical
+// identity. The read-only `vh trust license verify --vendor <addr>` inspection verb keeps its explicit
+// caller pin (it answers "did THIS key sign it?", it unlocks nothing). Self-hosted operators set their
+// OWN identity via `resolveCanonicalVendor` below (docs/LICENSING.md "Paid-gate vendor pinning").
 const CANONICAL_VENDOR_ADDRESS = vendorIdentity.VERIFYHASH_VENDOR_ADDRESS;
+
+// The operator config channel: a self-hosted instance exports THIS env var with its OWN vendor address
+// (mirrors cli/evidence.js). Re-exported so the CLI/server + tests share one name.
+const CANONICAL_VENDOR_ENV = vendorIdentity.CANONICAL_VENDOR_ENV;
+
+// resolveCanonicalVendor(io) — resolve the canonical vendor identity a paid gate pins to, in strict
+// precedence order: io.canonicalVendor (programmatic embedder/test seam, never reachable from argv) >
+// VH_CANONICAL_VENDOR (self-hosted operator config) > the committed published identity. The result is
+// validated at the gate via resolveVendorPin, so a garbage configured value is a NAMED error there,
+// never a silent unlock. PURE relative to the passed io + process.env.
+function resolveCanonicalVendor(io) {
+  return vendorIdentity.resolveCanonicalVendor({
+    override: io && io.canonicalVendor,
+    env: process.env,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Identity. The license has its OWN `kind`/`schemaVersion`, disjoint from the seal/dataset/parcel
@@ -218,13 +238,21 @@ function hasEntitlement(verdict, flag) {
 }
 
 /**
- * resolveVendorPin(callerVendor?) — the ONE address a TrustLedger ENTITLEMENT GATE may pin license
- * verification to: the CANONICAL vendor identity (T-75.3), never a caller-supplied address. A
- * caller-asserted vendor is accepted ONLY when it EQUALS the canonical identity; a mismatch is a NAMED
+ * resolveVendorPin(callerVendor?, canonicalVendor?) — the ONE address a TrustLedger ENTITLEMENT GATE may
+ * pin license verification to: the CANONICAL vendor identity (T-75.3), never a caller-supplied address.
+ * A caller-asserted vendor is accepted ONLY when it EQUALS the canonical identity; a mismatch is a NAMED
  * LicenseError (never a silent re-pin). Returns the checksummed canonical address to hand verifyLicense.
+ *
+ * `canonicalVendor` is the SELF-HOST seam: when omitted (or equal to the committed constant) the pin is
+ * the committed published identity; a self-hosted operator passes their OWN identity (resolved OUTSIDE
+ * argv via resolveCanonicalVendor) and it becomes the pin. It is NEVER the caller-supplied `--vendor`.
  */
-function resolveVendorPin(callerVendor) {
-  return coreLicense.resolveVendorPin(CFG, callerVendor);
+function resolveVendorPin(callerVendor, canonicalVendor) {
+  const cfg =
+    canonicalVendor == null || canonicalVendor === CANONICAL_VENDOR_ADDRESS
+      ? CFG
+      : Object.freeze({ ...CFG, canonicalVendor });
+  return coreLicense.resolveVendorPin(cfg, callerVendor);
 }
 
 // ---------------------------------------------------------------------------
@@ -580,6 +608,8 @@ module.exports = {
   hasEntitlement,
   // the canonical vendor pin (T-75.3)
   CANONICAL_VENDOR_ADDRESS,
+  CANONICAL_VENDOR_ENV,
+  resolveCanonicalVendor,
   resolveVendorPin,
   // order -> license-params mapping (T-37.2)
   fulfillOrder,

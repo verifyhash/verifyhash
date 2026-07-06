@@ -5,9 +5,9 @@
     "trustledger-standalone": {
       "bundle": "trustledger-standalone.html",
       "sidecar": "trustledger-standalone.html.sha256",
-      "bundleBytes": 273125,
-      "bundleSha256": "1afa0e08c9624505ad967ab88c91553c6af00b0e5e0f2b790ddf315741ed1742",
-      "sidecarLine": "1afa0e08c9624505ad967ab88c91553c6af00b0e5e0f2b790ddf315741ed1742  trustledger-standalone.html",
+      "bundleBytes": 275104,
+      "bundleSha256": "6dda49fbab81d29b044db36ad977c71a60a83a40dbb6c3c615fdfff247857704",
+      "sidecarLine": "6dda49fbab81d29b044db36ad977c71a60a83a40dbb6c3c615fdfff247857704  trustledger-standalone.html",
       "page": {
         "sourceFile": "trustledger/public/index.html",
         "sourceSha256": "eee5780a7e7cc62dd4e4baf2bcbb2af47fb68babd95d4ad2d4fe1e54b0fee9d4"
@@ -89,8 +89,8 @@
           "id": "door-core",
           "synthetic": false,
           "sourceFile": "trustledger/door-core.js",
-          "sourceSha256": "7c04cb3fbe338f3fd97059974b14d2977828434bd649ff23bef4c85ee57f5b46",
-          "inlinedSha256": "d3b2672104c4c2ed9a97f292f569c4f013bfa120c8085f33f9f054cf47c98654",
+          "sourceSha256": "64e0cbffbbc58465ae3c5c292bd0f58421366f2b0eebbeddc30d4df723dbb657",
+          "inlinedSha256": "d83c2058dc4b2905c7d040104db44e8d49ff562c1b8da78bfe6c0587154f0ac2",
           "entry": true
         }
       ]

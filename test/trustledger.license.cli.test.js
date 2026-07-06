@@ -234,7 +234,9 @@ describe("trustledger T-29.2: `vh trust license` + the reconcile license gate", 
     expect(code).to.equal(EXIT.USAGE); // exit 2 = a clear gate, not a crash
     expect(io.err()).to.match(/requires a license/);
     expect(io.err()).to.match(/vh trust license/);
-    expect(io.err()).to.match(/--license <file> --vendor <0xaddr>/);
+    expect(io.err()).to.match(/--license <file>/);
+    // The pin is the canonical vendor identity — the refusal advertises that, not a caller --vendor.
+    expect(io.err()).to.match(/CANONICAL vendor identity/);
     // The gate fires BEFORE any packet is built: nothing written to --out.
     expect(fs.readdirSync(dir)).to.deep.equal([]);
   });
@@ -245,7 +247,11 @@ describe("trustledger T-29.2: `vh trust license` + the reconcile license gate", 
     const { code: icode, vendor, file } = await issueLicense(licDir);
     expect(icode).to.equal(EXIT.PASS);
 
-    const io = capture();
+    // T-75.3: the gate pins to the CANONICAL vendor identity, resolved OUTSIDE argv. This is an
+    // operator instance minted with an ephemeral key, so the ephemeral vendor is declared canonical via
+    // the programmatic io.canonicalVendor seam (the documented self-hosting hook; never a --vendor
+    // re-pin). The matching --vendor is accepted only because it EQUALS that canonical identity.
+    const io = capture({ canonicalVendor: vendor });
     const code = cmdTrust(
       [
         "reconcile", BANK, BOOK, RENT,
@@ -263,7 +269,7 @@ describe("trustledger T-29.2: `vh trust license` + the reconcile license gate", 
 
     // The packet was scored under the per-state policy (proves the multi_state_policy
     // unlock actually engaged, not a silent free downgrade).
-    const jio = capture();
+    const jio = capture({ canonicalVendor: vendor });
     const jcode = cmdTrust(
       [
         "reconcile", BANK, BOOK, RENT,
@@ -289,7 +295,7 @@ describe("trustledger T-29.2: `vh trust license` + the reconcile license gate", 
     });
     expect(icode).to.equal(EXIT.PASS);
 
-    const io = capture();
+    const io = capture({ canonicalVendor: vendor });
     const code = cmdTrust(
       [
         "reconcile", BANK, BOOK, RENT,
@@ -311,7 +317,7 @@ describe("trustledger T-29.2: `vh trust license` + the reconcile license gate", 
     // A license that grants ONLY multi_state_policy, used to try to unlock --seal.
     const { vendor, file } = await issueLicense(licDir, { entitlements: "multi_state_policy" });
 
-    const io = capture();
+    const io = capture({ canonicalVendor: vendor });
     const code = cmdTrust(
       [
         "reconcile", BANK, BOOK, RENT,
@@ -326,22 +332,25 @@ describe("trustledger T-29.2: `vh trust license` + the reconcile license gate", 
     expect(fs.readdirSync(dir)).to.deep.equal([]);
   });
 
-  it("GATE: --license without --vendor (and vice-versa) is a usage error", async function () {
+  it("GATE (T-75.3): --vendor is now OPTIONAL — a license ALONE unlocks (pins to canonical); --vendor without --license is license_required", async function () {
     const dir = mkTmp();
     const licDir = mkTmp();
     const { vendor, file } = await issueLicense(licDir);
 
-    const io1 = capture();
+    // --license ALONE (no --vendor): the pin comes from the CANONICAL identity, resolved OUTSIDE argv
+    // (here the ephemeral operator's own identity via io.canonicalVendor), so a bare license unlocks.
+    const io1 = capture({ canonicalVendor: vendor });
     expect(
       cmdTrust(["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", dir, "--seal", "--license", file], io1)
-    ).to.equal(EXIT.USAGE);
-    expect(io1.err()).to.match(/must be supplied together/);
+    ).to.equal(EXIT.PASS);
+    expect(fs.existsSync(path.join(dir, `reconciliation-${DATE}-seal.json`))).to.equal(true);
 
-    const io2 = capture();
+    // --vendor WITHOUT --license: still a paid surface with nothing to verify => license_required.
+    const io2 = capture({ canonicalVendor: vendor });
     expect(
-      cmdTrust(["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", dir, "--seal", "--vendor", vendor], io2)
+      cmdTrust(["reconcile", BANK, BOOK, RENT, "--date", DATE, "--out", mkTmp(), "--seal", "--vendor", vendor], io2)
     ).to.equal(EXIT.USAGE);
-    expect(io2.err()).to.match(/must be supplied together/);
+    expect(io2.err()).to.match(/requires a license/);
   });
 
   // -------------------------------------------------------------- free tier

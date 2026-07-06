@@ -510,6 +510,11 @@ describe("T-45.2 `vh trust value-proof` — the CI-gateable value-proof command"
     const ESCALATE_POLICY = path.join(POL, "ca-example.json");
     const POL_DATE = "2026-06-24"; // the date the NSF fixtures are authored against
 
+    // T-75.3: the paid --policy/--state gate pins to the CANONICAL vendor identity, resolved OUTSIDE
+    // argv. The shared license below is minted with an EPHEMERAL vendor key, so it is declared canonical
+    // via the programmatic io.canonicalVendor seam (set in before()); ignored on the no-license runs.
+    let CANON;
+
     // A run() variant pinned to the NSF fixtures' date.
     function runAt(cmd, argv, date) {
       let out = "";
@@ -518,6 +523,7 @@ describe("T-45.2 `vh trust value-proof` — the CI-gateable value-proof command"
         write: (s) => (out += s),
         writeErr: (s) => (err += s),
         today: () => date || POL_DATE,
+        canonicalVendor: CANON,
       };
       const code = cmd(argv, io);
       return { code, out, err };
@@ -545,6 +551,8 @@ describe("T-45.2 `vh trust value-proof` — the CI-gateable value-proof command"
       const file = path.join(licDir, "test.vhlicense.json");
       fs.writeFileSync(file, licenseMod.serializeSignedLicense(container));
       LICFLAGS = ["--license", file, "--vendor", vendor.address];
+      // Declare the ephemeral vendor canonical for every gated run in this suite (T-75.3).
+      CANON = vendor.address;
     });
     after(function () {
       if (licDir) fs.rmSync(licDir, { recursive: true, force: true });

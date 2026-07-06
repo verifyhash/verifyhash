@@ -189,7 +189,10 @@ describe("pilot/run-pilot.js T-32.2: OFFLINE ephemeral-key RECONCILE vertical (+
     const licFile = path.join(ws, "g.vhlicense.json");
     fs.writeFileSync(licFile, trustLicense.serializeSignedLicense(container));
     {
+      // T-75.3: the gate pins to the CANONICAL vendor identity, resolved OUTSIDE argv. This operator
+      // instance declares its ephemeral vendor canonical via the programmatic io.canonicalVendor seam.
       const cap = io();
+      cap.canonicalVendor = vendorWallet.address;
       const r = trust.runReconcile(
         trust.parseReconcileArgs([...baseArgs, "--license", licFile, "--vendor", vendorWallet.address]),
         cap
@@ -199,12 +202,27 @@ describe("pilot/run-pilot.js T-32.2: OFFLINE ephemeral-key RECONCILE vertical (+
       expect(fs.existsSync(sealFile)).to.equal(true);
     }
 
-    // (c) A license pinned to the WRONG vendor is REFUSED (wrong_issuer) — fail-closed, never downgraded.
+    // (c) A SELF-MINTED license (signed by a NON-canonical key) is REFUSED (wrong_issuer) — the gate
+    //     pins to the canonical vendor identity, so an attacker's own key can never unlock the surface.
     {
-      const wrongVendor = Wallet.createRandom().address;
+      const attacker = Wallet.createRandom();
+      const attackerContainer = await trustLicense.buildLicense(
+        {
+          licenseId: "GATE-REC-SELFMINT",
+          customer: "attacker",
+          plan: "pro",
+          entitlements: ["seal"],
+          issuedAt: pilot.ISSUED,
+          expiresAt: pilot.EXPIRES,
+        },
+        attacker
+      );
+      const attackerFile = path.join(ws, "attacker.vhlicense.json");
+      fs.writeFileSync(attackerFile, trustLicense.serializeSignedLicense(attackerContainer));
       const cap = io();
+      cap.canonicalVendor = vendorWallet.address; // pinned to the REAL vendor, not the attacker
       const r = trust.runReconcile(
-        trust.parseReconcileArgs([...baseArgs, "--license", licFile, "--vendor", wrongVendor]),
+        trust.parseReconcileArgs([...baseArgs, "--license", attackerFile]),
         cap
       );
       expect(r.code).to.equal(trust.EXIT.USAGE);
@@ -240,7 +258,7 @@ describe("pilot/run-pilot.js T-32.2: OFFLINE ephemeral-key RECONCILE vertical (+
     const licFile = path.join(ws, "cp.vhlicense.json");
     fs.writeFileSync(licFile, trustLicense.serializeSignedLicense(container));
 
-    const cap = { write: () => {}, writeErr: () => {}, today: () => date };
+    const cap = { write: () => {}, writeErr: () => {}, today: () => date, canonicalVendor: vendorWallet.address };
     const r = trust.runReconcile(
       trust.parseReconcileArgs([
         bank, ledger, rent, "--date", date, "--out", recDir, "--seal", "--license", licFile, "--vendor", vendorWallet.address,

@@ -53,6 +53,7 @@ const fs = require("fs");
 const path = require("path");
 
 const doorCore = require("./door-core");
+const license = require("./license");
 const {
   HttpError,
   WEB_PAID_FEATURE_ENTITLEMENTS,
@@ -286,6 +287,11 @@ substitute for a CPA's review.</div>
 // The request handler. Pure of any module-level state except `today` (injectable).
 function makeHandler(opts = {}) {
   const today = opts.today || todayISO;
+  // The CANONICAL vendor identity the paid gate pins license verification to (T-75.3), resolved ONCE
+  // server-side OUTSIDE any request body: opts.canonicalVendor (programmatic embedder/test seam) >
+  // VH_CANONICAL_VENDOR (self-hosted operator config) > the committed published identity. A hostile
+  // client can NEVER re-pin the gate by putting its own vendorAddress in the request body.
+  const canonicalVendor = license.resolveCanonicalVendor({ canonicalVendor: opts.canonicalVendor });
   return function handler(req, res) {
     // Parse the URL path only (ignore query); route on method + path.
     const url = req.url || "/";
@@ -311,7 +317,7 @@ function makeHandler(opts = {}) {
           } catch (e) {
             throw new HttpError(400, "invalid_json", `request body is not valid JSON: ${e.message}`);
           }
-          const out = reconcilePayload(payload, today());
+          const out = reconcilePayload(payload, today(), canonicalVendor);
           sendJson(res, 200, out);
         })
         .catch((err) => sendError(res, err));

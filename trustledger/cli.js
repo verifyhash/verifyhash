@@ -351,6 +351,14 @@ function parseIntArg(raw, flag) {
 // The reason is reported EXACTLY as `verifyLicense` returns it (wrong_issuer /
 // expired / not_yet_valid / bad_signature / malformed) so a refusal is never
 // ambiguous, and a wrong/expired license NEVER silently downgrades to a free run.
+//
+// THE PIN (T-75.3, mirrors cli/evidence.js gatePaid): the license is verified against the CANONICAL
+// vendor identity (`canonicalVendor`, resolved OUTSIDE argv via license.resolveCanonicalVendor), NEVER
+// against the caller-supplied `--vendor` — a caller-chosen pin would let anyone self-mint a license with
+// their own key and unlock the paid reconcile surface for free (a revenue-only leak). `--vendor` is now
+// OPTIONAL and accepted only as an assertion that must EQUAL the canonical identity (a mismatch is a
+// NAMED usage refusal). Self-hosted operators set their OWN identity via VH_CANONICAL_VENDOR /
+// io.canonicalVendor (docs/LICENSING.md "Paid-gate vendor pinning").
 // ---------------------------------------------------------------------------
 
 // Which entitlement each paid reconcile surface requires. The ONLY place the
@@ -368,7 +376,7 @@ const PAID_FEATURE_ENTITLEMENTS = Object.freeze([
   },
 ]);
 
-function gateReconcile(opts, reportDate, writeErr) {
+function gateReconcile(opts, reportDate, writeErr, canonicalVendor) {
   // Which paid features were requested in THIS run?
   const needed = PAID_FEATURE_ENTITLEMENTS.filter((f) => f.requested(opts));
   if (needed.length === 0) {
@@ -379,26 +387,30 @@ function gateReconcile(opts, reportDate, writeErr) {
   }
 
   const featureList = needed.map((f) => f.label).join(" and ");
-  const hasLicense = opts.license != null;
-  const hasVendor = opts.vendor != null;
 
-  // Both license sources must be present together — a license file is worthless
-  // without the vendor key to PIN it to, and a vendor with no file is nothing to
-  // verify. Either alone is a usage error (parser parity with --key-env/--key-file).
-  if (!hasLicense && !hasVendor) {
+  // A paid surface REQUIRES a license. `--vendor` is OPTIONAL now: the gate pins to the CANONICAL
+  // identity (below), not to a caller-chosen address, so a bare `--vendor` is nothing to verify.
+  if (opts.license == null) {
     writeErr(
       `error: ${featureList} ${needed.length > 1 ? "are" : "is"} a PAID feature and ` +
-        "requires a license; pass --license <file> --vendor <0xaddr> " +
+        "requires a license; pass --license <file> " +
         "(mint one with `vh trust license issue`, verify it with `vh trust license verify`). " +
+        "Licenses are verified OFFLINE against the CANONICAL vendor identity — only a license minted " +
+        "by that vendor key unlocks the paid surface. " +
         "The FREE tier — baseline-policy reconcile + `vh trust inspect` — needs no license.\n"
     );
     return { code: EXIT.USAGE };
   }
-  if (!hasLicense || !hasVendor) {
-    writeErr(
-      "error: --license and --vendor must be supplied together (a license file is " +
-        "verified by pinning it to the vendor key); pass BOTH --license <file> --vendor <0xaddr>\n"
-    );
+
+  // Resolve the ONE pin the gate verifies against — the CANONICAL vendor identity, NEVER argv. An
+  // optional --vendor is accepted only as an assertion that must EQUAL the canonical identity; a
+  // mismatch (the self-mint re-pin) or a garbage canonical/asserted address is a NAMED usage refusal
+  // from the core, never a silent re-pin.
+  let pin;
+  try {
+    pin = license.resolveVendorPin(opts.vendor, canonicalVendor);
+  } catch (e) {
+    writeErr(`error: ${e.message}\n`);
     return { code: EXIT.USAGE };
   }
 
@@ -413,23 +425,29 @@ function gateReconcile(opts, reportDate, writeErr) {
     return { code: EXIT.USAGE };
   }
 
-  // Verify OFFLINE against the pinned vendor, dated at the run's reportDate. A
-  // malformed --vendor is a caller error thrown by verifyLicense — surface it as a
-  // usage line, never as a crash, and never echoing anything sensitive.
+  // Verify OFFLINE against the CANONICAL pin resolved above, dated at the run's reportDate.
   let verdict;
   try {
-    verdict = license.verifyLicense(container, { now: reportDate, vendorAddress: opts.vendor });
+    verdict = license.verifyLicense(container, { now: reportDate, vendorAddress: pin });
   } catch (e) {
     writeErr(`error: ${e.message}\n`);
     return { code: EXIT.USAGE };
   }
 
   if (!verdict.valid) {
-    // Report the precise reason verifyLicense returned — never silently downgrade.
+    // Report the precise reason verifyLicense returned — never silently downgrade. A wrong_issuer here
+    // is the self-mint case: a license signed by a NON-canonical key never unlocks the paid surface.
+    const selfMintNote =
+      verdict.reason === "wrong_issuer"
+        ? " Paid entitlements unlock ONLY with a license minted by the canonical vendor key; a " +
+          "self-minted license signed by any other key is refused. Running your OWN instance? Set " +
+          "your OWN canonical vendor identity (VH_CANONICAL_VENDOR) — see docs/LICENSING.md."
+        : "";
     writeErr(
       `error: ${featureList} requires a VALID license, but the supplied license is ` +
         `INVALID (reason: ${verdict.reason}). It does NOT unlock the paid surface; ` +
-        "the FREE baseline reconcile remains available without --state/--policy/--seal.\n"
+        "the FREE baseline reconcile remains available without --state/--policy/--seal." +
+        `${selfMintNote}\n`
     );
     return { code: EXIT.USAGE };
   }
@@ -507,8 +525,9 @@ function runReconcile(opts, io = {}) {
   // the precise reason (exit 2, a clear gate) and never silently downgrades to a
   // free result. `now` is the resolved reportDate (the SAME injectable clock the
   // packet is dated under) so verification is offline + deterministic; this path
-  // is read-only, holds NO key, and touches NO network.
-  const gate = gateReconcile(opts, reportDate, writeErr);
+  // is read-only, holds NO key, and touches NO network. The pin is the CANONICAL vendor identity
+  // resolved OUTSIDE argv (io.canonicalVendor / VH_CANONICAL_VENDOR / committed default).
+  const gate = gateReconcile(opts, reportDate, writeErr, license.resolveCanonicalVendor(io));
   if (gate.code !== EXIT.PASS) return { code: gate.code };
 
   // -- Resolve the per-state trust-rule policy (if any). ---------------------
@@ -1765,8 +1784,9 @@ function runValueProof(opts, io = {}) {
   //    must REFUSE a policy run without a valid, vendor-pinned license exactly as
   //    reconcile does; otherwise it would silently run an UNLICENSED policy path that
   //    the production gate would never grant. The free baseline (no --state/--policy)
-  //    needs no license and is byte-for-byte unchanged.
-  const gate = gateReconcile(opts, reportDate, writeErr);
+  //    needs no license and is byte-for-byte unchanged. The pin is the CANONICAL vendor identity
+  //    resolved OUTSIDE argv (io.canonicalVendor / VH_CANONICAL_VENDOR / committed default).
+  const gate = gateReconcile(opts, reportDate, writeErr, license.resolveCanonicalVendor(io));
   if (gate.code !== EXIT.PASS) return { code: gate.code };
 
   // -- Resolve the per-state policy (--policy/--state), IDENTICALLY to reconcile.

@@ -922,25 +922,42 @@ async function runReconcilePilot(workspace, checks) {
     );
   }
 
-  // (b) A license pinned to the WRONG vendor -> the gate REFUSES (usage exit, reason wrong_issuer) and
-  //     writes NO seal. (`reconcile` gates BEFORE any data/packet work, so nothing lands on disk.)
+  // (b) A SELF-MINTED license (signed by a NON-canonical key) -> the gate REFUSES (usage exit, reason
+  //     wrong_issuer) and writes NO seal. T-75.3: the paid gate pins to the CANONICAL vendor identity —
+  //     declared here via the programmatic `io.canonicalVendor` seam (the documented self-hosting hook,
+  //     this pilot being an OPERATOR instance keyed to its own ephemeral vendor) — NOT to a caller
+  //     `--vendor`, so a license an attacker mints with their OWN key never unlocks the paid surface.
+  //     (`reconcile` gates BEFORE any data/packet work, so nothing lands on disk.)
   {
-    const wrongVendor = Wallet.createRandom().address; // a DIFFERENT key than the one that signed the license
+    const attackerWallet = Wallet.createRandom(); // a DIFFERENT key than the canonical vendor
+    const attackerContainer = await trustLicense.buildLicense(
+      {
+        licenseId: "PILOT-RECONCILE-SELF-MINT",
+        customer: "Attacker (self-mint attempt)",
+        plan: "pro",
+        entitlements: ["seal"],
+        issuedAt: ISSUED,
+        expiresAt: EXPIRES,
+      },
+      attackerWallet
+    );
+    const attackerFile = path.join(workspace, "attacker.vhlicense.json");
+    fs.writeFileSync(attackerFile, trustLicense.serializeSignedLicense(attackerContainer));
+
     const io = trustIo();
+    io.canonicalVendor = vendorAddress; // pin to the REAL vendor identity, never the attacker's
     const opts = trust.parseReconcileArgs([
       ...baseArgs,
       "--out",
       reconcileDir,
       "--seal",
       "--license",
-      licenseFile,
-      "--vendor",
-      wrongVendor,
+      attackerFile,
     ]);
     const r = trust.runReconcile(opts, io);
     check(
       checks,
-      "license pinned to the WRONG vendor is REFUSED (wrong_issuer), no seal written",
+      "a SELF-MINTED license (non-canonical key) is REFUSED (wrong_issuer), no seal written",
       r.code === trust.EXIT.USAGE &&
         /reason: wrong_issuer/.test(io.err()) &&
         !fs.existsSync(sealFile),
@@ -957,6 +974,7 @@ async function runReconcilePilot(workspace, checks) {
   let reconcilePass = false;
   {
     const io = trustIo();
+    io.canonicalVendor = vendorAddress; // T-75.3: pin the paid gate to THIS operator's canonical identity
     const opts = trust.parseReconcileArgs([
       ...baseArgs,
       "--out",

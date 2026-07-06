@@ -36,14 +36,21 @@ const RENT = fs.readFileSync(path.join(FIX, "rentroll.csv"), "utf8");
 
 const DATE = "2026-06-24"; // pinned report date == the verify clock the server injects
 
-// Mint a SIGNED license container as canonical JSON TEXT (what the page POSTs), signed
-// by an EPHEMERAL wallet. Returns { text, vendorAddress }. In-window for DATE.
+// The CANONICAL vendor identity the server is configured to pin to (T-75.3). One fixed EPHEMERAL wallet
+// for the whole suite (TEST-ONLY Wallet.createRandom, never a real key). The server is created with
+// `canonicalVendor: VENDOR.address` (the documented self-hosting seam), so licenses minted by VENDOR
+// unlock and licenses minted by any OTHER key are refused wrong_issuer — regardless of what vendorAddress
+// the request body carries. (An ATTACKER wallet is used in the self-mint / re-pin tests.)
+const VENDOR = Wallet.createRandom();
+
+// Mint a SIGNED license container as canonical JSON TEXT (what the page POSTs), signed by `wallet`
+// (defaults to the canonical VENDOR). Returns { text, vendorAddress }. In-window for DATE.
 async function mintLicenseText({
   entitlements = ["multi_state_policy", "seal"],
   issuedAt = "2026-01-01T00:00:00.000Z",
   expiresAt = "2027-01-01T00:00:00.000Z",
+  wallet = VENDOR,
 } = {}) {
-  const wallet = Wallet.createRandom();
   const container = await licenseMod.buildLicense(
     {
       licenseId: "lic-web-test",
@@ -99,8 +106,10 @@ describe("trustledger T-29.3: the web door honours the license gate", function (
 
   beforeEach(function (done) {
     cwdBefore = fs.readdirSync(process.cwd()).sort();
-    // today() is injected so the in-memory reconcile + license verify stay deterministic.
-    server = createServer({ today: () => DATE });
+    // today() is injected so the in-memory reconcile + license verify stay deterministic. The canonical
+    // vendor identity is pinned to VENDOR via the programmatic seam (T-75.3) — the paid gate verifies
+    // ONLY against this identity, never against the request body's own vendorAddress.
+    server = createServer({ today: () => DATE, canonicalVendor: VENDOR.address });
     server.listen(0, "127.0.0.1", () => {
       port = server.address().port;
       done();
@@ -143,14 +152,17 @@ describe("trustledger T-29.3: the web door honours the license gate", function (
     expect(res.text).to.not.contain("at Object.");
   });
 
-  it("a license WITHOUT a vendorAddress (or vice versa) => 402 license_required", async function () {
-    const { text } = await mintLicenseText();
+  it("(T-75.3) vendorAddress is OPTIONAL — a canonical license ALONE unlocks; a vendorAddress with NO license is license_required", async function () {
+    // A canonical-signed license with NO vendorAddress in the body UNLOCKS: the gate pins to the
+    // server's canonical identity, so the body no longer needs to (and can no longer) supply the pin.
+    const { text } = await mintLicenseText({ entitlements: ["multi_state_policy"] });
     const a = await post(port, "/api/reconcile", {
       bank: BANK, ledger: BOOK, rentroll: RENT, state: "ca-example", license: text,
     });
-    expect(a.status).to.equal(402);
-    expect(a.json.error).to.equal("license_required");
+    expect(a.status).to.equal(200);
+    expect(a.json.pass).to.equal(true);
 
+    // A vendorAddress with NO license is still a paid surface with nothing to verify => license_required.
     const b = await post(port, "/api/reconcile", {
       bank: BANK, ledger: BOOK, rentroll: RENT, state: "ca-example", vendorAddress: Wallet.createRandom().address,
     });
@@ -192,15 +204,30 @@ describe("trustledger T-29.3: the web door honours the license gate", function (
 
   // --- GATED: invalid licenses are refused with the PRECISE reason ---------
 
-  it("a license pinned to the WRONG vendorAddress => 403 license_invalid (wrong_issuer)", async function () {
-    const { text } = await mintLicenseText({ entitlements: ["multi_state_policy"] });
-    const wrongVendor = Wallet.createRandom().address;
+  it("(T-75.3) a SELF-MINTED license (signed by a non-canonical key) => 403 license_invalid (wrong_issuer), even with no vendorAddress", async function () {
+    // The textbook free-ride: an attacker mints a license with their OWN key and POSTs it. The gate pins
+    // to the server's canonical identity, so the attacker's own signature never recovers to it.
+    const attacker = Wallet.createRandom();
+    const { text } = await mintLicenseText({ entitlements: ["multi_state_policy"], wallet: attacker });
     const res = await post(port, "/api/reconcile", {
-      bank: BANK, ledger: BOOK, rentroll: RENT, state: "ca-example", license: text, vendorAddress: wrongVendor,
+      bank: BANK, ledger: BOOK, rentroll: RENT, state: "ca-example", license: text,
     });
     expect(res.status).to.equal(403);
     expect(res.json.error).to.equal("license_invalid");
     expect(res.json.message).to.match(/wrong_issuer/);
+  });
+
+  it("(T-75.3) a vendorAddress RE-PIN attempt (body vendorAddress != canonical) => 403 license_invalid, refused as a re-pin", async function () {
+    // The attacker self-mints AND names their own address as vendorAddress, trying to re-pin the gate.
+    // The body's vendorAddress is accepted only as an assertion that must EQUAL the canonical identity.
+    const attacker = Wallet.createRandom();
+    const { text } = await mintLicenseText({ entitlements: ["multi_state_policy"], wallet: attacker });
+    const res = await post(port, "/api/reconcile", {
+      bank: BANK, ledger: BOOK, rentroll: RENT, state: "ca-example", license: text, vendorAddress: attacker.address,
+    });
+    expect(res.status).to.equal(403);
+    expect(res.json.error).to.equal("license_invalid");
+    expect(res.json.message).to.match(/does not match the canonical vendor identity/);
   });
 
   it("an EXPIRED license => 403 license_invalid (expired)", async function () {
@@ -241,13 +268,14 @@ describe("trustledger T-29.3: the web door honours the license gate", function (
     expect(res.json.error).to.equal("license_invalid");
   });
 
-  it("a garbage vendorAddress (with a license + paid feature) => 400 bad_request", async function () {
+  it("(T-75.3) a garbage vendorAddress assertion (with a license + paid feature) => 403 license_invalid (unparseable pin)", async function () {
     const { text } = await mintLicenseText({ entitlements: ["multi_state_policy"] });
     const res = await post(port, "/api/reconcile", {
       bank: BANK, ledger: BOOK, rentroll: RENT, state: "ca-example", license: text, vendorAddress: "not-an-address",
     });
-    expect(res.status).to.equal(400);
-    expect(res.json.error).to.equal("bad_request");
+    expect(res.status).to.equal(403);
+    expect(res.json.error).to.equal("license_invalid");
+    expect(res.json.message).to.match(/not a valid 0x-address/);
   });
 
   // --- a stray license on a FREE run is ignored (free path unchanged) ------

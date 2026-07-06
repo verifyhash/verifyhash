@@ -182,6 +182,12 @@ not recover to the claimed signer (or is unrecoverable); **wrong_issuer** = soun
   sealedRoot, recomputedRoot, rootMatches, counts:{matched,changed,missing,escaped,unexpected},
   matched[], changed[], missing[], escaped[], unexpected[], note`.
 - With no `--vendor`, `signerMatchesVendor` stays `null` and the recovered signer is reported, not pinned.
+- `--exact-dir` (T-75.5 parity): after the normal verdict, recursively list every non-directory entry
+  under baseDir (a symlink — even to a directory — is listed as itself, never followed; an unreadable
+  (sub)directory is an IO error → exit 1). Every relPath not named by the seal (i.e. not in
+  matched/changed/missing/escaped) and not the artifact file itself is `unexpected`. If any exist and
+  the verdict was ACCEPT, downgrade to REJECTED, reason `UNEXPECTED`, exit 3; an already-REJECTED
+  verdict keeps its dominant reason (the list still rides along). Emits `exactDir: true` in JSON.
 
 ---
 

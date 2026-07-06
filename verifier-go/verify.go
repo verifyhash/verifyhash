@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -90,6 +91,7 @@ type result struct {
 	Missing             []namedFile   `json:"missing"`
 	Escaped             []namedFile   `json:"escaped"`
 	Unexpected          []namedFile   `json:"unexpected"`
+	ExactDir            bool          `json:"exactDir,omitempty"`
 	Note                string        `json:"note"`
 }
 
@@ -467,12 +469,113 @@ func orEmptyChanged(s []changedFile) []changedFile {
 	return s
 }
 
+// ---- FAIL-CLOSED --exact-dir (T-75.5 parity with the JS verifier) -----------
+//
+// A seal binds a NAMED FILE SET, never a directory boundary: the default verify
+// checks exactly the (relPath, content) set the seal names, so an INJECTED file
+// the seal never named is simply NOT COVERED — the default verdict stays ACCEPT
+// (the seal's honest, by-design semantics). --exact-dir closes the boundary: it
+// scans the WHOLE base directory (recursively) and REJECTS (exit 3, reason
+// UNEXPECTED) any file present on disk but not named by the seal. Scan
+// semantics mirror verifier/verify-vh.js:
+//   - every non-directory entry counts (a symlink — including one to a
+//     directory — is listed as itself and NEVER followed);
+//   - the artifact file itself is exempt when it lives inside the scanned
+//     directory (a seal never names its own container);
+//   - an unreadable (sub)directory is an IO error (exit 1) — fail closed,
+//     never a silently-partial scan;
+//   - an already-REJECTED verdict keeps its dominant reason; the unexpected
+//     list still rides along as extra localization.
+
+// listDirEntriesRecursive lists every non-directory entry under baseDir as a
+// sorted forward-slash relPath. os.ReadDir's DirEntry.IsDir reflects the entry
+// TYPE (lstat semantics), so a symlink to a directory is listed, not followed.
+func listDirEntriesRecursive(baseDir string) ([]string, error) {
+	out := []string{}
+	var walk func(dirAbs, relPrefix string) error
+	walk = func(dirAbs, relPrefix string) error {
+		entries, err := os.ReadDir(dirAbs)
+		if err != nil {
+			return ioErrorf("--exact-dir could not scan %s: %v", dirAbs, err)
+		}
+		for _, ent := range entries {
+			rel := ent.Name()
+			if relPrefix != "" {
+				rel = relPrefix + "/" + ent.Name()
+			}
+			if ent.IsDir() {
+				if err := walk(filepath.Join(dirAbs, ent.Name()), rel); err != nil {
+					return err
+				}
+			} else {
+				out = append(out, rel)
+			}
+		}
+		return nil
+	}
+	if err := walk(baseDir, ""); err != nil {
+		return nil, err
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// applyExactDir folds the whole-directory scan onto an already-computed
+// verdict. Mutates res (attaches exactDir, the populated unexpected list +
+// counter) and returns the possibly-downgraded exit code.
+func applyExactDir(res *result, code int, baseDir, artifactPath string) (int, error) {
+	// The seal's NAMED set is exactly what classification bucketed: every sealed
+	// relPath landed in matched, changed, missing, or escaped.
+	named := map[string]bool{}
+	for _, e := range res.Matched {
+		named[e.RelPath] = true
+	}
+	for _, e := range res.Changed {
+		named[e.RelPath] = true
+	}
+	for _, e := range res.Missing {
+		named[e.RelPath] = true
+	}
+	for _, e := range res.Escaped {
+		named[e.RelPath] = true
+	}
+
+	rels, err := listDirEntriesRecursive(baseDir)
+	if err != nil {
+		return 0, err
+	}
+	unexpected := []namedFile{}
+	for _, rel := range rels {
+		if named[rel] {
+			continue
+		}
+		// The artifact's own container file is exempt (a seal never names itself).
+		abs, absErr := filepath.Abs(filepath.Join(baseDir, filepath.FromSlash(rel)))
+		if absErr == nil && artifactPath != "" && abs == artifactPath {
+			continue
+		}
+		unexpected = append(unexpected, namedFile{RelPath: rel})
+	}
+
+	res.ExactDir = true
+	res.Unexpected = unexpected
+	res.Counts.Unexpected = len(unexpected)
+	if len(unexpected) > 0 && res.Accepted {
+		res.Accepted = false
+		res.Verdict = "REJECTED"
+		res.Reason = "UNEXPECTED"
+		return exitRejected, nil
+	}
+	return code, nil
+}
+
 // ---- artifact loading ------------------------------------------------------
 
 type options struct {
 	artifact string
 	vendor   *string
 	dir      *string
+	exactDir bool
 	jsonOut  bool
 }
 
@@ -501,5 +604,15 @@ func verifyArtifact(opts options) (*result, int, error) {
 		}
 	}
 
-	return verifyParsed(opts.artifact, obj, opts.vendor, baseDir)
+	res, code, err := verifyParsed(opts.artifact, obj, opts.vendor, baseDir)
+	if err != nil {
+		return nil, 0, err
+	}
+	if opts.exactDir {
+		code, err = applyExactDir(res, code, baseDir, artifactPath)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	return res, code, nil
 }

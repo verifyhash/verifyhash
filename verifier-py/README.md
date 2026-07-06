@@ -29,7 +29,7 @@ be independently reproduced in both implementations to go unnoticed.
 Verify a packet (same flags as `verify-vh`):
 
 ```sh
-python3 verify_vh.py <packet.vhevidence.json> --vendor 0xYourVendorAddr [--dir <files-dir>] [--json]
+python3 verify_vh.py <packet.vhevidence.json> --vendor 0xYourVendorAddr [--dir <files-dir>] [--exact-dir] [--json]
 echo $?   # 0 = ACCEPT, 3 = REJECT
 ```
 

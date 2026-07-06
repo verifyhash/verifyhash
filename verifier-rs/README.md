@@ -30,7 +30,7 @@ CLI — not translated from any of the other three codebases.
 ## CLI + exit contract (identical to the JS, Python, and Go verifiers)
 
 ```
-verify-vh <artifact> [--vendor <0xaddr>] [--dir <files>] [--json]
+verify-vh <artifact> [--vendor <0xaddr>] [--dir <files>] [--exact-dir] [--json]
 ```
 
 | exit | meaning |
@@ -88,14 +88,17 @@ extra-file       | OK/0       | OK/0       | OK/0       | OK/0       | REJECT/3 
 ```
 
 - 5 of 6 cases match both each other AND the vector's expected verdict/exit.
-- `extra-file` is the **known, documented shared spec gap** (not an
-  inter-implementation divergence): all four AGREE (OK/exit 0), but the vector
-  expects REJECT/3 because in `--dir` mode every implementation re-derives only
-  the packet-*named* files and accepts an unsealed extra file. Strict
-  full-directory binding is the separately-scoped backlog fix (EPIC-77 T-77.2,
-  now covering all four `--dir` paths). The harness would exit 1 with a loud
-  DIVERGENCE banner if any implementation disagreed with the others, or if any
-  non-`extra-file` case agreed-but-differed from spec. Neither fired.
+- `extra-file` was the **known, documented shared spec gap** (not an
+  inter-implementation divergence): all four AGREED (OK/exit 0), but the vector
+  expects REJECT/3 because in default `--dir` mode every implementation
+  re-derives only the packet-*named* files and accepts an unsealed extra file
+  (the seal's by-design named-file-set boundary). **CLOSED (T-75.5 + T-77.1):**
+  all four verifiers now expose `--exact-dir`, which scans the ENTIRE directory
+  and REJECTs (reason `UNEXPECTED`, exit 3) any on-disk file the seal never
+  named — under it, `extra-file` goes GREEN in every implementation. The
+  harness would exit 1 with a loud DIVERGENCE banner if any implementation
+  disagreed with the others, or if any case agreed-but-differed from spec.
+  Neither fired.
 
 **Four implementations, four languages (JS / Python / Go / Rust), zero shared
 dependencies, one frozen vector suite — and they never disagree.** A customer's

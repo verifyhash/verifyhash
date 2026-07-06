@@ -403,6 +403,73 @@ def _normalize_address(addr, label):
     return addr.lower()
 
 
+# ===========================================================================
+# FAIL-CLOSED --exact-dir (T-75.5 parity with the JS verifier). A seal binds a
+# NAMED FILE SET, never a directory boundary: the default verify checks exactly
+# the (relPath, content) set the seal names, so a file INJECTED into a sealed
+# directory that the seal never named is simply NOT COVERED — the default
+# verdict stays ACCEPT (the seal's honest, by-design semantics). --exact-dir
+# closes the boundary: it scans the WHOLE base directory (recursively) and
+# REJECTS (exit 3, reason UNEXPECTED) any file present on disk but not named
+# by the seal. Scan semantics mirror verifier/verify-vh.js:
+#   * every non-directory entry counts (a symlink — including one to a
+#     directory — is listed as itself and NEVER followed);
+#   * the artifact file itself is exempt when it lives inside the scanned
+#     directory (a seal never names its own container);
+#   * an unreadable (sub)directory is an IO error (exit 1) — fail closed,
+#     never a silently-partial scan;
+#   * an already-REJECTED verdict keeps its dominant reason; the unexpected
+#     list still rides along as extra localization.
+# ===========================================================================
+
+def _list_dir_entries_recursive(base_dir):
+    out = []
+
+    def walk(dir_abs, rel_prefix):
+        try:
+            entries = list(os.scandir(dir_abs))
+        except OSError as exc:
+            raise IOError_(f"--exact-dir could not scan {dir_abs}: {exc}")
+        for ent in entries:
+            rel = ent.name if not rel_prefix else f"{rel_prefix}/{ent.name}"
+            try:
+                is_dir = ent.is_dir(follow_symlinks=False)
+            except OSError:
+                is_dir = False
+            if is_dir:
+                walk(os.path.join(dir_abs, ent.name), rel)
+            else:
+                out.append(rel)
+
+    walk(base_dir, "")
+    out.sort()
+    return out
+
+
+def _apply_exact_dir(result, code, base_dir, artifact_path):
+    named = set()
+    for key in ("matched", "changed", "missing", "escaped"):
+        for e in result[key]:
+            named.add(e["relPath"])
+    unexpected = []
+    for rel in _list_dir_entries_recursive(base_dir):
+        if rel in named:
+            continue
+        # The artifact's own container file is exempt (a seal never names itself).
+        if artifact_path is not None and os.path.abspath(os.path.join(base_dir, rel)) == artifact_path:
+            continue
+        unexpected.append({"relPath": rel})
+    result["exactDir"] = True
+    result["unexpected"] = unexpected
+    result["counts"]["unexpected"] = len(unexpected)
+    if unexpected and result["accepted"]:
+        result["accepted"] = False
+        result["verdict"] = "REJECTED"
+        result["reason"] = "UNEXPECTED"
+        return EXIT_REJECTED
+    return code
+
+
 def _decode_signed(container):
     sig = container.get("signature")
     if not isinstance(sig, dict):
@@ -547,7 +614,10 @@ def verify_artifact(opts):
 
     base_dir = os.path.abspath(opts["dir"]) if opts.get("dir") else os.path.dirname(artifact_path)
     verify_parsed_artifact.base_dir = base_dir
-    return verify_parsed_artifact(opts["artifact"], obj, opts.get("vendor"))
+    result, code = verify_parsed_artifact(opts["artifact"], obj, opts.get("vendor"))
+    if opts.get("exactDir"):
+        code = _apply_exact_dir(result, code, base_dir, artifact_path)
+    return result, code
 
 
 # ===========================================================================
@@ -621,11 +691,11 @@ def render_human(r):
 # CLI.
 # ===========================================================================
 
-USAGE = "usage: verify_vh.py <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]"
+USAGE = "usage: verify_vh.py <artifact> [--vendor <0xaddr>] [--dir <d>] [--exact-dir] [--json]"
 
 
 def parse_args(argv):
-    opts = {"artifact": None, "vendor": None, "dir": None, "json": False}
+    opts = {"artifact": None, "vendor": None, "dir": None, "exactDir": False, "json": False}
 
     def need(flag, i):
         if i + 1 >= len(argv):
@@ -641,6 +711,9 @@ def parse_args(argv):
         elif arg == "--dir":
             opts["dir"] = need("--dir", i)
             i += 2
+        elif arg == "--exact-dir":
+            opts["exactDir"] = True
+            i += 1
         elif arg == "--json":
             opts["json"] = True
             i += 1

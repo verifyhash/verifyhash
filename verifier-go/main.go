@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-const usage = "usage: verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]"
+const usage = "usage: verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--exact-dir] [--json]"
 
 func parseArgs(argv []string) (options, error) {
 	opts := options{}
@@ -46,6 +46,8 @@ func parseArgs(argv []string) (options, error) {
 			}
 			opts.dir = &v
 			i++
+		case arg == "--exact-dir":
+			opts.exactDir = true
 		case arg == "--json":
 			opts.jsonOut = true
 		case arg == "-h" || arg == "--help":

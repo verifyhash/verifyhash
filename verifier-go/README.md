@@ -19,7 +19,7 @@ reference CLI — not translated from either codebase.
 ## CLI + exit contract (identical to the JS and Python verifiers)
 
 ```
-verify-vh <packet> [--vendor <0xaddr>] [--dir <files>] [--json]
+verify-vh <packet> [--vendor <0xaddr>] [--dir <files>] [--exact-dir] [--json]
 ```
 
 | exit | meaning |
@@ -78,10 +78,13 @@ packet-**named** files (4 matched, `unexpected: 0`) and ACCEPTs — but the froz
 vector (and the canonical `vh evidence verify-signed` gate, which rebinds against a
 FULL directory scan) requires REJECT (`failedCheck: manifestBindsAttestation`).
 
-To conform, each verifier's `--dir` mode must scan the entire directory and REJECT
-(reason `unexpected`, exit 3) on any on-disk file absent from the seal. That fix is
-scoped in `../INTEGRATE.md` (EPIC-77). The harness catching a real, latent,
-three-implementation-wide divergence is precisely what the vectors exist for.
+**CLOSED (T-75.5 + T-77.1):** all four verifiers now expose `--exact-dir`, which
+scans the ENTIRE directory and REJECTs (reason `UNEXPECTED`, exit 3) any on-disk
+file the seal never named — under it, `extra-file` goes GREEN (REJECT/3, matching
+the vector) in every implementation. The default `--dir` mode keeps the seal's
+honest named-file-set semantics (the table above records the pre-fix run). The
+harness catching a real, latent, implementation-wide divergence is precisely what
+the vectors exist for.
 
 ## Honest scope
 

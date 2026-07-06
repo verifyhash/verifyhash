@@ -36,7 +36,8 @@ const EVIDENCE_SEAL_SIGNED: &str = "vh.evidence-seal-signed";
 
 const TRUST_NOTE: &str = "verify-vh is an INDEPENDENT, read-only, OFFLINE verifier. It RE-DERIVES the keccak root from the bytes you hold and recovers the signer with no producer stack. It proves TAMPER-EVIDENCE + WHO vouched — NOT a trusted timestamp and NOT a legal opinion.";
 
-const USAGE: &str = "usage: verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--json]";
+const USAGE: &str =
+    "usage: verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--exact-dir] [--json]";
 
 // ---------------------------------------------------------------------------
 // Errors: Usage -> exit 2, Io -> exit 1. A REJECTED verdict is NOT an error.
@@ -327,6 +328,8 @@ struct VerifyResult {
     changed: Vec<ChangedEntry>,
     missing: Vec<String>,
     escaped: Vec<String>,
+    unexpected: Vec<String>,
+    exact_dir: bool,
 }
 
 fn normalize_address(addr: &str, label: &str) -> Result<String, VhError> {
@@ -466,8 +469,129 @@ fn verify_parsed_artifact(
         changed: file_result.changed,
         missing: file_result.missing,
         escaped: file_result.escaped,
+        unexpected: Vec::new(),
+        exact_dir: false,
     };
     Ok((result, code))
+}
+
+// ---------------------------------------------------------------------------
+// FAIL-CLOSED --exact-dir (T-75.5 parity with the JS verifier). A seal binds a
+// NAMED FILE SET, never a directory boundary: the default verify checks
+// exactly the (relPath, content) set the seal names, so an INJECTED file the
+// seal never named is simply NOT COVERED — the default verdict stays ACCEPT
+// (the seal's honest, by-design semantics). --exact-dir closes the boundary:
+// it scans the WHOLE base directory (recursively) and REJECTS (exit 3, reason
+// UNEXPECTED) any file present on disk but not named by the seal. Scan
+// semantics mirror verifier/verify-vh.js:
+//   * every non-directory entry counts (a symlink — including one to a
+//     directory — is listed as itself and NEVER followed);
+//   * the artifact file itself is exempt when it lives inside the scanned
+//     directory (a seal never names its own container);
+//   * an unreadable (sub)directory is an IO error (exit 1) — fail closed,
+//     never a silently-partial scan;
+//   * an already-REJECTED verdict keeps its dominant reason; the unexpected
+//     list still rides along as extra localization.
+// ---------------------------------------------------------------------------
+
+// Recursively list every non-directory entry under `base_dir` as a sorted
+// forward-slash relPath. `DirEntry::file_type` does NOT follow symlinks, so a
+// symlink to a directory is listed as itself, never walked.
+fn list_dir_entries_recursive(base_dir: &Path) -> Result<Vec<String>, VhError> {
+    fn walk(dir_abs: &Path, rel_prefix: &str, out: &mut Vec<String>) -> Result<(), VhError> {
+        let entries = std::fs::read_dir(dir_abs).map_err(|e| {
+            VhError::Io(format!(
+                "--exact-dir could not scan {}: {}",
+                dir_abs.display(),
+                e
+            ))
+        })?;
+        for ent in entries {
+            let ent = ent.map_err(|e| {
+                VhError::Io(format!(
+                    "--exact-dir could not scan {}: {}",
+                    dir_abs.display(),
+                    e
+                ))
+            })?;
+            let name = ent.file_name().to_string_lossy().into_owned();
+            let rel = if rel_prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{}/{}", rel_prefix, name)
+            };
+            let ftype = ent.file_type().map_err(|e| {
+                VhError::Io(format!(
+                    "--exact-dir could not scan {}: {}",
+                    ent.path().display(),
+                    e
+                ))
+            })?;
+            if ftype.is_dir() {
+                walk(&ent.path(), &rel, out)?;
+            } else {
+                out.push(rel);
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(base_dir, "", &mut out)?;
+    out.sort();
+    Ok(out)
+}
+
+// Fold the whole-directory scan onto an already-computed verdict. Mutates `r`
+// (attaches exact_dir, the populated unexpected list) and returns the
+// possibly-downgraded exit code.
+fn apply_exact_dir(
+    r: &mut VerifyResult,
+    code: u8,
+    base_dir: &Path,
+    artifact_path: &Path,
+) -> Result<u8, VhError> {
+    let unexpected: Vec<String> = {
+        // The seal's NAMED set is exactly what classification bucketed: every
+        // sealed relPath landed in matched, changed, missing, or escaped.
+        let mut named: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for (rel, _) in &r.matched {
+            named.insert(rel.as_str());
+        }
+        for ch in &r.changed {
+            named.insert(ch.rel_path.as_str());
+        }
+        for m in &r.missing {
+            named.insert(m.as_str());
+        }
+        for x in &r.escaped {
+            named.insert(x.as_str());
+        }
+        let artifact_canon = std::fs::canonicalize(artifact_path).ok();
+        let mut u = Vec::new();
+        for rel in list_dir_entries_recursive(base_dir)? {
+            if named.contains(rel.as_str()) {
+                continue;
+            }
+            // The artifact's own container file is exempt (a seal never names itself).
+            if let Some(a) = &artifact_canon {
+                if let Ok(e) = std::fs::canonicalize(base_dir.join(&rel)) {
+                    if &e == a {
+                        continue;
+                    }
+                }
+            }
+            u.push(rel);
+        }
+        u
+    };
+    r.exact_dir = true;
+    r.unexpected = unexpected;
+    if !r.unexpected.is_empty() && r.accepted {
+        r.accepted = false;
+        r.reason = "UNEXPECTED".to_string();
+        return Ok(EXIT_REJECTED);
+    }
+    Ok(code)
 }
 
 fn verify_artifact(opts: &Opts) -> Result<(VerifyResult, u8), VhError> {
@@ -499,7 +623,12 @@ fn verify_artifact(opts: &Opts) -> Result<(VerifyResult, u8), VhError> {
             .unwrap_or_else(|| PathBuf::from(".")),
     };
 
-    verify_parsed_artifact(artifact, &obj, opts.vendor.as_deref(), &base_dir)
+    let (mut result, mut code) =
+        verify_parsed_artifact(artifact, &obj, opts.vendor.as_deref(), &base_dir)?;
+    if opts.exact_dir {
+        code = apply_exact_dir(&mut result, code, &base_dir, &artifact_path)?;
+    }
+    Ok((result, code))
 }
 
 // ---------------------------------------------------------------------------
@@ -561,11 +690,12 @@ fn render_human(r: &VerifyResult) -> String {
         lines.push(format!("root matches:    {}", if rm { "yes" } else { "NO" }));
     }
     lines.push(format!(
-        "files: {} matched, {} changed, {} missing, {} rejected, 0 unexpected",
+        "files: {} matched, {} changed, {} missing, {} rejected, {} unexpected",
         r.matched.len(),
         r.changed.len(),
         r.missing.len(),
-        r.escaped.len()
+        r.escaped.len(),
+        r.unexpected.len()
     ));
     lines.push(String::new());
 
@@ -587,6 +717,9 @@ fn render_human(r: &VerifyResult) -> String {
                 "  REJECTED   {}: path escapes the artifact directory (refused to read; no hash computed)",
                 x
             ));
+        }
+        for u in &r.unexpected {
+            lines.push(format!("  UNEXPECTED {}: on disk but not referenced", u));
         }
         match r.reason.as_str() {
             "bad_signature" => lines.push(
@@ -675,7 +808,7 @@ fn render_json(r: &VerifyResult) -> String {
     s.push_str(&format!("    \"changed\": {},\n", r.changed.len()));
     s.push_str(&format!("    \"missing\": {},\n", r.missing.len()));
     s.push_str(&format!("    \"escaped\": {},\n", r.escaped.len()));
-    s.push_str("    \"unexpected\": 0\n");
+    s.push_str(&format!("    \"unexpected\": {}\n", r.unexpected.len()));
     s.push_str("  },\n");
 
     // matched[]
@@ -727,7 +860,19 @@ fn render_json(r: &VerifyResult) -> String {
     }
     s.push_str(if r.escaped.is_empty() { "],\n" } else { "\n  ],\n" });
 
-    s.push_str("  \"unexpected\": [],\n");
+    // unexpected[]
+    s.push_str("  \"unexpected\": [");
+    for (i, u) in r.unexpected.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&format!("\n    {{ \"relPath\": \"{}\" }}", json_escape(u)));
+    }
+    s.push_str(if r.unexpected.is_empty() { "],\n" } else { "\n  ],\n" });
+
+    if r.exact_dir {
+        s.push_str("  \"exactDir\": true,\n");
+    }
     s.push_str(&format!("  \"note\": \"{}\"\n", json_escape(TRUST_NOTE)));
     s.push_str("}");
     s
@@ -741,6 +886,7 @@ struct Opts {
     artifact: Option<String>,
     vendor: Option<String>,
     dir: Option<String>,
+    exact_dir: bool,
     json: bool,
 }
 
@@ -749,6 +895,7 @@ fn parse_args(argv: &[String]) -> Result<Option<Opts>, VhError> {
         artifact: None,
         vendor: None,
         dir: None,
+        exact_dir: false,
         json: false,
     };
     let mut i = 0;
@@ -768,6 +915,10 @@ fn parse_args(argv: &[String]) -> Result<Option<Opts>, VhError> {
                     .ok_or_else(|| VhError::Usage("--dir requires a value".into()))?;
                 opts.dir = Some(v.clone());
                 i += 2;
+            }
+            "--exact-dir" => {
+                opts.exact_dir = true;
+                i += 1;
             }
             "--json" => {
                 opts.json = true;

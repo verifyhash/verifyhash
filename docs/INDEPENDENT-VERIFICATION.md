@@ -453,6 +453,20 @@ network, and no producer software: stock CPython 3.10+ is enough. If the two ver
 **disagree** on identical inputs, at least one implementation is wrong: stop, treat the artifact as
 unverified, and use the frozen vectors below to localize which side diverged.
 
+**That agreement is proven across the WHOLE verdict surface, not a few hand-picked cases.** On every
+CI run a differential conformance gate ([`../test/conformance-py.test.js`](../test/conformance-py.test.js))
+seals a fresh packet and then **generates the mutation space from the packet's own structure** — one
+flipped byte and one deleted file for *each* file the packet references (so the corpus scales with the
+packet, it is not a hand-authored list), plus every structural mutation of the signature, the embedded
+Merkle root, a stored file hash, the pinned vendor, and the on-disk directory — and requires `verify-vh`
+and `verify_vh.py` to return the **byte-identical verdict, reason, and exit code on all of them**. The
+generated corpus is itself asserted to exercise the **complete verdict contract** from
+[`SPEC.md`](../verifier-py/SPEC.md): every REJECT reason (`CHANGED` / `MISSING` / `UNEXPECTED` /
+`root_mismatch` / `path_escape` / `bad_signature` / `wrong_issuer` / `unsigned_cannot_pin_vendor`) **and
+all four exit codes** (`0` accept, `3` reject, `2` usage, `1` IO). So "the two implementations agree"
+means they agree across the entire surface a real packet can exercise — not merely on the happy-path
+ACCEPT — which is exactly what an auditor who suspects a cherry-picked cross-check will ask you to show.
+
 **The honest scope of the cross-check** (details in the scope bullets at the end of §6):
 
 - **Evidence-seal path only** — `verify_vh.py` verifies `vh.evidence-seal` /

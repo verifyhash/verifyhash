@@ -13,3 +13,57 @@ typechain-types/
 # VH_EXAMPLE_OUT at a local path under examples/, keep its output out of the tree.
 examples/.out/
 /public/
+
+# ============================================================================
+# LOOP-INTERNAL — local only, NEVER pushed to the public repo (2026-07-06).
+# The autonomous build-loop engine, its supervisor machinery, operational
+# telemetry, candid strategy/GTM notes, and the loop-hygiene tests. These stay
+# on disk so the loop keeps running; they are excluded from the public product
+# repo (the product = verifier(s), cli, contracts, user-facing docs, tests).
+# ============================================================================
+build-loop.workflow.js
+build-loop.prev.js
+build-loop.next.js
+AGENT_TEAM.md
+team.json
+STRATEGY.md
+BACKLOG.md
+DISTRIBUTION-SIGNALS.jsonl
+docs/engine-archive/
+docs/USAGE-BUDGET.json
+docs/METRICS.jsonl
+docs/ENGINE-LEDGER.json
+docs/MORNING.md
+docs/STRATEGY-ARCHIVE.md
+docs/SUPERVISOR-RUNBOOK.md
+docs/DECISIONS-PENDING.md
+docs/LOOP-AUDIT-*.json
+docs/LOOP-HARDENING-PLAN.md
+docs/ADOPTION.json
+docs/AUDIT.md
+docs/DECIDE.md
+public/docs/DECIDE.md
+scripts/pre-run-gate.cjs
+scripts/smoke-driver.cjs
+scripts/validate-driver.cjs
+scripts/governor-check.cjs
+scripts/reconcile-run.cjs
+scripts/engine-ledger.cjs
+scripts/adoption-pulse.cjs
+scripts/distribution-signals.cjs
+scripts/archive-direction.cjs
+scripts/guard-scope.cjs
+scripts/sync-decide.cjs
+test/strategy.archive.test.js
+test/strategy.size-guard.test.js
+test/decide.docs.test.js
+test/adoption-pulse.test.js
+test/scripts.governor-check.test.js
+test/scripts.engine-ledger.test.js
+test/scripts.reconcile-run.test.js
+test/anchoring.docs.test.js
+test/sdk.signed.test.js
+test/fixtures/governor-check/
+test/fixtures/reconcile-run/
+test/fixtures/strategy-direction-original.json
+test/fixtures/strategy-logsections-original.json

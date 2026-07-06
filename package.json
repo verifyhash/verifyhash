@@ -1,6 +1,6 @@
 {
   "name": "verifyhash",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Tamper-evident, permissionless on-chain registry of code-contribution hashes, plus an offline data-provenance toolkit (the `vh` CLI).",
   "license": "Apache-2.0",
   "main": "index.js",

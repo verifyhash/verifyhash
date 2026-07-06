@@ -22,7 +22,7 @@ Full toolchain — live on npm:
 Browser, no terminal (fully offline; drop a packet in):
 - https://verifyhash.com/verify-vh-standalone.html
 - Cross-check your download — published SHA-256 of `verify-vh-standalone.html`:
-  `2e0ea39b9e79ae469adf980c0978c8172ad89fe69f35d33df9e041ade5fc5e23`
+  `1c03db9b380783c272ef591eb7bf414326d25a5904f015970a425a83fbbffa1c`
 
 ## What a verify PROVES
 - Tamper-evidence: every byte re-derives to the same root, or the check fails and names the file that drifted.

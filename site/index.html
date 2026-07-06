@@ -261,7 +261,7 @@
         <strong>your own machine</strong> — you don't take our word, and you don't call our server.
         There isn't one.</p>
       <div class="hero-cta reveal d3">
-        <a class="btn btn-primary" href="#start">Start in 30 seconds</a>
+        <a class="btn btn-primary" href="/verify-vh-standalone.html">Open the verifier — try the built-in sample</a>
         <a class="btn btn-ghost" href="#reproduce">What it proves — and what it doesn't</a>
       </div>
 
@@ -317,12 +317,12 @@
       <div class="starts">
         <div class="card">
           <div class="top"><span class="num">01</span><h3>In your browser</h3></div>
-          <p>No terminal. Save <a href="/verify-vh-standalone.html">one offline page</a>
-            (<a href="/verify-vh-standalone.html.sha256">SHA-256 sidecar</a>), drop the packet in, watch
-            ACCEPT / REJECT. The page contains no network API at all — the devtools Network tab stays
-            empty. For CI/production gating use the node standalone, card 02.</p>
-          <pre><code><span class="c"># fully offline, nothing leaves the tab</span>
-open <span class="a">verify-vh-standalone.html</span></code></pre>
+          <p>No terminal. Open <a href="/verify-vh-standalone.html">one offline page</a>
+            (<a href="/verify-vh-standalone.html.sha256">SHA-256 sidecar</a>) — it has a built-in
+            sample packet, so you can watch ACCEPT, tamper one byte, and watch REJECT before you ever
+            drop a real packet in. The page contains no network API at all — the devtools Network tab
+            stays empty. For CI/production gating use the node standalone, card 02.</p>
+          <p style="margin:.6rem 1.1rem 1.1rem"><a class="btn btn-primary" href="/verify-vh-standalone.html">Open the verifier</a></p>
         </div>
         <div class="card">
           <div class="top"><span class="num">02</span><h3>In the terminal</h3></div>

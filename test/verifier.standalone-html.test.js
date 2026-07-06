@@ -598,6 +598,88 @@ describe("verifier standalone HTML: single-file OFFLINE page + built-in 60-secon
   });
 
   // ============================================================================================
+  // (T-74.4) FIRST-SCREEN LEGIBILITY: plain lede first, agent demo collapsed AFTER the verify
+  // section, plain-language boundary, offline proof a layperson can run, verifier one click from
+  // the landing hero. Pinned on the COMMITTED page (byte-equal to a fresh build per (1)).
+  // ============================================================================================
+  describe("(T-74.4) first-screen legibility: lede, collapsed agent demo, plain boundary, landing wiring", function () {
+    // The exact plain-English lede (one contiguous line in the emitted page).
+    const LEDE =
+      "Check whether a file someone handed you is byte-for-byte what they signed — and who signed it. " +
+      "Everything runs on this computer; nothing is uploaded.";
+    const TOGGLE = "▸ Show the advanced agent-session demo";
+
+    it("the plain-English lede is on the page, ABOVE the technical note (fresh build too)", function () {
+      for (const [label, html] of [["committed", committedHtml()], ["fresh", htmlBuilder.buildHtml()]]) {
+        const ledeAt = html.indexOf(LEDE);
+        const noteAt = html.indexOf("An INDEPENDENT, read-only, fully OFFLINE verifier");
+        expect(ledeAt, `${label}: lede present verbatim`).to.be.greaterThan(-1);
+        expect(noteAt, `${label}: technical note still present`).to.be.greaterThan(-1);
+        expect(ledeAt, `${label}: lede sits ABOVE the technical note`).to.be.lessThan(noteAt);
+      }
+    });
+
+    it("the boundary speaks plain language: 'without a separate trusted timestamp', never 'P-3 trust-root'", function () {
+      const html = committedHtml();
+      expect(html).to.contain("NOT proof of WHEN without a separate trusted timestamp");
+      expect(html.includes("P-3 trust-root"), "internal proposal jargon must be gone from the page").to.equal(false);
+    });
+
+    it("the devtools reassurance carries the offline proof a layperson can run: 'disconnect from the internet first — it still works'", function () {
+      expect(committedHtml()).to.contain("disconnect from the internet first — it still works");
+    });
+
+    it("the agent-session demo is COLLAPSED behind the ▸ toggle (a real <details>, controls inside it)", function () {
+      const html = committedHtml();
+      expect(html).to.contain(`<summary id="agent-toggle">${TOGGLE}</summary>`);
+      const detailsAt = html.indexOf('<details id="agent-details"');
+      expect(detailsAt, "a native <details> element wraps the demo").to.be.greaterThan(-1);
+      // <details> is collapsed by default — the markup must NOT force it open.
+      expect(/<details id="agent-details"[^>]*\bopen\b/.test(html), "details must not carry the open attribute").to.equal(false);
+      const detailsEnd = html.indexOf("</details>", detailsAt);
+      expect(detailsEnd).to.be.greaterThan(detailsAt);
+      // every agent-demo control sits INSIDE the collapsed details block
+      for (const id of ["load-agent-sample", "agent-editor", "agent-verify", "agent-tamper", "agent-restore", "agent-verdict"]) {
+        const at = html.indexOf(`id="${id}"`);
+        expect(at, `${id} present`).to.be.greaterThan(-1);
+        expect(at > detailsAt && at < detailsEnd, `${id} sits inside the collapsed <details>`).to.equal(true);
+      }
+      // …and the summary toggle sits before them, inside the same details.
+      const summaryAt = html.indexOf('id="agent-toggle"');
+      expect(summaryAt > detailsAt && summaryAt < html.indexOf('id="load-agent-sample"')).to.equal(true);
+    });
+
+    it("the collapsed agent demo sits AFTER the 'Verify a packet YOU were handed' section, with a one-sentence plain intro", function () {
+      const html = committedHtml();
+      const challengeAt = html.indexOf('id="challenge-section"');
+      const verifyAt = html.indexOf('id="verify-section"');
+      const agentAt = html.indexOf('id="agent-section"');
+      expect(challengeAt).to.be.greaterThan(-1);
+      expect(verifyAt, "verify section after the challenge").to.be.greaterThan(challengeAt);
+      expect(agentAt, "agent section positioned AFTER the verify section").to.be.greaterThan(verifyAt);
+      // the plain one-sentence intro precedes the toggle
+      const intro = "The same offline check also works on AI-agent session logs";
+      const introAt = html.indexOf(intro);
+      expect(introAt, "plain intro present").to.be.greaterThan(agentAt);
+      expect(introAt, "plain intro precedes the toggle").to.be.lessThan(html.indexOf('id="agent-toggle"'));
+    });
+
+    it("landing page: the hero CTA opens /verify-vh-standalone.html and card 01 has the built-in-sample clause + a real 'Open the verifier' button", function () {
+      const landing = fs.readFileSync(path.join(REPO, "site", "index.html"), "utf8");
+      // hero CTA (the primary button inside .hero-cta) points at the verifier page
+      const heroCta = landing.match(/<div class="hero-cta[^"]*">([\s\S]*?)<\/div>/);
+      expect(heroCta, "hero-cta block exists").to.not.equal(null);
+      expect(heroCta[1]).to.match(/<a class="btn btn-primary" href="\/verify-vh-standalone\.html"/);
+      // card 01: the built-in-sample clause…
+      expect(landing.replace(/\s+/g, " ")).to.match(/built-in sample packet/);
+      // …and a REAL button (styled anchor) labelled exactly "Open the verifier", linking the page
+      expect(landing).to.match(
+        /<a class="btn btn-primary" href="\/verify-vh-standalone\.html">Open the verifier<\/a>/
+      );
+    });
+  });
+
+  // ============================================================================================
   // (5) NO change to the existing JS-bundle builds (regression pin)
   // ============================================================================================
   describe("(5) the existing JS-bundle builds are unchanged", function () {

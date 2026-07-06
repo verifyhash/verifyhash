@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1082354,
+  "totalBytes": 1083294,
   "files": [
     {
       "path": "LICENSE",
@@ -20,7 +20,7 @@
       "path": "build-provenance.json",
       "source": "verifier/dist/BUILD-PROVENANCE.json",
       "bytes": 9676,
-      "sha256": "5abe5620c06f22a1f45ffbe0ca46a1c1b6e8b84c9587aadd58ecafdc21ef173a"
+      "sha256": "e0fcd40c1da3daeac9d4b15f7070b23d4a7c3d451521c14cff2731d741868276"
     },
     {
       "path": "docs/ADOPT.md",
@@ -133,8 +133,8 @@
     {
       "path": "docs/challenge-README.md",
       "source": "challenge/README.md",
-      "bytes": 9984,
-      "sha256": "5f219d940e0273f7cf45ed8104932388d3911c958376c8fef1218a74d4e02694"
+      "bytes": 9994,
+      "sha256": "a2a470ec9d10042d34ef7a7e94c1c67249fd2cc81989b382085438e8d6b63e17"
     },
     {
       "path": "docs/examples-README.md",
@@ -157,20 +157,20 @@
     {
       "path": "docs/verifier-README.md",
       "source": "verifier/README.md",
-      "bytes": 34561,
-      "sha256": "98b37800d41a3e453fb95e5340b4427357298ddc9c8fcd1d69108a618bee1c5f"
+      "bytes": 34571,
+      "sha256": "6df2704a8e2436847d2146a51e9866849ded7d964673f2d1a1e03160824ff37e"
     },
     {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 33031,
-      "sha256": "f4da5586759c87b8d670e3a5b9734f2ea3bc3b7356a8077b9449b5c0bad1a768"
+      "bytes": 33164,
+      "sha256": "c54079cdc7adec7b998a325d3d7d5504074117a51be1cb689eff5aa23121c7ec"
     },
     {
       "path": "llms.txt",
       "source": "site/llms.txt",
       "bytes": 3081,
-      "sha256": "4a4dadf47a2d3d55ef9c24b41c7f56c386895af62262b727a4b22d9f8c74949e"
+      "sha256": "7b89e2818161806bc29a0c8343e6cf1e341adfbe6ea8afd85d2cd7a31b61627a"
     },
     {
       "path": "seal-vh-standalone.js",
@@ -187,14 +187,14 @@
     {
       "path": "verify-vh-standalone.html",
       "source": "verifier/dist/verify-vh-standalone.html",
-      "bytes": 158889,
-      "sha256": "2e0ea39b9e79ae469adf980c0978c8172ad89fe69f35d33df9e041ade5fc5e23"
+      "bytes": 159676,
+      "sha256": "1c03db9b380783c272ef591eb7bf414326d25a5904f015970a425a83fbbffa1c"
     },
     {
       "path": "verify-vh-standalone.html.sha256",
       "source": "verifier/dist/verify-vh-standalone.html.sha256",
       "bytes": 92,
-      "sha256": "05fb6d356fa447707d5b2a0210ac3da2a0270950f94039cd10a1b0a5860ecf3c"
+      "sha256": "21f07c9f8b77adce521aa735187ea80f4b8b01be7cdfd6b70780bb83eeff13c4"
     },
     {
       "path": "verify-vh-standalone.js",

@@ -51,7 +51,7 @@ const SIDECAR_REL = "verifier/dist/verify-vh-standalone.html.sha256";
 const BOUNDARY_VERBATIM =
   "ACCEPT is tamper-evidence that these exact bytes match the seal — and, for a signed seal, WHO " +
   "vouched (signer recovery + optional vendor pin). It is NOT a trusted timestamp and NOT proof of " +
-  "WHEN without the P-3 trust-root.";
+  "WHEN without a separate trusted timestamp."; // T-74.4 wording (was: "without the P-3 trust-root")
 const CI_CAVEAT = "For CI/production gating use the node standalone";
 
 // The five honest facts EVERY routed pointer section must carry (checked on the flattened,

@@ -66,8 +66,8 @@ it stays empty. Like the node bundle, it is built deterministically from these s
 
 The boundary on the page is the same one this README carries, verbatim: **ACCEPT is tamper-evidence
 that these exact bytes match the seal — and, for a signed seal, WHO vouched (signer recovery + optional
-vendor pin). It is NOT a trusted timestamp and NOT proof of WHEN without the P-3 trust-root. For
-CI/production gating use the node standalone (`verify-vh-standalone.js`).** The browser page is the
+vendor pin). It is NOT a trusted timestamp and NOT proof of WHEN without a separate trusted
+timestamp. For CI/production gating use the node standalone (`verify-vh-standalone.js`).** The browser page is the
 first-contact convenience; your pipeline gates on the node standalone (§2b).
 
 ---

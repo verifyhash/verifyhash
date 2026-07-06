@@ -43,8 +43,8 @@ empty; your bytes never leave your machine.
 
 The page states its own honest boundary, verbatim: **ACCEPT is tamper-evidence that these exact bytes
 match the seal — and, for a signed seal, WHO vouched (signer recovery + optional vendor pin). It is NOT
-a trusted timestamp and NOT proof of WHEN without the P-3 trust-root. For CI/production gating use the
-node standalone (`verify-vh-standalone.js`).** The rest of *this README* — the three-commands flow below
+a trusted timestamp and NOT proof of WHEN without a separate trusted timestamp. For CI/production gating
+use the node standalone (`verify-vh-standalone.js`).** The rest of *this README* — the three-commands flow below
 — is exactly that node-shaped, CI-scriptable variant of the same challenge (over its own unsigned sample).
 
 ---

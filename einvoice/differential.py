@@ -6,8 +6,9 @@ compiled EN16931-UBL Schematron (shipped as an XSLT that emits SVRL) — against
 the fired-rule set of OUR validator (``einvoice/`` package).
 
 The official ruleset is the legal source of truth. For every invoice and for
-every one of OUR 20 implemented rule IDs we ask the same yes/no question of both
-engines — "does rule R fire on this invoice?" — and record whether they AGREE.
+every one of OUR implemented rule IDs (ALL_RULES in einvoice/rules.py) we ask
+the same yes/no question of both engines — "does rule R fire on this
+invoice?" — and record whether they AGREE.
 A disagreement is, by definition, a place where OUR interpretation departs from
 the legal document = our bug:
 
@@ -68,17 +69,17 @@ NS_DIFI = "http://difi.no/xsd/vefa/validator/1.0"
 
 
 # --------------------------------------------------------------------------- #
-# OUR 20 rules — read straight from einvoice/rules.py (the ALL_RULES list).
+# OUR rules — read straight from einvoice/rules.py (the ALL_RULES list).
 # --------------------------------------------------------------------------- #
 def _fn_to_rule_id(fn) -> str:
-    """br_01 -> BR-01, br_cl_01 -> BR-CL-01, br_co_10 -> BR-CO-10, br_s_01 -> BR-S-01."""
+    """br_01 -> BR-01, br_cl_01 -> BR-CL-01, br_dec_09 -> BR-DEC-09, br_s_01 -> BR-S-01."""
     parts = fn.__name__.split("_")
     return "-".join(p.upper() for p in parts)
 
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 20, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 43, OUR_RULE_IDS
 
 
 # --------------------------------------------------------------------------- #
@@ -397,11 +398,91 @@ def _mut_brs01(r):
     _child(cat, NS_CBC, "ID").text = "E"
 
 
-def _mut_brz01(r):
-    # Flip the line's item category to Z, leave breakdown as S -> zero Z rows.
+def _set_line_category(r, code):
+    """Flip the first line's ClassifiedTaxCategory code (breakdown stays 'S')."""
     item = _child(_first_line(r), NS_CAC, "Item")
     ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
-    _child(ctc, NS_CBC, "ID").text = "Z"
+    _child(ctc, NS_CBC, "ID").text = code
+
+
+def _mut_brz01(r): _set_line_category(r, "Z")
+def _mut_brae01(r): _set_line_category(r, "AE")
+def _mut_bre01(r): _set_line_category(r, "E")
+def _mut_brg01(r): _set_line_category(r, "G")
+def _mut_bric01(r): _set_line_category(r, "K")
+def _mut_bro01(r): _set_line_category(r, "O")
+
+
+def _mut_brco16(r):
+    _child(_lmt(r), NS_CBC, "PayableAmount").text = "111111.11"
+
+
+def _mut_brco17(r):
+    # Subtotal BT-117 more than 1 unit away from taxable x rate.
+    st = _child(_child(r, NS_CAC, "TaxTotal"), NS_CAC, "TaxSubtotal")
+    _child(st, NS_CBC, "TaxAmount").text = "99.99"
+
+
+def _mut_brco18(r):
+    # Remove the only VAT breakdown group.
+    tt = _child(r, NS_CAC, "TaxTotal")
+    tt.remove(_child(tt, NS_CAC, "TaxSubtotal"))
+
+
+# ---- BR-DEC mutations: give exactly one monetary field a 3rd decimal. ----- #
+def _sub_el(parent, ns, local, text=None, currency=False):
+    el = ET.SubElement(parent, _q(ns, local))
+    if text is not None:
+        el.text = text
+    if currency:
+        el.set("currencyID", "DKK")
+    return el
+
+
+def _add_doc_allowance_charge(r, charge, amount, base=None):
+    """Insert a document-level AllowanceCharge before cac:TaxTotal."""
+    ac = ET.Element(_q(NS_CAC, "AllowanceCharge"))
+    _sub_el(ac, NS_CBC, "ChargeIndicator", "true" if charge else "false")
+    _sub_el(ac, NS_CBC, "AllowanceChargeReason", "Adjustment")
+    _sub_el(ac, NS_CBC, "Amount", amount, currency=True)
+    if base is not None:
+        _sub_el(ac, NS_CBC, "BaseAmount", base, currency=True)
+    cat = _sub_el(ac, NS_CAC, "TaxCategory")
+    _sub_el(cat, NS_CBC, "ID", "S")
+    _sub_el(cat, NS_CBC, "Percent", "25")
+    _sub_el(_sub_el(cat, NS_CAC, "TaxScheme"), NS_CBC, "ID", "VAT")
+    r.insert(list(r).index(_child(r, NS_CAC, "TaxTotal")), ac)
+
+
+def _mut_brdec01(r): _add_doc_allowance_charge(r, charge=False, amount="10.009")
+def _mut_brdec02(r): _add_doc_allowance_charge(r, charge=False, amount="10.00",
+                                               base="100.009")
+def _mut_brdec05(r): _add_doc_allowance_charge(r, charge=True, amount="10.009")
+def _mut_brdec06(r): _add_doc_allowance_charge(r, charge=True, amount="10.00",
+                                               base="100.009")
+
+
+def _mut_brdec09(r): _child(_lmt(r), NS_CBC, "LineExtensionAmount").text = "625743.549"
+def _mut_brdec10(r): _sub_el(_lmt(r), NS_CBC, "AllowanceTotalAmount", "0.009",
+                             currency=True)
+def _mut_brdec11(r): _sub_el(_lmt(r), NS_CBC, "ChargeTotalAmount", "0.009",
+                             currency=True)
+def _mut_brdec12(r): _child(_lmt(r), NS_CBC, "TaxExclusiveAmount").text = "625743.549"
+def _mut_brdec14(r): _child(_lmt(r), NS_CBC, "TaxInclusiveAmount").text = "782179.439"
+def _mut_brdec16(r): _sub_el(_lmt(r), NS_CBC, "PrepaidAmount", "0.009", currency=True)
+def _mut_brdec17(r): _sub_el(_lmt(r), NS_CBC, "PayableRoundingAmount", "0.006",
+                             currency=True)
+def _mut_brdec18(r): _child(_lmt(r), NS_CBC, "PayableAmount").text = "782179.439"
+
+
+def _subtotal(r):
+    return _child(_child(r, NS_CAC, "TaxTotal"), NS_CAC, "TaxSubtotal")
+
+
+def _mut_brdec19(r): _child(_subtotal(r), NS_CBC, "TaxableAmount").text = "625743.549"
+def _mut_brdec20(r): _child(_subtotal(r), NS_CBC, "TaxAmount").text = "156435.889"
+def _mut_brdec23(r):
+    _child(_first_line(r), NS_CBC, "LineExtensionAmount").text = "625743.549"
 
 
 _MUTATIONS = {
@@ -411,7 +492,18 @@ _MUTATIONS = {
     "BR-21": _mut_br21, "BR-22": _mut_br22, "BR-24": _mut_br24,
     "BR-26": _mut_br26, "BR-CL-01": _mut_brcl01, "BR-CO-10": _mut_brco10,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
+    "BR-CO-16": _mut_brco16, "BR-CO-17": _mut_brco17, "BR-CO-18": _mut_brco18,
     "BR-S-01": _mut_brs01, "BR-Z-01": _mut_brz01,
+    "BR-AE-01": _mut_brae01, "BR-E-01": _mut_bre01, "BR-G-01": _mut_brg01,
+    "BR-IC-01": _mut_bric01, "BR-O-01": _mut_bro01,
+    "BR-DEC-01": _mut_brdec01, "BR-DEC-02": _mut_brdec02,
+    "BR-DEC-05": _mut_brdec05, "BR-DEC-06": _mut_brdec06,
+    "BR-DEC-09": _mut_brdec09, "BR-DEC-10": _mut_brdec10,
+    "BR-DEC-11": _mut_brdec11, "BR-DEC-12": _mut_brdec12,
+    "BR-DEC-14": _mut_brdec14, "BR-DEC-16": _mut_brdec16,
+    "BR-DEC-17": _mut_brdec17, "BR-DEC-18": _mut_brdec18,
+    "BR-DEC-19": _mut_brdec19, "BR-DEC-20": _mut_brdec20,
+    "BR-DEC-23": _mut_brdec23,
 }
 
 
@@ -518,8 +610,8 @@ def run_differential():
     # ----- per-rule agreement table ----- #
     print("=" * 82)
     print("PER-RULE AGREEMENT  (official EN16931-UBL Schematron  vs  our validator)")
-    print("graded invoices: %d   |   comparisons: %d (invoices x 20 rules)"
-          % (graded, total_cmp))
+    print("graded invoices: %d   |   comparisons: %d (invoices x %d rules)"
+          % (graded, total_cmp, len(OUR_RULE_IDS)))
     print("=" * 82)
     print("%-10s %9s %9s %10s %10s %6s" %
           ("RULE", "agree", "both-fire", "both-clr", "false-pos", "miss"))
@@ -556,7 +648,7 @@ def run_differential():
             print("    [%s]  %s" % (kind, inv))
     if not any_div:
         print("\n  (none) — our validator matched the normative Schematron on every")
-        print("  invoice for all 20 implemented rules.")
+        print("  invoice for all %d implemented rules." % len(OUR_RULE_IDS))
     print()
 
     if errors:

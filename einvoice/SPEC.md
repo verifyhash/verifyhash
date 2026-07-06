@@ -73,12 +73,15 @@ VAT category codes).
   (`corpus/cen-en16931/ubl/schema/`). Establishes that the paths in §2 exist and
   are correctly typed before business rules run.
 
-**Layer B — business rules (20 rules, §4).** Each is a testable predicate over
-the parsed tree; each has ≥1 failing fixture in `vendored/invalid/`.
+**Layer B — business rules.** Each is a testable predicate over the parsed
+tree. The FIRST SLICE was the 20 rules specified in §4; the ruleset has since
+grown to 43 (see `README.md` §2 and `CORRECTNESS.md` for the current list —
+BR-CO-16/17/18, the BR-AE/E/G/IC/O-01 VAT families and 15 BR-DEC-* decimal
+rules were added as a second, differential-proven batch).
 
 ---
 
-## 4. First-slice business ruleset (20 rules)
+## 4. First-slice business ruleset (the original 20 rules)
 
 Every row: rule ID · verbatim EN 16931 meaning · the vendored fixture whose
 `<error>` case triggers it. Fixtures live in
@@ -125,9 +128,12 @@ labeled `<error>` invoice fragment for its own rule, plus `<success>` counter-ex
 | BR-S-01 | If any line/allowance/charge is "Standard rated" (S), the VAT breakdown (BG-23) must contain ≥1 "Standard rated" category. | invalid/BR-S-01.xml |
 | BR-Z-01 | If any line/allowance/charge is "Zero rated" (Z), the VAT breakdown must contain exactly one "Zero rated" category. | invalid/BR-Z-01.xml |
 
-**Coverage guarantee:** all 20 rules have a failing fixture; the 12 valid
-vectors in `vendored/valid/` must pass every one of the 20 (they are complete,
-KoSIT-conformant XRechnung 3.0 / PEPPOL BIS 3.0 invoices).
+**Coverage guarantee:** every implemented rule with a CEN-shipped unit fixture
+has a failing fixture vendored (28 invalid vectors); the 12 valid vectors in
+`vendored/valid/` must pass ALL implemented rules (they are complete,
+KoSIT-conformant XRechnung 3.0 / PEPPOL BIS 3.0 invoices). Rules without a CEN
+unit fixture (the BR-DEC-* family) are exercised in the failing direction by
+generated mutations in `differential.py`.
 
 ---
 
@@ -145,8 +151,8 @@ corpus/
     src/test/business-cases/standard/   #   33 complete valid UBL invoices (*_ubl.xml) + CII twins
     src/test/technical-cases/cius/      #   CIUS comprehensive / minimal conformance invoices
   vendored/                          # curated FIRST-SLICE subset (stable, small)
-    valid/    (12 vectors)           #   complete valid UBL invoices — must pass all 20 rules
-    invalid/  (20 vectors)           #   one labeled testSet per first-slice rule (<error> case)
+    valid/    (12 vectors)           #   complete valid UBL invoices — must pass ALL implemented rules
+    invalid/  (28 vectors)           #   one labeled testSet per covered rule (<error> case)
     MANIFEST.tsv                     #   path · expectation · rule_id · syntax · profile · source
 ```
 

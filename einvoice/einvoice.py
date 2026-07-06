@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from einvoice.validate import validate_file  # noqa: E402
 from einvoice.parser import NotWellFormed     # noqa: E402
+from einvoice.rules import ALL_RULES          # noqa: E402
 
 USAGE = "usage: python3 einvoice.py validate <invoice.xml> [--json]"
 
@@ -73,7 +74,7 @@ def main(argv):
     else:
         if result.ok:
             sys.stdout.write("PASS: %s (all %d implemented rules)\n"
-                             % (path, 20))
+                             % (path, len(ALL_RULES)))
         else:
             v = result.first
             sys.stdout.write("FAIL: %s\n  %s: %s\n  offending element: %s\n"

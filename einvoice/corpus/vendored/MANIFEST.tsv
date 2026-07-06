@@ -31,3 +31,11 @@ invalid/BR-CO-14.xml	invalid	BR-CO-14	UBL-Invoice	en16931	ConnectingEurope/eInvo
 invalid/BR-CO-15.xml	invalid	BR-CO-15	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
 invalid/BR-S-01.xml	invalid	BR-S-01	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
 invalid/BR-Z-01.xml	invalid	BR-Z-01	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
+invalid/BR-AE-01.xml	invalid	BR-AE-01	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
+invalid/BR-CO-16.xml	invalid	BR-CO-16	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
+invalid/BR-CO-17.xml	invalid	BR-CO-17	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
+invalid/BR-CO-18.xml	invalid	BR-CO-18	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
+invalid/BR-E-01.xml	invalid	BR-E-01	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
+invalid/BR-G-01.xml	invalid	BR-G-01	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
+invalid/BR-IC-01.xml	invalid	BR-IC-01	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL
+invalid/BR-O-01.xml	invalid	BR-O-01	UBL-Invoice	en16931	ConnectingEurope/eInvoicing-EN16931 test/Invoice-unit-UBL

@@ -11,7 +11,7 @@ Standard library only.
 from __future__ import annotations
 
 from collections import namedtuple
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
 
 Violation = namedtuple("Violation", ["rule_id", "message", "element"])
 
@@ -29,18 +29,52 @@ _CENT = Decimal("0.01")
 
 
 def _dec(text):
-    """Parse a numeric text field to Decimal, or None if absent/unparseable."""
+    """Parse a numeric text field to Decimal, or None if absent/unparseable.
+
+    Non-finite parses ("NaN"/"Infinity" are valid Python Decimals but NOT valid
+    xs:decimal lexical forms) are rejected as unparseable.
+    """
     if text is None or text == "":
         return None
     try:
-        return Decimal(text)
+        value = Decimal(text)
     except (InvalidOperation, ValueError):
         return None
+    return value if value.is_finite() else None
 
 
 def _q(value):
     """Quantize a Decimal to 2 places, EN 16931 half-up rounding."""
     return value.quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def _fn_round(value):
+    """XPath 2.0 fn:round(): nearest integer, HALVES TOWARD +INFINITY.
+
+    This is floor(x + 0.5) — NOT Python's banker's rounding and NOT half-up
+    (fn:round(-2.5) = -2, whereas half-up gives -3). The official Schematron
+    computes every 2-place rounding as ``round(x * 10 * 10) div 100`` with
+    these semantics, so rules transcribed from it must match exactly.
+    """
+    return (value + Decimal("0.5")).to_integral_value(rounding=ROUND_FLOOR)
+
+
+def _xr2(value):
+    """The official ``round(x * 10 * 10) div 100`` idiom: 2-place rounding
+    with fn:round() (halves toward +infinity) semantics."""
+    return _fn_round(value * 100) / Decimal(100)
+
+
+def _dec_places(raw):
+    """string-length(substring-after(v, '.')) over the RAW text value.
+
+    Everything after the FIRST '.' counts — including whitespace — exactly like
+    the official BR-DEC-* XPath. An absent element (None), an empty element or
+    a dot-less value yields 0 (the official rules hold in those cases).
+    """
+    if raw is None or "." not in raw:
+        return 0
+    return len(raw.split(".", 1)[1])
 
 
 # ---------------------------------------------------------------------------
@@ -411,12 +445,352 @@ def br_z_01(inv):
     return None
 
 
+def br_co_16(inv):
+    """BR-CO-16: Amount due for payment (BT-115) = Invoice total with VAT
+    (BT-112) − Paid amount (BT-113) + Rounding amount (BT-114).
+
+    Official (context ``cac:LegalMonetaryTotal``) is a 4-way disjunction keyed
+    on the PRESENCE of ``cbc:PrepaidAmount`` / ``cbc:PayableRoundingAmount``:
+
+    * neither present:  ``PayableAmount = TaxInclusiveAmount``  (EXACT decimal
+      equality — no rounding in the official test);
+    * prepaid only:     ``PayableAmount = round2(TaxIncl − Prepaid)``;
+    * rounding only:    ``round2(Payable − Rounding) = TaxInclusiveAmount``
+      (right side unrounded);
+    * both:             ``round2(Payable − Rounding) = round2(TaxIncl − Prepaid)``.
+
+    round2 = ``round(x*100) div 100`` with fn:round() (halves toward +inf)
+    semantics. A missing/unparseable operand casts to the empty sequence, every
+    comparison with it is false, and the assert FIRES.
+    """
+    if not inv.has_legal_monetary_total:
+        return None  # context node absent -> rule never evaluated
+    payable = _dec(inv.payable_amount)
+    tax_incl = _dec(inv.tax_inclusive_amount)
+    prepaid_present = inv.prepaid_amount is not None
+    rounding_present = inv.payable_rounding_amount is not None
+    prepaid = _dec(inv.prepaid_amount)
+    rounding = _dec(inv.payable_rounding_amount)
+
+    if payable is None or tax_incl is None:
+        holds = False
+    elif not prepaid_present and not rounding_present:
+        holds = (payable == tax_incl)
+    elif prepaid_present and not rounding_present:
+        holds = (prepaid is not None and payable == _xr2(tax_incl - prepaid))
+    elif not prepaid_present and rounding_present:
+        holds = (rounding is not None and _xr2(payable - rounding) == tax_incl)
+    else:
+        holds = (prepaid is not None and rounding is not None
+                 and _xr2(payable - rounding) == _xr2(tax_incl - prepaid))
+    if holds:
+        return None
+    return Violation(
+        "BR-CO-16",
+        "Amount due for payment (BT-115=%s) must equal Invoice total with VAT "
+        "(BT-112=%s) - paid amount (BT-113=%s) + rounding amount (BT-114=%s)."
+        % (inv.payable_amount or "(absent)", inv.tax_inclusive_amount or "(absent)",
+           inv.prepaid_amount if prepaid_present else "(absent)",
+           inv.payable_rounding_amount if rounding_present else "(absent)"),
+        "cac:LegalMonetaryTotal/cbc:PayableAmount")
+
+
+def br_co_17(inv):
+    """BR-CO-17: VAT category tax amount (BT-117) = VAT category taxable amount
+    (BT-116) x (VAT category rate (BT-119) / 100), rounded to two decimals.
+
+    Official (context = EVERY ``cac:TaxTotal/cac:TaxSubtotal``, any depth) is a
+    3-way disjunction, where pct = the VAT-scheme TaxCategory's xs:decimal
+    Percent (a non-VAT scheme or missing Percent = absent):
+
+    * fn:round(pct) = 0  and fn:round(TaxAmount) = 0; or
+    * fn:round(pct) != 0 and |TaxAmount| is STRICTLY within +/-1 of
+      round2(|TaxableAmount| * pct/100)  (a whole tolerance band, not equality —
+      the legal artifact allows sub-1-unit rounding drift here); or
+    * pct absent and fn:round(TaxAmount) = 0.
+
+    A missing TaxAmount / TaxableAmount operand makes its comparison false, so
+    the assert FIRES.
+    """
+    for st in inv.all_tax_subtotals:
+        pct = _dec(st.percent) if st.category_scheme_id == "VAT" else None
+        tax = _dec(st.tax_amount)
+        taxable = _dec(st.taxable_amount)
+        d1 = (pct is not None and _fn_round(pct) == 0
+              and tax is not None and _fn_round(tax) == 0)
+        d2 = False
+        if (pct is not None and _fn_round(pct) != 0
+                and tax is not None and taxable is not None):
+            expected = _xr2(abs(taxable) * (pct / Decimal(100)))
+            d2 = (abs(tax) - 1 < expected) and (abs(tax) + 1 > expected)
+        d3 = (pct is None and tax is not None and _fn_round(tax) == 0)
+        if not (d1 or d2 or d3):
+            return Violation(
+                "BR-CO-17",
+                "VAT category tax amount (BT-117=%s) must equal VAT category "
+                "taxable amount (BT-116=%s) x (VAT rate (BT-119=%s) / 100), "
+                "rounded to two decimals."
+                % (st.tax_amount or "(absent)", st.taxable_amount or "(absent)",
+                   st.percent if pct is not None else "(absent)"),
+                "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_co_18(inv):
+    """BR-CO-18: An Invoice shall at least have one VAT breakdown group (BG-23).
+
+    Official (context ``/ubl:Invoice``): ``exists(cac:TaxTotal/cac:TaxSubtotal)``
+    — at least one TaxSubtotal under a TOP-LEVEL TaxTotal.
+    """
+    for tt in inv.tax_totals:
+        if tt.subtotals:
+            return None
+    return Violation(
+        "BR-CO-18",
+        "An Invoice shall at least have one VAT breakdown group (BG-23).",
+        "cac:TaxTotal/cac:TaxSubtotal")
+
+
+# ---------------------------------------------------------------------------
+# VAT-category families (BR-AE/E/G/IC/O-01) — "exactly one breakdown row"
+# ---------------------------------------------------------------------------
+def _vat_exactly_one_breakdown(inv, code):
+    """The shared official -01 pattern for categories AE/E/G/K/O (and Z).
+
+    HOLDS iff::
+
+        (X appears on ANY VAT-scheme TaxCategory/ClassifiedTaxCategory in the
+         document AND the VAT breakdown has EXACTLY ONE X row)
+        OR (X appears nowhere)
+
+    Two things the official XPath pins down:
+
+    * the "anywhere" set is ``//cac:TaxCategory | //cac:ClassifiedTaxCategory``
+      (VAT scheme only) — which INCLUDES the breakdown's own categories, so two
+      X breakdown rows fire the rule even with no X line/allowance/charge;
+    * one orphan X breakdown row (count = 1) does NOT fire it.
+    """
+    if code not in inv.vat_category_codes:
+        return True
+    return inv.breakdown_vat_category_codes().count(code) == 1
+
+
+def br_ae_01(inv):
+    """BR-AE-01: 'Reverse charge' (AE) items require exactly one AE VAT
+    breakdown (BG-23) row."""
+    if _vat_exactly_one_breakdown(inv, "AE"):
+        return None
+    return Violation(
+        "BR-AE-01",
+        "An Invoice with a 'Reverse charge' (AE) VAT category (BT-151/BT-95/"
+        "BT-102) must contain exactly one AE VAT breakdown row (BT-118); "
+        "found %d." % inv.breakdown_vat_category_codes().count("AE"),
+        "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+
+
+def br_e_01(inv):
+    """BR-E-01: 'Exempt from VAT' (E) items require exactly one E VAT
+    breakdown (BG-23) row."""
+    if _vat_exactly_one_breakdown(inv, "E"):
+        return None
+    return Violation(
+        "BR-E-01",
+        "An Invoice with an 'Exempt from VAT' (E) VAT category (BT-151/BT-95/"
+        "BT-102) must contain exactly one E VAT breakdown row (BT-118); "
+        "found %d." % inv.breakdown_vat_category_codes().count("E"),
+        "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+
+
+def br_g_01(inv):
+    """BR-G-01: 'Export outside the EU' (G) items require exactly one G VAT
+    breakdown (BG-23) row."""
+    if _vat_exactly_one_breakdown(inv, "G"):
+        return None
+    return Violation(
+        "BR-G-01",
+        "An Invoice with an 'Export outside the EU' (G) VAT category (BT-151/"
+        "BT-95/BT-102) must contain exactly one G VAT breakdown row (BT-118); "
+        "found %d." % inv.breakdown_vat_category_codes().count("G"),
+        "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+
+
+def br_ic_01(inv):
+    """BR-IC-01: 'Intra-community supply' (K) items require exactly one K VAT
+    breakdown (BG-23) row."""
+    if _vat_exactly_one_breakdown(inv, "K"):
+        return None
+    return Violation(
+        "BR-IC-01",
+        "An Invoice with an 'Intra-community supply' (K) VAT category (BT-151/"
+        "BT-95/BT-102) must contain exactly one K VAT breakdown row (BT-118); "
+        "found %d." % inv.breakdown_vat_category_codes().count("K"),
+        "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+
+
+def br_o_01(inv):
+    """BR-O-01: 'Not subject to VAT' (O) items require exactly one O VAT
+    breakdown (BG-23) row."""
+    if _vat_exactly_one_breakdown(inv, "O"):
+        return None
+    return Violation(
+        "BR-O-01",
+        "An Invoice with a 'Not subject to VAT' (O) VAT category (BT-151/BT-95/"
+        "BT-102) must contain exactly one O VAT breakdown row (BT-118); "
+        "found %d." % inv.breakdown_vat_category_codes().count("O"),
+        "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+
+
+# ---------------------------------------------------------------------------
+# Decimal-precision rules (BR-DEC-*): max 2 decimals on monetary fields.
+# Official test everywhere: string-length(substring-after(V, '.')) <= 2 over
+# the literal string value — absent element / no '.' = 0 decimals = holds.
+# ---------------------------------------------------------------------------
+def _dec_violation(rule_id, bt, label, element):
+    return Violation(
+        rule_id,
+        "The allowed maximum number of decimals for %s (%s) is 2." % (label, bt),
+        element)
+
+
+def br_dec_01(inv):
+    """BR-DEC-01: max 2 decimals for the Document level allowance amount (BT-92)."""
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is False and _dec_places(ac.amount_raw) > 2:
+            return _dec_violation("BR-DEC-01", "BT-92",
+                                  "the Document level allowance amount",
+                                  "cac:AllowanceCharge/cbc:Amount")
+    return None
+
+
+def br_dec_02(inv):
+    """BR-DEC-02: max 2 decimals for the Document level allowance base amount (BT-93)."""
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is False and _dec_places(ac.base_amount_raw) > 2:
+            return _dec_violation("BR-DEC-02", "BT-93",
+                                  "the Document level allowance base amount",
+                                  "cac:AllowanceCharge/cbc:BaseAmount")
+    return None
+
+
+def br_dec_05(inv):
+    """BR-DEC-05: max 2 decimals for the Document level charge amount (BT-99)."""
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is True and _dec_places(ac.amount_raw) > 2:
+            return _dec_violation("BR-DEC-05", "BT-99",
+                                  "the Document level charge amount",
+                                  "cac:AllowanceCharge/cbc:Amount")
+    return None
+
+
+def br_dec_06(inv):
+    """BR-DEC-06: max 2 decimals for the Document level charge base amount (BT-100)."""
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is True and _dec_places(ac.base_amount_raw) > 2:
+            return _dec_violation("BR-DEC-06", "BT-100",
+                                  "the Document level charge base amount",
+                                  "cac:AllowanceCharge/cbc:BaseAmount")
+    return None
+
+
+def _dec_lmt(inv, rule_id, bt, label, local):
+    """Shared body for the LegalMonetaryTotal BR-DEC rules (context = LMT)."""
+    if _dec_places(inv.lmt_raw.get(local)) > 2:
+        return _dec_violation(rule_id, bt, label,
+                              "cac:LegalMonetaryTotal/cbc:%s" % local)
+    return None
+
+
+def br_dec_09(inv):
+    """BR-DEC-09: max 2 decimals for the Sum of Invoice line net amount (BT-106)."""
+    return _dec_lmt(inv, "BR-DEC-09", "BT-106",
+                    "the Sum of Invoice line net amount", "LineExtensionAmount")
+
+
+def br_dec_10(inv):
+    """BR-DEC-10: max 2 decimals for the Sum of allowances on document level (BT-107)."""
+    return _dec_lmt(inv, "BR-DEC-10", "BT-107",
+                    "the Sum of allowances on document level", "AllowanceTotalAmount")
+
+
+def br_dec_11(inv):
+    """BR-DEC-11: max 2 decimals for the Sum of charges on document level (BT-108)."""
+    return _dec_lmt(inv, "BR-DEC-11", "BT-108",
+                    "the Sum of charges on document level", "ChargeTotalAmount")
+
+
+def br_dec_12(inv):
+    """BR-DEC-12: max 2 decimals for the Invoice total amount without VAT (BT-109)."""
+    return _dec_lmt(inv, "BR-DEC-12", "BT-109",
+                    "the Invoice total amount without VAT", "TaxExclusiveAmount")
+
+
+def br_dec_14(inv):
+    """BR-DEC-14: max 2 decimals for the Invoice total amount with VAT (BT-112)."""
+    return _dec_lmt(inv, "BR-DEC-14", "BT-112",
+                    "the Invoice total amount with VAT", "TaxInclusiveAmount")
+
+
+def br_dec_16(inv):
+    """BR-DEC-16: max 2 decimals for the Paid amount (BT-113)."""
+    return _dec_lmt(inv, "BR-DEC-16", "BT-113",
+                    "the Paid amount", "PrepaidAmount")
+
+
+def br_dec_17(inv):
+    """BR-DEC-17: max 2 decimals for the Rounding amount (BT-114)."""
+    return _dec_lmt(inv, "BR-DEC-17", "BT-114",
+                    "the Rounding amount", "PayableRoundingAmount")
+
+
+def br_dec_18(inv):
+    """BR-DEC-18: max 2 decimals for the Amount due for payment (BT-115)."""
+    return _dec_lmt(inv, "BR-DEC-18", "BT-115",
+                    "the Amount due for payment", "PayableAmount")
+
+
+def br_dec_19(inv):
+    """BR-DEC-19: max 2 decimals for the VAT category taxable amount (BT-116).
+
+    Context = every ``cac:TaxTotal/cac:TaxSubtotal`` (any depth).
+    """
+    for st in inv.all_tax_subtotals:
+        if _dec_places(st.taxable_amount_raw) > 2:
+            return _dec_violation("BR-DEC-19", "BT-116",
+                                  "the VAT category taxable amount",
+                                  "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_dec_20(inv):
+    """BR-DEC-20: max 2 decimals for the VAT category tax amount (BT-117)."""
+    for st in inv.all_tax_subtotals:
+        if _dec_places(st.tax_amount_raw) > 2:
+            return _dec_violation("BR-DEC-20", "BT-117",
+                                  "the VAT category tax amount",
+                                  "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_dec_23(inv):
+    """BR-DEC-23: max 2 decimals for the Invoice line net amount (BT-131)."""
+    for ln in inv.lines:
+        if _dec_places(ln.line_extension_amount_raw) > 2:
+            return _dec_violation("BR-DEC-23", "BT-131",
+                                  "the Invoice line net amount",
+                                  ln.label + "/cbc:LineExtensionAmount")
+    return None
+
+
 # Ordered ruleset (evaluation order = document flow: header -> lines -> codes
-# -> arithmetic -> VAT-category consistency).
+# -> arithmetic -> VAT-category consistency -> decimal precision).
 ALL_RULES = [
     br_01, br_02, br_03, br_04, br_05, br_06, br_07, br_08,
     br_16, br_21, br_22, br_24, br_26,
     br_cl_01,
-    br_co_10, br_co_13, br_co_14, br_co_15,
+    br_co_10, br_co_13, br_co_14, br_co_15, br_co_16, br_co_17, br_co_18,
     br_s_01, br_z_01,
+    br_ae_01, br_e_01, br_g_01, br_ic_01, br_o_01,
+    br_dec_01, br_dec_02, br_dec_05, br_dec_06,
+    br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_14,
+    br_dec_16, br_dec_17, br_dec_18, br_dec_19, br_dec_20, br_dec_23,
 ]

@@ -34,6 +34,25 @@ def _text(el):
     return (el.text or "").strip()
 
 
+def _rawtext(el):
+    """Return the element's raw text (whitespace preserved), or None if absent.
+
+    The BR-DEC-* decimal rules count characters after the '.' of the literal
+    string value (``string-length(substring-after(., '.'))``), where trailing
+    whitespace counts — so those rules must see the unstripped text.
+    """
+    if el is None:
+        return None
+    return el.text or ""
+
+
+def _norm_space(text):
+    """XPath normalize-space(): trim + collapse internal whitespace runs."""
+    if text is None:
+        return None
+    return " ".join(text.split())
+
+
 def _localname(tag):
     """Strip the ``{namespace}`` prefix ElementTree prepends to a tag."""
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
@@ -42,7 +61,8 @@ def _localname(tag):
 class InvoiceLine:
     """One ``cac:InvoiceLine`` (BG-25), fields kept as text/None."""
 
-    __slots__ = ("id", "quantity", "line_extension_amount", "price_amount",
+    __slots__ = ("id", "quantity", "line_extension_amount",
+                 "line_extension_amount_raw", "price_amount",
                  "item_name", "tax_category_ids", "index")
 
     def __init__(self, index):
@@ -50,6 +70,7 @@ class InvoiceLine:
         self.id = None                    # BT-126
         self.quantity = None              # BT-129 (text)
         self.line_extension_amount = None  # BT-131 (text)
+        self.line_extension_amount_raw = None  # BT-131 raw text (BR-DEC-23)
         self.price_amount = None          # BT-146 (text)
         self.item_name = None             # BT-153
         self.tax_category_ids = []        # BG-30 ClassifiedTaxCategory/ID codes
@@ -61,12 +82,18 @@ class InvoiceLine:
 
 
 class TaxSubtotal:
-    __slots__ = ("tax_amount", "taxable_amount", "category_id")
+    __slots__ = ("tax_amount", "tax_amount_raw", "taxable_amount",
+                 "taxable_amount_raw", "category_id", "category_scheme_id",
+                 "percent")
 
     def __init__(self):
-        self.tax_amount = None      # BT-117 (text)
-        self.taxable_amount = None  # BT-116 (text)
-        self.category_id = None     # BT-118 VAT category code
+        self.tax_amount = None          # BT-117 (text)
+        self.tax_amount_raw = None      # BT-117 raw text (BR-DEC-20)
+        self.taxable_amount = None      # BT-116 (text)
+        self.taxable_amount_raw = None  # BT-116 raw text (BR-DEC-19)
+        self.category_id = None         # BT-118 VAT category code
+        self.category_scheme_id = None  # TaxCategory/TaxScheme/ID, normalized UPPER
+        self.percent = None             # BT-119 (text)
 
 
 class TaxTotal:
@@ -76,6 +103,18 @@ class TaxTotal:
         self.tax_amount = None           # BT-110 (text)
         self.tax_amount_currency = None  # currencyID attribute
         self.subtotals = []              # list[TaxSubtotal]
+
+
+class AllowanceCharge:
+    """One document-level ``cac:AllowanceCharge`` (BG-20 allowance / BG-21 charge)."""
+
+    __slots__ = ("is_charge", "amount_raw", "base_amount_raw")
+
+    def __init__(self):
+        self.is_charge = None       # True = charge (BG-21), False = allowance (BG-20),
+        #                             None = no usable ChargeIndicator (neither context)
+        self.amount_raw = None      # BT-92/BT-99 raw text (BR-DEC-01/05)
+        self.base_amount_raw = None  # BT-93/BT-100 raw text (BR-DEC-02/06)
 
 
 class Invoice:
@@ -101,12 +140,25 @@ class Invoice:
         self.payable_amount = None        # BT-115
         self.allowance_total = None       # BT-107
         self.charge_total = None          # BT-108
+        self.prepaid_amount = None        # BT-113 (text; None = element absent)
+        self.payable_rounding_amount = None  # BT-114 (text; None = element absent)
         self.has_legal_monetary_total = False
+        # Raw (unstripped) text of the LegalMonetaryTotal amount children,
+        # keyed by local element name — consumed by the BR-DEC-* rules.
+        self.lmt_raw = {}
         # Tax + lines
-        self.tax_totals = []              # list[TaxTotal]
+        self.tax_totals = []              # list[TaxTotal]  (top-level only)
+        self.all_tax_subtotals = []       # every cac:TaxSubtotal in the document
         self.lines = []                   # list[InvoiceLine]
         # Document-level allowance/charge VAT category codes
         self.doc_allowance_charge_category_ids = []
+        # Document-level allowance/charge objects (BG-20/BG-21)
+        self.doc_allowance_charges = []   # list[AllowanceCharge]
+        # normalize-space()d codes of EVERY cac:TaxCategory / cac:ClassifiedTaxCategory
+        # in the document whose TaxScheme/ID is 'VAT' (case-insensitive) — the
+        # "//cac:TaxCategory | //cac:ClassifiedTaxCategory" set the VAT-category
+        # family rules (BR-AE/E/G/IC/O-01) test against.
+        self.vat_category_codes = []
 
     # -- document-currency tax totals --------------------------------------
     def doc_currency_tax_totals(self):
@@ -148,6 +200,18 @@ class Invoice:
             for st in tt.subtotals:
                 if st.category_id is not None:
                     codes.append(st.category_id)
+        return codes
+
+    def breakdown_vat_category_codes(self):
+        """VAT breakdown (BG-23) codes, restricted to TaxCategory rows whose
+        TaxScheme/ID is 'VAT' — the exact node set the official BR-AE/E/G/IC/O-01
+        asserts count (``cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[...VAT...]``,
+        relative to the Invoice root, i.e. top-level TaxTotals only)."""
+        codes = []
+        for tt in self.tax_totals:
+            for st in tt.subtotals:
+                if st.category_scheme_id == "VAT" and st.category_id:
+                    codes.append(_norm_space(st.category_id))
         return codes
 
 
@@ -204,8 +268,31 @@ def build_model(root):
         inv.payable_amount = _text(lmt.find("cbc:PayableAmount", NS))
         inv.allowance_total = _text(lmt.find("cbc:AllowanceTotalAmount", NS))
         inv.charge_total = _text(lmt.find("cbc:ChargeTotalAmount", NS))
+        inv.prepaid_amount = _text(lmt.find("cbc:PrepaidAmount", NS))
+        inv.payable_rounding_amount = _text(lmt.find("cbc:PayableRoundingAmount", NS))
+        for local in ("LineExtensionAmount", "AllowanceTotalAmount",
+                      "ChargeTotalAmount", "TaxExclusiveAmount",
+                      "TaxInclusiveAmount", "PrepaidAmount",
+                      "PayableRoundingAmount", "PayableAmount"):
+            inv.lmt_raw[local] = _rawtext(lmt.find("cbc:%s" % local, NS))
 
     # TaxTotal(s)
+    def _parse_subtotal(st_el):
+        st = TaxSubtotal()
+        ta_el = st_el.find("cbc:TaxAmount", NS)
+        tx_el = st_el.find("cbc:TaxableAmount", NS)
+        st.tax_amount = _text(ta_el)
+        st.tax_amount_raw = _rawtext(ta_el)
+        st.taxable_amount = _text(tx_el)
+        st.taxable_amount_raw = _rawtext(tx_el)
+        cat_el = st_el.find("cac:TaxCategory", NS)
+        if cat_el is not None:
+            st.category_id = _text(cat_el.find("cbc:ID", NS))
+            st.percent = _text(cat_el.find("cbc:Percent", NS))
+            scheme = _norm_space(_text(cat_el.find("cac:TaxScheme/cbc:ID", NS)))
+            st.category_scheme_id = scheme.upper() if scheme else None
+        return st
+
     for tt_el in root.findall("cac:TaxTotal", NS):
         tt = TaxTotal()
         amount_el = tt_el.find("cbc:TaxAmount", NS)
@@ -213,25 +300,52 @@ def build_model(root):
         if amount_el is not None:
             tt.tax_amount_currency = amount_el.get("currencyID")
         for st_el in tt_el.findall("cac:TaxSubtotal", NS):
-            st = TaxSubtotal()
-            st.tax_amount = _text(st_el.find("cbc:TaxAmount", NS))
-            st.taxable_amount = _text(st_el.find("cbc:TaxableAmount", NS))
-            st.category_id = _text(st_el.find("cac:TaxCategory/cbc:ID", NS))
-            tt.subtotals.append(st)
+            tt.subtotals.append(_parse_subtotal(st_el))
         inv.tax_totals.append(tt)
 
-    # Document-level allowance/charge VAT categories
+    # EVERY TaxSubtotal in the document (the official BR-CO-17 / BR-DEC-19/20
+    # context is "cac:TaxTotal/cac:TaxSubtotal" — any depth, not only top-level).
+    for st_el in root.iter("{%s}TaxSubtotal" % NS_CAC):
+        inv.all_tax_subtotals.append(_parse_subtotal(st_el))
+
+    # Every TaxCategory / ClassifiedTaxCategory with a 'VAT' TaxScheme, anywhere
+    # (the "//cac:TaxCategory | //cac:ClassifiedTaxCategory" set of the official
+    # VAT-category family rules — this INCLUDES the breakdown's own categories).
+    _cat_tags = ("{%s}TaxCategory" % NS_CAC, "{%s}ClassifiedTaxCategory" % NS_CAC)
+    for el in root.iter():
+        if el.tag not in _cat_tags:
+            continue
+        scheme = _norm_space(_text(el.find("cac:TaxScheme/cbc:ID", NS)))
+        if not scheme or scheme.upper() != "VAT":
+            continue
+        for id_el in el.findall("cbc:ID", NS):
+            code = _norm_space(_text(id_el))
+            if code:
+                inv.vat_category_codes.append(code)
+
+    # Document-level allowance/charge (BG-20/BG-21)
     for ac_el in root.findall("cac:AllowanceCharge", NS):
         cat = _text(ac_el.find("cac:TaxCategory/cbc:ID", NS))
         if cat is not None:
             inv.doc_allowance_charge_category_ids.append(cat)
+        ac = AllowanceCharge()
+        ind = _norm_space(_text(ac_el.find("cbc:ChargeIndicator", NS)))
+        if ind in ("true", "1"):
+            ac.is_charge = True
+        elif ind in ("false", "0"):
+            ac.is_charge = False
+        ac.amount_raw = _rawtext(ac_el.find("cbc:Amount", NS))
+        ac.base_amount_raw = _rawtext(ac_el.find("cbc:BaseAmount", NS))
+        inv.doc_allowance_charges.append(ac)
 
     # InvoiceLines
     for i, ln_el in enumerate(root.findall("cac:InvoiceLine", NS), start=1):
         ln = InvoiceLine(i)
         ln.id = _text(ln_el.find("cbc:ID", NS))
         ln.quantity = _text(ln_el.find("cbc:InvoicedQuantity", NS))
-        ln.line_extension_amount = _text(ln_el.find("cbc:LineExtensionAmount", NS))
+        lea_el = ln_el.find("cbc:LineExtensionAmount", NS)
+        ln.line_extension_amount = _text(lea_el)
+        ln.line_extension_amount_raw = _rawtext(lea_el)
         ln.price_amount = _text(ln_el.find("cac:Price/cbc:PriceAmount", NS))
         ln.item_name = _text(ln_el.find("cac:Item/cbc:Name", NS))
         for cat_el in ln_el.findall("cac:Item/cac:ClassifiedTaxCategory/cbc:ID", NS):

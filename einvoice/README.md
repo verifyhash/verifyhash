@@ -15,13 +15,13 @@ A zero-dependency, embeddable, self-hostable conformance validator for
   fixtures are vendored in-repo (`corpus/`), so the thing you validate against
   is auditable and pinned — no dependency on a third-party validation API.
 
-This is a **first slice**, not a product. Read §2 before trusting it with
-anything. It currently implements 20 of the roughly 200 EN 16931 business
+This is an **early slice**, not a product. Read §2 before trusting it with
+anything. It currently implements 43 of the roughly 200 EN 16931 business
 rules and none of the XRechnung-specific `BR-DE-*` rules.
 
-**How correctness is proven:** all 20 rules are differential-tested against the
+**How correctness is proven:** all 43 rules are differential-tested against the
 **official, normative EN16931-UBL Schematron** (the legal ruleset) and agree
-with it on **1005 real invoices with zero divergences** — see
+with it on **1028 real invoices with zero divergences** — see
 [`CORRECTNESS.md`](CORRECTNESS.md) for the full method, corpus, and the honest
 limits of that claim.
 
@@ -62,15 +62,17 @@ black-box web form.
 **Profile:** XRechnung 3.x (the German CIUS of EN 16931-1:2017),
 **UBL 2.1 `Invoice` syntax only.**
 
-### Implemented (exactly these 20 rules)
+### Implemented (exactly these 43 rules)
 
 | Family | Rule IDs |
 |---|---|
 | Header existence/cardinality | BR-01, BR-02, BR-03, BR-04, BR-05, BR-06, BR-07, BR-08 |
 | Invoice-line cardinality | BR-16, BR-21, BR-22, BR-24, BR-26 |
 | Code list | BR-CL-01 (UNTDID 1001 invoice type code) |
-| Arithmetic co-constraints | BR-CO-10, BR-CO-13, BR-CO-14, BR-CO-15 |
-| VAT-category consistency | BR-S-01, BR-Z-01 |
+| Arithmetic co-constraints | BR-CO-10, BR-CO-13, BR-CO-14, BR-CO-15, BR-CO-16, BR-CO-17 |
+| VAT breakdown presence | BR-CO-18 |
+| VAT-category consistency | BR-S-01, BR-Z-01, BR-AE-01, BR-E-01, BR-G-01, BR-IC-01, BR-O-01 |
+| Decimal precision (max 2 places) | BR-DEC-01, BR-DEC-02, BR-DEC-05, BR-DEC-06, BR-DEC-09, BR-DEC-10, BR-DEC-11, BR-DEC-12, BR-DEC-14, BR-DEC-16, BR-DEC-17, BR-DEC-18, BR-DEC-19, BR-DEC-20, BR-DEC-23 |
 
 Plus two structural checks: S-WF (well-formed XML) and S-ROOT (UBL Invoice-2
 root). Rule wording follows the vendored EN 16931 Schematron
@@ -81,47 +83,47 @@ root). Rule wording follows the vendored EN 16931 Schematron
 The strongest correctness evidence: `differential.py` runs each invoice through
 the **official, normative** compiled EN16931-UBL Schematron (Saxon → SVRL) and
 through our validator, then compares — for every invoice and every one of our
-20 rule IDs — whether each engine fires. The Schematron is the legal artifact;
+43 rule IDs — whether each engine fires. The Schematron is the legal artifact;
 any disagreement is our bug.
 
 ```
-corpus ............... 1005 real UBL Invoice documents
-comparisons .......... 20,100  (1005 invoices x 20 rules)
-TOTAL AGREEMENT ...... 20,100 / 20,100 = 100.0000%
+corpus ............... 1028 real UBL Invoice documents
+comparisons .......... 44,204  (1028 invoices x 43 rules)
+TOTAL AGREEMENT ...... 44,204 / 44,204 = 100.0000%
 divergences .......... 0 false-positives + 0 misses
 ```
 
-All 20 implemented rules agree with the official Schematron on every invoice in
+All 43 implemented rules agree with the official Schematron on every invoice in
 the corpus. Reproduce it (needs `saxonche` importable):
 `python3 differential.py`. Method, corpus breakdown, the divergences that were
 found and fixed, and the honest scope limits are documented in
 [`CORRECTNESS.md`](CORRECTNESS.md). This proves faithfulness **only for these
-20 rules** — not EN 16931 or XRechnung as a whole (see §2 "NOT covered").
+43 rules** — not EN 16931 or XRechnung as a whole (see §2 "NOT covered").
 
 ### Conformance result (this run)
 
 `conformance.py` drives the real CLI as a subprocess over every vector in
-`corpus/vendored/` (12 valid + 20 invalid). The invalid vectors are Difi
+`corpus/vendored/` (12 valid + 28 invalid). The invalid vectors are Difi
 `<testSet>` files, so the harness extracts every embedded `<Invoice>`
 fragment and checks each `<error>`/`<success>` assertion individually —
-93 embedded assertions in total.
+167 embedded assertions in total.
 
 ```
-total vendored vectors ............. 32  (12 valid + 20 invalid)
+total vendored vectors ............. 40  (12 valid + 28 invalid)
 
 VALID-vector pass rate ............. 12/12   100.0%   (miss = FALSE POSITIVE)
-COVERED-INVALID detection rate ..... 20/20   100.0%   (correct rule id fired)
+COVERED-INVALID detection rate ..... 28/28   100.0%   (correct rule id fired)
 OUT-OF-SCOPE invalid vectors ....... 0
 
 embedded-block detail (Difi assertions):
-  <error>   fragments: 45 total -> 45 detected, 0 missed, 0 wrong-id, 0 oos
-  <success> fragments: 48 total -> 48 clean,    0 FALSE POSITIVE,   0 oos
+  <error>   fragments: 76 total -> 76 detected, 0 missed, 0 wrong-id, 0 oos
+  <success> fragments: 91 total -> 91 clean,    0 FALSE POSITIVE,   0 oos
 
 HARD FAILS: 0   -> RESULT: PASS
 ```
 
 Every covered invalid vector is detected with the **correct labeled rule ID**
-across all 45 error fragments; every valid vector and all 48 must-pass
+across all 76 error fragments; every valid vector and all 91 must-pass
 fragments come back clean — zero false positives on this corpus.
 
 The harness itself was mutation-tested (then the code restored
@@ -139,19 +141,22 @@ prints the offending file, block, and expected vs. actual rule IDs).
   mandatory-for-Germany fields like `BuyerReference` (BT-10), seller contact,
   and the Leitweg routing ID. A validator without these is **not** a complete
   XRechnung compliance check. Highest-priority next slice.
-- **~180 further EN 16931 `BR-*` rules unimplemented**: most `BR-CO-*`
-  arithmetic, the VAT matrices for categories E/G/O/K/L/M/AE/IC (only S and Z
-  are covered), allowance/charge rules (BR-31…BR-44), and all `BR-CL-*` code
-  lists except BR-CL-01.
+- **~155 further EN 16931 `BR-*` rules unimplemented**: the remaining header/
+  party/allowance-charge existence rules (BR-09..15, BR-25, BR-27..BR-67
+  ranges), the rest of the `BR-CO-*` arithmetic (BR-CO-03/04/09/11/12/25/26 …),
+  the deeper VAT matrices (`-02..-10` of every category family: seller-VAT-ID
+  requirements, per-category taxable/tax sums, exemption reasons; the L/M
+  families entirely), the line-level `BR-DEC-*` allowance/charge decimals
+  (BT-136/137/141/142), and all `BR-CL-*` code lists except BR-CL-01.
 - **No XSD (structural schema) validation.** Layer S-XSD is deferred; only
   well-formedness and the UBL root are checked structurally.
 - **No CII syntax, no UBL `CreditNote`, no ZUGFeRD/Factur-X PDF containers,
   no signatures or attachments.**
-- **The 100% figures are agreement/pass rates for our 20 rules only** — the
-  32-vector `conformance.py` corpus and the 1005-invoice `differential.py`
-  corpus. They are 100% of a small, honest scope, **not** 100% of the ~200-rule
-  standard. Broader KoSIT/CEN fixtures under `corpus/` are used as differential
-  input but the ~180 unimplemented rules are still unchecked.
+- **The 100% figures are agreement/pass rates for our 43 rules only** — the
+  40-vector `conformance.py` corpus and the 1028-invoice `differential.py`
+  corpus. They are 100% of a limited, honest scope, **not** 100% of the
+  ~200-rule standard. Broader KoSIT/CEN fixtures under `corpus/` are used as
+  differential input but the unimplemented rules are still unchecked.
 
 See `SPEC.md` §6 for the full deferred list.
 
@@ -227,8 +232,8 @@ A first slice earns further investment or it doesn't. The signal, timeboxed:
 **KILL** if neither happens: write up what was learned, archive the repo, and
 stop. The corpus and harness remain useful artifacts either way.
 
-Current status against this metric: 20/20 first-slice rules shipped, 0
-vendors contacted. The clock starts now.
+Current status against this metric: 43 rules shipped (first slice of 20 +
+second batch of 23, all differential-proven), 0 vendors contacted.
 
 ---
 

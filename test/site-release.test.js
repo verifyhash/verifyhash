@@ -64,7 +64,6 @@ const EXPECTED_PUBLISHED = [
   "docs/ADOPT.md",
   "docs/CONFORMANCE.md",
   "docs/DATALEDGER.md",
-  "docs/DECIDE.md",
   "docs/EVIDENCE.md",
   "docs/IDENTITY.md",
   "docs/INDEPENDENT-VERIFICATION.md",
@@ -686,6 +685,54 @@ describe("T-67.1: scripts/site-release.js — deterministic site-release assembl
       const fake = makeFakeRepo(scratch);
       expect(sr.landingConsistencyProblems(sr.assemble(fake))).to.deep.equal([]);
     });
+  });
+});
+
+// =================================================================================================
+// T-78.1 — the internal DECIDE page is DE-PUBLISHED and its crashed generator RETIRED.
+//
+// docs/DECIDE.md was a GENERATED page (scripts/sync-decide.cjs rendered it from the P-8 block in
+// docs/MORNING.md). MORNING.md became a per-run engine snapshot that no longer carries P-8, so the
+// generator threw on every run and the page could only rot; its time-boxed pilot ask was superseded
+// by docs/DECISIONS-PENDING.md §3. It was also the ONE publish-set source that was not git-tracked.
+// This block pins the retirement: no DECIDE entry in the publish set, the generator + both page
+// copies gone from disk, and — the structural upgrade — EVERY publish source is a git-tracked file.
+// =================================================================================================
+
+describe("T-78.1: the internal DECIDE page is de-published; its crashed generator is retired", function () {
+  this.timeout(60000);
+
+  it("site/publish-set.json maps NO docs/DECIDE.md (neither published path nor source)", function () {
+    const set = sr.loadPublishSet(REPO);
+    expect(Object.keys(set.publish)).to.not.include("docs/DECIDE.md");
+    expect(Object.values(set.publish)).to.not.include("docs/DECIDE.md");
+    expect(EXPECTED_PUBLISHED).to.not.include("docs/DECIDE.md");
+  });
+
+  it("the committed site/RELEASE-MANIFEST.json records NO docs/DECIDE.md entry", function () {
+    const manifest = JSON.parse(fs.readFileSync(path.join(REPO, "site", "RELEASE-MANIFEST.json"), "utf8"));
+    expect(manifest.files.map((f) => f.path)).to.not.include("docs/DECIDE.md");
+    expect(manifest.files.map((f) => f.source)).to.not.include("docs/DECIDE.md");
+  });
+
+  it("the retired generator and both page copies are GONE from disk", function () {
+    for (const rel of ["scripts/sync-decide.cjs", "docs/DECIDE.md", "public/docs/DECIDE.md"]) {
+      expect(fs.existsSync(path.join(REPO, rel)), `${rel} must be deleted`).to.equal(false);
+    }
+  });
+
+  it("EVERY publish-set source is a git-tracked file (an untracked/generated source can never re-enter the webroot)", function () {
+    // docs/DECIDE.md was the ONE untracked source; this pins the invariant that removed it. Skips
+    // (visibly) only when the tree is not a git checkout (e.g. an extracted tarball).
+    const probe = spawnSync("git", ["ls-files", "-z"], { cwd: REPO, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (probe.error || probe.status !== 0) {
+      this.skip();
+      return;
+    }
+    const tracked = new Set(probe.stdout.split("\0"));
+    for (const src of Object.values(sr.loadPublishSet(REPO).publish)) {
+      expect(tracked.has(src), `publish-set source is not git-tracked: ${src}`).to.equal(true);
+    }
   });
 });
 

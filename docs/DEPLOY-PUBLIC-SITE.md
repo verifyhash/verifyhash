@@ -162,6 +162,10 @@ example, edit the `0x<…>` placeholder in §2 of that page (in `site/index.html
 
 The full refresh flow is: **release → upload → `--mark-deployed` → `--diff` clean.**
 
+Because the upload is REPLACE-mode (`rsync --delete`, §3a step 3), the next P-11 upload REMOVES the
+retired internal `/docs/DECIDE.md` page from the live webroot (dropped from `site/publish-set.json`
+2026-07-06; its ask now lives in `docs/DECISIONS-PENDING.md` §3).
+
 1. **release** — `node scripts/site-release.js` assembles `public/` + writes both manifests (§3a step 1),
    and `--check` gates it (§3a step 2).
 2. **upload** — the rsync + upload-verify of §3a steps 3–5. This is the human-owned step.

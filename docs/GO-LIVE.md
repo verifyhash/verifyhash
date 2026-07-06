@@ -52,7 +52,7 @@ human steps last. If it is green, the software is ready; only the human steps be
 
 If the self-serve evidence channel stalls, the **fallback** is the heavier TrustLedger design-partner
 pilot (P-5: CPA/counsel review, a per-state policy table, a two-month broker tie-out — see
-[`docs/DECIDE.md`](DECIDE.md) and `STRATEGY.md`; every one of those steps stays human-owned and
+`STRATEGY.md`; every one of those steps stays human-owned and
 unchanged). Its zero-install pilot path is ONE emailed file —
 [`trustledger/dist/trustledger-standalone.html`](../trustledger/dist/trustledger-standalone.html): the
 partner double-clicks it, drags their real exports in, and the page makes **no network request** (see

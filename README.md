@@ -833,10 +833,6 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
 
 ## Docs
 
-- [`docs/DECIDE.md`](docs/DECIDE.md) — **the one human decision, on one screen.** The single recommended
-  pilot (EVIDENCE / P-7), the 3 verbatim first actions, the exact `node pilot/run-pilot.js --certificate
-  <path>` command, the time box / stop criterion, and the revenue-integrity boundary. Read this first; it
-  adds no new ask beyond P-8.
 - [`docs/DATALEDGER.md`](docs/DATALEDGER.md) — the buyer-facing DataLedger product spec: what a dataset
   manifest PROVES (file names + bytes, offline set-membership, version diff, license roll-up) and does
   NOT (not a timestamp; untrusted source/license hints), the build→diff→summary→prove→verify-proof

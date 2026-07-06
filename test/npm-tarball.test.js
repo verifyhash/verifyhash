@@ -6,7 +6,7 @@
 // Two failure modes this file makes impossible to regress silently:
 //
 //   1. LEAKING THE LOOP. package.json `files` ships docs/ with a NEGATION denylist
-//      (docs/METRICS.jsonl, docs/DECIDE.md, …the internal build-loop's telemetry). A negation list is
+//      (docs/METRICS.jsonl, docs/MORNING.md, …the internal build-loop's telemetry). A negation list is
 //      fragile — reordering `files`, or an npm behavior change, would re-leak internals into every
 //      `npm publish`. So we assert, from `npm pack --dry-run --json` (the EXACT file list npm would
 //      publish), that every denylisted path is ABSENT and the user-facing docs (TRUST-BOUNDARIES,
@@ -61,7 +61,6 @@ const INTERNAL_DENYLIST_EXACT = [
   "docs/STRATEGY-ARCHIVE.md",
   "docs/MORNING.md",
   "docs/ADOPTION.json",
-  "docs/DECIDE.md",
   // Also on scripts/site-release.js's canonical INTERNAL_FILES never-publish list — forbidden from the
   // public *website*, so a fortiori forbidden from npm (a strictly more public channel). These two once
   // leaked to the tarball while this list stayed silent; the DE-DRIFT gate below now derives them from

@@ -41,8 +41,6 @@ docs/LOOP-AUDIT-*.json
 docs/LOOP-HARDENING-PLAN.md
 docs/ADOPTION.json
 docs/AUDIT.md
-docs/DECIDE.md
-public/docs/DECIDE.md
 scripts/pre-run-gate.cjs
 scripts/smoke-driver.cjs
 scripts/validate-driver.cjs
@@ -53,10 +51,8 @@ scripts/adoption-pulse.cjs
 scripts/distribution-signals.cjs
 scripts/archive-direction.cjs
 scripts/guard-scope.cjs
-scripts/sync-decide.cjs
 test/strategy.archive.test.js
 test/strategy.size-guard.test.js
-test/decide.docs.test.js
 test/adoption-pulse.test.js
 test/scripts.governor-check.test.js
 test/scripts.engine-ledger.test.js

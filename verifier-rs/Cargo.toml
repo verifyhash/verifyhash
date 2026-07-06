@@ -1,0 +1,15 @@
+[package]
+name = "verify-vh"
+version = "0.1.0"
+edition = "2021"
+description = "Independent, offline verifyhash evidence-seal verifier (pure Rust, zero external crates)"
+
+[[bin]]
+name = "verify-vh"
+path = "src/main.rs"
+
+# No [dependencies] section — this verifier is intentionally dependency-free.
+# keccak256 and secp256k1 recovery are hand-rolled in pure Rust below.
+
+[profile.release]
+opt-level = 3

@@ -1,0 +1,13 @@
+{
+  "kind": "verifyhash-release-attestation",
+  "date": "2026-07-06T21",
+  "gitCommit": "a7e7c92",
+  "repo": "https://github.com/verifyhash/verifyhash",
+  "npm": {
+    "verifyhash@0.1.8": {
+      "shasum": "28741a656f86a54158e492a3de0af39e000c583a"
+    }
+  },
+  "note": "Ships the independent Python verifier (verify_vh.py) in the npm tarball + EPIC-78 public-link integrity guard",
+  "vendorAddress": "0x7cb4d3DC6C52996B6386473Bfb32f898263412f7"
+}

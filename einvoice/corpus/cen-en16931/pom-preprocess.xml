@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed under European Union Public Licence (EUPL) version 1.2.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.helger</groupId>
+    <artifactId>parent-pom</artifactId>
+    <version>3.0.3</version>
+  </parent>
+  <artifactId>centc434-validation-rules</artifactId>
+  <version>1.3.16</version>
+  <name>centc434-validation-rules</name>
+  <description>EN16931 - CEN/TC 434 validation rules</description>
+  <url>https://github.com/CenPC434/validation</url>
+  <inceptionYear>2016</inceptionYear>
+  <licenses>
+    <license>
+      <name>EUPL V1.2</name>
+      <url>https://eupl.eu/1.2/en/</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.helger.maven</groupId>
+        <artifactId>ph-schematron-maven-plugin</artifactId>
+        <version>9.1.1</version>
+        <executions>
+          <execution>
+            <id>cii</id>
+            <goals>
+              <goal>preprocess</goal>
+            </goals>
+            <configuration>
+              <sourceFile>${basedir}/cii/schematron/EN16931-CII-validation.sch</sourceFile>
+              <targetFile>${basedir}/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch</targetFile>
+              <keepTitles>true</keepTitles>
+            </configuration>
+          </execution>
+          <!-- 
+          <execution>
+            <id>edifact</id>
+            <goals>
+              <goal>preprocess</goal>
+            </goals>
+            <configuration>
+              <sourceFile>${basedir}/edifact/schematron/EN16931-EDIFACT-validation.sch</sourceFile>
+              <targetFile>${basedir}/edifact/schematron/preprocessed/EN16931-EDIFACT-validation-preprocessed.sch</targetFile>
+            </configuration>
+          </execution>
+           -->
+          <execution>
+            <id>ubl</id>
+            <goals>
+              <goal>preprocess</goal>
+            </goals>
+            <configuration>
+              <sourceFile>${basedir}/ubl/schematron/EN16931-UBL-validation.sch</sourceFile>
+              <targetFile>${basedir}/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch</targetFile>
+              <keepTitles>true</keepTitles>
+            </configuration>
+          </execution>
+        </executions>
+        <configuration>
+          <keepTitles>false</keepTitles>
+          <keepDiagnostics>false</keepDiagnostics>
+          <keepReports>false</keepReports>
+          <keepEmptyPatterns>false</keepEmptyPatterns>
+          <!-- keep the leading and trailing spaces! -->
+          <schHeader> Schematron version 1.3.16 - Last update: 2026-04-10 </schHeader>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

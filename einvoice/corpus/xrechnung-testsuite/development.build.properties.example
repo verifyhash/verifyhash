@@ -1,0 +1,42 @@
+###
+# XRECHNUNG TESTSUITE properties
+#
+# Customize these properties to develop with local dependencies.
+# then use it with ant -p ${this.property.file} ...
+##
+
+##
+# This value has to be same as ant basedir because basedir is not set in this context
+#
+# Please set this value first and with an absolute path.
+##
+#work.dir=/mnt/c/data/git-repos/xrechnung-testsuite
+
+##
+# Designates the specification version for which this test suite is valid
+##
+#xrechnung.version.full=2.3.1
+
+
+###
+# Point to local copy of Validator Configuration XRechnung project directory
+##
+
+# this must be a direct absolute path 
+#validator.configuration.project.dir=/mnt/c/data/git-repos/validator-configuration-xrechnung
+
+#validator.version.full=1.5.0
+
+##
+# Should point to main directory of validator project, in case of local path
+##
+#validator.dir=${validator.configuration.project.dir}/lib
+
+#validator.jar=validationtool-${validator.version.full}-standalone.jar
+
+
+##
+# Point to a local copy of cii2ubl
+##
+#cii2ubl.local.enabled=true
+#cii2ubl.local.url=c:/dev/git/en16931-cii2ubl/en16931-cii2ubl-cli/target/en16931-cii2ubl-cli-full.jar

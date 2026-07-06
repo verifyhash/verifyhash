@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed under European Union Public Licence (EUPL) version 1.2.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.helger</groupId>
+    <artifactId>parent-pom</artifactId>
+    <version>3.0.3</version>
+  </parent>
+  <artifactId>centc434-validation-rules</artifactId>
+  <version>1.3.16</version>
+  <name>centc434-validation-rules</name>
+  <description>EN16931 - CEN/TC 434 validation rules</description>
+  <url>https://github.com/CenPC434/validation</url>
+  <inceptionYear>2016</inceptionYear>
+  <licenses>
+    <license>
+      <name>EUPL V1.2</name>
+      <url>https://eupl.eu/1.2/en/</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.helger.maven</groupId>
+        <artifactId>ph-schematron-maven-plugin</artifactId>
+        <version>9.1.1</version>
+        <executions>
+          <execution>
+            <id>cii</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>validate</goal>
+            </goals>
+            <configuration>
+              <xmlDirectory>cii/examples</xmlDirectory>
+              <schematronProcessingEngine>XSLT</schematronProcessingEngine>
+              <schematronFile>cii/xslt/EN16931-CII-validation.xslt</schematronFile>
+            </configuration>
+          </execution>
+          <execution>
+            <id>edifact</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>validate</goal>
+            </goals>
+            <configuration>
+              <xmlDirectory>edifact/examples</xmlDirectory>
+              <schematronProcessingEngine>XSLT</schematronProcessingEngine>
+              <schematronFile>edifact/xslt/EN16931-EDIFACT-validation.xslt</schematronFile>
+            </configuration>
+          </execution>
+          <execution>
+            <id>ubl</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>validate</goal>
+            </goals>
+            <configuration>
+              <xmlDirectory>ubl/examples</xmlDirectory>
+              <schematronProcessingEngine>XSLT</schematronProcessingEngine>
+              <schematronFile>ubl/xslt/EN16931-UBL-validation.xslt</schematronFile>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+"""conformance.py — run einvoice.py over EVERY vendored corpus vector and prove
+the honest coverage numbers.
+
+For every vector in ``corpus/vendored/`` this harness drives the *real* CLI
+(``einvoice.py``) end-to-end as a subprocess and asserts:
+
+  * every VALID vector            -> exit 0 (no false positive)
+  * every COVERED INVALID vector  -> exit 1 AND the EXPECTED rule id is reported
+                                     (correct detection, not just "some failure")
+  * vectors whose expected rule is NOT-yet-implemented -> OUT-OF-SCOPE
+                                     (counted, never failed)
+
+The invalid vectors are Difi/VEFA ``<testSet>`` documents: each wraps several
+``<test>`` blocks, and every block embeds a *minimal* ``<Invoice>`` fragment plus
+an assertion — ``<error>RULE</error>`` (the fragment MUST fail RULE) or
+``<success>RULE</success>`` (the fragment MUST pass RULE). We exercise every
+embedded block, so the invalid corpus contributes far more assertions than files.
+
+HARD FAILS (surfaced loudly, non-zero exit):
+  * FALSE POSITIVE   — a valid vector, or a ``<success>`` fragment, gets its rule
+                       flagged (a clean invoice rejected).
+  * MISSED DETECTION — an ``<error>`` fragment for an implemented rule is not
+                       caught at all (validator says valid).
+  * WRONG RULE ID    — an ``<error>`` fragment fails, but the EXPECTED rule is not
+                       among the reported violations.
+
+Standard library only. Reads only ``corpus/vendored/``; runs only under the
+einvoice project. Temp fragment files are written to an auto-deleted temp dir.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CLI = os.path.join(HERE, "einvoice.py")
+RULES_SRC = os.path.join(HERE, "einvoice", "rules.py")
+VENDORED = os.path.join(HERE, "corpus", "vendored")
+VALID_DIR = os.path.join(VENDORED, "valid")
+INVALID_DIR = os.path.join(VENDORED, "invalid")
+MANIFEST = os.path.join(VENDORED, "MANIFEST.tsv")
+
+DIFI_NS = "http://difi.no/xsd/vefa/validator/1.0"
+INVOICE_NS = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+
+EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_PARSE = 0, 1, 2, 3
+
+
+# --------------------------------------------------------------------------- #
+# What does the validator actually implement?  (source of truth = rules.py)   #
+# --------------------------------------------------------------------------- #
+def implemented_rule_ids():
+    src = open(RULES_SRC, encoding="utf-8").read()
+    return set(re.findall(r'Violation\(\s*["\']([A-Z0-9-]+)["\']', src))
+
+
+IMPLEMENTED = implemented_rule_ids()
+
+
+# --------------------------------------------------------------------------- #
+# Driving the real CLI                                                         #
+# --------------------------------------------------------------------------- #
+def run_cli(path):
+    """Run `einvoice.py validate <path> --json`. Return (exit_code, violation_ids,
+    raw_stdout). violation_ids is the set of rule ids the validator reported."""
+    proc = subprocess.run(
+        [sys.executable, CLI, "validate", path, "--json"],
+        capture_output=True, text=True,
+    )
+    ids = set()
+    try:
+        data = json.loads(proc.stdout)
+        for v in data.get("violations", []):
+            ids.add(v.get("rule"))
+    except (ValueError, AttributeError):
+        pass
+    return proc.returncode, ids, proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+# testSet parsing                                                             #
+# --------------------------------------------------------------------------- #
+def _q(tag):
+    return "{%s}%s" % (DIFI_NS, tag)
+
+
+def load_manifest():
+    rows = {}
+    with open(MANIFEST, encoding="utf-8") as fh:
+        header = fh.readline()
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            rel, expectation, rule_id = parts[0], parts[1], parts[2]
+            rows[rel] = (expectation, rule_id)
+    return rows
+
+
+def iter_test_blocks(testset_path):
+    """Yield (kind, rule_id, invoice_element) for each <test> block.
+
+    kind is 'error' or 'success'. invoice_element is the embedded <Invoice>.
+    """
+    tree = ET.parse(testset_path)
+    root = tree.getroot()
+    for test in root.findall(_q("test")):
+        assert_el = test.find(_q("assert"))
+        kind = rule = None
+        if assert_el is not None:
+            err = assert_el.find(_q("error"))
+            suc = assert_el.find(_q("success"))
+            if err is not None and (err.text or "").strip():
+                kind, rule = "error", err.text.strip()
+            elif suc is not None and (suc.text or "").strip():
+                kind, rule = "success", suc.text.strip()
+        invoice = test.find("{%s}Invoice" % INVOICE_NS)
+        if kind is None or invoice is None:
+            continue
+        yield kind, rule, invoice
+
+
+def write_fragment(invoice_el, tmpdir, name):
+    """Serialize an embedded <Invoice> subtree to its own file so the real CLI
+    can validate it exactly as a standalone document."""
+    # ElementTree resolves elements by namespace URI (not prefix), and the CLI's
+    # parser does the same, so ns0/ns1 auto-prefixes are fine.
+    path = os.path.join(tmpdir, name)
+    xml = ET.tostring(invoice_el, encoding="unicode")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        fh.write(xml)
+    return path
+
+
+# --------------------------------------------------------------------------- #
+# Result accumulators                                                          #
+# --------------------------------------------------------------------------- #
+class Tally:
+    def __init__(self):
+        self.hard_fails = []   # list[str]  loud
+        self.notes = []        # list[str]  informational (out-of-scope etc.)
+
+
+def main():
+    if not os.path.isdir(VENDORED):
+        sys.stderr.write("error: vendored corpus not found at %s\n" % VENDORED)
+        return 2
+
+    manifest = load_manifest()
+    tally = Tally()
+
+    # ---- 1. VALID vectors: must exit 0 -----------------------------------
+    valid_files = sorted(
+        f for f in os.listdir(VALID_DIR) if f.endswith(".xml"))
+    valid_total = len(valid_files)
+    valid_pass = 0
+    valid_rows = []
+    for f in valid_files:
+        path = os.path.join(VALID_DIR, f)
+        code, ids, _ = run_cli(path)
+        ok = (code == EXIT_OK and not ids)
+        if ok:
+            valid_pass += 1
+            valid_rows.append(("PASS", f, ""))
+        else:
+            detail = "exit=%d flagged=%s" % (code, ",".join(sorted(ids)) or "-")
+            valid_rows.append(("FALSE-POS", f, detail))
+            tally.hard_fails.append(
+                "FALSE POSITIVE: valid vector rejected -> %s (%s)" % (f, detail))
+
+    # ---- 2. INVALID vectors: driven at the embedded-block level ----------
+    invalid_files = sorted(
+        f for f in os.listdir(INVALID_DIR) if f.endswith(".xml"))
+
+    # file-level (one row per MANIFEST invalid vector)
+    file_rows = []
+    file_covered = 0
+    file_detected = 0
+    file_oos = 0
+
+    # block-level aggregates
+    err_total = err_detected = err_missed = err_wrong = err_oos = 0
+    suc_total = suc_clean = suc_falsepos = suc_oos = 0
+
+    tmpdir = tempfile.mkdtemp(prefix="einvoice-conf-")
+    try:
+        for f in invalid_files:
+            path = os.path.join(INVALID_DIR, f)
+            expected_file_rule = manifest.get("invalid/" + f, ("invalid", None))[1]
+            file_impl = expected_file_rule in IMPLEMENTED
+
+            blocks = list(iter_test_blocks(path))
+            file_err_blocks = [b for b in blocks if b[0] == "error"]
+            file_err_detected = 0
+            file_err_present = 0
+
+            for idx, (kind, rule, inv_el) in enumerate(blocks):
+                frag = write_fragment(
+                    inv_el, tmpdir, "%s.%d.xml" % (f[:-4], idx))
+                code, ids, _ = run_cli(frag)
+
+                if kind == "error":
+                    err_total += 1
+                    if rule not in IMPLEMENTED:
+                        err_oos += 1
+                        continue
+                    file_err_present += 1
+                    if code == EXIT_OK:
+                        err_missed += 1
+                        tally.hard_fails.append(
+                            "MISSED DETECTION: %s block#%d expected %s to fire, "
+                            "but validator returned VALID (exit 0)."
+                            % (f, idx, rule))
+                    elif rule in ids:
+                        err_detected += 1
+                        file_err_detected += 1
+                    else:
+                        err_wrong += 1
+                        tally.hard_fails.append(
+                            "WRONG RULE ID: %s block#%d expected %s; validator "
+                            "failed with %s (exit %d) but %s not among them."
+                            % (f, idx, rule, ",".join(sorted(ids)) or "-",
+                               code, rule))
+                else:  # success block: fragment MUST pass its rule
+                    suc_total += 1
+                    if rule not in IMPLEMENTED:
+                        suc_oos += 1
+                        continue
+                    if rule in ids:
+                        suc_falsepos += 1
+                        tally.hard_fails.append(
+                            "FALSE POSITIVE: %s success-block#%d must PASS %s, "
+                            "but validator flagged %s."
+                            % (f, idx, rule, rule))
+                    else:
+                        suc_clean += 1
+
+            # file-level verdict: labeled rule detected on >=1 of its <error> blocks
+            if not file_impl:
+                file_oos += 1
+                file_rows.append(("OOS", f, expected_file_rule,
+                                  "rule not implemented"))
+            else:
+                file_covered += 1
+                if file_err_present and file_err_detected == file_err_present:
+                    file_detected += 1
+                    file_rows.append(("DETECT", f, expected_file_rule,
+                                      "%d/%d error-frags" %
+                                      (file_err_detected, file_err_present)))
+                elif file_err_detected > 0:
+                    file_detected += 1
+                    file_rows.append(("DETECT*", f, expected_file_rule,
+                                      "%d/%d error-frags (partial)" %
+                                      (file_err_detected, file_err_present)))
+                else:
+                    file_rows.append(("FAIL", f, expected_file_rule,
+                                      "0/%d error-frags detected" %
+                                      file_err_present))
+    finally:
+        for n in os.listdir(tmpdir):
+            os.remove(os.path.join(tmpdir, n))
+        os.rmdir(tmpdir)
+
+    # ------------------------------------------------------------------ #
+    # Report                                                             #
+    # ------------------------------------------------------------------ #
+    out = sys.stdout.write
+
+    def pct(n, d):
+        return "100.0%" if d and n == d else ("%.1f%%" % (100.0 * n / d) if d else "n/a")
+
+    out("\n")
+    out("=" * 70 + "\n")
+    out("  einvoice CONFORMANCE — vendored corpus vs. the real CLI\n")
+    out("=" * 70 + "\n")
+    out("  validator implements %d business rules: %s\n"
+        % (len(IMPLEMENTED), ", ".join(sorted(IMPLEMENTED))))
+    out("\n")
+
+    # Per valid vector
+    out("-- VALID vectors (must exit 0) " + "-" * 38 + "\n")
+    for status, f, detail in valid_rows:
+        mark = "ok " if status == "PASS" else "!! "
+        out("  %s%-9s %-34s %s\n" % (mark, status, f, detail))
+    out("\n")
+
+    # Per invalid file
+    out("-- INVALID vectors (labeled rule must fire on its <error> fragments) "
+        + "-" * 1 + "\n")
+    for status, f, rule, detail in file_rows:
+        mark = "!! " if status == "FAIL" else "ok "
+        out("  %s%-8s %-14s %-16s %s\n" % (mark, status, rule, f, detail))
+    out("\n")
+
+    # Matrix
+    out("=" * 70 + "\n")
+    out("  MATRIX\n")
+    out("=" * 70 + "\n")
+    total_vectors = valid_total + len(invalid_files)
+    out("  total vendored vectors ............. %d "
+        "(%d valid + %d invalid)\n"
+        % (total_vectors, valid_total, len(invalid_files)))
+    out("\n")
+    out("  VALID-vector pass rate ............. %d/%d   %s\n"
+        % (valid_pass, valid_total, pct(valid_pass, valid_total)))
+    out("     (a miss here = FALSE POSITIVE, hard fail)\n")
+    out("\n")
+    out("  COVERED-INVALID detection rate ..... %d/%d   %s\n"
+        % (file_detected, file_covered, pct(file_detected, file_covered)))
+    out("     (labeled rule correctly fired, correct rule id)\n")
+    out("  OUT-OF-SCOPE invalid vectors ....... %d\n" % file_oos)
+    out("\n")
+    out("  -- embedded-block detail (Difi testSet assertions) --\n")
+    out("  <error>   fragments ................ %d total\n" % err_total)
+    out("     detected (expected rule fired) .. %d   %s\n"
+        % (err_detected, pct(err_detected,
+                             err_total - err_oos)))
+    out("     missed (validator said valid) ... %d\n" % err_missed)
+    out("     wrong rule id ................... %d\n" % err_wrong)
+    out("     out-of-scope .................... %d\n" % err_oos)
+    out("  <success> fragments ................ %d total\n" % suc_total)
+    out("     clean (rule correctly not fired)  %d   %s\n"
+        % (suc_clean, pct(suc_clean, suc_total - suc_oos)))
+    out("     FALSE POSITIVE (rule flagged) ... %d\n" % suc_falsepos)
+    out("     out-of-scope .................... %d\n" % suc_oos)
+    out("\n")
+
+    # Hard fails
+    out("=" * 70 + "\n")
+    if tally.hard_fails:
+        out("  HARD FAILS: %d  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n"
+            % len(tally.hard_fails))
+        out("=" * 70 + "\n")
+        for msg in tally.hard_fails:
+            out("  !! " + msg + "\n")
+        out("\n")
+        out("  RESULT: FAIL — the credibility contract is broken above.\n")
+        return 1
+    else:
+        out("  HARD FAILS: 0\n")
+        out("=" * 70 + "\n")
+        out("  RESULT: PASS — no false positives, every covered invalid vector\n"
+            "  is detected with the correct rule id, scope honestly reported.\n")
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,23 @@
+name: Run tests
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@master
+
+      - name: Run CII tests
+        uses: docker://difi/vefa-validator:latest
+        with:
+          args: build -x -t -p cii /github/workspace
+
+      - name: Run UBL tests
+        uses: docker://difi/vefa-validator:latest
+        with:
+          args: build -x -t -p ubl /github/workspace

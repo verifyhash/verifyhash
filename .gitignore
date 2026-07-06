@@ -63,3 +63,7 @@ test/fixtures/governor-check/
 test/fixtures/reconcile-run/
 test/fixtures/strategy-direction-original.json
 test/fixtures/strategy-logsections-original.json
+
+# einvoice build/cache junk (product source + corpus stay tracked)
+einvoice/**/__pycache__/
+einvoice/**/*.pyc

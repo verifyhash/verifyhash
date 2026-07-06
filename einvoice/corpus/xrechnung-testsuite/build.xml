@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project basedir="." name="xrechnung-testsuite" default="compile-test">
+
+  <property name="xsbi.abu.dir"
+    location="${basedir}/_vendor/xsbi-0.3.0-SNAPSHOT/abu" />
+
+  <import file="${xsbi.abu.dir}/abu-common.xml" />
+  <include file="${xsbi.abu.dir}/abu-saxon-provider.xml" />
+
+  <property name="dist.dir" location="${basedir}/dist" />
+  <property name="lib.dir" location="${basedir}/lib" />
+  <property name="src.dir" location="${basedir}/src" />
+  <property name="src.doc.dir" location="${basedir}/src/doc" />
+  <property name="instance.dir" location="${basedir}/instances" />
+  <property name="build.dir" location="${basedir}/build" />
+  <property name="download.dir" location="${build.dir}/download" />
+
+  <!-- the source of test instances -->
+  <property name="test.src.dir" location="${src.dir}/test" />
+  <property name="test.src.technical.dir"
+    location="${test.src.dir}/technical-cases" />
+  <property name="test.src.business.dir"
+    location="${test.src.dir}/business-cases" />
+  <!-- test instances in the build directory-->
+  <property name="test.build.dir" location="${build.dir}/instances" />
+  <property name="test.build.technical.dir"
+    location="${test.build.dir}/technical-cases" />
+  
+  <property name="test.build.standard.dir"
+    location="${test.build.dir}/standard" />
+  <property name="test.build.extension.dir"
+    location="${test.build.dir}/extension" />
+  <property name="test.build.generated.dir"
+    location="${test.build.dir}/generated" />
+  <property name="reports.dir" location="${build.dir}/reports" />
+
+  <property name="testsuite.version.date" value="2026-07-31-SNAPSHOT" />
+
+  <property name="_xrechnung.version.majorminor" value="3.0" />
+  <property name="xrechnung.version.full" value="${_xrechnung.version.majorminor}.2" />
+  
+
+  <!-- For cii2ubl -->
+  <property name="_cii2ubl.baseurl" value="https://github.com/phax/en16931-cii2ubl/releases/download/" />
+  <property name="_cii2ubl.version" value="3.1.0" />
+  <property name="cii2ubl.download.url" value="${_cii2ubl.baseurl}en16931-cii2ubl-parent-pom-${_cii2ubl.version}/en16931-cii2ubl-cli-${_cii2ubl.version}-shaded.jar" />
+  <property name="cii2ubl.download.skipexisting" value="true" />
+  <property name="cii2ubl.jar" value="en16931-cii2ubl-${_cii2ubl.version}.jar" />
+  <property name="cii2ubl.customizationid" value="urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_${_xrechnung.version.majorminor}" />
+  <property name="cii2ubl.profileid" value="urn:fdc:peppol.eu:2017:poacc:billing:01:1.0" />
+  <property name="cii2ubl.local.enabled" value="false" />
+  <property name="cii2ubl.local.url" value="define in development.build.properties" />
+
+  <!--  this must be a direct absolute path  --> 
+  <property name="validator.configuration.resources.dir" value="${validator.configuration.project.dir}/build/resources"/> 
+  <property name="validator.dir" value="${validator.configuration.project.dir}/lib"/>
+  <property name="validator.version.full" value="1.6.0"/>
+  <property name="validator.jar" value="validator-${validator.version.full}-standalone.jar"/>  
+  <property name="bis.version" value="3.0.20" />
+  <property name="bis.zip" value="validation-configuration-bis-${bis.version}.zip" />
+  <property name="validator.configuration.bis.download.url.prefix" value="https://github.com/itplr-kosit/validator-configuration-bis/releases/download/release-${bis.version}" />
+  <property name="validator.configuration.bis.download.url" value="${validator.configuration.bis.download.url.prefix}/${bis.zip}" />
+  
+  <!-- ci/cd  -->
+  <property name="project.name.short" value="testsuite" />
+  <property name="project.group.id" value="de.xeinkauf" />
+  <property name="project.artifact.id"
+    value="xrechnung-${xrechnung.version}-${project.name.short}" />
+  <property name="project.artifact.zip.name"
+    value="${project.artifact.id}-${testsuite.version.date}.zip" />
+  
+  <property name="dist.name"
+    value="xrechnung-${xrechnung.version.full}-testsuite-${testsuite.version.date}" />
+
+  <target name="init" depends="abu-common.init"
+    description="Initializes build directory structure and ISO timestamp">
+
+    <mkdir dir="${download.dir}" />
+    <mkdir dir="${reports.dir}" />
+  </target>
+
+
+  <target name="provide-validator-configuration">
+
+    <fail unless="validator.configuration.project.dir"
+      message="Set validator.configuration.project.dir property e.g. at command line" />
+
+    <echo message="Checking ${validator.configuration.resources.dir}" />
+
+    <fail unless="validator.configuration.resources.dir"
+      message="Set validator.configuration.resources.dir in properties file" />
+
+    <fail
+      message="Directory does not exist: ${validator.configuration.resources.dir}">
+      <condition>
+        <not>
+          <available file="${validator.configuration.resources.dir}" type="dir"
+           />
+        </not>
+      </condition>
+    </fail>
+
+    <fail message="Validator does not exist: ${validator.jar}">
+      <condition>
+        <not>
+          <available file="${validator.dir}/${validator.jar}" type="file" />
+        </not>
+      </condition>
+    </fail>
+
+  </target>
+
+
+  <target name="compile-test" depends="init"
+    description="Compiling test instances from sources">
+    <!-- Currently we just copy, but later we will transform etc. before testing -->
+    <copy todir="${test.build.dir}">
+      <fileset dir="${test.src.business.dir}" />
+      
+    </copy>
+    <copy todir="${test.build.technical.dir}">
+      <fileset dir="${test.src.technical.dir}" >
+        <exclude name="00.*.xml" />
+      </fileset>
+    </copy>
+  </target>
+
+
+  <target name="compile-doc" depends="init"
+    description="Compiling documentation from sources">
+    <!-- Currently we just copy, but later we will transform etc. before testing -->
+    <copy todir="${build.dir}" verbose="true">
+      <fileset dir="${src.doc.dir}" />
+    </copy>
+  </target>
+  
+  <target name="compile" depends="compile-test, compile-doc"
+    description="Compiling Testsuite from sources">
+  </target>
+
+  <target name="validator-standard-business-case-test"
+    depends="compile-test, provide-validator-configuration"
+    description="Testsuite business case validation"
+   >
+    <echo>Creating validation reports for standard business cases ...</echo>
+    <java jar="${validator.dir}/${validator.jar}" failonerror="yes" fork="yes"
+      dir="${basedir}">
+      <arg value="-s" />
+      <arg value="${validator.configuration.project.dir}/build/scenarios.xml" />
+      <arg value="-r" />
+      <arg value="${validator.configuration.project.dir}/build" />
+      <arg value="-h" />
+      <arg value="-o" />
+      <arg value="${reports.dir}" />
+      <arg value="${test.build.standard.dir}" />
+    </java>
+  </target>
+
+  <target name="validator-extension-business-case-test"
+    depends="compile-test, provide-validator-configuration"
+    description="Testsuite business case validation"
+   >
+    <echo>Creating validation reports for extension business cases ...</echo>
+    <java jar="${validator.dir}/${validator.jar}" failonerror="yes" fork="yes"
+      dir="${basedir}">
+      <arg value="-s" />
+      <arg value="${validator.configuration.project.dir}/build/scenarios.xml" />
+
+      <arg value="-r" />
+      <arg value="${validator.configuration.project.dir}/build" />
+      <arg value="-h" />
+      <arg value="-o" />
+      <arg value="${reports.dir}" />
+      <arg value="${test.build.extension.dir}" />
+    </java>
+  </target>
+
+  <target name="validator-technical-test"
+    depends="compile-test, provide-validator-configuration"
+    description="Testsuite technical validation with Validator XRechnung Configuration"
+   >
+    <echo>Creating validation reports for technical cases ...</echo>
+    <java jar="${validator.dir}/${validator.jar}" failonerror="yes" fork="yes"
+      dir="${basedir}">
+      <arg value="-s" />
+      <arg value="${validator.configuration.project.dir}/build/scenarios.xml" />
+
+      <arg value="-r" />
+      <arg value="${validator.configuration.project.dir}/build" />
+      <arg value="-h" />      
+      <arg value="-o" />
+      <arg value="${reports.dir}" />
+      <arg value="${test.build.technical.dir}/cius" />
+    </java>
+  </target>
+
+  <target name="validator-generated-business-case-test"
+    depends="cii2ubl, provide-validator-configuration"
+    description="Testsuite generated business case validation"
+   >
+    <echo>Creating validation reports for generated business cases ...</echo>
+    <java jar="${validator.dir}/${validator.jar}" failonerror="yes" fork="yes"
+      dir="${basedir}">
+      <arg value="-s" />
+      <arg value="${validator.configuration.project.dir}/build/scenarios.xml" />
+      <arg value="-r" />
+      <arg value="${validator.configuration.project.dir}/build" />
+      <arg value="-h" />
+      <arg value="-o" />
+      <arg value="${reports.dir}" />
+      <arg value="${test.build.generated.dir}/business-cases" />
+    </java>
+  </target>
+
+  <target name="validator-generated-technical-case-test"
+    depends="cii2ubl, provide-validator-configuration"
+    description="Testsuite generated technical case validation"
+    >
+    <echo>Creating validation reports for generated business cases ...</echo>
+    <java jar="${validator.dir}/${validator.jar}" failonerror="yes" fork="yes"
+      dir="${basedir}">
+      <arg value="-s" />
+      <arg value="${validator.configuration.project.dir}/build/scenarios.xml" />
+      <arg value="-r" />
+      <arg value="${validator.configuration.project.dir}/build" />
+      <arg value="-h" />
+      <arg value="-o" />
+      <arg value="${reports.dir}" />
+      <arg value="${test.build.generated.dir}/technical-cases" />
+    </java>
+  </target>
+
+  <target name="validator-test"
+    depends="validator-extension-business-case-test,validator-standard-business-case-test,validator-technical-test, validator-generated-test">
+
+  </target>
+  
+  <target name="retrieve-validator-bis-configuration" depends="init">
+    <echo>Downloading Validator Configuration BIS</echo>
+    <get src="${validator.configuration.bis.download.url}" 
+      dest="${download.dir}/${bis.zip}" 
+      verbose="true"
+      skipexisting="true"
+      usetimestamp="true" />
+  </target>
+  
+  <target name="provide-validator-bis-configuration" depends="retrieve-validator-bis-configuration">
+    <unzip src="${download.dir}/${bis.zip}" dest="${lib.dir}/peppol-bis" />
+  </target>
+  
+  <target name="provide-validator-bis-tests" depends="abu-saxon-provider.provide-saxon, compile-test, provide-validator-bis-configuration">
+    <!-- transform XRechnung CIUS business and technical test cases to Peppol BIS Billing, exclude self-billed invoices with type code 389 -->
+    <xslt basedir="${test.build.dir}" destdir="${test.build.generated.dir}/bis-billing-cases"
+        style="${src.dir}/tools/xr2bis.xsl"
+        classpathref="cp.saxon.xslt" extension=".xml"
+        includes="standard/*_ubl.xml, technical-cases/cius/*_ubl.xml"
+        excludes="standard/01.20a-INVOICE_ubl.xml">
+        <factory name="net.sf.saxon.TransformerFactoryImpl" />
+        <param name="spec-id" expression="urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0" />
+      </xslt>
+      
+  </target>
+  
+  <target name="validator-bis-test" depends="retrieve-validator-bis-configuration, provide-validator-bis-tests, provide-validator-configuration">
+    <echo>Creating validation reports for generated business cases ...</echo>
+    <java jar="${validator.dir}/${validator.jar}" failonerror="yes" fork="yes"
+      dir="${basedir}">
+      <arg value="-s" />
+      <arg value="${lib.dir}/peppol-bis/scenarios.xml" />
+      <arg value="-r" />
+      <arg value="${lib.dir}/peppol-bis" />
+      <arg value="-h" />
+      <arg value="-o" />
+      <arg value="${reports.dir}/bis" />
+      <arg value="${test.build.generated.dir}/bis-billing-cases/standard" />
+    </java>
+    
+    <echo>Creating validation reports for generated technical cases ...</echo>
+    <java jar="${validator.dir}/${validator.jar}" failonerror="yes" fork="yes"
+      dir="${basedir}">
+      <arg value="-s" />
+      <arg value="${lib.dir}/peppol-bis/scenarios.xml" />
+      <arg value="-r" />
+      <arg value="${lib.dir}/peppol-bis" />
+      <arg value="-h" />
+      <arg value="-o" />
+      <arg value="${reports.dir}/bis" />
+      <arg value="${test.build.generated.dir}/bis-billing-cases/technical-cases/cius" />
+    </java>
+  </target>
+
+  <target name="retrieve-cii2ubl-remote" depends="init" unless="${cii2ubl.local.enabled}">
+    <echo>Downloading remote CII2UBL</echo>
+    <get src="${cii2ubl.download.url}" 
+         dest="${lib.dir}/${cii2ubl.jar}" 
+         verbose="true"
+         skipexisting="${cii2ubl.download.skipexisting}"
+         usetimestamp="true" />
+  </target>
+
+  <target name="retrieve-cii2ubl-local" depends="init" if="${cii2ubl.local.enabled}">
+    <echo>Using local CII2UBL</echo>
+    <copy file="${cii2ubl.local.url}" tofile="${lib.dir}/${cii2ubl.jar}"/>
+  </target>
+
+  <macrodef name="execute-cii2ubl" description="Execute cii2ubl on the provided parameters">
+    <attribute name="srcdir" description="Directory with the CII files" />
+    <attribute name="dstdir" default="${test.build.generated.dir}" />
+    <attribute name="filemask" default="*_uncefact.xml" />
+
+    <sequential>
+      <echo>Running CII2UBL in @{srcdir}</echo>
+      <java jar="${lib.dir}/${cii2ubl.jar}" failonerror="true" fork="true" dir="${basedir}">
+        <arg value="--mode" />
+        <arg value="AUTOMATIC" />
+        <arg value="--ubl-customizationid" />
+        <arg value="${cii2ubl.customizationid}" />
+        <arg value="--ubl-profileid" />
+        <arg value="${cii2ubl.profileid}" />
+        <arg value="--ubl-defaultorderrefid" />
+        <arg value="'-'" />
+        <arg value="--target" />
+        <arg value="@{dstdir}" />
+        <arg value="--output-suffix" />
+        <arg value="_ubl_generated" />      
+        <arg value="@{srcdir}/@{filemask}" />
+      </java>
+    </sequential>  
+  </macrodef>
+
+  <target name="cii2ubl" depends="retrieve-cii2ubl-remote, retrieve-cii2ubl-local">
+    <execute-cii2ubl srcdir="${test.src.business.dir}/standard" dstdir="${test.build.generated.dir}/business-cases" />
+    <execute-cii2ubl srcdir="${test.src.technical.dir}/cius" dstdir="${test.build.generated.dir}/technical-cases" />
+  </target>
+
+  <target name="validator-generated-test"
+    depends="validator-generated-business-case-test, validator-generated-technical-case-test">
+  </target>
+
+  <target name="test" depends="compile-test,validator-test"
+    description="Perform all tests">
+    <echo message="Executing all tests" />
+  </target>
+
+
+  <target name="dist-only" description="Create distribution zip for release">
+    <zip destfile="${dist.dir}/${dist.name}.zip">
+      
+      <zipfileset dir="${test.build.dir}" includes="extension/**,standard/**,technical-cases/**" prefix="instances" />
+      <zipfileset dir="doc" prefix="doc"/>
+      <!-- Project documents-->
+      <fileset dir="${basedir}">
+        <include name="README.md" />
+        <include name="CHANGELOG.md" />
+        
+      </fileset>
+
+      <!-- Content documents-->
+      <fileset dir="${build.dir}">
+        <include name="test-overview.md" />
+      </fileset>
+      
+    </zip>
+  </target>
+
+
+  <target name="dist" depends="test, compile-doc, dist-only"
+    description="Create distribution zip for release">
+    <echo message="Created distribution" />
+
+  </target>
+
+  <target name="release-env-file" depends="dist-only"
+    description="Generate build.env file with Maven coordinates for CI/CD deployment">
+    <property name="build.env.file" value="${build.dir}/build.env" />
+    
+    <loadresource property="project.group.id.path">
+        <concat>${project.group.id}</concat>
+      <filterchain>
+        <replaceregex pattern="\." replace="/" />
+      </filterchain>
+    </loadresource>
+    
+    <echo file="${build.env.file}" append="false" encoding="UTF-8"
+        message="GROUP_ID=${project.group.id}${line.separator}" />
+    <echo file="${build.env.file}" append="true" encoding="UTF-8"
+        message="ARTIFACT_ID=${project.artifact.id}${line.separator}" />
+    <echo file="${build.env.file}" append="true" encoding="UTF-8"
+      message="PACKAGE_VERSION=${testsuite.version.date}${line.separator}" />
+    <echo file="${build.env.file}" append="true" encoding="UTF-8"
+      message="PACKAGE_BINARY=${project.artifact.zip.name}${line.separator}" />
+    <echo file="${build.env.file}" append="true" encoding="UTF-8"
+      message="MAVEN_PACKAGE_NAME=${project.group.id.path}/${project.artifact.id}${line.separator}" />
+    <echo file="${build.env.file}" append="true" encoding="UTF-8"
+      message="XRECHNUNG_VERSION=${xrechnung.version.full}${line.separator}" />
+    
+    <echo message="Created ${build.env.file} with deployment metadata" />
+    <echo message="GROUP_ID=de.kosit" />
+    <echo message="ARTIFACT_ID=xrechnung-testsuite" />
+    <echo message="PACKAGE_VERSION=${testsuite.version.date}" />
+    <echo message="PACKAGE_BINARY=${dist.name}.zip" />
+    <echo message="XRECHNUNG_VERSION=${xrechnung.version.full}" />
+  </target>
+
+  <target name="release" depends="compile-test, compile-doc, dist-only, release-env-file"
+    description="Build distribution and generate CI/CD metadata for release" />
+
+
+  <target name="clean" depends="abu-common.clean"/>
+
+</project>

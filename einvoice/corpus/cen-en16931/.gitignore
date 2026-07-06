@@ -1,0 +1,19 @@
+.DS_Store
+
+# IDE files
+.project
+.settings/
+
+*.iml
+target/
+
+# temp files
+zz*
+
+# vefa validator test folders
+target-cii/
+target-ubl/
+
+# releases
+en16931-cii-*.zip
+en16931-ubl-*.zip

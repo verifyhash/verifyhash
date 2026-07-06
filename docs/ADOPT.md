@@ -112,6 +112,18 @@ can only ever mean ACCEPT-and-pinned. The full exit-code contract they gate on: 
 **3** REJECT (tampered/forged/wrong-issuer) · **4** UNPINNED (the bytes verified but no trusted vendor pin
 backed the accept — `--strict` fail-closed) · **2** usage · **1** IO.
 
+> **Gating a whole build directory? Add `--exact-dir`.** A seal binds a **named file set, not a
+> directory boundary**: by default the verdict covers exactly the files the seal names, so a file
+> *injected* into the sealed directory that the seal never named (e.g. a dropped `EVIL-injected.sh`)
+> is **not covered** — the default output says so, and stays ACCEPT. When your gate's contract is
+> "everything in this directory is vouched for" (build gating), pass `--exact-dir`: it scans the
+> **whole** directory recursively and REJECTs (exit **3**, reason `UNEXPECTED`, naming each offending
+> path) any file on disk the seal does not name — only the artifact file itself is exempt. The
+> recommended build-gating form is therefore
+> `verify-vh <artifact> --vendor 0xADDR --strict --exact-dir`
+> (with the generic shell recipe: set `VH_EXACT_DIR=1`). The trust boundary is spelled out in
+> [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md).
+
 The `uses:` line is pre-pinned to this repository's real slug (`verifyhash/verifyhash`) and a full 40-hex
 commit SHA reachable from `main`, so it works exactly as pasted. Supply-chain hygiene: **re-pin `@<sha>` to
 a commit SHA you have audited and trust** — keep the full-SHA form (a mutable ref like `@main` can change

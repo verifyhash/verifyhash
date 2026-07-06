@@ -242,7 +242,7 @@ tells you in one line whether both match.
 ```bash
 cd verifier
 npm install            # pulls ONE runtime dependency: js-sha3 (keccak). Nothing else.
-node verify-vh.js <artifact> [--vendor 0xADDR] [--strict] [--dir <files-dir>] [--json]
+node verify-vh.js <artifact> [--vendor 0xADDR] [--strict] [--exact-dir] [--dir <files-dir>] [--json]
 # or, after `npm link` / global install:
 verify-vh <artifact> --vendor 0xADDR --strict
 ```
@@ -265,6 +265,15 @@ by 0x… — NOT pinned to a trusted vendor; anyone's key passes"): an attacker 
 release with *their own* key passes a vendor-less check. `--strict` fails closed on exactly that case —
 exit `4`, distinct from a REJECT — so a CI gate can never silently go green on an attacker-self-signed
 artifact. Obtain the vendor address **out-of-band**, never off the artifact.
+
+**A seal binds a NAMED FILE SET, not a directory — `--exact-dir` closes that boundary.** By default the
+verdict covers exactly the files the seal names (the output says so): a file *injected* into the sealed
+directory that the seal never named is **not covered** and does not reject. When the gate's contract is
+"everything in this directory is vouched for" (build gating), pass `--exact-dir`: the whole directory is
+scanned recursively and any file the seal does not name is REJECTED — exit `3`, reason `UNEXPECTED`,
+naming each offending path (only the artifact file itself is exempt). Recommended build-gating form:
+`verify-vh <artifact> --vendor 0xADDR --strict --exact-dir`. On a self-contained artifact (dataset
+attestation, proof bundle, agent packet) the flag is a named usage error — never silently ignored.
 
 ---
 

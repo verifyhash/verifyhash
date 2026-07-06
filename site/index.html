@@ -312,7 +312,7 @@
       <div class="props">
         <div class="prop"><div class="k">0</div><div class="t">Servers to trust</div><div class="d">Verification is a pure function of the bytes. Nothing is phoned home; there is no backend to compromise or subpoena.</div></div>
         <div class="prop"><div class="k">0</div><div class="t">Accounts, keys, tracking</div><div class="d">Download one file and run it. No signup, no telemetry, no API key to check a proof.</div></div>
-        <div class="prop"><div class="k">0<small>/3</small></div><div class="t">A plain exit code</div><div class="d">Exit <code>0</code> accepted, <code>3</code> rejected. Drop it into CI and gate a build on real provenance.</div></div>
+        <div class="prop"><div class="k">0<small>/3</small></div><div class="t">A plain exit code</div><div class="d">Exit <code>0</code> accepted, <code>3</code> rejected. Drop it into CI to gate on the sealed file set — add <code>--exact-dir</code> when gating a build directory, so a file the seal never named is rejected too.</div></div>
         <div class="prop"><div class="k">1:1</div><div class="t">Reproducible bundle</div><div class="d">Rebuild the verifier from source in memory and confirm it's byte-for-byte what we published.</div></div>
       </div>
     </div>
@@ -339,7 +339,7 @@
           <p>One file, zero dependencies, Node core only. Built for CI gating.</p>
           <pre><code>curl -O https://verifyhash.com/<span class="a">verify-vh-standalone.js</span>
 node verify-vh-standalone.js <span class="a">packet.json</span> --vendor 0x…</code></pre>
-          <p class="pubhash"><span>Published SHA-256:</span><code>2cfa3694bd680e3eff30dff4409ed28171897501619c68da1ccecd698f7e6a86</code></p>
+          <p class="pubhash"><span>Published SHA-256:</span><code>dbab00076499ba200d377770e216a82d8ccde77bda736a95d2896f60ad11f4f7</code></p>
         </div>
         <div class="card">
           <div class="top"><span class="num">03</span><h3>From npm</h3></div>

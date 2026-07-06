@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1107663,
+  "totalBytes": 1122458,
   "files": [
     {
       "path": "LICENSE",
@@ -20,13 +20,13 @@
       "path": "build-provenance.json",
       "source": "verifier/dist/BUILD-PROVENANCE.json",
       "bytes": 9676,
-      "sha256": "219e5316e98db7fd47e86934408697316f510d9c3b70d6c7abcf808cd056c90f"
+      "sha256": "660c7ab4a1182b02ce0017b65ca00a18365a87670c172222b975ba71ac9733af"
     },
     {
       "path": "docs/ADOPT.md",
       "source": "docs/ADOPT.md",
-      "bytes": 14402,
-      "sha256": "d812f33a526bac63dc844aacc5cfd677359d1f2f196fbb4955e52161337bdca2"
+      "bytes": 15348,
+      "sha256": "04626b22b5c2429e94ab767f2a3502e929c8a3b6ae53d0a72097aa2be1204337"
     },
     {
       "path": "docs/CONFORMANCE.md",
@@ -61,8 +61,8 @@
     {
       "path": "docs/INDEPENDENT-VERIFICATION.md",
       "source": "docs/INDEPENDENT-VERIFICATION.md",
-      "bytes": 22262,
-      "sha256": "e378b03622aa780185657f5ecf2fe205281cbde00f4ff8fdfad5d496b8981232"
+      "bytes": 23049,
+      "sha256": "3de8046c3ff495757c05f5d2831cb5e4d38ead3b89080dcce3a3fd3280108d94"
     },
     {
       "path": "docs/KEY-LIFECYCLE.md",
@@ -121,8 +121,8 @@
     {
       "path": "docs/TRUST-BOUNDARIES.md",
       "source": "docs/TRUST-BOUNDARIES.md",
-      "bytes": 24082,
-      "sha256": "8464de8199ce224267ab89089d95fdc5e7a7e833093ce0ee5cfed3e834c68dde"
+      "bytes": 26327,
+      "sha256": "0e0e80d1a7ebf2396b68580b968237c52ce13c95f257d15ab80b44014e6a6a1f"
     },
     {
       "path": "docs/TRUSTLEDGER.md",
@@ -157,20 +157,20 @@
     {
       "path": "docs/verifier-README.md",
       "source": "verifier/README.md",
-      "bytes": 35628,
-      "sha256": "f1fcc06927e3c317c71024c6ed53c216923449f7205ef52600aa10cfd4322406"
+      "bytes": 36466,
+      "sha256": "e91e88d9ab34bac5a78f7282140f7f5af31d54daa99948c26553c1e94220573c"
     },
     {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 36189,
-      "sha256": "94724b2c15aa5ef2a3bd852414b836fbe4b77048b5000bc2a2c05332f348d067"
+      "bytes": 36295,
+      "sha256": "e17fcfb4da9a1395f918ffc8b48815377eb97a2dd1e09f76b2ad61a432ee9eea"
     },
     {
       "path": "llms.txt",
       "source": "site/llms.txt",
       "bytes": 3081,
-      "sha256": "810b217ff55d704095c1d78b13566c1431afa7e29f9199ede4a77ee71fc1c57e"
+      "sha256": "2f1398a58f3dc21f95257e83abbd45221fc1109a2b65dbfd1359d73fc3cbb4d3"
     },
     {
       "path": "seal-vh-standalone.js",
@@ -199,14 +199,14 @@
     {
       "path": "verify-vh-standalone.js",
       "source": "verifier/dist/verify-vh-standalone.js",
-      "bytes": 259201,
-      "sha256": "2cfa3694bd680e3eff30dff4409ed28171897501619c68da1ccecd698f7e6a86"
+      "bytes": 269074,
+      "sha256": "dbab00076499ba200d377770e216a82d8ccde77bda736a95d2896f60ad11f4f7"
     },
     {
       "path": "verify-vh-standalone.js.sha256",
       "source": "verifier/dist/verify-vh-standalone.js.sha256",
       "bytes": 90,
-      "sha256": "4b5453ef93c7e37adfee906e6378997fffd594519d2716120fa5efedc498d215"
+      "sha256": "3b627ca5097745c9175d56db40aed1ec52a22344105570e093fcb0d3a8e5176b"
     }
   ]
 }

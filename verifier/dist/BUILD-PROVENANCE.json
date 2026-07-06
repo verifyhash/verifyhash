@@ -5,9 +5,9 @@
     "verify": {
       "bundle": "verify-vh-standalone.js",
       "sidecar": "verify-vh-standalone.js.sha256",
-      "bundleBytes": 259201,
-      "bundleSha256": "2cfa3694bd680e3eff30dff4409ed28171897501619c68da1ccecd698f7e6a86",
-      "sidecarLine": "2cfa3694bd680e3eff30dff4409ed28171897501619c68da1ccecd698f7e6a86  verify-vh-standalone.js",
+      "bundleBytes": 269074,
+      "bundleSha256": "dbab00076499ba200d377770e216a82d8ccde77bda736a95d2896f60ad11f4f7",
+      "sidecarLine": "dbab00076499ba200d377770e216a82d8ccde77bda736a95d2896f60ad11f4f7  verify-vh-standalone.js",
       "modules": [
         {
           "id": "keccak256-vendored",
@@ -69,8 +69,8 @@
           "id": "verify-vh",
           "synthetic": false,
           "sourceFile": "verifier/verify-vh.js",
-          "sourceSha256": "0e3e8114fbfcfbe95fbe58fc58f36d27034b481c21f3df02a98d32ade4164103",
-          "inlinedSha256": "dcf2d5182a19f0d4ad2a784ccb4d5482f375bb01fe86e029b49a10c3c127adb6",
+          "sourceSha256": "d974a94f2c72f3bd44401da15fa1b9d2ae9cea50968c08454023f8d0277f9c47",
+          "inlinedSha256": "9b6bbcc78195934357fb3580edf646df02a26a3801511cc3f191f66f005f2793",
           "entry": true
         }
       ]
@@ -183,7 +183,7 @@
           "id": "verify-vh-engine",
           "synthetic": false,
           "sourceFile": "verifier/verify-vh.js",
-          "sourceSha256": "0e3e8114fbfcfbe95fbe58fc58f36d27034b481c21f3df02a98d32ade4164103",
+          "sourceSha256": "d974a94f2c72f3bd44401da15fa1b9d2ae9cea50968c08454023f8d0277f9c47",
           "inlinedSha256": "43dfa125050638f90460b296cde0d28d461d414d7589b657133fd6fd916c1f04",
           "entry": true,
           "note": "the marked T-66.1 pure-engine slice of verifier/verify-vh.js (the bytes between its BEGIN/END engine markers), wrapped in a build-generated __require preamble + exports postamble; sourceSha256 pins the WHOLE verify-vh.js source file"

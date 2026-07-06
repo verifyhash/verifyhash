@@ -24,6 +24,10 @@
 #   VH_MANIFEST     a release manifest file            (gate EVERY artifact in one shot; optional)
 #   VH_ARTIFACTS    space-separated artifact paths     (used when VH_MANIFEST is unset)
 #   VH_DIR          dir holding the referenced files   (optional; defaults to each artifact's own dir)
+#   VH_EXACT_DIR    set to 1 to pass --exact-dir       (RECOMMENDED for BUILD gating: a seal binds a
+#                   NAMED FILE SET, not a directory — by default a file injected into the sealed dir
+#                   that the seal never named is NOT covered by the verdict. --exact-dir scans the
+#                   WHOLE directory and REJECTs (exit 3, reason UNEXPECTED) any such extra, naming it.)
 #
 # PINNED + STRICT BY DEFAULT (T-75.2). This gate REQUIRES VH_VENDOR and passes `--strict`, so a green
 #   job means ACCEPT-AND-PINNED: every artifact's bytes re-derive AND its signature recovers to the
@@ -71,6 +75,11 @@ fi
 set -- "$@" --vendor "$VH_VENDOR" --strict
 if [ -n "${VH_DIR:-}" ]; then
   set -- "$@" --dir "$VH_DIR"
+fi
+# EXACT-DIR (T-75.5, opt-in — RECOMMENDED when gating a whole build directory): reject any file present
+# on disk that the seal does not name, instead of only verifying the seal's named set.
+if [ "${VH_EXACT_DIR:-}" = "1" ]; then
+  set -- "$@" --exact-dir
 fi
 
 # Run the gate. `set -e` would abort on the non-zero exit before we could echo a clear message, so we

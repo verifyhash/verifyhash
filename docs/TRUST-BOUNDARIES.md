@@ -296,6 +296,42 @@ reconstructs the graph from the `Linked(child, parent)` event. Full detail and a
 
 ---
 
+## An evidence seal binds a NAMED FILE SET — not a directory (`--exact-dir` closes the boundary)
+
+Every seal in the family (`vh evidence seal`, a TrustLedger reconciliation seal) commits to an explicit
+**named `(relPath, content)` set**: the Merkle root binds exactly the files the seal lists, byte for
+byte, and nothing else. That is the seal's honest, by-design semantics — and it has a consequence a CI
+gate must not gloss over:
+
+* **What the default verdict proves:** every file the seal *names* re-derives byte-for-byte (CHANGED /
+  MISSING / path-escape are each localized and rejected), and — for a signed seal — *who* vouched for
+  that named set.
+* **What it does NOT prove:** that the directory holds *nothing else*. A file **injected** into the
+  sealed directory that the seal never named (think a dropped `EVIL-injected.sh` beside a sealed
+  release) is simply **not covered** by the verdict — the default `verify-vh` run still ACCEPTs
+  (exit 0), and its output now says so in plain words: the verdict covers *"the N files the seal
+  NAMES"*; other files *"are NOT covered"*.
+
+**Closing the boundary — `verify-vh --exact-dir` (opt-in, fail-closed).** When the gate's contract is
+*"everything in this directory is vouched for"* — the build-gating case — pass `--exact-dir`:
+`verify-vh` then scans the **whole** directory (recursively) and **REJECTs** (exit `3`, reason
+`UNEXPECTED`) any file present on disk that the seal does not name, populating the `unexpected`
+list/counter with each offending path. Only the artifact file itself is exempt (a seal never names its
+own container). The recommended CI build-gating form is:
+
+```bash
+node verifier/verify-vh.js <artifact> --vendor 0xPRODUCER --strict --exact-dir
+# 0 ACCEPT-and-pinned-and-exact · 3 REJECT (incl. UNEXPECTED extras) · 4 UNPINNED · 2 usage · 1 IO
+```
+
+`--exact-dir` applies to the artifact kinds that read a sibling file set (evidence and reconciliation
+seals, bare or signed); on a self-contained artifact (dataset attestation, proof bundle, agent-session
+packet) it is a **named usage error** (exit 2), never a silently-ignored flag.
+
+> Rule of thumb: **a seal vouches for its named file set; only `--exact-dir` vouches for a directory.**
+
+---
+
 ## One-line summary
 
 | Field | Trust it for | Do NOT trust it for |

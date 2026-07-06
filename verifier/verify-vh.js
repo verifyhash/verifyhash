@@ -2331,6 +2331,7 @@ function parseArgs(argv) {
     asOf: undefined,
     anchoredArtifact: undefined,
     strict: false,
+    exactDir: false,
     _pos: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -2367,6 +2368,14 @@ function parseArgs(argv) {
         // verdict whose signer was NOT pinned to a --vendor becomes the distinct UNPINNED verdict
         // (exit 4), so a CI gate cannot silently accept an attacker-self-signed artifact.
         opts.strict = true;
+        break;
+      case "--exact-dir":
+        // FAIL-CLOSED directory boundary (T-75.5): a seal binds a NAMED FILE SET, not a directory —
+        // by default a file present on disk but never named by the seal is simply NOT COVERED by the
+        // verdict. --exact-dir scans the WHOLE base directory (recursively) and REJECTS (exit 3,
+        // reason UNEXPECTED) any file the seal does not name, so "exit 0" can be used as "everything
+        // in this directory is vouched for" — the CI build-gating contract.
+        opts.exactDir = true;
         break;
       case "-h":
       case "--help":
@@ -2431,6 +2440,11 @@ function parseArgs(argv) {
     if (opts.strict) {
       throw new UsageError(
         "--strict does not apply to the anchored-receipt binding check (it verifies a digest binding, not a signer pin)"
+      );
+    }
+    if (opts.exactDir) {
+      throw new UsageError(
+        "--exact-dir does not apply to the anchored-receipt binding check (it reads exactly two files, never a sealed directory)"
       );
     }
     if (opts._pos.length !== 1) {
@@ -2640,6 +2654,97 @@ function applyStrict(result, code) {
 }
 
 // ---------------------------------------------------------------------------
+// FAIL-CLOSED --exact-dir (T-75.5). A seal binds a NAMED FILE SET, never a directory boundary: the
+// default verify checks EXACTLY the (relPath, content) set the seal names, so a file INJECTED into a
+// sealed directory that the seal never named is simply NOT COVERED — the default verdict says so, but
+// stays ACCEPT (that is the seal's honest, by-design semantics). When a CI gate's contract is instead
+// "EVERYTHING in this directory is vouched for" (build gating), --exact-dir closes the boundary: it
+// scans the WHOLE base directory (recursively) and REJECTS (exit 3, reason UNEXPECTED) any file that
+// is present on disk but not named by the seal, populating the `unexpected` list/counter with each
+// offending path. Applies to the artifact kinds that bind a sibling FILE SET (an evidence seal or a
+// reconciliation/trust seal, bare or signed) — the self-contained/identity-only kinds (dataset
+// attestation, proof bundle, agent-session packet) have no sealed directory to scan, so --exact-dir
+// on them is a NAMED usage error (exit 2), never a silently-ignored flag.
+//
+// Scan semantics (fail-closed by construction):
+//   * every non-directory entry counts (regular file, symlink — including a symlink to a directory,
+//     which is NOT followed: it can never be a sealed file, so it surfaces as UNEXPECTED);
+//   * the artifact file ITSELF is the one exemption when it lives inside the scanned directory
+//     (a seal never names its own container);
+//   * an unreadable (sub)directory is an IO error (exit 1) — a gate must never pass a directory it
+//     could not fully scan;
+//   * an already-REJECTED verdict keeps its dominant reason (CHANGED/MISSING/bad_signature/…) but the
+//     unexpected list still rides along as extra localization.
+// DISK-ONLY by design: this walk lives OUTSIDE the pure engine (the bytes entrypoint's `files` map IS
+// its exact directory, so the map path has no hidden extras to scan for).
+// ---------------------------------------------------------------------------
+
+// The payload kinds that read a sibling file set from the base directory (the only kinds --exact-dir
+// can meaningfully close).
+const EXACT_DIR_PAYLOAD_KINDS = Object.freeze([KINDS.EVIDENCE_SEAL, KINDS.TRUST_SEAL]);
+
+// Recursively list every non-directory entry under baseDir as a forward-slash relPath (sorted). A
+// symlink is listed as itself (never followed), so a symlinked directory cannot loop the walk or drag
+// out-of-tree content in. Throws IOError when any directory cannot be read — fail closed, never a
+// silently-partial scan.
+function listDirEntriesRecursive(baseDir) {
+  const out = [];
+  function walk(dirAbs, relPrefix) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dirAbs, { withFileTypes: true });
+    } catch (e) {
+      throw new IOError(`--exact-dir could not scan ${dirAbs}: ${e.message}`);
+    }
+    for (const ent of entries) {
+      const rel = relPrefix.length === 0 ? ent.name : `${relPrefix}/${ent.name}`;
+      if (ent.isDirectory()) walk(path.join(dirAbs, ent.name), rel);
+      else out.push(rel);
+    }
+  }
+  walk(baseDir, "");
+  out.sort();
+  return out;
+}
+
+// Fold the whole-directory scan onto an already-computed verdict. Mutates `result` (attaches
+// `exactDir: true`, the populated `unexpected` list + counter) and returns the possibly-downgraded
+// exit code. Throws UsageError for a kind with no sealed directory, IOError for an unscannable one.
+function applyExactDir(result, code, { baseDir, artifactPath }) {
+  if (!EXACT_DIR_PAYLOAD_KINDS.includes(result.payloadKind)) {
+    throw new UsageError(
+      `--exact-dir applies to artifacts that bind a NAMED FILE SET read from a directory (an evidence ` +
+        `seal or a reconciliation seal, bare or signed); ${JSON.stringify(result.payloadKind)} is ` +
+        "self-contained/identity-only — it has no sealed directory to scan"
+    );
+  }
+  // The seal's NAMED set is exactly what classification bucketed: every sealed relPath landed in
+  // matched, changed, missing, or escaped (each entry in exactly one bucket).
+  const named = new Set();
+  for (const list of [result.matched, result.changed, result.missing, result.escaped]) {
+    for (const e of list || []) named.add(e.relPath);
+  }
+  const unexpected = [];
+  for (const rel of listDirEntriesRecursive(baseDir)) {
+    if (named.has(rel)) continue;
+    // The artifact's own container file is exempt (a seal never names itself); everything else that
+    // the seal does not name is an UNEXPECTED extra.
+    if (artifactPath != null && path.resolve(baseDir, rel) === artifactPath) continue;
+    unexpected.push({ relPath: rel });
+  }
+  result.exactDir = true;
+  result.unexpected = unexpected;
+  result.counts.unexpected = unexpected.length;
+  if (unexpected.length > 0 && result.accepted) {
+    result.accepted = false;
+    result.verdict = "REJECTED";
+    result.reason = "UNEXPECTED";
+    return EXIT.REJECTED;
+  }
+  return code;
+}
+
+// ---------------------------------------------------------------------------
 // The DISK verify entrypoint — the original CLI contract, byte-identical: reads + JSON-parses the
 // artifact, then drives the SAME pure engine with the disk file source. Returns { result, code }.
 // ---------------------------------------------------------------------------
@@ -2676,12 +2781,22 @@ function verifyArtifact(opts) {
   // The base directory siblings resolve against: --dir override else the artifact's own directory.
   const baseDir = opts.dir != null ? path.resolve(opts.dir) : path.dirname(artifactPath);
 
-  const { result, code } = verifyParsedArtifact({
+  const parsed = verifyParsedArtifact({
     artifact: opts.artifact,
     obj,
     vendor: opts.vendor,
     readEntry: makeDiskReadEntry(baseDir),
   });
+  const result = parsed.result;
+  let code = parsed.code;
+
+  // FAIL-CLOSED --exact-dir (T-75.5): scan the WHOLE base directory and REJECT any file present on
+  // disk but not named by the seal. Runs BEFORE the revocations/strict folds, so a directory-boundary
+  // REJECT (exit 3) dominates a strict UNPINNED (exit 4) exactly as every other REJECT does. With no
+  // flag, result + code are byte-identical to the pre-T-75.5 baseline.
+  if (opts.exactDir) {
+    code = applyExactDir(result, code, { baseDir, artifactPath });
+  }
 
   // OPTIONAL recipient-side TRUST-DECISION-AS-OF (EPIC-51 / T-51.4). Runs ONLY under --revocations — with no
   // flag the result + code are byte-identical to the pre-T-51.4 baseline (regression-pinned). A signer
@@ -2777,6 +2892,10 @@ function verifyBatch(opts) {
       nowISO: opts.nowISO,
       // --strict (T-75.2) applies to EVERY entry: one unpinned accept fails the whole gate closed.
       strict: opts.strict,
+      // --exact-dir (T-75.5) applies to EVERY entry too: one injected extra fails the whole gate.
+      // NOTE each entry's scan exempts only its OWN artifact file — co-located artifacts gated in one
+      // batch must live outside each other's sealed directories (or be sealed themselves).
+      exactDir: opts.exactDir,
     });
     results.push(result);
   }
@@ -2832,10 +2951,37 @@ function renderHuman(r) {
   if (r.identityOnly) {
     L.push("(identity-only artifact: it commits to a dataset root/digest, not a re-walkable file set)");
   }
-  L.push(
-    `files: ${r.counts.matched} matched, ${r.counts.changed} changed, ` +
-      `${r.counts.missing} missing, ${r.counts.escaped || 0} rejected, ${r.counts.unexpected} unexpected`
-  );
+  // The files tally. T-75.5: the DEFAULT tally must never read as "the whole directory is vouched
+  // for" — a seal binds a NAMED FILE SET, not a directory boundary. So for the kinds that read a
+  // sibling file set, the default line counts ONLY the seal's named files and says the boundary out
+  // loud; under --exact-dir (which really did scan the whole directory) the `unexpected` counter is
+  // the genuine whole-directory tally. Self-contained kinds (agent packet, proof, attestation) keep
+  // the original line — there is no directory for them to overclaim.
+  const readsFileSet = r.payloadKind === KINDS.EVIDENCE_SEAL || r.payloadKind === KINDS.TRUST_SEAL;
+  if (r.exactDir) {
+    L.push(
+      `files: ${r.counts.matched} matched, ${r.counts.changed} changed, ` +
+        `${r.counts.missing} missing, ${r.counts.escaped || 0} rejected, ${r.counts.unexpected} unexpected ` +
+        "(--exact-dir: the WHOLE directory was scanned; a file the seal does not name REJECTS)"
+    );
+  } else if (readsFileSet) {
+    const namedCount =
+      r.counts.matched + r.counts.changed + r.counts.missing + (r.counts.escaped || 0);
+    L.push(
+      `files: ${r.counts.matched} matched, ${r.counts.changed} changed, ` +
+        `${r.counts.missing} missing, ${r.counts.escaped || 0} rejected — of the ${namedCount} ` +
+        `file${namedCount === 1 ? "" : "s"} the seal NAMES`
+    );
+    L.push(
+      "NOTE: this verdict covers the seal's NAMED file set only — other files in this directory are"
+    );
+    L.push("NOT covered. Use --exact-dir to REJECT extras (recommended when gating a build directory).");
+  } else {
+    L.push(
+      `files: ${r.counts.matched} matched, ${r.counts.changed} changed, ` +
+        `${r.counts.missing} missing, ${r.counts.escaped || 0} rejected, ${r.counts.unexpected} unexpected`
+    );
+  }
   // AGENT-SESSION packet block (T-68.3) — present ONLY for r.agent results, so every other kind's
   // output stays byte-identical.
   if (r.agent) {
@@ -2899,7 +3045,13 @@ function renderHuman(r) {
       L.push(`  REJECTED   ${x.relPath}: path escapes the artifact directory (refused to read; no hash computed)`);
     }
     for (const u of r.unexpected) {
-      L.push(`  UNEXPECTED ${u.relPath}: on disk but not referenced`);
+      L.push(`  UNEXPECTED ${u.relPath}: present in the directory but NOT named by the seal`);
+    }
+    if (r.reason === "UNEXPECTED") {
+      L.push(
+        "  UNEXPECTED: --exact-dir scanned the WHOLE directory and found file(s) the seal never named." +
+          " A seal binds a NAMED FILE SET; exact-dir mode refuses to vouch for a directory holding extras."
+      );
     }
     if (r.reason === "bad_signature") {
       L.push("  bad_signature: the signature does not recover to the claimed signer (tampered or forged).");
@@ -2976,6 +3128,9 @@ function renderBatchHuman(agg) {
       }
       for (const x of r.escaped || []) {
         L.push(`          REJECTED  ${x.relPath}: path escapes the artifact directory (no hash computed)`);
+      }
+      for (const u of r.unexpected || []) {
+        L.push(`          UNEXPECTED ${u.relPath}: in the directory but NOT named by the seal (--exact-dir)`);
       }
     }
   }
@@ -3323,9 +3478,9 @@ function usage() {
     "Usage:",
     "  verify-vh demo                                                                                   (zero-config quickstart)",
     "  verify-vh demo <dir>                                                                              (write a keepable signed packet you can verify yourself)",
-    "  verify-vh <artifact> [--vendor <0xaddr>] [--strict] [--dir <d>] [--revocations <file-or-dir> [--as-of <ISO>]] [--json]",
-    "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--strict] [--dir <d>] [--revocations <file-or-dir>] [--json]   (batch)",
-    "  verify-vh --manifest <file> [--vendor <0xaddr>] [--strict] [--dir <d>] [--revocations <file-or-dir>] [--json]           (batch)",
+    "  verify-vh <artifact> [--vendor <0xaddr>] [--strict] [--exact-dir] [--dir <d>] [--revocations <file-or-dir> [--as-of <ISO>]] [--json]",
+    "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--strict] [--exact-dir] [--dir <d>] [--revocations <file-or-dir>] [--json]   (batch)",
+    "  verify-vh --manifest <file> [--vendor <0xaddr>] [--strict] [--exact-dir] [--dir <d>] [--revocations <file-or-dir>] [--json]           (batch)",
     "  verify-vh <receipt> --anchored-artifact <sealed-file> [--json]                    (anchored-receipt binding check)",
     "",
     "DEMO: `verify-vh demo` runs a self-contained, genuinely-signed packet through the real verify path —",
@@ -3350,6 +3505,16 @@ function usage() {
     "distinct from 3 (REJECTED: tampered/forged/wrong-issuer). CI gates should pin AND pass --strict",
     "(the shipped verifier/ci/ recipes do).",
     "",
+    "NAMED SET vs DIRECTORY / --exact-dir (fail-closed): a seal binds a NAMED FILE SET, not a directory",
+    "boundary — by DEFAULT the verdict covers exactly the files the seal names, and a file present in",
+    "the directory but never named (an injected extra) is NOT covered (the default output says so).",
+    "--exact-dir scans the WHOLE directory (recursively) and REJECTS (exit 3, reason UNEXPECTED, naming",
+    "each offending path) any file on disk the seal does not name; only the artifact file itself is",
+    "exempt. Use it whenever the gate's contract is \"everything in this directory is vouched for\" —",
+    "the recommended form for CI BUILD gating is --vendor <0xaddr> --strict --exact-dir. It applies to",
+    "evidence/reconciliation seals (the kinds that read sibling files); on a self-contained artifact",
+    "(dataset attestation, proof bundle, agent packet) it is a named usage error.",
+    "",
     "REVOCATIONS: --revocations <file-or-dir> [--as-of <ISO>] downgrades an otherwise-ACCEPTED signed",
     "artifact to REVOKED (exit 3) when its signing key was REVOKED at or before --as-of (default now). The",
     "file may be one signed revocation or a JSON array; a directory is read as a flat pool of revocation",
@@ -3371,7 +3536,8 @@ function usage() {
     "is rejected, exit is 3 and the report names which artifact failed and why. --json emits a stable",
     "aggregate { ok, total, passed, failed, results:[...] } whose entries are the single-artifact shape.",
     "Top-level --vendor/--dir are inherited as defaults a manifest entry may override; --revocations/--as-of",
-    "apply to every entry.",
+    "and --strict/--exact-dir apply to every entry (each entry's --exact-dir scan exempts only its OWN",
+    "artifact file).",
     "",
     "READ-ONLY: holds no key, writes nothing.",
     "Exit: 0 ok (ACCEPT — and pinned, under --strict) / 3 rejected|revoked / 4 UNPINNED (--strict only:",
@@ -3511,6 +3677,8 @@ module.exports = {
   parseManifest,
   verifyArtifact,
   applyStrict,
+  applyExactDir,
+  EXACT_DIR_PAYLOAD_KINDS,
   verifyArtifactFromBytes,
   verifyBatch,
   buildBatchEntries,

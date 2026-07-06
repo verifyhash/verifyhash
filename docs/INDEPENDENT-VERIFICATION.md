@@ -249,10 +249,19 @@ signer matches vendor: yes
 sealed root:     0x51004f29ea5b0081be2943d377b2c1572b0543af4bfea724642fa73db3589dd5
 recomputed root: 0x51004f29ea5b0081be2943d377b2c1572b0543af4bfea724642fa73db3589dd5
 root matches:    yes
-files: 2 matched, 0 changed, 0 missing, 0 rejected, 0 unexpected
+files: 2 matched, 0 changed, 0 missing, 0 rejected — of the 2 files the seal NAMES
+NOTE: this verdict covers the seal's NAMED file set only — other files in this directory are
+NOT covered. Use --exact-dir to REJECT extras (recommended when gating a build directory).
 
 OK — the artifact verifies.
 ```
+
+> **Named set vs. directory (T-75.5).** A seal binds a **named file set**, not a directory boundary —
+> an extra file injected into the sealed directory that the seal never named is NOT covered by the
+> default verdict (the output above says so). To gate a whole build directory, add `--exact-dir`:
+> the whole directory is scanned and any file the seal does not name is REJECTED (exit `3`, reason
+> `UNEXPECTED`, naming the path). See
+> [`docs/TRUST-BOUNDARIES.md`](TRUST-BOUNDARIES.md#an-evidence-seal-binds-a-named-file-set--not-a-directory---exact-dir-closes-the-boundary).
 
 `--json` returns a stable verdict object — e.g.
 `{"verdict":"OK","reason":"OK","accepted":true,"rootMatches":true,"signerMatchesVendor":true,"counts":{"matched":2,"changed":0,"missing":0,"escaped":0,"unexpected":0}}`

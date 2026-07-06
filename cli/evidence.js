@@ -42,8 +42,11 @@ const { listFiles, hashBytes } = require("./hash");
 const { diffManifest } = require("./receipt");
 
 // Exit contract (shared with the rest of the family): 0 ok / 1 IO / 2 usage / 3 gate-fail (seal-build /
-// verify REJECTED). Mirrors trustledger/cli.js's EXIT so every gate reads the same.
-const EXIT = Object.freeze({ OK: 0, IO: 1, USAGE: 2, FAIL: 3 });
+// verify REJECTED). Mirrors trustledger/cli.js's EXIT so every gate reads the same. UNPINNED (4) is the
+// T-75.2 fail-closed code: `verify-signed --strict` exits 4 when every requested check passed but NO
+// `--signer` pin was requested — the bytes verify, but an unpinned signer is not provenance (anyone's
+// key passes an unpinned check), and a strict CI gate must not go green on it.
+const EXIT = Object.freeze({ OK: 0, IO: 1, USAGE: 2, FAIL: 3, UNPINNED: 4 });
 
 // ---------------------------------------------------------------------------
 // THE EVIDENCE SEAL product framing — handed to cli/core/packetseal.js. A GENERIC product `kind`
@@ -1306,6 +1309,7 @@ function parseVerifySignedArgs(argv) {
     signer: undefined,
     revocations: undefined,
     asOf: undefined,
+    strict: false,
     json: false,
     _positionals: [],
   };
@@ -1332,6 +1336,12 @@ function parseVerifySignedArgs(argv) {
         break;
       case "--as-of":
         opts.asOf = need("--as-of");
+        break;
+      case "--strict":
+        // FAIL-CLOSED pinning (T-75.2): exit 0 then means ACCEPT-AND-PINNED — an otherwise-ACCEPTED
+        // packet with NO --signer pin becomes the distinct UNPINNED verdict (exit 4), so a CI gate
+        // cannot silently accept an attacker-self-signed packet.
+        opts.strict = true;
         break;
       case "--json":
         opts.json = true;
@@ -1377,6 +1387,13 @@ function renderVerifySigned(r, ctx) {
   // Check 2 (only under --signer): the recovered signer equals the expected signer.
   if (r.checks.signerMatchesExpected === null) {
     L.push("  [skip] expected-signer pin: not requested (pass --signer <0xaddr> to pin the signer)");
+    // T-75.2: an unpinned signer must never read as trusted provenance — say so IN the verdict body.
+    L.push(
+      `         UNPINNED: signed by ${r.recoveredSigner} — NOT pinned to a trusted vendor; anyone's key`
+    );
+    L.push(
+      "         passes. Pin the publisher you trust (--signer, obtained out-of-band); --strict fails closed."
+    );
   } else {
     L.push(
       `  [${r.checks.signerMatchesExpected ? "PASS" : "FAIL"}] recovered signer matches the expected ` +
@@ -1396,6 +1413,17 @@ function renderVerifySigned(r, ctx) {
   }
   if (r.accepted) {
     L.push("ACCEPTED: every requested check passed.");
+    if (r.pinning === "unpinned") {
+      L.push(
+        `  NOTE — UNPINNED: no --signer pin was requested, so this ACCEPT only proves ${r.recoveredSigner}`
+      );
+      L.push("  signed these bytes — NOT that a publisher you trust did (anyone's key passes unpinned).");
+    }
+  } else if (r.verdict === "UNPINNED") {
+    // --strict fail-closed (T-75.2): every requested check passed, but nobody pinned the signer.
+    L.push(`UNPINNED (--strict, exit ${EXIT.UNPINNED}): every requested check passed, but NO --signer pin was requested.`);
+    L.push(`  signed by ${r.recoveredSigner} — NOT pinned to a trusted vendor; anyone's key passes.`);
+    L.push("  Pin the publisher you trust: re-run with --signer <0xaddr> (obtained out-of-band).");
   } else {
     L.push(`REJECTED: failed check(s): ${r.failedChecks.join(", ")}.`);
     if (r.failedChecks.includes("signatureMatchesSigner")) {
@@ -1536,6 +1564,31 @@ function runEvidenceVerifySigned(opts, io = {}) {
     }
   }
 
+  // PINNING TRANSPARENCY + FAIL-CLOSED --strict (T-75.2). Every verdict states whether the recovered
+  // signer was actually PINNED to a caller-trusted key: without --signer, a genuine signature only
+  // proves SOME key signed (an attacker re-signing with their OWN key passes the identical check), so
+  // the human AND JSON verdicts say UNPINNED explicitly, and --strict turns an unpinned accept into
+  // the distinct non-zero EXIT.UNPINNED (4). A pinned accept stays exit 0; REJECTED/REVOKED stays 3.
+  const pinRequested = opts.signer !== undefined && opts.signer !== null;
+  if (pinRequested) {
+    result.pinning = result.checks.signerMatchesExpected === true ? "pinned" : "pin_failed";
+  } else {
+    result.pinning = "unpinned";
+    if (result.accepted) {
+      result.unpinnedNote =
+        `UNPINNED: signed by ${result.recoveredSigner} — NOT pinned to a trusted vendor; anyone's ` +
+        "key passes. Pin the publisher you trust with --signer <0xaddr> (obtained out-of-band); " +
+        "--strict makes an unpinned accept a distinct non-zero exit.";
+    }
+  }
+  if (opts.strict) {
+    result.strict = true;
+    if (result.accepted && result.pinning !== "pinned") {
+      result.accepted = false;
+      result.verdict = "UNPINNED";
+    }
+  }
+
   if (opts.json) {
     write(
       JSON.stringify(
@@ -1557,7 +1610,9 @@ function runEvidenceVerifySigned(opts, io = {}) {
     write(out);
   }
 
-  // Exit non-zero on REJECTED/REVOKED so a buyer's CI can gate (mirrors the family's 0 ACCEPTED / 3 not-OK).
+  // Exit non-zero on REJECTED/REVOKED so a buyer's CI can gate (mirrors the family's 0 ACCEPTED / 3
+  // not-OK); UNPINNED under --strict is its own fail-closed code (4), distinct from a REJECT.
+  if (result.verdict === "UNPINNED") return EXIT.UNPINNED;
   return result.accepted ? EXIT.OK : EXIT.FAIL;
 }
 
@@ -2130,7 +2185,7 @@ function evidenceUsage() {
     "Usage:",
     "  vh evidence seal <dir> [--out <p>] [--license <f> --vendor <0xaddr>] [--sign] [--json]",
     "  vh evidence verify <p> [--dir <d>] [--json]",
-    "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--revocations <f> --as-of <ISO>] [--json]",
+    "  vh evidence verify-signed <signed> [--dir <d>] [--signer <0xaddr>] [--strict] [--revocations <f> --as-of <ISO>] [--json]",
     "  vh evidence diff <packetA> <packetB> [--policy <f>] [--json]",
     "  vh evidence license fulfill --plan <id> --customer <name> [--paid-through <ISO>] [--catalog <f>] (--key-env <VAR>|--key-file <p>) [--issued <ISO>] [--license-id <id>] [--out <f>] [--json]",
     "  vh evidence go-live-preflight --binding <f> [--catalog <f>] [--secret-env <VAR>] (--key-env <VAR>|--key-file <p>) [--json]",
@@ -2141,7 +2196,10 @@ function evidenceUsage() {
     "verify-signed is OFFLINE/key-free/network-free: it RECOVERS the signer + (--signer) pins it + (--dir) binds the bytes",
     "  + (--revocations) checks the signer was not REVOKED as of --as-of (default now).",
     "  A forged/tampered/wrong-key signature, or a key revoked-before-as-of, is a clean REJECTED/REVOKED — never a silent pass.",
-    "  Exit 0 ACCEPTED / 3 REJECTED|REVOKED / 2 usage / 1 IO.",
+    "  WITHOUT --signer the verdict is labelled UNPINNED (a genuine signature only proves SOME key signed — anyone's key",
+    "  passes an unpinned check); --strict fails closed on that: exit 0 then means ACCEPTED-and-pinned, and an unpinned",
+    "  accept is the distinct exit 4 (UNPINNED).",
+    "  Exit 0 ACCEPTED (and pinned, under --strict) / 3 REJECTED|REVOKED / 4 UNPINNED (--strict only) / 2 usage / 1 IO.",
     "verify on a SIGNED packet no longer trusts the claimed signer: it REJECTS a forged signature OR labels a genuine one",
     "  UNVERIFIED-for-pinning and points at `verify-signed`.",
     "diff is read-only/FREE/key-free/OFFLINE: it compares what TWO packets CLAIM and writes nothing.",

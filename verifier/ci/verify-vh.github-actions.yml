@@ -44,13 +44,20 @@ jobs:
         working-directory: verifier
         run: npm ci --omit=dev || npm install --omit=dev
 
-      # 3. THE GATE. One invocation, one exit code. verify-vh exits 0 only if EVERY artifact verifies;
-      #    3 if any is tampered/forged/wrong-issuer; 2 on misconfig; 1 on IO. `node` propagates that
-      #    exit code, and GitHub Actions fails the job on any non-zero — blocking the merge.
-      - name: Verify sealed artifacts (fails the build on a bad seal)
+      # 3. THE GATE — PINNED + STRICT by default (T-75.2). One invocation, one exit code:
+      #      0  every artifact verifies AND is pinned to VH_VENDOR (ACCEPT-and-pinned);
+      #      3  REJECTED — tampered/forged/wrong-issuer;
+      #      4  UNPINNED — the bytes verified but no trusted vendor pin backed the accept
+      #         (--strict fail-closed: without a pin, an attacker who re-signs a tampered release
+      #         with their OWN key would pass — so the gate refuses to go green on it);
+      #      2  misconfig; 1 IO.
+      #    `node` propagates that exit code, and GitHub Actions fails the job on any non-zero —
+      #    blocking the merge. Keep BOTH `--vendor` and `--strict`: they are what make a green check
+      #    mean "signed by the key I trust", not "signed by whoever".
+      - name: Verify sealed artifacts (fails the build on a bad or unpinned seal)
         env:
           # EDIT THESE for your release:
           VH_VENDOR: "0x0000000000000000000000000000000000000000"   # producer signer address (out-of-band)
           VH_MANIFEST: "release.manifest"                            # or set VH_ARTIFACTS instead
         run: |
-          node verifier/verify-vh.js --manifest "$VH_MANIFEST" --vendor "$VH_VENDOR"
+          node verifier/verify-vh.js --manifest "$VH_MANIFEST" --vendor "$VH_VENDOR" --strict

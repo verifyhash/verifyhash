@@ -242,9 +242,9 @@ tells you in one line whether both match.
 ```bash
 cd verifier
 npm install            # pulls ONE runtime dependency: js-sha3 (keccak). Nothing else.
-node verify-vh.js <artifact> [--vendor 0xADDR] [--dir <files-dir>] [--json]
+node verify-vh.js <artifact> [--vendor 0xADDR] [--strict] [--dir <files-dir>] [--json]
 # or, after `npm link` / global install:
-verify-vh <artifact> --vendor 0xADDR
+verify-vh <artifact> --vendor 0xADDR --strict
 ```
 
 Requires Node ≥ 18. No build step, no native modules, no compiler.
@@ -253,10 +253,18 @@ Requires Node ≥ 18. No build step, no native modules, no compiler.
 
 | code | meaning |
 |------|---------|
-| `0`  | **OK** — every referenced byte matches the seal, signature valid, signer == `--vendor` |
+| `0`  | **OK** — every referenced byte matches the seal, signature valid, signer == `--vendor` (under `--strict`: ACCEPT **and** pinned) |
 | `3`  | **REJECTED** — a clean, expected NO verdict (file changed/missing, bad signature, wrong issuer) |
+| `4`  | **UNPINNED** — `--strict` only: the bytes verified but **no trusted `--vendor` pin** backed the accept (fail-closed) |
 | `2`  | usage error (bad flags) |
 | `1`  | I/O error (artifact unreadable) |
+
+**Pinning is what turns "signed by whoever" into provenance.** Without `--vendor`, a *signed* artifact
+is accepted on its **own self-asserted key** and the verdict says so explicitly (**UNPINNED** — "signed
+by 0x… — NOT pinned to a trusted vendor; anyone's key passes"): an attacker who re-signs a tampered
+release with *their own* key passes a vendor-less check. `--strict` fails closed on exactly that case —
+exit `4`, distinct from a REJECT — so a CI gate can never silently go green on an attacker-self-signed
+artifact. Obtain the vendor address **out-of-band**, never off the artifact.
 
 ---
 
@@ -281,6 +289,7 @@ verify-vh --manifest release.manifest --json
 |------|---------|
 | `0`  | **OK** — and only if — **every** artifact in the batch verifies |
 | `3`  | **REJECTED** — **any** artifact is rejected; the report names **which** artifact failed and why |
+| `4`  | **UNPINNED** — `--strict` only, and no artifact was outright rejected: **some** artifact verified without a satisfied `--vendor` pin (fail-closed; the report names which) |
 | `2`  | usage error (bad flag, malformed per-entry `--vendor`, empty manifest, `--manifest` + a positional) |
 | `1`  | I/O error (the manifest, or any listed artifact, is unreadable) — the batch never "passes" while an artifact could not be evaluated |
 
@@ -327,8 +336,9 @@ tampered, forged, or signed by the wrong key. Two shipped snippets make that one
 
 - **[`ci/verify-vh.generic.sh`](ci/verify-vh.generic.sh)** — a portable `set -e` shell gate for **GitLab
   CI, CircleCI, Jenkins, a Makefile recipe, or a git hook**. It is configured entirely by environment
-  variables (no in-file editing), runs the standalone verifier in single-artifact *or* manifest mode, and
-  passes the `0/3/2/1` exit code straight through so any non-zero verdict **fails the job**:
+  variables (no in-file editing), runs the standalone verifier in single-artifact *or* manifest mode
+  **pinned + `--strict` by default** (green can only mean ACCEPT-and-pinned), and passes the `0/3/4/2/1`
+  exit code straight through so any non-zero verdict **fails the job**:
 
   ```bash
   # gate one artifact:

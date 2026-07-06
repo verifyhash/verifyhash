@@ -58,11 +58,19 @@ then prints the exact verify / tamper / restore commands:
 npx --yes verify-vh demo ./vh-demo
 ```
 
-When it clicks, point the tool at a **real** packet you were handed:
+When it clicks, point the tool at a **real** packet you were handed — **pinned and strict**:
 
 ```bash
-npx --yes verify-vh <packet> --vendor 0xPRODUCER_ADDRESS   # exit 0 = ACCEPT; 3 = REJECT
+npx --yes verify-vh <packet> --vendor 0xPRODUCER_ADDRESS --strict   # exit 0 = ACCEPT-and-pinned; 3 = REJECT; 4 = UNPINNED
 ```
+
+> **Why `--vendor` + `--strict`.** Without a `--vendor` pin, a *signed* packet is accepted on its **own
+> self-asserted key** — the verdict then says so explicitly (**UNPINNED — "signed by 0x… — NOT pinned to
+> a trusted vendor; anyone's key passes"**), because an attacker who re-signs a tampered release with
+> *their own* key passes a vendor-less check. `--strict` makes that fail-closed: **exit 0 means
+> ACCEPT-and-pinned**, an otherwise-accepted artifact with no satisfied vendor pin exits **4 (UNPINNED)**
+> — distinct from **3 (REJECT: tampered/forged/wrong-issuer)** — so a CI gate can never silently go green
+> on an attacker-self-signed artifact. Obtain the vendor address **out-of-band**, never off the packet.
 
 Prefer no `npx`? The same verifier is a single self-contained file you can save and run with bare `node` —
 see [`verifier/README.md`](../verifier/README.md).
@@ -96,6 +104,13 @@ jobs:
 > with **their own key** passes that gate — so omitting `vendor:` is the
 > **WEAKER, tamper-only mode**: it still catches tampered bytes, and it is the right mode **only**
 > for genuinely unsigned evidence seals (where there is no signer to pin).
+
+The shipped shell/YAML recipes ([`verifier/ci/verify-vh.generic.sh`](../verifier/ci/verify-vh.generic.sh)
+and [`verifier/ci/verify-vh.github-actions.yml`](../verifier/ci/verify-vh.github-actions.yml)) default to
+the **pinned + `--strict`** form: they *require* the vendor pin and pass `--strict`, so their green exit
+can only ever mean ACCEPT-and-pinned. The full exit-code contract they gate on: **0** ACCEPT-and-pinned ·
+**3** REJECT (tampered/forged/wrong-issuer) · **4** UNPINNED (the bytes verified but no trusted vendor pin
+backed the accept — `--strict` fail-closed) · **2** usage · **1** IO.
 
 The `uses:` line is pre-pinned to this repository's real slug (`verifyhash/verifyhash`) and a full 40-hex
 commit SHA reachable from `main`, so it works exactly as pasted. Supply-chain hygiene: **re-pin `@<sha>` to

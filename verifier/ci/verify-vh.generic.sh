@@ -25,9 +25,18 @@
 #   VH_ARTIFACTS    space-separated artifact paths     (used when VH_MANIFEST is unset)
 #   VH_DIR          dir holding the referenced files   (optional; defaults to each artifact's own dir)
 #
+# PINNED + STRICT BY DEFAULT (T-75.2). This gate REQUIRES VH_VENDOR and passes `--strict`, so a green
+#   job means ACCEPT-AND-PINNED: every artifact's bytes re-derive AND its signature recovers to the
+#   vendor key YOU pinned (obtained out-of-band, never read off the artifact). Without a pin, a signed
+#   artifact is accepted on its OWN self-asserted key — an attacker who re-signs a tampered release
+#   with THEIR OWN key would pass — so `--strict` fails closed (exit 4, verdict UNPINNED) instead of
+#   ever letting an unpinned accept read as provenance. Do not remove the pin or the flag.
+#
 # EXIT CODES (passed straight through from verify-vh, so the job status is meaningful):
-#   0  OK        — every artifact verified; allow the merge.
+#   0  OK        — every artifact verified AND was pinned to VH_VENDOR (ACCEPT-and-pinned); allow the merge.
 #   3  REJECTED  — an artifact was tampered/forged/wrong-issuer; BLOCK the merge (report names which).
+#   4  UNPINNED  — an artifact's bytes verified but NO trusted vendor pin backed the accept (--strict
+#                  fail-closed); BLOCK the merge — anyone's key passes an unpinned check.
 #   2  USAGE     — misconfiguration (bad flag / bad address / empty manifest).
 #   1  IO        — an artifact or the manifest could not be read; never reported as "passed".
 #
@@ -57,13 +66,15 @@ else
   set -- $VH_ARTIFACTS
 fi
 
-set -- "$@" --vendor "$VH_VENDOR"
+# PINNED + STRICT: the pin says WHO must have signed; --strict guarantees a green exit can only ever
+# mean ACCEPT-AND-PINNED (an unpinned accept is the distinct exit 4, never a silent pass).
+set -- "$@" --vendor "$VH_VENDOR" --strict
 if [ -n "${VH_DIR:-}" ]; then
   set -- "$@" --dir "$VH_DIR"
 fi
 
 # Run the gate. `set -e` would abort on the non-zero exit before we could echo a clear message, so we
-# capture the code explicitly and pass it through verbatim — preserving the 0/3/2/1 contract for CI.
+# capture the code explicitly and pass it through verbatim — preserving the 0/3/4/2/1 contract for CI.
 set +e
 node "$VERIFY_VH" "$@"
 code=$?

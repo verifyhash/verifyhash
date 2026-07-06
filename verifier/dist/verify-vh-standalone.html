@@ -1675,8 +1675,11 @@ var revocation = __require("revocation-core");
 // mechanically extractable (vm / browser bundling, EPIC-66).
 
 // CI-gateable exit contract, mirroring the producer family (vh verify-seal / vh evidence verify):
-//   0 ok / 3 rejected / 2 usage / 1 IO. Stable; a future CI/indexer keys on these.
-const EXIT = Object.freeze({ OK: 0, IO: 1, USAGE: 2, REJECTED: 3 });
+//   0 ok / 3 rejected / 2 usage / 1 IO / 4 UNPINNED (T-75.2: --strict only — the bytes verified but
+//   NO trusted --vendor pin backed the accept, so a fail-closed gate refuses to call it provenance).
+// Stable; a future CI/indexer keys on these. 0 therefore means ACCEPT — and, under --strict,
+// ACCEPT-AND-PINNED; 3 stays REJECT; 4 is the distinct unpinned-under-strict code.
+const EXIT = Object.freeze({ OK: 0, IO: 1, USAGE: 2, REJECTED: 3, UNPINNED: 4 });
 
 // A usage error the CLI maps to exit 2 (vs an IO error -> 1, vs a clean REJECTED verdict -> 3).
 class UsageError extends Error {}
@@ -2618,6 +2621,39 @@ function verifyAgentPacketArtifact({ artifact, obj, pinned }) {
 }
 
 // ---------------------------------------------------------------------------
+// PINNING TRANSPARENCY (T-75.2). Every verdict carries an explicit `pinning` field so an UNPINNED
+// signer can never present as marketed "real provenance":
+//   * "pinned"     — a --vendor pin was supplied AND the recovered signer equals it (the strong accept);
+//   * "pin_failed" — a pin was supplied but could not be satisfied (wrong issuer, forged signature, or
+//                    an unsigned artifact under a pin) — always a REJECTED verdict already;
+//   * "unpinned"   — NO pin was supplied. For a SIGNED artifact the signature then only proves that
+//                    SOME key signed these bytes — an attacker who re-signs a tampered release with
+//                    their OWN key passes exactly the same check — and for an unsigned artifact nobody
+//                    vouched at all.
+// An ACCEPTED-but-unpinned verdict additionally carries `unpinnedNote` (the same statement the human
+// renderer prints), and the CLI's --strict mode (below, outside the pure engine) turns it into the
+// distinct fail-closed EXIT.UNPINNED. PURE: reads only fields already on the result.
+// ---------------------------------------------------------------------------
+
+function attachPinning(result) {
+  if (result.pinnedVendor != null) {
+    result.pinning = result.signerMatchesVendor === true ? "pinned" : "pin_failed";
+  } else {
+    result.pinning = "unpinned";
+    if (result.accepted) {
+      result.unpinnedNote = result.signed
+        ? `UNPINNED: signed by ${result.recoveredSigner} — NOT pinned to a trusted vendor; anyone's ` +
+          "key passes. Pin the producer you trust with --vendor <0xaddr> (obtained out-of-band); " +
+          "--strict makes an unpinned accept a distinct non-zero exit."
+        : "UNPINNED: this artifact is UNSIGNED and no vendor was pinned — the verdict proves " +
+          "tamper-evidence of the bytes only, never WHO vouched for them; --strict makes an " +
+          "unpinned accept a distinct non-zero exit.";
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // The core verify orchestration over an ALREADY-PARSED artifact object + an injected file source. This
 // is the ONE engine BOTH entrypoints drive — `verifyArtifact` (disk: the CLI contract, byte-identical to
 // before this seam existed) and `verifyArtifactFromBytes` (in-memory map). It auto-detects the artifact
@@ -2633,7 +2669,9 @@ function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
   // AGENT-SESSION packet (T-68.3): SELF-CONTAINED — no sibling bytes, its own leaf/root convention and
   // its own in-packet signed head. Routed to the dedicated orchestrator above (`readEntry` unused).
   if (kind === KINDS.AGENT_PACKET) {
-    return verifyAgentPacketArtifact({ artifact, obj, pinned });
+    const out = verifyAgentPacketArtifact({ artifact, obj, pinned });
+    attachPinning(out.result); // T-75.2 — pinning transparency rides on EVERY verdict
+    return out;
   }
 
   // Detect signed vs bare and the underlying payload kind. A signed container wraps the embedded payload.
@@ -2762,6 +2800,7 @@ function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
   };
   if (fileResult.identityOnly) result.identityOnly = true;
   if (fileResult.proof) result.proof = fileResult.proof;
+  attachPinning(result); // T-75.2 — pinning transparency rides on EVERY verdict
 
   return { result, code };
 }

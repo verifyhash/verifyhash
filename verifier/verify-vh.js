@@ -60,8 +60,11 @@ const revocation = require("./lib/revocation");
 // mechanically extractable (vm / browser bundling, EPIC-66).
 
 // CI-gateable exit contract, mirroring the producer family (vh verify-seal / vh evidence verify):
-//   0 ok / 3 rejected / 2 usage / 1 IO. Stable; a future CI/indexer keys on these.
-const EXIT = Object.freeze({ OK: 0, IO: 1, USAGE: 2, REJECTED: 3 });
+//   0 ok / 3 rejected / 2 usage / 1 IO / 4 UNPINNED (T-75.2: --strict only — the bytes verified but
+//   NO trusted --vendor pin backed the accept, so a fail-closed gate refuses to call it provenance).
+// Stable; a future CI/indexer keys on these. 0 therefore means ACCEPT — and, under --strict,
+// ACCEPT-AND-PINNED; 3 stays REJECT; 4 is the distinct unpinned-under-strict code.
+const EXIT = Object.freeze({ OK: 0, IO: 1, USAGE: 2, REJECTED: 3, UNPINNED: 4 });
 
 // A usage error the CLI maps to exit 2 (vs an IO error -> 1, vs a clean REJECTED verdict -> 3).
 class UsageError extends Error {}
@@ -1003,6 +1006,39 @@ function verifyAgentPacketArtifact({ artifact, obj, pinned }) {
 }
 
 // ---------------------------------------------------------------------------
+// PINNING TRANSPARENCY (T-75.2). Every verdict carries an explicit `pinning` field so an UNPINNED
+// signer can never present as marketed "real provenance":
+//   * "pinned"     — a --vendor pin was supplied AND the recovered signer equals it (the strong accept);
+//   * "pin_failed" — a pin was supplied but could not be satisfied (wrong issuer, forged signature, or
+//                    an unsigned artifact under a pin) — always a REJECTED verdict already;
+//   * "unpinned"   — NO pin was supplied. For a SIGNED artifact the signature then only proves that
+//                    SOME key signed these bytes — an attacker who re-signs a tampered release with
+//                    their OWN key passes exactly the same check — and for an unsigned artifact nobody
+//                    vouched at all.
+// An ACCEPTED-but-unpinned verdict additionally carries `unpinnedNote` (the same statement the human
+// renderer prints), and the CLI's --strict mode (below, outside the pure engine) turns it into the
+// distinct fail-closed EXIT.UNPINNED. PURE: reads only fields already on the result.
+// ---------------------------------------------------------------------------
+
+function attachPinning(result) {
+  if (result.pinnedVendor != null) {
+    result.pinning = result.signerMatchesVendor === true ? "pinned" : "pin_failed";
+  } else {
+    result.pinning = "unpinned";
+    if (result.accepted) {
+      result.unpinnedNote = result.signed
+        ? `UNPINNED: signed by ${result.recoveredSigner} — NOT pinned to a trusted vendor; anyone's ` +
+          "key passes. Pin the producer you trust with --vendor <0xaddr> (obtained out-of-band); " +
+          "--strict makes an unpinned accept a distinct non-zero exit."
+        : "UNPINNED: this artifact is UNSIGNED and no vendor was pinned — the verdict proves " +
+          "tamper-evidence of the bytes only, never WHO vouched for them; --strict makes an " +
+          "unpinned accept a distinct non-zero exit.";
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // The core verify orchestration over an ALREADY-PARSED artifact object + an injected file source. This
 // is the ONE engine BOTH entrypoints drive — `verifyArtifact` (disk: the CLI contract, byte-identical to
 // before this seam existed) and `verifyArtifactFromBytes` (in-memory map). It auto-detects the artifact
@@ -1018,7 +1054,9 @@ function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
   // AGENT-SESSION packet (T-68.3): SELF-CONTAINED — no sibling bytes, its own leaf/root convention and
   // its own in-packet signed head. Routed to the dedicated orchestrator above (`readEntry` unused).
   if (kind === KINDS.AGENT_PACKET) {
-    return verifyAgentPacketArtifact({ artifact, obj, pinned });
+    const out = verifyAgentPacketArtifact({ artifact, obj, pinned });
+    attachPinning(out.result); // T-75.2 — pinning transparency rides on EVERY verdict
+    return out;
   }
 
   // Detect signed vs bare and the underlying payload kind. A signed container wraps the embedded payload.
@@ -1147,6 +1185,7 @@ function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
   };
   if (fileResult.identityOnly) result.identityOnly = true;
   if (fileResult.proof) result.proof = fileResult.proof;
+  attachPinning(result); // T-75.2 — pinning transparency rides on EVERY verdict
 
   return { result, code };
 }
@@ -2291,6 +2330,7 @@ function parseArgs(argv) {
     revocations: undefined,
     asOf: undefined,
     anchoredArtifact: undefined,
+    strict: false,
     _pos: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -2321,6 +2361,12 @@ function parseArgs(argv) {
         break;
       case "--json":
         opts.json = true;
+        break;
+      case "--strict":
+        // FAIL-CLOSED pinning (T-75.2): exit 0 must mean ACCEPT-AND-PINNED. An otherwise-ACCEPTED
+        // verdict whose signer was NOT pinned to a --vendor becomes the distinct UNPINNED verdict
+        // (exit 4), so a CI gate cannot silently accept an attacker-self-signed artifact.
+        opts.strict = true;
         break;
       case "-h":
       case "--help":
@@ -2381,6 +2427,11 @@ function parseArgs(argv) {
           `${flag} does not apply to the anchored-receipt binding check (--anchored-artifact reads exactly two files: the receipt and the sealed artifact)`
         );
       }
+    }
+    if (opts.strict) {
+      throw new UsageError(
+        "--strict does not apply to the anchored-receipt binding check (it verifies a digest binding, not a signer pin)"
+      );
     }
     if (opts._pos.length !== 1) {
       throw new UsageError(
@@ -2567,6 +2618,28 @@ function verifyTrustSeal(seal, baseDir) {
 }
 
 // ---------------------------------------------------------------------------
+// FAIL-CLOSED --strict (T-75.2). Under --strict, exit 0 means ACCEPT-AND-PINNED: an otherwise-
+// ACCEPTED verdict whose `pinning` is not "pinned" (a signed artifact verified WITHOUT a --vendor
+// pin — anyone's key passes — or an unsigned artifact with nobody vouching) becomes the DISTINCT
+// verdict UNPINNED with its own exit code (EXIT.UNPINNED = 4). A REJECTED/REVOKED verdict is left
+// untouched (still exit 3), and a pinned accept is untouched (still exit 0) — the pre-existing 0/3
+// contract for pinned calls is preserved verbatim. The integrity fields (rootMatches, counts,
+// signatureOk, …) stay on the result: the bytes DID verify; what is refused is calling that
+// "provenance" without a trusted vendor pin.
+// ---------------------------------------------------------------------------
+
+function applyStrict(result, code) {
+  result.strict = true;
+  if (code === EXIT.OK && result.pinning !== "pinned") {
+    result.accepted = false;
+    result.verdict = "UNPINNED";
+    result.reason = result.signed ? "unpinned_signer" : "unpinned_unsigned";
+    return { result, code: EXIT.UNPINNED };
+  }
+  return { result, code };
+}
+
+// ---------------------------------------------------------------------------
 // The DISK verify entrypoint — the original CLI contract, byte-identical: reads + JSON-parses the
 // artifact, then drives the SAME pure engine with the disk file source. Returns { result, code }.
 // ---------------------------------------------------------------------------
@@ -2637,10 +2710,12 @@ function verifyArtifact(opts) {
     const downgraded = applied.result;
     downgraded.trustAsOfDefaulted = applied.defaulted;
     const newCode = downgraded.accepted ? EXIT.OK : EXIT.REJECTED;
-    return { result: downgraded, code: newCode };
+    // --strict runs AFTER the revocation downgrade: a REVOKED verdict stays exit 3; an accept that
+    // survived the revocation check but is unpinned still fails closed (exit 4).
+    return opts.strict ? applyStrict(downgraded, newCode) : { result: downgraded, code: newCode };
   }
 
-  return { result, code };
+  return opts.strict ? applyStrict(result, code) : { result, code };
 }
 
 // ---------------------------------------------------------------------------
@@ -2700,15 +2775,23 @@ function verifyBatch(opts) {
       revocations: opts.revocations,
       asOf: opts.asOf,
       nowISO: opts.nowISO,
+      // --strict (T-75.2) applies to EVERY entry: one unpinned accept fails the whole gate closed.
+      strict: opts.strict,
     });
     results.push(result);
   }
   const total = results.length;
   const passed = results.filter((r) => r.accepted).length;
   const failed = total - passed;
+  // The UNPINNED tally (only ever non-zero under --strict). Exit precedence: any genuine REJECT
+  // dominates (3 — something is tampered/forged/wrong-issuer), else any unpinned-under-strict entry
+  // makes the whole batch UNPINNED (4), else OK (0). `ok` keeps its original meaning: every entry
+  // accepted (so an unpinned-under-strict batch is NOT ok).
+  const unpinned = results.filter((r) => r.verdict === "UNPINNED").length;
   const ok = failed === 0;
-  const aggregate = { ok, total, passed, failed, results };
-  return { aggregate, code: ok ? EXIT.OK : EXIT.REJECTED };
+  const aggregate = { ok, total, passed, failed, unpinned, results };
+  const code = failed - unpinned > 0 ? EXIT.REJECTED : unpinned > 0 ? EXIT.UNPINNED : EXIT.OK;
+  return { aggregate, code };
 }
 
 // ---------------------------------------------------------------------------
@@ -2730,10 +2813,18 @@ function renderHuman(r) {
       L.push(`pinned --vendor: ${r.pinnedVendor}`);
       L.push(`signer matches vendor: ${r.signerMatchesVendor ? "yes" : "NO"}`);
     } else {
-      L.push("(no --vendor pin: the recovered signer above is reported, not pinned)");
+      // T-75.2: an unpinned signer must never read as trusted provenance. State it in plain words
+      // (the same statement rides the JSON as `unpinnedNote`).
+      L.push(
+        `pinning:         UNPINNED (no --vendor pin) — signed by ${r.recoveredSigner || r.claimedSigner}, ` +
+          "NOT pinned to a trusted vendor; anyone's key passes."
+      );
+      L.push("                 Pin the producer you trust: --vendor <0xaddr> (obtained out-of-band); --strict fails closed.");
     }
   } else if (r.recoveredSigner == null && r.pinnedVendor != null) {
     L.push("note: --vendor was supplied but this artifact is UNSIGNED (no signer to pin)");
+  } else if (r.pinnedVendor == null) {
+    L.push("pinning:         UNPINNED — unsigned artifact, no vendor pin (tamper-evidence of the bytes only, never WHO)");
   }
   if (r.sealedRoot != null) L.push(`sealed root:     ${r.sealedRoot}`);
   if (r.recomputedRoot != null) L.push(`recomputed root: ${r.recomputedRoot}`);
@@ -2770,6 +2861,19 @@ function renderHuman(r) {
   L.push("");
   if (r.accepted) {
     L.push("OK — the artifact verifies.");
+    // T-75.2: an accept WITHOUT a vendor pin says so in the verdict itself — never only in the header.
+    if (r.unpinnedNote) L.push(r.unpinnedNote);
+  } else if (r.verdict === "UNPINNED") {
+    // --strict fail-closed (T-75.2): the bytes verified, but no trusted vendor pin backed the accept.
+    L.push(`UNPINNED (${r.reason}) — fail-closed under --strict (exit ${EXIT.UNPINNED}):`);
+    if (r.signed) {
+      L.push(`  signed by ${r.recoveredSigner} — NOT pinned to a trusted vendor; anyone's key passes.`);
+      L.push("  The bytes verify, but WITHOUT a --vendor pin this is NOT provenance: an attacker who");
+      L.push("  re-signs a tampered release with their OWN key would pass the same check.");
+    } else {
+      L.push("  the artifact is UNSIGNED and no vendor was pinned — tamper-evidence of the bytes only, never WHO.");
+    }
+    L.push("  Pin the producer you trust: re-run with --vendor <0xaddr> (obtained out-of-band).");
   } else if (r.reason === "key_revoked_as_of") {
     // The signature + bytes checked out, but the signing key was revoked AT OR BEFORE the as-of instant — a
     // distinct REVOKED verdict (exit 3), matching the producer's verify-signed downgrade.
@@ -2852,7 +2956,15 @@ function renderBatchHuman(agg) {
   L.push(`# verify-vh — BATCH (${agg.total} artifact${agg.total === 1 ? "" : "s"})`);
   for (const r of agg.results) {
     if (r.accepted) {
-      L.push(`  PASS  ${r.artifact}`);
+      // T-75.2: a pass with NO vendor pin is labelled UNPINNED right on its PASS line — a green batch
+      // log must never read as "the producer signed this" when nobody pinned the producer.
+      L.push(
+        `  PASS  ${r.artifact}` +
+          (r.pinning === "unpinned" ? "  (UNPINNED — no vendor pin; anyone's key passes)" : "")
+      );
+    } else if (r.verdict === "UNPINNED") {
+      // --strict fail-closed: the bytes verified but no trusted vendor pin backed the accept.
+      L.push(`  UNPINNED  ${r.artifact}  (${r.reason} — bytes verify, but no trusted --vendor pin; --strict fails closed)`);
     } else {
       L.push(`  FAIL  ${r.artifact}  (${r.reason})`);
       // Localize the first failing detail so a CI log names exactly what moved, per artifact.
@@ -2867,9 +2979,22 @@ function renderBatchHuman(agg) {
       }
     }
   }
+  const unpinnedCount = agg.unpinned || 0; // tolerate a pre-T-75.2 aggregate shape
   L.push("");
-  L.push(`total: ${agg.total}, passed: ${agg.passed}, failed: ${agg.failed}`);
-  L.push(agg.ok ? "OK — every artifact verifies." : `REJECTED — ${agg.failed} artifact(s) failed.`);
+  L.push(
+    `total: ${agg.total}, passed: ${agg.passed}, failed: ${agg.failed}` +
+      (unpinnedCount > 0 ? ` (${unpinnedCount} UNPINNED under --strict)` : "")
+  );
+  if (agg.ok) {
+    L.push("OK — every artifact verifies.");
+  } else if (agg.failed - unpinnedCount > 0) {
+    L.push(`REJECTED — ${agg.failed} artifact(s) failed.`);
+  } else {
+    L.push(
+      `UNPINNED — ${unpinnedCount} artifact(s) verified WITHOUT a trusted --vendor pin ` +
+        `(--strict fail-closed, exit ${EXIT.UNPINNED}).`
+    );
+  }
   L.push("");
   return L.join("\n");
 }
@@ -3198,9 +3323,9 @@ function usage() {
     "Usage:",
     "  verify-vh demo                                                                                   (zero-config quickstart)",
     "  verify-vh demo <dir>                                                                              (write a keepable signed packet you can verify yourself)",
-    "  verify-vh <artifact> [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir> [--as-of <ISO>]] [--json]",
-    "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir>] [--json]   (batch)",
-    "  verify-vh --manifest <file> [--vendor <0xaddr>] [--dir <d>] [--revocations <file-or-dir>] [--json]           (batch)",
+    "  verify-vh <artifact> [--vendor <0xaddr>] [--strict] [--dir <d>] [--revocations <file-or-dir> [--as-of <ISO>]] [--json]",
+    "  verify-vh <artifact> <artifact> ... [--vendor <0xaddr>] [--strict] [--dir <d>] [--revocations <file-or-dir>] [--json]   (batch)",
+    "  verify-vh --manifest <file> [--vendor <0xaddr>] [--strict] [--dir <d>] [--revocations <file-or-dir>] [--json]           (batch)",
     "  verify-vh <receipt> --anchored-artifact <sealed-file> [--json]                    (anchored-receipt binding check)",
     "",
     "DEMO: `verify-vh demo` runs a self-contained, genuinely-signed packet through the real verify path —",
@@ -3216,6 +3341,14 @@ function usage() {
     "when no pin is given). An agent-session packet is SELF-CONTAINED: every event leaf + the ordered",
     "RFC-6962-style head are re-derived from the events in the packet (REDACTED payloads are checked by",
     "their hash commitments), and a REJECT names the first offending event seq.",
+    "",
+    "PINNING / --strict (fail-closed): WITHOUT --vendor, a signed artifact is accepted on its OWN",
+    "self-asserted key — the verdict says so explicitly (\"UNPINNED … NOT pinned to a trusted vendor;",
+    "anyone's key passes\") because an attacker who re-signs a tampered release with their OWN key",
+    "passes a vendor-less check. --strict makes that fail-closed: exit 0 then means ACCEPT-AND-PINNED,",
+    "and an otherwise-accepted artifact with no satisfied --vendor pin exits 4 (verdict UNPINNED) —",
+    "distinct from 3 (REJECTED: tampered/forged/wrong-issuer). CI gates should pin AND pass --strict",
+    "(the shipped verifier/ci/ recipes do).",
     "",
     "REVOCATIONS: --revocations <file-or-dir> [--as-of <ISO>] downgrades an otherwise-ACCEPTED signed",
     "artifact to REVOKED (exit 3) when its signing key was REVOKED at or before --as-of (default now). The",
@@ -3240,7 +3373,9 @@ function usage() {
     "Top-level --vendor/--dir are inherited as defaults a manifest entry may override; --revocations/--as-of",
     "apply to every entry.",
     "",
-    "READ-ONLY: holds no key, writes nothing. Exit: 0 ok / 3 rejected|revoked / 2 usage / 1 IO.",
+    "READ-ONLY: holds no key, writes nothing.",
+    "Exit: 0 ok (ACCEPT — and pinned, under --strict) / 3 rejected|revoked / 4 UNPINNED (--strict only:",
+    "the bytes verify but no trusted --vendor pin backed the accept) / 2 usage / 1 IO.",
     "",
   ].join("\n");
 }
@@ -3375,6 +3510,7 @@ module.exports = {
   parseArgs,
   parseManifest,
   verifyArtifact,
+  applyStrict,
   verifyArtifactFromBytes,
   verifyBatch,
   buildBatchEntries,

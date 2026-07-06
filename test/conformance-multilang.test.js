@@ -51,10 +51,14 @@ const RS_SRC_DIR = path.join(REPO, "verifier-rs");
 const IMPL_NAMES = ["JS", "PY", "GO", "RUST"];
 const MODES = ["default", "exact-dir"];
 
-// The one case whose DEFAULT-mode answer intentionally differs from the vector expected: a seal
-// binds a NAMED FILE SET, so default --dir ACCEPTs an unsealed extra file (by design, T-75.5
+// The cases whose DEFAULT-mode answer intentionally differs from the vector expected: a seal
+// binds a NAMED FILE SET, so default --dir ACCEPTs an unsealed extra (by design, T-75.5
 // documented). The vector's expected REJECT applies to --exact-dir mode, where it must go GREEN.
-const BOUNDARY_CASE = "extra-file";
+//   * extra-file          — an injected plain file the seal never named;
+//   * symlinked-artifact  — a symlink alias to the artifact packet, inside the scanned dir; it must
+//                           be flagged UNEXPECTED under --exact-dir (LEXICAL self-exemption, never
+//                           symlink-resolving), the T-77.1 four-way parity lock.
+const BOUNDARY_CASES = new Set(["extra-file", "symlinked-artifact"]);
 const DEFAULT_MODE_BOUNDARY_SIG = { verdict: "OK", exit: 0 };
 
 // ---------------------------------------------------------------------------------------------
@@ -81,7 +85,7 @@ function assessAgreement(caseName, mode, resultsByImpl) {
 
 // The (verdict, exit) every present impl must produce for a case+mode.
 function expectedSignature(c, mode) {
-  if (mode === "default" && c.name === BOUNDARY_CASE) return DEFAULT_MODE_BOUNDARY_SIG;
+  if (mode === "default" && BOUNDARY_CASES.has(c.name)) return DEFAULT_MODE_BOUNDARY_SIG;
   return {
     verdict: c.expectedVerdict === "ACCEPT" ? "OK" : "REJECTED",
     exit: c.expectedExit,
@@ -387,8 +391,8 @@ describe("multi-language conformance: JS = PY = GO = RUST over the frozen vector
   // Vector-suite sanity: this gate must never green by running over nothing.
   // ------------------------------------------------------------------------------------------
 
-  it("the frozen vector suite is intact: >= 6 cases including the extra-file boundary case", function () {
-    expect(CASES.length).to.be.at.least(6);
+  it("the frozen vector suite is intact: >= 7 cases including both --exact-dir boundary cases", function () {
+    expect(CASES.length).to.be.at.least(7);
     const names = CASES.map((c) => c.name);
     for (const required of [
       "genuine-single",
@@ -397,9 +401,39 @@ describe("multi-language conformance: JS = PY = GO = RUST over the frozen vector
       "wrong-vendor",
       "missing-file",
       "extra-file",
+      "symlinked-artifact",
     ]) {
       expect(names, `vectors.json must carry the '${required}' case`).to.include(required);
     }
+  });
+
+  // The symlinked-artifact vector must actually place the artifact packet AND a symlink alias to it
+  // INSIDE the scanned dir — otherwise the LEXICAL-vs-symlink-resolving self-exemption parity it
+  // exists to lock (the T-77.1 rework) would be structurally untestable. Guard the fixture shape so
+  // the case can never silently degrade into a no-op that greens over nothing.
+  it("the symlinked-artifact vector really places the artifact + a resolving symlink alias inside the scanned dir", function () {
+    const vec = CASES.find((c) => c.name === "symlinked-artifact");
+    expect(vec, "vectors.json must carry the symlinked-artifact case").to.not.equal(undefined);
+    const filesDir = path.join(VECTORS_DIR, vec.filesDirRelPath);
+    const packetAbs = path.join(VECTORS_DIR, vec.packetRelPath);
+    // The artifact packet lives INSIDE the scanned dir (its container-file self-exemption is what
+    // the alias must NOT be mistaken for).
+    expect(
+      path.resolve(packetAbs).startsWith(path.resolve(filesDir) + path.sep),
+      "the packet must live inside the scanned dir"
+    ).to.equal(true);
+    // A sibling symlink alias exists and RESOLVES to the packet (so a symlink-resolving canonicalize
+    // WOULD exempt it — the bug this case pins).
+    const aliasAbs = path.join(filesDir, "alias.json");
+    const st = fs.lstatSync(aliasAbs);
+    expect(st.isSymbolicLink(), "alias.json must be a symlink").to.equal(true);
+    expect(
+      fs.realpathSync(aliasAbs),
+      "the alias must resolve to the artifact packet"
+    ).to.equal(fs.realpathSync(packetAbs));
+    // Lexically the alias is NOT the artifact (different basename) — so the correct, lexical rule
+    // flags it UNEXPECTED. This is the exact divergence a symlink-resolving impl would hide.
+    expect(path.resolve(aliasAbs)).to.not.equal(path.resolve(packetAbs));
   });
 
   it("the JS reference implementation ran every case in both modes (always present)", function () {
@@ -469,7 +503,7 @@ describe("multi-language conformance: JS = PY = GO = RUST over the frozen vector
       }
 
       it(
-        c.name === BOUNDARY_CASE
+        BOUNDARY_CASES.has(c.name)
           ? "matches the vector expected: GREEN (REJECTED/3) under --exact-dir for EVERY " +
               "present impl (T-75.5 landed), ACCEPT/0 in default mode (by-design named-set boundary)"
           : "matches the vector's expected verdict+exit in both modes",

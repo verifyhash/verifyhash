@@ -67,6 +67,13 @@ Two nuances every conformant verifier must honor (both are pinned by a vector):
   breaks the bind → REJECT (`unexpected`). Note `vh evidence verify` *alone* re-derives
   only the packet-**named** files and would ACCEPT; a conformant full verifier MUST bind
   against the entire directory, not just the named subset.
+- **`symlinked-artifact`** — the signed packet lives *inside* the scanned directory (so its
+  own container file is exempt — a seal never names itself) and a sibling **symlink**
+  `alias.json` points at that packet. Under `--exact-dir` the artifact self-exemption MUST be
+  **lexical**: `alias.json` is a different path and MUST be flagged `unexpected` → REJECT, even
+  though it symlink-*resolves* to the artifact. A verifier that exempts it via a symlink-resolving
+  canonicalize silently ACCEPTs the injected extra — the same fail-closed hole `--exact-dir` exists
+  to close. As with `extra-file`, default (`--dir`) mode ACCEPTs: only the named set is bound.
 
 ## Integrity — how a consumer regenerates / checks these vectors
 

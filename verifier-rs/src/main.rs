@@ -487,7 +487,8 @@ fn verify_parsed_artifact(
 //   * every non-directory entry counts (a symlink — including one to a
 //     directory — is listed as itself and NEVER followed);
 //   * the artifact file itself is exempt when it lives inside the scanned
-//     directory (a seal never names its own container);
+//     directory (a seal never names its own container) — matched LEXICALLY, so
+//     a symlink alias that resolves to the artifact is still flagged UNEXPECTED;
 //   * an unreadable (sub)directory is an IO error (exit 1) — fail closed,
 //     never a silently-partial scan;
 //   * an already-REJECTED verdict keeps its dominant reason; the unexpected
@@ -541,6 +542,38 @@ fn list_dir_entries_recursive(base_dir: &Path) -> Result<Vec<String>, VhError> {
     Ok(out)
 }
 
+// Lexical absolute path: make `p` absolute (join the cwd if relative) and
+// normalize `.`/`..` PURELY LEXICALLY — WITHOUT resolving symlinks — mirroring
+// the JS reference's path.resolve (verifier/verify-vh.js), Go's filepath.Abs,
+// and Python's os.path.abspath. Using the symlink-RESOLVING std::fs::canonicalize
+// here would re-open the exact T-75.5 hole: a symlink alias sitting inside the
+// scanned dir that points at the artifact would resolve-equal to it and be
+// EXEMPTED (skipped) rather than flagged UNEXPECTED — silently ACCEPTing an
+// injected extra, and diverging from the other three implementations in the
+// fail-closed direction. Lexical comparison keeps all four byte-identical.
+// (std::path::absolute only stabilized in 1.79; the toolchain pin is >= 1.56,
+// so we normalize by hand over Path::components.)
+fn lexical_abs(p: &Path) -> PathBuf {
+    let abs = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(p)
+    };
+    let mut out = PathBuf::new();
+    for comp in abs.components() {
+        match comp {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 // Fold the whole-directory scan onto an already-computed verdict. Mutates `r`
 // (attaches exact_dir, the populated unexpected list) and returns the
 // possibly-downgraded exit code.
@@ -566,19 +599,19 @@ fn apply_exact_dir(
         for x in &r.escaped {
             named.insert(x.as_str());
         }
-        let artifact_canon = std::fs::canonicalize(artifact_path).ok();
+        // LEXICAL (never symlink-resolving) self-exemption — parity with JS
+        // (path.resolve), Go (filepath.Abs), and Python (os.path.abspath). See
+        // lexical_abs: a symlink alias that RESOLVES to the artifact is NOT the
+        // artifact and must still be flagged UNEXPECTED (the T-75.5 property).
+        let artifact_lex = lexical_abs(artifact_path);
         let mut u = Vec::new();
         for rel in list_dir_entries_recursive(base_dir)? {
             if named.contains(rel.as_str()) {
                 continue;
             }
             // The artifact's own container file is exempt (a seal never names itself).
-            if let Some(a) = &artifact_canon {
-                if let Ok(e) = std::fs::canonicalize(base_dir.join(&rel)) {
-                    if &e == a {
-                        continue;
-                    }
-                }
+            if lexical_abs(&base_dir.join(&rel)) == artifact_lex {
+                continue;
             }
             u.push(rel);
         }
@@ -600,8 +633,10 @@ fn verify_artifact(opts: &Opts) -> Result<(VerifyResult, u8), VhError> {
         .as_ref()
         .ok_or_else(|| VhError::Usage("verify-vh requires an <artifact>".into()))?;
 
-    let artifact_path = std::fs::canonicalize(artifact)
-        .unwrap_or_else(|_| PathBuf::from(artifact));
+    // LEXICAL absolute (path.resolve parity), NOT symlink-resolving canonicalize:
+    // the --exact-dir self-exemption compares against this path lexically, so a
+    // symlink alias to the artifact is still flagged UNEXPECTED (see lexical_abs).
+    let artifact_path = lexical_abs(Path::new(artifact));
 
     let text = std::fs::read_to_string(&artifact_path)
         .map_err(|e| VhError::Io(format!("cannot read artifact {}: {}", artifact, e)))?;

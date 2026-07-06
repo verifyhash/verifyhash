@@ -54,10 +54,15 @@ PY_VERIFIER = os.path.join(REPO_ROOT, "verifier-py", "verify_vh.py")
 GO_SRC_DIR = os.path.join(REPO_ROOT, "verifier-go")
 RS_SRC_DIR = os.path.join(REPO_ROOT, "verifier-rs")
 
-# The one case whose DEFAULT-mode answer intentionally differs from the vector
+# The cases whose DEFAULT-mode answer intentionally differs from the vector
 # expected: a seal binds a NAMED FILE SET, so default --dir ACCEPTs an unsealed
-# extra file. --exact-dir (T-75.5) closes that boundary and must REJECT it.
-BOUNDARY_CASE = "extra-file"
+# extra. --exact-dir (T-75.5) closes that boundary and must REJECT it.
+#   * extra-file          — an injected plain file the seal never named;
+#   * symlinked-artifact  — a symlink alias to the artifact packet, inside the
+#                           scanned dir; --exact-dir must flag it UNEXPECTED via a
+#                           LEXICAL (never symlink-resolving) self-exemption — the
+#                           T-77.1 four-way parity lock.
+BOUNDARY_CASES = frozenset(("extra-file", "symlinked-artifact"))
 DEFAULT_MODE_BOUNDARY_SIG = ("OK", 0)
 
 MODES = ("default", "exact-dir")
@@ -310,7 +315,7 @@ def run_impl(impl, case, mode):
 
 def expected_signature(case, mode):
     """The (verdict, exit) the present impls must agree on for case+mode."""
-    if mode == "default" and case["name"] == BOUNDARY_CASE:
+    if mode == "default" and case["name"] in BOUNDARY_CASES:
         # BY DESIGN: default --dir verifies the NAMED file set only, so the
         # injected extra is not covered and every impl ACCEPTs. --exact-dir is
         # the mode the vector's expected REJECT applies to (T-75.5).

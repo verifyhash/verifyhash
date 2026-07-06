@@ -100,6 +100,21 @@
       "_root": "0xd0911fdfa4cb24a709de70479c3b25bf28b8b5cfe0daf48283af72da0c88f600",
       "_fileCount": 4,
       "_signer": "0x7cb4d3dc6c52996b6386473bfb32f898263412f7"
+    },
+    {
+      "name": "symlinked-artifact",
+      "packetRelPath": "cases/symlinked-artifact/files/packet.vhevidence.json",
+      "filesDirRelPath": "cases/symlinked-artifact/files",
+      "vendor": "0x7cb4d3dc6c52996b6386473bfb32f898263412f7",
+      "expectedVerdict": "REJECT",
+      "expectedExit": 3,
+      "reason": "unexpected",
+      "failedCheck": "manifestBindsAttestation",
+      "localizedAs": "UNEXPECTED alias.json — a symlink INSIDE the scanned dir that resolves to the artifact packet itself",
+      "note": "SELF-EXEMPTION PARITY (T-77.1 rework): the signed packet lives INSIDE the scanned directory (so its own container file is exempt, a seal never names itself) and a sibling symlink `alias.json` points AT that packet. Under --exact-dir the self-exemption MUST be LEXICAL: `alias.json` is NOT the artifact (different name) and MUST be flagged UNEXPECTED even though it symlink-RESOLVES to the artifact. A symlink-resolving canonicalize would exempt it and silently ACCEPT the injected extra (the T-75.5 failure class) — this case locks all four impls to the lexical rule. DEFAULT mode ACCEPTs (exit 0): the seal binds only the NAMED set {report.txt}, so neither the packet nor the alias is covered — the same by-design named-set boundary as `extra-file`; --exact-dir is the mode that closes it.",
+      "_root": "0x05a6552a8fc903b6fa8b73826a1b53877b96a652f17cb8e9c1eb28b231c88333",
+      "_fileCount": 1,
+      "_signer": "0x7cb4d3dc6c52996b6386473bfb32f898263412f7"
     }
   ]
 }

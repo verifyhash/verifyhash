@@ -1,0 +1,17 @@
+{
+  "kind": "verifyhash-release-attestation",
+  "date": "2026-07-06",
+  "gitCommit": "562e13e",
+  "repo": "https://github.com/verifyhash/verifyhash",
+  "npm": {
+    "verifyhash@0.1.5": {
+      "shasum": "89495e8e1e2a77eec43083a0b6ab36b4c519d2f9"
+    },
+    "verify-vh@0.1.4": {
+      "shasum": "d0f789db0e734da55a75d31b9d2524a476182f90"
+    }
+  },
+  "standaloneBundleSha256": "",
+  "note": "EPIC-74 truthful front door (legible landing, sha256sum/cosign/Rekor comparison, generated llms.txt) + T-75.1 key-leak scrub; new standalone verifier bundle",
+  "vendorAddress": "0x7cb4d3DC6C52996B6386473Bfb32f898263412f7"
+}

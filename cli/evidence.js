@@ -23,7 +23,8 @@
 //
 // TRUST-BOUNDARIES (the one-liner the output LEADS with).
 //   The seal proves TAMPER-EVIDENCE + OFFLINE-RECOMPUTE, NOT a trusted timestamp: "sealed at T" still
-//   rides the human-owned signing/timestamp trust-root (STRATEGY.md P-3). The packet is an UNTRUSTED
+//   rides the human-owned signing/timestamp trust-root (P-3 — the public summary lives at
+//   docs/TRUST-BOUNDARIES.md#p-3-trust-root). The packet is an UNTRUSTED
 //   transport container — verify RE-DERIVES the root from the bytes you hold, never the packet's own
 //   stored hashes. A signed wrap proves WHO vouched, still not WHEN.
 //
@@ -66,6 +67,12 @@ const SAMPLE_LIMIT = 25;
 
 // The TRUST-BOUNDARIES one-liner the output LEADS with — stated ONCE so the human + JSON paths agree and
 // the caveat can never drift. It is the load-bearing honesty of the artifact.
+// FROZEN WIRE BYTES (T-78.2): this note is embedded VERBATIM in every seal (`note`) and pinned
+// byte-for-byte by every shipped verifier (cli/core/packetseal.js, verifier/lib/seal-evidence.js, the
+// published dist bundles) — repointing its internal "STRATEGY.md P-3" reference would invalidate every
+// already-issued packet, including the mainnet-anchored releases in anchors/. The pointer's public,
+// stable target is docs/TRUST-BOUNDARIES.md#p-3-trust-root ("Human-owned steps"); new prose must point
+// THERE, never at the internal strategy log.
 const EVIDENCE_TRUST_NOTE =
   "This evidence seal is TAMPER-EVIDENT + OFFLINE-RECOMPUTABLE, NOT a trusted timestamp. Its Merkle " +
   "`root` commits to the full set of (relPath, content) pairs in the directory: any edit, rename, add, " +
@@ -125,6 +132,9 @@ const ENTITLEMENTS = Object.freeze({
     `Seal more than the free sample size (${SAMPLE_LIMIT} files) in one evidence packet.`,
 });
 
+// FROZEN WIRE BYTES (T-78.2): embedded VERBATIM in every issued license and pinned at verify — the
+// internal "STRATEGY.md P-3" pointer inside it stays byte-frozen; its public target is
+// docs/TRUST-BOUNDARIES.md#p-3-trust-root ("Human-owned steps").
 const LICENSE_TRUST_NOTE =
   "This verifyhash EVIDENCE license is a SIGNED entitlement token, verified OFFLINE by re-deriving the " +
   "signer from these exact bytes and pinning it to the evidence-product vendor key. A valid verdict " +

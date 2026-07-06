@@ -238,8 +238,8 @@ proof).
 O(1) count it does not itself call) — into a **score**. That score is a
 **NON-TRANSFERABLE DERIVED VIEW** —
 re-derivable by anyone from the same registry, holding no value and granting no rights — **NOT a
-token** (any tradeable/reputation-token layer is the human-gated D-2 / P-1 decision in
-[`STRATEGY.md`](../STRATEGY.md), not built here). It is **read-only and needs no key** (provider only,
+token** (any tradeable/reputation-token layer is the human-gated D-2 / P-1 decision, see
+[Human-owned steps › P-1](#p-1-token-framing), not built here). It is **read-only and needs no key** (provider only,
 never a signer), and like `vh list`/`vh show` it does **NOT validate content** — re-derive + `vh verify`
 for that. Crucially it does **NOT upgrade a front-runnable anchor's attribution**: grouping by
 `contributor` is a raw enumeration, so an anchor-only record stays "first anchorer only", never proven
@@ -365,6 +365,71 @@ bounds existence (it is never authorship time), a signer-pin proves *who vouched
 legal identity), and re-derive-and-compare is always the integrity check. See
 [`docs/ANCHORING.md`](ANCHORING.md) for the anchor leg — including the live Polygon mainnet
 registry a human deployed on 2026-07-03.
+
+---
+
+<a id="human-owned-steps"></a>
+## Human-owned steps
+
+Everything in this repository is built and tested **locally, offline, with ephemeral throwaway
+keys**. A small set of steps is deliberately **owned by a human maintainer** — anything that touches
+real keys, real funds, a public deployment, or commercial terms — and the software never executes
+them on its own. The **full proposals** behind these steps (options, trade-offs, live status) are
+kept in the **maintainers' internal strategy log**, which is not published; the entries below are
+the public, stable anchors for what each step owns. Docs and artifact notes that cite
+`STRATEGY.md P-N` refer to the matching entry here (see [frozen pointers](#frozen-pointers) below);
+other `P-N` pointers you may meet (e.g. P-5, TrustLedger's legal/compliance gate; P-9, SDK
+distribution; P-11, refreshing the live site) are the same species — outward-facing human decisions,
+logged internally.
+
+<a id="p-2-public-deploy"></a>
+### P-2 — public deploy
+
+Deploying the registry to a public network — and any real on-chain anchoring against it — is an
+outward-facing action only a human performs: provisioning a key outside this codebase, running the
+deploy, and publishing the deployed address so consumers can pin it out-of-band. A human performed
+one on **2026-07-03** (the live Polygon mainnet registry — see [`ANCHORING.md`](ANCHORING.md)); any
+future deployment stays human-owned.
+
+<a id="p-3-trust-root"></a>
+### P-3 — signing / timestamp trust-root
+
+No seal, attestation, or signature in this family proves **WHEN** something existed on its own:
+"sealed/unaltered since date T" rides a trust-root only a human can stand up — a self-managed
+signing key provisioned outside this codebase, an independent RFC-3161 timestamp authority, or an
+on-chain anchor (which itself rides [P-2](#p-2-public-deploy)). The software ships the formats, the
+sign/wrap commands, and the offline verifiers, all proved with ephemeral test keys; provisioning the
+real key or TSA relationship, and choosing between those options, is the human-owned step.
+
+<a id="p-6-p-7-licensing"></a>
+### P-6 / P-7 — vendor key, pricing, license issuance
+
+Turning a paid vertical into income (TrustLedger licensing — **P-6**; the evidence-packet vertical —
+**P-7**) is human-owned in three narrow steps: **generate and custody the real vendor keypair
+offline** (the software never holds it; issuance reads a human-provisioned key at runtime,
+read-used-discarded), **set the price and the free-vs-paid entitlement split**, and **issue the
+signed license to each paying customer** (billing/hosting included). A license is an ACCESS
+credential for delivered software value — never a token, coin, or tradeable asset.
+
+### Related human-owned decisions
+
+- <a id="p-1-token-framing"></a>**P-1 — reputation token framing.** Whether the reputation layer is
+  ever anything more than the NON-TRANSFERABLE derived view described above (any tradeable-token
+  framing) is the human-gated **D-2** decision — NOT built here.
+- <a id="p-8-pilot"></a>**P-8 — the design-partner pilot.** Choosing one design partner and running
+  the pilot kit with them is the consolidated human go-to-market step that P-3, P-6, and P-7 all
+  wait on; the kit itself ([`PILOT.md`](PILOT.md), `pilot/run-pilot.js`) is fully built and runs
+  offline on throwaway keys.
+
+<a id="frozen-pointers"></a>
+### Frozen pointers in already-issued artifacts
+
+Artifacts in this family embed their trust caveat **verbatim as wire bytes**, and every shipped
+verifier pins that `note` byte-for-byte — so the caveat can never be silently edited after issuance.
+Notes minted before this section existed name these steps as `STRATEGY.md P-2` / `P-3`: those bytes
+are **frozen** (repointing them would invalidate every already-issued artifact, including the
+anchored releases in `anchors/` and the vendor-signed identity card), and each such pointer means
+the matching human-owned step summarized above.
 
 ## Tests
 

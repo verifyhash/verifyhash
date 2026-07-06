@@ -101,7 +101,7 @@ trust this vendor enough to run a pilot."
   vouches for **who** the vendor is and **what** they claim to attest, not for the truth of any one packet.
 - **It is NOT a trusted timestamp.** A `publishedAt` is the vendor's self-asserted instant; "published
   since T" rides the human-owned signing/timestamp trust-root (`needs-human`, **P-3** in
-  [`STRATEGY.md`](../STRATEGY.md)), exactly like every other dated artifact in this family.
+  [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)), exactly like every other dated artifact in this family.
 - **It is NOT a legal opinion.** The card makes no compliance/legal claim; it is tamper-evidence + a signed
   identity binding, nothing more.
 

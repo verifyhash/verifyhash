@@ -79,6 +79,12 @@ const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 // The in-band trust caveat — stated ONCE so the human + JSON paths agree and the boundary can never drift.
 // It is the load-bearing honesty of the artifact: a card proves IDENTITY + a bounded claim SET; it is NOT
 // a per-packet truth claim, NOT a trusted timestamp, NOT a legal opinion.
+// FROZEN WIRE BYTES (T-78.2): this note is embedded VERBATIM in every card and pinned byte-for-byte at
+// validate time (`obj.note !== IDENTITY_CARD_TRUST_NOTE` below) — repointing its internal
+// "STRATEGY.md P-3" reference would invalidate every already-issued card, INCLUDING the committed
+// canonical vendor card at identity/verifyhash-evidence.vhidentity.json, which was signed by the
+// owner-held vendor key and CANNOT be re-signed here. The pointer's public, stable target is
+// docs/TRUST-BOUNDARIES.md#p-3-trust-root ("Human-owned steps"); new prose must point THERE.
 const IDENTITY_CARD_TRUST_NOTE =
   "This is a verifyhash producer IDENTITY CARD: the holder of `vendorAddress`'s key SIGNED it, binding " +
   "that address to the `claims` it attests and the `nonClaims` it explicitly does NOT. verify RE-DERIVES " +

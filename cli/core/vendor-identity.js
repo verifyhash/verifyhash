@@ -14,7 +14,8 @@
 //
 // THE PUBLISHED IDENTITY
 //   `VERIFYHASH_VENDOR_ADDRESS` is the published verifyhash vendor identity — the address whose key
-//   mints real customer licenses (the owner-held vendor key; see STRATEGY.md "First-dollar config" and
+//   mints real customer licenses (the owner-held vendor key — a human-owned P-6/P-7 step, see
+//   docs/TRUST-BOUNDARIES.md#p-6-p-7-licensing and the maintainers' internal "First-dollar config" — and
 //   the signed identity card at identity/verifyhash-evidence.vhidentity.json, whose signature recovers
 //   to this exact address). The private key NEVER lives in this repo; only the PUBLIC address is
 //   committed here.

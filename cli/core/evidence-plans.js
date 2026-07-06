@@ -459,8 +459,9 @@ function fulfillEvidenceOrder(order, catalog) {
 //     licenses/plans/tests keep their bytes, and `vh evidence go-live-preflight`
 //     behaves identically.
 //   * NO price is set anywhere — the capability is DRAFT; pricing stays the human's
-//     P-7 step (STRATEGY.md). A license is an ACCESS credential for delivered software
-//     value — NOT a token/coin/NFT, not tradeable, not an appreciating asset.
+//     P-7 step (docs/TRUST-BOUNDARIES.md#p-6-p-7-licensing). A license is an ACCESS
+//     credential for delivered software value — NOT a token/coin/NFT, not tradeable,
+//     not an appreciating asset.
 //
 // The agent CLI (cli/agent.js) folds this table into ITS OWN license framing — a
 // SUPERSET of the evidence entitlement table under the SAME license kind — so ONE

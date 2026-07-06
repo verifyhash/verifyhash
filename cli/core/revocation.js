@@ -82,8 +82,12 @@ const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 
 // The in-band trust caveat — stated ONCE so the human + JSON paths agree and the boundary can never drift.
 // It is the load-bearing honesty of the artifact: a revocation proves the KEY-HOLDER SAID "revoked as of D";
-// it is NOT a trusted wall-clock timestamp (the `revokedAt` instant rides the human-owned timestamp trust-
-// root, STRATEGY.md P-3), and it is NOT a legal opinion.
+// it is NOT a trusted wall-clock timestamp (the `revokedAt` instant rides the human-owned timestamp
+// trust-root, P-3 — public summary at docs/TRUST-BOUNDARIES.md#p-3-trust-root), and it is NOT a legal opinion.
+// FROZEN WIRE BYTES (T-78.2): the note below is embedded VERBATIM in every published revocation and pinned
+// byte-for-byte at verify time (here and in verifier/lib/revocation-core.js + the dist bundles) —
+// repointing its internal "STRATEGY.md P-3" reference would invalidate every already-issued revocation.
+// New prose must point at the public anchor above, never at the internal strategy log.
 const REVOCATION_TRUST_NOTE =
   "This is a verifyhash producer KEY REVOCATION: the holder of `vendorAddress`'s key SIGNED it, declaring " +
   "that address REVOKED as of `revokedAt` for `reason` (optionally superseded by `supersededBy`). verify " +

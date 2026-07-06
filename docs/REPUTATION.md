@@ -78,8 +78,8 @@ The score is a **read**, not an asset:
 - **Non-transferable.** There is nothing to transfer. The "score" is just `count`s over immutable
   records; it cannot be sent, sold, or assigned. It confers no rights and holds no value.
 - **NOT a token, NOT a security.** Issuing a transferable/tradeable reputation **token** on top of this
-  view is a **separate, human-gated decision** — proposal **D-2 / P-1** in
-  [`STRATEGY.md`](../STRATEGY.md), tagged `needs-human`, and **NOT built here**. This document and the
+  view is a **separate, human-gated decision** — proposal **D-2 / P-1**
+  ([Human-owned steps](TRUST-BOUNDARIES.md#p-1-token-framing)), tagged `needs-human`, and **NOT built here**. This document and the
   `vh reputation` command stay strictly on the non-transferable derived-view side of that line.
 
 ---

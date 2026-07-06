@@ -24,7 +24,8 @@
 //   root, and they prove NOTHING on their own. The manifest's `note` field says so in-band (mirroring the
 //   hint caveats) so a downstream reader can never mistake a self-asserted sender/recipient — or any
 //   delivery TIME — for a verified fact. "Delivered ON date T" needs the human-owned signing/timestamp
-//   trust-root (STRATEGY.md P-3), which ProofParcel inherits VERBATIM and does NOT short-circuit here.
+//   trust-root (P-3 — public summary at docs/TRUST-BOUNDARIES.md#p-3-trust-root), which ProofParcel
+//   inherits VERBATIM and does NOT short-circuit here.
 //
 // STRICTNESS
 //   A corrupt/edited parcel manifest must never be silently half-accepted: `readParcelManifest` validates
@@ -71,6 +72,10 @@ const TRUST_NOTE = coreManifest.TRUST_NOTE;
 // root (tamper-evidence), but the `parcel` block (parcelId/sender/recipient) and any delivery TIME are
 // UNTRUSTED self-asserted metadata and are NOT a trusted timestamp — "delivered ON date T" needs the
 // human-owned signing/timestamp trust-root P-3 (cross-link), which this offline receipt does NOT provide.
+// FROZEN WIRE BYTES (T-78.2): this caveat is composed VERBATIM into the signed/timestamped parcel
+// container notes carried in-band (and pinned at verify, incl. the published dist bundles) — repointing
+// its internal "STRATEGY.md P-3" reference would invalidate already-issued containers. The pointer's
+// public, stable target is docs/TRUST-BOUNDARIES.md#p-3-trust-root ("Human-owned steps").
 const PARCEL_TRUST_NOTE =
   "PARCEL CAVEAT: this receipt binds the delivered file SET to a Merkle root and proves tamper-evidence " +
   "(any edit/rename/add/remove changes the root). The `parcel` block (parcelId/sender/recipient) and any " +

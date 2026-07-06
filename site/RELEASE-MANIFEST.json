@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 33,
-  "totalBytes": 1147180,
+  "totalBytes": 1152068,
   "files": [
     {
       "path": "LICENSE",
@@ -31,32 +31,32 @@
     {
       "path": "docs/CONFORMANCE.md",
       "source": "docs/CONFORMANCE.md",
-      "bytes": 7548,
-      "sha256": "282f518508b994ee4febdbc08bbbaec83f8097493e0a4023b54be51ab41985ec"
+      "bytes": 7569,
+      "sha256": "eded1d065544a73761d0c52c7e326fe010bbe21cd9b01cc058cff1f4258553c7"
     },
     {
       "path": "docs/DATALEDGER.md",
       "source": "docs/DATALEDGER.md",
-      "bytes": 47667,
-      "sha256": "f043be38d6a96aa62cfd36a69897afd0e00a709e9722ec49ba97311509238adf"
+      "bytes": 47835,
+      "sha256": "6033265ea667eaf3286706d1b641710b05e9d763ab07c876192d0dcb4271942a"
     },
     {
       "path": "docs/EVIDENCE.md",
       "source": "docs/EVIDENCE.md",
-      "bytes": 37396,
-      "sha256": "12ce2d51b6c005a94b2f395392b4484852446a07cba06b7a4db83d3a6272582d"
+      "bytes": 37495,
+      "sha256": "104c8808b48ed2bd2c27815b4557ffbc3c15ab51659190d98e7aed37fda44e32"
     },
     {
       "path": "docs/IDENTITY.md",
       "source": "docs/IDENTITY.md",
-      "bytes": 9053,
-      "sha256": "23a534a6cf709e9b78a5113d4ca83f9c2d9a6d6949429bc53bb12578b72677c6"
+      "bytes": 9077,
+      "sha256": "bc322fb0d85a654a127fc16f2043408c7209932a5c16aa72d345011c3920db9d"
     },
     {
       "path": "docs/INDEPENDENT-VERIFICATION.md",
       "source": "docs/INDEPENDENT-VERIFICATION.md",
-      "bytes": 32985,
-      "sha256": "e4283294c0458123704f051d0b58ebbe60bdfcbccdda75052b86b09bb5d195f4"
+      "bytes": 33007,
+      "sha256": "2e8e8e39de42140fc776beca6feb622da94e08f0805f90d444f64974d203cf75"
     },
     {
       "path": "docs/KEY-LIFECYCLE.md",
@@ -79,14 +79,14 @@
     {
       "path": "docs/PILOT.md",
       "source": "docs/PILOT.md",
-      "bytes": 29672,
-      "sha256": "093f9ced82deac5fc1f38802cf0297f63895a9c2599dab4e5ed600ea7b16573b"
+      "bytes": 29716,
+      "sha256": "a083d5a31e2ef73c7fe30c6babe991aa85081ed3308025fca2627cca8e09808f"
     },
     {
       "path": "docs/PROOFPARCEL.md",
       "source": "docs/PROOFPARCEL.md",
-      "bytes": 15883,
-      "sha256": "540e967daed055e00bbc5f820b9357051b1e7877e353c3b6f0ae7cec6196481a"
+      "bytes": 15939,
+      "sha256": "3334c31c9108da65013bbd306a5b2df83f92f168de1d34d937d960be2ceaadd9"
     },
     {
       "path": "docs/PROOFS.md",
@@ -103,8 +103,8 @@
     {
       "path": "docs/REPUTATION.md",
       "source": "docs/REPUTATION.md",
-      "bytes": 10842,
-      "sha256": "07ef487a7b12704a4dc8b9661e910d9ae89f9d60c408e3e2f583841cc3976fb3"
+      "bytes": 10868,
+      "sha256": "a4dc3839467cbad760b91c83685f1304d38215247b877c8aff365322952713af"
     },
     {
       "path": "docs/TAMPER-ME.md",
@@ -115,8 +115,8 @@
     {
       "path": "docs/TRUST-BOUNDARIES.md",
       "source": "docs/TRUST-BOUNDARIES.md",
-      "bytes": 26327,
-      "sha256": "0e0e80d1a7ebf2396b68580b968237c52ce13c95f257d15ab80b44014e6a6a1f"
+      "bytes": 30345,
+      "sha256": "7fcd6321a5a6073463a3d8131ecf556f4b5791c3d41be6e97dd43d9f40d9efed"
     },
     {
       "path": "docs/TRUSTLEDGER.md",
@@ -127,26 +127,26 @@
     {
       "path": "docs/challenge-README.md",
       "source": "challenge/README.md",
-      "bytes": 9994,
-      "sha256": "a2a470ec9d10042d34ef7a7e94c1c67249fd2cc81989b382085438e8d6b63e17"
+      "bytes": 10024,
+      "sha256": "7849ff806b112f086c50f7feb8ac06bd16215a78bedf6a2ed3e691dd21914732"
     },
     {
       "path": "docs/examples-README.md",
       "source": "examples/README.md",
-      "bytes": 12735,
-      "sha256": "5a12e6ed7d4792f2406c27268f1dcab830ab8fbb45a4a26e52d3e919d721788d"
+      "bytes": 12828,
+      "sha256": "f3d68718a248f59974dc05d437998aa4cc4cf0c6220d662fd9bb059aa6d6df0e"
     },
     {
       "path": "docs/overview.md",
       "source": "README.md",
-      "bytes": 75087,
-      "sha256": "83f6c96a5470999a12f2ee2916b34f511324342d1842293f09a665515834f34c"
+      "bytes": 75271,
+      "sha256": "f6c3844b7a4c0e4977e9ee2573d8042fc2a0a15622042cbaf4a4b57e10a30259"
     },
     {
       "path": "docs/pilot-README.md",
       "source": "pilot/README.md",
-      "bytes": 8005,
-      "sha256": "3c130b90d2fdb5edcba6aa45faf9d01ca4d6098d6381dbb8fea1a7397a39c775"
+      "bytes": 8108,
+      "sha256": "a39dfa8293c0170ee7d197a33dc59f311a048f6773b5b865a8065c3dedf76f5c"
     },
     {
       "path": "docs/verifier-README.md",

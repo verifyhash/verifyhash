@@ -367,7 +367,7 @@ The pilot is deliberately conservative about what it claims:
 - **It does NOT prove a trusted timestamp.** There is **no trusted "sealed on date T" without P-3.**
   A trustworthy "existed by date T" requires a **human-owned trust-root** — a self-managed signing
   key, an independent RFC-3161 timestamp authority, or an on-chain anchor — which is **P-3** in
-  [`STRATEGY.md`](../STRATEGY.md). The pilot uses **ephemeral throwaway keys only**, so it asserts
+  [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root). The pilot uses **ephemeral throwaway keys only**, so it asserts
   nothing about *when*; any date you see in a licence window or report is self-asserted input, not an
   independent attestation.
 - **It is NOT a legal or compliance opinion.** The evidence packet makes no domain claim beyond
@@ -388,9 +388,9 @@ Everything above is **built, tested, and green**. The one thing the loop cannot 
 a human must — is **land a design partner and run a pilot**. That precondition was scattered across
 four proposals (P-3 trust-root, P-5 TrustLedger legal/CPA/design-partner, P-6 TrustLedger licence
 delivery + pricing, P-7 evidence vertical go-to-market). It is now **consolidated into one
-decision-ready ask, P-8**, in [`STRATEGY.md`](../STRATEGY.md) → *Proposals — needs-human*, whose
-**deliverable is this very kit**. Read P-8 to see the precise human steps and how running this pilot
-de-risks all four gates at once.
+decision-ready ask, P-8** ([Human-owned steps](TRUST-BOUNDARIES.md#p-8-pilot), needs-human — the full
+proposal lives in the maintainers' internal strategy log), whose **deliverable is this very kit**.
+Running this pilot de-risks all four gates at once.
 
 The first artifact that ask sends a cold prospect can now be **link-shaped**: the browser challenge
 page in §2 — one file, `verify-vh-standalone.html`, no Node, no install, nothing to type — with the

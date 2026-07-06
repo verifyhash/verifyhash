@@ -51,7 +51,7 @@ A parcel manifest commits to a Merkle root over the full set of `(relPath, conte
 **It does NOT, by itself, prove:**
 
 - **A trusted delivery TIMESTAMP.** "Delivered ON date T" / "unaltered since date T" rides the
-  **human-owned signing/timestamp trust-root** ([`STRATEGY.md` P-3](../STRATEGY.md), `needs-human`).
+  **human-owned signing/timestamp trust-root** ([P-3 — Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root), `needs-human`).
   The loop ships the **FORMAT, the OFFLINE VERIFIER, AND the `vh parcel sign` command** — but `vh parcel
   sign` only ever reads a key the human PROVISIONED outside the loop (it never generates/persists/logs a
   key); PROVISIONING the key / standing up a timestamp anchor is the human step. This is the **same honest
@@ -211,7 +211,7 @@ P-3 Option (B)'s human handoff collapses to: **(1)** pick a TSA you trust; **(2)
 
 - The receipt **binds the file SET** to a Merkle root and is **signable** — but it is **NOT by itself a
   trusted delivery TIMESTAMP**. "Delivered ON date T" rides the human-owned trust-root
-  ([`STRATEGY.md` P-3](../STRATEGY.md), `needs-human`).
+  ([P-3 — Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root), `needs-human`).
 - The `parcel` metadata (`parcelId` / `sender` / `recipient`) and the per-file `{source, license}`
   hints are **UNTRUSTED, self-asserted**: not bound into the root, excluded from the attestation digest,
   and proving nothing on their own.

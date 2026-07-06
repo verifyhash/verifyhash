@@ -97,7 +97,7 @@ flow + the honest boundary (tamper-evidence over the run record, **not** a trust
 The kit proves **tamper-evidence + who vouched** (the operator key whose address the counterparty
 pins as `--vendor`) and **offline recompute**. It does **NOT** prove a trusted timestamp: a
 "sealed on date **T**" claim rides the **human-owned** signing/timestamp trust-root — that is
-**P-3** in [`../STRATEGY.md`](../STRATEGY.md) (a self-managed key, an RFC-3161 TSA, or an on-chain
+**P-3** in [Human-owned steps](../docs/TRUST-BOUNDARIES.md#p-3-trust-root) (a self-managed key, an RFC-3161 TSA, or an on-chain
 anchor), and the kit deliberately uses **ephemeral throwaway keys only**, so it asserts nothing about
 *when*. It is also **not** a legal opinion. The kit **ends at the explicit human handoff** and
 overclaims nothing.
@@ -121,7 +121,8 @@ claims drift, the suite fails.
 
 This kit **is** the deliverable every revenue gate was waiting on. The consolidated, decision-ready
 ask that folds the shared "land a design partner / run a pilot" precondition of P-3/P-5/P-6/P-7 into
-one place is **P-8** in [`../STRATEGY.md`](../STRATEGY.md) → *Proposals — needs-human*.
+one place is **P-8** ([Human-owned steps](../docs/TRUST-BOUNDARIES.md#p-8-pilot), needs-human — the
+full proposal lives in the maintainers' internal strategy log).
 
 
 ---

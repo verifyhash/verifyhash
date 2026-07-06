@@ -80,10 +80,11 @@ describe("T-14.3 docs: DataLedger documented as a product (docs/DATALEDGER.md + 
       expect(docLower).to.include("unaltered since");
     });
 
-    it("routes the time-anchored claim to the human-owned signing/timestamp trust-root in STRATEGY.md", function () {
+    it("routes the time-anchored claim to the human-owned signing/timestamp trust-root (the public P-3 anchor)", function () {
       expect(docLower).to.match(/signing ?\/? ?timestamp trust-root|signing\/timestamp/);
       expect(docLower).to.include("needs-human");
-      expect(doc).to.include("STRATEGY.md");
+      // T-78.2: the pointer moved from the internal STRATEGY.md to the tracked, published anchor.
+      expect(doc).to.include("TRUST-BOUNDARIES.md#p-3-trust-root");
     });
 
     it("labels the {source, license} hints as UNTRUSTED self-asserted metadata", function () {

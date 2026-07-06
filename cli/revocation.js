@@ -24,7 +24,7 @@
 // THE LOAD-BEARING POSTURE — a SIGNED CLAIM, NOT a trusted timestamp without P-3.
 //   A revocation proves the KEY-HOLDER SAID "revoked as of D"; the `revokedAt` instant is the holder's
 //   self-asserted instant, NOT a trusted wall-clock timestamp (it rides the human-owned timestamp
-//   trust-root, STRATEGY.md P-3). The publish/verify paths LEAD with that caveat verbatim (the standing
+//   trust-root, P-3 — docs/TRUST-BOUNDARIES.md#p-3-trust-root). The publish/verify paths LEAD with that caveat verbatim (the standing
 //   REVOCATION/SIGNED_REVOCATION trust note the core exports), so the human + JSON boundary can never drift.
 
 const fs = require("fs");

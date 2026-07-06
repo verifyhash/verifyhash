@@ -111,7 +111,7 @@ browser challenge's sample, by contrast, *is* signed and does pin a signer. The 
   signer-pin, on a signed demo sample run through the **same engine**.)
 - **(every seal) It is NOT a trusted "sealed at T."** A seal says *these are the bytes*, not *when* — even
   a *signed* one. An independent time anchor rides the human-owned signing/timestamp trust-root (proposal
-  **P-3** in [`../STRATEGY.md`](../STRATEGY.md)), and a green verdict is **not** a legal or accounting
+  **P-3** — [Human-owned steps](../docs/TRUST-BOUNDARIES.md#p-3-trust-root)), and a green verdict is **not** a legal or accounting
   opinion.
 
 This is the same trust boundary every verifyhash seal carries — stated once, verbatim, so the cold-start

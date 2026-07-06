@@ -50,8 +50,8 @@ re-derivable by anyone, offline:
 
 - **It is NOT a timestamp.** A manifest binds a file SET to a root; it says nothing about *when* the
   dataset existed. "Unaltered since date T" is a strictly stronger, time-anchored claim that needs the
-  **human-owned signing / timestamp trust-root** — a `needs-human` step recorded in
-  [`STRATEGY.md`](../STRATEGY.md) (the loop only BUILDS and locally TESTS; standing up a real signing
+  **human-owned signing / timestamp trust-root** — a `needs-human` step, **P-3** in
+  [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root) (the loop only BUILDS and locally TESTS; standing up a real signing
   key / timestamp anchor is a human action). Until that trust-root exists, never report or imply
   "unaltered since date T".
 
@@ -271,7 +271,7 @@ vh dataset report v2.manifest.json --verify ./dataset-v2 --policy org-policy.jso
 > **What a PASS does and does NOT mean.** A PASS attests that the dataset's **self-asserted hints satisfy
 > the policy** — the control your pipeline ran and the verdict your auditor files. It is **NOT** a claim
 > that the licenses are genuinely correct, nor a timestamp ("unaltered since date T"). Those require the
-> human-owned signing/timestamp trust-root (`needs-human`, P-3 in [`STRATEGY.md`](../STRATEGY.md)).
+> human-owned signing/timestamp trust-root (`needs-human`, [P-3 — Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)).
 
 ---
 
@@ -377,8 +377,8 @@ vh dataset attest v2.manifest.json --json
 ```
 
 > **Attaching a real signature/timestamp is the human-owned trust-root.** Standing up a real signing key
-> or an external timestamp authority is a `needs-human` step recorded in
-> [`STRATEGY.md`](../STRATEGY.md) as **P-3** — the loop only BUILDS and locally TESTS the UNSIGNED
+> or an external timestamp authority is a `needs-human` step — **P-3** in
+> [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root) — the loop only BUILDS and locally TESTS the UNSIGNED
 > payload. Until a signature is attached, this payload proves only the same set-membership / identity the
 > manifest already does — **NOT** that the dataset is unaltered since a date T. Do not overclaim past P-3.
 
@@ -393,7 +393,7 @@ trust posture plus one signing-specific line:
 > **the holder of `signer`'s key vouched for THIS dataset identity** (the embedded `root` / `fileCount` /
 > `manifestDigest`). It does **NOT** by itself prove a trustworthy TIMESTAMP — there is still no "unaltered
 > since a date T" unless the `scheme` is a timestamp authority, which is **still the human-owned trust-root,
-> `needs-human`, P-3** in [`STRATEGY.md`](../STRATEGY.md). It does **NOT** validate that the dataset's
+> `needs-human`, P-3** ([Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)). It does **NOT** validate that the dataset's
 > `{source, license}` hints are genuinely correct (that is `vh dataset check`'s untrusted-hint caveat). It
 > is the same boundary every DataLedger artifact carries:
 >
@@ -404,7 +404,7 @@ trust posture plus one signing-specific line:
 > (`vh dataset sign`, below) — all proved end-to-end in the test suite with **EPHEMERAL, throwaway
 > `Wallet.createRandom()` keys generated in-process and never persisted**. **Provisioning a real signing key
 > and choosing trust-root option A/B/C is still the human-owned trust-root, P-3** (`needs-human`,
-> [`STRATEGY.md`](../STRATEGY.md)). The loop NEVER generates, holds, persists, or logs a real key — `vh
+> [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)). The loop NEVER generates, holds, persists, or logs a real key — `vh
 > dataset sign` reads a key the human provisioned OUTSIDE the loop, uses it in-process ONLY to sign, and
 > discards it. Emitting/signing/verifying a signed container NEVER implies "unaltered since date T": a signed
 > container says only "this key vouched for this dataset identity" — the trustworthy *timestamp* is the part
@@ -535,7 +535,7 @@ vh dataset verify-attest v2.attestation.signed.json \
 > **Still bounded by P-3.** An ACCEPTED verdict proves the key-holder vouched for this dataset identity —
 > it does **NOT** prove a trustworthy timestamp ("unaltered since date T") and does **NOT** validate any
 > `{source, license}` hint. The trustworthy timestamp is the human-owned trust-root, `needs-human`, P-3 in
-> [`STRATEGY.md`](../STRATEGY.md). This build ships the FORMAT, the VERIFIER, AND the `vh dataset sign`
+> [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root). This build ships the FORMAT, the VERIFIER, AND the `vh dataset sign`
 > command (all proved with throwaway test keys); the human still owns PROVISIONING the key and choosing
 > trust-root option A/B/C.
 
@@ -622,7 +622,7 @@ A mapping from the reviewer's question to the command that produces the evidence
 
 What this mapping deliberately does NOT claim: a wall-clock "unaltered since date T", and the
 truth of any `{source, license}` hint. Both require the human-owned signing/timestamp trust-root
-(`needs-human`, see [`STRATEGY.md`](../STRATEGY.md)).
+(`needs-human`, see [P-3 — Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)).
 
 ---
 

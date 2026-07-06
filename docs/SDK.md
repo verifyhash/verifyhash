@@ -120,7 +120,7 @@ shell-out** to the `vh` binary — the same code path, so it accepts / rejects b
 
 **Trust boundary (signed path).** A valid signature proves the holder of `signer`'s key **vouched for
 THIS sealed packet** — it is **NOT** a trusted timestamp ("signed since T" rides the human-owned trust-root,
-[STRATEGY.md](../STRATEGY.md) P-3) and **NOT** a legal opinion. Verification is offline / key-free: it
+[P-3 — Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)) and **NOT** a legal opinion. Verification is offline / key-free: it
 recovers a **public** address from the signature, holds no private key, and contacts nothing. Pin the
 `expectedSigner` to the vendor address you trust out-of-band (e.g. a published `vh identity` card).
 

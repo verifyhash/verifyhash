@@ -37,7 +37,7 @@ pinned, inside _your_ product").
 It leads with the standing **trust note** (a seal proves *tamper-evidence*; a valid **signature** proves
 *who vouched* — the pinned address's key-holder — for those bytes; **neither** proves a trusted timestamp
 and **neither** is a legal opinion — timestamping rides the human-owned trust-root, `needs-human`, P-3 in
-[`STRATEGY.md`](../STRATEGY.md)), prints a clear **PASS** summary naming both acts, and exits 0. The only
+[Human-owned steps](../docs/TRUST-BOUNDARIES.md#p-3-trust-root)), prints a clear **PASS** summary naming both acts, and exits 0. The only
 key it ever uses is an **ephemeral, in-memory throwaway** (never persisted, funded, or logged). It is
 test-gated by [`test/sdk.example.test.js`](../test/sdk.example.test.js) on every `npx hardhat test` — a grep
 there asserts the example uses **only** the public surface (`require("verifyhash")` + `ethers`, no deep
@@ -123,7 +123,7 @@ ACCEPT steps that **escalate in value**:
 It leads with the standing **trust note** (a valid **signature** proves *who vouched* — the pinned address's
 key-holder — for those exact sealed bytes; it does **not** prove a trusted timestamp and is **not** a legal
 opinion — timestamping rides the human-owned trust-root, `needs-human`, P-3 in
-[`../STRATEGY.md`](../STRATEGY.md)), prints a clear **PASS** summary, and exits 0. The received deliverable
+[Human-owned steps](../docs/TRUST-BOUNDARIES.md#p-3-trust-root)), prints a clear **PASS** summary, and exits 0. The received deliverable
 is written to a **throwaway OS temp dir** (never the repo tree) and cleaned up in a `finally`. Verification
 is **offline and key-free**: it recovers a **public** address from the signature, holds no private key, and
 contacts nothing. It is test-gated by [`test/sdk.example.signed.test.js`](../test/sdk.example.signed.test.js)
@@ -169,7 +169,7 @@ inspection with `VH_EXAMPLE_KEEP=1`. **Nothing is ever scattered into the repo w
 The example proves **tamper-evidence** (any edit, rename, add, or remove flips the Merkle root) and emits
 the canonical **UNSIGNED** attestation bytes a trust-root would sign. It does **not**, and cannot, prove
 *"unaltered since date T"*: that standing claim rides the **human-owned** signing / timestamp / anchor
-trust-root (`needs-human`, P-3 in [`STRATEGY.md`](../STRATEGY.md)). The script **references but never
+trust-root (`needs-human`, P-3 in [Human-owned steps](../docs/TRUST-BOUNDARIES.md#p-3-trust-root)). The script **references but never
 executes** those `sign` / `timestamp` / anchor steps, and says exactly where the human handoff is. See
 [`docs/TRUST-BOUNDARIES.md`](../docs/TRUST-BOUNDARIES.md), [`docs/DATALEDGER.md`](../docs/DATALEDGER.md),
 and [`docs/PROOFPARCEL.md`](../docs/PROOFPARCEL.md).

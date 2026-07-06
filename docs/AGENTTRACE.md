@@ -45,7 +45,7 @@ re-derive everything from the bytes you hold. A green verdict proves, offline:
 - **Event `ts` fields are self-asserted metadata.** They are recorded and bound verbatim, never
   verified against any clock. Order is proven by tree position (`seq`), not by `ts`.
 - **NOT a trusted timestamp.** There is no "this session existed at time T" claim without the
-  human-owned **P-3** trust-root ([`STRATEGY.md`](../STRATEGY.md) › Proposals — needs-human: a
+  human-owned **P-3** trust-root ([Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root), needs-human: a
   provisioned signing key, an RFC-3161 TSA, or an on-chain anchor). A signed head proves *who vouched*
   for the session head, not *when*.
 - **NOT a legal opinion**, and not a claim the agent behaved well, safely, or compliantly.
@@ -101,7 +101,7 @@ with `seq` contiguous from 0 (the tree position). Exit codes are the family cont
 
 The `agent_signed` capability is DRAFT and priceless in the bundled catalog: the vendor key, the price,
 and the sale remain the standing human-owned go-live steps of the evidence vertical (P-7/P-8 in
-[`STRATEGY.md`](../STRATEGY.md), one flip in [`GO-LIVE.md`](GO-LIVE.md)) — this vertical adds **no new
+[Human-owned steps](TRUST-BOUNDARIES.md#human-owned-steps), one flip in [`GO-LIVE.md`](GO-LIVE.md)) — this vertical adds **no new
 human gate**, and revenue is a license for delivered software value, never a token or tradeable asset.
 
 ## Where the buyer independently verifies (no producer stack)
@@ -179,7 +179,7 @@ vh agent verify-commit session.vhagent.json --repo /their/clone     # exit 0 ACC
 - **The claim's `ts` is self-asserted**, like every event `ts`: recorded verbatim, never verified
   against any clock.
 - **NOT a trusted timestamp.** "This session (or claim) existed at time T" still rides the human-owned
-  **P-3** trust-root ([`STRATEGY.md`](../STRATEGY.md) › Proposals — needs-human); a signed head proves
+  **P-3** trust-root ([Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root), needs-human); a signed head proves
   *who vouched* for the head, not *when*.
 
 **The same wording rides in-band**: every `commit-claim` emission and every `verify-commit` verdict
@@ -253,7 +253,7 @@ vh agent coverage --repo . --range HEAD~10..HEAD --packets ./packets --deep --ou
   it can never count toward coverage — redact everything BUT the claim and coverage still works.
 - **The claim's `ts` is self-asserted**, like every event `ts`: recorded verbatim, never verified
   against any clock — and the report is **NOT a trusted timestamp** without the human-owned **P-3**
-  trust-root ([`STRATEGY.md`](../STRATEGY.md) › Proposals — needs-human).
+  trust-root ([Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root), needs-human).
 
 **The same wording rides in-band**: every `vh agent coverage` verdict — human-readable and `--json`
 — leads with this boundary as its `note`. Verbatim:

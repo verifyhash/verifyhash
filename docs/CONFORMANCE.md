@@ -50,7 +50,7 @@ Be precise about what an all-REJECT run buys you:
   those bytes"; it asserts nothing about *when*. A trustworthy "sealed at T" still requires **P-3** (the
   human-owned trust-root — a self-managed signing key, an RFC-3161 timestamp authority, or an on-chain
   anchor; see [`INDEPENDENT-VERIFICATION.md`](INDEPENDENT-VERIFICATION.md) §3 and **P-3** in
-  [`../STRATEGY.md`](../STRATEGY.md)). The corpus is the **FREE, UNSIGNED** path, so there is no signer to
+  [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)). The corpus is the **FREE, UNSIGNED** path, so there is no signer to
   pin here either; a green verdict is not a legal or accounting opinion.
 - **It covers the UNSIGNED content-integrity surface ONLY — it does NOT red-team the signer-pin
   (`--vendor`) path.** Every fixture in the corpus is unsigned, and the taxonomy contains **no

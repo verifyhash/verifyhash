@@ -20,8 +20,8 @@
 //   * It does NOT validate the CONTENT of any record. "This address has N records" says nothing about
 //     whether those records correspond to real, untampered bytes — re-derive the content hash and run
 //     `vh verify` for that.
-//   * Any tradeable/reputation-TOKEN layer is a separate, human-gated decision (D-2 / P-1 in
-//     STRATEGY.md) and is NOT built here.
+//   * Any tradeable/reputation-TOKEN layer is a separate, human-gated decision (D-2 / P-1 —
+//     docs/TRUST-BOUNDARIES.md#p-1-token-framing) and is NOT built here.
 //
 // READ-ONLY BY CONSTRUCTION: takes a PROVIDER only, never a signer and never a key. It runs the
 // EPIC-11 `assertRegistry` preflight FIRST (reused from cli/registry.js) so the score is never reported

@@ -129,6 +129,11 @@ const MAX_INPUT_BYTES = 64 * 1024 * 1024; // 64 MiB
 // The TRUST-BOUNDARIES one-liner every output LEADS with — stated ONCE so the human, JSON, and
 // in-band packet paths agree and the caveat can never drift. It is the load-bearing honesty of the
 // artifact (the T-68.1 core's documented boundary, carried in-band).
+// FROZEN WIRE BYTES (T-78.2): this note is embedded VERBATIM in every packet (`note`) and pinned
+// byte-for-byte at verify time (see the `obj.note !== AGENT_TRUST_NOTE` checks below and the shipped
+// dist bundles) — repointing its internal "STRATEGY.md P-3" reference would invalidate every
+// already-issued packet. The pointer's public, stable target is
+// docs/TRUST-BOUNDARIES.md#p-3-trust-root ("Human-owned steps"); new prose must point THERE.
 const AGENT_TRUST_NOTE =
   "This agent-session packet is TAMPER-EVIDENT + OFFLINE-RECOMPUTABLE, NOT a trusted timestamp and " +
   "NOT a claim the agent behaved well. Its ordered Merkle `head` {size, root} (RFC-6962-style, " +

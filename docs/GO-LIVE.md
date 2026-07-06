@@ -63,4 +63,4 @@ partner double-clicks it, drags their real exports in, and the page makes **no n
 Income comes from **delivering value to paying customers** — a license is an **ACCESS credential for delivered
 software value**, **NOT** a token/coin/NFT, not tradeable, and not a trusted timestamp. There is **no** token
 sale, airdrop, staking/yield, or appreciating-asset scheme anywhere in this path. See the HARD GUARDRAILS and
-P-7 in [`STRATEGY.md`](../STRATEGY.md).
+P-7 in [Human-owned steps](TRUST-BOUNDARIES.md#p-6-p-7-licensing).

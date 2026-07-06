@@ -196,8 +196,8 @@ disclaims everything else.
 ### What it does NOT prove
 - **NOT a trusted "sealed at time T."** A signature attests *this key vouched for these bytes* — not
   *when*. Any `timestamp`/`sealedAt`/`reportDate` field inside an artifact is **producer-asserted** and
-  rides the human-owned signing/timestamp trust-root (proposal **P-3** in
-  [`../STRATEGY.md`](../STRATEGY.md)). For an *independent* time anchor the family ships a separate,
+  rides the human-owned signing/timestamp trust-root (proposal **P-3** —
+  [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)). For an *independent* time anchor the family ships a separate,
   also-offline **RFC-3161** timestamp path (`vh dataset/parcel verify-timestamp`, P-3 Option B) — that
   is a different deliverable, and `verify-vh` does not assert it.
 - **NOT a legal/accounting opinion.** A green verdict means the bytes and the signer check out — not

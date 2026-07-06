@@ -8,7 +8,7 @@ ProofParcel), and it ships its **own** sellable license product.
 
 > **Trust boundary (the output leads with this):** the seal proves **TAMPER-EVIDENCE +
 > OFFLINE-RECOMPUTE**, **NOT a trusted timestamp**. "Sealed at time T" still rides the human-owned
-> signing/timestamp trust-root (`needs-human`, **P-3** in [`STRATEGY.md`](../STRATEGY.md)). The packet is
+> signing/timestamp trust-root (`needs-human`, **P-3** in [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)). The packet is
 > an **UNTRUSTED transport container** — `verify` re-derives the root from the bytes referenced; it never
 > trusts the packet's own stored hashes. `verify` checks the **CONTENT, not the signer** — to prove **WHO**
 > signed a signed packet, use `verify-signed` (it recovers the signer from the cryptography, never the
@@ -271,7 +271,7 @@ files: DIFFERENT
 
 > **Trust boundary (unchanged):** the seal proves **TAMPER-EVIDENCE + OFFLINE-RECOMPUTE**, **NOT a trusted
 > timestamp**. "Sealed at time T" still rides the human-owned signing/timestamp trust-root (`needs-human`,
-> **P-3** in [`STRATEGY.md`](../STRATEGY.md)). A diff inherits this boundary: it tells you what the two
+> **P-3** in [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)). A diff inherits this boundary: it tells you what the two
 > packets CLAIM differs, it does not prove WHEN either was sealed.
 
 ### Gate the change in CI: `vh evidence diff … --policy <f>`
@@ -351,7 +351,7 @@ machine-driven, NOT a human hand-crafting entitlement flags.
 > **Trust boundary (unchanged).** Fulfilling a license mints an **ACCESS credential**, NOT a trusted timestamp.
 > A minted license proves the holder paid for the named evidence features; it does **NOT** prove **WHEN** any
 > packet was sealed — "sealed at time T" still rides the human-owned signing/timestamp trust-root (`needs-human`,
-> **P-3** in [`STRATEGY.md`](../STRATEGY.md)). The license is verified the SAME way every evidence artifact is —
+> **P-3** in [Human-owned steps](TRUST-BOUNDARIES.md#p-3-trust-root)). The license is verified the SAME way every evidence artifact is —
 > `verifyLicense` RE-DERIVES the signer from the bytes + signature and pins it to `--vendor`; the container's
 > claimed `vendor` is UNTRUSTED transport until then.
 
@@ -521,7 +521,7 @@ It **binds loopback (127.0.0.1) by default** — a non-loopback interface is not
 ## Going to market
 
 Standing up the evidence vendor keypair, the price, and the first design partner are **human steps** —
-see **P-7 (needs-human)** in [`STRATEGY.md`](../STRATEGY.md). The loop builds and locally tests; it never
+see **P-7 (needs-human)** in [Human-owned steps](TRUST-BOUNDARIES.md#p-6-p-7-licensing). The loop builds and locally tests; it never
 holds a vendor key, never sets a price, and never deploys.
 
 

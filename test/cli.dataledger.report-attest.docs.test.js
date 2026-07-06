@@ -280,7 +280,8 @@ describe("T-15.3 docs: DataLedger report + attest documented (docs/DATALEDGER.md
       expect(s).to.match(/human-owned trust-root|human signing|signing\/timestamp trust-root|trust-root/);
       expect(s).to.include("needs-human");
       expect(section).to.include("P-3");
-      expect(section).to.include("STRATEGY.md");
+      // T-78.2: the pointer moved from the internal STRATEGY.md to the tracked, published anchor.
+      expect(section).to.include("TRUST-BOUNDARIES.md#p-3-trust-root");
     });
 
     it("does NOT overclaim past P-3 (still not 'unaltered since date T')", function () {
@@ -346,7 +347,8 @@ describe("T-15.3 docs: DataLedger report + attest documented (docs/DATALEDGER.md
     it("cross-links the UNSIGNED attestation to the human trust-root (P-3)", function () {
       expect(section).to.include("UNSIGNED");
       expect(section).to.include("P-3");
-      expect(section).to.include("STRATEGY.md");
+      // T-78.2: the pointer moved from the internal STRATEGY.md to the tracked, published anchor.
+      expect(section).to.include("TRUST-BOUNDARIES.md#p-3-trust-root");
     });
   });
 

@@ -512,7 +512,7 @@ consolidates dataset identity + the provenance/license roll-up + the trust cavea
 `--verify <dir>`, a live-tree MATCH/MISMATCH verdict; with `--policy <p>`, the SAME policy verdict
 embedded as a "Policy compliance" section) into ONE deterministic document a reviewer files; `vh dataset
 attest` emits the canonical, byte-deterministic **UNSIGNED** payload a human signing/timestamp trust-root
-signs over (`needs-human`, P-3 in [`STRATEGY.md`](STRATEGY.md)); `vh dataset verify-attest` is the
+signs over (`needs-human`, [P-3 — Human-owned steps](docs/TRUST-BOUNDARIES.md#p-3-trust-root)); `vh dataset verify-attest` is the
 **offline, no key, no network, CI-gateable exit code** (0 ACCEPTED / 3 REJECTED) VERIFIER a buyer runs on a
 SIGNED attestation container — it recovers the signer, optionally pins the expected publisher (`--signer`)
 and binds the signature to the buyer's own dataset (`--manifest`). All are **offline, need NO key, and need
@@ -523,14 +523,14 @@ This build ships the signed-attestation **FORMAT, the offline VERIFIER, AND the 
 (all proved with throwaway test keys). `vh dataset sign` reads a key YOU provisioned OUTSIDE the loop
 (`--key-env`/`--key-file`), signs the canonical `vh dataset attest` bytes, and writes the container
 `verify-attest` accepts — it **never generates, persists, or logs a key** and touches no network. So the
-human's remaining P-3 step (`needs-human`, [`STRATEGY.md`](STRATEGY.md)) collapses to: **PROVISION a real
+human's remaining P-3 step (`needs-human`, [Human-owned steps](docs/TRUST-BOUNDARIES.md#p-3-trust-root)) collapses to: **PROVISION a real
 key, choose the trust-root option, and run `vh dataset sign --key-env <VAR>`**. A verified signature proves
 the key-holder vouched for the dataset identity, NOT a "unaltered since date T" timestamp (still P-3).
 
 The Merkle root commits to file **names AND bytes** (the SAME path-bound convention as `vh hash <dir>`),
 so any edit/rename/add/remove changes it. What DataLedger does **NOT** prove: it is **not a timestamp**
-— "unaltered since date T" needs the human-owned signing/timestamp trust-root, a `needs-human` step in
-[`STRATEGY.md`](STRATEGY.md) — and the per-file `{source, license}` **hints are UNTRUSTED self-asserted
+— "unaltered since date T" needs the human-owned signing/timestamp trust-root, a `needs-human` step
+([P-3 — Human-owned steps](docs/TRUST-BOUNDARIES.md#p-3-trust-root)) — and the per-file `{source, license}` **hints are UNTRUSTED self-asserted
 metadata** that are NOT bound into the root (the summary counts what the dataset CLAIMS). Do not
 overclaim. Full buyer-facing spec, worked example, and the auditor / EU-AI-Act evidence mapping:
 [`docs/DATALEDGER.md`](docs/DATALEDGER.md).
@@ -564,7 +564,7 @@ signed-container does **not** cross-verify as a parcel one.
 
 ProofParcel inherits the **SAME honest trust posture as DataLedger**: the receipt binds the file SET and
 is signable, but is **NOT by itself a trusted delivery TIMESTAMP** — "delivered ON date T" rides the
-human-owned signing/timestamp trust-root (`needs-human`, P-3 in [`STRATEGY.md`](STRATEGY.md)); a valid
+human-owned signing/timestamp trust-root (`needs-human`, [P-3 — Human-owned steps](docs/TRUST-BOUNDARIES.md#p-3-trust-root)); a valid
 signature proves the key-holder vouched for the parcel identity, NOT a "unaltered since date T"
 timestamp. The `parcel` metadata (parcelId/sender/recipient) is **UNTRUSTED self-asserted metadata** that
 is NOT bound into the root. This build ships the **FORMAT, the offline VERIFIER, AND the `vh parcel sign`
@@ -829,7 +829,7 @@ npx hardhat test
 ```
 
 Local hardhat / in-memory EVM only. Deployment to any real network is a human checkpoint
-(see `BACKLOG.md`, EPIC-4); never run automatically.
+([P-2 — Human-owned steps](docs/TRUST-BOUNDARIES.md#p-2-public-deploy)); never run automatically.
 
 ## Docs
 

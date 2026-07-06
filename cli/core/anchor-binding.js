@@ -96,6 +96,11 @@ const ANCHORED_RECEIPT_KIND = "vh-anchored-receipt@1";
 // T-70.3 carries the same sentences into docs). The two load-bearing sentences — "local dev chain
 // proves MECHANISM only" and "as trustworthy as the chain + YOUR pinned contract address" — must
 // never drift.
+// FROZEN WIRE BYTES (T-78.2): `receipt.note` is compared to this constant VERBATIM at verify time
+// (here and in the published dist bundles), and committed receipts (examples/anchoring/,
+// anchors/release-*) embed it — repointing its internal "STRATEGY.md P-2" reference would invalidate
+// every already-issued receipt. The pointer's public, stable target is
+// docs/TRUST-BOUNDARIES.md#p-2-public-deploy ("Human-owned steps"); new prose must point THERE.
 const ANCHOR_TRUST_NOTE =
   "This anchored receipt binds the artifact digest above to an on-chain registry record. A receipt " +
   "from a LOCAL dev chain proves MECHANISM only and is worth NOTHING publicly until a human deploys " +

@@ -5,7 +5,7 @@ description: >-
   ethers, no hardhat, no network) and runs it over your release artifact(s). With `vendor:` set, a green
   check means "every sealed artifact still matches the bytes the key you pinned signed"; with `vendor:`
   omitted it is tamper-evidence ONLY and does NOT prove WHO signed. Adoption is one line:
-  `uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a` (re-pin to a
+  `uses: verifyhash/verifyhash/verifier/action@73ec69746ea6c9d1b357bfaa8874971e29016c2d` (re-pin to a
   full-40-hex commit SHA you trust).
 author: "verifyhash"
 

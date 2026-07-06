@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a
+      - uses: verifyhash/verifyhash/verifier/action@73ec69746ea6c9d1b357bfaa8874971e29016c2d
         with:
           vendor: "0xYOUR_PRODUCER_SIGNER_ADDRESS"   # the key that must have signed (omit to check tamper only)
           manifest: "release.manifest"               # OR set `artifacts:` instead

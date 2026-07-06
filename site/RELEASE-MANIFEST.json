@@ -26,7 +26,7 @@
       "path": "docs/ADOPT.md",
       "source": "docs/ADOPT.md",
       "bytes": 15348,
-      "sha256": "04626b22b5c2429e94ab767f2a3502e929c8a3b6ae53d0a72097aa2be1204337"
+      "sha256": "9d91eb1c1929aff13994e7f448f0a1ae89b569b29d72dc13f0d5599f4cf65d41"
     },
     {
       "path": "docs/CONFORMANCE.md",
@@ -146,7 +146,7 @@
       "path": "docs/overview.md",
       "source": "README.md",
       "bytes": 75435,
-      "sha256": "75c8f5bf3d6887c9b2aac5737034fa7970783ee9d150af5058e57a6827952fcb"
+      "sha256": "c9a187411d7cfd599b86a407743604d9047acae96366a76d08c85932219d9a4e"
     },
     {
       "path": "docs/pilot-README.md",

@@ -8,7 +8,7 @@ Pick the row that matches where you are, copy the one line, and run it. The **fr
 |---|---|---|
 | **No Node/terminal at all? Verify in your browser** (the 60-second challenge built in) | open [`verifier/dist/verify-vh-standalone.html`](../verifier/dist/verify-vh-standalone.html) | free |
 | **See it work in 5 seconds** (no clone, no flags, no key) | `npx --yes verify-vh demo` | free |
-| **Gate your CI on tampered/forged seals** (GitHub Actions) | `uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a` | free |
+| **Gate your CI on tampered/forged seals** (GitHub Actions) | `uses: verifyhash/verifyhash/verifier/action@73ec69746ea6c9d1b357bfaa8874971e29016c2d` | free |
 | **Issue signed, customer-verifiable seals of your own** (the paid producer surface) | `vh evidence seal <dir> --sign --license <f>` | **paid** |
 
 The on-ramp is **deliberately one direction**: the free rows convince you the verdict is real, then the
@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a
+      - uses: verifyhash/verifyhash/verifier/action@73ec69746ea6c9d1b357bfaa8874971e29016c2d
         with:
           vendor: "0xYOUR_PRODUCER_SIGNER_ADDRESS"   # the key that must have signed — the RECOMMENDED DEFAULT
           manifest: "release.manifest"               # OR set `artifacts:` instead

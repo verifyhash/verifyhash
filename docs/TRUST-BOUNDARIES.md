@@ -308,6 +308,28 @@ reconstructs the graph from the `Linked(child, parent)` event. Full detail and a
 | `uri` | a human hint of where the content might be | anything security-relevant — re-fetch + re-hash |
 | `parent` | the child author's *claim* that it built on that predecessor (anchored earlier) | genuine content ancestry; any transfer of the parent's authorship — re-derive both |
 
+---
+
+## Why not just `sha256sum` + a signed git tag — or `cosign` + Rekor?
+
+The question deserves a straight answer, because for many needs those free tools ARE the answer:
+`sha256sum` plus a signed git tag proves a tree's integrity to anyone who trusts your key, and
+`cosign` + Rekor add an ecosystem-scale signature scheme with a public transparency log. Nothing in
+this project claims they fail at what they demonstrably do well. The honest three-row comparison
+(the same table the README and verifyhash.com carry):
+
+| | The honest answer |
+|---|---|
+| **What `sha256sum`, a signed git tag, or `cosign` + Rekor already give you** | Real strengths: SHA-256 is a **FIPS 180-4** hash; git + GPG and Sigstore are **large, mature ecosystems** your counterparty may already run; and **Rekor's public transparency log** records an **inclusion timestamp** — an existence bound you get out of the box. If these cover your need, use them. |
+| **What verifyhash adds** | **One offline, single-file verifier** your counterparty runs with **no toolchain, no account, no CA** — no git/GPG install, no Sigstore account or OIDC identity, no certificate authority to trust; one file plus Node (or the browser page), run on the bytes in hand. Plus **signer-pin + per-file tamper localization** — a REJECT names the exact file that changed, not just a digest mismatch — and an **optional permissionless existence anchor** (the ownerless on-chain registry: no account there either, only gas). |
+| **What verifyhash does NOT do** | **No trusted timestamp without the anchor** — a seal alone never proves "sealed at time T"; Rekor gives an inclusion timestamp by default, while here that property arrives only once you anchor. And **keccak256 is not a FIPS-approved hash** — the Merkle cores here are keccak256, so a compliance regime that requires FIPS-approved digests end-to-end is better served by the tools above today (SHA-256 appears here only on specific surfaces, e.g. dataset/parcel attestation digests and published file checksums). |
+
+The boundary rules elsewhere in this document apply to the anchor leg unchanged: a block timestamp
+bounds existence (it is never authorship time), a signer-pin proves *who vouched* (a key, not a
+legal identity), and re-derive-and-compare is always the integrity check. See
+[`docs/ANCHORING.md`](ANCHORING.md) for the anchor leg — including the live Polygon mainnet
+registry a human deployed on 2026-07-03.
+
 ## Tests
 
 `test/TrustBoundaries.test.js` proves these boundaries are documented and behaviourally true:

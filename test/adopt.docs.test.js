@@ -289,3 +289,153 @@ describe("self-serve adoption funnel docs/ADOPT.md (T-55.3)", function () {
     expect(md, "public mirror must contain the fulfill line").to.contain(EXPECTED_FULFILL_PREFIX);
   });
 });
+
+// =====================================================================================================
+// T-74.5 — the head-on "why not sha256sum + a signed git tag / cosign / Rekor?" answer, the ANCHORING
+// reconciliation with the REAL 2026-07-03 Polygon mainnet deploy, and the vendor-pinned-by-default CI
+// recipe. These pins keep three honesty properties from rotting:
+//   (1) the comparison table (README + landing page + TRUST-BOUNDARIES) states the free tools'
+//       strengths AS strengths (FIPS hashes, ecosystems, Rekor timestamps), states what verifyhash
+//       adds, states what it does NOT do (keccak256 not FIPS; no trusted timestamp without the
+//       anchor) — and NEVER claims the free tools "can't" do what they demonstrably can;
+//   (2) docs/ANCHORING.md names the live contract while KEEPING the loop-never-deploys guardrail
+//       sentence verbatim, and its own prose no longer says "until a human deploys" (the FROZEN
+//       in-band receipt note is the one legitimate carrier of that clause — see the deploy-state
+//       lint in test/docs-paved-road.test.js);
+//   (3) docs/ADOPT.md's CI recipe leads with `vendor:` as the RECOMMENDED DEFAULT and labels the
+//       tamper-only (no `vendor:`) form the WEAKER mode.
+// =====================================================================================================
+
+describe("T-74.5: the head-on comparison + the mainnet-reconciled anchoring story", function () {
+  const TRUST_BOUNDARIES = path.join(REPO, "docs", "TRUST-BOUNDARIES.md");
+  const ANCHORING = path.join(REPO, "docs", "ANCHORING.md");
+  const SITE_INDEX = path.join(REPO, "site", "index.html");
+  const FIXTURE_RECEIPT = path.join(REPO, "examples", "anchoring", "anchored-receipt.local.json");
+
+  const MAINNET_ADDRESS = "0x77d8eF881D5aeEda64788968D13f9146fE1A609B";
+  const DEPLOY_DATE = "2026-07-03";
+  // The guardrail sentence the reconciliation must KEEP verbatim (acceptance clause 2).
+  const GUARDRAIL_SENTENCE =
+    "The loop itself still NEVER deploys, holds funds, or anchors publicly (see STRATEGY.md P-2/P-3).";
+
+  const COMPARISON_HEADING = "## Why not just `sha256sum` + a signed git tag — or `cosign` + Rekor?";
+
+  // Slice a markdown section: from its heading to the next same-level heading (or EOF).
+  function markdownSection(text, heading, name) {
+    const start = text.indexOf(heading);
+    expect(start, `${name} must carry the section "${heading}"`).to.be.greaterThan(-1);
+    const end = text.indexOf("\n## ", start + heading.length);
+    return end === -1 ? text.slice(start) : text.slice(start, end);
+  }
+
+  // The landing page's comparison section: <section id="compare"> … </section>.
+  function landingCompareSection(html) {
+    const start = html.indexOf('<section id="compare">');
+    expect(start, 'site/index.html must carry <section id="compare">').to.be.greaterThan(-1);
+    const end = html.indexOf("</section>", start);
+    expect(end, "the compare section must close").to.be.greaterThan(start);
+    return html.slice(start, end);
+  }
+
+  // The three-row honesty pins, shared across every surface that carries the table.
+  function assertHonestComparison(section, name) {
+    const low = section.toLowerCase();
+    // Row 1 — the free tools' strengths, stated AS strengths.
+    for (const s of ["sha256sum", "cosign", "rekor", "fips 180-4", "transparency log", "inclusion timestamp", "mature ecosystems"]) {
+      expect(low, `${name}: row 1 must credit the free tools ("${s}")`).to.contain(s);
+    }
+    expect(low, `${name}: row 1 must affirmatively recommend the free tools when they fit`).to.contain("use them");
+    // Row 2 — what verifyhash adds.
+    for (const s of ["one offline, single-file verifier", "no toolchain, no account, no ca", "signer-pin", "per-file tamper localization", "permissionless existence anchor"]) {
+      expect(low, `${name}: row 2 must state what verifyhash adds ("${s}")`).to.contain(s);
+    }
+    // Row 3 — what verifyhash does NOT do.
+    expect(low, `${name}: row 3 must state the timestamp boundary`).to.contain("no trusted timestamp without the anchor");
+    expect(low, `${name}: row 3 must state keccak256 is not FIPS`).to.contain("keccak256 is not a fips-approved hash");
+    // The honesty rule: NO claim the free tools "can't" do what they can — the section carries no
+    // can't/cannot at all (verifyhash's own limits are phrased as "does NOT do").
+    expect(section, `${name}: the comparison must never say "can't"/"cannot"`).to.not.match(/can['’]t|cannot/i);
+  }
+
+  it("README.md carries the three-row honest comparison table", function () {
+    const readme = fs.readFileSync(README, "utf8");
+    const section = markdownSection(readme, COMPARISON_HEADING, "README.md");
+    // EXACTLY three table body rows (the header/divider rows carry no bold row label).
+    const rows = section.split("\n").filter((l) => l.startsWith("| **What"));
+    expect(rows.length, "README's comparison table must have exactly three rows").to.equal(3);
+    assertHonestComparison(section, "README.md");
+  });
+
+  it("docs/TRUST-BOUNDARIES.md carries the SAME three-row table next to the full trust model", function () {
+    const tb = fs.readFileSync(TRUST_BOUNDARIES, "utf8");
+    const section = markdownSection(tb, COMPARISON_HEADING, "docs/TRUST-BOUNDARIES.md");
+    const rows = section.split("\n").filter((l) => l.startsWith("| **What"));
+    expect(rows.length, "TRUST-BOUNDARIES' comparison table must have exactly three rows").to.equal(3);
+    assertHonestComparison(section, "docs/TRUST-BOUNDARIES.md");
+  });
+
+  it("the landing page (site/index.html) carries the three-row comparison too", function () {
+    const html = fs.readFileSync(SITE_INDEX, "utf8");
+    const section = landingCompareSection(html);
+    const rows = section.match(/<tr>/g) || [];
+    expect(rows.length, "the landing comparison table must have exactly three rows").to.equal(3);
+    assertHonestComparison(section, "site/index.html");
+  });
+
+  it("docs/ANCHORING.md names the LIVE Polygon mainnet contract and the deploy date", function () {
+    const doc = fs.readFileSync(ANCHORING, "utf8");
+    expect(doc, "ANCHORING.md must name the live contract").to.contain(MAINNET_ADDRESS);
+    expect(doc, "ANCHORING.md must date the human deploy").to.contain(DEPLOY_DATE);
+    expect(doc).to.contain("Polygon mainnet (chain id 137)");
+    // The reconciliation aims readers at the live address from BOTH ends of the doc: the up-front
+    // callout and the Going-public section.
+    const goingPublic = doc.slice(doc.indexOf("## Going public"));
+    expect(goingPublic, "the Going-public section must carry the live address").to.contain(MAINNET_ADDRESS);
+  });
+
+  it("docs/ANCHORING.md KEEPS the loop-never-deploys/holds-funds guardrail sentence VERBATIM", function () {
+    // Word-for-word verbatim; markdown line wraps normalize to single spaces (the sentence has always
+    // wrapped across lines in the doc), but not one word may change.
+    const flat = fs.readFileSync(ANCHORING, "utf8").replace(/\s+/g, " ");
+    expect(flat, `ANCHORING.md must keep verbatim: "${GUARDRAIL_SENTENCE}"`).to.contain(GUARDRAIL_SENTENCE);
+  });
+
+  it("docs/ANCHORING.md's OWN prose drops the stale not-deployed clause (only the FROZEN in-band note may carry it)", function () {
+    const doc = fs.readFileSync(ANCHORING, "utf8");
+    const frozenNote = JSON.parse(fs.readFileSync(FIXTURE_RECEIPT, "utf8")).note;
+    // The doc must still quote the frozen note byte-for-byte (receipts pin it; an edited note is the
+    // named bad-receipt) …
+    expect(doc, "the frozen in-band note must still be quoted byte-for-byte").to.contain(frozenNote);
+    // … but OUTSIDE that quotation, the not-deployed clause is stale drift.
+    const scrubbed = doc.split(frozenNote).join(" ");
+    expect(scrubbed, "no not-deployed prose outside the frozen note").to.not.match(/until a human deploys/i);
+    expect(scrubbed).to.not.contain("no receipt from this repo is worth anything publicly");
+  });
+
+  it("README.md's anchoring pointer names the live deploy instead of the stale not-deployed phrase", function () {
+    const readme = fs.readFileSync(README, "utf8");
+    expect(readme, "README must name the live contract").to.contain(MAINNET_ADDRESS);
+    expect(readme).to.not.match(/until a human deploys/i);
+  });
+
+  it("ADOPT's CI recipe: `vendor:` is the RECOMMENDED DEFAULT, tamper-only labeled the WEAKER mode (doc + public mirror)", function () {
+    for (const [name, file] of [
+      ["docs/ADOPT.md", ADOPT],
+      ["public/docs/ADOPT.md", PUBLIC_ADOPT],
+    ]) {
+      const md = fs.readFileSync(file, "utf8");
+      // The yaml itself leads with the pinned vendor: line, marked as the recommended default.
+      expect(md, `${name}: the vendor: line must be marked the RECOMMENDED DEFAULT`).to.match(
+        /vendor: "0xYOUR_PRODUCER_SIGNER_ADDRESS"[^\n]*RECOMMENDED DEFAULT/
+      );
+      // Tamper-only (no vendor:) is explicitly the WEAKER mode, stated AFTER the recommended form.
+      const vendorAt = md.search(/vendor: "0xYOUR_PRODUCER_SIGNER_ADDRESS"/);
+      const weakerAt = md.indexOf("WEAKER, tamper-only mode");
+      expect(weakerAt, `${name}: must label the no-vendor form the "WEAKER, tamper-only mode"`).to.be.greaterThan(-1);
+      expect(weakerAt, `${name}: the weaker-mode label must follow the recommended vendor: form`).to.be.greaterThan(vendorAt);
+      // The weaker mode stays honest about what it still does and when it is legitimate.
+      expect(md, `${name}: the weaker mode must still be credited for tamper-evidence`).to.contain("it still catches tampered bytes");
+      expect(md, `${name}: unsigned seals remain the one legitimate tamper-only case`).to.contain("genuinely unsigned");
+    }
+  });
+});

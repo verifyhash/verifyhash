@@ -198,6 +198,15 @@
   .bcol li b{color:var(--fg);font-weight:600}
   .bcol li span{color:var(--muted)}
 
+  /* ---- comparison ---- */
+  .cmp-scroll{margin-top:2rem;overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
+  .cmp{width:100%;min-width:640px;border-collapse:collapse;font-size:.92rem}
+  .cmp th{font-family:var(--mono);font-size:.8rem;letter-spacing:.02em;font-weight:600;text-align:left;vertical-align:top;color:var(--accent);padding:1.1rem;width:16rem;border-bottom:1px solid var(--line-soft);background:rgba(255,255,255,.015)}
+  .cmp td{color:var(--muted);line-height:1.6;padding:1.1rem;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  .cmp tr:last-child th,.cmp tr:last-child td{border-bottom:0}
+  .cmp td b{color:var(--fg);font-weight:600}
+  .cmp code{font-family:var(--mono);font-size:.85em;color:var(--fg)}
+
   /* ---- on-chain ---- */
   .chain{border:1px solid var(--line);border-radius:12px;background:linear-gradient(115deg,var(--panel),var(--ink2));padding:1.6rem;margin-top:2rem;display:flex;flex-wrap:wrap;gap:1.2rem;align-items:center}
   .chain .meta{flex:1 1 16rem}
@@ -242,6 +251,7 @@
     <nav>
       <a href="#verify">Verify</a>
       <a href="#reproduce">Guarantees</a>
+      <a href="#compare">Compare</a>
       <a href="#agents">Agents</a>
       <a href="#onchain">On-chain</a>
       <a href="#pricing">Pricing</a>
@@ -387,6 +397,34 @@ Keep verifyhash's trust boundary intact — a seal proves tamper-evidence + sign
             <li><span class="m">→</span><span><b>Anything about the producer's intent.</b> It attests bytes, not honesty of the URI they attached.</span></li>
           </ul>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARE -->
+  <section id="compare">
+    <div class="wrap">
+      <p class="eyebrow">The head-on question</p>
+      <div class="sec-head"><h2>Why not sha256sum + a signed git tag — or cosign + Rekor?</h2>
+        <p>Because for many needs those free tools are the right answer. Their strengths are real, and
+          we state them as strengths — then say exactly what verifyhash adds, and what it does not do.</p></div>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <tbody>
+            <tr>
+              <th>What <code>sha256sum</code>, a signed git tag, or <code>cosign</code> + Rekor already give you</th>
+              <td>Real strengths: SHA-256 is a <b>FIPS 180-4</b> hash; git + GPG and Sigstore are <b>large, mature ecosystems</b> your counterparty may already run; and <b>Rekor's public transparency log</b> records an <b>inclusion timestamp</b> — an existence bound you get out of the box. If these cover your need, use them.</td>
+            </tr>
+            <tr>
+              <th>What verifyhash adds</th>
+              <td><b>One offline, single-file verifier</b> your counterparty runs with <b>no toolchain, no account, no CA</b> — no git/GPG install, no Sigstore account or OIDC identity, no certificate authority to trust; one file plus Node (or the browser page), run on the bytes in hand. Plus <b>signer-pin + per-file tamper localization</b> — a REJECT names the exact file that changed, not just a digest mismatch — and an <b>optional permissionless existence anchor</b> (the ownerless on-chain registry below: no account there either, only gas).</td>
+            </tr>
+            <tr>
+              <th>What verifyhash does NOT do</th>
+              <td><b>No trusted timestamp without the anchor</b> — a seal alone never proves "sealed at time T"; Rekor gives an inclusion timestamp by default, while here that property arrives only once you anchor. And <b>keccak256 is not a FIPS-approved hash</b> — the Merkle cores here are keccak256, so a compliance regime that requires FIPS-approved digests end-to-end is better served by the tools above today.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </section>

@@ -1,7 +1,8 @@
 "use strict";
 
 // test/docs-paved-road.test.js — the OFFLINE docs lint for the copy-paste front door
-// (T-73.1: fenced `vh …` lines; T-74.2: fenced `npx …` lines + README publish-state consistency).
+// (T-73.1: fenced `vh …` lines; T-74.2: fenced `npx …` lines + README publish-state consistency;
+//  T-74.5: deploy-state consistency — the mainnet claim vs the stale not-deployed phrase).
 //
 // WHY THIS TEST EXISTS
 //   The paved road IS the product surface a stranger meets first: fenced `vh …` lines in README.md and
@@ -484,6 +485,66 @@ function publicationClaims(text) {
   };
 }
 
+// ---------------------------------------------------------------------------------------------------
+// 6. Deploy-state consistency (T-74.5) — a doc that claims the LIVE Polygon mainnet registry
+//    (0x77d8eF88…, human-deployed 2026-07-03) must never ALSO carry the stale not-deployed phrasing
+//    ("… until a human deploys the registry …") in its own prose — the exact contradiction class the
+//    publish-state check above closed for npm, relocated to the chain.
+//
+//    CARVE-OUT (deliberate, load-bearing): the in-band anchored-receipt trust note is FROZEN — it
+//    rides verbatim in every receipt ever built, INCLUDING the real mainnet receipts under anchors/,
+//    and an edited note is the named `bad-receipt` reject. A doc that quotes that note byte-for-byte
+//    (docs/ANCHORING.md must, per test/anchoring.docs.test.js) is quoting an artifact, not making a
+//    claim — so the frozen note (read from the committed fixture receipt, the same bytes
+//    cli/core/anchor-binding.js ships) is stripped BEFORE the lint runs. Any OTHER occurrence of the
+//    not-deployed phrase next to the mainnet claim is drift and fails, naming the doc.
+// ---------------------------------------------------------------------------------------------------
+
+const MAINNET_REGISTRY_ADDRESS = "0x77d8eF881D5aeEda64788968D13f9146fE1A609B";
+const NOT_DEPLOYED_PHRASES = [
+  /until a human deploys/i,
+  /no receipt from this repo is worth anything publicly/i,
+  /not (?:yet )?deployed to (?:a |any )?(?:real |public |main)/i,
+];
+
+// The frozen in-band trust note, read from the committed fixture receipt (byte-identical to the
+// shipped ANCHOR_TRUST_NOTE constant — test/anchoring.docs.test.js pins that equality).
+const FROZEN_ANCHOR_NOTE = JSON.parse(
+  fs.readFileSync(path.join(REPO, "examples", "anchoring", "anchored-receipt.local.json"), "utf8")
+).note;
+
+// The doc surfaces a stranger meets that may carry the mainnet claim. BACKLOG/STRATEGY history and
+// code/test constants are out of scope on purpose: they record the past, they are not the front door.
+const DEPLOY_STATE_DOCS = [
+  "README.md",
+  "docs/ADOPT.md",
+  "docs/ANCHORING.md",
+  "docs/GO-LIVE.md",
+  "docs/SUPERVISOR-RUNBOOK.md",
+  "docs/TRUST-BOUNDARIES.md",
+  "docs/VENDOR-PROVENANCE.md",
+  "examples/anchoring/README.md",
+  "site/index.html",
+];
+
+// deployStateProblems(name, text) -> { claimsMainnet, problems } after stripping the frozen note.
+function deployStateProblems(name, text) {
+  const scrubbed = text.split(FROZEN_ANCHOR_NOTE).join(" ");
+  const claimsMainnet = scrubbed.toLowerCase().includes(MAINNET_REGISTRY_ADDRESS.toLowerCase());
+  const problems = [];
+  if (claimsMainnet) {
+    const flat = scrubbed.replace(/\n>\s*/g, " ").replace(/\s+/g, " ");
+    for (const re of NOT_DEPLOYED_PHRASES) {
+      if (re.test(flat)) {
+        problems.push(
+          `${name}: claims the LIVE mainnet registry (${MAINNET_REGISTRY_ADDRESS}) AND still carries the stale not-deployed phrase ${re}`
+        );
+      }
+    }
+  }
+  return { claimsMainnet, problems };
+}
+
 describe("docs paved road: every fenced `vh …` line in README/ADOPT is a real, accepted invocation (T-73.1)", function () {
   this.timeout(120000); // two short node subprocesses (help + probe driver); generous for slow CI boxes
 
@@ -650,5 +711,55 @@ describe("docs paved road: every fenced `npx …` line names a runnable bin + th
     const clean = publicationClaims("`verifyhash` **is published** on the public npm registry.");
     expect(clean.published).to.equal(true);
     expect(clean.notPublished, "a consistent README must not trip the not-published markers").to.equal(false);
+  });
+});
+
+describe("docs lint: deploy-state consistency — the mainnet claim never rides with the stale not-deployed phrase (T-74.5)", function () {
+  it("every front-door doc that names the live Polygon mainnet registry is free of the not-deployed phrase (frozen in-band note carved out)", function () {
+    const problems = [];
+    const claimants = [];
+    for (const rel of DEPLOY_STATE_DOCS) {
+      const text = fs.readFileSync(path.join(REPO, rel), "utf8");
+      const r = deployStateProblems(rel, text);
+      if (r.claimsMainnet) claimants.push(rel);
+      problems.push(...r.problems);
+    }
+    expect(problems, `deploy-state drift:\n  - ${problems.join("\n  - ")}`).to.deep.equal([]);
+    // Anti-rot: the check has something to bite on — the primary front doors DO claim the deploy.
+    for (const mustClaim of ["README.md", "docs/ANCHORING.md", "site/index.html"]) {
+      expect(claimants, `${mustClaim} must name the live mainnet registry (2026-07-03 deploy)`).to.include(mustClaim);
+    }
+  });
+
+  it("the frozen in-band trust note really is the carved-out bytes (it still carries the pre-deploy clause, verbatim)", function () {
+    // The carve-out only makes sense while the FROZEN note is the thing carrying the old wording:
+    // receipts pin it verbatim (an edited note is the named bad-receipt), so docs must quote it
+    // unchanged even though the registry is now live. If the note itself is ever versioned, this
+    // pin — and the carve-out — should be revisited together.
+    expect(FROZEN_ANCHOR_NOTE).to.contain("until a human deploys the registry (STRATEGY.md P-2)");
+    expect(FROZEN_ANCHOR_NOTE).to.contain("proves MECHANISM only");
+  });
+
+  it("NEGATIVE SELF-TEST: the stale phrase NEXT TO the mainnet claim is DETECTED; the frozen note alone is carved out; no-claim docs are exempt", function () {
+    // (a) the drift shape this lint exists to kill: live-address claim + stale prose.
+    const drifted =
+      `The registry is live at ${MAINNET_REGISTRY_ADDRESS}.\n` +
+      "> A receipt is worth nothing publicly until a human\n> deploys the registry.\n";
+    const a = deployStateProblems("synthetic", drifted);
+    expect(a.claimsMainnet).to.equal(true);
+    expect(a.problems.length, "the line-wrapped stale phrase beside the mainnet claim must be detected").to.be.greaterThan(0);
+
+    // (b) the carve-out: the FROZEN in-band note (byte-for-byte) beside the mainnet claim is fine —
+    // that is exactly what docs/ANCHORING.md must ship.
+    const quoted = `The registry is live at ${MAINNET_REGISTRY_ADDRESS}.\n\n> ${FROZEN_ANCHOR_NOTE}\n`;
+    const b = deployStateProblems("synthetic", quoted);
+    expect(b.claimsMainnet).to.equal(true);
+    expect(b.problems, "the frozen verbatim note must NOT be flagged (it is an artifact, not a claim)").to.deep.equal([]);
+
+    // (c) a doc that never claims the deploy may keep historical phrasing (it contradicts nothing).
+    const historical = "Until a human deploys the registry, a local receipt proves mechanism only.\n";
+    const c = deployStateProblems("synthetic", historical);
+    expect(c.claimsMainnet).to.equal(false);
+    expect(c.problems).to.deep.equal([]);
   });
 });

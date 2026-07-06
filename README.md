@@ -110,6 +110,19 @@ Full detail, including the table of "trust it for / do NOT trust it for", is in
 [`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md). The exact directory-root construction is in
 [`docs/MERKLE-LEAVES.md`](docs/MERKLE-LEAVES.md).
 
+## Why not just `sha256sum` + a signed git tag — or `cosign` + Rekor?
+
+Head-on, because it is the right first question. For many needs those free tools are the correct
+answer, and nothing here claims they fail at what they demonstrably do well — the comparison below
+states their strengths as strengths. The same table lives in
+[`docs/TRUST-BOUNDARIES.md`](docs/TRUST-BOUNDARIES.md) next to the full trust model.
+
+| | The honest answer |
+|---|---|
+| **What `sha256sum`, a signed git tag, or `cosign` + Rekor already give you** | Real strengths: SHA-256 is a **FIPS 180-4** hash; git + GPG and Sigstore are **large, mature ecosystems** your counterparty may already run; and **Rekor's public transparency log** records an **inclusion timestamp** — an existence bound you get out of the box. If these cover your need, use them. |
+| **What verifyhash adds** | **One offline, single-file verifier** your counterparty runs with **no toolchain, no account, no CA** — no git/GPG install, no Sigstore account or OIDC identity, no certificate authority to trust; one file plus Node (or the browser page), run on the bytes in hand. Plus **signer-pin + per-file tamper localization** — a REJECT names the exact file that changed, not just a digest mismatch — and an **optional permissionless existence anchor** (the ownerless on-chain registry above: no account there either, only gas). |
+| **What verifyhash does NOT do** | **No trusted timestamp without the anchor** — a seal alone never proves "sealed at time T"; Rekor gives an inclusion timestamp by default, while here that property arrives only once you anchor. And **keccak256 is not a FIPS-approved hash** — the Merkle cores here are keccak256, so a compliance regime that requires FIPS-approved digests end-to-end is better served by the tools above today (SHA-256 appears here only on specific surfaces, e.g. dataset/parcel attestation digests and published file checksums). |
+
 ## CLI (`cli/vh.js`)
 
 ```
@@ -851,7 +864,9 @@ Local hardhat / in-memory EVM only. Deployment to any real network is a human ch
   anchored receipt PROVES (an on-chain registry record binds this exact digest at a block whose timestamp
   BOUNDS existence — as trustworthy as the chain + YOUR pinned contract address; `--author-bound` =
   front-run-resistant first-claimant attribution per D-1) and does NOT (a receipt from a LOCAL dev chain
-  proves MECHANISM only — worth nothing publicly until a human deploys per STRATEGY.md P-2; not the
+  proves MECHANISM only — a publicly meaningful receipt names a public, pinned deployment, e.g. the live
+  Polygon mainnet registry `0x77d8eF881D5aeEda64788968D13f9146fE1A609B` a human deployed 2026-07-03 per
+  STRATEGY.md P-2; not the
   artifact's truth; not attribution beyond the anchoring key; not legal advice), the free line (both verbs
   FREE; gas is your own), and the worked local flow with committed offline fixtures
   ([`examples/anchoring/`](examples/anchoring/)).

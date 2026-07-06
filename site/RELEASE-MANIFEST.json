@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 34,
-  "totalBytes": 1083294,
+  "totalBytes": 1091005,
   "files": [
     {
       "path": "LICENSE",
@@ -25,8 +25,8 @@
     {
       "path": "docs/ADOPT.md",
       "source": "docs/ADOPT.md",
-      "bytes": 12384,
-      "sha256": "08d40425a1bc3ca98b0e8dffe706023fd83e1af7a7eebf50076127e9eedaac07"
+      "bytes": 12539,
+      "sha256": "02d1e963c738b077a9fae19db0a0a7040a6401b0784a9d2b268d7b65fcaefb3f"
     },
     {
       "path": "docs/CONFORMANCE.md",
@@ -121,8 +121,8 @@
     {
       "path": "docs/TRUST-BOUNDARIES.md",
       "source": "docs/TRUST-BOUNDARIES.md",
-      "bytes": 21631,
-      "sha256": "0e013408bb2d99c396f63b16bfa281f9c29ab0e80f369883e1d1ddaa4f0ea947"
+      "bytes": 24082,
+      "sha256": "8464de8199ce224267ab89089d95fdc5e7a7e833093ce0ee5cfed3e834c68dde"
     },
     {
       "path": "docs/TRUSTLEDGER.md",
@@ -145,8 +145,8 @@
     {
       "path": "docs/overview.md",
       "source": "README.md",
-      "bytes": 73355,
-      "sha256": "eebe6cc0361a90c49be13f9b5a624168f2705b975d5da99e526a9c2edd3674cd"
+      "bytes": 75435,
+      "sha256": "75c8f5bf3d6887c9b2aac5737034fa7970783ee9d150af5058e57a6827952fcb"
     },
     {
       "path": "docs/pilot-README.md",
@@ -163,8 +163,8 @@
     {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 33164,
-      "sha256": "c54079cdc7adec7b998a325d3d7d5504074117a51be1cb689eff5aa23121c7ec"
+      "bytes": 36189,
+      "sha256": "e839f988a4007eaac26b9bdca538776a03ddc4e39f8ff6093e3938320b7c808d"
     },
     {
       "path": "llms.txt",

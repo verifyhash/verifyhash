@@ -86,9 +86,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: verifyhash/verifyhash/verifier/action@17696eff5d910b496b8935052ff42ee2e7c6a85a
         with:
-          vendor: "0xYOUR_PRODUCER_SIGNER_ADDRESS"   # the key that must have signed (omit to check tamper only)
+          vendor: "0xYOUR_PRODUCER_SIGNER_ADDRESS"   # the key that must have signed — the RECOMMENDED DEFAULT
           manifest: "release.manifest"               # OR set `artifacts:` instead
 ```
+
+> **`vendor:` pinned is the default, RECOMMENDED form** — copy the recipe as-is for any SIGNED
+> release. A signed artifact gated **without** `vendor:` is accepted as long as its signature
+> recovers to the signer the packet **self-asserts** — an attacker who re-signs a tampered release
+> with **their own key** passes that gate — so omitting `vendor:` is the
+> **WEAKER, tamper-only mode**: it still catches tampered bytes, and it is the right mode **only**
+> for genuinely unsigned evidence seals (where there is no signer to pin).
 
 The `uses:` line is pre-pinned to this repository's real slug (`verifyhash/verifyhash`) and a full 40-hex
 commit SHA reachable from `main`, so it works exactly as pasted. Supply-chain hygiene: **re-pin `@<sha>` to
@@ -97,11 +104,6 @@ under you). The composite action installs **only** the standalone verifier (`js-
 resolves its bundled `verifier/` tree via `${{ github.action_path }}` at run time — so you do **not** vendor
 `verifier/` into your repo. The action lives at [`verifier/action/`](../verifier/action/action.yml); its full
 input table and exit-code contract are in [`verifier/action/README.md`](../verifier/action/README.md).
-
-> ⚠️ **Pin `vendor:` for any SIGNED release.** A signed artifact gated **without** `vendor:` is accepted as
-> long as its signature recovers to the signer the packet **self-asserts** — so an attacker who re-signs a
-> tampered release with **their own key** passes the gate. Leave `vendor:` empty **only** for genuinely
-> unsigned evidence seals (where there is no signer to pin).
 
 ---
 

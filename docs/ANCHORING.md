@@ -6,6 +6,13 @@ permissionless, append-only contract — so an on-chain record binds the artifac
 timestamp **bounds its existence**. This is Option **(C)** of the STRATEGY.md **P-3** trust-root
 menu: no timestamp authority, no signing-key custody — the chain itself is the witness.
 
+> **Live deployment — Polygon mainnet (chain id 137).** A **human** took the standing **P-2** deploy
+> step on **2026-07-03**: the registry is live at
+> [`0x77d8eF881D5aeEda64788968D13f9146fE1A609B`](https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B)
+> (ownerless — the deploying key holds no special power over it). Pin the address out-of-band; every
+> command below works against it unchanged. Deploying was — and stays — a human action, never the
+> loop's (see *Going public*, below).
+
 The bridge is deliberately thin: the pure core (`cli/core/anchor-binding.js`) knows how to extract
 the one canonical digest from each sealed artifact kind — re-validating it through the artifact's
 **own shipped validator first** — and how to verify, **offline**, that an anchored receipt binds
@@ -69,12 +76,19 @@ Every receipt carries this note **in-band, verbatim** (an edited note is a named
 
 > This anchored receipt binds the artifact digest above to an on-chain registry record. A receipt from a LOCAL dev chain proves MECHANISM only and is worth NOTHING publicly until a human deploys the registry (STRATEGY.md P-2). On a public chain it proves ONLY that an on-chain record binds this exact digest at a block whose timestamp BOUNDS existence — as trustworthy as the chain + YOUR pinned contract address — NOT the artifact's truth, NOT faithful recording, NOT attribution beyond the anchoring key. The `chain` facts in this receipt are the anchorer's claim until re-checked against the chain (`vh verify-anchored --rpc`).
 
+(The note is FROZEN into every receipt ever built — an edited note is the named `bad-receipt` — so
+its wording predates the 2026-07-03 mainnet deploy: read its not-yet-deployed clause as "unless the
+receipt names a public, pinned deployment". One now exists — the live registry above — and a LOCAL
+dev-chain receipt is still worth nothing publicly.)
+
 Spelled out:
 
 - **A LOCAL dev-chain receipt proves MECHANISM only.** The committed fixtures below and every test
   in this repo anchor on an ephemeral local chain (chainId `31337`) — that demonstrates the pipeline
-  works end to end, and **nothing more**. Until a human deploys the registry to a public chain
-  (STRATEGY.md **P-2**), no receipt from this repo is worth anything publicly.
+  works end to end, and **nothing more**. Publicly meaningful receipts come from a **public, pinned
+  deployment** (STRATEGY.md **P-2**): since **2026-07-03** one exists — the Polygon mainnet registry
+  at `0x77d8eF881D5aeEda64788968D13f9146fE1A609B` above — but a local dev-chain receipt is worth
+  nothing publicly either way.
 - **NOT the artifact's truth or faithful recording.** Anchoring binds bytes, not reality: a sealed
   evidence packet's files, an agent log's events, a dataset's provenance hints are exactly as true
   as they were before anchoring (see each product's own trust note — garbage in is out of scope).
@@ -175,14 +189,20 @@ node cli/vh.js verify-anchored examples/anchoring/anchored-receipt.local.json ex
 It prints `ACCEPTED (offline binding check)` and exits `0`; flip one byte of either file and it is a
 named reject, exit `3`. (`test/anchoring.docs.test.js` runs exactly this leg.)
 
-## Going public — the standing human gate (P-2)
+## Going public — the P-2 gate was TAKEN on 2026-07-03 (Polygon mainnet)
 
-Everything above is built, tested, and free to run — against a **local** chain. The single missing
-step for receipts that are worth something publicly is the standing **P-2** deploy, which is a
-**human** action the loop never takes: provision a THROWAWAY faucet-funded testnet key, deploy to
-**Polygon Amoy first** (`scripts/deploy.js`), verify the source on the explorer, and publish the
-address so consumers can **pin** it. From that moment the exact commands above work unchanged —
-point `--rpc` at Amoy and `--contract` at YOUR pinned address — and every sealed artifact in the
-family gains "digest existed by public-chain block time T", with `--author-bound` front-run
-resistance, for the price of gas. The loop itself still NEVER deploys, holds funds, or anchors
+Everything above is built, tested, and free to run — and the missing step is missing no longer: on
+**2026-07-03** a **human** took the standing **P-2** deploy step, and the registry is **live on
+Polygon mainnet (chain id 137)** at
+[`0x77d8eF881D5aeEda64788968D13f9146fE1A609B`](https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B)
+— ownerless, with the address published so consumers can **pin** it out-of-band. The exact commands
+above work unchanged — point `--rpc` at a Polygon endpoint and `--contract` at YOUR pinned address —
+and every sealed artifact in the family gains "digest existed by public-chain block time T", with
+`--author-bound` front-run resistance, for the price of gas.
+
+The P-2 recipe itself remains the standing playbook for anyone standing up their OWN registry (it is
+permissionless and ownerless — you may prefer your own deployment to ours): provision a
+THROWAWAY faucet-funded testnet key, rehearse on **Polygon Amoy first** (`scripts/deploy.js`), verify the
+source on the explorer, and publish the address so consumers can **pin** it. Deploying — anywhere,
+ever — remains a **human** action. The loop itself still NEVER deploys, holds funds, or anchors
 publicly (see STRATEGY.md P-2/P-3).

@@ -33,6 +33,13 @@ python3 verify_vh.py <packet.vhevidence.json> --vendor 0xYourVendorAddr [--dir <
 echo $?   # 0 = ACCEPT, 3 = REJECT
 ```
 
+This is the counterparty **cross-check** documented for buyers in
+[`../docs/INDEPENDENT-VERIFICATION.md`](../docs/INDEPENDENT-VERIFICATION.md) §6 ("Verify with a
+SECOND, independent implementation"): run it next to `verify-vh` on the same packet + files and the
+ACCEPT/REJECT verdict + exit code must MATCH. This file (with `SPEC.md` and `DEPENDENCIES.md`) ships
+in the published `verifyhash` npm package, so an installer gets the second implementation without
+cloning this repo.
+
 Run the cross-implementation conformance harness over the frozen vector suite (it
 compares every implementation present on the machine — JS always, plus Python/Go/Rust
 when their toolchains exist — against `../verify-vectors/vectors.json`):

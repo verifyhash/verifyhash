@@ -125,6 +125,9 @@ const VERIFIER_ALLOWLIST = [
 // T-77.2 — the 4-language independent-verifier suite docs/INDEPENDENT-VERIFICATION.md §6 sells:
 // an npm installer must actually GET the alternate implementations + the frozen conformance
 // vectors, or the "verify with up to FOUR independent implementations" pitch is a clone-only claim.
+// (This also EXECUTES T-76.2's ship decision: verifier-py/verify_vh.py + SPEC.md + DEPENDENCIES.md
+// must be PRESENT in every published tarball — while the internal-loop negation set above still
+// holds — so a counterparty really can run the SECOND implementation from an npm install.)
 const ALT_IMPL_ALLOWLIST = [
   // Python — one stdlib-only file + the extracted format spec an auditor writes a 5th impl from.
   "verifier-py/verify_vh.py",

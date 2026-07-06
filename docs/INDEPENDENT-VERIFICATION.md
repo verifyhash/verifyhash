@@ -430,6 +430,40 @@ cargo run --release --offline -- ../verify-vectors/cases/genuine-single/packet.v
 #    … or build once: cargo build --release --offline   ->   target/release/verify-vh
 ```
 
+### Verify with a SECOND, independent implementation — the counterparty cross-check
+
+Everything in this subsection is the same fact from §6's table, stated as the two-party protocol it
+exists for. If you **distrust one verifier** — your counterparty handed you `verify-vh` and you won't
+run their tool, or your auditor refuses a verdict that rests on a single codebase — **run the other
+one**: a different language, **zero shared code, zero shared hash library, zero shared EC library,
+zero external dependencies**, over the SAME packet + files, and confirm it reaches the **SAME
+ACCEPT/REJECT** with the same exit code. For the Python implementation the exact command is:
+
+```bash
+python3 verify_vh.py <packet> --vendor 0x… --dir <files>
+echo $?   # 0 = ACCEPT, 3 = REJECT — the verdict MUST match what verify-vh said on the same inputs
+```
+
+`verify_vh.py` is **one stdlib-only file** — [`../verifier-py/verify_vh.py`](../verifier-py/verify_vh.py),
+shipped in the published `verifyhash` npm package together with the extracted format spec
+([`../verifier-py/SPEC.md`](../verifier-py/SPEC.md)) and its dependency statement
+([`../verifier-py/DEPENDENCIES.md`](../verifier-py/DEPENDENCIES.md): **none** — keccak-f[1600] and
+secp256k1 recovery are hand-rolled in the file) — so the cross-check needs no `pip install`, no
+network, and no producer software: stock CPython 3.10+ is enough. If the two verdicts ever
+**disagree** on identical inputs, at least one implementation is wrong: stop, treat the artifact as
+unverified, and use the frozen vectors below to localize which side diverged.
+
+**The honest scope of the cross-check** (details in the scope bullets at the end of §6):
+
+- **Evidence-seal path only** — `verify_vh.py` verifies `vh.evidence-seal` /
+  `vh.evidence-seal-signed` packets; other artifact kinds remain JS-reference-only.
+- **The SAME trust boundary as `verify-vh` (§3), unchanged.** A matching second verdict proves
+  tamper-evidence + signer-pin harder; it is still **NOT a trusted "sealed at time T"** (that
+  requires **P-3**) and adds no new trust root beyond the vendor address you pin out-of-band.
+- **keccak256 is not a FIPS-approved hash.** The seal format uses Ethereum keccak256 (domain byte
+  `0x01`), so that is what `verify_vh.py` hand-rolls; Python's stdlib has FIPS-approved
+  `hashlib.sha256` / `hashlib.sha3_256` ready if a FIPS-mode seal variant is ever added.
+
 **Why this matters (the pitch, in one sentence).** Four languages, zero shared dependencies, one
 frozen vector suite — a bug or a backdoor would have to be reproduced **identically, four times, in
 four unrelated codebases** to go unnoticed, and your own auditor can write a **fifth**

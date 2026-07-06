@@ -275,6 +275,14 @@ naming each offending path (only the artifact file itself is exempt). Recommende
 `verify-vh <artifact> --vendor 0xADDR --strict --exact-dir`. On a self-contained artifact (dataset
 attestation, proof bundle, agent packet) the flag is a named usage error — never silently ignored.
 
+**A bare merkle-proof bundle proves internal consistency ONLY — `--expect-root` binds it to a root you
+trust.** A proof bundle is self-contained: its leaf, siblings, and root all come from the same file, so
+a bare verify can only prove the bundle is **well-formed** (the verdict says so — it is NOT bound to any
+external/anchored root). For a genuine membership accept, pin the root you obtained **out-of-band**
+(e.g. read from the on-chain anchor or the producer's published record): `verify-vh proof.json
+--expect-root 0x<root>`. A fold that only reaches the artifact's own root REJECTS — exit `3`, reason
+`external_root_mismatch`. See [`docs/PROOFS.md`](../docs/PROOFS.md) for the full posture.
+
 ---
 
 ## 2a. Gate a whole release in one command — batch / manifest mode

@@ -332,7 +332,14 @@ function formatVerifyProof(r) {
       `    contract verifyLeaf accepts the proof:    ${yn(r.onChainVerified)}`
     );
   } else if (r.offlineOk) {
-    lines.push("", "  on-chain checks: SKIPPED (no provider) — offline fold only.");
+    // T-75.4: a fold with no on-chain leg must never read as an accept — the leaf, siblings, and root
+    // all came from the same artifact, so the fold alone proves internal consistency ONLY.
+    lines.push(
+      "",
+      "  on-chain checks: SKIPPED (no provider) — offline fold only. This proof is well-formed",
+      "  (internally consistent) ONLY; it is NOT bound to any external/anchored root — pin the root",
+      "  out-of-band or verify against the on-chain record (--rpc) for an ACCEPT."
+    );
   }
   lines.push("", `  result:         ${r.status}`);
 
@@ -479,7 +486,9 @@ async function runVerifyProof(opts) {
     // surface the offline-only result (status stays REJECTED so a script never reads it as a full
     // pass). Callers that want an offline-only confirmation read result.offlineOk.
     result.status = STATUS.REJECTED;
-    result.note = "no provider: offline fold passed but the on-chain anchored check was not performed";
+    result.note =
+      "no provider: offline fold passed but the on-chain anchored check was not performed — " +
+      "the proof is well-formed (internally consistent) only; it is NOT bound to any external/anchored root";
     _emit(result, opts, log);
     return result;
   }

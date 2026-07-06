@@ -119,6 +119,33 @@ mistakes an offline-only pass for a full accept.
 | `REJECTED` | An offline or on-chain check failed (tampered `leaf`/`contentHash`/`proof`/`root`, or the chain rejected the proof). Never a false accept. | non-zero |
 | `NOT ANCHORED` | The proof folds offline, but its root was never anchored on-chain. Distinct from a tamper. | non-zero |
 
+### A bare bundle "matching its own root" proves internal consistency ONLY (T-75.4)
+
+A proof artifact is **self-contained**: the `leaf`, the `proof` siblings, and the `root` all travel in
+the same file. Folding the proof back to the artifact's OWN `root` therefore checks the bundle against
+**itself** — a fabricated bundle over made-up hashes passes that same check. So no verifier surface
+may present a bare bundle's fold as a strong accept:
+
+- **`vh verify-proof` with no provider** reports the offline fold but the verdict stays
+  non-`ACCEPTED`, and the human output says why in words: *this proof is well-formed (internally
+  consistent) ONLY; it is NOT bound to any external/anchored root — pin the root out-of-band or verify
+  against the on-chain record (`--rpc`) for an `ACCEPT`.* The strong `ACCEPTED` is reserved for a
+  proof checked against the root **anchored on-chain** (`isAnchored` + the contract's `verifyLeaf`).
+- **the independent offline verifier** (`verify-vh <bundle>.vhproof.json`) never prints an
+  unconditional `root matches: yes` for a proof bundle. Bare, the line is qualified — `(vs the
+  artifact's OWN embedded root — INTERNAL consistency only, NOT an external/anchored root)` — and the
+  verdict reads `OK — WELL-FORMED (internal consistency ONLY), NOT an anchored-membership accept.`,
+  carrying the full caveat (`PROOF_UNANCHORED_NOTE`). For the strong accept **offline**, hand it the
+  root you obtained **independently of the artifact**: `verify-vh proof.json --expect-root 0x<root>`
+  (e.g. the root read from the on-chain anchor, or the producer's published record). The fold must
+  then reach THAT root — `root matches: yes (vs the INDEPENDENTLY-SUPPLIED --expect-root …)` — and a
+  fold that only reaches the artifact's own root REJECTS (exit 3, reason `external_root_mismatch`).
+  `--expect-root` on a non-proof artifact is a named usage error, never a silently-ignored flag.
+
+Rule of thumb: **a Merkle proof means something only relative to a root you trust from somewhere
+else** — the on-chain anchor, or an out-of-band pin. The bundle alone can only ever prove it is
+well-formed.
+
 ---
 
 ## Worked end-to-end example (prove → hand over → verify-proof)
@@ -256,6 +283,12 @@ boundary:
 `test/cli.proofs.docs.test.js` is the docs-rot guard for this file + the README CLI block: it pins the
 schema fields, the `kind`/`schemaVersion`, the verification stages, and the trust caveats to the real
 `cli/proof.js` exports, so the prose cannot silently drift from the code.
+
+`test/verifier.proof-expect-root.test.js` proves the T-75.4 bare-bundle posture on the independent
+verifier: a bare bundle's verdict states internal consistency ONLY (weakened wording, qualified
+`root matches` line), the strong accept appears only under a matching `--expect-root`, a wrong pin is
+a named `external_root_mismatch` reject, and `vh verify-proof` with no provider prints the same
+weakened wording.
 
 
 ---

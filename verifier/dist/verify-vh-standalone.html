@@ -1978,9 +1978,33 @@ function verifyDatasetAttestation(att) {
 // RE-DERIVE the leaf from relPath + contentHash, then fold leafHash(leaf) up through the proof siblings
 // with nodeHash and confirm it reproduces `root` — byte-identically to the on-chain verifyLeaf, but
 // fully OFFLINE. (The on-chain "is this root anchored" check is out of scope for the offline verifier.)
+//
+// T-75.4 — THE BARE-BUNDLE OVERCLAIM FIX. A bare proof bundle is SELF-CONTAINED: the leaf, the
+// siblings, AND the root all come from the SAME file, so folding it back to its own embedded root is
+// checking the artifact against ITSELF — a fabricated bundle over made-up hashes passes that check
+// identically. A bare verify therefore proves the bundle is WELL-FORMED (internally consistent) ONLY,
+// and the verdict must say so instead of an unconditional "root matches: yes". The STRONG membership
+// accept is reserved for a root the verifier obtained INDEPENDENTLY of the artifact: pass it as
+// `expectRoot` (CLI: --expect-root <0xroot>, obtained out-of-band — e.g. read from the on-chain
+// anchor or the producer's published record). With an expected root supplied, the fold must reach
+// THAT root; a fold that only reaches the artifact's own root REJECTS (external_root_mismatch).
 // ---------------------------------------------------------------------------
 
-function verifyProofBundle(art) {
+// The in-band trust notes for the two proof-root bindings (exported; pinned by tests + docs/PROOFS.md).
+const PROOF_UNANCHORED_NOTE =
+  "INTERNAL CONSISTENCY ONLY: this proof is well-formed — the leaf re-derives from contentHash+relPath " +
+  "and the siblings fold back to the root — but the leaf, siblings, and root ALL come from the same " +
+  "artifact, so this checks the bundle against ITSELF. It is NOT bound to any external/anchored root " +
+  "— pin the root out-of-band (--expect-root <0xroot>) or verify against the on-chain record " +
+  "(vh verify-proof --rpc).";
+
+const PROOF_EXTERNAL_NOTE =
+  "EXTERNALLY BOUND: the proof was checked against an INDEPENDENTLY-SUPPLIED expected root " +
+  "(--expect-root, obtained out-of-band), not merely the root the artifact itself carries. Membership " +
+  "holds only if the fold reaches that pinned root. This still proves SET-MEMBERSHIP only — never " +
+  "authorship — and does not itself prove the pinned root is anchored on-chain.";
+
+function verifyProofBundle(art, expectRoot) {
   for (const f of ["root", "leaf", "contentHash"]) {
     if (typeof art[f] !== "string" || !merkle.HEX32_RE.test(art[f])) {
       throw new IOError(`proof artifact ${f} must be a 0x-prefixed 32-byte hex string`);
@@ -1992,6 +2016,17 @@ function verifyProofBundle(art) {
   if (!Array.isArray(art.proof)) {
     throw new IOError("proof artifact `proof` must be an array of 0x 32-byte hex siblings");
   }
+  // The OPTIONAL independently-supplied root (T-75.4). Validated here so the disk and bytes paths
+  // reject a malformed pin identically (a UsageError — the pin is caller input, not artifact bytes).
+  let externalRoot = null;
+  if (expectRoot !== undefined && expectRoot !== null) {
+    if (typeof expectRoot !== "string" || !merkle.HEX32_RE.test(expectRoot)) {
+      throw new UsageError(
+        "--expect-root must be a 0x-prefixed 32-byte hex Merkle root (the root you obtained out-of-band)"
+      );
+    }
+    externalRoot = expectRoot.toLowerCase();
+  }
   const derivedLeaf = merkle.pathLeaf(art.relPath, art.contentHash);
   const leafMatches = derivedLeaf.toLowerCase() === art.leaf.toLowerCase();
   let computed = merkle.leafHash(art.leaf);
@@ -1999,18 +2034,34 @@ function verifyProofBundle(art) {
     computed = merkle.nodeHash(computed, sib);
   }
   const foldsToRoot = computed.toLowerCase() === art.root.toLowerCase();
+  // Internal consistency (the bare-bundle check) vs the EXTERNAL binding (the strong check): with an
+  // expected root pinned, the verdict additionally requires the fold to reach THAT root.
+  const internallyConsistent = leafMatches && foldsToRoot;
+  const externalRootMatches = externalRoot === null ? null : computed.toLowerCase() === externalRoot;
+  const ok = internallyConsistent && (externalRoot === null || externalRootMatches === true);
   return {
-    matched: leafMatches && foldsToRoot ? [{ relPath: art.relPath, contentHash: art.contentHash }] : [],
+    matched: ok ? [{ relPath: art.relPath, contentHash: art.contentHash }] : [],
     changed:
-      leafMatches && foldsToRoot ? [] : [{ relPath: art.relPath, expectedContentHash: art.root, actualContentHash: computed }],
+      internallyConsistent ? [] : [{ relPath: art.relPath, expectedContentHash: art.root, actualContentHash: computed }],
     missing: [],
     escaped: [],
     unexpected: [],
     sealedRoot: art.root,
     recomputedRoot: computed,
-    rootMatches: leafMatches && foldsToRoot,
-    filesOk: leafMatches && foldsToRoot,
-    proof: { derivedLeaf, leafMatches, foldsToRoot },
+    // With a pinned root, `rootMatches` answers the question that matters: does the fold reach the
+    // INDEPENDENTLY-SUPPLIED root? Bare, it can only ever mean "matches the artifact's OWN root" —
+    // the renderer qualifies it so it never reads as an anchored-root match.
+    rootMatches: externalRoot !== null ? externalRootMatches : internallyConsistent,
+    filesOk: ok,
+    proof: {
+      derivedLeaf,
+      leafMatches,
+      foldsToRoot,
+      rootBinding: externalRoot !== null ? "external" : "internal",
+      expectedRoot: externalRoot,
+      externalRootMatches,
+      note: externalRoot !== null ? PROOF_EXTERNAL_NOTE : PROOF_UNANCHORED_NOTE,
+    },
   };
 }
 
@@ -2670,7 +2721,7 @@ function attachPinning(result) {
 // Returns { result, code } — code is the EXIT-contract integer.
 // ---------------------------------------------------------------------------
 
-function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
+function verifyParsedArtifact({ artifact, obj, vendor, readEntry, expectRoot }) {
   const kind = obj.kind;
   const pinned = vendor != null ? normalizeAddress(vendor, "--vendor") : null;
 
@@ -2711,6 +2762,15 @@ function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
     );
   }
 
+  // T-75.4: --expect-root pins the root a PROOF bundle must fold to; on any other kind the pin is a
+  // NAMED usage error (never a silently-ignored flag — the house rule for every fail-closed flag).
+  if (expectRoot !== undefined && expectRoot !== null && payloadKind !== KINDS.PROOF) {
+    throw new UsageError(
+      `--expect-root applies only to a merkle-proof bundle (${JSON.stringify(KINDS.PROOF)}); ` +
+        `${JSON.stringify(payloadKind)} carries its own full file set / identity to re-derive`
+    );
+  }
+
   // Re-derive the root from the referenced bytes per the (underlying) kind.
   let fileResult;
   if (payloadKind === KINDS.EVIDENCE_SEAL) {
@@ -2720,7 +2780,7 @@ function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
   } else if (payloadKind === KINDS.DATASET_ATTESTATION) {
     fileResult = verifyDatasetAttestation(payload);
   } else if (payloadKind === KINDS.PROOF) {
-    fileResult = verifyProofBundle(payload);
+    fileResult = verifyProofBundle(payload, expectRoot);
   } else {
     throw new UsageError(
       `unrecognized embedded artifact kind: ${JSON.stringify(payloadKind)}`
@@ -2745,6 +2805,10 @@ function verifyParsedArtifact({ artifact, obj, vendor, readEntry }) {
     else if (fileResult.changed.length > 0) reason = "CHANGED";
     else if (fileResult.missing.length > 0) reason = "MISSING";
     else if (fileResult.unexpected.length > 0) reason = "UNEXPECTED";
+    else if (fileResult.proof && fileResult.proof.externalRootMatches === false)
+      // T-75.4: the proof is internally consistent but folds to a DIFFERENT root than the one the
+      // caller pinned out-of-band — a distinct, named reject (the file is not a member of YOUR root).
+      reason = "external_root_mismatch";
     else reason = "root_mismatch";
   }
 
@@ -2839,7 +2903,9 @@ function applyRevocationsDecision(result, revocationsInput, asOf, nowISO) {
 //   * `vendor`       — optional 0x-address pin (same semantics as `--vendor`);
 //   * `revocationsText` — optional revocations input (JSON text / container / array; same semantics as
 //     the CONTENT of a `--revocations` file), with optional `asOf` (canonical ISO instant) + `nowISO`;
-//   * `artifactName` — optional label used verbatim as `result.artifact` (defaults below).
+//   * `artifactName` — optional label used verbatim as `result.artifact` (defaults below);
+//   * `expectRoot` — optional independently-supplied Merkle root a PROOF bundle must fold to (same
+//     semantics as `--expect-root`, T-75.4); on any other kind it is a named usage rejection.
 //
 // CONTRACT — NEVER THROWS. Hostile input (non-JSON artifact text, an oversized / absolute / `..` map
 // key, a non-bytes map value, a malformed vendor or asOf) is NAMED-rejected: the return value is
@@ -2921,7 +2987,7 @@ function verifyArtifactFromBytes(params) {
           "{ artifactText, files, vendor?, revocationsText?, asOf?, nowISO?, artifactName? }"
       );
     }
-    const { artifactText, files, vendor, revocationsText, asOf, nowISO, artifactName } = params;
+    const { artifactText, files, vendor, revocationsText, asOf, nowISO, artifactName, expectRoot } = params;
     if (typeof artifactText !== "string") {
       throw new UsageError("verifyArtifactFromBytes requires `artifactText` (the artifact JSON as a string)");
     }
@@ -2965,6 +3031,7 @@ function verifyArtifactFromBytes(params) {
       obj,
       vendor,
       readEntry: makeMapReadEntry(files),
+      expectRoot,
     });
 
     // OPTIONAL recipient-side TRUST-DECISION-AS-OF, from caller-supplied revocations INPUT (never a
@@ -3161,15 +3228,22 @@ return {
     // render as the same clean green a pinned accept gets — the bytes verify, but anyone's key passes.
     // Mirror the CLI: amber box, an UNPINNED title, and the unpinnedNote surfaced as a warning band.
     var unpinnedAccept = r.accepted && r.pinning === "unpinned";
+    // T-75.4: a BARE merkle-proof bundle's accept is the WEAK verdict — its leaf/siblings/root all
+    // come from the same file, so it proves internal consistency ONLY, never anchored membership.
+    var proofInternal = r.proof && r.proof.rootBinding === "internal";
     var box = el("div", "verdict " + (r.accepted ? (unpinnedAccept ? "unpinned" : "accept") : "reject"));
     var title = r.accepted
-      ? (unpinnedAccept ? "ACCEPT — but UNPINNED: the bytes verify, but nobody you trust is pinned." : "ACCEPT — the artifact verifies.")
+      ? (unpinnedAccept ? "ACCEPT — but UNPINNED: the bytes verify, but nobody you trust is pinned." : (proofInternal ? "ACCEPT — WELL-FORMED (internal consistency ONLY), NOT an anchored-membership accept." : "ACCEPT — the artifact verifies."))
       : (r.verdict === "REVOKED" ? "REVOKED" : "REJECTED") + " (" + r.reason + ")";
     box.appendChild(el("div", "verdict-title", title));
     // The UNPINNED note (the same statement the CLI prints as unpinnedNote) rides RIGHT under the title,
     // in the amber warn style, so an unpinned accept can never read as clean provenance.
     if (unpinnedAccept && r.unpinnedNote) {
       box.appendChild(el("div", "warn", r.unpinnedNote));
+    }
+    // T-75.4: the internal-consistency-only note rides under a bare proof bundle's title the same way.
+    if (r.accepted && proofInternal && r.proof.note) {
+      box.appendChild(el("div", "warn", r.proof.note));
     }
     box.appendChild(kv("artifact", String(r.artifact)));
     box.appendChild(kv("kind", r.kind + (r.payloadKind !== r.kind ? "  (embeds " + r.payloadKind + ")" : "")));
@@ -3187,7 +3261,7 @@ return {
     }
     if (r.sealedRoot != null) box.appendChild(kv("sealed root", r.sealedRoot));
     if (r.recomputedRoot != null) box.appendChild(kv("recomputed root", r.recomputedRoot));
-    if (r.rootMatches != null) box.appendChild(kv("root matches", r.rootMatches ? "yes" : "NO"));
+    if (r.rootMatches != null) box.appendChild(kv("root matches", (r.rootMatches ? "yes" : "NO") + (r.proof ? (r.proof.rootBinding === "external" ? "  (vs the independently-supplied expected root)" : "  (vs the artifact's OWN embedded root — internal consistency only)") : "")));
     if (r.agent) {
       box.appendChild(kv("declared head", "{ size: " + r.agent.head.size + ", root: " + r.agent.head.root + " }"));
       if (r.agent.counts) {

@@ -13,7 +13,7 @@ Standalone, single file, Node core only:
 - `curl -O https://verifyhash.com/verify-vh-standalone.js`
 - `node verify-vh-standalone.js <packet.vhevidence.json> --vendor 0x<address-the-producer-told-you-to-pin>`
 - Exit code `0` = accepted, `3` = rejected. Drop it into CI to gate a build on real provenance.
-- Cross-check your download — published SHA-256:
+- Cross-check your download — published SHA-256 of `verify-vh-standalone.js`:
   `86f8262317539a48324de8733bf974134938213ae66f7e43b6aac6965bc1fba3`
 
 Full toolchain — live on npm:
@@ -21,6 +21,8 @@ Full toolchain — live on npm:
 
 Browser, no terminal (fully offline; drop a packet in):
 - https://verifyhash.com/verify-vh-standalone.html
+- Cross-check your download — published SHA-256 of `verify-vh-standalone.html`:
+  `2e0ea39b9e79ae469adf980c0978c8172ad89fe69f35d33df9e041ade5fc5e23`
 
 ## What a verify PROVES
 - Tamper-evidence: every byte re-derives to the same root, or the check fails and names the file that drifted.

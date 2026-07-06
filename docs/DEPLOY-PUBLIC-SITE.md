@@ -147,6 +147,17 @@ example, edit the `0x<…>` placeholder in §2 of that page (in `site/index.html
 > when the page's `Published SHA-256:` ≠ the shipped bundle's sha256**, so this drift can never ship
 > silently — but fix it at the source by editing `site/index.html`'s `Published SHA-256:` value.
 
+> 🔁 **`site/llms.txt`'s checksums are GENERATED — never hand-edit them (T-74.3).** The
+> `published SHA-256 of \`<file>\`` digest lines in `site/llms.txt` are written by
+> `node scripts/site-release.js` from the same fresh assembly the release manifest records, so every
+> surface that publishes the verifier checksum — `site/llms.txt`, `site/index.html`, the `.sha256`
+> sidecar, `site/RELEASE-MANIFEST.json` — carries the IDENTICAL digest. Any mismatch turns `--check`
+> RED, naming `LLMS DRIFT` (this is the structural fix for the 2026-07-05 incident where the live
+> llms.txt published a hand-drifted checksum matching nothing). And remember: **the LIVE site serves a
+> pinned bundle** — whatever release generation was last uploaded; rebuilding `verifier/dist/` in the
+> repo changes nothing live. Redeploy is needs-human (the P-11 flow of §3c): until you re-upload,
+> `site/DEPLOYED.json` truthfully records the older live generation and `--diff` reports it stale.
+
 ### 3c — close the loop: `--mark-deployed`, then keep `--diff` clean (the P-11 refresh)
 
 The full refresh flow is: **release → upload → `--mark-deployed` → `--diff` clean.**

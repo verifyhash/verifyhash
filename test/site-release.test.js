@@ -1043,3 +1043,312 @@ describe("T-67.2: --diff / --mark-deployed — site drift visible, the refresh d
     });
   });
 });
+
+// =================================================================================================
+// T-74.3 — ONE canonical published checksum: site/llms.txt is GENERATED from the release manifest,
+// and a STANDING test forbids digest drift across every surface that publishes it.
+//
+// WHY: on 2026-07-05 the live llms.txt published a HAND-maintained checksum (c73f795…) that matched
+// no shipped bundle — a trust-killer on the exact page that tells AI agents to "cross-check your
+// download". The supervisor hot-fixed the live value (→ 6de719e…) and redeployed; this suite makes the
+// fix STRUCTURAL so it can never recur:
+//   (1) GENERATION OWNERSHIP: the no-flag `node scripts/site-release.js` run REWRITES the
+//       `published SHA-256 of \`<file>\`` digest lines in site/llms.txt from the same fresh assembly
+//       the release manifest records — a hand-edited value cannot survive a release, and `--check`
+//       exits NONZERO (naming LLMS DRIFT) on any mismatch.
+//   (2) THE STANDING IDENTITY PIN: site/llms.txt, site/index.html, site/RELEASE-MANIFEST.json, the
+//       .sha256 sidecar (and BUILD-PROVENANCE.json) all carry the IDENTICAL digest, equal to the
+//       freshly computed sha256 of verifier/dist/verify-vh-standalone.js (and the .html bundle, which
+//       IS published, gets the same treatment). site/DEPLOYED.json carries that same digest whenever
+//       the live site is in sync; when it lags (the documented needs-human redeploy state — the LIVE
+//       site serves a PINNED bundle, see below) the lag must be a WHOLE-GENERATION lag recorded by the
+//       sanctioned `--mark-deployed` flow and VISIBLY reported by `--diff` — a hand-drifted single
+//       value can never masquerade as deploy lag.
+//   (3) DOC NOTE: the LIVE site serves a pinned bundle; redeploy is needs-human (P-11) — pinned in
+//       docs/DEPLOY-PUBLIC-SITE.md AND in the script itself.
+// =================================================================================================
+
+// makeFakeLlmsRepo(scratch, opts) — a throwaway repo that ships BOTH verifier bundles, the sidecar, a
+// consistent landing page, and an llms.txt whose digest lines are deliberately WRONG by default (the
+// generator must own them). opts.llmsText replaces the whole llms.txt body for structural RED cases.
+function makeFakeLlmsRepo(scratch, opts) {
+  opts = opts || {};
+  const root = fs.mkdtempSync(path.join(scratch, "fake-llms-"));
+  fs.mkdirSync(path.join(root, "dist"), { recursive: true });
+  fs.mkdirSync(path.join(root, "site"), { recursive: true });
+  const bundle = "// fake verifier bundle\nconsole.log('verify');\n";
+  const bundleHash = sha256(Buffer.from(bundle));
+  const htmlBundle = "<!doctype html><p>fake browser verifier</p>\n";
+  const htmlHash = sha256(Buffer.from(htmlBundle));
+  fs.writeFileSync(path.join(root, "dist", "verify-vh-standalone.js"), bundle);
+  fs.writeFileSync(path.join(root, "dist", "verify-vh-standalone.js.sha256"), `${bundleHash}  verify-vh-standalone.js\n`);
+  fs.writeFileSync(path.join(root, "dist", "verify-vh-standalone.html"), htmlBundle);
+  fs.writeFileSync(
+    path.join(root, "site", "index.html"),
+    `<!doctype html><html><body><p>Published SHA-256:</p><code>${bundleHash}</code></body></html>\n`
+  );
+  const llms =
+    opts.llmsText !== undefined
+      ? opts.llmsText
+      : "# fake llms\n\n" +
+        "- Cross-check your download — published SHA-256 of `verify-vh-standalone.js`:\n  `" + "0".repeat(64) + "`\n\n" +
+        "Browser:\n- published SHA-256 of `verify-vh-standalone.html`:\n  `" + "1".repeat(64) + "`\n";
+  fs.writeFileSync(path.join(root, "site", "llms.txt"), llms);
+  fs.writeFileSync(
+    path.join(root, "site", "publish-set.json"),
+    JSON.stringify(
+      {
+        schema: sr.PUBLISH_SET_SCHEMA,
+        publish: {
+          "index.html": "site/index.html",
+          "llms.txt": "site/llms.txt",
+          "verify-vh-standalone.js": "dist/verify-vh-standalone.js",
+          "verify-vh-standalone.js.sha256": "dist/verify-vh-standalone.js.sha256",
+          "verify-vh-standalone.html": "dist/verify-vh-standalone.html",
+        },
+      },
+      null,
+      2
+    ) + "\n"
+  );
+  return { root, bundleHash, htmlHash };
+}
+
+describe("T-74.3: ONE canonical published checksum — llms.txt is GENERATED; drift forbidden on every surface", function () {
+  this.timeout(120000);
+
+  let scratch;
+  before(function () {
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), "vh-llms-canon-test-"));
+    if (!fs.existsSync(path.join(REPO, "public", "RELEASE-MANIFEST.json"))) {
+      expect(runCli([]).status).to.equal(0);
+    }
+  });
+  after(function () {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  });
+
+  describe("anchor parsing + pure rendering (the generator's contract)", function () {
+    it("parseLlmsDigestAnchors finds next-line, same-line, and token-less anchors", function () {
+      const text =
+        "- published SHA-256 of `a.js`:\n  `" + "a".repeat(64) + "`\n" +
+        "- published SHA-256 of `b.js`: `" + "b".repeat(64) + "` (same line)\n" +
+        "- published SHA-256 of `c.js`:\n(nothing hex here)\n";
+      const anchors = sr.parseLlmsDigestAnchors(text);
+      expect(anchors.map((a) => a.file)).to.deep.equal(["a.js", "b.js", "c.js"]);
+      expect(anchors[0].digest).to.equal("a".repeat(64));
+      expect(anchors[1].digest).to.equal("b".repeat(64));
+      expect(anchors[2].digest).to.equal(null);
+      // an unrelated 64-hex BEFORE any anchor is never claimed
+      expect(sr.parseLlmsDigestAnchors("`" + "f".repeat(64) + "`\nno anchors\n")).to.deep.equal([]);
+    });
+
+    it("renderLlmsDigests rewrites ONLY the 64-hex tokens (layout byte-identical otherwise)", function () {
+      const before =
+        "# head\n- published SHA-256 of `x.js`:\n  `" + "0".repeat(64) + "`\ntail — published SHA-256 of `y.html`: `" + "1".repeat(64) + "` end\n";
+      const digests = new Map([
+        ["x.js", "2".repeat(64)],
+        ["y.html", "3".repeat(64)],
+      ]);
+      const out = sr.renderLlmsDigests(before, digests);
+      expect(out.problems).to.deep.equal([]);
+      expect(out.text).to.equal(before.replace("0".repeat(64), "2".repeat(64)).replace("1".repeat(64), "3".repeat(64)));
+      expect(out.updated.map((u) => u.file).sort()).to.deep.equal(["x.js", "y.html"]);
+      // already-canonical input renders to ITSELF (idempotent, nothing updated)
+      const again = sr.renderLlmsDigests(out.text, digests);
+      expect(again.text).to.equal(out.text);
+      expect(again.updated).to.deep.equal([]);
+    });
+
+    it("NAMED problems: anchor for an unshipped file / token-less anchor / MISSING required anchor", function () {
+      // anchor names a file the publish set does not ship
+      let out = sr.renderLlmsDigests("- published SHA-256 of `ghost.js`:\n  `" + "9".repeat(64) + "`\n", new Map());
+      expect(out.problems.join("\n")).to.include('"ghost.js"');
+      // anchor with no 64-hex token to own
+      out = sr.renderLlmsDigests("- published SHA-256 of `x.js`:\nno digest anywhere\n", new Map([["x.js", "2".repeat(64)]]));
+      expect(out.problems.join("\n")).to.match(/no 64-hex digest token/);
+      // the js bundle (and the html bundle, when published) MUST be anchored
+      out = sr.renderLlmsDigests("no anchors at all\n", new Map([
+        [sr.VERIFY_BUNDLE_PATH, "4".repeat(64)],
+        [sr.VERIFY_HTML_PATH, "5".repeat(64)],
+      ]));
+      expect(out.problems.join("\n")).to.include(`must publish the sha256 of "${sr.VERIFY_BUNDLE_PATH}"`);
+      expect(out.problems.join("\n")).to.include(`must publish the sha256 of "${sr.VERIFY_HTML_PATH}"`);
+    });
+  });
+
+  describe("(1) GENERATION OWNERSHIP — the assembler writes the digests; hand-drift cannot survive", function () {
+    it("the no-flag run OVERWRITES wrong hand values in llms.txt from the manifest, then --check is GREEN", function () {
+      const { root, bundleHash, htmlHash } = makeFakeLlmsRepo(scratch); // llms digests deliberately WRONG
+      const res = runCliAt(root, []);
+      expect(res.status, res.stderr).to.equal(0);
+      expect(res.stdout).to.include("regenerated site/llms.txt published SHA-256"); // the ownership is announced
+      const synced = fs.readFileSync(path.join(root, "site", "llms.txt"), "utf8");
+      expect(synced).to.include(bundleHash); // js digest generated
+      expect(synced).to.include(htmlHash); // html digest generated ("and .html if published")
+      expect(synced).to.not.include("0".repeat(64));
+      expect(synced).to.not.include("1".repeat(64));
+      // the staged webroot ships the SYNCED bytes and the whole tree checks green
+      expect(fs.readFileSync(path.join(root, "public", "llms.txt"), "utf8")).to.equal(synced);
+      expect(runCliAt(root, ["--check"]).status).to.equal(0);
+    });
+
+    it("hand-drifting the digest AFTER a release → --check exits NONZERO naming LLMS DRIFT; re-running the assembler REPAIRS it", function () {
+      const { root, bundleHash } = makeFakeLlmsRepo(scratch);
+      expect(runCliAt(root, []).status).to.equal(0); // green baseline
+      // the exact historical failure: someone hand-edits the published checksum
+      const llmsPath = path.join(root, "site", "llms.txt");
+      fs.writeFileSync(llmsPath, fs.readFileSync(llmsPath, "utf8").replace(bundleHash, "c".repeat(64)));
+      const red = runCliAt(root, ["--check"]);
+      expect(red.status).to.equal(1); // acceptance (1): --check exits nonzero on mismatch
+      expect(red.stderr).to.match(/LLMS DRIFT/);
+      expect(red.stderr).to.include("c".repeat(64)); // the wrong advertised digest is named
+      expect(red.stderr).to.include(bundleHash); // the correct shipped digest is named
+      expect(red.stderr).to.match(/never hand-edit/);
+      // …and the library agrees
+      const probs = sr.llmsDigestProblems(sr.assemble(root)).join("\n");
+      expect(probs).to.match(/LLMS DRIFT/);
+      // the REPAIR is the normal release: the generator rewrites the digest from the manifest
+      expect(runCliAt(root, []).status).to.equal(0);
+      expect(fs.readFileSync(llmsPath, "utf8")).to.include(bundleHash);
+      expect(runCliAt(root, ["--check"]).status).to.equal(0);
+    });
+
+    it("llms.txt WITHOUT the required anchors → release() REFUSES with a NAMED problem (js and html both required when shipped)", function () {
+      const { root } = makeFakeLlmsRepo(scratch, { llmsText: "# fake llms with no digest anchors\n" });
+      expect(() => sr.release(root)).to.throw(/must publish the sha256 of "verify-vh-standalone\.js"/);
+      expect(() => sr.release(root)).to.throw(/must publish the sha256 of "verify-vh-standalone\.html"/);
+      // check() on a hand-staged webroot names the same gap (deleting the anchor line can never go green)
+      sr.writeAssembly(path.join(root, "public"), sr.assemble(root));
+      fs.writeFileSync(path.join(root, "site", "RELEASE-MANIFEST.json"), sr.assemble(root).manifestJson);
+      const res = sr.check(root);
+      expect(res.ok).to.equal(false);
+      expect(res.problems.join("\n")).to.match(/LLMS DRIFT.*publishes no SHA-256/);
+    });
+
+    it("an anchor naming a file the release does NOT ship → release() REFUSES, named", function () {
+      const { root } = makeFakeLlmsRepo(scratch, {
+        llmsText:
+          "- published SHA-256 of `verify-vh-standalone.js`:\n  `" + "0".repeat(64) + "`\n" +
+          "- published SHA-256 of `verify-vh-standalone.html`:\n  `" + "1".repeat(64) + "`\n" +
+          "- published SHA-256 of `ghost.bin`:\n  `" + "2".repeat(64) + "`\n",
+      });
+      expect(() => sr.release(root)).to.throw(/"ghost\.bin"/);
+    });
+
+    it("a webroot that does not publish llms.txt is EXEMPT (no false positives; syncLlms is a no-op)", function () {
+      const { root } = makeFakeVerifierRepo(scratch); // publish set has no llms.txt
+      expect(sr.syncLlms(root)).to.deep.equal({ changed: false, sourceRel: null, updated: [] });
+      expect(sr.llmsDigestProblems(sr.assemble(root))).to.deep.equal([]);
+      sr.release(root); // must not throw
+    });
+
+    it("the REAL tree is already canonical: the no-flag run leaves site/llms.txt byte-identical (idempotent)", function () {
+      const before = fs.readFileSync(path.join(REPO, "site", "llms.txt"));
+      const res = runCli([]);
+      expect(res.status, res.stderr).to.equal(0);
+      expect(res.stdout).to.not.include("regenerated"); // nothing to regenerate — already canonical
+      expect(fs.readFileSync(path.join(REPO, "site", "llms.txt")).equals(before)).to.equal(true);
+    });
+  });
+
+  describe("(2) THE STANDING IDENTITY PIN — every surface publishes the IDENTICAL, freshly-recomputed digest", function () {
+    let freshJs, freshHtml;
+    before(function () {
+      freshJs = sha256(fs.readFileSync(path.join(REPO, "verifier", "dist", "verify-vh-standalone.js")));
+      freshHtml = sha256(fs.readFileSync(path.join(REPO, "verifier", "dist", "verify-vh-standalone.html")));
+    });
+
+    it("site/llms.txt publishes EXACTLY the fresh sha256 of verify-vh-standalone.js AND .html (both published)", function () {
+      const anchors = sr.parseLlmsDigestAnchors(fs.readFileSync(path.join(REPO, "site", "llms.txt"), "utf8"));
+      const byFile = new Map(anchors.map((a) => [a.file, a.digest]));
+      expect(byFile.get("verify-vh-standalone.js"), "llms.txt must publish the js bundle digest").to.equal(freshJs);
+      expect(byFile.get("verify-vh-standalone.html"), "llms.txt must publish the html bundle digest").to.equal(freshHtml);
+    });
+
+    it("site/llms.txt == site/index.html == site/RELEASE-MANIFEST.json == .sha256 sidecar == BUILD-PROVENANCE — ONE digest, equal to the fresh recomputation", function () {
+      const llmsDigest = new Map(
+        sr.parseLlmsDigestAnchors(fs.readFileSync(path.join(REPO, "site", "llms.txt"), "utf8")).map((a) => [a.file, a.digest])
+      ).get("verify-vh-standalone.js");
+      const pageDigest = sr.extractPublishedHash(fs.readFileSync(path.join(REPO, "site", "index.html"), "utf8"));
+      const manifest = JSON.parse(fs.readFileSync(path.join(REPO, "site", "RELEASE-MANIFEST.json"), "utf8"));
+      const manifestDigest = manifest.files.find((f) => f.path === "verify-vh-standalone.js").sha256;
+      const sidecarDigest = sr.parseSidecarHash(
+        fs.readFileSync(path.join(REPO, "verifier", "dist", "verify-vh-standalone.js.sha256"), "utf8")
+      );
+      const provenanceRaw = fs.readFileSync(path.join(REPO, "verifier", "dist", "BUILD-PROVENANCE.json"), "utf8");
+      // every surface, one digest:
+      expect(llmsDigest, "llms.txt vs fresh").to.equal(freshJs);
+      expect(pageDigest, "index.html vs fresh").to.equal(freshJs);
+      expect(manifestDigest, "RELEASE-MANIFEST vs fresh").to.equal(freshJs);
+      expect(sidecarDigest, "sidecar vs fresh").to.equal(freshJs);
+      expect(provenanceRaw, "BUILD-PROVENANCE must record the same bundle digest").to.include(freshJs);
+      // and the html bundle's manifest entry matches its fresh recomputation too
+      expect(manifest.files.find((f) => f.path === "verify-vh-standalone.html").sha256).to.equal(freshHtml);
+      // the assembled webroot agrees end-to-end (no problem on any cross-assertion)
+      const assembly = sr.assemble(REPO);
+      expect(sr.landingConsistencyProblems(assembly)).to.deep.equal([]);
+      expect(sr.llmsDigestProblems(assembly)).to.deep.equal([]);
+    });
+
+    it("site/DEPLOYED.json carries the SAME digest — or a WHOLE-GENERATION, sanctioned-flow lag that --diff reports", function () {
+      // The LIVE site serves a PINNED bundle (redeploy is needs-human, P-11). site/DEPLOYED.json is the
+      // truthful record of what is believed LIVE, so it carries the identical digest whenever live is in
+      // sync; while live lags a repo rebuild, the ONLY acceptable divergence is a whole-generation lag:
+      //   - recorded by the sanctioned `--mark-deployed` flow (which REFUSES self-contradicting
+      //     generations, so the deployed generation's page/llms/sidecar agreed with ITS bundle), AND
+      //   - the companion surfaces of the generation (sidecar, index.html, llms.txt) lag WITH the
+      //     bundle — a hand-drift of the single recorded digest can never masquerade as deploy lag, AND
+      //   - `--diff` VISIBLY reports the bundle as CHANGED (the needs-human refresh is decision-ready).
+      const snap = sr.loadDeployedSnapshot(REPO);
+      const deployed = snap.files["verify-vh-standalone.js"];
+      expect(deployed, "DEPLOYED.json must record the verifier bundle").to.match(/^[0-9a-f]{64}$/);
+      if (deployed === freshJs) {
+        // live is in sync: all four surfaces carry the IDENTICAL digest == fresh recomputation
+        expect(snap.files["verify-vh-standalone.js.sha256"]).to.equal(
+          sha256(fs.readFileSync(path.join(REPO, "verifier", "dist", "verify-vh-standalone.js.sha256")))
+        );
+        return;
+      }
+      // live lags the repo build — the documented pinned-bundle state. It must be the SANCTIONED record:
+      expect(sr.isIsoUtc(snap.markedDeployedAt), "a lagging snapshot must come from --mark-deployed").to.equal(true);
+      // …a WHOLE-generation lag (every coupled surface moved with the bundle):
+      const currentSidecar = sha256(fs.readFileSync(path.join(REPO, "verifier", "dist", "verify-vh-standalone.js.sha256")));
+      const currentIndex = sha256(fs.readFileSync(path.join(REPO, "site", "index.html")));
+      const currentLlms = sha256(fs.readFileSync(path.join(REPO, "site", "llms.txt")));
+      expect(snap.files["verify-vh-standalone.js.sha256"], "sidecar must lag WITH the bundle").to.not.equal(currentSidecar);
+      expect(snap.files["index.html"], "index.html must lag WITH the bundle").to.not.equal(currentIndex);
+      expect(snap.files["llms.txt"], "llms.txt must lag WITH the bundle").to.not.equal(currentLlms);
+      // …and VISIBLE: --diff names the bundle as CHANGED and calls the site stale
+      const diff = sr.diffDeployed(REPO);
+      expect(diff.stale).to.equal(true);
+      const row = diff.rows.find((r) => r.path === "verify-vh-standalone.js");
+      expect(row.status).to.equal("CHANGED");
+      expect(row.live).to.equal(deployed);
+      expect(row.release).to.equal(freshJs);
+    });
+  });
+
+  describe("(3) the DOC NOTE — pinned bundle, needs-human redeploy, generated llms.txt", function () {
+    it("docs/DEPLOY-PUBLIC-SITE.md: llms.txt checksums are GENERATED (never hand-edit) + LLMS DRIFT + pinned-bundle/needs-human note", function () {
+      const doc = fs
+        .readFileSync(path.join(REPO, "docs", "DEPLOY-PUBLIC-SITE.md"), "utf8")
+        .replace(/^>\s?/gm, "") // unwrap blockquote markers so phrases spanning quoted lines match
+        .replace(/\s+/g, " ");
+      expect(doc).to.match(/`site\/llms\.txt`'s checksums are GENERATED — never hand-edit them/);
+      expect(doc).to.include("LLMS DRIFT");
+      expect(doc).to.include("the LIVE site serves a pinned bundle");
+      expect(doc).to.include("Redeploy is needs-human");
+    });
+
+    it("the script itself carries the note (greppable at the tool) and --help announces the llms ownership", function () {
+      const script = fs.readFileSync(SCRIPT, "utf8").replace(/\s+/g, " ");
+      expect(script).to.include("the LIVE site serves a PINNED bundle");
+      expect(script).to.include("needs-human");
+      const help = runCli(["--help"]);
+      expect(help.status).to.equal(0);
+      expect(help.stdout.replace(/\s+/g, " ")).to.match(/GENERATES site\/llms\.txt/);
+      expect(help.stdout).to.include("LLMS DRIFT");
+    });
+  });
+});

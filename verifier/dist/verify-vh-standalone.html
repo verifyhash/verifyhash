@@ -50,6 +50,8 @@ textarea, input[type=text] { font-family: ui-monospace, SFMono-Regular, Menlo, C
 .verdict { border-radius: 8px; padding: 12px 14px; margin-top: 12px; border: 1px solid; }
 .verdict.accept { background: #e9f7ec; border-color: #34a853; }
 .verdict.reject { background: #fdecec; border-color: #d93025; }
+.verdict.unpinned { background: #fff5db; border-color: #d9a441; }
+.verdict .warn { background: #fdf0cf; border: 1px solid #d9a441; border-radius: 6px; padding: 8px 10px; margin: 6px 0 8px; font-size: 0.9rem; color: #5a4a00; overflow-wrap: anywhere; }
 .verdict-title { font-weight: 700; margin-bottom: 6px; }
 .kv { margin: 2px 0; }
 .kv b { display: inline-block; min-width: 12em; font-weight: 600; }
@@ -72,6 +74,11 @@ disconnect from the internet first — it still works).</p>
 match the seal — and, for a signed seal, WHO vouched (signer recovery + optional vendor pin). It is NOT
 a trusted timestamp and NOT proof of WHEN without a separate trusted timestamp. For CI/production gating
 use the node standalone (<code>verify-vh-standalone.js</code>).</p>
+<p class="boundary"><strong>Unpinned is NOT provenance:</strong> if you do not enter a vendor pin below,
+the accept is UNPINNED — the bytes verify, but anyone's key passes. An attacker who re-signs a tampered
+release with their OWN key would still show ACCEPT (rendered amber and labelled UNPINNED here, never the
+green of a pinned accept). Pin the producer you trust with a vendor address, or gate CI with the node
+standalone's <code>--strict</code>, which fails closed on an unpinned accept (exit 4).</p>
 </header>
 
 <section id="challenge-section">
@@ -114,9 +121,10 @@ picker keeps sub-directory paths). Nothing is uploaded; the page reads the bytes
 <label style="flex:1">Artifact: <select id="artifact-select" style="max-width:100%"></select></label>
 </div>
 <div class="row">
-<label style="flex:1">Vendor pin (optional 0x address — REJECT wrong_issuer if the signer differs):
+<label style="flex:1">Vendor pin — the 0x address of the producer you TRUST (get it out-of-band, not from the packet):
 <input id="vendor-input" type="text" placeholder="0x…" spellcheck="false"></label>
 </div>
+<p class="note">Leave this blank and you are trusting <strong>whatever key signed this packet — anyone's key passes</strong>, so an attacker who re-signs a tampered release with their own key still shows ACCEPT (marked <strong>UNPINNED</strong>, amber). Pin the producer's address to REJECT a different signer (wrong_issuer). For a CI gate that FAILS on an unpinned accept, use the node standalone with <code>--strict</code> (exit 4).</p>
 <div class="row">
 <label>Revocations file (optional): <input id="revocations-input" type="file"></label>
 <span id="revocations-name" class="mono"></span>
@@ -3149,11 +3157,20 @@ return {
       return;
     }
     var r = out.result;
-    var box = el("div", "verdict " + (r.accepted ? "accept" : "reject"));
+    // T-75.2: an accepted-but-UNPINNED verdict (signed with NO --vendor pin, or unsigned) must NOT
+    // render as the same clean green a pinned accept gets — the bytes verify, but anyone's key passes.
+    // Mirror the CLI: amber box, an UNPINNED title, and the unpinnedNote surfaced as a warning band.
+    var unpinnedAccept = r.accepted && r.pinning === "unpinned";
+    var box = el("div", "verdict " + (r.accepted ? (unpinnedAccept ? "unpinned" : "accept") : "reject"));
     var title = r.accepted
-      ? "ACCEPT — the artifact verifies."
+      ? (unpinnedAccept ? "ACCEPT — but UNPINNED: the bytes verify, but nobody you trust is pinned." : "ACCEPT — the artifact verifies.")
       : (r.verdict === "REVOKED" ? "REVOKED" : "REJECTED") + " (" + r.reason + ")";
     box.appendChild(el("div", "verdict-title", title));
+    // The UNPINNED note (the same statement the CLI prints as unpinnedNote) rides RIGHT under the title,
+    // in the amber warn style, so an unpinned accept can never read as clean provenance.
+    if (unpinnedAccept && r.unpinnedNote) {
+      box.appendChild(el("div", "warn", r.unpinnedNote));
+    }
     box.appendChild(kv("artifact", String(r.artifact)));
     box.appendChild(kv("kind", r.kind + (r.payloadKind !== r.kind ? "  (embeds " + r.payloadKind + ")" : "")));
     box.appendChild(kv("signed", r.signed ? "yes" : "no"));
@@ -3162,7 +3179,11 @@ return {
       if (r.pinnedVendor != null) {
         box.appendChild(kv("pinned vendor", r.pinnedVendor));
         box.appendChild(kv("signer matches vendor", r.signerMatchesVendor ? "yes" : "NO"));
+      } else if (r.pinning === "unpinned") {
+        box.appendChild(kv("pinning", "UNPINNED — no vendor pin; anyone's key passes"));
       }
+    } else if (r.pinning === "unpinned") {
+      box.appendChild(kv("pinning", "UNPINNED — unsigned; no vendor pin (tamper-evidence only, never WHO)"));
     }
     if (r.sealedRoot != null) box.appendChild(kv("sealed root", r.sealedRoot));
     if (r.recomputedRoot != null) box.appendChild(kv("recomputed root", r.recomputedRoot));

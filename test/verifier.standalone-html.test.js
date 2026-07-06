@@ -713,3 +713,158 @@ describe("verifier standalone HTML: single-file OFFLINE page + built-in 60-secon
     });
   });
 });
+
+// ================================================================================================
+// (T-75.2) THE BROWSER RENDER SURFACE — the flagship, marketed "drop a packet in" page must not
+// LAUNDER an unpinned/attacker-self-signed artifact as clean provenance. The engine already attaches
+// pinning/unpinnedNote (proven by test/verifier.strict-unpinned.test.js); this suite drives the SHIPPED
+// page's real run-verify -> renderVerdict DOM path (the layer that suite does NOT cover) in a bare `vm`
+// with a minimal DOM/FileReader shim, and asserts the rendered verdict states UNPINNED (amber, never the
+// clean green of a pinned accept). Offline, no new dependency.
+// ================================================================================================
+describe("verifier standalone HTML: the browser render surfaces UNPINNED, never clean provenance (T-75.2)", function () {
+  this.timeout(120000);
+
+  const DIST_HTML_PATH = htmlBuilder.OUT_PATH;
+  const ARTIFACT = "packet.vhevidence.json";
+  // The acceptance-mandated statement, verbatim modulo the concrete address (mirrors the CLI/JSON pin).
+  const UNPINNED_STATEMENT = /signed by 0x[0-9a-f]{40} — NOT pinned to a trusted vendor; anyone's key passes/;
+
+  // A minimal, DOM/FileReader shim (all in the vm realm) so the page's UI <script> — which reads bytes
+  // and drives renderVerdict — runs unmodified. textContent aggregates children like the real DOM, so a
+  // rendered verdict can be read back as a string. NO network anything.
+  const DOM_SHIM = `
+"use strict";
+function __mkEl(tag) {
+  var node = { tagName: tag, className: "", style: {}, value: "", onclick: null,
+    _text: "", childNodes: [], _listeners: {}, files: null };
+  node.appendChild = function (c) { this.childNodes.push(c); return c; };
+  node.addEventListener = function (t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); };
+  node.dispatch = function (t) { var ls = this._listeners[t] || []; for (var i = 0; i < ls.length; i++) ls[i].call(this); };
+  Object.defineProperty(node, "textContent", {
+    get: function () {
+      if (this.childNodes.length === 0) return this._text;
+      var s = ""; for (var i = 0; i < this.childNodes.length; i++) s += this.childNodes[i].textContent; return s;
+    },
+    set: function (v) { this._text = String(v); this.childNodes = []; }
+  });
+  return node;
+}
+var __byId = Object.create(null);
+var document = {
+  getElementById: function (id) { return __byId[id] || (__byId[id] = __mkEl("#" + id)); },
+  createElement: function (tag) { return __mkEl(tag); }
+};
+function TextEncoder() {}
+TextEncoder.prototype.encode = function () { return new Uint8Array(0); };
+function TextDecoder() {}
+TextDecoder.prototype.decode = function (u8) { return __decodeUtf8(u8); };
+function FileReader() {}
+FileReader.prototype.readAsArrayBuffer = function (f) { this.result = f.__bytes.buffer; if (this.onload) this.onload(); };
+FileReader.prototype.readAsText = function (f) { this.result = __decodeUtf8(f.__bytes); if (this.onload) this.onload(); };
+`;
+
+  // Drives the page's REAL "Verify a packet YOU were handed" flow: feed the packet + sibling files
+  // through the file-input change handler (populating the page's own private `held` map), set the
+  // artifact + vendor inputs, click run-verify, and return the rendered verdict text + box class.
+  const DRIVER = `
+"use strict";
+function __hexToU8(hx) {
+  var u = new Uint8Array(hx.length / 2);
+  for (var i = 0; i < u.length; i++) u[i] = parseInt(hx.substr(i * 2, 2), 16);
+  return u;
+}
+function __driveVerify(paramsJson) {
+  var p = JSON.parse(paramsJson);
+  var fi = document.getElementById("file-input");
+  fi.files = Object.keys(p.filesHex).map(function (name) {
+    return { name: name, __bytes: __hexToU8(p.filesHex[name]) };
+  });
+  fi.dispatch("change");
+  document.getElementById("artifact-select").value = p.artifactKey;
+  document.getElementById("vendor-input").value = p.vendor || "";
+  document.getElementById("run-verify").onclick();
+  var container = document.getElementById("verify-verdict");
+  var box = container.childNodes[0] || null;
+  return JSON.stringify({ text: container.textContent, cls: box ? box.className : null });
+}
+`;
+
+  // Load the SHIPPED page into a bare vm: DOM shim, then the engine block, then the page's UI script
+  // (the LAST <script> in the file), then the test driver — all in one realm so `held`/renderVerdict are
+  // the page's own. __decodeUtf8 is the only host bridge (a pure UTF-8 decode, no I/O).
+  function loadBrowserPage() {
+    const html = fs.readFileSync(DIST_HTML_PATH, "utf8");
+    const ctx = { __decodeUtf8: (u8) => Buffer.from(u8).toString("utf8") };
+    vm.createContext(ctx);
+    vm.runInContext(DOM_SHIM, ctx, { filename: "dom-shim.js" });
+    vm.runInContext(extractEngineBlock(html), ctx, { filename: "verify-vh-standalone-engine.js" });
+    const uiStart = html.lastIndexOf("<script>");
+    const uiEnd = html.indexOf("</script>", uiStart);
+    expect(uiStart, "the page's UI <script> is present").to.be.greaterThan(-1);
+    expect(uiEnd, "the UI <script> is closed").to.be.greaterThan(uiStart);
+    vm.runInContext(html.slice(uiStart + "<script>".length, uiEnd), ctx, { filename: "verify-vh-standalone-ui.js" });
+    vm.runInContext(DRIVER, ctx, { filename: "verify-vh-standalone-driver.js" });
+    return ctx;
+  }
+  function driveVerify(ctx, params) {
+    return JSON.parse(vm.runInContext(`__driveVerify(${JSON.stringify(JSON.stringify(params))})`, ctx));
+  }
+  function filesHexOf(map) {
+    const out = {};
+    for (const [k, v] of Object.entries(map)) out[k] = Buffer.from(v, "utf8").toString("hex");
+    return out;
+  }
+  const packetPlus = (artifactText) =>
+    Object.assign({ [ARTIFACT]: Buffer.from(artifactText, "utf8").toString("hex") }, filesHexOf(verifyvh.DEMO_FILES));
+
+  it("attacker-self-signed packet, NO vendor pin: the render states UNPINNED (amber), never a bare green ACCEPT", function () {
+    const ctx = loadBrowserPage();
+    const out = driveVerify(ctx, { filesHex: packetPlus(SIGNED_TEXT), artifactKey: ARTIFACT, vendor: "" });
+    // The bytes DID verify — but the shipped page must NOT present that as clean provenance.
+    expect(out.cls, "an unpinned accept box is amber, not the plain green accept").to.match(/\bunpinned\b/);
+    expect(out.cls, "an unpinned accept is NOT styled as the pinned green accept").to.not.match(/\baccept\b/);
+    expect(out.text, "the verdict itself says UNPINNED").to.match(/UNPINNED/);
+    expect(out.text, "the exact unpinned statement (anyone's key passes) rides the rendered verdict").to.match(
+      UNPINNED_STATEMENT
+    );
+    expect(out.text, "the recovered signer is still shown, never hidden").to.contain(verifyvh.DEMO_SIGNER);
+  });
+
+  it("a correctly PINNED accept stays the plain green ACCEPT (no over-warning, no regression)", function () {
+    const ctx = loadBrowserPage();
+    const out = driveVerify(ctx, {
+      filesHex: packetPlus(SIGNED_TEXT),
+      artifactKey: ARTIFACT,
+      vendor: verifyvh.DEMO_SIGNER,
+    });
+    expect(out.cls).to.match(/\baccept\b/);
+    expect(out.cls).to.not.match(/unpinned/);
+    expect(out.text).to.contain("ACCEPT — the artifact verifies.");
+    expect(out.text).to.not.match(/anyone's key passes/);
+  });
+
+  it("an UNSIGNED accept with no pin renders the UNPINNED-unsigned caveat (amber, never plain green)", function () {
+    const ctx = loadBrowserPage();
+    const out = driveVerify(ctx, { filesHex: packetPlus(UNSIGNED_TEXT), artifactKey: ARTIFACT, vendor: "" });
+    expect(out.cls).to.match(/\bunpinned\b/);
+    expect(out.text).to.match(/UNPINNED/);
+    expect(out.text, "the unsigned caveat is surfaced (never WHO vouched)").to.contain("UNSIGNED");
+  });
+
+  it("the shipped page SOURCE wires the UNPINNED render + boundary/vendor copy (byte-level regression pin)", function () {
+    const html = fs.readFileSync(DIST_HTML_PATH, "utf8");
+    expect(html, "amber unpinned verdict class").to.contain(".verdict.unpinned");
+    expect(html, "renderVerdict computes unpinnedAccept from the engine's pinning field").to.match(
+      /var unpinnedAccept = r\.accepted && r\.pinning === "unpinned"/
+    );
+    expect(html, "renderVerdict surfaces the engine's unpinnedNote in a warn band").to.match(
+      /box\.appendChild\(el\("div", "warn", r\.unpinnedNote\)\)/
+    );
+    // The honest-boundary area + vendor copy now name the unpinned-signer risk in plain words.
+    expect(html, "the unpinned risk is stated in prose").to.contain("anyone's key passes");
+    expect(html, "the pinned boundary sentence is preserved verbatim (docs quote it)").to.contain(
+      "It is NOT\na trusted timestamp and NOT proof of WHEN without a separate trusted timestamp"
+    );
+  });
+});

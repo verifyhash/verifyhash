@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Differential-validation harness for EN 16931 (UBL).
+"""Differential-validation harness for EN 16931 (UBL) + XRechnung CIUS.
 
-Compares the fired-rule set of the OFFICIAL, NORMATIVE CEN artifact — the
-compiled EN16931-UBL Schematron (shipped as an XSLT that emits SVRL) — against
-the fired-rule set of OUR validator (``einvoice/`` package).
+Compares the fired-rule set of the OFFICIAL, NORMATIVE artifacts against the
+fired-rule set of OUR validator (``einvoice/`` package), one "leg" per
+ruleset:
+
+    * EN leg        — the compiled EN16931-UBL Schematron (CEN) vs our 43
+                      core rules (einvoice/rules.py ALL_RULES);
+    * XRechnung leg — the compiled KoSIT XRechnung-UBL Schematron
+                      (corpus/xrechnung-schematron, v2.5.0 / XRechnung 3.0.2)
+                      vs our BR-DE-* CIUS layer
+                      (einvoice/rules_xrechnung.py ALL_RULES).
 
 The official ruleset is the legal source of truth. For every invoice and for
-every one of OUR implemented rule IDs (ALL_RULES in einvoice/rules.py) we ask
-the same yes/no question of both engines — "does rule R fire on this
-invoice?" — and record whether they AGREE.
+every one of OUR implemented rule IDs we ask the same yes/no question of both
+engines — "does rule R fire on this invoice?" — and record whether they AGREE.
 A disagreement is, by definition, a place where OUR interpretation departs from
 the legal document = our bug:
 
@@ -17,25 +23,30 @@ the legal document = our bug:
 
 Official path:
     UBL Invoice XML
-      --(Saxon Xslt30 transform through EN16931-UBL-validation.xslt)-->
+      --(Saxon Xslt30 transform through the official validation XSLT)-->
     SVRL report --(parse <svrl:failed-assert> @id)--> set of fired rule IDs
 
-Corpus (broad, real, and adversarial):
+Corpus (broad, real, and adversarial; shared by both legs):
     * cen-en16931  Invoice-unit-UBL test set  (each <test> case split out)
     * cen-en16931  ubl/examples               (real-world sample invoices)
     * vendored/valid + vendored/invalid        (our own fixtures)
     * xrechnung-testsuite UBL Invoice files     (real German CIUS invoices)
     * GENERATED targeted mutations: one per implemented rule, each breaking
       exactly the field that rule guards, mutated off a known-clean invoice —
-      so every rule is exercised in the FAILING direction.
+      so every rule is exercised in the FAILING direction (EN mutations off a
+      CEN-clean invoice, BR-DE mutations off a clean XRechnung testsuite
+      invoice).
 
 Requirements:
     export PYTHONPATH="$HOME/.local/lib/python3.10/site-packages:$PYTHONPATH"
     (SaxonC-for-Python / `saxonche` must be importable)
 
 Usage:
-    python3 differential.py                 # FULL differential run over corpus
+    python3 differential.py                 # FULL run: EN leg + XRechnung leg
+    python3 differential.py en              # EN 16931 core leg only
+    python3 differential.py xrechnung       # XRechnung CIUS leg only
     python3 differential.py <invoice> ...   # ad-hoc per-invoice report
+Exit code: 0 iff every graded comparison agreed (both legs).
 """
 
 from __future__ import annotations
@@ -51,12 +62,19 @@ sys.path.insert(0, HERE)
 
 # OUR validator, called in-process (no subprocess overhead over a large corpus).
 from einvoice.validate import validate_file          # noqa: E402
-from einvoice.parser import NotWellFormed            # noqa: E402
+from einvoice.parser import NotWellFormed, parse_file  # noqa: E402
 from einvoice import rules as _rules                  # noqa: E402
+from einvoice import rules_xrechnung as _rules_xr     # noqa: E402
 
-# The OFFICIAL normative artifact: the compiled EN16931-UBL Schematron.
+# The OFFICIAL normative artifacts:
+#  * the compiled EN16931-UBL Schematron (CEN), and
+#  * the compiled XRechnung-UBL Schematron (KoSIT, v2.5.0 / XRechnung 3.0.2).
 OFFICIAL_XSLT = os.path.join(
     HERE, "corpus", "cen-en16931", "ubl", "xslt", "EN16931-UBL-validation.xslt"
+)
+XR_OFFICIAL_XSLT = os.path.join(
+    HERE, "corpus", "xrechnung-schematron", "schematron", "ubl",
+    "XRechnung-UBL-validation.xsl"
 )
 
 # Namespaces.
@@ -81,6 +99,12 @@ OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
 assert len(OUR_RULE_IDS) == 43, OUR_RULE_IDS
 
+# XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
+# from the explicit .rule_id attribute, not derived from function names.
+XR_RULE_IDS = [fn.rule_id for fn in _rules_xr.ALL_RULES]
+XR_RULE_SET = set(XR_RULE_IDS)
+assert len(XR_RULE_IDS) == 32, XR_RULE_IDS
+
 
 # --------------------------------------------------------------------------- #
 # OFFICIAL side — compile the 895 KB XSLT ONCE, reuse across the whole corpus.
@@ -101,14 +125,14 @@ def _rule_id_from_failed_assert(fa: ET.Element):
 
 
 class Official:
-    """Wraps a single compiled instance of the normative XSLT."""
+    """Wraps a single compiled instance of a normative validation XSLT."""
 
-    def __init__(self):
+    def __init__(self, xslt_path=OFFICIAL_XSLT):
         from saxonche import PySaxonProcessor
         self._proc_cm = PySaxonProcessor(license=False)
         self._proc = self._proc_cm.__enter__()
         xp = self._proc.new_xslt30_processor()
-        self._exe = xp.compile_stylesheet(stylesheet_file=OFFICIAL_XSLT)
+        self._exe = xp.compile_stylesheet(stylesheet_file=xslt_path)
         self._xp = xp
 
     def fired(self, invoice_path: str) -> set:
@@ -137,6 +161,13 @@ class Official:
 def our_fired(invoice_path: str) -> set:
     result = validate_file(invoice_path)
     return {v.rule_id for v in result.violations}
+
+
+def xr_our_fired(invoice_path: str) -> set:
+    """Fired BR-DE-* ids of OUR XRechnung CIUS layer (all severities — the
+    official SVRL reports warning/information failed-asserts the same way)."""
+    root = parse_file(invoice_path)
+    return {v.rule_id for v in _rules_xr.evaluate(root)}
 
 
 # --------------------------------------------------------------------------- #
@@ -169,11 +200,11 @@ def _normalized_invoice_path(invoice_path: str):
     return tmp, (lambda: os.path.exists(tmp) and os.remove(tmp))
 
 
-def official_fired_rules(invoice_path: str) -> set:
+def official_fired_rules(invoice_path: str, xslt_path=OFFICIAL_XSLT) -> set:
     """One-shot official run (compiles the XSLT); use Official() for batches."""
     path, cleanup = _normalized_invoice_path(invoice_path)
     try:
-        return Official().fired(path)
+        return Official(xslt_path).fired(path)
     finally:
         cleanup()
 
@@ -531,6 +562,264 @@ def _gather_mutations(scratch: str):
     return out
 
 
+# ------- XRechnung (BR-DE-*) targeted mutations, off a clean XR invoice ----- #
+_XR_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
+                        "business-cases", "standard", "01.01a-INVOICE_ubl.xml")
+_NSD = {"cac": NS_CAC, "cbc": NS_CBC}
+
+
+def _xr_supplier_party(r):
+    return r.find("cac:AccountingSupplierParty/cac:Party", _NSD)
+
+
+def _xr_pm(r):
+    return r.find("cac:PaymentMeans", _NSD)
+
+
+def _xr_pm_code(r):
+    return _xr_pm(r).find("cbc:PaymentMeansCode", _NSD)
+
+
+def _xr_add_mandate(r, with_account_id):
+    pm = _xr_pm(r)
+    mandate = _sub_el(pm, NS_CAC, "PaymentMandate")
+    _sub_el(mandate, NS_CBC, "ID", "MANDATE-1")
+    if with_account_id is not None:
+        acct = _sub_el(mandate, NS_CAC, "PayerFinancialAccount")
+        _sub_el(acct, NS_CBC, "ID", with_account_id)
+
+
+def _xr_add_delivery_address(r, city=None, zone=None):
+    d = _sub_el(r, NS_CAC, "Delivery")
+    loc = _sub_el(d, NS_CAC, "DeliveryLocation")
+    addr = _sub_el(loc, NS_CAC, "Address")
+    if city:
+        _sub_el(addr, NS_CBC, "CityName", city)
+    if zone:
+        _sub_el(addr, NS_CBC, "PostalZone", zone)
+
+
+def _xrmut_de1(r):
+    for pm in r.findall("cac:PaymentMeans", _NSD):
+        r.remove(pm)
+
+
+def _xrmut_de2(r):
+    party = _xr_supplier_party(r)
+    party.remove(party.find("cac:Contact", _NSD))
+
+
+def _xrmut_de3(r):
+    a = _xr_supplier_party(r).find("cac:PostalAddress", _NSD)
+    a.remove(a.find("cbc:CityName", _NSD))
+
+
+def _xrmut_de4(r):
+    a = _xr_supplier_party(r).find("cac:PostalAddress", _NSD)
+    a.remove(a.find("cbc:PostalZone", _NSD))
+
+
+def _xrmut_de5(r):
+    c = _xr_supplier_party(r).find("cac:Contact", _NSD)
+    c.remove(c.find("cbc:Name", _NSD))
+
+
+def _xrmut_de6(r):
+    # Also fires BR-DE-27: normalize-space of an absent telephone is ''.
+    c = _xr_supplier_party(r).find("cac:Contact", _NSD)
+    c.remove(c.find("cbc:Telephone", _NSD))
+
+
+def _xrmut_de7(r):
+    # Also fires BR-DE-28 (absent email -> '').
+    c = _xr_supplier_party(r).find("cac:Contact", _NSD)
+    c.remove(c.find("cbc:ElectronicMail", _NSD))
+
+
+def _xrmut_de8(r):
+    a = r.find("cac:AccountingCustomerParty/cac:Party/cac:PostalAddress", _NSD)
+    a.remove(a.find("cbc:CityName", _NSD))
+
+
+def _xrmut_de9(r):
+    a = r.find("cac:AccountingCustomerParty/cac:Party/cac:PostalAddress", _NSD)
+    a.remove(a.find("cbc:PostalZone", _NSD))
+
+
+def _xrmut_de10(r):
+    _xr_add_delivery_address(r, zone="12345")   # city missing -> BR-DE-10
+
+
+def _xrmut_de11(r):
+    _xr_add_delivery_address(r, city="Bremen")  # zone missing -> BR-DE-11
+
+
+def _xrmut_de14(r):
+    cat = r.find("cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory", _NSD)
+    cat.remove(cat.find("cbc:Percent", _NSD))
+
+
+def _xrmut_de15(r):
+    r.remove(r.find("cbc:BuyerReference", _NSD))
+
+
+def _xrmut_de16(r):
+    party = _xr_supplier_party(r)
+    party.remove(party.find("cac:PartyTaxScheme", _NSD))
+
+
+def _xrmut_de17(r):
+    r.find("cbc:InvoiceTypeCode", _NSD).text = "71"  # UNTDID-valid, not XR-allowed
+
+
+def _xrmut_de18_bad(r):
+    # PROZENT lacks the mandatory 2 decimals -> grammar violation.
+    r.find("cac:PaymentTerms/cbc:Note", _NSD).text = "#SKONTO#TAGE=14#PROZENT=2#"
+
+
+def _xrmut_de18_valid(r):
+    # Grammar-conformant skonto WITH the required trailing newline -> holds.
+    r.find("cac:PaymentTerms/cbc:Note", _NSD).text = \
+        "#SKONTO#TAGE=14#PROZENT=2.00#\n"
+
+
+def _xrmut_de19(r):
+    # Shape-valid IBAN with impossible check digits 00 -> mod-97 fails.
+    _xr_pm(r).find("cac:PayeeFinancialAccount/cbc:ID", _NSD).text = \
+        "DE00000000001234567890"
+
+
+def _xrmut_de20(r):
+    # Code 59 + mandate with a BAD debited IBAN; PayeeFinancialAccount kept
+    # -> also fires BR-DE-25-b and BR-DE-30 (no SEPA creditor id).
+    _xr_pm_code(r).text = "59"
+    _xr_add_mandate(r, with_account_id="DE00000000001234567890")
+
+
+def _xrmut_de21(r):
+    r.find("cbc:CustomizationID", _NSD).text = "urn:cen.eu:en16931:2017"
+
+
+def _xrmut_de22(r):
+    for i in (1, 2):
+        adr = ET.Element(_q(NS_CAC, "AdditionalDocumentReference"))
+        _sub_el(adr, NS_CBC, "ID", "doc-%d" % i)
+        att = _sub_el(adr, NS_CAC, "Attachment")
+        obj = _sub_el(att, NS_CBC, "EmbeddedDocumentBinaryObject", "UkVDSA==")
+        obj.set("filename", "anlage.pdf")
+        obj.set("mimeCode", "application/pdf")
+        r.insert(list(r).index(r.find("cac:AccountingSupplierParty", _NSD)), adr)
+
+
+def _xrmut_de23a(r):
+    # Code 58 without CREDIT TRANSFER -> BR-DE-23-a (+ BR-DE-19: IBAN of '').
+    pm = _xr_pm(r)
+    pm.remove(pm.find("cac:PayeeFinancialAccount", _NSD))
+
+
+def _xrmut_de23b(r):
+    card = _sub_el(_xr_pm(r), NS_CAC, "CardAccount")
+    _sub_el(card, NS_CBC, "PrimaryAccountNumberID", "1234")
+    _sub_el(card, NS_CBC, "NetworkID", "VISA")
+
+
+def _xrmut_de24(r):
+    # Card code with CREDIT TRANSFER present and no CardAccount
+    # -> BR-DE-24-a AND BR-DE-24-b.
+    _xr_pm_code(r).text = "48"
+
+
+def _xrmut_de25(r):
+    # Direct-debit code with CREDIT TRANSFER present and no mandate
+    # -> BR-DE-25-a, BR-DE-25-b (+ BR-DE-20: IBAN of '').
+    _xr_pm_code(r).text = "59"
+
+
+def _xrmut_de26(r):
+    r.find("cbc:InvoiceTypeCode", _NSD).text = "384"  # no BillingReference
+
+
+def _xrmut_de27(r):
+    c = _xr_supplier_party(r).find("cac:Contact", _NSD)
+    c.find("cbc:Telephone", _NSD).text = "keine"  # < 3 digits
+
+
+def _xrmut_de28(r):
+    c = _xr_supplier_party(r).find("cac:Contact", _NSD)
+    c.find("cbc:ElectronicMail", _NSD).text = "kein-email-hier"
+
+
+def _xrmut_de30(r):
+    # Mandate + VALID debited IBAN, no SEPA creditor id anywhere -> BR-DE-30
+    # only (BR-DE-20/31 hold; PayeeFinancialAccount removed so 25-b holds).
+    pm = _xr_pm(r)
+    _xr_pm_code(r).text = "59"
+    pm.remove(pm.find("cac:PayeeFinancialAccount", _NSD))
+    _xr_add_mandate(r, with_account_id="DE79000000001234567890")
+
+
+def _xrmut_de31(r):
+    # Mandate WITHOUT PayerFinancialAccount/ID; SEPA creditor id added so
+    # BR-DE-30 holds -> BR-DE-31 (+ BR-DE-20: IBAN of '').
+    pm = _xr_pm(r)
+    _xr_pm_code(r).text = "59"
+    pm.remove(pm.find("cac:PayeeFinancialAccount", _NSD))
+    _xr_add_mandate(r, with_account_id=None)
+    party = _xr_supplier_party(r)
+    pid = ET.Element(_q(NS_CAC, "PartyIdentification"))
+    id_el = ET.SubElement(pid, _q(NS_CBC, "ID"))
+    id_el.text = "DE98ZZZ09999999999"
+    id_el.set("schemeID", "SEPA")
+    party.insert(1, pid)
+
+
+def _xrmut_tmp32_clear(r):
+    # BT-72 present -> BR-DE-TMP-32 HOLDS (the base invoice fires it).
+    d = _sub_el(r, NS_CAC, "Delivery")
+    _sub_el(d, NS_CBC, "ActualDeliveryDate", "2016-04-04")
+
+
+# label suffix -> mutation. Some mutations legitimately fire several BR-DE
+# rules at once; agreement is asserted per rule, so that is fine. Two entries
+# ("18-valid", "TMP-32-clear") prove the HOLDS direction of tricky rules.
+_XR_MUTATIONS = [
+    ("BR-DE-1", _xrmut_de1), ("BR-DE-2", _xrmut_de2), ("BR-DE-3", _xrmut_de3),
+    ("BR-DE-4", _xrmut_de4), ("BR-DE-5", _xrmut_de5), ("BR-DE-6", _xrmut_de6),
+    ("BR-DE-7", _xrmut_de7), ("BR-DE-8", _xrmut_de8), ("BR-DE-9", _xrmut_de9),
+    ("BR-DE-10", _xrmut_de10), ("BR-DE-11", _xrmut_de11),
+    ("BR-DE-14", _xrmut_de14), ("BR-DE-15", _xrmut_de15),
+    ("BR-DE-16", _xrmut_de16), ("BR-DE-17", _xrmut_de17),
+    ("BR-DE-18", _xrmut_de18_bad), ("BR-DE-18-valid", _xrmut_de18_valid),
+    ("BR-DE-19", _xrmut_de19), ("BR-DE-20", _xrmut_de20),
+    ("BR-DE-21", _xrmut_de21), ("BR-DE-22", _xrmut_de22),
+    ("BR-DE-23-a", _xrmut_de23a), ("BR-DE-23-b", _xrmut_de23b),
+    ("BR-DE-24", _xrmut_de24), ("BR-DE-25", _xrmut_de25),
+    ("BR-DE-26", _xrmut_de26), ("BR-DE-27", _xrmut_de27),
+    ("BR-DE-28", _xrmut_de28), ("BR-DE-30", _xrmut_de30),
+    ("BR-DE-31", _xrmut_de31), ("BR-DE-TMP-32-clear", _xrmut_tmp32_clear),
+]
+
+
+def _gather_xr_mutations(scratch: str):
+    """One generated invoice per BR-DE mutation, off a clean XR invoice."""
+    base_root = ET.parse(_XR_BASE).getroot()
+    dst = os.path.join(scratch, "xr-mutations")
+    os.makedirs(dst, exist_ok=True)
+    out = []
+    for name, mut in _XR_MUTATIONS:
+        root = copy.deepcopy(base_root)
+        try:
+            mut(root)
+        except Exception as e:  # pragma: no cover
+            print("  [XR mutation %s FAILED to build: %s]" % (name, e),
+                  file=sys.stderr)
+            continue
+        out_path = os.path.join(dst, "xrmut_%s.xml" % name.replace("-", "_"))
+        _write_doc(root, out_path)
+        out.append(("XRMUT/%s" % name, out_path))
+    return out
+
+
 def build_corpus(scratch: str):
     entries = []
     entries += _gather_bare_invoices()
@@ -547,40 +836,54 @@ def build_corpus(scratch: str):
     return uniq
 
 
-# --------------------------------------------------------------------------- #
-# Full differential run.
-# --------------------------------------------------------------------------- #
-def run_differential():
-    scratch = os.environ.get("DIFF_SCRATCH") or tempfile.mkdtemp(prefix="diffcorpus-")
-    os.makedirs(scratch, exist_ok=True)
+def build_xr_corpus(scratch: str):
+    """Corpus for the XRechnung leg: everything real (incl. the split CEN
+    unit fragments — adversarial for the presence rules) + BR-DE mutations,
+    but NOT the EN-targeted mutations (they exercise core rules)."""
+    entries = []
+    entries += _gather_bare_invoices()
+    entries += _split_cen_testsets(scratch)
+    entries += _gather_xr_mutations(scratch)
+    seen, uniq = set(), []
+    for label, path in entries:
+        key = os.path.abspath(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append((label, path))
+    return uniq
 
-    corpus = build_corpus(scratch)
-    print("Corpus assembled: %d UBL Invoice documents" % len(corpus))
-    print("  scratch dir: %s" % scratch)
-    print("  restricting comparison to OUR %d implemented rules:" % len(OUR_RULE_IDS))
-    print("    " + ", ".join(OUR_RULE_IDS))
+
+# --------------------------------------------------------------------------- #
+# Full differential run (one "leg" per official ruleset).
+# --------------------------------------------------------------------------- #
+def _run_leg(title, xslt_path, rule_ids, our_fn, corpus):
+    """Grade one official-vs-ours leg. Returns the divergence count."""
+    rule_set = set(rule_ids)
+    print("  restricting comparison to OUR %d implemented rules:" % len(rule_ids))
+    print("    " + ", ".join(rule_ids))
     print()
 
-    official = Official()
+    official = Official(xslt_path)
 
     # Per-rule tallies.
-    agree = {r: 0 for r in OUR_RULE_IDS}          # verdicts that match
-    both_fire = {r: 0 for r in OUR_RULE_IDS}      # true-positive agreements
-    both_clear = {r: 0 for r in OUR_RULE_IDS}     # true-negative agreements
-    false_pos = {r: [] for r in OUR_RULE_IDS}     # we fire, official doesn't
-    misses = {r: [] for r in OUR_RULE_IDS}        # official fires, we don't
+    agree = {r: 0 for r in rule_ids}          # verdicts that match
+    both_fire = {r: 0 for r in rule_ids}      # true-positive agreements
+    both_clear = {r: 0 for r in rule_ids}     # true-negative agreements
+    false_pos = {r: [] for r in rule_ids}     # we fire, official doesn't
+    misses = {r: [] for r in rule_ids}        # official fires, we don't
 
     errors = []
     graded = 0
 
     for label, path in corpus:
         try:
-            off = official.fired(path) & OUR_RULE_SET
+            off = official.fired(path) & rule_set
         except Exception as e:
             errors.append((label, "OFFICIAL", str(e)[:160]))
             continue
         try:
-            ours = our_fired(path) & OUR_RULE_SET
+            ours = our_fn(path) & rule_set
         except NotWellFormed as e:
             errors.append((label, "OURS(not-well-formed)", str(e)[:160]))
             continue
@@ -589,7 +892,7 @@ def run_differential():
             continue
 
         graded += 1
-        for r in OUR_RULE_IDS:
+        for r in rule_ids:
             o, u = (r in off), (r in ours)
             if o and u:
                 agree[r] += 1
@@ -604,26 +907,26 @@ def run_differential():
 
     official.close()
 
-    total_cmp = graded * len(OUR_RULE_IDS)
+    total_cmp = graded * len(rule_ids)
     total_agree = sum(agree.values())
 
     # ----- per-rule agreement table ----- #
     print("=" * 82)
-    print("PER-RULE AGREEMENT  (official EN16931-UBL Schematron  vs  our validator)")
+    print("PER-RULE AGREEMENT  (%s  vs  our validator)" % title)
     print("graded invoices: %d   |   comparisons: %d (invoices x %d rules)"
-          % (graded, total_cmp, len(OUR_RULE_IDS)))
+          % (graded, total_cmp, len(rule_ids)))
     print("=" * 82)
-    print("%-10s %9s %9s %10s %10s %6s" %
+    print("%-12s %9s %9s %10s %10s %6s" %
           ("RULE", "agree", "both-fire", "both-clr", "false-pos", "miss"))
     print("-" * 82)
-    for r in OUR_RULE_IDS:
-        print("%-10s %6d/%-3d %9d %10d %10d %6d" % (
+    for r in rule_ids:
+        print("%-12s %6d/%-4d %8d %10d %10d %6d" % (
             r, agree[r], graded, both_fire[r], both_clear[r],
             len(false_pos[r]), len(misses[r])))
     print("-" * 82)
     tot_fp = sum(len(v) for v in false_pos.values())
     tot_miss = sum(len(v) for v in misses.values())
-    print("%-10s %6d/%-3d %9s %10s %10d %6d" % (
+    print("%-12s %6d/%-4d %8s %10s %10d %6d" % (
         "TOTAL", total_agree, graded, "", "", tot_fp, tot_miss))
     rate = (100.0 * total_agree / total_cmp) if total_cmp else 0.0
     print()
@@ -637,7 +940,7 @@ def run_differential():
     print("DIVERGENCES  (each = our interpretation disagreeing with the legal ruleset)")
     print("=" * 82)
     any_div = False
-    for r in OUR_RULE_IDS:
+    for r in rule_ids:
         rows = ([("FALSE-POSITIVE (we fire, official clears)", inv) for inv in false_pos[r]] +
                 [("MISS (official fires, we clear)", inv) for inv in misses[r]])
         if not rows:
@@ -648,7 +951,7 @@ def run_differential():
             print("    [%s]  %s" % (kind, inv))
     if not any_div:
         print("\n  (none) — our validator matched the normative Schematron on every")
-        print("  invoice for all %d implemented rules." % len(OUR_RULE_IDS))
+        print("  invoice for all %d implemented rules." % len(rule_ids))
     print()
 
     if errors:
@@ -659,39 +962,86 @@ def run_differential():
             print("    %-30s %-24s %s" % (label, side, msg))
         if len(errors) > 60:
             print("    ... (%d more)" % (len(errors) - 60))
-    return 0
+        print()
+    return tot_fp + tot_miss
+
+
+def run_differential(legs=("en", "xrechnung")):
+    scratch = os.environ.get("DIFF_SCRATCH") or tempfile.mkdtemp(prefix="diffcorpus-")
+    os.makedirs(scratch, exist_ok=True)
+
+    divergences = 0
+    if "en" in legs:
+        corpus = build_corpus(scratch)
+        print("#" * 82)
+        print("# LEG 1 — EN 16931 core (official CEN EN16931-UBL Schematron)")
+        print("#" * 82)
+        print("Corpus assembled: %d UBL Invoice documents" % len(corpus))
+        print("  scratch dir: %s" % scratch)
+        divergences += _run_leg("official EN16931-UBL Schematron",
+                                OFFICIAL_XSLT, OUR_RULE_IDS, our_fired, corpus)
+    if "xrechnung" in legs:
+        corpus = build_xr_corpus(scratch)
+        print("#" * 82)
+        print("# LEG 2 — XRechnung CIUS (official KoSIT XRechnung-UBL Schematron 2.5.0)")
+        print("#" * 82)
+        print("Corpus assembled: %d UBL Invoice documents" % len(corpus))
+        print("  scratch dir: %s" % scratch)
+        divergences += _run_leg("official XRechnung-UBL Schematron",
+                                XR_OFFICIAL_XSLT, XR_RULE_IDS, xr_our_fired,
+                                corpus)
+    print("OVERALL DIVERGENCES ACROSS LEGS: %d -> %s"
+          % (divergences, "OK" if divergences == 0 else "DIVERGED"))
+    return 0 if divergences == 0 else 1
 
 
 # --------------------------------------------------------------------------- #
 # Ad-hoc per-invoice driver (kept for backward compatibility).
 # --------------------------------------------------------------------------- #
+def _print_leg_report(invoice_path, leg_name, xslt_path, rule_set, our_fn):
+    try:
+        official = official_fired_rules(invoice_path, xslt_path) & rule_set
+    except Exception as e:
+        official = None
+        print("  [%s] OFFICIAL: ERROR:" % leg_name, e)
+    try:
+        path, cleanup = _normalized_invoice_path(invoice_path)
+        try:
+            ours = our_fn(path) & rule_set
+        finally:
+            cleanup()
+    except Exception as e:
+        ours = None
+        print("  [%s] OURS:     ERROR:" % leg_name, e)
+    if official is not None:
+        print("  [%s] OFFICIAL fired (%d):" % (leg_name, len(official)),
+              ", ".join(sorted(official)) or "(none)")
+    if ours is not None:
+        print("  [%s] OURS     fired (%d):" % (leg_name, len(ours)),
+              ", ".join(sorted(ours)) or "(none)")
+    if official is not None and ours is not None:
+        print("  [%s] agree        :" % leg_name,
+              ", ".join(sorted(official & ours)) or "(none)")
+        print("  [%s] official-only:" % leg_name,
+              ", ".join(sorted(official - ours)) or "(none)")
+        print("  [%s] ours-only    :" % leg_name,
+              ", ".join(sorted(ours - official)) or "(none)")
+
+
 def _print_report(invoice_path: str) -> None:
     rel = os.path.relpath(invoice_path, HERE)
     print("=" * 78)
     print("INVOICE:", rel)
-    try:
-        official = official_fired_rules(invoice_path) & OUR_RULE_SET
-    except Exception as e:
-        official = None
-        print("  OFFICIAL: ERROR:", e)
-    try:
-        ours = our_fired_rules(invoice_path) & OUR_RULE_SET
-    except Exception as e:
-        ours = None
-        print("  OURS:     ERROR:", e)
-    if official is not None:
-        print("  OFFICIAL fired (%d):" % len(official), ", ".join(sorted(official)) or "(none)")
-    if ours is not None:
-        print("  OURS     fired (%d):" % len(ours), ", ".join(sorted(ours)) or "(none)")
-    if official is not None and ours is not None:
-        print("  agree        :", ", ".join(sorted(official & ours)) or "(none)")
-        print("  official-only:", ", ".join(sorted(official - ours)) or "(none)")
-        print("  ours-only    :", ", ".join(sorted(ours - official)) or "(none)")
+    _print_leg_report(invoice_path, "EN", OFFICIAL_XSLT, OUR_RULE_SET, our_fired)
+    _print_leg_report(invoice_path, "XR", XR_OFFICIAL_XSLT, XR_RULE_SET,
+                      xr_our_fired)
 
 
 def main(argv: list) -> int:
     if not argv:
         return run_differential()
+    if len(argv) == 1 and argv[0] in ("en", "xrechnung"):
+        return run_differential(legs=(argv[0],))
     for s in argv:
         if not os.path.exists(s):
             print("=" * 78)

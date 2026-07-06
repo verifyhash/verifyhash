@@ -2,16 +2,24 @@
 """einvoice — first-slice XRechnung / EN 16931 UBL Invoice validator (CLI).
 
 Usage:
-    python3 einvoice.py validate <invoice.xml> [--json]
+    python3 einvoice.py validate <invoice.xml> [--json] [--profile=xrechnung]
+
+Profiles:
+    en16931 (default)  the EN 16931 core business rules
+    xrechnung          core rules PLUS the German national CIUS layer
+                       (BR-DE-*). Warnings/information are reported, but only
+                       *fatal* violations make the invoice invalid (exit 1) —
+                       the official Schematron ``flag`` semantics.
 
 Exit codes:
-    0  the invoice passes every implemented rule
-    1  at least one implemented rule failed
+    0  the invoice passes every implemented fatal rule
+    1  at least one implemented fatal rule failed
     2  usage error
     3  input is not well-formed XML / parse error
 
-Default output on failure: the FIRST violated rule id, a human message and the
-offending element. With --json, the full result (all violations) is emitted.
+Default output on failure: the FIRST fatal violated rule id, a human message
+and the offending element. With --json, the full result (all violations,
+each with its severity) is emitted.
 
 Standard library only.
 """
@@ -24,11 +32,11 @@ import sys
 # invoked from another working directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from einvoice.validate import validate_file  # noqa: E402
+from einvoice.validate import validate_file, PROFILES, _severity  # noqa: E402
 from einvoice.parser import NotWellFormed     # noqa: E402
-from einvoice.rules import ALL_RULES          # noqa: E402
 
-USAGE = "usage: python3 einvoice.py validate <invoice.xml> [--json]"
+USAGE = ("usage: python3 einvoice.py validate <invoice.xml> "
+         "[--json] [--profile=en16931|xrechnung]")
 
 EXIT_OK = 0
 EXIT_FAIL = 1
@@ -43,6 +51,30 @@ def main(argv):
         as_json = True
         args = [a for a in args if a != "--json"]
 
+    profile = "en16931"
+    rest = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--profile":
+            if i + 1 >= len(args):
+                sys.stderr.write("error: --profile needs a value\n" + USAGE + "\n")
+                return EXIT_USAGE
+            profile = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--profile="):
+            profile = a.split("=", 1)[1]
+            i += 1
+            continue
+        rest.append(a)
+        i += 1
+    args = rest
+    if profile not in PROFILES:
+        sys.stderr.write("error: unknown profile %r (choose from %s)\n%s\n"
+                         % (profile, ", ".join(PROFILES), USAGE))
+        return EXIT_USAGE
+
     if len(args) < 2 or args[0] != "validate":
         sys.stderr.write(USAGE + "\n")
         return EXIT_USAGE
@@ -56,7 +88,7 @@ def main(argv):
         return EXIT_USAGE
 
     try:
-        result = validate_file(path)
+        result = validate_file(path, profile=profile)
     except NotWellFormed as exc:
         if as_json:
             sys.stdout.write(json.dumps({
@@ -73,10 +105,13 @@ def main(argv):
         sys.stdout.write(json.dumps(result.to_dict(source=path), indent=2) + "\n")
     else:
         if result.ok:
-            sys.stdout.write("PASS: %s (all %d implemented rules)\n"
-                             % (path, len(ALL_RULES)))
+            non_fatal = len(result.violations)
+            suffix = (" — %d non-fatal warning(s) reported" % non_fatal
+                      if non_fatal else "")
+            sys.stdout.write("PASS: %s (all implemented fatal rules, "
+                             "profile=%s)%s\n" % (path, profile, suffix))
         else:
-            v = result.first
+            v = next(x for x in result.violations if _severity(x) == "fatal")
             sys.stdout.write("FAIL: %s\n  %s: %s\n  offending element: %s\n"
                              % (path, v.rule_id, v.message, v.element))
 

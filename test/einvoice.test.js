@@ -11,6 +11,7 @@ const fs = require("fs");
 const REPO = path.resolve(__dirname, "..");
 const EINVOICE = path.join(REPO, "einvoice");
 const CONFORMANCE = path.join(EINVOICE, "conformance.py");
+const XRECHNUNG_TESTS = path.join(EINVOICE, "test_xrechnung.py");
 
 function havePython() {
   try { execFileSync("python3", ["--version"], { stdio: "ignore" }); return true; }
@@ -27,6 +28,18 @@ describe("einvoice (expansion product): conformance gate", function () {
     if (res.status !== 0) {
       throw new Error(
         "einvoice conformance FAILED (exit " + res.status + "). The validator regressed against its proven vectors.\n" +
+        (res.stdout || "").split("\n").slice(-25).join("\n") + "\n" + (res.stderr || "").slice(-2000)
+      );
+    }
+  });
+
+  it("einvoice/test_xrechnung.py passes (XRechnung BR-DE CIUS layer pinned) — or SKIPS if python3 absent", function () {
+    if (!havePython()) { this.skip(); return; }
+    if (!fs.existsSync(XRECHNUNG_TESTS)) throw new Error("einvoice/test_xrechnung.py missing — the XRechnung CIUS layer is not gated");
+    const res = spawnSync("python3", [XRECHNUNG_TESTS], { cwd: EINVOICE, encoding: "utf8", timeout: 110000 });
+    if (res.status !== 0) {
+      throw new Error(
+        "einvoice XRechnung layer tests FAILED (exit " + res.status + "). The BR-DE rules regressed against their differential-proven behaviour.\n" +
         (res.stdout || "").split("\n").slice(-25).join("\n") + "\n" + (res.stderr || "").slice(-2000)
       );
     }

@@ -16,14 +16,19 @@ A zero-dependency, embeddable, self-hostable conformance validator for
   is auditable and pinned — no dependency on a third-party validation API.
 
 This is an **early slice**, not a product. Read §2 before trusting it with
-anything. It currently implements 43 of the roughly 200 EN 16931 business
-rules and none of the XRechnung-specific `BR-DE-*` rules.
+anything. It currently implements 43 of the roughly 200 EN 16931 core business
+rules, plus — with `--profile=xrechnung` — **all 32 XRechnung-specific
+`BR-DE-*` asserts** of the official KoSIT UBL artifact (the German national
+CIUS layer: BuyerReference, seller contact, payment-means grouping, Skonto
+grammar, IBAN checks, …).
 
-**How correctness is proven:** all 43 rules are differential-tested against the
-**official, normative EN16931-UBL Schematron** (the legal ruleset) and agree
-with it on **1028 real invoices with zero divergences** — see
-[`CORRECTNESS.md`](CORRECTNESS.md) for the full method, corpus, and the honest
-limits of that claim.
+**How correctness is proven:** all 43 core rules are differential-tested
+against the **official, normative EN16931-UBL Schematron** (the legal ruleset)
+and agree with it on **1028 real invoices with zero divergences**; all 32
+`BR-DE-*` rules are differential-tested against the **official KoSIT
+XRechnung-UBL Schematron 2.5.0** and agree with it on **1014 invoices with
+zero divergences** — see [`CORRECTNESS.md`](CORRECTNESS.md) for the full
+method, corpora, and the honest limits of those claims.
 
 ---
 
@@ -62,7 +67,7 @@ black-box web form.
 **Profile:** XRechnung 3.x (the German CIUS of EN 16931-1:2017),
 **UBL 2.1 `Invoice` syntax only.**
 
-### Implemented (exactly these 43 rules)
+### Implemented — EN 16931 core (exactly these 43 rules)
 
 | Family | Rule IDs |
 |---|---|
@@ -77,6 +82,24 @@ black-box web form.
 Plus two structural checks: S-WF (well-formed XML) and S-ROOT (UBL Invoice-2
 root). Rule wording follows the vendored EN 16931 Schematron
 (`corpus/cen-en16931/ubl/schematron/abstract/EN16931-model.sch`) verbatim.
+
+### Implemented — XRechnung CIUS layer (`--profile=xrechnung`, all 32 BR-DE asserts)
+
+| Family | Rule IDs |
+|---|---|
+| Mandatory German fields | BR-DE-1 (payment instructions), BR-DE-15 (BuyerReference), BR-DE-2/5/6/7 (seller contact + name/phone/email), BR-DE-3/4 (seller city/post code), BR-DE-8/9 (buyer city/post code), BR-DE-10/11 (deliver-to city/post code), BR-DE-14 (VAT rate per breakdown) |
+| Seller VAT identification | BR-DE-16 |
+| Type-code / spec-id restrictions | BR-DE-17, BR-DE-21, BR-DE-26 |
+| Payment-means grouping | BR-DE-23-a/-b (credit transfer), BR-DE-24-a/-b (card), BR-DE-25-a/-b (direct debit), BR-DE-30, BR-DE-31 (SEPA mandate fields) |
+| Content quality (warnings) | BR-DE-19, BR-DE-20 (IBAN mod-97), BR-DE-27 (phone), BR-DE-28 (email), BR-DE-18 (Skonto grammar, fatal) |
+| Delivery-date recommendation | BR-DE-TMP-32 (information) |
+
+That is every `BR-DE-*` assert in the official KoSIT XRechnung 3.0.2 UBL
+Schematron (the numbering has official gaps: no BR-DE-12/13/29 exist there).
+Severities mirror the official flags — only **fatal** rules affect the exit
+code; warnings/information are reported in `--json`. NOT implemented:
+`BR-DEX-*` (extension profile), `BR-DE-CVD-*` (Clean Vehicle Directive
+profile), `BR-TMP-2`, and the `PEPPOL-EN16931-*` rules in the same artifact.
 
 ### Differential result vs. the OFFICIAL Schematron (this run)
 
@@ -93,12 +116,25 @@ TOTAL AGREEMENT ...... 44,204 / 44,204 = 100.0000%
 divergences .......... 0 false-positives + 0 misses
 ```
 
-All 43 implemented rules agree with the official Schematron on every invoice in
-the corpus. Reproduce it (needs `saxonche` importable):
-`python3 differential.py`. Method, corpus breakdown, the divergences that were
-found and fixed, and the honest scope limits are documented in
-[`CORRECTNESS.md`](CORRECTNESS.md). This proves faithfulness **only for these
-43 rules** — not EN 16931 or XRechnung as a whole (see §2 "NOT covered").
+The **XRechnung leg** of the same harness compares our 32 `BR-DE-*` rules
+against the official **KoSIT XRechnung-UBL Schematron 2.5.0** (vendored at
+`corpus/xrechnung-schematron/`):
+
+```
+corpus ............... 1014 graded UBL Invoice documents (incl. the full
+                       KoSIT xrechnung-testsuite + 31 BR-DE-targeted mutations)
+comparisons .......... 32,448  (1014 invoices x 32 rules)
+TOTAL AGREEMENT ...... 32,448 / 32,448 = 100.0000%
+divergences .......... 0 false-positives + 0 misses
+```
+
+All implemented rules agree with their official Schematron on every graded
+invoice. Reproduce it (needs `saxonche` importable): `python3 differential.py`
+(or `... en` / `... xrechnung` for one leg). Method, corpus breakdown, the
+divergences that were found and fixed, and the honest scope limits are
+documented in [`CORRECTNESS.md`](CORRECTNESS.md). This proves faithfulness
+**only for these 43+32 rules** — not EN 16931 or XRechnung as a whole (see §2
+"NOT covered").
 
 ### Conformance result (this run)
 
@@ -137,10 +173,10 @@ prints the offending file, block, and expected vs. actual rule IDs).
 
 ### NOT covered yet (deliberate first-slice cuts — do not rely on these)
 
-- **No XRechnung `BR-DE-*` / `BR-DEX-*` rules at all.** That includes
-  mandatory-for-Germany fields like `BuyerReference` (BT-10), seller contact,
-  and the Leitweg routing ID. A validator without these is **not** a complete
-  XRechnung compliance check. Highest-priority next slice.
+- **No `BR-DEX-*` (XRechnung extension) or `BR-DE-CVD-*` (Clean Vehicle
+  Directive) rules** — the `BR-DE-*` CIUS core is complete (see above), but
+  those two ADDITIONAL German profiles are not, and `BR-TMP-2` /
+  `PEPPOL-EN16931-*` from the same KoSIT artifact are also out of scope.
 - **~155 further EN 16931 `BR-*` rules unimplemented**: the remaining header/
   party/allowance-charge existence rules (BR-09..15, BR-25, BR-27..BR-67
   ranges), the rest of the `BR-CO-*` arithmetic (BR-CO-03/04/09/11/12/25/26 …),
@@ -152,11 +188,12 @@ prints the offending file, block, and expected vs. actual rule IDs).
   well-formedness and the UBL root are checked structurally.
 - **No CII syntax, no UBL `CreditNote`, no ZUGFeRD/Factur-X PDF containers,
   no signatures or attachments.**
-- **The 100% figures are agreement/pass rates for our 43 rules only** — the
-  40-vector `conformance.py` corpus and the 1028-invoice `differential.py`
-  corpus. They are 100% of a limited, honest scope, **not** 100% of the
-  ~200-rule standard. Broader KoSIT/CEN fixtures under `corpus/` are used as
-  differential input but the unimplemented rules are still unchecked.
+- **The 100% figures are agreement/pass rates for our 43+32 rules only** — the
+  40-vector `conformance.py` corpus and the 1028/1014-invoice
+  `differential.py` corpora. They are 100% of a limited, honest scope, **not**
+  100% of the ~200-rule standard. Broader KoSIT/CEN fixtures under `corpus/`
+  are used as differential input but the unimplemented rules are still
+  unchecked.
 
 See `SPEC.md` §6 for the full deferred list.
 
@@ -165,20 +202,23 @@ See `SPEC.md` §6 for the full deferred list.
 ## 3. Usage
 
 ```
-python3 einvoice.py validate <invoice.xml> [--json]
+python3 einvoice.py validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
 ```
+
+`--profile=xrechnung` layers the 32 German `BR-DE-*` rules on top of the core
+(default profile: core only).
 
 Exit codes (stable contract):
 
 | Code | Meaning |
 |---|---|
-| 0 | passes every implemented rule |
-| 1 | at least one implemented rule failed |
-| 2 | usage error (bad args, missing file) |
+| 0 | passes every implemented **fatal** rule (warnings may still be reported) |
+| 1 | at least one implemented fatal rule failed |
+| 2 | usage error (bad args, missing file, unknown profile) |
 | 3 | input is not well-formed XML |
 
-Default output on failure is the **first** violated rule, human message, and
-offending element. `--json` emits the full machine-readable result:
+Default output on failure is the **first** fatal violated rule, human message,
+and offending element. `--json` emits the full machine-readable result:
 
 ```json
 {
@@ -186,13 +226,13 @@ offending element. `--json` emits the full machine-readable result:
   "valid": false,
   "violation_count": 2,
   "violations": [
-    {"rule": "BR-06", "message": "...", "element": "..."}
+    {"rule": "BR-06", "message": "...", "element": "...", "severity": "fatal"}
   ]
 }
 ```
 
-A `valid: true` result means "no implemented rule fired" — given §2, it does
-**not** yet mean "legally conformant XRechnung."
+A `valid: true` result means "no implemented fatal rule fired" — given §2, it
+does **not** yet mean "legally conformant XRechnung."
 
 ---
 
@@ -232,8 +272,11 @@ A first slice earns further investment or it doesn't. The signal, timeboxed:
 **KILL** if neither happens: write up what was learned, archive the repo, and
 stop. The corpus and harness remain useful artifacts either way.
 
-Current status against this metric: 43 rules shipped (first slice of 20 +
-second batch of 23, all differential-proven), 0 vendors contacted.
+Current status against this metric: 43 core rules + all 32 XRechnung
+`BR-DE-*` asserts shipped (each batch differential-proven at 100% against its
+official Schematron), 0 vendors contacted. Metric #2's rule-count/`BR-DE`
+half is met on the UBL side; "passing the full KoSIT test suite" still
+requires the unimplemented core rules and CII.
 
 ---
 
@@ -241,4 +284,5 @@ second batch of 23, all differential-proven), 0 vendors contacted.
 
 - EN 16931 corpus & Schematron: `github.com/ConnectingEurope/eInvoicing-EN16931` (EUPL-1.2), vendored under `corpus/cen-en16931/`.
 - XRechnung test suite: `github.com/itplr-kosit/xrechnung-testsuite` (Apache-2.0), vendored under `corpus/xrechnung-testsuite/`.
-- Rule text quoted verbatim from the vendored `EN16931-model.sch` / `EN16931-syntax.sch`.
+- XRechnung Schematron v2.5.0 (XRechnung 3.0.2): `github.com/itplr-kosit/xrechnung-schematron` (Apache-2.0), vendored under `corpus/xrechnung-schematron/` (see its `VENDORED.md`).
+- Rule text quoted verbatim from the vendored `EN16931-model.sch` / `EN16931-syntax.sch` / `XRechnung-UBL-validation.sch`.

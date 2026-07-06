@@ -1,21 +1,38 @@
 # CORRECTNESS — how this validator is proven, and what "proven" means
 
-This document states plainly how the correctness of `einvoice`'s 43 implemented
+This document states plainly how the correctness of `einvoice`'s implemented
 business rules is established, what a buyer can rely on, and — just as
 importantly — what is **not** yet proven.
 
-Read it as the honest technical warranty. If a claim here is stronger than the
-evidence, that is a bug in this document; report it.
+The validator has **two distinct layers with separate coverage claims**:
+
+1. **EN 16931 core** — 43 of the ~200 EU-core business rules
+   (`einvoice/rules.py`), proven against the official CEN Schematron (§2);
+2. **XRechnung national CIUS (BR-DE-\*)** — all 32 German national asserts of
+   the official KoSIT XRechnung 3.0.2 UBL Schematron
+   (`einvoice/rules_xrechnung.py`), proven against that artifact (§2a). The
+   layer is opt-in via `--profile=xrechnung` and runs ON TOP of the core.
+
+Read this as the honest technical warranty. If a claim here is stronger than
+the evidence, that is a bug in this document; report it.
 
 ---
 
 ## 1. What each rule is
 
-Every rule is a **pure Python function** over a parsed invoice model
-(`einvoice/rules.py`, one function per rule, listed in `ALL_RULES`). A rule
-returns a `Violation` when it fires and `None` when it holds. There is no
-network call, no Java, no external Schematron engine in the validation path —
-the whole validator is standard-library Python.
+Every rule is a **pure Python function**: the 43 core rules over a parsed
+invoice model (`einvoice/rules.py`, one function per rule, listed in
+`ALL_RULES`), the 32 BR-DE rules over the parsed UBL root element
+(`einvoice/rules_xrechnung.py` — the national rules address parts of the
+document the flat core model deliberately does not carry). A rule returns a
+`Violation` when it fires and `None` when it holds. There is no network call,
+no Java, no external Schematron engine in the validation path — the whole
+validator is standard-library Python.
+
+BR-DE violations carry the official severity (`fatal`, `warning`,
+`information` — the Schematron `flag`): only **fatal** violations make a
+document invalid / exit 1; warnings and information are reported but do not
+block, exactly like the KoSIT reference validator.
 
 The arithmetic rules (BR-CO-10/13/14/15/16/17) use `decimal.Decimal`, not
 binary floats, so monetary equality is exact and reproducible. The newer rules
@@ -90,8 +107,73 @@ Reproduce it:
 
 ```
 export PYTHONPATH="$HOME/.local/lib/python3.10/site-packages:$PYTHONPATH"
-python3 differential.py            # needs saxonche importable
+python3 differential.py            # needs saxonche importable; runs BOTH legs
+python3 differential.py en         # EN 16931 core leg only
 ```
+
+## 2a. The XRechnung CIUS layer (BR-DE-*), proven the same way
+
+Germany's XRechnung is a CIUS of EN 16931: for German B2G invoices every core
+rule applies **plus** the national `BR-DE-*` rules. Our layer implements
+**every BR-DE assert in the official UBL artifact** — the KoSIT *XRechnung
+Schematron v2.5.0 (XRechnung 3.0.2)*, vendored at
+`corpus/xrechnung-schematron/` — 32 assert ids in total (28 numbered rules;
+BR-DE-23/24/25 are split by KoSIT into `-a`/`-b` parts, and BR-DE-TMP-32 is
+the delivery-date recommendation). The official numbering itself has gaps
+(there is no BR-DE-12/13/29 in the 3.0.2 UBL artifact); we implement exactly
+what the artifact contains, nothing invented.
+
+Ground truth is the **compiled official XSLT**
+(`corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.xsl`),
+wired into `differential.py` as a second leg with the same yes/no protocol as
+§2. Each Python rule transcribes the official **XPath** (untrimmed
+string-value comparisons, `normalize-space` predicates, the exact
+`following-sibling` node sets, the official IBAN mod-97 digitization —
+including its non-standard handling of lowercase letters — and the Skonto
+grammar regex with its newline-terminator conjunct), not the prose rule text.
+
+### Corpus and result of this run
+
+**1014 graded UBL `Invoice` documents** (same real corpus as §2 — including
+all 45+ KoSIT `xrechnung-testsuite` UBL invoices and every split CEN unit
+case — plus 31 BR-DE-targeted mutations off a clean XRechnung testsuite
+invoice, so every BR-DE rule is exercised in the **firing** direction; two
+`hold`-direction mutations pin the tricky Skonto and delivery-date cases):
+
+```
+TOTAL AGREEMENT: 32,448 / 32,448 = 100.0000%   (1014 invoices x 32 rules)
+divergences: 0 false-positives + 0 misses
+```
+
+Every rule has non-zero `both-fire` **and** `both-clear` coverage. This was a
+first-run 100% — the layer was written Schematron-first, like the second core
+batch (§3). Two corpus entries are excluded and reported as skips: on the CEN
+`BR-CL-23` unit fragments the *official* KoSIT XSLT itself raises a dynamic
+error (`Cannot convert string "" to xs:decimal`), so there is no official
+verdict to compare against.
+
+Reproduce it:
+
+```
+export PYTHONPATH="$HOME/.local/lib/python3.10/site-packages:$PYTHONPATH"
+python3 differential.py xrechnung
+```
+
+The saxon-free pin of this behaviour is `test_xrechnung.py` (39 unit tests,
+run by the repo's mechanical gate via `test/einvoice.test.js`).
+
+### What the XRechnung layer does NOT cover
+
+- **`BR-DEX-*`** (the XRechnung *extension* profile) and **`BR-DE-CVD-*`**
+  (the Clean-Vehicle-Directive profile) — both are gated on their own
+  CustomizationIDs and are separate profiles, not the CIUS core;
+- **`BR-TMP-2`** (external-reference URL shape) and the **`PEPPOL-EN16931-*`**
+  rules that KoSIT ships in the same artifact — not BR-DE rules;
+- **CII syntax and UBL `CreditNote`** documents (our validator is UBL
+  `Invoice` only; the official artifact also validates CreditNotes);
+- a `--profile=xrechnung` PASS still only means "none of our implemented
+  rules fired": the ~157 unimplemented EN core rules (§5) apply to XRechnung
+  invoices too.
 
 ## 3. Divergences that were found and fixed
 
@@ -168,9 +250,11 @@ Specifically:
   result means "none of our 43 rules fired", not "this invoice is legally
   conformant". (BR-IG-*/BR-IP-* do not exist in the vendored CEN artifact and
   therefore cannot be differential-proven; they are out of scope.)
-- **No XRechnung `BR-DE-*` / `BR-DEX-*` rules at all** — including
-  mandatory-for-Germany fields (BuyerReference, Leitweg routing ID, seller
-  contact). This is therefore **not** a complete XRechnung compliance check.
+- **The XRechnung `BR-DE-*` CIUS layer is complete** for the UBL-Invoice
+  artifact (all 32 asserts, §2a) — but the extension (`BR-DEX-*`) and CVD
+  (`BR-DE-CVD-*`) profiles are not implemented, and because the EN core is
+  only 43/~200 rules, `--profile=xrechnung` is **not** a complete XRechnung
+  compliance check either.
 - **No XSD structural validation**, no CII syntax, no UBL `CreditNote`, no
   ZUGFeRD/Factur-X PDF containers, no signatures.
 - **Corpus, not universe.** 1028 real invoices is broad and adversarial but
@@ -183,9 +267,11 @@ Specifically:
   of that text; it is the right ground truth for a validator, and it is what we
   prove against, but it is one layer below the prose standard.
 
-**Bottom line a buyer can rely on:** for the 43 rules listed in §2, this
+**Bottom line a buyer can rely on:** for the 43 core rules listed in §2, this
 validator returns the same verdict as the official EN16931-UBL Schematron on
-every invoice in a 1028-document real-world corpus — zero false positives, zero
-misses — and is re-checkable at any time with `python3 differential.py`. Within
-that explicitly-scoped 43-rule slice it is provably faithful to the legal
-ruleset; outside it, it makes no claim.
+every invoice in a 1028-document real-world corpus, and for the 32 XRechnung
+`BR-DE-*` rules listed in §2a it returns the same verdict as the official
+KoSIT XRechnung-UBL Schematron 2.5.0 on a 1014-document corpus — zero false
+positives, zero misses on both legs — re-checkable at any time with
+`python3 differential.py`. Within those explicitly-scoped 43+32 rule slices it
+is provably faithful to the legal rulesets; outside them, it makes no claim.

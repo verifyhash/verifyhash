@@ -173,12 +173,15 @@ Known gaps in this first slice — each is a deliberate cut, not an oversight:
 1. **Syntax:** UN/CEFACT **CII** invoices and UBL **CreditNote** documents are
    not validated. Only UBL `Invoice` is in scope. (CII twins are present in the
    corpus but unused.)
-2. **XRechnung `BR-DE-*` / `BR-DEX-*` rules:** *none* are in the first slice.
-   Neither vendored corpus ships a labeled *negative* fixture for a BR-DE rule
-   (the KoSIT suite is positive-cornered), so we cannot honor the
-   "every covered rule has a failing fixture" contract for them yet. This
-   includes mandatory-for-Germany fields such as `BuyerReference` (BT-10),
-   seller contact, and the leitweg/routing ID. **High-priority next slice.**
+2. **XRechnung `BR-DE-*` rules: SHIPPED** (no longer a gap). All 32 `BR-DE-*`
+   asserts of the official KoSIT XRechnung 3.0.2 UBL Schematron are
+   implemented as a layered profile (`einvoice/rules_xrechnung.py`, enabled
+   with `--profile=xrechnung`) and differential-proven at 100% against the
+   vendored official artifact (`corpus/xrechnung-schematron/`, see
+   `CORRECTNESS.md` §2a). The "failing fixture per rule" contract is honored
+   via generated BR-DE-targeted mutations in `differential.py` plus the
+   pinned unit vectors in `test_xrechnung.py`. Still out of scope:
+   `BR-DEX-*` (extension profile) and `BR-DE-CVD-*` (CVD profile).
 3. **EN 16931 breadth:** ~180 further `BR-*` rules are unimplemented, including
    most `BR-CO-*` arithmetic (only 10/13/14/15 chosen), the full VAT-category
    matrices for E/G/O/IC/IP/IG/AE/K/L/M categories (only S-01, Z-01 chosen),

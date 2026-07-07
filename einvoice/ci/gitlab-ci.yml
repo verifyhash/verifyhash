@@ -1,0 +1,16 @@
+# Copy-paste CI gate for GitLab CI: fail the pipeline if any invoice is not
+# XRechnung/EN 16931 conformant (against the validator's IMPLEMENTED rules —
+# see README.md §2 for the honest coverage). The failing rule ID (e.g.
+# BR-DE-15) is printed in the job log.
+#
+# Install: merge this job into your .gitlab-ci.yml, vendor the einvoice
+# product directory at third_party/einvoice/, put invoices under invoices/.
+# See ci/README.md.
+
+invoice-conformance:
+  image: python:3.12-alpine
+  variables:
+    EINVOICE_PROFILE: "xrechnung"   # or: en16931 (core rules only)
+  script:
+    - python3 -m pip install ./third_party/einvoice
+    - sh third_party/einvoice/ci/validate-invoices.sh invoices/

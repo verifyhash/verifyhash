@@ -1,0 +1,41 @@
+# Packaging for the einvoice validator. Deliberately minimal:
+#   * ZERO runtime dependencies (stdlib only) — `dependencies = []` is a
+#     contract, enforced by test_packaging.py.
+#   * one console script: `einvoice` -> einvoice.cli:main (the same entry
+#     point as `python3 -m einvoice` and the source-checkout `einvoice.py`).
+#   * ships ONLY the `einvoice` package — the multi-hundred-MB rule corpus,
+#     differential harness and test vectors stay in the repo, not the wheel.
+#
+# NOT published to PyPI (publishing is a needs-human step). Install from a
+# checkout / vendored copy:  python3 -m pip install /path/to/einvoice
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verifyhash-einvoice"
+version = "0.1.0"
+description = "Zero-dependency EN 16931 / XRechnung (UBL) e-invoice conformance validator — 43 core rules + all 32 BR-DE CIUS rules, each differential-tested to 100% agreement against the official Schematron rulesets."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial :: Accounting",
+]
+# ZERO runtime dependencies — the whole point. Do not add any.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/verifyhash/verifyhash"
+
+[project.scripts]
+einvoice = "einvoice.cli:main"
+
+[tool.setuptools]
+# Explicit: ship the pure-Python package only (never corpus/, ci/, tests).
+packages = ["einvoice"]

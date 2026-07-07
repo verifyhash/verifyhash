@@ -1,0 +1,38 @@
+# Copy-paste CI gate: fail the build if any invoice in your repo is not
+# XRechnung/EN 16931 conformant (against the validator's IMPLEMENTED rules —
+# see README.md §2 for the honest coverage). The failing rule ID (e.g.
+# BR-DE-15) is printed in the job log.
+#
+# Install: copy this file to .github/workflows/invoice-conformance.yml in
+# YOUR repo, vendor the einvoice product directory (this whole folder's
+# parent) at third_party/einvoice/, and put your invoices under invoices/.
+# Adjust the two paths below if yours differ. See ci/README.md.
+
+name: invoice-conformance
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  invoice-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # Zero runtime dependencies — this installs ONLY the validator package
+      # and its `einvoice` console script. (Not on PyPI yet; install from the
+      # vendored copy.)
+      - name: Install the einvoice validator
+        run: python3 -m pip install ./third_party/einvoice
+
+      # Exit 1 + the violated rule ID per failing invoice; exit 2 if the gate
+      # finds no invoices (an empty gate is a broken gate).
+      - name: "Gate: every invoice must be conformant"
+        run: sh third_party/einvoice/ci/validate-invoices.sh invoices/
+        env:
+          EINVOICE_PROFILE: xrechnung   # or: en16931 (core rules only)

@@ -4,16 +4,23 @@ A zero-dependency, embeddable, self-hostable conformance validator for
 **EN 16931** electronic invoices, targeting the German **XRechnung** CIUS
 (UBL 2.1 `Invoice` syntax).
 
-- **Zero dependency.** Python 3 standard library only. No lxml, no Java, no
-  Schematron toolchain, no network calls. `python3 einvoice.py validate x.xml`
-  is the whole install.
+- **Zero dependency.** Python 3 (>=3.8) standard library only. No lxml, no
+  Java, no Schematron toolchain, no network calls. `python3 einvoice.py
+  validate x.xml` from a checkout is the whole install; `pip install .` adds
+  an `einvoice` console script (`pyproject.toml` pins `dependencies = []` —
+  a tested contract, see `test_packaging.py`).
 - **Embeddable.** The validator is a small pure-Python package
-  (`einvoice/parser.py`, `einvoice/rules.py`, `einvoice/validate.py`); rules
-  are plain functions over a parsed model, so an ERP or billing system can
-  import it in-process instead of shelling out to a validator service.
+  (`einvoice/parser.py`, `einvoice/rules.py`, `einvoice/validate.py`,
+  `einvoice/cli.py`); rules are plain functions over a parsed model, so an
+  ERP or billing system can import it in-process instead of shelling out to
+  a validator service — copying the bare `einvoice/` package directory into
+  your tree is a supported (and tested) install method.
 - **Self-hostable.** Everything runs offline. The rule corpus and test
   fixtures are vendored in-repo (`corpus/`), so the thing you validate against
   is auditable and pinned — no dependency on a third-party validation API.
+- **CI-gateable.** `ci/` ships a copy-paste build gate (POSIX sh + GitHub
+  Actions / GitLab CI recipes) that fails a build on any non-conformant
+  invoice, naming the violated rule ID. See [§4](#4-ci-conformance-gate).
 
 This is an **early slice**, not a product. Read §2 before trusting it with
 anything. It currently implements 43 of the roughly 200 EN 16931 core business
@@ -199,10 +206,32 @@ See `SPEC.md` §6 for the full deferred list.
 
 ---
 
-## 3. Usage
+## 3. Install / embed / usage
 
-```
+Three ways in, one code path (`einvoice/cli.py` — proven identical by
+`test_packaging.py`):
+
+```sh
+# a) straight from a checkout — nothing to install
 python3 einvoice.py validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
+python3 -m einvoice   validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
+
+# b) pip-install (from a checkout/vendored copy — NOT on PyPI yet, on purpose)
+python3 -m pip install /path/to/einvoice     # zero runtime dependencies
+einvoice validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
+```
+
+**c) embed in-process** — vendor the bare `einvoice/` package directory (the
+pure-Python package alone, no corpus needed at runtime) or pip-install it,
+then:
+
+```python
+from einvoice import validate_file, NotWellFormed
+
+result = validate_file("invoice.xml", profile="xrechnung")
+if not result.ok:
+    for v in result.violations:          # each: rule_id, message, element
+        print(v.rule_id, v.message)      # e.g. "BR-DE-15 The element ..."
 ```
 
 `--profile=xrechnung` layers the 32 German `BR-DE-*` rules on top of the core
@@ -236,7 +265,44 @@ does **not** yet mean "legally conformant XRechnung."
 
 ---
 
-## 4. Intended revenue model
+## 4. CI conformance gate
+
+The distribution artifact an ERP/billing vendor actually wants: a build gate
+that makes "a non-conformant invoice reached the repo" a **red build**, with
+the violated rule ID named in the job log. Everything lives in
+[`ci/`](ci/README.md):
+
+- [`ci/validate-invoices.sh`](ci/validate-invoices.sh) — the gate. POSIX sh,
+  zero deps beyond python3. Exit `0` = all conformant; exit `1` = at least one
+  invoice failed (rule IDs printed); exit `2` = the gate itself is
+  misconfigured — including **finding no invoices at all** (an empty gate is a
+  broken gate, opt out with `EINVOICE_ALLOW_EMPTY=1`).
+- [`ci/github-actions.yml`](ci/github-actions.yml) — copy to
+  `.github/workflows/invoice-conformance.yml`.
+- [`ci/gitlab-ci.yml`](ci/gitlab-ci.yml) — merge into your `.gitlab-ci.yml`.
+
+The 60-second version (any CI system):
+
+```sh
+python3 -m pip install ./third_party/einvoice        # vendored copy; zero deps
+sh third_party/einvoice/ci/validate-invoices.sh invoices/
+```
+
+and a failure looks like:
+
+```
+FAIL: invoices/2026-04-017.xml
+  BR-DE-15: The element 'Buyer reference' (BT-10) must be transmitted.
+  offending element: cbc:BuyerReference
+conformance gate: 1/12 invoice(s) NON-CONFORMANT (profile=xrechnung) — FAIL
+```
+
+Same honest scope as §2: the gate proves your invoices pass the
+**implemented** 43+32 rules, not the full standard. The gate's behaviour
+(fails naming the rule ID, passes conformant sets, refuses empty input) is
+itself under test in `test_packaging.py`.
+
+## 5. Intended revenue model
 
 If this continues past the first slice, the model is boring on purpose:
 
@@ -255,7 +321,7 @@ before the first conversation with a vendor, not after.
 
 ---
 
-## 5. KILL / CONTINUE metric
+## 6. KILL / CONTINUE metric
 
 A first slice earns further investment or it doesn't. The signal, timeboxed:
 

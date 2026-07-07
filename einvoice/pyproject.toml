@@ -16,7 +16,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "verifyhash-einvoice"
 version = "0.1.0"
-description = "Zero-dependency EN 16931 / XRechnung (UBL) e-invoice conformance validator — 43 core rules + all 32 BR-DE CIUS rules, each differential-tested to 100% agreement against the official Schematron rulesets."
+description = "Zero-dependency EN 16931 / XRechnung (UBL) e-invoice conformance validator — an early slice: 43 of ~200 EN 16931 core rules + the 32 national BR-DE-* CIUS asserts, each differential-tested to 100% agreement with the official Schematron WITHIN that implemented subset (BR-DEX-*/BR-DE-CVD-* not yet implemented); see CORRECTNESS.md."
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [

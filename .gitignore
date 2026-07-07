@@ -67,3 +67,9 @@ test/fixtures/strategy-logsections-original.json
 # einvoice build/cache junk (product source + corpus stay tracked)
 einvoice/**/__pycache__/
 einvoice/**/*.pyc
+# setuptools in-tree build metadata (never let `pip wheel`/`build` junk get
+# staged into the public product repo an ERP vendor clones)
+einvoice/build/
+einvoice/dist/
+einvoice/*.egg-info/
+einvoice/**/*.egg-info/

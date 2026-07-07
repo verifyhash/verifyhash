@@ -131,6 +131,26 @@ class PackagingMetadata(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertEqual(m.group(1), einvoice.__version__)
 
+    def test_description_scopes_the_100pct_claim(self):
+        """The one-line package card (`pip show` / a future PyPI card) must
+        keep the SAME scope caveat README + CORRECTNESS.md keep. A
+        legally-forced compliance product must not imply full-standard
+        conformance on metadata a buyer might read alone."""
+        m = re.search(r'^description\s*=\s*"([^"]+)"', self.text, re.M)
+        self.assertIsNotNone(m, "pyproject.toml must declare a description")
+        desc = m.group(1).lower()
+        self.assertIn("200", desc,
+                      "description must show it is a slice of the ~200-rule "
+                      "standard, not the whole standard")
+        self.assertTrue(
+            "subset" in desc or "not yet implemented" in desc,
+            "description must qualify coverage to the implemented subset")
+        if "100%" in desc:
+            self.assertIn(
+                "subset", desc,
+                "a bare '100% agreement' claim on the metadata card is an "
+                "overclaim; scope it to the implemented subset")
+
     def test_only_the_package_ships(self):
         m = re.search(r'^packages\s*=\s*\[\s*"einvoice"\s*\]', self.text, re.M)
         self.assertIsNotNone(m, "wheel must contain ONLY the einvoice package "
@@ -231,13 +251,30 @@ class WheelBuild(unittest.TestCase):
                          "needs setuptools>=61 (PEP 621) to build the wheel")
     def test_wheel_builds_offline_and_contains_entry_point(self):
         with tempfile.TemporaryDirectory() as tmp:
+            # Build from a COPY of the source, never against the real tree.
+            # pip 21.3+ does in-tree builds, so setuptools writes build/ and
+            # *.egg-info/ NEXT TO pyproject.toml; pointing that at HERE would
+            # leave build junk in the working tree (and none of it is
+            # gitignored deeply enough to be safe from a `git add -A`). A
+            # throwaway copy keeps "tests leave the tree clean" true by
+            # construction, on every setuptools>=61 machine.
+            src = os.path.join(tmp, "src")
+            os.mkdir(src)
+            shutil.copytree(PKG_DIR, os.path.join(src, "einvoice"),
+                            ignore=shutil.ignore_patterns("__pycache__"))
+            # pyproject.toml + the README it references are all the backend
+            # needs (packages = ["einvoice"] is explicit; no corpus/tests).
+            for f in ("pyproject.toml", "README.md"):
+                shutil.copy(os.path.join(HERE, f), os.path.join(src, f))
+            out = os.path.join(tmp, "wheels")
+            os.mkdir(out)
             proc = run([sys.executable, "-m", "pip", "wheel",
                         "--no-build-isolation", "--no-deps", "--no-index",
-                        "-w", tmp, HERE], timeout=300)
+                        "-w", out, src], timeout=300)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            wheels = [f for f in os.listdir(tmp) if f.endswith(".whl")]
+            wheels = [f for f in os.listdir(out) if f.endswith(".whl")]
             self.assertEqual(len(wheels), 1, wheels)
-            with zipfile.ZipFile(os.path.join(tmp, wheels[0])) as zf:
+            with zipfile.ZipFile(os.path.join(out, wheels[0])) as zf:
                 names = zf.namelist()
                 self.assertIn("einvoice/cli.py", names)
                 self.assertNotIn("corpus", " ".join(names))

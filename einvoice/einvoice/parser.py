@@ -63,7 +63,7 @@ class InvoiceLine:
 
     __slots__ = ("id", "quantity", "line_extension_amount",
                  "line_extension_amount_raw", "price_amount",
-                 "item_name", "tax_category_ids", "index")
+                 "item_name", "tax_category_ids", "allowance_charges", "index")
 
     def __init__(self, index):
         self.index = index
@@ -74,6 +74,7 @@ class InvoiceLine:
         self.price_amount = None          # BT-146 (text)
         self.item_name = None             # BT-153
         self.tax_category_ids = []        # BG-30 ClassifiedTaxCategory/ID codes
+        self.allowance_charges = []       # line-level BG-27/BG-28 (list[AllowanceCharge])
 
     @property
     def label(self):
@@ -106,15 +107,67 @@ class TaxTotal:
 
 
 class AllowanceCharge:
-    """One document-level ``cac:AllowanceCharge`` (BG-20 allowance / BG-21 charge)."""
+    """One ``cac:AllowanceCharge`` group.
 
-    __slots__ = ("is_charge", "amount_raw", "base_amount_raw")
+    Used for both the document-level allowance/charge (BG-20/BG-21, direct child
+    of the Invoice) and the invoice-line-level allowance/charge (BG-27/BG-28,
+    child of a ``cac:InvoiceLine``). The presence flags carry the exact
+    ``exists(...)`` facts the EN 16931 allowance/charge rules test.
+    """
+
+    __slots__ = ("is_charge", "amount_raw", "base_amount_raw",
+                 "has_amount", "has_vat_category_id", "has_reason")
 
     def __init__(self):
-        self.is_charge = None       # True = charge (BG-21), False = allowance (BG-20),
-        #                             None = no usable ChargeIndicator (neither context)
+        self.is_charge = None       # True = charge (BG-21/BG-28), False = allowance
+        #                             (BG-20/BG-27), None = no usable ChargeIndicator
+        #                             (neither the allowance nor the charge context)
         self.amount_raw = None      # BT-92/BT-99 raw text (BR-DEC-01/05)
         self.base_amount_raw = None  # BT-93/BT-100 raw text (BR-DEC-02/06)
+        self.has_amount = False          # exists(cbc:Amount)  — BR-31/36/41/43
+        self.has_vat_category_id = False  # exists(VAT-scheme cac:TaxCategory/cbc:ID)
+        #                                   — BR-32/37
+        self.has_reason = False          # exists(cbc:AllowanceChargeReason)
+        #                                   or exists(cbc:AllowanceChargeReasonCode)
+        #                                   — BR-33/38/42/44
+
+
+def _build_allowance_charge(ac_el):
+    """Parse one ``cac:AllowanceCharge`` element into an :class:`AllowanceCharge`.
+
+    Captures the ``exists(...)`` facts the EN 16931 rules test, verbatim to the
+    compiled Schematron:
+
+    * ``is_charge`` — the ``cbc:ChargeIndicator = true()/false()`` context split.
+      An untyped element atomizes and casts to xs:boolean, so only the four
+      lexical booleans count; anything else (absent, "TRUE", junk) matches
+      neither the allowance nor the charge context.
+    * ``has_amount`` — ``exists(cbc:Amount)`` (pure existence; empty satisfies it).
+    * ``has_vat_category_id`` —
+      ``exists(cac:TaxCategory[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']/cbc:ID)``.
+    * ``has_reason`` — ``exists(cbc:AllowanceChargeReason)
+      or exists(cbc:AllowanceChargeReasonCode)``.
+    """
+    ac = AllowanceCharge()
+    ind = _norm_space(_text(ac_el.find("cbc:ChargeIndicator", NS)))
+    if ind in ("true", "1"):
+        ac.is_charge = True
+    elif ind in ("false", "0"):
+        ac.is_charge = False
+    amount_el = ac_el.find("cbc:Amount", NS)
+    ac.has_amount = amount_el is not None
+    ac.amount_raw = _rawtext(amount_el)
+    ac.base_amount_raw = _rawtext(ac_el.find("cbc:BaseAmount", NS))
+    for cat_el in ac_el.findall("cac:TaxCategory", NS):
+        scheme = _norm_space(_text(cat_el.find("cac:TaxScheme/cbc:ID", NS)))
+        if (scheme and scheme.upper() == "VAT"
+                and cat_el.find("cbc:ID", NS) is not None):
+            ac.has_vat_category_id = True
+            break
+    ac.has_reason = (
+        ac_el.find("cbc:AllowanceChargeReason", NS) is not None
+        or ac_el.find("cbc:AllowanceChargeReasonCode", NS) is not None)
+    return ac
 
 
 class Invoice:
@@ -337,20 +390,12 @@ def build_model(root):
             if code:
                 inv.vat_category_codes.append(code)
 
-    # Document-level allowance/charge (BG-20/BG-21)
+    # Document-level allowance/charge (BG-20/BG-21) — direct children of Invoice.
     for ac_el in root.findall("cac:AllowanceCharge", NS):
         cat = _text(ac_el.find("cac:TaxCategory/cbc:ID", NS))
         if cat is not None:
             inv.doc_allowance_charge_category_ids.append(cat)
-        ac = AllowanceCharge()
-        ind = _norm_space(_text(ac_el.find("cbc:ChargeIndicator", NS)))
-        if ind in ("true", "1"):
-            ac.is_charge = True
-        elif ind in ("false", "0"):
-            ac.is_charge = False
-        ac.amount_raw = _rawtext(ac_el.find("cbc:Amount", NS))
-        ac.base_amount_raw = _rawtext(ac_el.find("cbc:BaseAmount", NS))
-        inv.doc_allowance_charges.append(ac)
+        inv.doc_allowance_charges.append(_build_allowance_charge(ac_el))
 
     # InvoiceLines
     for i, ln_el in enumerate(root.findall("cac:InvoiceLine", NS), start=1):
@@ -366,6 +411,11 @@ def build_model(root):
             code = _text(cat_el)
             if code is not None:
                 ln.tax_category_ids.append(code)
+        # Invoice line allowance/charge (BG-27/BG-28) — the official context is
+        # //cac:InvoiceLine/cac:AllowanceCharge, i.e. AllowanceCharge children of
+        # the line (UBL InvoiceLines are direct children of the Invoice root).
+        for ac_el in ln_el.findall("cac:AllowanceCharge", NS):
+            ln.allowance_charges.append(_build_allowance_charge(ac_el))
         inv.lines.append(ln)
 
     return inv

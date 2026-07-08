@@ -909,6 +909,203 @@ def br_dec_23(inv):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Allowance / charge existence rules (BG-20/21 document level, BG-27/28 line
+# level). Each official rule's CONTEXT is the AllowanceCharge itself, split on
+# the boolean cbc:ChargeIndicator, so a rule is evaluated per matching group and
+# only when the ChargeIndicator casts to the required boolean (allowance=false,
+# charge=true). A group whose ChargeIndicator is absent/unparseable matches
+# neither context (parser: is_charge is None) and is skipped by every rule here.
+# ---------------------------------------------------------------------------
+def br_31(inv):
+    """BR-31: Each Document level allowance (BG-20) shall have a Document level
+    allowance amount (BT-92).
+
+    Official (context ``/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator =
+    false()]``): ``exists(cbc:Amount)`` — pure existence (present-but-empty
+    satisfies it; only absence fires).
+    """
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is False and not ac.has_amount:
+            return Violation(
+                "BR-31",
+                "Each Document level allowance (BG-20) shall have a Document "
+                "level allowance amount (BT-92).",
+                "cac:AllowanceCharge/cbc:Amount")
+    return None
+
+
+def br_32(inv):
+    """BR-32: Each Document level allowance (BG-20) shall have a Document level
+    allowance VAT category code (BT-95).
+
+    Official (context = document-level allowance)::
+
+        exists(cac:TaxCategory[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']/cbc:ID)
+
+    A VAT-scheme ``cac:TaxCategory`` (its ``TaxScheme/ID`` normalize-space +
+    upper-case = 'VAT') carrying a ``cbc:ID`` must exist. A TaxCategory with no
+    VAT TaxScheme, or a VAT TaxCategory with no ID, does not satisfy it.
+    """
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is False and not ac.has_vat_category_id:
+            return Violation(
+                "BR-32",
+                "Each Document level allowance (BG-20) shall have a Document "
+                "level allowance VAT category code (BT-95).",
+                "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_33(inv):
+    """BR-33: Each Document level allowance (BG-20) shall have a Document level
+    allowance reason (BT-97) or a Document level allowance reason code (BT-98).
+
+    Official (context = document-level allowance)::
+
+        exists(cbc:AllowanceChargeReason) or exists(cbc:AllowanceChargeReasonCode)
+    """
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is False and not ac.has_reason:
+            return Violation(
+                "BR-33",
+                "Each Document level allowance (BG-20) shall have a Document "
+                "level allowance reason (BT-97) or a Document level allowance "
+                "reason code (BT-98).",
+                "cac:AllowanceCharge/cbc:AllowanceChargeReason")
+    return None
+
+
+def br_36(inv):
+    """BR-36: Each Document level charge (BG-21) shall have a Document level
+    charge amount (BT-99).
+
+    Official (context ``/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator =
+    true()]``): ``exists(cbc:Amount)``.
+    """
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is True and not ac.has_amount:
+            return Violation(
+                "BR-36",
+                "Each Document level charge (BG-21) shall have a Document level "
+                "charge amount (BT-99).",
+                "cac:AllowanceCharge/cbc:Amount")
+    return None
+
+
+def br_37(inv):
+    """BR-37: Each Document level charge (BG-21) shall have a Document level
+    charge VAT category code (BT-102).
+
+    Official (context = document-level charge)::
+
+        exists(cac:TaxCategory[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']/cbc:ID)
+    """
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is True and not ac.has_vat_category_id:
+            return Violation(
+                "BR-37",
+                "Each Document level charge (BG-21) shall have a Document level "
+                "charge VAT category code (BT-102).",
+                "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_38(inv):
+    """BR-38: Each Document level charge (BG-21) shall have a Document level
+    charge reason (BT-104) or a Document level charge reason code (BT-105).
+
+    Official (context = document-level charge)::
+
+        exists(cbc:AllowanceChargeReason) or exists(cbc:AllowanceChargeReasonCode)
+    """
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is True and not ac.has_reason:
+            return Violation(
+                "BR-38",
+                "Each Document level charge (BG-21) shall have a Document level "
+                "charge reason (BT-104) or a Document level charge reason code "
+                "(BT-105).",
+                "cac:AllowanceCharge/cbc:AllowanceChargeReason")
+    return None
+
+
+def br_41(inv):
+    """BR-41: Each Invoice line allowance (BG-27) shall have an Invoice line
+    allowance amount (BT-136).
+
+    Official (context ``//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator
+    = false()]``): ``exists(cbc:Amount)`` — evaluated per line-level allowance.
+    """
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is False and not ac.has_amount:
+                return Violation(
+                    "BR-41",
+                    "Each Invoice line allowance (BG-27) shall have an Invoice "
+                    "line allowance amount (BT-136).",
+                    ln.label + "/cac:AllowanceCharge/cbc:Amount")
+    return None
+
+
+def br_42(inv):
+    """BR-42: Each Invoice line allowance (BG-27) shall have an Invoice line
+    allowance reason (BT-139) or an Invoice line allowance reason code (BT-140).
+
+    Official (context = line-level allowance)::
+
+        exists(cbc:AllowanceChargeReason) or exists(cbc:AllowanceChargeReasonCode)
+    """
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is False and not ac.has_reason:
+                return Violation(
+                    "BR-42",
+                    "Each Invoice line allowance (BG-27) shall have an Invoice "
+                    "line allowance reason (BT-139) or an Invoice line allowance "
+                    "reason code (BT-140).",
+                    ln.label + "/cac:AllowanceCharge/cbc:AllowanceChargeReason")
+    return None
+
+
+def br_43(inv):
+    """BR-43: Each Invoice line charge (BG-28) shall have an Invoice line charge
+    amount (BT-141).
+
+    Official (context ``//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator
+    = true()]``): ``exists(cbc:Amount)``.
+    """
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is True and not ac.has_amount:
+                return Violation(
+                    "BR-43",
+                    "Each Invoice line charge (BG-28) shall have an Invoice line "
+                    "charge amount (BT-141).",
+                    ln.label + "/cac:AllowanceCharge/cbc:Amount")
+    return None
+
+
+def br_44(inv):
+    """BR-44: Each Invoice line charge (BG-28) shall have an Invoice line charge
+    reason (BT-144) or an Invoice line charge reason code (BT-145).
+
+    Official (context = line-level charge)::
+
+        exists(cbc:AllowanceChargeReason) or exists(cbc:AllowanceChargeReasonCode)
+    """
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is True and not ac.has_reason:
+                return Violation(
+                    "BR-44",
+                    "Each Invoice line charge (BG-28) shall have an Invoice line "
+                    "charge reason (BT-144) or an Invoice line charge reason code "
+                    "(BT-145).",
+                    ln.label + "/cac:AllowanceCharge/cbc:AllowanceChargeReason")
+    return None
+
+
 # Ordered ruleset (evaluation order = document flow: header -> lines -> codes
 # -> arithmetic -> VAT-category consistency -> decimal precision).
 ALL_RULES = [
@@ -916,6 +1113,8 @@ ALL_RULES = [
     br_09, br_10, br_11,
     br_12, br_13, br_14, br_15,
     br_16, br_21, br_22, br_24, br_26,
+    br_31, br_32, br_33, br_36, br_37, br_38,
+    br_41, br_42, br_43, br_44,
     br_cl_01,
     br_co_10, br_co_13, br_co_14, br_co_15, br_co_16, br_co_17, br_co_18,
     br_s_01, br_z_01,

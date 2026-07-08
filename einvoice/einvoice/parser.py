@@ -132,7 +132,10 @@ class Invoice:
         # Parties
         self.seller_name = None           # BT-27
         self.seller_has_postal_address = False  # BG-5
+        self.seller_country_code = None   # BT-40 (normalize-space; None = no addr)
         self.buyer_name = None            # BT-44
+        self.buyer_has_postal_address = False  # BG-8
+        self.buyer_country_code = None    # BT-55 (normalize-space; None = no addr)
         # Totals
         self.line_extension_total = None  # BT-106
         self.tax_exclusive_amount = None  # BT-109
@@ -251,12 +254,23 @@ def build_model(root):
             supplier.find("cac:PartyLegalEntity/cbc:RegistrationName", NS))
         inv.seller_has_postal_address = (
             supplier.find("cac:PostalAddress", NS) is not None)
+        # BR-09 context is the Seller PostalAddress node; its test is
+        # normalize-space(cac:Country/cbc:IdentificationCode) != '' — evaluate
+        # the country code relative to that address (None when no address).
+        inv.seller_country_code = _norm_space(_text(
+            supplier.find(
+                "cac:PostalAddress/cac:Country/cbc:IdentificationCode", NS)))
 
     # Buyer
     customer = root.find("cac:AccountingCustomerParty/cac:Party", NS)
     if customer is not None:
         inv.buyer_name = _text(
             customer.find("cac:PartyLegalEntity/cbc:RegistrationName", NS))
+        inv.buyer_has_postal_address = (
+            customer.find("cac:PostalAddress", NS) is not None)
+        inv.buyer_country_code = _norm_space(_text(
+            customer.find(
+                "cac:PostalAddress/cac:Country/cbc:IdentificationCode", NS)))
 
     # LegalMonetaryTotal
     lmt = root.find("cac:LegalMonetaryTotal", NS)

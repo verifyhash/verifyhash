@@ -5,7 +5,7 @@ Compares the fired-rule set of the OFFICIAL, NORMATIVE artifacts against the
 fired-rule set of OUR validator (``einvoice/`` package), one "leg" per
 ruleset:
 
-    * EN leg        — the compiled EN16931-UBL Schematron (CEN) vs our 43
+    * EN leg        — the compiled EN16931-UBL Schematron (CEN) vs our 50
                       core rules (einvoice/rules.py ALL_RULES);
     * XRechnung leg — the compiled KoSIT XRechnung-UBL Schematron
                       (corpus/xrechnung-schematron, v2.5.0 / XRechnung 3.0.2)
@@ -97,7 +97,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 43, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 50, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -371,6 +371,40 @@ def _mut_br08(r):
     party.remove(_child(party, NS_CAC, "PostalAddress"))
 
 
+def _mut_br09(r):
+    # Drop the Seller PostalAddress country -> BR-09 (address still present).
+    pa = _child(_supplier_party(r), NS_CAC, "PostalAddress")
+    pa.remove(_child(pa, NS_CAC, "Country"))
+
+
+def _mut_br10(r):
+    # Drop the whole Buyer PostalAddress -> BR-10 (BR-11's context vanishes).
+    party = _customer_party(r)
+    party.remove(_child(party, NS_CAC, "PostalAddress"))
+
+
+def _mut_br11(r):
+    # Drop the Buyer PostalAddress country -> BR-11 (address still present).
+    pa = _child(_customer_party(r), NS_CAC, "PostalAddress")
+    pa.remove(_child(pa, NS_CAC, "Country"))
+
+
+def _mut_br12(r):
+    _lmt(r).remove(_child(_lmt(r), NS_CBC, "LineExtensionAmount"))
+
+
+def _mut_br13(r):
+    _lmt(r).remove(_child(_lmt(r), NS_CBC, "TaxExclusiveAmount"))
+
+
+def _mut_br14(r):
+    _lmt(r).remove(_child(_lmt(r), NS_CBC, "TaxInclusiveAmount"))
+
+
+def _mut_br15(r):
+    _lmt(r).remove(_child(_lmt(r), NS_CBC, "PayableAmount"))
+
+
 def _mut_br16(r):
     for ln in [c for c in r if c.tag == _q(NS_CAC, "InvoiceLine")]:
         r.remove(ln)
@@ -519,7 +553,11 @@ def _mut_brdec23(r):
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
-    "BR-07": _mut_br07, "BR-08": _mut_br08, "BR-16": _mut_br16,
+    "BR-07": _mut_br07, "BR-08": _mut_br08,
+    "BR-09": _mut_br09, "BR-10": _mut_br10, "BR-11": _mut_br11,
+    "BR-12": _mut_br12, "BR-13": _mut_br13, "BR-14": _mut_br14,
+    "BR-15": _mut_br15,
+    "BR-16": _mut_br16,
     "BR-21": _mut_br21, "BR-22": _mut_br22, "BR-24": _mut_br24,
     "BR-26": _mut_br26, "BR-CL-01": _mut_brcl01, "BR-CO-10": _mut_brco10,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,

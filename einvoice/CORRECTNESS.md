@@ -6,7 +6,7 @@ importantly — what is **not** yet proven.
 
 The validator has **two distinct layers with separate coverage claims**:
 
-1. **EN 16931 core** — 43 of the ~200 EU-core business rules
+1. **EN 16931 core** — 50 of the ~200 EU-core business rules
    (`einvoice/rules.py`), proven against the official CEN Schematron (§2);
 2. **XRechnung national CIUS (BR-DE-\*)** — all 32 German national asserts of
    the official KoSIT XRechnung 3.0.2 UBL Schematron
@@ -20,7 +20,7 @@ the evidence, that is a bug in this document; report it.
 
 ## 1. What each rule is
 
-Every rule is a **pure Python function**: the 43 core rules over a parsed
+Every rule is a **pure Python function**: the 50 core rules over a parsed
 invoice model (`einvoice/rules.py`, one function per rule, listed in
 `ALL_RULES`), the 32 BR-DE rules over the parsed UBL root element
 (`einvoice/rules_xrechnung.py` — the national rules address parts of the
@@ -59,7 +59,7 @@ The harness is `differential.py`:
    assertion `@id` is collected. This is the legal verdict, computed by the
    legal artifact — not a re-implementation.
 2. **Our side = the `einvoice/` package**, run in-process.
-3. For **every invoice** and **every one of our 43 rule IDs** the harness asks
+3. For **every invoice** and **every one of our 50 rule IDs** the harness asks
    both engines the same yes/no question — *"does rule R fire on this
    invoice?"* — and records agreement. A disagreement is, by definition, our
    bug: either a **false positive** (we fire, the law does not → we over-reject)
@@ -70,38 +70,40 @@ won and our code was corrected — never the reverse.
 
 ### Corpus
 
-**1028 real UBL `Invoice` documents**, assembled from:
+**1035 real UBL `Invoice` documents**, assembled from:
 
 - CEN `ubl/examples` real-world sample invoices;
 - our own `corpus/vendored/valid` + `vendored/invalid` fixtures;
 - 90 real German-CIUS invoices from the KoSIT `xrechnung-testsuite`;
 - every `<test>` case from the 206 CEN `Invoice-unit-UBL` unit-test files,
   split out into standalone invoices;
-- 43 generated mutations — one per rule, each breaking exactly the field that
+- 50 generated mutations — one per rule, each breaking exactly the field that
   rule guards, off a known-clean invoice — so every rule is exercised in the
   failing direction.
 
-That is **44,204 rule-vs-law comparisons** (1028 invoices × 43 rules).
+That is **51,750 rule-vs-law comparisons** (1035 invoices × 50 rules).
 
 ### Result of this run
 
 ```
-TOTAL AGREEMENT: 44,204 / 44,204 = 100.0000%
+TOTAL AGREEMENT: 51,750 / 51,750 = 100.0000%
 divergences: 0 false-positives + 0 misses
 ```
 
-**All 43 implemented rules agree with the official EN16931-UBL Schematron on
-every one of the 1028 invoices**, with zero false positives and zero misses.
+**All 50 implemented rules agree with the official EN16931-UBL Schematron on
+every one of the 1035 invoices**, with zero false positives and zero misses.
 
 | Rule family | Rule IDs | Agreement |
 |---|---|---|
-| Header existence/cardinality | BR-01, BR-02, BR-03, BR-04, BR-05, BR-06, BR-07, BR-08 | 1028/1028 each |
-| Invoice-line cardinality | BR-16, BR-21, BR-22, BR-24, BR-26 | 1028/1028 each |
-| Code list (UNTDID 1001) | BR-CL-01 | 1028/1028 |
-| Arithmetic co-constraints | BR-CO-10, BR-CO-13, BR-CO-14, BR-CO-15, BR-CO-16, BR-CO-17 | 1028/1028 each |
-| VAT breakdown presence | BR-CO-18 | 1028/1028 |
-| VAT-category consistency | BR-S-01, BR-Z-01, BR-AE-01, BR-E-01, BR-G-01, BR-IC-01, BR-O-01 | 1028/1028 each |
-| Decimal precision (max 2 places) | BR-DEC-01, BR-DEC-02, BR-DEC-05, BR-DEC-06, BR-DEC-09, BR-DEC-10, BR-DEC-11, BR-DEC-12, BR-DEC-14, BR-DEC-16, BR-DEC-17, BR-DEC-18, BR-DEC-19, BR-DEC-20, BR-DEC-23 | 1028/1028 each |
+| Header existence/cardinality | BR-01, BR-02, BR-03, BR-04, BR-05, BR-06, BR-07, BR-08 | 1035/1035 each |
+| Seller/Buyer postal address | BR-09, BR-10, BR-11 | 1035/1035 each |
+| Document totals presence | BR-12, BR-13, BR-14, BR-15 | 1035/1035 each |
+| Invoice-line cardinality | BR-16, BR-21, BR-22, BR-24, BR-26 | 1035/1035 each |
+| Code list (UNTDID 1001) | BR-CL-01 | 1035/1035 |
+| Arithmetic co-constraints | BR-CO-10, BR-CO-13, BR-CO-14, BR-CO-15, BR-CO-16, BR-CO-17 | 1035/1035 each |
+| VAT breakdown presence | BR-CO-18 | 1035/1035 |
+| VAT-category consistency | BR-S-01, BR-Z-01, BR-AE-01, BR-E-01, BR-G-01, BR-IC-01, BR-O-01 | 1035/1035 each |
+| Decimal precision (max 2 places) | BR-DEC-01, BR-DEC-02, BR-DEC-05, BR-DEC-06, BR-DEC-09, BR-DEC-10, BR-DEC-11, BR-DEC-12, BR-DEC-14, BR-DEC-16, BR-DEC-17, BR-DEC-18, BR-DEC-19, BR-DEC-20, BR-DEC-23 | 1035/1035 each |
 
 Reproduce it:
 
@@ -236,28 +238,29 @@ them), with the *correct* rule ID fired every time (not merely "some failure").
 
 ## 5. The honest remaining gap — what is NOT proven
 
-The 100% figure is **100% agreement on the 43 rules we implement, over this
-1028-invoice corpus.** It is not a claim of EN 16931 or XRechnung conformance.
+The 100% figure is **100% agreement on the 50 rules we implement, over this
+1035-invoice corpus.** It is not a claim of EN 16931 or XRechnung conformance.
 Specifically:
 
-- **Only 43 of ~200 EN 16931 business rules are implemented.** Still missing:
-  the header/party existence rules beyond BR-01..08 (BR-09..15, BR-25, BR-27..
-  BR-67 ranges), the rest of the `BR-CO-*` arithmetic (BR-CO-03/04/09/11/12/
-  25/26 …), the deeper VAT-category matrices (`BR-S/Z/AE/E/G/IC/O-02..10`:
-  seller-VAT-ID requirements, per-category taxable/tax sums, exemption-reason
-  rules), the remaining `BR-DEC-*` (BT-136/137/141/142 line allowance/charge
-  amounts), and the `BR-CL-*` code lists beyond BR-CL-01. A `valid: true`
-  result means "none of our 43 rules fired", not "this invoice is legally
+- **Only 50 of ~200 EN 16931 business rules are implemented.** Still missing:
+  the header/party existence rules beyond BR-01..16 (BR-17 Payee name,
+  BR-18/19 tax representative, BR-25, BR-27..BR-67 ranges), the rest of the
+  `BR-CO-*` arithmetic (BR-CO-03/04/09/11/12/25/26 …), the deeper VAT-category
+  matrices (`BR-S/Z/AE/E/G/IC/O-02..10`: seller-VAT-ID requirements,
+  per-category taxable/tax sums, exemption-reason rules), the remaining
+  `BR-DEC-*` (BT-136/137/141/142 line allowance/charge amounts), and the
+  `BR-CL-*` code lists beyond BR-CL-01. A `valid: true`
+  result means "none of our 50 rules fired", not "this invoice is legally
   conformant". (BR-IG-*/BR-IP-* do not exist in the vendored CEN artifact and
   therefore cannot be differential-proven; they are out of scope.)
 - **The XRechnung `BR-DE-*` CIUS layer is complete** for the UBL-Invoice
   artifact (all 32 asserts, §2a) — but the extension (`BR-DEX-*`) and CVD
   (`BR-DE-CVD-*`) profiles are not implemented, and because the EN core is
-  only 43/~200 rules, `--profile=xrechnung` is **not** a complete XRechnung
+  only 50/~200 rules, `--profile=xrechnung` is **not** a complete XRechnung
   compliance check either.
 - **No XSD structural validation**, no CII syntax, no UBL `CreditNote`, no
   ZUGFeRD/Factur-X PDF containers, no signatures.
-- **Corpus, not universe.** 1028 real invoices is broad and adversarial but
+- **Corpus, not universe.** 1035 real invoices is broad and adversarial but
   finite; agreement on it is strong evidence, not a formal proof over all
   possible inputs.
 - **The XSLT is the *compiled* Schematron**, which is the normative technical
@@ -267,11 +270,11 @@ Specifically:
   of that text; it is the right ground truth for a validator, and it is what we
   prove against, but it is one layer below the prose standard.
 
-**Bottom line a buyer can rely on:** for the 43 core rules listed in §2, this
+**Bottom line a buyer can rely on:** for the 50 core rules listed in §2, this
 validator returns the same verdict as the official EN16931-UBL Schematron on
-every invoice in a 1028-document real-world corpus, and for the 32 XRechnung
+every invoice in a 1035-document real-world corpus, and for the 32 XRechnung
 `BR-DE-*` rules listed in §2a it returns the same verdict as the official
 KoSIT XRechnung-UBL Schematron 2.5.0 on a 1014-document corpus — zero false
 positives, zero misses on both legs — re-checkable at any time with
-`python3 differential.py`. Within those explicitly-scoped 43+32 rule slices it
+`python3 differential.py`. Within those explicitly-scoped 50+32 rule slices it
 is provably faithful to the legal rulesets; outside them, it makes no claim.

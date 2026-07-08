@@ -155,6 +155,134 @@ def br_08(inv):
     return None
 
 
+def br_09(inv):
+    """BR-09: The Seller postal address (BG-5) shall contain a Seller country
+    code (BT-40).
+
+    Official (context ``$Seller_postal_address`` =
+    ``cac:AccountingSupplierParty/cac:Party/cac:PostalAddress``)::
+
+        normalize-space(cac:Country/cbc:IdentificationCode) != ''
+
+    The rule's context node is the Seller PostalAddress itself, so it is only
+    evaluated when that address is PRESENT (an absent address is BR-08's job,
+    not this rule's). Given a present address, the country code must
+    normalize-space to a non-empty string — an absent, empty or whitespace-only
+    ``Country/IdentificationCode`` fires the assert.
+    """
+    if inv.seller_has_postal_address and not inv.seller_country_code:
+        return Violation(
+            "BR-09",
+            "The Seller postal address (BG-5) shall contain a Seller country "
+            "code (BT-40).",
+            "cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/"
+            "cac:Country/cbc:IdentificationCode")
+    return None
+
+
+def br_10(inv):
+    """BR-10: An Invoice shall contain the Buyer postal address (BG-8).
+
+    Official (context ``$Invoice`` = ``/ubl:Invoice | /cn:CreditNote``)::
+
+        exists(cac:AccountingCustomerParty/cac:Party/cac:PostalAddress)
+
+    Evaluated on every Invoice (the context always exists); the Buyer postal
+    address must be present. This mirrors BR-08 for the Seller.
+    """
+    if not inv.buyer_has_postal_address:
+        return Violation(
+            "BR-10",
+            "An Invoice shall contain the Buyer postal address (BG-8).",
+            "cac:AccountingCustomerParty/cac:Party/cac:PostalAddress")
+    return None
+
+
+def br_11(inv):
+    """BR-11: The Buyer postal address shall contain a Buyer country code
+    (BT-55).
+
+    Official (context ``$Buyer_postal_address`` =
+    ``cac:AccountingCustomerParty/cac:Party/cac:PostalAddress``)::
+
+        normalize-space(cac:Country/cbc:IdentificationCode) != ''
+
+    Symmetric to BR-09 for the Buyer: only evaluated when the Buyer postal
+    address is present (absence is BR-10's job); given a present address, the
+    country code must normalize-space to a non-empty string.
+    """
+    if inv.buyer_has_postal_address and not inv.buyer_country_code:
+        return Violation(
+            "BR-11",
+            "The Buyer postal address shall contain a Buyer country code "
+            "(BT-55).",
+            "cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/"
+            "cac:Country/cbc:IdentificationCode")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Existence — document totals (BG-22, context cac:LegalMonetaryTotal)
+# ---------------------------------------------------------------------------
+def br_12(inv):
+    """BR-12: An Invoice shall have the Sum of Invoice line net amount (BT-106).
+
+    Official (context ``$Document_totals`` = ``cac:LegalMonetaryTotal``)::
+
+        exists(cbc:LineExtensionAmount)
+
+    A pure existence check whose context node is the LegalMonetaryTotal: it is
+    only evaluated when an LMT is present, and then requires the child element
+    to exist (present-but-empty satisfies it; only absence fires).
+    """
+    if inv.has_legal_monetary_total and inv.line_extension_total is None:
+        return Violation(
+            "BR-12",
+            "An Invoice shall have the Sum of Invoice line net amount (BT-106).",
+            "cac:LegalMonetaryTotal/cbc:LineExtensionAmount")
+    return None
+
+
+def br_13(inv):
+    """BR-13: An Invoice shall have the Invoice total amount without VAT (BT-109).
+
+    Official (context ``cac:LegalMonetaryTotal``): ``exists(cbc:TaxExclusiveAmount)``.
+    """
+    if inv.has_legal_monetary_total and inv.tax_exclusive_amount is None:
+        return Violation(
+            "BR-13",
+            "An Invoice shall have the Invoice total amount without VAT "
+            "(BT-109).",
+            "cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount")
+    return None
+
+
+def br_14(inv):
+    """BR-14: An Invoice shall have the Invoice total amount with VAT (BT-112).
+
+    Official (context ``cac:LegalMonetaryTotal``): ``exists(cbc:TaxInclusiveAmount)``.
+    """
+    if inv.has_legal_monetary_total and inv.tax_inclusive_amount is None:
+        return Violation(
+            "BR-14",
+            "An Invoice shall have the Invoice total amount with VAT (BT-112).",
+            "cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount")
+    return None
+
+
+def br_15(inv):
+    """BR-15: An Invoice shall have the Amount due for payment (BT-115).
+
+    Official (context ``cac:LegalMonetaryTotal``): ``exists(cbc:PayableAmount)``.
+    """
+    if inv.has_legal_monetary_total and inv.payable_amount is None:
+        return Violation(
+            "BR-15",
+            "An Invoice shall have the Amount due for payment (BT-115).",
+            "cac:LegalMonetaryTotal/cbc:PayableAmount")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Cardinality — invoice lines
 # ---------------------------------------------------------------------------
@@ -785,6 +913,8 @@ def br_dec_23(inv):
 # -> arithmetic -> VAT-category consistency -> decimal precision).
 ALL_RULES = [
     br_01, br_02, br_03, br_04, br_05, br_06, br_07, br_08,
+    br_09, br_10, br_11,
+    br_12, br_13, br_14, br_15,
     br_16, br_21, br_22, br_24, br_26,
     br_cl_01,
     br_co_10, br_co_13, br_co_14, br_co_15, br_co_16, br_co_17, br_co_18,

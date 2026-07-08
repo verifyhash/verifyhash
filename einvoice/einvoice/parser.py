@@ -12,6 +12,13 @@ model so a failing rule can name the offending element.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from collections import namedtuple
+
+# A VAT (Classified)TaxCategory as seen on an invoice line item or on a
+# document/line allowance-charge: the normalize-space()d category code (BT-151/
+# BT-95/BT-102), the upper-cased TaxScheme/ID, and the raw Percent text
+# (BT-152/BT-96/BT-103). Consumed by the Standard-rate rules BR-S-02..07.
+ItemTaxCategory = namedtuple("ItemTaxCategory", ["id", "scheme_id", "percent"])
 
 # ---------------------------------------------------------------------------
 # Namespaces
@@ -63,7 +70,8 @@ class InvoiceLine:
 
     __slots__ = ("id", "quantity", "line_extension_amount",
                  "line_extension_amount_raw", "price_amount",
-                 "item_name", "tax_category_ids", "allowance_charges", "index")
+                 "item_name", "tax_category_ids", "item_tax_categories",
+                 "allowance_charges", "index")
 
     def __init__(self, index):
         self.index = index
@@ -74,6 +82,10 @@ class InvoiceLine:
         self.price_amount = None          # BT-146 (text)
         self.item_name = None             # BT-153
         self.tax_category_ids = []        # BG-30 ClassifiedTaxCategory/ID codes
+        # Full item VAT categories (BG-30): id/scheme/percent per
+        # ClassifiedTaxCategory — needed by BR-S-02 (S-line present) and
+        # BR-S-05 (S-line VAT rate > 0).
+        self.item_tax_categories = []     # list[ItemTaxCategory]
         self.allowance_charges = []       # line-level BG-27/BG-28 (list[AllowanceCharge])
 
     @property
@@ -85,7 +97,7 @@ class InvoiceLine:
 class TaxSubtotal:
     __slots__ = ("tax_amount", "tax_amount_raw", "taxable_amount",
                  "taxable_amount_raw", "category_id", "category_scheme_id",
-                 "percent")
+                 "percent", "has_exemption_reason", "has_exemption_reason_code")
 
     def __init__(self):
         self.tax_amount = None          # BT-117 (text)
@@ -95,6 +107,10 @@ class TaxSubtotal:
         self.category_id = None         # BT-118 VAT category code
         self.category_scheme_id = None  # TaxCategory/TaxScheme/ID, normalized UPPER
         self.percent = None             # BT-119 (text)
+        # exists(cbc:TaxExemptionReason) / exists(cbc:TaxExemptionReasonCode)
+        # on the breakdown's TaxCategory (BT-120/BT-121) — BR-S-10.
+        self.has_exemption_reason = False
+        self.has_exemption_reason_code = False
 
 
 class TaxTotal:
@@ -116,7 +132,8 @@ class AllowanceCharge:
     """
 
     __slots__ = ("is_charge", "amount_raw", "base_amount_raw",
-                 "has_amount", "has_vat_category_id", "has_reason")
+                 "has_amount", "has_vat_category_id", "has_reason",
+                 "tax_categories")
 
     def __init__(self):
         self.is_charge = None       # True = charge (BG-21/BG-28), False = allowance
@@ -130,6 +147,9 @@ class AllowanceCharge:
         self.has_reason = False          # exists(cbc:AllowanceChargeReason)
         #                                   or exists(cbc:AllowanceChargeReasonCode)
         #                                   — BR-33/38/42/44
+        # Full VAT categories (id/scheme/percent) on this allowance/charge —
+        # BR-S-03/04 (S allowance/charge present) and BR-S-06/07 (S rate > 0).
+        self.tax_categories = []         # list[ItemTaxCategory]
 
 
 def _build_allowance_charge(ac_el):
@@ -163,7 +183,10 @@ def _build_allowance_charge(ac_el):
         if (scheme and scheme.upper() == "VAT"
                 and cat_el.find("cbc:ID", NS) is not None):
             ac.has_vat_category_id = True
-            break
+        ac.tax_categories.append(ItemTaxCategory(
+            _norm_space(_text(cat_el.find("cbc:ID", NS))),
+            scheme.upper() if scheme else None,
+            _text(cat_el.find("cbc:Percent", NS))))
     ac.has_reason = (
         ac_el.find("cbc:AllowanceChargeReason", NS) is not None
         or ac_el.find("cbc:AllowanceChargeReasonCode", NS) is not None)
@@ -186,6 +209,15 @@ class Invoice:
         self.seller_name = None           # BT-27
         self.seller_has_postal_address = False  # BG-5
         self.seller_country_code = None   # BT-40 (normalize-space; None = no addr)
+        # exists(//AccountingSupplierParty/Party/PartyTaxScheme/CompanyID) —
+        # the Seller VAT/tax-registration id (BT-31/BT-32). NOTE: the official
+        # BR-S-02/03/04 seller test is SCHEME-AGNOSTIC (any PartyTaxScheme with
+        # a CompanyID satisfies it, not only the VAT one).
+        self.seller_has_party_tax_scheme_company_id = False
+        # exists(//TaxRepresentativeParty/PartyTaxScheme[VAT]/CompanyID) —
+        # the Seller tax representative VAT id (BT-63); VAT scheme IS required
+        # here, unlike the seller test above.
+        self.taxrep_has_vat_company_id = False
         self.buyer_name = None            # BT-44
         self.buyer_has_postal_address = False  # BG-8
         self.buyer_country_code = None    # BT-55 (normalize-space; None = no addr)
@@ -270,6 +302,35 @@ class Invoice:
                     codes.append(_norm_space(st.category_id))
         return codes
 
+    # -- Standard-rate (BR-S-*) helpers ------------------------------------
+    def all_allowance_charges(self):
+        """Every cac:AllowanceCharge in the document (document-level BG-20/21
+        AND line-level BG-27/28) — the official BR-S-03/04/06/07 contexts use
+        ``//cac:AllowanceCharge``, i.e. any depth."""
+        acs = list(self.doc_allowance_charges)
+        for ln in self.lines:
+            acs.extend(ln.allowance_charges)
+        return acs
+
+    def has_classified_category(self, code, scheme="VAT"):
+        """True iff any invoice-line item ClassifiedTaxCategory has this
+        normalize-space()d code — ``//cac:ClassifiedTaxCategory[normalize-space
+        (cbc:ID)=code][VAT]`` when ``scheme='VAT'``, or the scheme-AGNOSTIC
+        ``//cac:ClassifiedTaxCategory[normalize-space(cbc:ID)=code]`` when
+        ``scheme=None`` (the BR-S-02 last-disjunct node set, which — unlike its
+        first disjunct — omits the TaxScheme predicate)."""
+        for ln in self.lines:
+            for cat in ln.item_tax_categories:
+                if cat.id == code and (scheme is None or cat.scheme_id == scheme):
+                    return True
+        return False
+
+    def seller_has_vat_identifier(self):
+        """The BR-S-02/03/04 seller disjunct: a Seller PartyTaxScheme CompanyID
+        (any scheme) OR a tax-representative VAT PartyTaxScheme CompanyID."""
+        return (self.seller_has_party_tax_scheme_company_id
+                or self.taxrep_has_vat_company_id)
+
 
 def parse_file(path):
     """Parse ``path`` into an (root, ElementTree) pair.
@@ -313,6 +374,21 @@ def build_model(root):
         inv.seller_country_code = _norm_space(_text(
             supplier.find(
                 "cac:PostalAddress/cac:Country/cbc:IdentificationCode", NS)))
+        # exists(cac:PartyTaxScheme/cbc:CompanyID) — scheme-agnostic (BR-S-02..04).
+        inv.seller_has_party_tax_scheme_company_id = (
+            supplier.find("cac:PartyTaxScheme/cbc:CompanyID", NS) is not None)
+
+    # TaxRepresentativeParty (anywhere): a VAT-scheme PartyTaxScheme with a
+    # CompanyID satisfies the seller-tax-representative disjunct of BR-S-02..04.
+    for trp_el in root.iter("{%s}TaxRepresentativeParty" % NS_CAC):
+        for pts_el in trp_el.findall("cac:PartyTaxScheme", NS):
+            scheme = _norm_space(_text(pts_el.find("cac:TaxScheme/cbc:ID", NS)))
+            if (scheme and scheme.upper() == "VAT"
+                    and pts_el.find("cbc:CompanyID", NS) is not None):
+                inv.taxrep_has_vat_company_id = True
+                break
+        if inv.taxrep_has_vat_company_id:
+            break
 
     # Buyer
     customer = root.find("cac:AccountingCustomerParty/cac:Party", NS)
@@ -358,6 +434,10 @@ def build_model(root):
             st.percent = _text(cat_el.find("cbc:Percent", NS))
             scheme = _norm_space(_text(cat_el.find("cac:TaxScheme/cbc:ID", NS)))
             st.category_scheme_id = scheme.upper() if scheme else None
+            st.has_exemption_reason = (
+                cat_el.find("cbc:TaxExemptionReason", NS) is not None)
+            st.has_exemption_reason_code = (
+                cat_el.find("cbc:TaxExemptionReasonCode", NS) is not None)
         return st
 
     for tt_el in root.findall("cac:TaxTotal", NS):
@@ -411,6 +491,12 @@ def build_model(root):
             code = _text(cat_el)
             if code is not None:
                 ln.tax_category_ids.append(code)
+        for cat_el in ln_el.findall("cac:Item/cac:ClassifiedTaxCategory", NS):
+            scheme = _norm_space(_text(cat_el.find("cac:TaxScheme/cbc:ID", NS)))
+            ln.item_tax_categories.append(ItemTaxCategory(
+                _norm_space(_text(cat_el.find("cbc:ID", NS))),
+                scheme.upper() if scheme else None,
+                _text(cat_el.find("cbc:Percent", NS))))
         # Invoice line allowance/charge (BG-27/BG-28) — the official context is
         # //cac:InvoiceLine/cac:AllowanceCharge, i.e. AllowanceCharge children of
         # the line (UBL InvoiceLines are direct children of the Invoice root).

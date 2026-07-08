@@ -13,6 +13,7 @@ const EINVOICE = path.join(REPO, "einvoice");
 const CONFORMANCE = path.join(EINVOICE, "conformance.py");
 const XRECHNUNG_TESTS = path.join(EINVOICE, "test_xrechnung.py");
 const PACKAGING_TESTS = path.join(EINVOICE, "test_packaging.py");
+const RULES_TESTS = path.join(EINVOICE, "test_rules.py");
 
 function havePython() {
   try { execFileSync("python3", ["--version"], { stdio: "ignore" }); return true; }
@@ -53,6 +54,18 @@ describe("einvoice (expansion product): conformance gate", function () {
     if (res.status !== 0) {
       throw new Error(
         "einvoice packaging tests FAILED (exit " + res.status + "). The installable/embeddable surface (pip entry point, python -m, ci/validate-invoices.sh) regressed.\n" +
+        (res.stdout || "").split("\n").slice(-25).join("\n") + "\n" + (res.stderr || "").slice(-2000)
+      );
+    }
+  });
+
+  it("einvoice/test_rules.py passes (EN 16931 core VAT-breakdown + Standard-rate rules pinned) — or SKIPS if python3 absent", function () {
+    if (!havePython()) { this.skip(); return; }
+    if (!fs.existsSync(RULES_TESTS)) throw new Error("einvoice/test_rules.py missing — the EN core BR-45..48 / BR-S-* rules are not gated");
+    const res = spawnSync("python3", [RULES_TESTS], { cwd: EINVOICE, encoding: "utf8", timeout: 110000 });
+    if (res.status !== 0) {
+      throw new Error(
+        "einvoice EN-core rule tests FAILED (exit " + res.status + "). The BR-45..48 / BR-S-* rules regressed against their differential-proven behaviour.\n" +
         (res.stdout || "").split("\n").slice(-25).join("\n") + "\n" + (res.stderr || "").slice(-2000)
       );
     }

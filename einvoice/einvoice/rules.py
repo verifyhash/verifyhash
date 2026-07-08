@@ -680,6 +680,313 @@ def br_co_18(inv):
 
 
 # ---------------------------------------------------------------------------
+# VAT breakdown group (BG-23) — per-subtotal existence + rate.
+# Context everywhere here: cac:TaxTotal/cac:TaxSubtotal (any depth), so these
+# use inv.all_tax_subtotals — exactly like BR-CO-17 / BR-DEC-19/20.
+# ---------------------------------------------------------------------------
+def br_45(inv):
+    """BR-45: Each VAT breakdown (BG-23) shall have a VAT category taxable
+    amount (BT-116).
+
+    Official (context ``cac:TaxTotal/cac:TaxSubtotal``): ``exists(cbc:TaxableAmount)``
+    — pure existence (present-but-empty satisfies it; only absence fires). The
+    parser's ``taxable_amount_raw`` is ``None`` iff the element is absent.
+    """
+    for st in inv.all_tax_subtotals:
+        if st.taxable_amount_raw is None:
+            return Violation(
+                "BR-45",
+                "Each VAT breakdown (BG-23) shall have a VAT category taxable "
+                "amount (BT-116).",
+                "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_46(inv):
+    """BR-46: Each VAT breakdown (BG-23) shall have a VAT category tax amount
+    (BT-117).
+
+    Official (context ``cac:TaxTotal/cac:TaxSubtotal``): ``exists(cbc:TaxAmount)``.
+    """
+    for st in inv.all_tax_subtotals:
+        if st.tax_amount_raw is None:
+            return Violation(
+                "BR-46",
+                "Each VAT breakdown (BG-23) shall have a VAT category tax "
+                "amount (BT-117).",
+                "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_47(inv):
+    """BR-47: Each VAT breakdown (BG-23) shall be defined through a VAT category
+    code (BT-118).
+
+    Official (context ``cac:TaxTotal/cac:TaxSubtotal``)::
+
+        exists(cac:TaxCategory[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']/cbc:ID)
+
+    A VAT-scheme ``cac:TaxCategory`` carrying a ``cbc:ID`` must exist. A subtotal
+    with no TaxCategory, a non-VAT TaxScheme, or a VAT TaxCategory without an ID
+    fires the assert (present-but-empty ID satisfies existence — ``category_id``
+    is ``None`` only when the ID element is absent).
+    """
+    for st in inv.all_tax_subtotals:
+        if not (st.category_scheme_id == "VAT" and st.category_id is not None):
+            return Violation(
+                "BR-47",
+                "Each VAT breakdown (BG-23) shall be defined through a VAT "
+                "category code (BT-118).",
+                "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_48(inv):
+    """BR-48: Each VAT breakdown (BG-23) shall have a VAT category rate
+    (BT-119), except if the Invoice is not subject to VAT.
+
+    Official (context ``cac:TaxTotal/cac:TaxSubtotal``)::
+
+        exists(cac:TaxCategory[VAT]/cbc:Percent)
+          or (cac:TaxCategory[VAT]/normalize-space(cbc:ID) = 'O')
+
+    Both disjuncts require the VAT-scheme TaxCategory: a VAT breakdown must carry
+    a Percent (BT-119) UNLESS its category is 'O' (Not subject to VAT). No VAT
+    TaxCategory at all fires the assert. ``category_id`` is already
+    normalize-space()d/stripped by the parser, so ``== 'O'`` is exact.
+    """
+    for st in inv.all_tax_subtotals:
+        vat = st.category_scheme_id == "VAT"
+        holds = vat and (st.percent is not None or st.category_id == "O")
+        if not holds:
+            return Violation(
+                "BR-48",
+                "Each VAT breakdown (BG-23) shall have a VAT category rate "
+                "(BT-119), except if the Invoice is not subject to VAT.",
+                "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Standard-rated (S) VAT category rules (BR-S-02..10, minus the -01/-08 already
+# handled / documented). "S rate > 0" reads BT-152/BT-96/BT-103; the seller-id
+# rules read the Seller/tax-representative VAT identifiers; BR-S-09/10 are
+# breakdown rules scoped to TOP-LEVEL TaxTotals (official context "/*/cac:TaxTotal").
+# ---------------------------------------------------------------------------
+def _percent_gt_zero(percent_text):
+    """The official ``(cbc:Percent) > 0`` test: holds iff Percent parses to a
+    number strictly greater than zero. Absent / empty / non-numeric / <= 0 all
+    make the general comparison false, so the assert fires."""
+    pct = _dec(percent_text)
+    return pct is not None and pct > 0
+
+
+def _ac_has_standard_rated(inv, is_charge):
+    """True iff any allowance (is_charge False) / charge (True) carries a VAT
+    TaxCategory whose code is 'S' — the ``//cac:AllowanceCharge[...]/cac:TaxCategory
+    [normalize-space(cbc:ID)='S'][VAT]`` node set (document- AND line-level)."""
+    for ac in inv.all_allowance_charges():
+        if ac.is_charge is is_charge:
+            for cat in ac.tax_categories:
+                if cat.id == "S" and cat.scheme_id == "VAT":
+                    return True
+    return False
+
+
+def br_s_02(inv):
+    """BR-S-02: An Invoice with a Standard-rated (S) Invoice line (BT-151) shall
+    contain the Seller VAT Identifier (BT-31), Seller tax registration id
+    (BT-32) and/or Seller tax representative VAT id (BT-63).
+
+    Official (context ``/ubl:Invoice``)::
+
+        (exists(//ClassifiedTaxCategory[ID='S'][VAT]) and SELLER_ID)
+          or not(exists(//ClassifiedTaxCategory[ID='S']))
+
+    Two node sets that DIFFER: the first disjunct's S-line check is VAT-scheme
+    scoped (call it A), the last disjunct's is SCHEME-AGNOSTIC (C — no TaxScheme
+    predicate). So the assert fires iff ``C and not(A and SELLER_ID)`` — an S
+    ClassifiedTaxCategory exists (any scheme) AND it is not the case that a
+    VAT-scheme S line is backed by a Seller VAT identifier. SELLER_ID = a Seller
+    ``PartyTaxScheme/CompanyID`` (ANY scheme) or a tax-representative VAT
+    ``PartyTaxScheme/CompanyID``.
+    """
+    if not inv.has_classified_category("S", scheme=None):   # C
+        return None
+    if (inv.has_classified_category("S", "VAT")             # A
+            and inv.seller_has_vat_identifier()):           # SELLER_ID
+        return None
+    return Violation(
+        "BR-S-02",
+        "An Invoice with a Standard rated (S) Invoice line (BT-151) shall "
+        "contain the Seller VAT Identifier (BT-31), the Seller tax "
+        "registration identifier (BT-32) and/or the Seller tax "
+        "representative VAT identifier (BT-63).",
+        "cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID")
+
+
+def br_s_03(inv):
+    """BR-S-03: An Invoice with a Standard-rated (S) Document level allowance
+    (BT-95) shall contain the Seller VAT id / tax registration id / tax rep VAT
+    id (same seller disjunct as BR-S-02)."""
+    if _ac_has_standard_rated(inv, False) and not inv.seller_has_vat_identifier():
+        return Violation(
+            "BR-S-03",
+            "An Invoice with a Standard rated (S) Document level allowance "
+            "(BT-95) shall contain the Seller VAT Identifier (BT-31), the "
+            "Seller tax registration identifier (BT-32) and/or the Seller tax "
+            "representative VAT identifier (BT-63).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_s_04(inv):
+    """BR-S-04: An Invoice with a Standard-rated (S) Document level charge
+    (BT-102) shall contain the Seller VAT id / tax registration id / tax rep VAT
+    id (same seller disjunct as BR-S-02)."""
+    if _ac_has_standard_rated(inv, True) and not inv.seller_has_vat_identifier():
+        return Violation(
+            "BR-S-04",
+            "An Invoice with a Standard rated (S) Document level charge "
+            "(BT-102) shall contain the Seller VAT Identifier (BT-31), the "
+            "Seller tax registration identifier (BT-32) and/or the Seller tax "
+            "representative VAT identifier (BT-63).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_s_05(inv):
+    """BR-S-05: In an Invoice line where the Invoiced item VAT category code
+    (BT-151) is 'Standard rated' the Invoiced item VAT rate (BT-152) shall be
+    greater than zero.
+
+    Official (context ``cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory
+    [normalize-space(cbc:ID)='S'][VAT]``): ``(cbc:Percent) > 0`` per matching
+    category (absent / <= 0 fires).
+    """
+    for ln in inv.lines:
+        for cat in ln.item_tax_categories:
+            if (cat.id == "S" and cat.scheme_id == "VAT"
+                    and not _percent_gt_zero(cat.percent)):
+                return Violation(
+                    "BR-S-05",
+                    "In an Invoice line (BG-25) where the Invoiced item VAT "
+                    "category code (BT-151) is 'Standard rated' the Invoiced "
+                    "item VAT rate (BT-152) shall be greater than zero.",
+                    ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")
+    return None
+
+
+def br_s_06(inv):
+    """BR-S-06: In a Document level allowance where the allowance VAT category
+    code (BT-95) is 'Standard rated' the allowance VAT rate (BT-96) shall be
+    greater than zero.
+
+    Official (context ``cac:AllowanceCharge[cbc:ChargeIndicator=false()]/
+    cac:TaxCategory[normalize-space(cbc:ID)='S'][VAT]``): ``(cbc:Percent) > 0``.
+    """
+    for ac in inv.all_allowance_charges():
+        if ac.is_charge is False:
+            for cat in ac.tax_categories:
+                if (cat.id == "S" and cat.scheme_id == "VAT"
+                        and not _percent_gt_zero(cat.percent)):
+                    return Violation(
+                        "BR-S-06",
+                        "In a Document level allowance (BG-20) where the "
+                        "Document level allowance VAT category code (BT-95) is "
+                        "'Standard rated' the Document level allowance VAT rate "
+                        "(BT-96) shall be greater than zero.",
+                        "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_s_07(inv):
+    """BR-S-07: In a Document level charge where the charge VAT category code
+    (BT-102) is 'Standard rated' the charge VAT rate (BT-103) shall be greater
+    than zero.
+
+    Official (context ``cac:AllowanceCharge[cbc:ChargeIndicator=true()]/
+    cac:TaxCategory[normalize-space(cbc:ID)='S'][VAT]``): ``(cbc:Percent) > 0``.
+    """
+    for ac in inv.all_allowance_charges():
+        if ac.is_charge is True:
+            for cat in ac.tax_categories:
+                if (cat.id == "S" and cat.scheme_id == "VAT"
+                        and not _percent_gt_zero(cat.percent)):
+                    return Violation(
+                        "BR-S-07",
+                        "In a Document level charge (BG-21) where the Document "
+                        "level charge VAT category code (BT-102) is 'Standard "
+                        "rated' the Document level charge VAT rate (BT-103) "
+                        "shall be greater than zero.",
+                        "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_s_09(inv):
+    """BR-S-09: The VAT category tax amount (BT-117) in a Standard-rated (S) VAT
+    breakdown shall equal the VAT category taxable amount (BT-116) x the VAT
+    category rate (BT-119).
+
+    Official (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='S'][VAT]`` — TOP-LEVEL TaxTotals only)::
+
+        abs(TaxAmount) - 1 < round2(abs(TaxableAmount) * Percent/100)
+          and abs(TaxAmount) + 1 > round2(abs(TaxableAmount) * Percent/100)
+
+    A ±1 tolerance band (like BR-CO-17), not equality; round2 = ``round(x*100)
+    div 100`` with fn:round() (halves toward +inf). A missing TaxAmount /
+    TaxableAmount / Percent makes the comparison false, so the assert fires.
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if not (st.category_id == "S" and st.category_scheme_id == "VAT"):
+                continue
+            pct = _dec(st.percent)
+            tax = _dec(st.tax_amount)
+            taxable = _dec(st.taxable_amount)
+            holds = False
+            if pct is not None and tax is not None and taxable is not None:
+                expected = _xr2(abs(taxable) * (pct / Decimal(100)))
+                holds = (abs(tax) - 1 < expected) and (abs(tax) + 1 > expected)
+            if not holds:
+                return Violation(
+                    "BR-S-09",
+                    "The VAT category tax amount (BT-117=%s) in a Standard "
+                    "rated (S) VAT breakdown must equal the VAT category "
+                    "taxable amount (BT-116=%s) x (VAT rate (BT-119=%s) / 100)."
+                    % (st.tax_amount or "(absent)",
+                       st.taxable_amount or "(absent)",
+                       st.percent if st.percent is not None else "(absent)"),
+                    "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_s_10(inv):
+    """BR-S-10: A VAT breakdown (BG-23) with a Standard rated (S) VAT category
+    code (BT-118) shall not have a VAT exemption reason text (BT-120) or code
+    (BT-121).
+
+    Official (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='S'][VAT]``)::
+
+        not(cbc:TaxExemptionReason) and not(cbc:TaxExemptionReasonCode)
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if (st.category_id == "S" and st.category_scheme_id == "VAT"
+                    and (st.has_exemption_reason or st.has_exemption_reason_code)):
+                return Violation(
+                    "BR-S-10",
+                    "A VAT breakdown (BG-23) with a Standard rated (S) VAT "
+                    "category code (BT-118) shall not have a VAT exemption "
+                    "reason text (BT-120) or code (BT-121).",
+                    "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
+                    "cbc:TaxExemptionReason")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # VAT-category families (BR-AE/E/G/IC/O-01) — "exactly one breakdown row"
 # ---------------------------------------------------------------------------
 def _vat_exactly_one_breakdown(inv, code):
@@ -1117,7 +1424,9 @@ ALL_RULES = [
     br_41, br_42, br_43, br_44,
     br_cl_01,
     br_co_10, br_co_13, br_co_14, br_co_15, br_co_16, br_co_17, br_co_18,
+    br_45, br_46, br_47, br_48,
     br_s_01, br_z_01,
+    br_s_02, br_s_03, br_s_04, br_s_05, br_s_06, br_s_07, br_s_09, br_s_10,
     br_ae_01, br_e_01, br_g_01, br_ic_01, br_o_01,
     br_dec_01, br_dec_02, br_dec_05, br_dec_06,
     br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_14,

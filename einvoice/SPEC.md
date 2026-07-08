@@ -75,11 +75,13 @@ VAT category codes).
 
 **Layer B — business rules.** Each is a testable predicate over the parsed
 tree. The FIRST SLICE was the 20 rules specified in §4; the ruleset has since
-grown to 50 (see `README.md` §2 and `CORRECTNESS.md` for the current list —
+grown to 72 (see `README.md` §2 and `CORRECTNESS.md` for the current list —
 BR-CO-16/17/18, the BR-AE/E/G/IC/O-01 VAT families and 15 BR-DEC-* decimal
-rules were added as a second batch, then the BR-09/10/11 seller/buyer
-postal-address country-code rules and BR-12..BR-15 document-total presence
-rules as a third — all differential-proven).
+rules were added as a second batch, the BR-09/10/11 seller/buyer
+postal-address country-code rules, BR-12..BR-15 document-total presence rules
+and the BR-31..44 allowance/charge existence rules as a third, then the
+BR-45..48 VAT-breakdown existence/rate rules and BR-S-02..07/09/10
+Standard-rate rules as a fourth — all differential-proven).
 
 ---
 

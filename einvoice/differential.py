@@ -97,7 +97,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 60, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 72, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -504,7 +504,7 @@ def _sub_el(parent, ns, local, text=None, currency=False):
     return el
 
 
-def _add_doc_allowance_charge(r, charge, amount, base=None):
+def _add_doc_allowance_charge(r, charge, amount, base=None, percent="25"):
     """Insert a document-level AllowanceCharge before cac:TaxTotal."""
     ac = ET.Element(_q(NS_CAC, "AllowanceCharge"))
     _sub_el(ac, NS_CBC, "ChargeIndicator", "true" if charge else "false")
@@ -514,7 +514,7 @@ def _add_doc_allowance_charge(r, charge, amount, base=None):
         _sub_el(ac, NS_CBC, "BaseAmount", base, currency=True)
     cat = _sub_el(ac, NS_CAC, "TaxCategory")
     _sub_el(cat, NS_CBC, "ID", "S")
-    _sub_el(cat, NS_CBC, "Percent", "25")
+    _sub_el(cat, NS_CBC, "Percent", percent)
     _sub_el(_sub_el(cat, NS_CAC, "TaxScheme"), NS_CBC, "ID", "VAT")
     r.insert(list(r).index(_child(r, NS_CAC, "TaxTotal")), ac)
 
@@ -550,6 +550,78 @@ def _mut_brdec23(r):
     _child(_first_line(r), NS_CBC, "LineExtensionAmount").text = "625743.549"
 
 
+# ---- VAT breakdown (BG-23) mutations: break exactly one subtotal field ----- #
+def _mut_br45(r):
+    st = _subtotal(r)
+    st.remove(_child(st, NS_CBC, "TaxableAmount"))
+
+
+def _mut_br46(r):
+    st = _subtotal(r)
+    st.remove(_child(st, NS_CBC, "TaxAmount"))
+
+
+def _mut_br47(r):
+    cat = _child(_subtotal(r), NS_CAC, "TaxCategory")
+    cat.remove(_child(cat, NS_CBC, "ID"))
+
+
+def _mut_br48(r):
+    cat = _child(_subtotal(r), NS_CAC, "TaxCategory")
+    cat.remove(_child(cat, NS_CBC, "Percent"))
+
+
+# ---- Standard-rated (BR-S-*) mutations, off the S-rated clean base --------- #
+def _supplier_remove_party_tax_scheme(r):
+    party = _supplier_party(r)
+    party.remove(_child(party, NS_CAC, "PartyTaxScheme"))
+
+
+def _mut_brs02(r):
+    # S line present (base has one) + no Seller VAT identifier -> BR-S-02.
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brs03(r):
+    # S document-level allowance + no Seller VAT id -> BR-S-03 (also BR-S-02).
+    _add_doc_allowance_charge(r, charge=False, amount="10.00", percent="25")
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brs04(r):
+    # S document-level charge + no Seller VAT id -> BR-S-04 (also BR-S-02).
+    _add_doc_allowance_charge(r, charge=True, amount="10.00", percent="25")
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brs05(r):
+    # S invoice line with VAT rate 0 -> BR-S-05.
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "Percent").text = "0"
+
+
+def _mut_brs06(r):
+    # S document-level allowance with VAT rate 0 -> BR-S-06.
+    _add_doc_allowance_charge(r, charge=False, amount="10.00", percent="0")
+
+
+def _mut_brs07(r):
+    # S document-level charge with VAT rate 0 -> BR-S-07.
+    _add_doc_allowance_charge(r, charge=True, amount="10.00", percent="0")
+
+
+def _mut_brs09(r):
+    # S breakdown TaxAmount far from taxable x rate -> BR-S-09.
+    _child(_subtotal(r), NS_CBC, "TaxAmount").text = "99.99"
+
+
+def _mut_brs10(r):
+    # S breakdown carrying a VAT exemption reason -> BR-S-10.
+    cat = _child(_subtotal(r), NS_CAC, "TaxCategory")
+    _sub_el(cat, NS_CBC, "TaxExemptionReason", "Reverse charge")
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -562,7 +634,12 @@ _MUTATIONS = {
     "BR-26": _mut_br26, "BR-CL-01": _mut_brcl01, "BR-CO-10": _mut_brco10,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
     "BR-CO-16": _mut_brco16, "BR-CO-17": _mut_brco17, "BR-CO-18": _mut_brco18,
+    "BR-45": _mut_br45, "BR-46": _mut_br46, "BR-47": _mut_br47,
+    "BR-48": _mut_br48,
     "BR-S-01": _mut_brs01, "BR-Z-01": _mut_brz01,
+    "BR-S-02": _mut_brs02, "BR-S-03": _mut_brs03, "BR-S-04": _mut_brs04,
+    "BR-S-05": _mut_brs05, "BR-S-06": _mut_brs06, "BR-S-07": _mut_brs07,
+    "BR-S-09": _mut_brs09, "BR-S-10": _mut_brs10,
     "BR-AE-01": _mut_brae01, "BR-E-01": _mut_bre01, "BR-G-01": _mut_brg01,
     "BR-IC-01": _mut_bric01, "BR-O-01": _mut_bro01,
     "BR-DEC-01": _mut_brdec01, "BR-DEC-02": _mut_brdec02,

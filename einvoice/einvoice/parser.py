@@ -20,6 +20,11 @@ from collections import namedtuple
 # (BT-152/BT-96/BT-103). Consumed by the Standard-rate rules BR-S-02..07.
 ItemTaxCategory = namedtuple("ItemTaxCategory", ["id", "scheme_id", "percent"])
 
+# One cac:InvoicePeriod (BG-14 document level / BG-26 line level): the stripped
+# StartDate/EndDate text, or None when the element is ABSENT ("" = present but
+# empty — the official BR-29/BR-30 exists() tests distinguish the two).
+Period = namedtuple("Period", ["start", "end"])
+
 # ---------------------------------------------------------------------------
 # Namespaces
 # ---------------------------------------------------------------------------
@@ -70,6 +75,7 @@ class InvoiceLine:
 
     __slots__ = ("id", "quantity", "line_extension_amount",
                  "line_extension_amount_raw", "price_amount",
+                 "price_base_amounts", "periods",
                  "item_name", "tax_category_ids", "item_tax_categories",
                  "allowance_charges", "index")
 
@@ -80,6 +86,11 @@ class InvoiceLine:
         self.line_extension_amount = None  # BT-131 (text)
         self.line_extension_amount_raw = None  # BT-131 raw text (BR-DEC-23)
         self.price_amount = None          # BT-146 (text)
+        # BT-148 Item gross price: text of EVERY cac:Price/cac:AllowanceCharge/
+        # cbc:BaseAmount on this line (the BR-28 node set is a sequence).
+        self.price_base_amounts = []      # list[str]
+        # BG-26 Invoice line period(s): cac:InvoicePeriod children of the line.
+        self.periods = []                 # list[Period]
         self.item_name = None             # BT-153
         self.tax_category_ids = []        # BG-30 ClassifiedTaxCategory/ID codes
         # Full item VAT categories (BG-30): id/scheme/percent per
@@ -193,6 +204,12 @@ def _build_allowance_charge(ac_el):
     return ac
 
 
+def _build_period(period_el):
+    """Parse one ``cac:InvoicePeriod`` into a :class:`Period` (None = absent)."""
+    return Period(_text(period_el.find("cbc:StartDate", NS)),
+                  _text(period_el.find("cbc:EndDate", NS)))
+
+
 class Invoice:
     """Normalized first-slice model of a UBL Invoice."""
 
@@ -234,6 +251,13 @@ class Invoice:
         # Raw (unstripped) text of the LegalMonetaryTotal amount children,
         # keyed by local element name — consumed by the BR-DEC-* rules.
         self.lmt_raw = {}
+        # BG-14 Invoicing period(s): every cac:InvoicePeriod in the document
+        # EXCEPT those inside an invoice/credit-note line — exactly the node
+        # set the official BR-29 rule context ends up matching (its Schematron
+        # pattern ``cac:InvoicePeriod`` matches any InvoicePeriod, but the
+        # line-period rule appears FIRST in the same pattern and captures the
+        # line-level ones — first matching rule wins in a Schematron pattern).
+        self.invoice_periods = []         # list[Period]
         # Tax + lines
         self.tax_totals = []              # list[TaxTotal]  (top-level only)
         self.all_tax_subtotals = []       # every cac:TaxSubtotal in the document
@@ -470,6 +494,17 @@ def build_model(root):
             if code:
                 inv.vat_category_codes.append(code)
 
+    # Invoicing period(s) (BG-14): every cac:InvoicePeriod that is NOT the
+    # child of an invoice/credit-note line (those are BG-26 / BR-30's context).
+    _period_tag = "{%s}InvoicePeriod" % NS_CAC
+    _line_tags = ("{%s}InvoiceLine" % NS_CAC, "{%s}CreditNoteLine" % NS_CAC)
+    for parent in root.iter():
+        if parent.tag in _line_tags:
+            continue
+        for el in parent:
+            if el.tag == _period_tag:
+                inv.invoice_periods.append(_build_period(el))
+
     # Document-level allowance/charge (BG-20/BG-21) — direct children of Invoice.
     for ac_el in root.findall("cac:AllowanceCharge", NS):
         cat = _text(ac_el.find("cac:TaxCategory/cbc:ID", NS))
@@ -486,6 +521,11 @@ def build_model(root):
         ln.line_extension_amount = _text(lea_el)
         ln.line_extension_amount_raw = _rawtext(lea_el)
         ln.price_amount = _text(ln_el.find("cac:Price/cbc:PriceAmount", NS))
+        ln.price_base_amounts = [
+            _text(el) for el in ln_el.findall(
+                "cac:Price/cac:AllowanceCharge/cbc:BaseAmount", NS)]
+        for period_el in ln_el.findall("cac:InvoicePeriod", NS):
+            ln.periods.append(_build_period(period_el))
         ln.item_name = _text(ln_el.find("cac:Item/cbc:Name", NS))
         for cat_el in ln_el.findall("cac:Item/cac:ClassifiedTaxCategory/cbc:ID", NS):
             code = _text(cat_el)

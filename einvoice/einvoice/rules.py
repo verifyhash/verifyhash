@@ -10,6 +10,8 @@ Standard library only.
 
 from __future__ import annotations
 
+import datetime
+
 from collections import namedtuple
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
 
@@ -63,6 +65,29 @@ def _xr2(value):
     """The official ``round(x * 10 * 10) div 100`` idiom: 2-place rounding
     with fn:round() (halves toward +infinity) semantics."""
     return _fn_round(value * 100) / Decimal(100)
+
+
+def _date(text):
+    """Parse an xs:date lexical value to a ``datetime.date``, or None.
+
+    xs:date is ``YYYY-MM-DD`` with an optional timezone suffix (``Z`` or
+    ``+hh:mm``/``-hh:mm``). The BR-29/BR-30 comparison in the corpus is always
+    between two plain dates, so the timezone (when present) is stripped rather
+    than modelled; an unparseable value returns None (on the official side an
+    invalid xs:date cast is a dynamic ERROR that aborts the whole transform,
+    so such documents carry no official verdict at all).
+    """
+    if not text:
+        return None
+    t = text.strip()
+    if t.endswith("Z"):
+        t = t[:-1]
+    elif len(t) > 10 and t[10] in "+-":
+        t = t[:10]
+    try:
+        return datetime.date.fromisoformat(t)
+    except ValueError:
+        return None
 
 
 def _dec_places(raw):
@@ -339,6 +364,26 @@ def br_24(inv):
     return None
 
 
+def br_25(inv):
+    """BR-25: Each Invoice line (BG-25) shall contain the Item name (BT-153).
+
+    Official (context = each Invoice line)::
+
+        normalize-space(cac:Item/cbc:Name) != ''
+
+    Not a pure existence check: an absent, empty or whitespace-only Item name
+    all normalize-space to ``''`` and fire the assert. The parser strips the
+    text, so ``ln.item_name`` is falsy in exactly those three cases.
+    """
+    for ln in inv.lines:
+        if not ln.item_name:
+            return Violation(
+                "BR-25",
+                "Each Invoice line (BG-25) shall contain the Item name (BT-153).",
+                ln.label + "/cac:Item/cbc:Name")
+    return None
+
+
 def br_26(inv):
     """BR-26: Each Invoice line shall contain the Item net price (BT-146).
 
@@ -350,6 +395,117 @@ def br_26(inv):
                 "BR-26",
                 "Each Invoice line shall contain the Item net price (BT-146).",
                 ln.label + "/cac:Price/cbc:PriceAmount")
+    return None
+
+
+def br_27(inv):
+    """BR-27: The Item net price (BT-146) shall NOT be negative.
+
+    Official (context = each Invoice line)::
+
+        (cac:Price/cbc:PriceAmount) >= 0
+
+    A general comparison, NOT presence-gated: with no PriceAmount the left
+    side is the empty sequence, ``() >= 0`` is false and the assert FIRES
+    (alongside BR-26 — the official artifact fires both on a price-less line).
+    A present, parseable PriceAmount must be >= 0. (A non-numeric value is a
+    dynamic cast error officially — no verdict; we fire.)
+    """
+    for ln in inv.lines:
+        price = _dec(ln.price_amount)
+        if price is None or price < 0:
+            return Violation(
+                "BR-27",
+                "The Item net price (BT-146=%s) shall NOT be negative."
+                % (ln.price_amount if ln.price_amount is not None
+                   else "(absent)"),
+                ln.label + "/cac:Price/cbc:PriceAmount")
+    return None
+
+
+def br_28(inv):
+    """BR-28: The Item gross price (BT-148) shall NOT be negative.
+
+    Official (context = each Invoice line)::
+
+        (cac:Price/cac:AllowanceCharge/cbc:BaseAmount) >= 0
+          or not(exists(cac:Price/cac:AllowanceCharge/cbc:BaseAmount))
+
+    Unlike BR-27 this IS presence-gated (the second disjunct): a line without
+    a gross price holds. When BaseAmount nodes exist, the general comparison
+    holds iff ANY of them is >= 0.
+    """
+    for ln in inv.lines:
+        if not ln.price_base_amounts:
+            continue  # not(exists(...)) -> holds
+        holds = False
+        for raw in ln.price_base_amounts:
+            v = _dec(raw)
+            if v is not None and v >= 0:
+                holds = True
+                break
+        if not holds:
+            return Violation(
+                "BR-28",
+                "The Item gross price (BT-148=%s) shall NOT be negative."
+                % ", ".join(ln.price_base_amounts),
+                ln.label + "/cac:Price/cac:AllowanceCharge/cbc:BaseAmount")
+    return None
+
+
+def _period_end_before_start(period):
+    """The shared official BR-29/BR-30 test, negated (True = assert fires)::
+
+        (exists(cbc:EndDate) and exists(cbc:StartDate)
+           and xs:date(cbc:EndDate) >= xs:date(cbc:StartDate))
+        or not(exists(cbc:StartDate)) or not(exists(cbc:EndDate))
+
+    Holds whenever either date is absent; with both present the end date must
+    be >= the start date. A present-but-unparseable date is a dynamic error on
+    the official side (no verdict there); we treat it as firing.
+    """
+    if period.start is None or period.end is None:
+        return False  # not(exists(...)) -> assert holds
+    start, end = _date(period.start), _date(period.end)
+    return start is None or end is None or end < start
+
+
+def br_29(inv):
+    """BR-29: If both Invoicing period start date (BT-73) and end date (BT-74)
+    are given then the end date shall be later or equal to the start date.
+
+    Official context: the document-level ``cac:InvoicePeriod`` (BG-14) — the
+    line-level periods are captured by BR-30's rule, which appears first in
+    the same Schematron pattern.
+    """
+    for period in inv.invoice_periods:
+        if _period_end_before_start(period):
+            return Violation(
+                "BR-29",
+                "The Invoicing period end date (BT-74=%s) shall be later or "
+                "equal to the Invoicing period start date (BT-73=%s)."
+                % (period.end, period.start),
+                "cac:InvoicePeriod/cbc:EndDate")
+    return None
+
+
+def br_30(inv):
+    """BR-30: If both Invoice line period start date (BT-134) and end date
+    (BT-135) are given then the end date shall be later or equal to the start
+    date.
+
+    Official context: ``cac:InvoiceLine/cac:InvoicePeriod`` (BG-26) — same
+    test as BR-29, scoped to the line periods.
+    """
+    for ln in inv.lines:
+        for period in ln.periods:
+            if _period_end_before_start(period):
+                return Violation(
+                    "BR-30",
+                    "The Invoice line period end date (BT-135=%s) shall be "
+                    "later or equal to the Invoice line period start date "
+                    "(BT-134=%s)." % (period.end, period.start),
+                    ln.label + "/cac:InvoicePeriod/cbc:EndDate")
     return None
 
 
@@ -371,6 +527,34 @@ def br_cl_01(inv):
 # ---------------------------------------------------------------------------
 # Calculation / co-constraint (arithmetic integrity)
 # ---------------------------------------------------------------------------
+def br_co_04(inv):
+    """BR-CO-04: Each Invoice line (BG-25) shall be categorized with an
+    Invoiced item VAT category code (BT-151).
+
+    Official (context = each Invoice line)::
+
+        (cac:Item/cac:ClassifiedTaxCategory
+            [cac:TaxScheme/(normalize-space(upper-case(cbc:ID))='VAT')]/cbc:ID)
+
+    Effective-boolean-value of a node sequence: the line must carry a
+    ``ClassifiedTaxCategory`` whose TaxScheme/ID upper-cases + normalize-spaces
+    to 'VAT' AND which has a ``cbc:ID`` ELEMENT (pure existence — a
+    present-but-empty ID satisfies it; the parser's ``cat.id`` is None only
+    when the element is absent).
+    """
+    for ln in inv.lines:
+        has_vat_code = any(
+            cat.scheme_id == "VAT" and cat.id is not None
+            for cat in ln.item_tax_categories)
+        if not has_vat_code:
+            return Violation(
+                "BR-CO-04",
+                "Each Invoice line (BG-25) shall be categorized with an "
+                "Invoiced item VAT category code (BT-151).",
+                ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:ID")
+    return None
+
+
 def br_co_10(inv):
     """BR-CO-10: Sum of Invoice line net amount (BT-106) = Σ line net amount (BT-131).
 
@@ -1419,10 +1603,11 @@ ALL_RULES = [
     br_01, br_02, br_03, br_04, br_05, br_06, br_07, br_08,
     br_09, br_10, br_11,
     br_12, br_13, br_14, br_15,
-    br_16, br_21, br_22, br_24, br_26,
+    br_16, br_21, br_22, br_24, br_25, br_26, br_27, br_28, br_29, br_30,
     br_31, br_32, br_33, br_36, br_37, br_38,
     br_41, br_42, br_43, br_44,
     br_cl_01,
+    br_co_04,
     br_co_10, br_co_13, br_co_14, br_co_15, br_co_16, br_co_17, br_co_18,
     br_45, br_46, br_47, br_48,
     br_s_01, br_z_01,

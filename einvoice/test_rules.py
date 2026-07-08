@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for the EN 16931 core rules added in the VAT-breakdown /
-Standard-rate batch (BR-45..48, BR-S-02..10).
+Standard-rate batch (BR-45..48, BR-S-02..10) and the invoice-line batch
+(BR-25, BR-27, BR-28, BR-29, BR-30, BR-CO-04).
 
 Fast, saxonche-free companion to the differential harness: the differential
 (``python3 differential.py en``) proves these rules against the OFFICIAL CEN
@@ -37,6 +38,11 @@ NEW_RULES = {
     "BR-45", "BR-46", "BR-47", "BR-48",
     "BR-S-02", "BR-S-03", "BR-S-04", "BR-S-05", "BR-S-06", "BR-S-07",
     "BR-S-09", "BR-S-10",
+}
+
+# Invoice-line core batch (differentially proven the same way).
+LINE_RULES = {
+    "BR-25", "BR-26", "BR-27", "BR-28", "BR-29", "BR-30", "BR-CO-04",
 }
 
 
@@ -269,12 +275,141 @@ class StandardRateBreakdown(unittest.TestCase):
         self.assertIn("BR-S-10", fired(r))
 
 
+class InvoiceLineBatch(unittest.TestCase):
+    """BR-25/27/28/29/30 + BR-CO-04 — the invoice-line core batch."""
+
+    def first_line(self, root):
+        return root.find(q(NS_CAC, "InvoiceLine"))
+
+    def line_price(self, root):
+        return self.first_line(root).find(q(NS_CAC, "Price"))
+
+    def doc_period(self, root):
+        return root.find(q(NS_CAC, "InvoicePeriod"))
+
+    def line_period(self, root):
+        return self.first_line(root).find(q(NS_CAC, "InvoicePeriod"))
+
+    def test_base_fires_none_of_the_line_rules(self):
+        self.assertEqual(fired(base()) & LINE_RULES, set())
+
+    # -- BR-25: item name ---------------------------------------------------
+    def test_br_25_missing_item_name_fires(self):
+        r = base()
+        item = first_line_item(r)
+        item.remove(child(item, NS_CBC, "Name"))
+        self.assertIn("BR-25", fired(r))
+        self.assertNotIn("BR-25", fired(base()))
+
+    def test_br_25_whitespace_only_item_name_fires(self):
+        # normalize-space('   ') = '' -> not a pure existence check.
+        r = base()
+        child(first_line_item(r), NS_CBC, "Name").text = "   "
+        self.assertIn("BR-25", fired(r))
+
+    # -- BR-26/27: item net price --------------------------------------------
+    def test_br_26_and_27_missing_price_amount_fire(self):
+        # The official artifact fires BOTH on a price-less line: BR-26 is
+        # exists(); BR-27's general comparison () >= 0 is false.
+        r = base()
+        price = self.line_price(r)
+        price.remove(child(price, NS_CBC, "PriceAmount"))
+        got = fired(r)
+        self.assertIn("BR-26", got)
+        self.assertIn("BR-27", got)
+
+    def test_br_27_negative_price_fires(self):
+        r = base()
+        child(self.line_price(r), NS_CBC, "PriceAmount").text = "-0.01"
+        got = fired(r)
+        self.assertIn("BR-27", got)
+        self.assertNotIn("BR-26", got)  # the element exists
+
+    def test_br_27_zero_price_holds(self):
+        r = base()
+        child(self.line_price(r), NS_CBC, "PriceAmount").text = "0"
+        self.assertNotIn("BR-27", fired(r))
+
+    # -- BR-28: item gross price ----------------------------------------------
+    def add_price_allowance(self, root, base_amount):
+        ac = ET.SubElement(self.line_price(root), q(NS_CAC, "AllowanceCharge"))
+        ET.SubElement(ac, q(NS_CBC, "ChargeIndicator")).text = "false"
+        amt = ET.SubElement(ac, q(NS_CBC, "Amount"))
+        amt.text = "10.00"
+        amt.set("currencyID", "DKK")
+        if base_amount is not None:
+            b = ET.SubElement(ac, q(NS_CBC, "BaseAmount"))
+            b.text = base_amount
+            b.set("currencyID", "DKK")
+
+    def test_br_28_negative_gross_price_fires(self):
+        r = base()
+        self.add_price_allowance(r, "-1")
+        self.assertIn("BR-28", fired(r))
+
+    def test_br_28_zero_gross_price_holds(self):
+        r = base()
+        self.add_price_allowance(r, "0")
+        self.assertNotIn("BR-28", fired(r))
+
+    def test_br_28_no_base_amount_holds(self):
+        # Presence-gated: not(exists(BaseAmount)) -> the assert holds.
+        r = base()
+        self.add_price_allowance(r, None)
+        self.assertNotIn("BR-28", fired(r))
+
+    # -- BR-29/30: period end >= start ---------------------------------------
+    def test_br_29_doc_period_end_before_start_fires(self):
+        r = base()
+        child(self.doc_period(r), NS_CBC, "EndDate").text = "2018-08-31"
+        got = fired(r)
+        self.assertIn("BR-29", got)
+        self.assertNotIn("BR-30", got)  # line period untouched
+
+    def test_br_29_equal_dates_hold(self):
+        r = base()
+        child(self.doc_period(r), NS_CBC, "EndDate").text = "2018-09-01"
+        self.assertNotIn("BR-29", fired(r))
+
+    def test_br_29_end_only_holds(self):
+        r = base()
+        p = self.doc_period(r)
+        p.remove(child(p, NS_CBC, "StartDate"))
+        self.assertNotIn("BR-29", fired(r))
+
+    def test_br_30_line_period_end_before_start_fires(self):
+        r = base()
+        child(self.line_period(r), NS_CBC, "EndDate").text = "2018-08-31"
+        got = fired(r)
+        self.assertIn("BR-30", got)
+        self.assertNotIn("BR-29", got)  # doc period untouched
+
+    # -- BR-CO-04: line VAT category code --------------------------------------
+    def test_br_co_04_missing_classified_category_fires(self):
+        r = base()
+        item = first_line_item(r)
+        item.remove(child(item, NS_CAC, "ClassifiedTaxCategory"))
+        self.assertIn("BR-CO-04", fired(r))
+
+    def test_br_co_04_non_vat_scheme_fires(self):
+        r = base()
+        ctc = child(first_line_item(r), NS_CAC, "ClassifiedTaxCategory")
+        child(ctc.find(q(NS_CAC, "TaxScheme")), NS_CBC, "ID").text = "GST"
+        self.assertIn("BR-CO-04", fired(r))
+
+    def test_br_co_04_missing_category_id_fires(self):
+        r = base()
+        ctc = child(first_line_item(r), NS_CAC, "ClassifiedTaxCategory")
+        ctc.remove(child(ctc, NS_CBC, "ID"))
+        self.assertIn("BR-CO-04", fired(r))
+
+
 class RulesetShape(unittest.TestCase):
-    def test_all_twelve_new_rules_registered(self):
+    def test_all_new_rules_registered(self):
         from einvoice import rules
         ids = {"-".join(p.upper() for p in fn.__name__.split("_"))
                for fn in rules.ALL_RULES}
-        for rid in NEW_RULES:
+        for rid in NEW_RULES | LINE_RULES:
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))

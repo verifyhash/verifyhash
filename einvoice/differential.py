@@ -5,7 +5,7 @@ Compares the fired-rule set of the OFFICIAL, NORMATIVE artifacts against the
 fired-rule set of OUR validator (``einvoice/`` package), one "leg" per
 ruleset:
 
-    * EN leg        — the compiled EN16931-UBL Schematron (CEN) vs our 50
+    * EN leg        — the compiled EN16931-UBL Schematron (CEN) vs our
                       core rules (einvoice/rules.py ALL_RULES);
     * XRechnung leg — the compiled KoSIT XRechnung-UBL Schematron
                       (corpus/xrechnung-schematron, v2.5.0 / XRechnung 3.0.2)
@@ -97,7 +97,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 72, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 78, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -425,10 +425,49 @@ def _mut_br24(r):
     ln.remove(_child(ln, NS_CBC, "LineExtensionAmount"))
 
 
+def _mut_br25(r):
+    item = _child(_first_line(r), NS_CAC, "Item")
+    item.remove(_child(item, NS_CBC, "Name"))
+
+
 def _mut_br26(r):
     ln = _first_line(r)
     price = _child(ln, NS_CAC, "Price")
     price.remove(_child(price, NS_CBC, "PriceAmount"))
+
+
+def _mut_br27(r):
+    price = _child(_first_line(r), NS_CAC, "Price")
+    _child(price, NS_CBC, "PriceAmount").text = "-1"
+
+
+def _mut_br28(r):
+    # Add an Item price discount group whose gross price (BaseAmount) is
+    # negative -> BR-28.
+    price = _child(_first_line(r), NS_CAC, "Price")
+    ac = _sub_el(price, NS_CAC, "AllowanceCharge")
+    _sub_el(ac, NS_CBC, "ChargeIndicator", "false")
+    _sub_el(ac, NS_CBC, "Amount", "10.00", currency=True)
+    _sub_el(ac, NS_CBC, "BaseAmount", "-1", currency=True)
+
+
+def _mut_br29(r):
+    # Document-level InvoicePeriod end date BEFORE the start date -> BR-29.
+    period = _child(r, NS_CAC, "InvoicePeriod")
+    _child(period, NS_CBC, "EndDate").text = "2018-08-01"
+
+
+def _mut_br30(r):
+    # Line-level InvoicePeriod end date BEFORE the start date -> BR-30.
+    period = _child(_first_line(r), NS_CAC, "InvoicePeriod")
+    _child(period, NS_CBC, "EndDate").text = "2018-08-01"
+
+
+def _mut_brco04(r):
+    # Remove the line item's ClassifiedTaxCategory -> BR-CO-04 (the orphan S
+    # breakdown row also fires BR-S-01 on both sides; agreement is per rule).
+    item = _child(_first_line(r), NS_CAC, "Item")
+    item.remove(_child(item, NS_CAC, "ClassifiedTaxCategory"))
 
 
 def _mut_brcl01(r):
@@ -631,7 +670,10 @@ _MUTATIONS = {
     "BR-15": _mut_br15,
     "BR-16": _mut_br16,
     "BR-21": _mut_br21, "BR-22": _mut_br22, "BR-24": _mut_br24,
-    "BR-26": _mut_br26, "BR-CL-01": _mut_brcl01, "BR-CO-10": _mut_brco10,
+    "BR-25": _mut_br25, "BR-26": _mut_br26, "BR-27": _mut_br27,
+    "BR-28": _mut_br28, "BR-29": _mut_br29, "BR-30": _mut_br30,
+    "BR-CO-04": _mut_brco04,
+    "BR-CL-01": _mut_brcl01, "BR-CO-10": _mut_brco10,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
     "BR-CO-16": _mut_brco16, "BR-CO-17": _mut_brco17, "BR-CO-18": _mut_brco18,
     "BR-45": _mut_br45, "BR-46": _mut_br46, "BR-47": _mut_br47,

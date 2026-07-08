@@ -15,7 +15,11 @@ import datetime
 from collections import namedtuple
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
 
-Violation = namedtuple("Violation", ["rule_id", "message", "element"])
+# ``severity`` mirrors the official Schematron ``flag``: every core rule is
+# ``fatal`` except BR-51, which the normative artifact flags as ``warning``
+# (validate.Result.ok only blocks on fatal violations).
+Violation = namedtuple("Violation", ["rule_id", "message", "element", "severity"])
+Violation.__new__.__defaults__ = ("fatal",)
 
 # UNTDID 1001 invoice type codes accepted by EN 16931 for an Invoice document
 # (presence-in-list check only; the XRechnung-restricted subset is deferred).
@@ -1597,15 +1601,301 @@ def br_44(inv):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Payee (BG-10), Seller tax representative (BG-11/BG-12), Payment instructions
+# (BG-16/BG-17/BG-18), Preceding invoice references (BG-3), Deliver-to address
+# (BG-15) and electronic-address scheme rules.
+# ---------------------------------------------------------------------------
+def br_17(inv):
+    """BR-17: The Payee name (BT-59) shall be provided in the Invoice, if the
+    Payee (BG-10) is different from the Seller (BG-4).
+
+    Official (context ``cac:PayeeParty``)::
+
+        exists(cac:PartyName/cbc:Name)
+          and (not(cac:PartyName/cbc:Name
+                     = ../cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name)
+               and not(cac:PartyIdentification/cbc:ID
+                     = ../cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID))
+
+    Evaluated per PayeeParty group. The name/id equalities are general
+    comparisons over RAW string values (no normalize-space): the assert fires
+    when the payee has no name element, OR when any payee name equals any
+    Seller PartyName name, OR when any payee identifier equals any Seller
+    identifier (i.e. the official artifact rejects a PayeeParty that duplicates
+    the Seller — the payee must genuinely differ).
+    """
+    for pp in inv.payee_parties:
+        holds = (bool(pp.names)
+                 and not any(n in pp.seller_names for n in pp.names)
+                 and not any(i in pp.seller_ids for i in pp.ids))
+        if not holds:
+            return Violation(
+                "BR-17",
+                "The Payee name (BT-59) shall be provided in the Invoice, if "
+                "the Payee (BG-10) is different from the Seller (BG-4).",
+                "cac:PayeeParty/cac:PartyName/cbc:Name")
+    return None
+
+
+def br_18(inv):
+    """BR-18: The Seller tax representative name (BT-62) shall be provided in
+    the Invoice, if the Seller (BG-4) has a Seller tax representative party
+    (BG-11).
+
+    Official (context ``cac:TaxRepresentativeParty``)::
+
+        normalize-space(cac:PartyName/cbc:Name) != ''
+
+    Absent, empty or whitespace-only name fires per representative party.
+    """
+    for trp in inv.tax_representatives:
+        name = trp.name if trp.name is not None else ""
+        if not " ".join(name.split()):
+            return Violation(
+                "BR-18",
+                "The Seller tax representative name (BT-62) shall be provided "
+                "in the Invoice, if the Seller (BG-4) has a Seller tax "
+                "representative party (BG-11).",
+                "cac:TaxRepresentativeParty/cac:PartyName/cbc:Name")
+    return None
+
+
+def br_19(inv):
+    """BR-19: The Seller tax representative postal address (BG-12) shall be
+    provided in the Invoice, if the Seller (BG-4) has a Seller tax
+    representative party (BG-11).
+
+    Official (context ``cac:TaxRepresentativeParty``): ``exists(cac:PostalAddress)``.
+    """
+    for trp in inv.tax_representatives:
+        if not trp.has_postal_address:
+            return Violation(
+                "BR-19",
+                "The Seller tax representative postal address (BG-12) shall be "
+                "provided in the Invoice, if the Seller (BG-4) has a Seller "
+                "tax representative party (BG-11).",
+                "cac:TaxRepresentativeParty/cac:PostalAddress")
+    return None
+
+
+def br_20(inv):
+    """BR-20: The Seller tax representative postal address (BG-12) shall
+    contain a Tax representative country code (BT-69), if the Seller (BG-4)
+    has a Seller tax representative party (BG-11).
+
+    Official (context ``cac:TaxRepresentativeParty/cac:PostalAddress``)::
+
+        normalize-space(cac:Country/cbc:IdentificationCode) != ''
+
+    Only evaluated when that postal address is PRESENT (absence is BR-19's
+    job); absent/empty/whitespace-only country code fires.
+    """
+    for cc in inv.taxrep_postal_addresses:
+        if not " ".join((cc or "").split()):
+            return Violation(
+                "BR-20",
+                "The Seller tax representative postal address (BG-12) shall "
+                "contain a Tax representative country code (BT-69), if the "
+                "Seller (BG-4) has a Seller tax representative party (BG-11).",
+                "cac:TaxRepresentativeParty/cac:PostalAddress/"
+                "cac:Country/cbc:IdentificationCode")
+    return None
+
+
+def br_49(inv):
+    """BR-49: A Payment instruction (BG-16) shall specify the Payment means
+    type code (BT-81).
+
+    Official (context ``cac:PaymentMeans``): ``exists(cbc:PaymentMeansCode)``
+    — pure existence per PaymentMeans group (present-but-empty satisfies it).
+    """
+    for pm in inv.payment_means:
+        if not pm.has_code:
+            return Violation(
+                "BR-49",
+                "A Payment instruction (BG-16) shall specify the Payment means "
+                "type code (BT-81).",
+                "cac:PaymentMeans/cbc:PaymentMeansCode")
+    return None
+
+
+def br_50(inv):
+    """BR-50: A Payment account identifier (BT-84) shall be present if Credit
+    transfer (BG-17) information is provided in the Invoice.
+
+    Official (context ``cac:PaymentMeans[cbc:PaymentMeansCode='30' or
+    cbc:PaymentMeansCode='58']/cac:PayeeFinancialAccount``)::
+
+        normalize-space(cbc:ID) != ''
+
+    The context predicate compares the RAW code string values (no
+    normalize-space, unlike BR-61); given a matching PaymentMeans, the rule is
+    evaluated per PayeeFinancialAccount, whose ID must normalize-space to a
+    non-empty string.
+    """
+    for pm in inv.payment_means:
+        if not any(c in ("30", "58") for c in pm.codes_raw):
+            continue  # context predicate does not match
+        for first_id in pm.account_first_ids:
+            if not " ".join((first_id or "").split()):
+                return Violation(
+                    "BR-50",
+                    "A Payment account identifier (BT-84) shall be present if "
+                    "Credit transfer (BG-17) information is provided in the "
+                    "Invoice.",
+                    "cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID")
+    return None
+
+
+def br_51(inv):
+    """BR-51: The last 4 to 6 digits of the Payment card primary account number
+    (BT-87) shall be present if Payment card information (BG-18) is provided.
+
+    Official (context ``cac:PaymentMeans/cac:CardAccount/
+    cbc:PrimaryAccountNumberID``, flag WARNING)::
+
+        string-length(normalize-space(.)) <= 10
+
+    Per PCI DSS an invoice must never carry a full primary account number: at
+    most first 6 + last 4 digits (10 characters after normalize-space). The
+    official flag is ``warning``, so the violation is non-blocking.
+    """
+    for pan in inv.card_pans:
+        if len(" ".join(pan.split())) > 10:
+            return Violation(
+                "BR-51",
+                "In accordance with card payments security standards an "
+                "invoice should never include a full card primary account "
+                "number (BT-87); at most the first 6 and last 4 digits may be "
+                "shown.",
+                "cac:PaymentMeans/cac:CardAccount/cbc:PrimaryAccountNumberID",
+                "warning")
+    return None
+
+
+def br_55(inv):
+    """BR-55: Each Preceding Invoice reference (BG-3) shall contain a Preceding
+    Invoice reference (BT-25).
+
+    Official (context ``cac:BillingReference``)::
+
+        exists(cac:InvoiceDocumentReference/cbc:ID)
+
+    Pure existence, evaluated per BillingReference group (any depth — UBL also
+    allows line-level BillingReference, which the pattern context matches).
+    """
+    for has_id in inv.billing_references:
+        if not has_id:
+            return Violation(
+                "BR-55",
+                "Each Preceding Invoice reference (BG-3) shall contain a "
+                "Preceding Invoice reference (BT-25).",
+                "cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID")
+    return None
+
+
+def br_57(inv):
+    """BR-57: Each Deliver to address (BG-15) shall contain a Deliver to
+    country code (BT-80).
+
+    Official (context ``cac:Delivery/cac:DeliveryLocation/cac:Address``)::
+
+        exists(cac:Country/cbc:IdentificationCode)
+
+    Pure existence (present-but-EMPTY satisfies it, unlike the normalize-space
+    tests of BR-09/BR-11/BR-20), per deliver-to Address — including line-level
+    Delivery groups, which the pattern context matches.
+    """
+    for has_cc in inv.delivery_addresses:
+        if not has_cc:
+            return Violation(
+                "BR-57",
+                "Each Deliver to address (BG-15) shall contain a Deliver to "
+                "country code (BT-80).",
+                "cac:Delivery/cac:DeliveryLocation/cac:Address/"
+                "cac:Country/cbc:IdentificationCode")
+    return None
+
+
+def br_61(inv):
+    """BR-61: If the Payment means type code (BT-81) means SEPA credit
+    transfer, Local credit transfer or Non-SEPA international credit transfer,
+    the Payment account identifier (BT-84) shall be present.
+
+    Official (context ``cac:PaymentMeans``)::
+
+        (exists(cac:PayeeFinancialAccount/cbc:ID)
+           and (normalize-space(cbc:PaymentMeansCode) = '30'
+                or normalize-space(cbc:PaymentMeansCode) = '58'))
+        or (normalize-space(cbc:PaymentMeansCode) != '30'
+            and normalize-space(cbc:PaymentMeansCode) != '58')
+
+    normalize-space here (unlike BR-50's raw context predicate): an absent code
+    normalizes to '' and the second disjunct holds. Fires iff the normalized
+    code is credit transfer (30/58) and no PayeeFinancialAccount/ID exists.
+    """
+    for pm in inv.payment_means:
+        if pm.code_norm in ("30", "58") and not pm.has_account_id:
+            return Violation(
+                "BR-61",
+                "If the Payment means type code (BT-81=%s) means credit "
+                "transfer, the Payment account identifier (BT-84) shall be "
+                "present." % pm.code_norm,
+                "cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID")
+    return None
+
+
+def br_62(inv):
+    """BR-62: The Seller electronic address (BT-34) shall have a Scheme
+    identifier.
+
+    Official (context ``cac:AccountingSupplierParty/cac:Party/cbc:EndpointID``)::
+
+        exists(@schemeID)
+
+    Attribute EXISTENCE per Seller EndpointID (an empty ``schemeID=""``
+    satisfies it).
+    """
+    for has_scheme in inv.seller_endpoints:
+        if not has_scheme:
+            return Violation(
+                "BR-62",
+                "The Seller electronic address (BT-34) shall have a Scheme "
+                "identifier.",
+                "cac:AccountingSupplierParty/cac:Party/cbc:EndpointID/@schemeID")
+    return None
+
+
+def br_63(inv):
+    """BR-63: The Buyer electronic address (BT-49) shall have a Scheme
+    identifier.
+
+    Official (context ``cac:AccountingCustomerParty/cac:Party/cbc:EndpointID``)::
+
+        exists(@schemeID)
+    """
+    for has_scheme in inv.buyer_endpoints:
+        if not has_scheme:
+            return Violation(
+                "BR-63",
+                "The Buyer electronic address (BT-49) shall have a Scheme "
+                "identifier.",
+                "cac:AccountingCustomerParty/cac:Party/cbc:EndpointID/@schemeID")
+    return None
+
+
 # Ordered ruleset (evaluation order = document flow: header -> lines -> codes
 # -> arithmetic -> VAT-category consistency -> decimal precision).
 ALL_RULES = [
     br_01, br_02, br_03, br_04, br_05, br_06, br_07, br_08,
     br_09, br_10, br_11,
     br_12, br_13, br_14, br_15,
-    br_16, br_21, br_22, br_24, br_25, br_26, br_27, br_28, br_29, br_30,
+    br_16, br_17, br_18, br_19, br_20,
+    br_21, br_22, br_24, br_25, br_26, br_27, br_28, br_29, br_30,
     br_31, br_32, br_33, br_36, br_37, br_38,
     br_41, br_42, br_43, br_44,
+    br_49, br_50, br_51, br_55, br_57, br_61, br_62, br_63,
     br_cl_01,
     br_co_04,
     br_co_10, br_co_13, br_co_14, br_co_15, br_co_16, br_co_17, br_co_18,

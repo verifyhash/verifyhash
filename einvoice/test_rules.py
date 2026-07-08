@@ -45,6 +45,13 @@ LINE_RULES = {
     "BR-25", "BR-26", "BR-27", "BR-28", "BR-29", "BR-30", "BR-CO-04",
 }
 
+# Payee / tax-representative / payment-instruction batch (differentially
+# proven the same way).
+PAYMENT_RULES = {
+    "BR-17", "BR-18", "BR-19", "BR-20",
+    "BR-49", "BR-50", "BR-51", "BR-55", "BR-57", "BR-61", "BR-62", "BR-63",
+}
+
 
 def q(ns, local):
     return "{%s}%s" % (ns, local)
@@ -404,12 +411,276 @@ class InvoiceLineBatch(unittest.TestCase):
         self.assertIn("BR-CO-04", fired(r))
 
 
+class PayeeAndTaxRepresentative(unittest.TestCase):
+    """BR-17..20 — Payee (BG-10) and Seller tax representative (BG-11/12)."""
+
+    def add_payee(self, root, name=None, party_id=None):
+        pp = ET.Element(q(NS_CAC, "PayeeParty"))
+        if party_id is not None:
+            pid = ET.SubElement(pp, q(NS_CAC, "PartyIdentification"))
+            ET.SubElement(pid, q(NS_CBC, "ID")).text = party_id
+        if name is not None:
+            pn = ET.SubElement(pp, q(NS_CAC, "PartyName"))
+            ET.SubElement(pn, q(NS_CBC, "Name")).text = name
+        root.insert(list(root).index(child(root, NS_CAC, "Delivery")), pp)
+
+    def add_tax_representative(self, root, name=None, postal_address=False,
+                               country=None):
+        trp = ET.Element(q(NS_CAC, "TaxRepresentativeParty"))
+        if name is not None:
+            pn = ET.SubElement(trp, q(NS_CAC, "PartyName"))
+            ET.SubElement(pn, q(NS_CBC, "Name")).text = name
+        if postal_address:
+            pa = ET.SubElement(trp, q(NS_CAC, "PostalAddress"))
+            if country is not None:
+                c = ET.SubElement(pa, q(NS_CAC, "Country"))
+                ET.SubElement(c, q(NS_CBC, "IdentificationCode")).text = country
+        root.insert(list(root).index(child(root, NS_CAC, "Delivery")), trp)
+
+    def test_base_fires_none_of_the_payment_rules(self):
+        self.assertEqual(fired(base()) & PAYMENT_RULES, set())
+
+    # -- BR-17: payee name -----------------------------------------------------
+    def test_br_17_payee_without_name_fires(self):
+        r = base()
+        self.add_payee(r, name=None, party_id="PAYEE-1")
+        self.assertIn("BR-17", fired(r))
+
+    def test_br_17_distinct_payee_holds(self):
+        r = base()
+        self.add_payee(r, name="Payee Corp", party_id="PAYEE-1")
+        self.assertNotIn("BR-17", fired(r))
+
+    def test_br_17_payee_name_equal_to_seller_fires(self):
+        # The official test rejects a PayeeParty duplicating the Seller name.
+        r = base()
+        self.add_payee(r, name="Company A")
+        self.assertIn("BR-17", fired(r))
+
+    def test_br_17_payee_id_equal_to_seller_fires(self):
+        # Distinct name but the Seller's PartyIdentification/ID.
+        r = base()
+        self.add_payee(r, name="Payee Corp", party_id="DK12345678")
+        self.assertIn("BR-17", fired(r))
+
+    # -- BR-18/19/20: seller tax representative --------------------------------
+    def test_br_18_missing_name_fires(self):
+        r = base()
+        self.add_tax_representative(r, name=None, postal_address=True,
+                                    country="DK")
+        got = fired(r)
+        self.assertIn("BR-18", got)
+        self.assertNotIn("BR-19", got)
+        self.assertNotIn("BR-20", got)
+
+    def test_br_18_whitespace_name_fires(self):
+        # normalize-space('   ') = '' -> not a pure existence check.
+        r = base()
+        self.add_tax_representative(r, name="   ", postal_address=True,
+                                    country="DK")
+        self.assertIn("BR-18", fired(r))
+
+    def test_br_19_missing_postal_address_fires(self):
+        r = base()
+        self.add_tax_representative(r, name="Rep GmbH", postal_address=False)
+        got = fired(r)
+        self.assertIn("BR-19", got)
+        self.assertNotIn("BR-18", got)
+        self.assertNotIn("BR-20", got)  # BR-20's context node is absent
+
+    def test_br_20_missing_country_code_fires(self):
+        r = base()
+        self.add_tax_representative(r, name="Rep GmbH", postal_address=True,
+                                    country=None)
+        got = fired(r)
+        self.assertIn("BR-20", got)
+        self.assertNotIn("BR-18", got)
+        self.assertNotIn("BR-19", got)
+
+    def test_full_tax_representative_holds(self):
+        r = base()
+        self.add_tax_representative(r, name="Rep GmbH", postal_address=True,
+                                    country="DE")
+        self.assertEqual(fired(r) & {"BR-18", "BR-19", "BR-20"}, set())
+
+
+class PaymentInstructions(unittest.TestCase):
+    """BR-49/50/51/61 — payment instructions (BG-16/17/18)."""
+
+    def pm(self, root):
+        return child(root, NS_CAC, "PaymentMeans")
+
+    # -- BR-49: payment means type code ----------------------------------------
+    def test_br_49_missing_code_fires(self):
+        r = base()
+        pm = self.pm(r)
+        pm.remove(child(pm, NS_CBC, "PaymentMeansCode"))
+        got = fired(r)
+        self.assertIn("BR-49", got)
+        # Absent code normalize-spaces to '' -> BR-61's second disjunct holds.
+        self.assertNotIn("BR-61", got)
+        self.assertNotIn("BR-49", fired(base()))
+
+    def test_br_49_empty_code_element_holds(self):
+        # exists() — a present-but-empty code satisfies BR-49.
+        r = base()
+        child(self.pm(r), NS_CBC, "PaymentMeansCode").text = ""
+        self.assertNotIn("BR-49", fired(r))
+
+    # -- BR-50: credit-transfer account id -------------------------------------
+    def test_br_50_missing_account_id_fires(self):
+        r = base()
+        acct = child(self.pm(r), NS_CAC, "PayeeFinancialAccount")
+        acct.remove(child(acct, NS_CBC, "ID"))
+        got = fired(r)
+        self.assertIn("BR-50", got)
+        self.assertIn("BR-61", got)   # no account id on a code-58 PaymentMeans
+        self.assertNotIn("BR-50", fired(base()))
+
+    def test_br_50_whitespace_account_id_fires(self):
+        # normalize-space('  ') = '' — BR-50 is NOT a pure existence check.
+        r = base()
+        acct = child(self.pm(r), NS_CAC, "PayeeFinancialAccount")
+        child(acct, NS_CBC, "ID").text = "   "
+        got = fired(r)
+        self.assertIn("BR-50", got)
+        self.assertNotIn("BR-61", got)  # the ID element EXISTS -> BR-61 holds
+
+    def test_br_50_padded_code_does_not_match_context(self):
+        # BR-50's context predicate compares RAW code values: ' 58 ' != '58'
+        # -> context never matches; BR-61 normalize-spaces and DOES apply.
+        r = base()
+        child(self.pm(r), NS_CBC, "PaymentMeansCode").text = " 58 "
+        acct = child(self.pm(r), NS_CAC, "PayeeFinancialAccount")
+        acct.remove(child(acct, NS_CBC, "ID"))
+        got = fired(r)
+        self.assertNotIn("BR-50", got)
+        self.assertIn("BR-61", got)
+
+    def test_br_50_non_credit_transfer_code_holds(self):
+        r = base()
+        child(self.pm(r), NS_CBC, "PaymentMeansCode").text = "10"
+        acct = child(self.pm(r), NS_CAC, "PayeeFinancialAccount")
+        acct.remove(child(acct, NS_CBC, "ID"))
+        got = fired(r)
+        self.assertNotIn("BR-50", got)
+        self.assertNotIn("BR-61", got)
+
+    # -- BR-61: account id for credit-transfer codes ---------------------------
+    def test_br_61_account_removed_fires(self):
+        r = base()
+        pm = self.pm(r)
+        pm.remove(child(pm, NS_CAC, "PayeeFinancialAccount"))
+        got = fired(r)
+        self.assertIn("BR-61", got)
+        self.assertNotIn("BR-50", got)  # BR-50's context node vanished
+        self.assertNotIn("BR-61", fired(base()))
+
+    def test_br_61_code_30_fires_too(self):
+        r = base()
+        pm = self.pm(r)
+        child(pm, NS_CBC, "PaymentMeansCode").text = "30"
+        pm.remove(child(pm, NS_CAC, "PayeeFinancialAccount"))
+        self.assertIn("BR-61", fired(r))
+
+    # -- BR-51: card primary account number ------------------------------------
+    def add_card(self, root, pan):
+        card = ET.SubElement(self.pm(root), q(NS_CAC, "CardAccount"))
+        ET.SubElement(card, q(NS_CBC, "PrimaryAccountNumberID")).text = pan
+        ET.SubElement(card, q(NS_CBC, "NetworkID")).text = "VISA"
+
+    def test_br_51_full_pan_fires_as_warning(self):
+        r = base()
+        self.add_card(r, "4111111111111111")
+        result = validate_root(r)
+        by_id = {v.rule_id: v for v in result.violations}
+        self.assertIn("BR-51", by_id)
+        self.assertEqual(by_id["BR-51"].severity, "warning")
+        self.assertTrue(result.ok)  # warning does not block validity
+
+    def test_br_51_truncated_pan_holds(self):
+        r = base()
+        self.add_card(r, " 4111**1111 ")   # 10 chars after normalize-space
+        self.assertNotIn("BR-51", fired(r))
+
+
+class ReferencesAndAddresses(unittest.TestCase):
+    """BR-55 (preceding invoice reference), BR-57 (deliver-to country),
+    BR-62/BR-63 (electronic-address scheme identifiers)."""
+
+    def add_billing_reference(self, root, with_id):
+        br = ET.Element(q(NS_CAC, "BillingReference"))
+        idr = ET.SubElement(br, q(NS_CAC, "InvoiceDocumentReference"))
+        if with_id:
+            ET.SubElement(idr, q(NS_CBC, "ID")).text = "INV-000"
+        root.insert(
+            list(root).index(child(root, NS_CAC, "AccountingSupplierParty")),
+            br)
+
+    def delivery_address(self, root):
+        return root.find("%s/%s/%s" % (q(NS_CAC, "Delivery"),
+                                       q(NS_CAC, "DeliveryLocation"),
+                                       q(NS_CAC, "Address")))
+
+    def test_br_55_reference_without_id_fires(self):
+        r = base()
+        self.add_billing_reference(r, with_id=False)
+        self.assertIn("BR-55", fired(r))
+
+    def test_br_55_reference_with_id_holds(self):
+        r = base()
+        self.add_billing_reference(r, with_id=True)
+        self.assertNotIn("BR-55", fired(r))
+
+    def test_br_57_missing_country_fires(self):
+        r = base()
+        addr = self.delivery_address(r)
+        addr.remove(addr.find(q(NS_CAC, "Country")))
+        self.assertIn("BR-57", fired(r))
+        self.assertNotIn("BR-57", fired(base()))
+
+    def test_br_57_empty_country_code_holds(self):
+        # exists() — a present-but-empty IdentificationCode satisfies BR-57
+        # (unlike the normalize-space rules BR-09/BR-11/BR-20).
+        r = base()
+        addr = self.delivery_address(r)
+        addr.find("%s/%s" % (q(NS_CAC, "Country"),
+                             q(NS_CBC, "IdentificationCode"))).text = ""
+        self.assertNotIn("BR-57", fired(r))
+
+    def test_br_62_missing_scheme_id_fires(self):
+        r = base()
+        ep = supplier_party(r).find(q(NS_CBC, "EndpointID"))
+        del ep.attrib["schemeID"]
+        got = fired(r)
+        self.assertIn("BR-62", got)
+        self.assertNotIn("BR-63", got)
+        self.assertNotIn("BR-62", fired(base()))
+
+    def test_br_62_empty_scheme_id_holds(self):
+        # exists(@schemeID) — an empty attribute still exists.
+        r = base()
+        supplier_party(r).find(q(NS_CBC, "EndpointID")).set("schemeID", "")
+        self.assertNotIn("BR-62", fired(r))
+
+    def test_br_63_missing_scheme_id_fires(self):
+        r = base()
+        party = r.find("%s/%s" % (q(NS_CAC, "AccountingCustomerParty"),
+                                  q(NS_CAC, "Party")))
+        ep = party.find(q(NS_CBC, "EndpointID"))
+        del ep.attrib["schemeID"]
+        got = fired(r)
+        self.assertIn("BR-63", got)
+        self.assertNotIn("BR-62", got)
+        self.assertNotIn("BR-63", fired(base()))
+
+
 class RulesetShape(unittest.TestCase):
     def test_all_new_rules_registered(self):
         from einvoice import rules
         ids = {"-".join(p.upper() for p in fn.__name__.split("_"))
                for fn in rules.ALL_RULES}
-        for rid in NEW_RULES | LINE_RULES:
+        for rid in NEW_RULES | LINE_RULES | PAYMENT_RULES:
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))

@@ -25,6 +25,33 @@ ItemTaxCategory = namedtuple("ItemTaxCategory", ["id", "scheme_id", "percent"])
 # empty — the official BR-29/BR-30 exists() tests distinguish the two).
 Period = namedtuple("Period", ["start", "end"])
 
+# One cac:PayeeParty (BG-10) — BR-17's context node. ``names``/``ids`` carry the
+# RAW string values (xs:string atomization, no strip) of the payee's
+# cac:PartyName/cbc:Name and cac:PartyIdentification/cbc:ID elements;
+# ``seller_names``/``seller_ids`` the same node sets under the PARENT's
+# ``cac:AccountingSupplierParty/cac:Party`` (the official test's ``..`` axis).
+PayeeParty = namedtuple(
+    "PayeeParty", ["names", "ids", "seller_names", "seller_ids"])
+
+# One cac:TaxRepresentativeParty (BG-11) — BR-18/BR-19's context node.
+# ``name`` = string value of the first cac:PartyName/cbc:Name (None = element
+# absent); ``has_postal_address`` = exists(cac:PostalAddress).
+TaxRepresentative = namedtuple(
+    "TaxRepresentative", ["name", "has_postal_address"])
+
+# One cac:PaymentMeans (BG-16) — BR-49/BR-50/BR-61's context subtree.
+# ``has_code``    exists(cbc:PaymentMeansCode)                     (BR-49)
+# ``code_norm``   normalize-space of the first code ('' if absent) (BR-61)
+# ``codes_raw``   RAW string values of every code — BR-50's context predicate
+#                 [cbc:PaymentMeansCode='30' or ...='58'] is a general
+#                 comparison over the UNNORMALIZED string values
+# ``has_account_id``    exists(cac:PayeeFinancialAccount/cbc:ID)   (BR-61)
+# ``account_first_ids`` per cac:PayeeFinancialAccount child: string value of
+#                 its first cbc:ID, or None when absent            (BR-50)
+PaymentMeans = namedtuple(
+    "PaymentMeans", ["has_code", "code_norm", "codes_raw",
+                     "has_account_id", "account_first_ids"])
+
 # ---------------------------------------------------------------------------
 # Namespaces
 # ---------------------------------------------------------------------------
@@ -56,6 +83,16 @@ def _rawtext(el):
     if el is None:
         return None
     return el.text or ""
+
+
+def _strval(el):
+    """XPath string value of an element (ALL descendant text, unstripped).
+
+    The official general comparisons (BR-17's name/id equality, BR-50's
+    PaymentMeansCode context predicate) atomize the node to its full string
+    value — no strip, no normalize-space — so those rules must see it raw.
+    """
+    return "".join(el.itertext())
 
 
 def _norm_space(text):
@@ -238,6 +275,30 @@ class Invoice:
         self.buyer_name = None            # BT-44
         self.buyer_has_postal_address = False  # BG-8
         self.buyer_country_code = None    # BT-55 (normalize-space; None = no addr)
+        # Per Seller/Buyer cbc:EndpointID element (BT-34/BT-49): does it carry
+        # a @schemeID attribute? — BR-62/BR-63 (attribute EXISTENCE; empty ok).
+        self.seller_endpoints = []        # list[bool]
+        self.buyer_endpoints = []         # list[bool]
+        # Payee (BG-10): one entry per cac:PayeeParty anywhere — BR-17.
+        self.payee_parties = []           # list[PayeeParty]
+        # Seller tax representative (BG-11): one entry per
+        # cac:TaxRepresentativeParty anywhere — BR-18/BR-19.
+        self.tax_representatives = []     # list[TaxRepresentative]
+        # Per cac:TaxRepresentativeParty/cac:PostalAddress (BG-12): string value
+        # of the first cac:Country/cbc:IdentificationCode (None = absent) — BR-20.
+        self.taxrep_postal_addresses = []  # list[str|None]
+        # Payment instructions (BG-16): one entry per cac:PaymentMeans anywhere
+        # — BR-49/BR-50/BR-61.
+        self.payment_means = []           # list[PaymentMeans]
+        # Card information (BT-87): string value of every cac:PaymentMeans/
+        # cac:CardAccount/cbc:PrimaryAccountNumberID — BR-51.
+        self.card_pans = []               # list[str]
+        # Preceding invoice references (BG-3): per cac:BillingReference anywhere,
+        # exists(cac:InvoiceDocumentReference/cbc:ID) — BR-55.
+        self.billing_references = []      # list[bool]
+        # Deliver-to addresses (BG-15): per cac:Delivery/cac:DeliveryLocation/
+        # cac:Address anywhere, exists(cac:Country/cbc:IdentificationCode) — BR-57.
+        self.delivery_addresses = []      # list[bool]
         # Totals
         self.line_extension_total = None  # BT-106
         self.tax_exclusive_amount = None  # BT-109
@@ -401,9 +462,15 @@ def build_model(root):
         # exists(cac:PartyTaxScheme/cbc:CompanyID) — scheme-agnostic (BR-S-02..04).
         inv.seller_has_party_tax_scheme_company_id = (
             supplier.find("cac:PartyTaxScheme/cbc:CompanyID", NS) is not None)
+        # BR-62: per Seller cbc:EndpointID, exists(@schemeID).
+        inv.seller_endpoints = [
+            "schemeID" in el.attrib
+            for el in supplier.findall("cbc:EndpointID", NS)]
 
-    # TaxRepresentativeParty (anywhere): a VAT-scheme PartyTaxScheme with a
-    # CompanyID satisfies the seller-tax-representative disjunct of BR-S-02..04.
+    # TaxRepresentativeParty (anywhere — BG-11, the BR-18/BR-19 context):
+    # capture the representative's name + postal address facts, its postal
+    # addresses' country codes (BR-20), and whether a VAT-scheme PartyTaxScheme
+    # with a CompanyID exists (the seller disjunct of BR-S-02..04).
     for trp_el in root.iter("{%s}TaxRepresentativeParty" % NS_CAC):
         for pts_el in trp_el.findall("cac:PartyTaxScheme", NS):
             scheme = _norm_space(_text(pts_el.find("cac:TaxScheme/cbc:ID", NS)))
@@ -411,8 +478,14 @@ def build_model(root):
                     and pts_el.find("cbc:CompanyID", NS) is not None):
                 inv.taxrep_has_vat_company_id = True
                 break
-        if inv.taxrep_has_vat_company_id:
-            break
+        name_el = trp_el.find("cac:PartyName/cbc:Name", NS)
+        inv.tax_representatives.append(TaxRepresentative(
+            _strval(name_el) if name_el is not None else None,
+            trp_el.find("cac:PostalAddress", NS) is not None))
+        for pa_el in trp_el.findall("cac:PostalAddress", NS):
+            cc_el = pa_el.find("cac:Country/cbc:IdentificationCode", NS)
+            inv.taxrep_postal_addresses.append(
+                _strval(cc_el) if cc_el is not None else None)
 
     # Buyer
     customer = root.find("cac:AccountingCustomerParty/cac:Party", NS)
@@ -424,6 +497,63 @@ def build_model(root):
         inv.buyer_country_code = _norm_space(_text(
             customer.find(
                 "cac:PostalAddress/cac:Country/cbc:IdentificationCode", NS)))
+        # BR-63: per Buyer cbc:EndpointID, exists(@schemeID).
+        inv.buyer_endpoints = [
+            "schemeID" in el.attrib
+            for el in customer.findall("cbc:EndpointID", NS)]
+
+    # Payee (BG-10) — BR-17's context is ``cac:PayeeParty`` (a pattern match:
+    # any depth). Its test reads the SELLER party via the parent axis (``..``),
+    # so seller names/ids are gathered relative to each PayeeParty's parent.
+    _payee_tag = "{%s}PayeeParty" % NS_CAC
+    for parent in root.iter():
+        for el in parent:
+            if el.tag != _payee_tag:
+                continue
+            inv.payee_parties.append(PayeeParty(
+                [_strval(e) for e in el.findall("cac:PartyName/cbc:Name", NS)],
+                [_strval(e) for e in el.findall(
+                    "cac:PartyIdentification/cbc:ID", NS)],
+                [_strval(e) for e in parent.findall(
+                    "cac:AccountingSupplierParty/cac:Party/"
+                    "cac:PartyName/cbc:Name", NS)],
+                [_strval(e) for e in parent.findall(
+                    "cac:AccountingSupplierParty/cac:Party/"
+                    "cac:PartyIdentification/cbc:ID", NS)]))
+
+    # Payment instructions (BG-16) — BR-49/BR-50/BR-51/BR-61 contexts.
+    for pm_el in root.iter("{%s}PaymentMeans" % NS_CAC):
+        code_els = pm_el.findall("cbc:PaymentMeansCode", NS)
+        codes_raw = [_strval(e) for e in code_els]
+        account_first_ids = []
+        for acct_el in pm_el.findall("cac:PayeeFinancialAccount", NS):
+            id_el = acct_el.find("cbc:ID", NS)
+            account_first_ids.append(
+                _strval(id_el) if id_el is not None else None)
+        inv.payment_means.append(PaymentMeans(
+            bool(code_els),
+            _norm_space(codes_raw[0]) if codes_raw else "",
+            codes_raw,
+            pm_el.find("cac:PayeeFinancialAccount/cbc:ID", NS) is not None,
+            account_first_ids))
+        for pan_el in pm_el.findall(
+                "cac:CardAccount/cbc:PrimaryAccountNumberID", NS):
+            inv.card_pans.append(_strval(pan_el))
+
+    # Preceding invoice references (BG-3) — BR-55's context is
+    # ``cac:BillingReference`` (any depth; UBL also allows line-level ones).
+    for br_el in root.iter("{%s}BillingReference" % NS_CAC):
+        inv.billing_references.append(
+            br_el.find("cac:InvoiceDocumentReference/cbc:ID", NS) is not None)
+
+    # Deliver-to addresses (BG-15) — BR-57's context is
+    # ``cac:Delivery/cac:DeliveryLocation/cac:Address`` (any depth; line-level
+    # Delivery groups match the pattern too).
+    for d_el in root.iter("{%s}Delivery" % NS_CAC):
+        for addr_el in d_el.findall("cac:DeliveryLocation/cac:Address", NS):
+            inv.delivery_addresses.append(
+                addr_el.find("cac:Country/cbc:IdentificationCode", NS)
+                is not None)
 
     # LegalMonetaryTotal
     lmt = root.find("cac:LegalMonetaryTotal", NS)

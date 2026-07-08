@@ -97,7 +97,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 78, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 90, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -661,6 +661,102 @@ def _mut_brs10(r):
     _sub_el(cat, NS_CBC, "TaxExemptionReason", "Reverse charge")
 
 
+# ---- Payee / tax representative / payment instructions / references -------- #
+def _mut_br17(r):
+    # PayeeParty without a PartyName/Name -> BR-17.
+    pp = ET.Element(_q(NS_CAC, "PayeeParty"))
+    pid = _sub_el(pp, NS_CAC, "PartyIdentification")
+    _sub_el(pid, NS_CBC, "ID", "PAYEE-1")
+    r.insert(list(r).index(_child(r, NS_CAC, "PaymentMeans")), pp)
+
+
+def _add_tax_representative(r, name=None, postal_country=None,
+                            postal_address=False):
+    trp = ET.Element(_q(NS_CAC, "TaxRepresentativeParty"))
+    if name is not None:
+        _sub_el(_sub_el(trp, NS_CAC, "PartyName"), NS_CBC, "Name", name)
+    if postal_address:
+        pa = _sub_el(trp, NS_CAC, "PostalAddress")
+        if postal_country is not None:
+            _sub_el(_sub_el(pa, NS_CAC, "Country"), NS_CBC,
+                    "IdentificationCode", postal_country)
+    pts = _sub_el(trp, NS_CAC, "PartyTaxScheme")
+    _sub_el(pts, NS_CBC, "CompanyID", "DK99999999")
+    _sub_el(_sub_el(pts, NS_CAC, "TaxScheme"), NS_CBC, "ID", "VAT")
+    r.insert(list(r).index(_child(r, NS_CAC, "Delivery")), trp)
+
+
+def _mut_br18(r):
+    # Tax representative without a name (address+country fine) -> BR-18 only.
+    _add_tax_representative(r, name=None, postal_address=True,
+                            postal_country="DK")
+
+
+def _mut_br19(r):
+    # Tax representative with a name but NO postal address -> BR-19.
+    _add_tax_representative(r, name="Rep GmbH", postal_address=False)
+
+
+def _mut_br20(r):
+    # Tax representative postal address without a country code -> BR-20.
+    _add_tax_representative(r, name="Rep GmbH", postal_address=True,
+                            postal_country=None)
+
+
+def _pm(r):
+    return _child(r, NS_CAC, "PaymentMeans")
+
+
+def _mut_br49(r):
+    # PaymentMeans without a PaymentMeansCode -> BR-49 (code '' != 30/58, so
+    # BR-61 holds; BR-50's context predicate no longer matches).
+    _pm(r).remove(_child(_pm(r), NS_CBC, "PaymentMeansCode"))
+
+
+def _mut_br50(r):
+    # Credit-transfer (58) PayeeFinancialAccount whose ID is removed -> BR-50
+    # (and BR-61: no account id on a 30/58 PaymentMeans).
+    acct = _child(_pm(r), NS_CAC, "PayeeFinancialAccount")
+    acct.remove(_child(acct, NS_CBC, "ID"))
+
+
+def _mut_br51(r):
+    # Full card PAN (16 digits > 10 after normalize-space) -> BR-51 (warning).
+    card = _sub_el(_pm(r), NS_CAC, "CardAccount")
+    _sub_el(card, NS_CBC, "PrimaryAccountNumberID", "4111111111111111")
+    _sub_el(card, NS_CBC, "NetworkID", "VISA")
+
+
+def _mut_br55(r):
+    # BillingReference whose InvoiceDocumentReference has no ID -> BR-55.
+    br = ET.Element(_q(NS_CAC, "BillingReference"))
+    _sub_el(br, NS_CAC, "InvoiceDocumentReference")
+    r.insert(list(r).index(_child(r, NS_CAC, "AccountingSupplierParty")), br)
+
+
+def _mut_br57(r):
+    # Deliver-to address without a Country -> BR-57.
+    addr = _child(_child(_child(r, NS_CAC, "Delivery"), NS_CAC,
+                         "DeliveryLocation"), NS_CAC, "Address")
+    addr.remove(_child(addr, NS_CAC, "Country"))
+
+
+def _mut_br61(r):
+    # Credit-transfer code (58) with the whole PayeeFinancialAccount removed
+    # -> BR-61 only (BR-50's context node vanishes with the account).
+    _pm(r).remove(_child(_pm(r), NS_CAC, "PayeeFinancialAccount"))
+
+
+def _mut_br62(r):
+    ep = _child(_supplier_party(r), NS_CBC, "EndpointID")
+    del ep.attrib["schemeID"]
+
+
+def _mut_br63(r):
+    ep = _child(_customer_party(r), NS_CBC, "EndpointID")
+    del ep.attrib["schemeID"]
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -669,6 +765,11 @@ _MUTATIONS = {
     "BR-12": _mut_br12, "BR-13": _mut_br13, "BR-14": _mut_br14,
     "BR-15": _mut_br15,
     "BR-16": _mut_br16,
+    "BR-17": _mut_br17, "BR-18": _mut_br18, "BR-19": _mut_br19,
+    "BR-20": _mut_br20,
+    "BR-49": _mut_br49, "BR-50": _mut_br50, "BR-51": _mut_br51,
+    "BR-55": _mut_br55, "BR-57": _mut_br57, "BR-61": _mut_br61,
+    "BR-62": _mut_br62, "BR-63": _mut_br63,
     "BR-21": _mut_br21, "BR-22": _mut_br22, "BR-24": _mut_br24,
     "BR-25": _mut_br25, "BR-26": _mut_br26, "BR-27": _mut_br27,
     "BR-28": _mut_br28, "BR-29": _mut_br29, "BR-30": _mut_br30,

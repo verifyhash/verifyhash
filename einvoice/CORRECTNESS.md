@@ -6,7 +6,7 @@ importantly — what is **not** yet proven.
 
 The validator has **two distinct layers with separate coverage claims**:
 
-1. **EN 16931 core** — 78 of the ~200 EU-core business rules
+1. **EN 16931 core** — 90 of the ~200 EU-core business rules
    (`einvoice/rules.py`), proven against the official CEN Schematron (§2);
 2. **XRechnung national CIUS (BR-DE-\*)** — all 32 German national asserts of
    the official KoSIT XRechnung 3.0.2 UBL Schematron
@@ -20,7 +20,7 @@ the evidence, that is a bug in this document; report it.
 
 ## 1. What each rule is
 
-Every rule is a **pure Python function**: the 78 core rules over a parsed
+Every rule is a **pure Python function**: the 90 core rules over a parsed
 invoice model (`einvoice/rules.py`, one function per rule, listed in
 `ALL_RULES`), the 32 BR-DE rules over the parsed UBL root element
 (`einvoice/rules_xrechnung.py` — the national rules address parts of the
@@ -32,7 +32,9 @@ validator is standard-library Python.
 BR-DE violations carry the official severity (`fatal`, `warning`,
 `information` — the Schematron `flag`): only **fatal** violations make a
 document invalid / exit 1; warnings and information are reported but do not
-block, exactly like the KoSIT reference validator.
+block, exactly like the KoSIT reference validator. One CORE rule carries a
+non-fatal flag too: BR-51 (card primary account number) is `warning` in the
+official CEN artifact, and our violation mirrors that.
 
 The arithmetic rules (BR-CO-10/13/14/15/16/17) use `decimal.Decimal`, not
 binary floats, so monetary equality is exact and reproducible. The newer rules
@@ -59,7 +61,7 @@ The harness is `differential.py`:
    assertion `@id` is collected. This is the legal verdict, computed by the
    legal artifact — not a re-implementation.
 2. **Our side = the `einvoice/` package**, run in-process.
-3. For **every invoice** and **every one of our 78 rule IDs** the harness asks
+3. For **every invoice** and **every one of our 90 rule IDs** the harness asks
    both engines the same yes/no question — *"does rule R fire on this
    invoice?"* — and records agreement. A disagreement is, by definition, our
    bug: either a **false positive** (we fire, the law does not → we over-reject)
@@ -70,7 +72,7 @@ won and our code was corrected — never the reverse.
 
 ### Corpus
 
-**1053 real UBL `Invoice` documents**, assembled from:
+**1065 real UBL `Invoice` documents**, assembled from:
 
 - CEN `ubl/examples` real-world sample invoices;
 - our own `corpus/vendored/valid` + `vendored/invalid` fixtures;
@@ -81,32 +83,35 @@ won and our code was corrected — never the reverse.
   each breaking exactly that field off a known-clean invoice — so every such
   rule is exercised in the failing direction.
 
-That is **82,134 rule-vs-law comparisons** (1053 invoices × 78 rules).
+That is **95,850 rule-vs-law comparisons** (1065 invoices × 90 rules).
 
 ### Result of this run
 
 ```
-TOTAL AGREEMENT: 82,134 / 82,134 = 100.0000%
+TOTAL AGREEMENT: 95,850 / 95,850 = 100.0000%
 divergences: 0 false-positives + 0 misses
 ```
 
-**All 78 implemented rules agree with the official EN16931-UBL Schematron on
-every one of the 1053 invoices**, with zero false positives and zero misses.
+**All 90 implemented rules agree with the official EN16931-UBL Schematron on
+every one of the 1065 invoices**, with zero false positives and zero misses.
 
 | Rule family | Rule IDs | Agreement |
 |---|---|---|
-| Header existence/cardinality | BR-01, BR-02, BR-03, BR-04, BR-05, BR-06, BR-07, BR-08 | 1053/1053 each |
-| Seller/Buyer postal address | BR-09, BR-10, BR-11 | 1053/1053 each |
-| Document totals presence | BR-12, BR-13, BR-14, BR-15 | 1053/1053 each |
-| Invoice-line cardinality | BR-16, BR-21, BR-22, BR-24, BR-26 | 1053/1053 each |
-| Invoice-line content (BG-25/26/14) | BR-25, BR-27, BR-28, BR-29, BR-30, BR-CO-04 | 1053/1053 each |
-| Code list (UNTDID 1001) | BR-CL-01 | 1053/1053 |
-| Arithmetic co-constraints | BR-CO-10, BR-CO-13, BR-CO-14, BR-CO-15, BR-CO-16, BR-CO-17 | 1053/1053 each |
-| VAT breakdown presence | BR-CO-18 | 1053/1053 |
-| VAT breakdown group (BG-23) | BR-45, BR-46, BR-47, BR-48 | 1053/1053 each |
-| VAT-category consistency | BR-S-01, BR-Z-01, BR-AE-01, BR-E-01, BR-G-01, BR-IC-01, BR-O-01 | 1053/1053 each |
-| Standard-rated (S) category | BR-S-02, BR-S-03, BR-S-04, BR-S-05, BR-S-06, BR-S-07, BR-S-09, BR-S-10 | 1053/1053 each |
-| Decimal precision (max 2 places) | BR-DEC-01, BR-DEC-02, BR-DEC-05, BR-DEC-06, BR-DEC-09, BR-DEC-10, BR-DEC-11, BR-DEC-12, BR-DEC-14, BR-DEC-16, BR-DEC-17, BR-DEC-18, BR-DEC-19, BR-DEC-20, BR-DEC-23 | 1053/1053 each |
+| Header existence/cardinality | BR-01, BR-02, BR-03, BR-04, BR-05, BR-06, BR-07, BR-08 | 1065/1065 each |
+| Seller/Buyer postal address | BR-09, BR-10, BR-11 | 1065/1065 each |
+| Payee & Seller tax representative (BG-10/11/12) | BR-17, BR-18, BR-19, BR-20 | 1065/1065 each |
+| Payment instructions (BG-16/17/18) | BR-49, BR-50, BR-51 (warning), BR-61 | 1065/1065 each |
+| References, deliver-to & electronic addresses | BR-55, BR-57, BR-62, BR-63 | 1065/1065 each |
+| Document totals presence | BR-12, BR-13, BR-14, BR-15 | 1065/1065 each |
+| Invoice-line cardinality | BR-16, BR-21, BR-22, BR-24, BR-26 | 1065/1065 each |
+| Invoice-line content (BG-25/26/14) | BR-25, BR-27, BR-28, BR-29, BR-30, BR-CO-04 | 1065/1065 each |
+| Code list (UNTDID 1001) | BR-CL-01 | 1065/1065 |
+| Arithmetic co-constraints | BR-CO-10, BR-CO-13, BR-CO-14, BR-CO-15, BR-CO-16, BR-CO-17 | 1065/1065 each |
+| VAT breakdown presence | BR-CO-18 | 1065/1065 |
+| VAT breakdown group (BG-23) | BR-45, BR-46, BR-47, BR-48 | 1065/1065 each |
+| VAT-category consistency | BR-S-01, BR-Z-01, BR-AE-01, BR-E-01, BR-G-01, BR-IC-01, BR-O-01 | 1065/1065 each |
+| Standard-rated (S) category | BR-S-02, BR-S-03, BR-S-04, BR-S-05, BR-S-06, BR-S-07, BR-S-09, BR-S-10 | 1065/1065 each |
+| Decimal precision (max 2 places) | BR-DEC-01, BR-DEC-02, BR-DEC-05, BR-DEC-06, BR-DEC-09, BR-DEC-10, BR-DEC-11, BR-DEC-12, BR-DEC-14, BR-DEC-16, BR-DEC-17, BR-DEC-18, BR-DEC-19, BR-DEC-20, BR-DEC-23 | 1065/1065 each |
 
 Reproduce it:
 
@@ -253,6 +258,38 @@ BR-29/BR-30 period test lives in ONE Schematron pattern where the line-period
 rule appears first, so a line-level `cac:InvoicePeriod` is matched by BR-30
 only and never by BR-29 (first matching rule wins within a pattern).
 
+The fifth batch (payee/tax-representative/payment-instruction rules BR-17,
+BR-18/19/20, BR-49/50/51/61, BR-55, BR-57, BR-62/63) was likewise written
+Schematron-first and reached 0 divergences on its first full run. The
+transcription points the official XPath pins down, which a prose reading
+would get wrong:
+
+- **BR-17 also fires on a payee that DUPLICATES the seller.** The prose says
+  "the payee name shall be provided if the payee differs from the seller", but
+  the official test is `exists(name) and not(name = seller-names) and
+  not(id = seller-ids)` — general comparisons over **raw string values** (no
+  normalize-space) against the seller's `PartyName/Name` and
+  `PartyIdentification/ID` node sets via the parent axis. A `cac:PayeeParty`
+  whose name or identifier equals the seller's therefore fires the assert,
+  exactly like a name-less one.
+- **BR-50 and BR-61 read the payment-means code DIFFERENTLY.** BR-50's context
+  predicate `[cbc:PaymentMeansCode='30' or ...='58']` compares the RAW string
+  value (a padded `" 58 "` never matches), while BR-61 normalize-spaces the
+  code (so `" 58 "` DOES trigger it). Their account tests differ the same way:
+  BR-61 is `exists(cac:PayeeFinancialAccount/cbc:ID)` (a present-but-empty ID
+  satisfies it), BR-50 is `normalize-space(cbc:ID) != ''` per
+  `PayeeFinancialAccount` (an empty/whitespace-only ID fires).
+- **BR-57 is a pure `exists()`** — a present-but-EMPTY deliver-to
+  `IdentificationCode` satisfies it, unlike the `normalize-space(...) != ''`
+  country tests of BR-09/BR-11/BR-20. Its pattern context also matches
+  line-level `cac:Delivery` groups (as BR-55's matches line-level
+  `cac:BillingReference`s), so ours does too.
+- **BR-62/BR-63 test attribute EXISTENCE** (`exists(@schemeID)`): an empty
+  `schemeID=""` satisfies them.
+- **BR-51 is flagged `warning`** in the official artifact — the only non-fatal
+  core rule we implement; the violation carries that severity and does not
+  block validity, mirroring the SVRL.
+
 ## 4. Second, independent check: the conformance harness
 
 `conformance.py` is a separate proof over the curated `corpus/vendored/`
@@ -273,14 +310,15 @@ them), with the *correct* rule ID fired every time (not merely "some failure").
 
 ## 5. The honest remaining gap — what is NOT proven
 
-The 100% figure is **100% agreement on the 78 rules we implement, over this
-1053-invoice corpus.** It is not a claim of EN 16931 or XRechnung conformance.
+The 100% figure is **100% agreement on the 90 rules we implement, over this
+1065-invoice corpus.** It is not a claim of EN 16931 or XRechnung conformance.
 Specifically:
 
-- **Only 78 of ~200 EN 16931 business rules are implemented.** Still missing:
-  the header/party existence rules beyond BR-01..16 (BR-17 Payee name,
-  BR-18/19 tax representative; BR-21..BR-44 are now covered — except BR-23,
-  the quantity unit-of-measure code — but the BR-49..BR-67 ranges are not),
+- **Only 90 of ~200 EN 16931 business rules are implemented.** Still missing:
+  BR-23 (quantity unit-of-measure code) and the rest of the BR-49..BR-67
+  range (BR-52/53/54 supporting documents, BR-56 tax-representative VAT id,
+  BR-58..60/64..67 identifier-scheme and item rules — BR-17..20, BR-49/50/51,
+  BR-55, BR-57 and BR-61/62/63 ARE now covered),
   the rest of the `BR-CO-*` arithmetic
   (BR-CO-03/09/11/12/25/26 …), and the deeper VAT-category matrices for the
   **other** categories (`BR-Z/AE/E/G/IC/O-02..10`: their seller-VAT-ID,
@@ -289,7 +327,7 @@ Specifically:
   BR-S-01..07 and BR-S-09/10; **BR-S-08 is deliberately deferred** —
   see the note below. Also missing: the remaining `BR-DEC-*` (BT-136/137/141/142
   line allowance/charge amounts) and the `BR-CL-*` code lists beyond BR-CL-01. A
-  `valid: true` result means "none of our 78 rules fired", not "this invoice is
+  `valid: true` result means "none of our 90 rules fired", not "this invoice is
   legally conformant". (BR-IG-*/BR-IP-* do not exist in the vendored CEN
   artifact and therefore cannot be differential-proven; they are out of scope.)
 - **BR-S-08 (not implemented — an honest scope decision, not a parser limit).**
@@ -303,15 +341,15 @@ Specifically:
   it is deferred to its own batch so the multi-rate grouping and the CreditNote
   path can be transcribed and differential-proven with the same rigour rather
   than rushed in alongside the simpler S rules here. Until then it simply does
-  not fire, and the differential grades only the 78 rules we do implement.
+  not fire, and the differential grades only the 90 rules we do implement.
 - **The XRechnung `BR-DE-*` CIUS layer is complete** for the UBL-Invoice
   artifact (all 32 asserts, §2a) — but the extension (`BR-DEX-*`) and CVD
   (`BR-DE-CVD-*`) profiles are not implemented, and because the EN core is
-  only 78/~200 rules, `--profile=xrechnung` is **not** a complete XRechnung
+  only 90/~200 rules, `--profile=xrechnung` is **not** a complete XRechnung
   compliance check either.
 - **No XSD structural validation**, no CII syntax, no UBL `CreditNote`, no
   ZUGFeRD/Factur-X PDF containers, no signatures.
-- **Corpus, not universe.** 1053 real invoices is broad and adversarial but
+- **Corpus, not universe.** 1065 real invoices is broad and adversarial but
   finite; agreement on it is strong evidence, not a formal proof over all
   possible inputs.
 - **The XSLT is the *compiled* Schematron**, which is the normative technical
@@ -321,11 +359,11 @@ Specifically:
   of that text; it is the right ground truth for a validator, and it is what we
   prove against, but it is one layer below the prose standard.
 
-**Bottom line a buyer can rely on:** for the 78 core rules listed in §2, this
+**Bottom line a buyer can rely on:** for the 90 core rules listed in §2, this
 validator returns the same verdict as the official EN16931-UBL Schematron on
-every invoice in a 1053-document real-world corpus, and for the 32 XRechnung
+every invoice in a 1065-document real-world corpus, and for the 32 XRechnung
 `BR-DE-*` rules listed in §2a it returns the same verdict as the official
 KoSIT XRechnung-UBL Schematron 2.5.0 on a 1014-document corpus — zero false
 positives, zero misses on both legs — re-checkable at any time with
-`python3 differential.py`. Within those explicitly-scoped 78+32 rule slices it
+`python3 differential.py`. Within those explicitly-scoped 90+32 rule slices it
 is provably faithful to the legal rulesets; outside them, it makes no claim.

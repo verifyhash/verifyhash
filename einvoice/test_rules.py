@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Unit tests for the EN 16931 core rules added in the VAT-breakdown /
-Standard-rate batch (BR-45..48, BR-S-02..10) and the invoice-line batch
-(BR-25, BR-27, BR-28, BR-29, BR-30, BR-CO-04).
+Standard-rate batch (BR-45..48, BR-S-02..10), the invoice-line batch
+(BR-25, BR-27, BR-28, BR-29, BR-30, BR-CO-04) and the Zero-rated/Exempt
+VAT category batch (BR-Z-02..10, BR-E-02..10).
 
 Fast, saxonche-free companion to the differential harness: the differential
 (``python3 differential.py en``) proves these rules against the OFFICIAL CEN
@@ -52,6 +53,15 @@ PAYMENT_RULES = {
     "BR-49", "BR-50", "BR-51", "BR-55", "BR-57", "BR-61", "BR-62", "BR-63",
 }
 
+# Zero-rated (Z) + Exempt (E) VAT category batch (differentially proven the
+# same way).
+ZE_RULES = {
+    "BR-Z-02", "BR-Z-03", "BR-Z-04", "BR-Z-05", "BR-Z-06", "BR-Z-07",
+    "BR-Z-08", "BR-Z-09", "BR-Z-10",
+    "BR-E-02", "BR-E-03", "BR-E-04", "BR-E-05", "BR-E-06", "BR-E-07",
+    "BR-E-08", "BR-E-09", "BR-E-10",
+}
+
 
 def q(ns, local):
     return "{%s}%s" % (ns, local)
@@ -86,23 +96,67 @@ def first_line_item(root):
     return root.find("%s/%s" % (q(NS_CAC, "InvoiceLine"), q(NS_CAC, "Item")))
 
 
-def add_doc_allowance_charge(root, charge, percent="25"):
-    """Append a document-level AllowanceCharge (S/VAT) before cac:TaxTotal."""
+def add_doc_allowance_charge(root, charge, percent="25", category="S",
+                             amount="10.00"):
+    """Append a document-level AllowanceCharge (VAT) before cac:TaxTotal."""
     ac = ET.Element(q(NS_CAC, "AllowanceCharge"))
     ET.SubElement(ac, q(NS_CBC, "ChargeIndicator")).text = (
         "true" if charge else "false")
     ET.SubElement(ac, q(NS_CBC, "AllowanceChargeReason")).text = "Adjustment"
     amt = ET.SubElement(ac, q(NS_CBC, "Amount"))
-    amt.text = "10.00"
+    amt.text = amount
     amt.set("currencyID", "DKK")
     cat = ET.SubElement(ac, q(NS_CAC, "TaxCategory"))
-    ET.SubElement(cat, q(NS_CBC, "ID")).text = "S"
+    ET.SubElement(cat, q(NS_CBC, "ID")).text = category
     ET.SubElement(cat, q(NS_CBC, "Percent")).text = percent
     ET.SubElement(ET.SubElement(cat, q(NS_CAC, "TaxScheme")),
                   q(NS_CBC, "ID")).text = "VAT"
     tt = child(root, NS_CAC, "TaxTotal")
     root.insert(list(root).index(tt), ac)
     return ac
+
+
+def convert_category(root, code, exemption_reason=None):
+    """Rewrite the clean S-25% base into a clean single-category invoice
+    (mirrors differential._convert_category): line + breakdown category ->
+    ``code`` at 0%%, VAT amounts -> 0, totals reconciled. ``exemption_reason``
+    (required for a clean E invoice by BR-E-10) lands on the breakdown
+    TaxCategory before cac:TaxScheme."""
+    ctc = first_line_item(root).find(q(NS_CAC, "ClassifiedTaxCategory"))
+    child(ctc, NS_CBC, "ID").text = code
+    child(ctc, NS_CBC, "Percent").text = "0"
+    tt = child(root, NS_CAC, "TaxTotal")
+    child(tt, NS_CBC, "TaxAmount").text = "0.00"
+    st = subtotal(root)
+    child(st, NS_CBC, "TaxAmount").text = "0.00"
+    cat = st.find(q(NS_CAC, "TaxCategory"))
+    child(cat, NS_CBC, "ID").text = code
+    child(cat, NS_CBC, "Percent").text = "0"
+    if exemption_reason is not None:
+        reason = ET.Element(q(NS_CBC, "TaxExemptionReason"))
+        reason.text = exemption_reason
+        cat.insert(list(cat).index(cat.find(q(NS_CAC, "TaxScheme"))), reason)
+    lmt = child(root, NS_CAC, "LegalMonetaryTotal")
+    excl = child(lmt, NS_CBC, "TaxExclusiveAmount").text
+    child(lmt, NS_CBC, "TaxInclusiveAmount").text = excl
+    child(lmt, NS_CBC, "PayableAmount").text = excl
+
+
+def zero_rated_base():
+    r = base()
+    convert_category(r, "Z")
+    return r
+
+
+def exempt_base():
+    r = base()
+    convert_category(r, "E", exemption_reason="Exempt from VAT")
+    return r
+
+
+def remove_seller_party_tax_scheme(root):
+    party = supplier_party(root)
+    party.remove(child(party, NS_CAC, "PartyTaxScheme"))
 
 
 class CleanBase(unittest.TestCase):
@@ -675,12 +729,199 @@ class ReferencesAndAddresses(unittest.TestCase):
         self.assertNotIn("BR-63", fired(base()))
 
 
+class _VatCategoryBatch:
+    """Shared positive/negative cases for the Zero-rated (Z) and Exempt (E)
+    families — same rule shapes, different code and exemption-reason polarity
+    (BR-Z-10 forbids BT-120/121 on the breakdown, BR-E-10 requires one)."""
+
+    code = None          # 'Z' / 'E'
+    fam = None           # rule-id family: 'Z' / 'E'
+
+    def rid(self, n):
+        return "BR-%s-%02d" % (self.fam, n)
+
+    def cat_base(self):
+        raise NotImplementedError
+
+    # -- clean converted base -------------------------------------------------
+    def test_clean_category_base_fires_nothing(self):
+        self.assertEqual(fired(self.cat_base()), set())
+
+    # -- -02..04: seller VAT identifier ----------------------------------------
+    def test_02_line_without_seller_vat_id_fires(self):
+        r = self.cat_base()
+        remove_seller_party_tax_scheme(r)
+        self.assertIn(self.rid(2), fired(r))
+        self.assertNotIn(self.rid(2), fired(self.cat_base()))
+
+    def test_02_tax_representative_satisfies(self):
+        r = self.cat_base()
+        remove_seller_party_tax_scheme(r)
+        trp = ET.Element(q(NS_CAC, "TaxRepresentativeParty"))
+        pts = ET.SubElement(trp, q(NS_CAC, "PartyTaxScheme"))
+        ET.SubElement(pts, q(NS_CBC, "CompanyID")).text = "DE999999999"
+        ET.SubElement(ET.SubElement(pts, q(NS_CAC, "TaxScheme")),
+                      q(NS_CBC, "ID")).text = "VAT"
+        r.insert(0, trp)
+        self.assertNotIn(self.rid(2), fired(r))
+
+    def test_02_scheme_less_line_category_does_not_fire(self):
+        # Unlike BR-S-02, BOTH disjuncts of the official -02 test are
+        # VAT-scheme scoped: a Z/E ClassifiedTaxCategory with NO TaxScheme
+        # matches neither node set, so the rule holds even without a seller id.
+        r = self.cat_base()
+        remove_seller_party_tax_scheme(r)
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        ctc.remove(ctc.find(q(NS_CAC, "TaxScheme")))
+        self.assertNotIn(self.rid(2), fired(r))
+
+    def test_03_allowance_without_seller_vat_id_fires(self):
+        r = self.cat_base()
+        add_doc_allowance_charge(r, charge=False, percent="0",
+                                 category=self.code)
+        remove_seller_party_tax_scheme(r)
+        self.assertIn(self.rid(3), fired(r))
+        r2 = self.cat_base()
+        add_doc_allowance_charge(r2, charge=False, percent="0",
+                                 category=self.code)
+        self.assertNotIn(self.rid(3), fired(r2))
+
+    def test_04_charge_without_seller_vat_id_fires(self):
+        r = self.cat_base()
+        add_doc_allowance_charge(r, charge=True, percent="0",
+                                 category=self.code)
+        remove_seller_party_tax_scheme(r)
+        self.assertIn(self.rid(4), fired(r))
+        r2 = self.cat_base()
+        add_doc_allowance_charge(r2, charge=True, percent="0",
+                                 category=self.code)
+        self.assertNotIn(self.rid(4), fired(r2))
+
+    # -- -05..07: VAT rate must be 0 -------------------------------------------
+    def test_05_nonzero_rate_line_fires(self):
+        r = self.cat_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "Percent").text = "5"
+        self.assertIn(self.rid(5), fired(r))
+        self.assertNotIn(self.rid(5), fired(self.cat_base()))  # 0 holds
+
+    def test_05_missing_rate_fires(self):
+        # xs:decimal(()) = 0 is FALSE -> an absent Percent fires (unlike the
+        # 'greater than zero' BR-S-05, the equality still needs an operand).
+        r = self.cat_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        ctc.remove(child(ctc, NS_CBC, "Percent"))
+        self.assertIn(self.rid(5), fired(r))
+
+    def test_06_nonzero_rate_allowance_fires(self):
+        r = self.cat_base()
+        add_doc_allowance_charge(r, charge=False, percent="5",
+                                 category=self.code)
+        self.assertIn(self.rid(6), fired(r))
+        r2 = self.cat_base()
+        add_doc_allowance_charge(r2, charge=False, percent="0",
+                                 category=self.code)
+        self.assertNotIn(self.rid(6), fired(r2))
+
+    def test_07_nonzero_rate_charge_fires(self):
+        r = self.cat_base()
+        add_doc_allowance_charge(r, charge=True, percent="5",
+                                 category=self.code)
+        self.assertIn(self.rid(7), fired(r))
+        r2 = self.cat_base()
+        add_doc_allowance_charge(r2, charge=True, percent="0",
+                                 category=self.code)
+        self.assertNotIn(self.rid(7), fired(r2))
+
+    # -- -08: breakdown taxable amount = exact category sum ---------------------
+    def test_08_taxable_amount_mismatch_fires(self):
+        r = self.cat_base()
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "111111.11"
+        self.assertIn(self.rid(8), fired(r))
+        self.assertNotIn(self.rid(8), fired(self.cat_base()))
+
+    def test_08_exact_equality_no_tolerance(self):
+        # BR-S-09 has a +/-1 band; the -08 sum rules are EXACT equality.
+        r = self.cat_base()
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "625743.55"  # off 0.01
+        self.assertIn(self.rid(8), fired(r))
+
+    def test_08_allowance_enters_the_sum(self):
+        # A matching-category doc allowance is subtracted from the expected sum.
+        r = self.cat_base()
+        add_doc_allowance_charge(r, charge=False, percent="0",
+                                 category=self.code, amount="10.00")
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "625733.54"
+        self.assertNotIn(self.rid(8), fired(r))
+
+    # -- -09: breakdown tax amount = 0 ------------------------------------------
+    def test_09_nonzero_tax_amount_fires(self):
+        r = self.cat_base()
+        child(subtotal(r), NS_CBC, "TaxAmount").text = "10.00"
+        self.assertIn(self.rid(9), fired(r))
+        self.assertNotIn(self.rid(9), fired(self.cat_base()))
+
+    def test_09_zero_with_decimals_holds(self):
+        r = self.cat_base()
+        child(subtotal(r), NS_CBC, "TaxAmount").text = "0"
+        self.assertNotIn(self.rid(9), fired(r))
+
+
+class ZeroRatedBatch(_VatCategoryBatch, unittest.TestCase):
+    """BR-Z-02..10 — Zero rated (Z) VAT category rules."""
+
+    code = "Z"
+    fam = "Z"
+
+    def cat_base(self):
+        return zero_rated_base()
+
+    def test_br_z_10_exemption_reason_fires(self):
+        r = self.cat_base()
+        cat = subtotal_category(r)
+        ET.SubElement(cat, q(NS_CBC, "TaxExemptionReason")).text = "n/a"
+        self.assertIn("BR-Z-10", fired(r))
+        self.assertNotIn("BR-Z-10", fired(self.cat_base()))
+
+    def test_br_z_10_exemption_reason_code_fires(self):
+        r = self.cat_base()
+        cat = subtotal_category(r)
+        ET.SubElement(cat, q(NS_CBC, "TaxExemptionReasonCode")).text = "VATEX-EU-O"
+        self.assertIn("BR-Z-10", fired(r))
+
+
+class ExemptBatch(_VatCategoryBatch, unittest.TestCase):
+    """BR-E-02..10 — Exempt from VAT (E) VAT category rules."""
+
+    code = "E"
+    fam = "E"
+
+    def cat_base(self):
+        return exempt_base()
+
+    def test_br_e_10_missing_exemption_reason_fires(self):
+        # An E breakdown REQUIRES a reason text or code (mirror of BR-Z-10).
+        r = base()
+        convert_category(r, "E", exemption_reason=None)
+        self.assertIn("BR-E-10", fired(r))
+        self.assertNotIn("BR-E-10", fired(self.cat_base()))  # text present
+
+    def test_br_e_10_reason_code_alone_satisfies(self):
+        r = base()
+        convert_category(r, "E", exemption_reason=None)
+        cat = subtotal_category(r)
+        code_el = ET.Element(q(NS_CBC, "TaxExemptionReasonCode"))
+        code_el.text = "VATEX-EU-132"
+        cat.insert(list(cat).index(cat.find(q(NS_CAC, "TaxScheme"))), code_el)
+        self.assertNotIn("BR-E-10", fired(r))
+
+
 class RulesetShape(unittest.TestCase):
     def test_all_new_rules_registered(self):
         from einvoice import rules
         ids = {"-".join(p.upper() for p in fn.__name__.split("_"))
                for fn in rules.ALL_RULES}
-        for rid in NEW_RULES | LINE_RULES | PAYMENT_RULES:
+        for rid in NEW_RULES | LINE_RULES | PAYMENT_RULES | ZE_RULES:
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))

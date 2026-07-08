@@ -97,7 +97,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 90, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 108, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -543,7 +543,8 @@ def _sub_el(parent, ns, local, text=None, currency=False):
     return el
 
 
-def _add_doc_allowance_charge(r, charge, amount, base=None, percent="25"):
+def _add_doc_allowance_charge(r, charge, amount, base=None, percent="25",
+                              category="S"):
     """Insert a document-level AllowanceCharge before cac:TaxTotal."""
     ac = ET.Element(_q(NS_CAC, "AllowanceCharge"))
     _sub_el(ac, NS_CBC, "ChargeIndicator", "true" if charge else "false")
@@ -552,7 +553,7 @@ def _add_doc_allowance_charge(r, charge, amount, base=None, percent="25"):
     if base is not None:
         _sub_el(ac, NS_CBC, "BaseAmount", base, currency=True)
     cat = _sub_el(ac, NS_CAC, "TaxCategory")
-    _sub_el(cat, NS_CBC, "ID", "S")
+    _sub_el(cat, NS_CBC, "ID", category)
     _sub_el(cat, NS_CBC, "Percent", percent)
     _sub_el(_sub_el(cat, NS_CAC, "TaxScheme"), NS_CBC, "ID", "VAT")
     r.insert(list(r).index(_child(r, NS_CAC, "TaxTotal")), ac)
@@ -659,6 +660,158 @@ def _mut_brs10(r):
     # S breakdown carrying a VAT exemption reason -> BR-S-10.
     cat = _child(_subtotal(r), NS_CAC, "TaxCategory")
     _sub_el(cat, NS_CBC, "TaxExemptionReason", "Reverse charge")
+
+
+# ---- Zero-rated (BR-Z-*) / Exempt (BR-E-*) mutations ------------------------ #
+def _convert_category(r, code, exemption_reason=None):
+    """Rewrite the clean S-25% base into a clean single-category invoice:
+    line + breakdown category -> ``code`` at 0%, VAT amounts -> 0, totals
+    reconciled (TaxInclusive = TaxExclusive). ``exemption_reason`` (required
+    for a clean E invoice by BR-E-10) is added to the breakdown TaxCategory."""
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "ID").text = code
+    _child(ctc, NS_CBC, "Percent").text = "0"
+    tt = _child(r, NS_CAC, "TaxTotal")
+    _child(tt, NS_CBC, "TaxAmount").text = "0.00"
+    st = _child(tt, NS_CAC, "TaxSubtotal")
+    _child(st, NS_CBC, "TaxAmount").text = "0.00"
+    cat = _child(st, NS_CAC, "TaxCategory")
+    _child(cat, NS_CBC, "ID").text = code
+    _child(cat, NS_CBC, "Percent").text = "0"
+    if exemption_reason is not None:
+        reason = ET.Element(_q(NS_CBC, "TaxExemptionReason"))
+        reason.text = exemption_reason
+        # UBL order: ... Percent, TaxExemptionReasonCode, TaxExemptionReason,
+        # TaxScheme — insert just before cac:TaxScheme.
+        cat.insert(list(cat).index(_child(cat, NS_CAC, "TaxScheme")), reason)
+    excl = _child(_lmt(r), NS_CBC, "TaxExclusiveAmount").text
+    _child(_lmt(r), NS_CBC, "TaxInclusiveAmount").text = excl
+    _child(_lmt(r), NS_CBC, "PayableAmount").text = excl
+
+
+def _to_zero_rated(r):
+    _convert_category(r, "Z")
+
+
+def _to_exempt(r):
+    _convert_category(r, "E", exemption_reason="Exempt from VAT")
+
+
+def _mut_brz02(r):
+    # Z line + no Seller VAT identifier -> BR-Z-02.
+    _to_zero_rated(r)
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brz03(r):
+    # Z document-level allowance + no Seller VAT id -> BR-Z-03 (also BR-Z-02).
+    _to_zero_rated(r)
+    _add_doc_allowance_charge(r, charge=False, amount="10.00", percent="0",
+                              category="Z")
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brz04(r):
+    # Z document-level charge + no Seller VAT id -> BR-Z-04 (also BR-Z-02).
+    _to_zero_rated(r)
+    _add_doc_allowance_charge(r, charge=True, amount="10.00", percent="0",
+                              category="Z")
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brz05(r):
+    # Z invoice line with a non-zero VAT rate -> BR-Z-05.
+    _to_zero_rated(r)
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "Percent").text = "5"
+
+
+def _mut_brz06(r):
+    # Z document-level allowance with a non-zero VAT rate -> BR-Z-06.
+    _to_zero_rated(r)
+    _add_doc_allowance_charge(r, charge=False, amount="10.00", percent="5",
+                              category="Z")
+
+
+def _mut_brz07(r):
+    # Z document-level charge with a non-zero VAT rate -> BR-Z-07.
+    _to_zero_rated(r)
+    _add_doc_allowance_charge(r, charge=True, amount="10.00", percent="5",
+                              category="Z")
+
+
+def _mut_brz08(r):
+    # Z breakdown taxable amount != exact sum of Z line nets -> BR-Z-08.
+    _to_zero_rated(r)
+    _child(_subtotal(r), NS_CBC, "TaxableAmount").text = "111111.11"
+
+
+def _mut_brz09(r):
+    # Z breakdown tax amount != 0 -> BR-Z-09.
+    _to_zero_rated(r)
+    _child(_subtotal(r), NS_CBC, "TaxAmount").text = "10.00"
+
+
+def _mut_brz10(r):
+    # Z breakdown carrying a VAT exemption reason -> BR-Z-10.
+    _to_zero_rated(r)
+    cat = _child(_subtotal(r), NS_CAC, "TaxCategory")
+    _sub_el(cat, NS_CBC, "TaxExemptionReason", "n/a")
+
+
+def _mut_bre02(r):
+    _to_exempt(r)
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_bre03(r):
+    _to_exempt(r)
+    _add_doc_allowance_charge(r, charge=False, amount="10.00", percent="0",
+                              category="E")
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_bre04(r):
+    _to_exempt(r)
+    _add_doc_allowance_charge(r, charge=True, amount="10.00", percent="0",
+                              category="E")
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_bre05(r):
+    _to_exempt(r)
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "Percent").text = "5"
+
+
+def _mut_bre06(r):
+    _to_exempt(r)
+    _add_doc_allowance_charge(r, charge=False, amount="10.00", percent="5",
+                              category="E")
+
+
+def _mut_bre07(r):
+    _to_exempt(r)
+    _add_doc_allowance_charge(r, charge=True, amount="10.00", percent="5",
+                              category="E")
+
+
+def _mut_bre08(r):
+    _to_exempt(r)
+    _child(_subtotal(r), NS_CBC, "TaxableAmount").text = "111111.11"
+
+
+def _mut_bre09(r):
+    _to_exempt(r)
+    _child(_subtotal(r), NS_CBC, "TaxAmount").text = "10.00"
+
+
+def _mut_bre10(r):
+    # E breakdown WITHOUT any exemption reason/code -> BR-E-10.
+    _convert_category(r, "E", exemption_reason=None)
 
 
 # ---- Payee / tax representative / payment instructions / references -------- #
@@ -783,6 +936,12 @@ _MUTATIONS = {
     "BR-S-02": _mut_brs02, "BR-S-03": _mut_brs03, "BR-S-04": _mut_brs04,
     "BR-S-05": _mut_brs05, "BR-S-06": _mut_brs06, "BR-S-07": _mut_brs07,
     "BR-S-09": _mut_brs09, "BR-S-10": _mut_brs10,
+    "BR-Z-02": _mut_brz02, "BR-Z-03": _mut_brz03, "BR-Z-04": _mut_brz04,
+    "BR-Z-05": _mut_brz05, "BR-Z-06": _mut_brz06, "BR-Z-07": _mut_brz07,
+    "BR-Z-08": _mut_brz08, "BR-Z-09": _mut_brz09, "BR-Z-10": _mut_brz10,
+    "BR-E-02": _mut_bre02, "BR-E-03": _mut_bre03, "BR-E-04": _mut_bre04,
+    "BR-E-05": _mut_bre05, "BR-E-06": _mut_bre06, "BR-E-07": _mut_bre07,
+    "BR-E-08": _mut_bre08, "BR-E-09": _mut_bre09, "BR-E-10": _mut_bre10,
     "BR-AE-01": _mut_brae01, "BR-E-01": _mut_bre01, "BR-G-01": _mut_brg01,
     "BR-IC-01": _mut_bric01, "BR-O-01": _mut_bro01,
     "BR-DEC-01": _mut_brdec01, "BR-DEC-02": _mut_brdec02,

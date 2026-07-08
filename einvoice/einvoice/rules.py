@@ -969,16 +969,31 @@ def _percent_gt_zero(percent_text):
     return pct is not None and pct > 0
 
 
-def _ac_has_standard_rated(inv, is_charge):
+def _percent_eq_zero(percent_text):
+    """The official ``xs:decimal(cbc:Percent) = 0`` test (BR-Z/E-05..07): holds
+    iff Percent parses to exactly zero. An absent Percent casts to the empty
+    sequence and ``() = 0`` is false, so the assert fires; a non-numeric value
+    is a dynamic error on the official side (no verdict) — treated as firing."""
+    pct = _dec(percent_text)
+    return pct is not None and pct == 0
+
+
+def _ac_has_vat_category(inv, is_charge, code):
     """True iff any allowance (is_charge False) / charge (True) carries a VAT
-    TaxCategory whose code is 'S' — the ``//cac:AllowanceCharge[...]/cac:TaxCategory
-    [normalize-space(cbc:ID)='S'][VAT]`` node set (document- AND line-level)."""
+    TaxCategory whose code is ``code`` — the ``//cac:AllowanceCharge[...]/
+    cac:TaxCategory[normalize-space(cbc:ID)=code][VAT]`` node set (document-
+    AND line-level)."""
     for ac in inv.all_allowance_charges():
         if ac.is_charge is is_charge:
             for cat in ac.tax_categories:
-                if cat.id == "S" and cat.scheme_id == "VAT":
+                if cat.id == code and cat.scheme_id == "VAT":
                     return True
     return False
+
+
+def _ac_has_standard_rated(inv, is_charge):
+    """The BR-S-03/04/06/07 node set (code 'S')."""
+    return _ac_has_vat_category(inv, is_charge, "S")
 
 
 def br_s_02(inv):
@@ -1169,6 +1184,408 @@ def br_s_10(inv):
                     "A VAT breakdown (BG-23) with a Standard rated (S) VAT "
                     "category code (BT-118) shall not have a VAT exemption "
                     "reason text (BT-120) or code (BT-121).",
+                    "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
+                    "cbc:TaxExemptionReason")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Zero-rated (Z) and Exempt (E) VAT category rules (BR-Z-02..10, BR-E-02..10).
+# Same shapes as the BR-S family, with three differences pinned by the official
+# Schematron:
+#
+# * the seller-id rules (-02..04) are SYMMETRIC: both disjuncts of the official
+#   test use the SAME VAT-scheme-scoped node set (unlike BR-S-02, whose last
+#   disjunct is scheme-agnostic), so the assert fires iff a VAT-scheme Z/E
+#   line/allowance/charge exists AND no Seller VAT identifier is present;
+# * the rate rules (-05..07) require ``xs:decimal(cbc:Percent) = 0`` (absent
+#   Percent -> empty sequence -> comparison false -> fires), not ``> 0``;
+# * the breakdown rules (-08..10) are per TOP-LEVEL TaxTotal subtotal whose
+#   VAT TaxCategory code is Z/E: BT-116 must equal the EXACT (unrounded,
+#   no tolerance band) sum of matching line net amounts + charges − allowances
+#   (-08), BT-117 must equal 0 (-09), and the exemption reason is FORBIDDEN
+#   for Z (-10) but REQUIRED for E (-10).
+# ---------------------------------------------------------------------------
+_SELLER_ID_ELEMENT = ("cac:AccountingSupplierParty/cac:Party/"
+                      "cac:PartyTaxScheme/cbc:CompanyID")
+
+
+def _seller_id_message(label, subject):
+    return ("An Invoice with a %s %s shall contain the Seller VAT Identifier "
+            "(BT-31), the Seller tax registration identifier (BT-32) and/or "
+            "the Seller tax representative VAT identifier (BT-63)."
+            % (label, subject))
+
+
+def _line_seller_id_fires(inv, code):
+    """The BR-Z/E-02 shape (context ``/ubl:Invoice``)::
+
+        (exists(//cac:ClassifiedTaxCategory[normalize-space(cbc:ID)=code][VAT])
+           and SELLER_ID)
+        or not(exists(//cac:ClassifiedTaxCategory[normalize-space(cbc:ID)=code][VAT]))
+
+    Both disjuncts test the SAME VAT-scoped node set, so the assert fires iff a
+    VAT-scheme ``code`` invoice line exists and no Seller VAT identifier does.
+    SELLER_ID = a Seller ``PartyTaxScheme/CompanyID`` (ANY scheme) or a
+    tax-representative VAT ``PartyTaxScheme/CompanyID`` — same as BR-S-02.
+    """
+    return (inv.has_classified_category(code, "VAT")
+            and not inv.seller_has_vat_identifier())
+
+
+def _ac_seller_id_fires(inv, code, is_charge):
+    """The BR-Z/E-03/04 shape: a VAT-scheme ``code`` document level allowance
+    (is_charge False, BT-95) / charge (True, BT-102) requires the Seller VAT
+    identifier disjunct. Symmetric node sets, both ``//cac:AllowanceCharge
+    [ChargeIndicator]/cac:TaxCategory[normalize-space(cbc:ID)=code][VAT]``."""
+    return (_ac_has_vat_category(inv, is_charge, code)
+            and not inv.seller_has_vat_identifier())
+
+
+def _line_rate_nonzero(inv, code):
+    """The BR-Z/E-05 shape (context ``cac:InvoiceLine/cac:Item/
+    cac:ClassifiedTaxCategory[normalize-space(cbc:ID)=code][VAT]``):
+    ``xs:decimal(cbc:Percent) = 0`` per matching category. Returns the first
+    offending line, or None when the rule holds."""
+    for ln in inv.lines:
+        for cat in ln.item_tax_categories:
+            if (cat.id == code and cat.scheme_id == "VAT"
+                    and not _percent_eq_zero(cat.percent)):
+                return ln
+    return None
+
+
+def _ac_rate_nonzero(inv, code, is_charge):
+    """The BR-Z/E-06/07 shape (context ``cac:AllowanceCharge[ChargeIndicator]/
+    cac:TaxCategory[normalize-space(cbc:ID)=code][VAT]`` — document- AND
+    line-level, like BR-S-06/07): ``xs:decimal(cbc:Percent) = 0``."""
+    for ac in inv.all_allowance_charges():
+        if ac.is_charge is is_charge:
+            for cat in ac.tax_categories:
+                if (cat.id == code and cat.scheme_id == "VAT"
+                        and not _percent_eq_zero(cat.percent)):
+                    return True
+    return False
+
+
+def _breakdown_taxable_sum_mismatch(inv, code):
+    """The BR-Z/E-08 shape (context ``/*/cac:TaxTotal/cac:TaxSubtotal/
+    cac:TaxCategory[normalize-space(cbc:ID)=code][VAT]`` — TOP-LEVEL TaxTotals
+    only). For an Invoice document the official test reduces to::
+
+        exists(//cac:InvoiceLine) and
+        xs:decimal(../cbc:TaxableAmount)
+          = sum(/Invoice/cac:InvoiceLine[cac:Item/cac:ClassifiedTaxCategory/
+                  normalize-space(cbc:ID)=code]/xs:decimal(cbc:LineExtensionAmount))
+            + sum(charges with cac:TaxCategory[normalize-space(cbc:ID)=code])
+            - sum(allowances with cac:TaxCategory[normalize-space(cbc:ID)=code])
+
+    Three details the official XPath pins down:
+
+    * the line/allowance/charge predicates are SCHEME-AGNOSTIC (no TaxScheme
+      test — unlike this rule's own context);
+    * the equality is EXACT xs:decimal equality — no rounding, no tolerance
+      band (unlike BR-S-08/09);
+    * with no ``cac:InvoiceLine`` in the document neither disjunct can hold,
+      so the assert FIRES; a missing BT-116 casts to the empty sequence and
+      fires too. Lines/allowances missing their amount contribute nothing.
+
+    Returns ``(subtotal, expected_sum)`` for the first offending breakdown,
+    or None when the rule holds.
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if not (st.category_id == code
+                    and st.category_scheme_id == "VAT"):
+                continue
+            expected = Decimal("0")
+            for ln in inv.lines:
+                if any(cat.id == code for cat in ln.item_tax_categories):
+                    v = _dec(ln.line_extension_amount)
+                    if v is not None:
+                        expected += v
+            for ac in inv.doc_allowance_charges:
+                if ac.is_charge is None:
+                    continue
+                if any(cat.id == code for cat in ac.tax_categories):
+                    v = _dec(ac.amount_raw)
+                    if v is not None:
+                        expected += v if ac.is_charge else -v
+            taxable = _dec(st.taxable_amount)
+            if not inv.lines or taxable is None or taxable != expected:
+                return st, expected
+    return None
+
+
+def _taxable_sum_message(label, st, expected):
+    return ("In a VAT breakdown (BG-23) where the VAT category code (BT-118) "
+            "is '%s' the VAT category taxable amount (BT-116=%s) shall equal "
+            "the sum of Invoice line net amounts minus allowances plus "
+            "charges with a '%s' VAT category code (= %s)."
+            % (label, st.taxable_amount or "(absent)", label, expected))
+
+
+def _breakdown_tax_nonzero(inv, code):
+    """The BR-Z/E-09 shape (same top-level breakdown context as -08):
+    ``xs:decimal(../cbc:TaxAmount) = 0`` — a missing/unparseable BT-117
+    fires (empty sequence compares false). Returns the first offending
+    subtotal, or None when the rule holds."""
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if st.category_id == code and st.category_scheme_id == "VAT":
+                tax = _dec(st.tax_amount)
+                if tax is None or tax != 0:
+                    return st
+    return None
+
+
+def _tax_zero_message(label, st):
+    return ("The VAT category tax amount (BT-117=%s) in a VAT breakdown "
+            "(BG-23) where the VAT category code (BT-118) is '%s' shall "
+            "equal 0 (zero)." % (st.tax_amount or "(absent)", label))
+
+
+def br_z_02(inv):
+    """BR-Z-02: a Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT
+    identifier / tax registration id / tax representative VAT id."""
+    if _line_seller_id_fires(inv, "Z"):
+        return Violation(
+            "BR-Z-02",
+            _seller_id_message("Zero rated (Z)", "Invoice line (BT-151)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_z_03(inv):
+    """BR-Z-03: a Zero-rated (Z) Document level allowance (BT-95) requires the
+    Seller VAT identifier disjunct."""
+    if _ac_seller_id_fires(inv, "Z", False):
+        return Violation(
+            "BR-Z-03",
+            _seller_id_message("Zero rated (Z)",
+                               "Document level allowance (BT-95)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_z_04(inv):
+    """BR-Z-04: a Zero-rated (Z) Document level charge (BT-102) requires the
+    Seller VAT identifier disjunct."""
+    if _ac_seller_id_fires(inv, "Z", True):
+        return Violation(
+            "BR-Z-04",
+            _seller_id_message("Zero rated (Z)",
+                               "Document level charge (BT-102)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_z_05(inv):
+    """BR-Z-05: in a Zero-rated (Z) Invoice line the Invoiced item VAT rate
+    (BT-152) shall be 0."""
+    ln = _line_rate_nonzero(inv, "Z")
+    if ln is not None:
+        return Violation(
+            "BR-Z-05",
+            "In an Invoice line (BG-25) where the Invoiced item VAT category "
+            "code (BT-151) is 'Zero rated' the Invoiced item VAT rate "
+            "(BT-152) shall be 0 (zero).",
+            ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")
+    return None
+
+
+def br_z_06(inv):
+    """BR-Z-06: in a Zero-rated (Z) Document level allowance the allowance VAT
+    rate (BT-96) shall be 0."""
+    if _ac_rate_nonzero(inv, "Z", False):
+        return Violation(
+            "BR-Z-06",
+            "In a Document level allowance (BG-20) where the Document level "
+            "allowance VAT category code (BT-95) is 'Zero rated' the Document "
+            "level allowance VAT rate (BT-96) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_z_07(inv):
+    """BR-Z-07: in a Zero-rated (Z) Document level charge the charge VAT rate
+    (BT-103) shall be 0."""
+    if _ac_rate_nonzero(inv, "Z", True):
+        return Violation(
+            "BR-Z-07",
+            "In a Document level charge (BG-21) where the Document level "
+            "charge VAT category code (BT-102) is 'Zero rated' the Document "
+            "level charge VAT rate (BT-103) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_z_08(inv):
+    """BR-Z-08: the Zero-rated (Z) VAT breakdown taxable amount (BT-116) shall
+    equal the exact sum of Z line net amounts − Z allowances + Z charges."""
+    hit = _breakdown_taxable_sum_mismatch(inv, "Z")
+    if hit is not None:
+        st, expected = hit
+        return Violation(
+            "BR-Z-08", _taxable_sum_message("Zero rated", st, expected),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_z_09(inv):
+    """BR-Z-09: the VAT category tax amount (BT-117) in a Zero-rated (Z) VAT
+    breakdown shall equal 0."""
+    st = _breakdown_tax_nonzero(inv, "Z")
+    if st is not None:
+        return Violation(
+            "BR-Z-09", _tax_zero_message("Zero rated", st),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_z_10(inv):
+    """BR-Z-10: a VAT breakdown (BG-23) with a Zero rated (Z) VAT category code
+    (BT-118) shall not have a VAT exemption reason text (BT-120) or code
+    (BT-121).
+
+    Official (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='Z'][VAT]``)::
+
+        not((cbc:TaxExemptionReason) or (cbc:TaxExemptionReasonCode))
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if (st.category_id == "Z" and st.category_scheme_id == "VAT"
+                    and (st.has_exemption_reason or st.has_exemption_reason_code)):
+                return Violation(
+                    "BR-Z-10",
+                    "A VAT breakdown (BG-23) with a Zero rated (Z) VAT "
+                    "category code (BT-118) shall not have a VAT exemption "
+                    "reason code (BT-121) or VAT exemption reason text "
+                    "(BT-120).",
+                    "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
+                    "cbc:TaxExemptionReason")
+    return None
+
+
+def br_e_02(inv):
+    """BR-E-02: an Exempt (E) Invoice line (BT-151) requires the Seller VAT
+    identifier / tax registration id / tax representative VAT id."""
+    if _line_seller_id_fires(inv, "E"):
+        return Violation(
+            "BR-E-02",
+            _seller_id_message("Exempt from VAT (E)", "Invoice line (BT-151)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_e_03(inv):
+    """BR-E-03: an Exempt (E) Document level allowance (BT-95) requires the
+    Seller VAT identifier disjunct."""
+    if _ac_seller_id_fires(inv, "E", False):
+        return Violation(
+            "BR-E-03",
+            _seller_id_message("Exempt from VAT (E)",
+                               "Document level allowance (BT-95)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_e_04(inv):
+    """BR-E-04: an Exempt (E) Document level charge (BT-102) requires the
+    Seller VAT identifier disjunct."""
+    if _ac_seller_id_fires(inv, "E", True):
+        return Violation(
+            "BR-E-04",
+            _seller_id_message("Exempt from VAT (E)",
+                               "Document level charge (BT-102)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_e_05(inv):
+    """BR-E-05: in an Exempt (E) Invoice line the Invoiced item VAT rate
+    (BT-152) shall be 0."""
+    ln = _line_rate_nonzero(inv, "E")
+    if ln is not None:
+        return Violation(
+            "BR-E-05",
+            "In an Invoice line (BG-25) where the Invoiced item VAT category "
+            "code (BT-151) is 'Exempt from VAT', the Invoiced item VAT rate "
+            "(BT-152) shall be 0 (zero).",
+            ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")
+    return None
+
+
+def br_e_06(inv):
+    """BR-E-06: in an Exempt (E) Document level allowance the allowance VAT
+    rate (BT-96) shall be 0."""
+    if _ac_rate_nonzero(inv, "E", False):
+        return Violation(
+            "BR-E-06",
+            "In a Document level allowance (BG-20) where the Document level "
+            "allowance VAT category code (BT-95) is 'Exempt from VAT', the "
+            "Document level allowance VAT rate (BT-96) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_e_07(inv):
+    """BR-E-07: in an Exempt (E) Document level charge the charge VAT rate
+    (BT-103) shall be 0."""
+    if _ac_rate_nonzero(inv, "E", True):
+        return Violation(
+            "BR-E-07",
+            "In a Document level charge (BG-21) where the Document level "
+            "charge VAT category code (BT-102) is 'Exempt from VAT', the "
+            "Document level charge VAT rate (BT-103) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_e_08(inv):
+    """BR-E-08: the Exempt (E) VAT breakdown taxable amount (BT-116) shall
+    equal the exact sum of E line net amounts − E allowances + E charges."""
+    hit = _breakdown_taxable_sum_mismatch(inv, "E")
+    if hit is not None:
+        st, expected = hit
+        return Violation(
+            "BR-E-08", _taxable_sum_message("Exempt from VAT", st, expected),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_e_09(inv):
+    """BR-E-09: the VAT category tax amount (BT-117) in an Exempt (E) VAT
+    breakdown shall equal 0."""
+    st = _breakdown_tax_nonzero(inv, "E")
+    if st is not None:
+        return Violation(
+            "BR-E-09", _tax_zero_message("Exempt from VAT", st),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_e_10(inv):
+    """BR-E-10: a VAT breakdown (BG-23) with an Exempt from VAT (E) VAT
+    category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or
+    text (BT-120) — the presence-required mirror image of BR-Z-10/BR-S-10.
+
+    Official (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='E'][VAT]``)::
+
+        exists(cbc:TaxExemptionReason) or exists(cbc:TaxExemptionReasonCode)
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if (st.category_id == "E" and st.category_scheme_id == "VAT"
+                    and not (st.has_exemption_reason
+                             or st.has_exemption_reason_code)):
+                return Violation(
+                    "BR-E-10",
+                    "A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT "
+                    "category code (BT-118) shall have a VAT exemption reason "
+                    "code (BT-121) or a VAT exemption reason text (BT-120).",
                     "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
                     "cbc:TaxExemptionReason")
     return None
@@ -1902,6 +2319,10 @@ ALL_RULES = [
     br_45, br_46, br_47, br_48,
     br_s_01, br_z_01,
     br_s_02, br_s_03, br_s_04, br_s_05, br_s_06, br_s_07, br_s_09, br_s_10,
+    br_z_02, br_z_03, br_z_04, br_z_05, br_z_06, br_z_07,
+    br_z_08, br_z_09, br_z_10,
+    br_e_02, br_e_03, br_e_04, br_e_05, br_e_06, br_e_07,
+    br_e_08, br_e_09, br_e_10,
     br_ae_01, br_e_01, br_g_01, br_ic_01, br_o_01,
     br_dec_01, br_dec_02, br_dec_05, br_dec_06,
     br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_14,

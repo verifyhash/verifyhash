@@ -116,40 +116,48 @@ validator and the semantic smoke test pass. Each entry: what changed, and that b
 ## Team changes
 *(Manager appends here when it reshapes the roster — what it added/changed/removed and the signal that justified it.)*
 
-- **2026-07-06 (run — T-76.2:VERIFIED(4/5); T-78.1:VERIFIED(4/5); T-78.2:VERIFIED(4/5);
-  T-78.3:VERIFIED(4/5)[2x]; 4 verified, 0 blocked, 1 rework, 3 newly-invented; avg 4.0, min 4) —
-  Manager: NO CHANGE (panel stays 5 reviewers + 5 builder profiles; no lens/persona edit).**
-  - **Recovery HELD; 4.0 is the healthy ceiling, not a mediocre plateau.** avgUsefulness (driver, newest
-    last, incl. this run) = `3.25(min2) → 4.0 → 4.0 → 4.0 → null(stillborn) → 4.0(min4)`. The 3.25/min-2
-    trough is five runs back and already explained-and-corrected (the axis-regression Critic's SCORING
-    FLOOR now caps at 2). A sustained 4.0/min-4 with the anti-orbit/anti-self-tooling floors ARMED means
-    the planner is routing energy to LIVE, no-human-gate veins — the intended signal, not a plateau to
-    attack (the genuinely monetizable next steps all sit behind the single P-8 design-partner human dam).
-  - **The one anomaly was an ENGINE/budget bug, already fixed — NOT a roster defect.** The `null` run
-    (07-06T17:50) was STILLBORN: the per-run token cap fired off the inherited HARNESS-SESSION counter at
-    the first top-of-loop check (0 verified, `spentTokens:8096665`, `rounds:1`). That is engine #33's
-    RUN-RELATIVE spend-baseline fix (see `## Loop upgrades`), which is exactly why THIS run rebounded to 4
-    clean verifies. Budget/cap mechanics live in build-loop.workflow.js, not team.json — out of roster
-    scope, and correctly handled by the Architect/Gatekeeper, not a lens/persona reshape.
-  - **This run's four tasks were on-axis, customer-facing, and correctly scored.** T-76.2 shipped the
-    SECOND independent Python verifier for user cross-verification (VerifierIndependence's #1 "verify
-    independently OFFLINE" headline). T-78.1/78.2/78.3 closed a REAL funnel defect — the public front door
-    (README + ~16 published docs + CLI output) 404ing on its own now-untracked STRATEGY.md links, and the
-    site still publishing the untracked internal DECIDE page (the same internal-telemetry leak class
-    ce4f35b purged from the tarball) — then made it a RED BUILD forever via a link-integrity test. That is
-    squarely Operability's DISTRIBUTION / PAVED-ROAD clause and Critic's carve-out (i) (distribution IS
-    customer-facing, never navel-gazing) on the declared adoption=ZERO frontier. Usefulness 4 is correct
-    on all four; nothing off-axis / orbiting the P-8 dam / reviving the retired crypto-registry surface /
-    built as internal self-tooling instead of customer work slipped through at a wrongly-high score — so
-    no mis-scoring blind spot opened that would justify adding or sharpening a lens.
-  - **Why no lever fired.** No usefulness DECLINE (recovery held, four clean 4.0s bracketing one
-    engine-caused stillbirth). No flat-MEDIOCRE plateau (4.0 is the ceiling; the floors are working). No
-    new mis-scoring surface (every surface this run touched was already owned — VerifierIndependence for
-    the Python cross-verifier, Operability for the paved-road/leak hygiene). No underperforming reviewer to
-    remove. No builder mismatch (T-78.3's 2× rework is single-task noise; cross-run rework = 3,1,3,0,0,1,
-    no trend). A reshape now would be thrash. (Out of scope, no reshape: firstShotModel=fable — Fable
-    leaves 2026-07-08 and first-shot flips to Opus, a MODEL-table concern not in team.json; the standing
-    humanGated dam is a human decision, not a team defect.)
+- **2026-07-07 (run — T-79.1:VERIFIED(4/5); T-79.2:VERIFIED(4/5); T-79.3:BLOCKED[3x];
+  T-79.4:VERIFIED(4/5); 3 verified, 1 blocked, 1 rework, 0 newly-invented; avg 4.0, min 4) —
+  Manager: ADDED reviewer `Conformance` (5->6) + ADDED builder profile `einvoice` (5->6). The signal
+  is a PRODUCT PIVOT, not a usefulness trend.**
+  - **The real signal: the work moved to a NEW domain the whole panel is blind to.** 3 of this run's 4
+    tasks (and all of EPIC-79) are on `einvoice/` — the EN 16931 / XRechnung e-invoice conformance
+    validator, the umbrella's FIRST expansion (owner-mandated "FIRST EXPANSION IN PROGRESS"; the go-forward
+    Direction). It is a Python, legally-mandated, forced-buyer product whose ENTIRE defensibility is "our
+    conformance verdict matches the official Schematron," proven by `einvoice/differential.py`. Yet the
+    make-or-break correctness class here — the charter's COMPLIANCE DISCIPLINE ("any verdict claiming a
+    legal standard MUST be differential-tested against the OFFICIAL machine-readable ruleset, never only
+    our own model") — was owned by NO reviewer: TrustIntegrity is scoped to TrustLedger/evidence
+    seal/money/license/agent-session, VerifierIndependence to the verifier tree + standalone bundle,
+    Operability to CLI/HTTP/distribution shape, Critic to market-fit, Security to vuln classes. T-79.1/79.2
+    (the differential-proven EN + BR-DE rule batches) VERIFIED at 4 with no lens actually scrutinizing the
+    differential-vs-official-ground-truth discipline. That is a genuine unowned make-or-break surface — the
+    exact "reshape the panel to add the lens the new work needs" move (mirrors how the seal/license/
+    VerifierIndependence lenses were added when those surfaces first appeared), not a reaction to a
+    usefulness number.
+  - **Change 1 — reviewer `Conformance`.** Owns exactly one thing no other lens does: is every conformance
+    verdict PROVEN equal to the official legal ruleset — differential-against-ground-truth at 0
+    false-pos/0 miss over a broad+adversarial corpus, no gaming the harness by shrinking corpus/rule set,
+    CIUS-as-restriction soundness, honest "conforms to implemented rules on these bytes / not a legally
+    valid invoice / not legal advice" posture, and determinism/strictness. Explicitly complements (does not
+    re-litigate) VerifierIndependence (the receipt's tamper-evidence/offline-verify), Operability (the
+    `validate` CLI + CI-gate shape), and Critic (forced-buyer market-fit). 6 reviewers = the cap.
+  - **Change 2 — builder profile `einvoice`.** The panel's builder personas are all JS/Solidity-flavored
+    (default/contract/cli/trustledger/falsepass); the pivot is Python + standards/Schematron. Following the
+    established domain-specialist pattern (contract=Solidity, trustledger=financial), `einvoice` frames the
+    Builder for differential-FIRST discipline: pure/deterministic rule functions, prove each rule against
+    the official Schematron over the corpus BEFORE it is "done," CIUS-as-restriction, honest CORRECTNESS.md,
+    zero new deps, and reuse of the verifyhash sealing/verifier core VERBATIM for the receipt synthesis.
+  - **Why NOT other levers.** No usefulness DECLINE and no flat-MEDIOCRE plateau: avg is a steady 4.0/min-4
+    (the prior Manager already established 4.0 is the healthy ceiling under the standing human dams) — this
+    reshape is driven by a work-shape change, not the score. The T-79.3 block is NOT a roster signal: its
+    3x failure was a link-integrity-test (T-78.3) COLLISION with VENDORED third-party corpus markdown
+    (`einvoice/corpus/xrechnung-schematron/README.md` links an un-vendored `./docs/development.md`) — an
+    engine/test-SCOPE artifact (the hardening tests were written for the single-product tree and now scan
+    vendored subtrees), handled by the Architect/Gatekeeper, not a lens/persona. No reviewer removed (all
+    five still own live secondary surfaces the umbrella hasn't retired). Not thrash: two ADDITIONS grounded
+    in ONE real, owner-mandated, multi-task product pivot, targeting the two distinct mechanisms (review
+    scrutiny + build competence) that a new-domain/new-language frontier requires.
 
 ## Proposals — needs-human
 *(Anything legal/funds/deploy/launch that the loop wants but is NOT allowed to do on its own.

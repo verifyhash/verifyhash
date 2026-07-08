@@ -3407,6 +3407,26 @@ archival runs; run `node scripts/archive-direction.cjs --guard` to check the bud
 
 ## Loop upgrades (archived)
 
+- **2026-07-07 — PROMOTED (engine #34, Architect-authored): the `fable` opt-in SELF-EXPIRES in code on the Fable-removal date.**
+  Fable 5 leaves the subscription plan 2026-07-08 — the hard date engines #25/#27 were built around. Engine #25 made a
+  plain launch default every role to Opus/Haiku, and documented the `{fable:true}` opt-in as "valid only until then," but
+  nothing ENFORCED the expiry: METRICS show every recent launch passes `{fable:true}` (firstShotModel:"fable" on the full
+  current tail, including the run on the eve of removal), so the habitual, unchanged launch command would — after the date —
+  resolve planner/decider/strategist/builderFirst/architect to a model the plan no longer carries. Failure shape is concrete:
+  the planner throws twice (`endReason:'planner-error'`, ZERO tasks built, roster/preflight/reporter overhead paid for
+  nothing) and the Architect call (the one fable call-site in the end-phases with no try/catch) throws uncaught after Report.
+  Fix is a single-line clamp: `const FABLE = A.fable === true && Date.now() < Date.parse('2026-07-08T00:00:00Z')`, so
+  engine #25's guarantee ("a plain launch never references a model the plan no longer carries") now holds for EVERY launch,
+  not only plain ones. Conservative edge: clamp is midnight UTC on the removal date, so at worst the loop switches to Opus a
+  few hours EARLY — it can never reference the missing model late. firstShotModel telemetry stays honest automatically (it
+  derives from `MODEL.builderFirst`, which follows `FABLE`). Diff is +16/-1: the one `const FABLE` line plus an explanatory
+  comment block — no gate, cap, schema, METRICS field, control-flow, self-upgrade-path, driver-script wiring, or guardrail
+  (NEVER push/deploy) change. The smoke harness passes no fable flag, so the clamp is a no-op there. Gates:
+  `validate-driver.cjs` → PASS and `smoke-driver.cjs` → SMOKE-PASS (5 scenarios: verify-before-commit + gatekeeper-invocation
+  + FAILING-verdict / testsPass:false / mechanical runner-red all BLOCK-with-no-commit; 23 agent calls, all terminated
+  cleanly), re-confirmed green on the promoted file in its new location. md5 `e6bb3bccc0025f16076d9b354dc55f59`; prior engine
+  (#33) backed up to `build-loop.prev.js` (md5 `28ffc227aab3386fe0cce1bf18f7ec50`).
+
 - **2026-07-06 — PROMOTED (engine #32, Architect-authored): run-shape telemetry (`rounds` + `spentTokens`) in the METRICS line.**
   The driver now serializes two additional fields into the per-run METRICS `stats` line — `"rounds":${rounds}` and
   `"spentTokens":${budget.spent()}` (the latter captured at Report-phase entry, excluding only the reporter/architect/
@@ -4093,6 +4113,41 @@ archival runs; run `node scripts/archive-direction.cjs --guard` to check the bud
     verify-before-commit ordering confirmed. Candidate size is above the 60% anti-gutting floor.
 
 ## Team changes (archived)
+
+- **2026-07-06 (run — T-76.2:VERIFIED(4/5); T-78.1:VERIFIED(4/5); T-78.2:VERIFIED(4/5);
+  T-78.3:VERIFIED(4/5)[2x]; 4 verified, 0 blocked, 1 rework, 3 newly-invented; avg 4.0, min 4) —
+  Manager: NO CHANGE (panel stays 5 reviewers + 5 builder profiles; no lens/persona edit).**
+  - **Recovery HELD; 4.0 is the healthy ceiling, not a mediocre plateau.** avgUsefulness (driver, newest
+    last, incl. this run) = `3.25(min2) → 4.0 → 4.0 → 4.0 → null(stillborn) → 4.0(min4)`. The 3.25/min-2
+    trough is five runs back and already explained-and-corrected (the axis-regression Critic's SCORING
+    FLOOR now caps at 2). A sustained 4.0/min-4 with the anti-orbit/anti-self-tooling floors ARMED means
+    the planner is routing energy to LIVE, no-human-gate veins — the intended signal, not a plateau to
+    attack (the genuinely monetizable next steps all sit behind the single P-8 design-partner human dam).
+  - **The one anomaly was an ENGINE/budget bug, already fixed — NOT a roster defect.** The `null` run
+    (07-06T17:50) was STILLBORN: the per-run token cap fired off the inherited HARNESS-SESSION counter at
+    the first top-of-loop check (0 verified, `spentTokens:8096665`, `rounds:1`). That is engine #33's
+    RUN-RELATIVE spend-baseline fix (see `## Loop upgrades`), which is exactly why THIS run rebounded to 4
+    clean verifies. Budget/cap mechanics live in build-loop.workflow.js, not team.json — out of roster
+    scope, and correctly handled by the Architect/Gatekeeper, not a lens/persona reshape.
+  - **This run's four tasks were on-axis, customer-facing, and correctly scored.** T-76.2 shipped the
+    SECOND independent Python verifier for user cross-verification (VerifierIndependence's #1 "verify
+    independently OFFLINE" headline). T-78.1/78.2/78.3 closed a REAL funnel defect — the public front door
+    (README + ~16 published docs + CLI output) 404ing on its own now-untracked STRATEGY.md links, and the
+    site still publishing the untracked internal DECIDE page (the same internal-telemetry leak class
+    ce4f35b purged from the tarball) — then made it a RED BUILD forever via a link-integrity test. That is
+    squarely Operability's DISTRIBUTION / PAVED-ROAD clause and Critic's carve-out (i) (distribution IS
+    customer-facing, never navel-gazing) on the declared adoption=ZERO frontier. Usefulness 4 is correct
+    on all four; nothing off-axis / orbiting the P-8 dam / reviving the retired crypto-registry surface /
+    built as internal self-tooling instead of customer work slipped through at a wrongly-high score — so
+    no mis-scoring blind spot opened that would justify adding or sharpening a lens.
+  - **Why no lever fired.** No usefulness DECLINE (recovery held, four clean 4.0s bracketing one
+    engine-caused stillbirth). No flat-MEDIOCRE plateau (4.0 is the ceiling; the floors are working). No
+    new mis-scoring surface (every surface this run touched was already owned — VerifierIndependence for
+    the Python cross-verifier, Operability for the paved-road/leak hygiene). No underperforming reviewer to
+    remove. No builder mismatch (T-78.3's 2× rework is single-task noise; cross-run rework = 3,1,3,0,0,1,
+    no trend). A reshape now would be thrash. (Out of scope, no reshape: firstShotModel=fable — Fable
+    leaves 2026-07-08 and first-shot flips to Opus, a MODEL-table concern not in team.json; the standing
+    humanGated dam is a human decision, not a team defect.)
 
 - **2026-07-06 (run — T-76.1:VERIFIED(4/5); 1 verified, 0 blocked, 0 rework, 0 newly-invented; avg 4.0,
   min 4) — Manager: NO CHANGE (panel stays 5 reviewers + 5 builder profiles; no lens/persona edit).**

@@ -2,9 +2,19 @@
 
 Usage:
     einvoice validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
+    einvoice receipt  <invoice.xml> [--profile=en16931|xrechnung]
 
 (also reachable as ``python3 -m einvoice ...`` and, from a source checkout,
 ``python3 einvoice.py ...`` — all three are the same entry point.)
+
+Subcommands:
+    validate   report conformance (human summary, or --json full result).
+    receipt    emit a CANONICAL, DETERMINISTIC JSON conformance receipt: a
+               byte-stable attestation of the outcome (tool+version, profile,
+               verdict, failed fatal rule ids, input-document SHA-256, and a
+               SHA-256 content hash of the receipt body). Re-running on the
+               same bytes yields byte-identical output — the tamper-evidence
+               bridge. See ``einvoice/receipt.py``.
 
 Profiles:
     en16931 (default)  the EN 16931 core business rules
@@ -17,7 +27,8 @@ Exit codes (stable contract):
     0  the invoice passes every implemented fatal rule
     1  at least one implemented fatal rule failed
     2  usage error
-    3  input is not well-formed XML / parse error
+    3  input is not well-formed XML / parse error (``validate`` only; the
+       ``receipt`` subcommand folds this into a FAIL receipt, exit 1)
 
 Default output on failure: the FIRST fatal violated rule id, a human message
 and the offending element. With --json, the full result (all violations,
@@ -32,9 +43,12 @@ import sys
 
 from .validate import validate_file, PROFILES, _severity
 from .parser import NotWellFormed
+from .receipt import build_receipt, canonical_json
 
 USAGE = ("usage: einvoice validate <invoice.xml> "
-         "[--json] [--profile=en16931|xrechnung]")
+         "[--json] [--profile=en16931|xrechnung]\n"
+         "       einvoice receipt <invoice.xml> "
+         "[--profile=en16931|xrechnung]")
 
 EXIT_OK = 0
 EXIT_FAIL = 1
@@ -76,17 +90,27 @@ def main(argv=None):
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_USAGE
 
-    if len(args) < 2 or args[0] != "validate":
+    if len(args) < 2 or args[0] not in ("validate", "receipt"):
         sys.stderr.write(USAGE + "\n")
         return EXIT_USAGE
     if len(args) > 2:
         sys.stderr.write("error: unexpected extra arguments\n" + USAGE + "\n")
         return EXIT_USAGE
 
+    subcommand = args[0]
     path = args[1]
     if not os.path.isfile(path):
         sys.stderr.write("error: no such file: %s\n" % path)
         return EXIT_USAGE
+
+    if subcommand == "receipt":
+        # A conformance receipt always emits a canonical JSON document (the
+        # receipt IS the output); the exit code mirrors the verdict so it can
+        # gate a build. Not-well-formed input is folded into a FAIL receipt by
+        # build_receipt, so nothing here raises NotWellFormed.
+        receipt = build_receipt(path, profile=profile)
+        sys.stdout.write(canonical_json(receipt) + "\n")
+        return EXIT_OK if receipt["receipt"]["verdict"] == "PASS" else EXIT_FAIL
 
     try:
         result = validate_file(path, profile=profile)

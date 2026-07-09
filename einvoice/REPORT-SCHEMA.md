@@ -13,16 +13,19 @@ constant in `einvoice/report.py`; this file is its human companion.
 ## Invocation
 
 ```
-python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit] [--pretty] <invoice.xml>
+python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit] [--pretty] [--baseline <prev-report.json>] <invoice.xml>
 ```
 
 - `--profile` — `xrechnung` (default) or `en16931`. `xrechnung` adds the German
   national CIUS layer (BR-DE-\*) on top of the EN 16931 core.
 - `--format` — `json` (default) or `junit`. `junit` emits a JUnit XML document
   (see **JUnit output** below) instead of the JSON; the exit-code contract is
-  identical either way.
+  identical either way. Not compatible with `--baseline`.
 - `--pretty` — indent the JSON (with sorted keys) instead of the default
   compact single line. Ignored when `--format junit` is in effect.
+- `--baseline <prev-report.json>` — switch to **baseline diff mode** (see
+  **Baseline diff mode** below). Fails the build only on a *new* regression
+  relative to a captured prior report, not on pre-existing violations.
 
 Programmatic entry point: `einvoice.report.build_report(path, profile='xrechnung') -> dict`.
 
@@ -105,6 +108,75 @@ Shape:
   `<error>` (so `errors="1"`, `tests="1"`, `failures="0"`) and exits `3`.
 
 All text is XML-escaped with `xml.sax.saxutils`.
+
+## Baseline diff mode (`--baseline <prev-report.json>`)
+
+An **adoption on-ramp** for teams inheriting a non-conformant invoice pipeline.
+A hard gate ("any fatal fails the build") is often too strict to switch on when
+there are already dozens of known violations. Baseline diff mode instead fails
+the build **only on a new regression** — a fatal violation that was *not* in a
+captured baseline — while tolerating the pre-existing backlog. Point CI at a
+baseline report captured once (a normal `--format json` run committed to the
+repo), and the build turns red the day someone makes conformance *worse*, not
+before.
+
+```
+# capture a baseline once (commit the JSON):
+python3 -m einvoice.report --format json invoice.xml > baseline.json
+# then gate every build against it:
+python3 -m einvoice.report --baseline baseline.json invoice.xml
+```
+
+The baseline is any prior report of schema `einvoice-conformance-report/v1`
+(it must be a JSON object with a `violations` array of
+`{rule, field, severity, message}` records). The tool **re-validates** the
+current invoice with `einvoice.validate` — it adds **no** rule logic — and
+**diffs** the two violation sets by the stable key
+**`(rule, field, message, severity)`**, respecting multiplicity.
+
+The diff is emitted to **stdout** as its **own versioned document**, schema
+`einvoice-conformance-diff/v1`. This is a distinct shape from the plain report,
+so adding it leaves the plain report's `report_version` at **1**; the diff
+document carries its own `report_version` (also starting at 1) and moves on its
+own cadence. Programmatic entry points:
+`einvoice.report.load_baseline(path) -> dict` and
+`einvoice.report.build_diff(invoice_path, baseline_dict, profile=..., baseline_path=...) -> dict`.
+
+### Diff document fields
+
+| field                  | type        | meaning |
+|------------------------|-------------|---------|
+| `report_version`       | int         | The diff document's own version (starts at **1**). |
+| `schema`               | string      | `einvoice-conformance-diff/v1`. |
+| `mode`                 | string      | The literal `diff`. |
+| `source`               | string      | The current invoice path that was validated. |
+| `baseline`             | string/null | The `--baseline` file path supplied on the CLI. |
+| `baseline_source`      | string/null | The `source` field recorded *inside* the baseline report. |
+| `profile`              | string      | `en16931` or `xrechnung`. |
+| `new_violations`       | list        | Violation records present **now** but absent in the baseline. Same four-key shape as `violations` above. |
+| `resolved_violations`  | list        | Violation records present in the **baseline** but absent now. |
+| `new_count`            | int         | `len(new_violations)`. |
+| `resolved_count`       | int         | `len(resolved_violations)`. |
+| `unchanged_count`      | int         | Violations present in both (with multiplicity). |
+| `new_fatal_count`      | int         | `new_violations` whose `severity` is `fatal`. **Drives the exit code.** |
+| `baseline_fatal_count` | int         | Fatal violations in the baseline. |
+| `current_fatal_count`  | int         | Fatal violations in the current invoice. |
+| `error`                | string      | Present **only** when the current invoice is not well-formed XML: `not-well-formed`. The diff lists are then empty. |
+| `message`              | string      | Present **only** alongside `error`: the parser's human message. |
+
+### Diff exit codes
+
+Deliberately **more lenient** than plain mode — a pre-existing failure does not
+break the build, only a regression does:
+
+| code | meaning |
+|------|---------|
+| `0`  | **Zero** new fatal violations vs the baseline (pre-existing fatals are tolerated). |
+| `1`  | At least one **new** fatal violation appeared — a regression. |
+| `3`  | The current input is not well-formed XML (diff carries `error`, lists empty). |
+
+A malformed, unreadable, or wrong-shape baseline file is reported with a clear
+`error:` line on **stderr** and a nonzero exit — never a traceback.
 
 ## Versioning
 

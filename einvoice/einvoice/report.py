@@ -23,6 +23,47 @@ The JSON report is printed to stdout: compact (one line) by default,
 indented with ``--pretty``. See ``REPORT_SCHEMA`` below / REPORT-SCHEMA.md for
 the full, versioned field description.
 
+Baseline diff mode (``--baseline <prev-report.json>``)
+------------------------------------------------------
+
+An adoption on-ramp for teams that inherit a NON-conformant invoice pipeline:
+instead of failing the build on every pre-existing violation, fail only on
+NEW regressions relative to a captured baseline. Given a prior report produced
+by an earlier ``--format json`` run (schema ``einvoice-conformance-report/v1``,
+carrying a ``violations`` array of ``{rule, field, severity, message}``), the
+tool re-validates the CURRENT invoice and DIFFs the two violation sets by a
+stable key ``(rule, field, message, severity)``:
+
+    python3 -m einvoice.report --baseline prev-report.json <invoice.xml>
+
+The diff is emitted to stdout as its OWN versioned document
+(schema ``einvoice-conformance-diff/v1`` — a distinct shape from the plain
+report above, so the base report_version stays ``1``; the diff document carries
+its own ``report_version``). It reuses ``einvoice.validate`` verbatim and adds
+NO rule logic — it only set-diffs the two projections. The document carries:
+
+    schema, report_version   the diff schema id + its version
+    mode                     the literal "diff"
+    source                   the current invoice path
+    baseline / baseline_source  the baseline file path, and the ``source``
+                             recorded inside the baseline report
+    new_violations           records present NOW but absent in the baseline
+    resolved_violations      records present in the baseline but absent NOW
+    new_count / resolved_count / unchanged_count
+    new_fatal_count          NEW violations whose severity is 'fatal'
+    baseline_fatal_count / current_fatal_count
+
+Diff-mode exit-code contract (deliberately more lenient than plain mode — a
+pre-existing failure does NOT break the build, only a regression does):
+
+    0   ZERO new fatal violations (pre-existing fatals are tolerated)
+    1   at least one NEW fatal violation appeared — a regression (EXIT_FAIL)
+    3   the current invoice is not well-formed XML (EXIT_PARSE), folded into
+        the diff document with an ``error`` field, as in plain mode
+
+A malformed / unreadable / wrong-shape baseline file is reported with a clear
+stderr message and a nonzero exit — never a traceback.
+
 Standard library only. No network.
 """
 
@@ -31,6 +72,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections import Counter
 from xml.sax.saxutils import escape, quoteattr
 
 from .validate import validate_file, PROFILES, _severity
@@ -42,6 +84,13 @@ REPORT_VERSION = 1
 #: Short, stable identifier for this report schema. Consumers should match on
 #: this string (not on ``report_version`` alone) to be robust across tools.
 REPORT_SCHEMA_ID = "einvoice-conformance-report/v1"
+
+#: The ``--baseline`` diff document is a SEPARATE, independently versioned shape
+#: (it is not the plain report), so adding it leaves ``REPORT_VERSION`` at 1.
+#: The "appropriate bump" for the new capability is this dedicated version
+#: namespace: the diff document starts at v1 and moves on its own cadence.
+REPORT_DIFF_VERSION = 1
+REPORT_DIFF_SCHEMA_ID = "einvoice-conformance-diff/v1"
 
 #: Exit codes — kept in lock-step with ``einvoice.cli`` (imported-by-value so a
 #: drift there is caught by tests, not silently duplicated).
@@ -147,6 +196,189 @@ def build_report(path, profile="xrechnung"):
     }
 
 
+#: The stable diff key for a violation record: two records are "the same"
+#: violation iff these four fields match. Documented in REPORT-SCHEMA.md.
+DIFF_KEY = ("rule", "field", "message", "severity")
+
+
+def _diff_key(rec):
+    """The stable identity tuple used to match a violation across reports."""
+    return tuple(rec.get(k) for k in DIFF_KEY)
+
+
+class BaselineError(Exception):
+    """A baseline report file could not be read or is the wrong shape."""
+
+
+def load_baseline(baseline_path):
+    """Load + shape-check a prior report JSON produced by ``--format json``.
+
+    Reads a report that carries a ``violations`` array of
+    ``{rule, field, severity, message}`` records (schema
+    ``einvoice-conformance-report/v1``). Raises :class:`BaselineError` — with a
+    human message, never a traceback — on any I/O error, non-JSON content, or a
+    document that is not a report object with a ``violations`` list.
+    """
+    try:
+        with open(baseline_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except OSError as exc:
+        raise BaselineError("cannot read baseline %s: %s"
+                            % (baseline_path, exc.strerror or exc))
+    except ValueError as exc:
+        raise BaselineError("baseline %s is not valid JSON: %s"
+                            % (baseline_path, exc))
+    if not isinstance(data, dict):
+        raise BaselineError("baseline %s is not a report object" % baseline_path)
+    violations = data.get("violations")
+    if not isinstance(violations, list):
+        raise BaselineError(
+            "baseline %s has no 'violations' array (not a conformance report?)"
+            % baseline_path)
+    for rec in violations:
+        if not isinstance(rec, dict):
+            raise BaselineError(
+                "baseline %s has a malformed violation record" % baseline_path)
+    return data
+
+
+def _multiset_diff(current_records, baseline_records):
+    """Multiset diff of two violation-record lists by :data:`DIFF_KEY`.
+
+    Returns ``(new_records, resolved_records, unchanged_count)``:
+      * ``new`` — current records with no (remaining) baseline match;
+      * ``resolved`` — baseline records with no (remaining) current match;
+      * ``unchanged_count`` — records present in both (with multiplicity).
+
+    Multiplicity is respected: if the same violation appears twice now and once
+    in the baseline, one copy is 'new' and one is 'unchanged'.
+    """
+    baseline_pool = Counter(_diff_key(r) for r in baseline_records)
+    new = []
+    unchanged = 0
+    for rec in current_records:
+        k = _diff_key(rec)
+        if baseline_pool[k] > 0:
+            baseline_pool[k] -= 1
+            unchanged += 1
+        else:
+            new.append(rec)
+
+    current_pool = Counter(_diff_key(r) for r in current_records)
+    resolved = []
+    for rec in baseline_records:
+        k = _diff_key(rec)
+        if current_pool[k] > 0:
+            current_pool[k] -= 1
+        else:
+            resolved.append(rec)
+    return new, resolved, unchanged
+
+
+def build_diff(path, baseline, profile="xrechnung", baseline_path=None):
+    """Validate ``path`` and diff it against a loaded ``baseline`` report dict.
+
+    Reuses :func:`build_report` (hence :func:`einvoice.validate.validate_file`)
+    for ALL rule evaluation — this function adds no rule logic, it only set-
+    diffs the two violation projections by :data:`DIFF_KEY`. A not-well-formed
+    current invoice is folded into the diff document with an ``error`` field
+    (mirroring :func:`build_report`) instead of raising.
+
+    :param path: path to the current invoice XML file.
+    :param baseline: a baseline report dict (from :func:`load_baseline`).
+    :param profile: 'xrechnung' (default) or 'en16931'.
+    :param baseline_path: the baseline file path, recorded for provenance.
+    :returns: a diff dict matching :data:`REPORT_DIFF_SCHEMA`.
+    """
+    current = build_report(path, profile=profile)
+    baseline_violations = baseline.get("violations", [])
+    baseline_source = baseline.get("source")
+    baseline_fatal = sum(1 for r in baseline_violations
+                         if isinstance(r, dict) and r.get("severity") == "fatal")
+
+    head = {
+        "report_version": REPORT_DIFF_VERSION,
+        "schema": REPORT_DIFF_SCHEMA_ID,
+        "mode": "diff",
+        "source": path,
+        "baseline": baseline_path,
+        "baseline_source": baseline_source,
+        "profile": profile,
+    }
+
+    if current.get("error"):
+        # Not-well-formed current invoice: no meaningful diff; report the error.
+        head.update({
+            "error": current["error"],
+            "message": current.get("message", ""),
+            "new_violations": [],
+            "resolved_violations": [],
+            "new_count": 0,
+            "resolved_count": 0,
+            "unchanged_count": 0,
+            "new_fatal_count": 0,
+            "baseline_fatal_count": baseline_fatal,
+            "current_fatal_count": 0,
+        })
+        return head
+
+    new, resolved, unchanged = _multiset_diff(
+        current["violations"], baseline_violations)
+    new_fatal = sum(1 for r in new if r.get("severity") == "fatal")
+
+    head.update({
+        "new_violations": new,
+        "resolved_violations": resolved,
+        "new_count": len(new),
+        "resolved_count": len(resolved),
+        "unchanged_count": unchanged,
+        "new_fatal_count": new_fatal,
+        "baseline_fatal_count": baseline_fatal,
+        "current_fatal_count": current["fatal_count"],
+    })
+    return head
+
+
+#: Documentation of the versioned diff-document shape (companion to
+#: REPORT-SCHEMA.md). The diff is emitted by ``--baseline`` mode.
+REPORT_DIFF_SCHEMA = {
+    "schema": REPORT_DIFF_SCHEMA_ID,
+    "report_version": REPORT_DIFF_VERSION,
+    "description": (
+        "Baseline diff of two conformance reports. Fails the build (exit 1) "
+        "only on a NEW fatal violation vs the baseline; pre-existing fatals "
+        "are tolerated (exit 0). Reuses einvoice.validate; no rule logic."
+    ),
+    "fields": {
+        "report_version": "int; the diff document's own version (starts at 1).",
+        "schema": "stable diff schema id ('%s')." % REPORT_DIFF_SCHEMA_ID,
+        "mode": "the literal string 'diff'.",
+        "source": "the current invoice path that was validated.",
+        "baseline": "the --baseline file path supplied on the CLI (or null).",
+        "baseline_source": "the 'source' field recorded inside the baseline.",
+        "profile": "validation profile used: 'en16931' or 'xrechnung'.",
+        "new_violations": "records present NOW but absent in the baseline "
+                          "(matched by rule+field+message+severity).",
+        "resolved_violations": "records present in the baseline but absent NOW.",
+        "new_count": "int — len(new_violations).",
+        "resolved_count": "int — len(resolved_violations).",
+        "unchanged_count": "int — violations present in both (with multiplicity).",
+        "new_fatal_count": "int — new_violations whose severity is 'fatal'. "
+                           "Drives the diff exit code.",
+        "baseline_fatal_count": "int — fatal violations in the baseline.",
+        "current_fatal_count": "int — fatal violations in the current invoice.",
+        "error": "present ONLY when the current invoice is not well-formed XML: "
+                 "code 'not-well-formed'; the diff lists are then empty.",
+        "message": "present ONLY alongside 'error': the parser's human message.",
+    },
+    "exit_codes": {
+        "0": "zero new fatal violations vs baseline (pre-existing fatals ok).",
+        "1": "at least one NEW fatal violation (a regression).",
+        "3": "current input not well-formed XML (diff has error).",
+    },
+}
+
+
 #: Name carried by the top-level <testsuites> element (stable, not the schema).
 JUNIT_SUITES_NAME = "einvoice-conformance"
 
@@ -232,7 +464,10 @@ def build_junit(report):
 
 USAGE = ("usage: python3 -m einvoice.report "
          "[--profile en16931|xrechnung] [--format json|junit] [--pretty] "
-         "<invoice.xml>")
+         "[--baseline <prev-report.json>] <invoice.xml>\n"
+         "  --baseline diffs against a prior JSON report and fails (exit 1) "
+         "ONLY on a NEW fatal violation; pre-existing fatals are tolerated "
+         "(exit 0). See REPORT-SCHEMA.md.")
 
 
 def main(argv=None):
@@ -248,6 +483,7 @@ def main(argv=None):
 
     profile = "xrechnung"
     fmt = "json"
+    baseline_path = None
     rest = []
     i = 0
     while i < len(args):
@@ -261,6 +497,17 @@ def main(argv=None):
             continue
         if a.startswith("--profile="):
             profile = a.split("=", 1)[1]
+            i += 1
+            continue
+        if a == "--baseline":
+            if i + 1 >= len(args):
+                sys.stderr.write("error: --baseline needs a value\n" + USAGE + "\n")
+                return EXIT_FAIL
+            baseline_path = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--baseline="):
+            baseline_path = a.split("=", 1)[1]
             i += 1
             continue
         if a == "--format":
@@ -288,6 +535,12 @@ def main(argv=None):
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_FAIL
 
+    if baseline_path is not None and fmt == "junit":
+        sys.stderr.write(
+            "error: --baseline emits a diff document and is not compatible "
+            "with --format junit\n%s\n" % USAGE)
+        return EXIT_FAIL
+
     if len(args) != 1:
         sys.stderr.write(USAGE + "\n")
         return EXIT_FAIL
@@ -296,6 +549,25 @@ def main(argv=None):
     if not os.path.isfile(path):
         sys.stderr.write("error: no such file: %s\n" % path)
         return EXIT_FAIL
+
+    # --------------------------------------------------------------------- #
+    # Baseline diff mode: fail only on a NEW fatal violation vs the baseline.
+    # --------------------------------------------------------------------- #
+    if baseline_path is not None:
+        try:
+            baseline = load_baseline(baseline_path)
+        except BaselineError as exc:
+            sys.stderr.write("error: %s\n" % exc)
+            return EXIT_FAIL
+        diff = build_diff(path, baseline, profile=profile,
+                          baseline_path=baseline_path)
+        if pretty:
+            sys.stdout.write(json.dumps(diff, indent=2, sort_keys=True) + "\n")
+        else:
+            sys.stdout.write(json.dumps(diff, separators=(",", ":")) + "\n")
+        if diff.get("error") == "not-well-formed":
+            return EXIT_PARSE
+        return EXIT_OK if diff["new_fatal_count"] == 0 else EXIT_FAIL
 
     report = build_report(path, profile=profile)
     if fmt == "junit":

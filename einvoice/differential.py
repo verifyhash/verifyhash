@@ -82,6 +82,10 @@ XR_OFFICIAL_XSLT = os.path.join(
 CII_OFFICIAL_XSLT = os.path.join(
     HERE, "corpus", "cen-en16931", "cii", "xslt", "EN16931-CII-validation.xslt"
 )
+XR_CII_OFFICIAL_XSLT = os.path.join(
+    HERE, "corpus", "xrechnung-schematron", "schematron", "cii",
+    "XRechnung-CII-validation.xsl"
+)
 
 # Namespaces.
 NS_SVRL = "http://purl.oclc.org/dsdl/svrl"
@@ -114,6 +118,50 @@ assert len(OUR_RULE_IDS) == 151, OUR_RULE_IDS
 XR_RULE_IDS = [fn.rule_id for fn in _rules_xr.ALL_RULES]
 XR_RULE_SET = set(XR_RULE_IDS)
 assert len(XR_RULE_IDS) == 46, XR_RULE_IDS
+
+# XRechnung national CIUS layer in CII syntax — the BR-DE-* rules evaluated over
+# the CII normalized model (rules_xrechnung.CII_DE_RULES), graded against the
+# official KoSIT XRechnung-CII Schematron. Admitted set is the subset of the
+# BR-DE layer whose guarded fact the model carries AND that reaches EXACT parity
+# on the differential corpus.
+CII_XR_RULE_IDS = [fn.rule_id for fn in _rules_xr.CII_DE_RULES]
+CII_XR_RULE_SET = set(CII_XR_RULE_IDS)
+assert len(CII_XR_RULE_IDS) == len(CII_XR_RULE_SET), CII_XR_RULE_IDS
+assert CII_XR_RULE_SET <= XR_RULE_SET, (
+    "CII BR-DE set names rules not in the UBL BR-DE layer: %s"
+    % sorted(CII_XR_RULE_SET - XR_RULE_SET))
+
+# EXCLUDED from the CII-graded BR-DE set (kept out on purpose, not overlooked).
+# These BR-DE / BR-DEX rules ARE present in the official XRechnung-CII Schematron
+# but bind CII document parts the syntax-agnostic EN 16931 core model deliberately
+# does not carry, so they cannot be evaluated over the normalized model without
+# adding a whole CII-payment / attachment / extension surface. Rather than
+# approximate a national rule (forbidden), they are excluded with the reason and
+# remain fully graded on the UBL XRechnung leg (LEG 2):
+#
+#  * BR-DE-18 (Skonto grammar in BT-20): the CII test tokenizes
+#    ram:SpecifiedTradePaymentTerms/ram:Description[1] and matches the KoSIT
+#    #SKONTO#…# regex — a free-text payment-terms structure the core model omits.
+#  * BR-DE-19 / BR-DE-20 (BT-84 / BT-91 IBAN mod-97): keyed on
+#    SpecifiedTradeSettlementPaymentMeans[ram:TypeCode='58'|'59'] IBANID — the CII
+#    payment-means node set and IBAN digits are not in the core model.
+#  * BR-DE-22 (unique EmbeddedDocumentBinaryObject filenames): keyed on every
+#    ram:AdditionalReferencedDocument/ram:AttachmentBinaryObject/@filename.
+#  * BR-DE-23-a/-b, BR-DE-24-a/-b, BR-DE-25-a/-b (payment-means type-code groups):
+#    keyed on SpecifiedTradeSettlementPaymentMeans[ram:TypeCode] and its
+#    Creditor/Debtor financial-account / card / mandate children.
+#  * BR-DE-30 / BR-DE-31 (BT-90 / BT-91 with DIRECT DEBIT BG-19): the CII binding
+#    reconstructs BG-19 semantically from DirectDebitMandateID / CreditorReferenceID
+#    / PayerPartyDebtorFinancialAccount IBANID presence — none in the core model.
+#  * BR-DEX-01/04/05/06/07/08/15 and BR-DE-CVD-* (extension / clean-vehicle
+#    profiles): out of the CIUS scope of this leg (as on the UBL side).
+CII_XR_EXCLUDED_RULE_IDS = (
+    "BR-DE-18", "BR-DE-19", "BR-DE-20", "BR-DE-22",
+    "BR-DE-23-a", "BR-DE-23-b", "BR-DE-24-a", "BR-DE-24-b",
+    "BR-DE-25-a", "BR-DE-25-b", "BR-DE-30", "BR-DE-31",
+)
+assert not (CII_XR_RULE_SET & set(CII_XR_EXCLUDED_RULE_IDS)), (
+    "a CII-excluded BR-DE rule is also in the graded set")
 
 
 # --------------------------------------------------------------------------- #
@@ -278,6 +326,14 @@ def xr_our_fired(invoice_path: str) -> set:
     official SVRL reports warning/information failed-asserts the same way)."""
     root = parse_file(invoice_path)
     return {v.rule_id for v in _rules_xr.evaluate(root)}
+
+
+def xr_cii_our_fired(invoice_path: str) -> set:
+    """Fired BR-DE-* ids of OUR XRechnung national layer evaluated over the CII
+    normalized model — the admitted CII_DE_RULES run over
+    einvoice.parser_cii.build_model, mirroring how the core rules run over CII."""
+    inv = _parser_cii.parse(invoice_path)
+    return {v.rule_id for v in _rules_xr.evaluate_cii(inv)}
 
 
 # --------------------------------------------------------------------------- #
@@ -1874,6 +1930,245 @@ def build_cii_corpus(scratch: str):
     return uniq
 
 
+# --------------------------------------------------------------------------- #
+# XRechnung-CII (BR-DE-*) corpus + targeted mutations.                          #
+#                                                                              #
+# Corpus = the CEN CII examples + every real German XRechnung CII invoice in the #
+# xrechnung-testsuite (the *_uncefact.xml CrossIndustryInvoice files — the       #
+# adversarial real-world sample) + one generated mutation per admitted BR-DE     #
+# rule, each breaking exactly the CII field that rule guards, off a known-clean   #
+# XRechnung-CII base (01.02a: a standard CIUS invoice that fires NO admitted      #
+# BR-DE rule on the official XSLT). Every mutation exercises its rule in the      #
+# FAILING direction on both engines.                                            #
+# --------------------------------------------------------------------------- #
+_XR_CII_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
+                            "business-cases", "standard",
+                            "01.02a-INVOICE_uncefact.xml")
+
+
+def _cii_agreement(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeAgreement", _NSC)
+
+
+def _cii_delivery(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeDelivery", _NSC)
+
+
+def _cii_seller_contact(r):
+    return _cii_seller(r).find("ram:DefinedTradeContact", _NSC)
+
+
+def _cii_add_shipto_address(r, city=None, zone=None):
+    """Add a DELIVER TO ADDRESS (BG-15): a ShipToTradeParty with a
+    PostalTradeAddress carrying only the given fields."""
+    delivery = _cii_delivery(r)
+    shipto = ET.Element(_cq(NS_RAM, "ShipToTradeParty"))
+    _sub_el(shipto, NS_RAM, "Name", "[Deliver to name]")
+    addr = _sub_el(shipto, NS_RAM, "PostalTradeAddress")
+    if zone:
+        _sub_el(addr, NS_RAM, "PostcodeCode", zone)
+    if city:
+        _sub_el(addr, NS_RAM, "CityName", city)
+    _sub_el(addr, NS_RAM, "CountryID", "DE")
+    delivery.insert(0, shipto)
+
+
+def _xrcmut_de1(r):
+    settle = _cii_settlement(r)
+    for pm in settle.findall("ram:SpecifiedTradeSettlementPaymentMeans", _NSC):
+        settle.remove(pm)
+
+
+def _xrcmut_de2(r):
+    seller = _cii_seller(r)
+    for c in seller.findall("ram:DefinedTradeContact", _NSC):
+        seller.remove(c)
+
+
+def _xrcmut_de3(r):
+    a = _cii_seller(r).find("ram:PostalTradeAddress", _NSC)
+    _cii_remove(r, a.find("ram:CityName", _NSC))
+
+
+def _xrcmut_de4(r):
+    a = _cii_seller(r).find("ram:PostalTradeAddress", _NSC)
+    _cii_remove(r, a.find("ram:PostcodeCode", _NSC))
+
+
+def _xrcmut_de5(r):
+    # Empty the contact point (PersonName + DepartmentName) -> BR-DE-5; tel/email
+    # stay so BR-DE-6/7 hold.
+    c = _cii_seller_contact(r)
+    for local in ("PersonName", "DepartmentName"):
+        _cii_remove(r, c.find("ram:%s" % local, _NSC))
+
+
+def _xrcmut_de6(r):
+    # Remove the telephone -> BR-DE-6 AND BR-DE-27 (absent -> '' has no 3 digits).
+    c = _cii_seller_contact(r)
+    _cii_remove(r, c.find("ram:TelephoneUniversalCommunication", _NSC))
+
+
+def _xrcmut_de7(r):
+    # Remove the email -> BR-DE-7 AND BR-DE-28 (absent -> '' is not an address).
+    c = _cii_seller_contact(r)
+    _cii_remove(r, c.find("ram:EmailURIUniversalCommunication", _NSC))
+
+
+def _xrcmut_de8(r):
+    a = _cii_buyer(r).find("ram:PostalTradeAddress", _NSC)
+    _cii_remove(r, a.find("ram:CityName", _NSC))
+
+
+def _xrcmut_de9(r):
+    a = _cii_buyer(r).find("ram:PostalTradeAddress", _NSC)
+    _cii_remove(r, a.find("ram:PostcodeCode", _NSC))
+
+
+def _xrcmut_de10(r):
+    _cii_add_shipto_address(r, zone="12345")   # city missing -> BR-DE-10
+
+
+def _xrcmut_de11(r):
+    _cii_add_shipto_address(r, city="Bremen")  # zone missing -> BR-DE-11
+
+
+def _xrcmut_de14(r):
+    _cii_remove(r, _cii_first_breakdown(r).find(
+        "ram:RateApplicablePercent", _NSC))
+
+
+def _xrcmut_de15(r):
+    _cii_remove(r, _cii_agreement(r).find("ram:BuyerReference", _NSC))
+
+
+def _xrcmut_de16(r):
+    # Remove the Seller tax registration (VA id); no tax representative in the
+    # base and the line is S-rated -> BR-DE-16 fires.
+    seller = _cii_seller(r)
+    for tr in seller.findall("ram:SpecifiedTaxRegistration", _NSC):
+        seller.remove(tr)
+
+
+def _xrcmut_de17(r):
+    # UNTDID-valid but not XRechnung-allowed type code -> BR-DE-17 (warning).
+    r.find("rsm:ExchangedDocument/ram:TypeCode", _NSC).text = "71"
+
+
+def _xrcmut_de21(r):
+    r.find("rsm:ExchangedDocumentContext/"
+           "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID",
+           _NSC).text = "urn:cen.eu:en16931:2017"
+
+
+def _xrcmut_de26(r):
+    # Type code 384 (Corrected) with no InvoiceReferencedDocument -> BR-DE-26
+    # (384 is XRechnung-allowed, so BR-DE-17 stays clear).
+    r.find("rsm:ExchangedDocument/ram:TypeCode", _NSC).text = "384"
+
+
+def _xrcmut_de27(r):
+    # Telephone present but with fewer than three digits -> BR-DE-27 (BR-DE-6 holds).
+    _cii_seller_contact(r).find(
+        "ram:TelephoneUniversalCommunication/ram:CompleteNumber",
+        _NSC).text = "kein"
+
+
+def _xrcmut_de28(r):
+    # Email present but without an '@' -> BR-DE-28 (BR-DE-7 holds).
+    _cii_seller_contact(r).find(
+        "ram:EmailURIUniversalCommunication/ram:URIID",
+        _NSC).text = "kein-email-hier"
+
+
+def _xrcmut_de_tmp32(r):
+    # Strip every delivery-date / billing-period source -> BR-DE-TMP-32 fires.
+    delivery = _cii_delivery(r)
+    if delivery is not None:
+        _cii_remove(r, delivery.find(
+            "ram:ActualDeliverySupplyChainEvent", _NSC))
+    settle = _cii_settlement(r)
+    _cii_remove(r, settle.find("ram:BillingSpecifiedPeriod", _NSC))
+    for ln in r.findall("rsm:SupplyChainTradeTransaction/"
+                        "ram:IncludedSupplyChainTradeLineItem", _NSC):
+        _cii_remove(r, ln.find(
+            "ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod", _NSC))
+
+
+_XR_CII_MUTATIONS = {
+    "BR-DE-1": _xrcmut_de1, "BR-DE-2": _xrcmut_de2, "BR-DE-3": _xrcmut_de3,
+    "BR-DE-4": _xrcmut_de4, "BR-DE-5": _xrcmut_de5, "BR-DE-6": _xrcmut_de6,
+    "BR-DE-7": _xrcmut_de7, "BR-DE-8": _xrcmut_de8, "BR-DE-9": _xrcmut_de9,
+    "BR-DE-10": _xrcmut_de10, "BR-DE-11": _xrcmut_de11, "BR-DE-14": _xrcmut_de14,
+    "BR-DE-15": _xrcmut_de15, "BR-DE-16": _xrcmut_de16, "BR-DE-17": _xrcmut_de17,
+    "BR-DE-21": _xrcmut_de21, "BR-DE-26": _xrcmut_de26, "BR-DE-27": _xrcmut_de27,
+    "BR-DE-28": _xrcmut_de28, "BR-DE-TMP-32": _xrcmut_de_tmp32,
+}
+
+
+def _gather_xr_cii_reals():
+    """(label, path) for the CEN CII examples + every real XRechnung CII invoice
+    (*_uncefact.xml) in the xrechnung-testsuite — the adversarial real sample."""
+    out = list(_gather_cii_examples())
+    xr = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test")
+    if os.path.isdir(xr):
+        for dirpath, _dirs, files in os.walk(xr):
+            for name in sorted(files):
+                if not name.lower().endswith("uncefact.xml"):
+                    continue
+                p = os.path.join(dirpath, name)
+                try:
+                    root = ET.parse(p).getroot()
+                except ET.ParseError:
+                    continue
+                if _localname(root.tag) != "CrossIndustryInvoice":
+                    continue
+                out.append(("xr-cii/%s" % os.path.relpath(p, xr), p))
+    return out
+
+
+def _gather_xr_cii_mutations(scratch: str):
+    """One generated CII invoice per admitted BR-DE rule, each breaking that
+    rule's field off the clean XRechnung-CII base."""
+    base_root = ET.parse(_XR_CII_BASE).getroot()
+    dst = os.path.join(scratch, "xr-cii-mutations")
+    os.makedirs(dst, exist_ok=True)
+    out = []
+    for rid in CII_XR_RULE_IDS:
+        mut = _XR_CII_MUTATIONS.get(rid)
+        if mut is None:
+            continue
+        root = copy.deepcopy(base_root)
+        try:
+            mut(root)
+        except Exception as e:  # pragma: no cover
+            print("  [XR-CII mutation %s FAILED to build: %s]" % (rid, e),
+                  file=sys.stderr)
+            continue
+        out_path = os.path.join(dst, "xrcmut_%s.xml" % rid.replace("-", "_"))
+        _write_cii_doc(root, out_path)
+        out.append(("XRCIIMUT/%s" % rid, out_path))
+    return out
+
+
+def build_xr_cii_corpus(scratch: str):
+    """Corpus for the XRechnung-CII leg: CEN CII examples + real XRechnung CII
+    invoices + one BR-DE mutation per admitted rule."""
+    entries = []
+    entries += _gather_xr_cii_reals()
+    entries += _gather_xr_cii_mutations(scratch)
+    seen, uniq = set(), []
+    for label, path in entries:
+        key = os.path.abspath(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append((label, path))
+    return uniq
+
+
 def build_corpus(scratch: str):
     entries = []
     entries += _gather_bare_invoices()
@@ -2021,7 +2316,7 @@ def _run_leg(title, xslt_path, rule_ids, our_fn, corpus):
     return tot_fp + tot_miss
 
 
-def run_differential(legs=("en", "xrechnung", "cii")):
+def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii")):
     scratch = os.environ.get("DIFF_SCRATCH") or tempfile.mkdtemp(prefix="diffcorpus-")
     os.makedirs(scratch, exist_ok=True)
 
@@ -2055,6 +2350,17 @@ def run_differential(legs=("en", "xrechnung", "cii")):
         divergences += _run_leg("official EN16931-CII Schematron",
                                 CII_OFFICIAL_XSLT, CII_RULE_IDS, cii_our_fired,
                                 corpus)
+    if "xrechnung-cii" in legs:
+        corpus = build_xr_cii_corpus(scratch)
+        print("#" * 82)
+        print("# LEG 4 — XRechnung CIUS in CII syntax (official KoSIT "
+              "XRechnung-CII Schematron)")
+        print("#" * 82)
+        print("Corpus assembled: %d CrossIndustryInvoice documents" % len(corpus))
+        print("  scratch dir: %s" % scratch)
+        divergences += _run_leg("official XRechnung-CII Schematron",
+                                XR_CII_OFFICIAL_XSLT, CII_XR_RULE_IDS,
+                                xr_cii_our_fired, corpus)
     print("OVERALL DIVERGENCES ACROSS LEGS: %d -> %s"
           % (divergences, "OK" if divergences == 0 else "DIVERGED"))
     return 0 if divergences == 0 else 1
@@ -2105,7 +2411,7 @@ def _print_report(invoice_path: str) -> None:
 def main(argv: list) -> int:
     if not argv:
         return run_differential()
-    if len(argv) == 1 and argv[0] in ("en", "xrechnung", "cii"):
+    if len(argv) == 1 and argv[0] in ("en", "xrechnung", "cii", "xrechnung-cii"):
         return run_differential(legs=(argv[0],))
     for s in argv:
         if not os.path.exists(s):

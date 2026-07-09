@@ -357,6 +357,49 @@ CII_SYNTAX_EXCLUDED = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# CII-syntax German-CIUS (BR-DE-*) coverage manifest.                           #
+#                                                                              #
+# The national BR-DE-* layer runs over the CII normalized model                 #
+# (einvoice.parser_cii.build_model) via einvoice.rules_xrechnung.CII_DE_RULES,   #
+# differentially proven equivalent to the official KoSIT XRechnung-CII           #
+# Schematron across the CII corpus (``differential.py xrechnung-cii`` green: 0   #
+# divergences). This manifest records which BR-DE rules reach that CII parity     #
+# (auditable + grep-able) and which are deliberately NOT graded on CII because    #
+# their CII binding needs document structure the EN 16931 core model does not     #
+# carry (payment-means / IBAN / skonto / attachment / extension) — excluded, not  #
+# approximated. The single source of truth is differential.CII_XR_RULE_IDS; the   #
+# assert below guarantees this manifest can never silently drift from it.         #
+_CII_XR_ADMITTED_IDS = (
+    "BR-DE-1", "BR-DE-2", "BR-DE-3", "BR-DE-4", "BR-DE-5", "BR-DE-6", "BR-DE-7",
+    "BR-DE-8", "BR-DE-9", "BR-DE-10", "BR-DE-11", "BR-DE-14", "BR-DE-15",
+    "BR-DE-16", "BR-DE-17", "BR-DE-21", "BR-DE-26", "BR-DE-27", "BR-DE-28",
+    "BR-DE-TMP-32",
+)
+# Descriptions are reused verbatim from the UBL CIUS manifest — the rule SEMANTICS
+# are identical across syntaxes; only the bound syntax differs.
+CII_XRECHNUNG_CIUS_COVERAGE = {
+    rid: XRECHNUNG_CIUS_COVERAGE[rid] for rid in _CII_XR_ADMITTED_IDS
+}
+CII_XRECHNUNG_CIUS_EXCLUDED = {
+    "BR-DE-18": "Skonto grammar in BT-20 (free-text payment-terms structure not "
+                "in the core model)",
+    "BR-DE-19": "BT-84 IBAN mod-97 (SEPA credit-transfer payment-means detail)",
+    "BR-DE-20": "BT-91 IBAN mod-97 (SEPA direct-debit payment-means detail)",
+    "BR-DE-22": "EmbeddedDocumentBinaryObject filename uniqueness (attachment "
+                "surface not in the core model)",
+    "BR-DE-23-a": "payment-means type-code 30/58 requires CREDIT TRANSFER",
+    "BR-DE-23-b": "payment-means type-code 30/58 forbids card / direct debit",
+    "BR-DE-24-a": "payment-means type-code 48/54/55 requires PAYMENT CARD",
+    "BR-DE-24-b": "payment-means type-code 48/54/55 forbids transfer / debit",
+    "BR-DE-25-a": "payment-means type-code 59 requires DIRECT DEBIT",
+    "BR-DE-25-b": "payment-means type-code 59 forbids transfer / card",
+    "BR-DE-30": "Bank assigned creditor id (BT-90) with BG-19 (semantic BG-19 "
+                "reconstruction not in the core model)",
+    "BR-DE-31": "Debited account id (BT-91) with BG-19 (same)",
+}
+
+
 def _all_asserted_rule_ids():
     """Every rule id the validator can actually emit — both the direct
     ``Violation("ID", …)`` calls (the ``IMPLEMENTED`` set) and the ids raised
@@ -404,6 +447,22 @@ try:
         "differential.CII_EXCLUDED_RULE_IDS — manifest-only: %s ; code-only: %s"
         % (sorted(CII_SYNTAX_EXCLUDED.keys() - _CII_EXCLUDED),
            sorted(_CII_EXCLUDED - CII_SYNTAX_EXCLUDED.keys())))
+    _CII_XR_GRADED = set(_differential.CII_XR_RULE_IDS)
+    _CII_XR_EXCLUDED = set(_differential.CII_XR_EXCLUDED_RULE_IDS)
+    assert CII_XRECHNUNG_CIUS_COVERAGE.keys() == _CII_XR_GRADED, (
+        "CII BR-DE coverage manifest drifted from differential.CII_XR_RULE_IDS "
+        "— manifest-only: %s ; graded-only: %s"
+        % (sorted(CII_XRECHNUNG_CIUS_COVERAGE.keys() - _CII_XR_GRADED),
+           sorted(_CII_XR_GRADED - CII_XRECHNUNG_CIUS_COVERAGE.keys())))
+    assert CII_XRECHNUNG_CIUS_EXCLUDED.keys() == _CII_XR_EXCLUDED, (
+        "CII BR-DE excluded manifest drifted from "
+        "differential.CII_XR_EXCLUDED_RULE_IDS — manifest-only: %s ; code-only: %s"
+        % (sorted(CII_XRECHNUNG_CIUS_EXCLUDED.keys() - _CII_XR_EXCLUDED),
+           sorted(_CII_XR_EXCLUDED - CII_XRECHNUNG_CIUS_EXCLUDED.keys())))
+    # Admitted CII BR-DE set must be a subset of the implemented UBL BR-DE set.
+    assert CII_XRECHNUNG_CIUS_COVERAGE.keys() <= _XR_CIUS_IMPLEMENTED, (
+        "CII BR-DE coverage names rules not implemented in rules_xrechnung.py: %s"
+        % sorted(CII_XRECHNUNG_CIUS_COVERAGE.keys() - _XR_CIUS_IMPLEMENTED))
 except ImportError:  # pragma: no cover - differential harness always co-located
     pass
 
@@ -660,6 +719,17 @@ def main():
     for rid in sorted(CII_SYNTAX_EXCLUDED):
         out("     %-11s %s\n" % (rid, CII_SYNTAX_EXCLUDED[rid]))
     out("\n")
+    out("  CII-syntax German CIUS (BR-DE-*) rules covered (%d), the SAME national\n"
+        "  rules run over the CII model, differentially proven vs the official\n"
+        "  KoSIT XRechnung-CII Schematron (differential.py xrechnung-cii green):\n"
+        % len(CII_XRECHNUNG_CIUS_COVERAGE))
+    for rid in sorted(CII_XRECHNUNG_CIUS_COVERAGE):
+        out("     %-13s %s\n" % (rid, CII_XRECHNUNG_CIUS_COVERAGE[rid]))
+    out("  not graded on CII (CII binding needs payment-means / IBAN / skonto /\n"
+        "  attachment structure the core model omits; excluded, not approximated):\n")
+    for rid in sorted(CII_XRECHNUNG_CIUS_EXCLUDED):
+        out("     %-13s %s\n" % (rid, CII_XRECHNUNG_CIUS_EXCLUDED[rid]))
+    out("\n")
 
     # Per valid vector
     out("-- VALID vectors (must exit 0) " + "-" * 38 + "\n")
@@ -692,6 +762,8 @@ def main():
         % len(CALCULATION_ROUNDING_COVERAGE))
     out("  CII-syntax core rules covered ...... %d  (%d excluded, documented)\n"
         % (len(CII_SYNTAX_COVERAGE), len(CII_SYNTAX_EXCLUDED)))
+    out("  CII-syntax BR-DE rules covered ..... %d  (%d excluded, documented)\n"
+        % (len(CII_XRECHNUNG_CIUS_COVERAGE), len(CII_XRECHNUNG_CIUS_EXCLUDED)))
     out("\n")
     out("  VALID-vector pass rate ............. %d/%d   %s\n"
         % (valid_pass, valid_total, pct(valid_pass, valid_total)))

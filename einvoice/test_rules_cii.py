@@ -24,10 +24,18 @@ import xml.etree.ElementTree as ET
 
 from einvoice import parser_cii
 from einvoice import rules
+from einvoice import rules_xrechnung
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CII_DIR = os.path.join(HERE, "corpus", "cen-en16931", "cii", "examples")
 GOOD = os.path.join(CII_DIR, "CII_example1.xml")
+
+# A clean German XRechnung invoice in CII syntax: fires NONE of the admitted
+# BR-DE-* rules on the official KoSIT XRechnung-CII Schematron (verified by
+# differential.py xrechnung-cii). Used as the mutation base for the BR-DE tests.
+XR_CII_GOOD = os.path.join(
+    HERE, "corpus", "xrechnung-testsuite", "src", "test", "business-cases",
+    "standard", "01.02a-INVOICE_uncefact.xml")
 
 NS = parser_cii.NS
 NSR = parser_cii.NS_RSM
@@ -200,6 +208,219 @@ class TestKnownBadCIIInvoices(unittest.TestCase):
                 "ram:SpecifiedTradeSettlementLineMonetarySummation/"
                 "ram:LineTotalAmount", NS).text = "625743.549"
         self.assert_fires(m, "BR-DEC-23")
+
+
+def _de_fired(root):
+    """Admitted CII BR-DE ids that rules_xrechnung.evaluate_cii fires on a CII root."""
+    inv = parser_cii.build_model(root)
+    return {v.rule_id for v in rules_xrechnung.evaluate_cii(inv)}
+
+
+def _xr_good_root():
+    return ET.parse(XR_CII_GOOD).getroot()
+
+
+def _agreement(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeAgreement", NS)
+
+
+def _settlement_x(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeSettlement", NS)
+
+
+def _delivery_x(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeDelivery", NS)
+
+
+def _seller_x(r):
+    return _agreement(r).find("ram:SellerTradeParty", NS)
+
+
+def _seller_contact_x(r):
+    return _seller_x(r).find("ram:DefinedTradeContact", NS)
+
+
+def _buyer_x(r):
+    return _agreement(r).find("ram:BuyerTradeParty", NS)
+
+
+def _add_shipto(r, city=None, zone=None):
+    shipto = ET.SubElement(_delivery_x(r), _q(NSA, "ShipToTradeParty"))
+    ET.SubElement(shipto, _q(NSA, "Name")).text = "[Deliver to]"
+    addr = ET.SubElement(shipto, _q(NSA, "PostalTradeAddress"))
+    if zone:
+        ET.SubElement(addr, _q(NSA, "PostcodeCode")).text = zone
+    if city:
+        ET.SubElement(addr, _q(NSA, "CityName")).text = city
+    ET.SubElement(addr, _q(NSA, "CountryID")).text = "DE"
+
+
+class TestKnownGoodCIIXRechnungInvoice(unittest.TestCase):
+    """The clean XRechnung CII invoice must fire NONE of the admitted BR-DE rules."""
+
+    def test_no_br_de_fires_on_clean_invoice(self):
+        fired = _de_fired(_xr_good_root())
+        self.assertEqual(
+            fired, set(),
+            "clean XRechnung CII invoice unexpectedly fired BR-DE rules: %s"
+            % sorted(fired))
+
+    def test_model_exposes_br_de_surface(self):
+        inv = parser_cii.parse(XR_CII_GOOD)
+        self.assertTrue(inv.has_payment_means)             # BR-DE-1
+        self.assertTrue(inv.seller_has_defined_trade_contact)  # BR-DE-2
+        self.assertTrue(inv.seller_vat_or_fc_id_present)   # BR-DE-16
+        self.assertEqual(len(inv.seller_defined_trade_contacts), 1)
+        self.assertTrue(inv.has_actual_delivery_date)      # BR-DE-TMP-32
+
+
+class TestKnownBadCIIXRechnungInvoices(unittest.TestCase):
+    """Each single-field mutation must make exactly the guarded BR-DE rule fire."""
+
+    def assert_fires(self, mutate, rule_id):
+        root = _xr_good_root()
+        mutate(root)
+        fired = _de_fired(root)
+        self.assertIn(
+            rule_id, fired,
+            "expected %s to fire after mutation; fired=%s"
+            % (rule_id, sorted(fired)))
+
+    def test_de1_missing_payment_means(self):
+        def m(r):
+            s = _settlement_x(r)
+            for pm in s.findall("ram:SpecifiedTradeSettlementPaymentMeans", NS):
+                s.remove(pm)
+        self.assert_fires(m, "BR-DE-1")
+
+    def test_de2_missing_seller_contact(self):
+        def m(r):
+            s = _seller_x(r)
+            for c in s.findall("ram:DefinedTradeContact", NS):
+                s.remove(c)
+        self.assert_fires(m, "BR-DE-2")
+
+    def test_de3_missing_seller_city(self):
+        def m(r):
+            a = _seller_x(r).find("ram:PostalTradeAddress", NS)
+            _remove(r, a.find("ram:CityName", NS))
+        self.assert_fires(m, "BR-DE-3")
+
+    def test_de4_missing_seller_postcode(self):
+        def m(r):
+            a = _seller_x(r).find("ram:PostalTradeAddress", NS)
+            _remove(r, a.find("ram:PostcodeCode", NS))
+        self.assert_fires(m, "BR-DE-4")
+
+    def test_de5_missing_contact_point(self):
+        def m(r):
+            c = _seller_contact_x(r)
+            for local in ("PersonName", "DepartmentName"):
+                el = c.find("ram:%s" % local, NS)
+                if el is not None:
+                    _remove(r, el)
+        self.assert_fires(m, "BR-DE-5")
+
+    def test_de6_missing_contact_telephone(self):
+        def m(r):
+            c = _seller_contact_x(r)
+            _remove(r, c.find("ram:TelephoneUniversalCommunication", NS))
+        self.assert_fires(m, "BR-DE-6")
+
+    def test_de7_missing_contact_email(self):
+        def m(r):
+            c = _seller_contact_x(r)
+            _remove(r, c.find("ram:EmailURIUniversalCommunication", NS))
+        self.assert_fires(m, "BR-DE-7")
+
+    def test_de8_missing_buyer_city(self):
+        def m(r):
+            a = _buyer_x(r).find("ram:PostalTradeAddress", NS)
+            _remove(r, a.find("ram:CityName", NS))
+        self.assert_fires(m, "BR-DE-8")
+
+    def test_de9_missing_buyer_postcode(self):
+        def m(r):
+            a = _buyer_x(r).find("ram:PostalTradeAddress", NS)
+            _remove(r, a.find("ram:PostcodeCode", NS))
+        self.assert_fires(m, "BR-DE-9")
+
+    def test_de10_shipto_missing_city(self):
+        self.assert_fires(lambda r: _add_shipto(r, zone="12345"), "BR-DE-10")
+
+    def test_de11_shipto_missing_postcode(self):
+        self.assert_fires(lambda r: _add_shipto(r, city="Bremen"), "BR-DE-11")
+
+    def test_de14_missing_breakdown_rate(self):
+        def m(r):
+            bd = _settlement_x(r).find("ram:ApplicableTradeTax", NS)
+            _remove(r, bd.find("ram:RateApplicablePercent", NS))
+        self.assert_fires(m, "BR-DE-14")
+
+    def test_de15_missing_buyer_reference(self):
+        def m(r):
+            _remove(r, _agreement(r).find("ram:BuyerReference", NS))
+        self.assert_fires(m, "BR-DE-15")
+
+    def test_de16_missing_seller_vat_id(self):
+        def m(r):
+            s = _seller_x(r)
+            for tr in s.findall("ram:SpecifiedTaxRegistration", NS):
+                s.remove(tr)
+        self.assert_fires(m, "BR-DE-16")
+
+    def test_de17_bad_type_code(self):
+        def m(r):
+            r.find("rsm:ExchangedDocument/ram:TypeCode", NS).text = "71"
+        self.assert_fires(m, "BR-DE-17")
+
+    def test_de21_bad_customization_id(self):
+        def m(r):
+            r.find("rsm:ExchangedDocumentContext/"
+                   "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID",
+                   NS).text = "urn:cen.eu:en16931:2017"
+        self.assert_fires(m, "BR-DE-21")
+
+    def test_de26_corrected_without_reference(self):
+        def m(r):
+            r.find("rsm:ExchangedDocument/ram:TypeCode", NS).text = "384"
+        self.assert_fires(m, "BR-DE-26")
+
+    def test_de27_short_telephone(self):
+        def m(r):
+            _seller_contact_x(r).find(
+                "ram:TelephoneUniversalCommunication/ram:CompleteNumber",
+                NS).text = "kein"
+        self.assert_fires(m, "BR-DE-27")
+
+    def test_de28_malformed_email(self):
+        def m(r):
+            _seller_contact_x(r).find(
+                "ram:EmailURIUniversalCommunication/ram:URIID",
+                NS).text = "kein-email-hier"
+        self.assert_fires(m, "BR-DE-28")
+
+    def test_de_tmp32_missing_delivery_date(self):
+        def m(r):
+            d = _delivery_x(r)
+            if d is not None:
+                el = d.find("ram:ActualDeliverySupplyChainEvent", NS)
+                if el is not None:
+                    _remove(r, el)
+            s = _settlement_x(r)
+            bp = s.find("ram:BillingSpecifiedPeriod", NS)
+            if bp is not None:
+                _remove(r, bp)
+            for ln in r.findall("rsm:SupplyChainTradeTransaction/"
+                                "ram:IncludedSupplyChainTradeLineItem", NS):
+                lp = ln.find("ram:SpecifiedLineTradeSettlement/"
+                             "ram:BillingSpecifiedPeriod", NS)
+                if lp is not None:
+                    _remove(r, lp)
+        self.assert_fires(m, "BR-DE-TMP-32")
 
 
 if __name__ == "__main__":

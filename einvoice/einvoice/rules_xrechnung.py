@@ -1150,3 +1150,326 @@ def evaluate(root):
         if v is not None:
             out.append(v)
     return out
+
+
+# ===========================================================================
+# CII-syntax BR-DE layer (evaluated over the normalized model, not a UBL tree).
+#
+# The BR-DE functions above read a UBL Invoice ``ElementTree`` directly — their
+# XPath contexts are UBL ``cac:``/``cbc:`` paths — so they cannot run over a CII
+# (UN/CEFACT CrossIndustryInvoice) document. This section provides the SAME
+# national BR-DE assertions, transcribed assert-by-assert from the OFFICIAL
+# XRechnung-CII Schematron (``corpus/xrechnung-schematron/schematron/cii/
+# XRechnung-CII-validation.sch``), evaluated against the syntax-agnostic
+# normalized model produced by :func:`einvoice.parser_cii.build_model` — exactly
+# the way the EN 16931 core rules run over CII. Because the German rules address
+# document parts the core model deliberately omits (payment instructions, postal
+# detail, seller contact, tax representative, preceding-invoice reference,
+# delivery date / billing period), :func:`einvoice.parser_cii._build_cii_br_de`
+# populates those attributes from the CII paths and the rules below read them.
+#
+# ONLY the BR-DE rules whose guarded fact the model carries AND which reach
+# EXACT parity (0 false-positive / 0 false-negative) with the official
+# XRechnung-CII Schematron on the differential corpus are admitted here (list
+# ``CII_DE_RULES``). The rules whose CII binding needs structure the EN 16931
+# core model does not carry — payment-means type-code groups, IBAN mod-97
+# (BR-DE-19/20/23/24/25/30/31), the Skonto grammar (BR-DE-18), attachment
+# filename uniqueness (BR-DE-22) and the whole BR-DEX-* / BR-DE-CVD-* extension
+# layer — are EXCLUDED, not approximated (see the documented exclusion list in
+# ``differential.CII_XR_EXCLUDED_RULE_IDS``). Every admitted rule is
+# differentially proven by ``differential.py xrechnung-cii``.
+# ===========================================================================
+def _mnz(text):
+    """normalize-space() truthiness on a stored model string ('' / None -> False)."""
+    return bool(_nsp(text))
+
+
+@_rule("BR-DE-1", "fatal")
+def cii_br_de_1(inv):
+    """BR-DE-1: an invoice must contain PAYMENT INSTRUCTIONS (BG-16). CII:
+    exists ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans."""
+    if not inv.has_payment_means:
+        return _v(cii_br_de_1, "An invoice (INVOICE) must contain information on "
+                  "PAYMENT INSTRUCTIONS (BG-16).",
+                  "ram:ApplicableHeaderTradeSettlement/"
+                  "ram:SpecifiedTradeSettlementPaymentMeans")
+    return None
+
+
+@_rule("BR-DE-2", "fatal")
+def cii_br_de_2(inv):
+    """BR-DE-2: SELLER CONTACT (BG-6) must be transmitted. CII rule context is the
+    SellerTradeParty node; assert ram:DefinedTradeContact exists."""
+    if inv.seller_party_present and not inv.seller_has_defined_trade_contact:
+        return _v(cii_br_de_2, "The group 'SELLER CONTACT' (BG-6) must be "
+                  "transmitted.", "ram:SellerTradeParty/ram:DefinedTradeContact")
+    return None
+
+
+@_rule("BR-DE-3", "fatal")
+def cii_br_de_3(inv):
+    """BR-DE-3: Seller city (BT-37) non-empty. CII rule context is the seller
+    PostalTradeAddress; assert ram:CityName[normalize-space]."""
+    if inv.seller_has_postal_address and not _mnz(inv.seller_city):
+        return _v(cii_br_de_3, "The element 'Seller city' (BT-37) must be "
+                  "transmitted.",
+                  "ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName")
+    return None
+
+
+@_rule("BR-DE-4", "fatal")
+def cii_br_de_4(inv):
+    """BR-DE-4: Seller post code (BT-38) non-empty (seller PostalTradeAddress
+    context; ram:PostcodeCode)."""
+    if inv.seller_has_postal_address and not _mnz(inv.seller_post_code):
+        return _v(cii_br_de_4, "The element 'Seller post code' (BT-38) must be "
+                  "transmitted.",
+                  "ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode")
+    return None
+
+
+@_rule("BR-DE-5", "fatal")
+def cii_br_de_5(inv):
+    """BR-DE-5: Seller contact point (BT-41) non-empty. CII rule context is each
+    DefinedTradeContact; assert (ram:PersonName, ram:DepartmentName)[normalize-space]."""
+    for c in inv.seller_defined_trade_contacts:
+        if not (_mnz(c.person_name) or _mnz(c.department_name)):
+            return _v(cii_br_de_5, "The element 'Seller contact point' (BT-41) "
+                      "must be transmitted.",
+                      "ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName")
+    return None
+
+
+@_rule("BR-DE-6", "fatal")
+def cii_br_de_6(inv):
+    """BR-DE-6: Seller contact telephone number (BT-42) non-empty (per contact;
+    ram:TelephoneUniversalCommunication/ram:CompleteNumber)."""
+    for c in inv.seller_defined_trade_contacts:
+        if not _mnz(c.telephone):
+            return _v(cii_br_de_6, "The element 'Seller contact telephone "
+                      "number' (BT-42) must be transmitted.",
+                      "ram:SellerTradeParty/ram:DefinedTradeContact/"
+                      "ram:TelephoneUniversalCommunication/ram:CompleteNumber")
+    return None
+
+
+@_rule("BR-DE-7", "fatal")
+def cii_br_de_7(inv):
+    """BR-DE-7: Seller contact email address (BT-43) non-empty (per contact;
+    ram:EmailURIUniversalCommunication/ram:URIID)."""
+    for c in inv.seller_defined_trade_contacts:
+        if not _mnz(c.email):
+            return _v(cii_br_de_7, "The element 'Seller contact email address' "
+                      "(BT-43) must be transmitted.",
+                      "ram:SellerTradeParty/ram:DefinedTradeContact/"
+                      "ram:EmailURIUniversalCommunication/ram:URIID")
+    return None
+
+
+@_rule("BR-DE-27", "warning")
+def cii_br_de_27(inv):
+    """BR-DE-27: BT-42 should contain at least three digits. Per contact;
+    normalize-space of an absent telephone is '' and therefore also fires."""
+    for c in inv.seller_defined_trade_contacts:
+        if not _TELEPHONE_RE.search(_nsp(c.telephone)):
+            return _v(cii_br_de_27, "'Seller contact telephone number' (BT-42) "
+                      "should contain at least three digits.",
+                      "ram:SellerTradeParty/ram:DefinedTradeContact/"
+                      "ram:TelephoneUniversalCommunication/ram:CompleteNumber")
+    return None
+
+
+@_rule("BR-DE-28", "warning")
+def cii_br_de_28(inv):
+    """BR-DE-28: BT-43 should look like an email address (exactly one '@',
+    flanked per the official regex). Per contact; absent email -> '' -> fires."""
+    for c in inv.seller_defined_trade_contacts:
+        if not _EMAIL_RE.search(_nsp(c.email)):
+            return _v(cii_br_de_28, "'Seller contact email address' (BT-43) "
+                      "should contain exactly one '@' with valid flanking "
+                      "characters.",
+                      "ram:SellerTradeParty/ram:DefinedTradeContact/"
+                      "ram:EmailURIUniversalCommunication/ram:URIID")
+    return None
+
+
+@_rule("BR-DE-8", "fatal")
+def cii_br_de_8(inv):
+    """BR-DE-8: Buyer city (BT-52) non-empty (buyer PostalTradeAddress context)."""
+    if inv.buyer_has_postal_address and not _mnz(inv.buyer_city):
+        return _v(cii_br_de_8, "The element 'Buyer city' (BT-52) must be "
+                  "transmitted.",
+                  "ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName")
+    return None
+
+
+@_rule("BR-DE-9", "fatal")
+def cii_br_de_9(inv):
+    """BR-DE-9: Buyer post code (BT-53) non-empty (buyer PostalTradeAddress)."""
+    if inv.buyer_has_postal_address and not _mnz(inv.buyer_post_code):
+        return _v(cii_br_de_9, "The element 'Buyer post code' (BT-53) must be "
+                  "transmitted.",
+                  "ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode")
+    return None
+
+
+@_rule("BR-DE-10", "fatal")
+def cii_br_de_10(inv):
+    """BR-DE-10: Deliver to city (BT-77) non-empty when DELIVER TO ADDRESS
+    (BG-15) is present. CII rule context is each ShipToTradeParty/PostalTradeAddress."""
+    for city, _zone in inv.shipto_postal_addresses:
+        if not _mnz(city):
+            return _v(cii_br_de_10, "The element 'Deliver to city' (BT-77) must "
+                      "be transmitted when DELIVER TO ADDRESS (BG-15) is present.",
+                      "ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CityName")
+    return None
+
+
+@_rule("BR-DE-11", "fatal")
+def cii_br_de_11(inv):
+    """BR-DE-11: Deliver to post code (BT-78) non-empty when DELIVER TO ADDRESS
+    (BG-15) is present (ShipToTradeParty/PostalTradeAddress context)."""
+    for _city, zone in inv.shipto_postal_addresses:
+        if not _mnz(zone):
+            return _v(cii_br_de_11, "The element 'Deliver to post code' (BT-78) "
+                      "must be transmitted when DELIVER TO ADDRESS (BG-15) is "
+                      "present.",
+                      "ram:ShipToTradeParty/ram:PostalTradeAddress/ram:PostcodeCode")
+    return None
+
+
+@_rule("BR-DE-14", "fatal")
+def cii_br_de_14(inv):
+    """BR-DE-14: VAT category rate (BT-119) non-empty in every VAT breakdown row.
+    CII rule context is each ram:ApplicableTradeTax; assert ram:RateApplicablePercent."""
+    for st in inv.all_tax_subtotals:
+        if not _mnz(st.percent):
+            return _v(cii_br_de_14, "The element 'VAT category rate' (BT-119) "
+                      "must be transmitted.",
+                      "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+                      "ram:RateApplicablePercent")
+    return None
+
+
+@_rule("BR-DE-15", "fatal")
+def cii_br_de_15(inv):
+    """BR-DE-15: Buyer reference (BT-10) must be transmitted (non-empty)."""
+    if not _mnz(inv.buyer_reference):
+        return _v(cii_br_de_15, "The element 'Buyer reference' (BT-10) must be "
+                  "transmitted.",
+                  "ram:ApplicableHeaderTradeAgreement/ram:BuyerReference")
+    return None
+
+
+@_rule("BR-DE-16", "fatal")
+def cii_br_de_16(inv):
+    """BR-DE-16: if VAT category codes S/Z/E/AE/K/G/L/M are used, one of Seller
+    VAT identifier (BT-31), Seller tax registration identifier (BT-32) or SELLER
+    TAX REPRESENTATIVE PARTY (BG-11) must be present.
+
+    Official CII value set (line-level): an ApplicableTradeTax with
+    ram:TypeCode = 'VAT' AND an ApplicableTradeTax with ram:CategoryCode in the
+    set (separate existence checks over the line node set). The document-level
+    allowance/charge disjunct in the official assert compares the *aggregate*
+    ``ram:CategoryTradeTax`` to the string 'VAT'; a schema-valid CategoryTradeTax
+    always carries a ram:CategoryCode child, so its string value is never exactly
+    'VAT' — the disjunct is unsatisfiable and contributes nothing (transcribed as
+    such, and confirmed at parity by the differential). Seller disjunct: a VA|FC
+    tax-registration id (non-empty) OR a tax representative party.
+    """
+    type_vat = any(c.scheme_id == "VAT"
+                   for ln in inv.lines for c in ln.item_tax_categories)
+    cat_in_set = any(c.id in _XR_SUPPORTED_VAT_CODES
+                     for ln in inv.lines for c in ln.item_tax_categories)
+    used = type_vat and cat_in_set
+    if not used:
+        return None
+    if inv.seller_vat_or_fc_id_present or inv.has_tax_representative:
+        return None
+    return _v(cii_br_de_16, "VAT category codes S, Z, E, AE, K, G, L or M are "
+              "used, so at least one of 'Seller VAT identifier' (BT-31), 'Seller "
+              "tax registration identifier' (BT-32) or 'SELLER TAX REPRESENTATIVE "
+              "PARTY' (BG-11) must be transmitted.",
+              "ram:SellerTradeParty/ram:SpecifiedTaxRegistration/ram:ID")
+
+
+@_rule("BR-DE-17", "warning")
+def cii_br_de_17(inv):
+    """BR-DE-17: BT-3 should be one of 326, 380, 384, 389, 381, 875, 876, 877.
+    Official test is over normalize-space(ram:ExchangedDocument/ram:TypeCode) — an
+    ABSENT type code normalizes to '' and therefore also fires."""
+    itc = _nsp(inv.invoice_type_code)
+    if itc in _XR_TYPE_CODES:
+        return None
+    return _v(cii_br_de_17, "'Invoice type code' (BT-3) should be one of the "
+              "codes 326, 380, 384, 389, 381, 875, 876, 877 (UNTDID 1001 "
+              "subset); found %r." % (itc or "(absent)"),
+              "ram:ExchangedDocument/ram:TypeCode")
+
+
+@_rule("BR-DE-21", "warning")
+def cii_br_de_21(inv):
+    """BR-DE-21: BT-24 should be the XRechnung specification identifier (CIUS,
+    extension or CVD variant)."""
+    if inv.customization_id in (XR_CIUS_ID, XR_EXTENSION_ID, XR_CVD_ID):
+        return None
+    return _v(cii_br_de_21, "'Specification identifier' (BT-24) should "
+              "syntactically match the XRechnung standard identifier.",
+              "ram:ExchangedDocumentContext/"
+              "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID")
+
+
+@_rule("BR-DE-26", "warning")
+def cii_br_de_26(inv):
+    """BR-DE-26: type code 384 (Corrected invoice) should carry a PRECEDING
+    INVOICE REFERENCE (BG-3). CII: ram:ApplicableHeaderTradeSettlement/
+    ram:InvoiceReferencedDocument."""
+    if _nsp(inv.invoice_type_code) != "384":
+        return None
+    if inv.has_invoice_referenced_document:
+        return None
+    return _v(cii_br_de_26, "'Invoice type code' (BT-3) is 384 (Corrected "
+              "invoice), so PRECEDING INVOICE REFERENCE (BG-3) should be present "
+              "at least once.",
+              "ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument")
+
+
+@_rule("BR-DE-TMP-32", "information")
+def cii_br_de_tmp_32(inv):
+    """BR-DE-TMP-32: an invoice should state the delivery/service date via BT-72
+    (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line
+    period) on EVERY line. CII context is SupplyChainTradeTransaction; the 'every
+    line' disjunct is vacuously true for zero lines."""
+    if inv.has_actual_delivery_date or inv.has_billing_period:
+        return None
+    if all(getattr(ln, "has_line_billing_period", False) for ln in inv.lines):
+        return None
+    return _v(cii_br_de_tmp_32, "The invoice should state the delivery/service "
+              "date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or "
+              "BG-26 'Invoice line period' on every line.",
+              "ram:ApplicableHeaderTradeDelivery/"
+              "ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime")
+
+
+# Admitted CII BR-DE set — document flow order. Every id here is proven at exact
+# parity with the official XRechnung-CII Schematron by differential.py.
+CII_DE_RULES = [
+    cii_br_de_1, cii_br_de_2, cii_br_de_3, cii_br_de_4, cii_br_de_5,
+    cii_br_de_6, cii_br_de_7, cii_br_de_8, cii_br_de_9, cii_br_de_10,
+    cii_br_de_11, cii_br_de_14, cii_br_de_15, cii_br_de_16, cii_br_de_17,
+    cii_br_de_21, cii_br_de_26, cii_br_de_27, cii_br_de_28, cii_br_de_tmp_32,
+]
+
+
+def evaluate_cii(inv):
+    """Run the admitted CII BR-DE layer over a normalized CII model.
+
+    ``inv`` is an :class:`einvoice.parser_cii.Invoice` (from
+    :func:`einvoice.parser_cii.build_model`). Returns the list of Violations
+    that fire (each admitted rule contributes at most one)."""
+    out = []
+    for rule in CII_DE_RULES:
+        v = rule(inv)
+        if v is not None:
+            out.append(v)
+    return out

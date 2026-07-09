@@ -57,6 +57,7 @@ BG-20/1 ``doc_allowance_charges``      …/ram:SpecifiedTradeAllowanceCharge
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from collections import namedtuple
 
 from . import parser
 from .parser import ItemTaxCategory, Period, TaxSubtotal, TaxTotal, AllowanceCharge
@@ -110,6 +111,13 @@ def _localname(tag):
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
+# One CII seller ``ram:DefinedTradeContact`` (BG-6), carrying the four fields the
+# national BR-DE-5/6/7/27/28 rules read. Text is kept raw (untrimmed) so the
+# rules apply XPath normalize-space() themselves, exactly like the UBL layer.
+CIIContact = namedtuple("CIIContact",
+                        ["person_name", "department_name", "telephone", "email"])
+
+
 class CIILine(parser.InvoiceLine):
     """One ``ram:IncludedSupplyChainTradeLineItem`` (BG-25).
 
@@ -144,6 +152,29 @@ class Invoice(parser.Invoice):
         self.has_header_monetary_summation = False
         self.tax_total_amount = None            # BT-110 ram:TaxTotalAmount (text)
         self.tax_total_amount_currency = None   # ram:TaxTotalAmount/@currencyID
+
+        # -- German-CIUS (BR-DE-*) surface, populated by _build_cii_br_de. -----
+        # These carry the exact document parts the CII XRechnung national layer
+        # (einvoice.rules_xrechnung, CII_DE_RULES) addresses — payment
+        # instructions, seller/buyer/deliver-to postal detail, seller contact,
+        # tax representative, preceding-invoice reference, delivery date /
+        # billing period — which the syntax-agnostic EN 16931 core model omits.
+        self.has_payment_means = False          # BG-16 present (BR-DE-1)
+        self.seller_party_present = False       # SellerTradeParty context node
+        self.seller_has_defined_trade_contact = False  # BG-6 present (BR-DE-2)
+        self.seller_city = None                 # BT-37 raw (BR-DE-3)
+        self.seller_post_code = None            # BT-38 raw (BR-DE-4)
+        self.seller_defined_trade_contacts = []  # [CIIContact] (BR-DE-5/6/7/27/28)
+        self.seller_vat_or_fc_id_present = False  # BT-31/32 VA|FC id (BR-DE-16)
+        self.has_tax_representative = False     # BG-11 present (BR-DE-16)
+        self.buyer_city = None                  # BT-52 raw (BR-DE-8)
+        self.buyer_post_code = None             # BT-53 raw (BR-DE-9)
+        # [(city_raw, post_code_raw)] per ShipToTradeParty/PostalTradeAddress
+        # (BR-DE-10/11 — each is a rule context node).
+        self.shipto_postal_addresses = []
+        self.has_invoice_referenced_document = False  # BG-3 present (BR-DE-26)
+        self.has_actual_delivery_date = False   # BT-72 present (BR-DE-TMP-32)
+        self.has_billing_period = False         # BG-14 present (BR-DE-TMP-32)
 
 
 def parse_file(path):
@@ -376,6 +407,10 @@ def build_model(root):
                 txn.findall("ram:IncludedSupplyChainTradeLineItem", NS),
                 start=1):
             ln = CIILine(i)
+            # BG-26 Invoice line period (BR-DE-TMP-32's per-line disjunct).
+            ln.has_line_billing_period = (
+                ln_el.find("ram:SpecifiedLineTradeSettlement/"
+                           "ram:BillingSpecifiedPeriod", NS) is not None)
             ln.id = _text(ln_el.find(
                 "ram:AssociatedDocumentLineDocument/ram:LineID", NS))  # BT-126
             ln.quantity = _text(ln_el.find(
@@ -410,7 +445,97 @@ def build_model(root):
                     _build_trade_tax_category(cat_el))
             inv.lines.append(ln)
 
+    _build_cii_br_de(inv, root)
     return inv
+
+
+def _has_tax_reg_nonempty(party_el, schemes):
+    """True iff ``party_el`` carries a ``ram:SpecifiedTaxRegistration/ram:ID`` with
+    ``normalize-space(@schemeID)`` in ``schemes`` AND a non-empty value — the exact
+    BR-DE-16 seller-VAT-id disjunct (``ram:ID[normalize-space(@schemeID)='VA' or
+    normalize-space(@schemeID)='FC'][boolean(normalize-space(.))]``)."""
+    if party_el is None:
+        return False
+    for id_el in party_el.findall("ram:SpecifiedTaxRegistration/ram:ID", NS):
+        sid = _norm_space(id_el.get("schemeID"))
+        if sid in schemes and (id_el.text or "").strip():
+            return True
+    return False
+
+
+def _build_cii_br_de(inv, root):
+    """Populate the German-CIUS (BR-DE-*) surface the CII XRechnung layer reads.
+
+    Every attribute is transcribed from the OFFICIAL XRechnung-CII Schematron
+    (corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch)
+    rule contexts/paths, so the CII BR-DE rules in
+    :mod:`einvoice.rules_xrechnung` (``CII_DE_RULES``) reach exact parity with it
+    (proven by ``differential.py xrechnung-cii``)."""
+    txn = root.find("rsm:SupplyChainTradeTransaction", NS)
+    if txn is None:
+        return
+    agreement = txn.find("ram:ApplicableHeaderTradeAgreement", NS)
+    settlement = txn.find("ram:ApplicableHeaderTradeSettlement", NS)
+    delivery = txn.find("ram:ApplicableHeaderTradeDelivery", NS)
+
+    # BR-DE-1: PAYMENT INSTRUCTIONS (BG-16) present.
+    if settlement is not None:
+        inv.has_payment_means = (
+            settlement.find("ram:SpecifiedTradeSettlementPaymentMeans", NS)
+            is not None)
+        # BR-DE-26: PRECEDING INVOICE REFERENCE (BG-3).
+        inv.has_invoice_referenced_document = (
+            settlement.find("ram:InvoiceReferencedDocument", NS) is not None)
+        # BR-DE-TMP-32: BG-14 Invoicing period.
+        inv.has_billing_period = (
+            settlement.find("ram:BillingSpecifiedPeriod", NS) is not None)
+
+    if agreement is not None:
+        # BR-DE-16: SELLER TAX REPRESENTATIVE PARTY (BG-11) present.
+        inv.has_tax_representative = (
+            agreement.find("ram:SellerTaxRepresentativeTradeParty", NS)
+            is not None)
+        seller = agreement.find("ram:SellerTradeParty", NS)
+        if seller is not None:
+            inv.seller_party_present = True
+            inv.seller_has_defined_trade_contact = (
+                seller.find("ram:DefinedTradeContact", NS) is not None)
+            addr = seller.find("ram:PostalTradeAddress", NS)
+            if addr is not None:
+                inv.seller_city = _rawtext(addr.find("ram:CityName", NS))
+                inv.seller_post_code = _rawtext(
+                    addr.find("ram:PostcodeCode", NS))
+            for c in seller.findall("ram:DefinedTradeContact", NS):
+                inv.seller_defined_trade_contacts.append(CIIContact(
+                    person_name=_rawtext(c.find("ram:PersonName", NS)),
+                    department_name=_rawtext(c.find("ram:DepartmentName", NS)),
+                    telephone=_rawtext(c.find(
+                        "ram:TelephoneUniversalCommunication/"
+                        "ram:CompleteNumber", NS)),
+                    email=_rawtext(c.find(
+                        "ram:EmailURIUniversalCommunication/ram:URIID", NS)),
+                ))
+            inv.seller_vat_or_fc_id_present = _has_tax_reg_nonempty(
+                seller, ("VA", "FC"))
+        buyer = agreement.find("ram:BuyerTradeParty", NS)
+        if buyer is not None:
+            baddr = buyer.find("ram:PostalTradeAddress", NS)
+            if baddr is not None:
+                inv.buyer_city = _rawtext(baddr.find("ram:CityName", NS))
+                inv.buyer_post_code = _rawtext(
+                    baddr.find("ram:PostcodeCode", NS))
+
+    if delivery is not None:
+        # BR-DE-10/11: each ShipToTradeParty/PostalTradeAddress is a rule context.
+        for shipto in delivery.findall("ram:ShipToTradeParty", NS):
+            for a in shipto.findall("ram:PostalTradeAddress", NS):
+                inv.shipto_postal_addresses.append((
+                    _rawtext(a.find("ram:CityName", NS)),
+                    _rawtext(a.find("ram:PostcodeCode", NS))))
+        # BR-DE-TMP-32: BT-72 Actual delivery date.
+        inv.has_actual_delivery_date = (
+            delivery.find("ram:ActualDeliverySupplyChainEvent/"
+                          "ram:OccurrenceDateTime", NS) is not None)
 
 
 def _has_tax_reg(party_el, schemes):

@@ -1933,6 +1933,442 @@ def br_ic_12(inv):
 
 
 # ---------------------------------------------------------------------------
+# Export outside the EU (G) VAT category rules (BR-G-02..10). The G family is
+# the BR-E family with ONE difference the official Schematron pins down: the
+# seller-identifier disjunct of -02..04 is VAT-scheme SCOPED (like BR-IC, not
+# BR-Z/BR-E), so it accepts ONLY a VAT-scheme Seller CompanyID (BT-31) or a
+# tax-representative VAT CompanyID (BT-63) — no ANY-scheme / tax-registration
+# fallback. Everything else — rate 0 (-05..07), breakdown taxable sum (-08),
+# tax 0 (-09), REQUIRED exemption reason (-10) — is the reused BR-E shape.
+# ---------------------------------------------------------------------------
+def _g_seller_id_message(subject):
+    return ("An Invoice with an Export outside the EU (G) %s shall contain the "
+            "Seller VAT Identifier (BT-31) or the Seller tax representative VAT "
+            "identifier (BT-63)." % subject)
+
+
+def br_g_02(inv):
+    """BR-G-02: an Invoice with an Export outside the EU (G) Invoice line
+    (BT-151) shall carry a VAT-scoped Seller identifier (BT-31/BT-63)."""
+    if (inv.has_classified_category("G", "VAT")
+            and not _ic_seller_id_present(inv)):
+        return Violation(
+            "BR-G-02", _g_seller_id_message("Invoice line (BT-151)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_g_03(inv):
+    """BR-G-03: an Invoice with an Export outside the EU (G) Document level
+    allowance (BT-95) shall carry a VAT-scoped Seller identifier."""
+    if (_ac_has_vat_category(inv, False, "G")
+            and not _ic_seller_id_present(inv)):
+        return Violation(
+            "BR-G-03",
+            _g_seller_id_message("Document level allowance (BT-95)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_g_04(inv):
+    """BR-G-04: an Invoice with an Export outside the EU (G) Document level
+    charge (BT-102) shall carry a VAT-scoped Seller identifier."""
+    if (_ac_has_vat_category(inv, True, "G")
+            and not _ic_seller_id_present(inv)):
+        return Violation(
+            "BR-G-04",
+            _g_seller_id_message("Document level charge (BT-102)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_g_05(inv):
+    """BR-G-05: in an Export outside the EU (G) Invoice line the Invoiced item
+    VAT rate (BT-152) shall be 0."""
+    ln = _line_rate_nonzero(inv, "G")
+    if ln is not None:
+        return Violation(
+            "BR-G-05",
+            "In an Invoice line (BG-25) where the Invoiced item VAT category "
+            "code (BT-151) is 'Export outside the EU' the Invoiced item VAT "
+            "rate (BT-152) shall be 0 (zero).",
+            ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")
+    return None
+
+
+def br_g_06(inv):
+    """BR-G-06: in an Export outside the EU (G) Document level allowance the
+    allowance VAT rate (BT-96) shall be 0."""
+    if _ac_rate_nonzero(inv, "G", False):
+        return Violation(
+            "BR-G-06",
+            "In a Document level allowance (BG-20) where the Document level "
+            "allowance VAT category code (BT-95) is 'Export outside the EU' the "
+            "Document level allowance VAT rate (BT-96) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_g_07(inv):
+    """BR-G-07: in an Export outside the EU (G) Document level charge the charge
+    VAT rate (BT-103) shall be 0."""
+    if _ac_rate_nonzero(inv, "G", True):
+        return Violation(
+            "BR-G-07",
+            "In a Document level charge (BG-21) where the Document level charge "
+            "VAT category code (BT-102) is 'Export outside the EU' the Document "
+            "level charge VAT rate (BT-103) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_g_08(inv):
+    """BR-G-08: the Export outside the EU (G) VAT breakdown taxable amount
+    (BT-116) shall equal the exact sum of G line nets − G allowances + G
+    charges."""
+    hit = _breakdown_taxable_sum_mismatch(inv, "G")
+    if hit is not None:
+        st, expected = hit
+        return Violation(
+            "BR-G-08", _taxable_sum_message("Export outside the EU", st, expected),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_g_09(inv):
+    """BR-G-09: the VAT category tax amount (BT-117) in an Export outside the EU
+    (G) VAT breakdown shall equal 0."""
+    st = _breakdown_tax_nonzero(inv, "G")
+    if st is not None:
+        return Violation(
+            "BR-G-09", _tax_zero_message("Export outside the EU", st),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_g_10(inv):
+    """BR-G-10: a VAT breakdown (BG-23) with an Export outside the EU (G) VAT
+    category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or
+    text (BT-120) — the presence-required shape shared with BR-E-10.
+
+    Official (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='G'][VAT]``)::
+
+        exists(cbc:TaxExemptionReason) or exists(cbc:TaxExemptionReasonCode)
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if (st.category_id == "G" and st.category_scheme_id == "VAT"
+                    and not (st.has_exemption_reason
+                             or st.has_exemption_reason_code)):
+                return Violation(
+                    "BR-G-10",
+                    "A VAT breakdown (BG-23) with an Export outside the EU (G) "
+                    "VAT category code (BT-118) shall have a VAT exemption "
+                    "reason code (BT-121), meaning 'Export outside the EU', or "
+                    "the VAT exemption reason text (BT-120) 'Export outside the "
+                    "EU'.",
+                    "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
+                    "cbc:TaxExemptionReason")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Not subject to VAT (O) — Services outside the scope of tax (BR-O-02..14).
+# This family is structurally the ODD ONE OUT, so it needs its own helpers:
+#
+# * -02..04 are PROHIBITIONS, not requirements: an O line/allowance/charge must
+#   NOT carry ANY VAT registration identifier — not the Seller VAT id (BT-31),
+#   not the tax-representative VAT id (BT-63), and not the Buyer VAT id (BT-48).
+#   So the assert fires iff an O item exists AND one of those three VAT ids is
+#   present (the inverse polarity of every other -02..04 family).
+# * -05..07 forbid the VAT rate itself: ``not(cbc:Percent)`` — a Percent ELEMENT
+#   present (any value, even empty) fires, its absence holds. This differs from
+#   the "= 0" rate rules, so it needs the -present helpers below.
+# * -08 (taxable sum) / -09 (tax = 0) / -10 (reason required) reuse the shared
+#   BR-E shapes.
+# * -11..14 are O-EXCLUSIVITY rules evaluated at the Invoice root: once an O VAT
+#   breakdown row exists the document may NOT mix in any other VAT-scheme
+#   category — not another VAT breakdown row (-11), not a non-O line item
+#   category (-12), a non-O document/line allowance (-13) or charge (-14).
+# ---------------------------------------------------------------------------
+def _o_party_vat_id_present(inv):
+    """The BR-O-02..04 prohibition set: a VAT-scheme Seller CompanyID (BT-31),
+    a tax-representative VAT CompanyID (BT-63) OR a VAT-scheme Buyer CompanyID
+    (BT-48). Any one present makes the O rule fire."""
+    return (inv.seller_has_vat_scheme_company_id
+            or inv.taxrep_has_vat_company_id
+            or inv.buyer_has_vat_scheme_company_id)
+
+
+def _o_party_id_message(subject):
+    return ("An Invoice with a 'Not subject to VAT' (O) %s shall not contain "
+            "the Seller VAT identifier (BT-31), the Seller tax representative "
+            "VAT identifier (BT-63) or the Buyer VAT identifier (BT-48)."
+            % subject)
+
+
+def _line_rate_present(inv, code):
+    """The BR-O-05 shape: a ``code`` VAT invoice-line ClassifiedTaxCategory that
+    carries a Percent ELEMENT (present, any value) — ``not(cbc:Percent)`` is
+    FALSE. Returns the first offending line, or None."""
+    for ln in inv.lines:
+        for cat in ln.item_tax_categories:
+            if (cat.id == code and cat.scheme_id == "VAT"
+                    and cat.percent is not None):
+                return ln
+    return None
+
+
+def _ac_rate_present(inv, code, is_charge):
+    """The BR-O-06/07 shape: a ``code`` VAT allowance (is_charge False) / charge
+    (True) — document- AND line-level — carrying a Percent element."""
+    for ac in inv.all_allowance_charges():
+        if ac.is_charge is is_charge:
+            for cat in ac.tax_categories:
+                if (cat.id == code and cat.scheme_id == "VAT"
+                        and cat.percent is not None):
+                    return True
+    return False
+
+
+def _line_has_other_vat_category(inv, exclude):
+    """The BR-O-12 node set: any invoice-line item VAT ClassifiedTaxCategory
+    whose code differs from ``exclude`` (an absent code — normalize-space '' —
+    counts as different, matching the official ``[normalize-space(cbc:ID)!='O']``
+    predicate)."""
+    for ln in inv.lines:
+        for cat in ln.item_tax_categories:
+            if cat.scheme_id == "VAT" and cat.id != exclude:
+                return True
+    return False
+
+
+def _ac_has_other_vat_category(inv, is_charge, exclude):
+    """The BR-O-13/14 node set: any allowance (is_charge False) / charge (True)
+    — document- AND line-level, matching the official ``//cac:AllowanceCharge``
+    — with a VAT TaxCategory whose code differs from ``exclude``."""
+    for ac in inv.all_allowance_charges():
+        if ac.is_charge is is_charge:
+            for cat in ac.tax_categories:
+                if cat.scheme_id == "VAT" and cat.id != exclude:
+                    return True
+    return False
+
+
+def br_o_02(inv):
+    """BR-O-02: an Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151)
+    shall NOT contain a Seller/tax-representative/Buyer VAT identifier."""
+    if (inv.has_classified_category("O", "VAT")
+            and _o_party_vat_id_present(inv)):
+        return Violation(
+            "BR-O-02", _o_party_id_message("Invoice line (BT-151)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_o_03(inv):
+    """BR-O-03: an Invoice with a 'Not subject to VAT' (O) Document level
+    allowance (BT-95) shall NOT contain any VAT identifier."""
+    if _ac_has_vat_category(inv, False, "O") and _o_party_vat_id_present(inv):
+        return Violation(
+            "BR-O-03",
+            _o_party_id_message("Document level allowance (BT-95)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_o_04(inv):
+    """BR-O-04: an Invoice with a 'Not subject to VAT' (O) Document level charge
+    (BT-102) shall NOT contain any VAT identifier."""
+    if _ac_has_vat_category(inv, True, "O") and _o_party_vat_id_present(inv):
+        return Violation(
+            "BR-O-04",
+            _o_party_id_message("Document level charge (BT-102)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_o_05(inv):
+    """BR-O-05: a 'Not subject to VAT' (O) Invoice line shall NOT contain an
+    Invoiced item VAT rate (BT-152) — ``not(cbc:Percent)``."""
+    ln = _line_rate_present(inv, "O")
+    if ln is not None:
+        return Violation(
+            "BR-O-05",
+            "An Invoice line (BG-25) where the VAT category code (BT-151) is "
+            "'Not subject to VAT' shall not contain an Invoiced item VAT rate "
+            "(BT-152).",
+            ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")
+    return None
+
+
+def br_o_06(inv):
+    """BR-O-06: a 'Not subject to VAT' (O) Document level allowance shall NOT
+    contain a Document level allowance VAT rate (BT-96)."""
+    if _ac_rate_present(inv, "O", False):
+        return Violation(
+            "BR-O-06",
+            "A Document level allowance (BG-20) where the Document level "
+            "allowance VAT category code (BT-95) is 'Not subject to VAT' shall "
+            "not contain a Document level allowance VAT rate (BT-96).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_o_07(inv):
+    """BR-O-07: a 'Not subject to VAT' (O) Document level charge shall NOT
+    contain a Document level charge VAT rate (BT-103)."""
+    if _ac_rate_present(inv, "O", True):
+        return Violation(
+            "BR-O-07",
+            "A Document level charge (BG-21) where the Document level charge "
+            "VAT category code (BT-102) is 'Not subject to VAT' shall not "
+            "contain a Document level charge VAT rate (BT-103).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_o_08(inv):
+    """BR-O-08: the 'Not subject to VAT' (O) VAT breakdown taxable amount
+    (BT-116) shall equal the exact sum of O line nets − O allowances + O
+    charges."""
+    hit = _breakdown_taxable_sum_mismatch(inv, "O")
+    if hit is not None:
+        st, expected = hit
+        return Violation(
+            "BR-O-08", _taxable_sum_message("Not subject to VAT", st, expected),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_o_09(inv):
+    """BR-O-09: the VAT category tax amount (BT-117) in a 'Not subject to VAT'
+    (O) VAT breakdown shall equal 0."""
+    st = _breakdown_tax_nonzero(inv, "O")
+    if st is not None:
+        return Violation(
+            "BR-O-09", _tax_zero_message("Not subject to VAT", st),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_o_10(inv):
+    """BR-O-10: a VAT breakdown (BG-23) with a 'Not subject to VAT' (O) VAT
+    category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or
+    text (BT-120).
+
+    Official (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='O'][VAT]``)::
+
+        exists(cbc:TaxExemptionReason) or exists(cbc:TaxExemptionReasonCode)
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if (st.category_id == "O" and st.category_scheme_id == "VAT"
+                    and not (st.has_exemption_reason
+                             or st.has_exemption_reason_code)):
+                return Violation(
+                    "BR-O-10",
+                    "A VAT breakdown (BG-23) with a 'Not subject to VAT' (O) "
+                    "VAT category code (BT-118) shall have a VAT exemption "
+                    "reason code (BT-121), meaning 'Not subject to VAT', or a "
+                    "VAT exemption reason text (BT-120) 'Not subject to VAT'.",
+                    "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
+                    "cbc:TaxExemptionReason")
+    return None
+
+
+def br_o_11(inv):
+    """BR-O-11: an Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23)
+    shall NOT contain any other VAT breakdown group.
+
+    Official (context ``/ubl:Invoice``): HOLDS iff either no O breakdown row
+    exists, or an O row exists AND every top-level VAT breakdown category code
+    equals 'O' (``count(cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)!='O'][VAT]) = 0``). Fires iff an O breakdown row
+    coexists with any non-O VAT breakdown row.
+    """
+    codes = inv.breakdown_vat_category_codes()
+    if "O" not in codes:
+        return None
+    if any(c != "O" for c in codes):
+        return Violation(
+            "BR-O-11",
+            "An Invoice that contains a VAT breakdown group (BG-23) with a VAT "
+            "category code (BT-118) 'Not subject to VAT' shall not contain "
+            "other VAT breakdown groups (BG-23).",
+            "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_o_12(inv):
+    """BR-O-12: an Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23)
+    shall NOT contain an Invoice line (BG-25) whose Invoiced item VAT category
+    code (BT-151) is not 'Not subject to VAT'.
+
+    Official (context ``/ubl:Invoice``): fires iff an O VAT breakdown row exists
+    AND a line-item VAT ClassifiedTaxCategory with a non-O code exists
+    (``count(//cac:ClassifiedTaxCategory[normalize-space(cbc:ID)!='O'][VAT])``).
+    """
+    if "O" not in inv.breakdown_vat_category_codes():
+        return None
+    if _line_has_other_vat_category(inv, "O"):
+        return Violation(
+            "BR-O-12",
+            "An Invoice that contains a VAT breakdown group (BG-23) with a VAT "
+            "category code (BT-118) 'Not subject to VAT' shall not contain an "
+            "Invoice line (BG-25) where the Invoiced item VAT category code "
+            "(BT-151) is not 'Not subject to VAT'.",
+            "cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory/cbc:ID")
+    return None
+
+
+def br_o_13(inv):
+    """BR-O-13: an Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23)
+    shall NOT contain a Document level allowance (BG-20) whose VAT category code
+    (BT-95) is not 'Not subject to VAT'.
+
+    Official (context ``/ubl:Invoice``): fires iff an O VAT breakdown row exists
+    AND an allowance (``//cac:AllowanceCharge[cbc:ChargeIndicator=false()]``)
+    carries a VAT TaxCategory with a non-O code.
+    """
+    if "O" not in inv.breakdown_vat_category_codes():
+        return None
+    if _ac_has_other_vat_category(inv, False, "O"):
+        return Violation(
+            "BR-O-13",
+            "An Invoice that contains a VAT breakdown group (BG-23) with a VAT "
+            "category code (BT-118) 'Not subject to VAT' shall not contain "
+            "Document level allowances (BG-20) where the Document level "
+            "allowance VAT category code (BT-95) is not 'Not subject to VAT'.",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_o_14(inv):
+    """BR-O-14: an Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23)
+    shall NOT contain a Document level charge (BG-21) whose VAT category code
+    (BT-102) is not 'Not subject to VAT'.
+
+    Official (context ``/ubl:Invoice``): fires iff an O VAT breakdown row exists
+    AND a charge (``//cac:AllowanceCharge[cbc:ChargeIndicator=true()]``) carries
+    a VAT TaxCategory with a non-O code.
+    """
+    if "O" not in inv.breakdown_vat_category_codes():
+        return None
+    if _ac_has_other_vat_category(inv, True, "O"):
+        return Violation(
+            "BR-O-14",
+            "An Invoice that contains a VAT breakdown group (BG-23) with a VAT "
+            "category code (BT-118) 'Not subject to VAT' shall not contain "
+            "Document level charges (BG-21) where the Document level charge VAT "
+            "category code (BT-102) is not 'Not subject to VAT'.",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # VAT-category families (BR-AE/E/G/IC/O-01) — "exactly one breakdown row"
 # ---------------------------------------------------------------------------
 def _vat_exactly_one_breakdown(inv, code):
@@ -2668,6 +3104,10 @@ ALL_RULES = [
     br_ae_08, br_ae_09, br_ae_10,
     br_ic_02, br_ic_03, br_ic_04, br_ic_05, br_ic_06, br_ic_07,
     br_ic_08, br_ic_09, br_ic_11, br_ic_12,
+    br_g_02, br_g_03, br_g_04, br_g_05, br_g_06, br_g_07,
+    br_g_08, br_g_09, br_g_10,
+    br_o_02, br_o_03, br_o_04, br_o_05, br_o_06, br_o_07,
+    br_o_08, br_o_09, br_o_10, br_o_11, br_o_12, br_o_13, br_o_14,
     br_ae_01, br_e_01, br_g_01, br_ic_01, br_o_01,
     br_dec_01, br_dec_02, br_dec_05, br_dec_06,
     br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_14,

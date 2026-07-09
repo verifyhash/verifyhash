@@ -71,6 +71,15 @@ AEIC_RULES = {
     "BR-IC-08", "BR-IC-09", "BR-IC-11", "BR-IC-12",
 }
 
+# Export outside the EU (G) + Not subject to VAT (O) VAT category batch
+# (differentially proven the same way).
+GO_RULES = {
+    "BR-G-02", "BR-G-03", "BR-G-04", "BR-G-05", "BR-G-06", "BR-G-07",
+    "BR-G-08", "BR-G-09", "BR-G-10",
+    "BR-O-02", "BR-O-03", "BR-O-04", "BR-O-05", "BR-O-06", "BR-O-07",
+    "BR-O-08", "BR-O-09", "BR-O-10", "BR-O-11", "BR-O-12", "BR-O-13", "BR-O-14",
+}
+
 
 def q(ns, local):
     return "{%s}%s" % (ns, local)
@@ -177,6 +186,30 @@ def reverse_charge_base():
 def intra_community_base():
     r = base()
     convert_category(r, "K")
+    return r
+
+
+def export_base():
+    # 'Export outside the EU' (G) mirrors E: rate 0, breakdown reason required.
+    r = base()
+    convert_category(r, "G", exemption_reason="Export outside the EU")
+    return r
+
+
+def not_subject_base():
+    """A clean 'Not subject to VAT' (O) invoice: no Invoiced item VAT rate
+    (BR-O-05), NO Seller/Buyer VAT identifier (BR-O-02..04) and a breakdown
+    exemption reason (BR-O-10)."""
+    r = base()
+    convert_category(r, "O", exemption_reason="Not subject to VAT")
+    # O forbids the Invoiced item VAT rate (BT-152): drop the line Percent.
+    ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+    p = child(ctc, NS_CBC, "Percent")
+    if p is not None:
+        ctc.remove(p)
+    # O forbids the Seller VAT id (BT-31) and the Buyer VAT id (BT-48).
+    remove_seller_party_tax_scheme(r)
+    remove_buyer_party_tax_scheme(r)
     return r
 
 
@@ -1084,13 +1117,215 @@ class IntraCommunityBatch(_VatCategoryBatch, unittest.TestCase):
         self.assertIn("BR-IC-12", fired(r))
 
 
+class ExportOutsideEuBatch(_VatCategoryBatch, unittest.TestCase):
+    """BR-G-02..10 — Export outside the EU (G) VAT category rules.
+
+    Structurally the Exempt (E) family, so it inherits the shared seller-id
+    (-02..04), rate-0 (-05..07) and breakdown (-08/-09) cases. The one twist
+    the differential surfaced: like BR-IC (and unlike BR-Z/BR-E) the -02..04
+    seller disjunct is VAT-scheme scoped — the inherited
+    ``test_02_scheme_less_line_category_does_not_fire`` covers that. BR-G-10
+    requires an exemption reason (mirror of BR-E-10)."""
+
+    code = "G"
+    fam = "G"
+
+    def cat_base(self):
+        return export_base()
+
+    def test_br_g_10_missing_exemption_reason_fires(self):
+        r = base()
+        convert_category(r, "G", exemption_reason=None)
+        self.assertIn("BR-G-10", fired(r))
+        self.assertNotIn("BR-G-10", fired(self.cat_base()))  # reason present
+
+    def test_br_g_10_reason_code_alone_satisfies(self):
+        r = base()
+        convert_category(r, "G", exemption_reason=None)
+        cat = subtotal_category(r)
+        code_el = ET.Element(q(NS_CBC, "TaxExemptionReasonCode"))
+        code_el.text = "VATEX-EU-G"
+        cat.insert(list(cat).index(cat.find(q(NS_CAC, "TaxScheme"))), code_el)
+        self.assertNotIn("BR-G-10", fired(r))
+
+
+def add_seller_vat_party_tax_scheme(root, company_id="DE123456789"):
+    """Append a VAT-scheme Seller PartyTaxScheme/CompanyID (BT-31)."""
+    party = supplier_party(root)
+    pts = ET.SubElement(party, q(NS_CAC, "PartyTaxScheme"))
+    ET.SubElement(pts, q(NS_CBC, "CompanyID")).text = company_id
+    ET.SubElement(ET.SubElement(pts, q(NS_CAC, "TaxScheme")),
+                  q(NS_CBC, "ID")).text = "VAT"
+
+
+def add_buyer_vat_party_tax_scheme(root, company_id="DE987654321"):
+    """Append a VAT-scheme Buyer PartyTaxScheme/CompanyID (BT-48)."""
+    party = buyer_party(root)
+    pts = ET.SubElement(party, q(NS_CAC, "PartyTaxScheme"))
+    ET.SubElement(pts, q(NS_CBC, "CompanyID")).text = company_id
+    ET.SubElement(ET.SubElement(pts, q(NS_CAC, "TaxScheme")),
+                  q(NS_CBC, "ID")).text = "VAT"
+
+
+class NotSubjectToVatBatch(unittest.TestCase):
+    """BR-O-02..14 — Not subject to VAT (O) VAT category rules.
+
+    The odd family: -02..04 are PROHIBITIONS (no VAT id may be present),
+    -05..07 forbid the VAT rate element outright (``not(cbc:Percent)``), and
+    -11..14 forbid mixing any other VAT category once an O breakdown exists."""
+
+    def o_base(self):
+        return not_subject_base()
+
+    def test_clean_o_base_fires_nothing(self):
+        self.assertEqual(fired(self.o_base()), set())
+
+    # -- -02..04: NO Seller / tax-rep / Buyer VAT identifier ------------------
+    def test_br_o_02_seller_vat_id_fires(self):
+        r = self.o_base()
+        add_seller_vat_party_tax_scheme(r)
+        self.assertIn("BR-O-02", fired(r))
+        self.assertNotIn("BR-O-02", fired(self.o_base()))
+
+    def test_br_o_02_buyer_vat_id_fires(self):
+        r = self.o_base()
+        add_buyer_vat_party_tax_scheme(r)
+        self.assertIn("BR-O-02", fired(r))
+
+    def test_br_o_02_tax_representative_vat_id_fires(self):
+        r = self.o_base()
+        trp = ET.Element(q(NS_CAC, "TaxRepresentativeParty"))
+        pts = ET.SubElement(trp, q(NS_CAC, "PartyTaxScheme"))
+        ET.SubElement(pts, q(NS_CBC, "CompanyID")).text = "DE999999999"
+        ET.SubElement(ET.SubElement(pts, q(NS_CAC, "TaxScheme")),
+                      q(NS_CBC, "ID")).text = "VAT"
+        r.insert(0, trp)
+        self.assertIn("BR-O-02", fired(r))
+
+    def test_br_o_03_allowance_with_vat_id_fires(self):
+        r = self.o_base()
+        ac = add_doc_allowance_charge(r, charge=False, percent="0", category="O")
+        ac.find(q(NS_CAC, "TaxCategory")).remove(
+            child(ac.find(q(NS_CAC, "TaxCategory")), NS_CBC, "Percent"))
+        add_seller_vat_party_tax_scheme(r)
+        self.assertIn("BR-O-03", fired(r))
+        # Same O allowance but NO VAT id anywhere -> holds.
+        r2 = self.o_base()
+        ac2 = add_doc_allowance_charge(r2, charge=False, percent="0",
+                                       category="O")
+        ac2.find(q(NS_CAC, "TaxCategory")).remove(
+            child(ac2.find(q(NS_CAC, "TaxCategory")), NS_CBC, "Percent"))
+        self.assertNotIn("BR-O-03", fired(r2))
+
+    def test_br_o_04_charge_with_vat_id_fires(self):
+        r = self.o_base()
+        ac = add_doc_allowance_charge(r, charge=True, percent="0", category="O")
+        ac.find(q(NS_CAC, "TaxCategory")).remove(
+            child(ac.find(q(NS_CAC, "TaxCategory")), NS_CBC, "Percent"))
+        add_seller_vat_party_tax_scheme(r)
+        self.assertIn("BR-O-04", fired(r))
+
+    # -- -05..07: NO VAT rate element ----------------------------------------
+    def test_br_o_05_line_percent_fires(self):
+        # A Percent ELEMENT present (even value 0) fires: not(cbc:Percent).
+        r = self.o_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        ET.SubElement(ctc, q(NS_CBC, "Percent")).text = "0"
+        self.assertIn("BR-O-05", fired(r))
+        self.assertNotIn("BR-O-05", fired(self.o_base()))
+
+    def test_br_o_06_allowance_percent_fires(self):
+        r = self.o_base()
+        add_doc_allowance_charge(r, charge=False, percent="0", category="O")
+        self.assertIn("BR-O-06", fired(r))
+        # Same O allowance without a Percent element -> holds.
+        r2 = self.o_base()
+        ac = add_doc_allowance_charge(r2, charge=False, percent="0",
+                                      category="O")
+        cat = ac.find(q(NS_CAC, "TaxCategory"))
+        cat.remove(child(cat, NS_CBC, "Percent"))
+        self.assertNotIn("BR-O-06", fired(r2))
+
+    def test_br_o_07_charge_percent_fires(self):
+        r = self.o_base()
+        add_doc_allowance_charge(r, charge=True, percent="0", category="O")
+        self.assertIn("BR-O-07", fired(r))
+        r2 = self.o_base()
+        ac = add_doc_allowance_charge(r2, charge=True, percent="0",
+                                      category="O")
+        cat = ac.find(q(NS_CAC, "TaxCategory"))
+        cat.remove(child(cat, NS_CBC, "Percent"))
+        self.assertNotIn("BR-O-07", fired(r2))
+
+    # -- -08/-09: breakdown taxable sum + tax = 0 ----------------------------
+    def test_br_o_08_taxable_amount_mismatch_fires(self):
+        r = self.o_base()
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "111111.11"
+        self.assertIn("BR-O-08", fired(r))
+        self.assertNotIn("BR-O-08", fired(self.o_base()))
+
+    def test_br_o_09_nonzero_tax_amount_fires(self):
+        r = self.o_base()
+        child(subtotal(r), NS_CBC, "TaxAmount").text = "10.00"
+        self.assertIn("BR-O-09", fired(r))
+        self.assertNotIn("BR-O-09", fired(self.o_base()))
+
+    # -- -10: exemption reason required --------------------------------------
+    def test_br_o_10_missing_exemption_reason_fires(self):
+        r = self.o_base()
+        cat = subtotal_category(r)
+        reason = cat.find(q(NS_CBC, "TaxExemptionReason"))
+        if reason is not None:
+            cat.remove(reason)
+        self.assertIn("BR-O-10", fired(r))
+        self.assertNotIn("BR-O-10", fired(self.o_base()))
+
+    def test_br_o_10_reason_code_alone_satisfies(self):
+        r = self.o_base()
+        cat = subtotal_category(r)
+        cat.remove(child(cat, NS_CBC, "TaxExemptionReason"))
+        code_el = ET.Element(q(NS_CBC, "TaxExemptionReasonCode"))
+        code_el.text = "VATEX-EU-O"
+        cat.insert(list(cat).index(cat.find(q(NS_CAC, "TaxScheme"))), code_el)
+        self.assertNotIn("BR-O-10", fired(r))
+
+    # -- -11..14: no OTHER VAT category once an O breakdown exists ------------
+    def test_br_o_11_other_breakdown_fires(self):
+        r = self.o_base()
+        tt = child(r, NS_CAC, "TaxTotal")
+        st2 = copy.deepcopy(tt.find(q(NS_CAC, "TaxSubtotal")))
+        child(st2.find(q(NS_CAC, "TaxCategory")), NS_CBC, "ID").text = "S"
+        tt.append(st2)
+        self.assertIn("BR-O-11", fired(r))
+        self.assertNotIn("BR-O-11", fired(self.o_base()))
+
+    def test_br_o_12_non_o_line_category_fires(self):
+        r = self.o_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "ID").text = "S"
+        self.assertIn("BR-O-12", fired(r))
+        self.assertNotIn("BR-O-12", fired(self.o_base()))
+
+    def test_br_o_13_non_o_allowance_fires(self):
+        r = self.o_base()
+        add_doc_allowance_charge(r, charge=False, percent="25", category="S")
+        self.assertIn("BR-O-13", fired(r))
+        self.assertNotIn("BR-O-13", fired(self.o_base()))
+
+    def test_br_o_14_non_o_charge_fires(self):
+        r = self.o_base()
+        add_doc_allowance_charge(r, charge=True, percent="25", category="S")
+        self.assertIn("BR-O-14", fired(r))
+        self.assertNotIn("BR-O-14", fired(self.o_base()))
+
+
 class RulesetShape(unittest.TestCase):
     def test_all_new_rules_registered(self):
         from einvoice import rules
         ids = {"-".join(p.upper() for p in fn.__name__.split("_"))
                for fn in rules.ALL_RULES}
         for rid in (NEW_RULES | LINE_RULES | PAYMENT_RULES | ZE_RULES
-                    | AEIC_RULES):
+                    | AEIC_RULES | GO_RULES):
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))

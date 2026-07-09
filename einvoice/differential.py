@@ -97,7 +97,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 149, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 151, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -480,6 +480,17 @@ def _lmt(r):
 
 def _mut_brco10(r):
     _child(_lmt(r), NS_CBC, "LineExtensionAmount").text = "111111.11"
+
+
+def _mut_brco11(r):
+    # State a document allowance total (BT-107) with no document allowances at
+    # all: Σ BT-92 = 0 != 12.34, so BR-CO-11 fires (both engines).
+    _sub_el(_lmt(r), NS_CBC, "AllowanceTotalAmount", "12.34", currency=True)
+
+
+def _mut_brco12(r):
+    # State a document charge total (BT-108) with no document charges: Σ = 0.
+    _sub_el(_lmt(r), NS_CBC, "ChargeTotalAmount", "12.34", currency=True)
 
 
 def _mut_brco13(r):
@@ -928,6 +939,7 @@ _MUTATIONS = {
     "BR-28": _mut_br28, "BR-29": _mut_br29, "BR-30": _mut_br30,
     "BR-CO-04": _mut_brco04,
     "BR-CL-01": _mut_brcl01, "BR-CO-10": _mut_brco10,
+    "BR-CO-11": _mut_brco11, "BR-CO-12": _mut_brco12,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
     "BR-CO-16": _mut_brco16, "BR-CO-17": _mut_brco17, "BR-CO-18": _mut_brco18,
     "BR-45": _mut_br45, "BR-46": _mut_br46, "BR-47": _mut_br47,

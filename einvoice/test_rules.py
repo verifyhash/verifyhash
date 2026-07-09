@@ -71,6 +71,13 @@ AEIC_RULES = {
     "BR-IC-08", "BR-IC-09", "BR-IC-11", "BR-IC-12",
 }
 
+# Document-level calculation / rounding batch (differentially proven the same
+# way). BR-CO-11/12 are the newly-added members; the others are exercised via
+# the differential corpus + mutations rather than unit tests here.
+CALC_RULES = {
+    "BR-CO-11", "BR-CO-12",
+}
+
 # Export outside the EU (G) + Not subject to VAT (O) VAT category batch
 # (differentially proven the same way).
 GO_RULES = {
@@ -132,6 +139,17 @@ def add_doc_allowance_charge(root, charge, percent="25", category="S",
     tt = child(root, NS_CAC, "TaxTotal")
     root.insert(list(root).index(tt), ac)
     return ac
+
+
+def set_lmt_amount(root, local, value):
+    """Set (or create) a ``cac:LegalMonetaryTotal/cbc:<local>`` monetary child."""
+    lmt = child(root, NS_CAC, "LegalMonetaryTotal")
+    el = child(lmt, NS_CBC, local)
+    if el is None:
+        el = ET.SubElement(lmt, q(NS_CBC, local))
+        el.set("currencyID", "DKK")
+    el.text = value
+    return el
 
 
 def convert_category(root, code, exemption_reason=None):
@@ -1319,13 +1337,89 @@ class NotSubjectToVatBatch(unittest.TestCase):
         self.assertNotIn("BR-O-14", fired(self.o_base()))
 
 
+class DocumentLevelCalculationBatch(unittest.TestCase):
+    """BR-CO-11 / BR-CO-12 — document-level allowance/charge total reconciliation.
+
+    The invariant: the stated total (BT-107 / BT-108) must equal round2(Σ of the
+    document-level allowance / charge amounts BT-92 / BT-99); a total with no
+    matching allowances/charges must be 0, and stated-but-unbacked or
+    unstated-but-present both fire. The clean base has neither a stated total nor
+    any document allowance/charge, so both rules hold vacuously on it.
+    """
+
+    def test_clean_base_holds(self):
+        got = fired(base())
+        self.assertNotIn("BR-CO-11", got)
+        self.assertNotIn("BR-CO-12", got)
+
+    # --- BR-CO-11 (allowances) --------------------------------------------- #
+    def test_br_co_11_stated_total_without_allowances_fires(self):
+        # BT-107 stated (12.34) but Σ BT-92 = 0 -> fires.
+        r = base()
+        set_lmt_amount(r, "AllowanceTotalAmount", "12.34")
+        self.assertIn("BR-CO-11", fired(r))
+
+    def test_br_co_11_reconciled_total_holds(self):
+        # One document allowance of 10.00 with a matching stated total -> holds.
+        r = base()
+        add_doc_allowance_charge(r, charge=False, amount="10.00")
+        set_lmt_amount(r, "AllowanceTotalAmount", "10.00")
+        self.assertNotIn("BR-CO-11", fired(r))
+
+    def test_br_co_11_wrong_total_fires(self):
+        # Allowance of 10.00 but the stated total says 7.50 -> fires.
+        r = base()
+        add_doc_allowance_charge(r, charge=False, amount="10.00")
+        set_lmt_amount(r, "AllowanceTotalAmount", "7.50")
+        self.assertIn("BR-CO-11", fired(r))
+
+    def test_br_co_11_allowance_without_stated_total_fires(self):
+        # Document allowance present but BT-107 absent -> fires.
+        r = base()
+        add_doc_allowance_charge(r, charge=False, amount="10.00")
+        self.assertIn("BR-CO-11", fired(r))
+
+    # --- BR-CO-12 (charges) ------------------------------------------------ #
+    def test_br_co_12_stated_total_without_charges_fires(self):
+        r = base()
+        set_lmt_amount(r, "ChargeTotalAmount", "12.34")
+        self.assertIn("BR-CO-12", fired(r))
+
+    def test_br_co_12_reconciled_total_holds(self):
+        r = base()
+        add_doc_allowance_charge(r, charge=True, amount="10.00")
+        set_lmt_amount(r, "ChargeTotalAmount", "10.00")
+        self.assertNotIn("BR-CO-12", fired(r))
+
+    def test_br_co_12_wrong_total_fires(self):
+        r = base()
+        add_doc_allowance_charge(r, charge=True, amount="10.00")
+        set_lmt_amount(r, "ChargeTotalAmount", "7.50")
+        self.assertIn("BR-CO-12", fired(r))
+
+    def test_br_co_12_charge_without_stated_total_fires(self):
+        r = base()
+        add_doc_allowance_charge(r, charge=True, amount="10.00")
+        self.assertIn("BR-CO-12", fired(r))
+
+    def test_br_co_11_rounding_half_up_holds(self):
+        # Two allowances 0.005 + 0.005 = 0.010 -> round2 (halves toward +inf) =
+        # 0.01; a stated total of 0.01 must hold. (BR-DEC-01 also fires on the
+        # 3-decimal amounts, but that is a separate rule; we assert only -11.)
+        r = base()
+        add_doc_allowance_charge(r, charge=False, amount="0.005")
+        add_doc_allowance_charge(r, charge=False, amount="0.005")
+        set_lmt_amount(r, "AllowanceTotalAmount", "0.01")
+        self.assertNotIn("BR-CO-11", fired(r))
+
+
 class RulesetShape(unittest.TestCase):
     def test_all_new_rules_registered(self):
         from einvoice import rules
         ids = {"-".join(p.upper() for p in fn.__name__.split("_"))
                for fn in rules.ALL_RULES}
         for rid in (NEW_RULES | LINE_RULES | PAYMENT_RULES | ZE_RULES
-                    | AEIC_RULES | GO_RULES):
+                    | AEIC_RULES | GO_RULES | CALC_RULES):
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))

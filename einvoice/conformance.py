@@ -65,6 +65,100 @@ IMPLEMENTED = implemented_rule_ids()
 
 
 # --------------------------------------------------------------------------- #
+# Explicit calculation / rounding coverage manifest (EN 16931 document-level    #
+# arithmetic invariants — T-VH.7/8/9/10 batches).                              #
+#                                                                              #
+# Each id below is asserted by einvoice/rules.py as a PURE ARITHMETIC INVARIANT #
+# over the parsed UBL model AND proven equivalent to the official CEN           #
+# Schematron across the differential corpus (differential.py green). It is      #
+# listed here explicitly — independent of the auto-derived ``IMPLEMENTED`` set  #
+# — so the coverage of the calculation/rounding family is auditable (and        #
+# grep-able) at a glance. The consistency assert below guarantees the manifest  #
+# can never claim a rule the validator does not actually implement.            #
+#                                                                              #
+# Rounding convention: EN 16931 monetary totals round to 2 decimals with the    #
+# official ``round(x * 10 * 10) div 100`` idiom = fn:round() (halves toward     #
+# +infinity), NOT banker's rounding; BR-CO-17 additionally allows a ±1-unit     #
+# tolerance band on the per-category VAT amount (as the normative artifact      #
+# does). See the rule docstrings in einvoice/rules.py for the exact per-rule    #
+# transcription.                                                               #
+CALCULATION_ROUNDING_COVERAGE = {
+    "BR-CO-10": "Sum of Invoice line net amount (BT-106) = Σ line net (BT-131)",
+    "BR-CO-11": "Sum of document allowances (BT-107) = Σ allowance amount (BT-92)",
+    "BR-CO-12": "Sum of document charges (BT-108) = Σ charge amount (BT-99)",
+    "BR-CO-13": "Total without VAT (BT-109) = line-net − allowances + charges",
+    "BR-CO-14": "Total VAT (BT-110) = Σ VAT category tax amount (BT-117)",
+    "BR-CO-15": "Total with VAT (BT-112) = total without VAT + total VAT",
+    "BR-CO-16": "Amount due (BT-115) = total with VAT − paid + rounding",
+    "BR-CO-17": "VAT category tax = taxable × rate/100 (rounded, ±1 tolerance)",
+    # BR-DEC decimal-places rules for these monetary totals (max 2 decimals):
+    "BR-DEC-09": "≤2 decimals: Sum of Invoice line net amount (BT-106)",
+    "BR-DEC-10": "≤2 decimals: Sum of allowances on document level (BT-107)",
+    "BR-DEC-11": "≤2 decimals: Sum of charges on document level (BT-108)",
+    "BR-DEC-12": "≤2 decimals: Invoice total amount without VAT (BT-109)",
+    "BR-DEC-14": "≤2 decimals: Invoice total amount with VAT (BT-112)",
+    "BR-DEC-16": "≤2 decimals: Paid amount (BT-113)",
+    "BR-DEC-17": "≤2 decimals: Rounding amount (BT-114)",
+    "BR-DEC-18": "≤2 decimals: Amount due for payment (BT-115)",
+    "BR-DEC-19": "≤2 decimals: VAT category taxable amount (BT-116)",
+    "BR-DEC-20": "≤2 decimals: VAT category tax amount (BT-117)",
+}
+
+# BR-DEC-13 (BT-110, Invoice total VAT amount) and BR-DEC-15 (BT-111, VAT amount
+# in accounting currency) are DELIBERATELY NOT asserted. In the vendored,
+# normative CEN Schematron their test is
+#
+#     (//cac:TaxTotal/cbc:TaxAmount[@currencyID = cbc:DocumentCurrencyCode] and
+#       string-length(substring-after(…,'.')) <= 2)
+#     or not(//cac:TaxTotal/cbc:TaxAmount[@currencyID = cbc:DocumentCurrencyCode])
+#
+# where the predicate ``cbc:DocumentCurrencyCode`` (resp. ``cbc:TaxCurrencyCode``
+# for BR-DEC-15) is a CHILD of the TaxAmount context node — an element that never
+# exists there — so the predicate is always false, the selected node-set is
+# always empty, and the assert ALWAYS HOLDS (it can never fire). Verified
+# empirically against the official XSLT: a top-level VAT TaxAmount carrying three
+# decimals in the document currency still produces NO BR-DEC-13 failed-assert.
+# Implementing them as active 2-decimal checks would therefore be a FALSE
+# POSITIVE against the legal artifact (the differential would go red); the only
+# faithful transcription is a no-op, which has no violating test case. They are
+# recorded here as a known-vacuous defect in the normative Schematron rather than
+# shipped as an approximation.
+CALCULATION_ROUNDING_VACUOUS = {
+    "BR-DEC-13": "vacuous in official Schematron (predicate references a "
+                 "non-existent child of cbc:TaxAmount) — never fires",
+    "BR-DEC-15": "vacuous in official Schematron (same defect, TaxCurrencyCode) "
+                 "— never fires",
+}
+
+def _all_asserted_rule_ids():
+    """Every rule id the validator can actually emit — both the direct
+    ``Violation("ID", …)`` calls (the ``IMPLEMENTED`` set) and the ids raised
+    through the ``_dec_violation("BR-DEC-…", …)`` helper (which the ``IMPLEMENTED``
+    regex intentionally leaves out because those ids never appear as a literal
+    first argument to ``Violation``). Used only to audit the coverage manifest,
+    so it does not perturb the grading ``IMPLEMENTED`` set above."""
+    src = open(RULES_SRC, encoding="utf-8").read()
+    ids = set(re.findall(r'Violation\(\s*["\']([A-Z0-9-]+)["\']', src))
+    ids |= set(re.findall(r'_dec_violation\(\s*["\']([A-Z0-9-]+)["\']', src))
+    # The document-total BR-DEC rules raise through _dec_lmt(inv, "BR-DEC-…", …).
+    ids |= set(re.findall(r'_dec_lmt\(\s*inv,\s*["\']([A-Z0-9-]+)["\']', src))
+    return ids
+
+
+_ASSERTED = _all_asserted_rule_ids()
+
+# The manifest may only claim rules the validator actually implements.
+assert CALCULATION_ROUNDING_COVERAGE.keys() <= _ASSERTED, (
+    "calculation/rounding coverage manifest names unimplemented rules: %s"
+    % sorted(CALCULATION_ROUNDING_COVERAGE.keys() - _ASSERTED))
+# The vacuous set must NOT be implemented (asserting them would be a false
+# positive against the official Schematron).
+assert not (CALCULATION_ROUNDING_VACUOUS.keys() & _ASSERTED), (
+    "a known-vacuous rule is being asserted (false positive risk): %s"
+    % sorted(CALCULATION_ROUNDING_VACUOUS.keys() & _ASSERTED))
+
+
+# --------------------------------------------------------------------------- #
 # Driving the real CLI                                                         #
 # --------------------------------------------------------------------------- #
 def run_cli(path):
@@ -284,6 +378,14 @@ def main():
     out("=" * 70 + "\n")
     out("  validator implements %d business rules: %s\n"
         % (len(IMPLEMENTED), ", ".join(sorted(IMPLEMENTED))))
+    out("\n")
+    out("  calculation/rounding invariants covered (%d), differentially proven:\n"
+        % len(CALCULATION_ROUNDING_COVERAGE))
+    for rid in sorted(CALCULATION_ROUNDING_COVERAGE):
+        out("     %-11s %s\n" % (rid, CALCULATION_ROUNDING_COVERAGE[rid]))
+    out("  known-vacuous in the normative Schematron (not asserted):\n")
+    for rid in sorted(CALCULATION_ROUNDING_VACUOUS):
+        out("     %-11s %s\n" % (rid, CALCULATION_ROUNDING_VACUOUS[rid]))
     out("\n")
 
     # Per valid vector

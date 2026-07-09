@@ -592,6 +592,107 @@ def br_co_10(inv):
     return None
 
 
+def _doc_ac_amount_sum(inv, is_charge):
+    """Σ over document-level allowances (is_charge False) / charges (True) of
+    ``xs:decimal(cbc:Amount)``.
+
+    Mirrors the official ``sum(../cac:AllowanceCharge[...]/xs:decimal(cbc:Amount))``
+    path expression: a matching AllowanceCharge whose ``cbc:Amount`` is absent or
+    unparseable maps to the empty sequence and simply drops out of the sum (it is
+    not itself an error for this rule). ``../cac:AllowanceCharge`` is the sibling
+    of the LegalMonetaryTotal, i.e. the DOCUMENT-level allowance/charge (BG-20/21)
+    captured by the parser as ``inv.doc_allowance_charges``.
+    """
+    total = Decimal("0")
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is is_charge:
+            v = _dec(ac.amount_raw)
+            if v is not None:
+                total += v
+    return total
+
+
+def _has_doc_ac(inv, is_charge):
+    """True iff a document-level allowance (is_charge False) / charge (True)
+    exists — the official ``exists(../cac:AllowanceCharge[cbc:ChargeIndicator=…])``
+    node test. The parser's ``is_charge`` is True/False only for a usable
+    ``cbc:ChargeIndicator`` (true()/1 vs false()/0), matching the XPath boolean
+    cast; an absent/garbage indicator is ``None`` and counts for neither side."""
+    return any(ac.is_charge is is_charge for ac in inv.doc_allowance_charges)
+
+
+def br_co_11(inv):
+    """BR-CO-11: Sum of allowances on document level (BT-107) = Σ Document level
+    allowance amount (BT-92).
+
+    Official (context ``cac:LegalMonetaryTotal``)::
+
+        xs:decimal(cbc:AllowanceTotalAmount)
+            = (round(sum(../cac:AllowanceCharge[cbc:ChargeIndicator=false()]
+                          /xs:decimal(cbc:Amount)) * 10 * 10) div 100)
+          or (not(cbc:AllowanceTotalAmount)
+              and not(../cac:AllowanceCharge[cbc:ChargeIndicator=false()]))
+
+    The rule's context node is the LegalMonetaryTotal, so it is only evaluated
+    when an LMT is present. ``round(x * 10 * 10) div 100`` is 2-place rounding
+    with fn:round() (halves toward +infinity) semantics — the shared ``_xr2``
+    idiom; only the summed right-hand side is rounded (the stated total keeps its
+    exact xs:decimal value, matching the official). The assert HOLDS iff EITHER
+    the stated total equals round2(Σ allowance amounts) OR there is neither a
+    stated total NOR any document-level allowance. It therefore FIRES when:
+
+    * a stated total is present but != round2(Σ) — including the sub-case where a
+      total is stated with no allowances at all (Σ = 0, so it must equal 0); or
+    * document-level allowances exist but NO total (BT-107) is stated (the empty
+      sequence makes ``() = n`` false and the second disjunct false).
+    """
+    if not inv.has_legal_monetary_total:
+        return None  # context node absent -> rule never evaluated
+    stated = _dec(inv.allowance_total)
+    if stated is None and not _has_doc_ac(inv, False):
+        return None  # second disjunct: nothing to reconcile -> holds
+    expected = _xr2(_doc_ac_amount_sum(inv, False))
+    if stated is not None and stated == expected:
+        return None  # first disjunct: stated == round2(Σ) -> holds
+    return Violation(
+        "BR-CO-11",
+        "Sum of allowances on document level (BT-107=%s) must equal the sum of "
+        "Document level allowance amounts (Σ BT-92=%s)."
+        % ("(absent)" if stated is None else stated, expected),
+        "cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount")
+
+
+def br_co_12(inv):
+    """BR-CO-12: Sum of charges on document level (BT-108) = Σ Document level
+    charge amount (BT-99).
+
+    Official (context ``cac:LegalMonetaryTotal``)::
+
+        xs:decimal(cbc:ChargeTotalAmount)
+            = (round(sum(../cac:AllowanceCharge[cbc:ChargeIndicator=true()]
+                          /xs:decimal(cbc:Amount)) * 10 * 10) div 100)
+          or (not(cbc:ChargeTotalAmount)
+              and not(../cac:AllowanceCharge[cbc:ChargeIndicator=true()]))
+
+    Exactly BR-CO-11's shape scoped to CHARGES (ChargeIndicator=true()): see
+    :func:`br_co_11` for the disjunction/rounding/tolerance semantics.
+    """
+    if not inv.has_legal_monetary_total:
+        return None  # context node absent -> rule never evaluated
+    stated = _dec(inv.charge_total)
+    if stated is None and not _has_doc_ac(inv, True):
+        return None  # second disjunct: nothing to reconcile -> holds
+    expected = _xr2(_doc_ac_amount_sum(inv, True))
+    if stated is not None and stated == expected:
+        return None  # first disjunct: stated == round2(Σ) -> holds
+    return Violation(
+        "BR-CO-12",
+        "Sum of charges on document level (BT-108=%s) must equal the sum of "
+        "Document level charge amounts (Σ BT-99=%s)."
+        % ("(absent)" if stated is None else stated, expected),
+        "cac:LegalMonetaryTotal/cbc:ChargeTotalAmount")
+
+
 def br_co_13(inv):
     """BR-CO-13: Invoice total without VAT (BT-109) = Σ line net (BT-131)
     − document allowances (BT-107) + document charges (BT-108)."""
@@ -3092,7 +3193,8 @@ ALL_RULES = [
     br_49, br_50, br_51, br_55, br_57, br_61, br_62, br_63,
     br_cl_01,
     br_co_04,
-    br_co_10, br_co_13, br_co_14, br_co_15, br_co_16, br_co_17, br_co_18,
+    br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15, br_co_16,
+    br_co_17, br_co_18,
     br_45, br_46, br_47, br_48,
     br_s_01, br_z_01,
     br_s_02, br_s_03, br_s_04, br_s_05, br_s_06, br_s_07, br_s_09, br_s_10,

@@ -62,6 +62,15 @@ ZE_RULES = {
     "BR-E-08", "BR-E-09", "BR-E-10",
 }
 
+# Reverse charge (AE) + Intra-community supply (K) VAT category batch
+# (differentially proven the same way).
+AEIC_RULES = {
+    "BR-AE-02", "BR-AE-03", "BR-AE-04", "BR-AE-05", "BR-AE-06", "BR-AE-07",
+    "BR-AE-08", "BR-AE-09", "BR-AE-10",
+    "BR-IC-02", "BR-IC-03", "BR-IC-04", "BR-IC-05", "BR-IC-06", "BR-IC-07",
+    "BR-IC-08", "BR-IC-09", "BR-IC-11", "BR-IC-12",
+}
+
 
 def q(ns, local):
     return "{%s}%s" % (ns, local)
@@ -157,6 +166,42 @@ def exempt_base():
 def remove_seller_party_tax_scheme(root):
     party = supplier_party(root)
     party.remove(child(party, NS_CAC, "PartyTaxScheme"))
+
+
+def reverse_charge_base():
+    r = base()
+    convert_category(r, "AE", exemption_reason="Reverse charge")
+    return r
+
+
+def intra_community_base():
+    r = base()
+    convert_category(r, "K")
+    return r
+
+
+def buyer_party(root):
+    return root.find("%s/%s" % (q(NS_CAC, "AccountingCustomerParty"),
+                                q(NS_CAC, "Party")))
+
+
+def remove_buyer_party_tax_scheme(root):
+    """Drop every Buyer cac:PartyTaxScheme (removes the Buyer VAT id, BT-48)."""
+    party = buyer_party(root)
+    for pts in party.findall(q(NS_CAC, "PartyTaxScheme")):
+        party.remove(pts)
+
+
+def remove_buyer_legal_entity_company_id(root):
+    """Drop the Buyer cac:PartyLegalEntity/cbc:CompanyID (BT-47)."""
+    ple = buyer_party(root).find(q(NS_CAC, "PartyLegalEntity"))
+    cid = child(ple, NS_CBC, "CompanyID")
+    if cid is not None:
+        ple.remove(cid)
+
+
+def doc_delivery(root):
+    return child(root, NS_CAC, "Delivery")
 
 
 class CleanBase(unittest.TestCase):
@@ -916,12 +961,136 @@ class ExemptBatch(_VatCategoryBatch, unittest.TestCase):
         self.assertNotIn("BR-E-10", fired(r))
 
 
+class ReverseChargeBatch(_VatCategoryBatch, unittest.TestCase):
+    """BR-AE-02..10 — Reverse charge (AE) VAT category rules.
+
+    Inherits the shared -02..09 seller-id/rate/breakdown cases; adds the
+    reverse-charge specific coverage (the BUYER-identifier disjunct of
+    BR-AE-02..04 and the mandatory exemption reason of BR-AE-10)."""
+
+    code = "AE"
+    fam = "AE"
+
+    def cat_base(self):
+        return reverse_charge_base()
+
+    # -- -02..04: the NEW buyer-identifier requirement -------------------------
+    def test_02_missing_buyer_id_fires(self):
+        # Seller id present, but NO Buyer VAT id (BT-48) and NO Buyer legal
+        # registration id (BT-47) -> BR-AE-02 fires.
+        r = self.cat_base()
+        remove_buyer_party_tax_scheme(r)
+        remove_buyer_legal_entity_company_id(r)
+        self.assertIn("BR-AE-02", fired(r))
+        self.assertNotIn("BR-AE-02", fired(self.cat_base()))
+
+    def test_02_buyer_legal_entity_alone_satisfies(self):
+        # AE accepts the Buyer legal registration id (BT-47) as the buyer
+        # disjunct: drop the Buyer VAT id but keep PartyLegalEntity/CompanyID.
+        r = self.cat_base()
+        remove_buyer_party_tax_scheme(r)
+        self.assertNotIn("BR-AE-02", fired(r))
+
+    # -- -10: exemption reason mandatory --------------------------------------
+    def test_br_ae_10_missing_exemption_reason_fires(self):
+        r = base()
+        convert_category(r, "AE", exemption_reason=None)
+        self.assertIn("BR-AE-10", fired(r))
+        self.assertNotIn("BR-AE-10", fired(self.cat_base()))  # reason present
+
+    def test_br_ae_10_reason_code_alone_satisfies(self):
+        r = base()
+        convert_category(r, "AE", exemption_reason=None)
+        cat = subtotal_category(r)
+        code_el = ET.Element(q(NS_CBC, "TaxExemptionReasonCode"))
+        code_el.text = "VATEX-EU-AE"
+        cat.insert(list(cat).index(cat.find(q(NS_CAC, "TaxScheme"))), code_el)
+        self.assertNotIn("BR-AE-10", fired(r))
+
+
+class IntraCommunityBatch(_VatCategoryBatch, unittest.TestCase):
+    """BR-IC-02..12 — Intra-community supply (K) VAT category rules.
+
+    Inherits the shared -02..09 cases; adds the stricter (VAT-scoped) buyer
+    requirement of BR-IC-02..04 and the delivery-information rules BR-IC-11/12.
+    (There is no BR-IC-10.)"""
+
+    code = "K"
+    fam = "IC"
+
+    def cat_base(self):
+        return intra_community_base()
+
+    # -- -02..04: buyer VAT id required; legal entity does NOT satisfy ---------
+    def test_02_missing_buyer_vat_id_fires(self):
+        r = self.cat_base()
+        remove_buyer_party_tax_scheme(r)
+        self.assertIn("BR-IC-02", fired(r))
+        self.assertNotIn("BR-IC-02", fired(self.cat_base()))
+
+    def test_02_legal_entity_does_not_satisfy(self):
+        # Unlike BR-AE-02, the Buyer legal registration id (BT-47) is NOT
+        # accepted: only the Buyer VAT id (BT-48) satisfies BR-IC-02. Dropping
+        # the VAT id while KEEPING PartyLegalEntity/CompanyID still fires.
+        r = self.cat_base()
+        remove_buyer_party_tax_scheme(r)
+        self.assertIsNotNone(
+            buyer_party(r).find("%s/%s" % (q(NS_CAC, "PartyLegalEntity"),
+                                           q(NS_CBC, "CompanyID"))))
+        self.assertIn("BR-IC-02", fired(r))
+
+    # -- -11: actual delivery date OR invoicing period ------------------------
+    def test_br_ic_11_missing_delivery_date_and_period_fires(self):
+        r = self.cat_base()
+        d = doc_delivery(r)
+        d.remove(child(d, NS_CBC, "ActualDeliveryDate"))
+        for p in r.findall(q(NS_CAC, "InvoicePeriod")):
+            r.remove(p)
+        self.assertIn("BR-IC-11", fired(r))
+        self.assertNotIn("BR-IC-11", fired(self.cat_base()))  # date present
+
+    def test_br_ic_11_invoice_period_satisfies(self):
+        # No actual delivery date, but a document-level invoicing period with a
+        # child element still satisfies the rule.
+        r = self.cat_base()
+        d = doc_delivery(r)
+        d.remove(child(d, NS_CBC, "ActualDeliveryDate"))
+        self.assertIsNotNone(child(r, NS_CAC, "InvoicePeriod"))
+        self.assertNotIn("BR-IC-11", fired(r))
+
+    def test_br_ic_11_single_char_date_still_fires(self):
+        # string-length(...) > 1: a 1-character date does not satisfy the rule.
+        r = self.cat_base()
+        child(doc_delivery(r), NS_CBC, "ActualDeliveryDate").text = "x"
+        for p in r.findall(q(NS_CAC, "InvoicePeriod")):
+            r.remove(p)
+        self.assertIn("BR-IC-11", fired(r))
+
+    # -- -12: deliver-to country code -----------------------------------------
+    def test_br_ic_12_missing_delivery_country_fires(self):
+        r = self.cat_base()
+        loc = child(doc_delivery(r), NS_CAC, "DeliveryLocation")
+        addr = child(loc, NS_CAC, "Address")
+        addr.remove(child(addr, NS_CAC, "Country"))
+        self.assertIn("BR-IC-12", fired(r))
+        self.assertNotIn("BR-IC-12", fired(self.cat_base()))  # DK present
+
+    def test_br_ic_12_single_char_country_fires(self):
+        r = self.cat_base()
+        cc = doc_delivery(r).find(
+            "%s/%s/%s/%s" % (q(NS_CAC, "DeliveryLocation"), q(NS_CAC, "Address"),
+                             q(NS_CAC, "Country"), q(NS_CBC, "IdentificationCode")))
+        cc.text = "D"
+        self.assertIn("BR-IC-12", fired(r))
+
+
 class RulesetShape(unittest.TestCase):
     def test_all_new_rules_registered(self):
         from einvoice import rules
         ids = {"-".join(p.upper() for p in fn.__name__.split("_"))
                for fn in rules.ALL_RULES}
-        for rid in NEW_RULES | LINE_RULES | PAYMENT_RULES | ZE_RULES:
+        for rid in (NEW_RULES | LINE_RULES | PAYMENT_RULES | ZE_RULES
+                    | AEIC_RULES):
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))

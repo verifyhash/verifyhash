@@ -247,6 +247,21 @@ def _build_period(period_el):
                   _text(period_el.find("cbc:EndDate", NS)))
 
 
+def _party_has_vat_company_id(party_el):
+    """True iff ``party_el`` carries a ``cac:PartyTaxScheme`` whose
+    ``cac:TaxScheme/cbc:ID`` normalizes to 'VAT' (case-insensitive) and which
+    has a ``cbc:CompanyID`` child — the VAT-scoped party-id disjunct shared by
+    BR-IC-02..04 (Seller BT-31 / Buyer BT-48). Returns False for a None party."""
+    if party_el is None:
+        return False
+    for pts_el in party_el.findall("cac:PartyTaxScheme", NS):
+        scheme = _norm_space(_text(pts_el.find("cac:TaxScheme/cbc:ID", NS)))
+        if (scheme and scheme.upper() == "VAT"
+                and pts_el.find("cbc:CompanyID", NS) is not None):
+            return True
+    return False
+
+
 class Invoice:
     """Normalized first-slice model of a UBL Invoice."""
 
@@ -268,6 +283,11 @@ class Invoice:
         # BR-S-02/03/04 seller test is SCHEME-AGNOSTIC (any PartyTaxScheme with
         # a CompanyID satisfies it, not only the VAT one).
         self.seller_has_party_tax_scheme_company_id = False
+        # exists(//AccountingSupplierParty/Party/PartyTaxScheme[VAT]/CompanyID) —
+        # the VAT-scheme-SCOPED Seller VAT identifier (BT-31). The reverse-charge
+        # rules BR-AE-02..04 accept the scheme-agnostic seller id above, but the
+        # intra-community rules BR-IC-02..04 require the VAT scheme explicitly.
+        self.seller_has_vat_scheme_company_id = False
         # exists(//TaxRepresentativeParty/PartyTaxScheme[VAT]/CompanyID) —
         # the Seller tax representative VAT id (BT-63); VAT scheme IS required
         # here, unlike the seller test above.
@@ -275,6 +295,14 @@ class Invoice:
         self.buyer_name = None            # BT-44
         self.buyer_has_postal_address = False  # BG-8
         self.buyer_country_code = None    # BT-55 (normalize-space; None = no addr)
+        # exists(//AccountingCustomerParty/Party/PartyTaxScheme[VAT]/CompanyID) —
+        # the Buyer VAT identifier (BT-48). Required by BR-AE-02..04 (as one
+        # disjunct) and BR-IC-02..04.
+        self.buyer_has_vat_scheme_company_id = False
+        # exists(//AccountingCustomerParty/Party/PartyLegalEntity/CompanyID) —
+        # the Buyer legal registration identifier (BT-47), the other disjunct of
+        # the BR-AE-02..04 buyer test.
+        self.buyer_has_legal_entity_company_id = False
         # Per Seller/Buyer cbc:EndpointID element (BT-34/BT-49): does it carry
         # a @schemeID attribute? — BR-62/BR-63 (attribute EXISTENCE; empty ok).
         self.seller_endpoints = []        # list[bool]
@@ -299,6 +327,18 @@ class Invoice:
         # Deliver-to addresses (BG-15): per cac:Delivery/cac:DeliveryLocation/
         # cac:Address anywhere, exists(cac:Country/cbc:IdentificationCode) — BR-57.
         self.delivery_addresses = []      # list[bool]
+        # Document-level Delivery (BG-13, a direct child of the Invoice) facts
+        # consumed by the intra-community rules BR-IC-11/BR-IC-12. RAW string
+        # values (no normalize-space — the official tests use string-length()
+        # over the literal string value), or None when the element is absent:
+        #  * cac:Delivery/cbc:ActualDeliveryDate                (BT-72), and
+        #  * cac:Delivery/cac:DeliveryLocation/cac:Address/
+        #      cac:Country/cbc:IdentificationCode               (BT-80).
+        self.doc_delivery_actual_date_raw = None
+        self.doc_delivery_country_code_raw = None
+        # exists(cac:InvoicePeriod/*) at the Invoice level — a document-level
+        # Invoicing period (BG-14) carrying at least one child element (BR-IC-11).
+        self.doc_invoice_period_has_child = False
         # Totals
         self.line_extension_total = None  # BT-106
         self.tax_exclusive_amount = None  # BT-109
@@ -462,6 +502,8 @@ def build_model(root):
         # exists(cac:PartyTaxScheme/cbc:CompanyID) — scheme-agnostic (BR-S-02..04).
         inv.seller_has_party_tax_scheme_company_id = (
             supplier.find("cac:PartyTaxScheme/cbc:CompanyID", NS) is not None)
+        # exists(cac:PartyTaxScheme[VAT]/cbc:CompanyID) — VAT-scoped (BR-IC-02..04).
+        inv.seller_has_vat_scheme_company_id = _party_has_vat_company_id(supplier)
         # BR-62: per Seller cbc:EndpointID, exists(@schemeID).
         inv.seller_endpoints = [
             "schemeID" in el.attrib
@@ -497,6 +539,11 @@ def build_model(root):
         inv.buyer_country_code = _norm_space(_text(
             customer.find(
                 "cac:PostalAddress/cac:Country/cbc:IdentificationCode", NS)))
+        # BT-48 (VAT-scoped) and BT-47 (legal registration id) — the two buyer
+        # disjuncts of BR-AE-02..04 / BR-IC-02..04.
+        inv.buyer_has_vat_scheme_company_id = _party_has_vat_company_id(customer)
+        inv.buyer_has_legal_entity_company_id = (
+            customer.find("cac:PartyLegalEntity/cbc:CompanyID", NS) is not None)
         # BR-63: per Buyer cbc:EndpointID, exists(@schemeID).
         inv.buyer_endpoints = [
             "schemeID" in el.attrib
@@ -554,6 +601,26 @@ def build_model(root):
             inv.delivery_addresses.append(
                 addr_el.find("cac:Country/cbc:IdentificationCode", NS)
                 is not None)
+
+    # Document-level Delivery (BG-13, direct child of the Invoice) — the BR-IC-11
+    # actual-delivery-date (BT-72) and BR-IC-12 deliver-to country code (BT-80)
+    # are read relative to /ubl:Invoice, so only the FIRST such Delivery counts.
+    doc_delivery = root.find("cac:Delivery", NS)
+    if doc_delivery is not None:
+        add_el = doc_delivery.find("cbc:ActualDeliveryDate", NS)
+        if add_el is not None:
+            inv.doc_delivery_actual_date_raw = _strval(add_el)
+        cc_el = doc_delivery.find(
+            "cac:DeliveryLocation/cac:Address/cac:Country/cbc:IdentificationCode",
+            NS)
+        if cc_el is not None:
+            inv.doc_delivery_country_code_raw = _strval(cc_el)
+
+    # exists(cac:InvoicePeriod/*) at the Invoice level — a document-level
+    # Invoicing period carrying at least one child element (BR-IC-11's second
+    # disjunct). Only direct children of the Invoice qualify.
+    inv.doc_invoice_period_has_child = any(
+        len(p_el) > 0 for p_el in root.findall("cac:InvoicePeriod", NS))
 
     # LegalMonetaryTotal
     lmt = root.find("cac:LegalMonetaryTotal", NS)

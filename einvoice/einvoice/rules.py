@@ -1592,6 +1592,347 @@ def br_e_10(inv):
 
 
 # ---------------------------------------------------------------------------
+# Reverse charge (AE) and Intra-community supply (K) VAT category rules
+# (BR-AE-02..10, BR-IC-02..12). These share the BR-Z/BR-E rate (-05..07),
+# breakdown-sum (-08), breakdown-tax-zero (-09) and (for AE) the exemption-
+# reason (-10) shapes, so the helpers above are reused directly. What is NEW
+# is the party-identifier requirement of the -02..04 rules: unlike BR-Z/BR-E
+# (which need ONLY a Seller identifier), reverse charge and intra-community
+# supply are cross-border B2B transactions where the tax liability shifts to
+# the customer, so the official Schematron also demands a BUYER identifier.
+#
+# Reverse charge (AE), BR-AE-02..04 fire iff an AE VAT line/allowance/charge
+# exists AND NOT (a SELLER id AND a BUYER id), where:
+#   * SELLER id = a Seller PartyTaxScheme/CompanyID (ANY scheme, BT-31/BT-32)
+#                 OR a tax-representative VAT PartyTaxScheme/CompanyID (BT-63);
+#   * BUYER  id = a Buyer VAT PartyTaxScheme/CompanyID (BT-48)
+#                 OR a Buyer PartyLegalEntity/CompanyID (BT-47).
+#
+# Intra-community supply (K), BR-IC-02..04 are the same shape but STRICTER on
+# the identifiers — every accepted id must be VAT-scheme scoped:
+#   * SELLER id = a Seller VAT PartyTaxScheme/CompanyID (BT-31)
+#                 OR a tax-representative VAT PartyTaxScheme/CompanyID (BT-63);
+#   * BUYER  id = a Buyer VAT PartyTaxScheme/CompanyID (BT-48) ONLY (no legal
+#                 registration fallback).
+# ---------------------------------------------------------------------------
+def _ae_buyer_id_present(inv):
+    """The BR-AE-02..04 buyer disjunct: a Buyer VAT identifier (BT-48) OR a
+    Buyer legal registration identifier (BT-47)."""
+    return (inv.buyer_has_vat_scheme_company_id
+            or inv.buyer_has_legal_entity_company_id)
+
+
+def _ic_seller_id_present(inv):
+    """The BR-IC-02..04 seller disjunct: a VAT-scoped Seller VAT identifier
+    (BT-31) OR a tax-representative VAT identifier (BT-63)."""
+    return (inv.seller_has_vat_scheme_company_id
+            or inv.taxrep_has_vat_company_id)
+
+
+def _ae_party_id_message(subject):
+    return ("An Invoice with a Reverse charge (AE) %s shall contain the Seller "
+            "VAT Identifier (BT-31), the Seller tax registration identifier "
+            "(BT-32) and/or the Seller tax representative VAT identifier (BT-63) "
+            "AND the Buyer VAT identifier (BT-48) and/or the Buyer legal "
+            "registration identifier (BT-47)." % subject)
+
+
+def _ic_party_id_message(subject):
+    return ("An Invoice with an Intra-community supply (K) %s shall contain the "
+            "Seller VAT Identifier (BT-31) or the Seller tax representative VAT "
+            "identifier (BT-63) AND the Buyer VAT identifier (BT-48)." % subject)
+
+
+def br_ae_02(inv):
+    """BR-AE-02: an Invoice with a Reverse charge (AE) Invoice line (BT-151)
+    shall carry a Seller identifier AND a Buyer identifier."""
+    if (inv.has_classified_category("AE", "VAT")
+            and not (inv.seller_has_vat_identifier()
+                     and _ae_buyer_id_present(inv))):
+        return Violation(
+            "BR-AE-02", _ae_party_id_message("Invoice line (BT-151)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_ae_03(inv):
+    """BR-AE-03: an Invoice with a Reverse charge (AE) Document level allowance
+    (BT-95) shall carry a Seller identifier AND a Buyer identifier."""
+    if (_ac_has_vat_category(inv, False, "AE")
+            and not (inv.seller_has_vat_identifier()
+                     and _ae_buyer_id_present(inv))):
+        return Violation(
+            "BR-AE-03",
+            _ae_party_id_message("Document level allowance (BT-95)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_ae_04(inv):
+    """BR-AE-04: an Invoice with a Reverse charge (AE) Document level charge
+    (BT-102) shall carry a Seller identifier AND a Buyer identifier."""
+    if (_ac_has_vat_category(inv, True, "AE")
+            and not (inv.seller_has_vat_identifier()
+                     and _ae_buyer_id_present(inv))):
+        return Violation(
+            "BR-AE-04",
+            _ae_party_id_message("Document level charge (BT-102)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_ae_05(inv):
+    """BR-AE-05: in a Reverse charge (AE) Invoice line the Invoiced item VAT
+    rate (BT-152) shall be 0."""
+    ln = _line_rate_nonzero(inv, "AE")
+    if ln is not None:
+        return Violation(
+            "BR-AE-05",
+            "In an Invoice line (BG-25) where the Invoiced item VAT category "
+            "code (BT-151) is 'Reverse charge' the Invoiced item VAT rate "
+            "(BT-152) shall be 0 (zero).",
+            ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")
+    return None
+
+
+def br_ae_06(inv):
+    """BR-AE-06: in a Reverse charge (AE) Document level allowance the allowance
+    VAT rate (BT-96) shall be 0."""
+    if _ac_rate_nonzero(inv, "AE", False):
+        return Violation(
+            "BR-AE-06",
+            "In a Document level allowance (BG-20) where the Document level "
+            "allowance VAT category code (BT-95) is 'Reverse charge' the "
+            "Document level allowance VAT rate (BT-96) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_ae_07(inv):
+    """BR-AE-07: in a Reverse charge (AE) Document level charge the charge VAT
+    rate (BT-103) shall be 0."""
+    if _ac_rate_nonzero(inv, "AE", True):
+        return Violation(
+            "BR-AE-07",
+            "In a Document level charge (BG-21) where the Document level charge "
+            "VAT category code (BT-102) is 'Reverse charge' the Document level "
+            "charge VAT rate (BT-103) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_ae_08(inv):
+    """BR-AE-08: the Reverse charge (AE) VAT breakdown taxable amount (BT-116)
+    shall equal the exact sum of AE line nets − AE allowances + AE charges."""
+    hit = _breakdown_taxable_sum_mismatch(inv, "AE")
+    if hit is not None:
+        st, expected = hit
+        return Violation(
+            "BR-AE-08", _taxable_sum_message("Reverse charge", st, expected),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_ae_09(inv):
+    """BR-AE-09: the VAT category tax amount (BT-117) in a Reverse charge (AE)
+    VAT breakdown shall equal 0."""
+    st = _breakdown_tax_nonzero(inv, "AE")
+    if st is not None:
+        return Violation(
+            "BR-AE-09", _tax_zero_message("Reverse charge", st),
+            "cac:TaxTotal/cac:TaxSubtotal/cac:TaxAmount")
+    return None
+
+
+def br_ae_10(inv):
+    """BR-AE-10: a VAT breakdown (BG-23) with a Reverse charge (AE) VAT category
+    code (BT-118) SHALL have a VAT exemption reason code (BT-121) meaning
+    'Reverse charge' or the reason text (BT-120) 'Reverse charge' — the
+    presence-required shape shared with BR-E-10.
+
+    Official (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='AE'][VAT]``)::
+
+        exists(cbc:TaxExemptionReason) or exists(cbc:TaxExemptionReasonCode)
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if (st.category_id == "AE" and st.category_scheme_id == "VAT"
+                    and not (st.has_exemption_reason
+                             or st.has_exemption_reason_code)):
+                return Violation(
+                    "BR-AE-10",
+                    "A VAT breakdown (BG-23) with a Reverse charge (AE) VAT "
+                    "category code (BT-118) shall have a VAT exemption reason "
+                    "code (BT-121), meaning 'Reverse charge', or the VAT "
+                    "exemption reason text (BT-120) 'Reverse charge'.",
+                    "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
+                    "cbc:TaxExemptionReason")
+    return None
+
+
+def br_ic_02(inv):
+    """BR-IC-02: an Invoice with an Intra-community supply (K) Invoice line
+    (BT-151) shall carry a VAT-scoped Seller identifier AND the Buyer VAT
+    identifier."""
+    if (inv.has_classified_category("K", "VAT")
+            and not (_ic_seller_id_present(inv)
+                     and inv.buyer_has_vat_scheme_company_id)):
+        return Violation(
+            "BR-IC-02", _ic_party_id_message("Invoice line (BT-151)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_ic_03(inv):
+    """BR-IC-03: an Invoice with an Intra-community supply (K) Document level
+    allowance (BT-95) shall carry a VAT-scoped Seller identifier AND the Buyer
+    VAT identifier."""
+    if (_ac_has_vat_category(inv, False, "K")
+            and not (_ic_seller_id_present(inv)
+                     and inv.buyer_has_vat_scheme_company_id)):
+        return Violation(
+            "BR-IC-03",
+            _ic_party_id_message("Document level allowance (BT-95)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_ic_04(inv):
+    """BR-IC-04: an Invoice with an Intra-community supply (K) Document level
+    charge (BT-102) shall carry a VAT-scoped Seller identifier AND the Buyer
+    VAT identifier."""
+    if (_ac_has_vat_category(inv, True, "K")
+            and not (_ic_seller_id_present(inv)
+                     and inv.buyer_has_vat_scheme_company_id)):
+        return Violation(
+            "BR-IC-04",
+            _ic_party_id_message("Document level charge (BT-102)"),
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_ic_05(inv):
+    """BR-IC-05: in an Intra-community supply (K) Invoice line the Invoiced item
+    VAT rate (BT-152) shall be 0."""
+    ln = _line_rate_nonzero(inv, "K")
+    if ln is not None:
+        return Violation(
+            "BR-IC-05",
+            "In an Invoice line (BG-25) where the Invoiced item VAT category "
+            "code (BT-151) is 'Intra-community supply' the Invoiced item VAT "
+            "rate (BT-152) shall be 0 (zero).",
+            ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")
+    return None
+
+
+def br_ic_06(inv):
+    """BR-IC-06: in an Intra-community supply (K) Document level allowance the
+    allowance VAT rate (BT-96) shall be 0."""
+    if _ac_rate_nonzero(inv, "K", False):
+        return Violation(
+            "BR-IC-06",
+            "In a Document level allowance (BG-20) where the Document level "
+            "allowance VAT category code (BT-95) is 'Intra-community supply' "
+            "the Document level allowance VAT rate (BT-96) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_ic_07(inv):
+    """BR-IC-07: in an Intra-community supply (K) Document level charge the
+    charge VAT rate (BT-103) shall be 0."""
+    if _ac_rate_nonzero(inv, "K", True):
+        return Violation(
+            "BR-IC-07",
+            "In a Document level charge (BG-21) where the Document level charge "
+            "VAT category code (BT-102) is 'Intra-community supply' the Document "
+            "level charge VAT rate (BT-103) shall be 0 (zero).",
+            "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_ic_08(inv):
+    """BR-IC-08: the Intra-community supply (K) VAT breakdown taxable amount
+    (BT-116) shall equal the exact sum of K line nets − K allowances + K
+    charges."""
+    hit = _breakdown_taxable_sum_mismatch(inv, "K")
+    if hit is not None:
+        st, expected = hit
+        return Violation(
+            "BR-IC-08",
+            _taxable_sum_message("Intra-community supply", st, expected),
+            "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_ic_09(inv):
+    """BR-IC-09: the VAT category tax amount (BT-117) in an Intra-community
+    supply (K) VAT breakdown shall equal 0."""
+    st = _breakdown_tax_nonzero(inv, "K")
+    if st is not None:
+        return Violation(
+            "BR-IC-09", _tax_zero_message("Intra-community supply", st),
+            "cac:TaxTotal/cac:TaxSubtotal/cac:TaxAmount")
+    return None
+
+
+def br_ic_11(inv):
+    """BR-IC-11: in an Invoice with an Intra-community supply (K) VAT breakdown
+    (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14)
+    shall not be blank.
+
+    Official (context ``/ubl:Invoice``)::
+
+        (exists K-VAT breakdown row AND
+           (string-length(cac:Delivery/cbc:ActualDeliveryDate) > 1
+            or (cac:InvoicePeriod/*)))
+        or not(exists K-VAT breakdown row)
+
+    So it FIRES iff a K breakdown row exists AND neither a >1-char actual
+    delivery date nor a document-level invoicing period with a child is present.
+    """
+    if "K" not in inv.breakdown_vat_category_codes():
+        return None
+    date_ok = len(inv.doc_delivery_actual_date_raw or "") > 1
+    if not (date_ok or inv.doc_invoice_period_has_child):
+        return Violation(
+            "BR-IC-11",
+            "In an Invoice with a VAT breakdown (BG-23) where the VAT category "
+            "code (BT-118) is 'Intra-community supply' the Actual delivery date "
+            "(BT-72) or the Invoicing period (BG-14) shall not be blank.",
+            "cac:Delivery/cbc:ActualDeliveryDate")
+    return None
+
+
+def br_ic_12(inv):
+    """BR-IC-12: in an Invoice with an Intra-community supply (K) VAT breakdown
+    (BG-23) the Deliver to country code (BT-80) shall not be blank.
+
+    Official (context ``/ubl:Invoice``)::
+
+        (exists K-VAT breakdown row AND
+           string-length(cac:Delivery/cac:DeliveryLocation/cac:Address/
+                         cac:Country/cbc:IdentificationCode) > 1)
+        or not(exists K-VAT breakdown row)
+
+    FIRES iff a K breakdown row exists AND the document-level deliver-to country
+    code is absent or 1 character or shorter.
+    """
+    if "K" not in inv.breakdown_vat_category_codes():
+        return None
+    if len(inv.doc_delivery_country_code_raw or "") <= 1:
+        return Violation(
+            "BR-IC-12",
+            "In an Invoice with a VAT breakdown (BG-23) where the VAT category "
+            "code (BT-118) is 'Intra-community supply' the Deliver to country "
+            "code (BT-80) shall not be blank.",
+            "cac:Delivery/cac:DeliveryLocation/cac:Address/cac:Country/"
+            "cbc:IdentificationCode")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # VAT-category families (BR-AE/E/G/IC/O-01) — "exactly one breakdown row"
 # ---------------------------------------------------------------------------
 def _vat_exactly_one_breakdown(inv, code):
@@ -2323,6 +2664,10 @@ ALL_RULES = [
     br_z_08, br_z_09, br_z_10,
     br_e_02, br_e_03, br_e_04, br_e_05, br_e_06, br_e_07,
     br_e_08, br_e_09, br_e_10,
+    br_ae_02, br_ae_03, br_ae_04, br_ae_05, br_ae_06, br_ae_07,
+    br_ae_08, br_ae_09, br_ae_10,
+    br_ic_02, br_ic_03, br_ic_04, br_ic_05, br_ic_06, br_ic_07,
+    br_ic_08, br_ic_09, br_ic_11, br_ic_12,
     br_ae_01, br_e_01, br_g_01, br_ic_01, br_o_01,
     br_dec_01, br_dec_02, br_dec_05, br_dec_06,
     br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_14,

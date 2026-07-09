@@ -3,6 +3,11 @@
 # see README.md §2 for the honest coverage). The failing rule ID (e.g.
 # BR-DE-15) is printed in the job log.
 #
+# It drives the real conformance-report entrypoint `python3 -m einvoice.report`
+# (exit 0 = no fatal, non-zero = fatal) and writes a per-invoice JUnit XML into
+# einvoice-junit/, wired below as GitLab's `artifacts:reports:junit` so each
+# fatal rule renders in the pipeline's Tests tab.
+#
 # Install: merge this job into your .gitlab-ci.yml, vendor the einvoice
 # product directory at third_party/einvoice/, put invoices under invoices/.
 # See ci/README.md.
@@ -11,6 +16,19 @@ invoice-conformance:
   image: python:3.12-alpine
   variables:
     EINVOICE_PROFILE: "xrechnung"   # or: en16931 (core rules only)
+    EINVOICE_RESULTS_DIR: "einvoice-junit"
   script:
     - python3 -m pip install ./third_party/einvoice
     - sh third_party/einvoice/ci/validate-invoices.sh invoices/
+  artifacts:
+    when: always
+    paths:
+      - einvoice-junit/
+    reports:
+      junit: einvoice-junit/*.junit.xml
+
+# Adoption on-ramp (T-VH.22): to gate only on NEW regressions vs a captured
+# baseline (tolerating a pre-existing backlog), use --baseline directly:
+#   python3 -m einvoice.report --format json invoices/x.xml > baseline.json
+#   python3 -m einvoice.report --baseline baseline.json invoices/x.xml
+# (--baseline exits 1 only on a new fatal; pre-existing fatals are tolerated.)

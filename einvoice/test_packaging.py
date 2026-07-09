@@ -185,9 +185,12 @@ class CiGate(unittest.TestCase):
 
     def gate(self, *args, env_extra=None):
         env = dict(os.environ)
-        # Pin the validator so the test exercises OUR tree, not a stray
-        # pip-installed `einvoice` on PATH.
-        env["EINVOICE_CMD"] = "%s %s" % (sys.executable, WRAPPER)
+        # Pin the REPORT entrypoint so the test exercises OUR tree, not a stray
+        # pip-installed `einvoice` on PATH. The gate drives
+        # `python3 -m einvoice.report --format junit`, so EINVOICE_CMD must
+        # invoke that module (the legacy validate CLI would not understand
+        # --format junit).
+        env["EINVOICE_CMD"] = "%s -m einvoice.report" % sys.executable
         if env_extra:
             env.update(env_extra)
         return run(["sh", GATE] + list(args), env=env, cwd=HERE)
@@ -218,7 +221,10 @@ class CiGate(unittest.TestCase):
             proc = self.gate(tmp)
             self.assertEqual(proc.returncode, 1,
                              proc.stdout + proc.stderr)
-            self.assertIn("S-WF", proc.stdout)
+            # The report entrypoint renders a not-well-formed input as a
+            # `not-well-formed` JUnit testcase (exit 3 per invoice -> the gate
+            # counts it non-conformant and prints the label).
+            self.assertIn("not well-formed", proc.stdout.lower())
 
     def test_gate_refuses_empty_input_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,12 +1,17 @@
 # Copy-paste CI gate: fail the build if any invoice in your repo is not
 # XRechnung/EN 16931 conformant (against the validator's IMPLEMENTED rules —
 # see README.md §2 for the honest coverage). The failing rule ID (e.g.
-# BR-DE-15) is printed in the job log.
+# BR-DE-15) is printed in the job log AND a per-invoice JUnit report is
+# uploaded, so GitHub renders each fatal rule as a failed test.
+#
+# It drives the real conformance-report entrypoint `python3 -m einvoice.report`
+# (JUnit projection): exit 0 = no fatal violation, non-zero = fatal. The gate
+# script wraps that per invoice and fails the build on any fatal.
 #
 # Install: copy this file to .github/workflows/invoice-conformance.yml in
 # YOUR repo, vendor the einvoice product directory (this whole folder's
 # parent) at third_party/einvoice/, and put your invoices under invoices/.
-# Adjust the two paths below if yours differ. See ci/README.md.
+# Adjust the paths below if yours differ. See ci/README.md.
 
 name: invoice-conformance
 
@@ -24,15 +29,36 @@ jobs:
         with:
           python-version: "3.x"
 
-      # Zero runtime dependencies — this installs ONLY the validator package
-      # and its `einvoice` console script. (Not on PyPI yet; install from the
-      # vendored copy.)
+      # Zero runtime dependencies — this installs ONLY the validator package,
+      # which makes `python3 -m einvoice.report` importable. (Not on PyPI yet;
+      # install from the vendored copy.)
       - name: Install the einvoice validator
         run: python3 -m pip install ./third_party/einvoice
 
-      # Exit 1 + the violated rule ID per failing invoice; exit 2 if the gate
-      # finds no invoices (an empty gate is a broken gate).
+      # Runs `python3 -m einvoice.report --format junit` per invoice, writing a
+      # JUnit XML into einvoice-junit/ for the test-report upload below. Exit 1
+      # + the violated rule ID per failing invoice; exit 2 if the gate finds no
+      # invoices (an empty gate is a broken gate).
       - name: "Gate: every invoice must be conformant"
         run: sh third_party/einvoice/ci/validate-invoices.sh invoices/
         env:
           EINVOICE_PROFILE: xrechnung   # or: en16931 (core rules only)
+          EINVOICE_RESULTS_DIR: einvoice-junit
+
+      # Publish the per-invoice JUnit reports as build artifacts even when the
+      # gate above failed, so the fatal rules show up in the run's file list.
+      - name: Upload JUnit conformance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: einvoice-conformance-junit
+          path: einvoice-junit/
+          if-no-files-found: ignore
+
+# Adoption on-ramp (T-VH.22): if you are switching this on over a pipeline that
+# ALREADY has known violations, gate only on NEW regressions instead of every
+# fatal — capture a baseline once and diff against it. Replace the gate step's
+# run: with, per invoice:
+#   python3 -m einvoice.report --format json invoices/x.xml > baseline.json
+#   python3 -m einvoice.report --baseline baseline.json invoices/x.xml
+# (--baseline exits 1 only on a new fatal; pre-existing fatals are tolerated.)

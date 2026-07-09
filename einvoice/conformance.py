@@ -42,6 +42,7 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLI = os.path.join(HERE, "einvoice.py")
 RULES_SRC = os.path.join(HERE, "einvoice", "rules.py")
+XR_RULES_SRC = os.path.join(HERE, "einvoice", "rules_xrechnung.py")
 VENDORED = os.path.join(HERE, "corpus", "vendored")
 VALID_DIR = os.path.join(VENDORED, "valid")
 INVALID_DIR = os.path.join(VENDORED, "invalid")
@@ -129,6 +130,60 @@ CALCULATION_ROUNDING_VACUOUS = {
     "BR-DEC-15": "vacuous in official Schematron (same defect, TaxCurrencyCode) "
                  "— never fires",
 }
+
+# --------------------------------------------------------------------------- #
+# XRechnung EXTENSION (BR-DEX-*) coverage manifest.                            #
+#                                                                             #
+# The KoSIT XRechnung Extension customization adds fourteen business rules on  #
+# top of the CIUS (BR-DE-*) layer. Each is implemented in                      #
+# einvoice/rules_xrechnung.py, gated behind the extension CustomizationID, and #
+# proven equivalent to the official compiled KoSIT XSLT across the differential #
+# corpus (differential.py, XRechnung leg, green — targeted mutations off the   #
+# clean extension fixture business-cases/extension/04.02a). Listed here so the #
+# extension coverage is auditable and grep-able; the assert below guarantees   #
+# the manifest can never claim a rule the validator does not actually emit.    #
+XRECHNUNG_EXTENSION_COVERAGE = {
+    "BR-DEX-01": "Attached Document (BT-125) MIME code within the Extension set "
+                 "(EN 8.2 list + application/xml)",
+    "BR-DEX-02": "Invoice/sub line net amount (BT-131) = Σ nested sub-line net "
+                 "amounts (warning)",
+    "BR-DEX-03": "each SUB INVOICE LINE (BG-DEX-01) carries exactly one VAT "
+                 "information (BG-DEX-06)",
+    "BR-DEX-04": "Party identification scheme id (ISO 6523 ICD, or SEPA for "
+                 "Seller/Payee)",
+    "BR-DEX-05": "Legal registration id scheme (BT-30/BT-47) ISO 6523 ICD",
+    "BR-DEX-06": "Item standard id scheme (BT-157) ISO 6523 ICD",
+    "BR-DEX-07": "Endpoint id scheme (BT-34/BT-49) in the CEF EAS code list",
+    "BR-DEX-08": "Deliver-to location id scheme (BT-71) ISO 6523 ICD",
+    "BR-DEX-09": "Amount due (BT-115) = with-VAT − paid + rounding + Σ third "
+                 "party payment amount (BT-DEX-002)",
+    "BR-DEX-10": "Third party payment type (BT-DEX-001) present with BG-DEX-09",
+    "BR-DEX-11": "Third party payment amount (BT-DEX-002) present with BG-DEX-09",
+    "BR-DEX-12": "Third party payment description (BT-DEX-003) present with "
+                 "BG-DEX-09",
+    "BR-DEX-13": "Third party payment amount (BT-DEX-002) ≤ 2 decimal places",
+    "BR-DEX-14": "Third party payment amount currency = Invoice currency (BT-5)",
+}
+
+
+def xrechnung_extension_rule_ids():
+    """Rule ids the XRechnung layer actually emits (the @_rule('ID', …)
+    decorators in einvoice/rules_xrechnung.py)."""
+    src = open(XR_RULES_SRC, encoding="utf-8").read()
+    return set(re.findall(r'@_rule\(\s*["\']([A-Z0-9-]+)["\']', src))
+
+
+_XR_IMPLEMENTED = xrechnung_extension_rule_ids()
+
+# The manifest may only claim BR-DEX rules the validator actually implements.
+assert XRECHNUNG_EXTENSION_COVERAGE.keys() <= _XR_IMPLEMENTED, (
+    "XRechnung extension coverage manifest names unimplemented rules: %s"
+    % sorted(XRECHNUNG_EXTENSION_COVERAGE.keys() - _XR_IMPLEMENTED))
+# All fourteen extension rules must be listed.
+assert XRECHNUNG_EXTENSION_COVERAGE.keys() >= {
+    "BR-DEX-%02d" % i for i in range(1, 15)}, (
+    "XRechnung extension coverage manifest is missing BR-DEX ids")
+
 
 def _all_asserted_rule_ids():
     """Every rule id the validator can actually emit — both the direct
@@ -386,6 +441,12 @@ def main():
     out("  known-vacuous in the normative Schematron (not asserted):\n")
     for rid in sorted(CALCULATION_ROUNDING_VACUOUS):
         out("     %-11s %s\n" % (rid, CALCULATION_ROUNDING_VACUOUS[rid]))
+    out("\n")
+    out("  XRechnung EXTENSION rules covered (%d), differentially proven vs the\n"
+        "  official KoSIT XSLT (extension CustomizationID only):\n"
+        % len(XRECHNUNG_EXTENSION_COVERAGE))
+    for rid in sorted(XRECHNUNG_EXTENSION_COVERAGE):
+        out("     %-11s %s\n" % (rid, XRECHNUNG_EXTENSION_COVERAGE[rid]))
     out("\n")
 
     # Per valid vector

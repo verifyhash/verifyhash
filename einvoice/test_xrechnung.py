@@ -78,12 +78,17 @@ def add_mandate(root, account_id):
 
 
 class RulesetShape(unittest.TestCase):
-    def test_32_rules_with_unique_ids_and_valid_severities(self):
+    def test_46_rules_with_unique_ids_and_valid_severities(self):
         ids = [fn.rule_id for fn in xr.ALL_RULES]
-        self.assertEqual(len(ids), 32)
-        self.assertEqual(len(set(ids)), 32)
+        self.assertEqual(len(ids), 46)          # 32 BR-DE + 14 BR-DEX
+        self.assertEqual(len(set(ids)), 46)
         for fn in xr.ALL_RULES:
             self.assertIn(fn.severity, ("fatal", "warning", "information"))
+
+    def test_all_fourteen_brdex_rules_present(self):
+        ids = {fn.rule_id for fn in xr.ALL_RULES}
+        for i in range(1, 15):
+            self.assertIn("BR-DEX-%02d" % i, ids)
 
     def test_severity_mapping_matches_official_flags(self):
         by_id = {fn.rule_id: fn.severity for fn in xr.ALL_RULES}
@@ -91,9 +96,13 @@ class RulesetShape(unittest.TestCase):
                     "BR-DE-26", "BR-DE-27", "BR-DE-28"):
             self.assertEqual(by_id[rid], "warning", rid)
         self.assertEqual(by_id["BR-DE-TMP-32"], "information")
+        # BR-DEX-02 is a warning; BR-DEX-01/03..14 are fatal (official flags).
+        self.assertEqual(by_id["BR-DEX-02"], "warning")
+        warnings_infos = ("BR-DE-17", "BR-DE-19", "BR-DE-20", "BR-DE-21",
+                          "BR-DE-26", "BR-DE-27", "BR-DE-28", "BR-DE-TMP-32",
+                          "BR-DEX-02")
         for rid, sev in by_id.items():
-            if rid not in ("BR-DE-17", "BR-DE-19", "BR-DE-20", "BR-DE-21",
-                           "BR-DE-26", "BR-DE-27", "BR-DE-28", "BR-DE-TMP-32"):
+            if rid not in warnings_infos:
                 self.assertEqual(sev, "fatal", rid)
 
 
@@ -361,6 +370,193 @@ class SkontoRule(unittest.TestCase):
         r = base()
         self.set_note(r, "#skonto#TAGE=14#PROZENT=2.00#\n")
         self.assertIn("BR-DE-18", fired(r))
+
+
+EXT_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
+                        "business-cases", "extension", "04.02a-INVOICE_ubl.xml")
+_EXT_BASE_ROOT = ET.parse(EXT_BASE).getroot()
+
+
+def ext_base():
+    return copy.deepcopy(_EXT_BASE_ROOT)
+
+
+def add_prepaid(root, id_=None, amount=None, currency="EUR", instr=None):
+    pp = ET.SubElement(root, q(NS_CAC, "PrepaidPayment"))
+    if id_ is not None:
+        ET.SubElement(pp, q(NS_CBC, "ID")).text = id_
+    if amount is not None:
+        amt = ET.SubElement(pp, q(NS_CBC, "PaidAmount"))
+        amt.text = amount
+        amt.set("currencyID", currency)
+    if instr is not None:
+        ET.SubElement(pp, q(NS_CBC, "InstructionID")).text = instr
+    return pp
+
+
+class ExtensionGating(unittest.TestCase):
+    """The BR-DEX-* layer is inert unless the CustomizationID is the Extension."""
+
+    def test_clean_extension_base_fires_no_brdex(self):
+        got = fired(ext_base())
+        self.assertTrue(xr._is_extension(ext_base()))
+        self.assertFalse(any(r.startswith("BR-DEX") for r in got), got)
+
+    def test_cius_base_never_fires_brdex_even_when_structure_would(self):
+        # A plain-CIUS invoice with a broken sub-line sum / bad MIME must NOT
+        # fire any BR-DEX rule (not an Extension).
+        r = base()
+        self.assertFalse(xr._is_extension(r))
+        # Add an attachment with a forbidden MIME code + a PrepaidPayment with
+        # nothing in it: on a CIUS invoice these are simply out of scope.
+        add_prepaid(r, id_=None, amount=None)
+        got = fired(r)
+        self.assertFalse(any(x.startswith("BR-DEX") for x in got), got)
+
+
+class ExtensionRules(unittest.TestCase):
+    """Positive (fires) + negative (clears) for each BR-DEX-* rule, mutating the
+    clean Extension fixture 04.02a (verified against the official KoSIT XSLT)."""
+
+    def test_brdex_01_attachment_mime_code(self):
+        r = ext_base()
+        adr = ET.SubElement(r, q(NS_CAC, "AdditionalDocumentReference"))
+        att = ET.SubElement(adr, q(NS_CAC, "Attachment"))
+        obj = ET.SubElement(att, q(NS_CBC, "EmbeddedDocumentBinaryObject"))
+        obj.text = "UkVDSA=="
+        obj.set("filename", "data.zip")
+        obj.set("mimeCode", "application/zip")
+        self.assertIn("BR-DEX-01", fired(r))
+        # application/xml is the Extension-only allowance -> clears.
+        obj.set("mimeCode", "application/xml")
+        self.assertNotIn("BR-DEX-01", fired(r))
+
+    def test_brdex_02_subline_net_sum(self):
+        r = ext_base()
+        sub = r.find("cac:InvoiceLine/cac:SubInvoiceLine/cbc:LineExtensionAmount",
+                     NS)
+        sub.text = "99.99"                        # 99.99 + 15.40 != 27.72
+        self.assertIn("BR-DEX-02", fired(r))
+        self.assertNotIn("BR-DEX-02", fired(ext_base()))   # base sums to 27.72
+
+    def test_brdex_03_subline_exactly_one_vat(self):
+        r = ext_base()
+        item = r.find("cac:InvoiceLine/cac:SubInvoiceLine/cac:Item", NS)
+        item.remove(item.find("cac:ClassifiedTaxCategory", NS))
+        self.assertIn("BR-DEX-03", fired(r))
+        # A second ClassifiedTaxCategory also violates "exactly one".
+        r2 = ext_base()
+        item2 = r2.find("cac:InvoiceLine/cac:SubInvoiceLine/cac:Item", NS)
+        item2.append(copy.deepcopy(item2.find("cac:ClassifiedTaxCategory", NS)))
+        self.assertIn("BR-DEX-03", fired(r2))
+        self.assertNotIn("BR-DEX-03", fired(ext_base()))
+
+    def test_brdex_04_party_identification_scheme(self):
+        r = ext_base()
+        pid = ET.Element(q(NS_CAC, "PartyIdentification"))
+        idel = ET.SubElement(pid, q(NS_CBC, "ID"))
+        idel.text = "X"
+        idel.set("schemeID", "ZZZ")
+        supplier_party(r).insert(1, pid)
+        self.assertIn("BR-DEX-04", fired(r))
+        # An ISO 6523 ICD code clears; the base SEPA id (Seller) already holds.
+        idel.set("schemeID", "0088")
+        self.assertNotIn("BR-DEX-04", fired(r))
+        self.assertNotIn("BR-DEX-04", fired(ext_base()))
+
+    def test_brdex_05_legal_registration_scheme(self):
+        r = ext_base()
+        cid = supplier_party(r).find("cac:PartyLegalEntity/cbc:CompanyID", NS)
+        cid.set("schemeID", "ZZZ")
+        self.assertIn("BR-DEX-05", fired(r))
+        cid.set("schemeID", "0088")
+        self.assertNotIn("BR-DEX-05", fired(r))
+
+    def test_brdex_06_item_standard_id_scheme(self):
+        r = ext_base()
+        item = r.find("cac:InvoiceLine/cac:Item", NS)
+        sii = ET.SubElement(item, q(NS_CAC, "StandardItemIdentification"))
+        idel = ET.SubElement(sii, q(NS_CBC, "ID"))
+        idel.text = "0815"
+        idel.set("schemeID", "ZZZ")
+        self.assertIn("BR-DEX-06", fired(r))
+        idel.set("schemeID", "0160")
+        self.assertNotIn("BR-DEX-06", fired(r))
+
+    def test_brdex_07_endpoint_scheme(self):
+        r = ext_base()
+        ep = supplier_party(r).find("cbc:EndpointID", NS)
+        ep.set("schemeID", "ZZ")
+        self.assertIn("BR-DEX-07", fired(r))
+        ep.set("schemeID", "EM")                  # base value, valid CEF EAS
+        self.assertNotIn("BR-DEX-07", fired(r))
+
+    def test_brdex_08_delivery_location_scheme(self):
+        r = ext_base()
+        d = ET.SubElement(r, q(NS_CAC, "Delivery"))
+        loc = ET.SubElement(d, q(NS_CAC, "DeliveryLocation"))
+        idel = ET.SubElement(loc, q(NS_CBC, "ID"))
+        idel.text = "LOC-1"
+        idel.set("schemeID", "ZZZ")
+        self.assertIn("BR-DEX-08", fired(r))
+        idel.set("schemeID", "0088")
+        self.assertNotIn("BR-DEX-08", fired(r))
+
+    def test_brdex_09_amount_due_balance(self):
+        r = ext_base()
+        r.find("cac:LegalMonetaryTotal/cbc:PayableAmount", NS).text = "99.99"
+        self.assertIn("BR-DEX-09", fired(r))
+        self.assertNotIn("BR-DEX-09", fired(ext_base()))
+        # A third-party payment that the payable amount accounts for -> holds.
+        r2 = ext_base()
+        r2.find("cac:LegalMonetaryTotal/cbc:PayableAmount", NS).text = "35.99"
+        add_prepaid(r2, id_="10", amount="3.00", currency="EUR", instr="tip")
+        self.assertNotIn("BR-DEX-09", fired(r2))
+
+    def test_brdex_10_third_party_payment_type_present(self):
+        r = ext_base()
+        add_prepaid(r, id_=None, amount="0.00", currency="EUR", instr="tip")
+        self.assertIn("BR-DEX-10", fired(r))
+        r2 = ext_base()
+        add_prepaid(r2, id_="10", amount="0.00", currency="EUR", instr="tip")
+        self.assertNotIn("BR-DEX-10", fired(r2))
+
+    def test_brdex_11_third_party_payment_amount_present(self):
+        r = ext_base()
+        add_prepaid(r, id_="10", amount=None, instr="tip")
+        self.assertIn("BR-DEX-11", fired(r))
+        r2 = ext_base()
+        add_prepaid(r2, id_="10", amount="0.00", currency="EUR", instr="tip")
+        self.assertNotIn("BR-DEX-11", fired(r2))
+
+    def test_brdex_12_third_party_payment_description_present(self):
+        r = ext_base()
+        add_prepaid(r, id_="10", amount="0.00", currency="EUR", instr=None)
+        self.assertIn("BR-DEX-12", fired(r))
+        r2 = ext_base()
+        add_prepaid(r2, id_="10", amount="0.00", currency="EUR", instr="tip")
+        self.assertNotIn("BR-DEX-12", fired(r2))
+
+    def test_brdex_13_third_party_amount_decimals(self):
+        r = ext_base()
+        add_prepaid(r, id_="10", amount="0.001", currency="EUR", instr="tip")
+        self.assertIn("BR-DEX-13", fired(r))
+        r2 = ext_base()
+        add_prepaid(r2, id_="10", amount="0.00", currency="EUR", instr="tip")
+        self.assertNotIn("BR-DEX-13", fired(r2))
+        # No decimal point at all -> holds (substring-after -> '').
+        r3 = ext_base()
+        add_prepaid(r3, id_="10", amount="5", currency="EUR", instr="tip")
+        r3.find("cac:LegalMonetaryTotal/cbc:PayableAmount", NS).text = "37.99"
+        self.assertNotIn("BR-DEX-13", fired(r3))
+
+    def test_brdex_14_third_party_amount_currency(self):
+        r = ext_base()
+        add_prepaid(r, id_="10", amount="0.00", currency="USD", instr="tip")
+        self.assertIn("BR-DEX-14", fired(r))
+        r2 = ext_base()
+        add_prepaid(r2, id_="10", amount="0.00", currency="EUR", instr="tip")
+        self.assertNotIn("BR-DEX-14", fired(r2))
 
 
 class ProfileWiring(unittest.TestCase):

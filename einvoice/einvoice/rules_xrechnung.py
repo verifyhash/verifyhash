@@ -23,9 +23,16 @@ Severity mirrors the official ``flag``: ``fatal`` blocks acceptance,
 ``warning`` and ``information`` are reported but do not make the document
 invalid.
 
-Out of scope (deliberately): ``BR-DEX-*`` (the XRechnung *extension* profile),
-``BR-DE-CVD-*`` (the Clean-Vehicle-Directive profile), ``BR-TMP-2`` and the
-``PEPPOL-EN16931-*`` rules also present in the KoSIT artifact.
+This module also implements the ``BR-DEX-*`` layer — the fourteen business
+rules the KoSIT artifact adds for the XRechnung *Extension* customization
+(``…#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0``). Those rules
+fire ONLY when the document carries the extension ``CustomizationID`` (the
+Schematron gates them behind a global ``$isExtension`` let); on a plain CIUS
+invoice they are inert. See ``_is_extension`` and the ``BR-DEX-*`` functions.
+
+Out of scope (deliberately): ``BR-DE-CVD-*`` (the Clean-Vehicle-Directive
+profile), ``BR-TMP-2`` and the ``PEPPOL-EN16931-*`` rules also present in the
+KoSIT artifact.
 
 Standard library only.
 """
@@ -34,6 +41,7 @@ from __future__ import annotations
 
 import re
 from collections import namedtuple
+from decimal import Decimal, ROUND_FLOOR, InvalidOperation
 
 Violation = namedtuple("Violation", ["rule_id", "message", "element", "severity"])
 
@@ -69,6 +77,65 @@ _XR_TYPE_CODES = ("326", "380", "384", "389", "381", "875", "876", "877")
 
 # BR-DE-16: the VAT category codes that trigger the seller-VAT-id requirement.
 _XR_SUPPORTED_VAT_CODES = ("S", "Z", "E", "AE", "K", "G", "L", "M")
+
+# ---------------------------------------------------------------------------
+# Extension (BR-DEX-*) code lists — transcribed VERBATIM from common.sch.
+# The Schematron tests membership with contains($LIST, concat(' ', code, ' '))
+# over a space-delimited string; a set of the split tokens is the exact same
+# predicate (every token is space-flanked, and the query is ' <code> ').
+# ---------------------------------------------------------------------------
+# common.sch: <let name="DIGA-CODES" value="' XR01 XR02 XR03 '" />
+_DIGA_CODES = "XR01 XR02 XR03"
+
+# common.sch: <let name="ISO-6523-ICD-CODES" ...> (note the deliberate gaps:
+# 0092, 0103, 0181, 0182 are absent in the official list).
+_ISO_6523_ICD_CODES = (
+    "0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 "
+    "0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 "
+    "0030 0031 0032 0033 0034 0035 0036 0037 0038 0039 0040 0041 0042 0043 "
+    "0044 0045 0046 0047 0048 0049 0050 0051 0052 0053 0054 0055 0056 0057 "
+    "0058 0059 0060 0061 0062 0063 0064 0065 0066 0067 0068 0069 0070 0071 "
+    "0072 0073 0074 0075 0076 0077 0078 0079 0080 0081 0082 0083 0084 0085 "
+    "0086 0087 0088 0089 0090 0091 0093 0094 0095 0096 0097 0098 0099 0100 "
+    "0101 0102 0104 0105 0106 0107 0108 0109 0110 0111 0112 0113 0114 0115 "
+    "0116 0117 0118 0119 0120 0121 0122 0123 0124 0125 0126 0127 0128 0129 "
+    "0130 0131 0132 0133 0134 0135 0136 0137 0138 0139 0140 0141 0142 0143 "
+    "0144 0145 0146 0147 0148 0149 0150 0151 0152 0153 0154 0155 0156 0157 "
+    "0158 0159 0160 0161 0162 0163 0164 0165 0166 0167 0168 0169 0170 0171 "
+    "0172 0173 0174 0175 0176 0177 0178 0179 0180 0183 0184 0185 0186 0187 "
+    "0188 0189 0190 0191 0192 0193 0194 0195 0196 0197 0198 0199 0200 0201 "
+    "0202 0203 0204 0205 0206 0207 0208 0209 0210 0211 0212 0213 0214 0215 "
+    "0216 0217 0218 0219 0220 0221 0222 0223 0224 0225 0226 0227 0228 0229 "
+    "0230 0231 0232 0233 0234 0235 0236 0237 0238 0239 0240 0241 0242 0243 "
+    "0244")
+
+# common.sch: <let name="CEF-EAS-CODES" ...>
+_CEF_EAS_CODES = (
+    "0002 0007 0009 0037 0060 0088 0096 0097 0106 0130 0135 0142 0147 0151 "
+    "0154 0158 0170 0177 0183 0184 0188 0190 0191 0192 0193 0194 0195 0196 "
+    "0198 0199 0200 0201 0202 0203 0204 0205 0208 0209 0210 0211 0212 0213 "
+    "0215 0216 0217 0218 0219 0220 0221 0225 0230 0235 0240 0244 9910 9913 "
+    "9914 9915 9918 9919 9920 9922 9923 9924 9925 9926 9927 9928 9929 9930 "
+    "9931 9932 9933 9934 9935 9936 9937 9938 9939 9940 9941 9942 9943 9944 "
+    "9945 9946 9947 9948 9949 9950 9951 9952 9953 9957 9959 AN AQ AS AU EM")
+
+# ISO-6523-ICD-EXT-CODES = concat($DIGA-CODES, $ISO-6523-ICD-CODES)
+_ISO_6523_ICD_EXT_CODES = frozenset(
+    (_DIGA_CODES + " " + _ISO_6523_ICD_CODES).split())
+# CEF-EAS-EXT-CODES = concat($DIGA-CODES, $CEF-EAS-CODES)
+_CEF_EAS_EXT_CODES = frozenset(
+    (_DIGA_CODES + " " + _CEF_EAS_CODES).split())
+
+# BR-DEX-01: MIME codes an Extension may use for an Attached Document (BT-125).
+_XR_EXT_MIME_CODES = frozenset((
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/xml",
+))
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +199,59 @@ def _rule(rule_id, severity):
 
 def _v(fn, message, element):
     return Violation(fn.rule_id, message, element, fn.severity)
+
+
+# ---------------------------------------------------------------------------
+# Extension (BR-DEX-*) helpers
+# ---------------------------------------------------------------------------
+def _is_extension(root):
+    """The Schematron ``$isExtension`` let (ubl-extension-pattern): true iff a
+    cbc:CustomizationID has the EXACT extension string value (untrimmed). All
+    BR-DEX-* rules are gated behind this — on a plain CIUS invoice the extension
+    contexts never match, so the rules are inert."""
+    return any(_sv(e) == XR_EXTENSION_ID
+               for e in root.findall("cbc:CustomizationID", NS))
+
+
+def _dec(text):
+    """xs:decimal(<string>): exact decimal, or None when it cannot be parsed
+    (in the official transform a bad xs:decimal is a dynamic error that aborts
+    the whole run, so such invoices are excluded from the differential; we
+    return None and let the caller treat the row as non-comparable/failed)."""
+    if text is None:
+        return None
+    try:
+        return Decimal(text.strip())
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _xpath_round(x):
+    """fn:round(): nearest integer, halves toward POSITIVE infinity
+    (floor(x + 0.5)) — NOT banker's/away-from-zero rounding."""
+    return (x + Decimal("0.5")).to_integral_value(rounding=ROUND_FLOOR)
+
+
+def _parent_map(root):
+    return {c: p for p in root.iter() for c in p}
+
+
+def _ancestor_localnames(root, el, pmap=None):
+    """Set of local element names on the ancestor axis of ``el`` (for the
+    XPath ``ancestor::cac:Foo`` tests)."""
+    pmap = pmap if pmap is not None else _parent_map(root)
+    names = set()
+    cur = pmap.get(el)
+    while cur is not None:
+        names.add(cur.tag.rsplit("}", 1)[-1])
+        cur = pmap.get(cur)
+    return names
+
+
+def _scheme_no_internal_space(schemeid):
+    """not(contains(normalize-space(@schemeID), ' ')) — false when the
+    normalized scheme identifier still holds an internal space."""
+    return " " not in _nsp(schemeid)
 
 
 # ---------------------------------------------------------------------------
@@ -679,14 +799,342 @@ def br_de_25_b(root):
     return None
 
 
+# ---------------------------------------------------------------------------
+# XRechnung EXTENSION layer (BR-DEX-*), context gated behind $isExtension.
+# Transcribed from XRechnung-UBL-validation.sch, pattern "ubl-extension-pattern".
+# ---------------------------------------------------------------------------
+def _prepaid_payments(root):
+    """context /ubl:Invoice/cac:PrepaidPayment — the THIRD PARTY PAYMENT groups
+    (BG-DEX-09), direct children of the Invoice."""
+    return root.findall("cac:PrepaidPayment", NS)
+
+
+@_rule("BR-DEX-01", "fatal")
+def br_dex_1(root):
+    """BR-DEX-01: every 'Attached Document' binary object (BT-125) must use an
+    Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject
+    anywhere in the document; the extra allowance over EN 8.2 is
+    application/xml. An absent @mimeCode also fires (empty node-set)."""
+    if not _is_extension(root):
+        return None
+    for obj in root.iter("{%s}EmbeddedDocumentBinaryObject" % NS_CBC):
+        if obj.get("mimeCode") not in _XR_EXT_MIME_CODES:
+            return _v(br_dex_1, "The 'Attached Document' (BT-125) uses a MIME "
+                      "code that an XRechnung Extension does not permit: %r."
+                      % (obj.get("mimeCode"),),
+                      "cbc:EmbeddedDocumentBinaryObject/@mimeCode")
+    return None
+
+
+@_rule("BR-DEX-02", "warning")
+def br_dex_2(root):
+    """BR-DEX-02: the 'Invoice line net amount' (BT-131) of an INVOICE LINE
+    (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the
+    directly nested SUB INVOICE LINEs' net amounts.
+
+    Two official conjuncts: (1) every top-level InvoiceLine that HAS sub-lines
+    must equal the sum of its direct sub-lines; (2) every SubInvoiceLine (at any
+    depth) that itself HAS sub-lines must equal the sum of ITS direct
+    sub-lines."""
+    if not _is_extension(root):
+        return None
+
+    def _sub_sum(node):
+        total = Decimal(0)
+        for sub in node.findall("cac:SubInvoiceLine", NS):
+            d = _dec(_sv(sub.find("cbc:LineExtensionAmount", NS)))
+            if d is None:
+                return None
+            total += d
+        return total
+
+    for il in root.findall("cac:InvoiceLine", NS):
+        subs = il.findall("cac:SubInvoiceLine", NS)
+        if not subs:
+            continue
+        own = _dec(_sv(il.find("cbc:LineExtensionAmount", NS)))
+        s = _sub_sum(il)
+        if own is None or s is None or own != s:
+            return _v(br_dex_2, "The 'Invoice line net amount' (BT-131) should "
+                      "equal the sum of the directly nested SUB INVOICE LINE "
+                      "net amounts.",
+                      "cac:InvoiceLine/cbc:LineExtensionAmount")
+    for sub in root.iter("{%s}SubInvoiceLine" % NS_CAC):
+        if not sub.findall("cac:SubInvoiceLine", NS):
+            continue
+        own = _dec(_sv(sub.find("cbc:LineExtensionAmount", NS)))
+        s = _sub_sum(sub)
+        if own is None or s is None or own != s:
+            return _v(br_dex_2, "The 'Invoice line net amount' (BT-131) of a "
+                      "SUB INVOICE LINE should equal the sum of the directly "
+                      "nested SUB INVOICE LINE net amounts.",
+                      "cac:SubInvoiceLine/cbc:LineExtensionAmount")
+    return None
+
+
+@_rule("BR-DEX-03", "fatal")
+def br_dex_3(root):
+    """BR-DEX-03: a SUB INVOICE LINE (BG-DEX-01) must carry exactly one SUB
+    INVOICE LINE VAT INFORMATION (BG-DEX-06) — i.e. its Item must have exactly
+    one cac:ClassifiedTaxCategory. Fires if any sub-line item has 0 or >1."""
+    if not _is_extension(root):
+        return None
+    for sub in root.iter("{%s}SubInvoiceLine" % NS_CAC):
+        for item in sub.findall("cac:Item", NS):
+            if len(item.findall("cac:ClassifiedTaxCategory", NS)) != 1:
+                return _v(br_dex_3, "A SUB INVOICE LINE (BG-DEX-01) must contain "
+                          "exactly one SUB INVOICE LINE VAT INFORMATION "
+                          "(BG-DEX-06).",
+                          "cac:SubInvoiceLine/cac:Item/cac:ClassifiedTaxCategory")
+    return None
+
+
+@_rule("BR-DEX-09", "fatal")
+def br_dex_9(root):
+    """BR-DEX-09: Amount due for payment (BT-115) = Invoice total amount with
+    VAT (BT-112) - Paid amount (BT-113) + Rounding amount (BT-114)
+    + Σ Third party payment amount (BT-DEX-002).
+
+    Context cac:LegalMonetaryTotal; both sides rounded to 2 decimals with
+    fn:round(x*100) div 100. The third-party sum is taken from the sibling
+    cac:PrepaidPayment/cbc:PaidAmount values (0 when none are present)."""
+    if not _is_extension(root):
+        return None
+    for lmt in root.findall("cac:LegalMonetaryTotal", NS):
+        payable = _dec(_sv(lmt.find("cbc:PayableAmount", NS)))
+        if payable is None:
+            continue
+        prepaid = _dec(_sv(lmt.find("cbc:PrepaidAmount", NS)))
+        prepaid = prepaid if prepaid is not None else Decimal(0)
+        rounding = _dec(_sv(lmt.find("cbc:PayableRoundingAmount", NS)))
+        rounding = rounding if rounding is not None else Decimal(0)
+        taxincl = _dec(_sv(lmt.find("cbc:TaxInclusiveAmount", NS)))
+        if taxincl is None:
+            continue
+        # thirdpartyprepaidamount: sum of sibling PrepaidPayment PaidAmounts
+        # when at least one non-empty PaidAmount exists, else 0.
+        paid_nodes = [pp.find("cbc:PaidAmount", NS)
+                      for pp in root.findall("cac:PrepaidPayment", NS)]
+        paid_vals = [_sv(n) for n in paid_nodes if n is not None]
+        if any(_nsp(v) for v in paid_vals):
+            third = Decimal(0)
+            for v in paid_vals:
+                d = _dec(v)
+                if d is None:
+                    third = None
+                    break
+                third += d
+        else:
+            third = Decimal(0)
+        if third is None:
+            continue
+        lhs = _xpath_round((payable - rounding) * 100)
+        rhs = _xpath_round((taxincl - prepaid + third) * 100)
+        if lhs != rhs:
+            return _v(br_dex_9, "'Amount due for payment' (BT-115) must equal "
+                      "Invoice total with VAT (BT-112) - Paid amount (BT-113) "
+                      "+ Rounding amount (BT-114) + Σ Third party payment "
+                      "amount (BT-DEX-002).",
+                      "cac:LegalMonetaryTotal/cbc:PayableAmount")
+    return None
+
+
+def _scheme_targets(root, parent_ns, parent_ln, child_ln):
+    """The cbc elements a BR-DEX-04..08 context selects. When ``parent_ln`` is
+    the element itself (EndpointID) ``child_ln`` is None; otherwise iterate the
+    named parent elements and take their cbc:<child_ln> children."""
+    if child_ln is None:
+        yield from root.iter("{%s}%s" % (parent_ns, parent_ln))
+        return
+    for parent in root.iter("{%s}%s" % (parent_ns, parent_ln)):
+        yield from parent.findall("cbc:%s" % child_ln, NS)
+
+
+def _scheme_rule(fn, root, targets, code_set, allow_sepa, message, element):
+    """Shared BR-DEX-04..08 body: for each context element that carries a
+    @schemeID, the normalized scheme id must have no internal space AND be a
+    member of ``code_set`` (or 'SEPA' under Seller/Payee when allowed)."""
+    if not _is_extension(root):
+        return None
+    pmap = _parent_map(root)
+    for el in targets:
+        scheme = el.get("schemeID")
+        if scheme is None:
+            continue
+        nsp_scheme = _nsp(scheme)
+        no_space = _scheme_no_internal_space(scheme)
+        ok = no_space and nsp_scheme in code_set
+        if not ok and allow_sepa and no_space and nsp_scheme == "SEPA":
+            anc = _ancestor_localnames(root, el, pmap)
+            ok = "AccountingSupplierParty" in anc or "PayeeParty" in anc
+        if not ok:
+            return _v(fn, message, element)
+    return None
+
+
+@_rule("BR-DEX-04", "fatal")
+def br_dex_4(root):
+    """BR-DEX-04: any scheme identifier on a Party identifier (cac:Party
+    Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or 'SEPA'
+    when the identifier belongs to the Seller or the Payee."""
+    return _scheme_rule(
+        br_dex_4, root,
+        _scheme_targets(root, NS_CAC, "PartyIdentification", "ID"),
+        _ISO_6523_ICD_EXT_CODES, allow_sepa=True,
+        message="Any scheme identifier on a Party identification (BT-29/BT-46/"
+                "BT-60) must be coded with an ISO 6523 ICD code (or 'SEPA' for "
+                "the Seller/Payee creditor identifier).",
+        element="cac:PartyIdentification/cbc:ID/@schemeID")
+
+
+@_rule("BR-DEX-05", "fatal")
+def br_dex_5(root):
+    """BR-DEX-05: any scheme identifier on a legal registration identifier
+    (cac:PartyLegalEntity/cbc:CompanyID, BT-30/BT-47) must be an ISO 6523 ICD
+    (extension) code."""
+    return _scheme_rule(
+        br_dex_5, root,
+        _scheme_targets(root, NS_CAC, "PartyLegalEntity", "CompanyID"),
+        _ISO_6523_ICD_EXT_CODES, allow_sepa=False,
+        message="Any scheme identifier on a legal registration identifier "
+                "(BT-30/BT-47) must be coded with an ISO 6523 ICD code.",
+        element="cac:PartyLegalEntity/cbc:CompanyID/@schemeID")
+
+
+@_rule("BR-DEX-06", "fatal")
+def br_dex_6(root):
+    """BR-DEX-06: any scheme identifier on an item standard identifier
+    (cac:StandardItemIdentification/cbc:ID, BT-157) must be an ISO 6523 ICD
+    (extension) code."""
+    return _scheme_rule(
+        br_dex_6, root,
+        _scheme_targets(root, NS_CAC, "StandardItemIdentification", "ID"),
+        _ISO_6523_ICD_EXT_CODES, allow_sepa=False,
+        message="Any scheme identifier on an 'Item standard identifier' "
+                "(BT-157) must be coded with an ISO 6523 ICD code.",
+        element="cac:StandardItemIdentification/cbc:ID/@schemeID")
+
+
+@_rule("BR-DEX-07", "fatal")
+def br_dex_7(root):
+    """BR-DEX-07: any scheme identifier on an Endpoint identifier (cbc:Endpoint
+    ID, BT-34/BT-49) must belong to the CEF EAS (extension) code list."""
+    return _scheme_rule(
+        br_dex_7, root,
+        _scheme_targets(root, NS_CBC, "EndpointID", None),
+        _CEF_EAS_EXT_CODES, allow_sepa=False,
+        message="Any scheme identifier on an 'Electronic address' endpoint "
+                "(BT-34/BT-49) must belong to the CEF EAS code list.",
+        element="cbc:EndpointID/@schemeID")
+
+
+@_rule("BR-DEX-08", "fatal")
+def br_dex_8(root):
+    """BR-DEX-08: any scheme identifier on a Deliver-to location identifier
+    (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension)
+    code."""
+    return _scheme_rule(
+        br_dex_8, root,
+        _scheme_targets(root, NS_CAC, "DeliveryLocation", "ID"),
+        _ISO_6523_ICD_EXT_CODES, allow_sepa=False,
+        message="Any scheme identifier on a 'Deliver to location identifier' "
+                "(BT-71) must be coded with an ISO 6523 ICD code.",
+        element="cac:DeliveryLocation/cbc:ID/@schemeID")
+
+
+@_rule("BR-DEX-10", "fatal")
+def br_dex_10(root):
+    """BR-DEX-10: 'Third party payment type' (BT-DEX-001, cbc:ID) must be
+    present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09)."""
+    if not _is_extension(root):
+        return None
+    for pp in _prepaid_payments(root):
+        if not _has_nonempty(pp, "cbc:ID"):
+            return _v(br_dex_10, "'Third party payment type' (BT-DEX-001) must "
+                      "be transmitted when a THIRD PARTY PAYMENT (BG-DEX-09) is "
+                      "present.", "cac:PrepaidPayment/cbc:ID")
+    return None
+
+
+@_rule("BR-DEX-11", "fatal")
+def br_dex_11(root):
+    """BR-DEX-11: 'Third party payment amount' (BT-DEX-002, cbc:PaidAmount) must
+    be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09)."""
+    if not _is_extension(root):
+        return None
+    for pp in _prepaid_payments(root):
+        if not _has_nonempty(pp, "cbc:PaidAmount"):
+            return _v(br_dex_11, "'Third party payment amount' (BT-DEX-002) "
+                      "must be transmitted when a THIRD PARTY PAYMENT "
+                      "(BG-DEX-09) is present.",
+                      "cac:PrepaidPayment/cbc:PaidAmount")
+    return None
+
+
+@_rule("BR-DEX-12", "fatal")
+def br_dex_12(root):
+    """BR-DEX-12: 'Third party payment description' (BT-DEX-003,
+    cbc:InstructionID) must be present (non-empty) in every THIRD PARTY PAYMENT
+    group (BG-DEX-09)."""
+    if not _is_extension(root):
+        return None
+    for pp in _prepaid_payments(root):
+        if not _has_nonempty(pp, "cbc:InstructionID"):
+            return _v(br_dex_12, "'Third party payment description' "
+                      "(BT-DEX-003) must be transmitted when a THIRD PARTY "
+                      "PAYMENT (BG-DEX-09) is present.",
+                      "cac:PrepaidPayment/cbc:InstructionID")
+    return None
+
+
+@_rule("BR-DEX-13", "fatal")
+def br_dex_13(root):
+    """BR-DEX-13: 'Third party payment amount' (BT-DEX-002) may carry at most 2
+    fractional digits: string-length(substring-after(cbc:PaidAmount, '.')) <= 2
+    (no '.' -> '' -> length 0 -> holds)."""
+    if not _is_extension(root):
+        return None
+    for pp in _prepaid_payments(root):
+        amt = pp.find("cbc:PaidAmount", NS)
+        raw = _sv(amt) if amt is not None else ""
+        frac = raw.split(".", 1)[1] if "." in raw else ""
+        if len(frac) > 2:
+            return _v(br_dex_13, "'Third party payment amount' (BT-DEX-002) "
+                      "must have at most 2 decimal places.",
+                      "cac:PrepaidPayment/cbc:PaidAmount")
+    return None
+
+
+@_rule("BR-DEX-14", "fatal")
+def br_dex_14(root):
+    """BR-DEX-14: the currency of 'Third party payment amount' (BT-DEX-002) must
+    equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID =
+    parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing
+    DocumentCurrencyCode makes the node-set comparison false -> fires."""
+    if not _is_extension(root):
+        return None
+    doc_ccs = {_sv(e) for e in root.findall("cbc:DocumentCurrencyCode", NS)}
+    for pp in _prepaid_payments(root):
+        cur_ids = {a.get("currencyID")
+                   for a in pp.findall("cbc:PaidAmount", NS)
+                   if a.get("currencyID") is not None}
+        if not any(c in doc_ccs for c in cur_ids):
+            return _v(br_dex_14, "The currency of 'Third party payment amount' "
+                      "(BT-DEX-002) must equal the 'Invoice currency code' "
+                      "(BT-5).", "cac:PrepaidPayment/cbc:PaidAmount/@currencyID")
+    return None
+
+
 # Ordered ruleset (document flow: header -> parties -> delivery -> VAT ->
-# payment means).
+# payment means -> extension layer).
 ALL_RULES = [
     br_de_1, br_de_2, br_de_3, br_de_4, br_de_5, br_de_6, br_de_7,
     br_de_8, br_de_9, br_de_10, br_de_11, br_de_14, br_de_15, br_de_16,
     br_de_17, br_de_18, br_de_19, br_de_20, br_de_21, br_de_22,
     br_de_23_a, br_de_23_b, br_de_24_a, br_de_24_b, br_de_25_a, br_de_25_b,
     br_de_26, br_de_27, br_de_28, br_de_30, br_de_31, br_de_tmp_32,
+    br_dex_1, br_dex_2, br_dex_3, br_dex_4, br_dex_5, br_dex_6, br_dex_7,
+    br_dex_8, br_dex_9, br_dex_10, br_dex_11, br_dex_12, br_dex_13, br_dex_14,
 ]
 
 

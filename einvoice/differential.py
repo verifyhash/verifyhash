@@ -103,7 +103,7 @@ assert len(OUR_RULE_IDS) == 151, OUR_RULE_IDS
 # from the explicit .rule_id attribute, not derived from function names.
 XR_RULE_IDS = [fn.rule_id for fn in _rules_xr.ALL_RULES]
 XR_RULE_SET = set(XR_RULE_IDS)
-assert len(XR_RULE_IDS) == 32, XR_RULE_IDS
+assert len(XR_RULE_IDS) == 46, XR_RULE_IDS
 
 
 # --------------------------------------------------------------------------- #
@@ -1249,6 +1249,152 @@ def _gather_xr_mutations(scratch: str):
     return out
 
 
+# --- XRechnung EXTENSION (BR-DEX-*) targeted mutations, off a clean ext base -- #
+# 04.02a is a clean XRechnung-Extension invoice (verified: fires NO BR-DEX on the
+# official XSLT) carrying a SubInvoiceLine, a SEPA PartyIdentification, an EM
+# EndpointID and a code-59 PaymentMandate — everything the fourteen extension
+# rules key on. Each mutation breaks exactly one BR-DEX guard.
+_XR_EXT_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
+                            "business-cases", "extension", "04.02a-INVOICE_ubl.xml")
+
+
+def _ext_supplier_party(r):
+    return r.find("cac:AccountingSupplierParty/cac:Party", _NSD)
+
+
+def _ext_add_prepaid(r, id_=None, amount=None, currency="EUR", instr=None):
+    """Append a THIRD PARTY PAYMENT group (cac:PrepaidPayment) to the Invoice."""
+    pp = ET.SubElement(r, _q(NS_CAC, "PrepaidPayment"))
+    if id_ is not None:
+        _sub_el(pp, NS_CBC, "ID", id_)
+    if amount is not None:
+        amt = _sub_el(pp, NS_CBC, "PaidAmount", amount)
+        amt.set("currencyID", currency)
+    if instr is not None:
+        _sub_el(pp, NS_CBC, "InstructionID", instr)
+    return pp
+
+
+def _xrmut_dex1(r):
+    # An Attachment binary object with a MIME code the Extension forbids.
+    adr = ET.Element(_q(NS_CAC, "AdditionalDocumentReference"))
+    _sub_el(adr, NS_CBC, "ID", "attach-1")
+    att = _sub_el(adr, NS_CAC, "Attachment")
+    obj = _sub_el(att, NS_CBC, "EmbeddedDocumentBinaryObject", "UkVDSA==")
+    obj.set("filename", "data.zip")
+    obj.set("mimeCode", "application/zip")
+    r.insert(list(r).index(r.find("cac:AccountingSupplierParty", _NSD)), adr)
+
+
+def _xrmut_dex2(r):
+    # Break the sub-line net-amount sum: parent 27.72 != 99.99 + 15.40.
+    r.find("cac:InvoiceLine/cac:SubInvoiceLine/cbc:LineExtensionAmount",
+           _NSD).text = "99.99"
+
+
+def _xrmut_dex3(r):
+    # A SubInvoiceLine Item left with zero ClassifiedTaxCategory (must be 1).
+    item = r.find("cac:InvoiceLine/cac:SubInvoiceLine/cac:Item", _NSD)
+    item.remove(item.find("cac:ClassifiedTaxCategory", _NSD))
+
+
+def _xrmut_dex4(r):
+    # A second Party identifier with a scheme id that is neither ISO 6523 nor
+    # SEPA (the base's SEPA identifier stays, so BR-DE-30 still holds).
+    party = _ext_supplier_party(r)
+    pid = ET.Element(_q(NS_CAC, "PartyIdentification"))
+    idel = _sub_el(pid, NS_CBC, "ID", "X")
+    idel.set("schemeID", "ZZZ")
+    party.insert(1, pid)
+
+
+def _xrmut_dex5(r):
+    r.find("cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/"
+           "cbc:CompanyID", _NSD).set("schemeID", "ZZZ")
+
+
+def _xrmut_dex6(r):
+    item = r.find("cac:InvoiceLine/cac:Item", _NSD)
+    sii = ET.Element(_q(NS_CAC, "StandardItemIdentification"))
+    idel = _sub_el(sii, NS_CBC, "ID", "0815")
+    idel.set("schemeID", "ZZZ")
+    item.insert(1, sii)
+
+
+def _xrmut_dex7(r):
+    # Endpoint scheme id off the CEF EAS list.
+    r.find("cac:AccountingSupplierParty/cac:Party/cbc:EndpointID",
+           _NSD).set("schemeID", "ZZ")
+
+
+def _xrmut_dex8(r):
+    d = _sub_el(r, NS_CAC, "Delivery")
+    loc = _sub_el(d, NS_CAC, "DeliveryLocation")
+    idel = _sub_el(loc, NS_CBC, "ID", "LOC-1")
+    idel.set("schemeID", "ZZZ")
+
+
+def _xrmut_dex9(r):
+    # Payable no longer equals TaxInclusive (no prepaid / third-party) -> off.
+    r.find("cac:LegalMonetaryTotal/cbc:PayableAmount", _NSD).text = "99.99"
+
+
+def _xrmut_dex10(r):
+    # THIRD PARTY PAYMENT missing its type id (BT-DEX-001).
+    _ext_add_prepaid(r, id_=None, amount="0.00", currency="EUR", instr="tip")
+
+
+def _xrmut_dex11(r):
+    # Missing amount (BT-DEX-002) -> BR-DEX-11 (and BR-DEX-14: no currency).
+    _ext_add_prepaid(r, id_="10", amount=None, instr="tip")
+
+
+def _xrmut_dex12(r):
+    # Missing description (BT-DEX-003).
+    _ext_add_prepaid(r, id_="10", amount="0.00", currency="EUR", instr=None)
+
+
+def _xrmut_dex13(r):
+    # Amount with three fractional digits.
+    _ext_add_prepaid(r, id_="10", amount="0.001", currency="EUR", instr="tip")
+
+
+def _xrmut_dex14(r):
+    # Amount currency (USD) != Invoice currency code (EUR).
+    _ext_add_prepaid(r, id_="10", amount="0.00", currency="USD", instr="tip")
+
+
+_XR_EXT_MUTATIONS = [
+    ("BR-DEX-01", _xrmut_dex1), ("BR-DEX-02", _xrmut_dex2),
+    ("BR-DEX-03", _xrmut_dex3), ("BR-DEX-04", _xrmut_dex4),
+    ("BR-DEX-05", _xrmut_dex5), ("BR-DEX-06", _xrmut_dex6),
+    ("BR-DEX-07", _xrmut_dex7), ("BR-DEX-08", _xrmut_dex8),
+    ("BR-DEX-09", _xrmut_dex9), ("BR-DEX-10", _xrmut_dex10),
+    ("BR-DEX-11", _xrmut_dex11), ("BR-DEX-12", _xrmut_dex12),
+    ("BR-DEX-13", _xrmut_dex13), ("BR-DEX-14", _xrmut_dex14),
+]
+
+
+def _gather_xr_ext_mutations(scratch: str):
+    """One generated invoice per BR-DEX mutation, off a clean XR-Extension base."""
+    base_root = ET.parse(_XR_EXT_BASE).getroot()
+    dst = os.path.join(scratch, "xr-ext-mutations")
+    os.makedirs(dst, exist_ok=True)
+    out = []
+    for name, mut in _XR_EXT_MUTATIONS:
+        root = copy.deepcopy(base_root)
+        try:
+            mut(root)
+        except Exception as e:  # pragma: no cover
+            print("  [XR-EXT mutation %s FAILED to build: %s]" % (name, e),
+                  file=sys.stderr)
+            continue
+        out_path = os.path.join(dst, "xrextmut_%s.xml" % name.replace("-", "_"))
+        _write_doc(root, out_path)
+        out.append(("XREXTMUT/%s" % name, out_path))
+    return out
+
+
 def build_corpus(scratch: str):
     entries = []
     entries += _gather_bare_invoices()
@@ -1273,6 +1419,7 @@ def build_xr_corpus(scratch: str):
     entries += _gather_bare_invoices()
     entries += _split_cen_testsets(scratch)
     entries += _gather_xr_mutations(scratch)
+    entries += _gather_xr_ext_mutations(scratch)
     seen, uniq = set(), []
     for label, path in entries:
         key = os.path.abspath(path)

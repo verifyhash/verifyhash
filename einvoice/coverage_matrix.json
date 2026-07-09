@@ -1,0 +1,4992 @@
+{
+  "artifact": "einvoice conformance coverage matrix",
+  "description": "Machine-readable enumeration of every EN 16931 / XRechnung business rule the einvoice engine actually asserts, with the syntax it is proven to fire in, its blocking severity, and the official Schematron artifact that differentially proved it. This is the artifact to read to answer \"does it run the rules my German ERP needs, in my CI?\" — it reflects what the CODE fires (proven by test_coverage_matrix.py against the live rule registries), not aspiration.",
+  "generated_by": "gen_coverage.py (derived from einvoice.rules + einvoice.rules_xrechnung + differential.py graded sets)",
+  "schematron_sources_order": [
+    "en16931-ubl",
+    "en16931-cii",
+    "xrechnung-ubl",
+    "xrechnung-cii"
+  ],
+  "schematron_sources": {
+    "en16931-ubl": {
+      "suite": "CEN EN 16931",
+      "file": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+      "version": "1.3.16",
+      "license": "EUPL-1.2"
+    },
+    "en16931-cii": {
+      "suite": "CEN EN 16931",
+      "file": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+      "version": "1.3.16",
+      "license": "EUPL-1.2"
+    },
+    "xrechnung-ubl": {
+      "suite": "KoSIT XRechnung",
+      "file": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+      "version": "2.5.0 (XRechnung 3.0.2)",
+      "license": "Apache-2.0"
+    },
+    "xrechnung-cii": {
+      "suite": "KoSIT XRechnung",
+      "file": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "version": "2.5.0 (XRechnung 3.0.2)",
+      "license": "Apache-2.0"
+    }
+  },
+  "rule_count": 197,
+  "rules": [
+    {
+      "id": "BR-01",
+      "title": "An Invoice shall have a Specification identifier (BT-24).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-02",
+      "title": "An Invoice shall have an Invoice number (BT-1).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-03",
+      "title": "An Invoice shall have an Invoice issue date (BT-2).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-04",
+      "title": "An Invoice shall have an Invoice type code (BT-3).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-05",
+      "title": "An Invoice shall have an Invoice currency code (BT-5).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-06",
+      "title": "An Invoice shall contain the Seller name (BT-27).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-07",
+      "title": "An Invoice shall contain the Buyer name (BT-44).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-08",
+      "title": "An Invoice shall contain the Seller postal address (BG-5).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-09",
+      "title": "The Seller postal address (BG-5) shall contain a Seller country code (BT-40).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "the CII binding evaluates the country-code test from the document root, firing even when the whole postal address is absent; the UBL function is gated on the address node existing, so it misses there. Address existence (BR-08) stays graded; the country code does not."
+        }
+      }
+    },
+    {
+      "id": "BR-10",
+      "title": "An Invoice shall contain the Buyer postal address (BG-8).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-11",
+      "title": "The Buyer postal address shall contain a Buyer country code (BT-55).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "same as BR-09 for the buyer postal address country code."
+        }
+      }
+    },
+    {
+      "id": "BR-12",
+      "title": "An Invoice shall have the Sum of Invoice line net amount (BT-106).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-13",
+      "title": "An Invoice shall have the Invoice total amount without VAT (BT-109).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-14",
+      "title": "An Invoice shall have the Invoice total amount with VAT (BT-112).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-15",
+      "title": "An Invoice shall have the Amount due for payment (BT-115).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-16",
+      "title": "An Invoice shall have at least one Invoice line (BG-25).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-17",
+      "title": "The Payee name (BT-59) shall be provided in the Invoice, if the Payee (BG-10) is different from the Seller (BG-4).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-18",
+      "title": "The Seller tax representative name (BT-62) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-19",
+      "title": "The Seller tax representative postal address (BG-12) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-20",
+      "title": "The Seller tax representative postal address (BG-12) shall contain a Tax representative country code (BT-69), if the Seller (BG-4) has a Seller tax representative party (BG-11).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-21",
+      "title": "Each Invoice line shall have an Invoice line identifier (BT-126).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-22",
+      "title": "Each Invoice line shall have an Invoiced quantity (BT-129).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-24",
+      "title": "Each Invoice line shall have an Invoice line net amount (BT-131).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-25",
+      "title": "Each Invoice line (BG-25) shall contain the Item name (BT-153).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-26",
+      "title": "Each Invoice line shall contain the Item net price (BT-146).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-27",
+      "title": "The Item net price (BT-146) shall NOT be negative.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-28",
+      "title": "The Item gross price (BT-148) shall NOT be negative.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-29",
+      "title": "If both Invoicing period start date (BT-73) and end date (BT-74) are given then the end date shall be later or equal to the start date.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-30",
+      "title": "If both Invoice line period start date (BT-134) and end date (BT-135) are given then the end date shall be later or equal to the start date.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-31",
+      "title": "Each Document level allowance (BG-20) shall have a Document level allowance amount (BT-92).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-32",
+      "title": "Each Document level allowance (BG-20) shall have a Document level allowance VAT category code (BT-95).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-33",
+      "title": "Each Document level allowance (BG-20) shall have a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-36",
+      "title": "Each Document level charge (BG-21) shall have a Document level charge amount (BT-99).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-37",
+      "title": "Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-38",
+      "title": "Each Document level charge (BG-21) shall have a Document level charge reason (BT-104) or a Document level charge reason code (BT-105).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-41",
+      "title": "Each Invoice line allowance (BG-27) shall have an Invoice line allowance amount (BT-136).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-42",
+      "title": "Each Invoice line allowance (BG-27) shall have an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-43",
+      "title": "Each Invoice line charge (BG-28) shall have an Invoice line charge amount (BT-141).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-44",
+      "title": "Each Invoice line charge (BG-28) shall have an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-45",
+      "title": "Each VAT breakdown (BG-23) shall have a VAT category taxable amount (BT-116).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-46",
+      "title": "Each VAT breakdown (BG-23) shall have a VAT category tax amount (BT-117).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-47",
+      "title": "Each VAT breakdown (BG-23) shall be defined through a VAT category code (BT-118).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-48",
+      "title": "Each VAT breakdown (BG-23) shall have a VAT category rate (BT-119), except if the Invoice is not subject to VAT.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-49",
+      "title": "A Payment instruction (BG-16) shall specify the Payment means type code (BT-81).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-50",
+      "title": "A Payment account identifier (BT-84) shall be present if Credit transfer (BG-17) information is provided in the Invoice.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-51",
+      "title": "The last 4 to 6 digits of the Payment card primary account number (BT-87) shall be present if Payment card information (BG-18) is provided.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-55",
+      "title": "Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-57",
+      "title": "Each Deliver to address (BG-15) shall contain a Deliver to country code (BT-80).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-61",
+      "title": "If the Payment means type code (BT-81) means SEPA credit transfer, Local credit transfer or Non-SEPA international credit transfer, the Payment account identifier (BT-84) shall be present.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-62",
+      "title": "The Seller electronic address (BT-34) shall have a Scheme identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-63",
+      "title": "The Buyer electronic address (BT-49) shall have a Scheme identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-CL-01",
+      "title": "The document type code (BT-3) MUST be coded per UNTDID 1001.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-04",
+      "title": "Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-10",
+      "title": "Sum of Invoice line net amount (BT-106) = Σ line net amount (BT-131).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-11",
+      "title": "Sum of allowances on document level (BT-107) = Σ Document level allowance amount (BT-92).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-CO-12",
+      "title": "Sum of charges on document level (BT-108) = Σ Document level charge amount (BT-99).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-CO-13",
+      "title": "Invoice total without VAT (BT-109) = Σ line net (BT-131) − document allowances (BT-107) + document charges (BT-108).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-14",
+      "title": "Invoice total VAT amount (BT-110) = Σ VAT category tax amount (BT-117).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "official CII context requires a document-currency BT-110 (ram:TaxTotalAmount) which a no-VAT CII invoice legitimately omits, so the assert never fires there; the UBL transcription would over-reject those documents."
+        }
+      }
+    },
+    {
+      "id": "BR-CO-15",
+      "title": "Invoice total with VAT (BT-112) = total without VAT (BT-109) + total VAT (BT-110).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "the CII binding carries an extra GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for a no-VAT invoice with no BT-110; the UBL function has no such disjunct and would over-reject the same documents."
+        }
+      }
+    },
+    {
+      "id": "BR-CO-16",
+      "title": "Amount due for payment (BT-115) = Invoice total with VAT (BT-112) − Paid amount (BT-113) + Rounding amount (BT-114).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-17",
+      "title": "VAT category tax amount (BT-117) = VAT category taxable amount (BT-116) x (VAT category rate (BT-119) / 100), rounded to two decimals.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-18",
+      "title": "An Invoice shall at least have one VAT breakdown group (BG-23).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-01",
+      "title": "Max 2 decimals for the Document level allowance amount (BT-92).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-02",
+      "title": "Max 2 decimals for the Document level allowance base amount (BT-93).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-05",
+      "title": "Max 2 decimals for the Document level charge amount (BT-99).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-06",
+      "title": "Max 2 decimals for the Document level charge base amount (BT-100).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-09",
+      "title": "Max 2 decimals for the Sum of Invoice line net amount (BT-106).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-10",
+      "title": "Max 2 decimals for the Sum of allowances on document level (BT-107).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-11",
+      "title": "Max 2 decimals for the Sum of charges on document level (BT-108).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-12",
+      "title": "Max 2 decimals for the Invoice total amount without VAT (BT-109).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-14",
+      "title": "Max 2 decimals for the Invoice total amount with VAT (BT-112).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-16",
+      "title": "Max 2 decimals for the Paid amount (BT-113).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-17",
+      "title": "Max 2 decimals for the Rounding amount (BT-114).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-18",
+      "title": "Max 2 decimals for the Amount due for payment (BT-115).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-19",
+      "title": "Max 2 decimals for the VAT category taxable amount (BT-116).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-20",
+      "title": "Max 2 decimals for the VAT category tax amount (BT-117).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-23",
+      "title": "Max 2 decimals for the Invoice line net amount (BT-131).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-AE-01",
+      "title": "'Reverse charge' (AE) items require exactly one AE VAT breakdown (BG-23) row.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-02",
+      "title": "An Invoice with a Reverse charge (AE) Invoice line (BT-151) shall carry a Seller identifier AND a Buyer identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-03",
+      "title": "An Invoice with a Reverse charge (AE) Document level allowance (BT-95) shall carry a Seller identifier AND a Buyer identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-04",
+      "title": "An Invoice with a Reverse charge (AE) Document level charge (BT-102) shall carry a Seller identifier AND a Buyer identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-05",
+      "title": "In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-06",
+      "title": "In a Reverse charge (AE) Document level allowance the allowance VAT rate (BT-96) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-07",
+      "title": "In a Reverse charge (AE) Document level charge the charge VAT rate (BT-103) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-08",
+      "title": "The Reverse charge (AE) VAT breakdown taxable amount (BT-116) shall equal the exact sum of AE line nets − AE allowances + AE charges.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-09",
+      "title": "The VAT category tax amount (BT-117) in a Reverse charge (AE) VAT breakdown shall equal 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-AE-10",
+      "title": "A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) meaning 'Reverse charge' or the reason text (BT-120) 'Reverse charge' — the presence-required shape shared with BR-E-10.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-01",
+      "title": "'Exempt from VAT' (E) items require exactly one E VAT breakdown (BG-23) row.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-02",
+      "title": "An Exempt (E) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-03",
+      "title": "An Exempt (E) Document level allowance (BT-95) requires the Seller VAT identifier disjunct.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-04",
+      "title": "An Exempt (E) Document level charge (BT-102) requires the Seller VAT identifier disjunct.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-05",
+      "title": "In an Exempt (E) Invoice line the Invoiced item VAT rate (BT-152) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-06",
+      "title": "In an Exempt (E) Document level allowance the allowance VAT rate (BT-96) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-07",
+      "title": "In an Exempt (E) Document level charge the charge VAT rate (BT-103) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-08",
+      "title": "The Exempt (E) VAT breakdown taxable amount (BT-116) shall equal the exact sum of E line net amounts − E allowances + E charges.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-09",
+      "title": "The VAT category tax amount (BT-117) in an Exempt (E) VAT breakdown shall equal 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-E-10",
+      "title": "A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required mirror image of BR-Z-10/BR-S-10.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-01",
+      "title": "'Export outside the EU' (G) items require exactly one G VAT breakdown (BG-23) row.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-02",
+      "title": "An Invoice with an Export outside the EU (G) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier (BT-31/BT-63).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-03",
+      "title": "An Invoice with an Export outside the EU (G) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-04",
+      "title": "An Invoice with an Export outside the EU (G) Document level charge (BT-102) shall carry a VAT-scoped Seller identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-05",
+      "title": "In an Export outside the EU (G) Invoice line the Invoiced item VAT rate (BT-152) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-06",
+      "title": "In an Export outside the EU (G) Document level allowance the allowance VAT rate (BT-96) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-07",
+      "title": "In an Export outside the EU (G) Document level charge the charge VAT rate (BT-103) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-08",
+      "title": "The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the exact sum of G line nets − G allowances + G charges.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-09",
+      "title": "The VAT category tax amount (BT-117) in an Export outside the EU (G) VAT breakdown shall equal 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-G-10",
+      "title": "A VAT breakdown (BG-23) with an Export outside the EU (G) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required shape shared with BR-E-10.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-01",
+      "title": "'Intra-community supply' (K) items require exactly one K VAT breakdown (BG-23) row.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-02",
+      "title": "An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-03",
+      "title": "An Invoice with an Intra-community supply (K) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-04",
+      "title": "An Invoice with an Intra-community supply (K) Document level charge (BT-102) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-05",
+      "title": "In an Intra-community supply (K) Invoice line the Invoiced item VAT rate (BT-152) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-06",
+      "title": "In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-07",
+      "title": "In an Intra-community supply (K) Document level charge the charge VAT rate (BT-103) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-08",
+      "title": "The Intra-community supply (K) VAT breakdown taxable amount (BT-116) shall equal the exact sum of K line nets − K allowances + K charges.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-09",
+      "title": "The VAT category tax amount (BT-117) in an Intra-community supply (K) VAT breakdown shall equal 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-11",
+      "title": "In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-IC-12",
+      "title": "In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Deliver to country code (BT-80) shall not be blank.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-01",
+      "title": "'Not subject to VAT' (O) items require exactly one O VAT breakdown (BG-23) row.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-02",
+      "title": "An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall NOT contain a Seller/tax-representative/Buyer VAT identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-03",
+      "title": "An Invoice with a 'Not subject to VAT' (O) Document level allowance (BT-95) shall NOT contain any VAT identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-04",
+      "title": "An Invoice with a 'Not subject to VAT' (O) Document level charge (BT-102) shall NOT contain any VAT identifier.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-05",
+      "title": "A 'Not subject to VAT' (O) Invoice line shall NOT contain an Invoiced item VAT rate (BT-152) — ``not(cbc:Percent)``.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-06",
+      "title": "A 'Not subject to VAT' (O) Document level allowance shall NOT contain a Document level allowance VAT rate (BT-96).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-07",
+      "title": "A 'Not subject to VAT' (O) Document level charge shall NOT contain a Document level charge VAT rate (BT-103).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-08",
+      "title": "The 'Not subject to VAT' (O) VAT breakdown taxable amount (BT-116) shall equal the exact sum of O line nets − O allowances + O charges.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-09",
+      "title": "The VAT category tax amount (BT-117) in a 'Not subject to VAT' (O) VAT breakdown shall equal 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-10",
+      "title": "A VAT breakdown (BG-23) with a 'Not subject to VAT' (O) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-11",
+      "title": "An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain any other VAT breakdown group.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-12",
+      "title": "An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain an Invoice line (BG-25) whose Invoiced item VAT category code (BT-151) is not 'Not subject to VAT'.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-13",
+      "title": "An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain a Document level allowance (BG-20) whose VAT category code (BT-95) is not 'Not subject to VAT'.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-O-14",
+      "title": "An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain a Document level charge (BG-21) whose VAT category code (BT-102) is not 'Not subject to VAT'.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-S-01",
+      "title": "Standard-rated (S) items and the VAT breakdown must agree.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "the CII binding is a weak one-directional count that does not flag an orphan Standard-rated breakdown; the UBL biconditional would over-fire on such CII invoices."
+        }
+      }
+    },
+    {
+      "id": "BR-S-02",
+      "title": "An Invoice with a Standard-rated (S) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-S-03",
+      "title": "An Invoice with a Standard-rated (S) Document level allowance (BT-95) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-S-04",
+      "title": "An Invoice with a Standard-rated (S) Document level charge (BT-102) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-S-05",
+      "title": "In an Invoice line where the Invoiced item VAT category code (BT-151) is 'Standard rated' the Invoiced item VAT rate (BT-152) shall be greater than zero.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-S-06",
+      "title": "In a Document level allowance where the allowance VAT category code (BT-95) is 'Standard rated' the allowance VAT rate (BT-96) shall be greater than zero.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-S-07",
+      "title": "In a Document level charge where the charge VAT category code (BT-102) is 'Standard rated' the charge VAT rate (BT-103) shall be greater than zero.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-S-09",
+      "title": "The VAT category tax amount (BT-117) in a Standard-rated (S) VAT breakdown shall equal the VAT category taxable amount (BT-116) x the VAT category rate (BT-119).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-S-10",
+      "title": "A VAT breakdown (BG-23) with a Standard rated (S) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-Z-01",
+      "title": "If any line/allowance/charge is Zero rated (Z), the VAT breakdown must contain exactly one Zero rated category.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-02",
+      "title": "A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-03",
+      "title": "A Zero-rated (Z) Document level allowance (BT-95) requires the Seller VAT identifier disjunct.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-04",
+      "title": "A Zero-rated (Z) Document level charge (BT-102) requires the Seller VAT identifier disjunct.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-05",
+      "title": "In a Zero-rated (Z) Invoice line the Invoiced item VAT rate (BT-152) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-06",
+      "title": "In a Zero-rated (Z) Document level allowance the allowance VAT rate (BT-96) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-07",
+      "title": "In a Zero-rated (Z) Document level charge the charge VAT rate (BT-103) shall be 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-08",
+      "title": "The Zero-rated (Z) VAT breakdown taxable amount (BT-116) shall equal the exact sum of Z line net amounts − Z allowances + Z charges.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-09",
+      "title": "The VAT category tax amount (BT-117) in a Zero-rated (Z) VAT breakdown shall equal 0.",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-Z-10",
+      "title": "A VAT breakdown (BG-23) with a Zero rated (Z) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121).",
+      "family": "core",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-1",
+      "title": "An invoice must contain PAYMENT INSTRUCTIONS (BG-16).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-2",
+      "title": "SELLER CONTACT (BG-6) must be transmitted.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-3",
+      "title": "Seller city (BT-37) must be transmitted (non-empty).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-4",
+      "title": "Seller post code (BT-38) must be transmitted (non-empty).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-5",
+      "title": "Seller contact point (BT-41) must be transmitted (non-empty).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-6",
+      "title": "Seller contact telephone number (BT-42) must be transmitted.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-7",
+      "title": "Seller contact email address (BT-43) must be transmitted.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-8",
+      "title": "Buyer city (BT-52) must be transmitted (non-empty).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-9",
+      "title": "Buyer post code (BT-53) must be transmitted (non-empty).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-10",
+      "title": "Deliver to city (BT-77) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-11",
+      "title": "Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-14",
+      "title": "VAT category rate (BT-119) must be transmitted (non-empty) in every top-level VAT breakdown row.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-15",
+      "title": "Buyer reference (BT-10) must be transmitted (non-empty).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-16",
+      "title": "If VAT category codes S/Z/E/AE/K/G/L/M are used, one of Seller VAT identifier (BT-31), Seller tax registration identifier (BT-32) or SELLER TAX REPRESENTATIVE PARTY (BG-11) must be present.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-17",
+      "title": "BT-3 should be one of 326, 380, 384, 389, 381, 875, 876, 877.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-18",
+      "title": "Skonto (cash-discount) lines in Payment terms (BT-20).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-19",
+      "title": "With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "IBAN mod-97 on a credit-transfer payment-means IBANID — the CII payment-means node set and IBAN digits are not in the core model."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-20",
+      "title": "With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN.",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "IBAN mod-97 on a payment-means IBANID — not carried by the core model (see BR-DE-19)."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-21",
+      "title": "BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) — untrimmed string equality.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-22",
+      "title": "The filename attribute of all EmbeddedDocumentBinaryObject elements must be unique (across cac:AdditionalDocumentReference).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "unique attachment filename check over every EmbeddedDocumentBinaryObject/@filename — not carried."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-23-a",
+      "title": "Codes 30/58 (credit transfer) require CREDIT TRANSFER (BG-17).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "payment-means type-code group check keyed on SpecifiedTradeSettlementPaymentMeans TypeCode and its financial-account children — not carried."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-23-b",
+      "title": "Codes 30/58 forbid PAYMENT CARD (BG-18) and DIRECT DEBIT (BG-19).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "payment-means type-code group check keyed on SpecifiedTradeSettlementPaymentMeans TypeCode and its financial-account children — not carried."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-24-a",
+      "title": "Codes 48/54/55 (card) require PAYMENT CARD INFORMATION (BG-18).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "payment-means type-code group check (card) — not carried."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-24-b",
+      "title": "Codes 48/54/55 forbid CREDIT TRANSFER (BG-17) and DIRECT DEBIT (BG-19).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "payment-means type-code group check (card) — not carried."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-25-a",
+      "title": "Code 59 (direct debit) requires DIRECT DEBIT (BG-19).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "payment-means type-code group check (direct debit) — not carried."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-25-b",
+      "title": "Code 59 forbids CREDIT TRANSFER (BG-17) and PAYMENT CARD (BG-18).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "payment-means type-code group check (direct debit) — not carried."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-26",
+      "title": "Type code 384 (Corrected invoice) should carry a PRECEDING INVOICE REFERENCE (BG-3).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-27",
+      "title": "BT-42 should contain at least three digits. Evaluated per seller Contact; an ABSENT telephone normalizes to '' and fires too.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-28",
+      "title": "BT-43 should look like an email address (exactly one '@', flanked per the official regex).",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DE-30",
+      "title": "DIRECT DEBIT (BG-19) requires the Bank assigned creditor identifier (BT-90: a SEPA-scheme PartyIdentification of the seller or payee).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "BT-90/BT-91 with DIRECT DEBIT (BG-19), reconstructed from mandate / creditor-reference / IBAN presence — not in the core model."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-31",
+      "title": "DIRECT DEBIT (BG-19) requires the Debited account identifier (BT-91).",
+      "family": "xrechnung-cius",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "BT-90/BT-91 with DIRECT DEBIT (BG-19) — not carried (see BR-DE-30)."
+        }
+      }
+    },
+    {
+      "id": "BR-DE-TMP-32",
+      "title": "An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.",
+      "family": "xrechnung-cius",
+      "syntax": "both",
+      "severity": "warning",
+      "flag": "information",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-01",
+      "title": "Every 'Attached Document' binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set).",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-02",
+      "title": "The 'Invoice line net amount' (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs' net amounts.",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-03",
+      "title": "A SUB INVOICE LINE (BG-DEX-01) must carry exactly one SUB INVOICE LINE VAT INFORMATION (BG-DEX-06) — i.e. its Item must have exactly one cac:ClassifiedTaxCategory. Fires if any sub-line item has 0 or >1.",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-04",
+      "title": "Any scheme identifier on a Party identifier (cac:Party Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or 'SEPA' when the identifier belongs to the Seller or the Payee.",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-05",
+      "title": "Any scheme identifier on a legal registration identifier (cac:PartyLegalEntity/cbc:CompanyID, BT-30/BT-47) must be an ISO 6523 ICD (extension) code.",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-06",
+      "title": "Any scheme identifier on an item standard identifier (cac:StandardItemIdentification/cbc:ID, BT-157) must be an ISO 6523 ICD (extension) code.",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-07",
+      "title": "Any scheme identifier on an Endpoint identifier (cbc:Endpoint ID, BT-34/BT-49) must belong to the CEF EAS (extension) code list.",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-08",
+      "title": "Any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code.",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-09",
+      "title": "Amount due for payment (BT-115) = Invoice total amount with VAT (BT-112) - Paid amount (BT-113) + Rounding amount (BT-114) + Σ Third party payment amount (BT-DEX-002).",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-10",
+      "title": "'Third party payment type' (BT-DEX-001, cbc:ID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-11",
+      "title": "'Third party payment amount' (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-12",
+      "title": "'Third party payment description' (BT-DEX-003, cbc:InstructionID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-13",
+      "title": "'Third party payment amount' (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, '.')) <= 2 (no '.' -> '' -> length 0 -> holds).",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    },
+    {
+      "id": "BR-DEX-14",
+      "title": "The currency of 'Third party payment amount' (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -> fires.",
+      "family": "xrechnung-extension",
+      "syntax": "ubl",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": false,
+          "reason": "part of the KoSIT XRechnung EXTENSION layer (UBL CustomizationID only); no CII extension profile is in scope."
+        }
+      }
+    }
+  ],
+  "exclusions": {
+    "description": "Rules deliberately NOT counted as coverage, documented so the matrix is honest about its boundaries.",
+    "vacuous": [
+      {
+        "id": "BR-DEC-13",
+        "reason": "vacuous in official Schematron (predicate references a non-existent child of cbc:TaxAmount) — never fires"
+      },
+      {
+        "id": "BR-DEC-15",
+        "reason": "vacuous in official Schematron (same defect, TaxCurrencyCode) — never fires"
+      }
+    ],
+    "cii_core_out_of_scope": [
+      {
+        "id": "BR-09",
+        "reason": "the CII binding evaluates the country-code test from the document root, firing even when the whole postal address is absent; the UBL function is gated on the address node existing, so it misses there. Address existence (BR-08) stays graded; the country code does not."
+      },
+      {
+        "id": "BR-11",
+        "reason": "same as BR-09 for the buyer postal address country code."
+      },
+      {
+        "id": "BR-CO-14",
+        "reason": "official CII context requires a document-currency BT-110 (ram:TaxTotalAmount) which a no-VAT CII invoice legitimately omits, so the assert never fires there; the UBL transcription would over-reject those documents."
+      },
+      {
+        "id": "BR-CO-15",
+        "reason": "the CII binding carries an extra GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for a no-VAT invoice with no BT-110; the UBL function has no such disjunct and would over-reject the same documents."
+      },
+      {
+        "id": "BR-S-01",
+        "reason": "the CII binding is a weak one-directional count that does not flag an orphan Standard-rated breakdown; the UBL biconditional would over-fire on such CII invoices."
+      }
+    ],
+    "cii_de_out_of_scope": [
+      {
+        "id": "BR-DE-18",
+        "reason": "Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits."
+      },
+      {
+        "id": "BR-DE-19",
+        "reason": "IBAN mod-97 on a credit-transfer payment-means IBANID — the CII payment-means node set and IBAN digits are not in the core model."
+      },
+      {
+        "id": "BR-DE-20",
+        "reason": "IBAN mod-97 on a payment-means IBANID — not carried by the core model (see BR-DE-19)."
+      },
+      {
+        "id": "BR-DE-22",
+        "reason": "unique attachment filename check over every EmbeddedDocumentBinaryObject/@filename — not carried."
+      },
+      {
+        "id": "BR-DE-23-a",
+        "reason": "payment-means type-code group check keyed on SpecifiedTradeSettlementPaymentMeans TypeCode and its financial-account children — not carried."
+      },
+      {
+        "id": "BR-DE-23-b",
+        "reason": "payment-means type-code group check keyed on SpecifiedTradeSettlementPaymentMeans TypeCode and its financial-account children — not carried."
+      },
+      {
+        "id": "BR-DE-24-a",
+        "reason": "payment-means type-code group check (card) — not carried."
+      },
+      {
+        "id": "BR-DE-24-b",
+        "reason": "payment-means type-code group check (card) — not carried."
+      },
+      {
+        "id": "BR-DE-25-a",
+        "reason": "payment-means type-code group check (direct debit) — not carried."
+      },
+      {
+        "id": "BR-DE-25-b",
+        "reason": "payment-means type-code group check (direct debit) — not carried."
+      },
+      {
+        "id": "BR-DE-30",
+        "reason": "BT-90/BT-91 with DIRECT DEBIT (BG-19), reconstructed from mandate / creditor-reference / IBAN presence — not in the core model."
+      },
+      {
+        "id": "BR-DE-31",
+        "reason": "BT-90/BT-91 with DIRECT DEBIT (BG-19) — not carried (see BR-DE-30)."
+      }
+    ],
+    "peppol": {
+      "status": "absent",
+      "note": "The Peppol BIS Billing 3.0 CIUS layer (the PEPPOL-EN16931-* rules) is NOT shipped — that work item (T-VH.17) is not implemented, so no Peppol-only rule is asserted or claimed here. The engine covers the EN 16931 core and the German XRechnung national CIUS + extension only."
+    }
+  }
+}

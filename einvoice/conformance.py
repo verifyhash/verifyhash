@@ -560,6 +560,10 @@ def main():
 
     manifest = load_manifest()
     tally = Tally()
+    # Every rule id the validator actually FIRES anywhere in the corpus run.
+    # Used below to prove the published coverage matrix documents them, and — via
+    # the full engine registry — that the matrix never drifts from the engine.
+    exercised = set()
 
     # ---- 1. VALID vectors: must exit 0 -----------------------------------
     valid_files = sorted(
@@ -570,6 +574,7 @@ def main():
     for f in valid_files:
         path = os.path.join(VALID_DIR, f)
         code, ids, _ = run_cli(path)
+        exercised |= set(ids)
         ok = (code == EXIT_OK and not ids)
         if ok:
             valid_pass += 1
@@ -610,6 +615,7 @@ def main():
                 frag = write_fragment(
                     inv_el, tmpdir, "%s.%d.xml" % (f[:-4], idx))
                 code, ids, _ = run_cli(frag)
+                exercised |= set(ids)
 
                 if kind == "error":
                     err_total += 1
@@ -672,6 +678,35 @@ def main():
         for n in os.listdir(tmpdir):
             os.remove(os.path.join(tmpdir, n))
         os.rmdir(tmpdir)
+
+    # ------------------------------------------------------------------ #
+    # Coverage-matrix consistency (published trust artifact)             #
+    #                                                                    #
+    # The machine-readable coverage_matrix.json is the artifact a buyer  #
+    # reads to trust "it runs the rules my CI needs". Cross-check it two  #
+    # ways so a matrix/engine drift fails THIS standing gate:            #
+    #   (a) its rule-id set == the engine's full fireable registry, and   #
+    #   (b) every rule the corpus run actually fired is documented in it.  #
+    # ------------------------------------------------------------------ #
+    try:
+        from einvoice import coverage as _coverage
+        _matrix = _coverage.load_matrix()
+        _matrix_ids = _coverage.matrix_rule_ids(_matrix)
+        _engine_ids = _coverage.engine_fireable_ids()
+        if _matrix_ids != _engine_ids:
+            tally.hard_fails.append(
+                "COVERAGE MATRIX DRIFT: coverage_matrix.json rule-id set != the "
+                "engine's fireable registry — matrix-only: %s ; engine-only: %s"
+                % (sorted(_matrix_ids - _engine_ids),
+                   sorted(_engine_ids - _matrix_ids)))
+        _undoc = sorted(exercised - _matrix_ids)
+        if _undoc:
+            tally.hard_fails.append(
+                "COVERAGE MATRIX GAP: the corpus run fired rules absent from "
+                "coverage_matrix.json: %s" % _undoc)
+    except Exception as _e:  # pragma: no cover - matrix/helper must be present
+        tally.hard_fails.append(
+            "COVERAGE MATRIX: could not verify coverage_matrix.json (%s)" % _e)
 
     # ------------------------------------------------------------------ #
     # Report                                                             #

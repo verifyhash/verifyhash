@@ -65,16 +65,22 @@ from einvoice.validate import validate_file          # noqa: E402
 from einvoice.parser import NotWellFormed, parse_file  # noqa: E402
 from einvoice import rules as _rules                  # noqa: E402
 from einvoice import rules_xrechnung as _rules_xr     # noqa: E402
+from einvoice import parser_cii as _parser_cii        # noqa: E402
 
 # The OFFICIAL normative artifacts:
-#  * the compiled EN16931-UBL Schematron (CEN), and
-#  * the compiled XRechnung-UBL Schematron (KoSIT, v2.5.0 / XRechnung 3.0.2).
+#  * the compiled EN16931-UBL Schematron (CEN),
+#  * the compiled XRechnung-UBL Schematron (KoSIT, v2.5.0 / XRechnung 3.0.2), and
+#  * the compiled EN16931-CII Schematron (CEN) — the CII (Factur-X/ZUGFeRD)
+#    syntax binding of the SAME EN 16931 core rules.
 OFFICIAL_XSLT = os.path.join(
     HERE, "corpus", "cen-en16931", "ubl", "xslt", "EN16931-UBL-validation.xslt"
 )
 XR_OFFICIAL_XSLT = os.path.join(
     HERE, "corpus", "xrechnung-schematron", "schematron", "ubl",
     "XRechnung-UBL-validation.xsl"
+)
+CII_OFFICIAL_XSLT = os.path.join(
+    HERE, "corpus", "cen-en16931", "cii", "xslt", "EN16931-CII-validation.xslt"
 )
 
 # Namespaces.
@@ -84,6 +90,10 @@ NS_CN = "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
 NS_CAC = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
 NS_CBC = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
 NS_DIFI = "http://difi.no/xsd/vefa/validator/1.0"
+# CII (UN/CEFACT CrossIndustryInvoice) namespaces.
+NS_RSM = _parser_cii.NS_RSM
+NS_RAM = _parser_cii.NS_RAM
+NS_UDT = _parser_cii.NS_UDT
 
 
 # --------------------------------------------------------------------------- #
@@ -104,6 +114,106 @@ assert len(OUR_RULE_IDS) == 151, OUR_RULE_IDS
 XR_RULE_IDS = [fn.rule_id for fn in _rules_xr.ALL_RULES]
 XR_RULE_SET = set(XR_RULE_IDS)
 assert len(XR_RULE_IDS) == 46, XR_RULE_IDS
+
+
+# --------------------------------------------------------------------------- #
+# CII leg — the SAME einvoice/rules.py core rule FUNCTIONS, run UNCHANGED over  #
+# the CII-normalized model (einvoice/parser_cii.build_model), graded against    #
+# the official CEN EN16931-CII Schematron.                                       #
+#                                                                              #
+# CII_GRADED_RULES is the subset of einvoice/rules.py ALL_RULES for which our   #
+# fired-rule set reaches EXACT parity with the official CII Schematron on the    #
+# differential corpus. A rule is admitted here ONLY once the leg proves 0       #
+# divergence for it; rules whose UNMODIFIED UBL transcription cannot reach       #
+# parity on CII (because CII gates the rule differently and we will not weaken   #
+# the shared function or approximate) are EXCLUDED below with the reason.        #
+# --------------------------------------------------------------------------- #
+CII_GRADED_RULES = [
+    # Header existence / cardinality (BR-01..16) — identical presence facts.
+    _rules.br_01, _rules.br_02, _rules.br_03, _rules.br_04, _rules.br_05,
+    _rules.br_06, _rules.br_07, _rules.br_08, _rules.br_10,
+    # Document-total existence (BR-12..15, context = header monetary summation).
+    _rules.br_12, _rules.br_13, _rules.br_14, _rules.br_15,
+    # Invoice-line cardinality / content (BR-16, BR-21..27).
+    _rules.br_16, _rules.br_21, _rules.br_22, _rules.br_24, _rules.br_25,
+    _rules.br_26, _rules.br_27,
+    # Document-type code list (BR-CL-01).
+    _rules.br_cl_01,
+    # Line VAT category code (BR-CO-04).
+    _rules.br_co_04,
+    # Document-level arithmetic invariants that reach CII parity.
+    _rules.br_co_10, _rules.br_co_13, _rules.br_co_16, _rules.br_co_17,
+    _rules.br_co_18,
+    # VAT breakdown (BG-23) per-row existence + rate (BR-45..48).
+    _rules.br_45, _rules.br_46, _rules.br_47, _rules.br_48,
+    # Standard-rated (S) rules that reach CII parity.
+    _rules.br_s_02, _rules.br_s_05, _rules.br_s_09, _rules.br_s_10,
+    # Decimal-place (≤2) rules that map cleanly to the CII monetary fields.
+    _rules.br_dec_09, _rules.br_dec_12, _rules.br_dec_14, _rules.br_dec_18,
+    _rules.br_dec_19, _rules.br_dec_20, _rules.br_dec_23,
+]
+
+# EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
+# confirmed to DIVERGE on the CII corpus under the unmodified UBL rule function —
+# because the CII Schematron binds these particular rules with genuinely different
+# semantics than the UBL binding — so grading them would ship a divergence. We do
+# not weaken the shared rule function or approximate; we simply do not assert them
+# on CII (they remain fully graded on the EN/XRechnung UBL legs):
+#
+#  * BR-CO-14 (Invoice total VAT amount BT-110 = Σ VAT category tax BT-117):
+#    the official CII context is ``//SpecifiedTradeSettlementHeaderMonetary
+#    Summation/ram:TaxTotalAmount[@currencyID=InvoiceCurrencyCode]`` — the rule
+#    exists ONLY when a document-currency BT-110 element is present. CII invoices
+#    with no VAT (e.g. an all-"O"/Not-subject invoice) legitimately OMIT
+#    ram:TaxTotalAmount, so the official assert never fires there; the UBL
+#    transcription (which fires whenever a breakdown is present but the total is
+#    absent) over-rejects those documents (verified on CII_example7, XRechnung-O).
+#  * BR-CO-15 (total with VAT = total without VAT + total VAT): the CII binding
+#    carries an extra disjunct — ``GrandTotalAmount = TaxBasisTotalAmount`` — that
+#    HOLDS for a no-VAT invoice with no BT-110; the UBL function requires exactly
+#    one document-currency VAT total and has no such disjunct, so it over-rejects
+#    the same BT-110-less CII documents (same two examples).
+#  * BR-09 / BR-11 (Seller/Buyer postal address shall contain a country code):
+#    the CII binding evaluates ``normalize-space(.../PostalTradeAddress/CountryID)
+#    != ''`` with the /rsm:CrossIndustryInvoice ROOT as its context, so it fires
+#    even when the whole postal address is absent. The UBL function is gated on the
+#    PostalAddress node existing (BR-09/BR-11's UBL context IS that node), so on a
+#    CII invoice missing the address it holds where the official fires (a MISS,
+#    seen on the BR-08/BR-10 mutations). BR-08/BR-10 (address existence) stay
+#    graded; the country-code rules do not.
+#  * BR-S-01 (Standard-rated item ⇒ Standard-rated VAT breakdown): the CII binding
+#    is a WEAK one-directional count — ``count(line S)+count(header S) >= 2 or
+#    not(line S)`` — which is satisfied by two or more S rows on either side and,
+#    unlike the UBL binding, does NOT flag an orphan S breakdown with no S item.
+#    The UBL function is the strict biconditional (fires on either orphan side), so
+#    it over-fires on CII invoices with an S breakdown but no S line (seen on the
+#    BR-16 / BR-CO-18 mutations, which strip the lines / breakdown).
+CII_EXCLUDED_RULE_IDS = ("BR-CO-14", "BR-CO-15", "BR-09", "BR-11", "BR-S-01")
+
+CII_RULE_IDS = [_fn_to_rule_id(fn) for fn in CII_GRADED_RULES]
+CII_RULE_SET = set(CII_RULE_IDS)
+assert len(CII_RULE_IDS) == len(set(CII_RULE_IDS)), CII_RULE_IDS
+assert CII_RULE_SET <= OUR_RULE_SET, (
+    "CII graded set names rules not in einvoice/rules.py ALL_RULES: %s"
+    % sorted(CII_RULE_SET - OUR_RULE_SET))
+assert not (CII_RULE_SET & set(CII_EXCLUDED_RULE_IDS)), (
+    "a CII-excluded rule is also in the graded set")
+
+
+def cii_our_fired(invoice_path: str) -> set:
+    """Fired core-rule ids of OUR validator on the CII-normalized model.
+
+    Parses the CII invoice with :func:`einvoice.parser_cii.parse` and runs the
+    UNMODIFIED :mod:`einvoice.rules` graded functions against it — the whole
+    point of the leg is that the syntax-agnostic rule bodies are reused verbatim.
+    """
+    inv = _parser_cii.parse(invoice_path)
+    fired = set()
+    for fn in CII_GRADED_RULES:
+        v = fn(inv)
+        if v is not None:
+            fired.add(v.rule_id)
+    return fired
 
 
 # --------------------------------------------------------------------------- #
@@ -1395,6 +1505,375 @@ def _gather_xr_ext_mutations(scratch: str):
     return out
 
 
+# --------------------------------------------------------------------------- #
+# CII (CrossIndustryInvoice) corpus + targeted mutations.                       #
+#                                                                              #
+# Corpus = the vendored CEN CII example invoices (all official-clean) + one     #
+# generated mutation per graded rule, each breaking exactly the CII field that  #
+# rule guards, off a known-clean CII base (CII_example1: a 20-line S-rated Dutch #
+# grocery invoice that fires nothing on the official CII XSLT and carries a      #
+# Seller VAT registration id). Every mutation exercises its rule in the FAILING  #
+# direction on both engines.                                                     #
+# --------------------------------------------------------------------------- #
+CII_EXAMPLES_DIR = os.path.join(HERE, "corpus", "cen-en16931", "cii", "examples")
+_CII_BASE = os.path.join(CII_EXAMPLES_DIR, "CII_example1.xml")
+_NSC = {"rsm": NS_RSM, "ram": NS_RAM, "udt": NS_UDT}
+
+
+def _register_cii_ns():
+    ET.register_namespace("rsm", NS_RSM)
+    ET.register_namespace("ram", NS_RAM)
+    ET.register_namespace("udt", NS_UDT)
+    ET.register_namespace("qdt",
+                          "urn:un:unece:uncefact:data:standard:QualifiedDataType:100")
+    ET.register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
+
+
+def _write_cii_doc(elem: ET.Element, out_path: str):
+    _register_cii_ns()
+    ET.ElementTree(elem).write(out_path, encoding="utf-8", xml_declaration=True)
+
+
+def _cq(ns, local):
+    return "{%s}%s" % (ns, local)
+
+
+def _cii_parent_map(root):
+    return {c: p for p in root.iter() for c in p}
+
+
+def _cii_remove(root, elem):
+    if elem is not None:
+        _cii_parent_map(root)[elem].remove(elem)
+
+
+def _cii_settlement(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeSettlement", _NSC)
+
+
+def _cii_summation(r):
+    return _cii_settlement(r).find(
+        "ram:SpecifiedTradeSettlementHeaderMonetarySummation", _NSC)
+
+
+def _cii_first_line(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:IncludedSupplyChainTradeLineItem", _NSC)
+
+
+def _cii_seller(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty", _NSC)
+
+
+def _cii_buyer(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty", _NSC)
+
+
+def _cii_first_breakdown(r):
+    return _cii_settlement(r).find("ram:ApplicableTradeTax", _NSC)
+
+
+def _cii_line_tax(r):
+    return _cii_first_line(r).find(
+        "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", _NSC)
+
+
+def _cii_set(parent, path, text):
+    parent.find(path, _NSC).text = text
+
+
+# ---- header existence / cardinality --------------------------------------- #
+def _cmut_br01(r):
+    _cii_remove(r, r.find("rsm:ExchangedDocumentContext/"
+                          "ram:GuidelineSpecifiedDocumentContextParameter/"
+                          "ram:ID", _NSC))
+
+
+def _cmut_br02(r):
+    _cii_remove(r, r.find("rsm:ExchangedDocument/ram:ID", _NSC))
+
+
+def _cmut_br03(r):
+    _cii_remove(r, r.find("rsm:ExchangedDocument/ram:IssueDateTime", _NSC))
+
+
+def _cmut_br04(r):
+    _cii_remove(r, r.find("rsm:ExchangedDocument/ram:TypeCode", _NSC))
+
+
+def _cmut_br05(r):
+    _cii_remove(r, _cii_settlement(r).find("ram:InvoiceCurrencyCode", _NSC))
+
+
+def _cmut_br06(r):
+    _cii_remove(r, _cii_seller(r).find("ram:Name", _NSC))
+
+
+def _cmut_br07(r):
+    _cii_remove(r, _cii_buyer(r).find("ram:Name", _NSC))
+
+
+def _cmut_br08(r):
+    _cii_remove(r, _cii_seller(r).find("ram:PostalTradeAddress", _NSC))
+
+
+def _cmut_br10(r):
+    _cii_remove(r, _cii_buyer(r).find("ram:PostalTradeAddress", _NSC))
+
+
+def _cmut_br12(r):
+    _cii_remove(r, _cii_summation(r).find("ram:LineTotalAmount", _NSC))
+
+
+def _cmut_br13(r):
+    _cii_remove(r, _cii_summation(r).find("ram:TaxBasisTotalAmount", _NSC))
+
+
+def _cmut_br14(r):
+    _cii_remove(r, _cii_summation(r).find("ram:GrandTotalAmount", _NSC))
+
+
+def _cmut_br15(r):
+    _cii_remove(r, _cii_summation(r).find("ram:DuePayableAmount", _NSC))
+
+
+def _cmut_br16(r):
+    txn = r.find("rsm:SupplyChainTradeTransaction", _NSC)
+    for ln in txn.findall("ram:IncludedSupplyChainTradeLineItem", _NSC):
+        txn.remove(ln)
+
+
+def _cmut_br21(r):
+    ln = _cii_first_line(r)
+    _cii_remove(r, ln.find("ram:AssociatedDocumentLineDocument/ram:LineID", _NSC))
+
+
+def _cmut_br22(r):
+    ln = _cii_first_line(r)
+    _cii_remove(r, ln.find(
+        "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity", _NSC))
+
+
+def _cmut_br24(r):
+    ln = _cii_first_line(r)
+    _cii_remove(r, ln.find(
+        "ram:SpecifiedLineTradeSettlement/"
+        "ram:SpecifiedTradeSettlementLineMonetarySummation/"
+        "ram:LineTotalAmount", _NSC))
+
+
+def _cmut_br25(r):
+    ln = _cii_first_line(r)
+    _cii_remove(r, ln.find("ram:SpecifiedTradeProduct/ram:Name", _NSC))
+
+
+def _cmut_br26(r):
+    ln = _cii_first_line(r)
+    _cii_remove(r, ln.find(
+        "ram:SpecifiedLineTradeAgreement/"
+        "ram:NetPriceProductTradePrice/ram:ChargeAmount", _NSC))
+
+
+def _cmut_br27(r):
+    _cii_first_line(r).find(
+        "ram:SpecifiedLineTradeAgreement/"
+        "ram:NetPriceProductTradePrice/ram:ChargeAmount", _NSC).text = "-1"
+
+
+def _cmut_brcl01(r):
+    r.find("rsm:ExchangedDocument/ram:TypeCode", _NSC).text = "999"
+
+
+def _cmut_brco04(r):
+    # Remove the line's VAT ApplicableTradeTax -> BR-CO-04 (no line VAT code).
+    ln_settle = _cii_first_line(r).find("ram:SpecifiedLineTradeSettlement", _NSC)
+    _cii_remove(r, ln_settle.find("ram:ApplicableTradeTax", _NSC))
+
+
+def _cmut_brco10(r):
+    _cii_summation(r).find("ram:LineTotalAmount", _NSC).text = "111111.11"
+
+
+def _cmut_brco13(r):
+    _cii_summation(r).find("ram:TaxBasisTotalAmount", _NSC).text = "111111.11"
+
+
+def _cmut_brco16(r):
+    _cii_summation(r).find("ram:DuePayableAmount", _NSC).text = "111111.11"
+
+
+def _cmut_brco17(r):
+    # First breakdown CalculatedAmount far from taxable × rate -> BR-CO-17.
+    _cii_first_breakdown(r).find("ram:CalculatedAmount", _NSC).text = "99.99"
+
+
+def _cmut_brco18(r):
+    # Remove every VAT breakdown row -> BR-CO-18 (no BG-23 group).
+    settle = _cii_settlement(r)
+    for tt in settle.findall("ram:ApplicableTradeTax", _NSC):
+        settle.remove(tt)
+
+
+def _cmut_br45(r):
+    _cii_remove(r, _cii_first_breakdown(r).find("ram:BasisAmount", _NSC))
+
+
+def _cmut_br46(r):
+    _cii_remove(r, _cii_first_breakdown(r).find("ram:CalculatedAmount", _NSC))
+
+
+def _cmut_br47(r):
+    _cii_remove(r, _cii_first_breakdown(r).find("ram:CategoryCode", _NSC))
+
+
+def _cmut_br48(r):
+    _cii_remove(r, _cii_first_breakdown(r).find(
+        "ram:RateApplicablePercent", _NSC))
+
+
+def _cmut_brs02(r):
+    # Remove the Seller tax registration -> BR-S-02 (S line present, no VAT id).
+    seller = _cii_seller(r)
+    _cii_remove(r, seller.find("ram:SpecifiedTaxRegistration", _NSC))
+
+
+def _cmut_brs05(r):
+    # S line with VAT rate 0 -> BR-S-05.
+    _cii_line_tax(r).find("ram:RateApplicablePercent", _NSC).text = "0"
+
+
+def _cmut_brs09(r):
+    # S breakdown tax amount far from taxable × rate -> BR-S-09 (also BR-CO-17).
+    _cii_first_breakdown(r).find("ram:CalculatedAmount", _NSC).text = "99.99"
+
+
+def _cmut_brs10(r):
+    # S breakdown carrying a VAT exemption reason -> BR-S-10.
+    bd = _cii_first_breakdown(r)
+    rate = bd.find("ram:RateApplicablePercent", _NSC)
+    reason = ET.Element(_cq(NS_RAM, "ExemptionReason"))
+    reason.text = "Reverse charge"
+    # CII order places ExemptionReason before RateApplicablePercent.
+    bd.insert(list(bd).index(rate), reason)
+
+
+def _cmut_brdec09(r):
+    _cii_summation(r).find("ram:LineTotalAmount", _NSC).text = "625743.549"
+
+
+def _cmut_brdec12(r):
+    _cii_summation(r).find("ram:TaxBasisTotalAmount", _NSC).text = "625743.549"
+
+
+def _cmut_brdec14(r):
+    _cii_summation(r).find("ram:GrandTotalAmount", _NSC).text = "625743.549"
+
+
+def _cmut_brdec18(r):
+    _cii_summation(r).find("ram:DuePayableAmount", _NSC).text = "625743.549"
+
+
+def _cmut_brdec19(r):
+    _cii_first_breakdown(r).find("ram:BasisAmount", _NSC).text = "625743.549"
+
+
+def _cmut_brdec20(r):
+    _cii_first_breakdown(r).find("ram:CalculatedAmount", _NSC).text = "156435.889"
+
+
+def _cmut_brdec23(r):
+    _cii_first_line(r).find(
+        "ram:SpecifiedLineTradeSettlement/"
+        "ram:SpecifiedTradeSettlementLineMonetarySummation/"
+        "ram:LineTotalAmount", _NSC).text = "625743.549"
+
+
+_CII_MUTATIONS = {
+    "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
+    "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
+    "BR-07": _cmut_br07, "BR-08": _cmut_br08, "BR-10": _cmut_br10,
+    "BR-12": _cmut_br12, "BR-13": _cmut_br13, "BR-14": _cmut_br14,
+    "BR-15": _cmut_br15, "BR-16": _cmut_br16,
+    "BR-21": _cmut_br21, "BR-22": _cmut_br22, "BR-24": _cmut_br24,
+    "BR-25": _cmut_br25, "BR-26": _cmut_br26, "BR-27": _cmut_br27,
+    "BR-CL-01": _cmut_brcl01, "BR-CO-04": _cmut_brco04,
+    "BR-CO-10": _cmut_brco10, "BR-CO-13": _cmut_brco13,
+    "BR-CO-16": _cmut_brco16, "BR-CO-17": _cmut_brco17,
+    "BR-CO-18": _cmut_brco18,
+    "BR-45": _cmut_br45, "BR-46": _cmut_br46, "BR-47": _cmut_br47,
+    "BR-48": _cmut_br48,
+    "BR-S-02": _cmut_brs02, "BR-S-05": _cmut_brs05,
+    "BR-S-09": _cmut_brs09, "BR-S-10": _cmut_brs10,
+    "BR-DEC-09": _cmut_brdec09, "BR-DEC-12": _cmut_brdec12,
+    "BR-DEC-14": _cmut_brdec14, "BR-DEC-18": _cmut_brdec18,
+    "BR-DEC-19": _cmut_brdec19, "BR-DEC-20": _cmut_brdec20,
+    "BR-DEC-23": _cmut_brdec23,
+}
+# Every entry above breaks exactly one graded rule's field off the clean S-rated
+# CII base; several also fire other graded rules (e.g. a broken breakdown amount
+# fires BR-CO-17 AND BR-S-09) — agreement is asserted PER RULE, so that is fine.
+
+
+def _gather_cii_examples():
+    """(label, abs_path) for every vendored CEN CII example invoice."""
+    out = []
+    if not os.path.isdir(CII_EXAMPLES_DIR):
+        return out
+    for name in sorted(os.listdir(CII_EXAMPLES_DIR)):
+        if not name.lower().endswith(".xml"):
+            continue
+        p = os.path.join(CII_EXAMPLES_DIR, name)
+        try:
+            root = ET.parse(p).getroot()
+        except ET.ParseError:
+            continue
+        if _localname(root.tag) != "CrossIndustryInvoice":
+            continue
+        out.append(("cii-ex/%s" % name, p))
+    return out
+
+
+def _gather_cii_mutations(scratch: str):
+    """One generated CII invoice per graded rule, each breaking that rule's field."""
+    base_root = ET.parse(_CII_BASE).getroot()
+    dst = os.path.join(scratch, "cii-mutations")
+    os.makedirs(dst, exist_ok=True)
+    out = []
+    for rid in CII_RULE_IDS:
+        mut = _CII_MUTATIONS.get(rid)
+        if mut is None:
+            continue
+        root = copy.deepcopy(base_root)
+        try:
+            mut(root)
+        except Exception as e:  # pragma: no cover
+            print("  [CII mutation %s FAILED to build: %s]" % (rid, e),
+                  file=sys.stderr)
+            continue
+        out_path = os.path.join(dst, "cmut_%s.xml" % rid.replace("-", "_"))
+        _write_cii_doc(root, out_path)
+        out.append(("CIIMUT/%s" % rid, out_path))
+    return out
+
+
+def build_cii_corpus(scratch: str):
+    """Corpus for the CII leg: the CEN CII examples + one mutation per graded rule."""
+    entries = []
+    entries += _gather_cii_examples()
+    entries += _gather_cii_mutations(scratch)
+    seen, uniq = set(), []
+    for label, path in entries:
+        key = os.path.abspath(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append((label, path))
+    return uniq
+
+
 def build_corpus(scratch: str):
     entries = []
     entries += _gather_bare_invoices()
@@ -1542,7 +2021,7 @@ def _run_leg(title, xslt_path, rule_ids, our_fn, corpus):
     return tot_fp + tot_miss
 
 
-def run_differential(legs=("en", "xrechnung")):
+def run_differential(legs=("en", "xrechnung", "cii")):
     scratch = os.environ.get("DIFF_SCRATCH") or tempfile.mkdtemp(prefix="diffcorpus-")
     os.makedirs(scratch, exist_ok=True)
 
@@ -1565,6 +2044,16 @@ def run_differential(legs=("en", "xrechnung")):
         print("  scratch dir: %s" % scratch)
         divergences += _run_leg("official XRechnung-UBL Schematron",
                                 XR_OFFICIAL_XSLT, XR_RULE_IDS, xr_our_fired,
+                                corpus)
+    if "cii" in legs:
+        corpus = build_cii_corpus(scratch)
+        print("#" * 82)
+        print("# LEG 3 — EN 16931 core in CII syntax (official CEN EN16931-CII Schematron)")
+        print("#" * 82)
+        print("Corpus assembled: %d CrossIndustryInvoice documents" % len(corpus))
+        print("  scratch dir: %s" % scratch)
+        divergences += _run_leg("official EN16931-CII Schematron",
+                                CII_OFFICIAL_XSLT, CII_RULE_IDS, cii_our_fired,
                                 corpus)
     print("OVERALL DIVERGENCES ACROSS LEGS: %d -> %s"
           % (divergences, "OK" if divergences == 0 else "DIVERGED"))
@@ -1616,7 +2105,7 @@ def _print_report(invoice_path: str) -> None:
 def main(argv: list) -> int:
     if not argv:
         return run_differential()
-    if len(argv) == 1 and argv[0] in ("en", "xrechnung"):
+    if len(argv) == 1 and argv[0] in ("en", "xrechnung", "cii"):
         return run_differential(legs=(argv[0],))
     for s in argv:
         if not os.path.exists(s):

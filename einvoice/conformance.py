@@ -283,6 +283,80 @@ assert XRECHNUNG_CIUS_COVERAGE.keys() == _XR_CIUS_IMPLEMENTED, (
        sorted(_XR_CIUS_IMPLEMENTED - XRECHNUNG_CIUS_COVERAGE.keys())))
 
 
+# --------------------------------------------------------------------------- #
+# CII-syntax (CrossIndustryInvoice) coverage manifest.                          #
+#                                                                              #
+# The SAME einvoice/rules.py core rule FUNCTIONS are run — unchanged — over the  #
+# CII-normalized model (einvoice/parser_cii.build_model) and differentially      #
+# proven equivalent to the official CEN EN16931-CII Schematron across the CII    #
+# corpus (``differential.py cii`` green: 0 divergences). This manifest records   #
+# which core rules reach that CII parity (auditable + grep-able), and which are  #
+# deliberately NOT graded on CII because their CII Schematron binding differs     #
+# from the UBL one (grading them under the unmodified UBL function would ship a   #
+# divergence — see differential.CII_EXCLUDED_RULE_IDS for the per-rule reason).  #
+# The single source of truth is differential.CII_GRADED_RULES; the assert below  #
+# guarantees this manifest can never silently drift from that graded set.        #
+CII_SYNTAX_COVERAGE = {
+    "BR-01": "Specification identifier (BT-24) present",
+    "BR-02": "Invoice number (BT-1) present",
+    "BR-03": "Invoice issue date (BT-2) present",
+    "BR-04": "Invoice type code (BT-3) present",
+    "BR-05": "Invoice currency code (BT-5) present",
+    "BR-06": "Seller name (BT-27) present",
+    "BR-07": "Buyer name (BT-44) present",
+    "BR-08": "Seller postal address (BG-5) present",
+    "BR-10": "Buyer postal address (BG-8) present",
+    "BR-12": "Sum of Invoice line net amount (BT-106) present",
+    "BR-13": "Invoice total without VAT (BT-109) present",
+    "BR-14": "Invoice total with VAT (BT-112) present",
+    "BR-15": "Amount due for payment (BT-115) present",
+    "BR-16": "At least one Invoice line (BG-25)",
+    "BR-21": "Invoice line identifier (BT-126) present",
+    "BR-22": "Invoiced quantity (BT-129) present",
+    "BR-24": "Invoice line net amount (BT-131) present",
+    "BR-25": "Item name (BT-153) present",
+    "BR-26": "Item net price (BT-146) present",
+    "BR-27": "Item net price (BT-146) not negative",
+    "BR-CL-01": "Document type code (BT-3) in UNTDID 1001",
+    "BR-CO-04": "Each line categorized with a VAT category code (BT-151)",
+    "BR-CO-10": "Sum of line net amount (BT-106) = Σ line net (BT-131)",
+    "BR-CO-13": "Total without VAT (BT-109) = line-net − allowances + charges",
+    "BR-CO-16": "Amount due (BT-115) = total with VAT − paid + rounding",
+    "BR-CO-17": "VAT category tax = taxable × rate/100 (±1 tolerance)",
+    "BR-CO-18": "At least one VAT breakdown group (BG-23)",
+    "BR-45": "VAT breakdown taxable amount (BT-116) present",
+    "BR-46": "VAT breakdown tax amount (BT-117) present",
+    "BR-47": "VAT breakdown VAT category code (BT-118) present",
+    "BR-48": "VAT breakdown VAT category rate (BT-119) present unless 'O'",
+    "BR-S-02": "Standard-rated line ⇒ Seller VAT/tax id present",
+    "BR-S-05": "Standard-rated line VAT rate (BT-152) > 0",
+    "BR-S-09": "Standard-rated breakdown tax = taxable × rate (±1)",
+    "BR-S-10": "Standard-rated breakdown has no VAT exemption reason",
+    "BR-DEC-09": "≤2 decimals: Sum of Invoice line net amount (BT-106)",
+    "BR-DEC-12": "≤2 decimals: Invoice total amount without VAT (BT-109)",
+    "BR-DEC-14": "≤2 decimals: Invoice total amount with VAT (BT-112)",
+    "BR-DEC-18": "≤2 decimals: Amount due for payment (BT-115)",
+    "BR-DEC-19": "≤2 decimals: VAT category taxable amount (BT-116)",
+    "BR-DEC-20": "≤2 decimals: VAT category tax amount (BT-117)",
+    "BR-DEC-23": "≤2 decimals: Invoice line net amount (BT-131)",
+}
+
+# Rules deliberately NOT graded on CII (the CII Schematron binds them with
+# different semantics than the UBL binding; grading under the unmodified UBL
+# function would ship a divergence). Kept here so the exclusion is auditable.
+CII_SYNTAX_EXCLUDED = {
+    "BR-CO-14": "CII gates BT-110 = Σ BT-117 on a present doc-currency "
+                "TaxTotalAmount; no-VAT CII invoices omit it (UBL over-rejects)",
+    "BR-CO-15": "CII adds a GrandTotal=TaxBasis disjunct for no-VAT invoices "
+                "the UBL function lacks (UBL over-rejects BT-110-less invoices)",
+    "BR-09": "CII country-code check is not gated on the postal address node; "
+             "UBL function is (misses when the whole address is absent)",
+    "BR-11": "same as BR-09 for the Buyer postal address country code",
+    "BR-S-01": "CII binding is a weak one-directional count; UBL function is the "
+               "strict biconditional (over-fires on an orphan S breakdown)",
+}
+
+
 def _all_asserted_rule_ids():
     """Every rule id the validator can actually emit — both the direct
     ``Violation("ID", …)`` calls (the ``IMPLEMENTED`` set) and the ids raised
@@ -309,6 +383,29 @@ assert CALCULATION_ROUNDING_COVERAGE.keys() <= _ASSERTED, (
 assert not (CALCULATION_ROUNDING_VACUOUS.keys() & _ASSERTED), (
     "a known-vacuous rule is being asserted (false positive risk): %s"
     % sorted(CALCULATION_ROUNDING_VACUOUS.keys() & _ASSERTED))
+
+# The CII-syntax manifest may only claim core rules the validator implements,
+# and must match differential.CII_GRADED_RULES EXACTLY (single source of truth),
+# so it can never silently drift from the graded set the differential proves.
+assert CII_SYNTAX_COVERAGE.keys() <= _ASSERTED, (
+    "CII-syntax coverage manifest names unimplemented rules: %s"
+    % sorted(CII_SYNTAX_COVERAGE.keys() - _ASSERTED))
+try:
+    import differential as _differential
+    _CII_GRADED = set(_differential.CII_RULE_IDS)
+    _CII_EXCLUDED = set(_differential.CII_EXCLUDED_RULE_IDS)
+    assert CII_SYNTAX_COVERAGE.keys() == _CII_GRADED, (
+        "CII-syntax coverage manifest drifted from differential.CII_GRADED_RULES "
+        "— manifest-only: %s ; graded-only: %s"
+        % (sorted(CII_SYNTAX_COVERAGE.keys() - _CII_GRADED),
+           sorted(_CII_GRADED - CII_SYNTAX_COVERAGE.keys())))
+    assert CII_SYNTAX_EXCLUDED.keys() == _CII_EXCLUDED, (
+        "CII-syntax excluded manifest drifted from "
+        "differential.CII_EXCLUDED_RULE_IDS — manifest-only: %s ; code-only: %s"
+        % (sorted(CII_SYNTAX_EXCLUDED.keys() - _CII_EXCLUDED),
+           sorted(_CII_EXCLUDED - CII_SYNTAX_EXCLUDED.keys())))
+except ImportError:  # pragma: no cover - differential harness always co-located
+    pass
 
 
 # --------------------------------------------------------------------------- #
@@ -552,6 +649,17 @@ def main():
     for rid in sorted(XRECHNUNG_EXTENSION_COVERAGE):
         out("     %-11s %s\n" % (rid, XRECHNUNG_EXTENSION_COVERAGE[rid]))
     out("\n")
+    out("  CII-syntax (Factur-X/ZUGFeRD) core rules covered (%d), the SAME rule\n"
+        "  functions run over the CII model, differentially proven vs the official\n"
+        "  CEN EN16931-CII Schematron (differential.py cii green, 0 divergences):\n"
+        % len(CII_SYNTAX_COVERAGE))
+    for rid in sorted(CII_SYNTAX_COVERAGE):
+        out("     %-11s %s\n" % (rid, CII_SYNTAX_COVERAGE[rid]))
+    out("  not graded on CII (CII Schematron binds these differently; excluded\n"
+        "  rather than approximated — still graded on the UBL EN/XRechnung legs):\n")
+    for rid in sorted(CII_SYNTAX_EXCLUDED):
+        out("     %-11s %s\n" % (rid, CII_SYNTAX_EXCLUDED[rid]))
+    out("\n")
 
     # Per valid vector
     out("-- VALID vectors (must exit 0) " + "-" * 38 + "\n")
@@ -582,6 +690,8 @@ def main():
         % len(XRECHNUNG_EXTENSION_COVERAGE))
     out("  calc/rounding invariants covered ... %d\n"
         % len(CALCULATION_ROUNDING_COVERAGE))
+    out("  CII-syntax core rules covered ...... %d  (%d excluded, documented)\n"
+        % (len(CII_SYNTAX_COVERAGE), len(CII_SYNTAX_EXCLUDED)))
     out("\n")
     out("  VALID-vector pass rate ............. %d/%d   %s\n"
         % (valid_pass, valid_total, pct(valid_pass, valid_total)))

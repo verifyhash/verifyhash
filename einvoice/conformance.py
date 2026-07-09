@@ -185,6 +185,104 @@ assert XRECHNUNG_EXTENSION_COVERAGE.keys() >= {
     "XRechnung extension coverage manifest is missing BR-DEX ids")
 
 
+# --------------------------------------------------------------------------- #
+# German CIUS (BR-DE-*) coverage manifest.                                    #
+#                                                                             #
+# The KoSIT XRechnung CIUS (Core Invoice Usage Specification) narrows EN 16931 #
+# for the German e-invoicing mandate: it is what makes a document a valid      #
+# XRechnung on top of the European core. Every BR-DE-* rule below is           #
+# implemented in einvoice/rules_xrechnung.py, unit-tested in test_xrechnung.py, #
+# and proven equivalent to the official KoSIT XRechnung-UBL Schematron across   #
+# the differential corpus (differential.py, CIUS leg, green). Severities match  #
+# the normative artifact: 'fatal' errors reject the invoice, 'warning'/         #
+# 'information' rules are advisory and never block. Listed here so the German   #
+# CIUS coverage is auditable and grep-able at a glance — the exact machine-      #
+# readable "which BR-DE rules run in your CI" differentiator. The consistency    #
+# assert below guarantees this manifest can never silently drift from the        #
+# @_rule decorators the validator actually registers.                          #
+XRECHNUNG_CIUS_COVERAGE = {
+    "BR-DE-1": "PAYMENT INSTRUCTIONS (BG-16) must be present (fatal)",
+    "BR-DE-2": "SELLER CONTACT (BG-6) must be present (fatal)",
+    "BR-DE-3": "Seller city (BT-37) must be present (fatal)",
+    "BR-DE-4": "Seller post code (BT-38) must be present (fatal)",
+    "BR-DE-5": "Seller contact point / name (BT-41) must be present (fatal)",
+    "BR-DE-6": "Seller contact telephone number (BT-42) must be present (fatal)",
+    "BR-DE-7": "Seller contact email address (BT-43) must be present (fatal)",
+    "BR-DE-8": "Buyer city (BT-52) must be present (fatal)",
+    "BR-DE-9": "Buyer post code (BT-53) must be present (fatal)",
+    "BR-DE-10": "Deliver-to city (BT-77) required when DELIVER TO ADDRESS "
+                "(BG-15) is present (fatal)",
+    "BR-DE-11": "Deliver-to post code (BT-78) required when DELIVER TO ADDRESS "
+                "(BG-15) is present (fatal)",
+    "BR-DE-14": "VAT category rate (BT-119) present in every VAT breakdown row "
+                "(fatal)",
+    "BR-DE-15": "Buyer reference (BT-10) must be present (fatal)",
+    "BR-DE-16": "with VAT category S/Z/E/AE/K/G/L/M, one of Seller VAT id "
+                "(BT-31), tax registration id (BT-32) or SELLER TAX "
+                "REPRESENTATIVE (BG-11) is required (fatal)",
+    "BR-DE-17": "Invoice/credit-note type code (BT-3) within the XRechnung "
+                "UNTDID 1001 subset 326/380/384/389/381/875/876/877 (warning)",
+    "BR-DE-18": "Skonto entries in Payment terms (BT-20) follow the "
+                "#SKONTO#TAGE=…#PROZENT=…# grammar with a trailing newline "
+                "(fatal)",
+    "BR-DE-19": "Payment account id (BT-84) is a valid IBAN when payment means "
+                "code is 58 (SEPA credit transfer) (warning)",
+    "BR-DE-20": "Debited account id (BT-91) is a valid IBAN when payment means "
+                "code is 59 (SEPA direct debit) (warning)",
+    "BR-DE-21": "Specification identifier (BT-24) matches an XRechnung "
+                "CustomizationID (CIUS, extension or CVD) (warning)",
+    "BR-DE-22": "EmbeddedDocumentBinaryObject filenames are unique across all "
+                "attachments (fatal)",
+    "BR-DE-23-a": "payment means code 30/58 requires CREDIT TRANSFER (BG-17) "
+                  "(fatal)",
+    "BR-DE-23-b": "payment means code 30/58 forbids PAYMENT CARD (BG-18) and "
+                  "DIRECT DEBIT (BG-19) (fatal)",
+    "BR-DE-24-a": "payment means code 48/54/55 requires PAYMENT CARD "
+                  "INFORMATION (BG-18) (fatal)",
+    "BR-DE-24-b": "payment means code 48/54/55 forbids CREDIT TRANSFER (BG-17) "
+                  "and DIRECT DEBIT (BG-19) (fatal)",
+    "BR-DE-25-a": "payment means code 59 requires DIRECT DEBIT (BG-19) (fatal)",
+    "BR-DE-25-b": "payment means code 59 forbids CREDIT TRANSFER (BG-17) and "
+                  "PAYMENT CARD (BG-18) (fatal)",
+    "BR-DE-26": "type code 384 (Corrected invoice) should carry a PRECEDING "
+                "INVOICE REFERENCE (BG-3) (warning)",
+    "BR-DE-27": "Seller contact telephone (BT-42) should contain at least "
+                "three digits (warning)",
+    "BR-DE-28": "Seller contact email (BT-43) should look like an email "
+                "address — exactly one '@' with valid flanks (warning)",
+    "BR-DE-30": "DIRECT DEBIT (BG-19) requires the Bank assigned creditor "
+                "identifier (BT-90, SEPA-scheme party id) (fatal)",
+    "BR-DE-31": "DIRECT DEBIT (BG-19) requires the Debited account identifier "
+                "(BT-91) (fatal)",
+    "BR-DE-TMP-32": "invoice should state the delivery/service date via BT-72, "
+                    "an Invoicing period (BG-14) or a per-line period (BG-26) "
+                    "(information)",
+}
+
+
+def xrechnung_cius_rule_ids():
+    """The German CIUS rule ids the XRechnung layer actually registers — the
+    ``@_rule('BR-DE-…', …)`` decorators in einvoice/rules_xrechnung.py. The
+    charset is broader than the BR-DEX extractor above because CIUS ids carry
+    lowercase branch suffixes (e.g. BR-DE-23-a)."""
+    src = open(XR_RULES_SRC, encoding="utf-8").read()
+    ids = set(re.findall(r'@_rule\(\s*["\']([A-Za-z0-9-]+)["\']', src))
+    return {rid for rid in ids if rid.startswith("BR-DE-")}
+
+
+_XR_CIUS_IMPLEMENTED = xrechnung_cius_rule_ids()
+
+# The CIUS manifest must match the implemented BR-DE rule set EXACTLY (in both
+# directions) so it can never silently drift from the code: no manifest entry
+# for a rule the validator does not register, and no registered BR-DE rule left
+# undocumented.
+assert XRECHNUNG_CIUS_COVERAGE.keys() == _XR_CIUS_IMPLEMENTED, (
+    "XRechnung CIUS coverage manifest drifted from rules_xrechnung.py — "
+    "manifest-only: %s ; code-only: %s"
+    % (sorted(XRECHNUNG_CIUS_COVERAGE.keys() - _XR_CIUS_IMPLEMENTED),
+       sorted(_XR_CIUS_IMPLEMENTED - XRECHNUNG_CIUS_COVERAGE.keys())))
+
+
 def _all_asserted_rule_ids():
     """Every rule id the validator can actually emit — both the direct
     ``Violation("ID", …)`` calls (the ``IMPLEMENTED`` set) and the ids raised
@@ -442,6 +540,12 @@ def main():
     for rid in sorted(CALCULATION_ROUNDING_VACUOUS):
         out("     %-11s %s\n" % (rid, CALCULATION_ROUNDING_VACUOUS[rid]))
     out("\n")
+    out("  German CIUS (BR-DE-*) rules covered (%d), differentially proven vs\n"
+        "  the official KoSIT XRechnung-UBL Schematron (CIUS layer):\n"
+        % len(XRECHNUNG_CIUS_COVERAGE))
+    for rid in sorted(XRECHNUNG_CIUS_COVERAGE):
+        out("     %-13s %s\n" % (rid, XRECHNUNG_CIUS_COVERAGE[rid]))
+    out("\n")
     out("  XRechnung EXTENSION rules covered (%d), differentially proven vs the\n"
         "  official KoSIT XSLT (extension CustomizationID only):\n"
         % len(XRECHNUNG_EXTENSION_COVERAGE))
@@ -472,6 +576,12 @@ def main():
     out("  total vendored vectors ............. %d "
         "(%d valid + %d invalid)\n"
         % (total_vectors, valid_total, len(invalid_files)))
+    out("  German CIUS (BR-DE-*) rules covered  %d\n"
+        % len(XRECHNUNG_CIUS_COVERAGE))
+    out("  XRechnung EXTENSION rules covered .. %d\n"
+        % len(XRECHNUNG_EXTENSION_COVERAGE))
+    out("  calc/rounding invariants covered ... %d\n"
+        % len(CALCULATION_ROUNDING_COVERAGE))
     out("\n")
     out("  VALID-vector pass rate ............. %d/%d   %s\n"
         % (valid_pass, valid_total, pct(valid_pass, valid_total)))

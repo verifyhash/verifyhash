@@ -1,0 +1,14 @@
+{
+  "exit_code": 0,
+  "name": "ubl-good-xrechnung-xr-01.01a",
+  "path": "corpus/vendored/valid/xr-01.01a_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-TMP-32",
+      "severity": "information"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": true
+}

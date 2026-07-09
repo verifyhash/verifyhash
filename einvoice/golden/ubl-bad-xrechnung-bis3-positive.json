@@ -1,0 +1,22 @@
+{
+  "exit_code": 1,
+  "name": "ubl-bad-xrechnung-bis3-positive",
+  "path": "corpus/vendored/valid/cen-bis3-positive_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-19",
+      "severity": "warning"
+    },
+    {
+      "rule": "BR-DE-2",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-21",
+      "severity": "warning"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": false
+}

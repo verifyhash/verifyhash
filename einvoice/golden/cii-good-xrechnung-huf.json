@@ -1,0 +1,14 @@
+{
+  "exit_code": 0,
+  "name": "cii-good-xrechnung-huf",
+  "path": "corpus/cen-en16931/cii/examples/huf_example_cii.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-21",
+      "severity": "warning"
+    }
+  ],
+  "syntax": "CII",
+  "valid": true
+}

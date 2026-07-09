@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "ubl-good-en16931-bis3-positive",
+  "path": "corpus/cen-en16931/ubl/examples/BIS3_Invoice_positive.XML",
+  "profile": "en16931",
+  "rules": [],
+  "syntax": "UBL",
+  "valid": true
+}

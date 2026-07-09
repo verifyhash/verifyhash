@@ -1,0 +1,14 @@
+{
+  "exit_code": 0,
+  "name": "cii-good-xrechnung-example5",
+  "path": "corpus/cen-en16931/cii/examples/CII_example5.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-21",
+      "severity": "warning"
+    }
+  ],
+  "syntax": "CII",
+  "valid": true
+}

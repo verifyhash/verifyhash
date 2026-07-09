@@ -1,0 +1,46 @@
+{
+  "exit_code": 1,
+  "name": "cii-bad-xrechnung-example6",
+  "path": "corpus/cen-en16931/cii/examples/CII_example6.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-1",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-15",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-2",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-21",
+      "severity": "warning"
+    },
+    {
+      "rule": "BR-DE-3",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-4",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-8",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-9",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-TMP-32",
+      "severity": "information"
+    }
+  ],
+  "syntax": "CII",
+  "valid": false
+}

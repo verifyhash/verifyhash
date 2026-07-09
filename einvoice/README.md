@@ -316,6 +316,26 @@ Same honest scope as §2: the gate proves your invoices pass the
 (fails naming the rule ID, passes conformant sets, refuses empty input) is
 itself under test in `test_packaging.py`.
 
+### Machine-readable report (`python3 -m einvoice.report`)
+
+When a CI step needs the outcome as **structured data** (to archive, diff, or
+feed a dashboard) rather than a log line, `einvoice.report` emits a single
+**versioned JSON** document to stdout and mirrors the same exit-code contract
+(`0` clean, `1` fatal violation, `3` not-well-formed XML):
+
+```sh
+python3 -m einvoice.report --profile xrechnung invoices/2026-04-017.xml
+# {"report_version":1,"schema":"einvoice-conformance-report/v1",...,
+#  "valid":false,"fatal_count":1,"violations":[{"rule":"BR-DE-15",...}]}
+```
+
+Every violation record carries exactly `rule`, `severity`, `message`, `field`;
+add `--pretty` for indented output. It re-uses `einvoice.validate` verbatim
+(no rule logic of its own, zero deps). The full field-by-field contract and
+its `report_version`/`schema` versioning semantics are documented in
+[`REPORT-SCHEMA.md`](REPORT-SCHEMA.md) (and mirrored in the `REPORT_SCHEMA`
+constant of `einvoice/report.py`).
+
 ## 5. Intended revenue model
 
 If this continues past the first slice, the model is boring on purpose:

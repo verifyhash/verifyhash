@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from xml.sax.saxutils import escape, quoteattr
 
 from .validate import validate_file, PROFILES, _severity
 from .parser import NotWellFormed
@@ -146,8 +147,92 @@ def build_report(path, profile="xrechnung"):
     }
 
 
+#: Name carried by the top-level <testsuites> element (stable, not the schema).
+JUNIT_SUITES_NAME = "einvoice-conformance"
+
+
+def build_junit(report):
+    """Project a report dict (from :func:`build_report`) into JUnit XML text.
+
+    This is a pure, additional PROJECTION of the exact same validator outcome
+    the JSON path emits — it adds no rule logic and re-reads nothing. Each
+    reported violation becomes one ``<testcase name="<rule-id>"
+    classname="<profile>">``:
+
+      * a ``fatal`` violation -> a ``<failure message="...">`` whose body
+        carries the offending field/XPath (so CI shows *where* it failed);
+      * a non-fatal violation (``warning`` / ``information``) -> a
+        ``<system-out>`` note and NO failure (it does not fail the build);
+      * a not-well-formed input -> a single ``<testcase>`` with an ``<error>``.
+
+    Passing / absent-violation rules are not emitted individually, but the
+    ``tests`` / ``failures`` / ``errors`` counts on the suite are accurate.
+
+    :param report: a dict as returned by :func:`build_report`.
+    :returns: a JUnit XML document as a ``str`` (UTF-8 declaration included).
+    """
+    profile = report.get("profile", "")
+    classname = quoteattr(profile)
+
+    lines = []
+
+    if report.get("error"):
+        # Not-well-formed XML: one errored testcase, mirroring the JSON path.
+        msg = report.get("message", "") or report["error"]
+        lines.append(
+            "    <testcase name=%s classname=%s>"
+            % (quoteattr(report["error"]), classname))
+        lines.append(
+            "      <error message=%s>%s</error>"
+            % (quoteattr(msg), escape(msg)))
+        lines.append("    </testcase>")
+        tests = 1
+        failures = 0
+        errors = 1
+    else:
+        violations = report.get("violations", [])
+        tests = len(violations)
+        failures = report.get("fatal_count", 0)
+        errors = 0
+        for v in violations:
+            rule = v.get("rule") or ""
+            severity = v.get("severity") or "fatal"
+            message = v.get("message") or ""
+            field = v.get("field") or ""
+            lines.append(
+                "    <testcase name=%s classname=%s>"
+                % (quoteattr(rule), classname))
+            if severity == "fatal":
+                body = "%s: %s" % (severity, field) if field else severity
+                lines.append(
+                    "      <failure message=%s>%s</failure>"
+                    % (quoteattr(message), escape(body)))
+            else:
+                note = "%s: %s" % (severity, message)
+                if field:
+                    note = "%s (%s)" % (note, field)
+                lines.append("      <system-out>%s</system-out>" % escape(note))
+            lines.append("    </testcase>")
+
+    suite_attrs = ("name=%s tests=%s failures=%s errors=%s"
+                   % (classname, quoteattr(str(tests)),
+                      quoteattr(str(failures)), quoteattr(str(errors))))
+    suites_attrs = ("name=%s tests=%s failures=%s errors=%s"
+                    % (quoteattr(JUNIT_SUITES_NAME), quoteattr(str(tests)),
+                       quoteattr(str(failures)), quoteattr(str(errors))))
+
+    out = ['<?xml version="1.0" encoding="UTF-8"?>']
+    out.append("<testsuites %s>" % suites_attrs)
+    out.append("  <testsuite %s>" % suite_attrs)
+    out.extend(lines)
+    out.append("  </testsuite>")
+    out.append("</testsuites>")
+    return "\n".join(out) + "\n"
+
+
 USAGE = ("usage: python3 -m einvoice.report "
-         "[--profile en16931|xrechnung] [--pretty] <invoice.xml>")
+         "[--profile en16931|xrechnung] [--format json|junit] [--pretty] "
+         "<invoice.xml>")
 
 
 def main(argv=None):
@@ -162,6 +247,7 @@ def main(argv=None):
         args = [a for a in args if a != "--pretty"]
 
     profile = "xrechnung"
+    fmt = "json"
     rest = []
     i = 0
     while i < len(args):
@@ -177,9 +263,25 @@ def main(argv=None):
             profile = a.split("=", 1)[1]
             i += 1
             continue
+        if a == "--format":
+            if i + 1 >= len(args):
+                sys.stderr.write("error: --format needs a value\n" + USAGE + "\n")
+                return EXIT_FAIL
+            fmt = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--format="):
+            fmt = a.split("=", 1)[1]
+            i += 1
+            continue
         rest.append(a)
         i += 1
     args = rest
+
+    if fmt not in ("json", "junit"):
+        sys.stderr.write("error: unknown format %r (choose from json, junit)\n%s\n"
+                         % (fmt, USAGE))
+        return EXIT_FAIL
 
     if profile not in PROFILES:
         sys.stderr.write("error: unknown profile %r (choose from %s)\n%s\n"
@@ -196,7 +298,9 @@ def main(argv=None):
         return EXIT_FAIL
 
     report = build_report(path, profile=profile)
-    if pretty:
+    if fmt == "junit":
+        sys.stdout.write(build_junit(report))
+    elif pretty:
         sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
     else:
         sys.stdout.write(json.dumps(report, separators=(",", ":")) + "\n")

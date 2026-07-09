@@ -13,13 +13,16 @@ constant in `einvoice/report.py`; this file is its human companion.
 ## Invocation
 
 ```
-python3 -m einvoice.report [--profile en16931|xrechnung] [--pretty] <invoice.xml>
+python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit] [--pretty] <invoice.xml>
 ```
 
 - `--profile` — `xrechnung` (default) or `en16931`. `xrechnung` adds the German
   national CIUS layer (BR-DE-\*) on top of the EN 16931 core.
+- `--format` — `json` (default) or `junit`. `junit` emits a JUnit XML document
+  (see **JUnit output** below) instead of the JSON; the exit-code contract is
+  identical either way.
 - `--pretty` — indent the JSON (with sorted keys) instead of the default
-  compact single line.
+  compact single line. Ignored when `--format junit` is in effect.
 
 Programmatic entry point: `einvoice.report.build_report(path, profile='xrechnung') -> dict`.
 
@@ -59,6 +62,49 @@ Mirrors `einvoice.cli` so a build fails exactly when the invoice does:
 | `0`  | No fatal violations — the invoice is valid. |
 | `1`  | At least one fatal violation. |
 | `3`  | Input not well-formed XML (report carries `error`, `valid=false`). |
+
+## JUnit output (`--format junit`)
+
+`--format junit` is an **additional projection** of the exact same validator
+outcome — it changes no rule logic and does **not** alter the JSON schema or
+`REPORT_VERSION` (the JSON contract above is unchanged; JUnit is a separate
+rendering meant for CI dashboards that already understand JUnit XML, e.g.
+GitLab CI, Jenkins, GitHub Actions test reporters).
+
+Standard library only (`xml.sax.saxutils` for escaping); no `lxml`, no new
+dependency. The document goes to **stdout**; the **exit code is identical to
+the JSON path** (`0` valid / `1` fatal / `3` not-well-formed).
+
+Shape:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="N" failures="F" errors="E">
+  <testsuite name="<profile>" tests="N" failures="F" errors="E">
+    <testcase name="BR-DE-15" classname="<profile>">
+      <failure message="&lt;Schematron message&gt;">fatal: &lt;offending field/XPath&gt;</failure>
+    </testcase>
+    <testcase name="BR-XX" classname="<profile>">
+      <system-out>warning: &lt;message&gt; (&lt;field&gt;)</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>
+```
+
+- Each **reported** violation becomes one `<testcase>` whose `name` is the rule
+  id (`BR-*`, `S-*`, `BR-DE-*`, `BR-DEX-*`) and whose `classname` is the profile.
+- A `fatal` violation renders a `<failure>`: the Schematron message is the
+  `message` attribute, the offending field/XPath is the failure body — so CI
+  shows both *what* and *where*.
+- A non-fatal violation (`warning` / `information`) renders a `<system-out>`
+  note and **no** `<failure>`; it does not fail the build.
+- Passing / absent-violation rules are **not** emitted individually, but the
+  `tests` / `failures` / `errors` counts are accurate: `tests` = number of
+  reported violations, `failures` = number of `fatal` violations, `errors` = 0.
+- Not-well-formed XML emits a single `<testcase name="not-well-formed">` with an
+  `<error>` (so `errors="1"`, `tests="1"`, `failures="0"`) and exits `3`.
+
+All text is XML-escaped with `xml.sax.saxutils`.
 
 ## Versioning
 

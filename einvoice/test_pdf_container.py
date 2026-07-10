@@ -51,6 +51,8 @@ AFREL_BAD_PDF = os.path.join(PDF_DIR, "facturx-afrel-bad.pdf")
 AF_MISSING_PDF = os.path.join(PDF_DIR, "facturx-af-missing.pdf")
 XMP_MISSING_PDF = os.path.join(PDF_DIR, "facturx-xmp-missing.pdf")
 XMP_MISMATCH_PDF = os.path.join(PDF_DIR, "facturx-xmp-mismatch.pdf")
+# XMP present with a valid Factur-X profile but NO PDF/A-3 pdfaid identity.
+PDFA3_MISSING_PDF = os.path.join(PDF_DIR, "facturx-pdfa3-missing.pdf")
 
 # The matching container fixtures (no FX-CONTAINER-* finding expected).
 MATCHING_PDFS = (VALID_PDF, VALID_PDF_RAW, BAD_PDF)
@@ -226,6 +228,39 @@ class TestContainerDeclarationChecks(unittest.TestCase):
         self.assertEqual(self._finding_ids(XMP_MISMATCH_PDF),
                          ["FX-CONTAINER-PROFILE"])
 
+    def test_pdfa3_missing_fires_exactly_the_two_pdfa3_ids(self):
+        # XMP is PRESENT (valid Factur-X profile) but carries no pdfaid identity
+        # schema -> exactly the two FX-PDFA3-* findings and nothing else. No
+        # FX-CONTAINER-XMP (profile IS declared), no double-report.
+        self.assertEqual(self._finding_ids(PDFA3_MISSING_PDF),
+                         ["FX-PDFA3-PART", "FX-PDFA3-CONFORMANCE"])
+
+    def test_matching_fixtures_have_no_pdfa3_finding(self):
+        # The valid fixtures declare pdfaid:part=3 + pdfaid:conformance=B, so no
+        # FX-PDFA3-* fires (keeps test_matching_fixtures_have_no_container...
+        # green — they carry NO container finding at all).
+        for pdf in MATCHING_PDFS:
+            fx = [i for i in self._finding_ids(pdf) if i.startswith("FX-PDFA3-")]
+            self.assertEqual(fx, [], pdf)
+
+    def test_absent_xmp_does_not_double_report_pdfa3(self):
+        # When the XMP stream is entirely absent, only FX-CONTAINER-XMP fires —
+        # NOT also FX-PDFA3-* for the same root cause.
+        ids = self._finding_ids(XMP_MISSING_PDF)
+        self.assertEqual(ids, ["FX-CONTAINER-XMP"])
+        self.assertFalse([i for i in ids if i.startswith("FX-PDFA3-")])
+
+    def test_pdfa3_findings_are_warnings_with_message_and_element(self):
+        for f in pdf_container.inspect_container(PDFA3_MISSING_PDF).findings:
+            self.assertTrue(f.rule_id.startswith("FX-PDFA3-"), f.rule_id)
+            self.assertEqual(f.severity, "warning")
+            self.assertTrue(f.message and f.element)
+            self.assertIn("pdfaid", f.element)
+
+    def test_pdfa3_defect_does_not_corrupt_extracted_xml(self):
+        self.assertEqual(pdf_container.extract_invoice_xml(PDFA3_MISSING_PDF),
+                         _read(VALID_INNER_XML))
+
     def test_findings_have_stable_namespace_and_warning_severity(self):
         for pdf in (AFREL_BAD_PDF, AF_MISSING_PDF, XMP_MISSING_PDF,
                     XMP_MISMATCH_PDF):
@@ -258,6 +293,24 @@ class TestContainerFindingsInReport(unittest.TestCase):
             self.assertNotIn("error", rep, pdf)
             fired = {v["rule"] for v in rep["violations"]}
             self.assertIn(rule_id, fired, (pdf, fired))
+
+    def test_pdfa3_missing_surfaces_both_ids_as_report_records(self):
+        # The FX-PDFA3-* findings ride the same container_findings list and
+        # surface as first-class report records (non-pass, never a crash).
+        rep = report.build_report(PDFA3_MISSING_PDF, profile="en16931")
+        self.assertNotIn("error", rep)
+        fired = {v["rule"] for v in rep["violations"]}
+        self.assertIn("FX-PDFA3-PART", fired)
+        self.assertIn("FX-PDFA3-CONFORMANCE", fired)
+        for v in rep["violations"]:
+            if v["rule"].startswith("FX-PDFA3-"):
+                self.assertEqual(v["severity"], "warning")
+
+    def test_matching_pdf_report_has_no_fx_pdfa3_records(self):
+        rep = report.build_report(VALID_PDF, profile="xrechnung")
+        fx = [v["rule"] for v in rep["violations"]
+              if v["rule"].startswith("FX-PDFA3-")]
+        self.assertEqual(fx, [])
 
     def test_matching_pdf_report_has_no_fx_container_records(self):
         # The valid PDF must carry NO FX-CONTAINER-* record (keeps the fired-id

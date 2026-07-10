@@ -464,7 +464,7 @@ endobj
 << /Names [ (factur-x.xml) 4 0 R ] >>
 endobj
 7 0 obj
-<< /Type /Metadata /Subtype /XML /Length 512 >>
+<< /Type /Metadata /Subtype /XML /Length 691 >>
 stream
 <?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -474,6 +474,10 @@ stream
    <fx:DocumentFileName>factur-x.xml</fx:DocumentFileName>
    <fx:Version>1.0</fx:Version>
    <fx:ConformanceLevel>EN 16931</fx:ConformanceLevel>
+  </rdf:Description>
+  <rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">
+   <pdfaid:part>3</pdfaid:part>
+   <pdfaid:conformance>B</pdfaid:conformance>
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>
@@ -493,5 +497,5 @@ xref
 trailer
 << /Size 8 /Root 1 0 R >>
 startxref
-25233
+25412
 %%EOF

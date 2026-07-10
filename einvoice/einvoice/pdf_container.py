@@ -53,18 +53,47 @@ cover, emitting each as a first-class report finding with a STABLE id:
     ``EN 16931`` but the XML CustomizationID is BASIC). Only fires when BOTH
     sides map to a recognised, distinct profile token.
 
+PDF/A-3 IDENTIFICATION-SCHEMA CHECKS (FX-PDFA3-*)
+-------------------------------------------------
+A conformant ZUGFeRD/Factur-X carrier is a PDF/A-3 file, so its document XMP
+MUST carry the PDF/A IDENTIFICATION schema (namespace
+``http://www.aiim.org/pdfa/ns/id/``) declaring ``pdfaid:part`` and
+``pdfaid:conformance``. These two checks (ISO 19005-3, identification schema)
+are only evaluated when an XMP stream is PRESENT — an absent XMP stream is
+already reported once as ``FX-CONTAINER-XMP``, so FX-PDFA3-* is suppressed in
+that case to avoid double-reporting the same root cause:
+
+  * ``FX-PDFA3-PART`` — the XMP does not declare ``pdfaid:part`` = 3 (absent or
+    a different value). The pdfaid prefix is resolved from the declared
+    namespace URI (not hardcoded), and both element form
+    (``<pdfaid:part>3</pdfaid:part>``) and attribute form (``pdfaid:part="3"``)
+    are accepted.
+  * ``FX-PDFA3-CONFORMANCE`` — the XMP does not declare a ``pdfaid:conformance``
+    level of A, B or U (absent or an out-of-range value).
+
+This is the PDF/A-3 IDENTIFICATION subset ONLY — it verifies that the file
+*declares itself* a PDF/A-3 (part 3, level A/B/U) in its XMP. It is NOT full
+PDF/A-3 validation: it does NOT check font embedding, ICC/output-intent colour,
+document tagging/structure, or the many other Level A/B/U requirements (those
+need veraPDF-class tooling). A present-but-lying identification schema is out of
+scope; a false PDF/A-3 pass is never emitted.
+
 These are advisory ``warning`` findings: the authoritative EN 16931 / XRechnung
 pass/fail is still decided by the rule engine on the embedded XML, so a wrong
 container declaration is reported WITHOUT flipping ``valid`` on its own.
 
 WHAT THIS IS *NOT* (honesty guardrail — constitution §7)
 --------------------------------------------------------
-This is a CONTAINER XML *extractor* plus the four declaration checks above —
+This is a CONTAINER XML *extractor* plus the declaration checks above (the four
+FX-CONTAINER-* checks and the two FX-PDFA3-* identification-schema checks) —
 NOT a PDF/A-3 conformance validator, a typographic/visual validator, or a
-digital-signature checker. The XMP and ``/AF`` checks inspect only the
-*declarations* (is the relationship right, is the profile string consistent);
-they do NOT verify PDF/A-3 Level A/B/U conformance, font embedding, colour
-spaces, the output intent, or that the rendered page matches the XML. It
+digital-signature checker. The XMP, ``/AF`` and pdfaid checks inspect only the
+*declarations* (is the relationship right, is the profile string consistent,
+does the XMP DECLARE PDF/A-3 part 3 + level A/B/U). The FX-PDFA3-* pair is the
+PDF/A-3 IDENTIFICATION subset ONLY — it does NOT verify actual PDF/A-3 Level
+A/B/U conformance, font embedding, colour spaces, the output intent, document
+tagging, or that the rendered page matches the XML (that needs veraPDF-class
+tooling). It
 deliberately handles only the common, unencrypted, classic case and refuses
 everything else with a clear "unsupported container" error (never a false
 pass, never a traceback). Specifically:
@@ -87,9 +116,9 @@ pass, never a traceback). Specifically:
       ``/FlateDecode`` (e.g. ``/DCTDecode``, multi-filter pipelines);
     * anything that is not a PDF at all (no ``%PDF-`` magic).
 
-  Beyond the FX-CONTAINER-* declaration checks above, it does NOT verify
-  PDF/A-3 conformance, digital signatures, or that the visual rendering
-  matches the XML.
+  Beyond the FX-CONTAINER-* and FX-PDFA3-* declaration checks above, it does
+  NOT verify PDF/A-3 conformance, digital signatures, or that the visual
+  rendering matches the XML.
 
 Standard library only (``re``, ``zlib``). No network, no new dependencies.
 """
@@ -124,6 +153,18 @@ FX_AFRELATIONSHIP = "FX-CONTAINER-AFRELATIONSHIP"
 FX_AF = "FX-CONTAINER-AF"
 FX_XMP = "FX-CONTAINER-XMP"
 FX_PROFILE = "FX-CONTAINER-PROFILE"
+
+#: Stable ids for the PDF/A-3 IDENTIFICATION-schema findings (ISO 19005-3). A
+#: conformant ZUGFeRD/Factur-X carrier is a PDF/A-3 file, so its document XMP
+#: MUST declare the PDF/A identification schema: ``pdfaid:part`` = 3 and a
+#: ``pdfaid:conformance`` level of A, B or U. These are the IDENTIFICATION
+#: subset only — NOT full PDF/A-3 validation (see the docstring honesty note).
+FX_PDFA3_PART = "FX-PDFA3-PART"
+FX_PDFA3_CONFORMANCE = "FX-PDFA3-CONFORMANCE"
+
+#: The PDF/A conformance levels ISO 19005-3 defines for Part 3 (A = accessible,
+#: B = basic, U = Unicode). Matched case-insensitively.
+VALID_PDFA3_CONFORMANCE = frozenset({"A", "B", "U"})
 
 
 class ContainerFinding:
@@ -368,6 +409,14 @@ def _container_findings(container, xml_bytes):
 
     # (b) + (c): parse the XMP profile declaration, then check consistency.
     xmp_bytes = _catalog_metadata_bytes(container)
+
+    # (d): PDF/A-3 IDENTIFICATION schema (pdfaid:part / pdfaid:conformance).
+    # Only evaluated when an XMP stream is PRESENT — an absent XMP stream is
+    # already reported once as FX-CONTAINER-XMP below, so firing FX-PDFA3-*
+    # for the same root cause would double-report it.
+    if xmp_bytes is not None:
+        findings.extend(_pdfa3_identification_findings(xmp_bytes))
+
     xmp = _parse_xmp_profile(xmp_bytes) if xmp_bytes is not None else None
     if xmp is None or not xmp.get("conformance_level"):
         if xmp_bytes is None:
@@ -470,6 +519,85 @@ def _parse_xmp_profile(xmp_bytes):
         "document_type": _field("DocumentType"),
         "version": _field("Version"),
     }
+
+
+#: The PDF/A IDENTIFICATION-schema namespace URI (ISO 19005-1 §6.7.11, reused
+#: by ISO 19005-3). Its prefix is resolved from this declaration — NOT assumed
+#: to be the conventional ``pdfaid`` — exactly like :data:`_XMP_NS_RE` resolves
+#: the Factur-X prefix. Both ``http`` and ``https`` and an optional trailing
+#: slash are tolerated; matched case-insensitively.
+_PDFAID_NS_RE = re.compile(
+    r'xmlns:([\w.\-]+)\s*=\s*["\']https?://www\.aiim\.org/pdfa/ns/id/?["\']',
+    re.IGNORECASE)
+
+
+def _parse_pdfaid(xmp_bytes):
+    """Parse the PDF/A-3 IDENTIFICATION schema (``pdfaid:part`` /
+    ``pdfaid:conformance``) out of an XMP packet using stdlib ``re`` only.
+
+    The XML prefix bound to the pdfaid namespace URI is resolved from the
+    ``xmlns:`` declaration (never hardcoded as ``pdfaid``), then used to read
+    each field in BOTH element form (``<pdfaid:part>3</pdfaid:part>``) and
+    attribute form (``pdfaid:part="3"``).
+
+    Returns ``{"part", "conformance"}`` when the pdfaid namespace is declared
+    (a field value is ``None`` if that element/attribute is itself absent), or
+    ``None`` when no pdfaid namespace is present at all. Never raises.
+    """
+    text = xmp_bytes.decode("utf-8", "replace")
+    m = _PDFAID_NS_RE.search(text)
+    if not m:
+        return None
+    prefix = re.escape(m.group(1))
+
+    def _field(local):
+        el = re.search(r'<%s:%s\b[^>]*>\s*(.*?)\s*</%s:%s\s*>'
+                       % (prefix, local, prefix, local), text,
+                       re.IGNORECASE | re.DOTALL)
+        if el:
+            return el.group(1).strip() or None
+        attr = re.search(r'\b%s:%s\s*=\s*["\'](.*?)["\']' % (prefix, local),
+                         text, re.IGNORECASE)
+        return attr.group(1).strip() if attr else None
+
+    return {"part": _field("part"), "conformance": _field("conformance")}
+
+
+def _pdfa3_identification_findings(xmp_bytes):
+    """Return the FX-PDFA3-* IDENTIFICATION-schema findings for an XMP packet
+    that is PRESENT (callers must gate on that — see :func:`_container_findings`).
+
+    A ZUGFeRD/Factur-X carrier is a PDF/A-3 file (ISO 19005-3), so its document
+    XMP must declare the PDF/A identification schema: ``pdfaid:part`` = 3 and a
+    ``pdfaid:conformance`` of A, B or U. Absent or wrong values each become one
+    ``warning`` finding. Total — never raises, never a false pass."""
+    findings = []
+    pdfaid = _parse_pdfaid(xmp_bytes)
+    part = pdfaid.get("part") if pdfaid else None
+    conformance = pdfaid.get("conformance") if pdfaid else None
+
+    if part is None or part.strip() != "3":
+        findings.append(ContainerFinding(
+            FX_PDFA3_PART,
+            "PDF/A-3 identification absent/wrong: the document XMP does not "
+            "declare pdfaid:part = 3 (found %s). A conformant Factur-X/ZUGFeRD "
+            "carrier is a PDF/A-3 file and MUST carry the PDF/A identification "
+            "schema declaring part 3 (ISO 19005-3, identification schema; XMP "
+            "namespace http://www.aiim.org/pdfa/ns/id/)"
+            % (repr(part) if part else "absent"),
+            "/Catalog /Metadata (XMP pdfaid:part)"))
+
+    if (conformance is None
+            or conformance.strip().upper() not in VALID_PDFA3_CONFORMANCE):
+        findings.append(ContainerFinding(
+            FX_PDFA3_CONFORMANCE,
+            "PDF/A-3 identification absent/wrong: the document XMP does not "
+            "declare a valid pdfaid:conformance (found %s). ISO 19005-3 "
+            "requires the identification schema to declare a conformance level "
+            "of A, B or U (XMP namespace http://www.aiim.org/pdfa/ns/id/)"
+            % (repr(conformance) if conformance else "absent"),
+            "/Catalog /Metadata (XMP pdfaid:conformance)"))
+    return findings
 
 
 #: Closing tag of the CII specification-identifier container, used to bound the

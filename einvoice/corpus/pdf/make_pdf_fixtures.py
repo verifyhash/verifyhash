@@ -28,6 +28,9 @@ container declares ConformanceLevel ``EN 16931``:
   * facturx-xmp-missing.pdf  no /Metadata XMP stream -> FX-CONTAINER-XMP
   * facturx-xmp-mismatch.pdf XMP ConformanceLevel BASIC vs XML EN 16931 ->
                              FX-CONTAINER-PROFILE
+  * facturx-pdfa3-missing.pdf XMP present with a valid Factur-X profile but NO
+                             pdfaid identification schema -> FX-PDFA3-PART +
+                             FX-PDFA3-CONFORMANCE (ISO 19005-3 identity subset)
 
 Run ``python3 make_pdf_fixtures.py`` from this directory to regenerate; the
 outputs are byte-stable (deterministic zlib level 9), so the committed fixtures
@@ -98,10 +101,30 @@ def _embedded_file_object(num, xml_bytes, compress=True):
 XMP_FX_NAMESPACE = "urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#"
 
 
+#: The PDF/A IDENTIFICATION-schema namespace (ISO 19005-1 §6.7.11, reused by
+#: ISO 19005-3). A conformant Factur-X/ZUGFeRD carrier is a PDF/A-3 file, so its
+#: document XMP declares pdfaid:part = 3 and pdfaid:conformance = A/B/U here.
+XMP_PDFAID_NAMESPACE = "http://www.aiim.org/pdfa/ns/id/"
+
+
 def _xmp_packet(attach_name, conformance_level, version="1.0",
-                document_type="INVOICE"):
+                document_type="INVOICE", include_pdfaid=True,
+                pdfaid_part="3", pdfaid_conformance="B"):
     """Build a minimal, deterministic XMP metadata packet declaring the
-    Factur-X/ZUGFeRD profile. Byte-stable (fixed whitespace, no timestamps)."""
+    Factur-X/ZUGFeRD profile. Byte-stable (fixed whitespace, no timestamps).
+
+    When ``include_pdfaid`` (the conformant default) it also carries the PDF/A-3
+    IDENTIFICATION schema (``pdfaid:part`` / ``pdfaid:conformance``, ISO 19005-3)
+    in its own ``rdf:Description``; ``include_pdfaid=False`` forges the
+    FX-PDFA3-* negative fixture (a Factur-X profile but no pdfaid identity)."""
+    pdfaid_block = ""
+    if include_pdfaid:
+        pdfaid_block = (
+            '  <rdf:Description rdf:about="" xmlns:pdfaid="%s">\n'
+            '   <pdfaid:part>%s</pdfaid:part>\n'
+            '   <pdfaid:conformance>%s</pdfaid:conformance>\n'
+            '  </rdf:Description>\n'
+            % (XMP_PDFAID_NAMESPACE, pdfaid_part, pdfaid_conformance))
     return (
         '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
         '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
@@ -113,11 +136,12 @@ def _xmp_packet(attach_name, conformance_level, version="1.0",
         '   <fx:Version>%s</fx:Version>\n'
         '   <fx:ConformanceLevel>%s</fx:ConformanceLevel>\n'
         '  </rdf:Description>\n'
+        '%s'
         ' </rdf:RDF>\n'
         '</x:xmpmeta>\n'
         '<?xpacket end="w"?>'
         % (XMP_FX_NAMESPACE, document_type, attach_name, version,
-           conformance_level)
+           conformance_level, pdfaid_block)
     ).encode("utf-8")
 
 
@@ -132,7 +156,8 @@ def _metadata_object(num, xmp_bytes):
 
 def build_facturx_pdf(xml_bytes, attach_name="factur-x.xml", compress=True,
                       af_relationship="Alternative", in_af_array=True,
-                      xmp_conformance_level="EN 16931", include_xmp=True):
+                      xmp_conformance_level="EN 16931", include_xmp=True,
+                      include_pdfaid=True):
     """Return the bytes of a minimal hybrid PDF embedding ``xml_bytes``.
 
     Object layout (contiguous, gen 0):
@@ -150,6 +175,8 @@ def build_facturx_pdf(xml_bytes, attach_name="factur-x.xml", compress=True,
       * ``in_af_array=False``                        -> FX-CONTAINER-AF
       * ``include_xmp=False``                        -> FX-CONTAINER-XMP
       * ``xmp_conformance_level`` != the XML profile -> FX-CONTAINER-PROFILE
+      * ``include_pdfaid=False`` (XMP present, no pdfaid identity)
+                                             -> FX-PDFA3-PART + FX-PDFA3-CONFORMANCE
     """
     name = attach_name.encode("latin-1")
     af_part = b" /AF [4 0 R]" if in_af_array else b""
@@ -174,7 +201,8 @@ def build_facturx_pdf(xml_bytes, attach_name="factur-x.xml", compress=True,
         (6, nametree),
     ]
     if include_xmp:
-        xmp = _xmp_packet(attach_name, xmp_conformance_level)
+        xmp = _xmp_packet(attach_name, xmp_conformance_level,
+                          include_pdfaid=include_pdfaid)
         objects.append(_metadata_object(7, xmp))
     return _assemble(objects, root_num=1)
 
@@ -226,6 +254,10 @@ FIXTURES = {
     #  XMP says BASIC but the embedded CII CustomizationID is EN 16931
     "facturx-xmp-mismatch.pdf": lambda: build_facturx_pdf(
         _example5(), xmp_conformance_level="BASIC"),
+    #  XMP present with a valid Factur-X ConformanceLevel but NO PDF/A-3
+    #  pdfaid identification schema -> FX-PDFA3-PART + FX-PDFA3-CONFORMANCE
+    "facturx-pdfa3-missing.pdf": lambda: build_facturx_pdf(
+        _example5(), include_pdfaid=False),
 }
 
 

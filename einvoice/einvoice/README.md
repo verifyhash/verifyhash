@@ -85,6 +85,31 @@ missing/empty `/EmbeddedFiles` tree, and any filter chain other than a single
 traceback. The exact IS/IS-NOT contract lives in the `pdf_container.py` module
 docstring.
 
+### Batch / folder validation (`report.py <directory>`)
+
+`python3 -m einvoice.report invoices/` accepts a **directory** (or an explicit
+`--recurse`) and validates every invoice under it in one run. It walks the tree
+recursively, collecting `*.xml` and `*.pdf` files (dotfiles and dot-directories
+are skipped) into a deterministic, path-sorted list, then drives the **same**
+`build_report` once per file — no second engine, no new deps, no network.
+
+The per-file reports are wrapped, **unchanged**, in an aggregate document with
+its own independently-versioned schema id `einvoice-conformance-batch/v1` (the
+single-file `einvoice-conformance-report/v1` shape is neither reused nor
+mutated). The wrapper carries `root`, `file_count`, the summed `fatal_count` /
+`warning_count` / `violation_count`, `failed_file_count`, and a `files` array of
+the per-file report dicts (each including its own `source`, byte-for-byte
+identical to a standalone run of that file).
+
+Aggregate exit code (**fatal outranks parse**): `1` if any file has a fatal
+violation, else `3` if any file errored (not-well-formed / unsupported
+container), else `0`. An empty directory is reported honestly as
+`file_count: 0` with a `"no invoice files found"` note and exit `0` — never a
+traceback, never a fabricated green pass. Batch mode supports `--format` `json`
+(default), `junit` (aggregate `<testsuites>`, one `<testsuite>` per file) and
+`text`; `sarif`/`html`/`badge` validate a single file and are rejected on a
+directory. The single-file path is unchanged.
+
 ### `report.py --explain <RULE-ID>` — remediation lookup
 
 `python3 -m einvoice.report --explain BR-DE-15` prints the remediation-catalog

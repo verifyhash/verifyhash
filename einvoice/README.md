@@ -336,6 +336,43 @@ its `report_version`/`schema` versioning semantics are documented in
 [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md) (and mirrored in the `REPORT_SCHEMA`
 constant of `einvoice/report.py`).
 
+#### Batch / folder validation
+
+Point the same command at a **directory** (or pass `--recurse`) to validate a
+whole folder of invoices in one run. Every `*.xml` / `*.pdf` file under the
+directory is walked recursively (dotfiles and dot-directories such as `.git`
+are skipped), the file list is sorted for deterministic output, and each file
+is validated through the **exact same** `build_report` — this is a wrapper, not
+a second engine.
+
+```sh
+python3 -m einvoice.report --profile xrechnung invoices/
+# {"report_version":1,"schema":"einvoice-conformance-batch/v1","root":"invoices/",
+#  "file_count":42,"fatal_count":3,"warning_count":11,"failed_file_count":2,
+#  "files":[{...single-file report...}, ...]}
+```
+
+The aggregate document uses its **own** independently-versioned schema id
+(`einvoice-conformance-batch/v1`) and wraps the per-file reports **unchanged** —
+each entry in `files` is byte-for-byte identical to validating that file on its
+own. It carries the summed `fatal_count` / `warning_count` / `violation_count`
+plus `failed_file_count` (files that errored or hold a fatal).
+
+Aggregate exit code (documented precedence — **fatal outranks parse**):
+
+- `0` — every file passed (each `fatal_count == 0`, no error), **or** the
+  directory held no invoice files (reported honestly as `file_count: 0` with a
+  `"no invoice files found"` note — never a fake pass, never a traceback);
+- `1` — at least one file has a **fatal** violation;
+- `3` — at least one file **errored** (not-well-formed XML / unsupported PDF
+  container) and no file had a fatal violation.
+
+Batch mode supports `--format json` (default, `--pretty` for indented),
+`--format junit` (an aggregate `<testsuites>` with one `<testsuite>` per file)
+and `--format text` (a concise one-line-per-file summary). `--format
+sarif/html/badge` validate a *single* file and are rejected on a directory with
+a clear error. Single-file invocation is completely unchanged.
+
 ## 5. Intended revenue model
 
 If this continues past the first slice, the model is boring on purpose:

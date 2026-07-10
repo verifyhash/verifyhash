@@ -100,6 +100,13 @@ REPORT_SCHEMA_ID = "einvoice-conformance-report/v1"
 REPORT_DIFF_VERSION = 1
 REPORT_DIFF_SCHEMA_ID = "einvoice-conformance-diff/v1"
 
+#: The directory / batch wrapper is ANOTHER independently versioned shape — it
+#: WRAPS the per-file plain reports, it does not mutate them, so
+#: ``REPORT_VERSION`` (the single-file schema) stays 1 and the batch document
+#: carries its own version namespace, starting at v1.
+REPORT_BATCH_VERSION = 1
+REPORT_BATCH_SCHEMA_ID = "einvoice-conformance-batch/v1"
+
 #: Exit codes — kept in lock-step with ``einvoice.cli`` (imported-by-value so a
 #: drift there is caught by tests, not silently duplicated).
 EXIT_OK = 0
@@ -388,6 +395,205 @@ def build_report(path, profile="xrechnung"):
     }
 
 
+#: File extensions collected in directory / batch mode. ``.xml`` is the plain
+#: UBL/CII path; ``.pdf`` is the Factur-X/ZUGFeRD hybrid path :func:`build_report`
+#: already dispatches on the ``%PDF-`` magic. Matched case-insensitively.
+BATCH_INVOICE_EXTS = (".xml", ".pdf")
+
+
+def collect_invoice_files(root):
+    """Walk ``root`` recursively and return a DETERMINISTIC, sorted list of the
+    invoice files under it.
+
+    Selection: regular files whose name ends (case-insensitively) with one of
+    :data:`BATCH_INVOICE_EXTS`. Dotfiles and dot-directories are skipped (editor
+    swap files, ``.git`` metadata, macOS ``._`` resource forks, etc. are never
+    validated). The result is ``sorted`` by path so the batch output is stable
+    across filesystems and runs.
+    """
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune dot-directories in place so os.walk never descends into them.
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for name in filenames:
+            if name.startswith("."):
+                continue
+            lower = name.lower()
+            if any(lower.endswith(ext) for ext in BATCH_INVOICE_EXTS):
+                found.append(os.path.join(dirpath, name))
+    return sorted(found)
+
+
+def build_batch_report(root, profile="xrechnung"):
+    """Validate every invoice file under directory ``root`` and wrap the per-file
+    reports in an aggregate document (schema ``einvoice-conformance-batch/v1``).
+
+    This drives the EXISTING :func:`build_report` once per collected file — it is
+    a WRAPPER, not a second engine, and adds NO rule logic. Each entry in the
+    returned ``files`` array is the plain single-file report dict UNCHANGED
+    (same shape, same ``source``, byte-for-byte identical to validating that file
+    on its own), so the single-file contract is preserved verbatim.
+
+    The wrapper carries its own version namespace and the aggregate counts:
+    ``file_count``, ``fatal_count`` / ``warning_count`` / ``violation_count``
+    (summed across files) and ``failed_file_count`` (files that errored OR have
+    at least one fatal). An empty directory yields ``file_count == 0``, empty
+    ``files`` and an explicit ``note`` — never a traceback and never a fake pass
+    with fabricated content.
+
+    :param root: a directory path (the caller has already checked ``isdir``).
+    :param profile: 'xrechnung' (default) or 'en16931'.
+    :returns: an aggregate dict (see :data:`REPORT_BATCH_SCHEMA`).
+    """
+    files = collect_invoice_files(root)
+    reports = [build_report(p, profile=profile) for p in files]
+
+    fatal_count = sum(r.get("fatal_count", 0) for r in reports)
+    warning_count = sum(r.get("warning_count", 0) for r in reports)
+    violation_count = sum(r.get("violation_count", 0) for r in reports)
+    failed_file_count = sum(
+        1 for r in reports if r.get("error") or r.get("fatal_count", 0) > 0)
+
+    batch = {
+        "report_version": REPORT_BATCH_VERSION,
+        "schema": REPORT_BATCH_SCHEMA_ID,
+        "root": root,
+        "profile": profile,
+        "file_count": len(reports),
+        "fatal_count": fatal_count,
+        "warning_count": warning_count,
+        "violation_count": violation_count,
+        "failed_file_count": failed_file_count,
+        "files": reports,
+    }
+    if not reports:
+        # Honest empty-directory result: nothing was validated, so say so
+        # rather than presenting a green pass over fabricated content.
+        batch["note"] = "no invoice files found"
+    return batch
+
+
+def batch_exit_code(batch):
+    """Aggregate process exit code for a batch report.
+
+    Documented precedence (fatal outranks parse): if ANY file has a fatal
+    violation -> :data:`EXIT_FAIL` (1); else if ANY file errored (not-well-formed
+    XML / unsupported PDF container) -> :data:`EXIT_PARSE` (3); else every file
+    passed -> :data:`EXIT_OK` (0). An empty directory has no failing/erroring
+    files, so it is :data:`EXIT_OK`.
+    """
+    reports = batch.get("files", [])
+    if any(r.get("fatal_count", 0) > 0 for r in reports):
+        return EXIT_FAIL
+    if any(r.get("error") for r in reports):
+        return EXIT_PARSE
+    return EXIT_OK
+
+
+def build_batch_text(batch):
+    """Render a batch report as a concise, human-readable text summary.
+
+    One status line per file (``PASS`` / ``FAIL`` / ``ERROR``) followed by an
+    aggregate tally line. An empty directory prints a single 'no invoice files
+    found' line. Pure projection of the batch dict — no rule logic.
+    """
+    root = batch.get("root", "")
+    file_count = batch.get("file_count", 0)
+    if file_count == 0:
+        return "einvoice batch: no invoice files found under %s\n" % root
+
+    lines = []
+    for r in batch.get("files", []):
+        src = r.get("source", "")
+        if r.get("error"):
+            lines.append("ERROR %s  %s" % (src, r.get("error")))
+        elif r.get("fatal_count", 0) > 0:
+            lines.append("FAIL  %s  %d fatal, %d warning"
+                         % (src, r.get("fatal_count", 0),
+                            r.get("warning_count", 0)))
+        else:
+            wc = r.get("warning_count", 0)
+            tail = (" (%d warning%s)" % (wc, "" if wc == 1 else "s")
+                    if wc else "")
+            lines.append("PASS  %s  conformant%s" % (src, tail))
+
+    failed = batch.get("failed_file_count", 0)
+    passed = file_count - failed
+    lines.append("")
+    lines.append(
+        "%d file%s: %d passed, %d failed  "
+        "(%d fatal, %d warning across all files)"
+        % (file_count, "" if file_count == 1 else "s", passed, failed,
+           batch.get("fatal_count", 0), batch.get("warning_count", 0)))
+    return "\n".join(lines) + "\n"
+
+
+def build_text(report):
+    """Render a SINGLE-file report as a concise text summary (additive format).
+
+    A status header (``PASS`` / ``FAIL`` / ``ERROR``) followed by one indented
+    line per violation. Pure projection — no rule logic. This is a new,
+    additive format: it never affects the default JSON bytes.
+    """
+    src = report.get("source", "")
+    if report.get("error"):
+        return "ERROR %s  %s: %s\n" % (
+            src, report["error"], report.get("message", "") or "")
+    if report.get("fatal_count", 0) > 0:
+        head = "FAIL  %s  %d fatal, %d warning" % (
+            src, report.get("fatal_count", 0), report.get("warning_count", 0))
+    else:
+        wc = report.get("warning_count", 0)
+        tail = " (%d warning%s)" % (wc, "" if wc == 1 else "s") if wc else ""
+        head = "PASS  %s  conformant%s" % (src, tail)
+    lines = [head]
+    for v in report.get("violations", []):
+        field = v.get("field")
+        lines.append("  [%s] %s: %s%s" % (
+            v.get("severity", ""), v.get("rule", ""), v.get("message", ""),
+            " (%s)" % field if field else ""))
+    return "\n".join(lines) + "\n"
+
+
+#: Documentation of the versioned BATCH wrapper shape (companion to
+#: REPORT-SCHEMA.md). Emitted when the positional path is a directory (or with
+#: ``--recurse``). It WRAPS unchanged single-file reports; it never mutates them.
+REPORT_BATCH_SCHEMA = {
+    "schema": REPORT_BATCH_SCHEMA_ID,
+    "report_version": REPORT_BATCH_VERSION,
+    "description": (
+        "Aggregate directory/batch conformance report. Drives the single-file "
+        "build_report once per invoice file found under a directory and wraps "
+        "the UNCHANGED per-file reports; reuses einvoice.validate, no rule "
+        "logic. Its own version namespace, independent of the single-file "
+        "report schema."
+    ),
+    "fields": {
+        "report_version": "int; the batch document's own version (starts at 1).",
+        "schema": "stable batch schema id ('%s')." % REPORT_BATCH_SCHEMA_ID,
+        "root": "the directory path that was walked.",
+        "profile": "validation profile used: 'en16931' or 'xrechnung'.",
+        "file_count": "int — number of invoice files collected and validated.",
+        "fatal_count": "int — total fatal violations summed across all files.",
+        "warning_count": "int — total warning violations summed across files.",
+        "violation_count": "int — total violations of every severity, summed.",
+        "failed_file_count": "int — files that errored OR carry >=1 fatal.",
+        "files": "array of per-file single-file report dicts (each UNCHANGED, "
+                 "including its own 'source'); schema '%s'." % REPORT_SCHEMA_ID,
+        "note": "present ONLY when file_count == 0: the literal 'no invoice "
+                "files found' (an empty directory is reported honestly, not as "
+                "a fake pass).",
+    },
+    "exit_codes": {
+        "0": "every file passed (each fatal_count==0 and no error), OR the "
+             "directory held no invoice files.",
+        "1": "at least one file has a fatal violation (outranks parse).",
+        "3": "at least one file errored (not-well-formed / unsupported "
+             "container) and no file had a fatal violation.",
+    },
+}
+
+
 #: The stable diff key for a violation record: two records are "the same"
 #: violation iff these four fields match. Documented in REPORT-SCHEMA.md.
 DIFF_KEY = ("rule", "field", "message", "severity")
@@ -575,25 +781,16 @@ REPORT_DIFF_SCHEMA = {
 JUNIT_SUITES_NAME = "einvoice-conformance"
 
 
-def build_junit(report):
-    """Project a report dict (from :func:`build_report`) into JUnit XML text.
+def _junit_suite_block(report, suite_name=None):
+    """Build ONE ``<testsuite>...</testsuite>`` block for a single report.
 
-    This is a pure, additional PROJECTION of the exact same validator outcome
-    the JSON path emits — it adds no rule logic and re-reads nothing. Each
-    reported violation becomes one ``<testcase name="<rule-id>"
-    classname="<profile>">``:
-
-      * a ``fatal`` violation -> a ``<failure message="...">`` whose body
-        carries the offending field/XPath (so CI shows *where* it failed);
-      * a non-fatal violation (``warning`` / ``information``) -> a
-        ``<system-out>`` note and NO failure (it does not fail the build);
-      * a not-well-formed input -> a single ``<testcase>`` with an ``<error>``.
-
-    Passing / absent-violation rules are not emitted individually, but the
-    ``tests`` / ``failures`` / ``errors`` counts on the suite are accurate.
-
-    :param report: a dict as returned by :func:`build_report`.
-    :returns: a JUnit XML document as a ``str`` (UTF-8 declaration included).
+    Returns ``(lines, tests, failures, errors)`` where ``lines`` is the list of
+    XML lines for exactly one ``<testsuite>`` element (indented for nesting under
+    ``<testsuites>``). Shared by :func:`build_junit` (single file) and
+    :func:`build_junit_batch` (directory) so the per-file testcase shape is
+    byte-identical in both. ``suite_name`` defaults to the profile (the historic
+    single-file behaviour); the batch path passes the file path so each suite is
+    distinguishable in a CI report.
     """
     profile = report.get("profile", "")
     classname = quoteattr(profile)
@@ -638,18 +835,81 @@ def build_junit(report):
                 lines.append("      <system-out>%s</system-out>" % escape(note))
             lines.append("    </testcase>")
 
+    if suite_name is None:
+        suite_name = profile
     suite_attrs = ("name=%s tests=%s failures=%s errors=%s"
-                   % (classname, quoteattr(str(tests)),
+                   % (quoteattr(suite_name), quoteattr(str(tests)),
                       quoteattr(str(failures)), quoteattr(str(errors))))
+    block = ["  <testsuite %s>" % suite_attrs]
+    block.extend(lines)
+    block.append("  </testsuite>")
+    return block, tests, failures, errors
+
+
+def build_junit(report):
+    """Project a report dict (from :func:`build_report`) into JUnit XML text.
+
+    This is a pure, additional PROJECTION of the exact same validator outcome
+    the JSON path emits — it adds no rule logic and re-reads nothing. Each
+    reported violation becomes one ``<testcase name="<rule-id>"
+    classname="<profile>">``:
+
+      * a ``fatal`` violation -> a ``<failure message="...">`` whose body
+        carries the offending field/XPath (so CI shows *where* it failed);
+      * a non-fatal violation (``warning`` / ``information``) -> a
+        ``<system-out>`` note and NO failure (it does not fail the build);
+      * a not-well-formed input -> a single ``<testcase>`` with an ``<error>``.
+
+    Passing / absent-violation rules are not emitted individually, but the
+    ``tests`` / ``failures`` / ``errors`` counts on the suite are accurate.
+
+    :param report: a dict as returned by :func:`build_report`.
+    :returns: a JUnit XML document as a ``str`` (UTF-8 declaration included).
+    """
+    block, tests, failures, errors = _junit_suite_block(report)
     suites_attrs = ("name=%s tests=%s failures=%s errors=%s"
                     % (quoteattr(JUNIT_SUITES_NAME), quoteattr(str(tests)),
                        quoteattr(str(failures)), quoteattr(str(errors))))
 
     out = ['<?xml version="1.0" encoding="UTF-8"?>']
     out.append("<testsuites %s>" % suites_attrs)
-    out.append("  <testsuite %s>" % suite_attrs)
-    out.extend(lines)
-    out.append("  </testsuite>")
+    out.extend(block)
+    out.append("</testsuites>")
+    return "\n".join(out) + "\n"
+
+
+def build_junit_batch(batch):
+    """Project a batch wrapper (from :func:`build_batch_report`) into aggregate
+    JUnit XML: ONE ``<testsuites>`` carrying one ``<testsuite>`` per file.
+
+    Each per-file ``<testsuite>`` reuses :func:`_junit_suite_block` verbatim, so
+    the individual testcase shape is identical to the single-file JUnit output;
+    the suite is named by the file path so CI can tell the files apart. The
+    top-level ``<testsuites>`` ``tests``/``failures``/``errors`` are the SUM
+    across every file. An empty directory yields a valid, empty
+    ``<testsuites>`` (all counts 0) — never a traceback.
+
+    :param batch: a dict as returned by :func:`build_batch_report`.
+    :returns: a JUnit XML document as a ``str`` (UTF-8 declaration included).
+    """
+    body = []
+    total_tests = total_failures = total_errors = 0
+    for report in batch.get("files", []):
+        suite_name = report.get("source") or batch.get("root") or ""
+        block, tests, failures, errors = _junit_suite_block(
+            report, suite_name=suite_name)
+        body.extend(block)
+        total_tests += tests
+        total_failures += failures
+        total_errors += errors
+
+    suites_attrs = ("name=%s tests=%s failures=%s errors=%s"
+                    % (quoteattr(JUNIT_SUITES_NAME), quoteattr(str(total_tests)),
+                       quoteattr(str(total_failures)),
+                       quoteattr(str(total_errors))))
+    out = ['<?xml version="1.0" encoding="UTF-8"?>']
+    out.append("<testsuites %s>" % suites_attrs)
+    out.extend(body)
     out.append("</testsuites>")
     return "\n".join(out) + "\n"
 
@@ -1049,10 +1309,18 @@ def build_html(report):
 
 
 USAGE = ("usage: python3 -m einvoice.report "
-         "[--profile en16931|xrechnung] [--format json|junit|sarif|html|badge] "
-         "[--pretty] "
-         "[--baseline <prev-report.json>] <invoice.xml>\n"
+         "[--profile en16931|xrechnung] "
+         "[--format json|junit|sarif|html|badge|text] "
+         "[--pretty] [--recurse] "
+         "[--baseline <prev-report.json>] <invoice.xml | directory>\n"
          "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
+         "  When the path is a DIRECTORY (or --recurse is given) every invoice "
+         "file (*.xml / *.pdf, dotfiles skipped) under it is validated and "
+         "wrapped in an aggregate 'einvoice-conformance-batch/v1' document. "
+         "Batch mode supports --format json (default), junit and text only "
+         "(sarif/html/badge validate a single file); the exit code is 1 if any "
+         "file has a fatal violation, else 3 if any file errored, else 0 (an "
+         "empty directory is a clear file_count:0 result, exit 0).\n"
          "  --baseline diffs against a prior JSON report and fails (exit 1) "
          "ONLY on a NEW fatal violation; pre-existing fatals are tolerated "
          "(exit 0). See REPORT-SCHEMA.md.\n"
@@ -1114,6 +1382,11 @@ def main(argv=None):
     if "--pretty" in args:
         pretty = True
         args = [a for a in args if a != "--pretty"]
+
+    recurse = False
+    if "--recurse" in args:
+        recurse = True
+        args = [a for a in args if a != "--recurse"]
 
     profile = "xrechnung"
     fmt = "json"
@@ -1202,10 +1475,10 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
-    if fmt not in ("json", "junit", "sarif", "html", "badge"):
+    if fmt not in ("json", "junit", "sarif", "html", "badge", "text"):
         sys.stderr.write(
             "error: unknown format %r (choose from json, junit, sarif, html, "
-            "badge)\n%s\n" % (fmt, USAGE))
+            "badge, text)\n%s\n" % (fmt, USAGE))
         return EXIT_FAIL
 
     if profile not in PROFILES:
@@ -1213,7 +1486,8 @@ def main(argv=None):
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_FAIL
 
-    if baseline_path is not None and fmt in ("junit", "sarif", "html", "badge"):
+    if baseline_path is not None and fmt in ("junit", "sarif", "html", "badge",
+                                             "text"):
         sys.stderr.write(
             "error: --baseline emits a diff document and is not compatible "
             "with --format %s\n%s\n" % (fmt, USAGE))
@@ -1224,6 +1498,40 @@ def main(argv=None):
         return EXIT_FAIL
 
     path = args[0]
+
+    # --------------------------------------------------------------------- #
+    # Directory / batch mode: a directory positional (or an explicit
+    # --recurse) validates every invoice file under it via the SAME
+    # build_report, wrapped in the einvoice-conformance-batch/v1 document.
+    # This must be decided BEFORE the single-file isfile() check below so the
+    # single-file path is completely unchanged.
+    # --------------------------------------------------------------------- #
+    if recurse or os.path.isdir(path):
+        if not os.path.isdir(path):
+            sys.stderr.write(
+                "error: --recurse requires a directory: %s\n" % path)
+            return EXIT_FAIL
+        if baseline_path is not None:
+            sys.stderr.write(
+                "error: --baseline validates a single file; it is not "
+                "compatible with a directory input\n%s\n" % USAGE)
+            return EXIT_FAIL
+        if fmt not in ("json", "junit", "text"):
+            sys.stderr.write(
+                "error: --format %s validates a single file; use "
+                "json/junit/text for a directory\n" % fmt)
+            return EXIT_FAIL
+        batch = build_batch_report(path, profile=profile)
+        if fmt == "junit":
+            sys.stdout.write(build_junit_batch(batch))
+        elif fmt == "text":
+            sys.stdout.write(build_batch_text(batch))
+        elif pretty:
+            sys.stdout.write(json.dumps(batch, indent=2, sort_keys=True) + "\n")
+        else:
+            sys.stdout.write(json.dumps(batch, separators=(",", ":")) + "\n")
+        return batch_exit_code(batch)
+
     if not os.path.isfile(path):
         sys.stderr.write("error: no such file: %s\n" % path)
         return EXIT_FAIL
@@ -1258,6 +1566,8 @@ def main(argv=None):
     elif fmt == "badge":
         sys.stdout.write(
             json.dumps(build_badge(report), indent=2, sort_keys=True) + "\n")
+    elif fmt == "text":
+        sys.stdout.write(build_text(report))
     elif pretty:
         sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
     else:

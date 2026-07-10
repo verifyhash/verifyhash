@@ -23,7 +23,36 @@ table, and the CI recipes live one level up in
   with a stable exit-code contract for build gates. Its full field-by-field,
   versioned schema is documented in
   [`../REPORT-SCHEMA.md`](../REPORT-SCHEMA.md) and mirrored in the
-  `REPORT_SCHEMA` constant of `report.py`.
+  `REPORT_SCHEMA` constant of `report.py`. It also carries a standalone
+  **`--explain <RULE-ID>`** mode (see below).
+
+### `report.py --explain <RULE-ID>` — remediation lookup
+
+`python3 -m einvoice.report --explain BR-DE-15` prints the remediation-catalog
+entry for a single rule id as a plain-text block and exits `0`. It is a pure
+lookup: it reads no invoice file, needs no argument beyond the rule id, and is
+**not** combinable with `--format`/`--baseline` (those are output-shape flags
+for the report mode; combining them is a usage error). Every printed field —
+title, what the rule requires, the BT/BG business terms it touches, the XML
+location hint, the one-line fix, the engine severity and the Schematron
+provenance — is taken verbatim from
+[`../remediation_catalog.json`](../remediation_catalog.json) (the single
+source of remediation truth; nothing is authored at print time). Rule ids are
+matched case-insensitively against the catalog keys (e.g. `BR-01`, `BR-DE-15`,
+`BR-DE-23-a`) and the canonical key is echoed back. An unknown id writes a
+clear error naming the id to stderr and exits non-zero.
+
+```
+$ python3 -m einvoice.report --explain BR-DE-15
+BR-DE-15  Buyer reference (BT-10) must be transmitted (non-empty).
+
+  requires : Buyer reference (BT-10) must be transmitted (non-empty).
+  BT/BG    : BT-10
+  location : cbc:BuyerReference
+  fix      : Add the required element at `cbc:BuyerReference`: ...
+  severity : fatal
+  source   : xrechnung-ubl (Schematron)
+```
 
 ## Guarantees
 

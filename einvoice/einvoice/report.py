@@ -525,9 +525,56 @@ def build_junit(report):
 USAGE = ("usage: python3 -m einvoice.report "
          "[--profile en16931|xrechnung] [--format json|junit] [--pretty] "
          "[--baseline <prev-report.json>] <invoice.xml>\n"
+         "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
          "  --baseline diffs against a prior JSON report and fails (exit 1) "
          "ONLY on a NEW fatal violation; pre-existing fatals are tolerated "
-         "(exit 0). See REPORT-SCHEMA.md.")
+         "(exit 0). See REPORT-SCHEMA.md.\n"
+         "  --explain prints the remediation-catalog entry for one rule id "
+         "(e.g. BR-DE-15) as a plain-text block and exits 0; it needs NO "
+         "invoice file and is not combinable with --format/--baseline.")
+
+
+def format_explain(rule_id, catalog=None):
+    """Render the remediation-catalog entry for ``rule_id`` as a plain-text
+    block, or return ``None`` if the id is not catalogued.
+
+    Every printed field is taken verbatim from ``remediation_catalog.json``
+    (the single source of remediation truth) — this function invents no rule
+    meaning of its own. Lookup is case-insensitive and matched against the
+    catalog keys (the fireable rule ids, e.g. ``BR-01``, ``BR-DE-15``,
+    ``BR-DE-23-a``), and the canonical key is echoed back in the output.
+    """
+    if catalog is None:
+        catalog = load_catalog()
+    entry = catalog.get(rule_id)
+    canonical = rule_id
+    if entry is None:
+        wanted = rule_id.upper()
+        for key, val in catalog.items():
+            if key.upper() == wanted:
+                entry, canonical = val, key
+                break
+    if entry is None:
+        return None
+
+    bt_bg = entry.get("bt_bg") or []
+    prov = entry.get("provenance") or {}
+    prov_source = prov.get("source") or "(unknown)"
+    prov_assert = prov.get("assert") or ""
+
+    lines = [
+        "%s  %s" % (canonical, entry.get("title", "")),
+        "",
+        "  requires : %s" % (entry.get("requires", "") or "(not stated)"),
+        "  BT/BG    : %s" % (", ".join(bt_bg) if bt_bg else "(none)"),
+        "  location : %s" % (entry.get("location_hint", "") or "(unspecified)"),
+        "  fix      : %s" % (entry.get("fix", "") or "(none given)"),
+        "  severity : %s" % (entry.get("severity", "") or "(unspecified)"),
+        "  source   : %s (Schematron)" % prov_source,
+    ]
+    if prov_assert:
+        lines.append("  assert   : %s" % prov_assert)
+    return "\n".join(lines) + "\n"
 
 
 def main(argv=None):
@@ -543,11 +590,27 @@ def main(argv=None):
 
     profile = "xrechnung"
     fmt = "json"
+    saw_format = False
     baseline_path = None
+    explain_id = None
+    saw_explain = False
     rest = []
     i = 0
     while i < len(args):
         a = args[i]
+        if a == "--explain":
+            if i + 1 >= len(args):
+                sys.stderr.write("error: --explain needs a rule id\n" + USAGE + "\n")
+                return EXIT_FAIL
+            explain_id = args[i + 1]
+            saw_explain = True
+            i += 2
+            continue
+        if a.startswith("--explain="):
+            explain_id = a.split("=", 1)[1]
+            saw_explain = True
+            i += 1
+            continue
         if a == "--profile":
             if i + 1 >= len(args):
                 sys.stderr.write("error: --profile needs a value\n" + USAGE + "\n")
@@ -575,15 +638,42 @@ def main(argv=None):
                 sys.stderr.write("error: --format needs a value\n" + USAGE + "\n")
                 return EXIT_FAIL
             fmt = args[i + 1]
+            saw_format = True
             i += 2
             continue
         if a.startswith("--format="):
             fmt = a.split("=", 1)[1]
+            saw_format = True
             i += 1
             continue
         rest.append(a)
         i += 1
     args = rest
+
+    # --------------------------------------------------------------------- #
+    # --explain mode: look up ONE rule id in the remediation catalog, print a
+    # plain-text block and exit. Standalone — no invoice file is read, and it
+    # is mutually exclusive with the invoice/output-format flags.
+    # --------------------------------------------------------------------- #
+    if saw_explain:
+        if args:
+            sys.stderr.write(
+                "error: --explain takes only a rule id; do not also pass an "
+                "invoice path (%s)\n%s\n" % (" ".join(args), USAGE))
+            return EXIT_FAIL
+        if saw_format or baseline_path is not None:
+            sys.stderr.write(
+                "error: --explain is a catalog lookup and cannot be combined "
+                "with --format or --baseline\n%s\n" % USAGE)
+            return EXIT_FAIL
+        block = format_explain(explain_id)
+        if block is None:
+            sys.stderr.write(
+                "error: unknown rule id %r — not in the remediation catalog "
+                "(remediation_catalog.json)\n" % explain_id)
+            return EXIT_FAIL
+        sys.stdout.write(block)
+        return EXIT_OK
 
     if fmt not in ("json", "junit"):
         sys.stderr.write("error: unknown format %r (choose from json, junit)\n%s\n"

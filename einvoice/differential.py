@@ -111,7 +111,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 160, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 165, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -193,6 +193,16 @@ CII_GRADED_RULES = [
     # @listID, ram:CountryID); the shared rule functions run unchanged.
     _rules.br_cl_03, _rules.br_cl_04, _rules.br_cl_05,
     _rules.br_cl_13, _rules.br_cl_14,
+    # Payment-means (BR-CL-16), allowance/charge reason (BR-CL-19/20), item
+    # standard-id scheme (BR-CL-21) and attachment MIME (BR-CL-24) code lists.
+    # The CII parser feeds these the CII context nodes
+    # (ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode;
+    # ram:SpecifiedTradeAllowanceCharge[.../udt:Indicator]/ram:ReasonCode;
+    # ram:SpecifiedTradeProduct/ram:GlobalID/@schemeID;
+    # ram:AttachmentBinaryObject/@mimeCode); the shared rule bodies run unchanged
+    # and reach EXACT parity with the official CII codes Schematron.
+    _rules.br_cl_16, _rules.br_cl_19, _rules.br_cl_20, _rules.br_cl_21,
+    _rules.br_cl_24,
     # VAT category code lists (BR-CL-17/18) + VAT exemption reason (BR-CL-22).
     # The CII parser feeds these the CII context nodes (ram:CategoryTradeTax
     # @CategoryCode for BR-CL-17, ram:ApplicableTradeTax/ram:CategoryCode for
@@ -1174,6 +1184,66 @@ def _mut_brcl23(r):
     _child(_first_line(r), NS_CBC, "InvoicedQuantity").set("unitCode", "XXY")
 
 
+def _mut_brcl16(r):
+    # The clean base carries cac:PaymentMeans/cbc:PaymentMeansCode = '58' (a
+    # listed code). Code it off the UNCL 4461 list. Only a code-list label — no
+    # amount changes — so BR-CL-16 is the sole codelist rule that fires.
+    r.find("cac:PaymentMeans/cbc:PaymentMeansCode", _NSD).text = "XXY"
+
+
+def _add_reason_allowance_charge(r, charge, reason_code):
+    """Insert a document-level AllowanceCharge with a coded reason (and a
+    zero, arithmetically-neutral amount + VAT category) before cac:TaxTotal.
+
+    Amount '0.00' keeps every document total unchanged, so no arithmetic
+    (BR-CO-*) rule flips; the VAT category 'S' and the coded reason satisfy
+    BR-32/BR-33, leaving the target reason-code rule the only one that fires."""
+    ac = ET.Element(_q(NS_CAC, "AllowanceCharge"))
+    _sub_el(ac, NS_CBC, "ChargeIndicator", "true" if charge else "false")
+    _sub_el(ac, NS_CBC, "AllowanceChargeReasonCode", reason_code)
+    _sub_el(ac, NS_CBC, "Amount", "0.00", currency=True)
+    cat = _sub_el(ac, NS_CAC, "TaxCategory")
+    _sub_el(cat, NS_CBC, "ID", "S")
+    _sub_el(cat, NS_CBC, "Percent", "25")
+    _sub_el(_sub_el(cat, NS_CAC, "TaxScheme"), NS_CBC, "ID", "VAT")
+    r.insert(list(r).index(_child(r, NS_CAC, "TaxTotal")), ac)
+
+
+def _mut_brcl19(r):
+    # Document ALLOWANCE (ChargeIndicator=false) with a reason code off the
+    # UNCL 5189 allowance-reason list. Amount 0.00 -> no arithmetic rule flips.
+    _add_reason_allowance_charge(r, charge=False, reason_code="XXX")
+
+
+def _mut_brcl20(r):
+    # Document CHARGE (ChargeIndicator=true) with a reason code off the UNCL 7161
+    # charge-reason list. Amount 0.00 -> no arithmetic rule flips.
+    _add_reason_allowance_charge(r, charge=True, reason_code="XXX")
+
+
+def _mut_brcl21(r):
+    # Add a cac:Item/cac:StandardItemIdentification/cbc:ID with a @schemeID off
+    # the ISO 6523 ICD list to the first line. A code-list label only, so
+    # BR-CL-21 is the sole rule that fires.
+    item = _child(_first_line(r), NS_CAC, "Item")
+    sii = _sub_el(item, NS_CAC, "StandardItemIdentification")
+    _sub_el(sii, NS_CBC, "ID", "1234567890123").set("schemeID", "XXX")
+
+
+def _mut_brcl24(r):
+    # Add a document attachment (cbc:EmbeddedDocumentBinaryObject) with a
+    # @mimeCode outside the six-entry MIMEMediaType subset. A cbc:ID on the
+    # AdditionalDocumentReference keeps unrelated presence rules clear; the
+    # binary object is a label only, so BR-CL-24 is the sole target that fires.
+    adr = ET.Element(_q(NS_CAC, "AdditionalDocumentReference"))
+    _sub_el(adr, NS_CBC, "ID", "ATTACH-1")
+    att = _sub_el(adr, NS_CAC, "Attachment")
+    edbo = _sub_el(att, NS_CBC, "EmbeddedDocumentBinaryObject", "AAAA")
+    edbo.set("mimeCode", "application/octet-stream")
+    edbo.set("filename", "attachment.bin")
+    r.insert(list(r).index(_child(r, NS_CAC, "AccountingSupplierParty")), adr)
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -1194,8 +1264,11 @@ _MUTATIONS = {
     "BR-CL-01": _mut_brcl01,
     "BR-CL-03": _mut_brcl03, "BR-CL-04": _mut_brcl04, "BR-CL-05": _mut_brcl05,
     "BR-CL-13": _mut_brcl13, "BR-CL-14": _mut_brcl14,
-    "BR-CL-17": _mut_brcl17, "BR-CL-18": _mut_brcl18, "BR-CL-22": _mut_brcl22,
-    "BR-CL-23": _mut_brcl23,
+    "BR-CL-16": _mut_brcl16,
+    "BR-CL-17": _mut_brcl17, "BR-CL-18": _mut_brcl18,
+    "BR-CL-19": _mut_brcl19, "BR-CL-20": _mut_brcl20, "BR-CL-21": _mut_brcl21,
+    "BR-CL-22": _mut_brcl22,
+    "BR-CL-23": _mut_brcl23, "BR-CL-24": _mut_brcl24,
     "BR-CO-10": _mut_brco10,
     "BR-CO-11": _mut_brco11, "BR-CO-12": _mut_brco12,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
@@ -2019,6 +2092,66 @@ def _cmut_brcl23(r):
     ).set("unitCode", "XXY")
 
 
+def _cmut_brcl16(r):
+    # CII_example1 carries a payment means (ram:SpecifiedTradeSettlementPayment
+    # Means/ram:TypeCode = '30'). Code it off the UNCL 4461 list. Only a code-
+    # list label — amounts untouched — so BR-CL-16 is the sole rule that fires.
+    _cii_settlement(r).find(
+        "ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode", _NSC
+    ).text = "XXY"
+
+
+def _cadd_reason_allowance_charge(r, charge, reason_code):
+    """Append a document-level ram:SpecifiedTradeAllowanceCharge to the settlement
+    with a coded reason and a zero, arithmetically-neutral ActualAmount.
+
+    The document totals (SpecifiedTradeSettlementHeaderMonetarySummation) are left
+    unchanged and the ActualAmount is 0.00, so no graded CII arithmetic
+    (BR-CO-13 etc.) flips; the target reason-code rule is the only one to fire."""
+    settle = _cii_settlement(r)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = (
+        "true" if charge else "false")
+    ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = "0.00"
+    ET.SubElement(ac, _cq(NS_RAM, "ReasonCode")).text = reason_code
+
+
+def _cmut_brcl19(r):
+    # Document ALLOWANCE (udt:Indicator=false) with a reason code off the UNCL
+    # 5189 allowance-reason list; ActualAmount 0.00 keeps totals neutral.
+    _cadd_reason_allowance_charge(r, charge=False, reason_code="XXX")
+
+
+def _cmut_brcl20(r):
+    # Document CHARGE (udt:Indicator=true) with a reason code off the UNCL 7161
+    # charge-reason list; ActualAmount 0.00 keeps totals neutral.
+    _cadd_reason_allowance_charge(r, charge=True, reason_code="XXX")
+
+
+def _cmut_brcl21(r):
+    # Add a product standard identifier (ram:SpecifiedTradeProduct/ram:GlobalID)
+    # with a @schemeID off the ISO 6523 ICD list to the first line's product.
+    prod = _cii_first_line(r).find("ram:SpecifiedTradeProduct", _NSC)
+    gid = ET.SubElement(prod, _cq(NS_RAM, "GlobalID"))
+    gid.set("schemeID", "XXX")
+    gid.text = "1234567890123"
+
+
+def _cmut_brcl24(r):
+    # Add a document attachment (ram:AdditionalReferencedDocument/ram:Attachment
+    # BinaryObject) with a @mimeCode outside the six-entry MIMEMediaType subset.
+    agreement = r.find("rsm:SupplyChainTradeTransaction/"
+                       "ram:ApplicableHeaderTradeAgreement", _NSC)
+    ard = ET.SubElement(agreement, _cq(NS_RAM, "AdditionalReferencedDocument"))
+    ET.SubElement(ard, _cq(NS_RAM, "IssuerAssignedID")).text = "ATTACH-1"
+    ET.SubElement(ard, _cq(NS_RAM, "TypeCode")).text = "916"
+    abo = ET.SubElement(ard, _cq(NS_RAM, "AttachmentBinaryObject"))
+    abo.set("mimeCode", "application/octet-stream")
+    abo.set("filename", "attachment.bin")
+    abo.text = "AAAA"
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -2030,8 +2163,11 @@ _CII_MUTATIONS = {
     "BR-CL-01": _cmut_brcl01,
     "BR-CL-03": _cmut_brcl03, "BR-CL-04": _cmut_brcl04, "BR-CL-05": _cmut_brcl05,
     "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,
-    "BR-CL-17": _cmut_brcl17, "BR-CL-18": _cmut_brcl18, "BR-CL-22": _cmut_brcl22,
-    "BR-CL-23": _cmut_brcl23,
+    "BR-CL-16": _cmut_brcl16,
+    "BR-CL-17": _cmut_brcl17, "BR-CL-18": _cmut_brcl18,
+    "BR-CL-19": _cmut_brcl19, "BR-CL-20": _cmut_brcl20, "BR-CL-21": _cmut_brcl21,
+    "BR-CL-22": _cmut_brcl22,
+    "BR-CL-23": _cmut_brcl23, "BR-CL-24": _cmut_brcl24,
     "BR-CO-04": _cmut_brco04,
     "BR-CO-10": _cmut_brco10, "BR-CO-13": _cmut_brco13,
     "BR-CO-16": _cmut_brco16, "BR-CO-17": _cmut_brco17,

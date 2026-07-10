@@ -124,6 +124,50 @@ _CII_DEX_GENERIC = ("part of the KoSIT XRechnung EXTENSION layer (UBL "
 _CII_DE_GENERIC = ("national rule not evaluated on the CII differential leg (LEG 4).")
 
 
+# EN 16931 codelist (BR-CL-*) rules that ARE present in the official codes
+# Schematron but the engine does NOT yet assert — documented so the matrix is
+# honest about which code families are covered. (BR-CL-16/19/20/21/24 ARE now
+# asserted and appear in the rule table above; these remain deferred.)
+CODELIST_NOT_ASSERTED = {
+    "BR-CL-06": "VAT-point date code. Not asserted: the UBL binding "
+                "(cac:InvoicePeriod/cbc:DescriptionCode, UNTDID 2005 subset "
+                "3/35/432) and the CII binding (ram:DueDateTypeCode, UNTDID 2475 "
+                "subset 5/29/72) use DIFFERENT code lists at DIFFERENT context "
+                "nodes; the per-syntax value set is not yet carried.",
+    "BR-CL-07": "Object/document reference identifier scheme (UNTDID 1153). Not "
+                "asserted: the UBL context is scoped to a DocumentReference with "
+                "cbc:DocumentTypeCode='130' (a predicate the model does not "
+                "carry) and the CII context is ram:ReferenceTypeCode — two "
+                "distinct bindings, deferred.",
+    "BR-CL-08": "Subject code (UNTDID 4451). CII-only rule (ram:SubjectCode) "
+                "with no UBL counterpart, so it falls outside the both-syntaxes "
+                "codelist scope; not asserted.",
+    "BR-CL-10": "Party identifier scheme in the ISO 6523 ICD list. Not asserted: "
+                "a broad party-identification scheme surface across many context "
+                "nodes; the 243-code ICD enumeration IS inlined in the .sch, but "
+                "the authoritative ISO 6523 register in corpus is a PDF "
+                "(codelist/iso6523/ICD-list.pdf), so it is deferred rather than "
+                "partially asserted.",
+    "BR-CL-11": "Party registration identifier scheme in the ISO 6523 ICD list. "
+                "Not asserted: same ICD surface as BR-CL-10 bound to "
+                "PartyLegalEntity/CompanyID / a scoped ram:ID; deferred.",
+    "BR-CL-15": "Item origin country code (ISO 3166-1). Not asserted: the same "
+                "code lists as BR-CL-14 but a distinct context node "
+                "(cac:OriginCountry / ram:OriginTradeCountry) the model does not "
+                "yet collect.",
+    "BR-CL-25": "Electronic-address scheme identifier (CEF EAS). Not asserted: "
+                "the EAS code set IS inlined in the .sch "
+                "(cbc:EndpointID/@schemeID / ram:URIID/@schemeID), but the "
+                "endpoint scheme-identifier parser surface is deferred; the "
+                "authoritative register is the ISO 6523 PDF in corpus, not a "
+                "machine-readable list. The set is NOT fabricated from the PDF.",
+    "BR-CL-26": "Delivery-location identifier scheme (ISO 6523 ICD). Not "
+                "asserted: the same ICD list as BR-CL-21 bound to a different "
+                "context node (cac:DeliveryLocation/cbc:ID / "
+                "ram:ShipToTradeParty/ram:GlobalID @schemeID); deferred.",
+}
+
+
 def _title(fn, rid):
     """First-paragraph docstring summary, id prefix stripped, whitespace collapsed."""
     doc = (fn.__doc__ or "").strip()
@@ -240,6 +284,8 @@ def build_matrix():
                     for rid in sorted(_diff.CII_EXCLUDED_RULE_IDS, key=_sort_key)]
     cii_de_oos = [{"id": rid, "reason": CII_DE_REASON.get(rid, _CII_DE_GENERIC)}
                   for rid in sorted(_diff.CII_XR_EXCLUDED_RULE_IDS, key=_sort_key)]
+    codelist_deferred = [{"id": rid, "reason": CODELIST_NOT_ASSERTED[rid]}
+                         for rid in sorted(CODELIST_NOT_ASSERTED, key=_sort_key)]
 
     matrix = {
         "artifact": "einvoice conformance coverage matrix",
@@ -263,6 +309,7 @@ def build_matrix():
                 "Rules deliberately NOT counted as coverage, documented so the "
                 "matrix is honest about its boundaries."),
             "vacuous": vacuous,
+            "codelist_not_asserted": codelist_deferred,
             "cii_core_out_of_scope": cii_core_oos,
             "cii_de_out_of_scope": cii_de_oos,
             "peppol": {

@@ -23,6 +23,11 @@ from .codelists import (
     VAT_CATEGORY_CODES,
     VATEX_CODES,
     UNIT_CODES,
+    PAYMENT_MEANS_CODES,
+    ALLOWANCE_REASON_CODES,
+    CHARGE_REASON_CODES,
+    ITEM_SCHEME_ID_CODES,
+    MIME_CODES,
 )
 
 # ``severity`` mirrors the official Schematron ``flag``: every core rule is
@@ -719,6 +724,111 @@ def br_cl_23(inv):
                 "Unit code MUST be coded according to the UN/ECE Recommendation "
                 "20 with Rec 21 extension; %r is not a listed unit code." % code,
                 "cbc:InvoicedQuantity/@unitCode")
+    return None
+
+
+def br_cl_16(inv):
+    """BR-CL-16: Payment means MUST be coded using the UNCL 4461 code list.
+
+    Official context = cac:PaymentMeans/cbc:PaymentMeansCode (UBL) /
+    ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode (CII). Both syntaxes
+    inline the IDENTICAL 84-code UNCL 4461 subset, so the shared pinned set
+    (``PAYMENT_MEANS_CODES``) serves both; the parser feeds
+    ``payment_means_codes`` the normalize-space'd code at exactly that context
+    node per syntax. NOTE the CII binding is the PAYMENT-means TypeCode, not the
+    document TypeCode (that is BR-CL-01).
+    """
+    for code in inv.payment_means_codes:
+        if _bad_code(code, PAYMENT_MEANS_CODES):
+            return Violation(
+                "BR-CL-16",
+                "Payment means in an invoice MUST be coded using the UNCL 4461 "
+                "code list; %r is not a listed payment-means code." % code,
+                "cbc:PaymentMeansCode")
+    return None
+
+
+def br_cl_19(inv):
+    """BR-CL-19: Coded allowance reasons MUST belong to the UNCL 5189 code list.
+
+    Official context = cac:AllowanceCharge[cbc:ChargeIndicator = false()]/
+    cbc:AllowanceChargeReasonCode (UBL) /
+    ram:SpecifiedTradeAllowanceCharge[ram:ChargeIndicator/udt:Indicator = false()]/
+    ram:ReasonCode (CII) — the ALLOWANCE (charge-indicator false) reason code, at
+    BOTH document and line level (the pattern matches an allowance/charge at any
+    depth). The parser feeds ``allowance_reason_codes`` exactly the normalize-
+    space'd reason codes of the false-indicator allowances per syntax. Both
+    syntaxes inline the IDENTICAL 19-code UNCL 5189 set.
+    """
+    for code in inv.allowance_reason_codes:
+        if _bad_code(code, ALLOWANCE_REASON_CODES):
+            return Violation(
+                "BR-CL-19",
+                "Coded allowance reasons MUST belong to the UNCL 5189 code list; "
+                "%r is not a listed allowance reason code." % code,
+                "cbc:AllowanceChargeReasonCode")
+    return None
+
+
+def br_cl_20(inv):
+    """BR-CL-20: Coded charge reasons MUST belong to the UNCL 7161 code list.
+
+    Official context = cac:AllowanceCharge[cbc:ChargeIndicator = true()]/
+    cbc:AllowanceChargeReasonCode (UBL) /
+    ram:SpecifiedTradeAllowanceCharge[ram:ChargeIndicator/udt:Indicator = true()]/
+    ram:ReasonCode (CII) — the CHARGE (charge-indicator true) reason code, at BOTH
+    document and line level. The parser feeds ``charge_reason_codes`` exactly the
+    normalize-space'd reason codes of the true-indicator charges per syntax. Both
+    syntaxes inline the IDENTICAL 178-code UNCL 7161 set.
+    """
+    for code in inv.charge_reason_codes:
+        if _bad_code(code, CHARGE_REASON_CODES):
+            return Violation(
+                "BR-CL-20",
+                "Coded charge reasons MUST belong to the UNCL 7161 code list; "
+                "%r is not a listed charge reason code." % code,
+                "cbc:AllowanceChargeReasonCode")
+    return None
+
+
+def br_cl_21(inv):
+    """BR-CL-21: Item standard identifier scheme MUST be an ISO 6523 ICD code.
+
+    Official context = cac:StandardItemIdentification/cbc:ID[@schemeID] (UBL) /
+    ram:SpecifiedTradeProduct/ram:GlobalID[@schemeID] (CII); only nodes carrying
+    @schemeID are context nodes, and the assert tests that @schemeID against the
+    ISO 6523 ICD list. Both syntaxes inline the IDENTICAL 243-code list, so the
+    shared pinned set (``ITEM_SCHEME_ID_CODES``) serves both; the parser feeds
+    ``item_std_id_scheme_ids`` the normalize-space'd @schemeID per syntax.
+    """
+    for scheme in inv.item_std_id_scheme_ids:
+        if _bad_code(scheme, ITEM_SCHEME_ID_CODES):
+            return Violation(
+                "BR-CL-21",
+                "Item standard identifier scheme identifier MUST belong to the "
+                "ISO 6523 ICD code list; %r is not a listed ICD." % scheme,
+                "cac:StandardItemIdentification/cbc:ID/@schemeID")
+    return None
+
+
+def br_cl_24(inv):
+    """BR-CL-24: For a MIME code in an attribute use the MIMEMediaType subset.
+
+    Official context = cbc:EmbeddedDocumentBinaryObject[@mimeCode] (UBL) /
+    ram:AttachmentBinaryObject[@mimeCode] (CII). Unlike the other codelist
+    asserts, the official test is a DIRECT disjunction of six ``@mimeCode = '...'``
+    string equalities (no normalize-space, no internal-space guard), so the raw
+    @mimeCode value is compared for exact membership in the six-entry
+    ``MIME_CODES`` set. Both syntaxes test the SAME six MIME literals. (This is
+    the ATTACHMENT MIME-code rule; the BT-3 document type code is BR-CL-01.)
+    """
+    for code in inv.mime_codes:
+        if code not in MIME_CODES:
+            return Violation(
+                "BR-CL-24",
+                "For a MIME code in an attribute use the MIMEMediaType subset; "
+                "%r is not a listed MIME type." % code,
+                "cbc:EmbeddedDocumentBinaryObject/@mimeCode")
     return None
 
 
@@ -3387,7 +3497,9 @@ ALL_RULES = [
     br_49, br_50, br_51, br_55, br_57, br_61, br_62, br_63,
     br_cl_01,
     br_cl_03, br_cl_04, br_cl_05, br_cl_13, br_cl_14,
-    br_cl_17, br_cl_18, br_cl_22, br_cl_23,
+    br_cl_16,
+    br_cl_17, br_cl_18, br_cl_19, br_cl_20, br_cl_21, br_cl_22, br_cl_23,
+    br_cl_24,
     br_co_04,
     br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15, br_co_16,
     br_co_17, br_co_18,

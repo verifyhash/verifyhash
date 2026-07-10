@@ -23,9 +23,9 @@ XSLT and compares the fired-rule set. The sources:
 
 ## Coverage at a glance
 
-- **206 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **71** proven on both UBL and CII, **135** UBL-only, **0** CII-only.
-- Severity (blocking class): **196** fatal (block validity), **10** warning / information (reported, non-blocking).
+- **211 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **76** proven on both UBL and CII, **135** UBL-only, **0** CII-only.
+- Severity (blocking class): **201** fatal (block validity), **10** warning / information (reported, non-blocking).
 
 ## Rules
 
@@ -93,10 +93,15 @@ the non-blocking `warning` class for the severity column).
 | `BR-CL-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3. |
 | `BR-CL-13` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Item classification scheme identifier MUST be a UNTDID 7143 code. |
 | `BR-CL-14` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Country codes MUST be coded using ISO 3166-1 alpha-2. |
+| `BR-CL-16` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Payment means MUST be coded using the UNCL 4461 code list. |
 | `BR-CL-17` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice tax categories MUST be coded using the UNCL 5305 subset. |
 | `BR-CL-18` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice tax categories MUST be coded using the UNCL 5305 subset. |
+| `BR-CL-19` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Coded allowance reasons MUST belong to the UNCL 5189 code list. |
+| `BR-CL-20` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Coded charge reasons MUST belong to the UNCL 7161 code list. |
+| `BR-CL-21` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Item standard identifier scheme MUST be an ISO 6523 ICD code. |
 | `BR-CL-22` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | VAT exemption reason code MUST belong to the CEF VATEX list. |
 | `BR-CL-23` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Unit code MUST be coded per UN/ECE Rec 20 with Rec 21 extension. |
+| `BR-CL-24` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | For a MIME code in an attribute use the MIMEMediaType subset. |
 | `BR-CO-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151). |
 | `BR-CO-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Sum of Invoice line net amount (BT-106) = Σ line net amount (BT-131). |
 | `BR-CO-11` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Sum of allowances on document level (BT-107) = Σ Document level allowance amount (BT-92). |
@@ -251,6 +256,22 @@ Rules deliberately NOT counted as coverage, documented so the matrix is honest a
 
 - **BR-DEC-13** — vacuous in official Schematron (predicate references a non-existent child of cbc:TaxAmount) — never fires
 - **BR-DEC-15** — vacuous in official Schematron (same defect, TaxCurrencyCode) — never fires
+
+### EN 16931 code-list rules present in the Schematron, not yet asserted
+
+These `BR-CL-*` code-list rules exist in the official codes Schematron
+but the engine does not yet assert them; listed so the code-list
+coverage is honest about its boundary. (`BR-CL-16/19/20/21/24` ARE
+asserted and appear in the rule table above.)
+
+- **BR-CL-06** — VAT-point date code. Not asserted: the UBL binding (cac:InvoicePeriod/cbc:DescriptionCode, UNTDID 2005 subset 3/35/432) and the CII binding (ram:DueDateTypeCode, UNTDID 2475 subset 5/29/72) use DIFFERENT code lists at DIFFERENT context nodes; the per-syntax value set is not yet carried.
+- **BR-CL-07** — Object/document reference identifier scheme (UNTDID 1153). Not asserted: the UBL context is scoped to a DocumentReference with cbc:DocumentTypeCode='130' (a predicate the model does not carry) and the CII context is ram:ReferenceTypeCode — two distinct bindings, deferred.
+- **BR-CL-08** — Subject code (UNTDID 4451). CII-only rule (ram:SubjectCode) with no UBL counterpart, so it falls outside the both-syntaxes codelist scope; not asserted.
+- **BR-CL-10** — Party identifier scheme in the ISO 6523 ICD list. Not asserted: a broad party-identification scheme surface across many context nodes; the 243-code ICD enumeration IS inlined in the .sch, but the authoritative ISO 6523 register in corpus is a PDF (codelist/iso6523/ICD-list.pdf), so it is deferred rather than partially asserted.
+- **BR-CL-11** — Party registration identifier scheme in the ISO 6523 ICD list. Not asserted: same ICD surface as BR-CL-10 bound to PartyLegalEntity/CompanyID / a scoped ram:ID; deferred.
+- **BR-CL-15** — Item origin country code (ISO 3166-1). Not asserted: the same code lists as BR-CL-14 but a distinct context node (cac:OriginCountry / ram:OriginTradeCountry) the model does not yet collect.
+- **BR-CL-25** — Electronic-address scheme identifier (CEF EAS). Not asserted: the EAS code set IS inlined in the .sch (cbc:EndpointID/@schemeID / ram:URIID/@schemeID), but the endpoint scheme-identifier parser surface is deferred; the authoritative register is the ISO 6523 PDF in corpus, not a machine-readable list. The set is NOT fabricated from the PDF.
+- **BR-CL-26** — Delivery-location identifier scheme (ISO 6523 ICD). Not asserted: the same ICD list as BR-CL-21 bound to a different context node (cac:DeliveryLocation/cbc:ID / ram:ShipToTradeParty/ram:GlobalID @schemeID); deferred.
 
 ### Fired on UBL, not differentially proven on CII
 

@@ -301,6 +301,30 @@ class Invoice:
         #        with @unitCode; CII: ram:BasisQuantity|ram:BilledQuantity with
         #        @unitCode), normalize-space'd like the official assert
         self.unit_codes = []
+        #   payment_means_codes — payment-means codes at the BR-CL-16 context
+        #       (UBL: cac:PaymentMeans/cbc:PaymentMeansCode; CII:
+        #        ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode),
+        #        normalize-space'd like the official UNCL 4461 assert
+        self.payment_means_codes = []
+        #   allowance_reason_codes / charge_reason_codes — coded allowance/charge
+        #       reason codes at the BR-CL-19 / BR-CL-20 contexts (the
+        #       AllowanceCharge is split by its ChargeIndicator: false ->
+        #       allowance/BR-CL-19, true -> charge/BR-CL-20). The context pattern
+        #       matches an AllowanceCharge at ANY depth, so these carry the reason
+        #       codes of BOTH document- and line-level allowances/charges.
+        #       (UBL: cbc:AllowanceChargeReasonCode; CII: ram:ReasonCode)
+        self.allowance_reason_codes = []
+        self.charge_reason_codes = []
+        #   item_std_id_scheme_ids — item standard-identifier @schemeID at the
+        #       BR-CL-21 context (UBL: cac:StandardItemIdentification/cbc:ID
+        #       @schemeID; CII: ram:SpecifiedTradeProduct/ram:GlobalID @schemeID),
+        #       tested against the ISO 6523 ICD list
+        self.item_std_id_scheme_ids = []
+        #   mime_codes — attachment @mimeCode at the BR-CL-24 context (UBL:
+        #       cbc:EmbeddedDocumentBinaryObject[@mimeCode]; CII:
+        #       ram:AttachmentBinaryObject[@mimeCode]). Kept RAW (the official
+        #       assert is a direct string equality, not a normalize-space'd list).
+        self.mime_codes = []
         # Parties
         self.seller_name = None           # BT-27
         self.seller_has_postal_address = False  # BG-5
@@ -577,6 +601,44 @@ def build_model(root):
         for tag in ("InvoicedQuantity", "BaseQuantity", "CreditedQuantity")
         for el in root.findall(".//cbc:%s" % tag, NS)
         if el.get("unitCode") is not None
+    ]
+    # BR-CL-16 context = cac:PaymentMeans/cbc:PaymentMeansCode (UBL). The rule
+    # tests normalize-space(.) against the UNCL 4461 payment-means list.
+    inv.payment_means_codes = [
+        _norm_space(_strval(el)) or ""
+        for el in root.findall(".//cac:PaymentMeans/cbc:PaymentMeansCode", NS)
+    ]
+    # BR-CL-19 / BR-CL-20 context = cac:AllowanceCharge split by
+    # cbc:ChargeIndicator: false() -> allowance reason (UNCL 5189, BR-CL-19),
+    # true() -> charge reason (UNCL 7161, BR-CL-20). The pattern matches an
+    # AllowanceCharge at ANY depth, so document- AND line-level are both covered.
+    # An AllowanceCharge whose ChargeIndicator is neither true/1 nor false/0 is
+    # in NEITHER context (matches the official xs:boolean cast), so its reason
+    # code fires neither rule.
+    for ac_el in root.findall(".//cac:AllowanceCharge", NS):
+        ind = _norm_space(_text(ac_el.find("cbc:ChargeIndicator", NS)))
+        codes = [_norm_space(_strval(el)) or ""
+                 for el in ac_el.findall("cbc:AllowanceChargeReasonCode", NS)]
+        if ind in ("true", "1"):
+            inv.charge_reason_codes.extend(codes)
+        elif ind in ("false", "0"):
+            inv.allowance_reason_codes.extend(codes)
+    # BR-CL-21 context = cac:StandardItemIdentification/cbc:ID[@schemeID] (UBL);
+    # only elements CARRYING @schemeID are context nodes. The rule tests
+    # normalize-space(@schemeID) against the ISO 6523 ICD list.
+    inv.item_std_id_scheme_ids = [
+        _norm_space(el.get("schemeID"))
+        for el in root.findall(
+            ".//cac:StandardItemIdentification/cbc:ID", NS)
+        if el.get("schemeID") is not None
+    ]
+    # BR-CL-24 context = cbc:EmbeddedDocumentBinaryObject[@mimeCode] (UBL). The
+    # official assert is a direct equality of the RAW @mimeCode against the six
+    # MIME literals, so the value is kept raw (no normalize-space).
+    inv.mime_codes = [
+        el.get("mimeCode")
+        for el in root.findall(".//cbc:EmbeddedDocumentBinaryObject", NS)
+        if el.get("mimeCode") is not None
     ]
 
     # Seller

@@ -68,6 +68,59 @@ Provenance (each file carries the header comment
     ``KWH``) with the Rec 21 packaging codes (the ``X..`` prefixed set, e.g.
     ``XBX`` box, ``XPK`` package). Extracted VERBATIM from the vendored .sch;
     NEVER typed from memory.
+
+  * PAYMENT_MEANS_CODES (UNCL 4461 payment-means subset, UBL/CII BR-CL-16):
+    corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch
+    (assert BR-CL-16, context cac:PaymentMeans/cbc:PaymentMeansCode) and the CII
+    file's BR-CL-16 (context
+    ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode). Both official asserts
+    inline the IDENTICAL 84-entry string (verified equal at extraction time), so
+    one pinned set serves both syntaxes.
+
+  * ALLOWANCE_REASON_CODES (UNCL 5189 allowance-reason list, UBL/CII BR-CL-19):
+    corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch
+    (assert BR-CL-19, context
+    cac:AllowanceCharge[cbc:ChargeIndicator = false()]/cbc:AllowanceChargeReasonCode)
+    and the CII file's BR-CL-19 (context
+    ram:SpecifiedTradeAllowanceCharge[ram:ChargeIndicator/udt:Indicator = false()]/
+    ram:ReasonCode). Both asserts inline the IDENTICAL 19-entry string (verified
+    equal), so one pinned set serves both syntaxes and both document- AND
+    line-level allowances (the Schematron context is a relative pattern matching
+    an AllowanceCharge at any depth).
+
+  * CHARGE_REASON_CODES (UNCL 7161 charge-reason list, UBL/CII BR-CL-20):
+    corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch
+    (assert BR-CL-20, context
+    cac:AllowanceCharge[cbc:ChargeIndicator = true()]/cbc:AllowanceChargeReasonCode)
+    and the CII file's BR-CL-20 (context
+    ram:SpecifiedTradeAllowanceCharge[ram:ChargeIndicator/udt:Indicator = true()]/
+    ram:ReasonCode). Both asserts inline the IDENTICAL 178-entry string (verified
+    equal), so one pinned set serves both syntaxes (document- AND line-level).
+
+  * ITEM_SCHEME_ID_CODES (ISO 6523 ICD list, UBL/CII BR-CL-21):
+    corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch
+    (assert BR-CL-21, context cac:StandardItemIdentification/cbc:ID[@schemeID])
+    and the CII file's BR-CL-21 (context
+    ram:SpecifiedTradeProduct/ram:GlobalID[@schemeID]). Both asserts inline the
+    IDENTICAL 243-entry ISO 6523 ICD numeric string (verified equal), so one
+    pinned set serves both syntaxes. The list is the ISO 6523 International Code
+    Designator register as ENUMERATED IN THE .sch (0002..0248, with the register's
+    own gaps, e.g. no 0092/0103/0181/0182); the standalone ISO 6523 register in
+    corpus/cen-en16931/.../codelist/iso6523 ships only as a PDF, so this set is
+    pinned from the Schematron's inline enumeration, never from the PDF.
+
+  * MIME_CODES (EN 16931 MIMEMediaType subset, UBL/CII BR-CL-24):
+    corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch
+    (assert BR-CL-24, context cbc:EmbeddedDocumentBinaryObject[@mimeCode]) and the
+    CII file's BR-CL-24 (context ram:AttachmentBinaryObject[@mimeCode]). NOTE the
+    official BR-CL-24 assert is NOT a whitespace-split code list — it is a direct
+    disjunction of six ``@mimeCode = '...'`` string equalities (both syntaxes
+    inline the SAME six literals, verified equal), so this set is pinned as those
+    exact six MIME-type strings and the rule does a DIRECT membership test on the
+    raw @mimeCode value (no normalize-space, no internal-space guard), mirroring
+    the official equality. (The task's BT-3 "document type code" is a SEPARATE
+    rule — BR-CL-01, UNTDID 1001 — already asserted; BR-CL-24 governs the
+    attachment MIME code, per the official .sch.)
 """
 
 from __future__ import annotations
@@ -285,6 +338,77 @@ _UNIT_CODE = (
     "XZT XZU XZV XZW XZX XZY XZZ "
 )
 
+# --- UNCL 4461 payment-means codes (UBL/CII BR-CL-16) ---
+# Exact inline value string of the BR-CL-16 assert (order preserved verbatim);
+# the UBL and CII asserts carry the IDENTICAL 84-entry string.
+_PAYMENT_MEANS = (
+    "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 "
+    "28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 "
+    "52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 74 75 76 77 78 "
+    "91 92 93 94 95 96 97 98 ZZZ "
+)
+
+# --- UNCL 5189 allowance-reason codes (UBL/CII BR-CL-19) ---
+# Exact inline value string of the BR-CL-19 assert (order preserved verbatim);
+# the UBL and CII asserts carry the IDENTICAL 19-entry string.
+_ALLOWANCE_REASON = (
+    "41 42 60 62 63 64 65 66 67 68 70 71 88 95 100 102 103 104 105 "
+)
+
+# --- UNCL 7161 charge-reason codes (UBL/CII BR-CL-20) ---
+# Exact inline value string of the BR-CL-20 assert (order preserved verbatim);
+# the UBL and CII asserts carry the IDENTICAL 178-entry string.
+_CHARGE_REASON = (
+    "AA AAA AAC AAD AAE AAF AAH AAI AAS AAT AAV AAY AAZ ABA ABB ABC ABD ABF "
+    "ABK ABL ABN ABR ABS ABT ABU ACF ACG ACH ACI ACJ ACK ACL ACM ACS ADC ADE "
+    "ADJ ADK ADL ADM ADN ADO ADP ADQ ADR ADT ADW ADY ADZ AEA AEB AEC AED AEF "
+    "AEH AEI AEJ AEK AEL AEM AEN AEO AEP AES AET AEU AEV AEW AEX AEY AEZ AJ AU "
+    "CA CAB CAD CAE CAF CAI CAJ CAK CAL CAM CAN CAO CAP CAQ CAR CAS CAT CAU CAV "
+    "CAW CAX CAY CAZ CD CG CS CT DAB DAD DAC DAF DAG DAH DAI DAJ DAK DAL DAM DAN "
+    "DAO DAP DAQ DL EG EP ER FAA FAB FAC FC FH FI GAA HAA HD HH IAA IAB ID IF "
+    "IR IS KO L1 LA LAA LAB LF MAE MI ML NAA OA PA PAA PC PL PRV RAB RAC RAD "
+    "RAF RE RF RH RV SA SAA SAD SAE SAI SG SH SM SU TAB TAC TT TV V1 V2 WH XAA "
+    "YY ZZZ "
+)
+
+# --- ISO 6523 ICD scheme identifiers (UBL/CII BR-CL-21) ---
+# Exact inline value string of the BR-CL-21 assert (order preserved verbatim);
+# the UBL and CII asserts carry the IDENTICAL 243-entry string. The register's
+# own gaps (no 0092/0103/0181/0182/etc.) are preserved as extracted.
+_ITEM_SCHEME_ID = (
+    "0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 "
+    "0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 "
+    "0030 0031 0032 0033 0034 0035 0036 0037 0038 0039 0040 0041 0042 0043 "
+    "0044 0045 0046 0047 0048 0049 0050 0051 0052 0053 0054 0055 0056 0057 "
+    "0058 0059 0060 0061 0062 0063 0064 0065 0066 0067 0068 0069 0070 0071 "
+    "0072 0073 0074 0075 0076 0077 0078 0079 0080 0081 0082 0083 0084 0085 "
+    "0086 0087 0088 0089 0090 0091 0093 0094 0095 0096 0097 0098 0099 0100 "
+    "0101 0102 0104 0105 0106 0107 0108 0109 0110 0111 0112 0113 0114 0115 "
+    "0116 0117 0118 0119 0120 0121 0122 0123 0124 0125 0126 0127 0128 0129 "
+    "0130 0131 0132 0133 0134 0135 0136 0137 0138 0139 0140 0141 0142 0143 "
+    "0144 0145 0146 0147 0148 0149 0150 0151 0152 0153 0154 0155 0156 0157 "
+    "0158 0159 0160 0161 0162 0163 0164 0165 0166 0167 0168 0169 0170 0171 "
+    "0172 0173 0174 0175 0176 0177 0178 0179 0180 0183 0184 0185 0186 0187 "
+    "0188 0189 0190 0191 0192 0193 0194 0195 0196 0197 0198 0199 0200 0201 "
+    "0202 0203 0204 0205 0206 0207 0208 0209 0210 0211 0212 0213 0214 0215 "
+    "0216 0217 0218 0219 0220 0221 0222 0223 0224 0225 0226 0227 0228 0229 "
+    "0230 0231 0232 0233 0234 0235 0236 0237 0238 0239 0240 0241 0242 0243 "
+    "0244 0245 0246 0247 0248 "
+)
+
+# --- EN 16931 MIMEMediaType subset (UBL/CII BR-CL-24) ---
+# The six exact @mimeCode literals of the BR-CL-24 assert disjunction; both the
+# UBL and CII asserts test the SAME six strings by direct equality (no
+# normalize-space, no split). Pinned as the exact strings, checked raw.
+MIME_CODES = frozenset((
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.oasis.opendocument.spreadsheet",
+))
+
 CURRENCY_CODES = frozenset(_CURRENCY.split())
 ITEM_CLASS_LIST_CODES = frozenset(_ITEM_CLASS.split())
 UBL_COUNTRY_CODES = frozenset(_UBL_COUNTRY.split())
@@ -294,6 +418,10 @@ VAT_CATEGORY_CODES = frozenset(_VAT_CATEGORY.split())
 # the rule compares upper_case(value) so the set must be the upper-cased form.
 VATEX_CODES = frozenset(_VATEX.split())
 UNIT_CODES = frozenset(_UNIT_CODE.split())
+PAYMENT_MEANS_CODES = frozenset(_PAYMENT_MEANS.split())
+ALLOWANCE_REASON_CODES = frozenset(_ALLOWANCE_REASON.split())
+CHARGE_REASON_CODES = frozenset(_CHARGE_REASON.split())
+ITEM_SCHEME_ID_CODES = frozenset(_ITEM_SCHEME_ID.split())
 
 # Fail fast if an edit corrupts a pinned list (counts match the vendored .sch).
 assert len(CURRENCY_CODES) == 178, len(CURRENCY_CODES)
@@ -303,3 +431,8 @@ assert len(CII_COUNTRY_CODES) == 251, len(CII_COUNTRY_CODES)
 assert len(VAT_CATEGORY_CODES) == 10, len(VAT_CATEGORY_CODES)
 assert len(VATEX_CODES) == 88, len(VATEX_CODES)
 assert len(UNIT_CODES) == 2162, len(UNIT_CODES)
+assert len(PAYMENT_MEANS_CODES) == 84, len(PAYMENT_MEANS_CODES)
+assert len(ALLOWANCE_REASON_CODES) == 19, len(ALLOWANCE_REASON_CODES)
+assert len(CHARGE_REASON_CODES) == 178, len(CHARGE_REASON_CODES)
+assert len(ITEM_SCHEME_ID_CODES) == 243, len(ITEM_SCHEME_ID_CODES)
+assert len(MIME_CODES) == 6, len(MIME_CODES)

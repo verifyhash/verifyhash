@@ -34,7 +34,7 @@
       "license": "Apache-2.0"
     }
   },
-  "rule_count": 206,
+  "rule_count": 211,
   "rules": [
     {
       "id": "BR-01",
@@ -1432,6 +1432,30 @@
       }
     },
     {
+      "id": "BR-CL-16",
+      "title": "Payment means MUST be coded using the UNCL 4461 code list.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
       "id": "BR-CL-17",
       "title": "Invoice tax categories MUST be coded using the UNCL 5305 subset.",
       "family": "core",
@@ -1480,6 +1504,78 @@
       }
     },
     {
+      "id": "BR-CL-19",
+      "title": "Coded allowance reasons MUST belong to the UNCL 5189 code list.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-20",
+      "title": "Coded charge reasons MUST belong to the UNCL 7161 code list.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-21",
+      "title": "Item standard identifier scheme MUST be an ISO 6523 ICD code.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
       "id": "BR-CL-22",
       "title": "VAT exemption reason code MUST belong to the CEF VATEX list.",
       "family": "core",
@@ -1506,6 +1602,30 @@
     {
       "id": "BR-CL-23",
       "title": "Unit code MUST be coded per UN/ECE Rec 20 with Rec 21 extension.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-24",
+      "title": "For a MIME code in an attribute use the MIMEMediaType subset.",
       "family": "core",
       "syntax": "both",
       "severity": "fatal",
@@ -5126,6 +5246,40 @@
       {
         "id": "BR-DEC-15",
         "reason": "vacuous in official Schematron (same defect, TaxCurrencyCode) — never fires"
+      }
+    ],
+    "codelist_not_asserted": [
+      {
+        "id": "BR-CL-06",
+        "reason": "VAT-point date code. Not asserted: the UBL binding (cac:InvoicePeriod/cbc:DescriptionCode, UNTDID 2005 subset 3/35/432) and the CII binding (ram:DueDateTypeCode, UNTDID 2475 subset 5/29/72) use DIFFERENT code lists at DIFFERENT context nodes; the per-syntax value set is not yet carried."
+      },
+      {
+        "id": "BR-CL-07",
+        "reason": "Object/document reference identifier scheme (UNTDID 1153). Not asserted: the UBL context is scoped to a DocumentReference with cbc:DocumentTypeCode='130' (a predicate the model does not carry) and the CII context is ram:ReferenceTypeCode — two distinct bindings, deferred."
+      },
+      {
+        "id": "BR-CL-08",
+        "reason": "Subject code (UNTDID 4451). CII-only rule (ram:SubjectCode) with no UBL counterpart, so it falls outside the both-syntaxes codelist scope; not asserted."
+      },
+      {
+        "id": "BR-CL-10",
+        "reason": "Party identifier scheme in the ISO 6523 ICD list. Not asserted: a broad party-identification scheme surface across many context nodes; the 243-code ICD enumeration IS inlined in the .sch, but the authoritative ISO 6523 register in corpus is a PDF (codelist/iso6523/ICD-list.pdf), so it is deferred rather than partially asserted."
+      },
+      {
+        "id": "BR-CL-11",
+        "reason": "Party registration identifier scheme in the ISO 6523 ICD list. Not asserted: same ICD surface as BR-CL-10 bound to PartyLegalEntity/CompanyID / a scoped ram:ID; deferred."
+      },
+      {
+        "id": "BR-CL-15",
+        "reason": "Item origin country code (ISO 3166-1). Not asserted: the same code lists as BR-CL-14 but a distinct context node (cac:OriginCountry / ram:OriginTradeCountry) the model does not yet collect."
+      },
+      {
+        "id": "BR-CL-25",
+        "reason": "Electronic-address scheme identifier (CEF EAS). Not asserted: the EAS code set IS inlined in the .sch (cbc:EndpointID/@schemeID / ram:URIID/@schemeID), but the endpoint scheme-identifier parser surface is deferred; the authoritative register is the ISO 6523 PDF in corpus, not a machine-readable list. The set is NOT fabricated from the PDF."
+      },
+      {
+        "id": "BR-CL-26",
+        "reason": "Delivery-location identifier scheme (ISO 6523 ICD). Not asserted: the same ICD list as BR-CL-21 bound to a different context node (cac:DeliveryLocation/cbc:ID / ram:ShipToTradeParty/ram:GlobalID @schemeID); deferred."
       }
     ],
     "cii_core_out_of_scope": [

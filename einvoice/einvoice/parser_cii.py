@@ -329,6 +329,45 @@ def build_model(root):
         for el in root.findall(".//ram:%s" % tag, NS)
         if el.get("unitCode") is not None
     ]
+    # BR-CL-16 context = ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode
+    # (CII) — NOT rsm:ExchangedDocument/ram:TypeCode (that is BR-CL-01). The rule
+    # tests normalize-space(.) against the UNCL 4461 payment-means list.
+    inv.payment_means_codes = [
+        _norm_space(_text(el)) or ""
+        for el in root.findall(
+            ".//ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode", NS)
+    ]
+    # BR-CL-19 / BR-CL-20 context = ram:SpecifiedTradeAllowanceCharge split by
+    # ram:ChargeIndicator/udt:Indicator: false() -> allowance reason (UNCL 5189,
+    # BR-CL-19), true() -> charge reason (UNCL 7161, BR-CL-20). The pattern
+    # matches an allowance/charge at ANY depth, so document- (settlement) AND
+    # line-level (SpecifiedLineTradeSettlement) are both covered.
+    for ac_el in root.findall(".//ram:SpecifiedTradeAllowanceCharge", NS):
+        ind = _norm_space(_text(
+            ac_el.find("ram:ChargeIndicator/udt:Indicator", NS)))
+        codes = [_norm_space(_text(el)) or ""
+                 for el in ac_el.findall("ram:ReasonCode", NS)]
+        if ind in ("true", "1"):
+            inv.charge_reason_codes.extend(codes)
+        elif ind in ("false", "0"):
+            inv.allowance_reason_codes.extend(codes)
+    # BR-CL-21 context = ram:SpecifiedTradeProduct/ram:GlobalID[@schemeID] (CII);
+    # only elements CARRYING @schemeID are context nodes. The rule tests
+    # normalize-space(@schemeID) against the ISO 6523 ICD list.
+    inv.item_std_id_scheme_ids = [
+        _norm_space(el.get("schemeID"))
+        for el in root.findall(
+            ".//ram:SpecifiedTradeProduct/ram:GlobalID", NS)
+        if el.get("schemeID") is not None
+    ]
+    # BR-CL-24 context = ram:AttachmentBinaryObject[@mimeCode] (CII). Direct
+    # equality of the RAW @mimeCode against the six MIME literals (no
+    # normalize-space), mirroring the official assert.
+    inv.mime_codes = [
+        el.get("mimeCode")
+        for el in root.findall(".//ram:AttachmentBinaryObject", NS)
+        if el.get("mimeCode") is not None
+    ]
 
     # -- BT-24 Specification identifier (ExchangedDocumentContext) ----------
     inv.customization_id = _text(root.find(

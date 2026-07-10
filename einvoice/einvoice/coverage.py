@@ -204,6 +204,19 @@ def render_markdown(matrix):
         w("- **%s** — %s" % (e["id"], e["reason"]))
     w("")
 
+    codelist_deferred = exc.get("codelist_not_asserted")
+    if codelist_deferred:
+        w("### EN 16931 code-list rules present in the Schematron, not yet asserted")
+        w("")
+        w("These `BR-CL-*` code-list rules exist in the official codes Schematron")
+        w("but the engine does not yet assert them; listed so the code-list")
+        w("coverage is honest about its boundary. (`BR-CL-16/19/20/21/24` ARE")
+        w("asserted and appear in the rule table above.)")
+        w("")
+        for e in codelist_deferred:
+            w("- **%s** — %s" % (e["id"], e["reason"]))
+        w("")
+
     w("### Fired on UBL, not differentially proven on CII")
     w("")
     w("These core rules fire and are proven on the UBL leg; the official CII")

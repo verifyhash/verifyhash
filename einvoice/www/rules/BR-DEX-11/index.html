@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>BR-DEX-11 — &#x27;Third party payment amount&#x27; (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). — einvoice rule reference</title>
+<meta name="description" content="BR-DEX-11 (EN 16931 / XRechnung rule): &#x27;Third party payment amount&#x27; (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). Fix: Correct `/ubl:Invoice/cac:PrepaidPayment` so that &#x27;Third party payment amount&#x27; (BT-DEX-002, cbc:PaidAmount) must be presen">
+<link rel="canonical" href="/rules/BR-DEX-11/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -15,7 +17,10 @@ main { max-width: 46rem; margin: 0 auto; }
   letter-spacing: .04em; margin: 0 0 .5rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
-.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
 .sev { display: inline-block; font-size: .8rem; font-weight: 700;
   padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
@@ -33,21 +38,25 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer { color: #8b949e; }
+  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
   code { background: #161b22; }
   .sev, .assert, footer { border-color: #30363d; }
 }</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-DEX-11 — 'Third party payment amount' (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).", "alternativeHeadline": "Das Element \"Third party payment amount\" BT-DEX-002 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.", "identifier": "BR-DEX-11", "about": {"@type": "Thing", "name": "BR-DEX-11"}, "description": "BR-DEX-11 (EN 16931 / XRechnung rule): 'Third party payment amount' (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). Fix: Correct `/ubl:Invoice/cac:PrepaidPayment` so that 'Third party payment amount' (BT-DEX-002, cbc:PaidAmount) must be presen", "articleBody": "Correct `/ubl:Invoice/cac:PrepaidPayment` so that 'Third party payment amount' (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
 </head>
 <body>
 <main>
 <p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
 <h1>BR-DEX-11</h1>
 <p class="title">&#x27;Third party payment amount&#x27; (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).</p>
+<p class="title-de" lang="de">Das Element &quot;Third party payment amount&quot; BT-DEX-002 muss übermittelt werden, wenn die Gruppe &quot;THIRD PARTY PAYMENT&quot; (BG-DEX-09) übermittelt wird.</p>
+<p class="prov-de">Deutsche Fassung: Amtlicher KoSIT-Text (official KoSIT assert text).</p>
 <dl>
 <dt>Requires</dt><dd>&#x27;Third party payment amount&#x27; (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).</dd>
 <dt>Business terms</dt><dd class="terms"><code>BG-DEX-09</code> <code>BT-DEX-002</code></dd>
 <dt>Location</dt><dd><code>/ubl:Invoice/cac:PrepaidPayment</code></dd>
 <dt>Fix</dt><dd>Correct `/ubl:Invoice/cac:PrepaidPayment` so that &#x27;Third party payment amount&#x27; (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).</dd>
+<dt>Fix (Deutsch)</dt><dd lang="de">Korrigieren Sie `/ubl:Invoice/cac:PrepaidPayment`, sodass gilt: Das Element &quot;Third party payment amount&quot; BT-DEX-002 muss übermittelt werden, wenn die Gruppe &quot;THIRD PARTY PAYMENT&quot; (BG-DEX-09) übermittelt wird.</dd>
 <dt>Severity</dt><dd><span class="sev">fatal</span></dd>
 <dt>Provenance source</dt><dd><code>xrechnung-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">Das Element &quot;Third party payment amount&quot; BT-DEX-002 muss übermittelt werden, wenn die Gruppe &quot;THIRD PARTY PAYMENT&quot; (BG-DEX-09) übermittelt wird.</p></dd>

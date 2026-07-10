@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>BR-DE-11 — Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present. — einvoice rule reference</title>
+<meta name="description" content="BR-DE-11 (EN 16931 / XRechnung rule): Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present. Fix: Add the required element at `/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address`: Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (">
+<link rel="canonical" href="/rules/BR-DE-11/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -15,7 +17,10 @@ main { max-width: 46rem; margin: 0 auto; }
   letter-spacing: .04em; margin: 0 0 .5rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
-.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
 .sev { display: inline-block; font-size: .8rem; font-weight: 700;
   padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
@@ -33,21 +38,25 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer { color: #8b949e; }
+  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
   code { background: #161b22; }
   .sev, .assert, footer { border-color: #30363d; }
 }</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-DE-11 — Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.", "alternativeHeadline": "Das Element \"Deliver to post code\" (BT-78) muss übermittelt werden, wenn die Gruppe \"DELIVER TO ADDRESS\" (BG-15) übermittelt wird.", "identifier": "BR-DE-11", "about": {"@type": "Thing", "name": "BR-DE-11"}, "description": "BR-DE-11 (EN 16931 / XRechnung rule): Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present. Fix: Add the required element at `/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address`: Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (", "articleBody": "Add the required element at `/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address`: Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
 </head>
 <body>
 <main>
 <p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
 <h1>BR-DE-11</h1>
 <p class="title">Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.</p>
+<p class="title-de" lang="de">Das Element &quot;Deliver to post code&quot; (BT-78) muss übermittelt werden, wenn die Gruppe &quot;DELIVER TO ADDRESS&quot; (BG-15) übermittelt wird.</p>
+<p class="prov-de">Deutsche Fassung: Amtlicher KoSIT-Text (official KoSIT assert text).</p>
 <dl>
 <dt>Requires</dt><dd>Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.</dd>
 <dt>Business terms</dt><dd class="terms"><code>BG-15</code> <code>BT-78</code></dd>
 <dt>Location</dt><dd><code>/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address</code></dd>
 <dt>Fix</dt><dd>Add the required element at `/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address`: Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.</dd>
+<dt>Fix (Deutsch)</dt><dd lang="de">Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address`: Das Element &quot;Deliver to post code&quot; (BT-78) muss übermittelt werden, wenn die Gruppe &quot;DELIVER TO ADDRESS&quot; (BG-15) übermittelt wird.</dd>
 <dt>Severity</dt><dd><span class="sev">fatal</span></dd>
 <dt>Provenance source</dt><dd><code>xrechnung-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">Das Element &quot;Deliver to post code&quot; (BT-78) muss übermittelt werden, wenn die Gruppe &quot;DELIVER TO ADDRESS&quot; (BG-15) übermittelt wird.</p></dd>

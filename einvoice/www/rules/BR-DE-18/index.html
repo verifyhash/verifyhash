@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>BR-DE-18 — Skonto (cash-discount) lines in Payment terms (BT-20). — einvoice rule reference</title>
+<meta name="description" content="BR-DE-18 (EN 16931 / XRechnung rule): Skonto (cash-discount) lines in Payment terms (BT-20). Fix: Correct `cac:PaymentTerms/cbc:Note` so that Skonto (cash-discount) lines in Payment terms (BT-20).">
+<link rel="canonical" href="/rules/BR-DE-18/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -15,7 +17,10 @@ main { max-width: 46rem; margin: 0 auto; }
   letter-spacing: .04em; margin: 0 0 .5rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
-.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
 .sev { display: inline-block; font-size: .8rem; font-weight: 700;
   padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
@@ -33,21 +38,25 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer { color: #8b949e; }
+  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
   code { background: #161b22; }
   .sev, .assert, footer { border-color: #30363d; }
 }</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-DE-18 — Skonto (cash-discount) lines in Payment terms (BT-20).", "alternativeHeadline": "Skonto Zeilen in müssen diesem regulärem Ausdruck entsprechen: . Die Informationen zur Gewährung von Skonto müssen wie folgt im Element \"Payment terms\" (BT-20) übermittelt werden: Anzugeben ist im ersten Segment \"SKONTO\", im zweiten \"TAGE=n\", im dritten \"PROZENT=n\". Prozentzahlen sind ohne Vorzeichen sowie mit Punkt getrennt von zwei Nachkommastellen anzugeben. Liegt dem zu berechnenden Betrag nicht BT-115, \"fälliger Betrag\" zugrunde, sondern nur ein Teil des fälligen Betrags der Rechnung, ist der Grundwert zur Berechnung von Skonto als viertes Segment \"BASISBETRAG=n\" gemäß dem semantischen Datentypen Amount anzugeben. Jeder Eintrag beginnt mit einer #, die Segmente sind mit einer # getrennt und eine Zeile schließt mit einer # ab. Am Ende einer vollständigen Skontoangabe muss ein XML-konformer Zeilenumbruch folgen. Alle Angaben zur Gewährung von Skonto müssen in Großbuchstaben gemacht werden. Zusätzliches Whitespace (Leerzeichen, Tabulatoren oder Zeilenumbrüche) ist nicht zulässig. Andere Zeichen oder Texte als in den oberen Vorgaben genannt sind nicht zulässig.", "identifier": "BR-DE-18", "about": {"@type": "Thing", "name": "BR-DE-18"}, "description": "BR-DE-18 (EN 16931 / XRechnung rule): Skonto (cash-discount) lines in Payment terms (BT-20). Fix: Correct `cac:PaymentTerms/cbc:Note` so that Skonto (cash-discount) lines in Payment terms (BT-20).", "articleBody": "Correct `cac:PaymentTerms/cbc:Note` so that Skonto (cash-discount) lines in Payment terms (BT-20).", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
 </head>
 <body>
 <main>
 <p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
 <h1>BR-DE-18</h1>
 <p class="title">Skonto (cash-discount) lines in Payment terms (BT-20).</p>
+<p class="title-de" lang="de">Skonto Zeilen in müssen diesem regulärem Ausdruck entsprechen: . Die Informationen zur Gewährung von Skonto müssen wie folgt im Element &quot;Payment terms&quot; (BT-20) übermittelt werden: Anzugeben ist im ersten Segment &quot;SKONTO&quot;, im zweiten &quot;TAGE=n&quot;, im dritten &quot;PROZENT=n&quot;. Prozentzahlen sind ohne Vorzeichen sowie mit Punkt getrennt von zwei Nachkommastellen anzugeben. Liegt dem zu berechnenden Betrag nicht BT-115, &quot;fälliger Betrag&quot; zugrunde, sondern nur ein Teil des fälligen Betrags der Rechnung, ist der Grundwert zur Berechnung von Skonto als viertes Segment &quot;BASISBETRAG=n&quot; gemäß dem semantischen Datentypen Amount anzugeben. Jeder Eintrag beginnt mit einer #, die Segmente sind mit einer # getrennt und eine Zeile schließt mit einer # ab. Am Ende einer vollständigen Skontoangabe muss ein XML-konformer Zeilenumbruch folgen. Alle Angaben zur Gewährung von Skonto müssen in Großbuchstaben gemacht werden. Zusätzliches Whitespace (Leerzeichen, Tabulatoren oder Zeilenumbrüche) ist nicht zulässig. Andere Zeichen oder Texte als in den oberen Vorgaben genannt sind nicht zulässig.</p>
+<p class="prov-de">Deutsche Fassung: Amtlicher KoSIT-Text (official KoSIT assert text).</p>
 <dl>
 <dt>Requires</dt><dd>Skonto (cash-discount) lines in Payment terms (BT-20).</dd>
 <dt>Business terms</dt><dd class="terms"><code>BT-20</code> <code>BT-115</code></dd>
 <dt>Location</dt><dd><code>cac:PaymentTerms/cbc:Note</code></dd>
 <dt>Fix</dt><dd>Correct `cac:PaymentTerms/cbc:Note` so that Skonto (cash-discount) lines in Payment terms (BT-20).</dd>
+<dt>Fix (Deutsch)</dt><dd lang="de">Korrigieren Sie `cac:PaymentTerms/cbc:Note`, sodass gilt: Skonto Zeilen in müssen diesem regulärem Ausdruck entsprechen: . Die Informationen zur Gewährung von Skonto müssen wie folgt im Element &quot;Payment terms&quot; (BT-20) übermittelt werden: Anzugeben ist im ersten Segment &quot;SKONTO&quot;, im zweiten &quot;TAGE=n&quot;, im dritten &quot;PROZENT=n&quot;. Prozentzahlen sind ohne Vorzeichen sowie mit Punkt getrennt von zwei Nachkommastellen anzugeben. Liegt dem zu berechnenden Betrag nicht BT-115, &quot;fälliger Betrag&quot; zugrunde, sondern nur ein Teil des fälligen Betrags der Rechnung, ist der Grundwert zur Berechnung von Skonto als viertes Segment &quot;BASISBETRAG=n&quot; gemäß dem semantischen Datentypen Amount anzugeben. Jeder Eintrag beginnt mit einer #, die Segmente sind mit einer # getrennt und eine Zeile schließt mit einer # ab. Am Ende einer vollständigen Skontoangabe muss ein XML-konformer Zeilenumbruch folgen. Alle Angaben zur Gewährung von Skonto müssen in Großbuchstaben gemacht werden. Zusätzliches Whitespace (Leerzeichen, Tabulatoren oder Zeilenumbrüche) ist nicht zulässig. Andere Zeichen oder Texte als in den oberen Vorgaben genannt sind nicht zulässig.</dd>
 <dt>Severity</dt><dd><span class="sev">fatal</span></dd>
 <dt>Provenance source</dt><dd><code>xrechnung-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">Skonto Zeilen in müssen diesem regulärem Ausdruck entsprechen: . Die Informationen zur Gewährung von Skonto müssen wie folgt im Element &quot;Payment terms&quot; (BT-20) übermittelt werden: Anzugeben ist im ersten Segment &quot;SKONTO&quot;, im zweiten &quot;TAGE=n&quot;, im dritten &quot;PROZENT=n&quot;. Prozentzahlen sind ohne Vorzeichen sowie mit Punkt getrennt von zwei Nachkommastellen anzugeben. Liegt dem zu berechnenden Betrag nicht BT-115, &quot;fälliger Betrag&quot; zugrunde, sondern nur ein Teil des fälligen Betrags der Rechnung, ist der Grundwert zur Berechnung von Skonto als viertes Segment &quot;BASISBETRAG=n&quot; gemäß dem semantischen Datentypen Amount anzugeben. Jeder Eintrag beginnt mit einer #, die Segmente sind mit einer # getrennt und eine Zeile schließt mit einer # ab. Am Ende einer vollständigen Skontoangabe muss ein XML-konformer Zeilenumbruch folgen. Alle Angaben zur Gewährung von Skonto müssen in Großbuchstaben gemacht werden. Zusätzliches Whitespace (Leerzeichen, Tabulatoren oder Zeilenumbrüche) ist nicht zulässig. Andere Zeichen oder Texte als in den oberen Vorgaben genannt sind nicht zulässig.</p></dd>

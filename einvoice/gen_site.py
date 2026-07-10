@@ -8,6 +8,26 @@ its title, what it requires, the EN 16931 BT/BG business terms it touches, the
 XML location hint, the one-line fix, the engine severity, and the Schematron
 provenance (source key + the verbatim official assert).
 
+Each page is ALSO bilingual: the catalog's German ``title_de`` and ``fix_de``
+are rendered alongside the English strings, each inside an element carrying the
+correct ``lang="de"`` attribute (English stays canonical/primary, German is
+additive). The German text is honestly labelled by its ``de_source``: an
+official KoSIT assert text ("Amtlicher KoSIT-Text") vs. a clearly-marked
+translation of the same BT/BG semantics ("Übersetzung") — a translation is
+never presented as the official assert. Because EN and DE share ONE URL, we do
+NOT emit ``<link rel=alternate hreflang>`` to nonexistent per-language URLs;
+language is marked at the element level with ``lang=`` and the document stays
+``lang="en"`` primary.
+
+Per-page SEO metadata is derived from the same single source of truth: a
+distinct ``<title>`` and ``<meta name=description>`` per rule, one relative
+``<link rel=canonical>`` (root-relative placeholder base — the live origin is
+bound at deploy time, VHW.3, so no live domain is hardcoded here), and one
+schema.org ``TechArticle`` JSON-LD block built with :func:`json.dumps` (every
+``<`` in the serialized JSON is replaced with ``\\u003c`` so it can never break
+out of the ``<script>`` element). Pages keep ``robots:noindex`` — the
+index/noindex flip is deferred to VHW.3.
+
 Single source of truth — exactly like ``gen_rules_doc.py``: every per-rule
 string is read from ``remediation_catalog.json`` via
 :func:`einvoice.remediation.load_catalog`; nothing is authored from memory. The
@@ -30,6 +50,7 @@ Standard library only; no network.
 from __future__ import annotations
 
 import html
+import json
 import os
 import shutil
 import sys
@@ -56,7 +77,10 @@ main { max-width: 46rem; margin: 0 auto; }
   letter-spacing: .04em; margin: 0 0 .5rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
-.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
 .sev { display: inline-block; font-size: .8rem; font-weight: 700;
   padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
@@ -74,11 +98,70 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer { color: #8b949e; }
+  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
   code { background: #161b22; }
   .sev, .assert, footer { border-color: #30363d; }
 }
 """.strip()
+
+
+# Root-relative canonical placeholder base. The site's real absolute origin is
+# still human-gated (T-VHW.5 undeployed, deployable:false) and is bound at
+# deploy time (VHW.3), so we deliberately do NOT hardcode a live verifyhash.com
+# URL here. One stable relative canonical per page, distinct by rule id.
+_CANONICAL_BASE = "/rules/"
+
+# Honest, human-visible German-provenance labels keyed by the catalog's
+# ``de_source``. 'kosit' => the German is the official KoSIT assert text;
+# 'translation' => a clearly-labelled translation of the same BT/BG semantics.
+# A translation is NEVER presented as the official assert (constitution §7).
+_DE_NOTE = {
+    "kosit": ("Deutsche Fassung: Amtlicher KoSIT-Text "
+              "(official KoSIT assert text)."),
+    "translation": ("Deutsche Fassung: Übersetzung der gleichen "
+                    "BT/BG-Semantik (translation — not the official assert)."),
+}
+# The provenance token each de_source must surface (asserted by the test).
+_DE_TOKEN = {"kosit": "Amtlicher KoSIT-Text", "translation": "Übersetzung"}
+
+
+def _description(rule_id, title, fix):
+    """A genuinely-distinct, honest meta description for one rule.
+
+    The rule id leads the string and rule ids are unique, so the description is
+    unique per page regardless of any truncation. Derived only from catalog
+    fields (no authored marketing copy).
+    """
+    desc = "%s (EN 16931 / XRechnung rule): %s" % (rule_id, title)
+    if fix and fix != title:
+        desc += " Fix: " + fix
+    # Trim to a sane meta length; the unique rule-id prefix is always preserved.
+    return desc[:300].rstrip()
+
+
+def _jsonld(rule_id, title, title_de, fix, description):
+    """Serialize ONE honest schema.org TechArticle block for the rule.
+
+    Built with :func:`json.dumps` so every value is properly JSON-escaped, then
+    every ``<`` is replaced with ``\\u003c`` (valid JSON that ``json.loads``
+    decodes back to ``<``) so the serialized JSON can never contain a literal
+    ``</script>`` that would break out of the enclosing ``<script>`` element.
+    ``@context`` is the schema.org namespace IRI — an identifier, not a fetched
+    resource, so it does not make the page require the network.
+    """
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "%s — %s" % (rule_id, title),
+        "alternativeHeadline": title_de,
+        "identifier": rule_id,
+        "about": {"@type": "Thing", "name": rule_id},
+        "description": description,
+        "articleBody": fix or title,
+        "inLanguage": ["en", "de"],
+        "isPartOf": "einvoice EN 16931 / XRechnung rule reference",
+    }
+    return json.dumps(ld, ensure_ascii=False).replace("<", "\\u003c")
 
 
 def _h(value):
@@ -103,14 +186,22 @@ def render_page(rule_id, entry):
     equality with the committed tree.
     """
     title = entry.get("title", "")
+    title_de = entry.get("title_de", "")
     requires = entry.get("requires", "")
     bt_bg = entry.get("bt_bg") or []
     location = entry.get("location_hint", "")
     fix = entry.get("fix", "")
+    fix_de = entry.get("fix_de", "")
+    de_source = entry.get("de_source", "")
     severity = entry.get("severity", "")
     prov = entry.get("provenance") or {}
     prov_source = prov.get("source", "")
     prov_assert = (prov.get("assert", "") or "")
+
+    de_note = _DE_NOTE.get(de_source, _DE_NOTE["translation"])
+    description = _description(rule_id, title, fix)
+    canonical = _CANONICAL_BASE + rule_id + "/"
+    ld_json = _jsonld(rule_id, title, title_de, fix, description)
 
     if bt_bg:
         terms_html = " ".join("<code>%s</code>" % _h(t) for t in bt_bg)
@@ -127,18 +218,29 @@ def render_page(rule_id, entry):
     w('<meta name="robots" content="noindex">')
     w("<title>%s — %s — einvoice rule reference</title>"
       % (_h(rule_id), _h(title)))
+    w('<meta name="description" content="%s">' % _h(description))
+    # Single relative canonical (placeholder base; see _CANONICAL_BASE). EN and
+    # DE share this one URL, so no per-language hreflang alternates are emitted.
+    w('<link rel="canonical" href="%s">' % _h(canonical))
     w("<style>%s</style>" % _STYLE)
+    # One honest schema.org TechArticle block; JSON is dumps-built and its '<'
+    # chars are neutralised so it cannot break out of the <script> element.
+    w('<script type="application/ld+json">%s</script>' % ld_json)
     w("</head>")
     w("<body>")
     w("<main>")
     w('<p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>')
     w("<h1>%s</h1>" % _h(rule_id))
     w('<p class="title">%s</p>' % _h(title))
+    # German title (additive; English above stays canonical/primary).
+    w('<p class="title-de" lang="de">%s</p>' % _h(title_de))
+    w('<p class="prov-de">%s</p>' % _h(de_note))
     w("<dl>")
     w("<dt>Requires</dt><dd>%s</dd>" % _h(requires))
     w('<dt>Business terms</dt><dd class="terms">%s</dd>' % terms_html)
     w("<dt>Location</dt><dd><code>%s</code></dd>" % _h(location))
     w("<dt>Fix</dt><dd>%s</dd>" % _h(fix))
+    w('<dt>Fix (Deutsch)</dt><dd lang="de">%s</dd>' % _h(fix_de))
     w('<dt>Severity</dt><dd><span class="sev">%s</span></dd>' % _h(severity))
     w("<dt>Provenance source</dt><dd><code>%s</code></dd>" % _h(prov_source))
     w("<dt>Provenance assert</dt><dd><p class=\"assert\">%s</p></dd>"

@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>BR-CL-24 — For a MIME code in an attribute use the MIMEMediaType subset. — einvoice rule reference</title>
+<meta name="description" content="BR-CL-24 (EN 16931 / XRechnung rule): For a MIME code in an attribute use the MIMEMediaType subset. Fix: Encode `cbc:EmbeddedDocumentBinaryObject[@mimeCode]` using a valid value from Mime code in attribute use MIMEMediaType..">
+<link rel="canonical" href="/rules/BR-CL-24/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -15,7 +17,10 @@ main { max-width: 46rem; margin: 0 auto; }
   letter-spacing: .04em; margin: 0 0 .5rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
-.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
 .sev { display: inline-block; font-size: .8rem; font-weight: 700;
   padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
@@ -33,21 +38,25 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer { color: #8b949e; }
+  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
   code { background: #161b22; }
   .sev, .assert, footer { border-color: #30363d; }
 }</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-CL-24 — For a MIME code in an attribute use the MIMEMediaType subset.", "alternativeHeadline": "Für den MIME-Code im Attribut ist MIMEMediaType zu verwenden.", "identifier": "BR-CL-24", "about": {"@type": "Thing", "name": "BR-CL-24"}, "description": "BR-CL-24 (EN 16931 / XRechnung rule): For a MIME code in an attribute use the MIMEMediaType subset. Fix: Encode `cbc:EmbeddedDocumentBinaryObject[@mimeCode]` using a valid value from Mime code in attribute use MIMEMediaType..", "articleBody": "Encode `cbc:EmbeddedDocumentBinaryObject[@mimeCode]` using a valid value from Mime code in attribute use MIMEMediaType..", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
 </head>
 <body>
 <main>
 <p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
 <h1>BR-CL-24</h1>
 <p class="title">For a MIME code in an attribute use the MIMEMediaType subset.</p>
+<p class="title-de" lang="de">Für den MIME-Code im Attribut ist MIMEMediaType zu verwenden.</p>
+<p class="prov-de">Deutsche Fassung: Übersetzung der gleichen BT/BG-Semantik (translation — not the official assert).</p>
 <dl>
 <dt>Requires</dt><dd>For Mime code in attribute use MIMEMediaType.</dd>
 <dt>Business terms</dt><dd class="terms"><span>— (no single business term)</span></dd>
 <dt>Location</dt><dd><code>cbc:EmbeddedDocumentBinaryObject[@mimeCode]</code></dd>
 <dt>Fix</dt><dd>Encode `cbc:EmbeddedDocumentBinaryObject[@mimeCode]` using a valid value from Mime code in attribute use MIMEMediaType..</dd>
+<dt>Fix (Deutsch)</dt><dd lang="de">Codieren Sie `cbc:EmbeddedDocumentBinaryObject[@mimeCode]` mit einem gültigen Wert aus der geforderten Codeliste: Für den MIME-Code im Attribut ist MIMEMediaType zu verwenden.</dd>
 <dt>Severity</dt><dd><span class="sev">fatal</span></dd>
 <dt>Provenance source</dt><dd><code>en16931-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">For Mime code in attribute use MIMEMediaType.</p></dd>

@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>BR-DEX-02 — The &#x27;Invoice line net amount&#x27; (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs&#x27; net amounts. — einvoice rule reference</title>
+<meta name="description" content="BR-DEX-02 (EN 16931 / XRechnung rule): The &#x27;Invoice line net amount&#x27; (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs&#x27; net amounts. Fix: Add the required element at `cac:InvoiceLine`: the &#x27;Invoice line net amount&#x27; (BT">
+<link rel="canonical" href="/rules/BR-DEX-02/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -15,7 +17,10 @@ main { max-width: 46rem; margin: 0 auto; }
   letter-spacing: .04em; margin: 0 0 .5rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
-.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
 .sev { display: inline-block; font-size: .8rem; font-weight: 700;
   padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
@@ -33,21 +38,25 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer { color: #8b949e; }
+  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
   code { background: #161b22; }
   .sev, .assert, footer { border-color: #30363d; }
 }</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-DEX-02 — The 'Invoice line net amount' (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs' net amounts.", "alternativeHeadline": "Der Wert von \"Invoice line net amount\" (BT-131) einer \"INVOICE LINE\" (BG-25) oder einer \"SUB INVOICE LINE\" (BG-DEX-01) soll der Summe der \"Invoice line net amount\" (BT-131) der direkt darunterliegenden \"SUB INVOICE LINE\" (BG-DEX-01) entsprechen.", "identifier": "BR-DEX-02", "about": {"@type": "Thing", "name": "BR-DEX-02"}, "description": "BR-DEX-02 (EN 16931 / XRechnung rule): The 'Invoice line net amount' (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs' net amounts. Fix: Add the required element at `cac:InvoiceLine`: the 'Invoice line net amount' (BT", "articleBody": "Add the required element at `cac:InvoiceLine`: the 'Invoice line net amount' (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs' net amounts.", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
 </head>
 <body>
 <main>
 <p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
 <h1>BR-DEX-02</h1>
 <p class="title">The &#x27;Invoice line net amount&#x27; (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs&#x27; net amounts.</p>
+<p class="title-de" lang="de">Der Wert von &quot;Invoice line net amount&quot; (BT-131) einer &quot;INVOICE LINE&quot; (BG-25) oder einer &quot;SUB INVOICE LINE&quot; (BG-DEX-01) soll der Summe der &quot;Invoice line net amount&quot; (BT-131) der direkt darunterliegenden &quot;SUB INVOICE LINE&quot; (BG-DEX-01) entsprechen.</p>
+<p class="prov-de">Deutsche Fassung: Amtlicher KoSIT-Text (official KoSIT assert text).</p>
 <dl>
 <dt>Requires</dt><dd>the &#x27;Invoice line net amount&#x27; (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs&#x27; net amounts.</dd>
 <dt>Business terms</dt><dd class="terms"><code>BG-25</code> <code>BG-DEX-01</code> <code>BT-131</code></dd>
 <dt>Location</dt><dd><code>cac:InvoiceLine</code></dd>
 <dt>Fix</dt><dd>Add the required element at `cac:InvoiceLine`: the &#x27;Invoice line net amount&#x27; (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs&#x27; net amounts.</dd>
+<dt>Fix (Deutsch)</dt><dd lang="de">Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine`: Der Wert von &quot;Invoice line net amount&quot; (BT-131) einer &quot;INVOICE LINE&quot; (BG-25) oder einer &quot;SUB INVOICE LINE&quot; (BG-DEX-01) soll der Summe der &quot;Invoice line net amount&quot; (BT-131) der direkt darunterliegenden &quot;SUB INVOICE LINE&quot; (BG-DEX-01) entsprechen.</dd>
 <dt>Severity</dt><dd><span class="sev">warning</span></dd>
 <dt>Provenance source</dt><dd><code>xrechnung-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">Der Wert von &quot;Invoice line net amount&quot; (BT-131) einer &quot;INVOICE LINE&quot; (BG-25) oder einer &quot;SUB INVOICE LINE&quot; (BG-DEX-01) soll der Summe der &quot;Invoice line net amount&quot; (BT-131) der direkt darunterliegenden &quot;SUB INVOICE LINE&quot; (BG-DEX-01) entsprechen.</p></dd>

@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>BR-IC-06 — In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0. — einvoice rule reference</title>
+<meta name="description" content="BR-IC-06 (EN 16931 / XRechnung rule): In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0. Fix: Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)=&#x27;K&#x27;][cac:TaxScheme/normalize-space(upp">
+<link rel="canonical" href="/rules/BR-IC-06/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -15,7 +17,10 @@ main { max-width: 46rem; margin: 0 auto; }
   letter-spacing: .04em; margin: 0 0 .5rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
-.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
 .sev { display: inline-block; font-size: .8rem; font-weight: 700;
   padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
@@ -33,21 +38,25 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer { color: #8b949e; }
+  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
   code { background: #161b22; }
   .sev, .assert, footer { border-color: #30363d; }
 }</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-IC-06 — In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0.", "alternativeHeadline": "Bei einem Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „innergemeinschaftliche Lieferung“ lautet, muss der Umsatzsteuersatz des Nachlasses auf Dokumentenebene (BT-96) 0 (null) betragen.", "identifier": "BR-IC-06", "about": {"@type": "Thing", "name": "BR-IC-06"}, "description": "BR-IC-06 (EN 16931 / XRechnung rule): In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0. Fix: Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='K'][cac:TaxScheme/normalize-space(upp", "articleBody": "Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='K'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"Intra-community supply\" the Document level allowance VAT rate (BT-96) shall be 0 (zero).", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
 </head>
 <body>
 <main>
 <p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
 <h1>BR-IC-06</h1>
 <p class="title">In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0.</p>
+<p class="title-de" lang="de">Bei einem Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „innergemeinschaftliche Lieferung“ lautet, muss der Umsatzsteuersatz des Nachlasses auf Dokumentenebene (BT-96) 0 (null) betragen.</p>
+<p class="prov-de">Deutsche Fassung: Übersetzung der gleichen BT/BG-Semantik (translation — not the official assert).</p>
 <dl>
 <dt>Requires</dt><dd>In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is &quot;Intra-community supply&quot; the Document level allowance VAT rate (BT-96) shall be 0 (zero).</dd>
 <dt>Business terms</dt><dd class="terms"><code>BG-20</code> <code>BT-95</code> <code>BT-96</code></dd>
 <dt>Location</dt><dd><code>cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)=&#x27;K&#x27;][cac:TaxScheme/normalize-space(upper-case(cbc:ID))=&#x27;VAT&#x27;]</code></dd>
 <dt>Fix</dt><dd>Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)=&#x27;K&#x27;][cac:TaxScheme/normalize-space(upper-case(cbc:ID))=&#x27;VAT&#x27;]` so that In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is &quot;Intra-community supply&quot; the Document level allowance VAT rate (BT-96) shall be 0 (zero).</dd>
+<dt>Fix (Deutsch)</dt><dd lang="de">Passen Sie die Umsatzsteueraufschlüsselung bei `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)=&#x27;K&#x27;][cac:TaxScheme/normalize-space(upper-case(cbc:ID))=&#x27;VAT&#x27;]` an, sodass gilt: Bei einem Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „innergemeinschaftliche Lieferung“ lautet, muss der Umsatzsteuersatz des Nachlasses auf Dokumentenebene (BT-96) 0 (null) betragen.</dd>
 <dt>Severity</dt><dd><span class="sev">fatal</span></dd>
 <dt>Provenance source</dt><dd><code>en16931-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is &quot;Intra-community supply&quot; the Document level allowance VAT rate (BT-96) shall be 0 (zero).</p></dd>

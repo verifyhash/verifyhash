@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>BR-Z-02 — A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. — einvoice rule reference</title>
+<meta name="description" content="BR-Z-02 (EN 16931 / XRechnung rule): A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. Fix: Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID=&#x27;Z&#x27;]` so that An Invoice that contains an Invo">
+<link rel="canonical" href="/rules/BR-Z-02/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -15,7 +17,10 @@ main { max-width: 46rem; margin: 0 auto; }
   letter-spacing: .04em; margin: 0 0 .5rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
-.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
 .sev { display: inline-block; font-size: .8rem; font-weight: 700;
   padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
@@ -33,21 +38,25 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer { color: #8b949e; }
+  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
   code { background: #161b22; }
   .sev, .assert, footer { border-color: #30363d; }
 }</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-Z-02 — A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id.", "alternativeHeadline": "Enthält eine Rechnung eine Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „Nullsatz“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.", "identifier": "BR-Z-02", "about": {"@type": "Thing", "name": "BR-Z-02"}, "description": "BR-Z-02 (EN 16931 / XRechnung rule): A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. Fix: Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='Z']` so that An Invoice that contains an Invo", "articleBody": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='Z']` so that An Invoice that contains an Invoice line where the Invoiced item VAT category code (BT-151) is \"Zero rated\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
 </head>
 <body>
 <main>
 <p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
 <h1>BR-Z-02</h1>
 <p class="title">A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id.</p>
+<p class="title-de" lang="de">Enthält eine Rechnung eine Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „Nullsatz“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.</p>
+<p class="prov-de">Deutsche Fassung: Übersetzung der gleichen BT/BG-Semantik (translation — not the official assert).</p>
 <dl>
 <dt>Requires</dt><dd>An Invoice that contains an Invoice line where the Invoiced item VAT category code (BT-151) is &quot;Zero rated&quot; shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).</dd>
 <dt>Business terms</dt><dd class="terms"><code>BT-31</code> <code>BT-32</code> <code>BT-63</code> <code>BT-151</code></dd>
 <dt>Location</dt><dd><code>cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID=&#x27;Z&#x27;]</code></dd>
 <dt>Fix</dt><dd>Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID=&#x27;Z&#x27;]` so that An Invoice that contains an Invoice line where the Invoiced item VAT category code (BT-151) is &quot;Zero rated&quot; shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).</dd>
+<dt>Fix (Deutsch)</dt><dd lang="de">Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID=&#x27;Z&#x27;]`: Enthält eine Rechnung eine Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „Nullsatz“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.</dd>
 <dt>Severity</dt><dd><span class="sev">fatal</span></dd>
 <dt>Provenance source</dt><dd><code>en16931-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">An Invoice that contains an Invoice line where the Invoiced item VAT category code (BT-151) is &quot;Zero rated&quot; shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).</p></dd>

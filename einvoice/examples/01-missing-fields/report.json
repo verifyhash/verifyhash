@@ -1,0 +1,50 @@
+{
+  "fatal_count": 2,
+  "profile": "xrechnung",
+  "report_version": 1,
+  "schema": "einvoice-conformance-report/v1",
+  "source": "examples/01-missing-fields/broken.xml",
+  "valid": false,
+  "violation_count": 3,
+  "violations": [
+    {
+      "field": "cac:AccountingSupplierParty/cac:Party/cac:Contact",
+      "fix_hint": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted.",
+      "location": "/ubl:Invoice/cac:AccountingSupplierParty",
+      "message": "The group 'SELLER CONTACT' (BG-6) must be transmitted.",
+      "rule": "BR-DE-2",
+      "severity": "fatal",
+      "terms": [
+        "BG-6"
+      ],
+      "title": "SELLER CONTACT (BG-6) must be transmitted."
+    },
+    {
+      "field": "cbc:BuyerReference",
+      "fix_hint": "Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty).",
+      "location": "cbc:BuyerReference",
+      "message": "The element 'Buyer reference' (BT-10) must be transmitted.",
+      "rule": "BR-DE-15",
+      "severity": "fatal",
+      "terms": [
+        "BT-10"
+      ],
+      "title": "Buyer reference (BT-10) must be transmitted (non-empty)."
+    },
+    {
+      "field": "cac:Delivery/cbc:ActualDeliveryDate",
+      "fix_hint": "Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.",
+      "location": "cac:Delivery/cbc:ActualDeliveryDate",
+      "message": "The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line.",
+      "rule": "BR-DE-TMP-32",
+      "severity": "information",
+      "terms": [
+        "BG-14",
+        "BG-26",
+        "BT-72"
+      ],
+      "title": "An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line."
+    }
+  ],
+  "warning_count": 0
+}

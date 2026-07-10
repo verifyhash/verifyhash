@@ -76,9 +76,15 @@ import sys
 from collections import Counter
 from xml.sax.saxutils import escape, quoteattr
 
-from .validate import validate_file, PROFILES, _severity
+from xml.etree import ElementTree as ET
+
+from .validate import validate_file, validate_root, PROFILES, _severity
 from .parser import NotWellFormed
 from .remediation import load_catalog
+from . import pdf_container
+from . import parser_cii as _parser_cii
+from . import rules as _rules
+from . import rules_xrechnung as _rules_xr
 
 #: Bump when the report shape changes in a way a consumer must notice.
 REPORT_VERSION = 1
@@ -122,10 +128,13 @@ REPORT_SCHEMA = {
         "warning_count": "int — number of violations with severity 'warning'.",
         "violation_count": "int — total violations of every severity.",
         "violations": "list of violation records (see 'violation_record').",
-        "error": "present ONLY when the input is not well-formed XML: a short "
-                 "code string ('not-well-formed'); 'valid' is then false and "
-                 "'violations' is empty.",
-        "message": "present ONLY alongside 'error': the parser's human message.",
+        "error": "present ONLY when the input cannot be reduced to a "
+                 "validatable invoice: a short code string — 'not-well-formed' "
+                 "(bad XML) or 'unsupported-container' (a PDF whose embedded "
+                 "e-invoice XML the zero-dependency extractor cannot reach). "
+                 "'valid' is then false and 'violations' is empty.",
+        "message": "present ONLY alongside 'error': the parser's / extractor's "
+                   "human message.",
     },
     "violation_record": {
         "rule": "the rule id, e.g. 'BR-DE-15' (from Violation.rule_id).",
@@ -212,17 +221,117 @@ def _record(v, catalog=None):
     }
 
 
+def _error_report(source, profile, code, message):
+    """Build a valid=false report carrying an ``error``/``message`` pair.
+
+    Shared by the not-well-formed and unsupported-container paths so both are a
+    non-pass report with empty counts rather than a raised traceback.
+    """
+    return {
+        "report_version": REPORT_VERSION,
+        "schema": REPORT_SCHEMA_ID,
+        "source": source,
+        "profile": profile,
+        "valid": False,
+        "error": code,
+        "message": message,
+        "fatal_count": 0,
+        "warning_count": 0,
+        "violation_count": 0,
+        "violations": [],
+    }
+
+
+def _report_from_violations(violations, source, profile):
+    """Project a list of :class:`~einvoice.rules.Violation` into the report dict.
+
+    The SAME projection :func:`build_report` applies to the UBL path — one
+    :func:`_record` per violation, counts derived from the mapped severities —
+    so a PDF-embedded invoice yields a byte-identical report shape to validating
+    its XML directly. Adds NO rule logic.
+    """
+    catalog = _remediation_catalog()
+    records = [_record(v, catalog) for v in violations]
+    fatal_count = sum(1 for r in records if r["severity"] == "fatal")
+    warning_count = sum(1 for r in records if r["severity"] == "warning")
+    return {
+        "report_version": REPORT_VERSION,
+        "schema": REPORT_SCHEMA_ID,
+        "source": source,
+        "profile": profile,
+        "valid": fatal_count == 0,
+        "fatal_count": fatal_count,
+        "warning_count": warning_count,
+        "violation_count": len(records),
+        "violations": records,
+    }
+
+
+def _report_from_invoice_bytes(xml_bytes, source, profile):
+    """Validate already-extracted invoice XML bytes and return a report dict.
+
+    Used by the PDF-container path. Dispatches on the XML root: a UN/CEFACT
+    ``CrossIndustryInvoice`` (Factur-X / ZUGFeRD / CII XRechnung) is validated
+    through the CII engine (``parser_cii.build_model`` + the syntax-agnostic
+    ``rules.ALL_RULES`` core rules + ``rules_xrechnung.evaluate_cii`` for the
+    German CIUS layer) — exactly the path ``test_golden_snapshot`` and
+    ``test_rules_cii`` exercise. A UBL ``Invoice`` root is routed through the
+    existing :func:`~einvoice.validate.validate_root`. This RE-IMPLEMENTS no
+    rule logic; it only feeds the extracted bytes into the shipped engines.
+    """
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError as exc:
+        return _error_report(source, profile, "not-well-formed", str(exc))
+
+    localname = root.tag.rsplit("}", 1)[-1]
+    if localname == "CrossIndustryInvoice":
+        inv = _parser_cii.build_model(root)
+        violations = [v for v in (fn(inv) for fn in _rules.ALL_RULES)
+                      if v is not None]
+        if profile == "xrechnung":
+            violations.extend(_rules_xr.evaluate_cii(inv))
+        return _report_from_violations(violations, source, profile)
+
+    # UBL (or any other root) — reuse the core UBL engine verbatim. A non-UBL,
+    # non-CII root falls out here as the same S-ROOT fatal the XML path emits.
+    result = validate_root(root, profile=profile)
+    return _report_from_violations(result.violations, source, profile)
+
+
 def build_report(path, profile="xrechnung"):
     """Validate ``path`` and return a machine-readable conformance report dict.
 
-    Reuses :func:`einvoice.validate.validate_file` for ALL rule evaluation.
-    Not-well-formed XML is folded into a report with ``valid=False`` and an
-    ``error`` field (mirroring ``cli.py``) instead of raising.
+    Reuses :func:`einvoice.validate.validate_file` for ALL rule evaluation on
+    the XML path. Not-well-formed XML is folded into a report with
+    ``valid=False`` and an ``error`` field (mirroring ``cli.py``) instead of
+    raising.
 
-    :param path: path to the invoice XML file.
+    Factur-X / ZUGFeRD PDF container: if ``path`` is a PDF (detected by the
+    ``%PDF-`` magic, not the extension), the embedded e-invoice XML is extracted
+    zero-dependency via :mod:`einvoice.pdf_container` and validated through the
+    same rule engine. A container we cannot open zero-dep (encryption, xref
+    streams, no ``/EmbeddedFiles`` tree, unknown filter) folds into an explicit
+    ``error='unsupported-container'`` non-pass report — NEVER a false pass and
+    NEVER a traceback. The plain-XML path behaviour is unchanged.
+
+    :param path: path to the invoice XML (or Factur-X/ZUGFeRD PDF) file.
     :param profile: 'xrechnung' (default) or 'en16931'.
     :returns: a dict matching :data:`REPORT_SCHEMA`.
     """
+    if pdf_container.is_pdf_file(path):
+        try:
+            xml_bytes = pdf_container.extract_invoice_xml(path)
+        except pdf_container.UnsupportedContainer as exc:
+            detail = str(exc)
+            if detail.startswith("unsupported container:"):
+                detail = detail[len("unsupported container:"):].strip()
+            return _error_report(
+                path, profile, "unsupported-container",
+                "unsupported container — could not extract embedded invoice "
+                "XML: %s" % detail)
+        return _report_from_invoice_bytes(xml_bytes, path, profile)
+
     try:
         result = validate_file(path, profile=profile)
     except NotWellFormed as exc:
@@ -1112,7 +1221,7 @@ def main(argv=None):
             sys.stdout.write(json.dumps(diff, indent=2, sort_keys=True) + "\n")
         else:
             sys.stdout.write(json.dumps(diff, separators=(",", ":")) + "\n")
-        if diff.get("error") == "not-well-formed":
+        if diff.get("error"):
             return EXIT_PARSE
         return EXIT_OK if diff["new_fatal_count"] == 0 else EXIT_FAIL
 
@@ -1132,7 +1241,10 @@ def main(argv=None):
     else:
         sys.stdout.write(json.dumps(report, separators=(",", ":")) + "\n")
 
-    if report.get("error") == "not-well-formed":
+    # Any error field (not-well-formed XML, or an unsupported PDF container) is
+    # a non-pass: exit non-zero, never 0. EXIT_PARSE reflects "could not reduce
+    # the input to a validatable invoice".
+    if report.get("error"):
         return EXIT_PARSE
     return EXIT_OK if report["fatal_count"] == 0 else EXIT_FAIL
 

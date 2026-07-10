@@ -24,7 +24,38 @@ table, and the CI recipes live one level up in
   versioned schema is documented in
   [`../REPORT-SCHEMA.md`](../REPORT-SCHEMA.md) and mirrored in the
   `REPORT_SCHEMA` constant of `report.py`. It also carries a standalone
-  **`--explain <RULE-ID>`** mode (see below).
+  **`--explain <RULE-ID>`** mode (see below) and accepts **Factur-X/ZUGFeRD
+  PDFs** directly (see below).
+- `pdf_container.py` — zero-dependency extractor for the embedded e-invoice XML
+  inside a Factur-X / ZUGFeRD / CII-XRechnung PDF (see below).
+
+### Factur-X / ZUGFeRD PDF input (`report.py` + `pdf_container.py`)
+
+`python3 -m einvoice.report invoice.pdf` also accepts a **hybrid PDF**. A PDF is
+detected by its `%PDF-` magic bytes (never by extension); its embedded
+CrossIndustryInvoice XML attachment (`factur-x.xml`, `zugferd-invoice.xml`,
+`xrechnung.xml`, or the legacy `ZUGFeRD-invoice.xml`, matched case-insensitively)
+is extracted zero-dependency and fed into the **same** CII parser + rule engine,
+so the verdict and fired rule ids are identical to validating that
+`factur-x.xml` on its own.
+
+**What is extracted** (provenance: PDF 32000-1:2008 §7.7/§7.9/§7.11 for the
+`/Names` → `/EmbeddedFiles` name tree, file specification and embedded-file
+streams; Factur-X 1.x / ZUGFeRD 2.x + PDF/A-3 / ISO 19005-3 for the attachment
+naming and `/AFRelationship`): the document catalog's `/Names` →
+`/EmbeddedFiles` tree is walked (`/Kids` and `/Names` node shapes), the matching
+file spec's `/EF` → `/F` (or `/UF`) reference is followed to the embedded-file
+stream, and the stream is inflated with stdlib `zlib` (`/FlateDecode`) or read
+raw (no filter).
+
+**What is _not_ done — this is a container-XML extractor, NOT a PDF/A-3 or
+typographic validator.** Encrypted PDFs (`/Encrypt`), cross-reference-stream /
+object-stream PDFs (PDF 1.5+), a missing/empty `/EmbeddedFiles` tree, and any
+filter chain other than a single `/FlateDecode` are **refused** with an explicit
+`error:"unsupported-container"`, `valid:false` report and a non-zero exit —
+never a false pass and never a traceback. PDF/A-3 conformance, signatures, the
+`/AF` association and XMP metadata are out of scope. The exact IS/IS-NOT
+contract lives in the `pdf_container.py` module docstring.
 
 ### `report.py --explain <RULE-ID>` — remediation lookup
 

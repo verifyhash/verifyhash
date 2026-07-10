@@ -28,6 +28,7 @@ import inspect
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -40,6 +41,47 @@ from einvoice import remediation as _remediation   # noqa: E402
 
 REQUIRED_STR_FIELDS = ("title", "requires", "location_hint", "fix", "severity")
 BT_BG_RE = re.compile(r"^(BT|BG)-")
+
+ALLOWED_DE_SOURCES = ("kosit", "translation")
+_SCH = "{http://purl.oclc.org/dsdl/schematron}"
+_XR_UBL_SCH = os.path.join(
+    HERE, "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch")
+
+# A handful of KoSIT BR-DE ids whose German assert text is present verbatim in
+# the vendored Schematron. The catalog MUST mark these de_source=="kosit" and its
+# German title MUST equal the cleaned assert string re-extracted here (proving the
+# German is derived from the .sch, not paraphrased from memory).
+KNOWN_KOSIT = ("BR-DE-1", "BR-DE-2", "BR-DE-15", "BR-DE-16", "BR-DE-21",
+               "BR-DEX-01", "BR-DEX-14")
+
+# German prose markers (mirrors gen_remediation.assert_is_german) — a KoSIT German
+# title must contain at least one; this rejects an English string mislabelled kosit.
+_DE_WORDS = re.compile(
+    r"(?:[äöüÄÖÜß]|\b(?:muss|müssen|enthalten|"
+    r"übermittelt|Rechnung|Element|Gruppe|werden|entsprechen|Angaben?|Wenn|"
+    r"zulässig|benutzt|Falle|darf|zusätzlich|nicht)\b)")
+
+
+def _clean_assert(text):
+    """Collapse whitespace and strip the ``[BR-XX]-`` id prefix (independent
+    re-implementation of gen_remediation._clean, so the test does not trust it)."""
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"^\[[^\]]+\]\s*-?\s*", "", text).strip()
+    return text
+
+
+def _xrechnung_asserts():
+    """id -> cleaned first-assert text from the vendored XRechnung UBL Schematron,
+    parsed straight from the .sch with an XML parser (no dependency on the build
+    script)."""
+    root = ET.parse(_XR_UBL_SCH).getroot()
+    out = {}
+    for rule in root.iter(_SCH + "rule"):
+        for a in rule.findall(_SCH + "assert"):
+            rid = a.get("id")
+            if rid and rid not in out:
+                out[rid] = _clean_assert("".join(a.itertext()))
+    return out
 
 
 def _engine_fireable_ids():
@@ -146,6 +188,38 @@ def main():
             for tok in bt:
                 check(isinstance(tok, str) and BT_BG_RE.match(tok),
                       "%s: bt_bg entry %r does not match /^(BT|BG)-/" % (rid, tok))
+
+        # (g) bilingual: both locales present, non-empty, and a valid de_source.
+        for f in ("title_de", "fix_de"):
+            v = e.get(f)
+            check(isinstance(v, str) and v.strip(),
+                  "%s: German field %r missing/empty" % (rid, f))
+        ds = e.get("de_source")
+        check(ds in ALLOWED_DE_SOURCES,
+              "%s: de_source %r not in %s" % (rid, ds, ALLOWED_DE_SOURCES))
+        # A KoSIT-sourced German string must actually read as German (not an
+        # English assert mislabelled kosit).
+        if ds == "kosit":
+            check(bool(_DE_WORDS.search(e.get("title_de", "") or "")),
+                  "%s: de_source==kosit but title_de is not German: %r"
+                  % (rid, e.get("title_de")))
+
+    # ---- (h) known BR-DE ids are kosit-sourced, German derived from the .sch -
+    sch = _xrechnung_asserts()
+    for rid in KNOWN_KOSIT:
+        check(rid in catalog, "%s: expected in catalog" % rid)
+        if rid not in catalog:
+            continue
+        e = catalog[rid]
+        check(e.get("de_source") == "kosit",
+              "%s: expected de_source==kosit, got %r" % (rid, e.get("de_source")))
+        expect = sch.get(rid)
+        check(bool(expect), "%s: no German assert found in vendored Schematron" % rid)
+        check(isinstance(e.get("title_de"), str) and e.get("title_de").strip(),
+              "%s: title_de missing/empty" % rid)
+        check(e.get("title_de") == expect,
+              "%s: title_de is not the verbatim cleaned .sch assert\n     got: %r\n"
+              "  expect: %r" % (rid, e.get("title_de"), expect))
 
     # ---- report ----------------------------------------------------------
     if failures:

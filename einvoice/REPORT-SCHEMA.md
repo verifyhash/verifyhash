@@ -13,16 +13,19 @@ constant in `einvoice/report.py`; this file is its human companion.
 ## Invocation
 
 ```
-python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit] [--pretty] [--baseline <prev-report.json>] <invoice.xml>
+python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit|sarif] [--pretty] [--baseline <prev-report.json>] <invoice.xml>
 ```
 
 - `--profile` — `xrechnung` (default) or `en16931`. `xrechnung` adds the German
   national CIUS layer (BR-DE-\*) on top of the EN 16931 core.
-- `--format` — `json` (default) or `junit`. `junit` emits a JUnit XML document
-  (see **JUnit output** below) instead of the JSON; the exit-code contract is
-  identical either way. Not compatible with `--baseline`.
+- `--format` — `json` (default), `junit`, or `sarif`. `junit` emits a JUnit XML
+  document (see **JUnit output** below); `sarif` emits a SARIF 2.1.0 document
+  (see **SARIF output** below) for GitHub code-scanning. Both are projections of
+  the same findings and share the JSON path's exit-code contract. Neither is
+  compatible with `--baseline`.
 - `--pretty` — indent the JSON (with sorted keys) instead of the default
-  compact single line. Ignored when `--format junit` is in effect.
+  compact single line. Ignored when `--format junit`/`sarif` is in effect (both
+  render their own document).
 - `--baseline <prev-report.json>` — switch to **baseline diff mode** (see
   **Baseline diff mode** below). Fails the build only on a *new* regression
   relative to a captured prior report, not on pre-existing violations.
@@ -125,6 +128,43 @@ Shape:
   `<error>` (so `errors="1"`, `tests="1"`, `failures="0"`) and exits `3`.
 
 All text is XML-escaped with `xml.sax.saxutils`.
+
+## SARIF output (`--format sarif`)
+
+[SARIF](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) (Static
+Analysis Results Interchange Format) is the JSON format GitHub code-scanning
+ingests to render **inline PR annotations**: upload the file with the
+`github/codeql-action/upload-sarif` action and each finding shows up as a comment
+on the offending line. `--format sarif` is a **pure projection** of the exact
+same `build_report()` findings — it adds no rule logic and invents no wording;
+every human string is either the validator message/field or a field already
+committed in `remediation_catalog.json`.
+
+The document conforms to OASIS **SARIF 2.1.0** (`version` `"2.1.0"`, `$schema`
+the OASIS raw-schema URL — a string literal, never fetched), with one `runs`
+element. Mapping:
+
+- `runs[0].tool.driver.name` = `"einvoice"`, `informationUri` = the repo URL.
+- `tool.driver.rules[]` — one `reportingDescriptor` per **fired** rule id
+  (deduplicated by id): `id`/`name` = the rule id, `shortDescription.text` = the
+  catalog `title`, `fullDescription.text` = the catalog `fix` hint, `help.text` =
+  the fix hint plus a line listing the rule's `BT-`/`BG-` business terms.
+- `runs[0].results[]` — one `result` per reported violation: `ruleId` = the rule
+  id (every result's `ruleId` is a declared driver rule — no orphans),
+  `message.text` = the violation message (falling back to the catalog title), and
+  a `locations[].logicalLocations[]` member (`kind: "member"`) naming the
+  offending field/XPath when one is known (omitted otherwise).
+- Severity → SARIF `level`: `fatal` → `error`, `warning` → `warning`, everything
+  else (`information`) → `note`.
+- Not-well-formed XML emits a single `error`-level result whose `ruleId` is
+  `not-well-formed` and exits `3`; the exit code otherwise matches the JSON path
+  (`0` valid / `1` fatal).
+
+Honest scope note: the SARIF document reflects **this one report run** against
+the invoice you passed — it is not a standing rule inventory. Only rules that
+actually fired appear in `tool.driver.rules`, so a clean invoice yields an empty
+`rules`/`results` pair. Standard-library `json` only; no new dependency, no
+network.
 
 ## Baseline diff mode (`--baseline <prev-report.json>`)
 

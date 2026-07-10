@@ -522,8 +522,146 @@ def build_junit(report):
     return "\n".join(out) + "\n"
 
 
+#: The tool's public home, cited as the SARIF driver ``informationUri`` (a
+#: string literal — no network is ever touched).
+SARIF_INFORMATION_URI = "https://github.com/verifyhash/verifyhash"
+
+#: The OASIS SARIF 2.1.0 raw JSON-schema URL, emitted as the ``$schema`` string
+#: literal. This is documentation/identification only — it is NOT fetched.
+SARIF_SCHEMA_URI = (
+    "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/"
+    "Schemata/sarif-schema-2.1.0.json"
+)
+
+#: SARIF result level for each report severity (fatal -> error, warning ->
+#: warning, everything else -> note). Static Analysis Results Interchange
+#: Format v2.1.0, section 3.27.10 (result.level).
+_SARIF_LEVEL = {"fatal": "error", "warning": "warning"}
+
+
+def _sarif_level(severity):
+    """Map a report severity string onto a SARIF ``result.level`` value.
+
+    ``fatal`` -> ``error``, ``warning`` -> ``warning``, anything else
+    (``information`` / unknown) -> ``note`` — the SARIF default for advisory
+    findings. See OASIS SARIF 2.1.0 section 3.27.10.
+    """
+    return _SARIF_LEVEL.get(severity, "note")
+
+
+def build_sarif(report):
+    """Project a report dict (from :func:`build_report`) into a SARIF 2.1.0 dict.
+
+    Emits a Python dict (serialise with ``json.dumps``) that conforms to the
+    OASIS *Static Analysis Results Interchange Format (SARIF) Version 2.1.0*
+    schema (https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/
+    Schemata/sarif-schema-2.1.0.json). This lets ``einvoice`` findings surface
+    as inline annotations in GitHub code-scanning (SARIF upload).
+
+    Like :func:`build_junit`, this is a PURE, additional PROJECTION of the very
+    same validator outcome the JSON path emits — it adds no rule logic, invents
+    no wording, and re-reads nothing. Every human string comes from either the
+    Violation (message/field) or the committed remediation catalog fields that
+    :func:`_record` already attached (title/fix_hint/terms/location).
+
+    Structure (SARIF 2.1.0):
+      * ``version`` == ``"2.1.0"`` and ``$schema`` == the OASIS raw-schema URL;
+      * ``runs`` is a one-element list;
+      * ``runs[0].tool.driver`` = ``{name:"einvoice", informationUri:<repo>,
+        rules:[...]}`` — one ``reportingDescriptor`` per *fired* rule id
+        (deduplicated by id): ``id``/``name`` = the rule id,
+        ``shortDescription.text`` = catalog ``title``, ``fullDescription.text``
+        = catalog ``fix_hint``, ``help.text`` = the fix hint plus a line listing
+        the rule's BT/BG ``terms``;
+      * ``runs[0].results`` = one SARIF ``result`` per violation:
+        ``ruleId`` = the rule id, ``level`` per :func:`_sarif_level`,
+        ``message.text`` = the violation message (falling back to the catalog
+        title), and — when a field/location is present — a ``locations`` entry
+        carrying a ``logicalLocations`` member.
+
+    A not-well-formed input (``report`` has an ``error``) yields a single result
+    whose ``ruleId`` is the error code, ``level`` ``error`` and ``message.text``
+    the parser message, with no rules in the driver — mirroring the JSON/JUnit
+    not-well-formed contract.
+
+    :param report: a dict as returned by :func:`build_report`.
+    :returns: a SARIF 2.1.0 document as a ``dict``.
+    """
+    rules = []          # list of reportingDescriptor dicts (deduped by id)
+    seen_rule_ids = set()
+    results = []        # list of SARIF result dicts
+
+    if report.get("error"):
+        # Not-well-formed XML: a single error result, no rule metadata — the
+        # SARIF analogue of the JUnit single-<error> testcase.
+        results.append({
+            "ruleId": report["error"],
+            "level": "error",
+            "message": {"text": report.get("message", "") or report["error"]},
+        })
+    else:
+        for v in report.get("violations", []):
+            rule_id = v.get("rule") or ""
+            severity = v.get("severity") or "fatal"
+            title = v.get("title")
+            fix_hint = v.get("fix_hint")
+            terms = v.get("terms") or []
+            field = v.get("field")
+            location = v.get("location")
+
+            # One reportingDescriptor per fired rule id (deduplicated).
+            if rule_id and rule_id not in seen_rule_ids:
+                seen_rule_ids.add(rule_id)
+                help_text = fix_hint or ""
+                if terms:
+                    terms_line = "Business terms: " + ", ".join(terms)
+                    help_text = (help_text + "\n" + terms_line
+                                 if help_text else terms_line)
+                descriptor = {
+                    "id": rule_id,
+                    "name": rule_id,
+                    "shortDescription": {"text": title or rule_id},
+                    "fullDescription": {"text": fix_hint or ""},
+                    "help": {"text": help_text},
+                }
+                rules.append(descriptor)
+
+            result = {
+                "ruleId": rule_id,
+                "level": _sarif_level(severity),
+                "message": {"text": v.get("message") or title or rule_id},
+            }
+            # Attach a logical location when we know WHERE the finding is;
+            # omit ``locations`` entirely when neither field nor location hint
+            # is present (an empty locations array is not useful).
+            loc_name = field or location
+            if loc_name:
+                result["locations"] = [{
+                    "logicalLocations": [{
+                        "name": loc_name,
+                        "kind": "member",
+                    }],
+                }]
+            results.append(result)
+
+    return {
+        "version": "2.1.0",
+        "$schema": SARIF_SCHEMA_URI,
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "einvoice",
+                    "informationUri": SARIF_INFORMATION_URI,
+                    "rules": rules,
+                },
+            },
+            "results": results,
+        }],
+    }
+
+
 USAGE = ("usage: python3 -m einvoice.report "
-         "[--profile en16931|xrechnung] [--format json|junit] [--pretty] "
+         "[--profile en16931|xrechnung] [--format json|junit|sarif] [--pretty] "
          "[--baseline <prev-report.json>] <invoice.xml>\n"
          "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
          "  --baseline diffs against a prior JSON report and fails (exit 1) "
@@ -675,9 +813,10 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
-    if fmt not in ("json", "junit"):
-        sys.stderr.write("error: unknown format %r (choose from json, junit)\n%s\n"
-                         % (fmt, USAGE))
+    if fmt not in ("json", "junit", "sarif"):
+        sys.stderr.write(
+            "error: unknown format %r (choose from json, junit, sarif)\n%s\n"
+            % (fmt, USAGE))
         return EXIT_FAIL
 
     if profile not in PROFILES:
@@ -685,10 +824,10 @@ def main(argv=None):
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_FAIL
 
-    if baseline_path is not None and fmt == "junit":
+    if baseline_path is not None and fmt in ("junit", "sarif"):
         sys.stderr.write(
             "error: --baseline emits a diff document and is not compatible "
-            "with --format junit\n%s\n" % USAGE)
+            "with --format %s\n%s\n" % (fmt, USAGE))
         return EXIT_FAIL
 
     if len(args) != 1:
@@ -722,6 +861,9 @@ def main(argv=None):
     report = build_report(path, profile=profile)
     if fmt == "junit":
         sys.stdout.write(build_junit(report))
+    elif fmt == "sarif":
+        sys.stdout.write(
+            json.dumps(build_sarif(report), indent=2, sort_keys=True) + "\n")
     elif pretty:
         sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
     else:

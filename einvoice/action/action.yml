@@ -1,0 +1,65 @@
+name: 'einvoice EN 16931 / XRechnung conformance'
+description: >-
+  Validate UBL / CII (and Factur-X / ZUGFeRD PDF) e-invoices against the
+  implemented EN 16931 core + XRechnung BR-DE-* rules and emit SARIF for inline
+  pull-request annotations. Drives the real `python3 -m einvoice.report`
+  entrypoint; it adds no second validation engine and no new output format.
+author: 'verifyhash'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  path:
+    description: >-
+      File or directory of invoices to validate. A directory is walked
+      recursively for *.xml (UBL/CII) and *.pdf (Factur-X/ZUGFeRD) files;
+      dotfiles are skipped. Default '.'.
+    required: false
+    default: '.'
+  format:
+    description: >-
+      Report format written to the job log: json | junit | sarif | text.
+      A merged SARIF file (see the sarif-file input / output) is ALWAYS written
+      for upload-sarif, independent of this choice. Default 'sarif'.
+    required: false
+    default: 'sarif'
+  fail-on:
+    description: >-
+      Severity that fails the build: 'fatal' (default — fail on any fatal
+      violation, the entrypoint's own exit contract) or 'warning' (also fail
+      when a warning-severity finding is present).
+    required: false
+    default: 'fatal'
+  sarif-file:
+    description: >-
+      Path the merged SARIF 2.1.0 document is written to; feed it to
+      github/codeql-action/upload-sarif. Default 'einvoice.sarif'.
+    required: false
+    default: 'einvoice.sarif'
+  profile:
+    description: >-
+      Validation profile: 'xrechnung' (default; EN 16931 core + the German
+      BR-DE-* CIUS) or 'en16931' (core rules only).
+    required: false
+    default: 'xrechnung'
+
+outputs:
+  sarif-file:
+    description: >-
+      Absolute path to the merged SARIF file the runner wrote (hand to
+      github/codeql-action/upload-sarif's sarif_file input).
+    value: ${{ steps.einvoice.outputs.sarif-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: einvoice
+      shell: bash
+      run: >-
+        python3 "${{ github.action_path }}/run.py"
+        --path "${{ inputs.path }}"
+        --format "${{ inputs.format }}"
+        --fail-on "${{ inputs.fail-on }}"
+        --sarif-file "${{ inputs.sarif-file }}"
+        --profile "${{ inputs.profile }}"

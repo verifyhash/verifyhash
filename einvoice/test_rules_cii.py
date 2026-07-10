@@ -209,6 +209,72 @@ class TestKnownBadCIIInvoices(unittest.TestCase):
                 "ram:LineTotalAmount", NS).text = "625743.549"
         self.assert_fires(m, "BR-DEC-23")
 
+    # --- codelist rules (BR-CL-03/04/05/13/14), CII bindings ---------------
+    def test_brcl03_bogus_tax_total_currency(self):
+        def m(r):
+            _summation(r).find(
+                "ram:TaxTotalAmount", NS).set("currencyID", "XXY")
+        self.assert_fires(m, "BR-CL-03")
+
+    def test_brcl04_bogus_invoice_currency(self):
+        def m(r):
+            _settlement(r).find("ram:InvoiceCurrencyCode", NS).text = "XXY"
+        self.assert_fires(m, "BR-CL-04")
+
+    def test_brcl05_bogus_tax_currency(self):
+        def m(r):
+            ET.SubElement(
+                _settlement(r), _q(NSA, "TaxCurrencyCode")).text = "XXY"
+        self.assert_fires(m, "BR-CL-05")
+
+    def test_brcl13_bogus_class_code_list_id(self):
+        def m(r):
+            prod = _first_line(r).find("ram:SpecifiedTradeProduct", NS)
+            dpc = ET.SubElement(
+                prod, _q(NSA, "DesignatedProductClassification"))
+            cc = ET.SubElement(dpc, _q(NSA, "ClassCode"))
+            cc.set("listID", "QQ")       # not a UNTDID 7143 code
+            cc.text = "1234"
+        self.assert_fires(m, "BR-CL-13")
+
+    def test_brcl14_bogus_country(self):
+        def m(r):
+            r.find("rsm:SupplyChainTradeTransaction/"
+                   "ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/"
+                   "ram:PostalTradeAddress/ram:CountryID", NS).text = "XX"
+        self.assert_fires(m, "BR-CL-14")
+
+    def test_brcl14_cii_binding_accepts_an_rejects_ss(self):
+        # The CII list carries AN (Netherlands Antilles) but not SS (South
+        # Sudan) — the exact opposite of the UBL list.
+        def country(r):
+            return r.find(
+                "rsm:SupplyChainTradeTransaction/"
+                "ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/"
+                "ram:PostalTradeAddress/ram:CountryID", NS)
+        r = _good_root()
+        country(r).text = "AN"
+        self.assertNotIn("BR-CL-14", _fired_ids(r))
+        r2 = _good_root()
+        country(r2).text = "SS"
+        self.assertIn("BR-CL-14", _fired_ids(r2))
+
+    def test_codelist_rules_fire_with_fatal_severity(self):
+        # A present-but-invalid currency must fire BR-CL-04 as fatal.
+        r = _good_root()
+        _settlement(r).find("ram:InvoiceCurrencyCode", NS).text = "XXY"
+        inv = parser_cii.build_model(r)
+        v = rules.br_cl_04(inv)
+        self.assertIsNotNone(v)
+        self.assertEqual(v.rule_id, "BR-CL-04")
+        self.assertEqual(v.severity, "fatal")
+
+    def test_clean_cii_base_fires_no_codelist_rule(self):
+        fired = _fired_ids(_good_root())
+        self.assertEqual(
+            fired & {"BR-CL-03", "BR-CL-04", "BR-CL-05",
+                     "BR-CL-13", "BR-CL-14"}, set())
+
 
 def _de_fired(root):
     """Admitted CII BR-DE ids that rules_xrechnung.evaluate_cii fires on a CII root."""

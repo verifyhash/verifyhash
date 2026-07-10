@@ -15,6 +15,13 @@ import datetime
 from collections import namedtuple
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
 
+from .codelists import (
+    CURRENCY_CODES,
+    ITEM_CLASS_LIST_CODES,
+    UBL_COUNTRY_CODES,
+    CII_COUNTRY_CODES,
+)
+
 # ``severity`` mirrors the official Schematron ``flag``: every core rule is
 # ``fatal`` except BR-51, which the normative artifact flags as ``warning``
 # (validate.Result.ok only blocks on fatal violations).
@@ -525,6 +532,105 @@ def br_cl_01(inv):
             "The document type code (BT-3) MUST be coded according to UNTDID 1001; "
             "%r is not a listed code." % code,
             "cbc:InvoiceTypeCode")
+    return None
+
+
+def _bad_code(value, allowed):
+    """Replicate the codelist assert test in the FAILING direction.
+
+    The official Schematron test is
+    ``not(contains(normalize-space(V),' ')) and contains(' L ', ' '+V+' ')``
+    — it HOLDS iff V has no internal space AND V is a member of the list ``L``.
+    So it FAILS (the rule fires) iff V contains a space OR V is not in ``L``.
+    ``value`` is already normalize-space'd by the parser.
+    """
+    return (" " in value) or (value not in allowed)
+
+
+def br_cl_03(inv):
+    """BR-CL-03: currencyID MUST be coded using ISO 4217 alpha-3.
+
+    Official context = each monetary amount element (UBL: cbc:Amount |
+    cbc:BaseAmount | … | cbc:PayableAmount; CII: ram:TaxTotalAmount[@currencyID]);
+    the assert tests that element's ``@currencyID`` against the ISO 4217 set.
+    """
+    for cur in inv.amount_currency_ids:
+        if _bad_code(cur, CURRENCY_CODES):
+            return Violation(
+                "BR-CL-03",
+                "currencyID MUST be coded using ISO 4217 alpha-3; "
+                "%r is not a listed currency code." % cur,
+                "@currencyID")
+    return None
+
+
+def br_cl_04(inv):
+    """BR-CL-04: Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3.
+
+    Official context = cbc:DocumentCurrencyCode (UBL) / ram:InvoiceCurrencyCode
+    (CII); both map to ``document_currency_code``. Absent = no context node
+    (presence is BR-05's job), so only a PRESENT, invalid code fires here.
+    """
+    code = inv.document_currency_code
+    if code is not None and _bad_code(code, CURRENCY_CODES):
+        return Violation(
+            "BR-CL-04",
+            "Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3; "
+            "%r is not a listed currency code." % code,
+            "cbc:DocumentCurrencyCode")
+    return None
+
+
+def br_cl_05(inv):
+    """BR-CL-05: Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3.
+
+    Official context = cbc:TaxCurrencyCode (UBL) / ram:TaxCurrencyCode (CII).
+    Absent = no context node, so only a PRESENT, invalid code fires.
+    """
+    code = inv.tax_currency_code
+    if code is not None and _bad_code(code, CURRENCY_CODES):
+        return Violation(
+            "BR-CL-05",
+            "Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3; "
+            "%r is not a listed currency code." % code,
+            "cbc:TaxCurrencyCode")
+    return None
+
+
+def br_cl_13(inv):
+    """BR-CL-13: Item classification scheme identifier MUST be a UNTDID 7143 code.
+
+    Official context = cac:CommodityClassification/cbc:ItemClassificationCode
+    with a @listID (UBL) / ram:ClassCode[@listID] (CII); the assert tests
+    that ``@listID`` against the UNTDID 7143 restriction.
+    """
+    for list_id in inv.item_class_list_ids:
+        if _bad_code(list_id, ITEM_CLASS_LIST_CODES):
+            return Violation(
+                "BR-CL-13",
+                "Item classification identifier scheme identifier MUST be coded "
+                "using one of the UNTDID 7143 list; %r is not listed." % list_id,
+                "cbc:ItemClassificationCode/@listID")
+    return None
+
+
+def br_cl_14(inv):
+    """BR-CL-14: Country codes MUST be coded using ISO 3166-1 alpha-2.
+
+    Official context = cac:Country/cbc:IdentificationCode (UBL) / ram:CountryID
+    (CII) — the seller/buyer/deliver-to/tax-representative/payee postal-address
+    country codes (item OriginCountry is BR-CL-15, not this rule). The UBL and
+    CII code lists differ by one code each, so the matching pinned set is
+    selected by syntax.
+    """
+    allowed = CII_COUNTRY_CODES if inv.syntax == "cii" else UBL_COUNTRY_CODES
+    for code in inv.country_codes:
+        if _bad_code(code, allowed):
+            return Violation(
+                "BR-CL-14",
+                "Country codes in an invoice MUST be coded using ISO 3166-1; "
+                "%r is not a listed country code." % code,
+                "cac:Country/cbc:IdentificationCode")
     return None
 
 
@@ -3192,6 +3298,7 @@ ALL_RULES = [
     br_41, br_42, br_43, br_44,
     br_49, br_50, br_51, br_55, br_57, br_61, br_62, br_63,
     br_cl_01,
+    br_cl_03, br_cl_04, br_cl_05, br_cl_13, br_cl_14,
     br_co_04,
     br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15, br_co_16,
     br_co_17, br_co_18,

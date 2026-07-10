@@ -1427,5 +1427,124 @@ class RulesetShape(unittest.TestCase):
         self.assertEqual(len(all_ids), len(set(all_ids)))
 
 
+def violation_for(root, rule_id):
+    """Return the first Violation with ``rule_id`` in the result, else None."""
+    for v in validate_root(root).violations:
+        if v.rule_id == rule_id:
+            return v
+    return None
+
+
+class CodelistCurrencyCountry(unittest.TestCase):
+    """BR-CL-03/04/05 (ISO 4217 currency) + BR-CL-13 (UNTDID 7143) + BR-CL-14
+    (ISO 3166-1 country), UBL binding. Each rule: a valid code passes, a bogus
+    code fires the rule with FATAL severity.
+
+    The allowed code sets are the pinned, verbatim-from-corpus lists in
+    einvoice/codelists.py; the base invoice uses DKK / DK (both valid).
+    """
+
+    CL_RULES = {"BR-CL-03", "BR-CL-04", "BR-CL-05", "BR-CL-13", "BR-CL-14"}
+
+    def test_clean_base_fires_no_codelist_rule(self):
+        self.assertEqual(fired(base()) & self.CL_RULES, set())
+
+    # --- BR-CL-03: @currencyID on amount elements --------------------------
+    def test_br_cl_03_bogus_amount_currency_fires_fatal(self):
+        r = base()
+        child(r, NS_CAC, "LegalMonetaryTotal").find(
+            q(NS_CBC, "PayableAmount")).set("currencyID", "XXY")
+        v = violation_for(r, "BR-CL-03")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+
+    def test_br_cl_03_valid_amount_currency_passes(self):
+        r = base()
+        # Switch every amount + document currency to another ISO 4217 code.
+        child(r, NS_CBC, "DocumentCurrencyCode").text = "EUR"
+        for el in r.iter():
+            if el.get("currencyID") == "DKK":
+                el.set("currencyID", "EUR")
+        self.assertNotIn("BR-CL-03", fired(r))
+
+    # --- BR-CL-04: DocumentCurrencyCode ------------------------------------
+    def test_br_cl_04_bogus_document_currency_fires_fatal(self):
+        r = base()
+        child(r, NS_CBC, "DocumentCurrencyCode").text = "XXY"
+        v = violation_for(r, "BR-CL-04")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+
+    def test_br_cl_04_valid_document_currency_passes(self):
+        r = base()
+        child(r, NS_CBC, "DocumentCurrencyCode").text = "USD"
+        self.assertNotIn("BR-CL-04", fired(r))
+
+    # --- BR-CL-05: TaxCurrencyCode -----------------------------------------
+    def test_br_cl_05_bogus_tax_currency_fires_fatal(self):
+        r = base()
+        ET.SubElement(r, q(NS_CBC, "TaxCurrencyCode")).text = "XXY"
+        v = violation_for(r, "BR-CL-05")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+
+    def test_br_cl_05_valid_tax_currency_passes(self):
+        r = base()
+        ET.SubElement(r, q(NS_CBC, "TaxCurrencyCode")).text = "EUR"
+        self.assertNotIn("BR-CL-05", fired(r))
+
+    def test_br_cl_05_absent_tax_currency_does_not_fire(self):
+        self.assertNotIn("BR-CL-05", fired(base()))
+
+    # --- BR-CL-13: item classification @listID (UNTDID 7143) ---------------
+    def test_br_cl_13_bogus_list_id_fires_fatal(self):
+        r = base()
+        item = first_line_item(r)
+        cc = ET.SubElement(item, q(NS_CAC, "CommodityClassification"))
+        icc = ET.SubElement(cc, q(NS_CBC, "ItemClassificationCode"))
+        icc.text = "1234"
+        icc.set("listID", "QQ")          # not a UNTDID 7143 code
+        v = violation_for(r, "BR-CL-13")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+
+    def test_br_cl_13_valid_list_id_passes(self):
+        r = base()
+        item = first_line_item(r)
+        cc = ET.SubElement(item, q(NS_CAC, "CommodityClassification"))
+        icc = ET.SubElement(cc, q(NS_CBC, "ItemClassificationCode"))
+        icc.text = "65010000"
+        icc.set("listID", "ST")          # a UNTDID 7143 code
+        self.assertNotIn("BR-CL-13", fired(r))
+
+    # --- BR-CL-14: country codes (ISO 3166-1) ------------------------------
+    def _seller_country_code(self, root):
+        return supplier_party(root).find(
+            "%s/%s/%s" % (q(NS_CAC, "PostalAddress"), q(NS_CAC, "Country"),
+                          q(NS_CBC, "IdentificationCode")))
+
+    def test_br_cl_14_bogus_country_fires_fatal(self):
+        r = base()
+        self._seller_country_code(r).text = "XX"
+        v = violation_for(r, "BR-CL-14")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+
+    def test_br_cl_14_valid_country_passes(self):
+        r = base()
+        self._seller_country_code(r).text = "GB"
+        self.assertNotIn("BR-CL-14", fired(r))
+
+    def test_br_cl_14_ubl_binding_accepts_ss_rejects_an(self):
+        # The UBL list carries SS (South Sudan) but not AN (Netherlands
+        # Antilles) — the exact opposite of the CII list.
+        r = base()
+        cc = self._seller_country_code(r)
+        cc.text = "SS"
+        self.assertNotIn("BR-CL-14", fired(r))
+        cc.text = "AN"
+        self.assertIn("BR-CL-14", fired(r))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

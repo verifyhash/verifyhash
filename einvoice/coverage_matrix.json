@@ -34,7 +34,7 @@
       "license": "Apache-2.0"
     }
   },
-  "rule_count": 197,
+  "rule_count": 202,
   "rules": [
     {
       "id": "BR-01",
@@ -1290,6 +1290,126 @@
     {
       "id": "BR-CL-01",
       "title": "The document type code (BT-3) MUST be coded per UNTDID 1001.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-03",
+      "title": "CurrencyID MUST be coded using ISO 4217 alpha-3.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-04",
+      "title": "Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-05",
+      "title": "Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-13",
+      "title": "Item classification scheme identifier MUST be a UNTDID 7143 code.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-14",
+      "title": "Country codes MUST be coded using ISO 3166-1 alpha-2.",
       "family": "core",
       "syntax": "both",
       "severity": "fatal",

@@ -268,6 +268,32 @@ def build_model(root):
             and root.tag.startswith("{%s}" % NS_RSM))
     )
     inv.root_is_ubl_invoice = False
+    inv.syntax = "cii"
+
+    # --- Code-list rule inputs (BR-CL-03/05/13/14), CII bindings ----------- #
+    # These mirror einvoice.parser's UBL collection but at the context nodes the
+    # official EN16931-CII codelist Schematron
+    # (corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch) uses:
+    #   BR-CL-03 context = ram:TaxTotalAmount[@currencyID] (predicate: only
+    #            elements that HAVE @currencyID are context nodes).
+    #   BR-CL-05 context = ram:TaxCurrencyCode (BT-6).
+    #   BR-CL-13 context = ram:ClassCode[@listID].
+    #   BR-CL-14 context = ram:CountryID.
+    inv.tax_currency_code = _norm_space(_text(root.find(".//ram:TaxCurrencyCode", NS)))
+    inv.amount_currency_ids = [
+        _norm_space(el.get("currencyID")) or ""
+        for el in root.findall(".//ram:TaxTotalAmount", NS)
+        if el.get("currencyID") is not None
+    ]
+    inv.item_class_list_ids = [
+        _norm_space(el.get("listID"))
+        for el in root.findall(".//ram:ClassCode", NS)
+        if el.get("listID") is not None
+    ]
+    inv.country_codes = [
+        _norm_space(_text(el)) or ""
+        for el in root.findall(".//ram:CountryID", NS)
+    ]
 
     # -- BT-24 Specification identifier (ExchangedDocumentContext) ----------
     inv.customization_id = _text(root.find(

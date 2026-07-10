@@ -111,7 +111,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 151, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 156, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -187,6 +187,12 @@ CII_GRADED_RULES = [
     _rules.br_26, _rules.br_27,
     # Document-type code list (BR-CL-01).
     _rules.br_cl_01,
+    # Currency / country / item-classification code lists (BR-CL-03/04/05/13/14).
+    # The CII parser feeds these the CII context nodes (ram:TaxTotalAmount
+    # @currencyID, ram:InvoiceCurrencyCode, ram:TaxCurrencyCode, ram:ClassCode
+    # @listID, ram:CountryID); the shared rule functions run unchanged.
+    _rules.br_cl_03, _rules.br_cl_04, _rules.br_cl_05,
+    _rules.br_cl_13, _rules.br_cl_14,
     # Line VAT category code (BR-CO-04).
     _rules.br_co_04,
     # Document-level arithmetic invariants that reach CII parity.
@@ -1087,6 +1093,40 @@ def _mut_br63(r):
     del ep.attrib["schemeID"]
 
 
+# ---- codelist (BR-CL-*) mutations: break exactly the guarded code ---------- #
+def _mut_brcl03(r):
+    # Give one monetary amount (the PayableAmount, outside the VAT-currency
+    # matching BR-CO-15 keys on) a currencyID that is not an ISO 4217 code.
+    _child(_lmt(r), NS_CBC, "PayableAmount").set("currencyID", "XXY")
+
+
+def _mut_brcl04(r):
+    # Document currency (BT-5) coded off-list. (Also flips BR-CO-15 on both
+    # engines — no document-currency VAT total remains — which agrees per rule.)
+    _child(r, NS_CBC, "DocumentCurrencyCode").text = "XXY"
+
+
+def _mut_brcl05(r):
+    # Add a Tax currency code (BT-6) with an off-list value. Inserted after
+    # DocumentCurrencyCode; parser finds it by name so position is irrelevant.
+    _sub_el(r, NS_CBC, "TaxCurrencyCode", text="XXY")
+
+
+def _mut_brcl13(r):
+    # Add a CommodityClassification with an off-list @listID (not in UNTDID 7143).
+    item = _child(_first_line(r), NS_CAC, "Item")
+    cc = _sub_el(item, NS_CAC, "CommodityClassification")
+    icc = _sub_el(cc, NS_CBC, "ItemClassificationCode", text="1234")
+    icc.set("listID", "QQ")
+
+
+def _mut_brcl14(r):
+    # Seller postal-address country (BT-40) coded off ISO 3166-1 (still present,
+    # so BR-09 holds; OriginCountry stays valid, so BR-CL-15 does not fire).
+    pa = _child(_supplier_party(r), NS_CAC, "PostalAddress")
+    _child(pa, NS_CAC, "Country").find(_q(NS_CBC, "IdentificationCode")).text = "XX"
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -1104,7 +1144,10 @@ _MUTATIONS = {
     "BR-25": _mut_br25, "BR-26": _mut_br26, "BR-27": _mut_br27,
     "BR-28": _mut_br28, "BR-29": _mut_br29, "BR-30": _mut_br30,
     "BR-CO-04": _mut_brco04,
-    "BR-CL-01": _mut_brcl01, "BR-CO-10": _mut_brco10,
+    "BR-CL-01": _mut_brcl01,
+    "BR-CL-03": _mut_brcl03, "BR-CL-04": _mut_brcl04, "BR-CL-05": _mut_brcl05,
+    "BR-CL-13": _mut_brcl13, "BR-CL-14": _mut_brcl14,
+    "BR-CO-10": _mut_brco10,
     "BR-CO-11": _mut_brco11, "BR-CO-12": _mut_brco12,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
     "BR-CO-16": _mut_brco16, "BR-CO-17": _mut_brco17, "BR-CO-18": _mut_brco18,
@@ -1847,6 +1890,39 @@ def _cmut_brdec23(r):
         "ram:LineTotalAmount", _NSC).text = "625743.549"
 
 
+# ---- codelist (BR-CL-*) mutations, CII bindings ---------------------------- #
+def _cmut_brcl03(r):
+    # ram:TaxTotalAmount[@currencyID] coded off ISO 4217 (BR-CO-14/15 are
+    # CII-excluded, so shifting the VAT-currency match does not affect graded
+    # rules; only BR-CL-03 fires here on both engines).
+    _cii_summation(r).find("ram:TaxTotalAmount", _NSC).set("currencyID", "XXY")
+
+
+def _cmut_brcl04(r):
+    _cii_settlement(r).find("ram:InvoiceCurrencyCode", _NSC).text = "XXY"
+
+
+def _cmut_brcl05(r):
+    # Add a ram:TaxCurrencyCode (BT-6) with an off-list value.
+    ET.SubElement(_cii_settlement(r), _cq(NS_RAM, "TaxCurrencyCode")).text = "XXY"
+
+
+def _cmut_brcl13(r):
+    # Add ram:DesignatedProductClassification/ram:ClassCode[@listID] with an
+    # off-list @listID (not in UNTDID 7143) to the first product.
+    prod = _cii_first_line(r).find("ram:SpecifiedTradeProduct", _NSC)
+    dpc = ET.SubElement(prod, _cq(NS_RAM, "DesignatedProductClassification"))
+    cc = ET.SubElement(dpc, _cq(NS_RAM, "ClassCode"))
+    cc.set("listID", "QQ")
+    cc.text = "1234"
+
+
+def _cmut_brcl14(r):
+    # Seller postal-address country (ram:CountryID) coded off ISO 3166-1.
+    _cii_seller(r).find(
+        "ram:PostalTradeAddress/ram:CountryID", _NSC).text = "XX"
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -1855,7 +1931,10 @@ _CII_MUTATIONS = {
     "BR-15": _cmut_br15, "BR-16": _cmut_br16,
     "BR-21": _cmut_br21, "BR-22": _cmut_br22, "BR-24": _cmut_br24,
     "BR-25": _cmut_br25, "BR-26": _cmut_br26, "BR-27": _cmut_br27,
-    "BR-CL-01": _cmut_brcl01, "BR-CO-04": _cmut_brco04,
+    "BR-CL-01": _cmut_brcl01,
+    "BR-CL-03": _cmut_brcl03, "BR-CL-04": _cmut_brcl04, "BR-CL-05": _cmut_brcl05,
+    "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,
+    "BR-CO-04": _cmut_brco04,
     "BR-CO-10": _cmut_brco10, "BR-CO-13": _cmut_brco13,
     "BR-CO-16": _cmut_brco16, "BR-CO-17": _cmut_brco17,
     "BR-CO-18": _cmut_brco18,

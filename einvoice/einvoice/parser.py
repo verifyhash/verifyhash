@@ -267,13 +267,26 @@ class Invoice:
 
     def __init__(self):
         self.root_is_ubl_invoice = False
+        # Syntax discriminator ("ubl" | "cii"): the codelist rules pick the
+        # matching pinned country set (the UBL and CII BR-CL-14 lists differ).
+        self.syntax = "ubl"
         # Header
         self.customization_id = None      # BT-24
         self.id = None                    # BT-1
         self.issue_date = None            # BT-2
         self.invoice_type_code = None     # BT-3
         self.document_currency_code = None  # BT-5
+        self.tax_currency_code = None     # BT-6 (normalize-space; None = absent)
         self.buyer_reference = None       # BT-10
+        # Code-list rule inputs (BR-CL-03/13/14). Each is a list of the
+        # normalized string values at exactly the context nodes the official
+        # codelist Schematron matches, populated per-syntax by build_model.
+        #   amount_currency_ids  — @currencyID on the amount elements (BR-CL-03)
+        #   item_class_list_ids  — @listID on item-classification codes (BR-CL-13)
+        #   country_codes        — country identification codes (BR-CL-14)
+        self.amount_currency_ids = []
+        self.item_class_list_ids = []
+        self.country_codes = []
         # Parties
         self.seller_name = None           # BT-27
         self.seller_has_postal_address = False  # BG-5
@@ -484,7 +497,39 @@ def build_model(root):
     inv.issue_date = _text(root.find("cbc:IssueDate", NS))
     inv.invoice_type_code = _text(root.find("cbc:InvoiceTypeCode", NS))
     inv.document_currency_code = _text(root.find("cbc:DocumentCurrencyCode", NS))
+    inv.tax_currency_code = _norm_space(_text(root.find("cbc:TaxCurrencyCode", NS)))
     inv.buyer_reference = _text(root.find("cbc:BuyerReference", NS))
+
+    # --- Code-list rule inputs (BR-CL-03/13/14) ---------------------------- #
+    # BR-CL-03 context = each monetary amount element; the rule tests its
+    # @currencyID (an ABSENT @currencyID normalize-spaces to '' and fails the
+    # official assert, so a missing attribute is recorded as '' to fire too).
+    _AMOUNT_TAGS = (
+        "Amount", "BaseAmount", "PriceAmount", "TaxAmount", "TaxableAmount",
+        "LineExtensionAmount", "TaxExclusiveAmount", "TaxInclusiveAmount",
+        "AllowanceTotalAmount", "ChargeTotalAmount", "PrepaidAmount",
+        "PayableRoundingAmount", "PayableAmount",
+    )
+    inv.amount_currency_ids = [
+        _norm_space(el.get("currencyID")) or ""
+        for tag in _AMOUNT_TAGS
+        for el in root.findall(".//cbc:%s" % tag, NS)
+    ]
+    # BR-CL-13 context = cac:CommodityClassification/cbc:ItemClassificationCode
+    # with a @listID (the [@listID] predicate); the rule tests that @listID.
+    inv.item_class_list_ids = [
+        _norm_space(el.get("listID"))
+        for el in root.findall(
+            ".//cac:CommodityClassification/cbc:ItemClassificationCode", NS)
+        if el.get("listID") is not None
+    ]
+    # BR-CL-14 context = cac:Country/cbc:IdentificationCode (postal-address
+    # countries: seller/buyer/deliver-to/tax-representative/payee). NOT
+    # cac:OriginCountry (that is BR-CL-15). The rule tests each code's value.
+    inv.country_codes = [
+        _norm_space(_strval(el)) or ""
+        for el in root.findall(".//cac:Country/cbc:IdentificationCode", NS)
+    ]
 
     # Seller
     supplier = root.find("cac:AccountingSupplierParty/cac:Party", NS)

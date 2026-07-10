@@ -1,0 +1,28 @@
+# Opt-in pre-commit-framework (https://pre-commit.com) wiring for the einvoice
+# conformance hook. This file installs NOTHING by itself: to use it, a consuming
+# developer copies this `repos:` entry into their own repo's
+# .pre-commit-config.yaml and runs `pre-commit install` themselves. Until they
+# do, no git hook exists on disk.
+#
+# The hook drives the SAME `python3 -m einvoice.report` entrypoint the CI gate
+# (validate-invoices.sh) runs, so a locally-blocked invoice is exactly one CI
+# would have failed. It is scoped to *.xml, so it stays inert on every other
+# commit. pre-commit passes the matched, staged filenames as arguments, which
+# the script validates directly.
+#
+# Adjust `entry` to wherever you vendored this product (e.g.
+# `third_party/einvoice/ci/pre-commit-einvoice.sh`) so it resolves from your
+# repo root. Set EINVOICE_PROFILE=en16931 to gate on core rules only.
+repos:
+  - repo: local
+    hooks:
+      - id: einvoice-conformance
+        name: EN 16931 / XRechnung invoice conformance
+        description: >-
+          Block a commit that stages a non-conformant e-invoice. Drives the real
+          python3 -m einvoice.report entrypoint (the same gate CI runs); prints
+          the offending rule id(s). Opt-in — nothing is installed automatically.
+        entry: ci/pre-commit-einvoice.sh
+        language: script
+        files: \.xml$
+        pass_filenames: true

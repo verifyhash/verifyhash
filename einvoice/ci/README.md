@@ -51,6 +51,8 @@ field}` records. Full schema: [`../REPORT-SCHEMA.md`](../REPORT-SCHEMA.md).
 | `validate-invoices.sh` | the gate itself — POSIX sh, zero deps beyond python3 |
 | `github-actions.yml` | copy to `.github/workflows/invoice-conformance.yml` |
 | `gitlab-ci.yml` | merge the job into your `.gitlab-ci.yml` |
+| `pre-commit-einvoice.sh` | local git pre-commit hook — block a bad invoice before it is committed |
+| `.pre-commit-config.yaml` | opt-in [pre-commit framework](https://pre-commit.com) wiring for that hook |
 
 ## 60-second install (any CI)
 
@@ -112,6 +114,47 @@ Gate exit codes: `0` all conformant, `1` at least one fatal or malformed
 invoice, `2` the gate itself is misconfigured (no importable entrypoint, no
 input, bad profile). Only fatal-severity rules fail the build —
 warnings/information (the official Schematron `flag` semantics) do not.
+
+## Git pre-commit hook (block a bad invoice before it lands)
+
+`pre-commit-einvoice.sh` moves the same check to the commit boundary: it runs
+the **real `python3 -m einvoice.report` entrypoint** — the identical validator
+this CI gate drives — over the `*.xml` files **staged** for a commit, and
+exits non-zero (blocking the commit) if any staged invoice has a **fatal**
+violation, printing the offending rule id(s). A commit that stages no invoice
+XML is untouched: the hook is inert and exits `0`.
+
+**Nothing is installed automatically.** A repo gets this hook only if a
+developer opts in, one of two ways:
+
+- **Plain git hook** — copy the script into your repo's hooks dir and mark it
+  executable:
+
+  ```sh
+  cp third_party/einvoice/ci/pre-commit-einvoice.sh .git/hooks/pre-commit
+  chmod +x .git/hooks/pre-commit
+  ```
+
+  With no arguments it resolves the staged, added/copied/modified `*.xml`
+  itself (`git diff --cached --name-only --diff-filter=ACM`).
+
+- **pre-commit framework** ([pre-commit.com](https://pre-commit.com)) — merge
+  the `repos:` entry from [`.pre-commit-config.yaml`](./.pre-commit-config.yaml)
+  into your repo's `.pre-commit-config.yaml`, adjust `entry:` to wherever you
+  vendored the script, then run `pre-commit install` yourself. It is scoped to
+  `files: \.xml$` and passes the staged filenames to the script as arguments.
+
+Test it without committing by passing files explicitly (this is exactly what
+the framework does under the hood):
+
+```sh
+sh ci/pre-commit-einvoice.sh path/to/invoice.xml        # exit 1 if it is bad
+```
+
+It honors the same `EINVOICE_PROFILE` (default `xrechnung`) and `EINVOICE_CMD`
+overrides as `validate-invoices.sh`, and reuses the report entrypoint's exit
+codes verbatim (`0` clean, `1` fatal violation, `3` not well-formed) — it never
+re-implements validation. Bypass in an emergency with `git commit --no-verify`.
 
 ## Adoption on-ramp: gate on regressions only (`--baseline`, T-VH.22)
 

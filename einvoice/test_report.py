@@ -75,7 +75,7 @@ class BuildReportBad(unittest.TestCase):
 
 
 class ViolationRecordShape(unittest.TestCase):
-    def test_every_record_has_exactly_the_four_keys(self):
+    def test_every_record_has_exactly_the_violation_keys(self):
         # Use the bad invoice so we have at least one violation to inspect.
         with tempfile.TemporaryDirectory() as tmp:
             bad = os.path.join(tmp, "bad.xml")
@@ -84,8 +84,50 @@ class ViolationRecordShape(unittest.TestCase):
         self.assertTrue(report["violations"], "expected at least one violation")
         for rec in report["violations"]:
             self.assertEqual(set(rec.keys()), set(VIOLATION_KEYS), rec)
-            self.assertEqual(set(rec.keys()),
-                             {"rule", "severity", "message", "field"}, rec)
+            # Original identity keys stay present, first, and unchanged.
+            self.assertEqual(
+                set(rec.keys()),
+                {"rule", "severity", "message", "field",
+                 "title", "fix_hint", "terms", "location"}, rec)
+        # VIOLATION_KEYS keeps the four identity keys first for back-compat.
+        self.assertEqual(VIOLATION_KEYS[:4],
+                         ("rule", "severity", "message", "field"))
+
+
+class ViolationRecordRemediation(unittest.TestCase):
+    """A fired violation must carry catalog-traceable remediation fields."""
+
+    def test_fired_violation_carries_catalog_remediation(self):
+        from einvoice.remediation import load_catalog
+        catalog = load_catalog()
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = os.path.join(tmp, "bad.xml")
+            make_bad_invoice(bad)
+            report = build_report(bad, profile="xrechnung")
+        self.assertTrue(report["violations"], "expected at least one violation")
+        rec = next(r for r in report["violations"] if r["rule"] == "BR-DE-15")
+        # title + fix_hint are non-empty and match the catalog entry exactly
+        # (report.py only relays catalog data — it invents nothing).
+        entry = catalog["BR-DE-15"]
+        self.assertTrue(rec["title"], rec)
+        self.assertTrue(rec["fix_hint"], rec)
+        self.assertEqual(rec["title"], entry["title"])
+        self.assertEqual(rec["fix_hint"], entry["fix"])
+        # terms + location keys are present and sourced from the catalog.
+        self.assertIn("terms", rec)
+        self.assertIn("location", rec)
+        self.assertEqual(rec["terms"], list(entry.get("bt_bg") or []))
+        self.assertEqual(rec["location"], entry.get("location_hint"))
+        # Every fired violation carries all four remediation keys, and each
+        # non-empty title/fix_hint is traceable to the catalog (no invented
+        # strings in report.py).
+        for r in report["violations"]:
+            for key in ("title", "fix_hint", "terms", "location"):
+                self.assertIn(key, r, r)
+            e = catalog.get(r["rule"])
+            if e is not None:
+                self.assertEqual(r["title"], e["title"], r)
+                self.assertEqual(r["fix_hint"], e["fix"], r)
 
 
 class EntryPointExitCodes(unittest.TestCase):

@@ -47,14 +47,31 @@ Programmatic entry point: `einvoice.report.build_report(path, profile='xrechnung
 
 ## Violation record
 
-Each entry of `violations` has **exactly** these four keys:
+Each entry of `violations` has **exactly** these eight keys. The first four are
+the **identity** fields taken verbatim from the validator; the last four are
+**additive remediation** fields (added in `v1`, backward-compatible — see
+**Versioning**) that are **relayed** from the committed remediation catalog
+(`remediation_catalog.json`, via `einvoice.remediation.load_catalog`) keyed by
+rule id. The report layer authors **none** of the remediation wording — it only
+projects the already-committed, Schematron-traceable catalog data.
 
-| field      | source               | meaning |
-|------------|----------------------|---------|
-| `rule`     | `Violation.rule_id`  | The rule id, e.g. `BR-DE-15`. |
-| `severity` | `validate._severity` | `fatal` \| `warning` \| `information`. |
-| `message`  | `Violation.message`  | The human/Schematron rule message. |
-| `field`    | `Violation.element`  | The offending element / path. |
+| field      | source                          | meaning |
+|------------|---------------------------------|---------|
+| `rule`     | `Violation.rule_id`             | The rule id, e.g. `BR-DE-15`. |
+| `severity` | `validate._severity`            | `fatal` \| `warning` \| `information`. |
+| `message`  | `Violation.message`             | The human/Schematron rule message. |
+| `field`    | `Violation.element`             | The offending element / path. |
+| `title`    | catalog `title`                 | Plain-language rule title. `null` if the rule has no catalog entry. |
+| `fix_hint` | catalog `fix`                   | One-line "how to fix" guidance. `null` if uncatalogued. |
+| `terms`    | catalog `bt_bg`                 | List of the `BT-`/`BG-` business-term ids the rule touches; `[]` if none. |
+| `location` | catalog `location_hint`         | The XML location/path hint for the finding. `null` if uncatalogued. |
+
+The four remediation fields **degrade gracefully**: a rule id absent from the
+catalog yields `title`/`fix_hint`/`location` = `null` and `terms` = `[]` — never
+an error. (In practice the consistency test `test_remediation_catalog.py` proves
+every fireable rule has an entry, so this is only a safety fallback.) The
+baseline-diff identity key remains **`(rule, field, message, severity)`** — the
+additive fields do **not** affect diffing.
 
 ## Exit codes
 
@@ -181,8 +198,15 @@ A malformed, unreadable, or wrong-shape baseline file is reported with a clear
 ## Versioning
 
 `report_version` and `schema` move together. A **backward-compatible** addition
-(a new optional top-level field) leaves both unchanged. A **breaking** change
-(renaming/removing a field, changing a field's type or a violation-record key)
-bumps `report_version` to 2 and mints a new `schema` id
+(a new optional top-level field, or an **additive** violation-record key that
+consumers can ignore) leaves both unchanged. A **breaking** change
+(renaming/removing a field, changing a field's type, or removing/renaming a
+violation-record key) bumps `report_version` to 2 and mints a new `schema` id
 (`einvoice-conformance-report/v2`). Consumers that pin on `schema` therefore
 never silently mis-read a newer report.
+
+The `title`, `fix_hint`, `terms` and `location` violation-record fields were
+added this way: they are **additive** on the **same** `einvoice-conformance-
+report/v1` schema id. The original `rule`/`severity`/`message`/`field` keys are
+unchanged and remain first, so existing consumers keep working untouched; the
+schema id is deliberately **not** revved.

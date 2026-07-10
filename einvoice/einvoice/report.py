@@ -77,6 +77,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from .validate import validate_file, PROFILES, _severity
 from .parser import NotWellFormed
+from .remediation import load_catalog
 
 #: Bump when the report shape changes in a way a consumer must notice.
 REPORT_VERSION = 1
@@ -130,6 +131,19 @@ REPORT_SCHEMA = {
         "severity": "'fatal' | 'warning' | 'information' (validate._severity).",
         "message": "the human/Schematron rule message (Violation.message).",
         "field": "the offending element / path (Violation.element).",
+        # --- Additive remediation fields (v1, non-breaking). Every value is
+        # RELAYED from the committed remediation_catalog.json (einvoice.
+        # remediation.load_catalog) keyed by rule id — report.py authors NONE
+        # of this wording. A rule with no catalog entry degrades to
+        # null/empty (never a KeyError).
+        "title": "plain-language rule title from the remediation catalog "
+                 "(string or null if the rule has no catalog entry).",
+        "fix_hint": "the catalog's one-line 'how to fix' guidance (string or "
+                    "null).",
+        "terms": "list of the BT-/BG- business-term ids the rule touches "
+                 "(from the catalog's bt_bg; empty list if none).",
+        "location": "the catalog's XML location/path hint for the finding "
+                    "(string or null).",
     },
     "exit_codes": {
         "0": "no fatal violations (valid).",
@@ -139,16 +153,61 @@ REPORT_SCHEMA = {
 }
 
 #: The exact key set every violation record carries (tests assert on this).
-VIOLATION_KEYS = ("rule", "severity", "message", "field")
+#: The original four identity keys come first and are unchanged for backward
+#: compatibility; the trailing four are the additive, catalog-relayed
+#: remediation fields (see :func:`_record` and REPORT_SCHEMA['violation_record']).
+VIOLATION_KEYS = ("rule", "severity", "message", "field",
+                  "title", "fix_hint", "terms", "location")
 
 
-def _record(v):
-    """Map one Violation into a stable, minimal report record."""
+#: Module-level cache of the remediation catalog (rule_id -> entry). Loaded
+#: once and reused so per-record enrichment stays O(1) and never re-parses the
+#: JSON in a hot loop. The report only RELAYS this committed, Schematron-
+#: traceable data — it authors no remediation wording of its own.
+_REMEDIATION_CATALOG = None
+
+
+def _remediation_catalog():
+    """Return the cached remediation catalog mapping (loaded at most once).
+
+    On any failure to read/parse the committed catalog this degrades to an
+    empty mapping, so enrichment falls back to null/empty fields rather than
+    raising — the report must never fail because remediation data is missing.
+    """
+    global _REMEDIATION_CATALOG
+    if _REMEDIATION_CATALOG is None:
+        try:
+            _REMEDIATION_CATALOG = load_catalog()
+        except (OSError, ValueError, KeyError):
+            _REMEDIATION_CATALOG = {}
+    return _REMEDIATION_CATALOG
+
+
+def _record(v, catalog=None):
+    """Map one Violation into a stable report record enriched with remediation.
+
+    The four identity fields (rule/severity/message/field) are taken verbatim
+    from the Violation. The four remediation fields (title/fix_hint/terms/
+    location) are RELAYED from the committed remediation catalog entry for this
+    rule id — this function authors none of that wording. A rule id with no
+    catalog entry degrades gracefully to null/empty fields (never a KeyError).
+
+    :param catalog: optional pre-loaded catalog mapping (build_report passes it
+        once for the whole result); when omitted, the cached module catalog is
+        used so a lone ``_record(v)`` call still enriches.
+    """
+    if catalog is None:
+        catalog = _remediation_catalog()
+    entry = catalog.get(v.rule_id) or {}
     return {
         "rule": v.rule_id,
         "severity": _severity(v),
         "message": v.message,
         "field": v.element,
+        "title": entry.get("title"),
+        "fix_hint": entry.get("fix"),
+        "terms": list(entry.get("bt_bg") or []),
+        "location": entry.get("location_hint"),
     }
 
 
@@ -180,7 +239,8 @@ def build_report(path, profile="xrechnung"):
             "violations": [],
         }
 
-    records = [_record(v) for v in result.violations]
+    catalog = _remediation_catalog()  # loaded once, not per violation record
+    records = [_record(v, catalog) for v in result.violations]
     fatal_count = sum(1 for r in records if r["severity"] == "fatal")
     warning_count = sum(1 for r in records if r["severity"] == "warning")
     return {

@@ -1,0 +1,8 @@
+# einvoice EN 16931 / XRechnung rule reference — crawl allowed.
+# The Sitemap: URL and every page canonical are built from the single
+# BASE_URL constant in gen_site.py; to move the site to a different
+# origin (subpath / subdomain / own domain), edit that ONE line and
+# re-run `python3 gen_site.py` (human-gated deploy, T-VHW.5).
+User-agent: *
+Allow: /
+Sitemap: https://verifyhash.com/einvoice/sitemap.xml

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EN 16931 / XRechnung conformance for German ERP &amp; billing developers — einvoice</title>
+<meta name="description" content="A free, zero-dependency EN 16931 / XRechnung conformance validator for German ERP and billing developers: what conformance is, who needs it, and how to wire the CI gate or GitHub Action in minutes.">
+<link rel="canonical" href="https://verifyhash.com/einvoice/">
+<style>:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  line-height: 1.5; margin: 0; padding: 2rem 1rem; color: #1f2328;
+  background: #ffffff; }
+main { max-width: 46rem; margin: 0 auto; }
+a { color: #0969da; }
+a:hover { text-decoration: none; }
+.crumb { color: #57606a; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; margin: 0 0 .5rem; }
+.crumb a { color: inherit; text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+.lead { font-size: 1.05rem; color: #24292f; }
+.fam { margin: 2rem 0 0; }
+.fam h2 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.25rem; margin: 0 0 .2rem; }
+.fam .intro { color: #57606a; font-size: .92rem; margin: 0 0 .6rem; }
+ul.rules { list-style: none; padding: 0; margin: 0; display: grid;
+  gap: .3rem; }
+ul.rules code { font-size: .85em; }
+.toc { columns: 2; column-gap: 2rem; font-size: .95rem; }
+.onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
+  margin: 1.5rem 0; }
+.onramp h2 { margin-top: 0; }
+h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.9rem; margin: 0; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
+.sev { display: inline-block; font-size: .8rem; font-weight: 700;
+  padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
+  margin: 0; }
+dt { font-weight: 700; color: #57606a; }
+dd { margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
+  font-size: .92em; }
+.assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
+  color: #24292f; }
+.terms code { margin-right: .3rem; }
+footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid #d0d7de; padding-top: 1rem; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e6edf3; background: #0d1117; }
+  .title, .assert, dd, .lead { color: #e6edf3; }
+  .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
+  code { background: #161b22; }
+  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  a { color: #4493f8; }
+}</style>
+</head>
+<body>
+<main>
+<p class="crumb">einvoice — EN 16931 / XRechnung conformance</p>
+<h1>einvoice</h1>
+<p class="lead">A zero-dependency, self-hostable conformance validator for <strong>EN 16931</strong> electronic invoices, targeting the German <strong>XRechnung</strong> CIUS (UBL 2.1 <code>Invoice</code> syntax). It runs offline against a vendored copy of the official rule corpus — no lxml, no Java, no Schematron toolchain, no network calls.</p>
+<h2>What EN 16931 / XRechnung conformance means</h2>
+<p><strong>EN 16931</strong> is the European standard that defines the semantic data model of an electronic invoice — the business terms (<code>BT-</code>) and business term groups (<code>BG-</code>) an invoice must carry, and the arithmetic and code-list rules those values must satisfy. <strong>XRechnung</strong> is the German national <em>CIUS</em> (Core Invoice Usage Specification): it keeps the EN 16931 core and adds ~30 German-specific asserts (the <code>BR-DE-*</code> rules from KoSIT — BuyerReference, seller contact, payment-means grouping, Skonto/discount grammar, IBAN checks). An invoice is <em>conformant</em> when it violates none of the <em>fatal</em> rules of the profile you validate against.</p>
+<p>Concretely, a rule like <code>BR-DE-15</code> requires the buyer reference (<code>BT-10</code>) to be present; if it is missing, a conformance validator reports that rule ID and the invoice is rejected by the receiver's portal. This site documents every rule this engine checks, one page each, in English and German.</p>
+<h2>Who this is for</h2>
+<p>German (and EU) <strong>ERP, billing and accounts-payable developers</strong> who issue or receive structured e-invoices and need to know <em>before</em> they send that an invoice will pass. Since 1 January 2025 every German business must be able to receive EN 16931 invoices, with the obligation to issue phasing in through 2027–2028; France, Belgium and others are on similar timelines. If you generate XRechnung or ZUGFeRD/Factur-X from an ERP, this is the gate that tells you whether the output is valid.</p>
+<h2>Honest scope</h2>
+<p>This is an early, auditable slice — not a legal guarantee. The engine implements the <strong>full XRechnung <code>BR-DE-*</code> layer</strong> and a large subset of the EN 16931 core rules, each <em>differential-tested</em> at 100&nbsp;% agreement against the official Schematron on thousands of real invoices. It does <em>not</em> yet implement every EN 16931 core rule: a green result means &ldquo;no implemented rule fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. The exact implemented set and its limits are written up in the repository README and <code>CORRECTNESS.md</code>.</p>
+<div class="onramp">
+<h2>Free on-ramp</h2>
+<p>Everything is free and open source (Apache-2.0). Start here:</p>
+<ul class="rules">
+<li><a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/README.md">Repository README</a> — install (<code>pip install .</code> or copy the package dir), the CLI, and the full honest scope.</li>
+<li><a href="https://github.com/verifyhash/verifyhash/tree/main/einvoice/ci">CI conformance gate recipe</a> (<code>einvoice/ci/</code>) — copy-paste POSIX&nbsp;sh + GitHub&nbsp;Actions / GitLab&nbsp;CI that fails a build on any non-conformant invoice and names the violated rule ID.</li>
+<li><a href="https://github.com/verifyhash/verifyhash/tree/main/einvoice/action">GitHub Action</a> (<code>einvoice/action/</code>) — a <code>uses:</code>-pinnable composite action that surfaces each finding as an inline PR annotation via SARIF.</li>
+</ul>
+</div>
+<h2>Browse the rules</h2>
+<p>Every rule the engine can fire has its own reference page — what it requires, the BT/BG terms it touches, the XML location, a one-line fix, the severity, and the verbatim official Schematron assert (English and German). Start at the <a href="rules/index.html">rule index, grouped by family</a>.</p>
+<footer>
+Generated from <code>remediation_catalog.json</code> (single source of truth) by <code>gen_site.py</code>. Self-contained: this page opens offline with no network requests.
+</footer>
+</main>
+</body>
+</html>

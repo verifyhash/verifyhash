@@ -31,6 +31,13 @@ Checks (each an independent hard assert):
       http(s) token is the schema.org @context IRI inside that JSON-LD block.
   (d) ``gen_site.py --check`` returns 0 on the committed tree, and would return
       non-zero if a committed page were mutated (simulated on a temp copy).
+  (e) NAV + SITEMAP INTEGRITY (VHW.3, mirrors weatherhack WXQ.3): the landing
+      page, rule index hub, sitemap.xml and robots.txt exist; every INTERNAL
+      href in every generated HTML file resolves to a real generated file (no
+      dangling link); sitemap.xml lists EXACTLY the generated canonical set
+      (landing + hub + all rule pages) with no orphan/missing/duplicate; no
+      page listed in the sitemap carries a noindex robots meta; robots.txt
+      allows crawl and references the sitemap URL.
 """
 
 from __future__ import annotations
@@ -48,7 +55,8 @@ sys.path.insert(0, os.path.join(HERE, "einvoice"))
 from einvoice import remediation as _remediation  # noqa: E402
 import gen_site as _gen                            # noqa: E402
 
-RULES_DIR = os.path.join(HERE, "www", "rules")
+WWW_DIR = os.path.join(HERE, "www")
+RULES_DIR = os.path.join(WWW_DIR, "rules")
 
 # Strip HTML tags so we can assert on the human-visible text only. The catalog
 # strings themselves contain no '<', so removing '<...>' spans cannot eat any
@@ -64,6 +72,11 @@ _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.S)
 _DESC_RE = re.compile(
     r'<meta name="description" content="(.*?)">', re.S)
 _CANON_RE = re.compile(r'<link\b[^>]*\brel="canonical"', re.IGNORECASE)
+# The whole canonical <link ...> tag — stripped before the external-resource
+# scan because its href is the absolute BASE_URL canonical (not a fetched
+# resource). Matches only the single self-closing <link> element.
+_CANON_LINK_RE = re.compile(r'<link\b[^>]*\brel="canonical"[^>]*>',
+                            re.IGNORECASE)
 
 # de_source -> the honest provenance token that MUST appear on the page.
 _DE_TOKEN = {"kosit": "Amtlicher KoSIT-Text", "translation": "Übersetzung"}
@@ -238,11 +251,15 @@ def main():
                 check(obj.get("@type") == "TechArticle",
                       "%s: JSON-LD @type is not TechArticle" % rid)
 
-        # (c) no external resource references of any kind. The schema.org
-        # @context IRI is the ONLY http(s) token allowed, so scan the page with
-        # the ld+json block removed.
+        # (c) no external resource references of any kind. Two http(s) tokens
+        # are legitimately present and are NOT fetched resources: the schema.org
+        # @context IRI (inside the ld+json block) and the absolute canonical
+        # <link> href built from gen_site.BASE_URL. Both are removed before the
+        # scan; anything else with https?:// / cdn. / url( is a real external
+        # resource and fails.
         page_no_ld = _LD_RE.sub(" ", page)
-        check(not ext_re.search(page_no_ld),
+        page_scan = _CANON_LINK_RE.sub(" ", page_no_ld)
+        check(not ext_re.search(page_scan),
               "%s: page references an external resource / url()" % rid)
         check(not bad_script_re.search(page),
               "%s: page has a non-ld+json <script>" % rid)
@@ -250,15 +267,17 @@ def main():
               "%s: page has a src= attribute (external resource)" % rid)
         check(not bad_link_re.search(page),
               "%s: page has a non-canonical <link> (external stylesheet)" % rid)
-        # canonical must be relative (no hardcoded live origin).
+        # canonical must be the absolute URL built from the ONE BASE_URL
+        # constant (VHW.3: same source as the sitemap <loc>, so they cannot
+        # disagree). No hand-authored / divergent origin.
         cmatch = re.search(r'<link\b[^>]*\brel="canonical"[^>]*\bhref="([^"]*)"',
                            page)
         check(cmatch is not None, "%s: canonical link has no href" % rid)
         if cmatch:
             href = cmatch.group(1)
-            check(not re.match(r"https?://", href, re.IGNORECASE),
-                  "%s: canonical is an absolute live URL (should be relative)"
-                  % rid)
+            check(href == _gen._url_rule(rid),
+                  "%s: canonical %r is not gen_site._url_rule(rid) (%r)"
+                  % (rid, href, _gen._url_rule(rid)))
 
     # ---- (5) global uniqueness across ALL pages ----------------------------
     n_pages = len(sorted(want & have))
@@ -268,6 +287,91 @@ def main():
     check(len(descs_seen) == n_pages,
           "meta descriptions not unique across pages: %d for %d pages"
           % (len(descs_seen), n_pages))
+
+    # ---- (e) internal-link + sitemap integrity (mirrors weatherhack WXQ.3) --
+    # Surface files must exist.
+    landing_path = os.path.join(WWW_DIR, "index.html")
+    hub_path = os.path.join(RULES_DIR, "index.html")
+    sitemap_path = os.path.join(WWW_DIR, "sitemap.xml")
+    robots_path = os.path.join(WWW_DIR, "robots.txt")
+    for pth, name in ((landing_path, "www/index.html"),
+                      (hub_path, "www/rules/index.html"),
+                      (sitemap_path, "www/sitemap.xml"),
+                      (robots_path, "www/robots.txt")):
+        check(os.path.exists(pth), "surface file missing: %s" % name)
+
+    # Enumerate EVERY generated HTML file (landing + hub + all rule pages).
+    html_files = []
+    if os.path.exists(landing_path):
+        html_files.append(landing_path)
+    if os.path.exists(hub_path):
+        html_files.append(hub_path)
+    for rid in sorted(want & have):
+        rp = os.path.join(RULES_DIR, rid, "index.html")
+        if os.path.exists(rp):
+            html_files.append(rp)
+
+    # Every INTERNAL href in every generated HTML file must resolve to a real
+    # generated file (no dangling link). External (http/https/mailto) hrefs and
+    # pure in-page fragments (#id) are not file targets and are skipped; the
+    # absolute canonical <link> href is external and thus skipped here too.
+    href_re = re.compile(r'\bhref="([^"]*)"', re.IGNORECASE)
+    generated_set = {os.path.realpath(p) for p in html_files}
+    for pth in html_files:
+        page = open(pth, encoding="utf-8").read()
+        base = os.path.dirname(pth)
+        for raw in href_re.findall(page):
+            href = html.unescape(raw)
+            if href.startswith(("http://", "https://", "mailto:", "#")):
+                continue
+            target = href.split("#", 1)[0].split("?", 1)[0]
+            if not target:
+                continue
+            resolved = os.path.realpath(os.path.join(base, target))
+            check(resolved in generated_set or os.path.exists(resolved),
+                  "%s: internal href %r resolves to a NON-generated/nonexistent"
+                  " target (%s)" % (os.path.relpath(pth, HERE), href, resolved))
+
+    # sitemap.xml must list EXACTLY the generated canonical page set: landing +
+    # rule index hub + every rule page (no orphan, no missing, no stale entry).
+    if os.path.exists(sitemap_path):
+        sm = open(sitemap_path, encoding="utf-8").read()
+        locs = [html.unescape(x)
+                for x in re.findall(r"<loc>(.*?)</loc>", sm, re.S)]
+        got = set(locs)
+        check(len(locs) == len(got), "sitemap has duplicate <loc> entries")
+        expected = {_gen._url_landing(), _gen._url_hub()}
+        expected |= {_gen._url_rule(rid) for rid in (want & have)}
+        check(got == expected,
+              "sitemap <loc> set != generated canonical set; missing=%s "
+              "orphan=%s" % (sorted(expected - got)[:5], sorted(got - expected)[:5]))
+
+        # No page listed in the sitemap may carry a noindex robots meta
+        # (indexable/sitemap consistency). Map each loc back to its file.
+        noindex_re = re.compile(
+            r'<meta[^>]*name="robots"[^>]*noindex', re.IGNORECASE)
+        loc_to_file = {_gen._url_landing(): landing_path,
+                       _gen._url_hub(): hub_path}
+        for rid in (want & have):
+            loc_to_file[_gen._url_rule(rid)] = os.path.join(
+                RULES_DIR, rid, "index.html")
+        for loc in got:
+            fp = loc_to_file.get(loc)
+            check(fp is not None, "sitemap loc has no mapped file: %s" % loc)
+            if fp and os.path.exists(fp):
+                doc = open(fp, encoding="utf-8").read()
+                check(not noindex_re.search(doc),
+                      "sitemap lists a NOINDEX page (contradiction): %s" % loc)
+
+    # robots.txt must allow crawling and reference the sitemap URL.
+    if os.path.exists(robots_path):
+        rb = open(robots_path, encoding="utf-8").read()
+        check("Sitemap:" in rb, "robots.txt has no Sitemap: line")
+        check(_gen._url_sitemap() in rb,
+              "robots.txt Sitemap: does not point at gen_site._url_sitemap()")
+        check(re.search(r"(?im)^\s*Allow:\s*/\s*$", rb)
+              or "Disallow:" not in rb,
+              "robots.txt does not allow crawling")
 
     # ---- (d) --check is 0 on the committed tree, non-zero on a mutation -----
     check(_gen.main(["--check"]) == 0,

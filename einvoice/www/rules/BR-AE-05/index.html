@@ -3,18 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
 <title>BR-AE-05 — In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. — einvoice rule reference</title>
 <meta name="description" content="BR-AE-05 (EN 16931 / XRechnung rule): In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. Fix: Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = &#x27;AE&#x27;][cac:TaxScheme/normalize-space(upper-case(cbc:ID))=&#x27;VAT&#x27;]` s">
-<link rel="canonical" href="/rules/BR-AE-05/">
+<link rel="canonical" href="https://verifyhash.com/einvoice/rules/BR-AE-05/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   line-height: 1.5; margin: 0; padding: 2rem 1rem; color: #1f2328;
   background: #ffffff; }
 main { max-width: 46rem; margin: 0 auto; }
+a { color: #0969da; }
+a:hover { text-decoration: none; }
 .crumb { color: #57606a; font-size: .8rem; text-transform: uppercase;
   letter-spacing: .04em; margin: 0 0 .5rem; }
+.crumb a { color: inherit; text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+.lead { font-size: 1.05rem; color: #24292f; }
+.fam { margin: 2rem 0 0; }
+.fam h2 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.25rem; margin: 0 0 .2rem; }
+.fam .intro { color: #57606a; font-size: .92rem; margin: 0 0 .6rem; }
+ul.rules { list-style: none; padding: 0; margin: 0; display: grid;
+  gap: .3rem; }
+ul.rules code { font-size: .85em; }
+.toc { columns: 2; column-gap: 2rem; font-size: .95rem; }
+.onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
+  margin: 1.5rem 0; }
+.onramp h2 { margin-top: 0; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
 .title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
@@ -37,16 +52,17 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   border-top: 1px solid #d0d7de; padding-top: 1rem; }
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
-  .title, .assert, dd { color: #e6edf3; }
-  .crumb, dt, footer, .title-de, .prov-de { color: #8b949e; }
+  .title, .assert, dd, .lead { color: #e6edf3; }
+  .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
   code { background: #161b22; }
-  .sev, .assert, footer { border-color: #30363d; }
+  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  a { color: #4493f8; }
 }</style>
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-AE-05 — In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0.", "alternativeHeadline": "Bei einer Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „Umkehrung der Steuerschuldnerschaft (Reverse Charge)“ lautet, muss der Umsatzsteuersatz des in Rechnung gestellten Artikels (BT-152) 0 (null) betragen.", "identifier": "BR-AE-05", "about": {"@type": "Thing", "name": "BR-AE-05"}, "description": "BR-AE-05 (EN 16931 / XRechnung rule): In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. Fix: Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'AE'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` s", "articleBody": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'AE'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"Reverse charge\" the Invoiced item VAT rate (BT-152) shall be 0 (zero).", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
 </head>
 <body>
 <main>
-<p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
+<p class="crumb"><a href="../../index.html">einvoice</a> / <a href="../index.html">EN 16931 / XRechnung rule reference</a></p>
 <h1>BR-AE-05</h1>
 <p class="title">In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0.</p>
 <p class="title-de" lang="de">Bei einer Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „Umkehrung der Steuerschuldnerschaft (Reverse Charge)“ lautet, muss der Umsatzsteuersatz des in Rechnung gestellten Artikels (BT-152) 0 (null) betragen.</p>

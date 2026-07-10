@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EN 16931 / XRechnung rule index — einvoice rule reference</title>
+<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (211 rules across 14 families), grouped by rule family with a reference page for each.">
+<link rel="canonical" href="https://verifyhash.com/einvoice/rules/">
+<style>:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  line-height: 1.5; margin: 0; padding: 2rem 1rem; color: #1f2328;
+  background: #ffffff; }
+main { max-width: 46rem; margin: 0 auto; }
+a { color: #0969da; }
+a:hover { text-decoration: none; }
+.crumb { color: #57606a; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; margin: 0 0 .5rem; }
+.crumb a { color: inherit; text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+.lead { font-size: 1.05rem; color: #24292f; }
+.fam { margin: 2rem 0 0; }
+.fam h2 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.25rem; margin: 0 0 .2rem; }
+.fam .intro { color: #57606a; font-size: .92rem; margin: 0 0 .6rem; }
+ul.rules { list-style: none; padding: 0; margin: 0; display: grid;
+  gap: .3rem; }
+ul.rules code { font-size: .85em; }
+.toc { columns: 2; column-gap: 2rem; font-size: .95rem; }
+.onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
+  margin: 1.5rem 0; }
+.onramp h2 { margin-top: 0; }
+h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.9rem; margin: 0; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
+.sev { display: inline-block; font-size: .8rem; font-weight: 700;
+  padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
+  margin: 0; }
+dt { font-weight: 700; color: #57606a; }
+dd { margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
+  font-size: .92em; }
+.assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
+  color: #24292f; }
+.terms code { margin-right: .3rem; }
+footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid #d0d7de; padding-top: 1rem; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e6edf3; background: #0d1117; }
+  .title, .assert, dd, .lead { color: #e6edf3; }
+  .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
+  code { background: #161b22; }
+  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  a { color: #4493f8; }
+}</style>
+</head>
+<body>
+<main>
+<p class="crumb"><a href="../index.html">einvoice</a> / EN 16931 / XRechnung rule reference</p>
+<h1>Rule index</h1>
+<p class="lead">Every EN 16931 / XRechnung business rule the einvoice engine can fire, grouped by rule family. Each rule links to its own reference page: what it requires, the BT/BG business terms it touches, the XML location, a one-line fix, the engine severity, and the verbatim official Schematron assert.</p>
+<p><strong>211 rules</strong> in total — 201 fatal, 9 warning, 1 information — across 14 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
+<nav class="toc">
+<ul class="rules">
+<li><a href="#BR">BR</a> (51)</li>
+<li><a href="#BR-CL">BR-CL</a> (15)</li>
+<li><a href="#BR-CO">BR-CO</a> (10)</li>
+<li><a href="#BR-DEC">BR-DEC</a> (15)</li>
+<li><a href="#BR-AE">BR-AE</a> (10)</li>
+<li><a href="#BR-E">BR-E</a> (10)</li>
+<li><a href="#BR-G">BR-G</a> (10)</li>
+<li><a href="#BR-IC">BR-IC</a> (11)</li>
+<li><a href="#BR-O">BR-O</a> (14)</li>
+<li><a href="#BR-S">BR-S</a> (9)</li>
+<li><a href="#BR-Z">BR-Z</a> (10)</li>
+<li><a href="#BR-DE">BR-DE</a> (31)</li>
+<li><a href="#BR-DE-TMP">BR-DE-TMP</a> (1)</li>
+<li><a href="#BR-DEX">BR-DEX</a> (14)</li>
+</ul>
+</nav>
+<section class="fam" id="BR">
+<h2>BR <small>(51)</small></h2>
+<p class="intro">Core EN 16931 content and cardinality rules.</p>
+<ul class="rules">
+<li><a href="BR-01/index.html"><code>BR-01</code></a> — An Invoice shall have a Specification identifier (BT-24). <span class="sev">fatal</span></li>
+<li><a href="BR-02/index.html"><code>BR-02</code></a> — An Invoice shall have an Invoice number (BT-1). <span class="sev">fatal</span></li>
+<li><a href="BR-03/index.html"><code>BR-03</code></a> — An Invoice shall have an Invoice issue date (BT-2). <span class="sev">fatal</span></li>
+<li><a href="BR-04/index.html"><code>BR-04</code></a> — An Invoice shall have an Invoice type code (BT-3). <span class="sev">fatal</span></li>
+<li><a href="BR-05/index.html"><code>BR-05</code></a> — An Invoice shall have an Invoice currency code (BT-5). <span class="sev">fatal</span></li>
+<li><a href="BR-06/index.html"><code>BR-06</code></a> — An Invoice shall contain the Seller name (BT-27). <span class="sev">fatal</span></li>
+<li><a href="BR-07/index.html"><code>BR-07</code></a> — An Invoice shall contain the Buyer name (BT-44). <span class="sev">fatal</span></li>
+<li><a href="BR-08/index.html"><code>BR-08</code></a> — An Invoice shall contain the Seller postal address (BG-5). <span class="sev">fatal</span></li>
+<li><a href="BR-09/index.html"><code>BR-09</code></a> — The Seller postal address (BG-5) shall contain a Seller country code (BT-40). <span class="sev">fatal</span></li>
+<li><a href="BR-10/index.html"><code>BR-10</code></a> — An Invoice shall contain the Buyer postal address (BG-8). <span class="sev">fatal</span></li>
+<li><a href="BR-11/index.html"><code>BR-11</code></a> — The Buyer postal address shall contain a Buyer country code (BT-55). <span class="sev">fatal</span></li>
+<li><a href="BR-12/index.html"><code>BR-12</code></a> — An Invoice shall have the Sum of Invoice line net amount (BT-106). <span class="sev">fatal</span></li>
+<li><a href="BR-13/index.html"><code>BR-13</code></a> — An Invoice shall have the Invoice total amount without VAT (BT-109). <span class="sev">fatal</span></li>
+<li><a href="BR-14/index.html"><code>BR-14</code></a> — An Invoice shall have the Invoice total amount with VAT (BT-112). <span class="sev">fatal</span></li>
+<li><a href="BR-15/index.html"><code>BR-15</code></a> — An Invoice shall have the Amount due for payment (BT-115). <span class="sev">fatal</span></li>
+<li><a href="BR-16/index.html"><code>BR-16</code></a> — An Invoice shall have at least one Invoice line (BG-25). <span class="sev">fatal</span></li>
+<li><a href="BR-17/index.html"><code>BR-17</code></a> — The Payee name (BT-59) shall be provided in the Invoice, if the Payee (BG-10) is different from the Seller (BG-4). <span class="sev">fatal</span></li>
+<li><a href="BR-18/index.html"><code>BR-18</code></a> — The Seller tax representative name (BT-62) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11). <span class="sev">fatal</span></li>
+<li><a href="BR-19/index.html"><code>BR-19</code></a> — The Seller tax representative postal address (BG-12) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11). <span class="sev">fatal</span></li>
+<li><a href="BR-20/index.html"><code>BR-20</code></a> — The Seller tax representative postal address (BG-12) shall contain a Tax representative country code (BT-69), if the Seller (BG-4) has a Seller tax representative party (BG-11). <span class="sev">fatal</span></li>
+<li><a href="BR-21/index.html"><code>BR-21</code></a> — Each Invoice line shall have an Invoice line identifier (BT-126). <span class="sev">fatal</span></li>
+<li><a href="BR-22/index.html"><code>BR-22</code></a> — Each Invoice line shall have an Invoiced quantity (BT-129). <span class="sev">fatal</span></li>
+<li><a href="BR-24/index.html"><code>BR-24</code></a> — Each Invoice line shall have an Invoice line net amount (BT-131). <span class="sev">fatal</span></li>
+<li><a href="BR-25/index.html"><code>BR-25</code></a> — Each Invoice line (BG-25) shall contain the Item name (BT-153). <span class="sev">fatal</span></li>
+<li><a href="BR-26/index.html"><code>BR-26</code></a> — Each Invoice line shall contain the Item net price (BT-146). <span class="sev">fatal</span></li>
+<li><a href="BR-27/index.html"><code>BR-27</code></a> — The Item net price (BT-146) shall NOT be negative. <span class="sev">fatal</span></li>
+<li><a href="BR-28/index.html"><code>BR-28</code></a> — The Item gross price (BT-148) shall NOT be negative. <span class="sev">fatal</span></li>
+<li><a href="BR-29/index.html"><code>BR-29</code></a> — If both Invoicing period start date (BT-73) and end date (BT-74) are given then the end date shall be later or equal to the start date. <span class="sev">fatal</span></li>
+<li><a href="BR-30/index.html"><code>BR-30</code></a> — If both Invoice line period start date (BT-134) and end date (BT-135) are given then the end date shall be later or equal to the start date. <span class="sev">fatal</span></li>
+<li><a href="BR-31/index.html"><code>BR-31</code></a> — Each Document level allowance (BG-20) shall have a Document level allowance amount (BT-92). <span class="sev">fatal</span></li>
+<li><a href="BR-32/index.html"><code>BR-32</code></a> — Each Document level allowance (BG-20) shall have a Document level allowance VAT category code (BT-95). <span class="sev">fatal</span></li>
+<li><a href="BR-33/index.html"><code>BR-33</code></a> — Each Document level allowance (BG-20) shall have a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98). <span class="sev">fatal</span></li>
+<li><a href="BR-36/index.html"><code>BR-36</code></a> — Each Document level charge (BG-21) shall have a Document level charge amount (BT-99). <span class="sev">fatal</span></li>
+<li><a href="BR-37/index.html"><code>BR-37</code></a> — Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102). <span class="sev">fatal</span></li>
+<li><a href="BR-38/index.html"><code>BR-38</code></a> — Each Document level charge (BG-21) shall have a Document level charge reason (BT-104) or a Document level charge reason code (BT-105). <span class="sev">fatal</span></li>
+<li><a href="BR-41/index.html"><code>BR-41</code></a> — Each Invoice line allowance (BG-27) shall have an Invoice line allowance amount (BT-136). <span class="sev">fatal</span></li>
+<li><a href="BR-42/index.html"><code>BR-42</code></a> — Each Invoice line allowance (BG-27) shall have an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140). <span class="sev">fatal</span></li>
+<li><a href="BR-43/index.html"><code>BR-43</code></a> — Each Invoice line charge (BG-28) shall have an Invoice line charge amount (BT-141). <span class="sev">fatal</span></li>
+<li><a href="BR-44/index.html"><code>BR-44</code></a> — Each Invoice line charge (BG-28) shall have an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145). <span class="sev">fatal</span></li>
+<li><a href="BR-45/index.html"><code>BR-45</code></a> — Each VAT breakdown (BG-23) shall have a VAT category taxable amount (BT-116). <span class="sev">fatal</span></li>
+<li><a href="BR-46/index.html"><code>BR-46</code></a> — Each VAT breakdown (BG-23) shall have a VAT category tax amount (BT-117). <span class="sev">fatal</span></li>
+<li><a href="BR-47/index.html"><code>BR-47</code></a> — Each VAT breakdown (BG-23) shall be defined through a VAT category code (BT-118). <span class="sev">fatal</span></li>
+<li><a href="BR-48/index.html"><code>BR-48</code></a> — Each VAT breakdown (BG-23) shall have a VAT category rate (BT-119), except if the Invoice is not subject to VAT. <span class="sev">fatal</span></li>
+<li><a href="BR-49/index.html"><code>BR-49</code></a> — A Payment instruction (BG-16) shall specify the Payment means type code (BT-81). <span class="sev">fatal</span></li>
+<li><a href="BR-50/index.html"><code>BR-50</code></a> — A Payment account identifier (BT-84) shall be present if Credit transfer (BG-17) information is provided in the Invoice. <span class="sev">fatal</span></li>
+<li><a href="BR-51/index.html"><code>BR-51</code></a> — The last 4 to 6 digits of the Payment card primary account number (BT-87) shall be present if Payment card information (BG-18) is provided. <span class="sev">warning</span></li>
+<li><a href="BR-55/index.html"><code>BR-55</code></a> — Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25). <span class="sev">fatal</span></li>
+<li><a href="BR-57/index.html"><code>BR-57</code></a> — Each Deliver to address (BG-15) shall contain a Deliver to country code (BT-80). <span class="sev">fatal</span></li>
+<li><a href="BR-61/index.html"><code>BR-61</code></a> — If the Payment means type code (BT-81) means SEPA credit transfer, Local credit transfer or Non-SEPA international credit transfer, the Payment account identifier (BT-84) shall be present. <span class="sev">fatal</span></li>
+<li><a href="BR-62/index.html"><code>BR-62</code></a> — The Seller electronic address (BT-34) shall have a Scheme identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-63/index.html"><code>BR-63</code></a> — The Buyer electronic address (BT-49) shall have a Scheme identifier. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-CL">
+<h2>BR-CL <small>(15)</small></h2>
+<p class="intro">Code-list rules — a coded value must come from the referenced official code list.</p>
+<ul class="rules">
+<li><a href="BR-CL-01/index.html"><code>BR-CL-01</code></a> — The document type code (BT-3) MUST be coded per UNTDID 1001. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-03/index.html"><code>BR-CL-03</code></a> — CurrencyID MUST be coded using ISO 4217 alpha-3. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-04/index.html"><code>BR-CL-04</code></a> — Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-05/index.html"><code>BR-CL-05</code></a> — Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-13/index.html"><code>BR-CL-13</code></a> — Item classification scheme identifier MUST be a UNTDID 7143 code. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-14/index.html"><code>BR-CL-14</code></a> — Country codes MUST be coded using ISO 3166-1 alpha-2. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-16/index.html"><code>BR-CL-16</code></a> — Payment means MUST be coded using the UNCL 4461 code list. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-17/index.html"><code>BR-CL-17</code></a> — Invoice tax categories MUST be coded using the UNCL 5305 subset. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-18/index.html"><code>BR-CL-18</code></a> — Invoice tax categories MUST be coded using the UNCL 5305 subset. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-19/index.html"><code>BR-CL-19</code></a> — Coded allowance reasons MUST belong to the UNCL 5189 code list. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-20/index.html"><code>BR-CL-20</code></a> — Coded charge reasons MUST belong to the UNCL 7161 code list. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-21/index.html"><code>BR-CL-21</code></a> — Item standard identifier scheme MUST be an ISO 6523 ICD code. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-22/index.html"><code>BR-CL-22</code></a> — VAT exemption reason code MUST belong to the CEF VATEX list. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-23/index.html"><code>BR-CL-23</code></a> — Unit code MUST be coded per UN/ECE Rec 20 with Rec 21 extension. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-24/index.html"><code>BR-CL-24</code></a> — For a MIME code in an attribute use the MIMEMediaType subset. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-CO">
+<h2>BR-CO <small>(10)</small></h2>
+<p class="intro">Calculation and consistency rules (cross-total arithmetic).</p>
+<ul class="rules">
+<li><a href="BR-CO-04/index.html"><code>BR-CO-04</code></a> — Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151). <span class="sev">fatal</span></li>
+<li><a href="BR-CO-10/index.html"><code>BR-CO-10</code></a> — Sum of Invoice line net amount (BT-106) = Σ line net amount (BT-131). <span class="sev">fatal</span></li>
+<li><a href="BR-CO-11/index.html"><code>BR-CO-11</code></a> — Sum of allowances on document level (BT-107) = Σ Document level allowance amount (BT-92). <span class="sev">fatal</span></li>
+<li><a href="BR-CO-12/index.html"><code>BR-CO-12</code></a> — Sum of charges on document level (BT-108) = Σ Document level charge amount (BT-99). <span class="sev">fatal</span></li>
+<li><a href="BR-CO-13/index.html"><code>BR-CO-13</code></a> — Invoice total without VAT (BT-109) = Σ line net (BT-131) − document allowances (BT-107) + document charges (BT-108). <span class="sev">fatal</span></li>
+<li><a href="BR-CO-14/index.html"><code>BR-CO-14</code></a> — Invoice total VAT amount (BT-110) = Σ VAT category tax amount (BT-117). <span class="sev">fatal</span></li>
+<li><a href="BR-CO-15/index.html"><code>BR-CO-15</code></a> — Invoice total with VAT (BT-112) = total without VAT (BT-109) + total VAT (BT-110). <span class="sev">fatal</span></li>
+<li><a href="BR-CO-16/index.html"><code>BR-CO-16</code></a> — Amount due for payment (BT-115) = Invoice total with VAT (BT-112) − Paid amount (BT-113) + Rounding amount (BT-114). <span class="sev">fatal</span></li>
+<li><a href="BR-CO-17/index.html"><code>BR-CO-17</code></a> — VAT category tax amount (BT-117) = VAT category taxable amount (BT-116) x (VAT category rate (BT-119) / 100), rounded to two decimals. <span class="sev">fatal</span></li>
+<li><a href="BR-CO-18/index.html"><code>BR-CO-18</code></a> — An Invoice shall at least have one VAT breakdown group (BG-23). <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-DEC">
+<h2>BR-DEC <small>(15)</small></h2>
+<p class="intro">Decimal-places rules — amounts must not exceed the allowed number of decimals.</p>
+<ul class="rules">
+<li><a href="BR-DEC-01/index.html"><code>BR-DEC-01</code></a> — Max 2 decimals for the Document level allowance amount (BT-92). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-02/index.html"><code>BR-DEC-02</code></a> — Max 2 decimals for the Document level allowance base amount (BT-93). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-05/index.html"><code>BR-DEC-05</code></a> — Max 2 decimals for the Document level charge amount (BT-99). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-06/index.html"><code>BR-DEC-06</code></a> — Max 2 decimals for the Document level charge base amount (BT-100). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-09/index.html"><code>BR-DEC-09</code></a> — Max 2 decimals for the Sum of Invoice line net amount (BT-106). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-10/index.html"><code>BR-DEC-10</code></a> — Max 2 decimals for the Sum of allowances on document level (BT-107). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-11/index.html"><code>BR-DEC-11</code></a> — Max 2 decimals for the Sum of charges on document level (BT-108). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-12/index.html"><code>BR-DEC-12</code></a> — Max 2 decimals for the Invoice total amount without VAT (BT-109). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-14/index.html"><code>BR-DEC-14</code></a> — Max 2 decimals for the Invoice total amount with VAT (BT-112). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-16/index.html"><code>BR-DEC-16</code></a> — Max 2 decimals for the Paid amount (BT-113). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-17/index.html"><code>BR-DEC-17</code></a> — Max 2 decimals for the Rounding amount (BT-114). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-18/index.html"><code>BR-DEC-18</code></a> — Max 2 decimals for the Amount due for payment (BT-115). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-19/index.html"><code>BR-DEC-19</code></a> — Max 2 decimals for the VAT category taxable amount (BT-116). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-20/index.html"><code>BR-DEC-20</code></a> — Max 2 decimals for the VAT category tax amount (BT-117). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-23/index.html"><code>BR-DEC-23</code></a> — Max 2 decimals for the Invoice line net amount (BT-131). <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-AE">
+<h2>BR-AE <small>(10)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code AE.</p>
+<ul class="rules">
+<li><a href="BR-AE-01/index.html"><code>BR-AE-01</code></a> — &#x27;Reverse charge&#x27; (AE) items require exactly one AE VAT breakdown (BG-23) row. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-02/index.html"><code>BR-AE-02</code></a> — An Invoice with a Reverse charge (AE) Invoice line (BT-151) shall carry a Seller identifier AND a Buyer identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-03/index.html"><code>BR-AE-03</code></a> — An Invoice with a Reverse charge (AE) Document level allowance (BT-95) shall carry a Seller identifier AND a Buyer identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-04/index.html"><code>BR-AE-04</code></a> — An Invoice with a Reverse charge (AE) Document level charge (BT-102) shall carry a Seller identifier AND a Buyer identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-05/index.html"><code>BR-AE-05</code></a> — In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-06/index.html"><code>BR-AE-06</code></a> — In a Reverse charge (AE) Document level allowance the allowance VAT rate (BT-96) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-07/index.html"><code>BR-AE-07</code></a> — In a Reverse charge (AE) Document level charge the charge VAT rate (BT-103) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-08/index.html"><code>BR-AE-08</code></a> — The Reverse charge (AE) VAT breakdown taxable amount (BT-116) shall equal the exact sum of AE line nets − AE allowances + AE charges. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-09/index.html"><code>BR-AE-09</code></a> — The VAT category tax amount (BT-117) in a Reverse charge (AE) VAT breakdown shall equal 0. <span class="sev">fatal</span></li>
+<li><a href="BR-AE-10/index.html"><code>BR-AE-10</code></a> — A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) meaning &#x27;Reverse charge&#x27; or the reason text (BT-120) &#x27;Reverse charge&#x27; — the presence-required shape shared with BR-E-10. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-E">
+<h2>BR-E <small>(10)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code E.</p>
+<ul class="rules">
+<li><a href="BR-E-01/index.html"><code>BR-E-01</code></a> — &#x27;Exempt from VAT&#x27; (E) items require exactly one E VAT breakdown (BG-23) row. <span class="sev">fatal</span></li>
+<li><a href="BR-E-02/index.html"><code>BR-E-02</code></a> — An Exempt (E) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. <span class="sev">fatal</span></li>
+<li><a href="BR-E-03/index.html"><code>BR-E-03</code></a> — An Exempt (E) Document level allowance (BT-95) requires the Seller VAT identifier disjunct. <span class="sev">fatal</span></li>
+<li><a href="BR-E-04/index.html"><code>BR-E-04</code></a> — An Exempt (E) Document level charge (BT-102) requires the Seller VAT identifier disjunct. <span class="sev">fatal</span></li>
+<li><a href="BR-E-05/index.html"><code>BR-E-05</code></a> — In an Exempt (E) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-E-06/index.html"><code>BR-E-06</code></a> — In an Exempt (E) Document level allowance the allowance VAT rate (BT-96) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-E-07/index.html"><code>BR-E-07</code></a> — In an Exempt (E) Document level charge the charge VAT rate (BT-103) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-E-08/index.html"><code>BR-E-08</code></a> — The Exempt (E) VAT breakdown taxable amount (BT-116) shall equal the exact sum of E line net amounts − E allowances + E charges. <span class="sev">fatal</span></li>
+<li><a href="BR-E-09/index.html"><code>BR-E-09</code></a> — The VAT category tax amount (BT-117) in an Exempt (E) VAT breakdown shall equal 0. <span class="sev">fatal</span></li>
+<li><a href="BR-E-10/index.html"><code>BR-E-10</code></a> — A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required mirror image of BR-Z-10/BR-S-10. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-G">
+<h2>BR-G <small>(10)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code G.</p>
+<ul class="rules">
+<li><a href="BR-G-01/index.html"><code>BR-G-01</code></a> — &#x27;Export outside the EU&#x27; (G) items require exactly one G VAT breakdown (BG-23) row. <span class="sev">fatal</span></li>
+<li><a href="BR-G-02/index.html"><code>BR-G-02</code></a> — An Invoice with an Export outside the EU (G) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier (BT-31/BT-63). <span class="sev">fatal</span></li>
+<li><a href="BR-G-03/index.html"><code>BR-G-03</code></a> — An Invoice with an Export outside the EU (G) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-G-04/index.html"><code>BR-G-04</code></a> — An Invoice with an Export outside the EU (G) Document level charge (BT-102) shall carry a VAT-scoped Seller identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-G-05/index.html"><code>BR-G-05</code></a> — In an Export outside the EU (G) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-G-06/index.html"><code>BR-G-06</code></a> — In an Export outside the EU (G) Document level allowance the allowance VAT rate (BT-96) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-G-07/index.html"><code>BR-G-07</code></a> — In an Export outside the EU (G) Document level charge the charge VAT rate (BT-103) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-G-08/index.html"><code>BR-G-08</code></a> — The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the exact sum of G line nets − G allowances + G charges. <span class="sev">fatal</span></li>
+<li><a href="BR-G-09/index.html"><code>BR-G-09</code></a> — The VAT category tax amount (BT-117) in an Export outside the EU (G) VAT breakdown shall equal 0. <span class="sev">fatal</span></li>
+<li><a href="BR-G-10/index.html"><code>BR-G-10</code></a> — A VAT breakdown (BG-23) with an Export outside the EU (G) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required shape shared with BR-E-10. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-IC">
+<h2>BR-IC <small>(11)</small></h2>
+<p class="intro">VAT breakdown rules for the intra-community VAT category.</p>
+<ul class="rules">
+<li><a href="BR-IC-01/index.html"><code>BR-IC-01</code></a> — &#x27;Intra-community supply&#x27; (K) items require exactly one K VAT breakdown (BG-23) row. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-02/index.html"><code>BR-IC-02</code></a> — An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-03/index.html"><code>BR-IC-03</code></a> — An Invoice with an Intra-community supply (K) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-04/index.html"><code>BR-IC-04</code></a> — An Invoice with an Intra-community supply (K) Document level charge (BT-102) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-05/index.html"><code>BR-IC-05</code></a> — In an Intra-community supply (K) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-06/index.html"><code>BR-IC-06</code></a> — In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-07/index.html"><code>BR-IC-07</code></a> — In an Intra-community supply (K) Document level charge the charge VAT rate (BT-103) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-08/index.html"><code>BR-IC-08</code></a> — The Intra-community supply (K) VAT breakdown taxable amount (BT-116) shall equal the exact sum of K line nets − K allowances + K charges. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-09/index.html"><code>BR-IC-09</code></a> — The VAT category tax amount (BT-117) in an Intra-community supply (K) VAT breakdown shall equal 0. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-11/index.html"><code>BR-IC-11</code></a> — In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank. <span class="sev">fatal</span></li>
+<li><a href="BR-IC-12/index.html"><code>BR-IC-12</code></a> — In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Deliver to country code (BT-80) shall not be blank. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-O">
+<h2>BR-O <small>(14)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code O.</p>
+<ul class="rules">
+<li><a href="BR-O-01/index.html"><code>BR-O-01</code></a> — &#x27;Not subject to VAT&#x27; (O) items require exactly one O VAT breakdown (BG-23) row. <span class="sev">fatal</span></li>
+<li><a href="BR-O-02/index.html"><code>BR-O-02</code></a> — An Invoice with a &#x27;Not subject to VAT&#x27; (O) Invoice line (BT-151) shall NOT contain a Seller/tax-representative/Buyer VAT identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-O-03/index.html"><code>BR-O-03</code></a> — An Invoice with a &#x27;Not subject to VAT&#x27; (O) Document level allowance (BT-95) shall NOT contain any VAT identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-O-04/index.html"><code>BR-O-04</code></a> — An Invoice with a &#x27;Not subject to VAT&#x27; (O) Document level charge (BT-102) shall NOT contain any VAT identifier. <span class="sev">fatal</span></li>
+<li><a href="BR-O-05/index.html"><code>BR-O-05</code></a> — A &#x27;Not subject to VAT&#x27; (O) Invoice line shall NOT contain an Invoiced item VAT rate (BT-152) — ``not(cbc:Percent)``. <span class="sev">fatal</span></li>
+<li><a href="BR-O-06/index.html"><code>BR-O-06</code></a> — A &#x27;Not subject to VAT&#x27; (O) Document level allowance shall NOT contain a Document level allowance VAT rate (BT-96). <span class="sev">fatal</span></li>
+<li><a href="BR-O-07/index.html"><code>BR-O-07</code></a> — A &#x27;Not subject to VAT&#x27; (O) Document level charge shall NOT contain a Document level charge VAT rate (BT-103). <span class="sev">fatal</span></li>
+<li><a href="BR-O-08/index.html"><code>BR-O-08</code></a> — The &#x27;Not subject to VAT&#x27; (O) VAT breakdown taxable amount (BT-116) shall equal the exact sum of O line nets − O allowances + O charges. <span class="sev">fatal</span></li>
+<li><a href="BR-O-09/index.html"><code>BR-O-09</code></a> — The VAT category tax amount (BT-117) in a &#x27;Not subject to VAT&#x27; (O) VAT breakdown shall equal 0. <span class="sev">fatal</span></li>
+<li><a href="BR-O-10/index.html"><code>BR-O-10</code></a> — A VAT breakdown (BG-23) with a &#x27;Not subject to VAT&#x27; (O) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120). <span class="sev">fatal</span></li>
+<li><a href="BR-O-11/index.html"><code>BR-O-11</code></a> — An Invoice with a &#x27;Not subject to VAT&#x27; (O) VAT breakdown (BG-23) shall NOT contain any other VAT breakdown group. <span class="sev">fatal</span></li>
+<li><a href="BR-O-12/index.html"><code>BR-O-12</code></a> — An Invoice with a &#x27;Not subject to VAT&#x27; (O) VAT breakdown (BG-23) shall NOT contain an Invoice line (BG-25) whose Invoiced item VAT category code (BT-151) is not &#x27;Not subject to VAT&#x27;. <span class="sev">fatal</span></li>
+<li><a href="BR-O-13/index.html"><code>BR-O-13</code></a> — An Invoice with a &#x27;Not subject to VAT&#x27; (O) VAT breakdown (BG-23) shall NOT contain a Document level allowance (BG-20) whose VAT category code (BT-95) is not &#x27;Not subject to VAT&#x27;. <span class="sev">fatal</span></li>
+<li><a href="BR-O-14/index.html"><code>BR-O-14</code></a> — An Invoice with a &#x27;Not subject to VAT&#x27; (O) VAT breakdown (BG-23) shall NOT contain a Document level charge (BG-21) whose VAT category code (BT-102) is not &#x27;Not subject to VAT&#x27;. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-S">
+<h2>BR-S <small>(9)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code S.</p>
+<ul class="rules">
+<li><a href="BR-S-01/index.html"><code>BR-S-01</code></a> — Standard-rated (S) items and the VAT breakdown must agree. <span class="sev">fatal</span></li>
+<li><a href="BR-S-02/index.html"><code>BR-S-02</code></a> — An Invoice with a Standard-rated (S) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63). <span class="sev">fatal</span></li>
+<li><a href="BR-S-03/index.html"><code>BR-S-03</code></a> — An Invoice with a Standard-rated (S) Document level allowance (BT-95) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02). <span class="sev">fatal</span></li>
+<li><a href="BR-S-04/index.html"><code>BR-S-04</code></a> — An Invoice with a Standard-rated (S) Document level charge (BT-102) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02). <span class="sev">fatal</span></li>
+<li><a href="BR-S-05/index.html"><code>BR-S-05</code></a> — In an Invoice line where the Invoiced item VAT category code (BT-151) is &#x27;Standard rated&#x27; the Invoiced item VAT rate (BT-152) shall be greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-S-06/index.html"><code>BR-S-06</code></a> — In a Document level allowance where the allowance VAT category code (BT-95) is &#x27;Standard rated&#x27; the allowance VAT rate (BT-96) shall be greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-S-07/index.html"><code>BR-S-07</code></a> — In a Document level charge where the charge VAT category code (BT-102) is &#x27;Standard rated&#x27; the charge VAT rate (BT-103) shall be greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-S-09/index.html"><code>BR-S-09</code></a> — The VAT category tax amount (BT-117) in a Standard-rated (S) VAT breakdown shall equal the VAT category taxable amount (BT-116) x the VAT category rate (BT-119). <span class="sev">fatal</span></li>
+<li><a href="BR-S-10/index.html"><code>BR-S-10</code></a> — A VAT breakdown (BG-23) with a Standard rated (S) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121). <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-Z">
+<h2>BR-Z <small>(10)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code Z.</p>
+<ul class="rules">
+<li><a href="BR-Z-01/index.html"><code>BR-Z-01</code></a> — If any line/allowance/charge is Zero rated (Z), the VAT breakdown must contain exactly one Zero rated category. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-02/index.html"><code>BR-Z-02</code></a> — A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-03/index.html"><code>BR-Z-03</code></a> — A Zero-rated (Z) Document level allowance (BT-95) requires the Seller VAT identifier disjunct. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-04/index.html"><code>BR-Z-04</code></a> — A Zero-rated (Z) Document level charge (BT-102) requires the Seller VAT identifier disjunct. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-05/index.html"><code>BR-Z-05</code></a> — In a Zero-rated (Z) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-06/index.html"><code>BR-Z-06</code></a> — In a Zero-rated (Z) Document level allowance the allowance VAT rate (BT-96) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-07/index.html"><code>BR-Z-07</code></a> — In a Zero-rated (Z) Document level charge the charge VAT rate (BT-103) shall be 0. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-08/index.html"><code>BR-Z-08</code></a> — The Zero-rated (Z) VAT breakdown taxable amount (BT-116) shall equal the exact sum of Z line net amounts − Z allowances + Z charges. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-09/index.html"><code>BR-Z-09</code></a> — The VAT category tax amount (BT-117) in a Zero-rated (Z) VAT breakdown shall equal 0. <span class="sev">fatal</span></li>
+<li><a href="BR-Z-10/index.html"><code>BR-Z-10</code></a> — A VAT breakdown (BG-23) with a Zero rated (Z) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121). <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-DE">
+<h2>BR-DE <small>(31)</small></h2>
+<p class="intro">German XRechnung national CIUS rules (KoSIT).</p>
+<ul class="rules">
+<li><a href="BR-DE-1/index.html"><code>BR-DE-1</code></a> — An invoice must contain PAYMENT INSTRUCTIONS (BG-16). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-2/index.html"><code>BR-DE-2</code></a> — SELLER CONTACT (BG-6) must be transmitted. <span class="sev">fatal</span></li>
+<li><a href="BR-DE-3/index.html"><code>BR-DE-3</code></a> — Seller city (BT-37) must be transmitted (non-empty). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-4/index.html"><code>BR-DE-4</code></a> — Seller post code (BT-38) must be transmitted (non-empty). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-5/index.html"><code>BR-DE-5</code></a> — Seller contact point (BT-41) must be transmitted (non-empty). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-6/index.html"><code>BR-DE-6</code></a> — Seller contact telephone number (BT-42) must be transmitted. <span class="sev">fatal</span></li>
+<li><a href="BR-DE-7/index.html"><code>BR-DE-7</code></a> — Seller contact email address (BT-43) must be transmitted. <span class="sev">fatal</span></li>
+<li><a href="BR-DE-8/index.html"><code>BR-DE-8</code></a> — Buyer city (BT-52) must be transmitted (non-empty). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-9/index.html"><code>BR-DE-9</code></a> — Buyer post code (BT-53) must be transmitted (non-empty). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-10/index.html"><code>BR-DE-10</code></a> — Deliver to city (BT-77) must be transmitted when DELIVER TO ADDRESS (BG-15) is present. <span class="sev">fatal</span></li>
+<li><a href="BR-DE-11/index.html"><code>BR-DE-11</code></a> — Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present. <span class="sev">fatal</span></li>
+<li><a href="BR-DE-14/index.html"><code>BR-DE-14</code></a> — VAT category rate (BT-119) must be transmitted (non-empty) in every top-level VAT breakdown row. <span class="sev">fatal</span></li>
+<li><a href="BR-DE-15/index.html"><code>BR-DE-15</code></a> — Buyer reference (BT-10) must be transmitted (non-empty). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-16/index.html"><code>BR-DE-16</code></a> — If VAT category codes S/Z/E/AE/K/G/L/M are used, one of Seller VAT identifier (BT-31), Seller tax registration identifier (BT-32) or SELLER TAX REPRESENTATIVE PARTY (BG-11) must be present. <span class="sev">fatal</span></li>
+<li><a href="BR-DE-17/index.html"><code>BR-DE-17</code></a> — BT-3 should be one of 326, 380, 384, 389, 381, 875, 876, 877. <span class="sev">warning</span></li>
+<li><a href="BR-DE-18/index.html"><code>BR-DE-18</code></a> — Skonto (cash-discount) lines in Payment terms (BT-20). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-19/index.html"><code>BR-DE-19</code></a> — With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription). <span class="sev">warning</span></li>
+<li><a href="BR-DE-20/index.html"><code>BR-DE-20</code></a> — With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN. <span class="sev">warning</span></li>
+<li><a href="BR-DE-21/index.html"><code>BR-DE-21</code></a> — BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) — untrimmed string equality. <span class="sev">warning</span></li>
+<li><a href="BR-DE-22/index.html"><code>BR-DE-22</code></a> — The filename attribute of all EmbeddedDocumentBinaryObject elements must be unique (across cac:AdditionalDocumentReference). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-23-a/index.html"><code>BR-DE-23-a</code></a> — Codes 30/58 (credit transfer) require CREDIT TRANSFER (BG-17). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-23-b/index.html"><code>BR-DE-23-b</code></a> — Codes 30/58 forbid PAYMENT CARD (BG-18) and DIRECT DEBIT (BG-19). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-24-a/index.html"><code>BR-DE-24-a</code></a> — Codes 48/54/55 (card) require PAYMENT CARD INFORMATION (BG-18). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-24-b/index.html"><code>BR-DE-24-b</code></a> — Codes 48/54/55 forbid CREDIT TRANSFER (BG-17) and DIRECT DEBIT (BG-19). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-25-a/index.html"><code>BR-DE-25-a</code></a> — Code 59 (direct debit) requires DIRECT DEBIT (BG-19). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-25-b/index.html"><code>BR-DE-25-b</code></a> — Code 59 forbids CREDIT TRANSFER (BG-17) and PAYMENT CARD (BG-18). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-26/index.html"><code>BR-DE-26</code></a> — Type code 384 (Corrected invoice) should carry a PRECEDING INVOICE REFERENCE (BG-3). <span class="sev">warning</span></li>
+<li><a href="BR-DE-27/index.html"><code>BR-DE-27</code></a> — BT-42 should contain at least three digits. Evaluated per seller Contact; an ABSENT telephone normalizes to &#x27;&#x27; and fires too. <span class="sev">warning</span></li>
+<li><a href="BR-DE-28/index.html"><code>BR-DE-28</code></a> — BT-43 should look like an email address (exactly one &#x27;@&#x27;, flanked per the official regex). <span class="sev">warning</span></li>
+<li><a href="BR-DE-30/index.html"><code>BR-DE-30</code></a> — DIRECT DEBIT (BG-19) requires the Bank assigned creditor identifier (BT-90: a SEPA-scheme PartyIdentification of the seller or payee). <span class="sev">fatal</span></li>
+<li><a href="BR-DE-31/index.html"><code>BR-DE-31</code></a> — DIRECT DEBIT (BG-19) requires the Debited account identifier (BT-91). <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-DE-TMP">
+<h2>BR-DE-TMP <small>(1)</small></h2>
+<p class="intro">German XRechnung national rules (BR-DE-TMP).</p>
+<ul class="rules">
+<li><a href="BR-DE-TMP-32/index.html"><code>BR-DE-TMP-32</code></a> — An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line. <span class="sev">information</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-DEX">
+<h2>BR-DEX <small>(14)</small></h2>
+<p class="intro">German XRechnung extension-layer rules (BR-DEX).</p>
+<ul class="rules">
+<li><a href="BR-DEX-01/index.html"><code>BR-DEX-01</code></a> — Every &#x27;Attached Document&#x27; binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set). <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-02/index.html"><code>BR-DEX-02</code></a> — The &#x27;Invoice line net amount&#x27; (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs&#x27; net amounts. <span class="sev">warning</span></li>
+<li><a href="BR-DEX-03/index.html"><code>BR-DEX-03</code></a> — A SUB INVOICE LINE (BG-DEX-01) must carry exactly one SUB INVOICE LINE VAT INFORMATION (BG-DEX-06) — i.e. its Item must have exactly one cac:ClassifiedTaxCategory. Fires if any sub-line item has 0 or &gt;1. <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-04/index.html"><code>BR-DEX-04</code></a> — Any scheme identifier on a Party identifier (cac:Party Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or &#x27;SEPA&#x27; when the identifier belongs to the Seller or the Payee. <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-05/index.html"><code>BR-DEX-05</code></a> — Any scheme identifier on a legal registration identifier (cac:PartyLegalEntity/cbc:CompanyID, BT-30/BT-47) must be an ISO 6523 ICD (extension) code. <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-06/index.html"><code>BR-DEX-06</code></a> — Any scheme identifier on an item standard identifier (cac:StandardItemIdentification/cbc:ID, BT-157) must be an ISO 6523 ICD (extension) code. <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-07/index.html"><code>BR-DEX-07</code></a> — Any scheme identifier on an Endpoint identifier (cbc:Endpoint ID, BT-34/BT-49) must belong to the CEF EAS (extension) code list. <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-08/index.html"><code>BR-DEX-08</code></a> — Any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code. <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-09/index.html"><code>BR-DEX-09</code></a> — Amount due for payment (BT-115) = Invoice total amount with VAT (BT-112) - Paid amount (BT-113) + Rounding amount (BT-114) + Σ Third party payment amount (BT-DEX-002). <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-10/index.html"><code>BR-DEX-10</code></a> — &#x27;Third party payment type&#x27; (BT-DEX-001, cbc:ID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-11/index.html"><code>BR-DEX-11</code></a> — &#x27;Third party payment amount&#x27; (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-12/index.html"><code>BR-DEX-12</code></a> — &#x27;Third party payment description&#x27; (BT-DEX-003, cbc:InstructionID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-13/index.html"><code>BR-DEX-13</code></a> — &#x27;Third party payment amount&#x27; (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, &#x27;.&#x27;)) &lt;= 2 (no &#x27;.&#x27; -&gt; &#x27;&#x27; -&gt; length 0 -&gt; holds). <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-14/index.html"><code>BR-DEX-14</code></a> — The currency of &#x27;Third party payment amount&#x27; (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -&gt; fires. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<footer>
+Generated from <code>remediation_catalog.json</code> (single source of truth) by <code>gen_site.py</code>, reusing the family grouping and labels of <code>gen_rules_doc.py</code>. Self-contained: this page opens offline with no network requests.
+</footer>
+</main>
+</body>
+</html>

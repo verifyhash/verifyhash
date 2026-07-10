@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>BR-DE-18 — Skonto (cash-discount) lines in Payment terms (BT-20). — einvoice rule reference</title>
+<style>:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  line-height: 1.5; margin: 0; padding: 2rem 1rem; color: #1f2328;
+  background: #ffffff; }
+main { max-width: 46rem; margin: 0 auto; }
+.crumb { color: #57606a; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; margin: 0 0 .5rem; }
+h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.9rem; margin: 0; }
+.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.sev { display: inline-block; font-size: .8rem; font-weight: 700;
+  padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
+  margin: 0; }
+dt { font-weight: 700; color: #57606a; }
+dd { margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
+  font-size: .92em; }
+.assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
+  color: #24292f; }
+.terms code { margin-right: .3rem; }
+footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid #d0d7de; padding-top: 1rem; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e6edf3; background: #0d1117; }
+  .title, .assert, dd { color: #e6edf3; }
+  .crumb, dt, footer { color: #8b949e; }
+  code { background: #161b22; }
+  .sev, .assert, footer { border-color: #30363d; }
+}</style>
+</head>
+<body>
+<main>
+<p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
+<h1>BR-DE-18</h1>
+<p class="title">Skonto (cash-discount) lines in Payment terms (BT-20).</p>
+<dl>
+<dt>Requires</dt><dd>Skonto (cash-discount) lines in Payment terms (BT-20).</dd>
+<dt>Business terms</dt><dd class="terms"><code>BT-20</code> <code>BT-115</code></dd>
+<dt>Location</dt><dd><code>cac:PaymentTerms/cbc:Note</code></dd>
+<dt>Fix</dt><dd>Correct `cac:PaymentTerms/cbc:Note` so that Skonto (cash-discount) lines in Payment terms (BT-20).</dd>
+<dt>Severity</dt><dd><span class="sev">fatal</span></dd>
+<dt>Provenance source</dt><dd><code>xrechnung-ubl</code></dd>
+<dt>Provenance assert</dt><dd><p class="assert">Skonto Zeilen in müssen diesem regulärem Ausdruck entsprechen: . Die Informationen zur Gewährung von Skonto müssen wie folgt im Element &quot;Payment terms&quot; (BT-20) übermittelt werden: Anzugeben ist im ersten Segment &quot;SKONTO&quot;, im zweiten &quot;TAGE=n&quot;, im dritten &quot;PROZENT=n&quot;. Prozentzahlen sind ohne Vorzeichen sowie mit Punkt getrennt von zwei Nachkommastellen anzugeben. Liegt dem zu berechnenden Betrag nicht BT-115, &quot;fälliger Betrag&quot; zugrunde, sondern nur ein Teil des fälligen Betrags der Rechnung, ist der Grundwert zur Berechnung von Skonto als viertes Segment &quot;BASISBETRAG=n&quot; gemäß dem semantischen Datentypen Amount anzugeben. Jeder Eintrag beginnt mit einer #, die Segmente sind mit einer # getrennt und eine Zeile schließt mit einer # ab. Am Ende einer vollständigen Skontoangabe muss ein XML-konformer Zeilenumbruch folgen. Alle Angaben zur Gewährung von Skonto müssen in Großbuchstaben gemacht werden. Zusätzliches Whitespace (Leerzeichen, Tabulatoren oder Zeilenumbrüche) ist nicht zulässig. Andere Zeichen oder Texte als in den oberen Vorgaben genannt sind nicht zulässig.</p></dd>
+</dl>
+<footer>
+Rendered verbatim from <code>remediation_catalog.json</code> (single source of truth); regenerate with <code>gen_site.py</code>. This page is self-contained and opens offline with no network requests.
+</footer>
+</main>
+</body>
+</html>

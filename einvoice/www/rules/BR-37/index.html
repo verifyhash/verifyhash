@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>BR-37 — Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102). — einvoice rule reference</title>
+<style>:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  line-height: 1.5; margin: 0; padding: 2rem 1rem; color: #1f2328;
+  background: #ffffff; }
+main { max-width: 46rem; margin: 0 auto; }
+.crumb { color: #57606a; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; margin: 0 0 .5rem; }
+h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.9rem; margin: 0; }
+.title { font-size: 1.15rem; margin: .35rem 0 1.5rem; color: #24292f; }
+.sev { display: inline-block; font-size: .8rem; font-weight: 700;
+  padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
+  margin: 0; }
+dt { font-weight: 700; color: #57606a; }
+dd { margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
+  font-size: .92em; }
+.assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
+  color: #24292f; }
+.terms code { margin-right: .3rem; }
+footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid #d0d7de; padding-top: 1rem; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e6edf3; background: #0d1117; }
+  .title, .assert, dd { color: #e6edf3; }
+  .crumb, dt, footer { color: #8b949e; }
+  code { background: #161b22; }
+  .sev, .assert, footer { border-color: #30363d; }
+}</style>
+</head>
+<body>
+<main>
+<p class="crumb">einvoice — EN 16931 / XRechnung rule reference</p>
+<h1>BR-37</h1>
+<p class="title">Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102).</p>
+<dl>
+<dt>Requires</dt><dd>Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102).</dd>
+<dt>Business terms</dt><dd class="terms"><code>BG-21</code> <code>BT-102</code></dd>
+<dt>Location</dt><dd><code>/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]</code></dd>
+<dt>Fix</dt><dd>Correct `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]` so that Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102).</dd>
+<dt>Severity</dt><dd><span class="sev">fatal</span></dd>
+<dt>Provenance source</dt><dd><code>en16931-ubl</code></dd>
+<dt>Provenance assert</dt><dd><p class="assert">Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102).</p></dd>
+</dl>
+<footer>
+Rendered verbatim from <code>remediation_catalog.json</code> (single source of truth); regenerate with <code>gen_site.py</code>. This page is self-contained and opens offline with no network requests.
+</footer>
+</main>
+</body>
+</html>

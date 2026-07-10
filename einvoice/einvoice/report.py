@@ -69,6 +69,7 @@ Standard library only. No network.
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import sys
@@ -660,8 +661,203 @@ def build_sarif(report):
     }
 
 
+#: Minimal, inline stylesheet for the self-contained HTML report. No external
+#: CSS/JS/fonts — everything the document needs travels inside it, so it opens
+#: offline with zero network requests. Colours use system-ui fonts (a local
+#: stack, never a web font) and a light-only palette that prints legibly.
+_HTML_STYLE = """
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  margin: 0; padding: 2rem 1rem; color: #1b1f24; background: #f6f8fa;
+  line-height: 1.5; }
+main { max-width: 60rem; margin: 0 auto; }
+h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+.meta { color: #57606a; font-size: .85rem; margin: 0 0 1.5rem;
+  word-break: break-all; }
+.banner { border-radius: 8px; padding: 1rem 1.25rem; margin: 0 0 1.5rem;
+  font-weight: 600; border: 1px solid transparent; }
+.banner.pass { background: #e6f4ea; color: #14532d; border-color: #a6d8b4; }
+.banner.fail { background: #fce8e6; color: #7a1f16; border-color: #f0b3ac; }
+.banner .counts { display: block; font-weight: 400; font-size: .9rem;
+  margin-top: .35rem; color: inherit; }
+.finding { background: #fff; border: 1px solid #d0d7de; border-radius: 8px;
+  padding: 1rem 1.25rem; margin: 0 0 1rem; }
+.finding h2 { font-size: 1.05rem; margin: 0 0 .5rem;
+  display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.rule-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.sev { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+  padding: .1rem .5rem; border-radius: 999px; font-weight: 700; }
+.sev.fatal { background: #fce8e6; color: #7a1f16; }
+.sev.warning { background: #fff3d6; color: #7a5b0d; }
+.sev.information { background: #ddeeff; color: #0a4a7a; }
+.title { font-weight: 600; }
+.msg { margin: .35rem 0; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem;
+  margin: .6rem 0 0; font-size: .9rem; }
+dt { color: #57606a; font-weight: 600; }
+dd { margin: 0; word-break: break-word; }
+dd.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.error-row { background: #fce8e6; border: 1px solid #f0b3ac; border-radius: 8px;
+  padding: 1rem 1.25rem; }
+.error-row .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700; }
+footer { color: #57606a; font-size: .8rem; margin-top: 2rem; }
+""".strip()
+
+
+def _h(value):
+    """HTML-escape ANY report/invoice/catalog-derived text for safe markup.
+
+    A thin wrapper over :func:`html.escape` (quote=True, so both ``"`` and
+    ``'`` are encoded) that also coerces ``None``/non-strings to a string first,
+    so a missing catalog field renders as an empty cell rather than raising.
+    ALL invoice- and catalog-derived text passes through here before it lands in
+    the document — there is no raw f-string interpolation of untrusted text.
+    """
+    if value is None:
+        return ""
+    return html.escape(str(value), quote=True)
+
+
+def build_html(report):
+    """Project a report dict (from :func:`build_report`) into ONE self-contained
+    static HTML document (returned as a ``str``, a full ``<!doctype html>`` …
+    ``</html>``).
+
+    Like :func:`build_junit` / :func:`build_sarif`, this is a PURE, additional
+    PROJECTION of the very same validator outcome the JSON path emits — it adds
+    no rule logic, invents no wording, and re-reads nothing. Every human string
+    comes from either the Violation (message/field) or the committed remediation
+    catalog fields that :func:`_record` already attached (title/fix_hint/terms/
+    location), and EVERY such value is HTML-escaped through :func:`_h` before it
+    reaches the markup (injection-safe).
+
+    Self-containment (hard requirement): the only styling is an inline
+    ``<style>`` block (:data:`_HTML_STYLE`); there are NO external CSS/JS/CDN
+    references, no ``<img>``, no web fonts, no analytics — the file opens offline
+    with zero network requests.
+
+    Layout:
+      * a pass/fail banner ("Conformant" vs "N finding(s)") built from the same
+        summary fields (``valid``/``fatal_count``/``warning_count``/
+        ``violation_count``) the JSON path exposes;
+      * one card per violation carrying the rule id, a severity pill, the
+        remediation ``title``, the violation ``message``, and a definition list
+        of ``fix_hint`` / BT-BG ``terms`` / ``field`` / ``location``;
+      * a not-well-formed input (``report`` has an ``error``) renders a single
+        error row with the error code + parser message — mirroring the JSON /
+        JUnit / SARIF not-well-formed contract.
+
+    :param report: a dict as returned by :func:`build_report`.
+    :returns: a self-contained HTML document as a ``str``.
+    """
+    profile = report.get("profile", "")
+    source = report.get("source", "")
+
+    parts = []
+    parts.append("<!doctype html>")
+    parts.append('<html lang="en">')
+    parts.append("<head>")
+    parts.append('<meta charset="utf-8">')
+    parts.append('<meta name="viewport" content="width=device-width, '
+                 'initial-scale=1">')
+    parts.append('<meta name="robots" content="noindex">')
+    parts.append("<title>einvoice conformance report</title>")
+    parts.append("<style>%s</style>" % _HTML_STYLE)
+    parts.append("</head>")
+    parts.append("<body>")
+    parts.append("<main>")
+    parts.append("<h1>EN 16931 / XRechnung conformance report</h1>")
+    parts.append('<p class="meta">source: %s &middot; profile: %s</p>'
+                 % (_h(source) or "(stdin)", _h(profile)))
+
+    if report.get("error"):
+        # Not-well-formed XML: a single error row — the HTML analogue of the
+        # JUnit single-<error> testcase / SARIF single error result.
+        code = report["error"]
+        msg = report.get("message", "") or code
+        parts.append('<div class="banner fail">Not well-formed XML — the '
+                     "invoice could not be parsed.</div>")
+        parts.append('<div class="error-row">')
+        parts.append('<span class="code">%s</span>' % _h(code))
+        parts.append("<p>%s</p>" % _h(msg))
+        parts.append("</div>")
+    else:
+        violations = report.get("violations", [])
+        valid = report.get("valid")
+        fatal_count = report.get("fatal_count", 0)
+        warning_count = report.get("warning_count", 0)
+        violation_count = report.get("violation_count", len(violations))
+
+        if valid:
+            n = violation_count
+            note = ("no findings" if n == 0
+                    else "%d non-fatal finding%s (warnings do not invalidate)"
+                    % (n, "" if n == 1 else "s"))
+            parts.append('<div class="banner pass">Conformant'
+                         '<span class="counts">%s</span></div>' % _h(note))
+        else:
+            counts = ("%d finding%s &middot; %d fatal &middot; %d warning"
+                      % (violation_count, "" if violation_count == 1 else "s",
+                         fatal_count, warning_count))
+            parts.append('<div class="banner fail">Not conformant'
+                         '<span class="counts">%s</span></div>' % counts)
+
+        for v in violations:
+            rule = v.get("rule") or ""
+            severity = v.get("severity") or "fatal"
+            title = v.get("title")
+            message = v.get("message") or ""
+            fix_hint = v.get("fix_hint")
+            terms = v.get("terms") or []
+            field = v.get("field")
+            location = v.get("location")
+
+            sev_class = severity if severity in (
+                "fatal", "warning", "information") else "information"
+
+            parts.append('<div class="finding">')
+            head = ['<span class="rule-id">%s</span>' % _h(rule),
+                    '<span class="sev %s">%s</span>'
+                    % (_h(sev_class), _h(severity))]
+            if title:
+                head.append('<span class="title">%s</span>' % _h(title))
+            parts.append("<h2>%s</h2>" % "".join(head))
+            if message:
+                parts.append('<p class="msg">%s</p>' % _h(message))
+
+            rows = []
+            if fix_hint:
+                rows.append(("How to fix", _h(fix_hint), False))
+            if terms:
+                rows.append(("Business terms",
+                             _h(", ".join(str(t) for t in terms)), True))
+            if field:
+                rows.append(("Field", _h(field), True))
+            if location:
+                rows.append(("Location", _h(location), True))
+            if rows:
+                parts.append("<dl>")
+                for label, val, mono in rows:
+                    parts.append("<dt>%s</dt>" % _h(label))
+                    parts.append('<dd%s>%s</dd>'
+                                 % (' class="mono"' if mono else "", val))
+                parts.append("</dl>")
+            parts.append("</div>")
+
+    parts.append("<footer>Static conformance artifact — reflects this one "
+                 "report run against the invoice above. Generated offline by "
+                 "einvoice; no network, no tracking.</footer>")
+    parts.append("</main>")
+    parts.append("</body>")
+    parts.append("</html>")
+    return "\n".join(parts) + "\n"
+
+
 USAGE = ("usage: python3 -m einvoice.report "
-         "[--profile en16931|xrechnung] [--format json|junit|sarif] [--pretty] "
+         "[--profile en16931|xrechnung] [--format json|junit|sarif|html] "
+         "[--pretty] "
          "[--baseline <prev-report.json>] <invoice.xml>\n"
          "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
          "  --baseline diffs against a prior JSON report and fails (exit 1) "
@@ -813,10 +1009,10 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
-    if fmt not in ("json", "junit", "sarif"):
+    if fmt not in ("json", "junit", "sarif", "html"):
         sys.stderr.write(
-            "error: unknown format %r (choose from json, junit, sarif)\n%s\n"
-            % (fmt, USAGE))
+            "error: unknown format %r (choose from json, junit, sarif, html)"
+            "\n%s\n" % (fmt, USAGE))
         return EXIT_FAIL
 
     if profile not in PROFILES:
@@ -824,7 +1020,7 @@ def main(argv=None):
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_FAIL
 
-    if baseline_path is not None and fmt in ("junit", "sarif"):
+    if baseline_path is not None and fmt in ("junit", "sarif", "html"):
         sys.stderr.write(
             "error: --baseline emits a diff document and is not compatible "
             "with --format %s\n%s\n" % (fmt, USAGE))
@@ -864,6 +1060,8 @@ def main(argv=None):
     elif fmt == "sarif":
         sys.stdout.write(
             json.dumps(build_sarif(report), indent=2, sort_keys=True) + "\n")
+    elif fmt == "html":
+        sys.stdout.write(build_html(report))
     elif pretty:
         sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
     else:

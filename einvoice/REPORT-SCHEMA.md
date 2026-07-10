@@ -13,19 +13,20 @@ constant in `einvoice/report.py`; this file is its human companion.
 ## Invocation
 
 ```
-python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit|sarif] [--pretty] [--baseline <prev-report.json>] <invoice.xml>
+python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit|sarif|html] [--pretty] [--baseline <prev-report.json>] <invoice.xml>
 ```
 
 - `--profile` — `xrechnung` (default) or `en16931`. `xrechnung` adds the German
   national CIUS layer (BR-DE-\*) on top of the EN 16931 core.
-- `--format` — `json` (default), `junit`, or `sarif`. `junit` emits a JUnit XML
-  document (see **JUnit output** below); `sarif` emits a SARIF 2.1.0 document
-  (see **SARIF output** below) for GitHub code-scanning. Both are projections of
-  the same findings and share the JSON path's exit-code contract. Neither is
-  compatible with `--baseline`.
+- `--format` — `json` (default), `junit`, `sarif`, or `html`. `junit` emits a
+  JUnit XML document (see **JUnit output** below); `sarif` emits a SARIF 2.1.0
+  document (see **SARIF output** below) for GitHub code-scanning; `html` emits a
+  single self-contained shareable HTML report (see **HTML output** below). All
+  are projections of the same findings and share the JSON path's exit-code
+  contract. None is compatible with `--baseline`.
 - `--pretty` — indent the JSON (with sorted keys) instead of the default
-  compact single line. Ignored when `--format junit`/`sarif` is in effect (both
-  render their own document).
+  compact single line. Ignored when `--format junit`/`sarif`/`html` is in effect
+  (each renders its own document).
 - `--baseline <prev-report.json>` — switch to **baseline diff mode** (see
   **Baseline diff mode** below). Fails the build only on a *new* regression
   relative to a captured prior report, not on pre-existing violations.
@@ -165,6 +166,35 @@ the invoice you passed — it is not a standing rule inventory. Only rules that
 actually fired appear in `tool.driver.rules`, so a clean invoice yields an empty
 `rules`/`results` pair. Standard-library `json` only; no new dependency, no
 network.
+
+## HTML output (`--format html`)
+
+`--format html` renders a **single self-contained static HTML document** (full
+`<!doctype html>` … `</html>`) meant to be shared or archived as a build
+artifact — attach it to a CI run, email it to a supplier, open it offline. Like
+the JUnit/SARIF paths it is a **pure projection** of the same `build_report()`
+findings: no rule logic, no invented wording. Layout:
+
+- a pass/fail **banner** ("Conformant" vs "Not conformant") built from the same
+  `valid` / `fatal_count` / `warning_count` / `violation_count` summary fields
+  the JSON path exposes;
+- one **card per violation** carrying the rule id, a severity pill
+  (fatal/warning/information), the remediation `title`, the violation `message`,
+  and a definition list of the catalog `fix` hint, the `BT-`/`BG-` business
+  terms, the offending `field`, and the `location` hint;
+- not-well-formed XML renders a single **error row** with the `not-well-formed`
+  code + the parser message and exits `3` — mirroring the JSON/JUnit/SARIF
+  not-well-formed contract; the exit code otherwise matches the JSON path
+  (`0` valid / `1` fatal).
+
+Self-containment is a hard guarantee: the only styling is one inline `<style>`
+block — **no external CSS/JS/CDN, no `<img>`, no web fonts, no analytics** — so
+the file opens with **zero network requests**. Every invoice- and catalog-derived
+string is HTML-escaped (`html.escape`, quotes included) before it reaches the
+markup, so a value containing `<script>` cannot inject anything. Honest scope: the
+document reflects **this one report run** against the invoice you passed — it is a
+static snapshot, not a live dashboard. `--pretty` is ignored (the HTML layout is
+fixed), and `--baseline` is not combinable with `--format html`.
 
 ## Baseline diff mode (`--baseline <prev-report.json>`)
 

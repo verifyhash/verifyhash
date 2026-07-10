@@ -44,12 +44,17 @@ dt { font-weight: 700; color: #57606a; }
 dd { margin: 0; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
-  font-size: .92em; }
+  font-size: .92em; overflow-wrap: anywhere; }
 .assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
   color: #24292f; }
 .terms code { margin-right: .3rem; }
 footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   border-top: 1px solid #d0d7de; padding-top: 1rem; }
+@media (max-width: 480px) {
+  dl { grid-template-columns: 1fr; gap: .15rem 0; }
+  dl dt { margin-top: .55rem; }
+  dl dt:first-child { margin-top: 0; }
+}
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   .title, .assert, dd, .lead { color: #e6edf3; }

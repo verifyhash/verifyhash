@@ -17,21 +17,57 @@ are then fed to the SAME CII parser + rule engine the tool already ships, so
 XRechnung rules it would run on the raw ``factur-x.xml``.
 
 Provenance for the structure walked here:
-  * PDF 32000-1:2008 (ISO 32000-1) — §7.7.2 (document catalog ``/Names``),
-    §7.7.4 & §7.9.6 (name trees, ``/Kids`` / ``/Names`` node shapes),
-    §7.11.3 (file specification dictionary, ``/EF``, ``/F``, ``/UF``),
-    §7.11.4 (embedded file streams), §7.4.4 (``FlateDecode``),
-    §7.5.4 (classic cross-reference table) and §7.5.5 (file trailer).
+  * PDF 32000-1:2008 (ISO 32000-1) — §7.7.2 (document catalog ``/Names`` and
+    ``/AF``), §7.7.4 & §7.9.6 (name trees, ``/Kids`` / ``/Names`` node shapes),
+    §7.11.3 (file specification dictionary, ``/EF``, ``/F``, ``/UF``,
+    ``/AFRelationship``), §7.11.4 (embedded file streams), §7.4.4
+    (``FlateDecode``), §7.5.4 (classic cross-reference table), §7.5.5 (file
+    trailer) and §14.3.2 / §7.10 (the document ``/Metadata`` XMP stream).
   * Factur-X 1.0.7 / ZUGFeRD 2.x and PDF/A-3 (ISO 19005-3) — the attachment
-    naming and the ``/AFRelationship`` (``/Data`` | ``/Alternative`` | ...)
-    marker on the file specification.
+    naming, the ``/AFRelationship`` (``/Data`` | ``/Alternative`` | ...) marker
+    on the file specification, the requirement that the invoice file be an
+    associated file of the catalog (``/AF``), and the Factur-X/ZUGFeRD XMP
+    extension schema (namespace ``urn:factur-x:pdfa:CrossIndustryDocument:``
+    ``invoice:1p0#`` / ``urn:zugferd:pdfa:...``) that declares the invoice
+    ``DocumentType`` / ``ConformanceLevel`` (profile) / ``Version``.
+
+CONTAINER-DECLARATION CHECKS (FX-CONTAINER-*)
+---------------------------------------------
+On top of extraction, :func:`inspect_container` layers the ZUGFeRD/Factur-X
+container-declaration checks the official UN/CEFACT CII Schematron does NOT
+cover, emitting each as a first-class report finding with a STABLE id:
+
+  * ``FX-CONTAINER-AFRELATIONSHIP`` — the invoice file specification's
+    ``/AFRelationship`` is absent or is not ``/Data`` or ``/Alternative``
+    (PDF 32000-1 §7.11.3; Factur-X/ZUGFeRD mandate ``/Alternative`` for the
+    hybrid invoice, ``/Data`` where the XML is the data source).
+  * ``FX-CONTAINER-AF`` — the invoice file specification is NOT listed in the
+    document catalog's ``/AF`` associated-files array (PDF 32000-1 §7.7.2 /
+    §7.11.4.2), i.e. the embedded invoice is not declared an associated file.
+  * ``FX-CONTAINER-XMP`` — the document ``/Metadata`` XMP stream is absent, is
+    unreachable zero-dependency, or declares no Factur-X/ZUGFeRD profile
+    (no ``ConformanceLevel`` in a ``urn:factur-x``/``urn:zugferd`` namespace).
+    This is the "undeclared / unsupported" finding — never a false pass.
+  * ``FX-CONTAINER-PROFILE`` — the XMP-declared ``ConformanceLevel`` and the CII
+    ``CustomizationID`` (BT-24) map to DIFFERENT profiles (e.g. XMP says
+    ``EN 16931`` but the XML CustomizationID is BASIC). Only fires when BOTH
+    sides map to a recognised, distinct profile token.
+
+These are advisory ``warning`` findings: the authoritative EN 16931 / XRechnung
+pass/fail is still decided by the rule engine on the embedded XML, so a wrong
+container declaration is reported WITHOUT flipping ``valid`` on its own.
 
 WHAT THIS IS *NOT* (honesty guardrail — constitution §7)
 --------------------------------------------------------
-This is a CONTAINER XML *extractor*, not a PDF/A-3 conformance or typographic
-validator. It deliberately handles only the common, unencrypted, classic
-case and refuses everything else with a clear "unsupported container" error
-(never a false pass, never a traceback). Specifically:
+This is a CONTAINER XML *extractor* plus the four declaration checks above —
+NOT a PDF/A-3 conformance validator, a typographic/visual validator, or a
+digital-signature checker. The XMP and ``/AF`` checks inspect only the
+*declarations* (is the relationship right, is the profile string consistent);
+they do NOT verify PDF/A-3 Level A/B/U conformance, font embedding, colour
+spaces, the output intent, or that the rendered page matches the XML. It
+deliberately handles only the common, unencrypted, classic case and refuses
+everything else with a clear "unsupported container" error (never a false
+pass, never a traceback). Specifically:
 
   HANDLED
     * ``%PDF-`` files with a classic cross-reference *table* + a ``trailer``
@@ -51,9 +87,9 @@ case and refuses everything else with a clear "unsupported container" error
       ``/FlateDecode`` (e.g. ``/DCTDecode``, multi-filter pipelines);
     * anything that is not a PDF at all (no ``%PDF-`` magic).
 
-  It also does NOT verify PDF/A-3 conformance, digital signatures, the
-  ``/AF`` association, XMP metadata, or that the visual rendering matches the
-  XML — extraction only.
+  Beyond the FX-CONTAINER-* declaration checks above, it does NOT verify
+  PDF/A-3 conformance, digital signatures, or that the visual rendering
+  matches the XML.
 
 Standard library only (``re``, ``zlib``). No network, no new dependencies.
 """
@@ -75,6 +111,52 @@ KNOWN_INVOICE_NAMES = frozenset({
     "zugferd-invoice.xml",
     "xrechnung.xml",
 })
+
+#: Valid ``/AFRelationship`` values for the embedded invoice file specification
+#: per Factur-X 1.x / ZUGFeRD 2.x (PDF 32000-1 §7.11.3 Table 45 defines the full
+#: set; the hybrid invoice attachment must be ``/Alternative`` — the XML is an
+#: alternative representation of the visual invoice — or ``/Data``).
+VALID_AF_RELATIONSHIPS = frozenset({"Data", "Alternative"})
+
+#: Stable ids for the FX-CONTAINER-* container-declaration findings (see the
+#: module docstring). Reported as first-class ``warning`` findings on PDF input.
+FX_AFRELATIONSHIP = "FX-CONTAINER-AFRELATIONSHIP"
+FX_AF = "FX-CONTAINER-AF"
+FX_XMP = "FX-CONTAINER-XMP"
+FX_PROFILE = "FX-CONTAINER-PROFILE"
+
+
+class ContainerFinding:
+    """One FX-CONTAINER-* container-declaration finding.
+
+    Structurally mirrors :class:`einvoice.rules.Violation`
+    (``rule_id`` / ``message`` / ``element`` / ``severity``) so
+    :mod:`einvoice.report` can project it with the SAME ``_record`` mapping it
+    uses for every other violation — no special-casing in the report shape.
+    """
+
+    __slots__ = ("rule_id", "message", "element", "severity")
+
+    def __init__(self, rule_id, message, element, severity="warning"):
+        self.rule_id = rule_id
+        self.message = message
+        self.element = element
+        self.severity = severity
+
+    def __repr__(self):
+        return "ContainerFinding(%r, %r)" % (self.rule_id, self.severity)
+
+
+class ContainerInspection:
+    """Result of :func:`inspect_container`: the extracted invoice ``xml_bytes``
+    plus the list of :class:`ContainerFinding` container-declaration findings
+    (empty when every declaration is consistent)."""
+
+    __slots__ = ("xml_bytes", "findings")
+
+    def __init__(self, xml_bytes, findings):
+        self.xml_bytes = xml_bytes
+        self.findings = findings
 
 
 class UnsupportedContainer(Exception):
@@ -129,6 +211,44 @@ def extract_invoice_xml(path: str) -> bytes:
 
 def extract_invoice_xml_from_bytes(data: bytes) -> bytes:
     """Bytes-level core of :func:`extract_invoice_xml` (see it for contract)."""
+    container = _open_container(data)
+    return _decode_stream(container.stream_obj)
+
+
+def inspect_container(path: str) -> "ContainerInspection":
+    """Extract the embedded invoice XML AND run the FX-CONTAINER-* container
+    declaration checks (``/AFRelationship`` + ``/AF``, XMP profile declaration,
+    and XMP-vs-CII profile consistency) for the PDF at ``path``.
+
+    :returns: a :class:`ContainerInspection` — ``.xml_bytes`` (identical to
+        :func:`extract_invoice_xml`) plus ``.findings`` (a list of
+        :class:`ContainerFinding`, empty when the container is consistent).
+    :raises UnsupportedContainer: on any shape the classic extractor cannot open
+        (same contract as :func:`extract_invoice_xml`). The container CHECKS
+        themselves never raise — an unparseable/absent XMP stream is reported as
+        an FX-CONTAINER-XMP finding, never a traceback and never a false pass.
+    """
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError as exc:
+        raise UnsupportedContainer("cannot read PDF %s: %s" % (path, exc))
+    return inspect_container_from_bytes(data)
+
+
+def inspect_container_from_bytes(data: bytes) -> "ContainerInspection":
+    """Bytes-level core of :func:`inspect_container` (see it for the contract)."""
+    container = _open_container(data)
+    xml_bytes = _decode_stream(container.stream_obj)
+    findings = _container_findings(container, xml_bytes)
+    return ContainerInspection(xml_bytes, findings)
+
+
+def _open_container(data: bytes) -> "_Container":
+    """Parse the PDF and walk it to the invoice file specification + embedded
+    stream object, returning a :class:`_Container` bundle. Raises
+    :class:`UnsupportedContainer` on any unhandled shape (the single place the
+    extraction refusals live, shared by extraction and inspection)."""
     if not looks_like_pdf(data):
         raise UnsupportedContainer(
             "unsupported container: not a PDF (missing %PDF- magic)")
@@ -191,7 +311,216 @@ def extract_invoice_xml_from_bytes(data: bytes) -> bytes:
             "unsupported container: embedded-file stream object is missing or "
             "carries no stream data")
 
-    return _decode_stream(stream_obj)
+    return _Container(data, objects, catalog, filespec, stream_obj)
+
+
+class _Container:
+    """An opened Factur-X/ZUGFeRD container: the raw bytes, the scanned object
+    map, the document catalog, the invoice file specification dict and its
+    embedded-file stream object. The bundle the FX-CONTAINER-* checks read."""
+
+    __slots__ = ("data", "objects", "catalog", "filespec", "stream_obj")
+
+    def __init__(self, data, objects, catalog, filespec, stream_obj):
+        self.data = data
+        self.objects = objects
+        self.catalog = catalog
+        self.filespec = filespec
+        self.stream_obj = stream_obj
+
+
+# --------------------------------------------------------------------------- #
+# FX-CONTAINER-* container-declaration checks
+#
+# These layer over extraction: given an opened container + the embedded XML,
+# check the ZUGFeRD/Factur-X declarations the CII Schematron does not cover.
+# Every helper is total (never raises) — a shape it cannot read becomes an
+# explicit finding, mirroring the UnsupportedContainer discipline.
+# --------------------------------------------------------------------------- #
+def _container_findings(container, xml_bytes):
+    """Return the list of :class:`ContainerFinding` for an opened container.
+
+    Runs the three checks (AFRelationship+/AF, XMP profile declaration, and
+    XMP-vs-CII profile consistency) and returns them ordered deterministically.
+    """
+    findings = []
+
+    # (a) /AFRelationship on the invoice file spec (PDF 32000-1 §7.11.3).
+    rel = _as_text(container.filespec.get("AFRelationship"))
+    if rel is None or rel not in VALID_AF_RELATIONSHIPS:
+        shown = "/%s" % rel if rel else "absent"
+        findings.append(ContainerFinding(
+            FX_AFRELATIONSHIP,
+            "embedded invoice file specification has an absent or invalid "
+            "/AFRelationship (%s); Factur-X/ZUGFeRD require /Alternative "
+            "(or /Data) per PDF 32000-1 §7.11.3" % shown,
+            "/EmbeddedFiles filespec /AFRelationship"))
+
+    # (a, cont.) the invoice filespec must be an associated file of the catalog
+    # (/AF array — PDF 32000-1 §7.7.2 / §7.11.4.2; ZUGFeRD/Factur-X mandate it).
+    if not _filespec_in_af(container):
+        findings.append(ContainerFinding(
+            FX_AF,
+            "embedded invoice is not declared an associated file: the invoice "
+            "file specification is not referenced from the document catalog's "
+            "/AF array (PDF 32000-1 §7.7.2 / §7.11.4.2)",
+            "/Catalog /AF"))
+
+    # (b) + (c): parse the XMP profile declaration, then check consistency.
+    xmp_bytes = _catalog_metadata_bytes(container)
+    xmp = _parse_xmp_profile(xmp_bytes) if xmp_bytes is not None else None
+    if xmp is None or not xmp.get("conformance_level"):
+        if xmp_bytes is None:
+            why = ("the document has no reachable /Metadata XMP stream")
+        elif xmp is None:
+            why = ("the /Metadata XMP declares no urn:factur-x / urn:zugferd "
+                   "namespace")
+        else:
+            why = ("the Factur-X/ZUGFeRD XMP declares no ConformanceLevel")
+        findings.append(ContainerFinding(
+            FX_XMP,
+            "undeclared container profile: %s, so the ZUGFeRD/Factur-X "
+            "DocumentType/ConformanceLevel/Version cannot be confirmed "
+            "(ZUGFeRD 2.x / Factur-X 1.x XMP extension schema)" % why,
+            "/Catalog /Metadata (XMP)"))
+    else:
+        # (c) consistency: XMP ConformanceLevel vs CII CustomizationID (BT-24).
+        xmp_profile = _canonical_profile(xmp["conformance_level"])
+        cii_id = _cii_customization_id(xml_bytes)
+        cii_profile = _canonical_profile(cii_id) if cii_id else None
+        if (xmp_profile is not None and cii_profile is not None
+                and xmp_profile != cii_profile):
+            findings.append(ContainerFinding(
+                FX_PROFILE,
+                "container profile mismatch: the XMP ConformanceLevel %r "
+                "(profile %s) disagrees with the embedded CII CustomizationID "
+                "%r (profile %s) — the PDF misdeclares its EN 16931 profile"
+                % (xmp["conformance_level"], xmp_profile, cii_id, cii_profile),
+                "/Metadata ConformanceLevel vs CII BT-24 CustomizationID"))
+    return findings
+
+
+def _filespec_in_af(container):
+    """True iff the invoice file specification is listed in the catalog ``/AF``
+    associated-files array (matched by object identity, falling back to the
+    invoice attachment name on the referenced spec)."""
+    af = _deref(container.catalog.get("AF"), container.objects)
+    if not isinstance(af, list):
+        return False
+    for item in af:
+        spec = _deref(item, container.objects)
+        if spec is container.filespec:
+            return True
+        if isinstance(spec, dict):
+            for key in ("F", "UF"):
+                name = _as_text(spec.get(key))
+                if name and name.strip().lower() in KNOWN_INVOICE_NAMES:
+                    return True
+    return False
+
+
+def _catalog_metadata_bytes(container):
+    """Return the decoded document ``/Metadata`` XMP stream bytes, or ``None``
+    when the catalog has no reachable/decodable metadata stream (PDF 32000-1
+    §14.3.2). Never raises — an undecodable stream is treated as absent."""
+    obj = _deref_obj(container.catalog.get("Metadata"), container.objects)
+    if obj is None or obj.stream is None or not isinstance(obj.value, dict):
+        return None
+    try:
+        return _decode_stream(obj)
+    except UnsupportedContainer:
+        return None
+
+
+#: A Factur-X/ZUGFeRD XMP namespace URI (any version). Matched
+#: case-insensitively; ``ferd`` also catches the legacy ZUGFeRD 1.x
+#: ``urn:ferd:...`` namespace.
+_XMP_NS_RE = re.compile(
+    r'xmlns:([\w.\-]+)\s*=\s*["\'](urn:[^"\']*(?:factur-x|zugferd|ferd)'
+    r'[^"\']*)["\']', re.IGNORECASE)
+
+
+def _parse_xmp_profile(xmp_bytes):
+    """Parse the Factur-X/ZUGFeRD profile declaration out of an XMP packet using
+    stdlib ``re`` only (no XML parser, no new deps).
+
+    Returns ``{"namespace", "conformance_level", "document_type", "version"}``
+    when a ``urn:factur-x``/``urn:zugferd`` namespace is declared, else ``None``.
+    Field values may be ``None`` if that particular element/attribute is absent.
+    """
+    text = xmp_bytes.decode("utf-8", "replace")
+    m = _XMP_NS_RE.search(text)
+    if not m:
+        return None
+    prefix = re.escape(m.group(1))
+
+    def _field(local):
+        el = re.search(r'<%s:%s\b[^>]*>\s*(.*?)\s*</%s:%s\s*>'
+                       % (prefix, local, prefix, local), text,
+                       re.IGNORECASE | re.DOTALL)
+        if el:
+            return el.group(1).strip() or None
+        attr = re.search(r'\b%s:%s\s*=\s*["\'](.*?)["\']' % (prefix, local),
+                         text, re.IGNORECASE)
+        return attr.group(1).strip() if attr else None
+
+    return {
+        "namespace": m.group(2),
+        "conformance_level": _field("ConformanceLevel"),
+        "document_type": _field("DocumentType"),
+        "version": _field("Version"),
+    }
+
+
+#: Closing tag of the CII specification-identifier container, used to bound the
+#: CustomizationID (BT-24) search to that element (prefix-agnostic).
+_CII_GUIDELINE_RE = re.compile(
+    rb"GuidelineSpecifiedDocumentContextParameter\b(.*?)"
+    rb"</[\w.\-]*:?GuidelineSpecifiedDocumentContextParameter\s*>", re.DOTALL)
+_CII_ID_RE = re.compile(rb"<[\w.\-]*:?ID\b[^>]*>\s*(.*?)\s*</[\w.\-]*:?ID\s*>",
+                        re.DOTALL)
+
+
+def _cii_customization_id(xml_bytes):
+    """Extract the CII CustomizationID (BT-24, the specification identifier under
+    ``ram:GuidelineSpecifiedDocumentContextParameter/ram:ID``) with ``re`` only.
+    Returns the string, or ``None`` when it is absent (so no false mismatch)."""
+    block = _CII_GUIDELINE_RE.search(xml_bytes)
+    if not block:
+        return None
+    idm = _CII_ID_RE.search(block.group(1))
+    if not idm:
+        return None
+    return idm.group(1).decode("utf-8", "replace").strip() or None
+
+
+def _canonical_profile(value):
+    """Map an XMP ConformanceLevel string OR a CII CustomizationID URN to a
+    canonical Factur-X/ZUGFeRD profile token, or ``None`` if unrecognised.
+
+    Recognised tokens: MINIMUM, BASICWL, BASIC, EN16931, EXTENDED, XRECHNUNG.
+    Ordering matters (BASIC WL before BASIC; the CIUS/XRechnung marker before the
+    plain EN 16931 URN) so the most specific match wins. Provenance: the profile
+    URNs of ZUGFeRD 2.x / Factur-X 1.x (``urn:factur-x.eu:1p0:*`` and the
+    ``urn:cen.eu:en16931:2017[#(compliant|conformant)#...]`` CustomizationIDs)."""
+    if not value:
+        return None
+    v = re.sub(r"\s+", "", value).upper()
+    if "MINIMUM" in v:
+        return "MINIMUM"
+    if "BASICWL" in v:
+        return "BASICWL"
+    if "EXTENDED" in v:
+        return "EXTENDED"
+    if "XRECHNUNG" in v:
+        return "XRECHNUNG"
+    if "BASIC" in v:
+        return "BASIC"
+    if "EN16931" in v or "COMFORT" in v:
+        # Plain EN 16931 CustomizationID (urn:cen.eu:en16931:2017) or the XMP
+        # 'EN 16931' / legacy 'COMFORT' ConformanceLevel.
+        return "EN16931"
+    return None
 
 
 # --------------------------------------------------------------------------- #

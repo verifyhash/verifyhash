@@ -48,14 +48,42 @@ file spec's `/EF` → `/F` (or `/UF`) reference is followed to the embedded-file
 stream, and the stream is inflated with stdlib `zlib` (`/FlateDecode`) or read
 raw (no filter).
 
-**What is _not_ done — this is a container-XML extractor, NOT a PDF/A-3 or
-typographic validator.** Encrypted PDFs (`/Encrypt`), cross-reference-stream /
-object-stream PDFs (PDF 1.5+), a missing/empty `/EmbeddedFiles` tree, and any
-filter chain other than a single `/FlateDecode` are **refused** with an explicit
-`error:"unsupported-container"`, `valid:false` report and a non-zero exit —
-never a false pass and never a traceback. PDF/A-3 conformance, signatures, the
-`/AF` association and XMP metadata are out of scope. The exact IS/IS-NOT
-contract lives in the `pdf_container.py` module docstring.
+**Container-declaration checks (`FX-CONTAINER-*`).** On top of extraction, the
+report layers the ZUGFeRD/Factur-X container-declaration checks the official
+UN/CEFACT CII Schematron does **not** cover, each emitted as a first-class
+**warning** finding with a stable id (provenance: ZUGFeRD 2.x / Factur-X 1.x
+technical spec + PDF 32000-1 §7.11.3 file specification / §7.11.4 embedded files
+/ §7.7.2 catalog `/AF`):
+
+- **`FX-CONTAINER-AFRELATIONSHIP`** — the invoice file spec's `/AFRelationship`
+  is absent or is not `/Data` or `/Alternative`.
+- **`FX-CONTAINER-AF`** — the invoice file spec is not listed in the catalog's
+  `/AF` associated-files array (the embedded invoice is not an associated file).
+- **`FX-CONTAINER-XMP`** — the document `/Metadata` XMP stream is absent,
+  unreachable, or declares no Factur-X/ZUGFeRD `ConformanceLevel` in a
+  `urn:factur-x`/`urn:zugferd` namespace (the "undeclared" case — never a false
+  pass). XMP is parsed with stdlib `re` only, no new dependency.
+- **`FX-CONTAINER-PROFILE`** — the XMP-declared `ConformanceLevel` and the CII
+  `CustomizationID` (BT-24) map to **different** profiles (e.g. XMP says
+  `EN 16931` but the XML CustomizationID is BASIC).
+
+These are advisory: the authoritative EN 16931 / XRechnung verdict is still
+decided by the rule engine on the embedded XML, so a wrong container declaration
+is reported **without** flipping `valid`. On the plain-XML path these ids never
+appear, so every existing JSON/text/JUnit/SARIF/HTML/badge contract is unchanged.
+
+**What is _not_ done — this is a container-XML extractor plus the four
+declaration checks above, NOT a PDF/A-3 or typographic validator.** The
+`/AF` and XMP checks inspect only the *declarations* (is the relationship right,
+is the profile string consistent); they do **not** verify PDF/A-3 Level A/B/U
+conformance, font embedding, colour spaces, the output intent, digital
+signatures, or that the rendered page matches the XML. Encrypted PDFs
+(`/Encrypt`), cross-reference-stream / object-stream PDFs (PDF 1.5+), a
+missing/empty `/EmbeddedFiles` tree, and any filter chain other than a single
+`/FlateDecode` are **refused** with an explicit `error:"unsupported-container"`,
+`valid:false` report and a non-zero exit — never a false pass and never a
+traceback. The exact IS/IS-NOT contract lives in the `pdf_container.py` module
+docstring.
 
 ### `report.py --explain <RULE-ID>` — remediation lookup
 

@@ -46,6 +46,15 @@ BAD_PDF = os.path.join(PDF_DIR, "facturx-bad.pdf")
 NO_EMBED_PDF = os.path.join(PDF_DIR, "no-embedded.pdf")
 ENCRYPTED_PDF = os.path.join(PDF_DIR, "encrypted.pdf")
 
+# FX-CONTAINER-* mismatch fixtures (each forges exactly one container defect).
+AFREL_BAD_PDF = os.path.join(PDF_DIR, "facturx-afrel-bad.pdf")
+AF_MISSING_PDF = os.path.join(PDF_DIR, "facturx-af-missing.pdf")
+XMP_MISSING_PDF = os.path.join(PDF_DIR, "facturx-xmp-missing.pdf")
+XMP_MISMATCH_PDF = os.path.join(PDF_DIR, "facturx-xmp-mismatch.pdf")
+
+# The matching container fixtures (no FX-CONTAINER-* finding expected).
+MATCHING_PDFS = (VALID_PDF, VALID_PDF_RAW, BAD_PDF)
+
 VALID_INNER_XML = os.path.join(CII_DIR, "CII_example5.xml")
 BAD_INNER_XML = os.path.join(CII_DIR, "CII_example6.xml")
 
@@ -188,6 +197,90 @@ class TestXmlPathUnchanged(unittest.TestCase):
         rep = report.build_report(VALID_INNER_XML, profile="en16931")
         rules_fired = {v["rule"] for v in rep["violations"]}
         self.assertIn("S-ROOT", rules_fired)
+
+
+class TestContainerDeclarationChecks(unittest.TestCase):
+    """FX-CONTAINER-* container-declaration checks (task T-VHP.2): each defect
+    fixture fires its one stable finding; the matching fixtures fire none."""
+
+    def _finding_ids(self, pdf_path):
+        insp = pdf_container.inspect_container(pdf_path)
+        return [f.rule_id for f in insp.findings]
+
+    def test_matching_fixtures_have_no_container_findings(self):
+        for pdf in MATCHING_PDFS:
+            self.assertEqual(self._finding_ids(pdf), [], pdf)
+
+    def test_afrelationship_defect_fires_only_its_id(self):
+        self.assertEqual(self._finding_ids(AFREL_BAD_PDF),
+                         ["FX-CONTAINER-AFRELATIONSHIP"])
+
+    def test_af_array_defect_fires_only_its_id(self):
+        self.assertEqual(self._finding_ids(AF_MISSING_PDF), ["FX-CONTAINER-AF"])
+
+    def test_absent_xmp_is_explicit_finding_not_a_crash(self):
+        # Absent XMP -> explicit non-pass finding, NEVER a traceback/false pass.
+        self.assertEqual(self._finding_ids(XMP_MISSING_PDF), ["FX-CONTAINER-XMP"])
+
+    def test_profile_mismatch_fires_only_its_id(self):
+        self.assertEqual(self._finding_ids(XMP_MISMATCH_PDF),
+                         ["FX-CONTAINER-PROFILE"])
+
+    def test_findings_have_stable_namespace_and_warning_severity(self):
+        for pdf in (AFREL_BAD_PDF, AF_MISSING_PDF, XMP_MISSING_PDF,
+                    XMP_MISMATCH_PDF):
+            for f in pdf_container.inspect_container(pdf).findings:
+                self.assertTrue(f.rule_id.startswith("FX-CONTAINER-"), f.rule_id)
+                self.assertEqual(f.severity, "warning")
+                self.assertTrue(f.message and f.element)
+
+    def test_extraction_still_byte_exact_on_defect_fixtures(self):
+        # Container defects must NOT corrupt the extracted invoice XML.
+        ref = _read(VALID_INNER_XML)
+        for pdf in (AFREL_BAD_PDF, AF_MISSING_PDF, XMP_MISSING_PDF,
+                    XMP_MISMATCH_PDF):
+            self.assertEqual(pdf_container.extract_invoice_xml(pdf), ref, pdf)
+
+
+class TestContainerFindingsInReport(unittest.TestCase):
+    """The FX-CONTAINER-* findings surface as first-class report records on the
+    PDF path, without disturbing the XML-input contract."""
+
+    def test_mismatch_fixtures_surface_expected_id_in_report(self):
+        expect = {
+            AFREL_BAD_PDF: "FX-CONTAINER-AFRELATIONSHIP",
+            AF_MISSING_PDF: "FX-CONTAINER-AF",
+            XMP_MISSING_PDF: "FX-CONTAINER-XMP",
+            XMP_MISMATCH_PDF: "FX-CONTAINER-PROFILE",
+        }
+        for pdf, rule_id in expect.items():
+            rep = report.build_report(pdf, profile="en16931")
+            self.assertNotIn("error", rep, pdf)
+            fired = {v["rule"] for v in rep["violations"]}
+            self.assertIn(rule_id, fired, (pdf, fired))
+
+    def test_matching_pdf_report_has_no_fx_container_records(self):
+        # The valid PDF must carry NO FX-CONTAINER-* record (keeps the fired-id
+        # equality with validating the inner XML directly intact).
+        rep = report.build_report(VALID_PDF, profile="xrechnung")
+        fx = [v["rule"] for v in rep["violations"]
+              if v["rule"].startswith("FX-CONTAINER-")]
+        self.assertEqual(fx, [])
+
+    def test_container_findings_are_warnings_not_fatal(self):
+        # A pure container defect (valid inner XML) does not flip fatal_count.
+        rep = report.build_report(AFREL_BAD_PDF, profile="en16931")
+        fx = [v for v in rep["violations"]
+              if v["rule"].startswith("FX-CONTAINER-")]
+        self.assertTrue(fx)
+        for v in fx:
+            self.assertEqual(v["severity"], "warning")
+
+    def test_raw_xml_path_never_gets_fx_container_records(self):
+        rep = report.build_report(VALID_INNER_XML, profile="en16931")
+        fx = [v["rule"] for v in rep["violations"]
+              if v["rule"].startswith("FX-CONTAINER-")]
+        self.assertEqual(fx, [])
 
 
 class TestFixturesReproducible(unittest.TestCase):

@@ -7,15 +7,27 @@ a classic cross-reference table, a ``trailer`` with ``/Root``, one blank page,
 and — where applicable — a ``/Names`` -> ``/EmbeddedFiles`` name tree wrapping
 a corpus CrossIndustryInvoice XML as a ``/FlateDecode`` embedded-file stream
 named ``factur-x.xml`` (the Factur-X 1.x attachment name; PDF 32000-1 §7.11.4
-+ ISO 19005-3 / Factur-X ``/AFRelationship``).
++ ISO 19005-3 / Factur-X ``/AFRelationship``), a catalog ``/AF`` associated-file
+array (PDF 32000-1 §7.7.2 / §7.11.4.2) and a document ``/Metadata`` XMP stream
+declaring the Factur-X/ZUGFeRD profile (``urn:factur-x:pdfa:CrossIndustry``
+``Document:invoice:1p0#`` DocumentType/Version/ConformanceLevel).
 
 The embedded payloads are EXISTING corpus invoices so the extracted XML runs the
-same rule engine as validating that XML directly:
+same rule engine as validating that XML directly. Both corpus samples carry the
+CustomizationID ``urn:cen.eu:en16931:2017`` (the EN 16931 profile), so a matching
+container declares ConformanceLevel ``EN 16931``:
 
-  * facturx-valid.pdf   wraps corpus CII_example5.xml  (zero fatal findings)
-  * facturx-bad.pdf     wraps corpus CII_example6.xml  (multiple BR-DE fatals)
-  * no-embedded.pdf     a valid PDF with NO /EmbeddedFiles (unsupported)
-  * encrypted.pdf       a PDF whose trailer carries /Encrypt (unsupported)
+  * facturx-valid.pdf        wraps CII_example5.xml, MATCHING container
+  * facturx-bad.pdf          wraps CII_example6.xml (BR-DE fatals), MATCHING
+                             container (only the XML is bad, not the container)
+  * facturx-valid-uncompressed.pdf  as facturx-valid.pdf, unfiltered stream
+  * no-embedded.pdf          a valid PDF with NO /EmbeddedFiles (unsupported)
+  * encrypted.pdf            a PDF whose trailer carries /Encrypt (unsupported)
+  * facturx-afrel-bad.pdf    /AFRelationship /Unspecified -> FX-CONTAINER-AFRELATIONSHIP
+  * facturx-af-missing.pdf   no catalog /AF array -> FX-CONTAINER-AF
+  * facturx-xmp-missing.pdf  no /Metadata XMP stream -> FX-CONTAINER-XMP
+  * facturx-xmp-mismatch.pdf XMP ConformanceLevel BASIC vs XML EN 16931 ->
+                             FX-CONTAINER-PROFILE
 
 Run ``python3 make_pdf_fixtures.py`` from this directory to regenerate; the
 outputs are byte-stable (deterministic zlib level 9), so the committed fixtures
@@ -79,25 +91,78 @@ def _embedded_file_object(num, xml_bytes, compress=True):
     return (num, body)
 
 
-def build_facturx_pdf(xml_bytes, attach_name="factur-x.xml", compress=True):
+#: The Factur-X 1.x XMP extension-schema namespace (ZUGFeRD 2.1.1 recommends the
+#: SAME namespace). Fields: DocumentType, DocumentFileName, Version,
+#: ConformanceLevel — the profile declaration the FX-CONTAINER-XMP/-PROFILE
+#: checks read. Provenance: Factur-X 1.0.7 technical spec, XMP extension schema.
+XMP_FX_NAMESPACE = "urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#"
+
+
+def _xmp_packet(attach_name, conformance_level, version="1.0",
+                document_type="INVOICE"):
+    """Build a minimal, deterministic XMP metadata packet declaring the
+    Factur-X/ZUGFeRD profile. Byte-stable (fixed whitespace, no timestamps)."""
+    return (
+        '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
+        ' <rdf:RDF xmlns:rdf='
+        '"http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+        '  <rdf:Description rdf:about="" xmlns:fx="%s">\n'
+        '   <fx:DocumentType>%s</fx:DocumentType>\n'
+        '   <fx:DocumentFileName>%s</fx:DocumentFileName>\n'
+        '   <fx:Version>%s</fx:Version>\n'
+        '   <fx:ConformanceLevel>%s</fx:ConformanceLevel>\n'
+        '  </rdf:Description>\n'
+        ' </rdf:RDF>\n'
+        '</x:xmpmeta>\n'
+        '<?xpacket end="w"?>'
+        % (XMP_FX_NAMESPACE, document_type, attach_name, version,
+           conformance_level)
+    ).encode("utf-8")
+
+
+def _metadata_object(num, xmp_bytes):
+    """Build the document ``/Metadata`` XMP stream object body (uncompressed —
+    PDF/A requires the XMP metadata stream to be readable without a filter)."""
+    dict_bytes = (b"<< /Type /Metadata /Subtype /XML /Length %d >>"
+                  % len(xmp_bytes))
+    body = dict_bytes + b"\nstream\n" + xmp_bytes + b"\nendstream"
+    return (num, body)
+
+
+def build_facturx_pdf(xml_bytes, attach_name="factur-x.xml", compress=True,
+                      af_relationship="Alternative", in_af_array=True,
+                      xmp_conformance_level="EN 16931", include_xmp=True):
     """Return the bytes of a minimal hybrid PDF embedding ``xml_bytes``.
 
     Object layout (contiguous, gen 0):
-      1 Catalog  -> /Pages 2, /Names << /EmbeddedFiles 6 >>, /AF [4]
+      1 Catalog  -> /Pages 2, /Names << /EmbeddedFiles 6 >>, [/AF [4]],
+                    [/Metadata 7]
       2 Pages    -> /Kids [3]
       3 Page     (blank A-ish page)
-      4 Filespec -> /F,/UF = attach_name, /AFRelationship /Alternative, /EF /F 5
+      4 Filespec -> /F,/UF = attach_name, [/AFRelationship rel], /EF /F 5
       5 EmbeddedFile stream (FlateDecode by default)
       6 EmbeddedFiles name-tree leaf -> /Names [ (attach_name) 4 0 R ]
+      7 Metadata XMP stream (only when ``include_xmp``)
+
+    The knobs forge the FX-CONTAINER-* mismatch fixtures:
+      * ``af_relationship=None`` / an invalid value  -> FX-CONTAINER-AFRELATIONSHIP
+      * ``in_af_array=False``                        -> FX-CONTAINER-AF
+      * ``include_xmp=False``                        -> FX-CONTAINER-XMP
+      * ``xmp_conformance_level`` != the XML profile -> FX-CONTAINER-PROFILE
     """
     name = attach_name.encode("latin-1")
+    af_part = b" /AF [4 0 R]" if in_af_array else b""
+    meta_part = b" /Metadata 7 0 R" if include_xmp else b""
     catalog = (b"<< /Type /Catalog /Pages 2 0 R "
-               b"/Names << /EmbeddedFiles 6 0 R >> /AF [4 0 R] >>")
+               b"/Names << /EmbeddedFiles 6 0 R >>%s%s >>"
+               % (af_part, meta_part))
     pages = b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
     page = b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>"
-    filespec = (b"<< /Type /Filespec /F (%s) /UF (%s) "
-                b"/AFRelationship /Alternative /Desc (Invoice) "
-                b"/EF << /F 5 0 R /UF 5 0 R >> >>" % (name, name))
+    rel_part = (b" /AFRelationship /%s" % af_relationship.encode("latin-1")
+                if af_relationship else b"")
+    filespec = (b"<< /Type /Filespec /F (%s) /UF (%s)%s /Desc (Invoice) "
+                b"/EF << /F 5 0 R /UF 5 0 R >> >>" % (name, name, rel_part))
     embedded = _embedded_file_object(5, xml_bytes, compress=compress)
     nametree = b"<< /Names [ (%s) 4 0 R ] >>" % name
     objects = [
@@ -108,6 +173,9 @@ def build_facturx_pdf(xml_bytes, attach_name="factur-x.xml", compress=True):
         embedded,
         (6, nametree),
     ]
+    if include_xmp:
+        xmp = _xmp_packet(attach_name, xmp_conformance_level)
+        objects.append(_metadata_object(7, xmp))
     return _assemble(objects, root_num=1)
 
 
@@ -131,15 +199,33 @@ def build_encrypted_pdf():
                      root_num=1, extra_trailer=b" /Encrypt 9 0 R")
 
 
+def _example5():
+    return _read(os.path.join(CORPUS, "CII_example5.xml"))
+
+
 FIXTURES = {
-    "facturx-valid.pdf": lambda: build_facturx_pdf(
-        _read(os.path.join(CORPUS, "CII_example5.xml"))),
+    # --- MATCHING containers (no FX-CONTAINER-* finding) -------------------
+    "facturx-valid.pdf": lambda: build_facturx_pdf(_example5()),
     "facturx-bad.pdf": lambda: build_facturx_pdf(
         _read(os.path.join(CORPUS, "CII_example6.xml"))),
     "facturx-valid-uncompressed.pdf": lambda: build_facturx_pdf(
-        _read(os.path.join(CORPUS, "CII_example5.xml")), compress=False),
+        _example5(), compress=False),
+    # --- unsupported containers (refused before any FX-CONTAINER check) ----
     "no-embedded.pdf": build_plain_pdf,
     "encrypted.pdf": build_encrypted_pdf,
+    # --- MISMATCHING containers (each fires one FX-CONTAINER-* finding) -----
+    #  wrong /AFRelationship (/Unspecified is not /Data or /Alternative)
+    "facturx-afrel-bad.pdf": lambda: build_facturx_pdf(
+        _example5(), af_relationship="Unspecified"),
+    #  invoice filespec is NOT in the catalog /AF associated-files array
+    "facturx-af-missing.pdf": lambda: build_facturx_pdf(
+        _example5(), in_af_array=False),
+    #  no document /Metadata XMP stream at all (undeclared profile)
+    "facturx-xmp-missing.pdf": lambda: build_facturx_pdf(
+        _example5(), include_xmp=False),
+    #  XMP says BASIC but the embedded CII CustomizationID is EN 16931
+    "facturx-xmp-mismatch.pdf": lambda: build_facturx_pdf(
+        _example5(), xmp_conformance_level="BASIC"),
 }
 
 

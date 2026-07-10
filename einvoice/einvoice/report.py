@@ -137,7 +137,14 @@ REPORT_SCHEMA = {
                    "human message.",
     },
     "violation_record": {
-        "rule": "the rule id, e.g. 'BR-DE-15' (from Violation.rule_id).",
+        "rule": "the rule id, e.g. 'BR-DE-15' (from Violation.rule_id). For "
+                "Factur-X/ZUGFeRD PDF input the report may ALSO carry "
+                "'FX-CONTAINER-*' ids (FX-CONTAINER-AFRELATIONSHIP, "
+                "FX-CONTAINER-AF, FX-CONTAINER-XMP, FX-CONTAINER-PROFILE) — the "
+                "container-declaration checks (/AFRelationship + /AF, XMP "
+                "profile declaration, XMP-vs-CII profile consistency) that "
+                "einvoice.pdf_container layers over the embedded XML. These are "
+                "warning-severity and never appear on the plain-XML path.",
         "severity": "'fatal' | 'warning' | 'information' (validate._severity).",
         "message": "the human/Schematron rule message (Violation.message).",
         "field": "the offending element / path (Violation.element).",
@@ -267,7 +274,8 @@ def _report_from_violations(violations, source, profile):
     }
 
 
-def _report_from_invoice_bytes(xml_bytes, source, profile):
+def _report_from_invoice_bytes(xml_bytes, source, profile,
+                               container_findings=None):
     """Validate already-extracted invoice XML bytes and return a report dict.
 
     Used by the PDF-container path. Dispatches on the XML root: a UN/CEFACT
@@ -278,7 +286,14 @@ def _report_from_invoice_bytes(xml_bytes, source, profile):
     ``test_rules_cii`` exercise. A UBL ``Invoice`` root is routed through the
     existing :func:`~einvoice.validate.validate_root`. This RE-IMPLEMENTS no
     rule logic; it only feeds the extracted bytes into the shipped engines.
+
+    :param container_findings: optional list of FX-CONTAINER-* container
+        declaration findings (``pdf_container.ContainerFinding``, structurally a
+        Violation) to append verbatim after the rule findings. Each is projected
+        through the SAME :func:`_record` mapping, so they carry the identical
+        record shape; they never change the XML-path behaviour.
     """
+    extra = list(container_findings or ())
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError as exc:
@@ -291,12 +306,13 @@ def _report_from_invoice_bytes(xml_bytes, source, profile):
                       if v is not None]
         if profile == "xrechnung":
             violations.extend(_rules_xr.evaluate_cii(inv))
-        return _report_from_violations(violations, source, profile)
+        return _report_from_violations(violations + extra, source, profile)
 
     # UBL (or any other root) — reuse the core UBL engine verbatim. A non-UBL,
     # non-CII root falls out here as the same S-ROOT fatal the XML path emits.
     result = validate_root(root, profile=profile)
-    return _report_from_violations(result.violations, source, profile)
+    return _report_from_violations(
+        list(result.violations) + extra, source, profile)
 
 
 def build_report(path, profile="xrechnung"):
@@ -321,7 +337,7 @@ def build_report(path, profile="xrechnung"):
     """
     if pdf_container.is_pdf_file(path):
         try:
-            xml_bytes = pdf_container.extract_invoice_xml(path)
+            inspection = pdf_container.inspect_container(path)
         except pdf_container.UnsupportedContainer as exc:
             detail = str(exc)
             if detail.startswith("unsupported container:"):
@@ -330,7 +346,13 @@ def build_report(path, profile="xrechnung"):
                 path, profile, "unsupported-container",
                 "unsupported container — could not extract embedded invoice "
                 "XML: %s" % detail)
-        return _report_from_invoice_bytes(xml_bytes, path, profile)
+        # The extracted XML runs the identical rule engine; the FX-CONTAINER-*
+        # container-declaration findings (ZUGFeRD/Factur-X /AFRelationship, /AF,
+        # XMP profile + XMP-vs-CII consistency) are appended as first-class
+        # warning records. PDF-input only — the XML path is untouched.
+        return _report_from_invoice_bytes(
+            inspection.xml_bytes, path, profile,
+            container_findings=inspection.findings)
 
     try:
         result = validate_file(path, profile=profile)

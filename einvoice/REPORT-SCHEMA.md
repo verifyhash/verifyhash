@@ -13,20 +13,22 @@ constant in `einvoice/report.py`; this file is its human companion.
 ## Invocation
 
 ```
-python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit|sarif|html] [--pretty] [--baseline <prev-report.json>] <invoice.xml>
+python3 -m einvoice.report [--profile en16931|xrechnung] [--format json|junit|sarif|html|badge] [--pretty] [--baseline <prev-report.json>] <invoice.xml>
 ```
 
 - `--profile` — `xrechnung` (default) or `en16931`. `xrechnung` adds the German
   national CIUS layer (BR-DE-\*) on top of the EN 16931 core.
-- `--format` — `json` (default), `junit`, `sarif`, or `html`. `junit` emits a
-  JUnit XML document (see **JUnit output** below); `sarif` emits a SARIF 2.1.0
-  document (see **SARIF output** below) for GitHub code-scanning; `html` emits a
+- `--format` — `json` (default), `junit`, `sarif`, `html`, or `badge`. `junit`
+  emits a JUnit XML document (see **JUnit output** below); `sarif` emits a SARIF
+  2.1.0 document (see **SARIF output** below) for GitHub code-scanning; `badge`
+  emits a shields.io endpoint-badge JSON (see **Badge output** below); `html`
+  emits a
   single self-contained shareable HTML report (see **HTML output** below). All
   are projections of the same findings and share the JSON path's exit-code
   contract. None is compatible with `--baseline`.
 - `--pretty` — indent the JSON (with sorted keys) instead of the default
   compact single line. Ignored when `--format junit`/`sarif`/`html` is in effect
-  (each renders its own document).
+  (each renders its own document; the `badge` document is always pretty-printed).
 - `--baseline <prev-report.json>` — switch to **baseline diff mode** (see
   **Baseline diff mode** below). Fails the build only on a *new* regression
   relative to a captured prior report, not on pre-existing violations.
@@ -166,6 +168,63 @@ the invoice you passed — it is not a standing rule inventory. Only rules that
 actually fired appear in `tool.driver.rules`, so a clean invoice yields an empty
 `rules`/`results` pair. Standard-library `json` only; no new dependency, no
 network.
+
+## Badge output (`--format badge`)
+
+`--format badge` emits a [shields.io **endpoint badge**](https://shields.io/badges/endpoint-badge)
+JSON object — the small schema shields.io reads when you point a badge at a
+committed or hosted JSON file with `?url=`. Like the JUnit/SARIF/HTML paths it is
+a **pure projection** of the same `build_report()` findings: no rule logic, no
+invented wording, and the badge state is derived from the very same
+`fatal_count` / `warning_count` counts (and the not-well-formed `error` flag)
+that drive the JSON verdict and the process exit code.
+
+The emitted object is the documented endpoint minimum — only these four keys
+(optional endpoint keys such as `labelColor`, `namedLogo`, `isError`, `style`,
+`cacheSeconds` are intentionally omitted to keep it zero-dependency and stable):
+
+```json
+{
+  "schemaVersion": 1,
+  "label": "EN 16931",
+  "message": "conformant",
+  "color": "brightgreen"
+}
+```
+
+State mapping (label is always `"EN 16931"`, the conformance target):
+
+- **zero fatal, zero warning** → `message` `"conformant"`, `color`
+  `"brightgreen"`.
+- **zero fatal, ≥1 warning** → `message` `"conformant (N warnings)"` (N = the
+  warning count), `color` `"yellow"` — it clears the fatal gate but is not clean.
+- **≥1 fatal** → `message` `"N issue(s)"` where **N is the FATAL count** (the
+  same count that determines the exit code, not the total finding count),
+  `color` `"red"`.
+- **not-well-formed XML** → `message` `"not well-formed"`, `color` `"red"`,
+  exit `3` — mirroring the JSON/JUnit/SARIF/HTML not-well-formed contract.
+
+The exit code is identical to the JSON path (`0` valid / `1` fatal / `3`
+not-well-formed), so `--format badge` composes in CI: fail the job on the exit
+code, and commit the JSON so a README badge can render the last verdict.
+
+Honest scope note: the badge reflects **THIS committed report run**, not a live
+hosted service. shields.io fetches whatever JSON URL you give it, so the badge is
+only as fresh as the JSON you commit or publish — regenerate and commit it in the
+same CI step that runs the report. Standard-library `json` only; no new
+dependency, no network.
+
+Copy-paste README snippet (commit `badge.json` next to your invoice, then have
+shields.io consume it via the raw file URL):
+
+```sh
+# in CI, regenerate the committed badge from the authoritative report run
+python3 -m einvoice.report --profile xrechnung --format badge invoice.xml > badge.json
+```
+
+```markdown
+![EN 16931 conformance](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/OWNER/REPO/BRANCH/badge.json)
+```
 
 ## HTML output (`--format html`)
 

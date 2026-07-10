@@ -661,6 +661,68 @@ def build_sarif(report):
     }
 
 
+def build_badge(report):
+    """Project a report dict (from :func:`build_report`) into a shields.io
+    ENDPOINT-badge JSON dict.
+
+    Emits the object shields.io consumes via its *endpoint badge* mechanism
+    (https://shields.io/badges/endpoint-badge): point a badge at a hosted or
+    committed JSON file with ``?url=<json>`` and shields.io renders it. The
+    schema we emit is the documented minimum — ``schemaVersion`` (always the
+    integer ``1``), ``label``, ``message`` and ``color``. Optional endpoint
+    keys (``labelColor``, ``namedLogo``, ``isError``, ``style``, ``cacheSeconds``)
+    are intentionally omitted to keep this a zero-dependency, stable projection.
+
+    Like :func:`build_junit` and :func:`build_sarif`, this is a PURE, additional
+    PROJECTION of the SAME validator outcome the JSON path emits — it re-reads
+    nothing, invents no rule logic, and adds no second source of truth. State is
+    derived from the report exactly as the other formats derive theirs:
+    ``fatal_count`` / ``warning_count`` (and the not-well-formed ``error`` flag).
+
+    Exact mapping (label is always ``"EN 16931"`` — the conformance target):
+      * not-well-formed input (``report`` carries an ``error``) ->
+        ``message = "not well-formed"``, ``color = "red"`` (mirrors the
+        non-zero JSON/SARIF/JUnit not-well-formed contract);
+      * one or more FATAL findings -> ``message = "<N> issue(s)"`` where **N is
+        the FATAL count** (the same count that drives the process exit code),
+        ``color = "red"``;
+      * zero fatal but one or more WARNING findings ->
+        ``message = "conformant (<N> warnings)"`` (N = warning count),
+        ``color = "yellow"`` — honest: it passes the fatal gate but is not clean;
+      * zero fatal and zero warning -> ``message = "conformant"``,
+        ``color = "brightgreen"``.
+
+    The message deliberately uses the FATAL count (not the total) so it agrees
+    with the conformance verdict and the exit code every other format reports.
+
+    :param report: a dict as returned by :func:`build_report`.
+    :returns: a shields.io endpoint-badge document as a ``dict``.
+    """
+    label = "EN 16931"
+    if report.get("error"):
+        message = "not well-formed"
+        color = "red"
+    else:
+        fatal = report.get("fatal_count", 0)
+        warning = report.get("warning_count", 0)
+        if fatal > 0:
+            message = "%d issue%s" % (fatal, "" if fatal == 1 else "s")
+            color = "red"
+        elif warning > 0:
+            message = "conformant (%d warning%s)" % (
+                warning, "" if warning == 1 else "s")
+            color = "yellow"
+        else:
+            message = "conformant"
+            color = "brightgreen"
+    return {
+        "schemaVersion": 1,
+        "label": label,
+        "message": message,
+        "color": color,
+    }
+
+
 #: Minimal, inline stylesheet for the self-contained HTML report. No external
 #: CSS/JS/fonts — everything the document needs travels inside it, so it opens
 #: offline with zero network requests. Colours use system-ui fonts (a local
@@ -856,7 +918,7 @@ def build_html(report):
 
 
 USAGE = ("usage: python3 -m einvoice.report "
-         "[--profile en16931|xrechnung] [--format json|junit|sarif|html] "
+         "[--profile en16931|xrechnung] [--format json|junit|sarif|html|badge] "
          "[--pretty] "
          "[--baseline <prev-report.json>] <invoice.xml>\n"
          "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
@@ -1009,10 +1071,10 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
-    if fmt not in ("json", "junit", "sarif", "html"):
+    if fmt not in ("json", "junit", "sarif", "html", "badge"):
         sys.stderr.write(
-            "error: unknown format %r (choose from json, junit, sarif, html)"
-            "\n%s\n" % (fmt, USAGE))
+            "error: unknown format %r (choose from json, junit, sarif, html, "
+            "badge)\n%s\n" % (fmt, USAGE))
         return EXIT_FAIL
 
     if profile not in PROFILES:
@@ -1020,7 +1082,7 @@ def main(argv=None):
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_FAIL
 
-    if baseline_path is not None and fmt in ("junit", "sarif", "html"):
+    if baseline_path is not None and fmt in ("junit", "sarif", "html", "badge"):
         sys.stderr.write(
             "error: --baseline emits a diff document and is not compatible "
             "with --format %s\n%s\n" % (fmt, USAGE))
@@ -1062,6 +1124,9 @@ def main(argv=None):
             json.dumps(build_sarif(report), indent=2, sort_keys=True) + "\n")
     elif fmt == "html":
         sys.stdout.write(build_html(report))
+    elif fmt == "badge":
+        sys.stdout.write(
+            json.dumps(build_badge(report), indent=2, sort_keys=True) + "\n")
     elif pretty:
         sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
     else:

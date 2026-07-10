@@ -17,7 +17,10 @@ A zero-dependency, embeddable, self-hostable conformance validator for
   your tree is a supported (and tested) install method.
 - **Self-hostable.** Everything runs offline. The rule corpus and test
   fixtures are vendored in-repo (`corpus/`), so the thing you validate against
-  is auditable and pinned — no dependency on a third-party validation API.
+  is auditable and pinned — no dependency on a third-party validation API. The
+  supply-chain posture (zero runtime deps, offline, vendored corpus) is
+  written up for evaluators in [`SECURITY.md`](SECURITY.md), backed by a
+  committed CycloneDX 1.5 SBOM at [`sbom/bom.json`](sbom/bom.json).
 - **CI-gateable.** `ci/` ships a copy-paste build gate (POSIX sh + GitHub
   Actions / GitLab CI recipes) that fails a build on any non-conformant
   invoice, naming the violated rule ID. See [§4](#4-ci-conformance-gate).

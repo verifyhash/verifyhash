@@ -1,0 +1,29 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "library",
+      "bom-ref": "pkg:pypi/verifyhash-einvoice@0.1.0",
+      "name": "verifyhash-einvoice",
+      "version": "0.1.0",
+      "purl": "pkg:pypi/verifyhash-einvoice@0.1.0",
+      "description": "Zero-dependency EN 16931 / XRechnung (UBL) e-invoice conformance validator (Python, stdlib only).",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    }
+  },
+  "components": [],
+  "dependencies": [
+    {
+      "ref": "pkg:pypi/verifyhash-einvoice@0.1.0",
+      "dependsOn": []
+    }
+  ]
+}

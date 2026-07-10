@@ -269,11 +269,57 @@ class TestKnownBadCIIInvoices(unittest.TestCase):
         self.assertEqual(v.rule_id, "BR-CL-04")
         self.assertEqual(v.severity, "fatal")
 
+    # --- VAT category / VATEX codelist rules (BR-CL-17/18/22), CII bindings --
+    def test_brcl18_bogus_line_category(self):
+        # CII routes the document breakdown AND line VAT category through
+        # BR-CL-18 (ram:ApplicableTradeTax/ram:CategoryCode).
+        def m(r):
+            _first_line(r).find(
+                "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/"
+                "ram:CategoryCode", NS).text = "XX"
+        self.assert_fires(m, "BR-CL-18")
+
+    def test_brcl18_bogus_breakdown_category(self):
+        def m(r):
+            _first_breakdown(r).find("ram:CategoryCode", NS).text = "QQ"
+        self.assert_fires(m, "BR-CL-18")
+
+    def test_brcl17_bogus_allowance_charge_category(self):
+        # CII BR-CL-17 context is the allowance/charge category
+        # (ram:CategoryTradeTax/ram:CategoryCode). CII_example1 has none, so add
+        # one; even if arithmetic rules also fire, BR-CL-17 must be present.
+        def m(r):
+            ac = ET.SubElement(
+                _settlement(r), _q(NSA, "SpecifiedTradeAllowanceCharge"))
+            ci = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+            ET.SubElement(ci, _q(parser_cii.NS_UDT, "Indicator")).text = "false"
+            ET.SubElement(ac, _q(NSA, "ActualAmount")).text = "10"
+            ET.SubElement(ac, _q(NSA, "Reason")).text = "Adjustment"
+            ctt = ET.SubElement(ac, _q(NSA, "CategoryTradeTax"))
+            ET.SubElement(ctt, _q(NSA, "TypeCode")).text = "VAT"
+            ET.SubElement(ctt, _q(NSA, "CategoryCode")).text = "XX"
+            ET.SubElement(ctt, _q(NSA, "RateApplicablePercent")).text = "21"
+        self.assert_fires(m, "BR-CL-17")
+
+    def test_brcl22_bogus_exemption_code(self):
+        def m(r):
+            lt = _first_line(r).find(
+                "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", NS)
+            ET.SubElement(lt, _q(NSA, "ExemptionReasonCode")).text = "NOT-VATEX"
+        self.assert_fires(m, "BR-CL-22")
+
+    def test_brcl22_valid_vatex_code_case_insensitive(self):
+        r = _good_root()
+        lt = _first_line(r).find(
+            "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", NS)
+        ET.SubElement(lt, _q(NSA, "ExemptionReasonCode")).text = "vatex-eu-79-c"
+        self.assertNotIn("BR-CL-22", _fired_ids(r))
+
     def test_clean_cii_base_fires_no_codelist_rule(self):
         fired = _fired_ids(_good_root())
         self.assertEqual(
-            fired & {"BR-CL-03", "BR-CL-04", "BR-CL-05",
-                     "BR-CL-13", "BR-CL-14"}, set())
+            fired & {"BR-CL-03", "BR-CL-04", "BR-CL-05", "BR-CL-13",
+                     "BR-CL-14", "BR-CL-17", "BR-CL-18", "BR-CL-22"}, set())
 
 
 def _de_fired(root):

@@ -20,6 +20,8 @@ from .codelists import (
     ITEM_CLASS_LIST_CODES,
     UBL_COUNTRY_CODES,
     CII_COUNTRY_CODES,
+    VAT_CATEGORY_CODES,
+    VATEX_CODES,
 )
 
 # ``severity`` mirrors the official Schematron ``flag``: every core rule is
@@ -631,6 +633,65 @@ def br_cl_14(inv):
                 "Country codes in an invoice MUST be coded using ISO 3166-1; "
                 "%r is not a listed country code." % code,
                 "cac:Country/cbc:IdentificationCode")
+    return None
+
+
+def br_cl_17(inv):
+    """BR-CL-17: Invoice tax categories MUST be coded using the UNCL 5305 subset.
+
+    Official context differs by syntax but the allowed value set is IDENTICAL:
+      * UBL: cac:TaxCategory/cbc:ID — the document VAT breakdown category AND
+        every document/line allowance-charge tax category.
+      * CII: ram:CategoryTradeTax/ram:CategoryCode — the allowance-charge VAT
+        category (the CII binding routes the breakdown/line categories through
+        BR-CL-18 instead).
+    The parser populates ``taxcategory_id_codes`` with exactly those context-node
+    values per syntax, so the shared body runs unchanged.
+    """
+    for code in inv.taxcategory_id_codes:
+        if _bad_code(code, VAT_CATEGORY_CODES):
+            return Violation(
+                "BR-CL-17",
+                "Invoice tax categories MUST be coded using the UNCL 5305 code "
+                "list; %r is not a listed VAT category code." % code,
+                "cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_cl_18(inv):
+    """BR-CL-18: Invoice tax categories MUST be coded using the UNCL 5305 subset.
+
+    Official context differs by syntax; the allowed set is the same as BR-CL-17:
+      * UBL: cac:ClassifiedTaxCategory/cbc:ID — the line item VAT category.
+      * CII: ram:ApplicableTradeTax/ram:CategoryCode — the document VAT breakdown
+        category AND each line's VAT category.
+    The parser populates ``classified_tax_category_codes`` per syntax.
+    """
+    for code in inv.classified_tax_category_codes:
+        if _bad_code(code, VAT_CATEGORY_CODES):
+            return Violation(
+                "BR-CL-18",
+                "Invoice tax categories MUST be coded using the UNCL 5305 code "
+                "list; %r is not a listed VAT category code." % code,
+                "cac:ClassifiedTaxCategory/cbc:ID")
+    return None
+
+
+def br_cl_22(inv):
+    """BR-CL-22: VAT exemption reason code MUST belong to the CEF VATEX list.
+
+    Official context = cbc:TaxExemptionReasonCode (UBL) / ram:ExemptionReasonCode
+    (CII). The assert tests ``normalize-space(upper-case(.))`` against the VATEX
+    list, so the parser stores each value UPPER-CASED; the membership check is
+    therefore case-insensitive exactly like the official rule.
+    """
+    for code in inv.tax_exemption_reason_codes:
+        if _bad_code(code, VATEX_CODES):
+            return Violation(
+                "BR-CL-22",
+                "The VAT exemption reason code MUST belong to the CEF VATEX code "
+                "list; %r is not a listed VATEX code." % code,
+                "cbc:TaxExemptionReasonCode")
     return None
 
 
@@ -3299,6 +3360,7 @@ ALL_RULES = [
     br_49, br_50, br_51, br_55, br_57, br_61, br_62, br_63,
     br_cl_01,
     br_cl_03, br_cl_04, br_cl_05, br_cl_13, br_cl_14,
+    br_cl_17, br_cl_18, br_cl_22,
     br_co_04,
     br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15, br_co_16,
     br_co_17, br_co_18,

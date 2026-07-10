@@ -1546,5 +1546,81 @@ class CodelistCurrencyCountry(unittest.TestCase):
         self.assertIn("BR-CL-14", fired(r))
 
 
+class CodelistVatCategory(unittest.TestCase):
+    """BR-CL-17 / BR-CL-18 (UNCL 5305 VAT category subset) + BR-CL-22 (CEF
+    VATEX exemption reason), UBL binding. The allowed sets are the pinned,
+    verbatim-from-corpus lists in einvoice/codelists.py; the base invoice uses
+    category 'S' (valid) with no exemption reason.
+    """
+
+    CL_RULES = {"BR-CL-17", "BR-CL-18", "BR-CL-22"}
+
+    def test_clean_base_fires_no_vat_category_rule(self):
+        self.assertEqual(fired(base()) & self.CL_RULES, set())
+
+    # --- BR-CL-17: VAT breakdown / allowance-charge category (cac:TaxCategory)
+    def test_br_cl_17_bogus_breakdown_category_fires_fatal(self):
+        r = base()
+        subtotal_category(r).find(q(NS_CBC, "ID")).text = "XX"
+        v = violation_for(r, "BR-CL-17")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+        # BR-CL-18 (line ClassifiedTaxCategory) is untouched, so it stays clear.
+        self.assertNotIn("BR-CL-18", fired(r))
+
+    def test_br_cl_17_every_valid_category_passes(self):
+        r = base()
+        cat = subtotal_category(r).find(q(NS_CBC, "ID"))
+        for code in ("S", "Z", "E", "AE", "K", "G", "O", "L", "M", "B"):
+            cat.text = code
+            self.assertNotIn("BR-CL-17", fired(r), "rejected valid %s" % code)
+
+    def test_br_cl_17_lowercase_is_rejected(self):
+        # The official test is case-SENSITIVE for category codes (no upper-case()).
+        r = base()
+        subtotal_category(r).find(q(NS_CBC, "ID")).text = "s"
+        self.assertIn("BR-CL-17", fired(r))
+
+    # --- BR-CL-18: line item VAT category (cac:ClassifiedTaxCategory) -------
+    def _line_category_id(self, root):
+        return first_line_item(root).find(
+            "%s/%s" % (q(NS_CAC, "ClassifiedTaxCategory"), q(NS_CBC, "ID")))
+
+    def test_br_cl_18_bogus_line_category_fires_fatal(self):
+        r = base()
+        self._line_category_id(r).text = "QQ"
+        v = violation_for(r, "BR-CL-18")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+
+    def test_br_cl_18_valid_line_category_passes(self):
+        r = base()
+        self._line_category_id(r).text = "Z"
+        self.assertNotIn("BR-CL-18", fired(r))
+
+    # --- BR-CL-22: VAT exemption reason code (CEF VATEX) --------------------
+    def test_br_cl_22_bogus_exemption_code_fires_fatal(self):
+        r = base()
+        cat = subtotal_category(r)
+        ET.SubElement(cat, q(NS_CBC, "TaxExemptionReasonCode")).text = "NOT-VATEX"
+        v = violation_for(r, "BR-CL-22")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+
+    def test_br_cl_22_valid_vatex_code_passes(self):
+        r = base()
+        cat = subtotal_category(r)
+        ET.SubElement(cat, q(NS_CBC, "TaxExemptionReasonCode")).text = "VATEX-EU-79-C"
+        self.assertNotIn("BR-CL-22", fired(r))
+
+    def test_br_cl_22_is_case_insensitive(self):
+        # The official assert compares upper-case(.), so a lower-case VATEX
+        # code is still accepted.
+        r = base()
+        cat = subtotal_category(r)
+        ET.SubElement(cat, q(NS_CBC, "TaxExemptionReasonCode")).text = "vatex-eu-79-c"
+        self.assertNotIn("BR-CL-22", fired(r))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

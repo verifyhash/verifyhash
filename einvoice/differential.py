@@ -111,7 +111,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 156, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 159, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -193,6 +193,12 @@ CII_GRADED_RULES = [
     # @listID, ram:CountryID); the shared rule functions run unchanged.
     _rules.br_cl_03, _rules.br_cl_04, _rules.br_cl_05,
     _rules.br_cl_13, _rules.br_cl_14,
+    # VAT category code lists (BR-CL-17/18) + VAT exemption reason (BR-CL-22).
+    # The CII parser feeds these the CII context nodes (ram:CategoryTradeTax
+    # @CategoryCode for BR-CL-17, ram:ApplicableTradeTax/ram:CategoryCode for
+    # BR-CL-18, ram:ExemptionReasonCode for BR-CL-22); the shared rule bodies
+    # run unchanged and reach EXACT parity with the official CII codes Schematron.
+    _rules.br_cl_17, _rules.br_cl_18, _rules.br_cl_22,
     # Line VAT category code (BR-CO-04).
     _rules.br_co_04,
     # Document-level arithmetic invariants that reach CII parity.
@@ -1127,6 +1133,34 @@ def _mut_brcl14(r):
     _child(pa, NS_CAC, "Country").find(_q(NS_CBC, "IdentificationCode")).text = "XX"
 
 
+def _mut_brcl17(r):
+    # VAT breakdown category (cac:TaxTotal/.../cac:TaxCategory/cbc:ID) coded off
+    # the UNCL 5305 subset. The line item category is left 'S', so this also
+    # trips BR-S-01 (S line, no S breakdown) — a rule already at parity, so both
+    # engines agree; the S-specific breakdown rules no longer have an S subtotal
+    # context and stay clear. Only BR-CL-17 among the codelist rules fires.
+    st = r.find("cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID", _NSD)
+    st.text = "XX"
+
+
+def _mut_brcl18(r):
+    # Line item VAT category (cac:Item/cac:ClassifiedTaxCategory/cbc:ID) coded
+    # off the UNCL 5305 subset. Breakdown category stays 'S' (again tripping the
+    # already-at-parity BR-S-01). Only BR-CL-18 among the codelist rules fires.
+    cat = _first_line(r).find("cac:Item/cac:ClassifiedTaxCategory/cbc:ID", _NSD)
+    cat.text = "XX"
+
+
+def _mut_brcl22(r):
+    # Add a VAT exemption reason code (BT-121) with a value that is NOT in the
+    # CEF VATEX list, inside the LINE ClassifiedTaxCategory. Placed on the line
+    # (not the breakdown) so no BR-S-10 ("S breakdown shall not have an exemption
+    # reason") fires — its context is the breakdown category only — leaving
+    # BR-CL-22 the sole rule that fires.
+    ctc = _first_line(r).find("cac:Item/cac:ClassifiedTaxCategory", _NSD)
+    _sub_el(ctc, NS_CBC, "TaxExemptionReasonCode", text="NOT-A-VATEX-CODE")
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -1147,6 +1181,7 @@ _MUTATIONS = {
     "BR-CL-01": _mut_brcl01,
     "BR-CL-03": _mut_brcl03, "BR-CL-04": _mut_brcl04, "BR-CL-05": _mut_brcl05,
     "BR-CL-13": _mut_brcl13, "BR-CL-14": _mut_brcl14,
+    "BR-CL-17": _mut_brcl17, "BR-CL-18": _mut_brcl18, "BR-CL-22": _mut_brcl22,
     "BR-CO-10": _mut_brco10,
     "BR-CO-11": _mut_brco11, "BR-CO-12": _mut_brco12,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
@@ -1616,6 +1651,13 @@ def _gather_xr_ext_mutations(scratch: str):
 # --------------------------------------------------------------------------- #
 CII_EXAMPLES_DIR = os.path.join(HERE, "corpus", "cen-en16931", "cii", "examples")
 _CII_BASE = os.path.join(CII_EXAMPLES_DIR, "CII_example1.xml")
+# Base for BR-CL-17: CII_example1 has no document allowance/charge, so its
+# ram:CategoryTradeTax context (the ONLY BR-CL-17 context in CII) is absent.
+# CII_business_example_01 is an official-clean invoice that DOES carry a
+# document-level SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax, so mutating
+# just that CategoryCode fires BR-CL-17 with nothing else in the graded set.
+_CII_BASE_ALLOWANCE = os.path.join(CII_EXAMPLES_DIR, "CII_business_example_01.xml")
+_CII_MUTATION_BASE = {"BR-CL-17": _CII_BASE_ALLOWANCE}
 _NSC = {"rsm": NS_RSM, "ram": NS_RAM, "udt": NS_UDT}
 
 
@@ -1923,6 +1965,37 @@ def _cmut_brcl14(r):
         "ram:PostalTradeAddress/ram:CountryID", _NSC).text = "XX"
 
 
+def _cmut_brcl17(r):
+    # Runs off _CII_BASE_ALLOWANCE (CII_business_example_01). Code the document
+    # allowance/charge VAT category (ram:SpecifiedTradeAllowanceCharge/
+    # ram:CategoryTradeTax/ram:CategoryCode) — the only BR-CL-17 context in CII —
+    # off the UNCL 5305 subset. Amounts are untouched, so graded arithmetic
+    # (BR-CO-13 etc.) stays clear; BR-S-01 is CII-excluded and BR-S-08 is
+    # unimplemented, so BR-CL-17 is the only graded rule that fires.
+    cc = _cii_settlement(r).find(
+        "ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:CategoryCode",
+        _NSC)
+    cc.text = "XX"
+
+
+def _cmut_brcl18(r):
+    # A line VAT category (ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+    # /ram:CategoryCode) coded off the UNCL 5305 subset. The header VAT breakdown
+    # category stays 'S'; BR-S-01 is CII-excluded and BR-S-08 unimplemented, so
+    # only BR-CL-18 fires among the graded rules.
+    _cii_line_tax(r).find("ram:CategoryCode", _NSC).text = "XX"
+
+
+def _cmut_brcl22(r):
+    # Add a VAT exemption reason code (ram:ExemptionReasonCode) with a non-VATEX
+    # value to a LINE's ApplicableTradeTax. The CII BR-S-10 context is the HEADER
+    # breakdown 'S' category ($VATS), not a line, so no BR-S-10 fires; BR-CL-22
+    # is the only rule that fires.
+    ET.SubElement(
+        _cii_line_tax(r), _cq(NS_RAM, "ExemptionReasonCode")
+    ).text = "NOT-A-VATEX-CODE"
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -1934,6 +2007,7 @@ _CII_MUTATIONS = {
     "BR-CL-01": _cmut_brcl01,
     "BR-CL-03": _cmut_brcl03, "BR-CL-04": _cmut_brcl04, "BR-CL-05": _cmut_brcl05,
     "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,
+    "BR-CL-17": _cmut_brcl17, "BR-CL-18": _cmut_brcl18, "BR-CL-22": _cmut_brcl22,
     "BR-CO-04": _cmut_brco04,
     "BR-CO-10": _cmut_brco10, "BR-CO-13": _cmut_brco13,
     "BR-CO-16": _cmut_brco16, "BR-CO-17": _cmut_brco17,
@@ -1974,6 +2048,11 @@ def _gather_cii_examples():
 def _gather_cii_mutations(scratch: str):
     """One generated CII invoice per graded rule, each breaking that rule's field."""
     base_root = ET.parse(_CII_BASE).getroot()
+    # A few rules guard a document part CII_example1 does not contain (e.g.
+    # BR-CL-17's context ram:CategoryTradeTax lives only on a document-level
+    # allowance/charge). For those we mutate a DIFFERENT known-valid CEN example
+    # that DOES carry the part, so the only new violation is the target rule.
+    base_cache = {}
     dst = os.path.join(scratch, "cii-mutations")
     os.makedirs(dst, exist_ok=True)
     out = []
@@ -1981,6 +2060,10 @@ def _gather_cii_mutations(scratch: str):
         mut = _CII_MUTATIONS.get(rid)
         if mut is None:
             continue
+        base_path = _CII_MUTATION_BASE.get(rid, _CII_BASE)
+        if base_path not in base_cache:
+            base_cache[base_path] = ET.parse(base_path).getroot()
+        base_root = base_cache[base_path]
         root = copy.deepcopy(base_root)
         try:
             mut(root)

@@ -284,9 +284,18 @@ class Invoice:
         #   amount_currency_ids  — @currencyID on the amount elements (BR-CL-03)
         #   item_class_list_ids  — @listID on item-classification codes (BR-CL-13)
         #   country_codes        — country identification codes (BR-CL-14)
+        #   taxcategory_id_codes — VAT category codes at the BR-CL-17 context
+        #       (distinct from ``vat_category_codes`` below, which is the
+        #       VAT-scheme-scoped set the BR-AE/E/G/IC/O family rules use)
+        #   classified_tax_category_codes — VAT category codes at BR-CL-18 context
+        #   tax_exemption_reason_codes — VATEX reason codes (BR-CL-22),
+        #       already UPPER-CASED to mirror the official ``upper-case(.)``
         self.amount_currency_ids = []
         self.item_class_list_ids = []
         self.country_codes = []
+        self.taxcategory_id_codes = []
+        self.classified_tax_category_codes = []
+        self.tax_exemption_reason_codes = []
         # Parties
         self.seller_name = None           # BT-27
         self.seller_has_postal_address = False  # BG-5
@@ -529,6 +538,27 @@ def build_model(root):
     inv.country_codes = [
         _norm_space(_strval(el)) or ""
         for el in root.findall(".//cac:Country/cbc:IdentificationCode", NS)
+    ]
+    # BR-CL-17 context = cac:TaxCategory/cbc:ID (UBL) — the VAT breakdown
+    # category (cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory) AND every
+    # document/line allowance-charge tax category (cac:AllowanceCharge/
+    # cac:TaxCategory). The rule tests each such ID against UNCL 5305.
+    inv.taxcategory_id_codes = [
+        _norm_space(_strval(el)) or ""
+        for el in root.findall(".//cac:TaxCategory/cbc:ID", NS)
+    ]
+    # BR-CL-18 context = cac:ClassifiedTaxCategory/cbc:ID (UBL) — the line
+    # item VAT category (cac:Item/cac:ClassifiedTaxCategory). Same code set.
+    inv.classified_tax_category_codes = [
+        _norm_space(_strval(el)) or ""
+        for el in root.findall(".//cac:ClassifiedTaxCategory/cbc:ID", NS)
+    ]
+    # BR-CL-22 context = cbc:TaxExemptionReasonCode (UBL). The official assert
+    # tests normalize-space(upper-case(.)) against the VATEX list, so the value
+    # is stored UPPER-CASED here (the ' '-in-value check is upper-case-invariant).
+    inv.tax_exemption_reason_codes = [
+        (_norm_space(_strval(el)) or "").upper()
+        for el in root.findall(".//cbc:TaxExemptionReasonCode", NS)
     ]
 
     # Seller

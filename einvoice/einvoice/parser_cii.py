@@ -294,6 +294,29 @@ def build_model(root):
         _norm_space(_text(el)) or ""
         for el in root.findall(".//ram:CountryID", NS)
     ]
+    # BR-CL-17 context = ram:CategoryTradeTax/ram:CategoryCode (CII): the VAT
+    # category of a document/line allowance-charge (ram:SpecifiedTradeAllowance
+    # Charge/ram:CategoryTradeTax). NOTE the CII Schematron splits the two
+    # category asserts differently from UBL — the document VAT breakdown and the
+    # line item categories are ram:ApplicableTradeTax and fall under BR-CL-18.
+    inv.taxcategory_id_codes = [
+        _norm_space(_text(el)) or ""
+        for el in root.findall(".//ram:CategoryTradeTax/ram:CategoryCode", NS)
+    ]
+    # BR-CL-18 context = ram:ApplicableTradeTax/ram:CategoryCode (CII): both the
+    # document VAT breakdown (ram:ApplicableHeaderTradeSettlement/ram:Applicable
+    # TradeTax) and each line's category (ram:SpecifiedLineTradeSettlement/
+    # ram:ApplicableTradeTax). Same UNCL 5305 code set as BR-CL-17.
+    inv.classified_tax_category_codes = [
+        _norm_space(_text(el)) or ""
+        for el in root.findall(".//ram:ApplicableTradeTax/ram:CategoryCode", NS)
+    ]
+    # BR-CL-22 context = ram:ExemptionReasonCode (CII). Stored UPPER-CASED to
+    # mirror the official normalize-space(upper-case(.)) VATEX test.
+    inv.tax_exemption_reason_codes = [
+        (_norm_space(_text(el)) or "").upper()
+        for el in root.findall(".//ram:ExemptionReasonCode", NS)
+    ]
 
     # -- BT-24 Specification identifier (ExchangedDocumentContext) ----------
     inv.customization_id = _text(root.find(

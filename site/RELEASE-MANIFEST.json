@@ -2,7 +2,7 @@
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
   "fileCount": 33,
-  "totalBytes": 1151946,
+  "totalBytes": 1152825,
   "files": [
     {
       "path": "LICENSE",
@@ -20,7 +20,7 @@
       "path": "build-provenance.json",
       "source": "verifier/dist/BUILD-PROVENANCE.json",
       "bytes": 9676,
-      "sha256": "904aefe96c8939a57cb3bdd010ec76ce53d7b2081898fd1a5101f51c8faaf753"
+      "sha256": "d238d0f04822011ab157aa5711e159f37763355a29a9874b6a56f38648f40ec8"
     },
     {
       "path": "docs/ADOPT.md",
@@ -157,14 +157,14 @@
     {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 36295,
-      "sha256": "795bed232a96da3b93fa92f36daa3e8da3e159f440da72f08409deefb113a1c6"
+      "bytes": 37047,
+      "sha256": "52125867a22f9bf859815f0f26cb7a6d8b1f0490813ba207e3d370bda5ecdd0c"
     },
     {
       "path": "llms.txt",
       "source": "site/llms.txt",
       "bytes": 3081,
-      "sha256": "e484874ff4eb0eaa3e75428b5df29026e719b573de1b28bd66a89b2998b2a521"
+      "sha256": "0d5ba5b65b413cddde667bb68a9a6eeab39e1328962547c14f1d9ca5b8f15714"
     },
     {
       "path": "seal-vh-standalone.js",
@@ -181,14 +181,14 @@
     {
       "path": "verify-vh-standalone.html",
       "source": "verifier/dist/verify-vh-standalone.html",
-      "bytes": 169902,
-      "sha256": "ce444165734a34745756aeefd34025f53c457389e57e5c10ce5d03b2ebe8eee3"
+      "bytes": 170029,
+      "sha256": "9034bd6e3faee123ec86d22a0925c968d3b6f55d84559ec6d6e04427785ef9f5"
     },
     {
       "path": "verify-vh-standalone.html.sha256",
       "source": "verifier/dist/verify-vh-standalone.html.sha256",
       "bytes": 92,
-      "sha256": "0b942179bd38df52f4887ebfa9b58b8c7a8f18af58293379c954488b18e65538"
+      "sha256": "0357f0f372d1b33dc2ce4fdcc225987cce7242b0a89880b36c2d4d3fc4e494c0"
     },
     {
       "path": "verify-vh-standalone.js",

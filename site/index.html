@@ -206,6 +206,14 @@
   .cmp tr:last-child th,.cmp tr:last-child td{border-bottom:0}
   .cmp td b{color:var(--fg);font-weight:600}
   .cmp code{font-family:var(--mono);font-size:.85em;color:var(--fg)}
+  /* Mobile (T-VHMOB.1): under 640px the two-column table left only ~84px of the answer column
+     visible behind a swipe — linearize each row into a stacked label + answer instead. */
+  @media(max-width:640px){
+    .cmp{min-width:0}
+    .cmp th,.cmp td{display:block;width:auto}
+    .cmp th{border-bottom:0;padding-bottom:.25rem}
+    .cmp td{padding-top:.4rem}
+  }
 
   /* ---- on-chain ---- */
   .chain{border:1px solid var(--line);border-radius:12px;background:linear-gradient(115deg,var(--panel),var(--ink2));padding:1.6rem;margin-top:2rem;display:flex;flex-wrap:wrap;gap:1.2rem;align-items:center}
@@ -243,6 +251,10 @@
     *{transition-duration:.01ms!important}
   }
 </style>
+<!-- T-VHAN.1: cookieless page-view counting (GoatCounter). LANDING PAGE ONLY by design: the
+     standalone verifier page states "no network API at all — check the devtools Network tab"
+     and must keep that claim literally true, so it carries no analytics. -->
+<script data-goatcounter="https://stats.dankdev.com/count" async src="https://stats.dankdev.com/count.js"></script>
 </head>
 <body>
 <header class="bar">

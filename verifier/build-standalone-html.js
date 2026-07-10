@@ -613,7 +613,10 @@ const PAGE_STYLE = [
   ".kv b { display: inline-block; min-width: 12em; font-weight: 600; }",
   "ul.files { margin: 6px 0; padding-left: 1.2em; }",
   ".row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }",
+  "select { max-width: 100%; font: inherit; }",
   "footer { margin-top: 28px; color: #444d56; font-size: 0.85rem; }",
+  // Mobile (T-VHMOB.1): thumb-sized tap targets on phones (~44px buttons instead of ~36px).
+  "@media (max-width: 480px) { button { padding: 11px 16px; } }",
   "</style>",
 ].join("\n");
 
@@ -691,7 +694,10 @@ function pageBodyText() {
     "</div>",
     '<div id="held-files" class="mono"></div>',
     '<div class="row">',
-    '<label style="flex:1">Artifact: <select id="artifact-select" style="max-width:100%"></select></label>',
+    // Mobile (T-VHMOB.1): min-width:0 lets the flex label shrink below the select's intrinsic width
+    // (the long placeholder option was forcing a 540px select -> ~180px horizontal page overflow at
+    // 390px); width:100% then sizes the select to the label, like the vendor-pin input below it.
+    '<label style="flex:1;min-width:0">Artifact: <select id="artifact-select" style="width:100%;max-width:100%"></select></label>',
     "</div>",
     '<div class="row">',
     '<label style="flex:1">Vendor pin — the 0x address of the producer you TRUST (get it out-of-band, not from the packet):',

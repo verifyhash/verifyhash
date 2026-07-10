@@ -119,9 +119,9 @@
     "verify-html": {
       "bundle": "verify-vh-standalone.html",
       "sidecar": "verify-vh-standalone.html.sha256",
-      "bundleBytes": 169902,
-      "bundleSha256": "ce444165734a34745756aeefd34025f53c457389e57e5c10ce5d03b2ebe8eee3",
-      "sidecarLine": "ce444165734a34745756aeefd34025f53c457389e57e5c10ce5d03b2ebe8eee3  verify-vh-standalone.html",
+      "bundleBytes": 170029,
+      "bundleSha256": "9034bd6e3faee123ec86d22a0925c968d3b6f55d84559ec6d6e04427785ef9f5",
+      "sidecarLine": "9034bd6e3faee123ec86d22a0925c968d3b6f55d84559ec6d6e04427785ef9f5  verify-vh-standalone.html",
       "modules": [
         {
           "id": "vh-buffer",

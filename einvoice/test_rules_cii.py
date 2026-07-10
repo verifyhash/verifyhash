@@ -315,11 +315,23 @@ class TestKnownBadCIIInvoices(unittest.TestCase):
         ET.SubElement(lt, _q(NSA, "ExemptionReasonCode")).text = "vatex-eu-79-c"
         self.assertNotIn("BR-CL-22", _fired_ids(r))
 
+    def test_brcl23_bogus_unit_code(self):
+        def m(r):
+            _first_line(r).find(
+                "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity", NS
+            ).set("unitCode", "XXY")
+        self.assert_fires(m, "BR-CL-23")
+
+    def test_brcl23_valid_unit_code_passes(self):
+        # The clean CII base line already carries a listed unit code (H87).
+        self.assertNotIn("BR-CL-23", _fired_ids(_good_root()))
+
     def test_clean_cii_base_fires_no_codelist_rule(self):
         fired = _fired_ids(_good_root())
         self.assertEqual(
             fired & {"BR-CL-03", "BR-CL-04", "BR-CL-05", "BR-CL-13",
-                     "BR-CL-14", "BR-CL-17", "BR-CL-18", "BR-CL-22"}, set())
+                     "BR-CL-14", "BR-CL-17", "BR-CL-18", "BR-CL-22",
+                     "BR-CL-23"}, set())
 
 
 def _de_fired(root):

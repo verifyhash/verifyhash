@@ -23,9 +23,9 @@ XSLT and compares the fired-rule set. The sources:
 
 ## Coverage at a glance
 
-- **205 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **70** proven on both UBL and CII, **135** UBL-only, **0** CII-only.
-- Severity (blocking class): **195** fatal (block validity), **10** warning / information (reported, non-blocking).
+- **206 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **71** proven on both UBL and CII, **135** UBL-only, **0** CII-only.
+- Severity (blocking class): **196** fatal (block validity), **10** warning / information (reported, non-blocking).
 
 ## Rules
 
@@ -96,6 +96,7 @@ the non-blocking `warning` class for the severity column).
 | `BR-CL-17` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice tax categories MUST be coded using the UNCL 5305 subset. |
 | `BR-CL-18` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice tax categories MUST be coded using the UNCL 5305 subset. |
 | `BR-CL-22` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | VAT exemption reason code MUST belong to the CEF VATEX list. |
+| `BR-CL-23` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Unit code MUST be coded per UN/ECE Rec 20 with Rec 21 extension. |
 | `BR-CO-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151). |
 | `BR-CO-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Sum of Invoice line net amount (BT-106) = Σ line net amount (BT-131). |
 | `BR-CO-11` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Sum of allowances on document level (BT-107) = Σ Document level allowance amount (BT-92). |

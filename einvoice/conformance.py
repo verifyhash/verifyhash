@@ -326,6 +326,7 @@ CII_SYNTAX_COVERAGE = {
     "BR-CL-17": "Allowance/charge VAT category code in UNCL 5305 subset",
     "BR-CL-18": "Breakdown & line VAT category code in UNCL 5305 subset",
     "BR-CL-22": "VAT exemption reason code (BT-121) in CEF VATEX list",
+    "BR-CL-23": "Quantity/base-quantity unit code in UN/ECE Rec 20 + Rec 21",
     "BR-CO-04": "Each line categorized with a VAT category code (BT-151)",
     "BR-CO-10": "Sum of line net amount (BT-106) = Σ line net (BT-131)",
     "BR-CO-13": "Total without VAT (BT-109) = line-net − allowances + charges",

@@ -22,6 +22,7 @@ from .codelists import (
     CII_COUNTRY_CODES,
     VAT_CATEGORY_CODES,
     VATEX_CODES,
+    UNIT_CODES,
 )
 
 # ``severity`` mirrors the official Schematron ``flag``: every core rule is
@@ -692,6 +693,32 @@ def br_cl_22(inv):
                 "The VAT exemption reason code MUST belong to the CEF VATEX code "
                 "list; %r is not a listed VATEX code." % code,
                 "cbc:TaxExemptionReasonCode")
+    return None
+
+
+def br_cl_23(inv):
+    """BR-CL-23: Unit code MUST be coded per UN/ECE Rec 20 with Rec 21 extension.
+
+    Official context differs by syntax but the allowed value set is IDENTICAL
+    (the vendored UBL and CII asserts inline the same 2162-entry string):
+      * UBL: cbc:InvoicedQuantity[@unitCode] | cbc:BaseQuantity[@unitCode] |
+        cbc:CreditedQuantity[@unitCode] — the line invoiced/credited quantity
+        (BT-129) and the item price base quantity (BT-149) @unitCode.
+      * CII: ram:BasisQuantity[@unitCode] | ram:BilledQuantity[@unitCode] —
+        the item price base quantity (BT-149) and billed line quantity (BT-129).
+    The [@unitCode] predicate means only quantity elements that CARRY a unitCode
+    attribute are context nodes, so a missing attribute cannot fire; the parser
+    populates ``unit_codes`` with exactly those normalize-space'd @unitCode
+    values per syntax, so the shared body runs unchanged and reaches parity with
+    each official codes Schematron.
+    """
+    for code in inv.unit_codes:
+        if _bad_code(code, UNIT_CODES):
+            return Violation(
+                "BR-CL-23",
+                "Unit code MUST be coded according to the UN/ECE Recommendation "
+                "20 with Rec 21 extension; %r is not a listed unit code." % code,
+                "cbc:InvoicedQuantity/@unitCode")
     return None
 
 
@@ -3360,7 +3387,7 @@ ALL_RULES = [
     br_49, br_50, br_51, br_55, br_57, br_61, br_62, br_63,
     br_cl_01,
     br_cl_03, br_cl_04, br_cl_05, br_cl_13, br_cl_14,
-    br_cl_17, br_cl_18, br_cl_22,
+    br_cl_17, br_cl_18, br_cl_22, br_cl_23,
     br_co_04,
     br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15, br_co_16,
     br_co_17, br_co_18,

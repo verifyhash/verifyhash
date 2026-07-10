@@ -1622,5 +1622,45 @@ class CodelistVatCategory(unittest.TestCase):
         self.assertNotIn("BR-CL-22", fired(r))
 
 
+class TestBrCl23UnitCode(unittest.TestCase):
+    """BR-CL-23: quantity/base-quantity unit codes must be UN/ECE Rec 20/21."""
+
+    def _invoiced_qty(self, root):
+        return root.find("%s/%s" % (q(NS_CAC, "InvoiceLine"),
+                                    q(NS_CBC, "InvoicedQuantity")))
+
+    def test_bogus_unit_code_fires_fatal(self):
+        r = base()
+        self._invoiced_qty(r).set("unitCode", "XXY")
+        v = violation_for(r, "BR-CL-23")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.severity, "fatal")
+
+    def test_valid_unit_code_passes(self):
+        # The base invoice's line unit code is a listed UN/ECE Rec 20 code.
+        self.assertNotIn("BR-CL-23", fired(base()))
+
+    def test_rec21_packaging_code_passes(self):
+        # A Rec 21 packaging code (XBX = box) is in the same allowed set.
+        r = base()
+        self._invoiced_qty(r).set("unitCode", "XBX")
+        self.assertNotIn("BR-CL-23", fired(r))
+
+    def test_base_quantity_unit_code_checked(self):
+        # cbc:BaseQuantity[@unitCode] (item price base quantity BT-149) is a
+        # BR-CL-23 context node too — an off-list value there must fire.
+        r = base()
+        line = r.find(q(NS_CAC, "InvoiceLine"))
+        price = line.find(q(NS_CAC, "Price"))
+        if price is None:
+            price = ET.SubElement(line, q(NS_CAC, "Price"))
+        bq = price.find(q(NS_CBC, "BaseQuantity"))
+        if bq is None:
+            bq = ET.SubElement(price, q(NS_CBC, "BaseQuantity"))
+            bq.text = "1"
+        bq.set("unitCode", "XXY")
+        self.assertIsNotNone(violation_for(r, "BR-CL-23"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

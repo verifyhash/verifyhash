@@ -296,6 +296,11 @@ class Invoice:
         self.taxcategory_id_codes = []
         self.classified_tax_category_codes = []
         self.tax_exemption_reason_codes = []
+        #   unit_codes — measurement unit codes at the BR-CL-23 context nodes
+        #       (UBL: cbc:InvoicedQuantity|cbc:BaseQuantity|cbc:CreditedQuantity
+        #        with @unitCode; CII: ram:BasisQuantity|ram:BilledQuantity with
+        #        @unitCode), normalize-space'd like the official assert
+        self.unit_codes = []
         # Parties
         self.seller_name = None           # BT-27
         self.seller_has_postal_address = False  # BG-5
@@ -559,6 +564,19 @@ def build_model(root):
     inv.tax_exemption_reason_codes = [
         (_norm_space(_strval(el)) or "").upper()
         for el in root.findall(".//cbc:TaxExemptionReasonCode", NS)
+    ]
+    # BR-CL-23 context (UBL) = cbc:InvoicedQuantity[@unitCode] |
+    # cbc:BaseQuantity[@unitCode] | cbc:CreditedQuantity[@unitCode] — the
+    # [@unitCode] predicate means only elements carrying that attribute are
+    # context nodes; the rule tests normalize-space(@unitCode) against the
+    # UN/ECE Rec 20 + Rec 21 unit-code list. (BaseQuantity here is the item
+    # price base quantity BT-149; InvoicedQuantity is BT-129; CreditedQuantity
+    # is the credit-note line quantity.)
+    inv.unit_codes = [
+        _norm_space(el.get("unitCode")) or ""
+        for tag in ("InvoicedQuantity", "BaseQuantity", "CreditedQuantity")
+        for el in root.findall(".//cbc:%s" % tag, NS)
+        if el.get("unitCode") is not None
     ]
 
     # Seller

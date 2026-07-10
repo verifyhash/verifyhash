@@ -317,6 +317,18 @@ def build_model(root):
         (_norm_space(_text(el)) or "").upper()
         for el in root.findall(".//ram:ExemptionReasonCode", NS)
     ]
+    # BR-CL-23 context (CII) = ram:BasisQuantity[@unitCode] |
+    # ram:BilledQuantity[@unitCode] — the [@unitCode] predicate means only
+    # elements carrying that attribute are context nodes; the rule tests
+    # normalize-space(@unitCode) against the UN/ECE Rec 20 + Rec 21 unit-code
+    # list. BilledQuantity is the invoiced line quantity (BT-129);
+    # BasisQuantity is the item price base quantity (BT-149).
+    inv.unit_codes = [
+        _norm_space(el.get("unitCode")) or ""
+        for tag in ("BasisQuantity", "BilledQuantity")
+        for el in root.findall(".//ram:%s" % tag, NS)
+        if el.get("unitCode") is not None
+    ]
 
     # -- BT-24 Specification identifier (ExchangedDocumentContext) ----------
     inv.customization_id = _text(root.find(

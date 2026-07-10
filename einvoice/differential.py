@@ -111,7 +111,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 159, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 160, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -199,6 +199,11 @@ CII_GRADED_RULES = [
     # BR-CL-18, ram:ExemptionReasonCode for BR-CL-22); the shared rule bodies
     # run unchanged and reach EXACT parity with the official CII codes Schematron.
     _rules.br_cl_17, _rules.br_cl_18, _rules.br_cl_22,
+    # Unit-code list (BR-CL-23). The CII parser feeds this the CII context nodes
+    # (ram:BasisQuantity/@unitCode, ram:BilledQuantity/@unitCode); the shared
+    # rule body runs unchanged and reaches parity with the official CII codes
+    # Schematron (same 2162-entry UN/ECE Rec 20 + Rec 21 unit list as UBL).
+    _rules.br_cl_23,
     # Line VAT category code (BR-CO-04).
     _rules.br_co_04,
     # Document-level arithmetic invariants that reach CII parity.
@@ -1161,6 +1166,14 @@ def _mut_brcl22(r):
     _sub_el(ctc, NS_CBC, "TaxExemptionReasonCode", text="NOT-A-VATEX-CODE")
 
 
+def _mut_brcl23(r):
+    # Line invoiced quantity (cbc:InvoicedQuantity) @unitCode coded off the
+    # UN/ECE Rec 20 + Rec 21 unit-code list. Only a label — amounts are
+    # untouched — so no arithmetic rule flips; BR-CL-23 is the sole rule that
+    # fires among the codelist rules.
+    _child(_first_line(r), NS_CBC, "InvoicedQuantity").set("unitCode", "XXY")
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -1182,6 +1195,7 @@ _MUTATIONS = {
     "BR-CL-03": _mut_brcl03, "BR-CL-04": _mut_brcl04, "BR-CL-05": _mut_brcl05,
     "BR-CL-13": _mut_brcl13, "BR-CL-14": _mut_brcl14,
     "BR-CL-17": _mut_brcl17, "BR-CL-18": _mut_brcl18, "BR-CL-22": _mut_brcl22,
+    "BR-CL-23": _mut_brcl23,
     "BR-CO-10": _mut_brco10,
     "BR-CO-11": _mut_brco11, "BR-CO-12": _mut_brco12,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
@@ -1996,6 +2010,15 @@ def _cmut_brcl22(r):
     ).text = "NOT-A-VATEX-CODE"
 
 
+def _cmut_brcl23(r):
+    # Line billed quantity (ram:BilledQuantity) @unitCode coded off the UN/ECE
+    # Rec 20 + Rec 21 unit-code list. Only a label — amounts untouched — so no
+    # graded arithmetic rule flips; BR-CL-23 is the sole rule that fires.
+    _cii_first_line(r).find(
+        "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity", _NSC
+    ).set("unitCode", "XXY")
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -2008,6 +2031,7 @@ _CII_MUTATIONS = {
     "BR-CL-03": _cmut_brcl03, "BR-CL-04": _cmut_brcl04, "BR-CL-05": _cmut_brcl05,
     "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,
     "BR-CL-17": _cmut_brcl17, "BR-CL-18": _cmut_brcl18, "BR-CL-22": _cmut_brcl22,
+    "BR-CL-23": _cmut_brcl23,
     "BR-CO-04": _cmut_brco04,
     "BR-CO-10": _cmut_brco10, "BR-CO-13": _cmut_brco13,
     "BR-CO-16": _cmut_brco16, "BR-CO-17": _cmut_brco17,

@@ -34,7 +34,7 @@
       "license": "Apache-2.0"
     }
   },
-  "rule_count": 205,
+  "rule_count": 206,
   "rules": [
     {
       "id": "BR-01",
@@ -1482,6 +1482,30 @@
     {
       "id": "BR-CL-22",
       "title": "VAT exemption reason code MUST belong to the CEF VATEX list.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-23",
+      "title": "Unit code MUST be coded per UN/ECE Rec 20 with Rec 21 extension.",
       "family": "core",
       "syntax": "both",
       "severity": "fatal",

@@ -292,20 +292,25 @@ def main():
     # Surface files must exist.
     landing_path = os.path.join(WWW_DIR, "index.html")
     hub_path = os.path.join(RULES_DIR, "index.html")
+    walkthrough_path = os.path.join(WWW_DIR, "walkthrough", "index.html")
     sitemap_path = os.path.join(WWW_DIR, "sitemap.xml")
     robots_path = os.path.join(WWW_DIR, "robots.txt")
     for pth, name in ((landing_path, "www/index.html"),
                       (hub_path, "www/rules/index.html"),
+                      (walkthrough_path, "www/walkthrough/index.html"),
                       (sitemap_path, "www/sitemap.xml"),
                       (robots_path, "www/robots.txt")):
         check(os.path.exists(pth), "surface file missing: %s" % name)
 
-    # Enumerate EVERY generated HTML file (landing + hub + all rule pages).
+    # Enumerate EVERY generated HTML file (landing + hub + walkthrough + all
+    # rule pages) so every internal link on each is integrity-checked.
     html_files = []
     if os.path.exists(landing_path):
         html_files.append(landing_path)
     if os.path.exists(hub_path):
         html_files.append(hub_path)
+    if os.path.exists(walkthrough_path):
+        html_files.append(walkthrough_path)
     for rid in sorted(want & have):
         rp = os.path.join(RULES_DIR, rid, "index.html")
         if os.path.exists(rp):
@@ -340,7 +345,8 @@ def main():
                 for x in re.findall(r"<loc>(.*?)</loc>", sm, re.S)]
         got = set(locs)
         check(len(locs) == len(got), "sitemap has duplicate <loc> entries")
-        expected = {_gen._url_landing(), _gen._url_hub()}
+        expected = {_gen._url_landing(), _gen._url_hub(),
+                    _gen._url_walkthrough()}
         expected |= {_gen._url_rule(rid) for rid in (want & have)}
         check(got == expected,
               "sitemap <loc> set != generated canonical set; missing=%s "
@@ -351,7 +357,8 @@ def main():
         noindex_re = re.compile(
             r'<meta[^>]*name="robots"[^>]*noindex', re.IGNORECASE)
         loc_to_file = {_gen._url_landing(): landing_path,
-                       _gen._url_hub(): hub_path}
+                       _gen._url_hub(): hub_path,
+                       _gen._url_walkthrough(): walkthrough_path}
         for rid in (want & have):
             loc_to_file[_gen._url_rule(rid)] = os.path.join(
                 RULES_DIR, rid, "index.html")

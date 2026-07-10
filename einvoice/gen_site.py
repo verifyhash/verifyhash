@@ -62,9 +62,11 @@ Standard library only; no network.
 
 from __future__ import annotations
 
+import difflib
 import html
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -85,6 +87,21 @@ from gen_rules_doc import (  # noqa: E402
 # The generated site tree lives under einvoice/www/rules/<RULE-ID>/index.html.
 SITE_DIR = os.path.join(HERE, "www")
 RULES_DIR = os.path.join(SITE_DIR, "rules")
+
+# The worked walkthrough page is emitted at the stable canonical path
+# www/walkthrough/index.html. Its content is derived from the committed
+# onboarding example under examples/01-missing-fields/ — the deliberately-broken
+# invoice, the REAL engine report it produces (report.json, itself regenerated
+# from the live engine by gen_examples.py and drift-guarded by test_examples.py),
+# and the corrected invoice. Nothing on the page is authored from memory.
+WALKTHROUGH_DIR = os.path.join(SITE_DIR, "walkthrough")
+EXAMPLE_DIR = os.path.join(HERE, "examples", "01-missing-fields")
+EX_BROKEN = os.path.join(EXAMPLE_DIR, "broken.xml")
+EX_FIXED = os.path.join(EXAMPLE_DIR, "fixed.xml")
+EX_REPORT = os.path.join(EXAMPLE_DIR, "report.json")
+# The example directory path as it appears in the report's ``source`` field and
+# in the CLI commands shown on the page (relative to the package root).
+EX_REL = os.path.relpath(EXAMPLE_DIR, HERE)
 
 # ---------------------------------------------------------------------------
 # BASE_URL — the ONE documented placeholder origin for the whole surface.
@@ -177,6 +194,11 @@ def _url_hub():
 def _url_rule(rule_id):
     """Absolute URL of one rule page (distinct by rule id)."""
     return BASE_URL + "/rules/" + rule_id + "/"
+
+
+def _url_walkthrough():
+    """Absolute URL of the worked 'failing CI to fixed invoice' walkthrough."""
+    return BASE_URL + "/walkthrough/"
 
 
 def _url_sitemap():
@@ -436,6 +458,11 @@ def render_landing():
 
     w('<div class="onramp">')
     w("<h2>Free on-ramp</h2>")
+    w("<p>New here? The fastest way in is the "
+      '<a href="walkthrough/index.html">5-minute worked walkthrough</a>: it '
+      "takes a broken XRechnung invoice, runs the checker, shows the real "
+      "report it prints, and applies the two-element fix until the invoice "
+      "passes.</p>")
     w("<p>Everything is free and open source (Apache-2.0). Start here:</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Repository README</a> — install '
@@ -560,14 +587,267 @@ def render_hub(catalog):
     return "\n".join(p) + "\n"
 
 
+# Extra styling for the walkthrough page only (code blocks + finding cards).
+# Kept in a SEPARATE constant so the shared _STYLE (and therefore the 200+
+# committed rule pages) is not touched by adding this one page.
+_WALK_STYLE = """
+pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
+  padding: .8rem 1rem; overflow-x: auto; font-size: .78rem; line-height: 1.45;
+  margin: .6rem 0; }
+.step { margin: 2.2rem 0 0; }
+.step h2 { margin-bottom: .3rem; }
+.finding { border: 1px solid #d0d7de; border-radius: .6rem;
+  padding: .7rem 1rem; margin: .8rem 0; }
+.finding .fhead { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+  margin: 0 0 .35rem; }
+.finding .fhead code { font-size: .9em; }
+.finding h3 { margin: .3rem 0; font-size: 1.02rem; }
+.finding .hint { color: #57606a; font-size: .92rem; margin: .35rem 0 0; }
+.pass { border-left: 4px solid #1a7f37; padding-left: .9rem; margin: 1rem 0; }
+.summary code { font-weight: 700; }
+@media (prefers-color-scheme: dark) {
+  pre { background: #161b22; border-color: #30363d; color: #e6edf3; }
+  .finding { border-color: #30363d; }
+  .finding .hint { color: #8b949e; }
+}
+""".strip()
+
+
+def _strip_leading_comment(xml):
+    """Drop the first ``<!-- ... -->`` block (the provenance header) from an XML
+    string so a body diff shows ONLY invoice-content changes, not the differing
+    provenance comments of broken.xml vs fixed.xml."""
+    return re.sub(r"<!--.*?-->\n?", "", xml, count=1, flags=re.S)
+
+
+def _body_diff(broken_xml, fixed_xml):
+    """Unified diff of the two invoice BODIES (provenance comments stripped).
+
+    For this example the diff is exactly the two restored elements
+    (``<cbc:BuyerReference>`` and the seller ``<cac:Contact>`` group), so it is
+    an honest, derived picture of the fix — never hand-authored.
+    """
+    b = _strip_leading_comment(broken_xml).splitlines()
+    f = _strip_leading_comment(fixed_xml).splitlines()
+    return "\n".join(difflib.unified_diff(
+        b, f, fromfile="broken.xml", tofile="fixed.xml", lineterm=""))
+
+
+def _walkthrough_inputs():
+    """Read the committed example corpus (broken/fixed XML + the live report).
+
+    The report is the REAL engine output committed at
+    examples/01-missing-fields/report.json — regenerated from the engine by
+    gen_examples.py and asserted current by test_examples.py, so it can never
+    silently drift from what the tool emits. This function never runs the engine
+    itself (gen_site stays offline/deterministic); the anti-drift guarantee is
+    provided by test_walkthrough.py, which re-runs the LIVE engine and fails if
+    the rendered report content disagrees.
+    """
+    with open(EX_BROKEN, encoding="utf-8") as fh:
+        broken = fh.read()
+    with open(EX_FIXED, encoding="utf-8") as fh:
+        fixed = fh.read()
+    with open(EX_REPORT, encoding="utf-8") as fh:
+        report = json.load(fh)
+    return broken, fixed, report
+
+
+def render_walkthrough(catalog):
+    """The worked walkthrough page (``www/walkthrough/index.html``) — pure.
+
+    A 5-minute quickstart: (a) a deliberately-broken XRechnung invoice, (b) the
+    REAL conformance report the engine produces for it (each finding's rule id
+    linked to its per-rule reference page, plain-language title, EN 16931 BT/BG
+    terms and the fix hint — straight from the committed live report.json), and
+    (c) the corrected invoice, shown as the exact element diff, which the engine
+    then accepts. Every invoice/report-derived string is HTML-escaped; the page
+    is self-contained and opens offline with no network requests.
+    """
+    broken_xml, fixed_xml, report = _walkthrough_inputs()
+    source = report.get("source", "")
+    profile = report.get("profile", "")
+    violations = report.get("violations") or []
+    fatal_count = report.get("fatal_count", 0)
+    warning_count = report.get("warning_count", 0)
+    violation_count = report.get("violation_count", len(violations))
+    n_fatal = sum(1 for v in violations if v.get("severity") == "fatal")
+    body_diff = _body_diff(broken_xml, fixed_xml)
+
+    title = ("From a failing CI check to a passing e-invoice — a worked "
+             "EN 16931 / XRechnung walkthrough — einvoice")
+    description = ("A 5-minute worked example: a deliberately-broken XRechnung "
+                   "UBL invoice, the real conformance report einvoice produces "
+                   "(%d findings, %d fatal), and the exact two-element fix that "
+                   "makes it pass." % (violation_count, n_fatal))
+    canonical = _url_walkthrough()
+
+    p = []
+    w = p.append
+    w("<!doctype html>")
+    w('<html lang="en">')
+    w("<head>")
+    w('<meta charset="utf-8">')
+    w('<meta name="viewport" content="width=device-width, initial-scale=1">')
+    # INDEXABLE (VHW.3): no robots:noindex — this page is in the sitemap.
+    w("<title>%s</title>" % _h(title))
+    w('<meta name="description" content="%s">' % _h(description))
+    w('<link rel="canonical" href="%s">' % _h(canonical))
+    # One inline <style> block: the shared base plus the walkthrough-only extra.
+    # No external CSS/JS/CDN/font/script — offline-openable.
+    w("<style>%s\n%s</style>" % (_STYLE, _WALK_STYLE))
+    w("</head>")
+    w("<body>")
+    w("<main>")
+    # Breadcrumb up to the landing + rule hub (relative, offline-resolvable):
+    # this page is www/walkthrough/index.html.
+    w('<p class="crumb"><a href="../index.html">einvoice</a> / '
+      '<a href="../rules/index.html">EN 16931 / XRechnung rule reference</a> / '
+      "Walkthrough</p>")
+    w("<h1>From failing CI to a fixed invoice</h1>")
+    w('<p class="lead">A five-minute worked example. We take a real German '
+      "<strong>XRechnung</strong> (EN 16931 UBL) invoice with two required "
+      "things removed, run the <code>einvoice</code> conformance checker exactly "
+      "as a CI gate would, read the actual report it prints, and apply the fix "
+      "until the invoice passes. Every finding below is produced by the real "
+      "engine — the report is regenerated from the tool and a test fails the "
+      "build if this page ever drifts from live output.</p>")
+    w("<p>You can reproduce every step yourself: you only need Python 3 and this "
+      "repository, no dependencies and no network. Run the commands from the "
+      "<code>einvoice/</code> directory.</p>")
+
+    # ---- Step 1: the broken invoice ---------------------------------------
+    w('<section class="step">')
+    w("<h2>1. The broken invoice</h2>")
+    w("<p>A supplier exported this UBL invoice, but two mandatory items are "
+      "missing: the <strong>Buyer reference</strong> "
+      "(<code>BT-10</code>, the <em>Leitweg-ID</em> routing id a German public "
+      "buyer requires) and the <strong>SELLER CONTACT</strong> group "
+      "(<code>BG-6</code>, a <code>cac:Contact</code> under the supplier "
+      "party). Everything else is a byte-for-byte copy of a valid KoSIT test "
+      "document, so these two omissions are the <em>only</em> reason it fails. "
+      "The full file is <code>%s/broken.xml</code>:</p>" % _h(EX_REL))
+    w("<pre>%s</pre>" % _h(broken_xml))
+    w("</section>")
+
+    # ---- Step 2: run the checker (the CI gate) ----------------------------
+    w('<section class="step">')
+    w("<h2>2. Run the checker (this is your CI gate)</h2>")
+    w("<p>Point the tool at the invoice. In a CI pipeline this is the command "
+      "whose non-zero exit fails the build:</p>")
+    w("<pre>$ python3 -m einvoice.report %s/broken.xml --format json</pre>"
+      % _h(EX_REL))
+    w("<p>It exits <strong>1</strong> and prints the report below. Only "
+      "<code>fatal</code> findings make an invoice invalid (mirroring the "
+      "official Schematron <code>flag</code> semantics); <code>warning</code> "
+      "and <code>information</code> findings are advisory and do not fail the "
+      "build.</p>")
+    w("</section>")
+
+    # ---- Step 3: read the real report -------------------------------------
+    w('<section class="step">')
+    w("<h2>3. Read the report</h2>")
+    w('<p class="summary">The engine reports <code>valid: %s</code> for '
+      "<code>%s</code> under profile <code>%s</code>: "
+      "<code>%d</code> findings in total, <code>%d</code> fatal and "
+      "<code>%d</code> warning. Each finding names the violated rule, the "
+      "EN 16931 business terms it touches, and a concrete fix hint. The rule id "
+      "links to its full reference page.</p>"
+      % (_h(json.dumps(report.get("valid"))), _h(source), _h(profile),
+         violation_count, fatal_count, warning_count))
+
+    for v in violations:
+        rule = v.get("rule", "")
+        severity = v.get("severity", "")
+        vtitle = v.get("title", "")
+        hint = v.get("fix_hint", "")
+        terms = v.get("terms") or []
+        terms_html = " ".join("<code>%s</code>" % _h(t) for t in terms)
+        # Link the rule id back to its per-rule reference page when that page
+        # exists (it always does for catalog rules; the guard keeps the link
+        # from ever dangling). Relative path resolves offline: this page is
+        # www/walkthrough/index.html, the rule page is www/rules/<id>/index.html.
+        if rule in catalog:
+            rule_html = ('<a href="../rules/%s/index.html"><code>%s</code></a>'
+                         % (_h(rule), _h(rule)))
+        else:
+            rule_html = "<code>%s</code>" % _h(rule)
+        w('<div class="finding">')
+        w('<p class="fhead">%s <span class="sev">%s</span> %s</p>'
+          % (rule_html, _h(severity), terms_html))
+        w("<h3>%s</h3>" % _h(vtitle))
+        w('<p class="hint">%s</p>' % _h(hint))
+        w("</div>")
+
+    w("<p>The two <code>fatal</code> findings (<code>BR-DE-15</code> and "
+      "<code>BR-DE-2</code>) are why the invoice is rejected. The "
+      "<code>information</code> finding is advisory — we leave it as-is so this "
+      "stays a minimal two-field fix. For a full remediation write-up of any "
+      "rule, run <code>python3 -m einvoice.report --explain BR-DE-15</code>.</p>")
+    w("</section>")
+
+    # ---- Step 4: the fix ---------------------------------------------------
+    w('<section class="step">')
+    w("<h2>4. Apply the fix</h2>")
+    w("<p>Restore the two missing elements. This is the exact diff from "
+      "<code>broken.xml</code> to the corrected <code>fixed.xml</code> "
+      "(the provenance comment headers are omitted; the invoice bodies differ "
+      "by nothing else):</p>")
+    w("<pre>%s</pre>" % _h(body_diff))
+    w("<p>A <code>cac:Contact</code> needs at least a name, telephone and/or "
+      "e-mail; the buyer reference is the routing id your buyer gives you.</p>")
+    w("</section>")
+
+    # ---- Step 5: it passes -------------------------------------------------
+    w('<section class="step">')
+    w("<h2>5. The corrected invoice passes</h2>")
+    w("<p>Re-run the same command on the corrected file "
+      "(<code>%s/fixed.xml</code>):</p>" % _h(EX_REL))
+    w("<pre>$ python3 -m einvoice.report %s/fixed.xml --format json</pre>"
+      % _h(EX_REL))
+    w('<p class="pass">It now exits <strong>0</strong> and reports '
+      "<code>valid: true</code> with <code>fatal_count: 0</code>. Both "
+      "<code>BR-DE-*</code> fatals are gone and the invoice would pass this "
+      "pre-flight. (This page&rsquo;s test re-runs the live engine on "
+      "<code>fixed.xml</code> and fails the build unless it really passes with "
+      "zero fatal findings.)</p>")
+    w("<p><strong>Honest limit:</strong> a green result means &ldquo;no "
+      "implemented rule fired&rdquo;, not &ldquo;certified legally "
+      "conformant&rdquo;. This is a fast pre-flight that catches the mistakes "
+      "which trip up most first submissions — still run your buyer&rsquo;s "
+      "official validator before you file.</p>")
+    w("</section>")
+
+    w('<section class="step">')
+    w("<h2>Next</h2>")
+    w('<p>Browse every rule the engine checks in the '
+      '<a href="../rules/index.html">rule index</a>, or start from the '
+      '<a href="../index.html">overview</a> for install and the CI-gate '
+      "recipe.</p>")
+    w("</section>")
+
+    w("<footer>")
+    w("The report on this page is rendered from "
+      "<code>examples/01-missing-fields/report.json</code> — real engine output "
+      "regenerated by <code>gen_examples.py</code> and drift-guarded by "
+      "<code>test_examples.py</code> / <code>test_walkthrough.py</code>. "
+      "Self-contained: this page opens offline with no network requests.")
+    w("</footer>")
+    w("</main>")
+    w("</body>")
+    w("</html>")
+    return "\n".join(p) + "\n"
+
+
 def render_sitemap(catalog):
     """XML sitemap listing EXACTLY the canonical page set — pure, deterministic.
 
-    The URL set is: landing + rule index hub + every rule page, each <loc>
-    built from the SAME BASE_URL as the canonical <link>s, so canonical and
-    sitemap can never disagree. Rule order follows the catalog (stable).
+    The URL set is: landing + rule index hub + the worked walkthrough + every
+    rule page, each <loc> built from the SAME BASE_URL as the canonical <link>s,
+    so canonical and sitemap can never disagree. Rule order follows the catalog
+    (stable).
     """
-    locs = [_url_landing(), _url_hub()]
+    locs = [_url_landing(), _url_hub(), _url_walkthrough()]
     locs += [_url_rule(rid) for rid in catalog]
     lines = []
     w = lines.append
@@ -599,18 +879,23 @@ def render_robots():
     return "\n".join(lines) + "\n"
 
 
-# Paths of the four surface-level (non-per-rule) generated files.
+# Paths of the surface-level (non-per-rule) generated files.
 LANDING_PATH = os.path.join(SITE_DIR, "index.html")
 HUB_PATH = os.path.join(RULES_DIR, "index.html")
+WALKTHROUGH_PATH = os.path.join(WALKTHROUGH_DIR, "index.html")
 SITEMAP_PATH = os.path.join(SITE_DIR, "sitemap.xml")
 ROBOTS_PATH = os.path.join(SITE_DIR, "robots.txt")
 
 
 def render_surface(catalog):
-    """Map absolute path -> rendered text for the four surface files (pure)."""
+    """Map absolute path -> rendered text for the surface files (pure).
+
+    Landing, rule index hub, worked walkthrough, sitemap.xml and robots.txt.
+    """
     return {
         LANDING_PATH: render_landing(),
         HUB_PATH: render_hub(catalog),
+        WALKTHROUGH_PATH: render_walkthrough(catalog),
         SITEMAP_PATH: render_sitemap(catalog),
         ROBOTS_PATH: render_robots(),
     }
@@ -671,7 +956,7 @@ def check(pages, surface):
         if surface_bad:
             sys.stderr.write("  stale surface: %s\n" % surface_bad)
         return 1
-    print("site up to date (%d rule pages + landing + hub + sitemap + robots)"
+    print("site up to date (%d rule pages + landing + hub + walkthrough + sitemap + robots)"
           % len(want))
     return 0
 
@@ -690,11 +975,13 @@ def write(pages, surface):
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as fh:
             fh.write(text)
-    # Surface files: landing, rule index hub, sitemap.xml, robots.txt.
+    # Surface files: landing, rule index hub, walkthrough, sitemap, robots.
+    # Ensure each parent dir exists (the walkthrough lives in its own subdir).
     for path, text in surface.items():
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
-    print("wrote %d rule pages + landing + hub + sitemap + robots under %s"
+    print("wrote %d rule pages + landing + hub + walkthrough + sitemap + robots under %s"
           % (len(pages), os.path.relpath(SITE_DIR, HERE)))
     return 0
 

@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From a failing CI check to a passing e-invoice — a worked EN 16931 / XRechnung walkthrough — einvoice</title>
+<meta name="description" content="A 5-minute worked example: a deliberately-broken XRechnung UBL invoice, the real conformance report einvoice produces (3 findings, 2 fatal), and the exact two-element fix that makes it pass.">
+<link rel="canonical" href="https://verifyhash.com/einvoice/walkthrough/">
+<style>:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  line-height: 1.5; margin: 0; padding: 2rem 1rem; color: #1f2328;
+  background: #ffffff; }
+main { max-width: 46rem; margin: 0 auto; }
+a { color: #0969da; }
+a:hover { text-decoration: none; }
+.crumb { color: #57606a; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; margin: 0 0 .5rem; }
+.crumb a { color: inherit; text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+.lead { font-size: 1.05rem; color: #24292f; }
+.fam { margin: 2rem 0 0; }
+.fam h2 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.25rem; margin: 0 0 .2rem; }
+.fam .intro { color: #57606a; font-size: .92rem; margin: 0 0 .6rem; }
+ul.rules { list-style: none; padding: 0; margin: 0; display: grid;
+  gap: .3rem; }
+ul.rules code { font-size: .85em; }
+.toc { columns: 2; column-gap: 2rem; font-size: .95rem; }
+.onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
+  margin: 1.5rem 0; }
+.onramp h2 { margin-top: 0; }
+h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.9rem; margin: 0; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
+.sev { display: inline-block; font-size: .8rem; font-weight: 700;
+  padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
+  margin: 0; }
+dt { font-weight: 700; color: #57606a; }
+dd { margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
+  font-size: .92em; }
+.assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
+  color: #24292f; }
+.terms code { margin-right: .3rem; }
+footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid #d0d7de; padding-top: 1rem; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e6edf3; background: #0d1117; }
+  .title, .assert, dd, .lead { color: #e6edf3; }
+  .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
+  code { background: #161b22; }
+  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  a { color: #4493f8; }
+}
+pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
+  padding: .8rem 1rem; overflow-x: auto; font-size: .78rem; line-height: 1.45;
+  margin: .6rem 0; }
+.step { margin: 2.2rem 0 0; }
+.step h2 { margin-bottom: .3rem; }
+.finding { border: 1px solid #d0d7de; border-radius: .6rem;
+  padding: .7rem 1rem; margin: .8rem 0; }
+.finding .fhead { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+  margin: 0 0 .35rem; }
+.finding .fhead code { font-size: .9em; }
+.finding h3 { margin: .3rem 0; font-size: 1.02rem; }
+.finding .hint { color: #57606a; font-size: .92rem; margin: .35rem 0 0; }
+.pass { border-left: 4px solid #1a7f37; padding-left: .9rem; margin: 1rem 0; }
+.summary code { font-weight: 700; }
+@media (prefers-color-scheme: dark) {
+  pre { background: #161b22; border-color: #30363d; color: #e6edf3; }
+  .finding { border-color: #30363d; }
+  .finding .hint { color: #8b949e; }
+}</style>
+</head>
+<body>
+<main>
+<p class="crumb"><a href="../index.html">einvoice</a> / <a href="../rules/index.html">EN 16931 / XRechnung rule reference</a> / Walkthrough</p>
+<h1>From failing CI to a fixed invoice</h1>
+<p class="lead">A five-minute worked example. We take a real German <strong>XRechnung</strong> (EN 16931 UBL) invoice with two required things removed, run the <code>einvoice</code> conformance checker exactly as a CI gate would, read the actual report it prints, and apply the fix until the invoice passes. Every finding below is produced by the real engine — the report is regenerated from the tool and a test fails the build if this page ever drifts from live output.</p>
+<p>You can reproduce every step yourself: you only need Python 3 and this repository, no dependencies and no network. Run the commands from the <code>einvoice/</code> directory.</p>
+<section class="step">
+<h2>1. The broken invoice</h2>
+<p>A supplier exported this UBL invoice, but two mandatory items are missing: the <strong>Buyer reference</strong> (<code>BT-10</code>, the <em>Leitweg-ID</em> routing id a German public buyer requires) and the <strong>SELLER CONTACT</strong> group (<code>BG-6</code>, a <code>cac:Contact</code> under the supplier party). Everything else is a byte-for-byte copy of a valid KoSIT test document, so these two omissions are the <em>only</em> reason it fails. The full file is <code>examples/01-missing-fields/broken.xml</code>:</p>
+<pre>&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;!--
+  DELIBERATELY NON-CONFORMANT onboarding example (broken invoice).
+
+  Provenance: this file is a minimal mutation of the real, valid XRechnung
+  corpus invoice corpus/vendored/valid/xr-01.01a_ubl.xml (a KoSIT test
+  document, valid under profile=xrechnung). Two required things were removed
+  so the engine fires real, catalog-backed FATAL findings:
+
+    1. The &#x27;Buyer reference&#x27; (BT-10) element was deleted        -&gt; BR-DE-15
+    2. The &#x27;SELLER CONTACT&#x27; group (BG-6, cac:Contact) was deleted -&gt; BR-DE-2
+
+  Everything else is byte-for-byte the valid corpus document, so the ONLY
+  reason it fails is the two removals. The corrected version lives in
+  fixed.xml (the same file with both elements restored).
+--&gt;
+&lt;ubl:Invoice xmlns:ubl=&quot;urn:oasis:names:specification:ubl:schema:xsd:Invoice-2&quot;
+             xmlns:cac=&quot;urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2&quot;
+             xmlns:cbc=&quot;urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2&quot;&gt;
+    &lt;cbc:CustomizationID&gt;urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0&lt;/cbc:CustomizationID&gt;
+    &lt;cbc:ProfileID&gt;urn:fdc:peppol.eu:2017:poacc:billing:01:1.0&lt;/cbc:ProfileID&gt;
+    &lt;cbc:ID&gt;123456XX&lt;/cbc:ID&gt;
+    &lt;cbc:IssueDate&gt;2016-04-04&lt;/cbc:IssueDate&gt;
+    &lt;cbc:InvoiceTypeCode&gt;380&lt;/cbc:InvoiceTypeCode&gt;
+    &lt;cbc:Note&gt;#ADU#Es gelten unsere Allgem. Geschäftsbedingungen, die Sie unter […] finden.&lt;/cbc:Note&gt;
+    &lt;cbc:DocumentCurrencyCode&gt;EUR&lt;/cbc:DocumentCurrencyCode&gt;
+    &lt;cac:AccountingSupplierParty&gt;
+        &lt;cac:Party&gt;
+            &lt;cbc:EndpointID schemeID=&quot;EM&quot;&gt;seller@email.de&lt;/cbc:EndpointID&gt;
+            &lt;cac:PartyName&gt;
+                &lt;cbc:Name&gt;[Seller trading name]&lt;/cbc:Name&gt;
+            &lt;/cac:PartyName&gt;
+            &lt;cac:PostalAddress&gt;
+                &lt;cbc:StreetName&gt;[Seller address line 1]&lt;/cbc:StreetName&gt;
+                &lt;cbc:CityName&gt;[Seller city]&lt;/cbc:CityName&gt;
+                &lt;cbc:PostalZone&gt;12345&lt;/cbc:PostalZone&gt;
+                &lt;cac:Country&gt;
+                    &lt;cbc:IdentificationCode&gt;DE&lt;/cbc:IdentificationCode&gt;
+                &lt;/cac:Country&gt;
+            &lt;/cac:PostalAddress&gt;
+            &lt;cac:PartyTaxScheme&gt;
+                &lt;cbc:CompanyID&gt;DE 123456789&lt;/cbc:CompanyID&gt;
+                &lt;cac:TaxScheme&gt;
+                    &lt;cbc:ID&gt;VAT&lt;/cbc:ID&gt;
+                &lt;/cac:TaxScheme&gt;
+            &lt;/cac:PartyTaxScheme&gt;
+            &lt;cac:PartyLegalEntity&gt;
+                &lt;cbc:RegistrationName&gt;[Seller name]&lt;/cbc:RegistrationName&gt;
+                &lt;cbc:CompanyID&gt;[HRA-Eintrag]&lt;/cbc:CompanyID&gt;
+                &lt;cbc:CompanyLegalForm&gt;123/456/7890, HRA-Eintrag in […]&lt;/cbc:CompanyLegalForm&gt;
+            &lt;/cac:PartyLegalEntity&gt;
+        &lt;/cac:Party&gt;
+    &lt;/cac:AccountingSupplierParty&gt;
+    &lt;cac:AccountingCustomerParty&gt;
+        &lt;cac:Party&gt;
+            &lt;cbc:EndpointID schemeID=&quot;EM&quot;&gt;buyer@info.de&lt;/cbc:EndpointID&gt;
+            &lt;cac:PartyIdentification&gt;
+                &lt;cbc:ID&gt;[Buyer identifier]&lt;/cbc:ID&gt;
+            &lt;/cac:PartyIdentification&gt;
+            &lt;cac:PostalAddress&gt;
+                &lt;cbc:StreetName&gt;[Buyer address line 1]&lt;/cbc:StreetName&gt;
+                &lt;cbc:CityName&gt;[Buyer city]&lt;/cbc:CityName&gt;
+                &lt;cbc:PostalZone&gt;12345&lt;/cbc:PostalZone&gt;
+                &lt;cac:Country&gt;
+                    &lt;cbc:IdentificationCode&gt;DE&lt;/cbc:IdentificationCode&gt;
+                &lt;/cac:Country&gt;
+            &lt;/cac:PostalAddress&gt;
+            &lt;cac:PartyLegalEntity&gt;
+                &lt;cbc:RegistrationName&gt;[Buyer name]&lt;/cbc:RegistrationName&gt;
+            &lt;/cac:PartyLegalEntity&gt;
+        &lt;/cac:Party&gt;
+    &lt;/cac:AccountingCustomerParty&gt;
+    &lt;cac:PaymentMeans&gt;
+        &lt;cbc:PaymentMeansCode&gt;58&lt;/cbc:PaymentMeansCode&gt;
+        &lt;cac:PayeeFinancialAccount&gt;
+            &lt;!-- dies ist eine nicht existerende aber valide IBAN als test dummy --&gt;
+            &lt;cbc:ID&gt;DE79000000001234567890&lt;/cbc:ID&gt;
+        &lt;/cac:PayeeFinancialAccount&gt;
+    &lt;/cac:PaymentMeans&gt;
+    &lt;cac:PaymentTerms&gt;
+        &lt;cbc:Note&gt;Zahlbar sofort ohne Abzug.&lt;/cbc:Note&gt;
+    &lt;/cac:PaymentTerms&gt;
+    &lt;cac:TaxTotal&gt;
+        &lt;cbc:TaxAmount currencyID=&quot;EUR&quot;&gt;22.04&lt;/cbc:TaxAmount&gt;
+        &lt;cac:TaxSubtotal&gt;
+            &lt;cbc:TaxableAmount currencyID=&quot;EUR&quot;&gt;314.86&lt;/cbc:TaxableAmount&gt;
+            &lt;cbc:TaxAmount currencyID=&quot;EUR&quot;&gt;22.04&lt;/cbc:TaxAmount&gt;
+            &lt;cac:TaxCategory&gt;
+                &lt;cbc:ID&gt;S&lt;/cbc:ID&gt;
+                &lt;cbc:Percent&gt;7&lt;/cbc:Percent&gt;
+                &lt;cac:TaxScheme&gt;
+                    &lt;cbc:ID&gt;VAT&lt;/cbc:ID&gt;
+                &lt;/cac:TaxScheme&gt;
+            &lt;/cac:TaxCategory&gt;
+        &lt;/cac:TaxSubtotal&gt;
+    &lt;/cac:TaxTotal&gt;
+    &lt;cac:LegalMonetaryTotal&gt;
+        &lt;cbc:LineExtensionAmount currencyID=&quot;EUR&quot;&gt;314.86&lt;/cbc:LineExtensionAmount&gt;
+        &lt;cbc:TaxExclusiveAmount currencyID=&quot;EUR&quot;&gt;314.86&lt;/cbc:TaxExclusiveAmount&gt;
+        &lt;cbc:TaxInclusiveAmount currencyID=&quot;EUR&quot;&gt;336.9&lt;/cbc:TaxInclusiveAmount&gt;
+        &lt;cbc:PayableAmount currencyID=&quot;EUR&quot;&gt;336.9&lt;/cbc:PayableAmount&gt;
+    &lt;/cac:LegalMonetaryTotal&gt;
+    &lt;cac:InvoiceLine&gt;
+        &lt;cbc:ID&gt;Zeitschrift [...]&lt;/cbc:ID&gt;
+        &lt;cbc:Note&gt;Die letzte Lieferung im Rahmen des abgerechneten Abonnements erfolgt in 12/2016 Lieferung erfolgt / erfolgte direkt vom Verlag&lt;/cbc:Note&gt;
+        &lt;cbc:InvoicedQuantity unitCode=&quot;XPP&quot;&gt;1&lt;/cbc:InvoicedQuantity&gt;
+        &lt;cbc:LineExtensionAmount currencyID=&quot;EUR&quot;&gt;288.79&lt;/cbc:LineExtensionAmount&gt;
+        &lt;cac:InvoicePeriod&gt;
+            &lt;cbc:StartDate&gt;2016-01-01&lt;/cbc:StartDate&gt;
+            &lt;cbc:EndDate&gt;2016-12-31&lt;/cbc:EndDate&gt;
+        &lt;/cac:InvoicePeriod&gt;
+        &lt;cac:OrderLineReference&gt;
+            &lt;cbc:LineID&gt;6171175.1&lt;/cbc:LineID&gt;
+        &lt;/cac:OrderLineReference&gt;
+        &lt;cac:Item&gt;
+            &lt;cbc:Description&gt;Zeitschrift Inland&lt;/cbc:Description&gt;
+            &lt;cbc:Name&gt;Zeitschrift [...]&lt;/cbc:Name&gt;
+            &lt;cac:SellersItemIdentification&gt;
+                &lt;cbc:ID&gt;246&lt;/cbc:ID&gt;
+            &lt;/cac:SellersItemIdentification&gt;
+            &lt;cac:CommodityClassification&gt;
+                &lt;cbc:ItemClassificationCode listID=&quot;IB&quot;&gt;0721-880X&lt;/cbc:ItemClassificationCode&gt;
+            &lt;/cac:CommodityClassification&gt;
+            &lt;cac:ClassifiedTaxCategory&gt;
+                &lt;cbc:ID&gt;S&lt;/cbc:ID&gt;
+                &lt;cbc:Percent&gt;7&lt;/cbc:Percent&gt;
+                &lt;cac:TaxScheme&gt;
+                    &lt;cbc:ID&gt;VAT&lt;/cbc:ID&gt;
+                &lt;/cac:TaxScheme&gt;
+            &lt;/cac:ClassifiedTaxCategory&gt;
+        &lt;/cac:Item&gt;
+        &lt;cac:Price&gt;
+            &lt;cbc:PriceAmount currencyID=&quot;EUR&quot;&gt;288.79&lt;/cbc:PriceAmount&gt;
+        &lt;/cac:Price&gt;
+    &lt;/cac:InvoiceLine&gt;
+    &lt;cac:InvoiceLine&gt;
+        &lt;cbc:ID&gt;Porto + Versandkosten&lt;/cbc:ID&gt;
+        &lt;cbc:InvoicedQuantity unitCode=&quot;XPP&quot;&gt;1&lt;/cbc:InvoicedQuantity&gt;
+        &lt;cbc:LineExtensionAmount currencyID=&quot;EUR&quot;&gt;26.07&lt;/cbc:LineExtensionAmount&gt;
+        &lt;cac:Item&gt;
+            &lt;cbc:Name&gt;Porto + Versandkosten&lt;/cbc:Name&gt;
+            &lt;cac:ClassifiedTaxCategory&gt;
+                &lt;cbc:ID&gt;S&lt;/cbc:ID&gt;
+                &lt;cbc:Percent&gt;7&lt;/cbc:Percent&gt;
+                &lt;cac:TaxScheme&gt;
+                    &lt;cbc:ID&gt;VAT&lt;/cbc:ID&gt;
+                &lt;/cac:TaxScheme&gt;
+            &lt;/cac:ClassifiedTaxCategory&gt;
+        &lt;/cac:Item&gt;
+        &lt;cac:Price&gt;
+            &lt;cbc:PriceAmount currencyID=&quot;EUR&quot;&gt;26.07&lt;/cbc:PriceAmount&gt;
+        &lt;/cac:Price&gt;
+    &lt;/cac:InvoiceLine&gt;
+&lt;/ubl:Invoice&gt;
+</pre>
+</section>
+<section class="step">
+<h2>2. Run the checker (this is your CI gate)</h2>
+<p>Point the tool at the invoice. In a CI pipeline this is the command whose non-zero exit fails the build:</p>
+<pre>$ python3 -m einvoice.report examples/01-missing-fields/broken.xml --format json</pre>
+<p>It exits <strong>1</strong> and prints the report below. Only <code>fatal</code> findings make an invoice invalid (mirroring the official Schematron <code>flag</code> semantics); <code>warning</code> and <code>information</code> findings are advisory and do not fail the build.</p>
+</section>
+<section class="step">
+<h2>3. Read the report</h2>
+<p class="summary">The engine reports <code>valid: false</code> for <code>examples/01-missing-fields/broken.xml</code> under profile <code>xrechnung</code>: <code>3</code> findings in total, <code>2</code> fatal and <code>0</code> warning. Each finding names the violated rule, the EN 16931 business terms it touches, and a concrete fix hint. The rule id links to its full reference page.</p>
+<div class="finding">
+<p class="fhead"><a href="../rules/BR-DE-2/index.html"><code>BR-DE-2</code></a> <span class="sev">fatal</span> <code>BG-6</code></p>
+<h3>SELLER CONTACT (BG-6) must be transmitted.</h3>
+<p class="hint">Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted.</p>
+</div>
+<div class="finding">
+<p class="fhead"><a href="../rules/BR-DE-15/index.html"><code>BR-DE-15</code></a> <span class="sev">fatal</span> <code>BT-10</code></p>
+<h3>Buyer reference (BT-10) must be transmitted (non-empty).</h3>
+<p class="hint">Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty).</p>
+</div>
+<div class="finding">
+<p class="fhead"><a href="../rules/BR-DE-TMP-32/index.html"><code>BR-DE-TMP-32</code></a> <span class="sev">information</span> <code>BG-14</code> <code>BG-26</code> <code>BT-72</code></p>
+<h3>An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.</h3>
+<p class="hint">Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.</p>
+</div>
+<p>The two <code>fatal</code> findings (<code>BR-DE-15</code> and <code>BR-DE-2</code>) are why the invoice is rejected. The <code>information</code> finding is advisory — we leave it as-is so this stays a minimal two-field fix. For a full remediation write-up of any rule, run <code>python3 -m einvoice.report --explain BR-DE-15</code>.</p>
+</section>
+<section class="step">
+<h2>4. Apply the fix</h2>
+<p>Restore the two missing elements. This is the exact diff from <code>broken.xml</code> to the corrected <code>fixed.xml</code> (the provenance comment headers are omitted; the invoice bodies differ by nothing else):</p>
+<pre>--- broken.xml
++++ fixed.xml
+@@ -9,6 +9,7 @@
+     &lt;cbc:InvoiceTypeCode&gt;380&lt;/cbc:InvoiceTypeCode&gt;
+     &lt;cbc:Note&gt;#ADU#Es gelten unsere Allgem. Geschäftsbedingungen, die Sie unter […] finden.&lt;/cbc:Note&gt;
+     &lt;cbc:DocumentCurrencyCode&gt;EUR&lt;/cbc:DocumentCurrencyCode&gt;
++    &lt;cbc:BuyerReference&gt;04011000-12345-03&lt;/cbc:BuyerReference&gt;
+     &lt;cac:AccountingSupplierParty&gt;
+         &lt;cac:Party&gt;
+             &lt;cbc:EndpointID schemeID=&quot;EM&quot;&gt;seller@email.de&lt;/cbc:EndpointID&gt;
+@@ -34,6 +35,11 @@
+                 &lt;cbc:CompanyID&gt;[HRA-Eintrag]&lt;/cbc:CompanyID&gt;
+                 &lt;cbc:CompanyLegalForm&gt;123/456/7890, HRA-Eintrag in […]&lt;/cbc:CompanyLegalForm&gt;
+             &lt;/cac:PartyLegalEntity&gt;
++            &lt;cac:Contact&gt;
++                &lt;cbc:Name&gt;nicht vorhanden&lt;/cbc:Name&gt;
++                &lt;cbc:Telephone&gt;+49 1234-5678&lt;/cbc:Telephone&gt;
++                &lt;cbc:ElectronicMail&gt;seller@email.de&lt;/cbc:ElectronicMail&gt;
++            &lt;/cac:Contact&gt;
+         &lt;/cac:Party&gt;
+     &lt;/cac:AccountingSupplierParty&gt;
+     &lt;cac:AccountingCustomerParty&gt;</pre>
+<p>A <code>cac:Contact</code> needs at least a name, telephone and/or e-mail; the buyer reference is the routing id your buyer gives you.</p>
+</section>
+<section class="step">
+<h2>5. The corrected invoice passes</h2>
+<p>Re-run the same command on the corrected file (<code>examples/01-missing-fields/fixed.xml</code>):</p>
+<pre>$ python3 -m einvoice.report examples/01-missing-fields/fixed.xml --format json</pre>
+<p class="pass">It now exits <strong>0</strong> and reports <code>valid: true</code> with <code>fatal_count: 0</code>. Both <code>BR-DE-*</code> fatals are gone and the invoice would pass this pre-flight. (This page&rsquo;s test re-runs the live engine on <code>fixed.xml</code> and fails the build unless it really passes with zero fatal findings.)</p>
+<p><strong>Honest limit:</strong> a green result means &ldquo;no implemented rule fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. This is a fast pre-flight that catches the mistakes which trip up most first submissions — still run your buyer&rsquo;s official validator before you file.</p>
+</section>
+<section class="step">
+<h2>Next</h2>
+<p>Browse every rule the engine checks in the <a href="../rules/index.html">rule index</a>, or start from the <a href="../index.html">overview</a> for install and the CI-gate recipe.</p>
+</section>
+<footer>
+The report on this page is rendered from <code>examples/01-missing-fields/report.json</code> — real engine output regenerated by <code>gen_examples.py</code> and drift-guarded by <code>test_examples.py</code> / <code>test_walkthrough.py</code>. Self-contained: this page opens offline with no network requests.
+</footer>
+</main>
+</body>
+</html>

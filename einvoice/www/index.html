@@ -73,6 +73,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p>This is an early, auditable slice — not a legal guarantee. The engine implements the <strong>full XRechnung <code>BR-DE-*</code> layer</strong> and a large subset of the EN 16931 core rules, each <em>differential-tested</em> at 100&nbsp;% agreement against the official Schematron on thousands of real invoices. It does <em>not</em> yet implement every EN 16931 core rule: a green result means &ldquo;no implemented rule fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. The exact implemented set and its limits are written up in the repository README and <code>CORRECTNESS.md</code>.</p>
 <div class="onramp">
 <h2>Free on-ramp</h2>
+<p>New here? The fastest way in is the <a href="walkthrough/index.html">5-minute worked walkthrough</a>: it takes a broken XRechnung invoice, runs the checker, shows the real report it prints, and applies the two-element fix until the invoice passes.</p>
 <p>Everything is free and open source (Apache-2.0). Start here:</p>
 <ul class="rules">
 <li><a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/README.md">Repository README</a> — install (<code>pip install .</code> or copy the package dir), the CLI, and the full honest scope.</li>

@@ -105,12 +105,6 @@ CII_CORE_REASON = {
                 "GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for "
                 "a no-VAT invoice with no BT-110; the UBL function has no such "
                 "disjunct and would over-reject the same documents.",
-    "BR-09": "the CII binding evaluates the country-code test from the document "
-             "root, firing even when the whole postal address is absent; the "
-             "UBL function is gated on the address node existing, so it misses "
-             "there. Address existence (BR-08) stays graded; the country code "
-             "does not.",
-    "BR-11": "same as BR-09 for the buyer postal address country code.",
     "BR-S-01": "the CII binding is a weak one-directional count that does not "
                "flag an orphan Standard-rated breakdown; the UBL biconditional "
                "would over-fire on such CII invoices.",

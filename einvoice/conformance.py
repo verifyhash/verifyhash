@@ -305,12 +305,24 @@ CII_SYNTAX_COVERAGE = {
     "BR-06": "Seller name (BT-27) present",
     "BR-07": "Buyer name (BT-44) present",
     "BR-08": "Seller postal address (BG-5) present",
+    "BR-09": "Seller country code (BT-40) present (CII binding: evaluated "
+             "from the document root, even without a postal address)",
     "BR-10": "Buyer postal address (BG-8) present",
+    "BR-11": "Buyer country code (BT-55) present (CII binding: evaluated "
+             "from the document root, even without a postal address)",
     "BR-12": "Sum of Invoice line net amount (BT-106) present",
     "BR-13": "Invoice total without VAT (BT-109) present",
     "BR-14": "Invoice total with VAT (BT-112) present",
     "BR-15": "Amount due for payment (BT-115) present",
     "BR-16": "At least one Invoice line (BG-25)",
+    "BR-17": "Payee name (BT-59) present when a Payee (BG-10) is given, and "
+             "the Payee differs from the Seller (CII adds a legal-"
+             "registration-id comparison)",
+    "BR-18": "Seller tax representative name (BT-62) present when a "
+             "representative (BG-11) is given",
+    "BR-19": "Seller tax representative postal address (BG-12) present",
+    "BR-20": "Tax representative country code (BT-69) present (CII binding: "
+             "evaluated per party, even without a postal address)",
     "BR-21": "Invoice line identifier (BT-126) present",
     "BR-22": "Invoiced quantity (BT-129) present",
     "BR-23": "Invoiced quantity unit of measure code (BT-130) present",
@@ -318,6 +330,19 @@ CII_SYNTAX_COVERAGE = {
     "BR-25": "Item name (BT-153) present",
     "BR-26": "Item net price (BT-146) present",
     "BR-27": "Item net price (BT-146) not negative",
+    "BR-28": "Item gross price (BT-148) not negative",
+    "BR-29": "Invoicing period (BG-14) end date (BT-74) ≥ start date (BT-73)",
+    "BR-30": "Invoice line period (BG-26) end date (BT-135) ≥ start date "
+             "(BT-134)",
+    "BR-31": "Document level allowance (BG-20) has an amount (BT-92)",
+    "BR-32": "Document level allowance (BG-20) has a VAT category code "
+             "(BT-95)",
+    "BR-33": "Document level allowance (BG-20) has a reason (BT-97) or "
+             "reason code (BT-98)",
+    "BR-36": "Document level charge (BG-21) has an amount (BT-99)",
+    "BR-37": "Document level charge (BG-21) has a VAT category code (BT-102)",
+    "BR-38": "Document level charge (BG-21) has a reason (BT-104) or reason "
+             "code (BT-105)",
     "BR-CL-01": "Document type code (BT-3) in UNTDID 1001",
     "BR-CL-03": "currencyID (amount elements) in ISO 4217 alpha-3",
     "BR-CL-04": "Invoice currency code (BT-5) in ISO 4217 alpha-3",
@@ -417,9 +442,6 @@ CII_SYNTAX_EXCLUDED = {
                 "TaxTotalAmount; no-VAT CII invoices omit it (UBL over-rejects)",
     "BR-CO-15": "CII adds a GrandTotal=TaxBasis disjunct for no-VAT invoices "
                 "the UBL function lacks (UBL over-rejects BT-110-less invoices)",
-    "BR-09": "CII country-code check is not gated on the postal address node; "
-             "UBL function is (misses when the whole address is absent)",
-    "BR-11": "same as BR-09 for the Buyer postal address country code",
     "BR-S-01": "CII binding is a weak one-directional count; UBL function is the "
                "strict biconditional (over-fires on an orphan S breakdown)",
     "BR-AF-08": "the CII artifact binds the assert to the ApplicableTradeTax "

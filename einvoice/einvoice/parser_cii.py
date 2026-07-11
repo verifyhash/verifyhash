@@ -60,7 +60,8 @@ import xml.etree.ElementTree as ET
 from collections import namedtuple
 
 from . import parser
-from .parser import ItemTaxCategory, Period, TaxSubtotal, TaxTotal, AllowanceCharge
+from .parser import (ItemTaxCategory, PayeeParty, Period, TaxRepresentative,
+                     TaxSubtotal, TaxTotal, AllowanceCharge)
 
 # ---------------------------------------------------------------------------
 # Namespaces (confirmed against corpus/cen-en16931/cii/examples/CII_example1.xml)
@@ -116,6 +117,45 @@ def _strval(el):
 def _localname(tag):
     """Strip the ``{namespace}`` prefix ElementTree prepends to a tag."""
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def _period_bound(period_el, which):
+    """One BR-29/BR-30 period bound, transcribed from the official CII test.
+
+    The official assert (shared by BR-29 and BR-30, contexts header/line
+    ``ram:BillingSpecifiedPeriod``)::
+
+        (ram:EndDateTime/udt:DateTimeString[@format = '102'])
+          >= (ram:StartDateTime/udt:DateTimeString[@format = '102'])
+        or not (ram:EndDateTime) or not (ram:StartDateTime)
+
+    The absence disjuncts test the ``ram:StartDateTime``/``ram:EndDateTime``
+    ELEMENTS, while the comparison reads only a ``@format='102'``
+    (``YYYYMMDD``) DateTimeString child. Mapping onto the shared
+    :class:`einvoice.parser.Period` model the UBL rule bodies consume:
+
+    * bound element absent -> ``None`` (the rule then holds via ``not(...)``);
+    * present with a valid 8-digit format-102 date -> its ISO ``YYYY-MM-DD``
+      form (format-102 strings compare lexicographically exactly as the dates
+      compare chronologically, so the shared date comparison is the official
+      string comparison);
+    * present WITHOUT a comparable format-102 value (missing DateTimeString,
+      other @format, or non-8-digit text) -> the raw text (never a parseable
+      xs:date), so the shared rule body treats the bound as unparseable and
+      fires whenever the opposite bound is also present — exactly the official
+      outcome there (the ``>=`` comparison against an empty operand is false
+      while both ``not(...)`` disjuncts are false).
+    """
+    bound_el = period_el.find("ram:%s" % which, NS)
+    if bound_el is None:
+        return None
+    dts = bound_el.find("udt:DateTimeString", NS)
+    if dts is not None and dts.get("format") == "102":
+        t = (dts.text or "").strip()
+        if len(t) == 8 and t.isdigit():
+            return "%s-%s-%s" % (t[:4], t[4:6], t[6:8])
+        return t or "not-a-102-date"
+    return "not-a-102-date"
 
 
 # One CII seller ``ram:DefinedTradeContact`` (BG-6), carrying the four fields the
@@ -433,12 +473,26 @@ def build_model(root):
     # ``normalize-space(ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA'])
     # != ''`` — the VA-scheme ID must exist AND be non-empty (unlike the UBL
     # pure-existence binding; the @schemeID='VA' predicate compares RAW).
+    # The same context node carries BR-18 (``normalize-space(ram:Name) != ''``),
+    # BR-19 (``(ram:PostalTradeAddress)``) and — unlike the UBL binding, where
+    # BR-20's context is the PostalAddress itself — BR-20
+    # (``normalize-space(ram:PostalTradeAddress/ram:CountryID) != ''``,
+    # evaluated per PARTY even when the address is absent), so one
+    # ``taxrep_postal_addresses`` entry is appended per party (None when the
+    # address or its CountryID is missing — the path string-values to '').
     for trp_el in root.findall(".//ram:SellerTaxRepresentativeTradeParty", NS):
         va_ids = [id_el for id_el in trp_el.findall(
                       "ram:SpecifiedTaxRegistration/ram:ID", NS)
                   if id_el.get("schemeID") == "VA"]
         inv.taxrep_vat_ids_ok.append(
             bool(va_ids) and bool(_norm_space(_strval(va_ids[0]))))
+        name_el = trp_el.find("ram:Name", NS)
+        inv.tax_representatives.append(TaxRepresentative(
+            _strval(name_el) if name_el is not None else None,
+            trp_el.find("ram:PostalTradeAddress", NS) is not None))
+        cc_el = trp_el.find("ram:PostalTradeAddress/ram:CountryID", NS)
+        inv.taxrep_postal_addresses.append(
+            _strval(cc_el) if cc_el is not None else None)
     # BR-64 context = //ram:IncludedSupplyChainTradeLineItem. Test:
     # ``normalize-space(ram:SpecifiedTradeProduct/ram:GlobalID/@schemeID) != ''
     #   or not(ram:SpecifiedTradeProduct/ram:GlobalID)`` — one verdict per line
@@ -485,6 +539,44 @@ def build_model(root):
         inv.line_period_filled.append(
             period_el.find("ram:StartDateTime", NS) is not None
             or period_el.find("ram:EndDateTime", NS) is not None)
+    # BR-29 context = //ram:ApplicableHeaderTradeSettlement/
+    # ram:BillingSpecifiedPeriod (BG-14): end >= start over the @format='102'
+    # DateTimeStrings whenever both bound ELEMENTS exist (see _period_bound
+    # for the exact transcription onto the shared Period model). The line
+    # periods (BR-30) are collected per line in the line loop below.
+    for period_el in root.findall(
+            ".//ram:ApplicableHeaderTradeSettlement/"
+            "ram:BillingSpecifiedPeriod", NS):
+        inv.invoice_periods.append(Period(
+            _period_bound(period_el, "StartDateTime"),
+            _period_bound(period_el, "EndDateTime")))
+    # BR-17 context = //ram:PayeeTradeParty (BG-10). Test: ``(ram:Name) and
+    # (not(ram:Name = ../../ram:ApplicableHeaderTradeAgreement/
+    # ram:SellerTradeParty/ram:Name) and not(ram:ID = .../ram:ID) and
+    # not(ram:SpecifiedLegalOrganization/ram:ID = .../ram:SpecifiedLegal
+    # Organization/ram:ID))`` — the seller node sets are resolved via the
+    # ``../..`` axis (the payee's grandparent, rsm:SupplyChainTradeTransaction
+    # in a real document), all general comparisons over RAW string values.
+    _payee_tag = "{%s}PayeeTradeParty" % NS_RAM
+    _pmap = None
+    for el in root.iter(_payee_tag):
+        if _pmap is None:
+            _pmap = {c: p for p in root.iter() for c in p}
+        gp = _pmap.get(_pmap.get(el))
+        _seller_path = ("ram:ApplicableHeaderTradeAgreement/"
+                        "ram:SellerTradeParty/")
+        inv.payee_parties.append(PayeeParty(
+            [_strval(e) for e in el.findall("ram:Name", NS)],
+            [_strval(e) for e in el.findall("ram:ID", NS)],
+            [_strval(e) for e in gp.findall(_seller_path + "ram:Name", NS)]
+            if gp is not None else [],
+            [_strval(e) for e in gp.findall(_seller_path + "ram:ID", NS)]
+            if gp is not None else [],
+            [_strval(e) for e in el.findall(
+                "ram:SpecifiedLegalOrganization/ram:ID", NS)],
+            [_strval(e) for e in gp.findall(
+                _seller_path + "ram:SpecifiedLegalOrganization/ram:ID", NS)]
+            if gp is not None else []))
     # BR-CO-26 context = //ram:SellerTradeParty. Test (four disjuncts, pure
     # existence except the RAW @schemeID='VA' predicate): ``(ram:ID) or
     # (ram:GlobalID) or (ram:SpecifiedLegalOrganization/ram:ID) or
@@ -641,6 +733,15 @@ def build_model(root):
             ln.has_line_billing_period = (
                 ln_el.find("ram:SpecifiedLineTradeSettlement/"
                            "ram:BillingSpecifiedPeriod", NS) is not None)
+            # BR-30 context = //ram:SpecifiedLineTradeSettlement/
+            # ram:BillingSpecifiedPeriod: the same end >= start test as BR-29,
+            # scoped to the line periods (see _period_bound).
+            for period_el in ln_el.findall(
+                    "ram:SpecifiedLineTradeSettlement/"
+                    "ram:BillingSpecifiedPeriod", NS):
+                ln.periods.append(Period(
+                    _period_bound(period_el, "StartDateTime"),
+                    _period_bound(period_el, "EndDateTime")))
             ln.id = _text(ln_el.find(
                 "ram:AssociatedDocumentLineDocument/ram:LineID", NS))  # BT-126
             ln.quantity = _text(ln_el.find(

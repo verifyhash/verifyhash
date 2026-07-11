@@ -35,8 +35,15 @@ Period = namedtuple("Period", ["start", "end"])
 # cac:PartyName/cbc:Name and cac:PartyIdentification/cbc:ID elements;
 # ``seller_names``/``seller_ids`` the same node sets under the PARENT's
 # ``cac:AccountingSupplierParty/cac:Party`` (the official test's ``..`` axis).
+# ``legal_ids``/``seller_legal_ids`` exist for the CII binding ONLY: the
+# official CII BR-17 test carries a third conjunct comparing the payee's
+# ram:SpecifiedLegalOrganization/ram:ID against the seller's — the UBL test
+# has no such conjunct, so the UBL parser leaves both at the empty default
+# (the shared rule conjunct is then vacuously satisfied).
 PayeeParty = namedtuple(
-    "PayeeParty", ["names", "ids", "seller_names", "seller_ids"])
+    "PayeeParty", ["names", "ids", "seller_names", "seller_ids",
+                   "legal_ids", "seller_legal_ids"],
+    defaults=((), ()))
 
 # One cac:TaxRepresentativeParty (BG-11) — BR-18/BR-19's context node.
 # ``name`` = string value of the first cac:PartyName/cbc:Name (None = element

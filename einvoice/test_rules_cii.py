@@ -1985,5 +1985,326 @@ class PeppolKositBatch2Cii(PeppolKositBatch1Cii):
         self.assertEqual(_pep_cii_fired(r), {_pep("R130")})
 
 
+# --------------------------------------------------------------------------- #
+# CII proof-parity batch 1 (T-VHCIIP.2): BR-09/11, BR-17..20, BR-28..33,      #
+# BR-36..38 — the first 15 cii-fireable rules from cii_parity.json, now       #
+# graded on the CII differential leg. Each rule gets a FIRE fixture (the      #
+# same field-level breakage differential._CII_MUTATIONS generates, proven     #
+# officially-agreeing by `differential.py cii`) and a non-firing variant.     #
+# --------------------------------------------------------------------------- #
+class CiiProofParityBatch1(unittest.TestCase):
+    """Firing + holding CII fixtures for the T-VHCIIP.2 batch-1 rules."""
+
+    def fired(self, root):
+        return _fired_ids(root)
+
+    def assert_rule(self, root, rule_id, expect=True):
+        fired = self.fired(root)
+        if expect:
+            self.assertIn(rule_id, fired,
+                          "%s should fire; fired=%s" % (rule_id, sorted(fired)))
+        else:
+            self.assertNotIn(rule_id, fired,
+                             "%s should NOT fire; fired=%s"
+                             % (rule_id, sorted(fired)))
+
+    def _agreement(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement", NS)
+
+    def _seller(self, r):
+        return self._agreement(r).find("ram:SellerTradeParty", NS)
+
+    def _buyer(self, r):
+        return self._agreement(r).find("ram:BuyerTradeParty", NS)
+
+    def add_payee(self, r, name=None, id_=None, legal_id=None):
+        payee = ET.SubElement(_settlement(r), _q(NSA, "PayeeTradeParty"))
+        if id_ is not None:
+            ET.SubElement(payee, _q(NSA, "ID")).text = id_
+        if name is not None:
+            ET.SubElement(payee, _q(NSA, "Name")).text = name
+        if legal_id is not None:
+            lo = ET.SubElement(payee, _q(NSA, "SpecifiedLegalOrganization"))
+            ET.SubElement(lo, _q(NSA, "ID")).text = legal_id
+        return payee
+
+    def add_taxrep(self, r, name="Tax handling company AS", with_address=True,
+                   country="NO"):
+        trp = ET.SubElement(self._agreement(r),
+                            _q(NSA, "SellerTaxRepresentativeTradeParty"))
+        if name is not None:
+            ET.SubElement(trp, _q(NSA, "Name")).text = name
+        if with_address:
+            pa = ET.SubElement(trp, _q(NSA, "PostalTradeAddress"))
+            ET.SubElement(pa, _q(NSA, "CityName")).text = "Newtown"
+            if country is not None:
+                ET.SubElement(pa, _q(NSA, "CountryID")).text = country
+        reg = ET.SubElement(trp, _q(NSA, "SpecifiedTaxRegistration"))
+        reg_id = ET.SubElement(reg, _q(NSA, "ID"))
+        reg_id.set("schemeID", "VA")
+        reg_id.text = "NO967611265MVA"
+        return trp
+
+    def add_period(self, r, start=None, end=None, line=False,
+                   fmt="102"):
+        parent = (_first_line(r).find("ram:SpecifiedLineTradeSettlement", NS)
+                  if line else _settlement(r))
+        period = ET.SubElement(parent, _q(NSA, "BillingSpecifiedPeriod"))
+        for local, value in (("StartDateTime", start), ("EndDateTime", end)):
+            if value is None:
+                continue
+            bound = ET.SubElement(period, _q(NSA, local))
+            dts = ET.SubElement(bound, _q(NSU, "DateTimeString"))
+            dts.set("format", fmt)
+            dts.text = value
+        return period
+
+    def add_doc_allowance_charge(self, r, charge, amount="0.00",
+                                 reason="Testing", vat_category=False):
+        ac = ET.SubElement(_settlement(r),
+                           _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        ind = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+        ET.SubElement(ind, _q(NSU, "Indicator")).text = (
+            "true" if charge else "false")
+        if amount is not None:
+            ET.SubElement(ac, _q(NSA, "ActualAmount")).text = amount
+        if vat_category:
+            cat = ET.SubElement(ac, _q(NSA, "CategoryTradeTax"))
+            ET.SubElement(cat, _q(NSA, "TypeCode")).text = "VAT"
+            ET.SubElement(cat, _q(NSA, "CategoryCode")).text = "S"
+            ET.SubElement(cat, _q(NSA, "RateApplicablePercent")).text = "21"
+        if reason is not None:
+            ET.SubElement(ac, _q(NSA, "Reason")).text = reason
+        return ac
+
+    # ---- BR-09 / BR-11: country code, ROOT-bound on CII ---------------------
+    def test_br09_missing_seller_country_code_fires(self):
+        r = _good_root()
+        _remove(r, self._seller(r).find(
+            "ram:PostalTradeAddress/ram:CountryID", NS))
+        fired = self.fired(r)
+        self.assertIn("BR-09", fired)
+        self.assertNotIn("BR-08", fired)  # the address node itself remains
+
+    def test_br09_fires_even_without_postal_address_on_cii(self):
+        # The CII binding's context is the DOCUMENT ROOT: stripping the whole
+        # seller address fires BR-09 ALONGSIDE BR-08 (unlike UBL, where BR-09
+        # is gated on the address node existing) — the T-VHCIIP.2 engine fix.
+        r = _good_root()
+        _remove(r, self._seller(r).find("ram:PostalTradeAddress", NS))
+        fired = self.fired(r)
+        self.assertIn("BR-08", fired)
+        self.assertIn("BR-09", fired)
+
+    def test_br09_holds_on_clean_base(self):
+        self.assert_rule(_good_root(), "BR-09", expect=False)
+
+    def test_br11_missing_buyer_country_code_fires(self):
+        r = _good_root()
+        _remove(r, self._buyer(r).find(
+            "ram:PostalTradeAddress/ram:CountryID", NS))
+        fired = self.fired(r)
+        self.assertIn("BR-11", fired)
+        self.assertNotIn("BR-10", fired)
+
+    def test_br11_fires_even_without_postal_address_on_cii(self):
+        r = _good_root()
+        _remove(r, self._buyer(r).find("ram:PostalTradeAddress", NS))
+        fired = self.fired(r)
+        self.assertIn("BR-10", fired)
+        self.assertIn("BR-11", fired)
+
+    # ---- BR-17: payee must be named and differ from the seller --------------
+    def test_br17_payee_without_name_fires(self):
+        r = _good_root()
+        self.add_payee(r, id_="PAYEE-4711")
+        self.assert_rule(r, "BR-17")
+
+    def test_br17_payee_name_equal_to_seller_fires(self):
+        r = _good_root()
+        seller_name = self._seller(r).find("ram:Name", NS).text
+        self.add_payee(r, name=seller_name)
+        self.assert_rule(r, "BR-17")
+
+    def test_br17_payee_legal_id_equal_to_seller_fires(self):
+        # The CII-only third conjunct: matching SpecifiedLegalOrganization/ID.
+        r = _good_root()
+        seller_lo = ET.SubElement(self._seller(r),
+                                  _q(NSA, "SpecifiedLegalOrganization"))
+        ET.SubElement(seller_lo, _q(NSA, "ID")).text = "LEGAL-1"
+        self.add_payee(r, name="Genuinely Different Payee AS",
+                       legal_id="LEGAL-1")
+        self.assert_rule(r, "BR-17")
+
+    def test_br17_distinct_payee_holds(self):
+        r = _good_root()
+        self.add_payee(r, name="Genuinely Different Payee AS",
+                       id_="PAYEE-4711", legal_id="LEGAL-999")
+        self.assert_rule(r, "BR-17", expect=False)
+
+    # ---- BR-18/19/20: seller tax representative ----------------------------
+    def test_br18_nameless_taxrep_fires(self):
+        r = _good_root()
+        self.add_taxrep(r, name=None)
+        fired = self.fired(r)
+        self.assertIn("BR-18", fired)
+        self.assertNotIn("BR-19", fired)
+        self.assertNotIn("BR-20", fired)
+
+    def test_br19_addressless_taxrep_fires_with_br20(self):
+        # CII binds BR-20 to the trade PARTY, so a representative without a
+        # postal address fires BR-19 AND BR-20 (the official CII artifact
+        # agrees — proven on the differential leg).
+        r = _good_root()
+        self.add_taxrep(r, with_address=False)
+        fired = self.fired(r)
+        self.assertIn("BR-19", fired)
+        self.assertIn("BR-20", fired)
+        self.assertNotIn("BR-18", fired)
+
+    def test_br20_countryless_address_fires_alone(self):
+        r = _good_root()
+        self.add_taxrep(r, country=None)
+        fired = self.fired(r)
+        self.assertIn("BR-20", fired)
+        self.assertNotIn("BR-19", fired)
+
+    def test_complete_taxrep_holds(self):
+        r = _good_root()
+        self.add_taxrep(r)
+        fired = self.fired(r)
+        for rid in ("BR-18", "BR-19", "BR-20", "BR-56"):
+            self.assertNotIn(rid, fired)
+
+    # ---- BR-28: item gross price not negative -------------------------------
+    def _add_gross_price(self, r, amount):
+        agreement = _first_line(r).find("ram:SpecifiedLineTradeAgreement", NS)
+        gp = ET.Element(_q(NSA, "GrossPriceProductTradePrice"))
+        ET.SubElement(gp, _q(NSA, "ChargeAmount")).text = amount
+        agreement.insert(0, gp)
+
+    def test_br28_negative_gross_price_fires(self):
+        r = _good_root()
+        self._add_gross_price(r, "-5.00")
+        self.assert_rule(r, "BR-28")
+
+    def test_br28_zero_gross_price_holds(self):
+        r = _good_root()
+        self._add_gross_price(r, "0.00")
+        self.assert_rule(r, "BR-28", expect=False)
+
+    def test_br28_no_gross_price_holds(self):
+        self.assert_rule(_good_root(), "BR-28", expect=False)
+
+    # ---- BR-29 / BR-30: billing-period ordering ------------------------------
+    def test_br29_inverted_header_period_fires(self):
+        r = _good_root()
+        self.add_period(r, start="20240201", end="20240101")
+        fired = self.fired(r)
+        self.assertIn("BR-29", fired)
+        self.assertNotIn("BR-CO-19", fired)  # the period IS filled
+
+    def test_br29_ordered_header_period_holds(self):
+        r = _good_root()
+        self.add_period(r, start="20240101", end="20240201")
+        self.assert_rule(r, "BR-29", expect=False)
+
+    def test_br29_end_only_period_holds(self):
+        r = _good_root()
+        self.add_period(r, end="20240201")
+        self.assert_rule(r, "BR-29", expect=False)
+
+    def test_br29_non_102_format_fires_when_both_bounds_present(self):
+        # The official comparison reads ONLY @format='102' DateTimeStrings; a
+        # present bound without one leaves the operand empty, so the >= is
+        # false while both not(...) disjuncts are false -> the assert fires.
+        r = _good_root()
+        self.add_period(r, start="20240101", end="20240201", fmt="610")
+        self.assert_rule(r, "BR-29")
+
+    def test_br30_inverted_line_period_fires(self):
+        r = _good_root()
+        self.add_period(r, start="20240201", end="20240101", line=True)
+        fired = self.fired(r)
+        self.assertIn("BR-30", fired)
+        self.assertNotIn("BR-29", fired)   # header periods untouched
+        self.assertNotIn("BR-CO-20", fired)
+
+    def test_br30_ordered_line_period_holds(self):
+        r = _good_root()
+        self.add_period(r, start="20240101", end="20240201", line=True)
+        self.assert_rule(r, "BR-30", expect=False)
+
+    # ---- BR-31..33 / BR-36..38: document allowance / charge facts -----------
+    def test_br31_amountless_allowance_fires(self):
+        r = _good_root()
+        self.add_doc_allowance_charge(r, charge=False, amount=None,
+                                      vat_category=True)
+        fired = self.fired(r)
+        self.assertIn("BR-31", fired)
+        self.assertNotIn("BR-32", fired)
+        self.assertNotIn("BR-33", fired)
+
+    def test_br32_categoryless_allowance_fires(self):
+        r = _good_root()
+        self.add_doc_allowance_charge(r, charge=False)
+        fired = self.fired(r)
+        self.assertIn("BR-32", fired)
+        self.assertNotIn("BR-31", fired)
+        self.assertNotIn("BR-33", fired)
+
+    def test_br33_reasonless_allowance_fires(self):
+        r = _good_root()
+        self.add_doc_allowance_charge(r, charge=False, reason=None,
+                                      vat_category=True)
+        fired = self.fired(r)
+        self.assertIn("BR-33", fired)
+        self.assertIn("BR-CO-21", fired)  # its twin official test
+        self.assertNotIn("BR-31", fired)
+        self.assertNotIn("BR-32", fired)
+
+    def test_complete_allowance_holds(self):
+        r = _good_root()
+        self.add_doc_allowance_charge(r, charge=False, vat_category=True)
+        fired = self.fired(r)
+        for rid in ("BR-31", "BR-32", "BR-33", "BR-CO-21"):
+            self.assertNotIn(rid, fired)
+
+    def test_br36_amountless_charge_fires(self):
+        r = _good_root()
+        self.add_doc_allowance_charge(r, charge=True, amount=None,
+                                      vat_category=True)
+        fired = self.fired(r)
+        self.assertIn("BR-36", fired)
+        self.assertNotIn("BR-37", fired)
+        self.assertNotIn("BR-38", fired)
+
+    def test_br37_categoryless_charge_fires(self):
+        r = _good_root()
+        self.add_doc_allowance_charge(r, charge=True)
+        fired = self.fired(r)
+        self.assertIn("BR-37", fired)
+        self.assertNotIn("BR-36", fired)
+        self.assertNotIn("BR-38", fired)
+
+    def test_br38_reasonless_charge_fires(self):
+        r = _good_root()
+        self.add_doc_allowance_charge(r, charge=True, reason=None,
+                                      vat_category=True)
+        fired = self.fired(r)
+        self.assertIn("BR-38", fired)
+        self.assertIn("BR-CO-22", fired)
+        self.assertNotIn("BR-36", fired)
+        self.assertNotIn("BR-37", fired)
+
+    def test_complete_charge_holds(self):
+        r = _good_root()
+        self.add_doc_allowance_charge(r, charge=True, vat_category=True)
+        fired = self.fired(r)
+        for rid in ("BR-36", "BR-37", "BR-38", "BR-CO-22"):
+            self.assertNotIn(rid, fired)
+
+
 if __name__ == "__main__":
     unittest.main()

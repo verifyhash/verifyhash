@@ -24,7 +24,7 @@ XSLT and compares the fired-rule set. The sources:
 ## Coverage at a glance
 
 - **276 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **137** proven on both UBL and CII, **139** UBL-only, **0** CII-only.
+- Syntax: **152** proven on both UBL and CII, **124** UBL-only, **0** CII-only.
 - Severity (blocking class): **265** fatal (block validity), **11** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -54,18 +54,18 @@ the non-blocking `warning` class for the severity column).
 | `BR-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall contain the Seller name (BT-27). |
 | `BR-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall contain the Buyer name (BT-44). |
 | `BR-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall contain the Seller postal address (BG-5). |
-| `BR-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Seller postal address (BG-5) shall contain a Seller country code (BT-40). |
+| `BR-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Seller postal address (BG-5) shall contain a Seller country code (BT-40). |
 | `BR-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall contain the Buyer postal address (BG-8). |
-| `BR-11` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Buyer postal address shall contain a Buyer country code (BT-55). |
+| `BR-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Buyer postal address shall contain a Buyer country code (BT-55). |
 | `BR-12` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall have the Sum of Invoice line net amount (BT-106). |
 | `BR-13` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall have the Invoice total amount without VAT (BT-109). |
 | `BR-14` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall have the Invoice total amount with VAT (BT-112). |
 | `BR-15` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall have the Amount due for payment (BT-115). |
 | `BR-16` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall have at least one Invoice line (BG-25). |
-| `BR-17` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Payee name (BT-59) shall be provided in the Invoice, if the Payee (BG-10) is different from the Seller (BG-4). |
-| `BR-18` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Seller tax representative name (BT-62) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11). |
-| `BR-19` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Seller tax representative postal address (BG-12) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11). |
-| `BR-20` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Seller tax representative postal address (BG-12) shall contain a Tax representative country code (BT-69), if the Seller (BG-4) has a Seller tax representative party (BG-11). |
+| `BR-17` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Payee name (BT-59) shall be provided in the Invoice, if the Payee (BG-10) is different from the Seller (BG-4). |
+| `BR-18` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Seller tax representative name (BT-62) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11). |
+| `BR-19` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Seller tax representative postal address (BG-12) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11). |
+| `BR-20` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Seller tax representative postal address (BG-12) shall contain a Tax representative country code (BT-69), if the Seller (BG-4) has a Seller tax representative party (BG-11). |
 | `BR-21` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line shall have an Invoice line identifier (BT-126). |
 | `BR-22` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line shall have an Invoiced quantity (BT-129). |
 | `BR-23` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130). |
@@ -73,15 +73,15 @@ the non-blocking `warning` class for the severity column).
 | `BR-25` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line (BG-25) shall contain the Item name (BT-153). |
 | `BR-26` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line shall contain the Item net price (BT-146). |
 | `BR-27` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Item net price (BT-146) shall NOT be negative. |
-| `BR-28` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Item gross price (BT-148) shall NOT be negative. |
-| `BR-29` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | If both Invoicing period start date (BT-73) and end date (BT-74) are given then the end date shall be later or equal to the start date. |
-| `BR-30` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | If both Invoice line period start date (BT-134) and end date (BT-135) are given then the end date shall be later or equal to the start date. |
-| `BR-31` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Document level allowance (BG-20) shall have a Document level allowance amount (BT-92). |
-| `BR-32` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Document level allowance (BG-20) shall have a Document level allowance VAT category code (BT-95). |
-| `BR-33` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Document level allowance (BG-20) shall have a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98). |
-| `BR-36` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Document level charge (BG-21) shall have a Document level charge amount (BT-99). |
-| `BR-37` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102). |
-| `BR-38` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Document level charge (BG-21) shall have a Document level charge reason (BT-104) or a Document level charge reason code (BT-105). |
+| `BR-28` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Item gross price (BT-148) shall NOT be negative. |
+| `BR-29` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | If both Invoicing period start date (BT-73) and end date (BT-74) are given then the end date shall be later or equal to the start date. |
+| `BR-30` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | If both Invoice line period start date (BT-134) and end date (BT-135) are given then the end date shall be later or equal to the start date. |
+| `BR-31` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level allowance (BG-20) shall have a Document level allowance amount (BT-92). |
+| `BR-32` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level allowance (BG-20) shall have a Document level allowance VAT category code (BT-95). |
+| `BR-33` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level allowance (BG-20) shall have a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98). |
+| `BR-36` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level charge (BG-21) shall have a Document level charge amount (BT-99). |
+| `BR-37` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102). |
+| `BR-38` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level charge (BG-21) shall have a Document level charge reason (BT-104) or a Document level charge reason code (BT-105). |
 | `BR-41` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Invoice line allowance (BG-27) shall have an Invoice line allowance amount (BT-136). |
 | `BR-42` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Invoice line allowance (BG-27) shall have an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140). |
 | `BR-43` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Invoice line charge (BG-28) shall have an Invoice line charge amount (BT-141). |
@@ -380,8 +380,6 @@ These core rules fire and are proven on the UBL leg; the official CII
 Schematron binds them differently, so they are excluded from the CII
 graded set rather than approximated.
 
-- **BR-09** — the CII binding evaluates the country-code test from the document root, firing even when the whole postal address is absent; the UBL function is gated on the address node existing, so it misses there. Address existence (BR-08) stays graded; the country code does not.
-- **BR-11** — same as BR-09 for the buyer postal address country code.
 - **BR-CO-14** — official CII context requires a document-currency BT-110 (ram:TaxTotalAmount) which a no-VAT CII invoice legitimately omits, so the assert never fires there; the UBL transcription would over-reject those documents.
 - **BR-CO-15** — the CII binding carries an extra GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for a no-VAT invoice with no BT-110; the UBL function has no such disjunct and would over-reject the same documents.
 - **BR-AF-08** — the CII artifact binds this assert to the ram:ApplicableTradeTax ROW — unlike BR-S-08, whose context node is the ram:CategoryCode CHILD — so the test's ../ram:RateApplicablePercent resolves against the header settlement (no such children) and 'every $rate in ()' is vacuously true: the shipped assert can never fire. The engine asserts the intended per-rate round2 bucket sum on CII anyway (deliberate strictness).
@@ -483,7 +481,7 @@ Peppol assert reopens this worklist automatically.
 
 ## CII proof parity
 
-**139** rules in the table above are today differentially proven on
+**124** rules in the table above are today differentially proven on
 the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
 many of them the official CII artifacts actually carry, by a real
 XML parse of `sch:assert/@id` in the vendored CII Schematron files
@@ -495,7 +493,7 @@ XML parse of `sch:assert/@id` in the vendored CII Schematron files
 Measured split (committed as `cii_parity.json`, live-recomputed by
 `test_cii_parity.py` so it can never silently go stale):
 
-- **131 cii-fireable** — an official CII assert with the same id
+- **116 cii-fireable** — an official CII assert with the same id
   exists in at least one vendored CII artifact. This is the real
   QA worklist: the rule officially applies to CII invoices and the
   engine's coverage there is not yet proven.

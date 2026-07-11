@@ -207,13 +207,37 @@ assert PEPPOL_UBL_PROVEN_CANONICAL == PEPPOL_CII_PROVEN_CANONICAL, (
 # --------------------------------------------------------------------------- #
 CII_GRADED_RULES = [
     # Header existence / cardinality (BR-01..16) — identical presence facts.
+    # BR-09/BR-11 (seller/buyer address country code) are bound from the
+    # DOCUMENT ROOT on CII (they fire even when the whole postal address is
+    # absent, alongside BR-08/BR-10) — the rule bodies branch on inv.syntax
+    # and transcribe EACH binding exactly (T-VHCIIP.2 engine fix).
     _rules.br_01, _rules.br_02, _rules.br_03, _rules.br_04, _rules.br_05,
-    _rules.br_06, _rules.br_07, _rules.br_08, _rules.br_10,
+    _rules.br_06, _rules.br_07, _rules.br_08, _rules.br_09, _rules.br_10,
+    _rules.br_11,
     # Document-total existence (BR-12..15, context = header monetary summation).
     _rules.br_12, _rules.br_13, _rules.br_14, _rules.br_15,
     # Invoice-line cardinality / content (BR-16, BR-21..27).
     _rules.br_16, _rules.br_21, _rules.br_22, _rules.br_24, _rules.br_25,
     _rules.br_26, _rules.br_27,
+    # Item gross price non-negativity (BR-28) — the CII parser materializes
+    # the line's GrossPriceProductTradePrice/ChargeAmount into the same
+    # ``price_base_amounts`` sequence the UBL body reads.
+    _rules.br_28,
+    # Payee (BR-17: the CII test carries an EXTRA legal-registration-id
+    # conjunct, carried via PayeeParty.legal_ids) and Seller tax
+    # representative (BR-18/19/20; the CII BR-20 context is the trade PARTY,
+    # so it also fires when the whole postal address is absent — the parser
+    # bakes that in with one entry per party).
+    _rules.br_17, _rules.br_18, _rules.br_19, _rules.br_20,
+    # Billing-period ordering (BR-29 header / BR-30 line): end >= start over
+    # the @format='102' DateTimeStrings (parser_cii._period_bound transcribes
+    # the official operand semantics onto the shared Period model).
+    _rules.br_29, _rules.br_30,
+    # Document-level allowance (BG-20: BR-31/32/33) and charge (BG-21:
+    # BR-36/37/38) existence facts — same ``doc_allowance_charges`` surface
+    # the graded BR-CO-21/22 already read.
+    _rules.br_31, _rules.br_32, _rules.br_33,
+    _rules.br_36, _rules.br_37, _rules.br_38,
     # Document-type code list (BR-CL-01).
     _rules.br_cl_01,
     # Currency / country / item-classification code lists (BR-CL-03/04/05/13/14).
@@ -326,14 +350,11 @@ CII_GRADED_RULES = [
 #    HOLDS for a no-VAT invoice with no BT-110; the UBL function requires exactly
 #    one document-currency VAT total and has no such disjunct, so it over-rejects
 #    the same BT-110-less CII documents (same two examples).
-#  * BR-09 / BR-11 (Seller/Buyer postal address shall contain a country code):
-#    the CII binding evaluates ``normalize-space(.../PostalTradeAddress/CountryID)
-#    != ''`` with the /rsm:CrossIndustryInvoice ROOT as its context, so it fires
-#    even when the whole postal address is absent. The UBL function is gated on the
-#    PostalAddress node existing (BR-09/BR-11's UBL context IS that node), so on a
-#    CII invoice missing the address it holds where the official fires (a MISS,
-#    seen on the BR-08/BR-10 mutations). BR-08/BR-10 (address existence) stay
-#    graded; the country-code rules do not.
+#  (BR-09 / BR-11 — the seller/buyer country-code rules whose CII binding is
+#   evaluated from the DOCUMENT ROOT rather than the PostalAddress node — used
+#   to be excluded here for exactly that context mismatch; since T-VHCIIP.2
+#   the rule bodies branch on inv.syntax and transcribe each binding exactly,
+#   so both are GRADED above.)
 #  * BR-S-01 (Standard-rated item ⇒ Standard-rated VAT breakdown): the CII binding
 #    is a WEAK one-directional count — ``count(line S)+count(header S) >= 2 or
 #    not(line S)`` — which is satisfied by two or more S rows on either side and,
@@ -365,7 +386,7 @@ CII_GRADED_RULES = [
 #    shipped assert can ever fire on CII. Our engine asserts the intended
 #    arithmetic on the CII model anyway (deliberate strictness); both stay
 #    fully graded on the UBL leg.
-CII_EXCLUDED_RULE_IDS = ("BR-CO-14", "BR-CO-15", "BR-09", "BR-11", "BR-S-01",
+CII_EXCLUDED_RULE_IDS = ("BR-CO-14", "BR-CO-15", "BR-S-01",
                          "BR-AF-08", "BR-AF-09", "BR-AG-08", "BR-AG-09")
 
 CII_RULE_IDS = [_fn_to_rule_id(fn) for fn in CII_GRADED_RULES]
@@ -2697,8 +2718,21 @@ def _cmut_br08(r):
     _cii_remove(r, _cii_seller(r).find("ram:PostalTradeAddress", _NSC))
 
 
+def _cmut_br09(r):
+    # Remove ONLY the seller address's CountryID (the address node stays, so
+    # BR-08 holds and BR-09 is the only graded header rule that fires).
+    _cii_remove(r, _cii_seller(r).find("ram:PostalTradeAddress/ram:CountryID",
+                                       _NSC))
+
+
 def _cmut_br10(r):
     _cii_remove(r, _cii_buyer(r).find("ram:PostalTradeAddress", _NSC))
+
+
+def _cmut_br11(r):
+    # Buyer twin of _cmut_br09: CountryID gone, PostalTradeAddress kept.
+    _cii_remove(r, _cii_buyer(r).find("ram:PostalTradeAddress/ram:CountryID",
+                                      _NSC))
 
 
 def _cmut_br12(r):
@@ -3435,15 +3469,175 @@ def _cmut_brb02(r):
     _cii_line_tax(r).find("ram:CategoryCode", _NSC).text = "B"
 
 
+# ---- CII proof-parity batch 1 (T-VHCIIP.2): BR-17..20, BR-28..33, BR-36..38 - #
+def _cii_header_agreement(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:ApplicableHeaderTradeAgreement", _NSC)
+
+
+def _cadd_payee(r, name=None, id_=None, legal_id=None):
+    """Append a ram:PayeeTradeParty (BG-10, BR-17's context) to the header
+    settlement. The clean CII base has no payee, so only BR-17 can react."""
+    payee = ET.SubElement(_cii_settlement(r), _cq(NS_RAM, "PayeeTradeParty"))
+    if id_ is not None:
+        ET.SubElement(payee, _cq(NS_RAM, "ID")).text = id_
+    if name is not None:
+        ET.SubElement(payee, _cq(NS_RAM, "Name")).text = name
+    if legal_id is not None:
+        lo = ET.SubElement(payee, _cq(NS_RAM, "SpecifiedLegalOrganization"))
+        ET.SubElement(lo, _cq(NS_RAM, "ID")).text = legal_id
+    return payee
+
+
+def _cmut_br17(r):
+    # A PayeeTradeParty with an ID but NO ram:Name: exists(ram:Name) is false,
+    # so BR-17 fires (the id/legal-id equality conjuncts are moot).
+    _cadd_payee(r, id_="PAYEE-4711")
+
+
+def _cadd_taxrep(r, name="Tax handling company AS", with_address=True,
+                 country="NO"):
+    """Append a ram:SellerTaxRepresentativeTradeParty (BG-11) mirroring the
+    official-clean CII_business_example_01 party: Name + PostalTradeAddress
+    (CountryID NO) + a non-empty VA SpecifiedTaxRegistration (so the graded
+    BR-56 holds and BR-CO-09 sees a valid country prefix). The knobs remove
+    exactly the field each of BR-18/19/20 guards."""
+    trp = ET.SubElement(_cii_header_agreement(r),
+                        _cq(NS_RAM, "SellerTaxRepresentativeTradeParty"))
+    if name is not None:
+        ET.SubElement(trp, _cq(NS_RAM, "Name")).text = name
+    if with_address:
+        pa = ET.SubElement(trp, _cq(NS_RAM, "PostalTradeAddress"))
+        ET.SubElement(pa, _cq(NS_RAM, "CityName")).text = "Newtown"
+        if country is not None:
+            ET.SubElement(pa, _cq(NS_RAM, "CountryID")).text = country
+    reg = ET.SubElement(trp, _cq(NS_RAM, "SpecifiedTaxRegistration"))
+    reg_id = ET.SubElement(reg, _cq(NS_RAM, "ID"))
+    reg_id.set("schemeID", "VA")
+    reg_id.text = "NO967611265MVA"
+    return trp
+
+
+def _cmut_br18(r):
+    # Representative present but nameless -> BR-18 fires (address + country
+    # + VA id keep BR-19/20/56 quiet).
+    _cadd_taxrep(r, name=None)
+
+
+def _cmut_br19(r):
+    # Representative with NO PostalTradeAddress: BR-19 fires, and on CII the
+    # party-scoped BR-20 fires alongside (normalize-space('') over the absent
+    # address path) — on both engines.
+    _cadd_taxrep(r, with_address=False)
+
+
+def _cmut_br20(r):
+    # Address present but WITHOUT CountryID -> only BR-20 fires.
+    _cadd_taxrep(r, country=None)
+
+
+def _cmut_br28(r):
+    # Give the first line a NEGATIVE Item gross price (BT-148). The clean base
+    # carries no GrossPriceProductTradePrice, so only BR-28's own operand
+    # appears; the net price / line arithmetic is untouched.
+    agreement = _cii_first_line(r).find("ram:SpecifiedLineTradeAgreement",
+                                        _NSC)
+    gp = ET.Element(_cq(NS_RAM, "GrossPriceProductTradePrice"))
+    ET.SubElement(gp, _cq(NS_RAM, "ChargeAmount")).text = "-5.00"
+    agreement.insert(0, gp)
+
+
+def _cii_billing_period(start=None, end=None):
+    """A ram:BillingSpecifiedPeriod with @format='102' (YYYYMMDD) bounds."""
+    period = ET.Element(_cq(NS_RAM, "BillingSpecifiedPeriod"))
+    for local, value in (("StartDateTime", start), ("EndDateTime", end)):
+        if value is None:
+            continue
+        bound = ET.SubElement(period, _cq(NS_RAM, local))
+        dts = ET.SubElement(bound, _cq(NS_UDT, "DateTimeString"))
+        dts.set("format", "102")
+        dts.text = value
+    return period
+
+
+def _cmut_br29(r):
+    # Header billing period (BG-14) whose end PRECEDES its start -> BR-29
+    # fires (both bounds present, so BR-CO-19 holds).
+    _cii_settlement(r).append(_cii_billing_period(start="20240201",
+                                                  end="20240101"))
+
+
+def _cmut_br30(r):
+    # Same inverted period on the FIRST LINE (BG-26) -> BR-30 fires (BR-CO-20
+    # holds — the period is filled).
+    _cii_first_line(r).find("ram:SpecifiedLineTradeSettlement", _NSC).append(
+        _cii_billing_period(start="20240201", end="20240101"))
+
+
+def _cadd_doc_allowance_charge(r, charge, amount="0.00", reason="Testing"):
+    """Append a document SpecifiedTradeAllowanceCharge (BG-20/BG-21) with the
+    exact field the target rule guards removed via the knobs. A 0.00 amount
+    keeps every graded arithmetic unchanged, and NO CategoryTradeTax is added
+    (so the BR-S-08 per-rate buckets never shift); the absent category makes
+    BR-32/BR-37 fire alongside on BOTH engines, which the per-rule grading
+    handles."""
+    settle = _cii_settlement(r)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = (
+        "true" if charge else "false")
+    if amount is not None:
+        ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = amount
+    if reason is not None:
+        ET.SubElement(ac, _cq(NS_RAM, "Reason")).text = reason
+
+
+def _cmut_br31(r):
+    # Allowance with NO ActualAmount -> BR-31 fires (BR-32 fires alongside on
+    # both engines — no CategoryTradeTax; the Reason keeps BR-33/CO-21 quiet).
+    _cadd_doc_allowance_charge(r, charge=False, amount=None)
+
+
+def _cmut_br32(r):
+    # Allowance with amount + reason but NO VAT CategoryTradeTax -> BR-32
+    # only.
+    _cadd_doc_allowance_charge(r, charge=False)
+
+
+def _cmut_br33(r):
+    # Allowance with NO Reason/ReasonCode -> BR-33 fires; its twin-test
+    # BR-CO-21 and the category-less BR-32 fire alongside on both engines.
+    _cadd_doc_allowance_charge(r, charge=False, reason=None)
+
+
+def _cmut_br36(r):
+    # Charge twins of BR-31/32/33.
+    _cadd_doc_allowance_charge(r, charge=True, amount=None)
+
+
+def _cmut_br37(r):
+    _cadd_doc_allowance_charge(r, charge=True)
+
+
+def _cmut_br38(r):
+    _cadd_doc_allowance_charge(r, charge=True, reason=None)
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
-    "BR-07": _cmut_br07, "BR-08": _cmut_br08, "BR-10": _cmut_br10,
+    "BR-07": _cmut_br07, "BR-08": _cmut_br08, "BR-09": _cmut_br09,
+    "BR-10": _cmut_br10, "BR-11": _cmut_br11,
     "BR-12": _cmut_br12, "BR-13": _cmut_br13, "BR-14": _cmut_br14,
     "BR-15": _cmut_br15, "BR-16": _cmut_br16,
+    "BR-17": _cmut_br17, "BR-18": _cmut_br18, "BR-19": _cmut_br19,
+    "BR-20": _cmut_br20,
     "BR-21": _cmut_br21, "BR-22": _cmut_br22, "BR-23": _cmut_br23,
     "BR-24": _cmut_br24,
     "BR-25": _cmut_br25, "BR-26": _cmut_br26, "BR-27": _cmut_br27,
+    "BR-28": _cmut_br28, "BR-29": _cmut_br29, "BR-30": _cmut_br30,
+    "BR-31": _cmut_br31, "BR-32": _cmut_br32, "BR-33": _cmut_br33,
+    "BR-36": _cmut_br36, "BR-37": _cmut_br37, "BR-38": _cmut_br38,
     "BR-52": _cmut_br52, "BR-53": _cmut_br53, "BR-54": _cmut_br54,
     "BR-56": _cmut_br56, "BR-64": _cmut_br64, "BR-65": _cmut_br65,
     "BR-CO-03": _cmut_brco03, "BR-CO-09": _cmut_brco09,

@@ -232,7 +232,7 @@
       "id": "BR-09",
       "title": "The Seller postal address (BG-5) shall contain a Seller country code (BT-40).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -248,8 +248,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "the CII binding evaluates the country-code test from the document root, firing even when the whole postal address is absent; the UBL function is gated on the address node existing, so it misses there. Address existence (BR-08) stays graded; the country code does not."
+          "differentially_proven": true
         }
       }
     },
@@ -281,7 +280,7 @@
       "id": "BR-11",
       "title": "The Buyer postal address shall contain a Buyer country code (BT-55).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -297,8 +296,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "same as BR-09 for the buyer postal address country code."
+          "differentially_proven": true
         }
       }
     },
@@ -426,7 +424,7 @@
       "id": "BR-17",
       "title": "The Payee name (BT-59) shall be provided in the Invoice, if the Payee (BG-10) is different from the Seller (BG-4).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -442,8 +440,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -451,7 +448,7 @@
       "id": "BR-18",
       "title": "The Seller tax representative name (BT-62) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -467,8 +464,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -476,7 +472,7 @@
       "id": "BR-19",
       "title": "The Seller tax representative postal address (BG-12) shall be provided in the Invoice, if the Seller (BG-4) has a Seller tax representative party (BG-11).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -492,8 +488,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -501,7 +496,7 @@
       "id": "BR-20",
       "title": "The Seller tax representative postal address (BG-12) shall contain a Tax representative country code (BT-69), if the Seller (BG-4) has a Seller tax representative party (BG-11).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -517,8 +512,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -694,7 +688,7 @@
       "id": "BR-28",
       "title": "The Item gross price (BT-148) shall NOT be negative.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -710,8 +704,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -719,7 +712,7 @@
       "id": "BR-29",
       "title": "If both Invoicing period start date (BT-73) and end date (BT-74) are given then the end date shall be later or equal to the start date.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -735,8 +728,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -744,7 +736,7 @@
       "id": "BR-30",
       "title": "If both Invoice line period start date (BT-134) and end date (BT-135) are given then the end date shall be later or equal to the start date.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -760,8 +752,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -769,7 +760,7 @@
       "id": "BR-31",
       "title": "Each Document level allowance (BG-20) shall have a Document level allowance amount (BT-92).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -785,8 +776,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -794,7 +784,7 @@
       "id": "BR-32",
       "title": "Each Document level allowance (BG-20) shall have a Document level allowance VAT category code (BT-95).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -810,8 +800,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -819,7 +808,7 @@
       "id": "BR-33",
       "title": "Each Document level allowance (BG-20) shall have a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -835,8 +824,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -844,7 +832,7 @@
       "id": "BR-36",
       "title": "Each Document level charge (BG-21) shall have a Document level charge amount (BT-99).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -860,8 +848,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -869,7 +856,7 @@
       "id": "BR-37",
       "title": "Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -885,8 +872,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -894,7 +880,7 @@
       "id": "BR-38",
       "title": "Each Document level charge (BG-21) shall have a Document level charge reason (BT-104) or a Document level charge reason code (BT-105).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -910,8 +896,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -6930,14 +6915,6 @@
       }
     ],
     "cii_core_out_of_scope": [
-      {
-        "id": "BR-09",
-        "reason": "the CII binding evaluates the country-code test from the document root, firing even when the whole postal address is absent; the UBL function is gated on the address node existing, so it misses there. Address existence (BR-08) stays graded; the country code does not."
-      },
-      {
-        "id": "BR-11",
-        "reason": "same as BR-09 for the buyer postal address country code."
-      },
       {
         "id": "BR-CO-14",
         "reason": "official CII context requires a document-currency BT-110 (ram:TaxTotalAmount) which a no-VAT CII invoice legitimately omits, so the assert never fires there; the UBL transcription would over-reject those documents."

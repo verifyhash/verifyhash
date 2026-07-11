@@ -208,13 +208,27 @@ def br_09(inv):
 
         normalize-space(cac:Country/cbc:IdentificationCode) != ''
 
-    The rule's context node is the Seller PostalAddress itself, so it is only
-    evaluated when that address is PRESENT (an absent address is BR-08's job,
-    not this rule's). Given a present address, the country code must
+    The UBL rule's context node is the Seller PostalAddress itself, so it is
+    only evaluated when that address is PRESENT (an absent address is BR-08's
+    job, not this rule's). Given a present address, the country code must
     normalize-space to a non-empty string — an absent, empty or whitespace-only
     ``Country/IdentificationCode`` fires the assert.
+
+    Official CII (context ``/rsm:CrossIndustryInvoice`` — the document ROOT)::
+
+        normalize-space(rsm:SupplyChainTradeTransaction/
+            ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/
+            ram:PostalTradeAddress/ram:CountryID) != ''
+
+    The CII binding is NOT gated on the postal address existing: with the root
+    as context the assert is evaluated on every document, and an entirely
+    absent ``ram:PostalTradeAddress`` (or SellerTradeParty) string-values to
+    ``''`` — so it fires ALONGSIDE BR-08 there. The two bindings genuinely
+    differ, so the body branches on ``inv.syntax`` and transcribes each
+    exactly.
     """
-    if inv.seller_has_postal_address and not inv.seller_country_code:
+    gate = True if inv.syntax == "cii" else inv.seller_has_postal_address
+    if gate and not inv.seller_country_code:
         return Violation(
             "BR-09",
             "The Seller postal address (BG-5) shall contain a Seller country "
@@ -251,11 +265,22 @@ def br_11(inv):
 
         normalize-space(cac:Country/cbc:IdentificationCode) != ''
 
-    Symmetric to BR-09 for the Buyer: only evaluated when the Buyer postal
-    address is present (absence is BR-10's job); given a present address, the
-    country code must normalize-space to a non-empty string.
+    Symmetric to BR-09 for the Buyer: on UBL only evaluated when the Buyer
+    postal address is present (absence is BR-10's job); given a present
+    address, the country code must normalize-space to a non-empty string.
+
+    Official CII (context ``/rsm:CrossIndustryInvoice`` — the document ROOT)::
+
+        normalize-space(rsm:SupplyChainTradeTransaction/
+            ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/
+            ram:PostalTradeAddress/ram:CountryID) != ''
+
+    As with BR-09, the CII binding is ungated — an absent Buyer postal address
+    string-values to ``''`` and fires this rule alongside BR-10 — so the body
+    branches on ``inv.syntax`` and transcribes each binding exactly.
     """
-    if inv.buyer_has_postal_address and not inv.buyer_country_code:
+    gate = True if inv.syntax == "cii" else inv.buyer_has_postal_address
+    if gate and not inv.buyer_country_code:
         return Violation(
             "BR-11",
             "The Buyer postal address shall contain a Buyer country code "
@@ -4035,11 +4060,27 @@ def br_17(inv):
     Seller PartyName name, OR when any payee identifier equals any Seller
     identifier (i.e. the official artifact rejects a PayeeParty that duplicates
     the Seller — the payee must genuinely differ).
+
+    Official CII (context ``//ram:PayeeTradeParty``)::
+
+        (ram:Name)
+          and (not(ram:Name = ../../ram:ApplicableHeaderTradeAgreement/
+                       ram:SellerTradeParty/ram:Name)
+               and not(ram:ID = .../ram:SellerTradeParty/ram:ID)
+               and not(ram:SpecifiedLegalOrganization/ram:ID
+                     = .../ram:SellerTradeParty/ram:SpecifiedLegalOrganization/
+                       ram:ID))
+
+    Same shape plus a THIRD equality conjunct over the legal-registration
+    identifiers (BT-61 vs BT-30). The UBL test has no such conjunct, so the
+    UBL parser leaves ``legal_ids``/``seller_legal_ids`` empty and the extra
+    check below is vacuously satisfied there.
     """
     for pp in inv.payee_parties:
         holds = (bool(pp.names)
                  and not any(n in pp.seller_names for n in pp.names)
-                 and not any(i in pp.seller_ids for i in pp.ids))
+                 and not any(i in pp.seller_ids for i in pp.ids)
+                 and not any(i in pp.seller_legal_ids for i in pp.legal_ids))
         if not holds:
             return Violation(
                 "BR-17",
@@ -4099,8 +4140,19 @@ def br_20(inv):
 
         normalize-space(cac:Country/cbc:IdentificationCode) != ''
 
-    Only evaluated when that postal address is PRESENT (absence is BR-19's
-    job); absent/empty/whitespace-only country code fires.
+    On UBL only evaluated when that postal address is PRESENT (absence is
+    BR-19's job); absent/empty/whitespace-only country code fires.
+
+    Official CII (context ``//ram:SellerTaxRepresentativeTradeParty`` — the
+    trade PARTY, not the address)::
+
+        normalize-space(ram:PostalTradeAddress/ram:CountryID) != ''
+
+    The CII binding is evaluated once per representative party even when the
+    postal address is absent (the path then string-values to ``''``), so on
+    CII this rule fires ALONGSIDE BR-19 for an address-less representative.
+    The CII parser transcribes that by appending one entry per trade party
+    (None when the address or country is absent), so this body runs unchanged.
     """
     for cc in inv.taxrep_postal_addresses:
         if not " ".join((cc or "").split()):

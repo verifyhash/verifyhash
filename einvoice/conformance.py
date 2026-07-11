@@ -425,6 +425,42 @@ CII_SYNTAX_COVERAGE = {
     "BR-46": "VAT breakdown tax amount (BT-117) present",
     "BR-47": "VAT breakdown VAT category code (BT-118) present",
     "BR-48": "VAT breakdown VAT category rate (BT-119) present unless 'O'",
+    "BR-E-01": "Exempt from VAT (E) categories ⇒ exactly one E VAT "
+               "breakdown row (CII binding: raw, VAT-scheme-unscoped "
+               "counts; an orphan E breakdown row fires)",
+    "BR-E-02": "Exempt (E) line ⇒ Seller VAT/tax id present (CII binding: "
+               "a VA-or-FC seller tax registration or a tax-representative "
+               "VA id)",
+    "BR-E-03": "Exempt (E) document allowance ⇒ Seller VAT/tax id present",
+    "BR-E-04": "Exempt (E) document charge ⇒ Seller VAT/tax id present",
+    "BR-E-05": "Exempt (E) line VAT rate (BT-152) = 0",
+    "BR-E-06": "Exempt (E) document allowance VAT rate (BT-96) = 0",
+    "BR-E-07": "Exempt (E) document charge VAT rate (BT-103) = 0",
+    "BR-E-08": "Exempt (E) breakdown taxable (BT-116) = Σ E line net + "
+               "charges − allowances (CII binding: ±1 band around the "
+               "round2 bucket sums)",
+    "BR-E-09": "Exempt (E) breakdown tax amount (BT-117) = 0",
+    "BR-E-10": "Exempt (E) breakdown has a VAT exemption reason code "
+               "(BT-121) or text (BT-120)",
+    "BR-G-01": "Export outside the EU (G) categories ⇒ exactly one G VAT "
+               "breakdown row (CII binding: raw, VAT-scheme-unscoped "
+               "counts; an orphan G breakdown row fires)",
+    "BR-G-02": "Export (G) line ⇒ Seller VAT id (BT-31) or tax-"
+               "representative VAT id (BT-63) present (VA only — no FC "
+               "fallback, unlike BR-E-02)",
+    "BR-G-03": "Export (G) document allowance ⇒ Seller VAT id or tax-"
+               "representative VAT id present",
+    "BR-G-04": "Export (G) document charge ⇒ Seller VAT id or tax-"
+               "representative VAT id present",
+    "BR-G-05": "Export (G) line VAT rate (BT-152) = 0",
+    "BR-G-06": "Export (G) document allowance VAT rate (BT-96) = 0",
+    "BR-G-07": "Export (G) document charge VAT rate (BT-103) = 0",
+    "BR-G-08": "Export (G) breakdown taxable (BT-116) = Σ G line net + "
+               "charges − allowances (CII binding: ±1 band around the "
+               "round2 bucket sums)",
+    "BR-G-09": "Export (G) breakdown tax amount (BT-117) = 0",
+    "BR-G-10": "Export (G) breakdown has a VAT exemption reason code "
+               "(BT-121) or text (BT-120)",
     "BR-S-02": "Standard-rated line ⇒ Seller VAT/tax id present",
     "BR-S-05": "Standard-rated line VAT rate (BT-152) > 0",
     "BR-S-08": "Standard-rated breakdown taxable (BT-116) = per-rate Σ line "

@@ -349,6 +349,28 @@ CII_GRADED_RULES = [
     _rules.br_49, _rules.br_50, _rules.br_51, _rules.br_55, _rules.br_57,
     _rules.br_61, _rules.br_62, _rules.br_63,
     _rules.br_ae_01, _rules.br_ae_02, _rules.br_ae_03,
+    # CII proof-parity batch 3 (T-VHCIIP.4): the Exempt-from-VAT (BR-E-01..10)
+    # and Export-outside-the-EU (BR-G-01..10) VAT-category families — the
+    # structural twins of the batch-2 BR-AE heads. Per family: the -01 head
+    # is the exact BR-AE-01 CII shape (raw, VAT-TypeCode-unscoped counts; an
+    # orphan breakdown row fires) — the rule bodies branch on inv.syntax; the
+    # seller-identifier rules (-02/03/04) map onto the CII parser's
+    # per-binding seller-id surfaces unchanged (E accepts a VA-or-FC seller
+    # tax registration, G accepts VA only — exactly what
+    # ``seller_has_party_tax_scheme_company_id`` / ``seller_has_vat_scheme_
+    # company_id`` already carry on CII); the rate rules (-05/06/07,
+    # ``ram:RateApplicablePercent = 0``: absent fires) and the
+    # exemption-reason/zero-tax breakdown rules (-09/-10, per header
+    # ApplicableTradeTax row) run on the shared bodies unchanged; the
+    # bucket-sum rules (-08) branch on inv.syntax in the shared helper —
+    # the CII binding is a strict ±1 band around the per-bucket round2 sums
+    # (shared verbatim by Z/E/AE/K/G), where UBL is exact and unrounded.
+    _rules.br_e_01, _rules.br_e_02, _rules.br_e_03, _rules.br_e_04,
+    _rules.br_e_05, _rules.br_e_06, _rules.br_e_07, _rules.br_e_08,
+    _rules.br_e_09, _rules.br_e_10,
+    _rules.br_g_01, _rules.br_g_02, _rules.br_g_03, _rules.br_g_04,
+    _rules.br_g_05, _rules.br_g_06, _rules.br_g_07, _rules.br_g_08,
+    _rules.br_g_09, _rules.br_g_10,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -3809,6 +3831,201 @@ def _cmut_brae03(r):
     _cadd_ae_allowance(r)
 
 
+# ---- CII proof-parity batch 3 (T-VHCIIP.4): BR-E-01..10 + BR-G-01..10 ------ #
+# The Exempt-from-VAT (E) and Export-outside-the-EU (G) twins of the batch-2
+# BR-AE mutations, off the same CII_example1 base (seller: one VA tax
+# registration, no FC, no tax representative; 20 S-rated lines, first line
+# S/6 with LineTotalAmount 19.9; header S/6 + S/21 breakdown rows).
+def _cadd_vatcat_ac_b3(r, code, charge=False, rate="0"):
+    """Append a document allowance/charge (BG-20/BG-21) carrying an E/G
+    CategoryTradeTax at ``rate``. ActualAmount 0.00 keeps every graded
+    arithmetic (BR-CO-13, the S bucket sums) unchanged and the Reason
+    satisfies BR-33/BR-38 + BR-CO-21/22, so with rate '0' only the targeted
+    category-family rules react (the orphan E/G category always fires the
+    family's -01 head — on both engines alike)."""
+    settle = _cii_settlement(r)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = (
+        "true" if charge else "false")
+    ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = "0.00"
+    ET.SubElement(ac, _cq(NS_RAM, "Reason")).text = "Testing"
+    ctt = ET.SubElement(ac, _cq(NS_RAM, "CategoryTradeTax"))
+    ET.SubElement(ctt, _cq(NS_RAM, "TypeCode")).text = "VAT"
+    ET.SubElement(ctt, _cq(NS_RAM, "CategoryCode")).text = code
+    ET.SubElement(ctt, _cq(NS_RAM, "RateApplicablePercent")).text = rate
+
+
+def _cflip_line1_cat_b3(r, code, rate="0"):
+    """Flip the FIRST line's VAT category S -> ``code`` (the BR-AE-02 move).
+    ``rate=None`` keeps the base rate 6 (a nonzero rate, for the -05 rules).
+    The flipped line always leaves its S/6 bucket, so BR-S-08 fires alongside
+    on both engines (exactly as on the batch-2 BR-AE-02 fixture)."""
+    tt = _cii_line_tax(r)
+    tt.find("ram:CategoryCode", _NSC).text = code
+    if rate is not None:
+        tt.find("ram:RateApplicablePercent", _NSC).text = rate
+
+
+def _cdrop_seller_tax_reg_b3(r):
+    """Remove the seller's only SpecifiedTaxRegistration (the VA id) — no FC
+    id and no tax representative exist in the base, so EVERY official CII
+    seller-identifier disjunct (VA-or-FC for BR-E-02..04 and BR-S-02, VA-only
+    for BR-G-02..04) goes false. BR-S-02 therefore fires alongside on every
+    such fixture (the S lines lose their seller id — the standalone BR-S-02
+    mutation is this same removal); BR-CO-26 stays quiet (the seller keeps
+    its SpecifiedLegalOrganization/ID)."""
+    _cii_remove(r, _cii_seller(r).find("ram:SpecifiedTaxRegistration", _NSC))
+
+
+def _cadd_header_vat_row_b3(r, code, basis, calculated="0.00", reason=True):
+    """Append a header VAT breakdown row (BG-23: ram:ApplicableTradeTax) for
+    ``code`` at rate 0 — Basis/Calculated/Category/Rate all present so BR-45
+    ..48 hold; the optional ExemptionReason satisfies the family's -10 rule.
+    Used together with a line flip so the -01 head holds (header count 1 AND
+    a matching line exists)."""
+    settle = _cii_settlement(r)
+    tt = ET.SubElement(settle, _cq(NS_RAM, "ApplicableTradeTax"))
+    ET.SubElement(tt, _cq(NS_RAM, "CalculatedAmount")).text = calculated
+    ET.SubElement(tt, _cq(NS_RAM, "TypeCode")).text = "VAT"
+    if reason:
+        ET.SubElement(tt, _cq(NS_RAM, "ExemptionReason")).text = (
+            "Exempt from VAT" if code == "E" else "Export outside the EU")
+    ET.SubElement(tt, _cq(NS_RAM, "BasisAmount")).text = basis
+    ET.SubElement(tt, _cq(NS_RAM, "CategoryCode")).text = code
+    ET.SubElement(tt, _cq(NS_RAM, "RateApplicablePercent")).text = "0"
+    return tt
+
+
+def _cmut_bre01(r):
+    # Orphan E document allowance (rate 0, seller VA id intact): CategoryTrade
+    # Tax count 1, header E count 0 -> BR-E-01 is the only graded rule to
+    # fire, on both engines (the official CII test has no orphan escape).
+    _cadd_vatcat_ac_b3(r, "E")
+
+
+def _cmut_bre02(r):
+    # E line (rate 0) + NO seller VA/FC id -> BR-E-02; BR-E-01 (no E header
+    # row), BR-S-02 (S lines, seller id gone) and BR-S-08 (line 1 left its
+    # S/6 bucket) fire alongside on both engines.
+    _cflip_line1_cat_b3(r, "E")
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_bre03(r):
+    # E document allowance + NO seller VA/FC id -> BR-E-03; BR-E-01 (orphan E
+    # category) and BR-S-02 fire alongside.
+    _cadd_vatcat_ac_b3(r, "E")
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_bre04(r):
+    # Charge twin of BR-E-03.
+    _cadd_vatcat_ac_b3(r, "E", charge=True)
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_bre05(r):
+    # E line KEEPING the base rate 6: ram:RateApplicablePercent = 0 fails ->
+    # BR-E-05; BR-E-01 and BR-S-08 fire alongside.
+    _cflip_line1_cat_b3(r, "E", rate=None)
+
+
+def _cmut_bre06(r):
+    # E document allowance at rate 21 -> BR-E-06; BR-E-01 (orphan E category)
+    # fires alongside, BR-E-03 holds (seller VA id intact).
+    _cadd_vatcat_ac_b3(r, "E", rate="21")
+
+
+def _cmut_bre07(r):
+    # Charge twin of BR-E-06.
+    _cadd_vatcat_ac_b3(r, "E", charge=True, rate="21")
+
+
+def _cmut_bre08(r):
+    # E line (LineTotalAmount 19.9) + header E row whose BasisAmount 30.00
+    # sits OUTSIDE the official ±1 band around round2(19.9) -> BR-E-08;
+    # BR-E-01/09/10 hold (one header row + an E line, CalculatedAmount 0,
+    # ExemptionReason present); BR-S-08 fires alongside (line 1 left its
+    # S/6 bucket).
+    _cflip_line1_cat_b3(r, "E")
+    _cadd_header_vat_row_b3(r, "E", basis="30.00")
+
+
+def _cmut_bre09(r):
+    # Correct BasisAmount (19.90) but CalculatedAmount 0.01: the official
+    # ``../ram:CalculatedAmount = 0`` fails -> BR-E-09, while BR-CO-17 still
+    # holds (round(rate)=0 and round(0.01)=0). BR-S-08 fires alongside.
+    _cflip_line1_cat_b3(r, "E")
+    _cadd_header_vat_row_b3(r, "E", basis="19.90", calculated="0.01")
+
+
+def _cmut_bre10(r):
+    # Correct E header row WITHOUT ExemptionReason/Code -> BR-E-10 (the
+    # presence-REQUIRED mirror of BR-S-10); BR-S-08 fires alongside.
+    _cflip_line1_cat_b3(r, "E")
+    _cadd_header_vat_row_b3(r, "E", basis="19.90", reason=False)
+
+
+def _cmut_brg01(r):
+    # Orphan G document allowance -> BR-G-01 only (see _cmut_bre01).
+    _cadd_vatcat_ac_b3(r, "G")
+
+
+def _cmut_brg02(r):
+    # G line (rate 0) + NO seller VA id (the G disjunct accepts VA only) ->
+    # BR-G-02; BR-G-01, BR-S-02 and BR-S-08 fire alongside.
+    _cflip_line1_cat_b3(r, "G")
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_brg03(r):
+    # G document allowance + NO seller VA id -> BR-G-03; BR-G-01 and BR-S-02
+    # fire alongside.
+    _cadd_vatcat_ac_b3(r, "G")
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_brg04(r):
+    # Charge twin of BR-G-03.
+    _cadd_vatcat_ac_b3(r, "G", charge=True)
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_brg05(r):
+    # G line keeping the base rate 6 -> BR-G-05; BR-G-01 and BR-S-08 fire
+    # alongside.
+    _cflip_line1_cat_b3(r, "G", rate=None)
+
+
+def _cmut_brg06(r):
+    # G document allowance at rate 21 -> BR-G-06; BR-G-01 fires alongside.
+    _cadd_vatcat_ac_b3(r, "G", rate="21")
+
+
+def _cmut_brg07(r):
+    # Charge twin of BR-G-06.
+    _cadd_vatcat_ac_b3(r, "G", charge=True, rate="21")
+
+
+def _cmut_brg08(r):
+    # G twin of the BR-E-08 fixture (BasisAmount 30.00 vs bucket sum 19.9).
+    _cflip_line1_cat_b3(r, "G")
+    _cadd_header_vat_row_b3(r, "G", basis="30.00")
+
+
+def _cmut_brg09(r):
+    # G twin of the BR-E-09 fixture (CalculatedAmount 0.01).
+    _cflip_line1_cat_b3(r, "G")
+    _cadd_header_vat_row_b3(r, "G", basis="19.90", calculated="0.01")
+
+
+def _cmut_brg10(r):
+    # G twin of the BR-E-10 fixture (no ExemptionReason/Code).
+    _cflip_line1_cat_b3(r, "G")
+    _cadd_header_vat_row_b3(r, "G", basis="19.90", reason=False)
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -3831,6 +4048,14 @@ _CII_MUTATIONS = {
     "BR-61": _cmut_br61, "BR-62": _cmut_br62, "BR-63": _cmut_br63,
     "BR-AE-01": _cmut_brae01, "BR-AE-02": _cmut_brae02,
     "BR-AE-03": _cmut_brae03,
+    "BR-E-01": _cmut_bre01, "BR-E-02": _cmut_bre02, "BR-E-03": _cmut_bre03,
+    "BR-E-04": _cmut_bre04, "BR-E-05": _cmut_bre05, "BR-E-06": _cmut_bre06,
+    "BR-E-07": _cmut_bre07, "BR-E-08": _cmut_bre08, "BR-E-09": _cmut_bre09,
+    "BR-E-10": _cmut_bre10,
+    "BR-G-01": _cmut_brg01, "BR-G-02": _cmut_brg02, "BR-G-03": _cmut_brg03,
+    "BR-G-04": _cmut_brg04, "BR-G-05": _cmut_brg05, "BR-G-06": _cmut_brg06,
+    "BR-G-07": _cmut_brg07, "BR-G-08": _cmut_brg08, "BR-G-09": _cmut_brg09,
+    "BR-G-10": _cmut_brg10,
     "BR-52": _cmut_br52, "BR-53": _cmut_br53, "BR-54": _cmut_br54,
     "BR-56": _cmut_br56, "BR-64": _cmut_br64, "BR-65": _cmut_br65,
     "BR-CO-03": _cmut_brco03, "BR-CO-09": _cmut_brco09,

@@ -2708,5 +2708,316 @@ class CiiProofParityBatch2(unittest.TestCase):
         self.assert_rule(r, "BR-AE-03", expect=False)
 
 
+# --------------------------------------------------------------------------- #
+# CII proof-parity batch 3 (T-VHCIIP.4): the Exempt-from-VAT (BR-E-01..10)    #
+# and Export-outside-the-EU (BR-G-01..10) families — the structural twins of  #
+# the batch-2 BR-AE heads. Every firing shape below is the SAME field-level    #
+# breakage differential._CII_MUTATIONS ships, proven officially-agreeing by    #
+# `differential.py cii`; the holding siblings pin the passing direction —      #
+# including the binding differences the batch carries: the -01 heads'         #
+# orphan-breakdown-row fire (CII only), the E-vs-G seller-id disjunct split   #
+# (E accepts a VA-or-FC seller tax registration, G accepts VA only) and the   #
+# -08 rules' strict ±1 CII band where the UBL binding is exact.               #
+# --------------------------------------------------------------------------- #
+class CiiProofParityBatch3(unittest.TestCase):
+    """Firing + holding CII fixtures for the T-VHCIIP.4 batch-3 rules."""
+
+    def fired(self, root):
+        return _fired_ids(root)
+
+    def assert_rule(self, root, rule_id, expect=True):
+        fired = self.fired(root)
+        if expect:
+            self.assertIn(rule_id, fired,
+                          "%s should fire; fired=%s" % (rule_id, sorted(fired)))
+        else:
+            self.assertNotIn(rule_id, fired,
+                             "%s should NOT fire; fired=%s"
+                             % (rule_id, sorted(fired)))
+
+    def _seller(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:SellerTradeParty", NS)
+
+    def _line_tax(self, r):
+        return _first_line(r).find(
+            "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", NS)
+
+    def add_vatcat_ac(self, r, code, charge=False, rate="0"):
+        """A document allowance/charge with an E/G CategoryTradeTax at
+        ``rate`` (the differential._cadd_vatcat_ac_b3 shape)."""
+        ac = ET.SubElement(_settlement(r),
+                           _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        ind = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+        ET.SubElement(ind, _q(NSU, "Indicator")).text = (
+            "true" if charge else "false")
+        ET.SubElement(ac, _q(NSA, "ActualAmount")).text = "0.00"
+        ET.SubElement(ac, _q(NSA, "Reason")).text = "Testing"
+        ctt = ET.SubElement(ac, _q(NSA, "CategoryTradeTax"))
+        ET.SubElement(ctt, _q(NSA, "TypeCode")).text = "VAT"
+        ET.SubElement(ctt, _q(NSA, "CategoryCode")).text = code
+        ET.SubElement(ctt, _q(NSA, "RateApplicablePercent")).text = rate
+        return ac
+
+    def flip_line1(self, r, code, rate="0"):
+        """Flip the first line's VAT category S -> code (rate=None keeps 6)."""
+        tt = self._line_tax(r)
+        tt.find("ram:CategoryCode", NS).text = code
+        if rate is not None:
+            tt.find("ram:RateApplicablePercent", NS).text = rate
+
+    def drop_seller_tax_reg(self, r):
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+
+    def set_seller_tax_reg_scheme(self, r, scheme):
+        self._seller(r).find(
+            "ram:SpecifiedTaxRegistration/ram:ID", NS).set("schemeID", scheme)
+
+    def add_header_row(self, r, code, basis, calculated="0.00", reason=True):
+        """A header VAT breakdown row for ``code`` at rate 0 (the
+        differential._cadd_header_vat_row_b3 shape)."""
+        tt = ET.SubElement(_settlement(r), _q(NSA, "ApplicableTradeTax"))
+        ET.SubElement(tt, _q(NSA, "CalculatedAmount")).text = calculated
+        ET.SubElement(tt, _q(NSA, "TypeCode")).text = "VAT"
+        if reason:
+            ET.SubElement(tt, _q(NSA, "ExemptionReason")).text = "Testing"
+        ET.SubElement(tt, _q(NSA, "BasisAmount")).text = basis
+        ET.SubElement(tt, _q(NSA, "CategoryCode")).text = code
+        ET.SubElement(tt, _q(NSA, "RateApplicablePercent")).text = "0"
+        return tt
+
+    # ---- BR-E-01 / BR-G-01: exactly one breakdown row (the BR-AE-01 shape) --
+    def test_bre01_orphan_e_category_fires(self):
+        # An E CategoryTradeTax with NO E header breakdown row; the seller
+        # VA id keeps BR-E-03 quiet.
+        r = _good_root()
+        self.add_vatcat_ac(r, "E")
+        fired = self.fired(r)
+        self.assertIn("BR-E-01", fired)
+        self.assertNotIn("BR-E-03", fired)
+
+    def test_bre01_orphan_e_breakdown_row_fires_on_cii(self):
+        # The CII binding difference (as BR-AE-01): ONE orphan E header
+        # breakdown row FIRES on CII; on UBL the same orphan holds.
+        r = _good_root()
+        self.add_header_row(r, "E", basis="0.00")
+        self.assert_rule(r, "BR-E-01")
+
+    def test_bre01_paired_e_line_and_row_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.add_header_row(r, "E", basis="19.90")
+        self.assert_rule(r, "BR-E-01", expect=False)
+
+    def test_brg01_orphan_g_category_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "G")
+        fired = self.fired(r)
+        self.assertIn("BR-G-01", fired)
+        self.assertNotIn("BR-G-03", fired)
+
+    def test_brg01_orphan_g_breakdown_row_fires_on_cii(self):
+        r = _good_root()
+        self.add_header_row(r, "G", basis="0.00")
+        self.assert_rule(r, "BR-G-01")
+
+    def test_brg01_paired_g_line_and_row_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.add_header_row(r, "G", basis="19.90")
+        self.assert_rule(r, "BR-G-01", expect=False)
+
+    def test_e01_g01_hold_on_clean_base(self):
+        fired = self.fired(_good_root())
+        self.assertNotIn("BR-E-01", fired)
+        self.assertNotIn("BR-G-01", fired)
+
+    # ---- BR-E-02..04 / BR-G-02..04: the seller-identifier disjunct split ----
+    def test_bre02_e_line_without_seller_id_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.drop_seller_tax_reg(r)
+        fired = self.fired(r)
+        self.assertIn("BR-E-02", fired)
+        self.assertIn("BR-S-02", fired)   # the S lines lose the same id
+
+    def test_bre02_fc_seller_registration_satisfies_e(self):
+        # The official CII BR-E-02 disjunct is @schemeID = ('VA','FC'):
+        # an FC (tax registration, BT-32) seller id SATISFIES the E family.
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.set_seller_tax_reg_scheme(r, "FC")
+        self.assert_rule(r, "BR-E-02", expect=False)
+
+    def test_bre03_e_allowance_without_seller_id_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "E")
+        self.drop_seller_tax_reg(r)
+        self.assert_rule(r, "BR-E-03")
+
+    def test_bre04_e_charge_without_seller_id_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "E", charge=True)
+        self.drop_seller_tax_reg(r)
+        self.assert_rule(r, "BR-E-04")
+
+    def test_brg02_g_line_without_seller_id_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.drop_seller_tax_reg(r)
+        self.assert_rule(r, "BR-G-02")
+
+    def test_brg02_fc_seller_registration_does_not_satisfy_g(self):
+        # The G disjunct accepts VA ONLY (no FC fallback, unlike BR-E-02):
+        # the same FC seller id that satisfies BR-E-02 leaves BR-G-02 firing.
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.set_seller_tax_reg_scheme(r, "FC")
+        self.assert_rule(r, "BR-G-02")
+
+    def test_brg02_va_seller_registration_satisfies_g(self):
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.assert_rule(r, "BR-G-02", expect=False)
+
+    def test_brg03_g_allowance_without_seller_id_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "G")
+        self.drop_seller_tax_reg(r)
+        self.assert_rule(r, "BR-G-03")
+
+    def test_brg04_g_charge_without_seller_id_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "G", charge=True)
+        self.drop_seller_tax_reg(r)
+        self.assert_rule(r, "BR-G-04")
+
+    # ---- BR-E-05..07 / BR-G-05..07: rate must equal 0 ------------------------
+    def test_bre05_nonzero_rate_e_line_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "E", rate=None)   # keeps the base rate 6
+        self.assert_rule(r, "BR-E-05")
+
+    def test_bre05_zero_rate_e_line_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.assert_rule(r, "BR-E-05", expect=False)
+
+    def test_bre06_nonzero_rate_e_allowance_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "E", rate="21")
+        self.assert_rule(r, "BR-E-06")
+
+    def test_bre07_nonzero_rate_e_charge_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "E", charge=True, rate="21")
+        self.assert_rule(r, "BR-E-07")
+
+    def test_brg05_nonzero_rate_g_line_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "G", rate=None)
+        self.assert_rule(r, "BR-G-05")
+
+    def test_brg06_nonzero_rate_g_allowance_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "G", rate="21")
+        self.assert_rule(r, "BR-G-06")
+
+    def test_brg07_nonzero_rate_g_charge_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "G", charge=True, rate="21")
+        self.assert_rule(r, "BR-G-07")
+
+    # ---- BR-E-08 / BR-G-08: the CII ±1 band around the round2 bucket sums ---
+    def test_bre08_out_of_band_basis_fires(self):
+        # E bucket sum = 19.9 (line 1); BasisAmount 30.00 sits outside the
+        # official CII ±1 band -> fires.
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.add_header_row(r, "E", basis="30.00")
+        self.assert_rule(r, "BR-E-08")
+
+    def test_bre08_exact_basis_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.add_header_row(r, "E", basis="19.90")
+        self.assert_rule(r, "BR-E-08", expect=False)
+
+    def test_bre08_inside_band_holds_on_cii(self):
+        # The CII binding difference: BasisAmount 20.50 is 0.60 off the
+        # bucket sum — INSIDE the official strict ±1 band, so the CII assert
+        # holds where the exact UBL binding would fire.
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.add_header_row(r, "E", basis="20.50")
+        self.assert_rule(r, "BR-E-08", expect=False)
+
+    def test_bre08_absent_basis_fires(self):
+        # A missing BT-116 empties the official band comparison -> fires
+        # (BR-45 fires alongside on both engines).
+        r = _good_root()
+        self.flip_line1(r, "E")
+        row = self.add_header_row(r, "E", basis="19.90")
+        row.remove(row.find("ram:BasisAmount", NS))
+        fired = self.fired(r)
+        self.assertIn("BR-E-08", fired)
+        self.assertIn("BR-45", fired)
+
+    def test_brg08_out_of_band_basis_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.add_header_row(r, "G", basis="30.00")
+        self.assert_rule(r, "BR-G-08")
+
+    def test_brg08_inside_band_holds_on_cii(self):
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.add_header_row(r, "G", basis="20.50")
+        self.assert_rule(r, "BR-G-08", expect=False)
+
+    # ---- BR-E-09/10 / BR-G-09/10: zero tax + REQUIRED exemption reason ------
+    def test_bre09_nonzero_tax_fires(self):
+        # CalculatedAmount 0.01 != 0 -> BR-E-09; round(0.01) = 0 keeps the
+        # graded BR-CO-17 quiet (its zero-rate disjunct holds).
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.add_header_row(r, "E", basis="19.90", calculated="0.01")
+        fired = self.fired(r)
+        self.assertIn("BR-E-09", fired)
+        self.assertNotIn("BR-CO-17", fired)
+
+    def test_bre10_reasonless_e_breakdown_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.add_header_row(r, "E", basis="19.90", reason=False)
+        self.assert_rule(r, "BR-E-10")
+
+    def test_bre10_reasoned_e_breakdown_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "E")
+        self.add_header_row(r, "E", basis="19.90")
+        self.assert_rule(r, "BR-E-10", expect=False)
+
+    def test_brg09_nonzero_tax_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.add_header_row(r, "G", basis="19.90", calculated="0.01")
+        self.assert_rule(r, "BR-G-09")
+
+    def test_brg10_reasonless_g_breakdown_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.add_header_row(r, "G", basis="19.90", reason=False)
+        self.assert_rule(r, "BR-G-10")
+
+    def test_brg10_reasoned_g_breakdown_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "G")
+        self.add_header_row(r, "G", basis="19.90")
+        self.assert_rule(r, "BR-G-10", expect=False)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1698,7 +1698,7 @@ def _ac_rate_nonzero(inv, code, is_charge):
     return False
 
 
-def _breakdown_taxable_sum_mismatch(inv, code):
+def _breakdown_taxable_sum_mismatch(inv, code, cii_band=True):
     """The BR-Z/E-08 shape (context ``/*/cac:TaxTotal/cac:TaxSubtotal/
     cac:TaxCategory[normalize-space(cbc:ID)=code][VAT]`` — TOP-LEVEL TaxTotals
     only). For an Invoice document the official test reduces to::
@@ -1710,7 +1710,7 @@ def _breakdown_taxable_sum_mismatch(inv, code):
             + sum(charges with cac:TaxCategory[normalize-space(cbc:ID)=code])
             - sum(allowances with cac:TaxCategory[normalize-space(cbc:ID)=code])
 
-    Three details the official XPath pins down:
+    Three details the official UBL XPath pins down:
 
     * the line/allowance/charge predicates are SCHEME-AGNOSTIC (no TaxScheme
       test — unlike this rule's own context);
@@ -1720,6 +1720,30 @@ def _breakdown_taxable_sum_mismatch(inv, code):
       so the assert FIRES; a missing BT-116 casts to the empty sequence and
       fires too. Lines/allowances missing their amount contribute nothing.
 
+    The CII binding (context ``//ram:ApplicableHeaderTradeSettlement/
+    ram:ApplicableTradeTax/ram:CategoryCode[.=code][upper-case(../ram:TypeCode)
+    ='VAT']`` — the CategoryCode CHILD, like BR-S-08's context, so the assert
+    CAN fire, unlike the row-bound BR-AF/AG-08 artifact defects) is genuinely
+    different and shared verbatim by the Z/E/AE/K/G families::
+
+        ../ram:BasisAmount - 1 < round2(Σ code-line LineTotalAmount)
+                                 + round2(Σ code header charges' ActualAmount[1])
+                                 - round2(Σ code header allowances' ActualAmount[1])
+        and ../ram:BasisAmount + 1 > (the same sum)
+
+    i.e. a STRICT ±1 tolerance band around the PER-BUCKET fn:round 2-place
+    sums (round2 = ``round(x*10*10) div 100``, the ``_xr2`` idiom) — where
+    the UBL binding is exact and unrounded. The CII sum predicates are raw,
+    scheme-agnostic comparisons (``ram:CategoryCode = code``, no TypeCode
+    test) over document lines and HEADER-level allowance/charge groups split
+    by ``ChargeIndicator/udt:Indicator``; there is NO exists(//line) term, so
+    a line-less document holds when BT-116 sits inside the band around the
+    allowance/charge sums; a missing BT-116 empties the band comparison and
+    fires. ``cii_band=False`` keeps the UBL arithmetic on CII for a caller
+    whose CII binding does NOT carry the band (BR-O-08 is exact + row-bound;
+    the O family keeps the pre-existing syntax-agnostic behaviour until its
+    own parity batch).
+
     Returns ``(subtotal, expected_sum)`` for the first offending breakdown,
     or None when the rule holds.
     """
@@ -1728,20 +1752,35 @@ def _breakdown_taxable_sum_mismatch(inv, code):
             if not (st.category_id == code
                     and st.category_scheme_id == "VAT"):
                 continue
-            expected = Decimal("0")
+            line_sum = Decimal("0")
             for ln in inv.lines:
                 if any(cat.id == code for cat in ln.item_tax_categories):
                     v = _dec(ln.line_extension_amount)
                     if v is not None:
-                        expected += v
+                        line_sum += v
+            charge_sum = Decimal("0")
+            allowance_sum = Decimal("0")
             for ac in inv.doc_allowance_charges:
                 if ac.is_charge is None:
                     continue
                 if any(cat.id == code for cat in ac.tax_categories):
                     v = _dec(ac.amount_raw)
-                    if v is not None:
-                        expected += v if ac.is_charge else -v
+                    if v is None:
+                        continue
+                    if ac.is_charge:
+                        charge_sum += v
+                    else:
+                        allowance_sum += v
             taxable = _dec(st.taxable_amount)
+            if inv.syntax == "cii" and cii_band:
+                expected = (_xr2(line_sum) + _xr2(charge_sum)
+                            - _xr2(allowance_sum))
+                if not (taxable is not None
+                        and taxable - 1 < expected
+                        and taxable + 1 > expected):
+                    return st, expected
+                continue
+            expected = line_sum + charge_sum - allowance_sum
             if not inv.lines or taxable is None or taxable != expected:
                 return st, expected
     return None
@@ -1975,7 +2014,9 @@ def br_e_07(inv):
 
 def br_e_08(inv):
     """BR-E-08: the Exempt (E) VAT breakdown taxable amount (BT-116) shall
-    equal the exact sum of E line net amounts − E allowances + E charges."""
+    equal the sum of E line net amounts − E allowances + E charges (exact on
+    UBL; the ±1 band around the round2 bucket sums on CII — see
+    :func:`_breakdown_taxable_sum_mismatch`)."""
     hit = _breakdown_taxable_sum_mismatch(inv, "E")
     if hit is not None:
         st, expected = hit
@@ -2454,8 +2495,9 @@ def br_g_07(inv):
 
 def br_g_08(inv):
     """BR-G-08: the Export outside the EU (G) VAT breakdown taxable amount
-    (BT-116) shall equal the exact sum of G line nets − G allowances + G
-    charges."""
+    (BT-116) shall equal the sum of G line nets − G allowances + G charges
+    (exact on UBL; the ±1 band around the round2 bucket sums on CII — see
+    :func:`_breakdown_taxable_sum_mismatch`)."""
     hit = _breakdown_taxable_sum_mismatch(inv, "G")
     if hit is not None:
         st, expected = hit
@@ -2662,8 +2704,14 @@ def br_o_07(inv):
 def br_o_08(inv):
     """BR-O-08: the 'Not subject to VAT' (O) VAT breakdown taxable amount
     (BT-116) shall equal the exact sum of O line nets − O allowances + O
-    charges."""
-    hit = _breakdown_taxable_sum_mismatch(inv, "O")
+    charges.
+
+    ``cii_band=False``: unlike the Z/E/AE/K/G families, the official CII
+    BR-O-08 is EXACT (``ram:BasisAmount = round2(...)``, no ±1 band) and
+    row-bound, so the shared helper's CII band branch does not apply; the
+    pre-existing syntax-agnostic UBL arithmetic is kept until the O family's
+    own CII parity batch."""
+    hit = _breakdown_taxable_sum_mismatch(inv, "O", cii_band=False)
     if hit is not None:
         st, expected = hit
         return Violation(
@@ -3694,7 +3742,25 @@ def br_ae_01(inv):
 
 def br_e_01(inv):
     """BR-E-01: 'Exempt from VAT' (E) items require exactly one E VAT
-    breakdown (BG-23) row."""
+    breakdown (BG-23) row.
+
+    The CII binding is the exact BR-AE-01 shape for category 'E' (raw
+    comparisons, no VAT TypeCode filter, and an orphan E breakdown row
+    fires) — the body branches on ``inv.syntax`` like :func:`br_ae_01`
+    (see :func:`_cii_vat_exactly_one_breakdown`).
+    """
+    if inv.syntax == "cii":
+        if _cii_vat_exactly_one_breakdown(inv, "E"):
+            return None
+        return Violation(
+            "BR-E-01",
+            "An Invoice with an 'Exempt from VAT' (E) VAT category (BT-151/"
+            "BT-95/BT-102) must contain exactly one E VAT breakdown row "
+            "(BT-118); found %d."
+            % sum(1 for row in inv.cii_header_trade_tax_code_rows
+                  if "E" in row),
+            "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+            "ram:CategoryCode")
     if _vat_exactly_one_breakdown(inv, "E"):
         return None
     return Violation(
@@ -3707,7 +3773,25 @@ def br_e_01(inv):
 
 def br_g_01(inv):
     """BR-G-01: 'Export outside the EU' (G) items require exactly one G VAT
-    breakdown (BG-23) row."""
+    breakdown (BG-23) row.
+
+    The CII binding is the exact BR-AE-01 shape for category 'G' (raw
+    comparisons, no VAT TypeCode filter, and an orphan G breakdown row
+    fires) — the body branches on ``inv.syntax`` like :func:`br_ae_01`
+    (see :func:`_cii_vat_exactly_one_breakdown`).
+    """
+    if inv.syntax == "cii":
+        if _cii_vat_exactly_one_breakdown(inv, "G"):
+            return None
+        return Violation(
+            "BR-G-01",
+            "An Invoice with an 'Export outside the EU' (G) VAT category "
+            "(BT-151/BT-95/BT-102) must contain exactly one G VAT breakdown "
+            "row (BT-118); found %d."
+            % sum(1 for row in inv.cii_header_trade_tax_code_rows
+                  if "G" in row),
+            "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+            "ram:CategoryCode")
     if _vat_exactly_one_breakdown(inv, "G"):
         return None
     return Violation(

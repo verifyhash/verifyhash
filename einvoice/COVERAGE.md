@@ -24,7 +24,7 @@ XSLT and compares the fired-rule set. The sources:
 ## Coverage at a glance
 
 - **276 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **167** proven on both UBL and CII, **109** UBL-only, **0** CII-only.
+- Syntax: **187** proven on both UBL and CII, **89** UBL-only, **0** CII-only.
 - Severity (blocking class): **265** fatal (block validity), **11** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -189,26 +189,26 @@ the non-blocking `warning` class for the severity column).
 | `BR-AG-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with an IPSI (M) VAT category code (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120). |
 | `BR-B-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is 'Split payment' shall be a domestic Italian invoice. |
 | `BR-B-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Split payment' (B) VAT category code (BT-151, BT-95, BT-118 or BT-102) shall not also contain a 'Standard rated' (S) VAT category code. |
-| `BR-E-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | 'Exempt from VAT' (E) items require exactly one E VAT breakdown (BG-23) row. |
-| `BR-E-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Exempt (E) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. |
-| `BR-E-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Exempt (E) Document level allowance (BT-95) requires the Seller VAT identifier disjunct. |
-| `BR-E-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Exempt (E) Document level charge (BT-102) requires the Seller VAT identifier disjunct. |
-| `BR-E-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Exempt (E) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
-| `BR-E-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Exempt (E) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
-| `BR-E-07` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Exempt (E) Document level charge the charge VAT rate (BT-103) shall be 0. |
-| `BR-E-08` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Exempt (E) VAT breakdown taxable amount (BT-116) shall equal the exact sum of E line net amounts − E allowances + E charges. |
-| `BR-E-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The VAT category tax amount (BT-117) in an Exempt (E) VAT breakdown shall equal 0. |
-| `BR-E-10` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required mirror image of BR-Z-10/BR-S-10. |
-| `BR-G-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | 'Export outside the EU' (G) items require exactly one G VAT breakdown (BG-23) row. |
-| `BR-G-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with an Export outside the EU (G) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier (BT-31/BT-63). |
-| `BR-G-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with an Export outside the EU (G) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier. |
-| `BR-G-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with an Export outside the EU (G) Document level charge (BT-102) shall carry a VAT-scoped Seller identifier. |
-| `BR-G-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Export outside the EU (G) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
-| `BR-G-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Export outside the EU (G) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
-| `BR-G-07` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Export outside the EU (G) Document level charge the charge VAT rate (BT-103) shall be 0. |
-| `BR-G-08` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the exact sum of G line nets − G allowances + G charges. |
-| `BR-G-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The VAT category tax amount (BT-117) in an Export outside the EU (G) VAT breakdown shall equal 0. |
-| `BR-G-10` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A VAT breakdown (BG-23) with an Export outside the EU (G) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required shape shared with BR-E-10. |
+| `BR-E-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | 'Exempt from VAT' (E) items require exactly one E VAT breakdown (BG-23) row. |
+| `BR-E-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Exempt (E) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. |
+| `BR-E-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Exempt (E) Document level allowance (BT-95) requires the Seller VAT identifier disjunct. |
+| `BR-E-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Exempt (E) Document level charge (BT-102) requires the Seller VAT identifier disjunct. |
+| `BR-E-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Exempt (E) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
+| `BR-E-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Exempt (E) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
+| `BR-E-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Exempt (E) Document level charge the charge VAT rate (BT-103) shall be 0. |
+| `BR-E-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Exempt (E) VAT breakdown taxable amount (BT-116) shall equal the sum of E line net amounts − E allowances + E charges (exact on UBL; the ±1 band around the round2 bucket sums on CII — see :func:`_breakdown_taxable_sum_mismatch`). |
+| `BR-E-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in an Exempt (E) VAT breakdown shall equal 0. |
+| `BR-E-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required mirror image of BR-Z-10/BR-S-10. |
+| `BR-G-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | 'Export outside the EU' (G) items require exactly one G VAT breakdown (BG-23) row. |
+| `BR-G-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with an Export outside the EU (G) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier (BT-31/BT-63). |
+| `BR-G-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with an Export outside the EU (G) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier. |
+| `BR-G-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with an Export outside the EU (G) Document level charge (BT-102) shall carry a VAT-scoped Seller identifier. |
+| `BR-G-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Export outside the EU (G) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
+| `BR-G-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Export outside the EU (G) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
+| `BR-G-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Export outside the EU (G) Document level charge the charge VAT rate (BT-103) shall be 0. |
+| `BR-G-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the sum of G line nets − G allowances + G charges (exact on UBL; the ±1 band around the round2 bucket sums on CII — see :func:`_breakdown_taxable_sum_mismatch`). |
+| `BR-G-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in an Export outside the EU (G) VAT breakdown shall equal 0. |
+| `BR-G-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with an Export outside the EU (G) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required shape shared with BR-E-10. |
 | `BR-IC-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | 'Intra-community supply' (K) items require exactly one K VAT breakdown (BG-23) row. |
 | `BR-IC-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. |
 | `BR-IC-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with an Intra-community supply (K) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. |
@@ -481,7 +481,7 @@ Peppol assert reopens this worklist automatically.
 
 ## CII proof parity
 
-**109** rules in the table above are today differentially proven on
+**89** rules in the table above are today differentially proven on
 the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
 many of them the official CII artifacts actually carry, by a real
 XML parse of `sch:assert/@id` in the vendored CII Schematron files
@@ -493,7 +493,7 @@ XML parse of `sch:assert/@id` in the vendored CII Schematron files
 Measured split (committed as `cii_parity.json`, live-recomputed by
 `test_cii_parity.py` so it can never silently go stale):
 
-- **101 cii-fireable** — an official CII assert with the same id
+- **81 cii-fireable** — an official CII assert with the same id
   exists in at least one vendored CII artifact. This is the real
   QA worklist: the rule officially applies to CII invoices and the
   engine's coverage there is not yet proven.

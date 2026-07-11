@@ -1150,7 +1150,8 @@ def br_co_15(inv):
 def br_s_01(inv):
     """BR-S-01: Standard-rated (S) items and the VAT breakdown must agree.
 
-    The official rule (context ``/ubl:Invoice``) is BIDIRECTIONAL — it holds iff::
+    The official UBL rule (context ``/ubl:Invoice``) is BIDIRECTIONAL — it
+    holds iff::
 
         (items-have-S AND breakdown-has-S) OR (no-items-have-S AND breakdown-has-no-S)
 
@@ -1160,7 +1161,49 @@ def br_s_01(inv):
     assert fires whenever exactly ONE side carries 'S' — not only the
     "S item, no S breakdown" direction, but also an orphan 'S' breakdown with no
     corresponding 'S' line/allowance/charge (the misses the differential found).
+
+    The official CII binding (context ``/rsm:CrossIndustryInvoice``) is a
+    GENUINELY WEAKER count formula, transcribed exactly (T-VHCIIP.6)::
+
+        ((count(line-S-rows) + count(header-S-rows)) >= 2 or not(line-S-rows))
+        and
+        ((count(CategoryTradeTax-S) + count(header-S-rows)) >= 2
+         or not(CategoryTradeTax-S))
+
+    over three RAW (VAT-TypeCode-unscoped) node sets: the line VAT rows
+    (``//ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+    [ram:CategoryCode='S']``), the header breakdown rows
+    (``//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax
+    [ram:CategoryCode='S']``) and every allowance/charge category
+    (``//ram:CategoryTradeTax[ram:CategoryCode='S']`` — document AND line
+    level). Three consequences the differential pinned down, none shared by
+    the UBL biconditional:
+
+    * ONE S line (or one S allowance/charge) with no S breakdown row fires —
+      that direction survives;
+    * TWO or more S rows on the item side alone satisfy the ``>= 2`` count,
+      so e.g. two S lines with NO S breakdown row officially HOLD on CII;
+    * an orphan S breakdown row with no S item never fires (``not(...)`` on
+      the empty item side is true).
     """
+    if inv.syntax == "cii":
+        hdr_s = sum(1 for row in inv.cii_header_trade_tax_code_rows
+                    if "S" in row)
+        line_s = sum(1 for row in inv.cii_line_trade_tax_code_rows
+                     if "S" in row)
+        # ram:CategoryTradeTax carries at most one ram:CategoryCode child, so
+        # counting 'S' VALUES equals counting matching CategoryTradeTax rows.
+        cat_s = inv.tax_category_ids_raw.count("S")
+        if (((line_s + hdr_s) >= 2 or line_s == 0)
+                and ((cat_s + hdr_s) >= 2 or cat_s == 0)):
+            return None
+        return Violation(
+            "BR-S-01",
+            "A Standard rated (S) item/allowance/charge is present, so the "
+            "VAT breakdown (BG-23) must contain a Standard rated VAT "
+            "category.",
+            "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+            "ram:CategoryCode")
     item_has_s = "S" in inv.all_category_ids()
     breakdown_has_s = "S" in inv.breakdown_category_ids()
     if item_has_s != breakdown_has_s:
@@ -1739,10 +1782,18 @@ def _breakdown_taxable_sum_mismatch(inv, code, cii_band=True):
     by ``ChargeIndicator/udt:Indicator``; there is NO exists(//line) term, so
     a line-less document holds when BT-116 sits inside the band around the
     allowance/charge sums; a missing BT-116 empties the band comparison and
-    fires. ``cii_band=False`` keeps the UBL arithmetic on CII for a caller
-    whose CII binding does NOT carry the band (BR-O-08 is exact + row-bound;
-    the O family keeps the pre-existing syntax-agnostic behaviour until its
-    own parity batch).
+    fires.
+
+    ``cii_band=False`` selects the OTHER official CII shape (BR-O-08,
+    T-VHCIIP.6): the assert is bound to the ``ram:ApplicableTradeTax`` ROW
+    itself (``[ram:CategoryCode = 'O'][upper-case(ram:TypeCode) = 'VAT']``)
+    and its test is EXACT — ``ram:BasisAmount = round2(Σ O-line
+    LineTotalAmount) + round2(Σ O header charges) − round2(Σ O header
+    allowances)`` — the same raw, scheme-agnostic sum predicates and per-sum
+    ``round(x*10*10) div 100`` rounding as the band shape, but with NO ±1
+    tolerance and, like the band shape, NO exists(//line) term (a line-less
+    O invoice with a 0.00 BasisAmount HOLDS on CII where the UBL binding
+    fires); a missing BT-116 fails the equality and fires.
 
     Returns ``(subtotal, expected_sum)`` for the first offending breakdown,
     or None when the rule holds.
@@ -1772,13 +1823,17 @@ def _breakdown_taxable_sum_mismatch(inv, code, cii_band=True):
                     else:
                         allowance_sum += v
             taxable = _dec(st.taxable_amount)
-            if inv.syntax == "cii" and cii_band:
+            if inv.syntax == "cii":
                 expected = (_xr2(line_sum) + _xr2(charge_sum)
                             - _xr2(allowance_sum))
-                if not (taxable is not None
-                        and taxable - 1 < expected
-                        and taxable + 1 > expected):
-                    return st, expected
+                if cii_band:
+                    if not (taxable is not None
+                            and taxable - 1 < expected
+                            and taxable + 1 > expected):
+                        return st, expected
+                else:  # BR-O-08: exact equality, no band, no exists(//line)
+                    if taxable is None or taxable != expected:
+                        return st, expected
                 continue
             expected = line_sum + charge_sum - allowance_sum
             if not inv.lines or taxable is None or taxable != expected:
@@ -2654,6 +2709,20 @@ def _ac_rate_present(inv, code, is_charge):
     return False
 
 
+def _cii_o_header_vat_row_exists(inv):
+    """The official CII BR-O-11..14 CONTEXT node set (one context node per
+    matching row)::
+
+        //rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/
+        ram:ApplicableTradeTax[ram:CategoryCode = 'O']
+                              [upper-case(ram:TypeCode) = 'VAT']
+
+    True iff at least one 'O' VAT header breakdown row exists — with no such
+    row the four asserts have no context node and can never fire on CII."""
+    return any(st.category_id == "O" and st.category_scheme_id == "VAT"
+               for tt in inv.tax_totals for st in tt.subtotals)
+
+
 def _line_has_other_vat_category(inv, exclude):
     """The BR-O-12 node set: any invoice-line item VAT ClassifiedTaxCategory
     whose code differs from ``exclude`` (an absent code — normalize-space '' —
@@ -2757,10 +2826,13 @@ def br_o_08(inv):
     charges.
 
     ``cii_band=False``: unlike the Z/E/AE/K/G families, the official CII
-    BR-O-08 is EXACT (``ram:BasisAmount = round2(...)``, no ±1 band) and
-    row-bound, so the shared helper's CII band branch does not apply; the
-    pre-existing syntax-agnostic UBL arithmetic is kept until the O family's
-    own CII parity batch."""
+    BR-O-08 is EXACT (``ram:BasisAmount = round2(Σ O lines) + round2(Σ O
+    header charges) − round2(Σ O header allowances)``, no ±1 band) and bound
+    to the ``ram:ApplicableTradeTax`` ROW itself; like the band shape it has
+    NO exists(//line) term, so a line-less O invoice whose BasisAmount
+    matches the allowance/charge sums HOLDS on CII where the UBL binding
+    fires (differential-proven T-VHCIIP.6 — see the shared helper's
+    docstring for the verbatim shapes)."""
     hit = _breakdown_taxable_sum_mismatch(inv, "O", cii_band=False)
     if hit is not None:
         st, expected = hit
@@ -2811,12 +2883,32 @@ def br_o_11(inv):
     """BR-O-11: an Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23)
     shall NOT contain any other VAT breakdown group.
 
-    Official (context ``/ubl:Invoice``): HOLDS iff either no O breakdown row
-    exists, or an O row exists AND every top-level VAT breakdown category code
-    equals 'O' (``count(cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    Official UBL (context ``/ubl:Invoice``): HOLDS iff either no O breakdown
+    row exists, or an O row exists AND every top-level VAT breakdown category
+    code equals 'O' (``count(cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
     [normalize-space(cbc:ID)!='O'][VAT]) = 0``). Fires iff an O breakdown row
     coexists with any non-O VAT breakdown row.
+
+    The official CII binding is genuinely WIDER (T-VHCIIP.6): the context is
+    each 'O' VAT header row and the test is
+    ``not(//ram:ApplicableTradeTax[ram:CategoryCode != 'O'])`` — the RAW
+    (VAT-TypeCode-unscoped) node set of EVERY trade-tax row, header
+    breakdown AND line VAT rows alike, and it is byte-identical to the CII
+    BR-O-12 test — so on CII the two rules fire together whenever an O
+    header VAT row coexists with any non-O ``ram:CategoryCode`` on a header
+    or line ApplicableTradeTax.
     """
+    if inv.syntax == "cii":
+        if (_cii_o_header_vat_row_exists(inv)
+                and any(c != "O" for c in inv.classified_category_ids_raw)):
+            return Violation(
+                "BR-O-11",
+                "An Invoice that contains a VAT breakdown group (BG-23) with "
+                "a VAT category code (BT-118) 'Not subject to VAT' shall not "
+                "contain other VAT breakdown groups (BG-23).",
+                "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+                "ram:CategoryCode")
+        return None
     codes = inv.breakdown_vat_category_codes()
     if "O" not in codes:
         return None
@@ -2835,10 +2927,27 @@ def br_o_12(inv):
     shall NOT contain an Invoice line (BG-25) whose Invoiced item VAT category
     code (BT-151) is not 'Not subject to VAT'.
 
-    Official (context ``/ubl:Invoice``): fires iff an O VAT breakdown row exists
-    AND a line-item VAT ClassifiedTaxCategory with a non-O code exists
+    Official UBL (context ``/ubl:Invoice``): fires iff an O VAT breakdown row
+    exists AND a line-item VAT ClassifiedTaxCategory with a non-O code exists
     (``count(//cac:ClassifiedTaxCategory[normalize-space(cbc:ID)!='O'][VAT])``).
+
+    The official CII test is byte-identical to CII BR-O-11 —
+    ``not(//ram:ApplicableTradeTax[ram:CategoryCode != 'O'])`` over the raw
+    header+line trade-tax rows — so on CII BR-O-11 and BR-O-12 always fire
+    together (see :func:`br_o_11`; differential-proven T-VHCIIP.6).
     """
+    if inv.syntax == "cii":
+        if (_cii_o_header_vat_row_exists(inv)
+                and any(c != "O" for c in inv.classified_category_ids_raw)):
+            return Violation(
+                "BR-O-12",
+                "An Invoice that contains a VAT breakdown group (BG-23) with "
+                "a VAT category code (BT-118) 'Not subject to VAT' shall not "
+                "contain an Invoice line (BG-25) where the Invoiced item VAT "
+                "category code (BT-151) is not 'Not subject to VAT'.",
+                "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/"
+                "ram:CategoryCode")
+        return None
     if "O" not in inv.breakdown_vat_category_codes():
         return None
     if _line_has_other_vat_category(inv, "O"):
@@ -2857,10 +2966,31 @@ def br_o_13(inv):
     shall NOT contain a Document level allowance (BG-20) whose VAT category code
     (BT-95) is not 'Not subject to VAT'.
 
-    Official (context ``/ubl:Invoice``): fires iff an O VAT breakdown row exists
-    AND an allowance (``//cac:AllowanceCharge[cbc:ChargeIndicator=false()]``)
-    carries a VAT TaxCategory with a non-O code.
+    Official UBL (context ``/ubl:Invoice``): fires iff an O VAT breakdown row
+    exists AND an allowance (``//cac:AllowanceCharge[cbc:ChargeIndicator=
+    false()]``) carries a VAT TaxCategory with a non-O code.
+
+    The official CII test —
+    ``not(//ram:CategoryTradeTax[ram:CategoryCode != 'O'])`` — is RAW
+    (VAT-TypeCode-unscoped), spans document- AND line-level allowance/charge
+    categories, and does NOT split on the ChargeIndicator: it is
+    byte-identical to the CII BR-O-14 test, so on CII the two rules fire
+    together on ANY non-O allowance/charge category once an O header VAT row
+    exists (differential-proven T-VHCIIP.6).
     """
+    if inv.syntax == "cii":
+        if (_cii_o_header_vat_row_exists(inv)
+                and any(c != "O" for c in inv.tax_category_ids_raw)):
+            return Violation(
+                "BR-O-13",
+                "An Invoice that contains a VAT breakdown group (BG-23) with "
+                "a VAT category code (BT-118) 'Not subject to VAT' shall not "
+                "contain Document level allowances (BG-20) where the Document "
+                "level allowance VAT category code (BT-95) is not 'Not "
+                "subject to VAT'.",
+                "ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/"
+                "ram:CategoryCode")
+        return None
     if "O" not in inv.breakdown_vat_category_codes():
         return None
     if _ac_has_other_vat_category(inv, False, "O"):
@@ -2879,10 +3009,28 @@ def br_o_14(inv):
     shall NOT contain a Document level charge (BG-21) whose VAT category code
     (BT-102) is not 'Not subject to VAT'.
 
-    Official (context ``/ubl:Invoice``): fires iff an O VAT breakdown row exists
-    AND a charge (``//cac:AllowanceCharge[cbc:ChargeIndicator=true()]``) carries
-    a VAT TaxCategory with a non-O code.
+    Official UBL (context ``/ubl:Invoice``): fires iff an O VAT breakdown row
+    exists AND a charge (``//cac:AllowanceCharge[cbc:ChargeIndicator=true()]``)
+    carries a VAT TaxCategory with a non-O code.
+
+    The official CII test is byte-identical to CII BR-O-13 —
+    ``not(//ram:CategoryTradeTax[ram:CategoryCode != 'O'])``, raw and
+    indicator-agnostic — so on CII BR-O-13 and BR-O-14 always fire together
+    (see :func:`br_o_13`; differential-proven T-VHCIIP.6).
     """
+    if inv.syntax == "cii":
+        if (_cii_o_header_vat_row_exists(inv)
+                and any(c != "O" for c in inv.tax_category_ids_raw)):
+            return Violation(
+                "BR-O-14",
+                "An Invoice that contains a VAT breakdown group (BG-23) with "
+                "a VAT category code (BT-118) 'Not subject to VAT' shall not "
+                "contain Document level charges (BG-21) where the Document "
+                "level charge VAT category code (BT-102) is not 'Not subject "
+                "to VAT'.",
+                "ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/"
+                "ram:CategoryCode")
+        return None
     if "O" not in inv.breakdown_vat_category_codes():
         return None
     if _ac_has_other_vat_category(inv, True, "O"):
@@ -3759,6 +3907,33 @@ def _cii_vat_exactly_one_breakdown(inv, code):
             or (hdr == 1 and (line_any or cat_any)))
 
 
+def _cii_o_exactly_one_breakdown(inv):
+    """The official CII BR-O-01 shape (context ``/rsm:CrossIndustryInvoice``)
+    — NOT the AE/Z/E/G/K ``_cii_vat_exactly_one_breakdown`` shape. Verbatim::
+
+        not(//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax
+              [ram:CategoryCode='O'])
+        or (count(//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax
+              [ram:CategoryCode='O']) = 1
+            and (exists(//ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+                  [ram:CategoryCode='O'])
+                 or exists(//ram:CategoryTradeTax[ram:CategoryCode='O'])))
+
+    The comparisons are RAW (no VAT TypeCode filter), like the other -01
+    heads — but the first disjunct is ``not(header-O-rows)`` rather than the
+    all-three-node-sets-empty conjunction, so an O line or O allowance/charge
+    with NO O header breakdown row officially HOLDS on CII (where the UBL
+    binding and every other CII -01 head fire); what fires is an O header
+    row count != 1, or one ORPHAN O header row with no O item anywhere
+    (differential-proven T-VHCIIP.6)."""
+    hdr = sum(1 for row in inv.cii_header_trade_tax_code_rows if "O" in row)
+    if hdr == 0:
+        return True
+    line_any = any("O" in row for row in inv.cii_line_trade_tax_code_rows)
+    cat_any = "O" in inv.tax_category_ids_raw
+    return hdr == 1 and (line_any or cat_any)
+
+
 def br_ae_01(inv):
     """BR-AE-01: 'Reverse charge' (AE) items require exactly one AE VAT
     breakdown (BG-23) row.
@@ -3885,7 +4060,26 @@ def br_ic_01(inv):
 
 def br_o_01(inv):
     """BR-O-01: 'Not subject to VAT' (O) items require exactly one O VAT
-    breakdown (BG-23) row."""
+    breakdown (BG-23) row.
+
+    The CII binding is its OWN shape — ``not(header-O-rows) or ...`` — not
+    the AE/Z/E/G/K one: an O item with no O header row officially HOLDS on
+    CII, while an orphan or duplicated O header row fires. The body branches
+    on ``inv.syntax`` (see :func:`_cii_o_exactly_one_breakdown` for the
+    verbatim official test)."""
+    if inv.syntax == "cii":
+        if _cii_o_exactly_one_breakdown(inv):
+            return None
+        return Violation(
+            "BR-O-01",
+            "An Invoice with a 'Not subject to VAT' (O) VAT breakdown row "
+            "(BT-118) must contain exactly one such row AND an O Invoice "
+            "line, Document level allowance or charge (BT-151/BT-95/BT-102); "
+            "found %d row(s)."
+            % sum(1 for row in inv.cii_header_trade_tax_code_rows
+                  if "O" in row),
+            "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+            "ram:CategoryCode")
     if _vat_exactly_one_breakdown(inv, "O"):
         return None
     return Violation(

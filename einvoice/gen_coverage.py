@@ -105,9 +105,6 @@ CII_CORE_REASON = {
                 "GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for "
                 "a no-VAT invoice with no BT-110; the UBL function has no such "
                 "disjunct and would over-reject the same documents.",
-    "BR-S-01": "the CII binding is a weak one-directional count that does not "
-               "flag an orphan Standard-rated breakdown; the UBL biconditional "
-               "would over-fire on such CII invoices.",
     "BR-AF-08": "the CII artifact binds this assert to the "
                 "ram:ApplicableTradeTax ROW — unlike BR-S-08, whose context "
                 "node is the ram:CategoryCode CHILD — so the test's "

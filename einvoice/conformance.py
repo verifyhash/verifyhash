@@ -452,6 +452,49 @@ CII_SYNTAX_COVERAGE = {
     "BR-IC-12": "Intra-community (K) breakdown ⇒ deliver-to country code "
                 "(BT-80) present (CII binding: pure node existence of the "
                 "ship-to PostalTradeAddress/CountryID)",
+    "BR-O-01": "Not subject to VAT (O) breakdown row ⇒ exactly one such row "
+               "AND an O item present (CII binding: not(header-O-rows) "
+               "first disjunct — an O item with NO O header row officially "
+               "holds, unlike UBL and every other -01 head)",
+    "BR-O-02": "Not subject to VAT (O) line ⇒ NO Seller VAT id (BT-31), "
+               "tax-representative VAT id (BT-63) or Buyer VAT id (BT-48) — "
+               "a prohibition, all VA-scoped on CII",
+    "BR-O-03": "Not subject to VAT (O) document allowance ⇒ NO Seller/tax-"
+               "representative/Buyer VAT id (prohibition)",
+    "BR-O-04": "Not subject to VAT (O) document charge ⇒ NO Seller/tax-"
+               "representative/Buyer VAT id (prohibition)",
+    "BR-O-05": "Not subject to VAT (O) line ⇒ NO VAT rate (BT-152): the "
+               "RateApplicablePercent ELEMENT is forbidden (any value, even "
+               "0, fires)",
+    "BR-O-06": "Not subject to VAT (O) document allowance ⇒ NO VAT rate "
+               "(BT-96) element",
+    "BR-O-07": "Not subject to VAT (O) document charge ⇒ NO VAT rate "
+               "(BT-103) element",
+    "BR-O-08": "Not subject to VAT (O) breakdown taxable (BT-116) = Σ O "
+               "line net + charges − allowances (CII binding: EXACT round2 "
+               "equality — no ±1 band, no exists(//line) term)",
+    "BR-O-09": "Not subject to VAT (O) breakdown tax amount (BT-117) = 0",
+    "BR-O-10": "Not subject to VAT (O) breakdown has a VAT exemption reason "
+               "code (BT-121) or text (BT-120)",
+    "BR-O-11": "O breakdown row ⇒ no other VAT breakdown group (CII binding: "
+               "raw not(//ram:ApplicableTradeTax[CategoryCode != 'O']) over "
+               "header AND line rows — byte-identical to CII BR-O-12, the "
+               "pair fires together)",
+    "BR-O-12": "O breakdown row ⇒ no non-O line VAT category (CII binding: "
+               "same shared raw trade-tax-row test as BR-O-11)",
+    "BR-O-13": "O breakdown row ⇒ no non-O allowance VAT category (CII "
+               "binding: raw not(//ram:CategoryTradeTax[CategoryCode != "
+               "'O']), indicator-agnostic — byte-identical to CII BR-O-14, "
+               "the pair fires together)",
+    "BR-O-14": "O breakdown row ⇒ no non-O charge VAT category (CII binding: "
+               "same shared raw CategoryTradeTax test as BR-O-13)",
+    "BR-S-01": "Standard rated (S) items and the VAT breakdown must agree "
+               "(CII binding: the official WEAK count formula — "
+               "(count(line-S)+count(header-S)) >= 2 or not(line-S), "
+               "repeated for CategoryTradeTax — transcribed exactly: one S "
+               "item with no S breakdown row fires, but two S rows on the "
+               "item side alone officially hold and an orphan S breakdown "
+               "row never fires)",
     "BR-CL-01": "Document type code (BT-3) in UNTDID 1001",
     "BR-CL-03": "currencyID (amount elements) in ISO 4217 alpha-3",
     "BR-CL-04": "Invoice currency code (BT-5) in ISO 4217 alpha-3",
@@ -587,8 +630,6 @@ CII_SYNTAX_EXCLUDED = {
                 "TaxTotalAmount; no-VAT CII invoices omit it (UBL over-rejects)",
     "BR-CO-15": "CII adds a GrandTotal=TaxBasis disjunct for no-VAT invoices "
                 "the UBL function lacks (UBL over-rejects BT-110-less invoices)",
-    "BR-S-01": "CII binding is a weak one-directional count; UBL function is the "
-               "strict biconditional (over-fires on an orphan S breakdown)",
     "BR-AF-08": "the CII artifact binds the assert to the ApplicableTradeTax "
                 "ROW (not its CategoryCode child like BR-S-08), so its "
                 "../ram:RateApplicablePercent is empty and 'every $rate in ()' "

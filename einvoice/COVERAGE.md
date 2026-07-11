@@ -24,7 +24,7 @@ XSLT and compares the fired-rule set. The sources:
 ## Coverage at a glance
 
 - **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **214** proven on both UBL and CII, **71** UBL-only, **1** CII-only.
+- Syntax: **229** proven on both UBL and CII, **56** UBL-only, **1** CII-only.
 - Severity (blocking class): **274** fatal (block validity), **12** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -221,21 +221,21 @@ the non-blocking `warning` class for the severity column).
 | `BR-IC-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with the VAT category code (BT-118) "Intra-community supply" (K) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the K twin of BR-E-10 / BR-AE-10. |
 | `BR-IC-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank. |
 | `BR-IC-12` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Deliver to country code (BT-80) shall not be blank. |
-| `BR-O-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | 'Not subject to VAT' (O) items require exactly one O VAT breakdown (BG-23) row. |
-| `BR-O-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall NOT contain a Seller/tax-representative/Buyer VAT identifier. |
-| `BR-O-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) Document level allowance (BT-95) shall NOT contain any VAT identifier. |
-| `BR-O-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) Document level charge (BT-102) shall NOT contain any VAT identifier. |
-| `BR-O-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A 'Not subject to VAT' (O) Invoice line shall NOT contain an Invoiced item VAT rate (BT-152) — ``not(cbc:Percent)``. |
-| `BR-O-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A 'Not subject to VAT' (O) Document level allowance shall NOT contain a Document level allowance VAT rate (BT-96). |
-| `BR-O-07` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A 'Not subject to VAT' (O) Document level charge shall NOT contain a Document level charge VAT rate (BT-103). |
-| `BR-O-08` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The 'Not subject to VAT' (O) VAT breakdown taxable amount (BT-116) shall equal the exact sum of O line nets − O allowances + O charges. |
-| `BR-O-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The VAT category tax amount (BT-117) in a 'Not subject to VAT' (O) VAT breakdown shall equal 0. |
-| `BR-O-10` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A VAT breakdown (BG-23) with a 'Not subject to VAT' (O) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120). |
-| `BR-O-11` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain any other VAT breakdown group. |
-| `BR-O-12` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain an Invoice line (BG-25) whose Invoiced item VAT category code (BT-151) is not 'Not subject to VAT'. |
-| `BR-O-13` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain a Document level allowance (BG-20) whose VAT category code (BT-95) is not 'Not subject to VAT'. |
-| `BR-O-14` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain a Document level charge (BG-21) whose VAT category code (BT-102) is not 'Not subject to VAT'. |
-| `BR-S-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Standard-rated (S) items and the VAT breakdown must agree. |
+| `BR-O-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | 'Not subject to VAT' (O) items require exactly one O VAT breakdown (BG-23) row. |
+| `BR-O-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall NOT contain a Seller/tax-representative/Buyer VAT identifier. |
+| `BR-O-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Not subject to VAT' (O) Document level allowance (BT-95) shall NOT contain any VAT identifier. |
+| `BR-O-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Not subject to VAT' (O) Document level charge (BT-102) shall NOT contain any VAT identifier. |
+| `BR-O-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A 'Not subject to VAT' (O) Invoice line shall NOT contain an Invoiced item VAT rate (BT-152) — ``not(cbc:Percent)``. |
+| `BR-O-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A 'Not subject to VAT' (O) Document level allowance shall NOT contain a Document level allowance VAT rate (BT-96). |
+| `BR-O-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A 'Not subject to VAT' (O) Document level charge shall NOT contain a Document level charge VAT rate (BT-103). |
+| `BR-O-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The 'Not subject to VAT' (O) VAT breakdown taxable amount (BT-116) shall equal the exact sum of O line nets − O allowances + O charges. |
+| `BR-O-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in a 'Not subject to VAT' (O) VAT breakdown shall equal 0. |
+| `BR-O-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with a 'Not subject to VAT' (O) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120). |
+| `BR-O-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain any other VAT breakdown group. |
+| `BR-O-12` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain an Invoice line (BG-25) whose Invoiced item VAT category code (BT-151) is not 'Not subject to VAT'. |
+| `BR-O-13` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain a Document level allowance (BG-20) whose VAT category code (BT-95) is not 'Not subject to VAT'. |
+| `BR-O-14` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain a Document level charge (BG-21) whose VAT category code (BT-102) is not 'Not subject to VAT'. |
+| `BR-S-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Standard-rated (S) items and the VAT breakdown must agree. |
 | `BR-S-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Standard-rated (S) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63). |
 | `BR-S-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a Standard-rated (S) Document level allowance (BT-95) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02). |
 | `BR-S-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a Standard-rated (S) Document level charge (BT-102) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02). |
@@ -396,7 +396,6 @@ graded set rather than approximated.
 - **BR-AF-09** — the official CII artifact ships this assert as test="true()" — a tautology that can never fire, whatever the arithmetic — so CII parity is impossible for a real check; the engine asserts the UBL binding's taxable × rate ±1 band on both syntaxes instead (deliberate strictness).
 - **BR-AG-08** — the CII artifact repeats the BR-AF-08 binding defect for the IPSI (M) family: the assert is bound to the ram:ApplicableTradeTax ROW, so its ../ram:RateApplicablePercent is empty and 'every $rate in ()' is vacuously true — the shipped assert can never fire. The engine asserts the intended per-rate round2 bucket sum on CII anyway (deliberate strictness).
 - **BR-AG-09** — the official CII artifact ships this assert as test="true()" — the same never-firing tautology as BR-AF-09 — so CII parity is impossible for a real check; the engine asserts the UBL binding's taxable × rate ±1 band on both syntaxes instead (deliberate strictness).
-- **BR-S-01** — the CII binding is a weak one-directional count that does not flag an orphan Standard-rated breakdown; the UBL biconditional would over-fire on such CII invoices.
 
 ### German CIUS rules fired on UBL, not evaluated on CII
 
@@ -544,7 +543,7 @@ worklist automatically.
 
 ## CII proof parity
 
-**71** rules in the table above are today differentially proven on
+**56** rules in the table above are today differentially proven on
 the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
 many of them the official CII artifacts actually carry, by a real
 XML parse of `sch:assert/@id` in the vendored CII Schematron files
@@ -556,7 +555,7 @@ XML parse of `sch:assert/@id` in the vendored CII Schematron files
 Measured split (committed as `cii_parity.json`, live-recomputed by
 `test_cii_parity.py` so it can never silently go stale):
 
-- **59 cii-fireable** — an official CII assert with the same id
+- **44 cii-fireable** — an official CII assert with the same id
   exists in at least one vendored CII artifact. This is the real
   QA worklist: the rule officially applies to CII invoices and the
   engine's coverage there is not yet proven.

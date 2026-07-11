@@ -402,6 +402,34 @@ CII_GRADED_RULES = [
     _rules.br_ic_01, _rules.br_ic_02, _rules.br_ic_03, _rules.br_ic_04,
     _rules.br_ic_05, _rules.br_ic_06, _rules.br_ic_07, _rules.br_ic_08,
     _rules.br_ic_09, _rules.br_ic_11, _rules.br_ic_12,
+    # CII proof-parity batch 5 (T-VHCIIP.6): the whole Not-subject-to-VAT
+    # family (BR-O-01..14) + BR-S-01. Four genuinely different CII bindings
+    # are transcribed into syntax branches (verbatim tests in the rule
+    # docstrings): the -01 head is NOT the shared AE/Z/E/G/K shape — its
+    # first disjunct is ``not(header-O-rows)``, so an O item with NO O header
+    # row officially HOLDS on CII (rules.br_o_01 branches via
+    # _cii_o_exactly_one_breakdown; only an orphan or duplicated O header row
+    # fires); BR-O-08 is EXACT round2 arithmetic — no ±1 band and no
+    # exists(//line) term (the cii_band=False branch of the shared bucket-sum
+    # helper); BR-O-11/-12 share ONE byte-identical CII test
+    # (``not(//ram:ApplicableTradeTax[ram:CategoryCode != 'O'])`` — raw,
+    # header AND line rows alike) as do BR-O-13/-14
+    # (``not(//ram:CategoryTradeTax[ram:CategoryCode != 'O'])`` — raw,
+    # document AND line allowance/charge categories, indicator-agnostic), so
+    # each pair always fires together on CII where UBL separates breakdown/
+    # line/allowance/charge. The prohibitions (-02..04: seller VA, tax-
+    # representative VA and buyer VA all forbidden — exactly the parser's
+    # VA-scoped id surfaces) and the rate-ELEMENT prohibitions (-05..07:
+    # ``not(ram:RateApplicablePercent)``, any value including 0 fires) plus
+    # -09/-10 run on the shared bodies unchanged. BR-S-01 — CII-excluded
+    # since batch 1 — is now GRADED: its weak official count formula is
+    # transcribed exactly in a syntax branch of rules.br_s_01 (see the
+    # retired exclusion note below).
+    _rules.br_o_01, _rules.br_o_02, _rules.br_o_03, _rules.br_o_04,
+    _rules.br_o_05, _rules.br_o_06, _rules.br_o_07, _rules.br_o_08,
+    _rules.br_o_09, _rules.br_o_10, _rules.br_o_11, _rules.br_o_12,
+    _rules.br_o_13, _rules.br_o_14,
+    _rules.br_s_01,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -429,13 +457,17 @@ CII_GRADED_RULES = [
 #   to be excluded here for exactly that context mismatch; since T-VHCIIP.2
 #   the rule bodies branch on inv.syntax and transcribe each binding exactly,
 #   so both are GRADED above.)
-#  * BR-S-01 (Standard-rated item ⇒ Standard-rated VAT breakdown): the CII binding
-#    is a WEAK one-directional count — ``count(line S)+count(header S) >= 2 or
-#    not(line S)`` — which is satisfied by two or more S rows on either side and,
-#    unlike the UBL binding, does NOT flag an orphan S breakdown with no S item.
-#    The UBL function is the strict biconditional (fires on either orphan side), so
-#    it over-fires on CII invoices with an S breakdown but no S line (seen on the
-#    BR-16 / BR-CO-18 mutations, which strip the lines / breakdown).
+#  (BR-S-01 — the Standard-rated item/breakdown agreement rule — was excluded
+#   here from batch 1 through batch 4: its CII binding is a WEAK count formula
+#   — ``(count(line S)+count(header S)) >= 2 or not(line S)``, repeated for
+#   ``//ram:CategoryTradeTax`` — that never flags an orphan S breakdown and is
+#   even satisfied by two S lines with NO S breakdown row, so the UBL
+#   biconditional over-fired on such CII invoices (seen on the BR-16 /
+#   BR-CO-18 mutations, which strip the lines / breakdown). Since T-VHCIIP.6
+#   rules.br_s_01 branches on inv.syntax and transcribes the weak CII count
+#   formula EXACTLY — the assert is real and fireable (one S line with no S
+#   breakdown row still fires), so parity is provable; the rule is GRADED
+#   above, not approximated.)
 #  * BR-AF-08 (IGIC breakdown taxable BT-116 = per-rate bucket sum): the CII
 #    artifact binds the assert to the ``ram:ApplicableTradeTax`` ROW (unlike
 #    BR-S-08, whose context node is the ``ram:CategoryCode`` CHILD), so the
@@ -460,7 +492,7 @@ CII_GRADED_RULES = [
 #    shipped assert can ever fire on CII. Our engine asserts the intended
 #    arithmetic on the CII model anyway (deliberate strictness); both stay
 #    fully graded on the UBL leg.
-CII_EXCLUDED_RULE_IDS = ("BR-CO-14", "BR-CO-15", "BR-S-01",
+CII_EXCLUDED_RULE_IDS = ("BR-CO-14", "BR-CO-15",
                          "BR-AF-08", "BR-AF-09", "BR-AG-08", "BR-AG-09")
 
 CII_RULE_IDS = [_fn_to_rule_id(fn) for fn in CII_GRADED_RULES]
@@ -3153,9 +3185,12 @@ def _cmut_brcl17(r):
     # allowance/charge VAT category (ram:SpecifiedTradeAllowanceCharge/
     # ram:CategoryTradeTax/ram:CategoryCode) — the only BR-CL-17 context in CII —
     # off the UNCL 5305 subset. Amounts are untouched, so graded arithmetic
-    # (BR-CO-13 etc.) stays clear; BR-S-01 is CII-excluded. The re-coded
-    # allowance (100) leaves the S/25% bucket, so BR-S-08 fires ALONGSIDE
-    # BR-CL-17 on both engines — agreement is asserted per rule.
+    # (BR-CO-13 etc.) stays clear; BR-S-01 (graded since batch 5) holds on
+    # both engines — the weak CII count only inspects the S node sets, and
+    # losing the allowance's S category satisfies its not(CategoryTradeTax-S)
+    # disjunct. The re-coded allowance (100) leaves the S/25% bucket, so
+    # BR-S-08 fires ALONGSIDE BR-CL-17 on both engines — agreement is
+    # asserted per rule.
     cc = _cii_settlement(r).find(
         "ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:CategoryCode",
         _NSC)
@@ -3165,9 +3200,10 @@ def _cmut_brcl17(r):
 def _cmut_brcl18(r):
     # A line VAT category (ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
     # /ram:CategoryCode) coded off the UNCL 5305 subset. The header VAT breakdown
-    # category stays 'S'; BR-S-01 is CII-excluded. The re-coded first line
-    # (19.9) leaves the S/6% bucket, so BR-S-08 fires ALONGSIDE BR-CL-18 on
-    # both engines — agreement is asserted per rule.
+    # category stays 'S'; BR-S-01 (graded since batch 5) holds on both engines
+    # (19 S lines remain — far past the weak CII count's >= 2). The re-coded
+    # first line (19.9) leaves the S/6% bucket, so BR-S-08 fires ALONGSIDE
+    # BR-CL-18 on both engines — agreement is asserted per rule.
     _cii_line_tax(r).find("ram:CategoryCode", _NSC).text = "XX"
 
 
@@ -4057,6 +4093,7 @@ _B34_EXEMPTION_REASON = {
     "G": "Export outside the EU",
     "AE": "Reverse charge",
     "K": "Intra-Community supply",
+    "O": "Not subject to VAT",
 }
 
 
@@ -4404,6 +4441,206 @@ def _cmut_bric12(r):
     _cadd_delivery_date_b4(r)
 
 
+# ---- CII proof-parity batch 5 (T-VHCIIP.6): BR-O-01..14 + BR-S-01 --------- #
+# The Not-subject-to-VAT (O) family is the ODD ONE OUT on CII exactly as on
+# UBL, plus four CII-specific binding shapes (see the CII_GRADED_RULES batch-5
+# comment). Base facts that matter here: the seller carries ONE VA tax
+# registration (so any O item makes the -02..04 PROHIBITIONS fire unless a
+# fixture removes it), the buyer carries none, and the base has NO
+# ram:CategoryTradeTax at all — so BR-O-13/-14 stay quiet unless a fixture
+# adds an allowance/charge. BR-O-05..07 forbid the RateApplicablePercent
+# ELEMENT (any value, even 0), so the O twins of the batch-3 helpers OMIT the
+# rate element by default.
+def _cadd_o_ac_b5(r, charge=False, rate=None):
+    """Append a document allowance/charge (BG-20/BG-21) carrying an O
+    CategoryTradeTax with NO RateApplicablePercent element (``rate`` adds one
+    back — the BR-O-06/07 firing move). ActualAmount 0.00 keeps every graded
+    arithmetic unchanged and the Reason satisfies BR-33/BR-38 + BR-CO-21/22."""
+    settle = _cii_settlement(r)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = (
+        "true" if charge else "false")
+    ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = "0.00"
+    ET.SubElement(ac, _cq(NS_RAM, "Reason")).text = "Testing"
+    ctt = ET.SubElement(ac, _cq(NS_RAM, "CategoryTradeTax"))
+    ET.SubElement(ctt, _cq(NS_RAM, "TypeCode")).text = "VAT"
+    ET.SubElement(ctt, _cq(NS_RAM, "CategoryCode")).text = "O"
+    if rate is not None:
+        ET.SubElement(ctt, _cq(NS_RAM, "RateApplicablePercent")).text = rate
+
+
+def _cflip_line1_cat_o_b5(r):
+    """Flip the FIRST line's VAT category S -> O and REMOVE its
+    RateApplicablePercent element (BT-152 is FORBIDDEN on an O line — its
+    mere presence fires BR-O-05). The flipped line always leaves its S/6
+    bucket, so BR-S-08 fires alongside on both engines."""
+    tt = _cii_line_tax(r)
+    tt.find("ram:CategoryCode", _NSC).text = "O"
+    tt.remove(tt.find("ram:RateApplicablePercent", _NSC))
+
+
+def _cflip_header_rows_b5(r, code):
+    """Re-code EVERY header VAT breakdown row's CategoryCode to ``code``
+    (numbers, rates and TypeCodes untouched — BR-45..48 and BR-CO-17 keep
+    holding on both engines)."""
+    settle = _cii_settlement(r)
+    for tt in settle.findall("ram:ApplicableTradeTax", _NSC):
+        tt.find("ram:CategoryCode", _NSC).text = code
+
+
+def _cmut_bro01(r):
+    # ONE orphan O header breakdown row (no O line/allowance anywhere):
+    # the CII BR-O-01 second disjunct fails -> BR-O-01 fires. BR-O-11/-12
+    # fire alongside on both engines (the O header VAT row coexists with the
+    # base's 20 S line rows + 2 S header rows — their shared raw
+    # //ram:ApplicableTradeTax test). BR-O-08/09/10 hold (basis 0.00 = the
+    # empty O bucket, CalculatedAmount 0, ExemptionReason present);
+    # BR-O-13/14 hold (no ram:CategoryTradeTax in the document).
+    _cadd_header_vat_row_b3(r, "O", basis="0.00")
+
+
+def _cmut_bro02(r):
+    # O line (rate element REMOVED) + the base seller VA id -> the BR-O-02
+    # PROHIBITION fires. BR-O-01 HOLDS on CII — the O-specific
+    # not(header-O-rows) first disjunct: an O line with no O header row is
+    # officially fine on CII (on UBL the same shape fires BR-O-01 — the
+    # binding difference this batch pinned down). BR-O-05 holds (no rate
+    # element); BR-S-08 fires alongside (line 1 left its S/6 bucket).
+    _cflip_line1_cat_o_b5(r)
+
+
+def _cmut_bro03(r):
+    # O document allowance (no rate element) + seller VA id -> BR-O-03;
+    # BR-O-01 holds on CII (not(header-O-rows) — the orphan O CATEGORY that
+    # fires every other family's -01 head is officially fine here) and
+    # BR-O-06 holds (no RateApplicablePercent element).
+    _cadd_o_ac_b5(r)
+
+
+def _cmut_bro04(r):
+    # Charge twin of BR-O-03 -> BR-O-04.
+    _cadd_o_ac_b5(r, charge=True)
+
+
+def _cmut_bro05(r):
+    # O line KEEPING a RateApplicablePercent element with value 0: the
+    # official ``not(ram:RateApplicablePercent)`` tests ELEMENT PRESENCE,
+    # not the value, so even rate 0 fires BR-O-05. BR-O-02 fires alongside
+    # (seller VA id), BR-S-08 too (line 1 left its S/6 bucket); BR-O-01
+    # holds on CII (no O header row).
+    _cflip_line1_cat_b3(r, "O", rate="0")
+
+
+def _cmut_bro06(r):
+    # O document allowance WITH a rate element (value 0 — presence is what
+    # fires) -> BR-O-06; BR-O-03 fires alongside (seller VA id).
+    _cadd_o_ac_b5(r, rate="0")
+
+
+def _cmut_bro07(r):
+    # Charge twin of BR-O-06 -> BR-O-07; BR-O-04 alongside.
+    _cadd_o_ac_b5(r, charge=True, rate="0")
+
+
+def _cmut_bro08(r):
+    # O line (LineTotalAmount 19.9) + O header row whose BasisAmount 20.50
+    # sits INSIDE the Z/E/AE/K/G families' ±1 band but FAILS the exact CII
+    # BR-O-08 equality (20.50 != round2(19.9)) -> BR-O-08 fires — the
+    # sharpest possible probe that the O binding is exact, not banded (a
+    # band engine would clear it and MISS). BR-O-01 holds (one header row +
+    # an O line); BR-O-02 (seller VA id), BR-O-11/-12 (S rows coexist) and
+    # BR-S-08 fire alongside; BR-O-09/-10 hold.
+    _cflip_line1_cat_o_b5(r)
+    _cadd_header_vat_row_b3(r, "O", basis="20.50")
+
+
+def _cmut_bro09(r):
+    # Correct BasisAmount (19.90) but CalculatedAmount 0.01: the official
+    # ``ram:CalculatedAmount = 0`` fails -> BR-O-09, while BR-O-08 holds
+    # (19.90 = 19.9 numerically) and BR-CO-17 holds (rate 0: 0.01 is inside
+    # its band). BR-O-02, BR-O-11/-12 and BR-S-08 fire alongside.
+    _cflip_line1_cat_o_b5(r)
+    _cadd_header_vat_row_b3(r, "O", basis="19.90", calculated="0.01")
+
+
+def _cmut_bro10(r):
+    # Correct O header row WITHOUT ExemptionReason/Code -> BR-O-10;
+    # BR-O-02, BR-O-11/-12 and BR-S-08 fire alongside.
+    _cflip_line1_cat_o_b5(r)
+    _cadd_header_vat_row_b3(r, "O", basis="19.90", reason=False)
+
+
+def _cmut_bro11(r):
+    # Correct O header row + O line, with the base's 2 S header rows and 19
+    # S line rows left in place: the shared raw CII BR-O-11/-12 test
+    # (not(//ram:ApplicableTradeTax[ram:CategoryCode != 'O'])) fails on BOTH
+    # node kinds -> BR-O-11 and BR-O-12 fire together (on UBL only BR-O-11
+    # would — the header S rows — and BR-O-12 separately for the lines).
+    # BR-O-01/08/09/10 hold; BR-O-13/14 hold (no CategoryTradeTax); BR-O-02
+    # (seller VA id) and BR-S-08 fire alongside.
+    _cflip_line1_cat_o_b5(r)
+    _cadd_header_vat_row_b3(r, "O", basis="19.90")
+
+
+def _cmut_bro12(r):
+    # The LINE-ROW direction of the same shared test, isolated: remove BOTH
+    # S header breakdown rows, so the ONLY non-O ram:ApplicableTradeTax rows
+    # left are the 19 S LINES -> the official CII BR-O-11/-12 still fire —
+    # an engine transcribing the UBL breakdown-only semantics would clear
+    # and MISS. BR-S-01 holds on both engines (19 S lines satisfy the weak
+    # count's >= 2); BR-S-08/09/10 lose their S header contexts and hold;
+    # BR-CO-18 holds (the O row remains); BR-O-01/08 hold (one O header row
+    # + the O line, basis 19.90); BR-O-02 fires alongside (seller VA id).
+    _cflip_line1_cat_o_b5(r)
+    settle = _cii_settlement(r)
+    for tt in list(settle.findall("ram:ApplicableTradeTax", _NSC)):
+        _cii_remove(r, tt)
+    _cadd_header_vat_row_b3(r, "O", basis="19.90")
+
+
+def _cmut_bro13(r):
+    # O header row + O line + an S document ALLOWANCE (ActualAmount 0.00,
+    # rate 6 — joins the existing S/6 bucket without moving its sum): the
+    # shared raw CII BR-O-13/-14 test (not(//ram:CategoryTradeTax
+    # [ram:CategoryCode != 'O'])) fails -> BOTH fire (the CII binding is
+    # indicator-agnostic — on UBL an ALLOWANCE fires only BR-O-13).
+    # BR-O-11/-12 fire alongside (S rows), as do BR-O-02 (seller VA id) and
+    # BR-S-08 (line 1 left its S/6 bucket); BR-S-01 holds (the S category
+    # sets stay far past the weak count's >= 2).
+    _cflip_line1_cat_o_b5(r)
+    _cadd_header_vat_row_b3(r, "O", basis="19.90")
+    _cadd_vatcat_ac_b3(r, "S", rate="6")
+
+
+def _cmut_bro14(r):
+    # Charge twin of BR-O-13 (an S document CHARGE) -> BR-O-13 and BR-O-14
+    # both fire again — proving the pair's shared CII test is indicator-
+    # agnostic in the other direction too.
+    _cflip_line1_cat_o_b5(r)
+    _cadd_header_vat_row_b3(r, "O", basis="19.90")
+    _cadd_vatcat_ac_b3(r, "S", charge=True, rate="6")
+
+
+def _cmut_brs01(r):
+    # Make the official WEAK CII BR-S-01 count formula fire: re-code BOTH
+    # header breakdown rows S -> Z (amounts/rates untouched, so BR-45..48
+    # and BR-CO-17 keep holding; the ungraded-on-CII BR-Z family reacting
+    # officially is outside the graded comparison) and add ONE S document
+    # allowance (ActualAmount 0.00, rate 6). Now count(CategoryTradeTax-S)
+    # = 1 with count(header-S-rows) = 0: the second conjunct's ``>= 2 or
+    # not(...)`` fails -> BR-S-01 fires on both engines. The FIRST conjunct
+    # shows the weakness this batch transcribed rather than approximated:
+    # the 20 S LINES also have no S breakdown row, yet 20 >= 2 satisfies
+    # the official count — a UBL-biconditional engine would fire on the
+    # lines alone and FALSE-POSITIVE against an official artifact that,
+    # e.g., clears two S lines with no S breakdown. BR-S-08/09/10 lose
+    # their S header contexts and hold; BR-S-02/05 hold (S lines keep the
+    # seller VA id and their nonzero rates).
+    _cflip_header_rows_b5(r, "Z")
+    _cadd_vatcat_ac_b3(r, "S", rate="6")
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -4436,6 +4673,12 @@ _CII_MUTATIONS = {
     "BR-IC-07": _cmut_bric07, "BR-IC-08": _cmut_bric08,
     "BR-IC-09": _cmut_bric09, "BR-IC-11": _cmut_bric11,
     "BR-IC-12": _cmut_bric12,
+    "BR-O-01": _cmut_bro01, "BR-O-02": _cmut_bro02, "BR-O-03": _cmut_bro03,
+    "BR-O-04": _cmut_bro04, "BR-O-05": _cmut_bro05, "BR-O-06": _cmut_bro06,
+    "BR-O-07": _cmut_bro07, "BR-O-08": _cmut_bro08, "BR-O-09": _cmut_bro09,
+    "BR-O-10": _cmut_bro10, "BR-O-11": _cmut_bro11, "BR-O-12": _cmut_bro12,
+    "BR-O-13": _cmut_bro13, "BR-O-14": _cmut_bro14,
+    "BR-S-01": _cmut_brs01,
     "BR-E-01": _cmut_bre01, "BR-E-02": _cmut_bre02, "BR-E-03": _cmut_bre03,
     "BR-E-04": _cmut_bre04, "BR-E-05": _cmut_bre05, "BR-E-06": _cmut_bre06,
     "BR-E-07": _cmut_bre07, "BR-E-08": _cmut_bre08, "BR-E-09": _cmut_bre09,

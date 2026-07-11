@@ -3301,5 +3301,267 @@ class CiiProofParityBatch4(CiiProofParityBatch3):
         self.assertIn("BR-IC-02", fired)
 
 
+class CiiProofParityBatch5(CiiProofParityBatch4):
+    """Firing + holding CII fixtures for the T-VHCIIP.6 batch-5 rules:
+    BR-O-01..14 + BR-S-01 (subclasses the batch-4 case for its parametric
+    fixture builders; the inherited tests re-running is a cheap side
+    effect). The four genuinely-different CII bindings this batch pinned
+    down are each exercised in BOTH directions: the BR-O-01
+    not(header-O-rows) escape, BR-O-08's exact-not-banded arithmetic, the
+    byte-identical BR-O-11/-12 pair (raw header+line trade-tax rows), the
+    byte-identical indicator-agnostic BR-O-13/-14 pair, and BR-S-01's weak
+    official count formula."""
+
+    def add_o_ac(self, r, charge=False, rate=None):
+        """An O document allowance/charge whose CategoryTradeTax has NO
+        RateApplicablePercent element unless ``rate`` is given (the
+        differential._cadd_o_ac_b5 shape)."""
+        ac = ET.SubElement(_settlement(r),
+                           _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        ind = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+        ET.SubElement(ind, _q(NSU, "Indicator")).text = (
+            "true" if charge else "false")
+        ET.SubElement(ac, _q(NSA, "ActualAmount")).text = "0.00"
+        ET.SubElement(ac, _q(NSA, "Reason")).text = "Testing"
+        ctt = ET.SubElement(ac, _q(NSA, "CategoryTradeTax"))
+        ET.SubElement(ctt, _q(NSA, "TypeCode")).text = "VAT"
+        ET.SubElement(ctt, _q(NSA, "CategoryCode")).text = "O"
+        if rate is not None:
+            ET.SubElement(ctt, _q(NSA, "RateApplicablePercent")).text = rate
+
+    def flip_line1_o(self, r):
+        """Flip the first line S -> O and REMOVE its RateApplicablePercent
+        element (BT-152 is forbidden on an O line — presence fires BR-O-05)."""
+        tt = self._line_tax(r)
+        tt.find("ram:CategoryCode", NS).text = "O"
+        tt.remove(tt.find("ram:RateApplicablePercent", NS))
+
+    def flip_header_rows(self, r, code):
+        for tt in _settlement(r).findall("ram:ApplicableTradeTax", NS):
+            tt.find("ram:CategoryCode", NS).text = code
+
+    def _all_line_taxes(self, r):
+        return r.findall("rsm:SupplyChainTradeTransaction/"
+                         "ram:IncludedSupplyChainTradeLineItem/"
+                         "ram:SpecifiedLineTradeSettlement/"
+                         "ram:ApplicableTradeTax", NS)
+
+    # ---- BR-O-01: the O-specific not(header-O-rows) head --------------------
+    def test_bro01_orphan_o_header_row_fires(self):
+        r = _good_root()
+        self.add_header_row(r, "O", basis="0.00")
+        self.assert_rule(r, "BR-O-01")
+
+    def test_bro01_o_item_without_o_header_row_holds_on_cii(self):
+        # THE binding difference: an orphan O CATEGORY (which fires every
+        # other family's -01 head, and BR-O-01 itself on UBL) officially
+        # HOLDS on CII — the first disjunct is not(header-O-rows).
+        r = _good_root()
+        self.add_o_ac(r)
+        fired = self.fired(r)
+        self.assertNotIn("BR-O-01", fired)
+        self.assertIn("BR-O-03", fired)   # seller VA id + O allowance
+
+    def test_bro01_two_o_header_rows_fire(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90")
+        self.add_header_row(r, "O", basis="0.00")
+        self.assert_rule(r, "BR-O-01")
+
+    def test_bro01_paired_o_line_and_row_holds(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90")
+        self.assert_rule(r, "BR-O-01", expect=False)
+
+    # ---- BR-O-02..04: the VAT-id PROHIBITIONS --------------------------------
+    def test_bro02_o_line_with_seller_va_fires(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.assert_rule(r, "BR-O-02")
+
+    def test_bro02_holds_without_any_vat_id(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.drop_seller_tax_reg(r)
+        self.assert_rule(r, "BR-O-02", expect=False)
+
+    def test_bro02_buyer_va_alone_fires(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.drop_seller_tax_reg(r)
+        self.add_buyer_vat_reg(r)
+        self.assert_rule(r, "BR-O-02")
+
+    def test_bro03_o_allowance_with_seller_va_fires(self):
+        r = _good_root()
+        self.add_o_ac(r)
+        self.assert_rule(r, "BR-O-03")
+
+    def test_bro03_holds_without_any_vat_id(self):
+        r = _good_root()
+        self.add_o_ac(r)
+        self.drop_seller_tax_reg(r)
+        self.assert_rule(r, "BR-O-03", expect=False)
+
+    def test_bro04_o_charge_with_seller_va_fires(self):
+        r = _good_root()
+        self.add_o_ac(r, charge=True)
+        fired = self.fired(r)
+        self.assertIn("BR-O-04", fired)
+        self.assertNotIn("BR-O-03", fired)   # the allowance twin stays quiet
+
+    # ---- BR-O-05..07: the rate-ELEMENT prohibitions ---------------------------
+    def test_bro05_rate_element_with_value_zero_fires(self):
+        # not(ram:RateApplicablePercent) tests PRESENCE, not the value.
+        r = _good_root()
+        self.flip_line1(r, "O", rate="0")
+        self.assert_rule(r, "BR-O-05")
+
+    def test_bro05_no_rate_element_holds(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.assert_rule(r, "BR-O-05", expect=False)
+
+    def test_bro06_allowance_rate_element_fires(self):
+        r = _good_root()
+        self.add_o_ac(r, rate="0")
+        self.assert_rule(r, "BR-O-06")
+
+    def test_bro06_no_rate_element_holds(self):
+        r = _good_root()
+        self.add_o_ac(r)
+        self.assert_rule(r, "BR-O-06", expect=False)
+
+    def test_bro07_charge_rate_element_fires(self):
+        r = _good_root()
+        self.add_o_ac(r, charge=True, rate="0")
+        fired = self.fired(r)
+        self.assertIn("BR-O-07", fired)
+        self.assertNotIn("BR-O-06", fired)
+
+    # ---- BR-O-08..10: the O breakdown-row rules -------------------------------
+    def test_bro08_exact_not_banded_fires_inside_band(self):
+        # 20.50 is INSIDE the Z/E/AE/K/G ±1 band around round2(19.9) but
+        # fails the O family's EXACT equality — the sharpest probe that the
+        # CII BR-O-08 binding is exact.
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="20.50")
+        self.assert_rule(r, "BR-O-08")
+
+    def test_bro08_exact_match_holds(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90")
+        self.assert_rule(r, "BR-O-08", expect=False)
+
+    def test_bro09_nonzero_tax_fires(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90", calculated="0.01")
+        self.assert_rule(r, "BR-O-09")
+
+    def test_bro10_missing_exemption_reason_fires(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90", reason=False)
+        self.assert_rule(r, "BR-O-10")
+
+    # ---- BR-O-11/-12: ONE byte-identical CII test (raw trade-tax rows) --------
+    def test_bro11_bro12_fire_together_on_s_rows(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90")
+        fired = self.fired(r)
+        self.assertIn("BR-O-11", fired)
+        self.assertIn("BR-O-12", fired)
+
+    def test_bro11_bro12_fire_on_line_rows_alone(self):
+        # Remove BOTH S header rows: the only non-O ApplicableTradeTax rows
+        # left are the S LINES — the raw CII test still fails (a UBL
+        # breakdown-only transcription would clear).
+        r = _good_root()
+        self.flip_line1_o(r)
+        for tt in list(_settlement(r).findall("ram:ApplicableTradeTax", NS)):
+            _remove(r, tt)
+        self.add_header_row(r, "O", basis="19.90")
+        fired = self.fired(r)
+        self.assertIn("BR-O-11", fired)
+        self.assertIn("BR-O-12", fired)
+
+    def test_bro11_bro12_quiet_without_o_header_row(self):
+        # Context = the O header VAT row; an O line alone has none.
+        r = _good_root()
+        self.flip_line1_o(r)
+        fired = self.fired(r)
+        self.assertNotIn("BR-O-11", fired)
+        self.assertNotIn("BR-O-12", fired)
+
+    # ---- BR-O-13/-14: ONE indicator-agnostic CategoryTradeTax test ------------
+    def test_bro13_bro14_both_fire_on_an_allowance(self):
+        # On UBL an S ALLOWANCE fires only BR-O-13; the CII test has no
+        # ChargeIndicator split, so the pair fires together.
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90")
+        self.add_vatcat_ac(r, "S", rate="6")
+        fired = self.fired(r)
+        self.assertIn("BR-O-13", fired)
+        self.assertIn("BR-O-14", fired)
+
+    def test_bro13_bro14_both_fire_on_a_charge(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90")
+        self.add_vatcat_ac(r, "S", charge=True, rate="6")
+        fired = self.fired(r)
+        self.assertIn("BR-O-13", fired)
+        self.assertIn("BR-O-14", fired)
+
+    def test_bro13_bro14_quiet_without_categorytradetax(self):
+        r = _good_root()
+        self.flip_line1_o(r)
+        self.add_header_row(r, "O", basis="19.90")
+        fired = self.fired(r)
+        self.assertNotIn("BR-O-13", fired)
+        self.assertNotIn("BR-O-14", fired)
+
+    # ---- BR-S-01: the weak official CII count formula -------------------------
+    def test_brs01_single_s_categorytradetax_without_s_row_fires(self):
+        # count(CategoryTradeTax-S)=1 + count(header-S)=0 fails the second
+        # conjunct's ``>= 2 or not(...)``.
+        r = _good_root()
+        self.flip_header_rows(r, "Z")
+        self.add_vatcat_ac(r, "S", rate="6")
+        self.assert_rule(r, "BR-S-01")
+
+    def test_brs01_single_s_line_without_s_row_fires(self):
+        # count(line-S)=1 + count(header-S)=0 fails the FIRST conjunct.
+        r = _good_root()
+        self.flip_header_rows(r, "Z")
+        for tt in self._all_line_taxes(r)[1:]:
+            tt.find("ram:CategoryCode", NS).text = "Z"
+        self.assert_rule(r, "BR-S-01")
+
+    def test_brs01_many_s_lines_without_s_row_hold_on_cii(self):
+        # THE weakness transcribed rather than approximated: 20 S lines with
+        # NO S breakdown row satisfy the official ``>= 2`` count — the UBL
+        # biconditional would fire here.
+        r = _good_root()
+        self.flip_header_rows(r, "Z")
+        self.assert_rule(r, "BR-S-01", expect=False)
+
+    def test_brs01_orphan_s_breakdown_row_never_fires_on_cii(self):
+        # All 20 lines re-coded Z, the two S header rows kept: not(line-S)
+        # and not(CategoryTradeTax-S) satisfy both conjuncts — on UBL this
+        # orphan S breakdown fires.
+        r = _good_root()
+        for tt in self._all_line_taxes(r):
+            tt.find("ram:CategoryCode", NS).text = "Z"
+        self.assert_rule(r, "BR-S-01", expect=False)
+
+
 if __name__ == "__main__":
     unittest.main()

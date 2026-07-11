@@ -24,7 +24,7 @@ XSLT and compares the fired-rule set. The sources:
 ## Coverage at a glance
 
 - **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **239** proven on both UBL and CII, **46** UBL-only, **1** CII-only.
+- Syntax: **253** proven on both UBL and CII, **32** UBL-only, **1** CII-only.
 - Severity (blocking class): **274** fatal (block validity), **12** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -123,8 +123,8 @@ the non-blocking `warning` class for the severity column).
 | `BR-CO-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151). |
 | `BR-CO-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix 'EL'. |
 | `BR-CO-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Sum of Invoice line net amount (BT-106) = Σ line net amount (BT-131). |
-| `BR-CO-11` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Sum of allowances on document level (BT-107) = Σ Document level allowance amount (BT-92). |
-| `BR-CO-12` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Sum of charges on document level (BT-108) = Σ Document level charge amount (BT-99). |
+| `BR-CO-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Sum of allowances on document level (BT-107) = Σ Document level allowance amount (BT-92). |
+| `BR-CO-12` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Sum of charges on document level (BT-108) = Σ Document level charge amount (BT-99). |
 | `BR-CO-13` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice total without VAT (BT-109) = Σ line net (BT-131) − document allowances (BT-107) + document charges (BT-108). |
 | `BR-CO-14` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Invoice total VAT amount (BT-110) = Σ VAT category tax amount (BT-117). |
 | `BR-CO-15` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Invoice total with VAT (BT-112) = total without VAT (BT-109) + total VAT (BT-110). |
@@ -138,17 +138,17 @@ the non-blocking `warning` class for the severity column).
 | `BR-CO-23` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both. |
 | `BR-CO-24` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both. |
 | `BR-CO-26` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present. |
-| `BR-DEC-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Document level allowance amount (BT-92). |
-| `BR-DEC-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Document level allowance base amount (BT-93). |
-| `BR-DEC-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Document level charge amount (BT-99). |
-| `BR-DEC-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Document level charge base amount (BT-100). |
+| `BR-DEC-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Document level allowance amount (BT-92). |
+| `BR-DEC-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Document level allowance base amount (BT-93). |
+| `BR-DEC-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Document level charge amount (BT-99). |
+| `BR-DEC-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Document level charge base amount (BT-100). |
 | `BR-DEC-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Sum of Invoice line net amount (BT-106). |
-| `BR-DEC-10` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Sum of allowances on document level (BT-107). |
-| `BR-DEC-11` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Sum of charges on document level (BT-108). |
+| `BR-DEC-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Sum of allowances on document level (BT-107). |
+| `BR-DEC-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Sum of charges on document level (BT-108). |
 | `BR-DEC-12` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice total amount without VAT (BT-109). |
 | `BR-DEC-14` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice total amount with VAT (BT-112). |
-| `BR-DEC-16` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Paid amount (BT-113). |
-| `BR-DEC-17` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Rounding amount (BT-114). |
+| `BR-DEC-16` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Paid amount (BT-113). |
+| `BR-DEC-17` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Rounding amount (BT-114). |
 | `BR-DEC-18` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Amount due for payment (BT-115). |
 | `BR-DEC-19` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the VAT category taxable amount (BT-116). |
 | `BR-DEC-20` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the VAT category tax amount (BT-117). |
@@ -237,11 +237,11 @@ the non-blocking `warning` class for the severity column).
 | `BR-O-14` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a 'Not subject to VAT' (O) VAT breakdown (BG-23) shall NOT contain a Document level charge (BG-21) whose VAT category code (BT-102) is not 'Not subject to VAT'. |
 | `BR-S-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Standard-rated (S) items and the VAT breakdown must agree. |
 | `BR-S-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Standard-rated (S) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63). |
-| `BR-S-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a Standard-rated (S) Document level allowance (BT-95) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02). |
-| `BR-S-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a Standard-rated (S) Document level charge (BT-102) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02). |
+| `BR-S-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Standard-rated (S) Document level allowance (BT-95) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02). |
+| `BR-S-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Standard-rated (S) Document level charge (BT-102) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02). |
 | `BR-S-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Invoice line where the Invoiced item VAT category code (BT-151) is 'Standard rated' the Invoiced item VAT rate (BT-152) shall be greater than zero. |
-| `BR-S-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Document level allowance where the allowance VAT category code (BT-95) is 'Standard rated' the allowance VAT rate (BT-96) shall be greater than zero. |
-| `BR-S-07` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Document level charge where the charge VAT category code (BT-102) is 'Standard rated' the charge VAT rate (BT-103) shall be greater than zero. |
+| `BR-S-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In a Document level allowance where the allowance VAT category code (BT-95) is 'Standard rated' the allowance VAT rate (BT-96) shall be greater than zero. |
+| `BR-S-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In a Document level charge where the charge VAT category code (BT-102) is 'Standard rated' the charge VAT rate (BT-103) shall be greater than zero. |
 | `BR-S-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "Standard rated", the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is "Standard rated" and the VAT rate equals BT-119. |
 | `BR-S-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in a Standard-rated (S) VAT breakdown shall equal the VAT category taxable amount (BT-116) x the VAT category rate (BT-119). |
 | `BR-S-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with a Standard rated (S) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121). |
@@ -543,7 +543,7 @@ worklist automatically.
 
 ## CII proof parity
 
-**46** rules in the table above are today differentially proven on
+**32** rules in the table above are today differentially proven on
 the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
 many of them the official CII artifacts actually carry, by a real
 XML parse of `sch:assert/@id` in the vendored CII Schematron files
@@ -555,7 +555,7 @@ XML parse of `sch:assert/@id` in the vendored CII Schematron files
 Measured split (committed as `cii_parity.json`, live-recomputed by
 `test_cii_parity.py` so it can never silently go stale):
 
-- **34 cii-fireable** — an official CII assert with the same id
+- **20 cii-fireable** — an official CII assert with the same id
   exists in at least one vendored CII artifact. This is the real
   QA worklist: the rule officially applies to CII invoices and the
   engine's coverage there is not yet proven.

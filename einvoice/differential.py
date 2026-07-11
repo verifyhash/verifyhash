@@ -450,6 +450,34 @@ CII_GRADED_RULES = [
     _rules.br_z_01, _rules.br_z_02, _rules.br_z_03, _rules.br_z_04,
     _rules.br_z_05, _rules.br_z_06, _rules.br_z_07, _rules.br_z_08,
     _rules.br_z_09, _rules.br_z_10,
+    # CII proof-parity batch 7 (T-VHCIIP.8): the remaining document-level
+    # calculation, decimal and Standard-rated allowance/charge rules. All map
+    # to CII context nodes the core model already carries and whose official
+    # CII binding matches the shared UBL body VERBATIM (confirmed against the
+    # vendored CEN CII Schematron):
+    #  * BR-CO-11/12 (Σ document allowances/charges = stated BT-107/BT-108):
+    #    context = ram:SpecifiedTradeSettlementHeaderMonetarySummation; the CII
+    #    test is the SAME round2 disjunction as UBL (``round(sum(..ActualAmount
+    #    [1])*10*10) div 100`` with the ``not(allowance) and not(total)``
+    #    escape) — the shared _xr2 idiom + inv.allowance_total/charge_total.
+    #  * BR-DEC-01/02/05/06 (document allowance/charge amount BT-92/93 and
+    #    charge amount BT-99/100 ≤ 2 decimals): context =
+    #    ram:SpecifiedTradeAllowanceCharge/ram:ChargeIndicator[Indicator=
+    #    'false'|'true'], test = string-length(substring-after(../ram:Actual
+    #    Amount[1]|../ram:BasisAmount,'.'))<=2 over inv.doc_allowance_charges.
+    #  * BR-DEC-10/11/16/17 (summation AllowanceTotalAmount / ChargeTotalAmount
+    #    / TotalPrepaidAmount / RoundingAmount ≤ 2 decimals): the SAME _dec_lmt
+    #    body the graded BR-DEC-09/12/14/18 already prove, over inv.lmt_raw.
+    #  * BR-S-03/04/06/07 (Standard-rated document allowance/charge → Seller VAT
+    #    id present / rate > 0): context =
+    #    ram:SpecifiedTradeAllowanceCharge[../udt:Indicator]/ram:CategoryTradeTax
+    #    [CategoryCode='S'][VAT]; the seller-id disjunct is the SpecifiedTax
+    #    Registration/@schemeID in ('VA','FC') OR tax-rep VA the graded BR-S-02
+    #    already reads, and the rate test is ``ram:RateApplicablePercent > 0``.
+    _rules.br_co_11, _rules.br_co_12,
+    _rules.br_dec_01, _rules.br_dec_02, _rules.br_dec_05, _rules.br_dec_06,
+    _rules.br_dec_10, _rules.br_dec_11, _rules.br_dec_16, _rules.br_dec_17,
+    _rules.br_s_03, _rules.br_s_04, _rules.br_s_06, _rules.br_s_07,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -2879,7 +2907,20 @@ _CII_BASE = os.path.join(CII_EXAMPLES_DIR, "CII_example1.xml")
 # document-level SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax, so mutating
 # just that CategoryCode fires BR-CL-17 with nothing else in the graded set.
 _CII_BASE_ALLOWANCE = os.path.join(CII_EXAMPLES_DIR, "CII_business_example_01.xml")
-_CII_MUTATION_BASE = {"BR-CL-17": _CII_BASE_ALLOWANCE}
+_CII_MUTATION_BASE = {
+    "BR-CL-17": _CII_BASE_ALLOWANCE,
+    # Batch 7: every calculation / decimal / Standard-rated document
+    # allowance-charge rule binds a document-level ram:SpecifiedTradeAllowance
+    # Charge or a summation field that CII_example1 lacks — mutate the one CEN
+    # example (CII_business_example_01) that carries the S allowance + charge.
+    "BR-CO-11": _CII_BASE_ALLOWANCE, "BR-CO-12": _CII_BASE_ALLOWANCE,
+    "BR-DEC-01": _CII_BASE_ALLOWANCE, "BR-DEC-02": _CII_BASE_ALLOWANCE,
+    "BR-DEC-05": _CII_BASE_ALLOWANCE, "BR-DEC-06": _CII_BASE_ALLOWANCE,
+    "BR-DEC-10": _CII_BASE_ALLOWANCE, "BR-DEC-11": _CII_BASE_ALLOWANCE,
+    "BR-DEC-16": _CII_BASE_ALLOWANCE, "BR-DEC-17": _CII_BASE_ALLOWANCE,
+    "BR-S-03": _CII_BASE_ALLOWANCE, "BR-S-04": _CII_BASE_ALLOWANCE,
+    "BR-S-06": _CII_BASE_ALLOWANCE, "BR-S-07": _CII_BASE_ALLOWANCE,
+}
 _NSC = {"rsm": NS_RSM, "ram": NS_RAM, "udt": NS_UDT}
 
 
@@ -4754,6 +4795,125 @@ def _cmut_brz10(r):
     _cadd_header_vat_row_b3(r, "Z", basis="19.90", reason=True)
 
 
+# --------------------------------------------------------------------------- #
+# CII proof-parity batch 7 (T-VHCIIP.8): the remaining calculation
+# (BR-CO-11/12), document-level decimal (BR-DEC-01/02/05/06/10/11/16/17) and
+# Standard-rated document allowance/charge (BR-S-03/04/06/07) rules. All run off
+# CII_business_example_01 (_CII_BASE_ALLOWANCE), the only CEN CII example that
+# carries BOTH a document-level Standard-rated allowance (ChargeIndicator=false,
+# S/VAT/25 %, ActualAmount 100) and charge (ChargeIndicator=true, S/VAT/25 %,
+# ActualAmount 100) plus a monetary summation with AllowanceTotalAmount /
+# ChargeTotalAmount / TotalPrepaidAmount — exactly the context nodes these rules
+# bind. Each mutation breaks its target field; alongside-firing arithmetic rules
+# (e.g. a re-stated AllowanceTotalAmount trips BR-CO-11 AND BR-CO-13) agree on
+# both engines because agreement is asserted PER RULE.
+def _cii_first_doc_ac(r, charge):
+    """First document-level ram:SpecifiedTradeAllowanceCharge whose
+    ChargeIndicator matches ``charge`` (True=charge, False=allowance)."""
+    for ac in _cii_settlement(r).findall(
+            "ram:SpecifiedTradeAllowanceCharge", _NSC):
+        ind = ac.find("ram:ChargeIndicator/udt:Indicator", _NSC)
+        val = ((ind.text or "").strip().lower() in ("true", "1")
+               if ind is not None else False)
+        if val == charge:
+            return ac
+    return None
+
+
+def _cmut_brco11(r):
+    # Re-state AllowanceTotalAmount (BT-107) to 50.00 while the sole document
+    # allowance keeps ActualAmount 100 -> stated 50 != round2(Σ100) -> BR-CO-11
+    # fires (2 decimals, so BR-DEC-10 stays clear); BR-CO-13 shifts alongside.
+    _cii_summation(r).find("ram:AllowanceTotalAmount", _NSC).text = "50.00"
+
+
+def _cmut_brco12(r):
+    # Re-state ChargeTotalAmount (BT-108) to 50.00 while the sole document charge
+    # keeps ActualAmount 100 -> BR-CO-12 fires (BR-CO-13 shifts alongside).
+    _cii_summation(r).find("ram:ChargeTotalAmount", _NSC).text = "50.00"
+
+
+def _cmut_brdec01(r):
+    # Document allowance ActualAmount (BT-92) with 3 decimals -> BR-DEC-01.
+    _cii_first_doc_ac(r, False).find("ram:ActualAmount", _NSC).text = "100.123"
+
+
+def _cmut_brdec02(r):
+    # Document allowance BasisAmount (BT-93) with 3 decimals -> BR-DEC-02. The
+    # base amount feeds no graded arithmetic, so only BR-DEC-02 fires.
+    ET.SubElement(_cii_first_doc_ac(r, False),
+                  _cq(NS_RAM, "BasisAmount")).text = "10.123"
+
+
+def _cmut_brdec05(r):
+    # Document charge ActualAmount (BT-99) with 3 decimals -> BR-DEC-05.
+    _cii_first_doc_ac(r, True).find("ram:ActualAmount", _NSC).text = "100.123"
+
+
+def _cmut_brdec06(r):
+    # Document charge BasisAmount (BT-100) with 3 decimals -> BR-DEC-06.
+    ET.SubElement(_cii_first_doc_ac(r, True),
+                  _cq(NS_RAM, "BasisAmount")).text = "10.123"
+
+
+def _cmut_brdec10(r):
+    # AllowanceTotalAmount (BT-107) with 3 decimals -> BR-DEC-10 (BR-CO-11 fires
+    # alongside: 100.123 != round2(Σ100)).
+    _cii_summation(r).find("ram:AllowanceTotalAmount", _NSC).text = "100.123"
+
+
+def _cmut_brdec11(r):
+    # ChargeTotalAmount (BT-108) with 3 decimals -> BR-DEC-11 (BR-CO-12 fires
+    # alongside).
+    _cii_summation(r).find("ram:ChargeTotalAmount", _NSC).text = "100.123"
+
+
+def _cmut_brdec16(r):
+    # TotalPrepaidAmount (BT-113) with 3 decimals -> BR-DEC-16 (the shifted
+    # prepaid trips BR-CO-16 alongside on both engines).
+    _cii_summation(r).find("ram:TotalPrepaidAmount", _NSC).text = "1000.123"
+
+
+def _cmut_brdec17(r):
+    # Add ram:RoundingAmount (BT-114) with 3 decimals -> BR-DEC-17 (the added
+    # rounding trips BR-CO-16 alongside on both engines).
+    ET.SubElement(_cii_summation(r), _cq(NS_RAM, "RoundingAmount")).text = "0.123"
+
+
+def _cmut_brs03(r):
+    # Remove BOTH seller-id disjuncts the CII BR-S-03 test accepts — the Seller
+    # VA SpecifiedTaxRegistration AND the SellerTaxRepresentativeTradeParty VA
+    # registration (CII_business_example_01 carries both) — so the document
+    # allowance's S/VAT CategoryTradeTax has no backing Seller VAT id and
+    # BR-S-03 fires; BR-S-02 (S lines), BR-S-04 (S charge) and BR-56 (tax-rep
+    # VAT id) fire alongside on both engines.
+    _cii_remove(r, _cii_seller(r).find("ram:SpecifiedTaxRegistration", _NSC))
+    agr = _cii_agreement(r)
+    taxrep = agr.find("ram:SellerTaxRepresentativeTradeParty", _NSC)
+    if taxrep is not None:
+        _cii_remove(r, taxrep.find("ram:SpecifiedTaxRegistration", _NSC))
+
+
+def _cmut_brs04(r):
+    # Same seller-id break as BR-S-03, targeting the S document CHARGE arm.
+    _cmut_brs03(r)
+
+
+def _cmut_brs06(r):
+    # Document allowance S CategoryTradeTax rate set to 0 -> BR-S-06 (rate not
+    # > 0). The allowance leaves the S/25 bucket, so BR-S-08 fires alongside on
+    # both engines (both recompute the same per-rate bucket sums).
+    _cii_first_doc_ac(r, False).find(
+        "ram:CategoryTradeTax/ram:RateApplicablePercent", _NSC).text = "0"
+
+
+def _cmut_brs07(r):
+    # Document charge S CategoryTradeTax rate set to 0 -> BR-S-07 (rate not
+    # > 0). BR-S-08 fires alongside (the charge leaves the S/25 bucket).
+    _cii_first_doc_ac(r, True).find(
+        "ram:CategoryTradeTax/ram:RateApplicablePercent", _NSC).text = "0"
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -4841,6 +5001,14 @@ _CII_MUTATIONS = {
     "BR-DEC-14": _cmut_brdec14, "BR-DEC-18": _cmut_brdec18,
     "BR-DEC-19": _cmut_brdec19, "BR-DEC-20": _cmut_brdec20,
     "BR-DEC-23": _cmut_brdec23,
+    # CII proof-parity batch 7 (T-VHCIIP.8).
+    "BR-CO-11": _cmut_brco11, "BR-CO-12": _cmut_brco12,
+    "BR-DEC-01": _cmut_brdec01, "BR-DEC-02": _cmut_brdec02,
+    "BR-DEC-05": _cmut_brdec05, "BR-DEC-06": _cmut_brdec06,
+    "BR-DEC-10": _cmut_brdec10, "BR-DEC-11": _cmut_brdec11,
+    "BR-DEC-16": _cmut_brdec16, "BR-DEC-17": _cmut_brdec17,
+    "BR-S-03": _cmut_brs03, "BR-S-04": _cmut_brs04,
+    "BR-S-06": _cmut_brs06, "BR-S-07": _cmut_brs07,
 }
 # Every entry above breaks exactly one graded rule's field off the clean S-rated
 # CII base; several also fire other graded rules (e.g. a broken breakdown amount

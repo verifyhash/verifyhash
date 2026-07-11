@@ -638,6 +638,25 @@ CII_SYNTAX_COVERAGE = {
     "BR-DEC-25": "≤2 decimals: Invoice line allowance base amount (BT-137)",
     "BR-DEC-27": "≤2 decimals: Invoice line charge amount (BT-141)",
     "BR-DEC-28": "≤2 decimals: Invoice line charge base amount (BT-142)",
+    # CII proof-parity batch 7 (T-VHCIIP.8).
+    "BR-CO-11": "Sum of document allowances (BT-107) = Σ Document level "
+                "allowance amounts (BT-92)",
+    "BR-CO-12": "Sum of document charges (BT-108) = Σ Document level charge "
+                "amounts (BT-99)",
+    "BR-DEC-01": "≤2 decimals: Document level allowance amount (BT-92)",
+    "BR-DEC-02": "≤2 decimals: Document level allowance base amount (BT-93)",
+    "BR-DEC-05": "≤2 decimals: Document level charge amount (BT-99)",
+    "BR-DEC-06": "≤2 decimals: Document level charge base amount (BT-100)",
+    "BR-DEC-10": "≤2 decimals: Sum of allowances on document level (BT-107)",
+    "BR-DEC-11": "≤2 decimals: Sum of charges on document level (BT-108)",
+    "BR-DEC-16": "≤2 decimals: Paid amount (BT-113)",
+    "BR-DEC-17": "≤2 decimals: Rounding amount (BT-114)",
+    "BR-S-03": "Standard-rated document allowance (BT-95) requires a Seller "
+               "VAT identifier (BT-31/BT-32/BT-63)",
+    "BR-S-04": "Standard-rated document charge (BT-102) requires a Seller VAT "
+               "identifier (BT-31/BT-32/BT-63)",
+    "BR-S-06": "Standard-rated document allowance VAT rate (BT-96) > 0",
+    "BR-S-07": "Standard-rated document charge VAT rate (BT-103) > 0",
 }
 
 # Rules deliberately NOT graded on CII (the CII Schematron binds them with

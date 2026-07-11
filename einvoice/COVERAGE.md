@@ -24,7 +24,7 @@ XSLT and compares the fired-rule set. The sources:
 ## Coverage at a glance
 
 - **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **229** proven on both UBL and CII, **56** UBL-only, **1** CII-only.
+- Syntax: **239** proven on both UBL and CII, **46** UBL-only, **1** CII-only.
 - Severity (blocking class): **274** fatal (block validity), **12** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -245,16 +245,16 @@ the non-blocking `warning` class for the severity column).
 | `BR-S-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "Standard rated", the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is "Standard rated" and the VAT rate equals BT-119. |
 | `BR-S-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in a Standard-rated (S) VAT breakdown shall equal the VAT category taxable amount (BT-116) x the VAT category rate (BT-119). |
 | `BR-S-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with a Standard rated (S) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121). |
-| `BR-Z-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | If any line/allowance/charge is Zero rated (Z), the VAT breakdown must contain exactly one Zero rated category. |
-| `BR-Z-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. |
-| `BR-Z-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A Zero-rated (Z) Document level allowance (BT-95) requires the Seller VAT identifier disjunct. |
-| `BR-Z-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A Zero-rated (Z) Document level charge (BT-102) requires the Seller VAT identifier disjunct. |
-| `BR-Z-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Zero-rated (Z) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
-| `BR-Z-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Zero-rated (Z) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
-| `BR-Z-07` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Zero-rated (Z) Document level charge the charge VAT rate (BT-103) shall be 0. |
-| `BR-Z-08` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Zero-rated (Z) VAT breakdown taxable amount (BT-116) shall equal the exact sum of Z line net amounts − Z allowances + Z charges. |
-| `BR-Z-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The VAT category tax amount (BT-117) in a Zero-rated (Z) VAT breakdown shall equal 0. |
-| `BR-Z-10` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A VAT breakdown (BG-23) with a Zero rated (Z) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121). |
+| `BR-Z-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | If any line/allowance/charge is Zero rated (Z), the VAT breakdown must contain exactly one Zero rated category. |
+| `BR-Z-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. |
+| `BR-Z-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A Zero-rated (Z) Document level allowance (BT-95) requires the Seller VAT identifier disjunct. |
+| `BR-Z-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A Zero-rated (Z) Document level charge (BT-102) requires the Seller VAT identifier disjunct. |
+| `BR-Z-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In a Zero-rated (Z) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
+| `BR-Z-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In a Zero-rated (Z) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
+| `BR-Z-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In a Zero-rated (Z) Document level charge the charge VAT rate (BT-103) shall be 0. |
+| `BR-Z-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Zero-rated (Z) VAT breakdown taxable amount (BT-116) shall equal the exact sum of Z line net amounts − Z allowances + Z charges. |
+| `BR-Z-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in a Zero-rated (Z) VAT breakdown shall equal 0. |
+| `BR-Z-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with a Zero rated (Z) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121). |
 | `BR-DE-1` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | An invoice must contain PAYMENT INSTRUCTIONS (BG-16). |
 | `BR-DE-2` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | SELLER CONTACT (BG-6) must be transmitted. |
 | `BR-DE-3` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Seller city (BT-37) must be transmitted (non-empty). |
@@ -543,7 +543,7 @@ worklist automatically.
 
 ## CII proof parity
 
-**56** rules in the table above are today differentially proven on
+**46** rules in the table above are today differentially proven on
 the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
 many of them the official CII artifacts actually carry, by a real
 XML parse of `sch:assert/@id` in the vendored CII Schematron files
@@ -555,7 +555,7 @@ XML parse of `sch:assert/@id` in the vendored CII Schematron files
 Measured split (committed as `cii_parity.json`, live-recomputed by
 `test_cii_parity.py` so it can never silently go stale):
 
-- **44 cii-fireable** — an official CII assert with the same id
+- **34 cii-fireable** — an official CII assert with the same id
   exists in at least one vendored CII artifact. This is the real
   QA worklist: the rule officially applies to CII invoices and the
   engine's coverage there is not yet proven.

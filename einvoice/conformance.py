@@ -495,6 +495,24 @@ CII_SYNTAX_COVERAGE = {
                "item with no S breakdown row fires, but two S rows on the "
                "item side alone officially hold and an orphan S breakdown "
                "row never fires)",
+    "BR-Z-01": "Zero rated (Z) categories ⇒ exactly one Z VAT breakdown row "
+               "(CII binding: raw, VAT-scheme-unscoped counts; an orphan Z "
+               "breakdown row fires — byte-identical to CII BR-E-01 with 'Z')",
+    "BR-Z-02": "Zero rated (Z) line ⇒ Seller VAT/tax id present (CII binding: "
+               "a VA-or-FC seller tax registration or a tax-representative "
+               "VA id, exactly like BR-E-02)",
+    "BR-Z-03": "Zero rated (Z) document allowance ⇒ Seller VAT/tax id present",
+    "BR-Z-04": "Zero rated (Z) document charge ⇒ Seller VAT/tax id present",
+    "BR-Z-05": "Zero rated (Z) line VAT rate (BT-152) = 0",
+    "BR-Z-06": "Zero rated (Z) document allowance VAT rate (BT-96) = 0",
+    "BR-Z-07": "Zero rated (Z) document charge VAT rate (BT-103) = 0",
+    "BR-Z-08": "Zero rated (Z) breakdown taxable (BT-116) = Σ Z line net + "
+               "charges − allowances (CII binding: ±1 band around the round2 "
+               "bucket sums)",
+    "BR-Z-09": "Zero rated (Z) breakdown tax amount (BT-117) = 0",
+    "BR-Z-10": "Zero rated (Z) breakdown must NOT have a VAT exemption reason "
+               "code (BT-121) or text (BT-120) — the presence-FORBIDDEN "
+               "mirror of BR-E-10",
     "BR-CL-01": "Document type code (BT-3) in UNTDID 1001",
     "BR-CL-03": "currencyID (amount elements) in ISO 4217 alpha-3",
     "BR-CL-04": "Invoice currency code (BT-5) in ISO 4217 alpha-3",

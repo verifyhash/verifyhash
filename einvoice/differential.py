@@ -430,6 +430,26 @@ CII_GRADED_RULES = [
     _rules.br_o_09, _rules.br_o_10, _rules.br_o_11, _rules.br_o_12,
     _rules.br_o_13, _rules.br_o_14,
     _rules.br_s_01,
+    # CII proof-parity batch 6 (T-VHCIIP.7): the whole Zero-rated (Z) family
+    # (BR-Z-01..10). On CII this family is the byte-for-byte twin of the
+    # batch-3 Exempt-from-VAT (E) family with 'E' replaced by 'Z' EVERYWHERE
+    # in the vendored CEN CII Schematron — EXCEPT the -10 rule, which INVERTS:
+    # BR-E-10 REQUIRES a VAT exemption reason on the E breakdown row, while
+    # BR-Z-10 FORBIDS one (test ``not(../ram:ExemptionReason) and
+    # not(../ram:ExemptionReasonCode)``, the presence-PROHIBITED mirror of
+    # BR-E-10). So: the -01 head is the exact shared AE/E/G/K CII shape (raw,
+    # VAT-TypeCode-unscoped counts; an orphan Z header row fires) — rules.br_z_01
+    # branches on inv.syntax like br_e_01 (T-VHCIIP.7 engine fix); the
+    # seller-identifier rules (-02/03/04, Z accepts a VA-or-FC seller tax
+    # registration exactly like E), the rate rules (-05/06/07,
+    # ``ram:RateApplicablePercent = 0``), the breakdown taxable-sum rule (-08,
+    # the shared ±1 round2 band branch), the breakdown-tax-zero rule (-09) and
+    # the exemption-reason prohibition (-10, already syntax-agnostic over the
+    # parser's per-row exemption-reason surface) all run on the SAME shared
+    # bodies the E family already proved on CII — unchanged.
+    _rules.br_z_01, _rules.br_z_02, _rules.br_z_03, _rules.br_z_04,
+    _rules.br_z_05, _rules.br_z_06, _rules.br_z_07, _rules.br_z_08,
+    _rules.br_z_09, _rules.br_z_10,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -4094,6 +4114,11 @@ _B34_EXEMPTION_REASON = {
     "AE": "Reverse charge",
     "K": "Intra-Community supply",
     "O": "Not subject to VAT",
+    # 'Z' text is used ONLY by the BR-Z-10 fixture (the one Z row that
+    # DELIBERATELY carries a forbidden exemption reason to fire the -10
+    # prohibition). Every other Z header row this batch adds passes
+    # reason=False — a clean Z row carries no ExemptionReason on CII.
+    "Z": "Zero rated",
 }
 
 
@@ -4641,6 +4666,94 @@ def _cmut_brs01(r):
     _cadd_vatcat_ac_b3(r, "S", rate="6")
 
 
+# ---- CII proof-parity batch 6 (T-VHCIIP.7): BR-Z-01..10 -------------------- #
+# The Zero-rated (Z) twins of the batch-3 BR-E fixtures — same CII_example1
+# base (seller: one VA tax registration, no FC, no tax representative; 20
+# S-rated lines, first line S/6 with LineTotalAmount 19.9; header S/6 + S/21
+# breakdown rows) and the SAME code-parametric helpers with code='Z'. The one
+# structural difference from the E family is BR-Z-10: on CII a Z breakdown row
+# MUST NOT carry an ExemptionReason (the reverse of BR-E-10), so every clean Z
+# header row below passes reason=False and only _cmut_brz10 adds a reason to
+# fire the prohibition.
+def _cmut_brz01(r):
+    # Orphan Z document allowance (rate 0, seller VA id intact): CategoryTrade
+    # Tax count 1, header Z count 0 -> BR-Z-01 is the only graded rule to fire,
+    # on both engines (the twin of _cmut_bre01; the shared CII -01 test has no
+    # orphan escape). BR-Z-03 holds (seller VA id), BR-Z-06 holds (rate 0).
+    _cadd_vatcat_ac_b3(r, "Z")
+
+
+def _cmut_brz02(r):
+    # Z line (rate 0) + NO seller VA/FC id -> BR-Z-02; BR-Z-01 (Z line with no
+    # Z header row still fails the shared CII count), BR-S-02 (S lines, seller
+    # id gone) and BR-S-08 (line 1 left its S/6 bucket) fire alongside on both
+    # engines (the twin of _cmut_bre02).
+    _cflip_line1_cat_b3(r, "Z")
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_brz03(r):
+    # Z document allowance + NO seller VA/FC id -> BR-Z-03; BR-Z-01 (orphan Z
+    # category) and BR-S-02 fire alongside (the twin of _cmut_bre03).
+    _cadd_vatcat_ac_b3(r, "Z")
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_brz04(r):
+    # Charge twin of BR-Z-03 -> BR-Z-04.
+    _cadd_vatcat_ac_b3(r, "Z", charge=True)
+    _cdrop_seller_tax_reg_b3(r)
+
+
+def _cmut_brz05(r):
+    # Z line KEEPING the base rate 6: ram:RateApplicablePercent = 0 fails ->
+    # BR-Z-05; BR-Z-01 and BR-S-08 fire alongside (the twin of _cmut_bre05).
+    _cflip_line1_cat_b3(r, "Z", rate=None)
+
+
+def _cmut_brz06(r):
+    # Z document allowance at rate 21 -> BR-Z-06; BR-Z-01 (orphan Z category)
+    # fires alongside, BR-Z-03 holds (seller VA id intact).
+    _cadd_vatcat_ac_b3(r, "Z", rate="21")
+
+
+def _cmut_brz07(r):
+    # Charge twin of BR-Z-06 -> BR-Z-07; BR-Z-01 fires alongside, BR-Z-04 holds.
+    _cadd_vatcat_ac_b3(r, "Z", charge=True, rate="21")
+
+
+def _cmut_brz08(r):
+    # Z line (LineTotalAmount 19.9) + header Z row whose BasisAmount 30.00 sits
+    # OUTSIDE the official ±1 band around round2(19.9) -> BR-Z-08; the Z header
+    # row carries NO ExemptionReason (reason=False) so BR-Z-10 HOLDS; BR-Z-01
+    # holds (one Z header row + a Z line), BR-Z-09 holds (CalculatedAmount 0),
+    # BR-S-08 fires alongside (line 1 left its S/6 bucket).
+    _cflip_line1_cat_b3(r, "Z")
+    _cadd_header_vat_row_b3(r, "Z", basis="30.00", reason=False)
+
+
+def _cmut_brz09(r):
+    # Correct BasisAmount (19.90) but CalculatedAmount 0.01: the official
+    # ``../ram:CalculatedAmount = 0`` fails -> BR-Z-09, while BR-CO-17 still
+    # holds (round(rate)=0 and round(0.01)=0) and BR-Z-08 holds (19.90 = 19.9).
+    # The Z header row carries no ExemptionReason so BR-Z-10 HOLDS; BR-Z-01
+    # holds; BR-S-08 fires alongside.
+    _cflip_line1_cat_b3(r, "Z")
+    _cadd_header_vat_row_b3(r, "Z", basis="19.90", calculated="0.01",
+                            reason=False)
+
+
+def _cmut_brz10(r):
+    # Correct Z header row (basis 19.90, CalculatedAmount 0) but WITH an
+    # ExemptionReason ("Zero rated"): the official prohibition
+    # ``not(../ram:ExemptionReason) and not(../ram:ExemptionReasonCode)`` fails
+    # -> BR-Z-10 fires (the presence-FORBIDDEN mirror of BR-E-10). BR-Z-01
+    # holds (one Z header row + a Z line), BR-Z-08/09 hold (basis 19.90,
+    # CalculatedAmount 0); BR-S-08 fires alongside (line 1 left its S/6 bucket).
+    _cflip_line1_cat_b3(r, "Z")
+    _cadd_header_vat_row_b3(r, "Z", basis="19.90", reason=True)
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -4679,6 +4792,10 @@ _CII_MUTATIONS = {
     "BR-O-10": _cmut_bro10, "BR-O-11": _cmut_bro11, "BR-O-12": _cmut_bro12,
     "BR-O-13": _cmut_bro13, "BR-O-14": _cmut_bro14,
     "BR-S-01": _cmut_brs01,
+    "BR-Z-01": _cmut_brz01, "BR-Z-02": _cmut_brz02, "BR-Z-03": _cmut_brz03,
+    "BR-Z-04": _cmut_brz04, "BR-Z-05": _cmut_brz05, "BR-Z-06": _cmut_brz06,
+    "BR-Z-07": _cmut_brz07, "BR-Z-08": _cmut_brz08, "BR-Z-09": _cmut_brz09,
+    "BR-Z-10": _cmut_brz10,
     "BR-E-01": _cmut_bre01, "BR-E-02": _cmut_bre02, "BR-E-03": _cmut_bre03,
     "BR-E-04": _cmut_bre04, "BR-E-05": _cmut_bre05, "BR-E-06": _cmut_bre06,
     "BR-E-07": _cmut_bre07, "BR-E-08": _cmut_bre08, "BR-E-09": _cmut_bre09,

@@ -303,66 +303,6 @@
       "family": "core",
       "classification": "cii-fireable",
       "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-01",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-02",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-03",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-04",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-05",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-06",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-07",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-08",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-09",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-Z-10",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
     }
   ]
 }

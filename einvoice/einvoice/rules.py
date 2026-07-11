@@ -1221,7 +1221,26 @@ def br_s_01(inv):
 
 def br_z_01(inv):
     """BR-Z-01: If any line/allowance/charge is Zero rated (Z), the VAT breakdown
-    must contain exactly one Zero rated category."""
+    must contain exactly one Zero rated category.
+
+    The CII binding is the exact BR-AE-01 shape for category 'Z' (raw
+    comparisons, no VAT TypeCode filter, and an orphan Z breakdown row
+    fires) — byte-identical to the official BR-E-01 CII test with 'E'
+    replaced by 'Z' — so the body branches on ``inv.syntax`` like
+    :func:`br_e_01` (see :func:`_cii_vat_exactly_one_breakdown`).
+    """
+    if inv.syntax == "cii":
+        if _cii_vat_exactly_one_breakdown(inv, "Z"):
+            return None
+        return Violation(
+            "BR-Z-01",
+            "An Invoice with a 'Zero rated' (Z) VAT category (BT-151/BT-95/"
+            "BT-102) must contain exactly one Z VAT breakdown row (BT-118); "
+            "found %d."
+            % sum(1 for row in inv.cii_header_trade_tax_code_rows
+                  if "Z" in row),
+            "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+            "ram:CategoryCode")
     if "Z" in inv.all_category_ids():
         z_count = inv.breakdown_category_ids().count("Z")
         if z_count != 1:

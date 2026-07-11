@@ -4836,7 +4836,7 @@
       "id": "BR-Z-01",
       "title": "If any line/allowance/charge is Zero rated (Z), the VAT breakdown must contain exactly one Zero rated category.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -4852,8 +4852,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -4861,7 +4860,7 @@
       "id": "BR-Z-02",
       "title": "A Zero-rated (Z) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -4877,8 +4876,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -4886,7 +4884,7 @@
       "id": "BR-Z-03",
       "title": "A Zero-rated (Z) Document level allowance (BT-95) requires the Seller VAT identifier disjunct.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -4902,8 +4900,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -4911,7 +4908,7 @@
       "id": "BR-Z-04",
       "title": "A Zero-rated (Z) Document level charge (BT-102) requires the Seller VAT identifier disjunct.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -4927,8 +4924,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -4936,7 +4932,7 @@
       "id": "BR-Z-05",
       "title": "In a Zero-rated (Z) Invoice line the Invoiced item VAT rate (BT-152) shall be 0.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -4952,8 +4948,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -4961,7 +4956,7 @@
       "id": "BR-Z-06",
       "title": "In a Zero-rated (Z) Document level allowance the allowance VAT rate (BT-96) shall be 0.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -4977,8 +4972,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -4986,7 +4980,7 @@
       "id": "BR-Z-07",
       "title": "In a Zero-rated (Z) Document level charge the charge VAT rate (BT-103) shall be 0.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5002,8 +4996,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -5011,7 +5004,7 @@
       "id": "BR-Z-08",
       "title": "The Zero-rated (Z) VAT breakdown taxable amount (BT-116) shall equal the exact sum of Z line net amounts − Z allowances + Z charges.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5027,8 +5020,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -5036,7 +5028,7 @@
       "id": "BR-Z-09",
       "title": "The VAT category tax amount (BT-117) in a Zero-rated (Z) VAT breakdown shall equal 0.",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5052,8 +5044,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },
@@ -5061,7 +5052,7 @@
       "id": "BR-Z-10",
       "title": "A VAT breakdown (BG-23) with a Zero rated (Z) VAT category code (BT-118) shall not have a VAT exemption reason text (BT-120) or code (BT-121).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5077,8 +5068,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+          "differentially_proven": true
         }
       }
     },

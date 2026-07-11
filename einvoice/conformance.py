@@ -384,6 +384,18 @@ CII_SYNTAX_COVERAGE = {
     "BR-AF-06": "IGIC document allowance VAT rate (BT-96) valid (CII: > 0)",
     "BR-AF-07": "IGIC document charge VAT rate (BT-103) valid (CII: > 0)",
     "BR-AF-10": "IGIC breakdown has no VAT exemption reason",
+    "BR-AG-01": "IPSI (M) items ⇔ an IPSI VAT breakdown row (BG-23)",
+    "BR-AG-02": "IPSI line ⇒ Seller VAT/tax id present",
+    "BR-AG-03": "IPSI document allowance ⇒ Seller VAT/tax id present",
+    "BR-AG-04": "IPSI document charge ⇒ Seller VAT/tax id present",
+    "BR-AG-05": "IPSI line VAT rate (BT-152) ≥ 0 (both bindings)",
+    "BR-AG-06": "IPSI document allowance VAT rate (BT-96) ≥ 0 (both bindings)",
+    "BR-AG-07": "IPSI document charge VAT rate (BT-103) ≥ 0 (both bindings)",
+    "BR-AG-10": "IPSI breakdown has no VAT exemption reason",
+    "BR-B-01": "Split-payment (B) invoice must be domestic Italian (all "
+               "country codes 'IT')",
+    "BR-B-02": "Split-payment (B) and Standard-rated (S) categories must not "
+               "coexist",
     "BR-DEC-09": "≤2 decimals: Sum of Invoice line net amount (BT-106)",
     "BR-DEC-12": "≤2 decimals: Invoice total amount without VAT (BT-109)",
     "BR-DEC-14": "≤2 decimals: Invoice total amount with VAT (BT-112)",
@@ -418,6 +430,15 @@ CII_SYNTAX_EXCLUDED = {
     "BR-AF-09": "the official CII artifact ships this assert as test=\"true()\" "
                 "— a tautology that can never fire; the engine asserts the real "
                 "taxable × rate arithmetic on both syntaxes instead",
+    "BR-AG-08": "the CII artifact repeats the BR-AF-08 defect for the IPSI "
+                "family (assert bound to the ApplicableTradeTax ROW, so "
+                "'every $rate in ()' is vacuously true and it can never "
+                "fire); the engine asserts the intended per-rate bucket sum "
+                "anyway",
+    "BR-AG-09": "the official CII artifact ships this assert as test=\"true()\" "
+                "— the same never-firing tautology as BR-AF-09; the engine "
+                "asserts the real taxable × rate arithmetic on both syntaxes "
+                "instead",
 }
 
 

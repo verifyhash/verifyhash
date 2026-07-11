@@ -224,6 +224,7 @@ def _build_trade_tax_subtotal(tt_el):
     st.taxable_amount = _text(ba_el)          # BT-116
     st.taxable_amount_raw = _rawtext(ba_el)
     st.category_id = _text(tt_el.find("ram:CategoryCode", NS))   # BT-118
+    st.category_id_raw = _rawtext(tt_el.find("ram:CategoryCode", NS))
     st.percent = _text(tt_el.find("ram:RateApplicablePercent", NS))  # BT-119
     scheme = _norm_space(_text(tt_el.find("ram:TypeCode", NS)))
     st.category_scheme_id = scheme.upper() if scheme else None
@@ -302,6 +303,24 @@ def build_model(root):
     inv.country_codes = [
         _norm_space(_text(el)) or ""
         for el in root.findall(".//ram:CountryID", NS)
+    ]
+    # BR-B-01/BR-B-02 (Italian split payment) node sets — RAW string values
+    # (the official CII tests are the raw general comparisons
+    # ``//ram:CategoryCode = 'B'`` / ``//ram:CountryID != 'IT'``). The two
+    # category lists below (CategoryTradeTax + ApplicableTradeTax) together
+    # cover EVERY ram:CategoryCode element a CII invoice can carry. The UBL
+    # child-axis BR-B-02 sets (doc_breakdown/doc_ac) stay empty on CII —
+    # br_b_02 branches on syntax and compares the whole set here.
+    inv.tax_category_ids_raw = [
+        _strval(el)
+        for el in root.findall(".//ram:CategoryTradeTax/ram:CategoryCode", NS)
+    ]
+    inv.classified_category_ids_raw = [
+        _strval(el)
+        for el in root.findall(".//ram:ApplicableTradeTax/ram:CategoryCode", NS)
+    ]
+    inv.all_country_codes_raw = [
+        _strval(el) for el in root.findall(".//ram:CountryID", NS)
     ]
     # BR-CL-17 context = ram:CategoryTradeTax/ram:CategoryCode (CII): the VAT
     # category of a document/line allowance-charge (ram:SpecifiedTradeAllowance

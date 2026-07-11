@@ -1227,5 +1227,218 @@ class TestIgicBatchBCII(unittest.TestCase):
         self.assert_fired(self._igic_root(), "BR-AF-10", expect=False)
 
 
+class TestIpsiSplitPaymentBatchCCII(unittest.TestCase):
+    """CII-side coverage for batch C — BR-AG-01..10 (IPSI, 'M') and
+    BR-B-01/02 (Italian split payment, 'B') over the CII model. Pins the
+    CII-binding specifics the differential leg proved:
+
+      * the BR-AG rate rules (05/06/07) are ``ram:RateApplicablePercent >= 0``
+        on CII — the SAME predicate as UBL, so a ZERO rate HOLDS (the one
+        place the M family differs from the L family, whose CII binding is
+        strictly ``> 0``);
+      * BR-AG-08 applies the EXACT per-rate round2 bucket equality (BR-S-08's
+        proven CII idiom). The SHIPPED CII assert is vacuously bound (its
+        context is the ApplicableTradeTax row, so ``../RateApplicablePercent``
+        is empty and ``every $rate in ()`` always holds) and can never fire —
+        the engine asserts the intended arithmetic anyway, CII-ungraded;
+      * BR-AG-09 is engine-asserted on the CII model too (the official CII
+        artifact ships it as ``test="true()"`` — CII-ungraded by design);
+      * BR-B-01/02 are raw ``//ram:CategoryCode`` / ``//ram:CountryID``
+        comparisons — fully CII-graded in the differential.
+    """
+
+    def assert_fired(self, root, rule_id, expect=True):
+        got = _fired_ids(root)
+        if expect:
+            self.assertIn(rule_id, got,
+                          "%s should fire; fired=%s" % (rule_id, sorted(got)))
+        else:
+            self.assertNotIn(rule_id, got,
+                             "%s should NOT fire" % rule_id)
+
+    # ---- helpers -----------------------------------------------------------
+    def _to_ipsi(self, r):
+        """Flip every S CategoryCode (20 lines + 2 breakdown rows) to M: a
+        clean IPSI invoice — the 6/21 rates satisfy the CII >= 0 predicate
+        and the bucket arithmetic is untouched."""
+        txn = r.find("rsm:SupplyChainTradeTransaction", NS)
+        for cc in txn.iter(_q(NSA, "CategoryCode")):
+            if cc.text == "S":
+                cc.text = "M"
+
+    def _ipsi_root(self):
+        r = _good_root()
+        self._to_ipsi(r)
+        return r
+
+    def _line_tax(self, r):
+        return _first_line(r).find(
+            "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", NS)
+
+    def _seller(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:SellerTradeParty", NS)
+
+    def _add_ipsi_ac(self, r, charge, rate):
+        """Document allowance/charge with an IPSI (M) CategoryTradeTax;
+        ActualAmount 0.00 keeps the totals and bucket sums unchanged."""
+        ac = ET.SubElement(_settlement(r),
+                           _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        ind = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+        ET.SubElement(
+            ind, "{urn:un:unece:uncefact:data:standard:"
+                 "UnqualifiedDataType:100}Indicator").text = (
+            "true" if charge else "false")
+        ET.SubElement(ac, _q(NSA, "ActualAmount")).text = "0.00"
+        ET.SubElement(ac, _q(NSA, "Reason")).text = (
+            "Freight" if charge else "Discount")
+        ctt = ET.SubElement(ac, _q(NSA, "CategoryTradeTax"))
+        ET.SubElement(ctt, _q(NSA, "TypeCode")).text = "VAT"
+        ET.SubElement(ctt, _q(NSA, "CategoryCode")).text = "M"
+        ET.SubElement(ctt, _q(NSA, "RateApplicablePercent")).text = rate
+
+    # ---- the clean converted base -----------------------------------------
+    def test_clean_ipsi_invoice_fires_nothing(self):
+        fired = _fired_ids(self._ipsi_root())
+        self.assertEqual(
+            fired, set(),
+            "clean all-M CII invoice unexpectedly fired: %s" % sorted(fired))
+
+    # ---- BR-AG-01 ------------------------------------------------------------
+    def test_01_m_line_without_m_breakdown_fires(self):
+        r = _good_root()
+        self._line_tax(r).find("ram:CategoryCode", NS).text = "M"
+        self.assert_fired(r, "BR-AG-01")
+        self.assert_fired(self._ipsi_root(), "BR-AG-01", expect=False)
+
+    # ---- BR-AG-02..04: seller VAT/tax registration ---------------------------
+    def test_02_line_without_seller_registration_fires(self):
+        r = self._ipsi_root()
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+        self.assert_fired(r, "BR-AG-02")
+        self.assert_fired(self._ipsi_root(), "BR-AG-02", expect=False)
+
+    def test_03_allowance_without_seller_registration_fires(self):
+        r = _good_root()
+        self._add_ipsi_ac(r, charge=False, rate="21")
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+        self.assert_fired(r, "BR-AG-03")
+        r2 = _good_root()
+        self._add_ipsi_ac(r2, charge=False, rate="21")
+        self.assert_fired(r2, "BR-AG-03", expect=False)
+
+    def test_04_charge_without_seller_registration_fires(self):
+        r = _good_root()
+        self._add_ipsi_ac(r, charge=True, rate="21")
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+        self.assert_fired(r, "BR-AG-04")
+
+    # ---- BR-AG-05..07: the CII binding is >= 0 (zero HOLDS, unlike BR-AF) ----
+    def test_05_negative_rate_line_fires_zero_holds(self):
+        r = self._ipsi_root()
+        self._line_tax(r).find("ram:RateApplicablePercent", NS).text = "-5"
+        self.assert_fired(r, "BR-AG-05")
+        r2 = self._ipsi_root()
+        self._line_tax(r2).find("ram:RateApplicablePercent", NS).text = "0"
+        # RateApplicablePercent >= 0 — zero is a valid IPSI rate on CII
+        # (BR-AF-05 would fire here; the M binding is the UBL predicate).
+        self.assert_fired(r2, "BR-AG-05", expect=False)
+
+    def test_06_negative_rate_allowance_fires_zero_holds(self):
+        r = _good_root()
+        self._add_ipsi_ac(r, charge=False, rate="-5")
+        self.assert_fired(r, "BR-AG-06")
+        r2 = _good_root()
+        self._add_ipsi_ac(r2, charge=False, rate="0")
+        self.assert_fired(r2, "BR-AG-06", expect=False)
+
+    def test_07_negative_rate_charge_fires_zero_holds(self):
+        r = _good_root()
+        self._add_ipsi_ac(r, charge=True, rate="-5")
+        self.assert_fired(r, "BR-AG-07")
+        r2 = _good_root()
+        self._add_ipsi_ac(r2, charge=True, rate="0")
+        self.assert_fired(r2, "BR-AG-07", expect=False)
+
+    # ---- BR-AG-08: EXACT per-rate round2 bucket equality (engine; the
+    # shipped CII assert is vacuously bound and never fires -> CII-ungraded) --
+    def test_08_shifted_basis_fires(self):
+        r = self._ipsi_root()
+        _first_breakdown(r).find("ram:BasisAmount", NS).text = "185.23"
+        self.assert_fired(r, "BR-AG-08")
+        self.assert_fired(self._ipsi_root(), "BR-AG-08", expect=False)
+
+    def test_08_off_by_a_cent_fires(self):
+        # No ±1 band on the CII idiom — even one cent off fires.
+        r = self._ipsi_root()
+        _first_breakdown(r).find("ram:BasisAmount", NS).text = "183.24"
+        self.assert_fired(r, "BR-AG-08")
+
+    # ---- BR-AG-09: engine-asserted on CII (officially a tautology) -----------
+    def test_09_tax_far_from_taxable_times_rate_fires(self):
+        r = self._ipsi_root()
+        _first_breakdown(r).find("ram:CalculatedAmount", NS).text = "99.99"
+        self.assert_fired(r, "BR-AG-09")
+        self.assert_fired(self._ipsi_root(), "BR-AG-09", expect=False)
+
+    # ---- BR-AG-10: exemption reason forbidden --------------------------------
+    def test_10_exemption_reason_fires(self):
+        r = self._ipsi_root()
+        bd = _first_breakdown(r)
+        rate = bd.find("ram:RateApplicablePercent", NS)
+        reason = ET.Element(_q(NSA, "ExemptionReason"))
+        reason.text = "n/a"
+        bd.insert(list(bd).index(rate), reason)
+        self.assert_fired(r, "BR-AG-10")
+        self.assert_fired(self._ipsi_root(), "BR-AG-10", expect=False)
+
+    # ---- BR-B-01/02: Italian split payment ------------------------------------
+    def _to_split_payment(self, r, domestic=True):
+        """Flip every S CategoryCode to B; with ``domestic`` also set both
+        ram:CountryID elements (CII_example1 is Dutch) to IT so BR-B-01's
+        not(//ram:CountryID != 'IT') holds."""
+        txn = r.find("rsm:SupplyChainTradeTransaction", NS)
+        for cc in txn.iter(_q(NSA, "CategoryCode")):
+            if cc.text == "S":
+                cc.text = "B"
+        if domestic:
+            for el in r.iter(_q(NSA, "CountryID")):
+                el.text = "IT"
+
+    def test_b01_foreign_split_payment_fires(self):
+        r = _good_root()
+        self._to_split_payment(r, domestic=False)   # countries stay NL
+        self.assert_fired(r, "BR-B-01")
+
+    def test_b01_domestic_italian_holds(self):
+        r = _good_root()
+        self._to_split_payment(r, domestic=True)
+        got = _fired_ids(r)
+        self.assertEqual(got, set(),
+                         "clean domestic split-payment CII invoice "
+                         "unexpectedly fired: %s" % sorted(got))
+
+    def test_b01_no_b_category_holds(self):
+        self.assert_fired(_good_root(), "BR-B-01", expect=False)
+
+    def test_b02_b_and_s_coexist_fires(self):
+        r = _good_root()
+        self._line_tax(r).find("ram:CategoryCode", NS).text = "B"
+        for el in r.iter(_q(NSA, "CountryID")):
+            el.text = "IT"                          # keep BR-B-01 out
+        got = _fired_ids(r)
+        self.assertIn("BR-B-02", got)
+        self.assertNotIn("BR-B-01", got)
+
+    def test_b02_all_b_holds(self):
+        r = _good_root()
+        self._to_split_payment(r, domestic=True)
+        self.assert_fired(r, "BR-B-02", expect=False)
+
+
 if __name__ == "__main__":
     unittest.main()

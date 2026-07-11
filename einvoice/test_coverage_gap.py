@@ -23,9 +23,10 @@ What is checked (each its own test):
      missing rule carries non-empty official text and a flag, ids are sorted
      (deterministic output), and no missing id is secretly fireable by the
      engine or listed as an exclusion.
-  5. known families: the UBL gap contains the IPSI VAT block (BR-AG-01), the
-     split-payment block (BR-B-01) and the remaining BR-CO block (BR-CO-05) —
-     the spot checks an independent measurement of the artifact produced.
+  5. known families: the UBL gap contains the remaining BR-CO tautology block
+     (BR-CO-05..08) and NOTHING from the now-implemented IGIC (BR-AF-*) /
+     IPSI (BR-AG-*) / split-payment (BR-B-*) families — the spot checks an
+     independent measurement of the artifact produced.
 """
 
 from __future__ import annotations
@@ -151,8 +152,21 @@ class CoverageGapTest(unittest.TestCase):
     def test_known_missing_families_present_in_ubl_gap(self):
         ubl = {m["id"] for m in
                self.gap["artifacts"]["en16931-ubl"]["missing_rules"]}
-        for rid in ("BR-AG-01", "BR-B-01", "BR-CO-05"):
+        for rid in ("BR-CO-05", "BR-CO-06", "BR-CO-07", "BR-CO-08"):
             self.assertIn(rid, ubl, "expected known-missing %s in UBL gap" % rid)
+
+    def test_implemented_families_absent_from_every_gap(self):
+        """The IGIC (batch B), IPSI and split-payment (batch C) families are
+        implemented in both bindings — none of their ids may linger in ANY
+        artifact's missing list."""
+        for key in self.gap["artifact_order"]:
+            ids = {m["id"] for m in
+                   self.gap["artifacts"][key]["missing_rules"]}
+            stale = {i for i in ids
+                     if i.startswith(("BR-AF-", "BR-AG-", "BR-B-"))}
+            self.assertFalse(
+                stale, "%s: implemented family ids still in gap: %s"
+                % (key, sorted(stale)))
 
     def test_excluded_ids_considered_matches_live_sources(self):
         self.assertEqual(set(self.gap["excluded_ids_considered"]), self.excluded)

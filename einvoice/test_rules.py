@@ -93,6 +93,16 @@ AF_RULES = {
     "BR-AF-07", "BR-AF-08", "BR-AF-09", "BR-AF-10",
 }
 
+# Ceuta/Melilla IPSI (M) VAT category batch C (differentially proven the
+# same way; BR-AG-08/09 are UBL-proven only — the official CII artifact
+# ships both as asserts that can never fire) plus the Italian split-payment
+# pair (both bindings fully graded).
+AG_B_RULES = {
+    "BR-AG-01", "BR-AG-02", "BR-AG-03", "BR-AG-04", "BR-AG-05", "BR-AG-06",
+    "BR-AG-07", "BR-AG-08", "BR-AG-09", "BR-AG-10",
+    "BR-B-01", "BR-B-02",
+}
+
 # Export outside the EU (G) + Not subject to VAT (O) VAT category batch
 # (differentially proven the same way).
 GO_RULES = {
@@ -1397,6 +1407,304 @@ class IgicBatch(unittest.TestCase):
         self.assertIn("BR-AF-10", fired(r))
 
 
+def ipsi_base():
+    """A clean IPSI (M) invoice: the S-25% base with the line + breakdown
+    category codes flipped to M. The 25% rate, amounts and seller VAT id stay,
+    so nothing fires — 25 satisfies the ``>= 0`` rate test of BOTH bindings
+    and the breakdown arithmetic already reconciles."""
+    r = base()
+    ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+    child(ctc, NS_CBC, "ID").text = "M"
+    child(subtotal_category(r), NS_CBC, "ID").text = "M"
+    return r
+
+
+class IpsiBatch(unittest.TestCase):
+    """BR-AG-01..10 — Ceuta/Melilla IPSI (M) VAT category rules (UBL
+    semantics: the rate rules accept >= 0 on BOTH bindings, the -08 sum is a
+    strict ±1 band gated on any invoice line existing, -09 is the BR-S-09
+    band, and -01's first disjunct counts the RAW ``cbc:ID='M'`` VAT-scoped
+    breakdown node set)."""
+
+    def test_clean_ipsi_base_fires_nothing(self):
+        self.assertEqual(fired(ipsi_base()), set())
+
+    # -- BR-AG-01: items <-> breakdown agreement (bidirectional) --------------
+    def test_01_m_line_without_m_breakdown_fires(self):
+        r = base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "ID").text = "M"      # breakdown stays 'S'
+        self.assertIn("BR-AG-01", fired(r))
+        self.assertNotIn("BR-AG-01", fired(ipsi_base()))
+
+    def test_01_orphan_m_breakdown_fires(self):
+        r = base()                                # line stays 'S'
+        child(subtotal_category(r), NS_CBC, "ID").text = "M"
+        self.assertIn("BR-AG-01", fired(r))
+
+    def test_01_m_allowance_without_m_breakdown_fires(self):
+        r = base()
+        add_doc_allowance_charge(r, charge=False, percent="25", category="M",
+                                 amount="0.00")
+        self.assertIn("BR-AG-01", fired(r))
+
+    def test_01_padded_breakdown_id_does_not_satisfy_the_item_side(self):
+        # The official FIRST disjunct counts the RAW cbc:ID = 'M' breakdown
+        # node set (no normalize-space): a whitespace-padded ' M ' breakdown
+        # row does NOT satisfy an M item, so the rule still fires — while the
+        # normalize-space'd ORPHAN direction does not see an orphan either.
+        r = ipsi_base()
+        child(subtotal_category(r), NS_CBC, "ID").text = " M "
+        self.assertIn("BR-AG-01", fired(r))
+
+    # -- BR-AG-02..04: seller VAT identifier ----------------------------------
+    def test_02_line_without_seller_vat_id_fires(self):
+        r = ipsi_base()
+        remove_seller_party_tax_scheme(r)
+        self.assertIn("BR-AG-02", fired(r))
+        self.assertNotIn("BR-AG-02", fired(ipsi_base()))
+
+    def test_02_tax_representative_satisfies(self):
+        r = ipsi_base()
+        remove_seller_party_tax_scheme(r)
+        trp = ET.Element(q(NS_CAC, "TaxRepresentativeParty"))
+        pts = ET.SubElement(trp, q(NS_CAC, "PartyTaxScheme"))
+        ET.SubElement(pts, q(NS_CBC, "CompanyID")).text = "ES999999999"
+        ET.SubElement(ET.SubElement(pts, q(NS_CAC, "TaxScheme")),
+                      q(NS_CBC, "ID")).text = "VAT"
+        r.insert(0, trp)
+        self.assertNotIn("BR-AG-02", fired(r))
+
+    def test_02_scheme_less_line_category_does_not_fire(self):
+        # Both disjuncts of the official BR-AG-02 test are VAT-scheme scoped
+        # (the BR-Z/E/AF-02 symmetric shape): an M ClassifiedTaxCategory with
+        # NO TaxScheme matches neither node set, so the rule holds even
+        # without a seller id.
+        r = ipsi_base()
+        remove_seller_party_tax_scheme(r)
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        ctc.remove(ctc.find(q(NS_CAC, "TaxScheme")))
+        self.assertNotIn("BR-AG-02", fired(r))
+
+    def test_03_allowance_without_seller_vat_id_fires(self):
+        r = ipsi_base()
+        add_doc_allowance_charge(r, charge=False, percent="25", category="M",
+                                 amount="0.00")
+        remove_seller_party_tax_scheme(r)
+        self.assertIn("BR-AG-03", fired(r))
+        r2 = ipsi_base()
+        add_doc_allowance_charge(r2, charge=False, percent="25", category="M",
+                                 amount="0.00")
+        self.assertNotIn("BR-AG-03", fired(r2))
+
+    def test_04_charge_without_seller_vat_id_fires(self):
+        r = ipsi_base()
+        add_doc_allowance_charge(r, charge=True, percent="25", category="M",
+                                 amount="0.00")
+        remove_seller_party_tax_scheme(r)
+        self.assertIn("BR-AG-04", fired(r))
+        r2 = ipsi_base()
+        add_doc_allowance_charge(r2, charge=True, percent="25", category="M",
+                                 amount="0.00")
+        self.assertNotIn("BR-AG-04", fired(r2))
+
+    # -- BR-AG-05..07: VAT rate must be >= 0 (zero allowed on BOTH bindings) --
+    def test_05_negative_rate_line_fires(self):
+        r = ipsi_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "Percent").text = "-5"
+        self.assertIn("BR-AG-05", fired(r))
+
+    def test_05_zero_rate_holds(self):
+        # (cbc:Percent) >= 0 — a 0% IPSI rate is valid (and unlike BR-AF-05,
+        # the CII binding agrees; see test_rules_cii.py).
+        r = ipsi_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "Percent").text = "0"
+        self.assertNotIn("BR-AG-05", fired(r))
+
+    def test_05_missing_rate_fires(self):
+        # () >= 0 is FALSE — an absent Percent fires.
+        r = ipsi_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        ctc.remove(child(ctc, NS_CBC, "Percent"))
+        self.assertIn("BR-AG-05", fired(r))
+
+    def test_06_negative_rate_allowance_fires(self):
+        r = ipsi_base()
+        add_doc_allowance_charge(r, charge=False, percent="-5", category="M",
+                                 amount="0.00")
+        self.assertIn("BR-AG-06", fired(r))
+        r2 = ipsi_base()
+        add_doc_allowance_charge(r2, charge=False, percent="0", category="M",
+                                 amount="0.00")
+        self.assertNotIn("BR-AG-06", fired(r2))  # zero rate holds
+
+    def test_07_negative_rate_charge_fires(self):
+        r = ipsi_base()
+        add_doc_allowance_charge(r, charge=True, percent="-5", category="M",
+                                 amount="0.00")
+        self.assertIn("BR-AG-07", fired(r))
+        r2 = ipsi_base()
+        add_doc_allowance_charge(r2, charge=True, percent="0", category="M",
+                                 amount="0.00")
+        self.assertNotIn("BR-AG-07", fired(r2))
+
+    # -- BR-AG-08: per-rate bucket sum, strict ±1 band -------------------------
+    def test_08_taxable_outside_band_fires(self):
+        r = ipsi_base()
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "625745.54"  # +2
+        self.assertIn("BR-AG-08", fired(r))
+        self.assertNotIn("BR-AG-08", fired(ipsi_base()))
+
+    def test_08_inside_band_holds(self):
+        # The band is strict ±1 around the bucket sum: +0.50 holds.
+        r = ipsi_base()
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "625744.04"
+        self.assertNotIn("BR-AG-08", fired(r))
+
+    def test_08_charge_enters_the_sum(self):
+        r = ipsi_base()
+        add_doc_allowance_charge(r, charge=True, percent="25", category="M",
+                                 amount="10.00")
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "625753.54"
+        self.assertNotIn("BR-AG-08", fired(r))
+
+    def test_08_no_invoice_line_fires(self):
+        # The official band is gated on exists(//cac:InvoiceLine): an M
+        # breakdown with a rate on a line-less document fires.
+        r = ipsi_base()
+        for ln in r.findall(q(NS_CAC, "InvoiceLine")):
+            r.remove(ln)
+        self.assertIn("BR-AG-08", fired(r))
+
+    def test_08_missing_rate_is_vacuous(self):
+        # every $rate in () — an M breakdown without a Percent never fires
+        # BR-AG-08 (BR-48 guards the missing rate instead).
+        r = ipsi_base()
+        cat = subtotal_category(r)
+        cat.remove(child(cat, NS_CBC, "Percent"))
+        f = fired(r)
+        self.assertNotIn("BR-AG-08", f)
+        self.assertIn("BR-48", f)
+
+    # -- BR-AG-09: breakdown tax = taxable x rate (±1 band) --------------------
+    def test_09_tax_far_from_taxable_times_rate_fires(self):
+        r = ipsi_base()
+        child(subtotal(r), NS_CBC, "TaxAmount").text = "99.99"
+        self.assertIn("BR-AG-09", fired(r))
+        self.assertNotIn("BR-AG-09", fired(ipsi_base()))
+
+    def test_09_inside_band_holds(self):
+        r = ipsi_base()
+        child(subtotal(r), NS_CBC, "TaxAmount").text = "156436.39"  # +0.50
+        self.assertNotIn("BR-AG-09", fired(r))
+
+    # -- BR-AG-10: exemption reason forbidden ----------------------------------
+    def test_10_exemption_reason_fires(self):
+        r = ipsi_base()
+        ET.SubElement(subtotal_category(r),
+                      q(NS_CBC, "TaxExemptionReason")).text = "n/a"
+        self.assertIn("BR-AG-10", fired(r))
+        self.assertNotIn("BR-AG-10", fired(ipsi_base()))
+
+    def test_10_exemption_reason_code_fires(self):
+        r = ipsi_base()
+        ET.SubElement(subtotal_category(r),
+                      q(NS_CBC, "TaxExemptionReasonCode")).text = "VATEX-EU-O"
+        self.assertIn("BR-AG-10", fired(r))
+
+
+def set_all_country_codes(root, code):
+    """Set every cbc:IdentificationCode in the document (the BR-B-01 node
+    set: postal Country AND item OriginCountry codes) to ``code``."""
+    for el in root.iter(q(NS_CBC, "IdentificationCode")):
+        el.text = code
+
+
+def split_payment_base():
+    """A clean split-payment invoice: the S-25% base with line + breakdown
+    categories flipped to B and every country code set to IT (the base is
+    Danish; BR-B-01 requires a domestic Italian document)."""
+    r = base()
+    ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+    child(ctc, NS_CBC, "ID").text = "B"
+    child(subtotal_category(r), NS_CBC, "ID").text = "B"
+    set_all_country_codes(r, "IT")
+    return r
+
+
+class SplitPaymentBatch(unittest.TestCase):
+    """BR-B-01/BR-B-02 — Italian split payment (B). Both official tests are
+    RAW general comparisons: no normalize-space, no TaxScheme scoping."""
+
+    def test_clean_split_payment_base_fires_nothing(self):
+        self.assertEqual(fired(split_payment_base()), set())
+
+    # -- BR-B-01: split payment must be domestic Italian -----------------------
+    def test_01_non_italian_country_fires(self):
+        r = base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "ID").text = "B"
+        child(subtotal_category(r), NS_CBC, "ID").text = "B"
+        # countries stay DK -> not a domestic Italian invoice
+        self.assertIn("BR-B-01", fired(r))
+
+    def test_01_single_foreign_code_among_it_fires(self):
+        r = split_payment_base()
+        next(iter(r.iter(q(NS_CBC, "IdentificationCode")))).text = "FR"
+        self.assertIn("BR-B-01", fired(r))
+
+    def test_01_breakdown_only_b_also_counts(self):
+        # BR-B-01's presence set is //cac:TaxCategory | //cac:Classified-
+        # TaxCategory — a B breakdown row alone (line stays S) triggers the
+        # domestic-Italian requirement.
+        r = base()                                # countries DK
+        child(subtotal_category(r), NS_CBC, "ID").text = "B"
+        self.assertIn("BR-B-01", fired(r))
+
+    def test_01_no_b_category_holds_whatever_the_country(self):
+        self.assertNotIn("BR-B-01", fired(base()))
+
+    def test_01_padded_b_does_not_count(self):
+        # RAW comparison: ' B ' != 'B', so a padded category id is NOT a
+        # split-payment code and the rule holds (no normalize-space in the
+        # official test).
+        r = base()
+        child(subtotal_category(r), NS_CBC, "ID").text = " B "
+        self.assertNotIn("BR-B-01", fired(r))
+
+    # -- BR-B-02: B and S must not coexist --------------------------------------
+    def test_02_b_line_with_s_breakdown_fires(self):
+        r = base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "ID").text = "B"      # breakdown stays 'S'
+        set_all_country_codes(r, "IT")           # keep BR-B-01 out of the way
+        f = fired(r)
+        self.assertIn("BR-B-02", f)
+        self.assertNotIn("BR-B-01", f)
+
+    def test_02_s_allowance_alongside_b_fires(self):
+        r = split_payment_base()
+        add_doc_allowance_charge(r, charge=True, percent="25", category="S",
+                                 amount="0.00")
+        self.assertIn("BR-B-02", fired(r))
+
+    def test_02_all_b_holds(self):
+        self.assertNotIn("BR-B-02", fired(split_payment_base()))
+
+    def test_02_scheme_agnostic(self):
+        # The official node sets carry NO TaxScheme predicate: a B breakdown
+        # category whose TaxScheme is not VAT still collides with S.
+        r = base()
+        child(subtotal_category(r), NS_CBC, "ID").text = "B"
+        cat = subtotal_category(r)
+        cat.find("%s/%s" % (q(NS_CAC, "TaxScheme"),
+                            q(NS_CBC, "ID"))).text = "GST"
+        set_all_country_codes(r, "IT")
+        self.assertIn("BR-B-02", fired(r))
+
+
 class NotSubjectToVatBatch(unittest.TestCase):
     """BR-O-02..14 — Not subject to VAT (O) VAT category rules.
 
@@ -1632,7 +1940,7 @@ class RulesetShape(unittest.TestCase):
                for fn in rules.ALL_RULES}
         for rid in (NEW_RULES | LINE_RULES | PAYMENT_RULES | ZE_RULES
                     | AEIC_RULES | GO_RULES | CALC_RULES | GAP_A_RULES
-                    | AF_RULES):
+                    | AF_RULES | AG_B_RULES):
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))

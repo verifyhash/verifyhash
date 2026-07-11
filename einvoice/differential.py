@@ -111,7 +111,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 197, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 209, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -263,6 +263,18 @@ CII_GRADED_RULES = [
     _rules.br_af_01, _rules.br_af_02, _rules.br_af_03, _rules.br_af_04,
     _rules.br_af_05, _rules.br_af_06, _rules.br_af_07,
     _rules.br_af_10,
+    # IPSI batch C (BR-AG-01..07, BR-AG-10) + Italian split payment
+    # (BR-B-01/02). The BR-AG rate rules (05/06/07) are ``>= 0`` on BOTH
+    # bindings — the CII artifact ships ``ram:RateApplicablePercent >= 0``,
+    # unlike BR-AF's strict CII ``> 0`` — so the shared bodies run
+    # unbranched. BR-AG-08 and BR-AG-09 are CII-excluded below for exactly
+    # the BR-AF-08/09 artifact defects. BR-B-01/02 are plain raw
+    # ``//ram:CategoryCode`` + ``//ram:CountryID`` comparisons on CII —
+    # fully graded.
+    _rules.br_ag_01, _rules.br_ag_02, _rules.br_ag_03, _rules.br_ag_04,
+    _rules.br_ag_05, _rules.br_ag_06, _rules.br_ag_07,
+    _rules.br_ag_10,
+    _rules.br_b_01, _rules.br_b_02,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -316,8 +328,16 @@ CII_GRADED_RULES = [
 #    arithmetic on both syntaxes (deliberate strictness), so grading it on CII
 #    would ship a guaranteed false-positive divergence on every violating
 #    fixture. Both stay fully graded on the UBL leg.
+#  * BR-AG-08 / BR-AG-09 (IPSI breakdown taxable-sum / tax-amount arithmetic):
+#    the official CII artifact repeats BOTH BR-AF defects verbatim for the
+#    'M' family — BR-AG-08 is bound to the ``ram:ApplicableTradeTax`` ROW
+#    (empty ``../ram:RateApplicablePercent`` ⇒ ``every $rate in ()`` is
+#    vacuously true) and BR-AG-09 ships as ``test="true()"`` — so neither
+#    shipped assert can ever fire on CII. Our engine asserts the intended
+#    arithmetic on the CII model anyway (deliberate strictness); both stay
+#    fully graded on the UBL leg.
 CII_EXCLUDED_RULE_IDS = ("BR-CO-14", "BR-CO-15", "BR-09", "BR-11", "BR-S-01",
-                         "BR-AF-08", "BR-AF-09")
+                         "BR-AF-08", "BR-AF-09", "BR-AG-08", "BR-AG-09")
 
 CII_RULE_IDS = [_fn_to_rule_id(fn) for fn in CII_GRADED_RULES]
 CII_RULE_SET = set(CII_RULE_IDS)
@@ -1613,6 +1633,131 @@ def _mut_braf10(r):
     _sub_el(cat, NS_CBC, "TaxExemptionReason", "n/a")
 
 
+# ---- IPSI (BR-AG-*) mutations, off an M-converted clean base --------------- #
+def _to_ipsi(r):
+    """Rewrite the clean S-25% base into a clean IPSI invoice: the line and
+    breakdown category codes flip S -> M, everything else (25% rate, amounts,
+    seller VAT id) stays — 25 satisfies the ``>= 0`` rate predicate of BOTH
+    bindings and the arithmetic already reconciles, so the converted invoice
+    fires no rule on either engine."""
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "ID").text = "M"
+    cat = _child(_subtotal(r), NS_CAC, "TaxCategory")
+    _child(cat, NS_CBC, "ID").text = "M"
+
+
+def _mut_brag01(r):
+    # M invoice line with an S-only breakdown -> BR-AG-01 (item side without
+    # a matching raw-M VAT breakdown row); the orphan S breakdown row equally
+    # fires BR-S-01 on both engines.
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "ID").text = "M"
+
+
+def _mut_brag02(r):
+    # M line present + no Seller VAT identifier -> BR-AG-02.
+    _to_ipsi(r)
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brag03(r):
+    # M document-level allowance + no Seller VAT id -> BR-AG-03 (also
+    # BR-AG-02, the M line). Amount 0.00 keeps the M/25 bucket sum (BR-AG-08)
+    # and the document totals unchanged.
+    _to_ipsi(r)
+    _add_doc_allowance_charge(r, charge=False, amount="0.00", percent="25",
+                              category="M")
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brag04(r):
+    # M document-level charge + no Seller VAT id -> BR-AG-04 (also BR-AG-02).
+    _to_ipsi(r)
+    _add_doc_allowance_charge(r, charge=True, amount="0.00", percent="25",
+                              category="M")
+    _supplier_remove_party_tax_scheme(r)
+
+
+def _mut_brag05(r):
+    # M invoice line with a NEGATIVE VAT rate -> BR-AG-05 ((Percent) >= 0
+    # fails; zero would HOLD on both bindings, unlike BR-AF). The line leaves
+    # the M/25 bucket, so BR-AG-08 fires alongside on both engines.
+    _to_ipsi(r)
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "Percent").text = "-5"
+
+
+def _mut_brag06(r):
+    # M document-level allowance with a negative VAT rate -> BR-AG-06. The
+    # -5 category matches no M/25 breakdown context and the amount is 0.00,
+    # so no other graded rule flips.
+    _to_ipsi(r)
+    _add_doc_allowance_charge(r, charge=False, amount="0.00", percent="-5",
+                              category="M")
+
+
+def _mut_brag07(r):
+    # M document-level charge with a negative VAT rate -> BR-AG-07.
+    _to_ipsi(r)
+    _add_doc_allowance_charge(r, charge=True, amount="0.00", percent="-5",
+                              category="M")
+
+
+def _mut_brag08(r):
+    # Shift the M breakdown's taxable amount (BT-116) by +2: outside
+    # BR-AG-08's strict ±1 band against the M/25 bucket sum (625743.54), but
+    # the tax amount is then only 0.50 off taxable x 25% — INSIDE the ±1
+    # bands of BR-CO-17 and BR-AG-09 — so BR-AG-08 is the only rule that
+    # fires (the BR-S/AF-08 twin of this mutation).
+    _to_ipsi(r)
+    st = _child(_child(r, NS_CAC, "TaxTotal"), NS_CAC, "TaxSubtotal")
+    _child(st, NS_CBC, "TaxableAmount").text = "625745.54"
+
+
+def _mut_brag09(r):
+    # M breakdown TaxAmount far from taxable x rate -> BR-AG-09 (BR-CO-17 and
+    # the ungraded-on-UBL BR-CO-14 fire alongside on both engines).
+    _to_ipsi(r)
+    _child(_subtotal(r), NS_CBC, "TaxAmount").text = "99.99"
+
+
+def _mut_brag10(r):
+    # M breakdown carrying a VAT exemption reason -> BR-AG-10.
+    _to_ipsi(r)
+    cat = _child(_subtotal(r), NS_CAC, "TaxCategory")
+    _sub_el(cat, NS_CBC, "TaxExemptionReason", "n/a")
+
+
+# ---- Italian split payment (BR-B-*) mutations ------------------------------- #
+def _mut_brb01(r):
+    # Flip the line AND breakdown category codes S -> B: a split-payment
+    # invoice whose four cbc:IdentificationCode countries are all 'DK' (the
+    # clean base is Danish), so the official "domestic Italian" test
+    # not(//cbc:IdentificationCode != 'IT') fails -> BR-B-01 fires on both
+    # engines. No 'S' remains anywhere, so BR-B-02 and the BR-S family stay
+    # quiet; category 'B' is UNCL 5305-valid (BR-CL-17/18 hold) and no B
+    # breakdown/rate family exists to fire alongside.
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "ID").text = "B"
+    cat = _child(_subtotal(r), NS_CAC, "TaxCategory")
+    _child(cat, NS_CBC, "ID").text = "B"
+
+
+def _mut_brb02(r):
+    # Flip ONLY the line's classified category S -> B, breakdown stays S:
+    # 'B' (line item) and 'S' (breakdown row) now coexist -> BR-B-02 fires.
+    # BR-B-01 fires alongside (B + the base's DK countries), as do BR-S-01
+    # (orphan S breakdown) and BR-S-08 (the S/25 bucket lost its only line)
+    # — on both engines alike.
+    item = _child(_first_line(r), NS_CAC, "Item")
+    ctc = _child(item, NS_CAC, "ClassifiedTaxCategory")
+    _child(ctc, NS_CBC, "ID").text = "B"
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -1642,6 +1787,11 @@ _MUTATIONS = {
     "BR-AF-04": _mut_braf04, "BR-AF-05": _mut_braf05, "BR-AF-06": _mut_braf06,
     "BR-AF-07": _mut_braf07, "BR-AF-08": _mut_braf08, "BR-AF-09": _mut_braf09,
     "BR-AF-10": _mut_braf10,
+    "BR-AG-01": _mut_brag01, "BR-AG-02": _mut_brag02, "BR-AG-03": _mut_brag03,
+    "BR-AG-04": _mut_brag04, "BR-AG-05": _mut_brag05, "BR-AG-06": _mut_brag06,
+    "BR-AG-07": _mut_brag07, "BR-AG-08": _mut_brag08, "BR-AG-09": _mut_brag09,
+    "BR-AG-10": _mut_brag10,
+    "BR-B-01": _mut_brb01, "BR-B-02": _mut_brb02,
     "BR-DEC-24": _mut_brdec24, "BR-DEC-25": _mut_brdec25,
     "BR-DEC-27": _mut_brdec27, "BR-DEC-28": _mut_brdec28,
     "BR-CO-04": _mut_brco04,
@@ -2850,6 +3000,126 @@ def _cmut_braf10(r):
     bd.insert(list(bd).index(rate), reason)
 
 
+# ---- IPSI (BR-AG-*) mutations, CII bindings --------------------------------- #
+def _c_to_ipsi(r):
+    """Flip every Standard-rated (S) ram:CategoryCode in the transaction to M
+    — the 20 line ApplicableTradeTax rows AND the two header VAT breakdown
+    rows — turning CII_example1 into a clean IPSI invoice: the 6/21 rates
+    satisfy the CII ``RateApplicablePercent >= 0`` predicate, the per-rate
+    bucket sums and tax amounts are untouched, and no S rule applies."""
+    txn = r.find("rsm:SupplyChainTradeTransaction", _NSC)
+    for cc in txn.iter(_cq(NS_RAM, "CategoryCode")):
+        if cc.text == "S":
+            cc.text = "M"
+
+
+def _cadd_ipsi_allowance_charge(r, charge, rate):
+    """Append a document SpecifiedTradeAllowanceCharge carrying an IPSI (M)
+    CategoryTradeTax at ``rate``. ActualAmount 0.00 keeps every graded
+    arithmetic (BR-CO-13, the S bucket sums) unchanged; the Reason satisfies
+    BR-CO-21/22. With no M header breakdown row, the official weak-count
+    BR-AG-01 fires alongside on the M-item side — as does ours — so
+    agreement holds per rule."""
+    settle = _cii_settlement(r)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = (
+        "true" if charge else "false")
+    ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = "0.00"
+    ET.SubElement(ac, _cq(NS_RAM, "Reason")).text = (
+        "Freight" if charge else "Discount")
+    ctt = ET.SubElement(ac, _cq(NS_RAM, "CategoryTradeTax"))
+    ET.SubElement(ctt, _cq(NS_RAM, "TypeCode")).text = "VAT"
+    ET.SubElement(ctt, _cq(NS_RAM, "CategoryCode")).text = "M"
+    ET.SubElement(ctt, _cq(NS_RAM, "RateApplicablePercent")).text = rate
+
+
+def _cmut_brag01(r):
+    # Flip exactly ONE line's CategoryCode S -> M, breakdowns stay S: the
+    # official weak-count test (line-M + header-M counts >= 2 or no line M)
+    # sees 1 < 2 and FIRES — the one CII configuration where its verdict
+    # matches the UBL biconditional. The flipped line leaves its S/6 bucket,
+    # so BR-S-08 fires alongside on both engines.
+    _cii_line_tax(r).find("ram:CategoryCode", _NSC).text = "M"
+
+
+def _cmut_brag02(r):
+    # All-M invoice + no Seller VA/FC tax registration -> BR-AG-02.
+    _c_to_ipsi(r)
+    _cii_remove(r, _cii_seller(r).find("ram:SpecifiedTaxRegistration", _NSC))
+
+
+def _cmut_brag03(r):
+    # Document allowance with an IPSI CategoryTradeTax (rate 21 >= 0) + no
+    # Seller VA/FC registration -> BR-AG-03 (BR-S-02 fires alongside: the
+    # S lines also lose the seller id; BR-AG-01 fires on the orphan M
+    # allowance side — both engines agree on each).
+    _cadd_ipsi_allowance_charge(r, charge=False, rate="21")
+    _cii_remove(r, _cii_seller(r).find("ram:SpecifiedTaxRegistration", _NSC))
+
+
+def _cmut_brag04(r):
+    # Document charge with an IPSI CategoryTradeTax + no Seller registration
+    # -> BR-AG-04 (same alongside-set as BR-AG-03).
+    _cadd_ipsi_allowance_charge(r, charge=True, rate="21")
+    _cii_remove(r, _cii_seller(r).find("ram:SpecifiedTaxRegistration", _NSC))
+
+
+def _cmut_brag05(r):
+    # All-M invoice with the first line's VAT rate set to -5: the CII BR-AG
+    # binding requires RateApplicablePercent >= 0 (the SAME predicate as UBL,
+    # unlike BR-AF's CII-strict > 0 — a zero rate would HOLD here), so
+    # BR-AG-05 fires. The line also leaves its M/6 bucket, which only OUR
+    # (CII-ungraded) BR-AG-08 notices — the official artifact's BR-AG-08
+    # binding is vacuous.
+    _c_to_ipsi(r)
+    _cii_line_tax(r).find("ram:RateApplicablePercent", _NSC).text = "-5"
+
+
+def _cmut_brag06(r):
+    # Document allowance with an IPSI CategoryTradeTax at rate -5 -> BR-AG-06
+    # (>= 0 fails; rate 0 would hold, unlike BR-AF-06 on CII); BR-AG-01 fires
+    # alongside (orphan M allowance).
+    _cadd_ipsi_allowance_charge(r, charge=False, rate="-5")
+
+
+def _cmut_brag07(r):
+    # Document charge with an IPSI CategoryTradeTax at rate -5 -> BR-AG-07.
+    _cadd_ipsi_allowance_charge(r, charge=True, rate="-5")
+
+
+def _cmut_brag10(r):
+    # All-M invoice whose first M breakdown carries a VAT exemption reason
+    # -> BR-AG-10.
+    _c_to_ipsi(r)
+    bd = _cii_first_breakdown(r)
+    rate = bd.find("ram:RateApplicablePercent", _NSC)
+    reason = ET.Element(_cq(NS_RAM, "ExemptionReason"))
+    reason.text = "n/a"
+    bd.insert(list(bd).index(rate), reason)
+
+
+# ---- Italian split payment (BR-B-*) mutations, CII bindings ----------------- #
+def _cmut_brb01(r):
+    # Flip every S CategoryCode to B (20 lines + 2 header rows): a
+    # split-payment invoice whose two ram:CountryID elements are 'NL'
+    # (CII_example1 is Dutch), so not(//ram:CountryID != 'IT') fails ->
+    # BR-B-01 fires on both engines. No 'S' remains (BR-B-02 and the BR-S
+    # family stay quiet) and 'B' is UNCL 5305-valid.
+    txn = r.find("rsm:SupplyChainTradeTransaction", _NSC)
+    for cc in txn.iter(_cq(NS_RAM, "CategoryCode")):
+        if cc.text == "S":
+            cc.text = "B"
+
+
+def _cmut_brb02(r):
+    # Flip ONE line's CategoryCode S -> B: 'B' and 'S' now coexist in
+    # //ram:CategoryCode -> BR-B-02 fires; BR-B-01 fires alongside (B + the
+    # NL countries), as does BR-S-08 (the flipped line leaves its S/6
+    # bucket) — on both engines alike.
+    _cii_line_tax(r).find("ram:CategoryCode", _NSC).text = "B"
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -2870,6 +3140,10 @@ _CII_MUTATIONS = {
     "BR-AF-01": _cmut_braf01, "BR-AF-02": _cmut_braf02, "BR-AF-03": _cmut_braf03,
     "BR-AF-04": _cmut_braf04, "BR-AF-05": _cmut_braf05, "BR-AF-06": _cmut_braf06,
     "BR-AF-07": _cmut_braf07, "BR-AF-10": _cmut_braf10,
+    "BR-AG-01": _cmut_brag01, "BR-AG-02": _cmut_brag02, "BR-AG-03": _cmut_brag03,
+    "BR-AG-04": _cmut_brag04, "BR-AG-05": _cmut_brag05, "BR-AG-06": _cmut_brag06,
+    "BR-AG-07": _cmut_brag07, "BR-AG-10": _cmut_brag10,
+    "BR-B-01": _cmut_brb01, "BR-B-02": _cmut_brb02,
     "BR-DEC-24": _cmut_brdec24, "BR-DEC-25": _cmut_brdec25,
     "BR-DEC-27": _cmut_brdec27, "BR-DEC-28": _cmut_brdec28,
     "BR-CL-01": _cmut_brcl01,

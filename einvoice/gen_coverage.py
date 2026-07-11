@@ -118,6 +118,18 @@ CII_CORE_REASON = {
                 "so CII parity is impossible for a real check; the engine "
                 "asserts the UBL binding's taxable × rate ±1 band on both "
                 "syntaxes instead (deliberate strictness).",
+    "BR-AG-08": "the CII artifact repeats the BR-AF-08 binding defect for the "
+                "IPSI (M) family: the assert is bound to the "
+                "ram:ApplicableTradeTax ROW, so its "
+                "../ram:RateApplicablePercent is empty and 'every $rate in ()' "
+                "is vacuously true — the shipped assert can never fire. The "
+                "engine asserts the intended per-rate round2 bucket sum on "
+                "CII anyway (deliberate strictness).",
+    "BR-AG-09": "the official CII artifact ships this assert as test=\"true()\" "
+                "— the same never-firing tautology as BR-AF-09 — so CII "
+                "parity is impossible for a real check; the engine asserts "
+                "the UBL binding's taxable × rate ±1 band on both syntaxes "
+                "instead (deliberate strictness).",
 }
 _CII_CORE_GENERIC = ("core rule not included in the CII differential leg (LEG 3) "
                      "graded subset; the syntax-agnostic rule body can run over "
@@ -232,9 +244,9 @@ def _prov(source_key, proven, reason=None):
     return entry
 
 
-_FAMILY_ORDER = ["BR", "BR-CL", "BR-CO", "BR-DEC", "BR-AE", "BR-AF", "BR-E",
-                 "BR-G", "BR-IC", "BR-O", "BR-S", "BR-Z", "BR-DE", "BR-DE-TMP",
-                 "BR-DEX"]
+_FAMILY_ORDER = ["BR", "BR-CL", "BR-CO", "BR-DEC", "BR-AE", "BR-AF", "BR-AG",
+                 "BR-B", "BR-E", "BR-G", "BR-IC", "BR-O", "BR-S", "BR-Z",
+                 "BR-DE", "BR-DE-TMP", "BR-DEX"]
 
 
 def _sort_key(rid):

@@ -154,8 +154,9 @@ class InvoiceLine:
 
 class TaxSubtotal:
     __slots__ = ("tax_amount", "tax_amount_raw", "taxable_amount",
-                 "taxable_amount_raw", "category_id", "category_scheme_id",
-                 "percent", "has_exemption_reason", "has_exemption_reason_code")
+                 "taxable_amount_raw", "category_id", "category_id_raw",
+                 "category_scheme_id", "percent", "has_exemption_reason",
+                 "has_exemption_reason_code")
 
     def __init__(self):
         self.tax_amount = None          # BT-117 (text)
@@ -163,6 +164,10 @@ class TaxSubtotal:
         self.taxable_amount = None      # BT-116 (text)
         self.taxable_amount_raw = None  # BT-116 raw text (BR-DEC-19)
         self.category_id = None         # BT-118 VAT category code
+        # BT-118 UN-stripped raw text: BR-AG-01's official first disjunct
+        # counts the RAW ``cbc:ID = 'M'`` breakdown node set (no
+        # normalize-space — an artifact quirk), so that rule must see it.
+        self.category_id_raw = None
         self.category_scheme_id = None  # TaxCategory/TaxScheme/ID, normalized UPPER
         self.percent = None             # BT-119 (text)
         # exists(cbc:TaxExemptionReason) / exists(cbc:TaxExemptionReasonCode)
@@ -307,6 +312,27 @@ class Invoice:
         self.taxcategory_id_codes = []
         self.classified_tax_category_codes = []
         self.tax_exemption_reason_codes = []
+        # Italian split-payment rule inputs (BR-B-01/BR-B-02). The official
+        # tests are RAW general comparisons — no normalize-space, no
+        # TaxScheme scoping — so these carry the untouched XPath string
+        # values at exactly the official context node sets:
+        #   tax_category_ids_raw        — UBL //cac:TaxCategory/cbc:ID;
+        #       CII //ram:CategoryTradeTax/ram:CategoryCode
+        #   classified_category_ids_raw — UBL //cac:ClassifiedTaxCategory/
+        #       cbc:ID; CII //ram:ApplicableTradeTax/ram:CategoryCode
+        #       (together the two CII lists cover every //ram:CategoryCode)
+        #   doc_breakdown_category_ids_raw / doc_ac_category_ids_raw — the
+        #       BR-B-02 UBL child-axis node sets (cac:TaxTotal/cac:TaxSubtotal/
+        #       cac:TaxCategory/cbc:ID and cac:AllowanceCharge/cac:TaxCategory/
+        #       cbc:ID off the Invoice root); unused on CII, whose BR-B-02
+        #       compares the whole //ram:CategoryCode set instead
+        #   all_country_codes_raw       — UBL //cbc:IdentificationCode (postal
+        #       AND origin countries); CII //ram:CountryID
+        self.tax_category_ids_raw = []
+        self.classified_category_ids_raw = []
+        self.doc_breakdown_category_ids_raw = []
+        self.doc_ac_category_ids_raw = []
+        self.all_country_codes_raw = []
         #   unit_codes — measurement unit codes at the BR-CL-23 context nodes
         #       (UBL: cbc:InvoicedQuantity|cbc:BaseQuantity|cbc:CreditedQuantity
         #        with @unitCode; CII: ram:BasisQuantity|ram:BilledQuantity with
@@ -656,6 +682,30 @@ def build_model(root):
         _norm_space(_strval(el)) or ""
         for el in root.findall(".//cac:Country/cbc:IdentificationCode", NS)
     ]
+    # BR-B-01/BR-B-02 (Italian split payment) node sets — RAW string values,
+    # exactly the official comparisons (no normalize-space, no TaxScheme
+    # scoping). BR-B-01's country set is EVERY //cbc:IdentificationCode —
+    # postal-address Country AND item OriginCountry — unlike BR-CL-14's
+    # ``country_codes`` above, which is Country-scoped and normalized.
+    inv.tax_category_ids_raw = [
+        _strval(el) for el in root.findall(".//cac:TaxCategory/cbc:ID", NS)
+    ]
+    inv.classified_category_ids_raw = [
+        _strval(el)
+        for el in root.findall(".//cac:ClassifiedTaxCategory/cbc:ID", NS)
+    ]
+    inv.doc_breakdown_category_ids_raw = [
+        _strval(el)
+        for el in root.findall(
+            "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID", NS)
+    ]
+    inv.doc_ac_category_ids_raw = [
+        _strval(el)
+        for el in root.findall("cac:AllowanceCharge/cac:TaxCategory/cbc:ID", NS)
+    ]
+    inv.all_country_codes_raw = [
+        _strval(el) for el in root.findall(".//cbc:IdentificationCode", NS)
+    ]
     # BR-CL-17 context = cac:TaxCategory/cbc:ID (UBL) — the VAT breakdown
     # category (cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory) AND every
     # document/line allowance-charge tax category (cac:AllowanceCharge/
@@ -971,6 +1021,7 @@ def build_model(root):
         cat_el = st_el.find("cac:TaxCategory", NS)
         if cat_el is not None:
             st.category_id = _text(cat_el.find("cbc:ID", NS))
+            st.category_id_raw = _rawtext(cat_el.find("cbc:ID", NS))
             st.percent = _text(cat_el.find("cbc:Percent", NS))
             scheme = _norm_space(_text(cat_el.find("cac:TaxScheme/cbc:ID", NS)))
             st.category_scheme_id = scheme.upper() if scheme else None

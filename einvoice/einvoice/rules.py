@@ -3155,6 +3155,437 @@ def br_af_10(inv):
 
 
 # ---------------------------------------------------------------------------
+# Ceuta and Melilla IPSI (M) VAT category rules (BR-AG-01..10).
+#
+# IPSI ("Impuesto sobre la Producción, los Servicios y la Importación") is the
+# indirect tax of the Spanish autonomous cities Ceuta and Melilla; EN 16931
+# models it as VAT category code 'M'. The family mirrors the IGIC (BR-AF)
+# machinery — itself the Standard-rate shape — with three differences pinned
+# by the official artifacts:
+#
+# * the breakdown-agreement rule (-01) scopes the FIRST disjunct's breakdown
+#   count to VAT-scheme rows with the RAW ``cbc:ID = 'M'`` (no
+#   normalize-space; BR-AF-01's first disjunct is the raw scheme-AGNOSTIC set
+#   instead), so it reads the subtotal's ``category_id_raw``;
+# * the rate rules (-05..07) are ``>= 0`` on BOTH bindings — the UBL artifact
+#   tests ``(cbc:Percent) >= 0`` and the CII artifact tests
+#   ``ram:RateApplicablePercent >= 0`` (unlike BR-AF-05..07, whose CII
+#   binding is strictly ``> 0``) — so the bodies use :func:`_percent_ge_zero`
+#   without branching on syntax;
+# * the charge seller-id rule (-04) is fully SYMMETRIC (normalize-space in
+#   both disjuncts — no BR-AF-04 raw-node-set quirk), so all three seller-id
+#   rules (-02..04) share the BR-Z/E helpers.
+#
+# BR-AG-08/-09/-10 are the BR-AF-08/-09/-10 shapes verbatim with code 'M',
+# including the two CII artifact defects: the shipped CII -08 assert is
+# vacuously bound (its ``../ram:RateApplicablePercent`` is empty, so ``every
+# $rate in ()`` always holds) and the shipped CII -09 assert is
+# ``test="true()"`` — both can never fire officially on CII, so both are
+# CII-ungraded in the differential while the engine asserts the intended
+# arithmetic on both syntaxes (deliberate strictness).
+# ---------------------------------------------------------------------------
+def br_ag_01(inv):
+    """BR-AG-01: IPSI (M) items and the VAT breakdown (BG-23) must agree.
+
+    Official (context ``/ubl:Invoice``) — the BR-AF-01 bidirectional count
+    shape with the item side VAT-scheme scoped::
+
+        ((count(//cac:AllowanceCharge/cac:TaxCategory[ns ID='M'][VAT])
+            + count(//cac:ClassifiedTaxCategory[ns ID='M'][VAT])) > 0
+          and count(cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+                    [cbc:ID='M'][VAT]) > 0)
+        or (the same item count = 0
+          and count(cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+                    [ns ID='M'][VAT]) = 0)
+
+    so the assert fires whenever exactly ONE side carries 'M': an M line /
+    allowance / charge with no M breakdown row, or an orphan M breakdown row
+    with no M item. Both breakdown counts are VAT-scoped, but the FIRST
+    disjunct's compares the RAW ``cbc:ID`` (no normalize-space — unlike
+    BR-AF-01, whose first-disjunct set is raw but scheme-agnostic); the
+    orphan direction's is the normalize-space'd VAT set
+    (``breakdown_vat_category_codes``).
+    """
+    items_m = (inv.has_classified_category("M", "VAT")
+               or any(cat.id == "M" and cat.scheme_id == "VAT"
+                      for ac in inv.all_allowance_charges()
+                      for cat in ac.tax_categories))
+    if items_m:
+        has_raw_m_vat_row = any(
+            st.category_id_raw == "M" and st.category_scheme_id == "VAT"
+            for tt in inv.tax_totals for st in tt.subtotals)
+        if not has_raw_m_vat_row:
+            return Violation(
+                "BR-AG-01",
+                "An IPSI (M) item/allowance/charge is present, so the VAT "
+                "breakdown (BG-23) must contain at least one VAT category "
+                "code (BT-118) equal with 'IPSI'.",
+                "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+    elif "M" in inv.breakdown_vat_category_codes():
+        return Violation(
+            "BR-AG-01",
+            "The VAT breakdown (BG-23) contains an IPSI (M) VAT category, "
+            "but no IPSI item/allowance/charge is present.",
+            "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+    return None
+
+
+def br_ag_02(inv):
+    """BR-AG-02: an IPSI (M) Invoice line (BT-151) requires the Seller VAT
+    identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax
+    representative VAT id (BT-63) — both official disjuncts are VAT-scoped
+    (the BR-Z/E/AF-02 symmetric shape, not BR-S-02's scheme-agnostic tail)."""
+    if _line_seller_id_fires(inv, "M"):
+        return Violation(
+            "BR-AG-02",
+            _seller_id_message("IPSI (M)", "Invoice line (BT-151)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_ag_03(inv):
+    """BR-AG-03: an IPSI (M) Document level allowance (BT-95) requires the
+    Seller VAT identifier disjunct (same shape as BR-AG-02)."""
+    if _ac_seller_id_fires(inv, "M", False):
+        return Violation(
+            "BR-AG-03",
+            _seller_id_message("IPSI (M)", "Document level allowance (BT-95)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_ag_04(inv):
+    """BR-AG-04: an IPSI (M) Document level charge (BT-102) requires the
+    Seller VAT identifier disjunct.
+
+    Unlike BR-AF-04 (whose official last disjunct gates on the RAW charge
+    node set), BOTH disjuncts of the official BR-AG-04 test use the same
+    ``normalize-space(cbc:ID)='M'`` VAT-scoped charge set — the fully
+    symmetric BR-Z/E-04 shape — so the shared helper transcribes it."""
+    if _ac_seller_id_fires(inv, "M", True):
+        return Violation(
+            "BR-AG-04",
+            _seller_id_message("IPSI (M)", "Document level charge (BT-102)"),
+            _SELLER_ID_ELEMENT)
+    return None
+
+
+def br_ag_05(inv):
+    """BR-AG-05: in an IPSI (M) Invoice line the Invoiced item VAT rate
+    (BT-152) shall be 0 (zero) or greater than zero.
+
+    Official UBL (context ``cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory
+    [normalize-space(cbc:ID)='M'][VAT]``): ``(cbc:Percent) >= 0`` per matching
+    category. The CII artifact tests ``ram:RateApplicablePercent >= 0`` — the
+    SAME predicate (unlike BR-AF-05, where the CII binding is strict ``> 0``),
+    so the body does not branch on syntax: an absent / non-numeric / negative
+    rate fires, a zero rate holds on both bindings.
+    """
+    for ln in inv.lines:
+        for cat in ln.item_tax_categories:
+            if (cat.id == "M" and cat.scheme_id == "VAT"
+                    and not _percent_ge_zero(cat.percent)):
+                return Violation(
+                    "BR-AG-05",
+                    "In an Invoice line (BG-25) where the Invoiced item VAT "
+                    "category code (BT-151) is 'IPSI' the Invoiced item VAT "
+                    "rate (BT-152) shall be 0 (zero) or greater than zero.",
+                    ln.label + "/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")
+    return None
+
+
+def br_ag_06(inv):
+    """BR-AG-06: in an IPSI (M) Document level allowance the allowance VAT
+    rate (BT-96) shall be 0 (zero) or greater than zero.
+
+    Official UBL (context ``cac:AllowanceCharge[cbc:ChargeIndicator=false()]/
+    cac:TaxCategory[normalize-space(cbc:ID)='M'][VAT]``): ``(cbc:Percent) >= 0``;
+    the CII artifact tests ``ram:RateApplicablePercent >= 0`` — identical.
+    """
+    for ac in inv.all_allowance_charges():
+        if ac.is_charge is False:
+            for cat in ac.tax_categories:
+                if (cat.id == "M" and cat.scheme_id == "VAT"
+                        and not _percent_ge_zero(cat.percent)):
+                    return Violation(
+                        "BR-AG-06",
+                        "In a Document level allowance (BG-20) where the "
+                        "Document level allowance VAT category code (BT-95) is "
+                        "'IPSI' the Document level allowance VAT rate (BT-96) "
+                        "shall be 0 (zero) or greater than zero.",
+                        "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_ag_07(inv):
+    """BR-AG-07: in an IPSI (M) Document level charge the charge VAT rate
+    (BT-103) shall be 0 (zero) or greater than zero.
+
+    Official UBL (context ``cac:AllowanceCharge[cbc:ChargeIndicator=true()]/
+    cac:TaxCategory[normalize-space(cbc:ID)='M'][VAT]``): ``(cbc:Percent) >= 0``;
+    the CII artifact tests ``ram:RateApplicablePercent >= 0`` — identical.
+    """
+    for ac in inv.all_allowance_charges():
+        if ac.is_charge is True:
+            for cat in ac.tax_categories:
+                if (cat.id == "M" and cat.scheme_id == "VAT"
+                        and not _percent_ge_zero(cat.percent)):
+                    return Violation(
+                        "BR-AG-07",
+                        "In a Document level charge (BG-21) where the Document "
+                        "level charge VAT category code (BT-102) is 'IPSI' the "
+                        "Document level charge VAT rate (BT-103) shall be 0 "
+                        "(zero) or greater than zero.",
+                        "cac:AllowanceCharge/cac:TaxCategory/cbc:Percent")
+    return None
+
+
+def br_ag_08(inv):
+    """BR-AG-08: for each different value of VAT category rate (BT-119) where
+    the VAT category code (BT-118) is 'IPSI', the VAT category taxable amount
+    (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus
+    document level charge amounts (BT-99) minus document level allowance
+    amounts (BT-92) where the VAT category code is 'IPSI' and the VAT rate
+    equals BT-119.
+
+    The BR-AF-08 shape verbatim with code 'M' — see :func:`br_af_08` for the
+    full official XPath commentary. UBL: the strict ±1 band per breakdown
+    rate, each bucket group restricted by TWO INDEPENDENT scheme-agnostic
+    predicates (``normalize-space(id)='M'`` and ``xs:decimal(Percent)=$rate``),
+    gated on ANY ``//cac:InvoiceLine`` existing (a line-less document with an
+    M-rate breakdown fires). An absent Percent is vacuously true; a
+    missing/unparseable BT-116 fires. CII: the exact per-bucket round2 sum —
+    but NOTE the SHIPPED CII assert is bound to the ``ram:ApplicableTradeTax``
+    ROW (like BR-AF-08, unlike BR-S-08), so its ``../ram:RateApplicablePercent``
+    is empty and the official assert can never fire; the engine asserts the
+    intended arithmetic on the CII model anyway (deliberate strictness) and
+    the rule is not graded on the CII differential leg.
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if not (st.category_id == "M"
+                    and st.category_scheme_id == "VAT"):
+                continue
+            rate = _dec(st.percent)
+            if rate is None:
+                continue  # every $rate in () — vacuously true
+            line_sum = Decimal("0")
+            for ln in inv.lines:
+                cats = ln.item_tax_categories
+                if (any(cat.id == "M" for cat in cats)
+                        and any(_dec(cat.percent) == rate for cat in cats)):
+                    v = _dec(ln.line_extension_amount)
+                    if v is not None:
+                        line_sum += v
+            charge_sum = Decimal("0")
+            allowance_sum = Decimal("0")
+            for ac in inv.doc_allowance_charges:
+                if ac.is_charge is None:
+                    continue
+                cats = ac.tax_categories
+                if not (any(cat.id == "M" for cat in cats)
+                        and any(_dec(cat.percent) == rate for cat in cats)):
+                    continue
+                v = _dec(ac.amount_raw)
+                if v is None:
+                    continue
+                if ac.is_charge:
+                    charge_sum += v
+                else:
+                    allowance_sum += v
+            taxable = _dec(st.taxable_amount)
+            if inv.syntax == "cii":
+                expected = (_xr2(line_sum) + _xr2(charge_sum)
+                            - _xr2(allowance_sum))
+                if taxable is not None and taxable == expected:
+                    continue
+            else:
+                expected = line_sum + charge_sum - allowance_sum
+                if (inv.lines and taxable is not None
+                        and taxable - 1 < expected
+                        and taxable + 1 > expected):
+                    continue
+            return Violation(
+                "BR-AG-08",
+                "For each different value of VAT category rate (BT-119=%s) "
+                "where the VAT category code (BT-118) is 'IPSI', the VAT "
+                "category taxable amount (BT-116=%s) in a VAT breakdown "
+                "(BG-23) shall equal the sum of Invoice line net amounts "
+                "plus document level charges minus document level allowances "
+                "at that IPSI rate."
+                % (st.percent, st.taxable_amount or "(absent)"),
+                "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
+def br_ag_09(inv):
+    """BR-AG-09: the VAT category tax amount (BT-117) in an IPSI (M) VAT
+    breakdown shall equal the VAT category taxable amount (BT-116) multiplied
+    by the VAT category rate (BT-119).
+
+    Official UBL (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='M'][VAT]`` — TOP-LEVEL TaxTotals only) — the
+    BR-S/AF-09 band verbatim::
+
+        abs(TaxAmount) - 1 < round2(abs(TaxableAmount) * Percent/100)
+          and abs(TaxAmount) + 1 > round2(abs(TaxableAmount) * Percent/100)
+
+    A ±1 tolerance band; round2 = ``round(x*100) div 100`` with fn:round()
+    (halves toward +inf). A missing TaxAmount / TaxableAmount / Percent makes
+    the comparison false, so the assert fires. NOTE: the official CII
+    artifact ships this assert as ``test="true()"`` — a tautology that can
+    never fire (exactly like BR-AF-09) — so the rule is deliberately NOT
+    graded on the CII differential leg; the engine asserts the real EN 16931
+    arithmetic on both syntaxes.
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if not (st.category_id == "M" and st.category_scheme_id == "VAT"):
+                continue
+            pct = _dec(st.percent)
+            tax = _dec(st.tax_amount)
+            taxable = _dec(st.taxable_amount)
+            holds = False
+            if pct is not None and tax is not None and taxable is not None:
+                expected = _xr2(abs(taxable) * (pct / Decimal(100)))
+                holds = (abs(tax) - 1 < expected) and (abs(tax) + 1 > expected)
+            if not holds:
+                return Violation(
+                    "BR-AG-09",
+                    "The VAT category tax amount (BT-117=%s) in an IPSI (M) "
+                    "VAT breakdown must equal the VAT category taxable "
+                    "amount (BT-116=%s) x (VAT rate (BT-119=%s) / 100)."
+                    % (st.tax_amount or "(absent)",
+                       st.taxable_amount or "(absent)",
+                       st.percent if st.percent is not None else "(absent)"),
+                    "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")
+    return None
+
+
+def br_ag_10(inv):
+    """BR-AG-10: a VAT breakdown (BG-23) with an IPSI (M) VAT category code
+    (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT
+    exemption reason text (BT-120).
+
+    Official (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='M'][VAT]``, CII the M VAT header trade tax)::
+
+        not(cbc:TaxExemptionReason) and not(cbc:TaxExemptionReasonCode)
+
+    — the exemption-forbidding BR-S/Z/AF-10 shape, identical on both
+    bindings.
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if (st.category_id == "M" and st.category_scheme_id == "VAT"
+                    and (st.has_exemption_reason or st.has_exemption_reason_code)):
+                return Violation(
+                    "BR-AG-10",
+                    "A VAT breakdown (BG-23) with VAT category code (BT-118) "
+                    "'IPSI' shall not have a VAT exemption reason code "
+                    "(BT-121) or VAT exemption reason text (BT-120).",
+                    "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
+                    "cbc:TaxExemptionReason")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Italian split payment (B) rules (BR-B-01/BR-B-02).
+#
+# UNCL 5305 category 'B' ("transferred VAT / split payment") is the Italian
+# scissione dei pagamenti regime, where the buyer pays the VAT directly to
+# the state instead of to the seller. EN 16931 constrains it with just two
+# document-level rules — there is no BR-B breakdown/rate family. Both
+# official tests are RAW general comparisons (no normalize-space, no
+# TaxScheme scoping), so the bodies read the raw string-value node sets the
+# parsers collect verbatim (``tax_category_ids_raw`` etc.).
+# ---------------------------------------------------------------------------
+def _split_payment_item_present(inv):
+    """The BR-B-01 'B'-presence node set.
+
+    UBL: ``//cac:TaxCategory/cbc:ID = 'B' or //cac:ClassifiedTaxCategory/
+    cbc:ID = 'B'`` — ANY tax category anywhere (breakdown rows, document- and
+    line-level allowance/charge categories, line item categories), raw
+    string-value equality. CII: ``//ram:CategoryCode = 'B'`` — the union of
+    the CategoryTradeTax and ApplicableTradeTax code lists covers every
+    ``ram:CategoryCode`` element, so the same two model lists transcribe it.
+    """
+    return ("B" in inv.tax_category_ids_raw
+            or "B" in inv.classified_category_ids_raw)
+
+
+def br_b_01(inv):
+    """BR-B-01: an Invoice where the VAT category code (BT-151, BT-95 or
+    BT-102) is 'Split payment' shall be a domestic Italian invoice.
+
+    Official UBL (context ``/ubl:Invoice``)::
+
+        (not(//cbc:IdentificationCode != 'IT')
+           and (//cac:TaxCategory/cbc:ID ='B'
+                or //cac:ClassifiedTaxCategory/cbc:ID = 'B'))
+        or (not(//cac:TaxCategory/cbc:ID ='B'
+                or //cac:ClassifiedTaxCategory/cbc:ID = 'B'))
+
+    CII: ``(not(//ram:CountryID != 'IT') and //ram:CategoryCode ='B') or
+    (not(//ram:CategoryCode ='B'))``. Both are raw comparisons: the assert
+    fires iff a 'B' category exists anywhere AND at least one country
+    identification code in the document differs from 'IT'
+    (``//cbc:IdentificationCode`` covers the postal-address Country codes
+    AND the item OriginCountry codes; a document with 'B' categories and NO
+    country code at all vacuously passes).
+    """
+    if (_split_payment_item_present(inv)
+            and any(c != "IT" for c in inv.all_country_codes_raw)):
+        return Violation(
+            "BR-B-01",
+            "An Invoice where the VAT category code (BT-151, BT-95 or "
+            "BT-102) is 'Split payment' (B) shall be a domestic Italian "
+            "invoice: every country identification code in the document "
+            "must be 'IT'.",
+            "cac:Country/cbc:IdentificationCode")
+    return None
+
+
+def br_b_02(inv):
+    """BR-B-02: an Invoice with a 'Split payment' (B) VAT category code
+    (BT-151, BT-95, BT-118 or BT-102) shall not also contain a 'Standard
+    rated' (S) VAT category code.
+
+    Official UBL (context ``/ubl:Invoice``) — three raw child-axis /
+    descendant node sets, the same union on both sides::
+
+        ((cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID ='B'
+           or cac:AllowanceCharge/cac:TaxCategory/cbc:ID ='B'
+           or //cac:ClassifiedTaxCategory/cbc:ID = 'B')
+         and not( ... the same three sets = 'S' ...))
+        or not( ... the same three sets = 'B' ...)
+
+    — the breakdown and allowance/charge sets are CHILD-axis (top-level
+    TaxTotal rows and document-level allowance/charge categories only; a
+    line-level allowance category is NOT in this rule's UBL node set, unlike
+    BR-B-01's ``//cac:TaxCategory``), while the item classified set is any
+    depth. The CII binding is simply ``(//ram:CategoryCode ='B' and
+    not(//ram:CategoryCode ='S')) or not(//ram:CategoryCode ='B')`` — every
+    CategoryCode anywhere — so the body branches on syntax and compares each
+    binding's exact node set. Fires iff 'B' and 'S' are both present.
+    """
+    if inv.syntax == "cii":
+        codes = inv.tax_category_ids_raw + inv.classified_category_ids_raw
+    else:
+        codes = (inv.doc_breakdown_category_ids_raw
+                 + inv.doc_ac_category_ids_raw
+                 + inv.classified_category_ids_raw)
+    if "B" in codes and "S" in codes:
+        return Violation(
+            "BR-B-02",
+            "An Invoice that contains a VAT category code (BT-151, BT-95, "
+            "BT-118 or BT-102) 'Split payment' (B) shall not also contain "
+            "the VAT category code 'Standard rated' (S).",
+            "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # VAT-category families (BR-AE/E/G/IC/O-01) — "exactly one breakdown row"
 # ---------------------------------------------------------------------------
 def _vat_exactly_one_breakdown(inv, code):
@@ -4666,6 +5097,9 @@ ALL_RULES = [
     br_o_08, br_o_09, br_o_10, br_o_11, br_o_12, br_o_13, br_o_14,
     br_af_01, br_af_02, br_af_03, br_af_04, br_af_05, br_af_06,
     br_af_07, br_af_08, br_af_09, br_af_10,
+    br_ag_01, br_ag_02, br_ag_03, br_ag_04, br_ag_05, br_ag_06,
+    br_ag_07, br_ag_08, br_ag_09, br_ag_10,
+    br_b_01, br_b_02,
     br_ae_01, br_e_01, br_g_01, br_ic_01, br_o_01,
     br_dec_01, br_dec_02, br_dec_05, br_dec_06,
     br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_14,

@@ -14,6 +14,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections import namedtuple
 
+from ._xmlsec import _safe_parse
+
 # A VAT (Classified)TaxCategory as seen on an invoice line item or on a
 # document/line allowance-charge: the normalize-space()d category code (BT-151/
 # BT-95/BT-102), the upper-cased TaxScheme/ID, and the raw Percent text
@@ -657,10 +659,16 @@ class Invoice:
 def parse_file(path):
     """Parse ``path`` into an (root, ElementTree) pair.
 
-    Raises :class:`NotWellFormed` for parse errors (CLI exit 3).
+    Raises :class:`NotWellFormed` for parse errors (CLI exit 3). Untrusted
+    input is parsed through the DTD/entity/XXE-hardened :func:`_safe_parse`
+    (see :mod:`einvoice._xmlsec`); a hostile DTD/entity/external-reference
+    payload raises :class:`einvoice._xmlsec.XMLSecurityError` — a
+    ``ET.ParseError`` subclass — which is folded into ``NotWellFormed`` here,
+    so it surfaces as the same actionable not-well-formed outcome as any
+    ill-formed invoice, never a traceback or an entity expansion.
     """
     try:
-        tree = ET.parse(path)
+        tree = _safe_parse(path)  # hardened stdlib replacement for ET.parse; see einvoice._xmlsec
     except ET.ParseError as exc:
         raise NotWellFormed(str(exc))
     return tree.getroot()

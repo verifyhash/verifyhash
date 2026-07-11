@@ -72,6 +72,52 @@ The validator makes **no network calls** — no schema downloads, no telemetry,
 no license phone-home. It runs fully offline and is safe to deploy in an
 air-gapped environment. `gen_sbom.py` is likewise offline.
 
+## Untrusted input / XML entity handling
+
+The invoices this validator parses come from **untrusted suppliers**, so every
+production XML entry point is hardened against the classic
+`xml.etree`/expat attack classes — **DTD/DOCTYPE injection**, **entity-expansion
+denial of service** (billion-laughs, quadratic blowup), and **XXE external-entity /
+external-DTD** file reads and SSRF. The guarantee, precisely:
+
+- **Standard library only.** The hardening lives in
+  [`einvoice/_xmlsec.py`](einvoice/_xmlsec.py) and imports only
+  `xml.etree.ElementTree` and `xml.parsers.expat`. There is **no new runtime
+  dependency** (no `defusedxml`, no `lxml`); the zero-dependency contract
+  above is unchanged and `test_packaging.py` still proves it.
+- **No DTD.** A `<!DOCTYPE …>` — internal *or* external subset — is rejected at
+  the expat `StartDoctypeDeclHandler` **before** any entity is defined.
+- **No entity definition or expansion.** Because the DOCTYPE that would carry
+  `<!ENTITY …>` declarations is refused up front, no custom entity is ever
+  defined, so nothing is ever expanded. As defence in depth the
+  entity-declaration and unparsed-entity handlers also refuse. A billion-laughs
+  or quadratic-blowup payload therefore aborts in constant time and memory — it
+  never materialises the expanded string.
+- **No external entity / external DTD resolution.** External `SYSTEM`/`PUBLIC`
+  references are refused; expat never opens a `file://`, `http://`, or any other
+  URL, so `<!ENTITY xxe SYSTEM 'file:///etc/passwd'>` reads **nothing**.
+- **Only the five XML-predefined entities** (`&lt; &gt; &amp; &quot; &apos;`)
+  are honoured, exactly as before — they are handled natively by expat's
+  character-data path, so legitimate invoice text is untouched.
+
+A refused payload is folded into the engine's **existing** *not-well-formed*
+outcome — `error: "not-well-formed"` in the JSON report (`report.build_report`)
+and CLI exit code **3** — an actionable result identical to any ill-formed
+invoice, **never a traceback, never a hang, never a silent pass**.
+
+Every production XML call site routes through this helper:
+`einvoice/parser.py` (UBL `parse_file`), `einvoice/parser_cii.py` (CII
+`parse_file`), and `einvoice/report.py` (the PDF-container embedded-XML byte
+path). The behaviour is verified end-to-end by
+[`test_security.py`](test_security.py) — billion-laughs, quadratic-blowup,
+external-entity `file://` read (asserting a written canary secret never leaks),
+`/etc/passwd` XXE, and external-DTD `SYSTEM` references are each asserted to be
+refused in bounded time with the actionable error, while a benign XRechnung
+invoice still parses and validates unchanged. That last invariant is also
+covered by the differential harness (0 divergences) and
+`test_golden_snapshot.py` (byte-identical output), which guarantee the
+hardening changed **no** validation result on any legitimate invoice.
+
 ## Deterministic, auditable output
 
 Given the same invoice and profile, the validator produces the same result;

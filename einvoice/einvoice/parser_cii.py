@@ -59,6 +59,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections import namedtuple
 
+from ._xmlsec import _safe_parse
 from . import parser
 from .parser import (ItemTaxCategory, PayeeParty, Period, TaxRepresentative,
                      TaxSubtotal, TaxTotal, AllowanceCharge)
@@ -275,10 +276,13 @@ def parse_file(path):
     """Parse ``path`` and return the CrossIndustryInvoice root element.
 
     Raises :class:`NotWellFormed` for parse errors (CLI exit 3), mirroring
-    :func:`einvoice.parser.parse_file`.
+    :func:`einvoice.parser.parse_file`. Parses through the
+    DTD/entity/XXE-hardened :func:`_safe_parse` (see :mod:`einvoice._xmlsec`);
+    a hostile DTD/entity/external-reference payload is folded into
+    ``NotWellFormed`` exactly like ill-formed input.
     """
     try:
-        tree = ET.parse(path)
+        tree = _safe_parse(path)  # hardened stdlib replacement for ET.parse; see einvoice._xmlsec
     except ET.ParseError as exc:
         raise NotWellFormed(str(exc))
     return tree.getroot()

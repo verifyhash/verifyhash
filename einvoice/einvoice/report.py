@@ -80,6 +80,7 @@ from xml.etree import ElementTree as ET
 
 from .validate import validate_file, validate_root, PROFILES, _severity
 from .parser import NotWellFormed
+from ._xmlsec import _safe_fromstring
 from .remediation import load_catalog
 from . import pdf_container
 from . import parser_cii as _parser_cii
@@ -302,7 +303,12 @@ def _report_from_invoice_bytes(xml_bytes, source, profile,
     """
     extra = list(container_findings or ())
     try:
-        root = ET.fromstring(xml_bytes)
+        # Untrusted embedded bytes: parse through the DTD/entity/XXE-hardened
+        # helper (see einvoice._xmlsec). A hostile DTD/entity/external-reference
+        # payload raises XMLSecurityError (an ET.ParseError subclass), caught
+        # here and folded into the SAME actionable not-well-formed report an
+        # ill-formed embedded XML produces — never a traceback or expansion.
+        root = _safe_fromstring(xml_bytes)  # hardened stdlib replacement for ET.fromstring; see einvoice._xmlsec
     except ET.ParseError as exc:
         return _error_report(source, profile, "not-well-formed", str(exc))
 

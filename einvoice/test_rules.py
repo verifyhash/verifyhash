@@ -78,6 +78,13 @@ CALC_RULES = {
     "BR-CO-11", "BR-CO-12",
 }
 
+# Core/decimals/VAT gap batch A (differentially proven the same way).
+GAP_A_RULES = {
+    "BR-CO-20", "BR-CO-21", "BR-CO-22", "BR-CO-23", "BR-CO-24", "BR-CO-26",
+    "BR-DEC-24", "BR-DEC-25", "BR-DEC-27", "BR-DEC-28",
+    "BR-IC-10", "BR-S-08",
+}
+
 # Export outside the EU (G) + Not subject to VAT (O) VAT category batch
 # (differentially proven the same way).
 GO_RULES = {
@@ -202,8 +209,9 @@ def reverse_charge_base():
 
 
 def intra_community_base():
+    # K mirrors AE/E/G: the breakdown REQUIRES an exemption reason (BR-IC-10).
     r = base()
-    convert_category(r, "K")
+    convert_category(r, "K", exemption_reason="Intra-community supply")
     return r
 
 
@@ -1419,7 +1427,7 @@ class RulesetShape(unittest.TestCase):
         ids = {"-".join(p.upper() for p in fn.__name__.split("_"))
                for fn in rules.ALL_RULES}
         for rid in (NEW_RULES | LINE_RULES | PAYMENT_RULES | ZE_RULES
-                    | AEIC_RULES | GO_RULES | CALC_RULES):
+                    | AEIC_RULES | GO_RULES | CALC_RULES | GAP_A_RULES):
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))
@@ -1937,6 +1945,271 @@ class SupportingDocItemMetadataVatPointBatch(unittest.TestCase):
         period.remove(child(period, NS_CBC, "EndDate"))
         ET.SubElement(period, q(NS_CBC, "DescriptionCode")).text = "35"
         self.assertNotIn("BR-CO-19", fired(r))
+
+
+class GapBatchA(unittest.TestCase):
+    """BR-CO-20/21/22/23/24/26, BR-DEC-24/25/27/28, BR-IC-10, BR-S-08 — the
+    core/decimals/VAT gap batch A, differentially proven against the official
+    CEN EN16931-UBL Schematron the same way as the earlier batches
+    (``differential.py en``). Each case pins one proven verdict."""
+
+    def first_line(self, root):
+        return root.find(q(NS_CAC, "InvoiceLine"))
+
+    def add_line_allowance_charge(self, root, charge, amount="0.00",
+                                  base_amount=None, reason=None):
+        ln = self.first_line(root)
+        ac = ET.Element(q(NS_CAC, "AllowanceCharge"))
+        ET.SubElement(ac, q(NS_CBC, "ChargeIndicator")).text = (
+            "true" if charge else "false")
+        if reason is not None:
+            ET.SubElement(ac, q(NS_CBC, "AllowanceChargeReason")).text = reason
+        amt = ET.SubElement(ac, q(NS_CBC, "Amount"))
+        amt.text = amount
+        amt.set("currencyID", "DKK")
+        if base_amount is not None:
+            b = ET.SubElement(ac, q(NS_CBC, "BaseAmount"))
+            b.text = base_amount
+            b.set("currencyID", "DKK")
+        ln.insert(list(ln).index(child(ln, NS_CAC, "Item")), ac)
+        return ac
+
+    # ---- BR-CO-20 -----------------------------------------------------------
+    def test_br_co_20_empty_line_period_fires(self):
+        r = base()
+        period = child(self.first_line(r), NS_CAC, "InvoicePeriod")
+        period.remove(child(period, NS_CBC, "StartDate"))
+        period.remove(child(period, NS_CBC, "EndDate"))
+        self.assertIn("BR-CO-20", fired(r))
+        self.assertNotIn("BR-CO-20", fired(base()))
+
+    def test_br_co_20_start_date_alone_holds(self):
+        r = base()
+        period = child(self.first_line(r), NS_CAC, "InvoicePeriod")
+        period.remove(child(period, NS_CBC, "EndDate"))
+        self.assertNotIn("BR-CO-20", fired(r))
+
+    def test_br_co_20_empty_date_element_holds(self):
+        # exists(cbc:StartDate) — pure existence: a present-but-empty date
+        # satisfies BR-CO-20 (its VALUE is other rules' business).
+        r = base()
+        period = child(self.first_line(r), NS_CAC, "InvoicePeriod")
+        child(period, NS_CBC, "StartDate").text = ""
+        period.remove(child(period, NS_CBC, "EndDate"))
+        self.assertNotIn("BR-CO-20", fired(r))
+
+    # ---- BR-CO-21 / BR-CO-22 (document allowance/charge reason) -------------
+    def add_bare_doc_ac(self, root, charge):
+        ac = add_doc_allowance_charge(root, charge=charge, amount="0.00")
+        ac.remove(child(ac, NS_CBC, "AllowanceChargeReason"))
+        return ac
+
+    def test_br_co_21_reasonless_doc_allowance_fires(self):
+        r = base()
+        self.add_bare_doc_ac(r, charge=False)
+        self.assertIn("BR-CO-21", fired(r))
+        self.assertNotIn("BR-CO-21", fired(base()))
+
+    def test_br_co_21_reason_code_alone_holds(self):
+        r = base()
+        ac = self.add_bare_doc_ac(r, charge=False)
+        ET.SubElement(ac, q(NS_CBC, "AllowanceChargeReasonCode")).text = "95"
+        self.assertNotIn("BR-CO-21", fired(r))
+
+    def test_br_co_22_reasonless_doc_charge_fires(self):
+        r = base()
+        self.add_bare_doc_ac(r, charge=True)
+        self.assertIn("BR-CO-22", fired(r))
+        self.assertNotIn("BR-CO-21", fired(r))  # the allowance twin stays out
+
+    # ---- BR-CO-23 / BR-CO-24 (line allowance/charge reason) -----------------
+    def test_br_co_23_reasonless_line_allowance_fires(self):
+        r = base()
+        self.add_line_allowance_charge(r, charge=False)
+        self.assertIn("BR-CO-23", fired(r))
+        self.assertNotIn("BR-CO-23", fired(base()))
+
+    def test_br_co_23_with_reason_holds(self):
+        r = base()
+        self.add_line_allowance_charge(r, charge=False, reason="Discount")
+        self.assertNotIn("BR-CO-23", fired(r))
+
+    def test_br_co_24_reasonless_line_charge_fires(self):
+        r = base()
+        self.add_line_allowance_charge(r, charge=True)
+        self.assertIn("BR-CO-24", fired(r))
+        self.assertNotIn("BR-CO-23", fired(r))
+
+    # ---- BR-DEC-24/25/27/28 (line allowance/charge decimals) ----------------
+    def test_br_dec_24_three_decimal_allowance_amount_fires(self):
+        r = base()
+        self.add_line_allowance_charge(r, charge=False, amount="1.123",
+                                       reason="Discount")
+        self.assertIn("BR-DEC-24", fired(r))
+        self.assertNotIn("BR-DEC-24", fired(base()))
+
+    def test_br_dec_25_three_decimal_allowance_base_fires(self):
+        r = base()
+        self.add_line_allowance_charge(r, charge=False, amount="1.12",
+                                       base_amount="10.123", reason="Discount")
+        got = fired(r)
+        self.assertIn("BR-DEC-25", got)
+        self.assertNotIn("BR-DEC-24", got)  # the amount itself is 2-dec
+
+    def test_br_dec_27_three_decimal_charge_amount_fires(self):
+        r = base()
+        self.add_line_allowance_charge(r, charge=True, amount="1.123",
+                                       reason="Freight")
+        got = fired(r)
+        self.assertIn("BR-DEC-27", got)
+        self.assertNotIn("BR-DEC-24", got)  # charge, not allowance
+
+    def test_br_dec_28_three_decimal_charge_base_fires(self):
+        r = base()
+        self.add_line_allowance_charge(r, charge=True, amount="1.12",
+                                       base_amount="10.123", reason="Freight")
+        self.assertIn("BR-DEC-28", fired(r))
+
+    def test_br_dec_two_decimals_hold(self):
+        r = base()
+        self.add_line_allowance_charge(r, charge=False, amount="1.12",
+                                       base_amount="10.12", reason="Discount")
+        got = fired(r)
+        for rid in ("BR-DEC-24", "BR-DEC-25", "BR-DEC-27", "BR-DEC-28"):
+            self.assertNotIn(rid, got)
+
+    # ---- BR-CO-26 (seller identification) ------------------------------------
+    def strip_seller_ids(self, root):
+        party = supplier_party(root)
+        party.remove(child(party, NS_CAC, "PartyIdentification"))
+        party.remove(child(party, NS_CAC, "PartyTaxScheme"))
+        ple = child(party, NS_CAC, "PartyLegalEntity")
+        ple.remove(child(ple, NS_CBC, "CompanyID"))
+
+    def test_br_co_26_no_identifier_fires(self):
+        r = base()
+        self.strip_seller_ids(r)
+        self.assertIn("BR-CO-26", fired(r))
+        self.assertNotIn("BR-CO-26", fired(base()))
+
+    def test_br_co_26_party_identification_alone_holds(self):
+        r = base()
+        party = supplier_party(r)
+        party.remove(child(party, NS_CAC, "PartyTaxScheme"))
+        ple = child(party, NS_CAC, "PartyLegalEntity")
+        ple.remove(child(ple, NS_CBC, "CompanyID"))
+        self.assertNotIn("BR-CO-26", fired(r))
+
+    def test_br_co_26_sepa_scheme_id_does_not_count(self):
+        # cbc:ID[not(@schemeID = 'SEPA')] — a SEPA-schemed identifier is
+        # excluded from the accepted set (it identifies a mandate creditor,
+        # not the supplier), so with the other ids stripped BR-CO-26 fires.
+        r = base()
+        self.strip_seller_ids(r)
+        party = supplier_party(r)
+        pi = ET.Element(q(NS_CAC, "PartyIdentification"))
+        id_el = ET.SubElement(pi, q(NS_CBC, "ID"))
+        id_el.text = "DK99999999"
+        id_el.set("schemeID", "SEPA")
+        party.insert(0, pi)
+        self.assertIn("BR-CO-26", fired(r))
+
+    def test_br_co_26_schemeless_id_counts(self):
+        # An ID with NO @schemeID satisfies not(() = 'SEPA') and holds.
+        r = base()
+        self.strip_seller_ids(r)
+        party = supplier_party(r)
+        pi = ET.Element(q(NS_CAC, "PartyIdentification"))
+        ET.SubElement(pi, q(NS_CBC, "ID")).text = "DK99999999"
+        party.insert(0, pi)
+        self.assertNotIn("BR-CO-26", fired(r))
+
+    # ---- BR-IC-10 -------------------------------------------------------------
+    def test_br_ic_10_k_breakdown_without_reason_fires(self):
+        r = base()
+        st = ET.SubElement(child(r, NS_CAC, "TaxTotal"),
+                           q(NS_CAC, "TaxSubtotal"))
+        for local, val in (("TaxableAmount", "0.00"), ("TaxAmount", "0.00")):
+            el = ET.SubElement(st, q(NS_CBC, local))
+            el.text = val
+            el.set("currencyID", "DKK")
+        cat = ET.SubElement(st, q(NS_CAC, "TaxCategory"))
+        ET.SubElement(cat, q(NS_CBC, "ID")).text = "K"
+        ET.SubElement(cat, q(NS_CBC, "Percent")).text = "0"
+        ET.SubElement(ET.SubElement(cat, q(NS_CAC, "TaxScheme")),
+                      q(NS_CBC, "ID")).text = "VAT"
+        self.assertIn("BR-IC-10", fired(r))
+        # A reason text satisfies the rule (mirror of BR-E-10).
+        reason = ET.Element(q(NS_CBC, "TaxExemptionReason"))
+        reason.text = "Intra-community supply"
+        cat.insert(list(cat).index(cat.find(q(NS_CAC, "TaxScheme"))), reason)
+        self.assertNotIn("BR-IC-10", fired(r))
+
+    def test_br_ic_10_clean_k_base_holds(self):
+        self.assertNotIn("BR-IC-10", fired(intra_community_base()))
+
+    # ---- BR-S-08 ---------------------------------------------------------------
+    def set_taxable(self, root, value):
+        child(subtotal(root), NS_CBC, "TaxableAmount").text = value
+
+    def test_br_s_08_taxable_off_band_fires(self):
+        r = base()
+        self.set_taxable(r, "625745.54")  # +2 off the S/25 bucket sum
+        got = fired(r)
+        self.assertIn("BR-S-08", got)
+        # ... while the ±1 tax-amount bands (BR-CO-17 / BR-S-09) still hold:
+        # 625745.54 x 25% is only 0.50 away from the stated 156435.89.
+        self.assertNotIn("BR-CO-17", got)
+        self.assertNotIn("BR-S-09", got)
+        self.assertNotIn("BR-S-08", fired(base()))
+
+    def test_br_s_08_band_is_strictly_exclusive(self):
+        # taxable - 1 < sum and taxable + 1 > sum: exactly +1 off FIRES.
+        r = base()
+        self.set_taxable(r, "625744.54")
+        self.assertIn("BR-S-08", fired(r))
+        r2 = base()
+        self.set_taxable(r2, "625744.53")  # 0.99 off: inside the band
+        self.assertNotIn("BR-S-08", fired(r2))
+
+    def test_br_s_08_doc_allowance_and_charge_enter_the_bucket(self):
+        # A matching-rate S charge adds, an S allowance subtracts.
+        r = base()
+        add_doc_allowance_charge(r, charge=True, amount="10.00")
+        self.set_taxable(r, "625753.54")
+        self.assertNotIn("BR-S-08", fired(r))
+        r2 = base()
+        add_doc_allowance_charge(r2, charge=False, amount="10.00")
+        self.set_taxable(r2, "625733.54")
+        self.assertNotIn("BR-S-08", fired(r2))
+
+    def test_br_s_08_other_rate_allowance_stays_out(self):
+        # An S allowance at a DIFFERENT rate is not part of the 25% bucket:
+        # the sum stays 625743.54, so shifting taxable to match the allowance
+        # being subtracted FIRES.
+        r = base()
+        add_doc_allowance_charge(r, charge=False, amount="10.00", percent="12")
+        self.set_taxable(r, "625733.54")
+        self.assertIn("BR-S-08", fired(r))
+
+    def test_br_s_08_orphan_s_breakdown_rate_fires(self):
+        # No S line and no S allowance/charge at the breakdown's rate: both
+        # official exists() disjuncts fail, so the assert fires even though
+        # the amounts are consistent.
+        r = base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "Percent").text = "12"
+        self.assertIn("BR-S-08", fired(r))
+
+    def test_br_s_08_absent_percent_is_vacuous(self):
+        # every $rate in xs:decimal(cbc:Percent) over an ABSENT Percent is
+        # vacuously true -> BR-S-08 holds (BR-48 fires for the missing rate).
+        r = base()
+        cat = subtotal_category(r)
+        cat.remove(child(cat, NS_CBC, "Percent"))
+        got = fired(r)
+        self.assertNotIn("BR-S-08", got)
+        self.assertIn("BR-48", got)
 
 
 if __name__ == "__main__":

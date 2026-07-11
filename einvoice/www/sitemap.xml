@@ -89,6 +89,12 @@
   <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-17/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-18/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-19/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-20/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-21/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-22/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-23/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-24/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-CO-26/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-01/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-02/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-05/</loc></url>
@@ -104,6 +110,10 @@
   <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-19/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-20/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-23/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-24/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-25/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-27/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-DEC-28/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-AE-01/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-AE-02/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-AE-03/</loc></url>
@@ -143,6 +153,7 @@
   <url><loc>https://verifyhash.com/einvoice/rules/BR-IC-07/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-IC-08/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-IC-09/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-IC-10/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-IC-11/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-IC-12/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-O-01/</loc></url>
@@ -166,6 +177,7 @@
   <url><loc>https://verifyhash.com/einvoice/rules/BR-S-05/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-S-06/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-S-07/</loc></url>
+  <url><loc>https://verifyhash.com/einvoice/rules/BR-S-08/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-S-09/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-S-10/</loc></url>
   <url><loc>https://verifyhash.com/einvoice/rules/BR-Z-01/</loc></url>

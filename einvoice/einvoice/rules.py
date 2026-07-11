@@ -3851,6 +3851,401 @@ def br_co_19(inv):
     return None
 
 
+# --------------------------------------------------------------------------- #
+# Core/decimals/VAT gap batch A                                                 #
+# (BR-CO-20/-21/-22/-23/-24/-26, BR-DEC-24/-25/-27/-28, BR-IC-10, BR-S-08)      #
+# --------------------------------------------------------------------------- #
+def br_co_20(inv):
+    """BR-CO-20: If Invoice line period (BG-26) is used, the Invoice line
+    period start date (BT-134) or the Invoice line period end date (BT-135)
+    shall be filled, or both.
+
+    Official (context = each Invoice line period)::
+
+        UBL (cac:InvoiceLine/cac:InvoicePeriod):
+            exists(cbc:StartDate) or exists(cbc:EndDate)
+        CII (//ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod):
+            (ram:StartDateTime) or (ram:EndDateTime)
+
+    Pure child-element EXISTENCE on both bindings (a present-but-empty date
+    element satisfies it — the value's validity is BR-30's business, not this
+    rule's). Each parser stores one already-evaluated bool per line-period
+    context node (``line_period_filled``), mirroring BR-CO-19's document-level
+    ``invoice_period_filled``.
+    """
+    for filled in inv.line_period_filled:
+        if not filled:
+            return Violation(
+                "BR-CO-20",
+                "If Invoice line period (BG-26) is used, the Invoice line "
+                "period start date (BT-134) or the Invoice line period end "
+                "date (BT-135) shall be filled, or both.",
+                "cac:InvoiceLine/cac:InvoicePeriod")
+    return None
+
+
+def br_co_21(inv):
+    """BR-CO-21: Each Document level allowance (BG-20) shall contain a
+    Document level allowance reason (BT-97) or a Document level allowance
+    reason code (BT-98), or both.
+
+    Official (context = each DOCUMENT-level allowance)::
+
+        UBL (/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = false()]):
+            exists(cbc:AllowanceChargeReason)
+            or exists(cbc:AllowanceChargeReasonCode)
+        CII (//ram:ApplicableHeaderTradeSettlement/
+             ram:SpecifiedTradeAllowanceCharge/
+             ram:ChargeIndicator[udt:Indicator='false']):
+            (../ram:Reason) or (../ram:ReasonCode)
+
+    Same ``exists(reason) or exists(reason code)`` fact BR-33 tests (the
+    official artifact carries BOTH ids for this constraint); the parsers bake
+    it into ``ac.has_reason``. A group whose ChargeIndicator matches neither
+    boolean context (``is_charge is None``) fires neither binding.
+    """
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is False and not ac.has_reason:
+            return Violation(
+                "BR-CO-21",
+                "Each Document level allowance (BG-20) shall contain a "
+                "Document level allowance reason (BT-97) or a Document level "
+                "allowance reason code (BT-98), or both.",
+                "cac:AllowanceCharge/cbc:AllowanceChargeReason")
+    return None
+
+
+def br_co_22(inv):
+    """BR-CO-22: Each Document level charge (BG-21) shall contain a Document
+    level charge reason (BT-104) or a Document level charge reason code
+    (BT-105), or both.
+
+    Official: the charge twin of BR-CO-21 — same contexts split on
+    ``ChargeIndicator = true()`` / ``udt:Indicator='true'``, same
+    ``exists(reason) or exists(reason code)`` test (duplicated by BR-38).
+    """
+    for ac in inv.doc_allowance_charges:
+        if ac.is_charge is True and not ac.has_reason:
+            return Violation(
+                "BR-CO-22",
+                "Each Document level charge (BG-21) shall contain a Document "
+                "level charge reason (BT-104) or a Document level charge "
+                "reason code (BT-105), or both.",
+                "cac:AllowanceCharge/cbc:AllowanceChargeReason")
+    return None
+
+
+def br_co_23(inv):
+    """BR-CO-23: Each Invoice line allowance (BG-27) shall contain an Invoice
+    line allowance reason (BT-139) or an Invoice line allowance reason code
+    (BT-140), or both.
+
+    Official (context = each LINE-level allowance)::
+
+        UBL (//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator=false()]):
+            exists(cbc:AllowanceChargeReason)
+            or exists(cbc:AllowanceChargeReasonCode)
+        CII (//ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/
+             ram:ChargeIndicator[udt:Indicator = 'false']):
+            (../ram:Reason) or (../ram:ReasonCode)
+
+    The line twin of BR-CO-21 (and the same fact BR-42 tests).
+    """
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is False and not ac.has_reason:
+                return Violation(
+                    "BR-CO-23",
+                    "Each Invoice line allowance (BG-27) shall contain an "
+                    "Invoice line allowance reason (BT-139) or an Invoice "
+                    "line allowance reason code (BT-140), or both.",
+                    ln.label + "/cac:AllowanceCharge/cbc:AllowanceChargeReason")
+    return None
+
+
+def br_co_24(inv):
+    """BR-CO-24: Each Invoice line charge (BG-28) shall contain an Invoice
+    line charge reason (BT-144) or an Invoice line charge reason code
+    (BT-145), or both.
+
+    Official: the charge twin of BR-CO-23 — same line-level contexts split on
+    the true() / 'true' ChargeIndicator (and the same fact BR-44 tests).
+    """
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is True and not ac.has_reason:
+                return Violation(
+                    "BR-CO-24",
+                    "Each Invoice line charge (BG-28) shall contain an "
+                    "Invoice line charge reason (BT-144) or an Invoice line "
+                    "charge reason code (BT-145), or both.",
+                    ln.label + "/cac:AllowanceCharge/cbc:AllowanceChargeReason")
+    return None
+
+
+def br_co_26(inv):
+    """BR-CO-26: In order for the buyer to automatically identify a supplier,
+    the Seller identifier (BT-29), the Seller legal registration identifier
+    (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.
+
+    Official (context = each Seller party group)::
+
+        UBL (cac:AccountingSupplierParty):
+            exists(cac:Party/cac:PartyTaxScheme[cac:TaxScheme/
+                   normalize-space(upper-case(cbc:ID))='VAT']/cbc:CompanyID)
+            or exists(cac:Party/cac:PartyIdentification/
+                      cbc:ID[not(@schemeID = 'SEPA')])
+            or exists(cac:Party/cac:PartyLegalEntity/cbc:CompanyID)
+        CII (//ram:SellerTradeParty):
+            (ram:ID) or (ram:GlobalID)
+            or (ram:SpecifiedLegalOrganization/ram:ID)
+            or (ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA'])
+
+    The bindings accept genuinely different identifier sets (UBL admits ANY
+    non-SEPA PartyIdentification/ID — an ID with no @schemeID at all counts,
+    since ``not(() = 'SEPA')`` is true; CII admits ram:ID / ram:GlobalID and
+    requires the RAW @schemeID='VA' on the tax registration), so each parser
+    bakes ITS binding's verdict into one bool per Seller context node
+    (``seller_identification_ok``).
+    """
+    for ok in inv.seller_identification_ok:
+        if not ok:
+            return Violation(
+                "BR-CO-26",
+                "In order for the buyer to automatically identify a supplier, "
+                "the Seller identifier (BT-29), the Seller legal registration "
+                "identifier (BT-30) and/or the Seller VAT identifier (BT-31) "
+                "shall be present.",
+                "cac:AccountingSupplierParty/cac:Party/"
+                "cac:PartyIdentification/cbc:ID")
+    return None
+
+
+def br_dec_24(inv):
+    """BR-DEC-24: max 2 decimals for the Invoice line allowance amount (BT-136).
+
+    Official (context = each LINE-level allowance, the BR-CO-23 context set)::
+
+        UBL: string-length(substring-after(cbc:Amount,'.')) <= 2
+        CII: string-length(substring-after(../ram:ActualAmount[1],'.')) <= 2
+
+    Counted over the RAW text after the first '.' (whitespace included), like
+    every BR-DEC rule; an absent amount yields '' and holds.
+    """
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is False and _dec_places(ac.amount_raw) > 2:
+                return _dec_violation(
+                    "BR-DEC-24", "BT-136",
+                    "the Invoice line allowance amount",
+                    ln.label + "/cac:AllowanceCharge/cbc:Amount")
+    return None
+
+
+def br_dec_25(inv):
+    """BR-DEC-25: max 2 decimals for the Invoice line allowance base amount
+    (BT-137). Same line-level allowance context as BR-DEC-24, over
+    ``cbc:BaseAmount`` (UBL) / ``../ram:BasisAmount`` (CII)."""
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is False and _dec_places(ac.base_amount_raw) > 2:
+                return _dec_violation(
+                    "BR-DEC-25", "BT-137",
+                    "the Invoice line allowance base amount",
+                    ln.label + "/cac:AllowanceCharge/cbc:BaseAmount")
+    return None
+
+
+def br_dec_27(inv):
+    """BR-DEC-27: max 2 decimals for the Invoice line charge amount (BT-141).
+    The charge twin of BR-DEC-24 (ChargeIndicator true() / 'true')."""
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is True and _dec_places(ac.amount_raw) > 2:
+                return _dec_violation(
+                    "BR-DEC-27", "BT-141",
+                    "the Invoice line charge amount",
+                    ln.label + "/cac:AllowanceCharge/cbc:Amount")
+    return None
+
+
+def br_dec_28(inv):
+    """BR-DEC-28: max 2 decimals for the Invoice line charge base amount
+    (BT-142). The charge twin of BR-DEC-25."""
+    for ln in inv.lines:
+        for ac in ln.allowance_charges:
+            if ac.is_charge is True and _dec_places(ac.base_amount_raw) > 2:
+                return _dec_violation(
+                    "BR-DEC-28", "BT-142",
+                    "the Invoice line charge base amount",
+                    ln.label + "/cac:AllowanceCharge/cbc:BaseAmount")
+    return None
+
+
+def br_ic_10(inv):
+    """BR-IC-10: a VAT breakdown (BG-23) with the VAT category code (BT-118)
+    "Intra-community supply" (K) SHALL have a VAT exemption reason code
+    (BT-121) or text (BT-120) — the K twin of BR-E-10 / BR-AE-10.
+
+    Official (context = each K VAT-breakdown category)::
+
+        UBL (/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+             [normalize-space(cbc:ID) = 'K'][VAT]):
+            exists(cbc:TaxExemptionReason) or (exists(cbc:TaxExemptionReasonCode))
+        CII (//rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/
+             ram:ApplicableTradeTax/ram:CategoryCode[.= 'K']
+             [upper-case(../ram:TypeCode) = 'VAT']):
+            (../ram:ExemptionReason) or (../ram:ExemptionReasonCode)
+
+    Both contexts are exactly the top-level VAT-breakdown rows the model's
+    ``tax_totals`` carry (CII's header ApplicableTradeTax rows ARE that set).
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if (st.category_id == "K" and st.category_scheme_id == "VAT"
+                    and not (st.has_exemption_reason
+                             or st.has_exemption_reason_code)):
+                return Violation(
+                    "BR-IC-10",
+                    "A VAT breakdown (BG-23) with the VAT Category code "
+                    "(BT-118) 'Intra-community supply' shall have a VAT "
+                    "exemption reason code (BT-121) or a VAT exemption "
+                    "reason text (BT-120).",
+                    "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/"
+                    "cbc:TaxExemptionReason")
+    return None
+
+
+def br_s_08(inv):
+    """BR-S-08: for each different value of VAT category rate (BT-119) where
+    the VAT category code (BT-118) is "Standard rated", the VAT category
+    taxable amount (BT-116) shall equal the sum of Invoice line net amounts
+    (BT-131) plus document level charge amounts (BT-99) minus document level
+    allowance amounts (BT-92) where the VAT category code is "Standard rated"
+    and the VAT rate equals BT-119.
+
+    The two bindings encode this per-rate bucket sum with genuinely different
+    predicates, so the body branches on syntax.
+
+    UBL (context ``/*/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+    [normalize-space(cbc:ID)='S'][VAT]``)::
+
+        every $rate in xs:decimal(cbc:Percent) satisfies
+          ( (exists(//cac:InvoiceLine[... 'S'][... = $rate])
+               or exists(//cac:AllowanceCharge[cac:TaxCategory/... 'S']
+                         [cac:TaxCategory/xs:decimal(cbc:Percent) = $rate]))
+            and abs-free ±1 band:
+                ../xs:decimal(cbc:TaxableAmount - 1) < SUM_IL
+                and ../xs:decimal(cbc:TaxableAmount + 1) > SUM_IL )
+          or ( (exists(//cac:CreditNoteLine[...]) or exists(//cac:AllowanceCharge[...]))
+               and the same band against SUM_CNL )
+
+    where ``SUM_IL`` = Σ document lines' LineExtensionAmount + Σ document-level
+    charges − Σ document-level allowances, each restricted by TWO INDEPENDENT
+    predicates over the group's categories — ``normalize-space(id)='S'`` and
+    ``xs:decimal(Percent)=$rate`` — that are SCHEME-AGNOSTIC (no TaxScheme
+    test, unlike this rule's own context). Details the official XPath pins:
+
+    * an ABSENT Percent makes ``every $rate in ()`` vacuously true (holds);
+    * the exists() disjunct scans //cac:AllowanceCharge at ANY depth (line
+      allowances included, no ChargeIndicator test), while the SUMS scan only
+      the document-level siblings split by ``ChargeIndicator = true()/false()``;
+    * on an Invoice document the CreditNote branch's line sum is empty, so it
+      reduces to "an S/$rate AllowanceCharge exists somewhere AND the band
+      holds against charges − allowances alone";
+    * a missing/unparseable BT-116 empties the band comparison -> fires;
+    * the official band arithmetic routes through xs:double (untyped − 1)
+      before the xs:decimal cast; computed here in exact Decimal, which is
+      indistinguishable off the representational edge of the strict ±1 band.
+
+    CII (context ``//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/
+    ram:CategoryCode[.='S']`` — note: NO TypeCode/VAT predicate)::
+
+        every $rate in ../ram:RateApplicablePercent/xs:decimal(.) satisfies
+          ../ram:BasisAmount =
+              round2(Σ S/$rate line LineTotalAmount)
+            + round2(Σ S/$rate header charges'   ActualAmount[1])
+            - round2(Σ S/$rate header allowances' ActualAmount[1])
+
+    EXACT equality against the PER-BUCKET fn:round 2-place sums (round2 =
+    ``round(x*10*10) div 100``, the ``_xr2`` idiom) — no tolerance band; a
+    missing BT-116 compares false and fires. The line/allowance predicates
+    are conjunctions over the group's ApplicableTradeTax / CategoryTradeTax
+    rows (CategoryCode='S' and xs:decimal(RateApplicablePercent)=$rate); the
+    charge/allowance split is the boolean ``ChargeIndicator/udt:Indicator``.
+    """
+    for tt in inv.tax_totals:
+        for st in tt.subtotals:
+            if inv.syntax == "cii":
+                if st.category_id != "S":
+                    continue
+            elif not (st.category_id == "S"
+                      and st.category_scheme_id == "VAT"):
+                continue
+            rate = _dec(st.percent)
+            if rate is None:
+                continue  # every $rate in () — vacuously true
+            line_exists = False
+            line_sum = Decimal("0")
+            for ln in inv.lines:
+                cats = ln.item_tax_categories
+                if (any(cat.id == "S" for cat in cats)
+                        and any(_dec(cat.percent) == rate for cat in cats)):
+                    line_exists = True
+                    v = _dec(ln.line_extension_amount)
+                    if v is not None:
+                        line_sum += v
+            charge_sum = Decimal("0")
+            allowance_sum = Decimal("0")
+            for ac in inv.doc_allowance_charges:
+                if ac.is_charge is None:
+                    continue
+                cats = ac.tax_categories
+                if not (any(cat.id == "S" for cat in cats)
+                        and any(_dec(cat.percent) == rate for cat in cats)):
+                    continue
+                v = _dec(ac.amount_raw)
+                if v is None:
+                    continue
+                if ac.is_charge:
+                    charge_sum += v
+                else:
+                    allowance_sum += v
+            taxable = _dec(st.taxable_amount)
+            if inv.syntax == "cii":
+                expected = (_xr2(line_sum) + _xr2(charge_sum)
+                            - _xr2(allowance_sum))
+                if taxable is not None and taxable == expected:
+                    continue
+            else:
+                ac_exists = any(
+                    (any(cat.id == "S" for cat in ac.tax_categories)
+                     and any(_dec(cat.percent) == rate
+                             for cat in ac.tax_categories))
+                    for ac in inv.all_allowance_charges())
+
+                def _band(expected):
+                    return (taxable is not None
+                            and taxable - 1 < expected
+                            and taxable + 1 > expected)
+
+                if (((line_exists or ac_exists)
+                     and _band(line_sum + charge_sum - allowance_sum))
+                        or (ac_exists and _band(charge_sum - allowance_sum))):
+                    continue
+            return Violation(
+                "BR-S-08",
+                "For each different value of VAT category rate (BT-119=%s) "
+                "where the VAT category code (BT-118) is 'Standard rated', "
+                "the VAT category taxable amount (BT-116=%s) in a VAT "
+                "breakdown (BG-23) shall equal the sum of Invoice line net "
+                "amounts plus document level charges minus document level "
+                "allowances at that Standard rate."
+                % (st.percent, st.taxable_amount or "(absent)"),
+                "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")
+    return None
+
+
 # Ordered ruleset (evaluation order = document flow: header -> lines -> codes
 # -> arithmetic -> VAT-category consistency -> decimal precision).
 ALL_RULES = [
@@ -3871,9 +4266,11 @@ ALL_RULES = [
     br_co_03, br_co_04,
     br_co_09, br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15,
     br_co_16, br_co_17, br_co_18, br_co_19,
+    br_co_20, br_co_21, br_co_22, br_co_23, br_co_24, br_co_26,
     br_45, br_46, br_47, br_48,
     br_s_01, br_z_01,
-    br_s_02, br_s_03, br_s_04, br_s_05, br_s_06, br_s_07, br_s_09, br_s_10,
+    br_s_02, br_s_03, br_s_04, br_s_05, br_s_06, br_s_07, br_s_08,
+    br_s_09, br_s_10,
     br_z_02, br_z_03, br_z_04, br_z_05, br_z_06, br_z_07,
     br_z_08, br_z_09, br_z_10,
     br_e_02, br_e_03, br_e_04, br_e_05, br_e_06, br_e_07,
@@ -3881,7 +4278,7 @@ ALL_RULES = [
     br_ae_02, br_ae_03, br_ae_04, br_ae_05, br_ae_06, br_ae_07,
     br_ae_08, br_ae_09, br_ae_10,
     br_ic_02, br_ic_03, br_ic_04, br_ic_05, br_ic_06, br_ic_07,
-    br_ic_08, br_ic_09, br_ic_11, br_ic_12,
+    br_ic_08, br_ic_09, br_ic_10, br_ic_11, br_ic_12,
     br_g_02, br_g_03, br_g_04, br_g_05, br_g_06, br_g_07,
     br_g_08, br_g_09, br_g_10,
     br_o_02, br_o_03, br_o_04, br_o_05, br_o_06, br_o_07,
@@ -3890,4 +4287,5 @@ ALL_RULES = [
     br_dec_01, br_dec_02, br_dec_05, br_dec_06,
     br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_14,
     br_dec_16, br_dec_17, br_dec_18, br_dec_19, br_dec_20, br_dec_23,
+    br_dec_24, br_dec_25, br_dec_27, br_dec_28,
 ]

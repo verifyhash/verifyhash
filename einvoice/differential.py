@@ -111,7 +111,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 175, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 187, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -241,6 +241,19 @@ CII_GRADED_RULES = [
     # Decimal-place (≤2) rules that map cleanly to the CII monetary fields.
     _rules.br_dec_09, _rules.br_dec_12, _rules.br_dec_14, _rules.br_dec_18,
     _rules.br_dec_19, _rules.br_dec_20, _rules.br_dec_23,
+    # Core/decimals/VAT gap batch A (BR-CO-20..24/-26, BR-DEC-24/25/27/28,
+    # BR-IC-10, BR-S-08): line billing periods, allowance/charge reasons
+    # (document + line level — the CII parser now materializes the line-level
+    # ram:SpecifiedTradeAllowanceCharge groups), seller identification, line
+    # allowance/charge decimal places, the Intra-community (K) exemption
+    # reason, and the per-rate Standard-rated bucket sum. Where the CII
+    # binding genuinely differs (BR-CO-26's identifier disjuncts, BR-S-08's
+    # exact per-bucket round2 equality vs the UBL ±1 band), the shared rule
+    # bodies branch on inv.syntax and transcribe EACH binding exactly.
+    _rules.br_co_20, _rules.br_co_21, _rules.br_co_22, _rules.br_co_23,
+    _rules.br_co_24, _rules.br_co_26,
+    _rules.br_dec_24, _rules.br_dec_25, _rules.br_dec_27, _rules.br_dec_28,
+    _rules.br_ic_10, _rules.br_s_08,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -1355,6 +1368,127 @@ def _mut_brco19(r):
     period.remove(_child(period, NS_CBC, "EndDate"))
 
 
+# ---- Core/decimals/VAT gap batch A mutations -------------------------------- #
+# (BR-CO-20/21/22/23/24/26, BR-DEC-24/25/27/28, BR-IC-10, BR-S-08)
+def _mut_brco20(r):
+    # Empty the first line's Invoice line period (BG-26): with neither
+    # StartDate nor EndDate, BR-CO-20 fires (BR-30 has no dates left to
+    # compare, and the document-level BG-14 period is untouched).
+    period = _child(_first_line(r), NS_CAC, "InvoicePeriod")
+    period.remove(_child(period, NS_CBC, "StartDate"))
+    period.remove(_child(period, NS_CBC, "EndDate"))
+
+
+def _add_bare_doc_allowance_charge(r, charge):
+    """Insert a document AllowanceCharge with amount 0.00 + S/25 VAT category
+    but NO reason: the target BR-CO-21/22 fires (with its BR-33/BR-38 twin),
+    the zero amount keeps every document-total and BR-S-08 bucket sum
+    unchanged, and the matching S/25 rate keeps BR-S-06/07 clear."""
+    ac = ET.Element(_q(NS_CAC, "AllowanceCharge"))
+    _sub_el(ac, NS_CBC, "ChargeIndicator", "true" if charge else "false")
+    _sub_el(ac, NS_CBC, "Amount", "0.00", currency=True)
+    cat = _sub_el(ac, NS_CAC, "TaxCategory")
+    _sub_el(cat, NS_CBC, "ID", "S")
+    _sub_el(cat, NS_CBC, "Percent", "25")
+    _sub_el(_sub_el(cat, NS_CAC, "TaxScheme"), NS_CBC, "ID", "VAT")
+    r.insert(list(r).index(_child(r, NS_CAC, "TaxTotal")), ac)
+
+
+def _mut_brco21(r):
+    _add_bare_doc_allowance_charge(r, charge=False)
+
+
+def _mut_brco22(r):
+    _add_bare_doc_allowance_charge(r, charge=True)
+
+
+def _add_line_allowance_charge(r, charge, amount="0.00", base=None,
+                               reason=None):
+    """Insert an Invoice line AllowanceCharge (BG-27/BG-28) on the first line.
+    Line allowances/charges feed no document-total arithmetic and carry no VAT
+    category here, so only the reason (BR-CO-23/24 + BR-42/44) and decimal
+    (BR-DEC-24/25/27/28) rules can react."""
+    ln = _first_line(r)
+    ac = ET.Element(_q(NS_CAC, "AllowanceCharge"))
+    _sub_el(ac, NS_CBC, "ChargeIndicator", "true" if charge else "false")
+    if reason is not None:
+        _sub_el(ac, NS_CBC, "AllowanceChargeReason", reason)
+    _sub_el(ac, NS_CBC, "Amount", amount, currency=True)
+    if base is not None:
+        _sub_el(ac, NS_CBC, "BaseAmount", base, currency=True)
+    ln.insert(list(ln).index(_child(ln, NS_CAC, "Item")), ac)
+
+
+def _mut_brco23(r):
+    # Line ALLOWANCE without reason/reason code: BR-CO-23 fires (and its
+    # BR-42 twin — same official fact, two ids — on both engines).
+    _add_line_allowance_charge(r, charge=False)
+
+
+def _mut_brco24(r):
+    # Line CHARGE without reason/reason code: BR-CO-24 (+ BR-44 twin).
+    _add_line_allowance_charge(r, charge=True)
+
+
+def _mut_brdec24(r):
+    _add_line_allowance_charge(r, charge=False, amount="1.123",
+                               reason="Discount")
+
+
+def _mut_brdec25(r):
+    _add_line_allowance_charge(r, charge=False, amount="1.12", base="10.123",
+                               reason="Discount")
+
+
+def _mut_brdec27(r):
+    _add_line_allowance_charge(r, charge=True, amount="1.123",
+                               reason="Freight")
+
+
+def _mut_brdec28(r):
+    _add_line_allowance_charge(r, charge=True, amount="1.12", base="10.123",
+                               reason="Freight")
+
+
+def _mut_brco26(r):
+    # Strip every Seller identifier BR-CO-26 accepts: the PartyIdentification
+    # (BT-29), the whole PartyTaxScheme (BT-31 — also BR-CO-09's only context,
+    # which therefore vanishes rather than firing) and the PartyLegalEntity
+    # CompanyID (BT-30; its RegistrationName stays, so BR-06 holds). The
+    # S-rated lines then also lack a seller VAT id -> BR-S-02 fires alongside
+    # on both engines.
+    party = _supplier_party(r)
+    party.remove(_child(party, NS_CAC, "PartyIdentification"))
+    party.remove(_child(party, NS_CAC, "PartyTaxScheme"))
+    ple = _child(party, NS_CAC, "PartyLegalEntity")
+    ple.remove(_child(ple, NS_CBC, "CompanyID"))
+
+
+def _mut_bric10(r):
+    # Add an Intra-community (K) VAT breakdown row with NO exemption reason:
+    # BR-IC-10 fires. Amounts are 0.00 so BR-CO-14 and the K sum/zero rules
+    # (BR-IC-08/09) hold; BR-IC-01 fires alongside on both engines (K
+    # breakdown with no K line); the base's ActualDeliveryDate keeps BR-IC-11
+    # clear.
+    tt = _child(r, NS_CAC, "TaxTotal")
+    st = _sub_el(tt, NS_CAC, "TaxSubtotal")
+    _sub_el(st, NS_CBC, "TaxableAmount", "0.00", currency=True)
+    _sub_el(st, NS_CBC, "TaxAmount", "0.00", currency=True)
+    cat = _sub_el(st, NS_CAC, "TaxCategory")
+    _sub_el(cat, NS_CBC, "ID", "K")
+    _sub_el(cat, NS_CBC, "Percent", "0")
+    _sub_el(_sub_el(cat, NS_CAC, "TaxScheme"), NS_CBC, "ID", "VAT")
+
+
+def _mut_brs08(r):
+    # Shift the S breakdown's taxable amount (BT-116) by +2: outside BR-S-08's
+    # strict ±1 band against the S/25 bucket sum (625743.54), but the tax
+    # amount is then only 0.50 off taxable x 25%, INSIDE the ±1 band of
+    # BR-CO-17 and BR-S-09 — so BR-S-08 is the only rule that fires.
+    st = _child(_child(r, NS_CAC, "TaxTotal"), NS_CAC, "TaxSubtotal")
+    _child(st, NS_CBC, "TaxableAmount").text = "625745.54"
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -1376,6 +1510,12 @@ _MUTATIONS = {
     "BR-56": _mut_br56, "BR-64": _mut_br64, "BR-65": _mut_br65,
     "BR-CO-03": _mut_brco03, "BR-CO-09": _mut_brco09,
     "BR-CO-19": _mut_brco19,
+    "BR-CO-20": _mut_brco20, "BR-CO-21": _mut_brco21,
+    "BR-CO-22": _mut_brco22, "BR-CO-23": _mut_brco23,
+    "BR-CO-24": _mut_brco24, "BR-CO-26": _mut_brco26,
+    "BR-IC-10": _mut_bric10, "BR-S-08": _mut_brs08,
+    "BR-DEC-24": _mut_brdec24, "BR-DEC-25": _mut_brdec25,
+    "BR-DEC-27": _mut_brdec27, "BR-DEC-28": _mut_brdec28,
     "BR-CO-04": _mut_brco04,
     "BR-CL-01": _mut_brcl01,
     "BR-CL-03": _mut_brcl03, "BR-CL-04": _mut_brcl04, "BR-CL-05": _mut_brcl05,
@@ -2173,8 +2313,9 @@ def _cmut_brcl17(r):
     # allowance/charge VAT category (ram:SpecifiedTradeAllowanceCharge/
     # ram:CategoryTradeTax/ram:CategoryCode) — the only BR-CL-17 context in CII —
     # off the UNCL 5305 subset. Amounts are untouched, so graded arithmetic
-    # (BR-CO-13 etc.) stays clear; BR-S-01 is CII-excluded and BR-S-08 is
-    # unimplemented, so BR-CL-17 is the only graded rule that fires.
+    # (BR-CO-13 etc.) stays clear; BR-S-01 is CII-excluded. The re-coded
+    # allowance (100) leaves the S/25% bucket, so BR-S-08 fires ALONGSIDE
+    # BR-CL-17 on both engines — agreement is asserted per rule.
     cc = _cii_settlement(r).find(
         "ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:CategoryCode",
         _NSC)
@@ -2184,8 +2325,9 @@ def _cmut_brcl17(r):
 def _cmut_brcl18(r):
     # A line VAT category (ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
     # /ram:CategoryCode) coded off the UNCL 5305 subset. The header VAT breakdown
-    # category stays 'S'; BR-S-01 is CII-excluded and BR-S-08 unimplemented, so
-    # only BR-CL-18 fires among the graded rules.
+    # category stays 'S'; BR-S-01 is CII-excluded. The re-coded first line
+    # (19.9) leaves the S/6% bucket, so BR-S-08 fires ALONGSIDE BR-CL-18 on
+    # both engines — agreement is asserted per rule.
     _cii_line_tax(r).find("ram:CategoryCode", _NSC).text = "XX"
 
 
@@ -2370,6 +2512,120 @@ def _cmut_brco19(r):
     settle.append(ET.Element(_cq(NS_RAM, "BillingSpecifiedPeriod")))
 
 
+# ---- Core/decimals/VAT gap batch A (CII side) ------------------------------- #
+# (BR-CO-20/21/22/23/24/26, BR-DEC-24/25/27/28, BR-IC-10, BR-S-08)
+def _cmut_brco20(r):
+    # Add an EMPTY line billing period (BG-26) to the first line's
+    # SpecifiedLineTradeSettlement: with neither StartDateTime nor
+    # EndDateTime, BR-CO-20 fires (the header BG-14 period is untouched).
+    ET.SubElement(
+        _cii_first_line(r).find("ram:SpecifiedLineTradeSettlement", _NSC),
+        _cq(NS_RAM, "BillingSpecifiedPeriod"))
+
+
+def _cadd_bare_allowance_charge(r, charge):
+    """Append a document SpecifiedTradeAllowanceCharge with ActualAmount 0.00
+    and NO Reason/ReasonCode: the target BR-CO-21/22 fires (its ungraded
+    BR-33/BR-38 twin fires officially too); the zero amount and the absent
+    CategoryTradeTax keep every graded arithmetic and BR-S-08 bucket sum
+    unchanged."""
+    settle = _cii_settlement(r)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = (
+        "true" if charge else "false")
+    ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = "0.00"
+
+
+def _cmut_brco21(r):
+    _cadd_bare_allowance_charge(r, charge=False)
+
+
+def _cmut_brco22(r):
+    _cadd_bare_allowance_charge(r, charge=True)
+
+
+def _cadd_line_allowance_charge(r, charge, amount="0.00", base=None,
+                                reason=None):
+    """Append a LINE-level ram:SpecifiedTradeAllowanceCharge (BG-27/BG-28) to
+    the first line. Line allowances feed no graded arithmetic (the line's
+    LineTotalAmount is untouched) and carry no CategoryTradeTax here, so only
+    the reason (BR-CO-23/24) and decimal (BR-DEC-24/25/27/28) rules react."""
+    settle = _cii_first_line(r).find("ram:SpecifiedLineTradeSettlement", _NSC)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = (
+        "true" if charge else "false")
+    if base is not None:
+        ET.SubElement(ac, _cq(NS_RAM, "BasisAmount")).text = base
+    ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = amount
+    if reason is not None:
+        ET.SubElement(ac, _cq(NS_RAM, "Reason")).text = reason
+
+
+def _cmut_brco23(r):
+    _cadd_line_allowance_charge(r, charge=False)
+
+
+def _cmut_brco24(r):
+    _cadd_line_allowance_charge(r, charge=True)
+
+
+def _cmut_brdec24(r):
+    _cadd_line_allowance_charge(r, charge=False, amount="1.123",
+                                reason="Discount")
+
+
+def _cmut_brdec25(r):
+    _cadd_line_allowance_charge(r, charge=False, amount="1.12", base="10.123",
+                                reason="Discount")
+
+
+def _cmut_brdec27(r):
+    _cadd_line_allowance_charge(r, charge=True, amount="1.123",
+                                reason="Freight")
+
+
+def _cmut_brdec28(r):
+    _cadd_line_allowance_charge(r, charge=True, amount="1.12", base="10.123",
+                                reason="Freight")
+
+
+def _cmut_brco26(r):
+    # Strip every Seller identifier the CII BR-CO-26 accepts: the base seller
+    # carries a SpecifiedLegalOrganization/ID and a VA SpecifiedTaxRegistration
+    # (no ram:ID / ram:GlobalID), so removing those two groups fires BR-CO-26.
+    # The S-rated lines then also lack a seller VA/FC id -> BR-S-02 fires
+    # alongside on both engines; BR-CO-09's context vanishes with the VA id.
+    seller = _cii_seller(r)
+    _cii_remove(r, seller.find("ram:SpecifiedLegalOrganization", _NSC))
+    _cii_remove(r, seller.find("ram:SpecifiedTaxRegistration", _NSC))
+
+
+def _cmut_bric10(r):
+    # Add an Intra-community (K) VAT breakdown row with NO exemption reason:
+    # BR-IC-10 fires. Amounts are 0.00 so the graded arithmetic (BR-CO-17)
+    # holds; the official also fires the CII-ungraded BR-IC-01/-11/-12
+    # cascade, which the leg does not grade.
+    settle = _cii_settlement(r)
+    first = settle.find("ram:ApplicableTradeTax", _NSC)
+    tt = ET.Element(_cq(NS_RAM, "ApplicableTradeTax"))
+    ET.SubElement(tt, _cq(NS_RAM, "CalculatedAmount")).text = "0.00"
+    ET.SubElement(tt, _cq(NS_RAM, "TypeCode")).text = "VAT"
+    ET.SubElement(tt, _cq(NS_RAM, "BasisAmount")).text = "0.00"
+    ET.SubElement(tt, _cq(NS_RAM, "CategoryCode")).text = "K"
+    ET.SubElement(tt, _cq(NS_RAM, "RateApplicablePercent")).text = "0"
+    settle.insert(list(settle).index(first), tt)
+
+
+def _cmut_brs08(r):
+    # Shift the first S breakdown's BasisAmount (6%: 183.23) by +2: the CII
+    # BR-S-08 EXACT per-rate bucket equality breaks, while the tax amount
+    # stays only 0.12 off taxable x 6% — inside the ±1 bands of BR-CO-17 and
+    # BR-S-09 — so BR-S-08 is the only graded rule that fires.
+    _cii_first_breakdown(r).find("ram:BasisAmount", _NSC).text = "185.23"
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -2383,6 +2639,12 @@ _CII_MUTATIONS = {
     "BR-56": _cmut_br56, "BR-64": _cmut_br64, "BR-65": _cmut_br65,
     "BR-CO-03": _cmut_brco03, "BR-CO-09": _cmut_brco09,
     "BR-CO-19": _cmut_brco19,
+    "BR-CO-20": _cmut_brco20, "BR-CO-21": _cmut_brco21,
+    "BR-CO-22": _cmut_brco22, "BR-CO-23": _cmut_brco23,
+    "BR-CO-24": _cmut_brco24, "BR-CO-26": _cmut_brco26,
+    "BR-IC-10": _cmut_bric10, "BR-S-08": _cmut_brs08,
+    "BR-DEC-24": _cmut_brdec24, "BR-DEC-25": _cmut_brdec25,
+    "BR-DEC-27": _cmut_brdec27, "BR-DEC-28": _cmut_brdec28,
     "BR-CL-01": _cmut_brcl01,
     "BR-CL-03": _cmut_brcl03, "BR-CL-04": _cmut_brcl04, "BR-CL-05": _cmut_brcl05,
     "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,

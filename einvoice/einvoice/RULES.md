@@ -30,20 +30,20 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**221 rules** in total — 211 fatal, 9 warning, 1 information — across 14 families.
+**233 rules** in total — 223 fatal, 9 warning, 1 information — across 14 families.
 
 ## Families
 
 - **BR** (58) — Core EN 16931 content and cardinality rules.
 - **BR-CL** (15) — Code-list rules — a coded value must come from the referenced official code list.
-- **BR-CO** (13) — Calculation and consistency rules (cross-total arithmetic).
-- **BR-DEC** (15) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
+- **BR-CO** (19) — Calculation and consistency rules (cross-total arithmetic).
+- **BR-DEC** (19) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **BR-AE** (10) — VAT breakdown rules for VAT category code AE.
 - **BR-E** (10) — VAT breakdown rules for VAT category code E.
 - **BR-G** (10) — VAT breakdown rules for VAT category code G.
-- **BR-IC** (11) — VAT breakdown rules for the intra-community VAT category.
+- **BR-IC** (12) — VAT breakdown rules for the intra-community VAT category.
 - **BR-O** (14) — VAT breakdown rules for VAT category code O.
-- **BR-S** (9) — VAT breakdown rules for VAT category code S.
+- **BR-S** (10) — VAT breakdown rules for VAT category code S.
 - **BR-Z** (10) — VAT breakdown rules for VAT category code Z.
 - **BR-DE** (31) — German XRechnung national CIUS rules (KoSIT).
 - **BR-DE-TMP** (1) — German XRechnung national rules (BR-DE-TMP).
@@ -835,6 +835,60 @@ Calculation and consistency rules (cross-total arithmetic).
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.”
 
+### BR-CO-20 — If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.
+
+- **Requires:** If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.
+- **Business terms:** BG-26, BT-134, BT-135
+- **Location:** `cac:InvoiceLine/cac:InvoicePeriod`
+- **Fix:** Add the required element at `cac:InvoiceLine/cac:InvoicePeriod`: If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.”
+
+### BR-CO-21 — Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.
+
+- **Requires:** Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.
+- **Business terms:** BG-20, BT-97, BT-98
+- **Location:** `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`
+- **Fix:** Add the required element at `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`: Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.”
+
+### BR-CO-22 — Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.
+
+- **Requires:** Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.
+- **Business terms:** BG-21, BT-104, BT-105
+- **Location:** `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`
+- **Fix:** Add the required element at `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`: Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.”
+
+### BR-CO-23 — Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.
+
+- **Requires:** Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.
+- **Business terms:** BG-27, BT-139, BT-140
+- **Location:** `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`
+- **Fix:** Add the required element at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`: Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.”
+
+### BR-CO-24 — Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.
+
+- **Requires:** Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.
+- **Business terms:** BG-28, BT-144, BT-145
+- **Location:** `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`
+- **Fix:** Add the required element at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`: Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.”
+
+### BR-CO-26 — In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.
+
+- **Requires:** In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.
+- **Business terms:** BT-29, BT-30, BT-31
+- **Location:** `cac:AccountingSupplierParty`
+- **Fix:** Correct `cac:AccountingSupplierParty` so that In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.”
+
 ## BR-DEC
 
 Decimal-places rules — amounts must not exceed the allowed number of decimals.
@@ -973,6 +1027,42 @@ Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **Fix:** Round the value at `cac:InvoiceLine` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line net amount (BT-131) is 2.
 - **Severity:** fatal
 - **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice line net amount (BT-131) is 2.”
+
+### BR-DEC-24 — Max 2 decimals for the Invoice line allowance amount (BT-136).
+
+- **Requires:** The allowed maximum number of decimals for the Invoice line allowance amount (BT-136) is 2.
+- **Business terms:** BT-136
+- **Location:** `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`
+- **Fix:** Round the value at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line allowance amount (BT-136) is 2.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice line allowance amount (BT-136) is 2.”
+
+### BR-DEC-25 — Max 2 decimals for the Invoice line allowance base amount (BT-137). Same line-level allowance context as BR-DEC-24, over ``cbc:BaseAmount`` (UBL) / ``../ram:BasisAmount`` (CII).
+
+- **Requires:** The allowed maximum number of decimals for the Invoice line allowance base amount (BT-137) is 2.
+- **Business terms:** BT-137
+- **Location:** `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`
+- **Fix:** Round the value at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line allowance base amount (BT-137) is 2.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice line allowance base amount (BT-137) is 2.”
+
+### BR-DEC-27 — Max 2 decimals for the Invoice line charge amount (BT-141). The charge twin of BR-DEC-24 (ChargeIndicator true() / 'true').
+
+- **Requires:** The allowed maximum number of decimals for the Invoice line charge amount (BT-141) is 2.
+- **Business terms:** BT-141
+- **Location:** `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`
+- **Fix:** Round the value at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line charge amount (BT-141) is 2.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice line charge amount (BT-141) is 2.”
+
+### BR-DEC-28 — Max 2 decimals for the Invoice line charge base amount (BT-142). The charge twin of BR-DEC-25.
+
+- **Requires:** The allowed maximum number of decimals for the Invoice line charge base amount (BT-142) is 2.
+- **Business terms:** BT-142
+- **Location:** `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`
+- **Fix:** Round the value at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line charge base amount (BT-142) is 2.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice line charge base amount (BT-142) is 2.”
 
 ## BR-AE
 
@@ -1341,6 +1431,15 @@ VAT breakdown rules for the intra-community VAT category.
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where the VAT category code (BT-118) is "Intra-community supply" shall be 0 (zero).”
 
+### BR-IC-10 — A VAT breakdown (BG-23) with the VAT category code (BT-118) "Intra-community supply" (K) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the K twin of BR-E-10 / BR-AE-10.
+
+- **Requires:** A VAT breakdown (BG-23) with the VAT Category code (BT-118) "Intra-community supply" shall have a VAT exemption reason code (BT-121), meaning "Intra-community supply" or the VAT exemption reason text (BT-120) "Intra-community supply" (or the equivalent standard text in another language).
+- **Business terms:** BG-23, BT-118, BT-120, BT-121
+- **Location:** `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'K'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'K'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with the VAT Category code (BT-118) "Intra-community supply" shall have a VAT exemption reason code (BT-121), meaning "Intra-community supply" or the VAT exemption reason text (BT-120) "Intra-community supply" (or the equivalent standard text in another language).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “A VAT breakdown (BG-23) with the VAT Category code (BT-118) "Intra-community supply" shall have a VAT exemption reason code (BT-121), meaning "Intra-community supply" or the VAT exemption reason text (BT-120) "Intra-community supply" (or the equivalent standard text in another language).”
+
 ### BR-IC-11 — In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank.
 
 - **Requires:** In an Invoice with a VAT breakdown (BG-23) where the VAT category code (BT-118) is "Intra-community supply" the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank.
@@ -1555,6 +1654,15 @@ VAT breakdown rules for VAT category code S.
 - **Fix:** Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "Standard rated" the Document level charge VAT rate (BT-103) shall be greater than zero.
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "Standard rated" the Document level charge VAT rate (BT-103) shall be greater than zero.”
+
+### BR-S-08 — For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "Standard rated", the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is "Standard rated" and the VAT rate equals BT-119.
+
+- **Requires:** For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "Standard rated", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "Standard rated" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).
+- **Business terms:** BG-23, BT-92, BT-95, BT-96, BT-99, BT-102, BT-103, BT-116, BT-118, BT-119, BT-131, BT-151, BT-152
+- **Location:** `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "Standard rated", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "Standard rated" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "Standard rated", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "Standard rated" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).”
 
 ### BR-S-09 — The VAT category tax amount (BT-117) in a Standard-rated (S) VAT breakdown shall equal the VAT category taxable amount (BT-116) x the VAT category rate (BT-119).
 

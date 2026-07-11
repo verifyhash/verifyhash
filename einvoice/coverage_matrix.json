@@ -34,7 +34,7 @@
       "license": "Apache-2.0"
     }
   },
-  "rule_count": 221,
+  "rule_count": 233,
   "rules": [
     {
       "id": "BR-01",
@@ -2132,6 +2132,150 @@
       }
     },
     {
+      "id": "BR-CO-20",
+      "title": "If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-21",
+      "title": "Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-22",
+      "title": "Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-23",
+      "title": "Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-24",
+      "title": "Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-26",
+      "title": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
       "id": "BR-DEC-01",
       "title": "Max 2 decimals for the Document level allowance amount (BT-92).",
       "family": "core",
@@ -2478,6 +2622,102 @@
     {
       "id": "BR-DEC-23",
       "title": "Max 2 decimals for the Invoice line net amount (BT-131).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-24",
+      "title": "Max 2 decimals for the Invoice line allowance amount (BT-136).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-25",
+      "title": "Max 2 decimals for the Invoice line allowance base amount (BT-137). Same line-level allowance context as BR-DEC-24, over ``cbc:BaseAmount`` (UBL) / ``../ram:BasisAmount`` (CII).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-27",
+      "title": "Max 2 decimals for the Invoice line charge amount (BT-141). The charge twin of BR-DEC-24 (ChargeIndicator true() / 'true').",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-28",
+      "title": "Max 2 decimals for the Invoice line charge base amount (BT-142). The charge twin of BR-DEC-25.",
       "family": "core",
       "syntax": "both",
       "severity": "fatal",
@@ -3475,6 +3715,30 @@
       }
     },
     {
+      "id": "BR-IC-10",
+      "title": "A VAT breakdown (BG-23) with the VAT category code (BT-118) \"Intra-community supply\" (K) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the K twin of BR-E-10 / BR-AE-10.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
       "id": "BR-IC-11",
       "title": "In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank.",
       "family": "core",
@@ -4044,6 +4308,30 @@
           "version": "1.3.16",
           "differentially_proven": false,
           "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-S-08",
+      "title": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"Standard rated\", the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is \"Standard rated\" and the VAT rate equals BT-119.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
         }
       }
     },
@@ -5621,9 +5909,9 @@
       "en16931-ubl": {
         "source": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
         "official_universe": 223,
-        "implemented": 175,
+        "implemented": 187,
         "excluded": 10,
-        "missing": 38,
+        "missing": 26,
         "non_business_rule_asserts": 756,
         "non_business_rule_families": [
           "UBL-CR",
@@ -5654,78 +5942,6 @@
             "flag": "fatal",
             "vacuous_in_artifact": true,
             "text": "Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason."
-          },
-          {
-            "id": "BR-CO-20",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both."
-          },
-          {
-            "id": "BR-CO-21",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both."
-          },
-          {
-            "id": "BR-CO-22",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both."
-          },
-          {
-            "id": "BR-CO-23",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both."
-          },
-          {
-            "id": "BR-CO-24",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both."
-          },
-          {
-            "id": "BR-CO-26",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present."
-          },
-          {
-            "id": "BR-DEC-24",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The allowed maximum number of decimals for the Invoice line allowance amount (BT-136) is 2."
-          },
-          {
-            "id": "BR-DEC-25",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The allowed maximum number of decimals for the Invoice line allowance base amount (BT-137) is 2."
-          },
-          {
-            "id": "BR-DEC-27",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The allowed maximum number of decimals for the Invoice line charge amount (BT-141) is 2."
-          },
-          {
-            "id": "BR-DEC-28",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The allowed maximum number of decimals for the Invoice line charge base amount (BT-142) is 2."
-          },
-          {
-            "id": "BR-IC-10",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "A VAT breakdown (BG-23) with the VAT Category code (BT-118) \"Intra-community supply\" shall have a VAT exemption reason code (BT-121), meaning \"Intra-community supply\" or the VAT exemption reason text (BT-120) \"Intra-community supply\" (or the equivalent standard text in another language)."
-          },
-          {
-            "id": "BR-S-08",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"Standard rated\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"Standard rated\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119)."
           },
           {
             "id": "BR-AF-01",
@@ -5864,9 +6080,9 @@
       "en16931-cii": {
         "source": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
         "official_universe": 223,
-        "implemented": 175,
+        "implemented": 187,
         "excluded": 10,
-        "missing": 38,
+        "missing": 26,
         "non_business_rule_asserts": 583,
         "non_business_rule_families": [
           "CII-DT",
@@ -5896,78 +6112,6 @@
             "flag": "fatal",
             "vacuous_in_artifact": true,
             "text": "Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason."
-          },
-          {
-            "id": "BR-CO-20",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both."
-          },
-          {
-            "id": "BR-CO-21",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both."
-          },
-          {
-            "id": "BR-CO-22",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both."
-          },
-          {
-            "id": "BR-CO-23",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both."
-          },
-          {
-            "id": "BR-CO-24",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both."
-          },
-          {
-            "id": "BR-CO-26",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present."
-          },
-          {
-            "id": "BR-DEC-24",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The allowed maximum number of decimals for the Invoice line allowance amount (BT-136) is 2."
-          },
-          {
-            "id": "BR-DEC-25",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The allowed maximum number of decimals for the Invoice line allowance base amount (BT-137) is 2."
-          },
-          {
-            "id": "BR-DEC-27",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The allowed maximum number of decimals for the Invoice line charge amount (BT-141) is 2."
-          },
-          {
-            "id": "BR-DEC-28",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The allowed maximum number of decimals for the Invoice line charge base amount (BT-142) is 2."
-          },
-          {
-            "id": "BR-IC-10",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "A VAT Breakdown (BG-23) with the VAT Category code (BT-118) \"Intra-community supply\" shall have a VAT exemption reason code (BT-121), meaning \"Intra-community supply\" or the VAT exemption reason text (BT-120) \"Intra-community supply\" (or the equivalent standard text in another language)."
-          },
-          {
-            "id": "BR-S-08",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"Standard rated\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"Standard rated\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119)."
           },
           {
             "id": "BR-AF-01",

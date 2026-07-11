@@ -826,5 +826,240 @@ class TestSupportingDocItemMetadataVatPointBatchCII(unittest.TestCase):
         self.assert_fired(r, "BR-CO-19", expect=False)
 
 
+class TestGapBatchACII(unittest.TestCase):
+    """CII-side coverage for the core/decimals/VAT gap batch A — BR-CO-20/21/
+    22/23/24/26, BR-DEC-24/25/27/28, BR-IC-10 and BR-S-08. Each case pins a
+    verdict the CII differential leg (``differential.py cii``) proved against
+    the official CEN EN16931-CII Schematron, including BR-S-08's CII-only
+    EXACT per-rate round2 equality (the UBL binding is a ±1 band instead) and
+    BR-CO-26's CII-specific identifier disjuncts."""
+
+    def assert_fired(self, root, rule_id, expect=True):
+        got = _fired_ids(root)
+        if expect:
+            self.assertIn(rule_id, got,
+                          "%s should fire; fired=%s" % (rule_id, sorted(got)))
+        else:
+            self.assertNotIn(rule_id, got,
+                             "%s should NOT fire" % rule_id)
+
+    def _line_settlement(self, r):
+        return _first_line(r).find("ram:SpecifiedLineTradeSettlement", NS)
+
+    def _seller(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:SellerTradeParty", NS)
+
+    def add_line_period(self, r, start=False):
+        period = ET.SubElement(self._line_settlement(r),
+                               _q(NSA, "BillingSpecifiedPeriod"))
+        if start:
+            dt = ET.SubElement(period, _q(NSA, "StartDateTime"))
+            ds = ET.SubElement(
+                dt, "{urn:un:unece:uncefact:data:standard:"
+                    "UnqualifiedDataType:100}DateTimeString")
+            ds.set("format", "102")
+            ds.text = "20150101"
+
+    def _add_ac(self, parent, charge, amount, base, reason):
+        ac = ET.SubElement(parent, _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        ind = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+        ET.SubElement(
+            ind, "{urn:un:unece:uncefact:data:standard:"
+                 "UnqualifiedDataType:100}Indicator").text = (
+            "true" if charge else "false")
+        if base is not None:
+            ET.SubElement(ac, _q(NSA, "BasisAmount")).text = base
+        ET.SubElement(ac, _q(NSA, "ActualAmount")).text = amount
+        if reason is not None:
+            ET.SubElement(ac, _q(NSA, "Reason")).text = reason
+        return ac
+
+    def add_doc_ac(self, r, charge, reason=None):
+        return self._add_ac(_settlement(r), charge, "0.00", None, reason)
+
+    def add_line_ac(self, r, charge, amount="0.00", base=None, reason=None):
+        return self._add_ac(self._line_settlement(r), charge, amount, base,
+                            reason)
+
+    # ---- BR-CO-20 ------------------------------------------------------------
+    def test_br_co_20_empty_line_period_fires(self):
+        r = _good_root()
+        self.add_line_period(r)
+        self.assert_fired(r, "BR-CO-20")
+        self.assert_fired(_good_root(), "BR-CO-20", expect=False)
+
+    def test_br_co_20_start_date_alone_holds(self):
+        r = _good_root()
+        self.add_line_period(r, start=True)
+        self.assert_fired(r, "BR-CO-20", expect=False)
+
+    # ---- BR-CO-21 / BR-CO-22 ---------------------------------------------------
+    def test_br_co_21_reasonless_doc_allowance_fires(self):
+        r = _good_root()
+        self.add_doc_ac(r, charge=False)
+        got = _fired_ids(r)
+        self.assertIn("BR-CO-21", got)
+        self.assertNotIn("BR-CO-22", got)
+        self.assert_fired(_good_root(), "BR-CO-21", expect=False)
+
+    def test_br_co_21_with_reason_holds(self):
+        r = _good_root()
+        self.add_doc_ac(r, charge=False, reason="Promotion discount")
+        self.assert_fired(r, "BR-CO-21", expect=False)
+
+    def test_br_co_22_reasonless_doc_charge_fires(self):
+        r = _good_root()
+        self.add_doc_ac(r, charge=True)
+        self.assert_fired(r, "BR-CO-22")
+
+    # ---- BR-CO-23 / BR-CO-24 ----------------------------------------------------
+    def test_br_co_23_reasonless_line_allowance_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=False)
+        got = _fired_ids(r)
+        self.assertIn("BR-CO-23", got)
+        self.assertNotIn("BR-CO-24", got)
+        self.assert_fired(_good_root(), "BR-CO-23", expect=False)
+
+    def test_br_co_24_reasonless_line_charge_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=True)
+        self.assert_fired(r, "BR-CO-24")
+
+    def test_br_co_24_with_reason_holds(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=True, reason="Freight")
+        self.assert_fired(r, "BR-CO-24", expect=False)
+
+    # ---- BR-DEC-24/25/27/28 ------------------------------------------------------
+    def test_br_dec_24_three_decimal_allowance_amount_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=False, amount="1.123", reason="Discount")
+        self.assert_fired(r, "BR-DEC-24")
+        self.assert_fired(_good_root(), "BR-DEC-24", expect=False)
+
+    def test_br_dec_25_three_decimal_allowance_base_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=False, amount="1.12", base="10.123",
+                         reason="Discount")
+        got = _fired_ids(r)
+        self.assertIn("BR-DEC-25", got)
+        self.assertNotIn("BR-DEC-24", got)
+
+    def test_br_dec_27_three_decimal_charge_amount_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=True, amount="1.123", reason="Freight")
+        self.assert_fired(r, "BR-DEC-27")
+
+    def test_br_dec_28_three_decimal_charge_base_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=True, amount="1.12", base="10.123",
+                         reason="Freight")
+        self.assert_fired(r, "BR-DEC-28")
+
+    def test_br_dec_two_decimals_hold(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=True, amount="1.12", base="10.12",
+                         reason="Freight")
+        got = _fired_ids(r)
+        for rid in ("BR-DEC-24", "BR-DEC-25", "BR-DEC-27", "BR-DEC-28"):
+            self.assertNotIn(rid, got)
+
+    # ---- BR-CO-26 -------------------------------------------------------------
+    def test_br_co_26_no_identifier_fires(self):
+        # The base seller carries a SpecifiedLegalOrganization/ID and a VA
+        # SpecifiedTaxRegistration (no ram:ID / ram:GlobalID): removing both
+        # leaves no accepted identifier.
+        r = _good_root()
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedLegalOrganization", NS))
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+        self.assert_fired(r, "BR-CO-26")
+        self.assert_fired(_good_root(), "BR-CO-26", expect=False)
+
+    def test_br_co_26_plain_ram_id_counts_on_cii(self):
+        # (ram:ID) is a CII-accepted seller identifier disjunct.
+        r = _good_root()
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedLegalOrganization", NS))
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+        sid = ET.Element(_q(NSA, "ID"))
+        sid.text = "SUP-1"
+        seller.insert(0, sid)
+        self.assert_fired(r, "BR-CO-26", expect=False)
+
+    def test_br_co_26_non_va_registration_does_not_count(self):
+        # The tax-registration disjunct requires the RAW @schemeID='VA'; an
+        # FC-schemed registration alone leaves the seller unidentified.
+        r = _good_root()
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedLegalOrganization", NS))
+        for id_el in seller.findall("ram:SpecifiedTaxRegistration/ram:ID", NS):
+            id_el.set("schemeID", "FC")
+        self.assert_fired(r, "BR-CO-26")
+
+    # ---- BR-IC-10 ---------------------------------------------------------------
+    def add_k_breakdown(self, r, reason=None):
+        settle = _settlement(r)
+        first = settle.find("ram:ApplicableTradeTax", NS)
+        tt = ET.Element(_q(NSA, "ApplicableTradeTax"))
+        ET.SubElement(tt, _q(NSA, "CalculatedAmount")).text = "0.00"
+        ET.SubElement(tt, _q(NSA, "TypeCode")).text = "VAT"
+        if reason is not None:
+            ET.SubElement(tt, _q(NSA, "ExemptionReason")).text = reason
+        ET.SubElement(tt, _q(NSA, "BasisAmount")).text = "0.00"
+        ET.SubElement(tt, _q(NSA, "CategoryCode")).text = "K"
+        ET.SubElement(tt, _q(NSA, "RateApplicablePercent")).text = "0"
+        settle.insert(list(settle).index(first), tt)
+
+    def test_br_ic_10_k_breakdown_without_reason_fires(self):
+        r = _good_root()
+        self.add_k_breakdown(r)
+        self.assert_fired(r, "BR-IC-10")
+        self.assert_fired(_good_root(), "BR-IC-10", expect=False)
+
+    def test_br_ic_10_reason_text_holds(self):
+        r = _good_root()
+        self.add_k_breakdown(r, reason="Intra-community supply")
+        self.assert_fired(r, "BR-IC-10", expect=False)
+
+    # ---- BR-S-08 ------------------------------------------------------------------
+    def test_br_s_08_basis_off_by_two_fires(self):
+        r = _good_root()
+        _first_breakdown(r).find("ram:BasisAmount", NS).text = "185.23"
+        got = _fired_ids(r)
+        self.assertIn("BR-S-08", got)
+        self.assertNotIn("BR-CO-17", got)   # tax 10.99 still within ±1
+        self.assert_fired(_good_root(), "BR-S-08", expect=False)
+
+    def test_br_s_08_exact_equality_on_cii(self):
+        # The CII binding is EXACT round2 equality (no UBL-style ±1 band):
+        # one cent off the 6% bucket sum (183.23) already fires.
+        r = _good_root()
+        _first_breakdown(r).find("ram:BasisAmount", NS).text = "183.24"
+        self.assert_fired(r, "BR-S-08")
+
+    def test_br_s_08_recategorized_line_leaves_the_bucket(self):
+        # Re-code the first line (19.9 at 6%) off 'S': the 6% bucket sum
+        # drops by 19.9 and the stated 183.23 no longer matches.
+        r = _good_root()
+        line_tt = _first_line(r).find(
+            "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", NS)
+        line_tt.find("ram:CategoryCode", NS).text = "E"
+        self.assert_fired(r, "BR-S-08")
+
+    def test_br_s_08_missing_rate_is_vacuous(self):
+        # every $rate in ../ram:RateApplicablePercent/xs:decimal(.) over an
+        # absent rate is vacuously true (BR-48 fires for the missing BT-119).
+        r = _good_root()
+        bd = _first_breakdown(r)
+        bd.remove(bd.find("ram:RateApplicablePercent", NS))
+        got = _fired_ids(r)
+        self.assertNotIn("BR-S-08", got)
+        self.assertIn("BR-48", got)
+
+
 if __name__ == "__main__":
     unittest.main()

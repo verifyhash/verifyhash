@@ -457,6 +457,21 @@ class Invoice:
         # exists StartDate/EndDate/DescriptionCode; CII: StartDateTime or
         # EndDateTime present).
         self.invoice_period_filled = []    # list[bool]
+        # BR-CO-20: one bool per Invoice line period (BG-26) context node —
+        # True when the period carries a start or an end date (UBL:
+        # exists(cbc:StartDate) or exists(cbc:EndDate) per
+        # cac:InvoiceLine/cac:InvoicePeriod; CII: (ram:StartDateTime) or
+        # (ram:EndDateTime) per //ram:SpecifiedLineTradeSettlement/
+        # ram:BillingSpecifiedPeriod). Existence only; empty elements count.
+        self.line_period_filled = []       # list[bool]
+        # BR-CO-26: one bool per Seller party context node — True when the
+        # seller is identifiable per that syntax's official disjuncts (UBL,
+        # per cac:AccountingSupplierParty: a VAT-scheme PartyTaxScheme
+        # CompanyID, a non-SEPA PartyIdentification/ID, or a PartyLegalEntity
+        # CompanyID; CII, per //ram:SellerTradeParty: ram:ID, ram:GlobalID,
+        # SpecifiedLegalOrganization/ram:ID, or a raw @schemeID='VA'
+        # SpecifiedTaxRegistration/ram:ID).
+        self.seller_identification_ok = []  # list[bool]
         # Totals
         self.line_extension_total = None  # BT-106
         self.tax_exclusive_amount = None  # BT-109
@@ -764,6 +779,22 @@ def build_model(root):
         cid_el = pts_el.find("cbc:CompanyID", NS)
         inv.vat_id_prefixes.append(
             _strval(cid_el)[:2] if cid_el is not None else "")
+    # BR-CO-26 context = cac:AccountingSupplierParty (a match pattern — any
+    # depth). Test (three disjuncts): a VAT-scheme PartyTaxScheme CompanyID
+    # (BT-31), a PartyIdentification/ID whose RAW @schemeID is not 'SEPA'
+    # (BT-29 — an ID with no @schemeID counts: not(() = 'SEPA') is true), or
+    # a PartyLegalEntity CompanyID (BT-30). Pure existence on each.
+    for asp_el in root.iter("{%s}AccountingSupplierParty" % NS_CAC):
+        party_el = asp_el.find("cac:Party", NS)
+        ok = False
+        if party_el is not None:
+            ok = (_party_has_vat_company_id(party_el)
+                  or any(id_el.get("schemeID") != "SEPA"
+                         for id_el in party_el.findall(
+                             "cac:PartyIdentification/cbc:ID", NS))
+                  or party_el.find(
+                      "cac:PartyLegalEntity/cbc:CompanyID", NS) is not None)
+        inv.seller_identification_ok.append(ok)
 
     # Seller
     supplier = root.find("cac:AccountingSupplierParty/cac:Party", NS)
@@ -1020,6 +1051,12 @@ def build_model(root):
                 "cac:Price/cac:AllowanceCharge/cbc:BaseAmount", NS)]
         for period_el in ln_el.findall("cac:InvoicePeriod", NS):
             ln.periods.append(_build_period(period_el))
+            # BR-CO-20 (UBL test, context = each line cac:InvoicePeriod):
+            # exists(cbc:StartDate) or exists(cbc:EndDate) — existence, so a
+            # present-but-empty date element ('' in the Period) satisfies it.
+            inv.line_period_filled.append(
+                period_el.find("cbc:StartDate", NS) is not None
+                or period_el.find("cbc:EndDate", NS) is not None)
         ln.item_name = _text(ln_el.find("cac:Item/cbc:Name", NS))
         for cat_el in ln_el.findall("cac:Item/cac:ClassifiedTaxCategory/cbc:ID", NS):
             code = _text(cat_el)

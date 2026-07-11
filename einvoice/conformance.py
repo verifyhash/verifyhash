@@ -352,12 +352,28 @@ CII_SYNTAX_COVERAGE = {
     "BR-CO-18": "At least one VAT breakdown group (BG-23)",
     "BR-CO-19": "Invoicing period (BG-14) used ⇒ start (BT-73) or end "
                 "(BT-74) date filled",
+    "BR-CO-20": "Invoice line period (BG-26) used ⇒ start (BT-134) or end "
+                "(BT-135) date filled",
+    "BR-CO-21": "Document level allowance (BG-20) has a reason (BT-97) or "
+                "reason code (BT-98)",
+    "BR-CO-22": "Document level charge (BG-21) has a reason (BT-104) or "
+                "reason code (BT-105)",
+    "BR-CO-23": "Invoice line allowance (BG-27) has a reason (BT-139) or "
+                "reason code (BT-140)",
+    "BR-CO-24": "Invoice line charge (BG-28) has a reason (BT-144) or "
+                "reason code (BT-145)",
+    "BR-CO-26": "Seller identifier (BT-29), legal registration id (BT-30) "
+                "and/or VAT identifier (BT-31) present",
+    "BR-IC-10": "Intra-community (K) breakdown has a VAT exemption reason "
+                "code (BT-121) or text (BT-120)",
     "BR-45": "VAT breakdown taxable amount (BT-116) present",
     "BR-46": "VAT breakdown tax amount (BT-117) present",
     "BR-47": "VAT breakdown VAT category code (BT-118) present",
     "BR-48": "VAT breakdown VAT category rate (BT-119) present unless 'O'",
     "BR-S-02": "Standard-rated line ⇒ Seller VAT/tax id present",
     "BR-S-05": "Standard-rated line VAT rate (BT-152) > 0",
+    "BR-S-08": "Standard-rated breakdown taxable (BT-116) = per-rate Σ line "
+               "net + charges − allowances at that rate",
     "BR-S-09": "Standard-rated breakdown tax = taxable × rate (±1)",
     "BR-S-10": "Standard-rated breakdown has no VAT exemption reason",
     "BR-DEC-09": "≤2 decimals: Sum of Invoice line net amount (BT-106)",
@@ -367,6 +383,10 @@ CII_SYNTAX_COVERAGE = {
     "BR-DEC-19": "≤2 decimals: VAT category taxable amount (BT-116)",
     "BR-DEC-20": "≤2 decimals: VAT category tax amount (BT-117)",
     "BR-DEC-23": "≤2 decimals: Invoice line net amount (BT-131)",
+    "BR-DEC-24": "≤2 decimals: Invoice line allowance amount (BT-136)",
+    "BR-DEC-25": "≤2 decimals: Invoice line allowance base amount (BT-137)",
+    "BR-DEC-27": "≤2 decimals: Invoice line charge amount (BT-141)",
+    "BR-DEC-28": "≤2 decimals: Invoice line charge base amount (BT-142)",
 }
 
 # Rules deliberately NOT graded on CII (the CII Schematron binds them with

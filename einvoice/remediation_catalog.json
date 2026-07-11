@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 221,
+  "rule_count": 233,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -1509,6 +1509,120 @@
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoicePeriod`: Wenn die Gruppe „RECHNUNGSZEITRAUM“ (BG-14) verwendet wird, müssen das Startdatum des Rechnungszeitraums (BT-73) oder das Enddatum des Rechnungszeitraums (BT-74) oder beide angegeben werden.",
       "de_source": "translation"
     },
+    "BR-CO-20": {
+      "title": "If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.",
+      "requires": "If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.",
+      "bt_bg": [
+        "BG-26",
+        "BT-134",
+        "BT-135"
+      ],
+      "location_hint": "cac:InvoiceLine/cac:InvoicePeriod",
+      "fix": "Add the required element at `cac:InvoiceLine/cac:InvoicePeriod`: If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both."
+      },
+      "title_de": "Wenn die Gruppe „RECHNUNGSPOSITIONSZEITRAUM“ (BG-26) verwendet wird, müssen das Startdatum des Rechnungspositionszeitraums (BT-134) oder das Enddatum des Rechnungspositionszeitraums (BT-135) oder beide angegeben werden.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine/cac:InvoicePeriod`: Wenn die Gruppe „RECHNUNGSPOSITIONSZEITRAUM“ (BG-26) verwendet wird, müssen das Startdatum des Rechnungspositionszeitraums (BT-134) oder das Enddatum des Rechnungspositionszeitraums (BT-135) oder beide angegeben werden.",
+      "de_source": "translation"
+    },
+    "BR-CO-21": {
+      "title": "Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.",
+      "requires": "Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.",
+      "bt_bg": [
+        "BG-20",
+        "BT-97",
+        "BT-98"
+      ],
+      "location_hint": "/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = false()]",
+      "fix": "Add the required element at `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`: Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both."
+      },
+      "title_de": "Jeder NACHLASS AUF DOKUMENTENEBENE (BG-20) muss einen Grund für den Nachlass auf Dokumentenebene (BT-97) oder einen Code für den Grund des Nachlasses auf Dokumentenebene (BT-98) oder beides enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`: Jeder NACHLASS AUF DOKUMENTENEBENE (BG-20) muss einen Grund für den Nachlass auf Dokumentenebene (BT-97) oder einen Code für den Grund des Nachlasses auf Dokumentenebene (BT-98) oder beides enthalten.",
+      "de_source": "translation"
+    },
+    "BR-CO-22": {
+      "title": "Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.",
+      "requires": "Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.",
+      "bt_bg": [
+        "BG-21",
+        "BT-104",
+        "BT-105"
+      ],
+      "location_hint": "/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]",
+      "fix": "Add the required element at `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`: Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both."
+      },
+      "title_de": "Jeder ZUSCHLAG AUF DOKUMENTENEBENE (BG-21) muss einen Grund für den Zuschlag auf Dokumentenebene (BT-104) oder einen Code für den Grund des Zuschlags auf Dokumentenebene (BT-105) oder beides enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`: Jeder ZUSCHLAG AUF DOKUMENTENEBENE (BG-21) muss einen Grund für den Zuschlag auf Dokumentenebene (BT-104) oder einen Code für den Grund des Zuschlags auf Dokumentenebene (BT-105) oder beides enthalten.",
+      "de_source": "translation"
+    },
+    "BR-CO-23": {
+      "title": "Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.",
+      "requires": "Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.",
+      "bt_bg": [
+        "BG-27",
+        "BT-139",
+        "BT-140"
+      ],
+      "location_hint": "//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]",
+      "fix": "Add the required element at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`: Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both."
+      },
+      "title_de": "Jeder NACHLASS AUF EBENE DER RECHNUNGSPOSITION (BG-27) muss einen Grund für den Nachlass auf Ebene der Rechnungsposition (BT-139) oder einen Code für den Grund des Nachlasses auf Ebene der Rechnungsposition (BT-140) oder beides enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]`: Jeder NACHLASS AUF EBENE DER RECHNUNGSPOSITION (BG-27) muss einen Grund für den Nachlass auf Ebene der Rechnungsposition (BT-139) oder einen Code für den Grund des Nachlasses auf Ebene der Rechnungsposition (BT-140) oder beides enthalten.",
+      "de_source": "translation"
+    },
+    "BR-CO-24": {
+      "title": "Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.",
+      "requires": "Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.",
+      "bt_bg": [
+        "BG-28",
+        "BT-144",
+        "BT-145"
+      ],
+      "location_hint": "//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]",
+      "fix": "Add the required element at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`: Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both."
+      },
+      "title_de": "Jeder ZUSCHLAG AUF EBENE DER RECHNUNGSPOSITION (BG-28) muss einen Grund für den Zuschlag auf Ebene der Rechnungsposition (BT-144) oder einen Code für den Grund des Zuschlags auf Ebene der Rechnungsposition (BT-145) oder beides enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`: Jeder ZUSCHLAG AUF EBENE DER RECHNUNGSPOSITION (BG-28) muss einen Grund für den Zuschlag auf Ebene der Rechnungsposition (BT-144) oder einen Code für den Grund des Zuschlags auf Ebene der Rechnungsposition (BT-145) oder beides enthalten.",
+      "de_source": "translation"
+    },
+    "BR-CO-26": {
+      "title": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.",
+      "requires": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.",
+      "bt_bg": [
+        "BT-29",
+        "BT-30",
+        "BT-31"
+      ],
+      "location_hint": "cac:AccountingSupplierParty",
+      "fix": "Correct `cac:AccountingSupplierParty` so that In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present."
+      },
+      "title_de": "Damit der Erwerber den Lieferanten automatisch identifizieren kann, müssen die Kennung des Verkäufers (BT-29), die Rechtliche Registrierungskennung des Verkäufers (BT-30) und/oder die Umsatzsteuer-Identifikationsnummer des Verkäufers (BT-31) vorhanden sein.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:AccountingSupplierParty`: Damit der Erwerber den Lieferanten automatisch identifizieren kann, müssen die Kennung des Verkäufers (BT-29), die Rechtliche Registrierungskennung des Verkäufers (BT-30) und/oder die Umsatzsteuer-Identifikationsnummer des Verkäufers (BT-31) vorhanden sein.",
+      "de_source": "translation"
+    },
     "BR-DEC-01": {
       "title": "Max 2 decimals for the Document level allowance amount (BT-92).",
       "requires": "The allowed maximum number of decimals for the Document level allowance amount (BT-92) is 2.",
@@ -1762,6 +1876,74 @@
       },
       "title_de": "Die zulässige Höchstzahl an Nachkommastellen für „Nettobetrag der Rechnungsposition“ (BT-131) beträgt 2.",
       "fix_de": "Runden Sie den Wert bei `cac:InvoiceLine` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Nettobetrag der Rechnungsposition“ (BT-131) beträgt 2.",
+      "de_source": "translation"
+    },
+    "BR-DEC-24": {
+      "title": "Max 2 decimals for the Invoice line allowance amount (BT-136).",
+      "requires": "The allowed maximum number of decimals for the Invoice line allowance amount (BT-136) is 2.",
+      "bt_bg": [
+        "BT-136"
+      ],
+      "location_hint": "//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]",
+      "fix": "Round the value at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line allowance amount (BT-136) is 2.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "The allowed maximum number of decimals for the Invoice line allowance amount (BT-136) is 2."
+      },
+      "title_de": "Die zulässige Höchstzahl an Nachkommastellen für „Betrag des Nachlasses auf Ebene der Rechnungsposition“ (BT-136) beträgt 2.",
+      "fix_de": "Runden Sie den Wert bei `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Betrag des Nachlasses auf Ebene der Rechnungsposition“ (BT-136) beträgt 2.",
+      "de_source": "translation"
+    },
+    "BR-DEC-25": {
+      "title": "Max 2 decimals for the Invoice line allowance base amount (BT-137). Same line-level allowance context as BR-DEC-24, over ``cbc:BaseAmount`` (UBL) / ``../ram:BasisAmount`` (CII).",
+      "requires": "The allowed maximum number of decimals for the Invoice line allowance base amount (BT-137) is 2.",
+      "bt_bg": [
+        "BT-137"
+      ],
+      "location_hint": "//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]",
+      "fix": "Round the value at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line allowance base amount (BT-137) is 2.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "The allowed maximum number of decimals for the Invoice line allowance base amount (BT-137) is 2."
+      },
+      "title_de": "Die zulässige Höchstzahl an Nachkommastellen für „Grundbetrag des Nachlasses auf Ebene der Rechnungsposition“ (BT-137) beträgt 2.",
+      "fix_de": "Runden Sie den Wert bei `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = false()]` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Grundbetrag des Nachlasses auf Ebene der Rechnungsposition“ (BT-137) beträgt 2.",
+      "de_source": "translation"
+    },
+    "BR-DEC-27": {
+      "title": "Max 2 decimals for the Invoice line charge amount (BT-141). The charge twin of BR-DEC-24 (ChargeIndicator true() / 'true').",
+      "requires": "The allowed maximum number of decimals for the Invoice line charge amount (BT-141) is 2.",
+      "bt_bg": [
+        "BT-141"
+      ],
+      "location_hint": "//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]",
+      "fix": "Round the value at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line charge amount (BT-141) is 2.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "The allowed maximum number of decimals for the Invoice line charge amount (BT-141) is 2."
+      },
+      "title_de": "Die zulässige Höchstzahl an Nachkommastellen für „Betrag des Zuschlags auf Ebene der Rechnungsposition“ (BT-141) beträgt 2.",
+      "fix_de": "Runden Sie den Wert bei `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Betrag des Zuschlags auf Ebene der Rechnungsposition“ (BT-141) beträgt 2.",
+      "de_source": "translation"
+    },
+    "BR-DEC-28": {
+      "title": "Max 2 decimals for the Invoice line charge base amount (BT-142). The charge twin of BR-DEC-25.",
+      "requires": "The allowed maximum number of decimals for the Invoice line charge base amount (BT-142) is 2.",
+      "bt_bg": [
+        "BT-142"
+      ],
+      "location_hint": "//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]",
+      "fix": "Round the value at `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice line charge base amount (BT-142) is 2.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "The allowed maximum number of decimals for the Invoice line charge base amount (BT-142) is 2."
+      },
+      "title_de": "Die zulässige Höchstzahl an Nachkommastellen für „Grundbetrag des Zuschlags auf Ebene der Rechnungsposition“ (BT-142) beträgt 2.",
+      "fix_de": "Runden Sie den Wert bei `//cac:InvoiceLine/cac:AllowanceCharge[cbc:ChargeIndicator = true()]` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Grundbetrag des Zuschlags auf Ebene der Rechnungsposition“ (BT-142) beträgt 2.",
       "de_source": "translation"
     },
     "BR-AE-01": {
@@ -2579,6 +2761,26 @@
       "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'K'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Der Umsatzsteuerbetrag der Umsatzsteuerkategorie (BT-117) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23), bei der der Code der Umsatzsteuerkategorie (BT-118) „innergemeinschaftliche Lieferung“ lautet, muss 0 (null) betragen.",
       "de_source": "translation"
     },
+    "BR-IC-10": {
+      "title": "A VAT breakdown (BG-23) with the VAT category code (BT-118) \"Intra-community supply\" (K) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the K twin of BR-E-10 / BR-AE-10.",
+      "requires": "A VAT breakdown (BG-23) with the VAT Category code (BT-118) \"Intra-community supply\" shall have a VAT exemption reason code (BT-121), meaning \"Intra-community supply\" or the VAT exemption reason text (BT-120) \"Intra-community supply\" (or the equivalent standard text in another language).",
+      "bt_bg": [
+        "BG-23",
+        "BT-118",
+        "BT-120",
+        "BT-121"
+      ],
+      "location_hint": "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'K'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'K'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with the VAT Category code (BT-118) \"Intra-community supply\" shall have a VAT exemption reason code (BT-121), meaning \"Intra-community supply\" or the VAT exemption reason text (BT-120) \"Intra-community supply\" (or the equivalent standard text in another language).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "A VAT breakdown (BG-23) with the VAT Category code (BT-118) \"Intra-community supply\" shall have a VAT exemption reason code (BT-121), meaning \"Intra-community supply\" or the VAT exemption reason text (BT-120) \"Intra-community supply\" (or the equivalent standard text in another language)."
+      },
+      "title_de": "Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie (BT-118) „innergemeinschaftliche Lieferung“ muss einen Code für den Grund der Umsatzsteuerbefreiung (BT-121) mit der Bedeutung „Intra-community supply“ oder den Text für den Grund der Umsatzsteuerbefreiung (BT-120) „Intra-community supply“ (oder den entsprechenden Standardtext in einer anderen Sprache) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'K'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie (BT-118) „innergemeinschaftliche Lieferung“ muss einen Code für den Grund der Umsatzsteuerbefreiung (BT-121) mit der Bedeutung „Intra-community supply“ oder den Text für den Grund der Umsatzsteuerbefreiung (BT-120) „Intra-community supply“ (oder den entsprechenden Standardtext in einer anderen Sprache) enthalten.",
+      "de_source": "translation"
+    },
     "BR-IC-11": {
       "title": "In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank.",
       "requires": "In an Invoice with a VAT breakdown (BG-23) where the VAT category code (BT-118) is \"Intra-community supply\" the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank.",
@@ -3046,6 +3248,35 @@
       },
       "title_de": "Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „Regelbesteuerung“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) größer als null sein.",
       "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „Regelbesteuerung“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) größer als null sein.",
+      "de_source": "translation"
+    },
+    "BR-S-08": {
+      "title": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"Standard rated\", the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is \"Standard rated\" and the VAT rate equals BT-119.",
+      "requires": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"Standard rated\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"Standard rated\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).",
+      "bt_bg": [
+        "BG-23",
+        "BT-92",
+        "BT-95",
+        "BT-96",
+        "BT-99",
+        "BT-102",
+        "BT-103",
+        "BT-116",
+        "BT-118",
+        "BT-119",
+        "BT-131",
+        "BT-151",
+        "BT-152"
+      ],
+      "location_hint": "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"Standard rated\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"Standard rated\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"Standard rated\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"Standard rated\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119)."
+      },
+      "title_de": "Für jeden einzelnen Wert des Umsatzsteuersatzes der Umsatzsteuerkategorie (BT-119), bei dem der Code der Umsatzsteuerkategorie (BT-118) „Regelbesteuerung“ lautet, muss der nach Umsatzsteuerkategorie zu versteuernde Betrag (BT-116) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) gleich der Summe der Nettobeträge der Rechnungspositionen (BT-131) zuzüglich der Summe der Beträge der Zuschläge auf Dokumentenebene (BT-99) abzüglich der Summe der Beträge der Nachlässe auf Dokumentenebene (BT-92) sein, für die der Code der Umsatzsteuerkategorie (BT-151, BT-102, BT-95) „Regelbesteuerung“ lautet und der Umsatzsteuersatz (BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) ist.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: Für jeden einzelnen Wert des Umsatzsteuersatzes der Umsatzsteuerkategorie (BT-119), bei dem der Code der Umsatzsteuerkategorie (BT-118) „Regelbesteuerung“ lautet, muss der nach Umsatzsteuerkategorie zu versteuernde Betrag (BT-116) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) gleich der Summe der Nettobeträge der Rechnungspositionen (BT-131) zuzüglich der Summe der Beträge der Zuschläge auf Dokumentenebene (BT-99) abzüglich der Summe der Beträge der Nachlässe auf Dokumentenebene (BT-92) sein, für die der Code der Umsatzsteuerkategorie (BT-151, BT-102, BT-95) „Regelbesteuerung“ lautet und der Umsatzsteuersatz (BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) ist.",
       "de_source": "translation"
     },
     "BR-S-09": {

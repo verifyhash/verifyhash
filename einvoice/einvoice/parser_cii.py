@@ -245,8 +245,9 @@ def _build_trade_tax_category(cat_el):
 
 
 def _build_doc_allowance_charge(ac_el):
-    """Normalize one document-level ``ram:SpecifiedTradeAllowanceCharge``
-    (BG-20/BG-21) into an :class:`einvoice.parser.AllowanceCharge`, capturing the
+    """Normalize one ``ram:SpecifiedTradeAllowanceCharge`` (document-level
+    BG-20/BG-21 or line-level BG-27/BG-28 — the element vocabulary is
+    identical) into an :class:`einvoice.parser.AllowanceCharge`, capturing the
     exact ``exists(...)`` facts the EN 16931 allowance/charge rules test."""
     ac = AllowanceCharge()
     ac.is_charge = _indicator_bool(ac_el)
@@ -455,6 +456,28 @@ def build_model(root):
         inv.invoice_period_filled.append(
             period_el.find("ram:StartDateTime", NS) is not None
             or period_el.find("ram:EndDateTime", NS) is not None)
+    # BR-CO-20 context = //ram:SpecifiedLineTradeSettlement/
+    # ram:BillingSpecifiedPeriod (BG-26, the LINE billing period). Test:
+    # ``(ram:StartDateTime) or (ram:EndDateTime)`` — element existence.
+    for period_el in root.findall(
+            ".//ram:SpecifiedLineTradeSettlement/"
+            "ram:BillingSpecifiedPeriod", NS):
+        inv.line_period_filled.append(
+            period_el.find("ram:StartDateTime", NS) is not None
+            or period_el.find("ram:EndDateTime", NS) is not None)
+    # BR-CO-26 context = //ram:SellerTradeParty. Test (four disjuncts, pure
+    # existence except the RAW @schemeID='VA' predicate): ``(ram:ID) or
+    # (ram:GlobalID) or (ram:SpecifiedLegalOrganization/ram:ID) or
+    # (ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA'])``.
+    for seller_el in root.findall(".//ram:SellerTradeParty", NS):
+        inv.seller_identification_ok.append(
+            seller_el.find("ram:ID", NS) is not None
+            or seller_el.find("ram:GlobalID", NS) is not None
+            or seller_el.find(
+                "ram:SpecifiedLegalOrganization/ram:ID", NS) is not None
+            or any(id_el.get("schemeID") == "VA"
+                   for id_el in seller_el.findall(
+                       "ram:SpecifiedTaxRegistration/ram:ID", NS)))
 
     # -- BT-24 Specification identifier (ExchangedDocumentContext) ----------
     inv.customization_id = _text(root.find(
@@ -637,6 +660,16 @@ def build_model(root):
                     ln.tax_category_ids.append(code)
                 ln.item_tax_categories.append(
                     _build_trade_tax_category(cat_el))
+            # Invoice line allowance/charge (BG-27/BG-28) — the official CII
+            # contexts are //ram:SpecifiedLineTradeSettlement/
+            # ram:SpecifiedTradeAllowanceCharge (BR-41..44, BR-CO-23/24,
+            # BR-DEC-24/25/27/28). Same element vocabulary as the document
+            # level, so the shared builder applies (ActualAmount[1] = the
+            # first ram:ActualAmount, exactly what find() returns).
+            for ac_el in ln_el.findall(
+                    "ram:SpecifiedLineTradeSettlement/"
+                    "ram:SpecifiedTradeAllowanceCharge", NS):
+                ln.allowance_charges.append(_build_doc_allowance_charge(ac_el))
             inv.lines.append(ln)
 
     _build_cii_br_de(inv, root)

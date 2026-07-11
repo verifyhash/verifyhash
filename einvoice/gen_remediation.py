@@ -361,9 +361,11 @@ GLOSSARY = {
     "BT-134": "Startdatum des Rechnungspositionszeitraums",
     "BT-135": "Enddatum des Rechnungspositionszeitraums",
     "BT-136": "Betrag des Nachlasses auf Ebene der Rechnungsposition",
+    "BT-137": "Grundbetrag des Nachlasses auf Ebene der Rechnungsposition",
     "BT-139": "Grund für den Nachlass auf Ebene der Rechnungsposition",
     "BT-140": "Code für den Grund des Nachlasses auf Ebene der Rechnungsposition",
     "BT-141": "Betrag des Zuschlags auf Ebene der Rechnungsposition",
+    "BT-142": "Grundbetrag des Zuschlags auf Ebene der Rechnungsposition",
     "BT-146": "Nettopreis des Artikels",
     "BT-148": "Bruttopreis des Artikels",
     "BT-151": "Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels",
@@ -759,6 +761,50 @@ SPECIAL = {
         "Fälliger Zahlungsbetrag (BT-115) = Gesamtbetrag der Rechnung einschließlich "
         "Umsatzsteuer (BT-112) - Bereits gezahlter Betrag (BT-113) + Rundungsbetrag (BT-114) "
         "+ Σ Betrag der Zahlung durch Dritte (BT-DEX-002).",
+    # ---- Core/decimals/VAT gap batch A (2026-07) ----
+    "If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both.":
+        "Wenn die Gruppe „RECHNUNGSPOSITIONSZEITRAUM“ (BG-26) verwendet wird, müssen das "
+        "Startdatum des Rechnungspositionszeitraums (BT-134) oder das Enddatum des "
+        "Rechnungspositionszeitraums (BT-135) oder beide angegeben werden.",
+    "Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both.":
+        "Jeder NACHLASS AUF DOKUMENTENEBENE (BG-20) muss einen Grund für den Nachlass auf "
+        "Dokumentenebene (BT-97) oder einen Code für den Grund des Nachlasses auf "
+        "Dokumentenebene (BT-98) oder beides enthalten.",
+    "Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.":
+        "Jeder ZUSCHLAG AUF DOKUMENTENEBENE (BG-21) muss einen Grund für den Zuschlag auf "
+        "Dokumentenebene (BT-104) oder einen Code für den Grund des Zuschlags auf "
+        "Dokumentenebene (BT-105) oder beides enthalten.",
+    "Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140), or both.":
+        "Jeder NACHLASS AUF EBENE DER RECHNUNGSPOSITION (BG-27) muss einen Grund für den "
+        "Nachlass auf Ebene der Rechnungsposition (BT-139) oder einen Code für den Grund "
+        "des Nachlasses auf Ebene der Rechnungsposition (BT-140) oder beides enthalten.",
+    "Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145), or both.":
+        "Jeder ZUSCHLAG AUF EBENE DER RECHNUNGSPOSITION (BG-28) muss einen Grund für den "
+        "Zuschlag auf Ebene der Rechnungsposition (BT-144) oder einen Code für den Grund "
+        "des Zuschlags auf Ebene der Rechnungsposition (BT-145) oder beides enthalten.",
+    "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.":
+        "Damit der Erwerber den Lieferanten automatisch identifizieren kann, müssen die "
+        "Kennung des Verkäufers (BT-29), die Rechtliche Registrierungskennung des "
+        "Verkäufers (BT-30) und/oder die Umsatzsteuer-Identifikationsnummer des "
+        "Verkäufers (BT-31) vorhanden sein.",
+    'A VAT breakdown (BG-23) with the VAT Category code (BT-118) "Intra-community supply" shall have a VAT exemption reason code (BT-121), meaning "Intra-community supply" or the VAT exemption reason text (BT-120) "Intra-community supply" (or the equivalent standard text in another language).':
+        "Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie "
+        "(BT-118) „innergemeinschaftliche Lieferung“ muss einen Code für den Grund der "
+        "Umsatzsteuerbefreiung (BT-121) mit der Bedeutung „Intra-community supply“ oder "
+        "den Text für den Grund der Umsatzsteuerbefreiung (BT-120) „Intra-community "
+        "supply“ (oder den entsprechenden Standardtext in einer anderen Sprache) "
+        "enthalten.",
+    'For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "Standard rated", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "Standard rated" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).':
+        "Für jeden einzelnen Wert des Umsatzsteuersatzes der Umsatzsteuerkategorie "
+        "(BT-119), bei dem der Code der Umsatzsteuerkategorie (BT-118) „Regelbesteuerung“ "
+        "lautet, muss der nach Umsatzsteuerkategorie zu versteuernde Betrag (BT-116) in "
+        "einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) gleich der Summe der Nettobeträge der "
+        "Rechnungspositionen (BT-131) zuzüglich der Summe der Beträge der Zuschläge auf "
+        "Dokumentenebene (BT-99) abzüglich der Summe der Beträge der Nachlässe auf "
+        "Dokumentenebene (BT-92) sein, für die der Code der Umsatzsteuerkategorie "
+        "(BT-151, BT-102, BT-95) „Regelbesteuerung“ lautet und der Umsatzsteuersatz "
+        "(BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie "
+        "(BT-119) ist.",
 }
 
 

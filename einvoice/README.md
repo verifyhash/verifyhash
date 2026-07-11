@@ -148,8 +148,11 @@ Severities mirror the official flags — only **fatal** rules affect the exit
 code; warnings/information are reported in `--json`. The 14 `BR-DEX-*`
 extension-profile rules have since been implemented as well (see
 `COVERAGE.md`); still NOT implemented: `BR-DE-CVD-*` (Clean Vehicle
-Directive profile), `BR-TMP-2`, and the `PEPPOL-EN16931-*` rules in the
-same artifact.
+Directive profile) and `BR-TMP-2`. Of the 21 `PEPPOL-EN16931-R*` rules the
+same KoSIT artifact vendors, 11 are implemented in both bindings
+(differential-proven; the other 10 are an explicit known-open worklist in
+`COVERAGE.md`) — that is the KoSIT-vendored subset only, **not** Peppol BIS
+Billing 3.0 support.
 
 ### Differential result vs. the OFFICIAL Schematron (this run)
 
@@ -160,10 +163,10 @@ ID — whether each engine fires. The Schematron is the legal artifact; any
 disagreement is our bug. The 2026-07-11 run:
 
 ```
-LEG 1  EN 16931 core, UBL ....... 1145 invoices x 209 rules = 239,305
-LEG 2  XRechnung layer, UBL ..... 1030 invoices x  46 rules =  47,380
-LEG 3  EN 16931 core, CII ....... 111 invoices x 96 graded  =  10,656
-LEG 4  XRechnung layer, CII ..... 76 invoices x 20 graded   =   1,520
+LEG 1  EN 16931 core, UBL ............... 1145 invoices x 209 rules = 239,305
+LEG 2  XRechnung + Peppol batch, UBL .... 1041 invoices x  57 rules =  59,337
+LEG 3  EN 16931 core, CII ............... 111 invoices x 96 graded  =  10,656
+LEG 4  XRechnung + Peppol batch, CII ..... 88 invoices x 32 graded  =   2,816
 TOTAL AGREEMENT ...... 100.0000% on every leg
 divergences .......... 0 false-positives + 0 misses, all legs
 ```
@@ -217,8 +220,14 @@ prints the offending file, block, and expected vs. actual rule IDs).
 
 - **No `BR-DE-CVD-*` (Clean Vehicle Directive) rules** — the `BR-DE-*` CIUS
   core and the `BR-DEX-*` extension layer are implemented (see
-  `COVERAGE.md`), but that ADDITIONAL German profile is not, and `BR-TMP-2` /
-  `PEPPOL-EN16931-*` from the same KoSIT artifact are also out of scope.
+  `COVERAGE.md`), but that ADDITIONAL German profile is not, and `BR-TMP-2`
+  from the same KoSIT artifact is also out of scope.
+- **No Peppol BIS Billing 3.0 support.** 11 of the 21 `PEPPOL-EN16931-R*`
+  rules KoSIT ships inside the official XRechnung Schematron artifact ARE
+  implemented (both bindings, differential-proven; the remaining 10 are an
+  explicit known-open worklist in `COVERAGE.md`), but the OpenPeppol ruleset
+  proper (its own Schematron + test corpus) is a separate, not-vendored
+  artifact — nothing beyond the KoSIT-vendored asserts is claimed.
 - **14 official `BR-*` ids per CEN universe are documented deliberate
   exclusions, NOT coverage**: 8 deferred `BR-CL-*` code-list checks
   (BR-CL-06/07/08/10/11/15/25/26 — real, fireable official rules the engine

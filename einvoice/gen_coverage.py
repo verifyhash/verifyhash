@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import rules as _rules            # noqa: E402
 from einvoice import rules_xrechnung as _rules_xr  # noqa: E402
+from einvoice import rules_peppol as _rules_pep  # noqa: E402
 from einvoice import coverage as _coverage       # noqa: E402
 import differential as _diff                      # noqa: E402
 
@@ -84,6 +85,14 @@ CORE_UBL_PROVEN = set(_diff.OUR_RULE_SET)          # LEG 1: all 151 core on UBL
 CORE_CII_PROVEN = set(_diff.CII_RULE_SET)          # LEG 3: core subset on CII
 DE_UBL_PROVEN = set(_diff.XR_RULE_SET)             # LEG 2: all 46 BR-DE/DEX on UBL
 DE_CII_PROVEN = set(_diff.CII_XR_RULE_SET)         # LEG 4: BR-DE subset on CII
+# KoSIT-vendored Peppol batch, canonical ids (LEG 2 grades the UBL asserts,
+# LEG 4 the CII asserts — including R043's two CII asserts individually).
+PEP_UBL_PROVEN = set(_diff.PEPPOL_UBL_PROVEN_CANONICAL)
+PEP_CII_PROVEN = set(_diff.PEPPOL_CII_PROVEN_CANONICAL)
+
+# The vendored artifacts carrying the PEPPOL-EN16931-R* family (the KoSIT
+# XRechnung Schematron ships them inside its peppol-* patterns).
+PEPPOL_ARTIFACT_ORDER = ["xrechnung-ubl", "xrechnung-cii"]
 
 # Honest reasons a core rule is NOT graded on the CII leg (verbatim intent from
 # differential.CII_EXCLUDED_RULE_IDS' block comment).
@@ -419,6 +428,108 @@ def build_gap(implemented_ids, excluded_ids):
     }
 
 
+PEPPOL_FAMILY_LABEL = ("the Peppol-derived rules KoSIT ships inside the "
+                       "official XRechnung Schematron artifact")
+
+_PEPPOL_IMPLEMENTED_BY_ARTIFACT = {
+    "xrechnung-ubl": _coverage.peppol_ubl_rule_ids,
+    "xrechnung-cii": _coverage.peppol_cii_rule_ids,
+}
+
+
+def build_peppol_family():
+    """Machine-checked enumeration of the KoSIT-vendored PEPPOL-EN16931-R*
+    family — computed LIVE, never hand-transcribed.
+
+    For BOTH vendored KoSIT artifacts the family is extracted with a real XML
+    parse of ``sch:assert/@id`` (:func:`einvoice.coverage.schematron_assert_index`
+    — the VHR.1 method, no regex-on-prose). Assert ids are collapsed onto
+    canonical family ids (the CII artifact splits R043 into two asserts); each
+    artifact's implemented set comes from the live per-binding registry in
+    :mod:`einvoice.rules_peppol`, and the not-yet-implemented remainder is
+    published as an explicit ``known_open_worklist`` class with the official
+    rule text carried verbatim per binding. This family is OUTSIDE the CEN
+    EN 16931 ``BR-*`` gap universes (the ids share no prefix), so it neither
+    inflates the CEN arithmetic nor touches the fireable-missing == 0 claim;
+    ``test_coverage_gap.py`` recomputes this whole section live so it can
+    never silently go stale after an artifact bump or a rule landing.
+    """
+    artifacts = {}
+    fam_index = {}   # key -> {assert_id: entry}
+    canon_map = {}   # key -> {canonical: [assert_ids]}
+    for key in PEPPOL_ARTIFACT_ORDER:
+        rel = SCHEMATRON_SOURCES[key]["file"]
+        index = _coverage.schematron_assert_index(os.path.join(HERE, rel))
+        fam = {rid: e for rid, e in index.items()
+               if rid.startswith(_coverage.PEPPOL_FAMILY_PREFIX)}
+        canon = {}
+        for rid in fam:
+            canon.setdefault(_coverage.peppol_canonical_id(rid), []).append(rid)
+        for rids in canon.values():
+            rids.sort()
+        implemented = _PEPPOL_IMPLEMENTED_BY_ARTIFACT[key]()
+        universe = set(canon)
+        stray = implemented - universe
+        if stray:
+            raise AssertionError(
+                "%s: engine claims Peppol rules the vendored artifact does "
+                "not carry: %s" % (key, sorted(stray)))
+        fam_index[key] = fam
+        canon_map[key] = canon
+        artifacts[key] = {
+            "source": rel,
+            "assert_ids": sorted(fam, key=_sort_key),
+            "family_asserts": len(fam),
+            "canonical_ids": sorted(universe, key=_sort_key),
+            "family_universe": len(universe),
+            "implemented": len(universe & implemented),
+            "known_open": len(universe - implemented),
+        }
+    all_canonical = set()
+    for key in PEPPOL_ARTIFACT_ORDER:
+        all_canonical |= set(canon_map[key])
+    implemented_all = (_coverage.peppol_ubl_rule_ids()
+                       | _coverage.peppol_cii_rule_ids())
+    worklist = []
+    for rid in sorted(all_canonical - implemented_all, key=_sort_key):
+        bindings = {}
+        for key in PEPPOL_ARTIFACT_ORDER:
+            aids = canon_map[key].get(rid)
+            if not aids:
+                continue
+            bindings[key] = [
+                {"assert_id": aid,
+                 "flag": fam_index[key][aid]["flag"],
+                 "vacuous_in_artifact": fam_index[key][aid]["vacuous_in_artifact"],
+                 "text": fam_index[key][aid]["text"]}
+                for aid in aids
+            ]
+        worklist.append({"id": rid, "bindings": bindings})
+    return {
+        "label": PEPPOL_FAMILY_LABEL,
+        "description": (
+            "Machine-checked enumeration of " + PEPPOL_FAMILY_LABEL + " (the "
+            "peppol-* patterns of the vendored KoSIT XRechnung Schematron "
+            "v2.5.0), extracted by a real XML parse of sch:assert/@id from "
+            "BOTH binding artifacts. This is NOT full Peppol BIS Billing 3.0 "
+            "support: the OpenPeppol ruleset proper (its own Schematron and "
+            "test corpus) is a separate, not-vendored artifact, and nothing "
+            "beyond the asserts KoSIT ships is claimed. Implemented ids are "
+            "read from the live einvoice.rules_peppol registries and are "
+            "differentially proven per binding (LEG 2 / LEG 4); the remainder "
+            "is the explicit known_open_worklist below, official rule text "
+            "verbatim. The family is outside the CEN EN 16931 BR-* gap "
+            "universes, so the fireable-missing == 0 claim for those "
+            "universes is unaffected. test_coverage_gap.py recomputes this "
+            "section live from the vendored .sch files and fails on any "
+            "drift."),
+        "artifact_order": list(PEPPOL_ARTIFACT_ORDER),
+        "artifacts": artifacts,
+        "implemented_ids": sorted(implemented_all, key=_sort_key),
+        "known_open_worklist": worklist,
+    }
+
+
 def build_matrix():
     """Assemble the coverage-matrix document from the live engine + graded sets."""
     entries = {}
@@ -470,6 +581,36 @@ def build_matrix():
             "provenance": prov,
         }
 
+    # KoSIT-vendored Peppol batch (einvoice.rules_peppol) — implemented in
+    # BOTH bindings, graded on LEG 2 (UBL asserts) and LEG 4 (CII asserts).
+    for fn in _rules_pep.UBL_RULES:
+        rid = fn.rule_id
+        flag = fn.severity
+        cii_ok = rid in PEP_CII_PROVEN
+        prov = {
+            "ubl": _prov("xrechnung-ubl", rid in PEP_UBL_PROVEN),
+            "cii": _prov("xrechnung-cii", cii_ok,
+                         None if cii_ok else
+                         "not graded on the KoSIT-CII differential leg."),
+        }
+        if rid == "PEPPOL-EN16931-R043":
+            prov["cii"]["asserts"] = ["PEPPOL-EN16931-R043-1",
+                                      "PEPPOL-EN16931-R043-2"]
+            prov["cii"]["note"] = (
+                "the CII artifact splits this rule into two asserts "
+                "(SpecifiedTradeAllowanceCharge and "
+                "AppliedTradeAllowanceCharge contexts); BOTH are graded "
+                "individually on LEG 4.")
+        entries[rid] = {
+            "id": rid,
+            "title": _title(fn, rid),
+            "family": "peppol-kosit-vendored",
+            "syntax": "both" if cii_ok else "ubl",
+            "severity": _severity_class(flag),
+            "flag": flag,
+            "provenance": prov,
+        }
+
     rules_list = [entries[k] for k in sorted(entries, key=_sort_key)]
 
     # Exclusions — vacuous rules + CII scope boundaries + Peppol.
@@ -510,16 +651,24 @@ def build_matrix():
             "cii_core_out_of_scope": cii_core_oos,
             "cii_de_out_of_scope": cii_de_oos,
             "peppol": {
-                "status": "absent",
+                "status": "kosit-vendored-batch-1",
                 "note": (
-                    "The Peppol BIS Billing 3.0 CIUS layer (the PEPPOL-EN16931-* "
-                    "rules) is NOT shipped — that work item (T-VH.17) is not "
-                    "implemented, so no Peppol-only rule is asserted or claimed "
-                    "here. The engine covers the EN 16931 core and the German "
-                    "XRechnung national CIUS + extension only."),
+                    "Partially covered, scoped honestly: the engine asserts 11 "
+                    "of the 21 canonical PEPPOL-EN16931-R* rules that KoSIT "
+                    "ships inside the official XRechnung Schematron artifact "
+                    "(see the peppol_kosit_family section and the rule table; "
+                    "each is differentially proven per binding). This is NOT "
+                    "full Peppol BIS Billing 3.0 support: the OpenPeppol "
+                    "ruleset proper (its own Schematron + test corpus) is a "
+                    "separate, not-vendored artifact, and nothing beyond the "
+                    "KoSIT-vendored asserts is claimed. The remaining rules "
+                    "are the explicit known-open worklist in "
+                    "peppol_kosit_family, recomputed live by "
+                    "test_coverage_gap.py."),
             },
         },
         "gap": build_gap(set(entries), deliberate_exclusion_ids()),
+        "peppol_kosit_family": build_peppol_family(),
     }
     return matrix
 

@@ -2725,5 +2725,237 @@ class GapBatchA(unittest.TestCase):
         self.assertIn("BR-48", got)
 
 
+# --------------------------------------------------------------------------- #
+# KoSIT-vendored Peppol batch 1 (PEPPOL-EN16931-R*), UBL binding.             #
+# Firing + non-firing fixtures per rule, mutated off the clean XRechnung      #
+# testsuite invoice 01.01a (fires NONE of the batch on the official KoSIT     #
+# XSLT — agreement proven exhaustively by `differential.py xrechnung`).       #
+# --------------------------------------------------------------------------- #
+from einvoice import rules_peppol as _rules_pep  # noqa: E402
+
+_PEP_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
+                         "business-cases", "standard", "01.01a-INVOICE_ubl.xml")
+_PEP_BASE_ROOT = ET.parse(_PEP_BASE).getroot()
+
+
+def _pep(rid):
+    return "PEPPOL-EN16931-" + rid
+
+
+class PeppolKositBatch1Ubl(unittest.TestCase):
+    """UBL-binding fixtures for the 11 implemented PEPPOL-EN16931-R* rules."""
+
+    @staticmethod
+    def pep_base():
+        return copy.deepcopy(_PEP_BASE_ROOT)
+
+    @staticmethod
+    def pep_fired(r):
+        return {v.rule_id for v in _rules_pep.evaluate_ubl(r)}
+
+    def add_doc_allowance(self, r, indicator="false", amount=None, base=None,
+                          percent=None):
+        """Document-level cac:AllowanceCharge before cac:TaxTotal."""
+        ac = ET.Element(q(NS_CAC, "AllowanceCharge"))
+        if indicator is not None:
+            ET.SubElement(ac, q(NS_CBC, "ChargeIndicator")).text = indicator
+        if percent is not None:
+            ET.SubElement(ac, q(NS_CBC,
+                                "MultiplierFactorNumeric")).text = percent
+        if amount is not None:
+            ET.SubElement(ac, q(NS_CBC, "Amount")).text = amount
+        if base is not None:
+            ET.SubElement(ac, q(NS_CBC, "BaseAmount")).text = base
+        r.insert(list(r).index(r.find(q(NS_CAC, "TaxTotal"))), ac)
+        return ac
+
+    def add_price_allowance(self, r, indicator, base, amount):
+        """cac:AllowanceCharge under the first line's cac:Price (whose
+        PriceAmount in the 01.01a base is 288.79)."""
+        price = r.find("%s/%s" % (q(NS_CAC, "InvoiceLine"), q(NS_CAC, "Price")))
+        ac = ET.SubElement(price, q(NS_CAC, "AllowanceCharge"))
+        if indicator is not None:
+            ET.SubElement(ac, q(NS_CBC, "ChargeIndicator")).text = indicator
+        if amount is not None:
+            ET.SubElement(ac, q(NS_CBC, "Amount")).text = amount
+        if base is not None:
+            ET.SubElement(ac, q(NS_CBC, "BaseAmount")).text = base
+        return price, ac
+
+    # ---- clean base ---------------------------------------------------------
+    def test_clean_base_fires_none(self):
+        self.assertEqual(self.pep_fired(self.pep_base()), set())
+
+    # ---- R001 ---------------------------------------------------------------
+    def test_r001_missing_profile_id_fires(self):
+        r = self.pep_base()
+        r.remove(child(r, NS_CBC, "ProfileID"))
+        self.assertEqual(self.pep_fired(r), {_pep("R001")})
+
+    def test_r001_empty_profile_id_holds_but_r008_fires(self):
+        # R001 tests element EXISTENCE only; an empty ProfileID satisfies it
+        # (but is itself an empty element -> R008).
+        r = self.pep_base()
+        child(r, NS_CBC, "ProfileID").text = ""
+        got = self.pep_fired(r)
+        self.assertNotIn(_pep("R001"), got)
+        self.assertIn(_pep("R008"), got)
+
+    # ---- R005 ---------------------------------------------------------------
+    def test_r005_tax_currency_equal_to_doc_currency_fires(self):
+        r = self.pep_base()
+        dcc = child(r, NS_CBC, "DocumentCurrencyCode")
+        tcc = ET.Element(q(NS_CBC, "TaxCurrencyCode"))
+        tcc.text = dcc.text
+        r.insert(list(r).index(dcc) + 1, tcc)
+        self.assertEqual(self.pep_fired(r), {_pep("R005")})
+
+    def test_r005_different_tax_currency_holds(self):
+        r = self.pep_base()
+        dcc = child(r, NS_CBC, "DocumentCurrencyCode")
+        tcc = ET.Element(q(NS_CBC, "TaxCurrencyCode"))
+        tcc.text = "USD"
+        r.insert(list(r).index(dcc) + 1, tcc)
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R008 ---------------------------------------------------------------
+    def test_r008_empty_element_fires(self):
+        r = self.pep_base()
+        ET.SubElement(r, q(NS_CBC, "Note"))
+        self.assertEqual(self.pep_fired(r), {_pep("R008")})
+
+    def test_r008_whitespace_only_element_fires(self):
+        r = self.pep_base()
+        ET.SubElement(r, q(NS_CBC, "Note")).text = "  \n\t "
+        self.assertEqual(self.pep_fired(r), {_pep("R008")})
+
+    def test_r008_attribute_does_not_rescue_empty_element(self):
+        r = self.pep_base()
+        el = ET.SubElement(r, q(NS_CBC, "Note"))
+        el.set("languageID", "de")
+        self.assertEqual(self.pep_fired(r), {_pep("R008")})
+
+    def test_r008_element_with_text_holds(self):
+        r = self.pep_base()
+        ET.SubElement(r, q(NS_CBC, "Note")).text = "real content"
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R010 / R020 --------------------------------------------------------
+    def test_r010_missing_buyer_endpoint_fires(self):
+        r = self.pep_base()
+        party = r.find("%s/%s" % (q(NS_CAC, "AccountingCustomerParty"),
+                                  q(NS_CAC, "Party")))
+        party.remove(child(party, NS_CBC, "EndpointID"))
+        self.assertEqual(self.pep_fired(r), {_pep("R010")})
+
+    def test_r020_missing_seller_endpoint_fires(self):
+        r = self.pep_base()
+        party = supplier_party(r)
+        party.remove(child(party, NS_CBC, "EndpointID"))
+        self.assertEqual(self.pep_fired(r), {_pep("R020")})
+
+    # ---- R040 (slack band) --------------------------------------------------
+    def test_r040_amount_off_the_percentage_fires(self):
+        r = self.pep_base()
+        self.add_doc_allowance(r, amount="10.00", base="100.00", percent="25")
+        self.assertEqual(self.pep_fired(r), {_pep("R040")})
+
+    def test_r040_amount_within_slack_holds(self):
+        # |25.01 - 25.00| = 0.01 <= slack 0.02 -> holds.
+        r = self.pep_base()
+        self.add_doc_allowance(r, amount="25.01", base="100.00", percent="25")
+        self.assertEqual(self.pep_fired(r), set())
+
+    def test_r040_just_outside_slack_fires(self):
+        # |25.03 - 25.00| = 0.03 > 0.02 -> fires.
+        r = self.pep_base()
+        self.add_doc_allowance(r, amount="25.03", base="100.00", percent="25")
+        self.assertEqual(self.pep_fired(r), {_pep("R040")})
+
+    def test_r040_huf_widens_slack_to_half(self):
+        # $slackValue is 0.5 when BT-5 = HUF: 25.40 holds there, fires on EUR.
+        r = self.pep_base()
+        self.add_doc_allowance(r, amount="25.40", base="100.00", percent="25")
+        self.assertEqual(self.pep_fired(r), {_pep("R040")})
+        r2 = self.pep_base()
+        child(r2, NS_CBC, "DocumentCurrencyCode").text = "HUF"
+        self.add_doc_allowance(r2, amount="25.40", base="100.00", percent="25")
+        self.assertNotIn(_pep("R040"), self.pep_fired(r2))
+
+    def test_r040_absent_amount_counts_as_zero(self):
+        # if (cbc:Amount) then cbc:Amount else 0 -> 0 vs 25.00 -> fires.
+        r = self.pep_base()
+        self.add_doc_allowance(r, amount=None, base="100.00", percent="25")
+        self.assertEqual(self.pep_fired(r), {_pep("R040")})
+
+    # ---- R041 / R042 --------------------------------------------------------
+    def test_r041_percentage_without_base_fires(self):
+        r = self.pep_base()
+        self.add_doc_allowance(r, amount="10.00", percent="10")
+        self.assertEqual(self.pep_fired(r), {_pep("R041")})
+
+    def test_r042_base_without_percentage_fires(self):
+        r = self.pep_base()
+        self.add_doc_allowance(r, amount="10.00", base="100.00")
+        self.assertEqual(self.pep_fired(r), {_pep("R042")})
+
+    def test_r041_r042_both_present_hold(self):
+        r = self.pep_base()
+        self.add_doc_allowance(r, amount="25.00", base="100.00", percent="25")
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R043 ---------------------------------------------------------------
+    def test_r043_bad_indicator_fires(self):
+        r = self.pep_base()
+        self.add_doc_allowance(r, indicator="TRUE", amount="10.00")
+        self.assertEqual(self.pep_fired(r), {_pep("R043")})
+
+    def test_r043_absent_indicator_fires(self):
+        r = self.pep_base()
+        self.add_doc_allowance(r, indicator=None, amount="10.00")
+        self.assertEqual(self.pep_fired(r), {_pep("R043")})
+
+    def test_r043_normalized_true_holds(self):
+        # normalize-space(' true ') = 'true' -> holds.
+        r = self.pep_base()
+        self.add_doc_allowance(r, indicator=" true ", amount="10.00")
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R044 / R046 (price level) ------------------------------------------
+    def test_r044_price_level_charge_fires(self):
+        r = self.pep_base()
+        # PriceAmount 288.79 = 289.79 - 1.00 -> R046 holds; only R044 fires.
+        self.add_price_allowance(r, "true", base="289.79", amount="1.00")
+        self.assertEqual(self.pep_fired(r), {_pep("R044")})
+
+    def test_r044_false_indicator_holds(self):
+        r = self.pep_base()
+        self.add_price_allowance(r, "false", base="289.79", amount="1.00")
+        self.assertEqual(self.pep_fired(r), set())
+
+    def test_r046_gross_minus_allowance_mismatch_fires(self):
+        r = self.pep_base()
+        self.add_price_allowance(r, "false", base="300.00", amount="1.00")
+        self.assertEqual(self.pep_fired(r), {_pep("R046")})
+
+    def test_r046_absent_amount_fires(self):
+        # xs:decimal(()) in the subtraction -> comparison false -> fires.
+        r = self.pep_base()
+        self.add_price_allowance(r, "false", base="288.79", amount=None)
+        self.assertEqual(self.pep_fired(r), {_pep("R046")})
+
+    def test_r046_no_base_amount_is_vacuous(self):
+        r = self.pep_base()
+        self.add_price_allowance(r, "false", base=None, amount="1.00")
+        self.assertEqual(self.pep_fired(r), set())
+
+    def test_r046_decimal_equality_is_numeric(self):
+        # xs:decimal('288.79') = xs:decimal('289.79') - xs:decimal('1.000')
+        # (trailing zeros are equal numerically, exactly like xs:decimal).
+        r = self.pep_base()
+        self.add_price_allowance(r, "false", base="289.79", amount="1.000")
+        self.assertEqual(self.pep_fired(r), set())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

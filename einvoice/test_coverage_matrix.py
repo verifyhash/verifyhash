@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import rules as _rules              # noqa: E402
 from einvoice import rules_xrechnung as _rules_xr  # noqa: E402
+from einvoice import rules_peppol as _rules_pep    # noqa: E402
 from einvoice import coverage as _coverage         # noqa: E402
 import differential as _diff                        # noqa: E402
 
@@ -54,7 +55,9 @@ def _engine_fireable_ids():
         core.add(head)
     ubl_de = {fn.rule_id for fn in _rules_xr.ALL_RULES}
     cii_de = {fn.rule_id for fn in _rules_xr.CII_DE_RULES}
-    return core | ubl_de | cii_de
+    pep = ({fn.rule_id for fn in _rules_pep.UBL_RULES}
+           | {fn.rule_id for fn in _rules_pep.CII_RULES})
+    return core | ubl_de | cii_de | pep
 
 
 def _engine_severity_and_flag():
@@ -73,6 +76,9 @@ def _engine_severity_and_flag():
     for fn in _rules_xr.ALL_RULES:
         flag = fn.severity
         out[fn.rule_id] = ("fatal" if flag == "fatal" else "warning", flag)
+    for fn in _rules_pep.UBL_RULES + _rules_pep.CII_RULES:
+        flag = fn.severity
+        out[fn.rule_id] = ("fatal" if flag == "fatal" else "warning", flag)
     return out
 
 
@@ -80,7 +86,9 @@ def _proven_syntax(rid):
     """The syntax tag the differential graded sets justify for ``rid``."""
     core_cii = set(_diff.CII_RULE_SET)
     de_cii = set(_diff.CII_XR_RULE_SET)
-    return "both" if (rid in core_cii or rid in de_cii) else "ubl"
+    pep_cii = set(_diff.PEPPOL_CII_PROVEN_CANONICAL)
+    return "both" if (rid in core_cii or rid in de_cii or rid in pep_cii) \
+        else "ubl"
 
 
 def main():
@@ -166,6 +174,11 @@ def main():
     check(not overlap,
           "a vacuous/excluded rule is ALSO claimed as fired coverage: %s" % overlap)
     check("peppol" in exc, "exclusions must document Peppol scope (T-VH.17)")
+    pep_note = (exc.get("peppol") or {}).get("note", "")
+    check("NOT full Peppol BIS Billing 3.0" in pep_note,
+          "exclusions.peppol.note must carry the explicit 'NOT full Peppol "
+          "BIS Billing 3.0' disclaimer (only the KoSIT-vendored asserts are "
+          "implemented)")
 
     # ---- report ----------------------------------------------------------
     if failures:

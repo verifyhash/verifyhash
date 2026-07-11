@@ -31,8 +31,10 @@ Schematron gates them behind a global ``$isExtension`` let); on a plain CIUS
 invoice they are inert. See ``_is_extension`` and the ``BR-DEX-*`` functions.
 
 Out of scope (deliberately): ``BR-DE-CVD-*`` (the Clean-Vehicle-Directive
-profile), ``BR-TMP-2`` and the ``PEPPOL-EN16931-*`` rules also present in the
-KoSIT artifact.
+profile) and ``BR-TMP-2``. The ``PEPPOL-EN16931-R*`` rules also present in the
+KoSIT artifact live in their own module, :mod:`einvoice.rules_peppol` (batch 1
+implemented, remainder an explicit known-open worklist in the coverage
+matrix).
 
 Standard library only.
 """

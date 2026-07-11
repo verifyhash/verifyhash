@@ -1440,5 +1440,264 @@ class TestIpsiSplitPaymentBatchCCII(unittest.TestCase):
         self.assert_fired(r, "BR-B-02", expect=False)
 
 
+# --------------------------------------------------------------------------- #
+# KoSIT-vendored Peppol batch 1 (PEPPOL-EN16931-R*), CII binding.             #
+# The rules run over the RAW CrossIndustryInvoice tree (rules like R008       #
+# constrain the literal document, not a normalized model). Firing +           #
+# non-firing fixtures per assert, off the clean XRechnung-CII invoice 01.02a  #
+# (fires NONE of the batch on the official KoSIT XSLT — agreement proven      #
+# exhaustively by `differential.py xrechnung-cii`).                            #
+# --------------------------------------------------------------------------- #
+from einvoice import rules_peppol                      # noqa: E402
+
+NSU = parser_cii.NS_UDT
+
+
+def _pep(rid):
+    return "PEPPOL-EN16931-" + rid
+
+
+def _pep_cii_root():
+    return ET.parse(XR_CII_GOOD).getroot()
+
+
+def _pep_cii_fired(r):
+    return {v.rule_id for v in rules_peppol.evaluate_cii(r)}
+
+
+class PeppolKositBatch1Cii(unittest.TestCase):
+    """CII-binding fixtures for the 11 implemented PEPPOL-EN16931-R* rules
+    (12 vendored asserts — R043 is split into -1/-2 in the CII artifact)."""
+
+    def _settlement(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeSettlement", NS)
+
+    def _line_agreement(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:IncludedSupplyChainTradeLineItem/"
+                      "ram:SpecifiedLineTradeAgreement", NS)
+
+    def add_header_allowance(self, r, indicator="false", actual=None,
+                             basis=None, percent=None):
+        """ram:SpecifiedTradeAllowanceCharge in the header settlement."""
+        settle = self._settlement(r)
+        ac = ET.SubElement(settle, _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        if indicator is not None:
+            ci = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+            ET.SubElement(ci, _q(NSU, "Indicator")).text = indicator
+        if percent is not None:
+            ET.SubElement(ac, _q(NSA, "CalculationPercent")).text = percent
+        if basis is not None:
+            ET.SubElement(ac, _q(NSA, "BasisAmount")).text = basis
+        if actual is not None:
+            ET.SubElement(ac, _q(NSA, "ActualAmount")).text = actual
+        return ac
+
+    def add_gross_price(self, r, indicator, charge, actual):
+        """ram:GrossPriceProductTradePrice (with an AppliedTradeAllowanceCharge
+        when ``actual``/``indicator`` given) on the first line, whose
+        NetPriceProductTradePrice/ChargeAmount in the 01.02a base is 11.78."""
+        agr = self._line_agreement(r)
+        gp = ET.Element(_q(NSA, "GrossPriceProductTradePrice"))
+        if charge is not None:
+            ET.SubElement(gp, _q(NSA, "ChargeAmount")).text = charge
+        if indicator is not None or actual is not None:
+            atac = ET.SubElement(gp, _q(NSA, "AppliedTradeAllowanceCharge"))
+            if indicator is not None:
+                ci = ET.SubElement(atac, _q(NSA, "ChargeIndicator"))
+                ET.SubElement(ci, _q(NSU, "Indicator")).text = indicator
+            if actual is not None:
+                ET.SubElement(atac, _q(NSA, "ActualAmount")).text = actual
+        agr.insert(0, gp)
+        return gp
+
+    # ---- clean base ---------------------------------------------------------
+    def test_clean_base_fires_none(self):
+        self.assertEqual(_pep_cii_fired(_pep_cii_root()), set())
+
+    # ---- R001 ---------------------------------------------------------------
+    def test_r001_missing_business_process_fires(self):
+        r = _pep_cii_root()
+        ctx = r.find("rsm:ExchangedDocumentContext", NS)
+        ctx.remove(ctx.find(
+            "ram:BusinessProcessSpecifiedDocumentContextParameter", NS))
+        self.assertEqual(_pep_cii_fired(r), {_pep("R001")})
+
+    # ---- R005 ---------------------------------------------------------------
+    def test_r005_tax_currency_equal_to_invoice_currency_fires(self):
+        r = _pep_cii_root()
+        settle = self._settlement(r)
+        icc = settle.find("ram:InvoiceCurrencyCode", NS)
+        tcc = ET.Element(_q(NSA, "TaxCurrencyCode"))
+        tcc.text = icc.text
+        settle.insert(list(settle).index(icc), tcc)
+        self.assertEqual(_pep_cii_fired(r), {_pep("R005")})
+
+    def test_r005_different_tax_currency_holds(self):
+        r = _pep_cii_root()
+        settle = self._settlement(r)
+        icc = settle.find("ram:InvoiceCurrencyCode", NS)
+        tcc = ET.Element(_q(NSA, "TaxCurrencyCode"))
+        tcc.text = "USD"
+        settle.insert(list(settle).index(icc), tcc)
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    # ---- R008 ---------------------------------------------------------------
+    def test_r008_empty_element_fires(self):
+        r = _pep_cii_root()
+        exdoc = r.find("rsm:ExchangedDocument", NS)
+        ET.SubElement(exdoc, _q(NSA, "IncludedNote"))
+        self.assertEqual(_pep_cii_fired(r), {_pep("R008")})
+
+    def test_r008_empty_header_trade_delivery_is_exempt(self):
+        # The CII context EXCLUDES ram:ApplicableHeaderTradeDelivery — the one
+        # schema-mandatory element a CII invoice may legitimately leave empty.
+        r = _pep_cii_root()
+        delivery = r.find("rsm:SupplyChainTradeTransaction/"
+                          "ram:ApplicableHeaderTradeDelivery", NS)
+        for kid in list(delivery):
+            delivery.remove(kid)
+        delivery.text = None
+        self.assertEqual(len(list(delivery)), 0)
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r008_element_with_text_holds(self):
+        r = _pep_cii_root()
+        exdoc = r.find("rsm:ExchangedDocument", NS)
+        note = ET.SubElement(exdoc, _q(NSA, "IncludedNote"))
+        ET.SubElement(note, _q(NSA, "Content")).text = "real content"
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    # ---- R010 / R020 --------------------------------------------------------
+    def _header_agreement(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement", NS)
+
+    def test_r010_missing_buyer_uri_fires(self):
+        r = _pep_cii_root()
+        buyer = self._header_agreement(r).find("ram:BuyerTradeParty", NS)
+        buyer.remove(buyer.find("ram:URIUniversalCommunication", NS))
+        self.assertEqual(_pep_cii_fired(r), {_pep("R010")})
+
+    def test_r020_missing_seller_uri_fires(self):
+        r = _pep_cii_root()
+        seller = self._header_agreement(r).find("ram:SellerTradeParty", NS)
+        seller.remove(seller.find("ram:URIUniversalCommunication", NS))
+        self.assertEqual(_pep_cii_fired(r), {_pep("R020")})
+
+    # ---- R040 (slack band) --------------------------------------------------
+    def test_r040_amount_off_the_percentage_fires(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, actual="10.00", basis="100.00",
+                                  percent="25")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R040")})
+
+    def test_r040_amount_within_slack_holds(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, actual="25.01", basis="100.00",
+                                  percent="25")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r040_huf_widens_slack_to_half(self):
+        r = _pep_cii_root()
+        self._settlement(r).find("ram:InvoiceCurrencyCode", NS).text = "HUF"
+        self.add_header_allowance(r, actual="25.40", basis="100.00",
+                                  percent="25")
+        self.assertNotIn(_pep("R040"), _pep_cii_fired(r))
+
+    def test_r040_absent_actual_counts_as_zero(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, actual=None, basis="100.00", percent="25")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R040")})
+
+    # ---- R041 / R042 --------------------------------------------------------
+    def test_r041_percentage_without_basis_fires(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, actual="10.00", percent="10")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R041")})
+
+    def test_r042_basis_without_percentage_fires(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, actual="10.00", basis="100.00")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R042")})
+
+    def test_r041_r042_both_present_hold(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, actual="25.00", basis="100.00",
+                                  percent="25")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    # ---- R043 (two vendored asserts) -----------------------------------------
+    def test_r043_1_bad_header_indicator_fires(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, indicator="TRUE", actual="10.00")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R043")})
+        # And specifically via the -1 assert (SpecifiedTradeAllowanceCharge).
+        self.assertIsNotNone(rules_peppol.cii_r043_1(r))
+        self.assertIsNone(rules_peppol.cii_r043_2(r))
+
+    def test_r043_1_absent_indicator_fires(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, indicator=None, actual="10.00")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R043")})
+
+    def test_r043_2_bad_price_indicator_fires(self):
+        r = _pep_cii_root()
+        # net 11.78 = 12.78 - 1.00 -> R046 holds; TRUE -> R043-2 + R044 fire.
+        self.add_gross_price(r, "TRUE", charge="12.78", actual="1.00")
+        got = _pep_cii_fired(r)
+        self.assertEqual(got, {_pep("R043"), _pep("R044")})
+        self.assertIsNone(rules_peppol.cii_r043_1(r))
+        self.assertIsNotNone(rules_peppol.cii_r043_2(r))
+
+    def test_r043_normalized_true_holds(self):
+        r = _pep_cii_root()
+        self.add_header_allowance(r, indicator=" true ", actual="10.00")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    # ---- R044 / R046 (gross price level) --------------------------------------
+    def test_r044_price_level_charge_fires(self):
+        r = _pep_cii_root()
+        self.add_gross_price(r, "true", charge="12.78", actual="1.00")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R044")})
+
+    def test_r044_false_indicator_holds(self):
+        r = _pep_cii_root()
+        self.add_gross_price(r, "false", charge="12.78", actual="1.00")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r044_untrimmed_false_fires(self):
+        # The R044 CII test is node-set = 'false' (NO normalize-space): a
+        # padded ' false ' satisfies R043-2 (normalized) but NOT R044.
+        r = _pep_cii_root()
+        self.add_gross_price(r, " false ", charge="12.78", actual="1.00")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R044")})
+
+    def test_r046_gross_minus_allowance_mismatch_fires(self):
+        r = _pep_cii_root()
+        self.add_gross_price(r, "false", charge="20.00", actual="1.00")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R046")})
+
+    def test_r046_absent_allowance_counts_as_zero(self):
+        # u:decimalOrZero over an absent ActualAmount -> 0: gross == net holds.
+        r = _pep_cii_root()
+        self.add_gross_price(r, None, charge="11.78", actual=None)
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r046_no_charge_amount_is_vacuous(self):
+        r = _pep_cii_root()
+        self.add_gross_price(r, "false", charge=None, actual="1.00")
+        # No ram:ChargeAmount -> R046 vacuous; but the empty-ish GrossPrice
+        # still carries children, so R008 stays quiet too. R044 fires: an
+        # ActualAmount exists and the indicator is 'false' -> holds. Nothing.
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r046_decimal_equality_is_numeric(self):
+        r = _pep_cii_root()
+        self.add_gross_price(r, "false", charge="12.780", actual="1.000")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+
 if __name__ == "__main__":
     unittest.main()

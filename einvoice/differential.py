@@ -65,6 +65,7 @@ from einvoice.validate import validate_file          # noqa: E402
 from einvoice.parser import NotWellFormed, parse_file  # noqa: E402
 from einvoice import rules as _rules                  # noqa: E402
 from einvoice import rules_xrechnung as _rules_xr     # noqa: E402
+from einvoice import rules_peppol as _rules_pep       # noqa: E402
 from einvoice import parser_cii as _parser_cii        # noqa: E402
 
 # The OFFICIAL normative artifacts:
@@ -162,6 +163,34 @@ CII_XR_EXCLUDED_RULE_IDS = (
 )
 assert not (CII_XR_RULE_SET & set(CII_XR_EXCLUDED_RULE_IDS)), (
     "a CII-excluded BR-DE rule is also in the graded set")
+
+# --------------------------------------------------------------------------- #
+# PEPPOL-EN16931-R* — the Peppol-derived batch KoSIT ships INSIDE the official  #
+# XRechnung Schematron artifact (einvoice/rules_peppol.py). Graded on the SAME  #
+# legs as the national layer (LEG 2 for UBL, LEG 4 for CII) because the SAME    #
+# compiled KoSIT XSLTs evaluate the peppol-* patterns. The graded ids are the   #
+# OFFICIAL per-binding assert ids (fn.assert_id): identical to the canonical    #
+# rule id everywhere except R043, which the CII artifact splits into the two    #
+# asserts PEPPOL-EN16931-R043-1 / -R043-2.                                      #
+# --------------------------------------------------------------------------- #
+PEPPOL_UBL_RULE_IDS = [fn.assert_id for fn in _rules_pep.UBL_RULES]
+PEPPOL_UBL_RULE_SET = set(PEPPOL_UBL_RULE_IDS)
+assert len(PEPPOL_UBL_RULE_IDS) == len(PEPPOL_UBL_RULE_SET) == 11, \
+    PEPPOL_UBL_RULE_IDS
+
+PEPPOL_CII_RULE_IDS = [fn.assert_id for fn in _rules_pep.CII_RULES]
+PEPPOL_CII_RULE_SET = set(PEPPOL_CII_RULE_IDS)
+assert len(PEPPOL_CII_RULE_IDS) == len(PEPPOL_CII_RULE_SET) == 12, \
+    PEPPOL_CII_RULE_IDS
+
+# Canonical (family-id) views for the coverage matrix: a canonical id is
+# UBL-proven when its UBL assert is graded, CII-proven when EVERY CII assert
+# carrying that canonical id is graded (R043 needs both -1 and -2).
+PEPPOL_UBL_PROVEN_CANONICAL = {fn.rule_id for fn in _rules_pep.UBL_RULES}
+PEPPOL_CII_PROVEN_CANONICAL = {fn.rule_id for fn in _rules_pep.CII_RULES}
+assert PEPPOL_UBL_PROVEN_CANONICAL == PEPPOL_CII_PROVEN_CANONICAL, (
+    "batch 1 implements every rule in BOTH bindings; the canonical sets must "
+    "coincide")
 
 
 # --------------------------------------------------------------------------- #
@@ -424,17 +453,32 @@ def our_fired(invoice_path: str) -> set:
 
 def xr_our_fired(invoice_path: str) -> set:
     """Fired BR-DE-* ids of OUR XRechnung CIUS layer (all severities — the
-    official SVRL reports warning/information failed-asserts the same way)."""
+    official SVRL reports warning/information failed-asserts the same way),
+    plus the fired OFFICIAL assert ids of the implemented PEPPOL-EN16931-R*
+    batch (einvoice.rules_peppol.UBL_RULES) — both layers live in the same
+    KoSIT artifact, so LEG 2 grades them together."""
     root = parse_file(invoice_path)
-    return {v.rule_id for v in _rules_xr.evaluate(root)}
+    fired = {v.rule_id for v in _rules_xr.evaluate(root)}
+    for fn in _rules_pep.UBL_RULES:
+        if fn(root) is not None:
+            fired.add(fn.assert_id)
+    return fired
 
 
 def xr_cii_our_fired(invoice_path: str) -> set:
     """Fired BR-DE-* ids of OUR XRechnung national layer evaluated over the CII
     normalized model — the admitted CII_DE_RULES run over
-    einvoice.parser_cii.build_model, mirroring how the core rules run over CII."""
+    einvoice.parser_cii.build_model, mirroring how the core rules run over CII —
+    plus the fired OFFICIAL assert ids of the implemented PEPPOL-EN16931-R*
+    batch, which runs over the RAW CII tree (rules like R008 constrain the
+    literal document, not a normalized model)."""
     inv = _parser_cii.parse(invoice_path)
-    return {v.rule_id for v in _rules_xr.evaluate_cii(inv)}
+    fired = {v.rule_id for v in _rules_xr.evaluate_cii(inv)}
+    raw_root = ET.parse(invoice_path).getroot()
+    for fn in _rules_pep.CII_RULES:
+        if fn(raw_root) is not None:
+            fired.add(fn.assert_id)
+    return fired
 
 
 # --------------------------------------------------------------------------- #
@@ -2260,6 +2304,130 @@ def _gather_xr_ext_mutations(scratch: str):
     return out
 
 
+# --- PEPPOL-EN16931-R* (UBL) targeted mutations, off the clean XR base ------- #
+# One invoice per implemented rule, each breaking exactly the guarded fact in
+# the FAILING direction (the rest of the LEG 2 corpus exercises the HOLDS
+# direction — the clean base fires none of the batch on the official XSLT).
+def _pep_add_doc_allowance(r, indicator="false", amount=None, base=None,
+                           percent=None):
+    """Insert a document-level cac:AllowanceCharge (official child order:
+    ChargeIndicator, Reason, MultiplierFactorNumeric, Amount, BaseAmount,
+    TaxCategory) before cac:TaxTotal."""
+    ac = ET.Element(_q(NS_CAC, "AllowanceCharge"))
+    _sub_el(ac, NS_CBC, "ChargeIndicator", indicator)
+    _sub_el(ac, NS_CBC, "AllowanceChargeReason", "Adjustment")
+    if percent is not None:
+        _sub_el(ac, NS_CBC, "MultiplierFactorNumeric", percent)
+    if amount is not None:
+        _sub_el(ac, NS_CBC, "Amount", amount).set("currencyID", "EUR")
+    if base is not None:
+        _sub_el(ac, NS_CBC, "BaseAmount", base).set("currencyID", "EUR")
+    cat = _sub_el(ac, NS_CAC, "TaxCategory")
+    _sub_el(cat, NS_CBC, "ID", "S")
+    _sub_el(cat, NS_CBC, "Percent", "19")
+    _sub_el(_sub_el(cat, NS_CAC, "TaxScheme"), NS_CBC, "ID", "VAT")
+    r.insert(list(r).index(_child(r, NS_CAC, "TaxTotal")), ac)
+
+
+def _pep_add_price_allowance(r, indicator, base_delta, amount="1.00"):
+    """Add a cac:Price/cac:AllowanceCharge to the first line. BaseAmount is set
+    to PriceAmount + ``base_delta`` so R046 holds exactly when
+    base_delta == Decimal(amount)."""
+    from decimal import Decimal
+    price = r.find("cac:InvoiceLine/cac:Price", _NSD)
+    pa = Decimal(price.find("cbc:PriceAmount", _NSD).text)
+    ac = _sub_el(price, NS_CAC, "AllowanceCharge")
+    _sub_el(ac, NS_CBC, "ChargeIndicator", indicator)
+    _sub_el(ac, NS_CBC, "Amount", amount).set("currencyID", "EUR")
+    _sub_el(ac, NS_CBC, "BaseAmount", str(pa + base_delta)).set(
+        "currencyID", "EUR")
+
+
+def _pepmut_r001(r):
+    r.remove(_child(r, NS_CBC, "ProfileID"))
+
+
+def _pepmut_r005(r):
+    dcc = _child(r, NS_CBC, "DocumentCurrencyCode")
+    tcc = ET.Element(_q(NS_CBC, "TaxCurrencyCode"))
+    tcc.text = dcc.text  # equal codes -> fires
+    r.insert(list(r).index(dcc) + 1, tcc)
+
+
+def _pepmut_r008(r):
+    ET.SubElement(r, _q(NS_CBC, "Note"))  # an empty element anywhere fires
+
+
+def _pepmut_r010(r):
+    party = _customer_party(r)
+    party.remove(party.find("cbc:EndpointID", _NSD))
+
+
+def _pepmut_r020(r):
+    party = _xr_supplier_party(r)
+    party.remove(party.find("cbc:EndpointID", _NSD))
+
+
+def _pepmut_r040(r):
+    # 10.00 != 100.00 * 25 / 100 = 25.00 (off by far more than the 0.02 slack).
+    _pep_add_doc_allowance(r, amount="10.00", base="100.00", percent="25")
+
+
+def _pepmut_r041(r):
+    _pep_add_doc_allowance(r, amount="10.00", percent="25")  # no BaseAmount
+
+
+def _pepmut_r042(r):
+    _pep_add_doc_allowance(r, amount="10.00", base="100.00")  # no percentage
+
+
+def _pepmut_r043(r):
+    _pep_add_doc_allowance(r, indicator="TRUE", amount="10.00")
+
+
+def _pepmut_r044(r):
+    # Price-level CHARGE (indicator true); amounts consistent so R046 holds.
+    from decimal import Decimal
+    _pep_add_price_allowance(r, "true", Decimal("1.00"))
+
+
+def _pepmut_r046(r):
+    # PriceAmount != BaseAmount - Amount (base is 5.00 over, amount only 1.00).
+    from decimal import Decimal
+    _pep_add_price_allowance(r, "false", Decimal("5.00"))
+
+
+_PEPPOL_MUTATIONS = [
+    ("PEPPOL-R001", _pepmut_r001), ("PEPPOL-R005", _pepmut_r005),
+    ("PEPPOL-R008", _pepmut_r008), ("PEPPOL-R010", _pepmut_r010),
+    ("PEPPOL-R020", _pepmut_r020), ("PEPPOL-R040", _pepmut_r040),
+    ("PEPPOL-R041", _pepmut_r041), ("PEPPOL-R042", _pepmut_r042),
+    ("PEPPOL-R043", _pepmut_r043), ("PEPPOL-R044", _pepmut_r044),
+    ("PEPPOL-R046", _pepmut_r046),
+]
+
+
+def _gather_peppol_mutations(scratch: str):
+    """One generated UBL invoice per implemented PEPPOL-EN16931-R* rule, off the
+    clean XR base (the same base the BR-DE mutations use)."""
+    base_root = ET.parse(_XR_BASE).getroot()
+    dst = os.path.join(scratch, "peppol-mutations")
+    os.makedirs(dst, exist_ok=True)
+    out = []
+    for name, mut in _PEPPOL_MUTATIONS:
+        root = copy.deepcopy(base_root)
+        try:
+            mut(root)
+        except Exception as e:  # pragma: no cover
+            print("  [PEPPOL mutation %s FAILED to build: %s]" % (name, e),
+                  file=sys.stderr)
+            continue
+        out_path = os.path.join(dst, "pepmut_%s.xml" % name.replace("-", "_"))
+        _write_doc(root, out_path)
+        out.append(("PEPMUT/%s" % name, out_path))
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # CII (CrossIndustryInvoice) corpus + targeted mutations.                       #
 #                                                                              #
@@ -3416,6 +3584,152 @@ _XR_CII_MUTATIONS = {
 }
 
 
+# --- PEPPOL-EN16931-R* (CII) targeted mutations, off the clean XR-CII base --- #
+def _csub(parent, ns, local, text=None):
+    el = ET.SubElement(parent, _cq(ns, local))
+    if text is not None:
+        el.text = text
+    return el
+
+
+def _pep_cii_add_header_allowance(r, indicator="false", actual=None,
+                                  basis=None, percent=None):
+    """Append a ram:SpecifiedTradeAllowanceCharge to the header settlement
+    (official child order: ChargeIndicator, CalculationPercent, BasisAmount,
+    ActualAmount, Reason, CategoryTradeTax), inserted before the monetary
+    summation."""
+    settle = _cii_settlement(r)
+    ac = ET.Element(_cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ci = _csub(ac, NS_RAM, "ChargeIndicator")
+    _csub(ci, NS_UDT, "Indicator", indicator)
+    if percent is not None:
+        _csub(ac, NS_RAM, "CalculationPercent", percent)
+    if basis is not None:
+        _csub(ac, NS_RAM, "BasisAmount", basis)
+    if actual is not None:
+        _csub(ac, NS_RAM, "ActualAmount", actual)
+    _csub(ac, NS_RAM, "Reason", "Adjustment")
+    ctt = _csub(ac, NS_RAM, "CategoryTradeTax")
+    _csub(ctt, NS_RAM, "TypeCode", "VAT")
+    _csub(ctt, NS_RAM, "CategoryCode", "S")
+    _csub(ctt, NS_RAM, "RateApplicablePercent", "19")
+    summ = settle.find("ram:SpecifiedTradeSettlementHeaderMonetarySummation",
+                       _NSC)
+    settle.insert(list(settle).index(summ), ac)
+
+
+def _pep_cii_add_gross_price(r, indicator, base_delta, actual="1.00"):
+    """Add a ram:GrossPriceProductTradePrice (ChargeAmount = net + base_delta,
+    with an AppliedTradeAllowanceCharge of ``actual``) to the first line's
+    SpecifiedLineTradeAgreement. R046 holds exactly when
+    base_delta == Decimal(actual)."""
+    from decimal import Decimal
+    agr = r.find("rsm:SupplyChainTradeTransaction/"
+                 "ram:IncludedSupplyChainTradeLineItem/"
+                 "ram:SpecifiedLineTradeAgreement", _NSC)
+    net = Decimal(agr.find("ram:NetPriceProductTradePrice/ram:ChargeAmount",
+                           _NSC).text)
+    gp = ET.Element(_cq(NS_RAM, "GrossPriceProductTradePrice"))
+    _csub(gp, NS_RAM, "ChargeAmount", str(net + base_delta))
+    atac = _csub(gp, NS_RAM, "AppliedTradeAllowanceCharge")
+    ci = _csub(atac, NS_RAM, "ChargeIndicator")
+    _csub(ci, NS_UDT, "Indicator", indicator)
+    _csub(atac, NS_RAM, "ActualAmount", actual)
+    agr.insert(0, gp)
+
+
+def _pepcmut_r001(r):
+    ctx = r.find("rsm:ExchangedDocumentContext", _NSC)
+    _cii_remove(r, ctx.find(
+        "ram:BusinessProcessSpecifiedDocumentContextParameter", _NSC))
+
+
+def _pepcmut_r005(r):
+    settle = _cii_settlement(r)
+    icc = settle.find("ram:InvoiceCurrencyCode", _NSC)
+    tcc = ET.Element(_cq(NS_RAM, "TaxCurrencyCode"))
+    tcc.text = icc.text  # equal codes -> fires
+    settle.insert(list(settle).index(icc), tcc)
+
+
+def _pepcmut_r008(r):
+    exdoc = r.find("rsm:ExchangedDocument", _NSC)
+    ET.SubElement(exdoc, _cq(NS_RAM, "IncludedNote"))  # empty element
+
+
+def _pepcmut_r010(r):
+    buyer = _cii_agreement(r).find("ram:BuyerTradeParty", _NSC)
+    _cii_remove(r, buyer.find("ram:URIUniversalCommunication", _NSC))
+
+
+def _pepcmut_r020(r):
+    seller = _cii_agreement(r).find("ram:SellerTradeParty", _NSC)
+    _cii_remove(r, seller.find("ram:URIUniversalCommunication", _NSC))
+
+
+def _pepcmut_r040(r):
+    _pep_cii_add_header_allowance(r, actual="10.00", basis="100.00",
+                                  percent="25")
+
+
+def _pepcmut_r041(r):
+    _pep_cii_add_header_allowance(r, actual="10.00", percent="25")
+
+
+def _pepcmut_r042(r):
+    _pep_cii_add_header_allowance(r, actual="10.00", basis="100.00")
+
+
+def _pepcmut_r043_1(r):
+    _pep_cii_add_header_allowance(r, indicator="TRUE", actual="10.00")
+
+
+def _pepcmut_r043_2(r):
+    from decimal import Decimal
+    _pep_cii_add_gross_price(r, "TRUE", Decimal("1.00"))
+
+
+def _pepcmut_r044(r):
+    from decimal import Decimal
+    _pep_cii_add_gross_price(r, "true", Decimal("1.00"))
+
+
+def _pepcmut_r046(r):
+    from decimal import Decimal
+    _pep_cii_add_gross_price(r, "false", Decimal("5.00"))
+
+
+_PEPPOL_CII_MUTATIONS = [
+    ("PEPPOL-R001", _pepcmut_r001), ("PEPPOL-R005", _pepcmut_r005),
+    ("PEPPOL-R008", _pepcmut_r008), ("PEPPOL-R010", _pepcmut_r010),
+    ("PEPPOL-R020", _pepcmut_r020), ("PEPPOL-R040", _pepcmut_r040),
+    ("PEPPOL-R041", _pepcmut_r041), ("PEPPOL-R042", _pepcmut_r042),
+    ("PEPPOL-R043-1", _pepcmut_r043_1), ("PEPPOL-R043-2", _pepcmut_r043_2),
+    ("PEPPOL-R044", _pepcmut_r044), ("PEPPOL-R046", _pepcmut_r046),
+]
+
+
+def _gather_peppol_cii_mutations(scratch: str):
+    """One generated CII invoice per implemented PEPPOL-EN16931-R* assert, off
+    the clean XRechnung-CII base."""
+    base_root = ET.parse(_XR_CII_BASE).getroot()
+    dst = os.path.join(scratch, "peppol-cii-mutations")
+    os.makedirs(dst, exist_ok=True)
+    out = []
+    for name, mut in _PEPPOL_CII_MUTATIONS:
+        root = copy.deepcopy(base_root)
+        try:
+            mut(root)
+        except Exception as e:  # pragma: no cover
+            print("  [PEPPOL-CII mutation %s FAILED to build: %s]" % (name, e),
+                  file=sys.stderr)
+            continue
+        out_path = os.path.join(dst, "pepcmut_%s.xml" % name.replace("-", "_"))
+        _write_cii_doc(root, out_path)
+        out.append(("PEPCIIMUT/%s" % name, out_path))
+    return out
+
+
 def _gather_xr_cii_reals():
     """(label, path) for the CEN CII examples + every real XRechnung CII invoice
     (*_uncefact.xml) in the xrechnung-testsuite — the adversarial real sample."""
@@ -3463,10 +3777,12 @@ def _gather_xr_cii_mutations(scratch: str):
 
 def build_xr_cii_corpus(scratch: str):
     """Corpus for the XRechnung-CII leg: CEN CII examples + real XRechnung CII
-    invoices + one BR-DE mutation per admitted rule."""
+    invoices + one BR-DE mutation per admitted rule + one PEPPOL-EN16931-R*
+    mutation per implemented assert."""
     entries = []
     entries += _gather_xr_cii_reals()
     entries += _gather_xr_cii_mutations(scratch)
+    entries += _gather_peppol_cii_mutations(scratch)
     seen, uniq = set(), []
     for label, path in entries:
         key = os.path.abspath(path)
@@ -3502,6 +3818,7 @@ def build_xr_corpus(scratch: str):
     entries += _split_cen_testsets(scratch)
     entries += _gather_xr_mutations(scratch)
     entries += _gather_xr_ext_mutations(scratch)
+    entries += _gather_peppol_mutations(scratch)
     seen, uniq = set(), []
     for label, path in entries:
         key = os.path.abspath(path)
@@ -3641,13 +3958,15 @@ def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii")):
     if "xrechnung" in legs:
         corpus = build_xr_corpus(scratch)
         print("#" * 82)
-        print("# LEG 2 — XRechnung CIUS (official KoSIT XRechnung-UBL Schematron 2.5.0)")
+        print("# LEG 2 — XRechnung CIUS + KoSIT-vendored Peppol batch "
+              "(official KoSIT XRechnung-UBL Schematron 2.5.0)")
         print("#" * 82)
         print("Corpus assembled: %d UBL Invoice documents" % len(corpus))
         print("  scratch dir: %s" % scratch)
         divergences += _run_leg("official XRechnung-UBL Schematron",
-                                XR_OFFICIAL_XSLT, XR_RULE_IDS, xr_our_fired,
-                                corpus)
+                                XR_OFFICIAL_XSLT,
+                                XR_RULE_IDS + PEPPOL_UBL_RULE_IDS,
+                                xr_our_fired, corpus)
     if "cii" in legs:
         corpus = build_cii_corpus(scratch)
         print("#" * 82)
@@ -3661,13 +3980,14 @@ def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii")):
     if "xrechnung-cii" in legs:
         corpus = build_xr_cii_corpus(scratch)
         print("#" * 82)
-        print("# LEG 4 — XRechnung CIUS in CII syntax (official KoSIT "
-              "XRechnung-CII Schematron)")
+        print("# LEG 4 — XRechnung CIUS + KoSIT-vendored Peppol batch in CII "
+              "syntax (official KoSIT XRechnung-CII Schematron)")
         print("#" * 82)
         print("Corpus assembled: %d CrossIndustryInvoice documents" % len(corpus))
         print("  scratch dir: %s" % scratch)
         divergences += _run_leg("official XRechnung-CII Schematron",
-                                XR_CII_OFFICIAL_XSLT, CII_XR_RULE_IDS,
+                                XR_CII_OFFICIAL_XSLT,
+                                CII_XR_RULE_IDS + PEPPOL_CII_RULE_IDS,
                                 xr_cii_our_fired, corpus)
     print("OVERALL DIVERGENCES ACROSS LEGS: %d -> %s"
           % (divergences, "OK" if divergences == 0 else "DIVERGED"))

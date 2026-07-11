@@ -37,6 +37,15 @@ What is checked (each its own test):
      re-verified here against a fresh parse AND the raw artifact line, for
      both universes; and NOTHING from the now-implemented IGIC (BR-AF-*) /
      IPSI (BR-AG-*) / split-payment (BR-B-*) families lingers in any gap.
+  7. the KoSIT-vendored Peppol family (PEPPOL-EN16931-R*): the committed
+     peppol_kosit_family section equals a LIVE recomputation — family
+     extracted by a real XML parse of sch:assert/@id from BOTH vendored KoSIT
+     artifacts, implemented ids read from the live einvoice.rules_peppol
+     registries per binding, implemented + known_open partitioning each
+     artifact's canonical universe, worklist texts byte-equal to the
+     artifacts, and no PEPPOL id leaking into the CEN BR-* gap arithmetic —
+     so the family can never silently go stale after an artifact bump or a
+     rule landing.
 """
 
 from __future__ import annotations
@@ -272,6 +281,161 @@ class CoverageGapTest(unittest.TestCase):
         self.assertEqual(set(self.gap["excluded_ids_considered"]), self.excluded)
         for rid in self.gap["excluded_ids_considered"]:
             self.assertRegex(rid, r"^BR-")
+
+    # ---- 7. the KoSIT-vendored Peppol family --------------------------------
+    PEPPOL_BATCH_1 = frozenset(
+        "PEPPOL-EN16931-" + r for r in
+        ("R001", "R005", "R008", "R010", "R020",
+         "R040", "R041", "R042", "R043", "R044", "R046"))
+
+    def _peppol_fam(self):
+        fam = self.matrix.get("peppol_kosit_family")
+        self.assertIsNotNone(
+            fam, "coverage_matrix.json has no 'peppol_kosit_family' section")
+        return fam
+
+    def test_peppol_family_committed_equals_live(self):
+        """The committed family section is deep-equal to a fresh recomputation
+        off the vendored KoSIT .sch artifacts + the live rules_peppol
+        registries — the enumeration can neither be hand-edited nor go stale
+        (an artifact bump that adds/renames a PEPPOL assert fails here until
+        gen_coverage.py is re-run and the diff reviewed)."""
+        self.assertEqual(
+            self._peppol_fam(), _gen.build_peppol_family(),
+            "committed peppol_kosit_family differs from a fresh computation "
+            "off the vendored KoSIT Schematron + live registries — re-run "
+            "gen_coverage.py")
+
+    def test_peppol_family_real_parse_of_both_artifacts(self):
+        """The family in each binding equals a fresh REAL XML parse
+        (sch:assert/@id) of that vendored KoSIT artifact — both bindings, no
+        regex-on-prose, canonical collapse (R043-1/-2) included."""
+        fam = self._peppol_fam()
+        self.assertEqual(fam["artifact_order"],
+                         ["xrechnung-ubl", "xrechnung-cii"])
+        for key in fam["artifact_order"]:
+            art = fam["artifacts"][key]
+            path = os.path.join(HERE, _gen.SCHEMATRON_SOURCES[key]["file"])
+            self.assertEqual(art["source"], _gen.SCHEMATRON_SOURCES[key]["file"])
+            index = _coverage.schematron_assert_index(path)
+            fam_ids = {rid for rid in index
+                       if rid.startswith(_coverage.PEPPOL_FAMILY_PREFIX)}
+            self.assertTrue(fam_ids,
+                            "%s: vendored artifact carries no PEPPOL asserts?!"
+                            % key)
+            self.assertEqual(art["assert_ids"],
+                             sorted(fam_ids, key=_gen._sort_key), key)
+            self.assertEqual(art["family_asserts"], len(fam_ids), key)
+            canonical = {_coverage.peppol_canonical_id(r) for r in fam_ids}
+            self.assertEqual(art["canonical_ids"],
+                             sorted(canonical, key=_gen._sort_key), key)
+            self.assertEqual(art["family_universe"], len(canonical), key)
+
+    def test_peppol_family_partition_and_live_registries(self):
+        """Per binding: implemented + known_open == canonical universe, with
+        the implemented set read from the LIVE per-binding registry — so a
+        rule removed from the engine (or claimed beyond the artifact) fails
+        here immediately."""
+        from einvoice import rules_peppol as _rules_pep
+        fam = self._peppol_fam()
+        live_impl = {
+            "xrechnung-ubl": {fn.rule_id for fn in _rules_pep.UBL_RULES},
+            "xrechnung-cii": {fn.rule_id for fn in _rules_pep.CII_RULES},
+        }
+        all_universe = set()
+        for key in fam["artifact_order"]:
+            art = fam["artifacts"][key]
+            universe = set(art["canonical_ids"])
+            all_universe |= universe
+            impl = live_impl[key]
+            self.assertLessEqual(
+                impl, universe,
+                "%s: engine claims Peppol rules the vendored artifact does "
+                "not carry: %s" % (key, sorted(impl - universe)))
+            self.assertEqual(art["implemented"], len(universe & impl), key)
+            self.assertEqual(art["known_open"], len(universe - impl), key)
+            self.assertEqual(art["implemented"] + art["known_open"],
+                             art["family_universe"],
+                             "%s: implemented + known_open != universe" % key)
+        open_ids = {r["id"] for r in fam["known_open_worklist"]}
+        impl_ids = set(fam["implemented_ids"])
+        self.assertFalse(open_ids & impl_ids,
+                         "id both implemented and known-open")
+        self.assertEqual(open_ids | impl_ids, all_universe,
+                         "worklist + implemented do not partition the family")
+
+    def test_peppol_batch1_implemented_in_both_bindings(self):
+        """The 11 batch-1 rules are implemented wherever the vendored artifact
+        carries the assert — for batch 1 that is BOTH bindings."""
+        from einvoice import rules_peppol as _rules_pep
+        fam = self._peppol_fam()
+        for key, registry in (("xrechnung-ubl", _rules_pep.UBL_RULES),
+                              ("xrechnung-cii", _rules_pep.CII_RULES)):
+            art = fam["artifacts"][key]
+            impl = {fn.rule_id for fn in registry}
+            self.assertLessEqual(self.PEPPOL_BATCH_1, impl,
+                                 "%s: batch-1 rule missing from the live "
+                                 "registry" % key)
+            self.assertLessEqual(self.PEPPOL_BATCH_1, set(art["canonical_ids"]),
+                                 "%s: batch-1 id not in the artifact family"
+                                 % key)
+            # Every registered assert id must exist verbatim in the artifact.
+            index = _coverage.schematron_assert_index(
+                os.path.join(HERE, art["source"]))
+            for fn in registry:
+                self.assertIn(fn.assert_id, index,
+                              "%s: registry assert id %s not in the vendored "
+                              "artifact" % (key, fn.assert_id))
+
+    def test_peppol_worklist_texts_verbatim_and_flags(self):
+        """No fabricated prose: every known-open row carries the official rule
+        text byte-equal to a fresh parse of the binding's artifact, a valid
+        flag, and no assert secretly shipped as a tautology goes unmarked."""
+        fam = self._peppol_fam()
+        indexes = {key: _coverage.schematron_assert_index(
+                       os.path.join(HERE, fam["artifacts"][key]["source"]))
+                   for key in fam["artifact_order"]}
+        for row in fam["known_open_worklist"]:
+            self.assertTrue(row["bindings"], "%s: worklist row with no "
+                            "binding evidence" % row["id"])
+            for key, asserts in row["bindings"].items():
+                for a in asserts:
+                    entry = indexes[key].get(a["assert_id"])
+                    self.assertIsNotNone(entry, "%s/%s: assert vanished from "
+                                         "the artifact" % (row["id"], key))
+                    self.assertEqual(a["text"], entry["text"],
+                                     "%s/%s: text differs from the artifact"
+                                     % (row["id"], key))
+                    self.assertEqual(a["flag"], entry["flag"], row["id"])
+                    self.assertEqual(a["vacuous_in_artifact"],
+                                     entry["vacuous_in_artifact"], row["id"])
+                    self.assertEqual(_coverage.peppol_canonical_id(
+                        a["assert_id"]), row["id"], row["id"])
+
+    def test_peppol_family_stays_out_of_cen_gap(self):
+        """The Peppol family is OUTSIDE the CEN BR-* gap universes: no PEPPOL
+        id may appear in any CEN missing list or in the deliberate-exclusion
+        ids — the fireable-missing == 0 claim is untouched by this family."""
+        for key in self.gap["artifact_order"]:
+            for m in self.gap["artifacts"][key]["missing_rules"]:
+                self.assertNotRegex(m["id"], r"^PEPPOL-", key)
+        for rid in self.gap["excluded_ids_considered"]:
+            self.assertNotRegex(rid, r"^PEPPOL-")
+        # And the CEN universes themselves carry no PEPPOL ids by construction.
+        for key in self.gap["artifact_order"]:
+            index = _index(key)
+            self.assertFalse(
+                {r for r in index if r.startswith("PEPPOL-")},
+                "%s: CEN artifact unexpectedly carries PEPPOL asserts" % key)
+
+    def test_peppol_markdown_section_rendered(self):
+        """COVERAGE.md carries the family section with the honest label and
+        the explicit not-full-BIS disclaimer."""
+        md = open(os.path.join(HERE, "COVERAGE.md"), encoding="utf-8").read()
+        self.assertIn("the Peppol-derived rules KoSIT ships inside the "
+                      "official XRechnung Schematron artifact", md)
+        self.assertIn("NOT full Peppol BIS Billing 3.0", md)
+        self.assertIn("### Known-open worklist", md)
 
     def test_markdown_gap_section_rendered(self):
         """COVERAGE.md carries the rendered Gap section (render is separately

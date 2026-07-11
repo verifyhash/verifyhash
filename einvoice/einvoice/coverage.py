@@ -31,8 +31,13 @@ import xml.etree.ElementTree as ET
 
 from . import rules as _rules
 from . import rules_xrechnung as _rules_xr
+from . import rules_peppol as _rules_pep
 
 _SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
+#: The KoSIT-vendored Peppol family id prefix (canonical rule ids AND the
+#: per-binding assert ids both start with it; the CII artifact splits R043
+#: into two suffixed asserts).
+PEPPOL_FAMILY_PREFIX = "PEPPOL-EN16931-R"
 
 
 # --------------------------------------------------------------------------- #
@@ -72,14 +77,39 @@ def cii_de_rule_ids():
     return {fn.rule_id for fn in _rules_xr.CII_DE_RULES}
 
 
+def peppol_ubl_rule_ids():
+    """Canonical PEPPOL-EN16931-R* ids implemented over UBL
+    (``einvoice.rules_peppol.UBL_RULES``)."""
+    return {fn.rule_id for fn in _rules_pep.UBL_RULES}
+
+
+def peppol_cii_rule_ids():
+    """Canonical PEPPOL-EN16931-R* ids implemented over CII
+    (``einvoice.rules_peppol.CII_RULES``; the two R043 CII asserts collapse
+    onto the one canonical id a Violation reports)."""
+    return {fn.rule_id for fn in _rules_pep.CII_RULES}
+
+
+def peppol_canonical_id(assert_id):
+    """Canonical family id of a vendored ``PEPPOL-EN16931-R*`` assert id: the
+    CII artifact splits one rule across suffixed asserts
+    (``PEPPOL-EN16931-R043-1`` / ``-2``); everything else is already
+    canonical."""
+    m = re.match(r"^(PEPPOL-EN16931-R\d+)(-\d+)?$", assert_id)
+    return m.group(1) if m else assert_id
+
+
 def engine_fireable_ids():
     """The EXACT set of rule ids the validator can emit across every syntax.
 
-    Union of the core ruleset, the UBL German-CIUS/extension layer and the CII
-    German-CIUS layer. The CII layer is a subset of the UBL one, so it adds no
-    new ids, but it is unioned explicitly so the intent is legible.
+    Union of the core ruleset, the UBL German-CIUS/extension layer, the CII
+    German-CIUS layer and the KoSIT-vendored Peppol batch (canonical ids, both
+    bindings). The CII layers are subsets of / identical to their UBL
+    counterparts, so they add no new ids, but they are unioned explicitly so
+    the intent is legible.
     """
-    return core_rule_ids() | ubl_de_rule_ids() | cii_de_rule_ids()
+    return (core_rule_ids() | ubl_de_rule_ids() | cii_de_rule_ids()
+            | peppol_ubl_rule_ids() | peppol_cii_rule_ids())
 
 
 def matrix_rule_ids(matrix):
@@ -330,7 +360,7 @@ def render_markdown(matrix):
         w("- **%s** — %s" % (e["id"], e["reason"]))
     w("")
 
-    w("### Peppol-only rules")
+    w("### Peppol scope")
     w("")
     w(exc["peppol"]["note"].strip())
     w("")
@@ -385,6 +415,47 @@ def render_markdown(matrix):
                   " tautologies")
                 w("listed in the Exclusions section above with verbatim artifact")
                 w("evidence.")
+            w("")
+
+    # --- KoSIT-vendored Peppol family (enumeration + known-open worklist) ---
+    fam = matrix.get("peppol_kosit_family")
+    if fam:
+        w("## `PEPPOL-EN16931-R*` — %s" % fam["label"])
+        w("")
+        w(fam["description"].strip())
+        w("")
+        w("**This is NOT full Peppol BIS Billing 3.0 support** — only the")
+        w("asserts the vendored KoSIT artifact itself carries are enumerated,")
+        w("implemented, or claimed here.")
+        w("")
+        for key in fam["artifact_order"]:
+            a = fam["artifacts"][key]
+            w("### `%s` — %d implemented + %d known-open = %d canonical rules"
+              " (%d asserts)"
+              % (key, a["implemented"], a["known_open"], a["family_universe"],
+                 a["family_asserts"]))
+            w("")
+            w("Family parsed from `%s` (`sch:assert/@id`)." % a["source"])
+            w("")
+        w("Implemented (differentially proven per binding, see the rule table"
+          " above):")
+        w("%s." % ", ".join("`%s`" % i for i in fam["implemented_ids"]))
+        w("")
+        if fam["known_open_worklist"]:
+            w("### Known-open worklist (enumerated, not yet asserted)")
+            w("")
+            w("These canonical ids are shipped by the vendored KoSIT artifacts")
+            w("but not yet implemented — an explicit worklist, not a hidden")
+            w("gap. Official rule text is carried verbatim per binding:")
+            w("")
+            w("| id | binding | assert id | flag | official rule text |")
+            w("| --- | --- | --- | --- | --- |")
+            for row in fam["known_open_worklist"]:
+                for key in fam["artifact_order"]:
+                    for a in row["bindings"].get(key, []):
+                        w("| `%s` | `%s` | `%s` | %s | %s |"
+                          % (row["id"], key, a["assert_id"], a["flag"],
+                             a["text"].replace("|", "\\|")))
             w("")
 
     return "\n".join(lines) + "\n"

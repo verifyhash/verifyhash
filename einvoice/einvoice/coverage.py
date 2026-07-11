@@ -26,9 +26,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import xml.etree.ElementTree as ET
 
 from . import rules as _rules
 from . import rules_xrechnung as _rules_xr
+
+_SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
 
 
 # --------------------------------------------------------------------------- #
@@ -81,6 +85,46 @@ def engine_fireable_ids():
 def matrix_rule_ids(matrix):
     """Set of rule ids declared in a parsed coverage-matrix document."""
     return {r["id"] for r in matrix["rules"]}
+
+
+# --------------------------------------------------------------------------- #
+# Official rule-id universe: real XML parse of a compiled Schematron file.    #
+# --------------------------------------------------------------------------- #
+def schematron_assert_index(path):
+    """Index every ``<sch:assert>`` of a compiled Schematron file by ``@id``.
+
+    A REAL XML parse (:mod:`xml.etree.ElementTree`), not a regex scrape of
+    prose. Returns ``{id: {"flag": str, "text": str, "vacuous_in_artifact":
+    bool}}`` where
+
+    * ``flag`` is the assert's raw ``@flag`` (``fatal`` when absent, matching
+      ISO Schematron's unflagged default in these artifacts),
+    * ``text`` is the assert's official rule prose — full element text with
+      whitespace collapsed and the redundant leading ``[ID]-`` marker the CEN
+      artifacts prepend stripped off, and
+    * ``vacuous_in_artifact`` is True when the assert's ``@test`` is literally
+      ``true()`` (the artifact ships the rule as a tautology that can never
+      fire — worth knowing before implementing it).
+
+    The CEN preprocessed artifacts carry each id exactly once; if an id ever
+    repeated, the FIRST occurrence in document order would win, keeping the
+    result deterministic.
+    """
+    index = {}
+    for a in ET.parse(path).getroot().iter(_SCH_NS + "assert"):
+        rid = a.get("id")
+        if not rid or rid in index:
+            continue
+        text = re.sub(r"\s+", " ", "".join(a.itertext())).strip()
+        marker = "[%s]-" % rid
+        if text.startswith(marker):
+            text = text[len(marker):].strip()
+        index[rid] = {
+            "flag": a.get("flag") or "fatal",
+            "text": text,
+            "vacuous_in_artifact": (a.get("test") or "").strip() == "true()",
+        }
+    return index
 
 
 # --------------------------------------------------------------------------- #
@@ -241,5 +285,42 @@ def render_markdown(matrix):
     w("")
     w(exc["peppol"]["note"].strip())
     w("")
+
+    # --- Gap: official rules neither implemented nor excluded ---
+    gap = matrix.get("gap")
+    if gap:
+        w("## Gap — official rules not yet asserted")
+        w("")
+        w(gap["description"].strip())
+        w("")
+        w("Deliberate exclusions counted against each universe (%d ids, all"
+          % len(gap["excluded_ids_considered"]))
+        w("documented with reasons in the Exclusions section above): %s."
+          % ", ".join("`%s`" % i for i in gap["excluded_ids_considered"]))
+        w("")
+        for key in gap["artifact_order"]:
+            a = gap["artifacts"][key]
+            w("### `%s` — %d implemented + %d excluded + %d missing = %d "
+              "official `BR-*` rules"
+              % (key, a["implemented"], a["excluded"], a["missing"],
+                 a["official_universe"]))
+            w("")
+            w("Universe parsed from `%s` (`sch:assert/@id`). The same file also"
+              % a["source"])
+            w("carries %d non-`BR-*` asserts (%s) — syntax-binding cardinality/"
+              % (a["non_business_rule_asserts"],
+                 ", ".join("`%s-*`" % f for f in a["non_business_rule_families"])))
+            w("data-type restrictions, not EN 16931 business rules, so they are")
+            w("outside this matrix's scope.")
+            w("")
+            w("| id | flag | official rule text |")
+            w("| --- | --- | --- |")
+            for m in a["missing_rules"]:
+                note = (" *(shipped as `test=\"true()\"` in the artifact — a "
+                        "tautology that can never fire officially)*"
+                        if m["vacuous_in_artifact"] else "")
+                w("| `%s` | %s | %s%s |"
+                  % (m["id"], m["flag"], m["text"].replace("|", "\\|"), note))
+            w("")
 
     return "\n".join(lines) + "\n"

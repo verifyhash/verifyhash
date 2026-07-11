@@ -67,6 +67,18 @@ SCHEMATRON_SOURCES = {
 }
 SCHEMATRON_ORDER = ["en16931-ubl", "en16931-cii", "xrechnung-ubl", "xrechnung-cii"]
 
+# Preprocessed (fully compiled, includes-resolved) CEN artifacts — the honest
+# machine-readable universe of official rule ids for the gap computation. The
+# gap is scoped to the two CEN EN 16931 artifacts: the KoSIT layer is a
+# national CIUS on top, not part of the CEN core universe.
+GAP_ARTIFACT_ORDER = ["en16931-ubl", "en16931-cii"]
+GAP_ARTIFACT_SCH = {
+    "en16931-ubl": "corpus/cen-en16931/ubl/schematron/preprocessed/"
+                   "EN16931-UBL-validation-preprocessed.sch",
+    "en16931-cii": "corpus/cen-en16931/cii/schematron/preprocessed/"
+                   "EN16931-CII-validation-preprocessed.sch",
+}
+
 # Differentially-proven graded sets (single source of truth = differential.py).
 CORE_UBL_PROVEN = set(_diff.OUR_RULE_SET)          # LEG 1: all 151 core on UBL
 CORE_CII_PROVEN = set(_diff.CII_RULE_SET)          # LEG 3: core subset on CII
@@ -223,6 +235,83 @@ def _sort_key(rid):
     return (rank, family, num, suffix)
 
 
+def deliberate_exclusion_ids():
+    """Ids deliberately NOT asserted at all (vacuous + deferred code-list) —
+    the only exclusion buckets that subtract from an official universe. The
+    cii_*_out_of_scope buckets are IMPLEMENTED rules (proven on UBL, honestly
+    not graded on CII), so they already count as implemented, never excluded."""
+    from conformance import CALCULATION_ROUNDING_VACUOUS  # noqa: E402
+    return set(CALCULATION_ROUNDING_VACUOUS) | set(CODELIST_NOT_ASSERTED)
+
+
+def _non_br_families(index):
+    """Sorted id-family prefixes (e.g. UBL-CR, CII-DT) of the non-BR asserts."""
+    fams = set()
+    for rid in index:
+        if not rid.startswith("BR-"):
+            m = re.match(r"^([A-Z]+-[A-Z]+)-", rid)
+            fams.add(m.group(1) if m else rid)
+    return sorted(fams)
+
+
+def build_gap(implemented_ids, excluded_ids):
+    """Per CEN artifact: missing = official BR-* universe − implemented − excluded.
+
+    The universe is extracted with a real XML parse of the vendored
+    preprocessed Schematron (:func:`einvoice.coverage.schematron_assert_index`)
+    and scoped to ``BR-*`` business-rule ids — the artifacts' ``UBL-CR-*`` /
+    ``UBL-SR-*`` / ``UBL-DT-*`` / ``CII-SR-*`` / ``CII-DT-*`` asserts are
+    syntax-binding restrictions, not EN 16931 business rules. ``implemented``
+    is intersected with each universe first, so KoSIT ``BR-DE-*`` rules
+    (outside the CEN universe) never inflate the arithmetic. Every rule text is
+    copied verbatim from the artifact, nothing is fabricated.
+    """
+    artifacts = {}
+    for key in GAP_ARTIFACT_ORDER:
+        rel = GAP_ARTIFACT_SCH[key]
+        index = _coverage.schematron_assert_index(os.path.join(HERE, rel))
+        universe = {rid for rid in index if rid.startswith("BR-")}
+        impl_in = universe & implemented_ids
+        excl_in = universe & excluded_ids
+        overlap = sorted(impl_in & excl_in)
+        if overlap:
+            raise AssertionError(
+                "gap buckets not disjoint for %s — implemented AND excluded: %s"
+                % (key, overlap))
+        missing = sorted(universe - impl_in - excl_in, key=_sort_key)
+        artifacts[key] = {
+            "source": rel,
+            "official_universe": len(universe),
+            "implemented": len(impl_in),
+            "excluded": len(excl_in),
+            "missing": len(missing),
+            "non_business_rule_asserts": len(index) - len(universe),
+            "non_business_rule_families": _non_br_families(index),
+            "missing_rules": [
+                {"id": rid,
+                 "flag": index[rid]["flag"],
+                 "vacuous_in_artifact": index[rid]["vacuous_in_artifact"],
+                 "text": index[rid]["text"]}
+                for rid in missing
+            ],
+        }
+    return {
+        "description": (
+            "Machine-checked complement of the rule table: for each CEN "
+            "EN 16931 artifact, every official BR-* assert id that is NEITHER "
+            "implemented by the engine NOR listed as a deliberate exclusion — "
+            "extracted by a real XML parse of sch:assert/@id from the vendored "
+            "preprocessed Schematron, with the official rule text carried "
+            "verbatim. test_coverage_gap.py recomputes this live from the "
+            ".sch files and fails on any drift, so the gap can neither be "
+            "hidden nor go stale. It is the exact worklist for the next rule "
+            "batches."),
+        "artifact_order": GAP_ARTIFACT_ORDER,
+        "excluded_ids_considered": sorted(excluded_ids, key=_sort_key),
+        "artifacts": artifacts,
+    }
+
+
 def build_matrix():
     """Assemble the coverage-matrix document from the live engine + graded sets."""
     entries = {}
@@ -322,6 +411,7 @@ def build_matrix():
                     "XRechnung national CIUS + extension only."),
             },
         },
+        "gap": build_gap(set(entries), deliberate_exclusion_ids()),
     }
     return matrix
 

@@ -481,3 +481,31 @@ artifact ships the assert. The enumeration above stays
 machine-checked, so a future artifact bump that adds a new
 Peppol assert reopens this worklist automatically.
 
+## CII proof parity
+
+**139** rules in the table above are today differentially proven on
+the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
+many of them the official CII artifacts actually carry, by a real
+XML parse of `sch:assert/@id` in the vendored CII Schematron files
+(no prose scraping, no hand lists):
+
+- `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch`
+- `corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch`
+
+Measured split (committed as `cii_parity.json`, live-recomputed by
+`test_cii_parity.py` so it can never silently go stale):
+
+- **131 cii-fireable** — an official CII assert with the same id
+  exists in at least one vendored CII artifact. This is the real
+  QA worklist: the rule officially applies to CII invoices and the
+  engine's coverage there is not yet proven.
+- **8 binding-inapplicable** — no vendored CII artifact carries
+  the id (`BR-DEX-02`, `BR-DEX-03`, `BR-DEX-09`, `BR-DEX-10`, `BR-DEX-11`, `BR-DEX-12`, `BR-DEX-13`, `BR-DEX-14`), so at the vendored
+  artifact versions these rules are officially UBL-only; there is
+  nothing to prove against on the CII leg.
+
+This is a MEASUREMENT, not a claim: no `syntax` tag above flips on
+the strength of it. A cii-fireable rule stays `syntax = UBL` until
+its CII behaviour is differentially proven against the official
+artifact, exactly like every existing `UBL + CII` row.
+

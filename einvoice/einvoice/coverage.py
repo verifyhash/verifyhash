@@ -178,6 +178,23 @@ def load_matrix(path=None):
         return json.load(fh)
 
 
+def default_cii_parity_path():
+    """Path to the committed ``cii_parity.json`` next to the matrix."""
+    return os.path.join(os.path.dirname(default_matrix_path()),
+                        "cii_parity.json")
+
+
+def load_cii_parity(path=None):
+    """Parse the committed CII proof-parity worklist (``cii_parity.json``,
+    built by ``gen_cii_parity.py``), or ``None`` when the file is absent."""
+    if path is None:
+        path = default_cii_parity_path()
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 # --------------------------------------------------------------------------- #
 # Deterministic COVERAGE.md rendering.                                        #
 # --------------------------------------------------------------------------- #
@@ -196,13 +213,18 @@ def _proof_cell(prov, syntax_key):
     return "not proven"
 
 
-def render_markdown(matrix):
+def render_markdown(matrix, cii_parity=None):
     """Render the full COVERAGE.md text from a parsed matrix document.
 
-    Deterministic: output depends only on ``matrix`` (no time, no env). The rule
-    rows follow the order rules appear in ``matrix['rules']`` (the build script
-    writes them in canonical id order), so JSON order == document order.
+    Deterministic: output depends only on ``matrix`` plus the committed
+    ``cii_parity.json`` worklist (no time, no env) — when ``cii_parity`` is
+    not passed it is loaded via :func:`load_cii_parity`, and the section is
+    omitted entirely if that file does not exist. The rule rows follow the
+    order rules appear in ``matrix['rules']`` (the build script writes them
+    in canonical id order), so JSON order == document order.
     """
+    if cii_parity is None:
+        cii_parity = load_cii_parity()
     lines = []
     w = lines.append
 
@@ -466,5 +488,47 @@ def render_markdown(matrix):
             w("machine-checked, so a future artifact bump that adds a new")
             w("Peppol assert reopens this worklist automatically.")
             w("")
+
+    # --- CII proof parity (measured worklist, cii_parity.json) -------------
+    if cii_parity:
+        pr = cii_parity["rules"]
+        n_ubl_only = len(pr)
+        fireable = [e for e in pr if e["classification"] == "cii-fireable"]
+        inapp = [e for e in pr if e["classification"] == "binding-inapplicable"]
+        w("## CII proof parity")
+        w("")
+        w("**%d** rules in the table above are today differentially proven on"
+          % n_ubl_only)
+        w("the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how")
+        w("many of them the official CII artifacts actually carry, by a real")
+        w("XML parse of `sch:assert/@id` in the vendored CII Schematron files")
+        w("(no prose scraping, no hand lists):")
+        w("")
+        for rel in cii_parity["generated_from"]:
+            w("- `%s`" % rel)
+        w("")
+        w("Measured split (committed as `cii_parity.json`, live-recomputed by")
+        w("`test_cii_parity.py` so it can never silently go stale):")
+        w("")
+        w("- **%d cii-fireable** — an official CII assert with the same id"
+          % len(fireable))
+        w("  exists in at least one vendored CII artifact. This is the real")
+        w("  QA worklist: the rule officially applies to CII invoices and the")
+        w("  engine's coverage there is not yet proven.")
+        w("- **%d binding-inapplicable** — no vendored CII artifact carries"
+          % len(inapp))
+        if inapp:
+            w("  the id (%s), so at the vendored"
+              % ", ".join("`%s`" % e["id"] for e in inapp))
+        else:
+            w("  the id, so at the vendored")
+        w("  artifact versions these rules are officially UBL-only; there is")
+        w("  nothing to prove against on the CII leg.")
+        w("")
+        w("This is a MEASUREMENT, not a claim: no `syntax` tag above flips on")
+        w("the strength of it. A cii-fireable rule stays `syntax = UBL` until")
+        w("its CII behaviour is differentially proven against the official")
+        w("artifact, exactly like every existing `UBL + CII` row.")
+        w("")
 
     return "\n".join(lines) + "\n"

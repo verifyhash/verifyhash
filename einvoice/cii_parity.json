@@ -1,0 +1,842 @@
+{
+  "generated_from": [
+    "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+    "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+  ],
+  "rules": [
+    {
+      "id": "BR-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-11",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-17",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-18",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-19",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-20",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-28",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-29",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-30",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-31",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-32",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-33",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-36",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-37",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-38",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-41",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-42",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-43",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-44",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-49",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-50",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-51",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-55",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-57",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-61",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-62",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-63",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-01",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-02",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-03",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-04",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-05",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-06",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-07",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-08",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AE-10",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AF-08",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AF-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AG-08",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-AG-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-CO-11",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-CO-12",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-CO-14",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-CO-15",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DE-18",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-19",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-20",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-22",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-23-a",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-23-b",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-24-a",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-24-b",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-25-a",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-25-b",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-30",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DE-31",
+      "family": "xrechnung-cius",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DEC-01",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DEC-02",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DEC-05",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DEC-06",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DEC-10",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DEC-11",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DEC-16",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DEC-17",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-DEX-01",
+      "family": "xrechnung-extension",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DEX-02",
+      "family": "xrechnung-extension",
+      "classification": "binding-inapplicable",
+      "cii_artifact": null
+    },
+    {
+      "id": "BR-DEX-03",
+      "family": "xrechnung-extension",
+      "classification": "binding-inapplicable",
+      "cii_artifact": null
+    },
+    {
+      "id": "BR-DEX-04",
+      "family": "xrechnung-extension",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DEX-05",
+      "family": "xrechnung-extension",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DEX-06",
+      "family": "xrechnung-extension",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DEX-07",
+      "family": "xrechnung-extension",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DEX-08",
+      "family": "xrechnung-extension",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+    },
+    {
+      "id": "BR-DEX-09",
+      "family": "xrechnung-extension",
+      "classification": "binding-inapplicable",
+      "cii_artifact": null
+    },
+    {
+      "id": "BR-DEX-10",
+      "family": "xrechnung-extension",
+      "classification": "binding-inapplicable",
+      "cii_artifact": null
+    },
+    {
+      "id": "BR-DEX-11",
+      "family": "xrechnung-extension",
+      "classification": "binding-inapplicable",
+      "cii_artifact": null
+    },
+    {
+      "id": "BR-DEX-12",
+      "family": "xrechnung-extension",
+      "classification": "binding-inapplicable",
+      "cii_artifact": null
+    },
+    {
+      "id": "BR-DEX-13",
+      "family": "xrechnung-extension",
+      "classification": "binding-inapplicable",
+      "cii_artifact": null
+    },
+    {
+      "id": "BR-DEX-14",
+      "family": "xrechnung-extension",
+      "classification": "binding-inapplicable",
+      "cii_artifact": null
+    },
+    {
+      "id": "BR-E-01",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-02",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-03",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-04",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-05",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-06",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-07",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-08",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-E-10",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-01",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-02",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-03",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-04",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-05",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-06",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-07",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-08",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-G-10",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-01",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-02",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-03",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-04",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-05",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-06",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-07",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-08",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-11",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-IC-12",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-01",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-02",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-03",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-04",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-05",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-06",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-07",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-08",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-10",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-11",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-12",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-13",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-O-14",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-S-01",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-S-03",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-S-04",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-S-06",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-S-07",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-01",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-02",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-03",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-04",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-05",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-06",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-07",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-08",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-09",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    },
+    {
+      "id": "BR-Z-10",
+      "family": "core",
+      "classification": "cii-fireable",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+    }
+  ]
+}

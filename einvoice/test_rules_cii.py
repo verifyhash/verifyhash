@@ -547,5 +547,284 @@ class TestKnownBadCIIXRechnungInvoices(unittest.TestCase):
         self.assert_fires(m, "BR-DE-TMP-32")
 
 
+class TestSupportingDocItemMetadataVatPointBatchCII(unittest.TestCase):
+    """CII-side coverage for BR-23, BR-52, BR-53, BR-54, BR-56, BR-64, BR-65,
+    BR-CO-03, BR-CO-09 and BR-CO-19 — the batch whose CII extraction differs
+    from UBL on every rule (different context nodes, and for BR-53/56/64/65/
+    CO-03/CO-09 genuinely different official predicates). Each case pins a
+    verdict the CII differential leg (``differential.py cii``) proved against
+    the official CEN EN16931-CII Schematron, including the places where the
+    CII binding decides the OPPOSITE of the UBL binding on the same shape."""
+
+    def assert_fired(self, root, rule_id, expect=True):
+        got = _fired_ids(root)
+        if expect:
+            self.assertIn(rule_id, got,
+                          "%s should fire; fired=%s" % (rule_id, sorted(got)))
+        else:
+            self.assertNotIn(rule_id, got,
+                             "%s should NOT fire" % rule_id)
+
+    def _agreement(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement", NS)
+
+    def _product(self, r):
+        return _first_line(r).find("ram:SpecifiedTradeProduct", NS)
+
+    # ---- BR-23 --------------------------------------------------------------
+    def test_br_23_missing_unit_code_fires(self):
+        r = _good_root()
+        del _first_line(r).find("ram:SpecifiedLineTradeDelivery/"
+                                "ram:BilledQuantity", NS).attrib["unitCode"]
+        self.assert_fired(r, "BR-23")
+        self.assert_fired(_good_root(), "BR-23", expect=False)
+
+    def test_br_23_empty_unit_code_holds(self):
+        # Effective-boolean-value of the @unitCode node: existence, so an
+        # empty unitCode="" satisfies BR-23 on CII exactly like on UBL.
+        r = _good_root()
+        _first_line(r).find("ram:SpecifiedLineTradeDelivery/"
+                            "ram:BilledQuantity", NS).set("unitCode", "")
+        self.assert_fired(r, "BR-23", expect=False)
+
+    # ---- BR-52 --------------------------------------------------------------
+    def add_referenced_doc(self, r, issuer_id):
+        ard = ET.SubElement(self._agreement(r),
+                            _q(NSA, "AdditionalReferencedDocument"))
+        if issuer_id is not None:
+            ET.SubElement(ard, _q(NSA, "IssuerAssignedID")).text = issuer_id
+        ET.SubElement(ard, _q(NSA, "TypeCode")).text = "916"
+
+    def test_br_52_missing_issuer_id_fires(self):
+        r = _good_root()
+        self.add_referenced_doc(r, None)
+        self.assert_fired(r, "BR-52")
+        self.assert_fired(_good_root(), "BR-52", expect=False)
+
+    def test_br_52_with_issuer_id_holds(self):
+        r = _good_root()
+        self.add_referenced_doc(r, "DOC-1")
+        self.assert_fired(r, "BR-52", expect=False)
+
+    # ---- BR-53 --------------------------------------------------------------
+    def add_tax_currency(self, r, code):
+        settle = _settlement(r)
+        icc = settle.find("ram:InvoiceCurrencyCode", NS)
+        tcc = ET.Element(_q(NSA, "TaxCurrencyCode"))
+        tcc.text = code
+        settle.insert(list(settle).index(icc) + 1, tcc)
+
+    def test_br_53_tax_currency_without_matching_total_fires(self):
+        # BT-6 = USD, but the header summation's only ram:TaxTotalAmount
+        # carries @currencyID="EUR".
+        r = _good_root()
+        self.add_tax_currency(r, "USD")
+        self.assert_fired(r, "BR-53")
+        self.assert_fired(_good_root(), "BR-53", expect=False)
+
+    def test_br_53_matching_accounting_total_holds(self):
+        r = _good_root()
+        self.add_tax_currency(r, "USD")
+        tta = ET.SubElement(_summation(r), _q(NSA, "TaxTotalAmount"))
+        tta.text = "24.42"
+        tta.set("currencyID", "USD")
+        self.assert_fired(r, "BR-53", expect=False)
+
+    def test_br_53_tax_currency_equal_to_invoice_currency_fires(self):
+        # The CII-only conjunct not(BT-6 = BT-5): declaring the accounting
+        # currency EQUAL to the invoice currency fires even though a matching
+        # EUR ram:TaxTotalAmount exists. (The UBL binding has no such clause.)
+        r = _good_root()
+        self.add_tax_currency(r, "EUR")
+        self.assert_fired(r, "BR-53")
+
+    # ---- BR-54 --------------------------------------------------------------
+    def add_characteristic(self, r, description=None, value=None):
+        apc = ET.SubElement(self._product(r),
+                            _q(NSA, "ApplicableProductCharacteristic"))
+        if description is not None:
+            ET.SubElement(apc, _q(NSA, "Description")).text = description
+        if value is not None:
+            ET.SubElement(apc, _q(NSA, "Value")).text = value
+
+    def test_br_54_description_without_value_fires(self):
+        r = _good_root()
+        self.add_characteristic(r, description="Colour")
+        self.assert_fired(r, "BR-54")
+        self.assert_fired(_good_root(), "BR-54", expect=False)
+
+    def test_br_54_description_and_value_hold(self):
+        r = _good_root()
+        self.add_characteristic(r, description="Colour", value="Red")
+        self.assert_fired(r, "BR-54", expect=False)
+
+    # ---- BR-56 --------------------------------------------------------------
+    def add_tax_representative(self, r, va_id=None):
+        trp = ET.SubElement(self._agreement(r),
+                            _q(NSA, "SellerTaxRepresentativeTradeParty"))
+        ET.SubElement(trp, _q(NSA, "Name")).text = "Rep A"
+        pta = ET.SubElement(trp, _q(NSA, "PostalTradeAddress"))
+        ET.SubElement(pta, _q(NSA, "CountryID")).text = "NL"
+        if va_id is not None:
+            reg = ET.SubElement(trp, _q(NSA, "SpecifiedTaxRegistration"))
+            id_el = ET.SubElement(reg, _q(NSA, "ID"))
+            id_el.text = va_id
+            id_el.set("schemeID", "VA")
+
+    def test_br_56_representative_without_registration_fires(self):
+        r = _good_root()
+        self.add_tax_representative(r)
+        self.assert_fired(r, "BR-56")
+        self.assert_fired(_good_root(), "BR-56", expect=False)
+
+    def test_br_56_empty_va_id_fires_on_cii(self):
+        # normalize-space(...) != '' — the CII binding REQUIRES a non-empty
+        # identifier, where the UBL binding (pure existence) accepts an empty
+        # CompanyID. Same shape, opposite verdict, both official.
+        r = _good_root()
+        self.add_tax_representative(r, va_id="")
+        self.assert_fired(r, "BR-56")
+
+    def test_br_56_with_va_id_holds(self):
+        r = _good_root()
+        self.add_tax_representative(r, va_id="NL123456789B01")
+        self.assert_fired(r, "BR-56", expect=False)
+
+    # ---- BR-64 / BR-65 -------------------------------------------------------
+    def add_global_id(self, r, scheme_id):
+        gid = ET.Element(_q(NSA, "GlobalID"))
+        gid.text = "1234567890123"
+        if scheme_id is not None:
+            gid.set("schemeID", scheme_id)
+        self._product(r).insert(0, gid)
+
+    def test_br_64_missing_scheme_id_fires(self):
+        r = _good_root()
+        self.add_global_id(r, None)
+        self.assert_fired(r, "BR-64")
+        self.assert_fired(_good_root(), "BR-64", expect=False)
+
+    def test_br_64_empty_scheme_id_fires_on_cii(self):
+        # normalize-space(@schemeID) != '' — empty fires here, while the UBL
+        # binding (exists(@schemeID)) holds on the same shape.
+        r = _good_root()
+        self.add_global_id(r, "")
+        self.assert_fired(r, "BR-64")
+
+    def test_br_64_with_scheme_id_holds(self):
+        r = _good_root()
+        self.add_global_id(r, "0160")
+        self.assert_fired(r, "BR-64", expect=False)
+
+    def add_classification(self, r, list_id):
+        dpc = ET.SubElement(self._product(r),
+                            _q(NSA, "DesignatedProductClassification"))
+        cc = ET.SubElement(dpc, _q(NSA, "ClassCode"))
+        cc.text = "9873242"
+        if list_id is not None:
+            cc.set("listID", list_id)
+
+    def test_br_65_missing_list_id_fires(self):
+        r = _good_root()
+        self.add_classification(r, None)
+        self.assert_fired(r, "BR-65")
+        self.assert_fired(_good_root(), "BR-65", expect=False)
+
+    def test_br_65_with_list_id_holds(self):
+        r = _good_root()
+        self.add_classification(r, "TST")
+        self.assert_fired(r, "BR-65", expect=False)
+
+    # ---- BR-CO-03 ------------------------------------------------------------
+    def add_tax_point_fields(self, r, date=True, code=True):
+        tt = _first_breakdown(r)
+        if date:
+            ET.SubElement(tt, _q(NSA, "TaxPointDate"))
+        if code:
+            ET.SubElement(tt, _q(NSA, "DueDateTypeCode")).text = "35"
+
+    def test_br_co_03_both_present_fires(self):
+        r = _good_root()
+        self.add_tax_point_fields(r)
+        self.assert_fired(r, "BR-CO-03")
+        self.assert_fired(_good_root(), "BR-CO-03", expect=False)
+
+    def test_br_co_03_date_alone_holds(self):
+        r = _good_root()
+        self.add_tax_point_fields(r, code=False)
+        self.assert_fired(r, "BR-CO-03", expect=False)
+
+    def test_br_co_03_no_breakdown_rows_holds_on_cii(self):
+        # The CII assert lives on //ram:ApplicableHeaderTradeSettlement/
+        # ram:ApplicableTradeTax: with NO document-level breakdown rows the
+        # official artifact has no context node and stays silent even though
+        # BT-7 and BT-8 are both present (on a line-level trade tax). Other
+        # rules (BR-CO-18 etc.) fire instead.
+        r = _good_root()
+        line_tt = _first_line(r).find("ram:SpecifiedLineTradeSettlement/"
+                                      "ram:ApplicableTradeTax", NS)
+        ET.SubElement(line_tt, _q(NSA, "TaxPointDate"))
+        ET.SubElement(line_tt, _q(NSA, "DueDateTypeCode")).text = "35"
+        settle = _settlement(r)
+        for tt in settle.findall("ram:ApplicableTradeTax", NS):
+            settle.remove(tt)
+        got = _fired_ids(r)
+        self.assertNotIn("BR-CO-03", got)
+        self.assertIn("BR-CO-18", got)  # sanity: the breakdown IS gone
+
+    # ---- BR-CO-09 ------------------------------------------------------------
+    def _seller_va_id(self, r):
+        seller = self._agreement(r).find("ram:SellerTradeParty", NS)
+        for id_el in seller.findall("ram:SpecifiedTaxRegistration/ram:ID", NS):
+            if id_el.get("schemeID") == "VA":
+                return id_el
+        raise AssertionError("base invoice lost its VA registration")
+
+    def test_br_co_09_unlisted_prefix_fires(self):
+        r = _good_root()
+        self._seller_va_id(r).text = "XX8200.98.395.B.01"
+        self.assert_fired(r, "BR-CO-09")
+        self.assert_fired(_good_root(), "BR-CO-09", expect=False)
+
+    def test_br_co_09_greece_el_prefix_holds(self):
+        r = _good_root()
+        self._seller_va_id(r).text = "EL123456789"
+        self.assert_fired(r, "BR-CO-09", expect=False)
+
+    def test_br_co_09_short_id_fires_on_cii(self):
+        # contains(list, concat(' ', substring(., 1, 2), ' ')) — the CII
+        # binding space-wraps the prefix, so a 1-character identifier can never
+        # match a 2-character token and FIRES. The UBL binding (unwrapped
+        # contains) holds on the same shape — see test_rules.py.
+        r = _good_root()
+        self._seller_va_id(r).text = "N"
+        self.assert_fired(r, "BR-CO-09")
+
+    # ---- BR-CO-19 ------------------------------------------------------------
+    def add_billing_period(self, r, start=False, end=False):
+        period = ET.SubElement(_settlement(r),
+                               _q(NSA, "BillingSpecifiedPeriod"))
+        for flag, local in ((start, "StartDateTime"), (end, "EndDateTime")):
+            if flag:
+                dt = ET.SubElement(period, _q(NSA, local))
+                ds = ET.SubElement(
+                    dt, "{urn:un:unece:uncefact:data:standard:"
+                        "UnqualifiedDataType:100}DateTimeString")
+                ds.set("format", "102")
+                ds.text = "20181201"
+
+    def test_br_co_19_empty_period_fires(self):
+        r = _good_root()
+        self.add_billing_period(r)
+        self.assert_fired(r, "BR-CO-19")
+        self.assert_fired(_good_root(), "BR-CO-19", expect=False)
+
+    def test_br_co_19_start_date_alone_holds(self):
+        r = _good_root()
+        self.add_billing_period(r, start=True)
+        self.assert_fired(r, "BR-CO-19", expect=False)
+
+
 if __name__ == "__main__":
     unittest.main()

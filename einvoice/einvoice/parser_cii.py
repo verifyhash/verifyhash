@@ -106,6 +106,13 @@ def _norm_space(text):
     return " ".join(text.split())
 
 
+def _strval(el):
+    """XPath string value of an element (ALL descendant text, unstripped),
+    mirroring :func:`einvoice.parser._strval` — the raw atomized value the
+    official general comparisons and ``substring()`` calls read."""
+    return "".join(el.itertext())
+
+
 def _localname(tag):
     """Strip the ``{namespace}`` prefix ElementTree prepends to a tag."""
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
@@ -369,6 +376,86 @@ def build_model(root):
         if el.get("mimeCode") is not None
     ]
 
+    # --- BR-23/52/53/54/56/64/65/CO-03/CO-09/CO-19 context extraction (CII) - #
+    # BR-52 context = //ram:AdditionalReferencedDocument (BG-24, any depth —
+    # header AND line references). Test:
+    # ``normalize-space(ram:IssuerAssignedID) != ''`` over the FIRST child.
+    for ard_el in root.findall(".//ram:AdditionalReferencedDocument", NS):
+        id_el = ard_el.find("ram:IssuerAssignedID", NS)
+        inv.supporting_doc_refs.append(
+            _norm_space(_strval(id_el)) if id_el is not None else "")
+    # BR-53 (CII): context = //ram:SpecifiedTradeSettlementHeaderMonetary
+    # Summation; the test reads the settlement's TaxCurrencyCode and
+    # InvoiceCurrencyCode via ABSOLUTE paths and the context node's own
+    # ram:TaxTotalAmount/@currencyID. All comparisons are over RAW values.
+    _settle_path = ("rsm:SupplyChainTradeTransaction/"
+                    "ram:ApplicableHeaderTradeSettlement")
+    inv.tax_currency_codes_raw = [
+        _strval(el)
+        for el in root.findall(_settle_path + "/ram:TaxCurrencyCode", NS)]
+    inv.cii_invoice_currency_codes_raw = [
+        _strval(el)
+        for el in root.findall(_settle_path + "/ram:InvoiceCurrencyCode", NS)]
+    inv.cii_summation_taxtotal_currencies = [
+        [tta.get("currencyID")
+         for tta in summ.findall("ram:TaxTotalAmount", NS)
+         if tta.get("currencyID") is not None]
+        for summ in root.findall(
+            ".//ram:SpecifiedTradeSettlementHeaderMonetarySummation", NS)]
+    # BR-54 context = //ram:ApplicableProductCharacteristic (BG-32). Test:
+    # ``(ram:Description) and (ram:Value)`` — child-element existence.
+    for apc_el in root.findall(".//ram:ApplicableProductCharacteristic", NS):
+        inv.item_attributes.append(
+            (apc_el.find("ram:Description", NS) is not None,
+             apc_el.find("ram:Value", NS) is not None))
+    # BR-56 context = //ram:SellerTaxRepresentativeTradeParty (BG-11). Test:
+    # ``normalize-space(ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA'])
+    # != ''`` — the VA-scheme ID must exist AND be non-empty (unlike the UBL
+    # pure-existence binding; the @schemeID='VA' predicate compares RAW).
+    for trp_el in root.findall(".//ram:SellerTaxRepresentativeTradeParty", NS):
+        va_ids = [id_el for id_el in trp_el.findall(
+                      "ram:SpecifiedTaxRegistration/ram:ID", NS)
+                  if id_el.get("schemeID") == "VA"]
+        inv.taxrep_vat_ids_ok.append(
+            bool(va_ids) and bool(_norm_space(_strval(va_ids[0]))))
+    # BR-64 context = //ram:IncludedSupplyChainTradeLineItem. Test:
+    # ``normalize-space(ram:SpecifiedTradeProduct/ram:GlobalID/@schemeID) != ''
+    #   or not(ram:SpecifiedTradeProduct/ram:GlobalID)`` — one verdict per line
+    # WITH a GlobalID (lines without one hold via the second disjunct).
+    for line_el in root.findall(
+            ".//ram:IncludedSupplyChainTradeLineItem", NS):
+        gids = line_el.findall("ram:SpecifiedTradeProduct/ram:GlobalID", NS)
+        if gids:
+            inv.item_std_ids_scheme_ok.append(
+                bool(_norm_space(gids[0].get("schemeID") or "")))
+    # BR-65 context = //ram:DesignatedProductClassification. Test:
+    # ``normalize-space(ram:ClassCode/@listID) != '' or not(ram:ClassCode)``.
+    for dpc_el in root.findall(".//ram:DesignatedProductClassification", NS):
+        ccs = dpc_el.findall("ram:ClassCode", NS)
+        if ccs:
+            inv.item_class_ids_scheme_ok.append(
+                bool(_norm_space(ccs[0].get("listID") or "")))
+    # BR-CO-03 (CII): the test is GLOBAL — ``//ram:TaxPointDate`` (BT-7) and
+    # ``//ram:DueDateTypeCode`` (BT-8) — evaluated per VAT-breakdown row
+    # (the rule's context; the rules layer gates on all_tax_subtotals).
+    inv.has_tax_point_date = root.find(".//ram:TaxPointDate", NS) is not None
+    inv.has_tax_point_date_code = (
+        root.find(".//ram:DueDateTypeCode", NS) is not None)
+    # BR-CO-09 context = //ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA'].
+    # The tested value is ``substring(., 1, 2)`` — raw first two characters.
+    for id_el in root.findall(".//ram:SpecifiedTaxRegistration/ram:ID", NS):
+        if id_el.get("schemeID") == "VA":
+            inv.vat_id_prefixes.append(_strval(id_el)[:2])
+    # BR-CO-19 context = //ram:ApplicableHeaderTradeSettlement/
+    # ram:BillingSpecifiedPeriod (BG-14). Test: ``(ram:StartDateTime) or
+    # (ram:EndDateTime)`` — element existence.
+    for period_el in root.findall(
+            ".//ram:ApplicableHeaderTradeSettlement/"
+            "ram:BillingSpecifiedPeriod", NS):
+        inv.invoice_period_filled.append(
+            period_el.find("ram:StartDateTime", NS) is not None
+            or period_el.find("ram:EndDateTime", NS) is not None)
+
     # -- BT-24 Specification identifier (ExchangedDocumentContext) ----------
     inv.customization_id = _text(root.find(
         "rsm:ExchangedDocumentContext/"
@@ -515,6 +602,13 @@ def build_model(root):
                 "ram:AssociatedDocumentLineDocument/ram:LineID", NS))  # BT-126
             ln.quantity = _text(ln_el.find(
                 "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity", NS))  # BT-129
+            # BR-23 (CII test, per line): effective boolean value of
+            # ram:SpecifiedLineTradeDelivery/ram:BilledQuantity/@unitCode —
+            # attribute existence (an empty unitCode="" satisfies it).
+            ln.has_quantity_unit_code = any(
+                q_el.get("unitCode") is not None
+                for q_el in ln_el.findall(
+                    "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity", NS))
             lea_el = ln_el.find(
                 "ram:SpecifiedLineTradeSettlement/"
                 "ram:SpecifiedTradeSettlementLineMonetarySummation/"

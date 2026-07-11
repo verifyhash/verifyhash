@@ -30,13 +30,13 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**211 rules** in total — 201 fatal, 9 warning, 1 information — across 14 families.
+**221 rules** in total — 211 fatal, 9 warning, 1 information — across 14 families.
 
 ## Families
 
-- **BR** (51) — Core EN 16931 content and cardinality rules.
+- **BR** (58) — Core EN 16931 content and cardinality rules.
 - **BR-CL** (15) — Code-list rules — a coded value must come from the referenced official code list.
-- **BR-CO** (10) — Calculation and consistency rules (cross-total arithmetic).
+- **BR-CO** (13) — Calculation and consistency rules (cross-total arithmetic).
 - **BR-DEC** (15) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **BR-AE** (10) — VAT breakdown rules for VAT category code AE.
 - **BR-E** (10) — VAT breakdown rules for VAT category code E.
@@ -250,6 +250,15 @@ Core EN 16931 content and cardinality rules.
 - **Fix:** Add the required element at `cac:InvoiceLine`: Each Invoice line (BG-25) shall have an Invoiced quantity (BT-129).
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “Each Invoice line (BG-25) shall have an Invoiced quantity (BT-129).”
+
+### BR-23 — An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).
+
+- **Requires:** An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).
+- **Business terms:** BG-25, BT-130
+- **Location:** `cac:InvoiceLine`
+- **Fix:** Add the required element at `cac:InvoiceLine`: An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).”
 
 ### BR-24 — Each Invoice line shall have an Invoice line net amount (BT-131).
 
@@ -467,6 +476,33 @@ Core EN 16931 content and cardinality rules.
 - **Severity:** warning
 - **Provenance:** `en16931-ubl` — “In accordance with card payments security standards an invoice should never include a full card primary account number (BT-87). At the moment PCI Security Standards Council has defined that the first 6 digits and last 4 digits are the maximum number of digits to be shown.”
 
+### BR-52 — Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122).
+
+- **Requires:** Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122).
+- **Business terms:** BG-24, BT-122
+- **Location:** `cac:AdditionalDocumentReference`
+- **Fix:** Add the required element at `cac:AdditionalDocumentReference`: Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122).”
+
+### BR-53 — If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.
+
+- **Requires:** If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.
+- **Business terms:** BT-6, BT-111
+- **Location:** `cbc:TaxCurrencyCode`
+- **Fix:** Add the required element at `cbc:TaxCurrencyCode`: If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.”
+
+### BR-54 — Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).
+
+- **Requires:** Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).
+- **Business terms:** BG-32, BT-160, BT-161
+- **Location:** `//cac:AdditionalItemProperty`
+- **Fix:** Add the required element at `//cac:AdditionalItemProperty`: Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).”
+
 ### BR-55 — Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25).
 
 - **Requires:** Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25).
@@ -475,6 +511,15 @@ Core EN 16931 content and cardinality rules.
 - **Fix:** Add the required element at `cac:BillingReference`: Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25).
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25).”
+
+### BR-56 — Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63).
+
+- **Requires:** Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63).
+- **Business terms:** BG-11, BT-63
+- **Location:** `cac:TaxRepresentativeParty`
+- **Fix:** Correct `cac:TaxRepresentativeParty` so that Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63).”
 
 ### BR-57 — Each Deliver to address (BG-15) shall contain a Deliver to country code (BT-80).
 
@@ -511,6 +556,24 @@ Core EN 16931 content and cardinality rules.
 - **Fix:** Add the required element at `cac:AccountingCustomerParty/cac:Party/cbc:EndpointID`: The Buyer electronic address (BT-49) shall have a Scheme identifier.
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “The Buyer electronic address (BT-49) shall have a Scheme identifier.”
+
+### BR-64 — The Item standard identifier (BT-157) shall have a Scheme identifier.
+
+- **Requires:** The Item standard identifier (BT-157) shall have a Scheme identifier.
+- **Business terms:** BT-157
+- **Location:** `cac:InvoiceLine/cac:Item/cac:StandardItemIdentification/cbc:ID`
+- **Fix:** Add the required element at `cac:InvoiceLine/cac:Item/cac:StandardItemIdentification/cbc:ID`: The Item standard identifier (BT-157) shall have a Scheme identifier.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “The Item standard identifier (BT-157) shall have a Scheme identifier.”
+
+### BR-65 — The Item classification identifier (BT-158) shall have a Scheme identifier.
+
+- **Requires:** The Item classification identifier (BT-158) shall have a Scheme identifier.
+- **Business terms:** BT-158
+- **Location:** `cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`
+- **Fix:** Add the required element at `cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`: The Item classification identifier (BT-158) shall have a Scheme identifier.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “The Item classification identifier (BT-158) shall have a Scheme identifier.”
 
 ## BR-CL
 
@@ -655,6 +718,15 @@ Code-list rules — a coded value must come from the referenced official code li
 
 Calculation and consistency rules (cross-total arithmetic).
 
+### BR-CO-03 — Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.
+
+- **Requires:** Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.
+- **Business terms:** BT-7, BT-8
+- **Location:** `cac:LegalMonetaryTotal`
+- **Fix:** Add the required element at `cac:LegalMonetaryTotal`: Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.”
+
 ### BR-CO-04 — Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151).
 
 - **Requires:** Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151).
@@ -663,6 +735,15 @@ Calculation and consistency rules (cross-total arithmetic).
 - **Fix:** Correct `cac:InvoiceLine` so that Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151).
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151).”
+
+### BR-CO-09 — The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix 'EL'.
+
+- **Requires:** The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’.
+- **Business terms:** BT-31, BT-48, BT-63
+- **Location:** `//cac:PartyTaxScheme[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Add the required element at `//cac:PartyTaxScheme[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’.”
 
 ### BR-CO-10 — Sum of Invoice line net amount (BT-106) = Σ line net amount (BT-131).
 
@@ -744,6 +825,15 @@ Calculation and consistency rules (cross-total arithmetic).
 - **Fix:** Add the required element at `cac:TaxTotal/cac:TaxSubtotal`: An Invoice shall at least have one VAT breakdown group (BG-23).
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “An Invoice shall at least have one VAT breakdown group (BG-23).”
+
+### BR-CO-19 — If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.
+
+- **Requires:** If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.
+- **Business terms:** BG-14, BT-73, BT-74
+- **Location:** `cac:InvoicePeriod`
+- **Fix:** Add the required element at `cac:InvoicePeriod`: If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.”
 
 ## BR-DEC
 

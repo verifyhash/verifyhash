@@ -151,7 +151,7 @@ class CoverageGapTest(unittest.TestCase):
     def test_known_missing_families_present_in_ubl_gap(self):
         ubl = {m["id"] for m in
                self.gap["artifacts"]["en16931-ubl"]["missing_rules"]}
-        for rid in ("BR-AF-01", "BR-AG-01", "BR-CO-19"):
+        for rid in ("BR-AF-01", "BR-AG-01", "BR-CO-20"):
             self.assertIn(rid, ubl, "expected known-missing %s in UBL gap" % rid)
 
     def test_excluded_ids_considered_matches_live_sources(self):

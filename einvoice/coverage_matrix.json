@@ -34,7 +34,7 @@
       "license": "Apache-2.0"
     }
   },
-  "rule_count": 211,
+  "rule_count": 221,
   "rules": [
     {
       "id": "BR-01",
@@ -549,6 +549,30 @@
     {
       "id": "BR-22",
       "title": "Each Invoice line shall have an Invoiced quantity (BT-129).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-23",
+      "title": "An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).",
       "family": "core",
       "syntax": "both",
       "severity": "fatal",
@@ -1163,6 +1187,78 @@
       }
     },
     {
+      "id": "BR-52",
+      "title": "Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-53",
+      "title": "If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-54",
+      "title": "Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
       "id": "BR-55",
       "title": "Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25).",
       "family": "core",
@@ -1184,6 +1280,30 @@
           "version": "1.3.16",
           "differentially_proven": false,
           "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-56",
+      "title": "Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
         }
       }
     },
@@ -1284,6 +1404,54 @@
           "version": "1.3.16",
           "differentially_proven": false,
           "reason": "core rule not included in the CII differential leg (LEG 3) graded subset; the syntax-agnostic rule body can run over the CII model but CII parity is not asserted for it."
+        }
+      }
+    },
+    {
+      "id": "BR-64",
+      "title": "The Item standard identifier (BT-157) shall have a Scheme identifier.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-65",
+      "title": "The Item classification identifier (BT-158) shall have a Scheme identifier.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
         }
       }
     },
@@ -1648,8 +1816,56 @@
       }
     },
     {
+      "id": "BR-CO-03",
+      "title": "Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
       "id": "BR-CO-04",
       "title": "Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-09",
+      "title": "The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix 'EL'.",
       "family": "core",
       "syntax": "both",
       "severity": "fatal",
@@ -1870,6 +2086,30 @@
     {
       "id": "BR-CO-18",
       "title": "An Invoice shall at least have one VAT breakdown group (BG-23).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CO-19",
+      "title": "If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.",
       "family": "core",
       "syntax": "both",
       "severity": "fatal",
@@ -5381,9 +5621,9 @@
       "en16931-ubl": {
         "source": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
         "official_universe": 223,
-        "implemented": 165,
+        "implemented": 175,
         "excluded": 10,
-        "missing": 48,
+        "missing": 38,
         "non_business_rule_asserts": 756,
         "non_business_rule_families": [
           "UBL-CR",
@@ -5391,54 +5631,6 @@
           "UBL-SR"
         ],
         "missing_rules": [
-          {
-            "id": "BR-23",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130)."
-          },
-          {
-            "id": "BR-52",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122)."
-          },
-          {
-            "id": "BR-53",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided."
-          },
-          {
-            "id": "BR-54",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161)."
-          },
-          {
-            "id": "BR-56",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63)."
-          },
-          {
-            "id": "BR-64",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The Item standard identifier (BT-157) shall have a Scheme identifier."
-          },
-          {
-            "id": "BR-65",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The Item classification identifier (BT-158) shall have a Scheme identifier."
-          },
-          {
-            "id": "BR-CO-03",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive."
-          },
           {
             "id": "BR-CO-05",
             "flag": "fatal",
@@ -5462,18 +5654,6 @@
             "flag": "fatal",
             "vacuous_in_artifact": true,
             "text": "Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason."
-          },
-          {
-            "id": "BR-CO-09",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’."
-          },
-          {
-            "id": "BR-CO-19",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both."
           },
           {
             "id": "BR-CO-20",
@@ -5684,63 +5864,15 @@
       "en16931-cii": {
         "source": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
         "official_universe": 223,
-        "implemented": 165,
+        "implemented": 175,
         "excluded": 10,
-        "missing": 48,
+        "missing": 38,
         "non_business_rule_asserts": 583,
         "non_business_rule_families": [
           "CII-DT",
           "CII-SR"
         ],
         "missing_rules": [
-          {
-            "id": "BR-23",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130)."
-          },
-          {
-            "id": "BR-52",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122)."
-          },
-          {
-            "id": "BR-53",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided."
-          },
-          {
-            "id": "BR-54",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161)."
-          },
-          {
-            "id": "BR-56",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63)."
-          },
-          {
-            "id": "BR-64",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The Item standard identifier (BT-157) shall have a Scheme identifier."
-          },
-          {
-            "id": "BR-65",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The Item classification identifier (BT-158) shall have a Scheme identifier."
-          },
-          {
-            "id": "BR-CO-03",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive."
-          },
           {
             "id": "BR-CO-05",
             "flag": "fatal",
@@ -5764,18 +5896,6 @@
             "flag": "fatal",
             "vacuous_in_artifact": true,
             "text": "Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason."
-          },
-          {
-            "id": "BR-CO-09",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’."
-          },
-          {
-            "id": "BR-CO-19",
-            "flag": "fatal",
-            "vacuous_in_artifact": false,
-            "text": "If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both."
           },
           {
             "id": "BR-CO-20",

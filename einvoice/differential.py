@@ -111,7 +111,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 165, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 175, OUR_RULE_IDS
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -214,6 +214,21 @@ CII_GRADED_RULES = [
     # rule body runs unchanged and reaches parity with the official CII codes
     # Schematron (same 2162-entry UN/ECE Rec 20 + Rec 21 unit list as UBL).
     _rules.br_cl_23,
+    # Invoiced-quantity unit code (BR-23) — attribute existence per line on
+    # both bindings; the parsers bake each binding's exact check into
+    # ln.has_quantity_unit_code.
+    _rules.br_23,
+    # Supporting documents / item attributes / tax representative / item
+    # identifier-scheme rules (BR-52/54/56/64/65) and the accounting-currency,
+    # VAT-point and invoicing-period constraints (BR-53, BR-CO-03/-09/-19).
+    # Where the CII binding genuinely differs (BR-53's extra BT-6 != BT-5
+    # conjunct, BR-56's non-empty requirement, BR-64/65's normalize-space,
+    # BR-CO-03's per-breakdown-row context, BR-CO-09's space-wrapped contains
+    # and its own pinned prefix list), the rule bodies branch on inv.syntax and
+    # transcribe EACH binding's official predicate exactly.
+    _rules.br_52, _rules.br_53, _rules.br_54, _rules.br_56,
+    _rules.br_64, _rules.br_65,
+    _rules.br_co_03, _rules.br_co_09, _rules.br_co_19,
     # Line VAT category code (BR-CO-04).
     _rules.br_co_04,
     # Document-level arithmetic invariants that reach CII parity.
@@ -1244,6 +1259,102 @@ def _mut_brcl24(r):
     r.insert(list(r).index(_child(r, NS_CAC, "AccountingSupplierParty")), adr)
 
 
+# ---- Supporting-document / item-metadata / VAT-point batch mutations ------- #
+# (BR-23, BR-52, BR-53, BR-54, BR-56, BR-64, BR-65, BR-CO-03/-09/-19)
+def _mut_br23(r):
+    # Strip @unitCode from the first line's InvoicedQuantity (BT-130). BR-23 is
+    # attribute existence; the quantity value itself stays, so BR-22 holds and
+    # BR-CL-23 (unit-code list) loses its context node rather than firing.
+    del _child(_first_line(r), NS_CBC, "InvoicedQuantity").attrib["unitCode"]
+
+
+def _mut_br52(r):
+    # Add an Additional supporting document (BG-24) with NO cbc:ID at all:
+    # normalize-space(cbc:ID) = '' fires BR-52 and nothing else graded.
+    adr = ET.Element(_q(NS_CAC, "AdditionalDocumentReference"))
+    _sub_el(adr, NS_CBC, "DocumentDescription", "timesheet")
+    r.insert(list(r).index(_child(r, NS_CAC, "AccountingSupplierParty")), adr)
+
+
+def _mut_br53(r):
+    # Declare a VAT accounting currency (BT-6 = EUR, base doc currency is DKK)
+    # without adding any EUR cac:TaxTotal/cbc:TaxAmount: the official
+    # ``every $taxcurrency ... satisfies exists(...)`` quantifier fails. EUR is
+    # a listed ISO 4217 code, so BR-CL-05 stays quiet.
+    tcc = ET.Element(_q(NS_CBC, "TaxCurrencyCode"))
+    tcc.text = "EUR"
+    r.insert(list(r).index(_child(r, NS_CBC, "DocumentCurrencyCode")) + 1, tcc)
+
+
+def _mut_br54(r):
+    # Add an Item attribute (BG-32) carrying a Name but NO Value: the official
+    # ``exists(cbc:Name) and exists(cbc:Value)`` conjunction fails.
+    item = _child(_first_line(r), NS_CAC, "Item")
+    aip = _sub_el(item, NS_CAC, "AdditionalItemProperty")
+    _sub_el(aip, NS_CBC, "Name", "Colour")
+
+
+def _mut_br56(r):
+    # Add a Seller tax representative party (BG-11) WITHOUT any VAT-scheme
+    # cac:PartyTaxScheme/cbc:CompanyID. Name + postal address + country are
+    # supplied so the sibling representative rules (BR-18/BR-19/BR-20) hold and
+    # BR-56 is the only graded rule that fires.
+    trp = ET.Element(_q(NS_CAC, "TaxRepresentativeParty"))
+    pn = _sub_el(trp, NS_CAC, "PartyName")
+    _sub_el(pn, NS_CBC, "Name", "Rep A")
+    pa = _sub_el(trp, NS_CAC, "PostalAddress")
+    country = _sub_el(pa, NS_CAC, "Country")
+    _sub_el(country, NS_CBC, "IdentificationCode", "DK")
+    r.insert(list(r).index(_child(r, NS_CAC, "TaxTotal")), trp)
+
+
+def _mut_br64(r):
+    # Add an Item standard identifier (BT-157) with NO @schemeID: BR-64 is
+    # attribute existence, and with the attribute absent BR-CL-21 (ICD list)
+    # has no value to check.
+    item = _child(_first_line(r), NS_CAC, "Item")
+    sii = _sub_el(item, NS_CAC, "StandardItemIdentification")
+    _sub_el(sii, NS_CBC, "ID", "1234567890123")
+
+
+def _mut_br65(r):
+    # Add an Item classification identifier (BT-158) with NO @listID: BR-65 is
+    # attribute existence, and with the attribute absent BR-CL-13 (UNTDID 7143
+    # list) has no value to check.
+    item = _child(_first_line(r), NS_CAC, "Item")
+    cc = _sub_el(item, NS_CAC, "CommodityClassification")
+    _sub_el(cc, NS_CBC, "ItemClassificationCode", "9873242")
+
+
+def _mut_brco03(r):
+    # Provide BOTH the Value added tax point date (BT-7, cbc:TaxPointDate) and
+    # the VAT point date code (BT-8, document cac:InvoicePeriod/
+    # cbc:DescriptionCode '35' = delivery date): mutually exclusive per
+    # BR-CO-03. The base's document InvoicePeriod keeps its start/end dates, so
+    # BR-CO-19/BR-29 hold.
+    tpd = ET.Element(_q(NS_CBC, "TaxPointDate"))
+    tpd.text = "2018-09-30"
+    r.insert(list(r).index(_child(r, NS_CBC, "DocumentCurrencyCode")), tpd)
+    _sub_el(_child(r, NS_CAC, "InvoicePeriod"), NS_CBC, "DescriptionCode", "35")
+
+
+def _mut_brco09(r):
+    # Give the Seller VAT identifier (BT-31) the prefix 'XX' — not a token of
+    # the official UBL prefix string and not any two adjacent characters of it
+    # either, so the raw contains() genuinely fails.
+    pts = _child(_supplier_party(r), NS_CAC, "PartyTaxScheme")
+    _child(pts, NS_CBC, "CompanyID").text = "XX12345678"
+
+
+def _mut_brco19(r):
+    # Empty the document-level Invoicing period (BG-14): with neither StartDate
+    # nor EndDate nor DescriptionCode, BR-CO-19 fires. (The line-level
+    # cac:InvoicePeriod is BG-26/BR-30's context and is left untouched.)
+    period = _child(r, NS_CAC, "InvoicePeriod")
+    period.remove(_child(period, NS_CBC, "StartDate"))
+    period.remove(_child(period, NS_CBC, "EndDate"))
+
+
 _MUTATIONS = {
     "BR-01": _mut_br01, "BR-02": _mut_br02, "BR-03": _mut_br03,
     "BR-04": _mut_br04, "BR-05": _mut_br05, "BR-06": _mut_br06,
@@ -1257,9 +1368,14 @@ _MUTATIONS = {
     "BR-49": _mut_br49, "BR-50": _mut_br50, "BR-51": _mut_br51,
     "BR-55": _mut_br55, "BR-57": _mut_br57, "BR-61": _mut_br61,
     "BR-62": _mut_br62, "BR-63": _mut_br63,
-    "BR-21": _mut_br21, "BR-22": _mut_br22, "BR-24": _mut_br24,
+    "BR-21": _mut_br21, "BR-22": _mut_br22, "BR-23": _mut_br23,
+    "BR-24": _mut_br24,
     "BR-25": _mut_br25, "BR-26": _mut_br26, "BR-27": _mut_br27,
     "BR-28": _mut_br28, "BR-29": _mut_br29, "BR-30": _mut_br30,
+    "BR-52": _mut_br52, "BR-53": _mut_br53, "BR-54": _mut_br54,
+    "BR-56": _mut_br56, "BR-64": _mut_br64, "BR-65": _mut_br65,
+    "BR-CO-03": _mut_brco03, "BR-CO-09": _mut_brco09,
+    "BR-CO-19": _mut_brco19,
     "BR-CO-04": _mut_brco04,
     "BR-CL-01": _mut_brcl01,
     "BR-CL-03": _mut_brcl03, "BR-CL-04": _mut_brcl04, "BR-CL-05": _mut_brcl05,
@@ -2152,14 +2268,121 @@ def _cmut_brcl24(r):
     abo.text = "AAAA"
 
 
+# ---- Supporting-document / item-metadata / VAT-point batch (CII side) ------ #
+def _cmut_br23(r):
+    # Strip @unitCode from the first line's ram:BilledQuantity (BT-130):
+    # attribute existence fails; BR-CL-23 loses its context value instead of
+    # firing.
+    del _cii_first_line(r).find(
+        "ram:SpecifiedLineTradeDelivery/ram:BilledQuantity",
+        _NSC).attrib["unitCode"]
+
+
+def _cmut_br52(r):
+    # Add a header ram:AdditionalReferencedDocument (BG-24) with NO
+    # ram:IssuerAssignedID: normalize-space('') fires BR-52.
+    agreement = r.find("rsm:SupplyChainTradeTransaction/"
+                       "ram:ApplicableHeaderTradeAgreement", _NSC)
+    ard = ET.SubElement(agreement, _cq(NS_RAM, "AdditionalReferencedDocument"))
+    ET.SubElement(ard, _cq(NS_RAM, "TypeCode")).text = "916"
+
+
+def _cmut_br53(r):
+    # Declare a VAT accounting currency (BT-6 = USD; the base invoice currency
+    # is EUR) without any USD ram:TaxTotalAmount on the header summation: the
+    # (ram:TaxTotalAmount/@currencyID = TCC) conjunct of the official CII test
+    # fails. USD is a listed ISO 4217 code, so BR-CL-05 stays quiet.
+    settle = _cii_settlement(r)
+    icc = settle.find("ram:InvoiceCurrencyCode", _NSC)
+    tcc = ET.Element(_cq(NS_RAM, "TaxCurrencyCode"))
+    tcc.text = "USD"
+    settle.insert(list(settle).index(icc) + 1, tcc)
+
+
+def _cmut_br54(r):
+    # Add an Item attribute (BG-32) with a Description (BT-160) but NO Value
+    # (BT-161): the (ram:Description) and (ram:Value) conjunction fails.
+    prod = _cii_first_line(r).find("ram:SpecifiedTradeProduct", _NSC)
+    apc = ET.SubElement(prod, _cq(NS_RAM, "ApplicableProductCharacteristic"))
+    ET.SubElement(apc, _cq(NS_RAM, "Description")).text = "Colour"
+
+
+def _cmut_br56(r):
+    # Add a Seller tax representative (BG-11) WITHOUT a VA-scheme
+    # ram:SpecifiedTaxRegistration/ram:ID: normalize-space('') fires BR-56.
+    # Name + postal address + country keep the ungraded BR-18/19/20 shape sane.
+    agreement = r.find("rsm:SupplyChainTradeTransaction/"
+                       "ram:ApplicableHeaderTradeAgreement", _NSC)
+    trp = ET.SubElement(agreement,
+                        _cq(NS_RAM, "SellerTaxRepresentativeTradeParty"))
+    ET.SubElement(trp, _cq(NS_RAM, "Name")).text = "Rep A"
+    pta = ET.SubElement(trp, _cq(NS_RAM, "PostalTradeAddress"))
+    ET.SubElement(pta, _cq(NS_RAM, "CountryID")).text = "NL"
+
+
+def _cmut_br64(r):
+    # Add a product standard identifier (ram:GlobalID) with NO @schemeID:
+    # normalize-space(@schemeID) = '' fires BR-64; BR-CL-21 has no attribute
+    # value to check.
+    prod = _cii_first_line(r).find("ram:SpecifiedTradeProduct", _NSC)
+    gid = ET.Element(_cq(NS_RAM, "GlobalID"))
+    gid.text = "1234567890123"
+    prod.insert(0, gid)
+
+
+def _cmut_br65(r):
+    # Add a product classification (ram:DesignatedProductClassification/
+    # ram:ClassCode) with NO @listID: normalize-space(@listID) = '' fires
+    # BR-65; BR-CL-13 has no attribute value to check.
+    prod = _cii_first_line(r).find("ram:SpecifiedTradeProduct", _NSC)
+    dpc = ET.SubElement(prod, _cq(NS_RAM, "DesignatedProductClassification"))
+    ET.SubElement(dpc, _cq(NS_RAM, "ClassCode")).text = "9873242"
+
+
+def _cmut_brco03(r):
+    # Provide BOTH the VAT point date (BT-7, ram:TaxPointDate) and the VAT
+    # point date code (BT-8, ram:DueDateTypeCode) on the first document-level
+    # VAT breakdown row: the //-global mutual-exclusion test fails on every
+    # breakdown row.
+    tt = _cii_settlement(r).find("ram:ApplicableTradeTax", _NSC)
+    tpd = ET.SubElement(tt, _cq(NS_RAM, "TaxPointDate"))
+    ds = ET.SubElement(tpd, _cq(NS_UDT, "DateString"))
+    ds.set("format", "102")
+    ds.text = "20181206"
+    ET.SubElement(tt, _cq(NS_RAM, "DueDateTypeCode")).text = "35"
+
+
+def _cmut_brco09(r):
+    # Give the Seller VAT identifier (BT-31, the VA-scheme registration id) the
+    # prefix 'XX' — not a token of the official CII prefix string, so the
+    # space-wrapped contains() fails.
+    for id_el in _cii_seller(r).findall(
+            "ram:SpecifiedTaxRegistration/ram:ID", _NSC):
+        if id_el.get("schemeID") == "VA":
+            id_el.text = "XX8200.98.395.B.01"
+
+
+def _cmut_brco19(r):
+    # Add an EMPTY document-level Invoicing period (BG-14,
+    # ram:BillingSpecifiedPeriod): with neither StartDateTime nor EndDateTime,
+    # BR-CO-19 fires (BR-29 holds — nothing to compare).
+    settle = _cii_settlement(r)
+    settle.append(ET.Element(_cq(NS_RAM, "BillingSpecifiedPeriod")))
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
     "BR-07": _cmut_br07, "BR-08": _cmut_br08, "BR-10": _cmut_br10,
     "BR-12": _cmut_br12, "BR-13": _cmut_br13, "BR-14": _cmut_br14,
     "BR-15": _cmut_br15, "BR-16": _cmut_br16,
-    "BR-21": _cmut_br21, "BR-22": _cmut_br22, "BR-24": _cmut_br24,
+    "BR-21": _cmut_br21, "BR-22": _cmut_br22, "BR-23": _cmut_br23,
+    "BR-24": _cmut_br24,
     "BR-25": _cmut_br25, "BR-26": _cmut_br26, "BR-27": _cmut_br27,
+    "BR-52": _cmut_br52, "BR-53": _cmut_br53, "BR-54": _cmut_br54,
+    "BR-56": _cmut_br56, "BR-64": _cmut_br64, "BR-65": _cmut_br65,
+    "BR-CO-03": _cmut_brco03, "BR-CO-09": _cmut_brco09,
+    "BR-CO-19": _cmut_brco19,
     "BR-CL-01": _cmut_brcl01,
     "BR-CL-03": _cmut_brcl03, "BR-CL-04": _cmut_brcl04, "BR-CL-05": _cmut_brcl05,
     "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,

@@ -313,6 +313,7 @@ CII_SYNTAX_COVERAGE = {
     "BR-16": "At least one Invoice line (BG-25)",
     "BR-21": "Invoice line identifier (BT-126) present",
     "BR-22": "Invoiced quantity (BT-129) present",
+    "BR-23": "Invoiced quantity unit of measure code (BT-130) present",
     "BR-24": "Invoice line net amount (BT-131) present",
     "BR-25": "Item name (BT-153) present",
     "BR-26": "Item net price (BT-146) present",
@@ -332,12 +333,25 @@ CII_SYNTAX_COVERAGE = {
     "BR-CL-22": "VAT exemption reason code (BT-121) in CEF VATEX list",
     "BR-CL-23": "Quantity/base-quantity unit code in UN/ECE Rec 20 + Rec 21",
     "BR-CL-24": "Attachment MIME code (BT-125-1) in the EN 16931 MIMEMediaType subset",
+    "BR-52": "Supporting document reference (BT-122) present per BG-24",
+    "BR-53": "VAT accounting currency (BT-6) present ⇒ VAT total in that "
+             "currency (BT-111) provided",
+    "BR-54": "Item attribute (BG-32) has name (BT-160) and value (BT-161)",
+    "BR-56": "Seller tax representative VAT identifier (BT-63) present",
+    "BR-64": "Item standard identifier (BT-157) has a scheme identifier",
+    "BR-65": "Item classification identifier (BT-158) has a scheme identifier",
+    "BR-CO-03": "VAT point date (BT-7) and VAT point date code (BT-8) "
+                "mutually exclusive",
     "BR-CO-04": "Each line categorized with a VAT category code (BT-151)",
+    "BR-CO-09": "Seller/tax-representative/buyer VAT identifier prefixed "
+                "with an ISO 3166-1 alpha-2 country code (Greece: 'EL')",
     "BR-CO-10": "Sum of line net amount (BT-106) = Σ line net (BT-131)",
     "BR-CO-13": "Total without VAT (BT-109) = line-net − allowances + charges",
     "BR-CO-16": "Amount due (BT-115) = total with VAT − paid + rounding",
     "BR-CO-17": "VAT category tax = taxable × rate/100 (±1 tolerance)",
     "BR-CO-18": "At least one VAT breakdown group (BG-23)",
+    "BR-CO-19": "Invoicing period (BG-14) used ⇒ start (BT-73) or end "
+                "(BT-74) date filled",
     "BR-45": "VAT breakdown taxable amount (BT-116) present",
     "BR-46": "VAT breakdown tax amount (BT-117) present",
     "BR-47": "VAT breakdown VAT category code (BT-118) present",

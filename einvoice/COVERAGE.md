@@ -23,9 +23,9 @@ XSLT and compares the fired-rule set. The sources:
 
 ## Coverage at a glance
 
-- **211 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **76** proven on both UBL and CII, **135** UBL-only, **0** CII-only.
-- Severity (blocking class): **201** fatal (block validity), **10** warning / information (reported, non-blocking).
+- **221 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **86** proven on both UBL and CII, **135** UBL-only, **0** CII-only.
+- Severity (blocking class): **211** fatal (block validity), **10** warning / information (reported, non-blocking).
 
 ## Rules
 
@@ -58,6 +58,7 @@ the non-blocking `warning` class for the severity column).
 | `BR-20` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Seller tax representative postal address (BG-12) shall contain a Tax representative country code (BT-69), if the Seller (BG-4) has a Seller tax representative party (BG-11). |
 | `BR-21` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line shall have an Invoice line identifier (BT-126). |
 | `BR-22` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line shall have an Invoiced quantity (BT-129). |
+| `BR-23` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130). |
 | `BR-24` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line shall have an Invoice line net amount (BT-131). |
 | `BR-25` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line (BG-25) shall contain the Item name (BT-153). |
 | `BR-26` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line shall contain the Item net price (BT-146). |
@@ -82,11 +83,17 @@ the non-blocking `warning` class for the severity column).
 | `BR-49` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A Payment instruction (BG-16) shall specify the Payment means type code (BT-81). |
 | `BR-50` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A Payment account identifier (BT-84) shall be present if Credit transfer (BG-17) information is provided in the Invoice. |
 | `BR-51` | UBL | warning | warning | CEN EN 16931 1.3.16 | not proven | The last 4 to 6 digits of the Payment card primary account number (BT-87) shall be present if Payment card information (BG-18) is provided. |
+| `BR-52` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122). |
+| `BR-53` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided. |
+| `BR-54` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161). |
 | `BR-55` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25). |
+| `BR-56` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63). |
 | `BR-57` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Deliver to address (BG-15) shall contain a Deliver to country code (BT-80). |
 | `BR-61` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | If the Payment means type code (BT-81) means SEPA credit transfer, Local credit transfer or Non-SEPA international credit transfer, the Payment account identifier (BT-84) shall be present. |
 | `BR-62` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Seller electronic address (BT-34) shall have a Scheme identifier. |
 | `BR-63` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Buyer electronic address (BT-49) shall have a Scheme identifier. |
+| `BR-64` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Item standard identifier (BT-157) shall have a Scheme identifier. |
+| `BR-65` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Item classification identifier (BT-158) shall have a Scheme identifier. |
 | `BR-CL-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The document type code (BT-3) MUST be coded per UNTDID 1001. |
 | `BR-CL-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | CurrencyID MUST be coded using ISO 4217 alpha-3. |
 | `BR-CL-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3. |
@@ -102,7 +109,9 @@ the non-blocking `warning` class for the severity column).
 | `BR-CL-22` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | VAT exemption reason code MUST belong to the CEF VATEX list. |
 | `BR-CL-23` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Unit code MUST be coded per UN/ECE Rec 20 with Rec 21 extension. |
 | `BR-CL-24` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | For a MIME code in an attribute use the MIMEMediaType subset. |
+| `BR-CO-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive. |
 | `BR-CO-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151). |
+| `BR-CO-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix 'EL'. |
 | `BR-CO-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Sum of Invoice line net amount (BT-106) = Σ line net amount (BT-131). |
 | `BR-CO-11` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Sum of allowances on document level (BT-107) = Σ Document level allowance amount (BT-92). |
 | `BR-CO-12` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Sum of charges on document level (BT-108) = Σ Document level charge amount (BT-99). |
@@ -112,6 +121,7 @@ the non-blocking `warning` class for the severity column).
 | `BR-CO-16` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Amount due for payment (BT-115) = Invoice total with VAT (BT-112) − Paid amount (BT-113) + Rounding amount (BT-114). |
 | `BR-CO-17` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | VAT category tax amount (BT-117) = VAT category taxable amount (BT-116) x (VAT category rate (BT-119) / 100), rounded to two decimals. |
 | `BR-CO-18` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall at least have one VAT breakdown group (BG-23). |
+| `BR-CO-19` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both. |
 | `BR-DEC-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Document level allowance amount (BT-92). |
 | `BR-DEC-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Document level allowance base amount (BT-93). |
 | `BR-DEC-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Max 2 decimals for the Document level charge amount (BT-99). |
@@ -315,7 +325,7 @@ Machine-checked complement of the rule table: for each CEN EN 16931 artifact, ev
 Deliberate exclusions counted against each universe (10 ids, all
 documented with reasons in the Exclusions section above): `BR-CL-06`, `BR-CL-07`, `BR-CL-08`, `BR-CL-10`, `BR-CL-11`, `BR-CL-15`, `BR-CL-25`, `BR-CL-26`, `BR-DEC-13`, `BR-DEC-15`.
 
-### `en16931-ubl` — 165 implemented + 10 excluded + 48 missing = 223 official `BR-*` rules
+### `en16931-ubl` — 175 implemented + 10 excluded + 38 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 756 non-`BR-*` asserts (`UBL-CR-*`, `UBL-DT-*`, `UBL-SR-*`) — syntax-binding cardinality/
@@ -324,20 +334,10 @@ outside this matrix's scope.
 
 | id | flag | official rule text |
 | --- | --- | --- |
-| `BR-23` | fatal | An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130). |
-| `BR-52` | fatal | Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122). |
-| `BR-53` | fatal | If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided. |
-| `BR-54` | fatal | Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161). |
-| `BR-56` | fatal | Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63). |
-| `BR-64` | fatal | The Item standard identifier (BT-157) shall have a Scheme identifier. |
-| `BR-65` | fatal | The Item classification identifier (BT-158) shall have a Scheme identifier. |
-| `BR-CO-03` | fatal | Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive. |
 | `BR-CO-05` | fatal | Document level allowance reason code (BT-98) and Document level allowance reason (BT-97) shall indicate the same type of allowance. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-06` | fatal | Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-07` | fatal | Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-08` | fatal | Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-CO-09` | fatal | The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’. |
-| `BR-CO-19` | fatal | If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both. |
 | `BR-CO-20` | fatal | If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both. |
 | `BR-CO-21` | fatal | Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both. |
 | `BR-CO-22` | fatal | Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both. |
@@ -373,7 +373,7 @@ outside this matrix's scope.
 | `BR-B-01` | fatal | An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice. |
 | `BR-B-02` | fatal | An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”. |
 
-### `en16931-cii` — 165 implemented + 10 excluded + 48 missing = 223 official `BR-*` rules
+### `en16931-cii` — 175 implemented + 10 excluded + 38 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 583 non-`BR-*` asserts (`CII-DT-*`, `CII-SR-*`) — syntax-binding cardinality/
@@ -382,20 +382,10 @@ outside this matrix's scope.
 
 | id | flag | official rule text |
 | --- | --- | --- |
-| `BR-23` | fatal | An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130). |
-| `BR-52` | fatal | Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122). |
-| `BR-53` | fatal | If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided. |
-| `BR-54` | fatal | Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161). |
-| `BR-56` | fatal | Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63). |
-| `BR-64` | fatal | The Item standard identifier (BT-157) shall have a Scheme identifier. |
-| `BR-65` | fatal | The Item classification identifier (BT-158) shall have a Scheme identifier. |
-| `BR-CO-03` | fatal | Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive. |
 | `BR-CO-05` | fatal | Document level allowance reason code (BT-98) and Document level allowance reason (BT-97) shall indicate the same type of allowance. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-06` | fatal | Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-07` | fatal | Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-08` | fatal | Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-CO-09` | fatal | The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’. |
-| `BR-CO-19` | fatal | If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both. |
 | `BR-CO-20` | fatal | If Invoice line period (BG-26) is used, the Invoice line period start date (BT-134) or the Invoice line period end date (BT-135) shall be filled, or both. |
 | `BR-CO-21` | fatal | Each Document level allowance (BG-20) shall contain a Document level allowance reason (BT-97) or a Document level allowance reason code (BT-98), or both. |
 | `BR-CO-22` | fatal | Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both. |

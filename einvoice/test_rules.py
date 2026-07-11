@@ -1662,5 +1662,282 @@ class TestBrCl23UnitCode(unittest.TestCase):
         self.assertIsNotNone(violation_for(r, "BR-CL-23"))
 
 
+class SupportingDocItemMetadataVatPointBatch(unittest.TestCase):
+    """BR-23, BR-52, BR-53, BR-54, BR-56, BR-64, BR-65, BR-CO-03, BR-CO-09,
+    BR-CO-19 — the supporting-document / item-metadata / VAT-point batch,
+    differentially proven against the official CEN EN16931-UBL Schematron the
+    same way as the earlier batches (``differential.py en``). Each case pins
+    one proven verdict, including the EXISTENCE-vs-normalize-space distinctions
+    the official predicates draw."""
+
+    # ---- helpers -----------------------------------------------------------
+    def first_line(self, root):
+        return root.find(q(NS_CAC, "InvoiceLine"))
+
+    def add_supporting_doc(self, root, id_text):
+        adr = ET.Element(q(NS_CAC, "AdditionalDocumentReference"))
+        if id_text is not None:
+            ET.SubElement(adr, q(NS_CBC, "ID")).text = id_text
+        root.insert(
+            list(root).index(child(root, NS_CAC, "AccountingSupplierParty")),
+            adr)
+
+    def add_tax_currency(self, root, code):
+        tcc = ET.Element(q(NS_CBC, "TaxCurrencyCode"))
+        tcc.text = code
+        root.insert(
+            list(root).index(child(root, NS_CBC, "DocumentCurrencyCode")) + 1,
+            tcc)
+
+    def add_item_property(self, root, name=None, value=None):
+        item = first_line_item(root)
+        aip = ET.SubElement(item, q(NS_CAC, "AdditionalItemProperty"))
+        if name is not None:
+            ET.SubElement(aip, q(NS_CBC, "Name")).text = name
+        if value is not None:
+            ET.SubElement(aip, q(NS_CBC, "Value")).text = value
+
+    def add_tax_representative(self, root, scheme=None, company_id=None):
+        trp = ET.Element(q(NS_CAC, "TaxRepresentativeParty"))
+        pn = ET.SubElement(trp, q(NS_CAC, "PartyName"))
+        ET.SubElement(pn, q(NS_CBC, "Name")).text = "Rep A"
+        pa = ET.SubElement(trp, q(NS_CAC, "PostalAddress"))
+        country = ET.SubElement(pa, q(NS_CAC, "Country"))
+        ET.SubElement(country, q(NS_CBC, "IdentificationCode")).text = "DK"
+        if scheme is not None:
+            pts = ET.SubElement(trp, q(NS_CAC, "PartyTaxScheme"))
+            if company_id is not None:
+                ET.SubElement(pts, q(NS_CBC, "CompanyID")).text = company_id
+            ts = ET.SubElement(pts, q(NS_CAC, "TaxScheme"))
+            ET.SubElement(ts, q(NS_CBC, "ID")).text = scheme
+        root.insert(list(root).index(child(root, NS_CAC, "TaxTotal")), trp)
+
+    def doc_period(self, root):
+        return child(root, NS_CAC, "InvoicePeriod")
+
+    def seller_company_id(self, root):
+        pts = child(supplier_party(root), NS_CAC, "PartyTaxScheme")
+        return child(pts, NS_CBC, "CompanyID")
+
+    # ---- BR-23: invoiced-quantity unit code (attribute existence) ----------
+    def test_br_23_missing_unit_code_fires(self):
+        r = base()
+        del child(self.first_line(r), NS_CBC,
+                  "InvoicedQuantity").attrib["unitCode"]
+        self.assertIn("BR-23", fired(r))
+        self.assertNotIn("BR-23", fired(base()))
+
+    def test_br_23_empty_unit_code_holds(self):
+        # exists(@unitCode) — an EMPTY unitCode="" satisfies BR-23 (judging the
+        # VALUE is BR-CL-23's job, not BR-23's).
+        r = base()
+        child(self.first_line(r), NS_CBC,
+              "InvoicedQuantity").set("unitCode", "")
+        self.assertNotIn("BR-23", fired(r))
+
+    # ---- BR-52: supporting document reference (normalize-space) ------------
+    def test_br_52_reference_without_id_fires(self):
+        r = base()
+        self.add_supporting_doc(r, None)
+        self.assertIn("BR-52", fired(r))
+        self.assertNotIn("BR-52", fired(base()))
+
+    def test_br_52_whitespace_only_id_fires(self):
+        # normalize-space(cbc:ID) != '' — whitespace-only is as bad as absent.
+        r = base()
+        self.add_supporting_doc(r, "   ")
+        self.assertIn("BR-52", fired(r))
+
+    def test_br_52_reference_with_id_holds(self):
+        r = base()
+        self.add_supporting_doc(r, "DOC-1")
+        self.assertNotIn("BR-52", fired(r))
+
+    # ---- BR-53: VAT total in the accounting currency ------------------------
+    def test_br_53_tax_currency_without_matching_total_fires(self):
+        # BT-6 declared (EUR; doc currency is DKK) but no cac:TaxTotal/
+        # cbc:TaxAmount carries @currencyID="EUR".
+        r = base()
+        self.add_tax_currency(r, "EUR")
+        self.assertIn("BR-53", fired(r))
+        self.assertNotIn("BR-53", fired(base()))
+
+    def test_br_53_matching_accounting_total_holds(self):
+        r = base()
+        self.add_tax_currency(r, "EUR")
+        tt = ET.Element(q(NS_CAC, "TaxTotal"))
+        ta = ET.SubElement(tt, q(NS_CBC, "TaxAmount"))
+        ta.text = "156435.89"
+        ta.set("currencyID", "EUR")
+        r.insert(list(r).index(child(r, NS_CAC, "LegalMonetaryTotal")), tt)
+        self.assertNotIn("BR-53", fired(r))
+
+    # ---- BR-54: item attribute name AND value (existence) ------------------
+    def test_br_54_name_without_value_fires(self):
+        r = base()
+        self.add_item_property(r, name="Colour")
+        self.assertIn("BR-54", fired(r))
+        self.assertNotIn("BR-54", fired(base()))
+
+    def test_br_54_value_without_name_fires(self):
+        r = base()
+        self.add_item_property(r, value="Red")
+        self.assertIn("BR-54", fired(r))
+
+    def test_br_54_name_and_value_hold(self):
+        # exists(cbc:Name) and exists(cbc:Value) — presence only, empty text ok.
+        r = base()
+        self.add_item_property(r, name="", value="")
+        self.assertNotIn("BR-54", fired(r))
+
+    # ---- BR-56: tax representative VAT identifier (UBL pure existence) -----
+    def test_br_56_representative_without_tax_scheme_fires(self):
+        r = base()
+        self.add_tax_representative(r)
+        self.assertIn("BR-56", fired(r))
+        self.assertNotIn("BR-56", fired(base()))
+
+    def test_br_56_non_vat_scheme_fires(self):
+        # A CompanyID under a non-VAT TaxScheme is BT-64 territory, not BT-63.
+        r = base()
+        self.add_tax_representative(r, scheme="OTHER", company_id="DK11111111")
+        self.assertIn("BR-56", fired(r))
+
+    def test_br_56_empty_company_id_holds(self):
+        # exists(...cbc:CompanyID) — the UBL binding is PURE existence: even an
+        # empty CompanyID under the VAT scheme satisfies BR-56 (unlike the CII
+        # binding, which normalize-spaces — see test_rules_cii.py).
+        r = base()
+        self.add_tax_representative(r, scheme="VAT", company_id="")
+        self.assertNotIn("BR-56", fired(r))
+
+    # ---- BR-64 / BR-65: identifier scheme attributes (existence) -----------
+    def add_standard_item_id(self, root, scheme_id):
+        sii = ET.SubElement(first_line_item(root),
+                            q(NS_CAC, "StandardItemIdentification"))
+        id_el = ET.SubElement(sii, q(NS_CBC, "ID"))
+        id_el.text = "1234567890123"
+        if scheme_id is not None:
+            id_el.set("schemeID", scheme_id)
+
+    def add_classification(self, root, list_id):
+        cc = ET.SubElement(first_line_item(root),
+                           q(NS_CAC, "CommodityClassification"))
+        icc = ET.SubElement(cc, q(NS_CBC, "ItemClassificationCode"))
+        icc.text = "9873242"
+        if list_id is not None:
+            icc.set("listID", list_id)
+
+    def test_br_64_missing_scheme_id_fires(self):
+        r = base()
+        self.add_standard_item_id(r, None)
+        self.assertIn("BR-64", fired(r))
+        self.assertNotIn("BR-64", fired(base()))
+
+    def test_br_64_empty_scheme_id_holds(self):
+        # exists(@schemeID) — empty attribute satisfies the UBL binding.
+        r = base()
+        self.add_standard_item_id(r, "")
+        self.assertNotIn("BR-64", fired(r))
+
+    def test_br_64_gtin_scheme_holds(self):
+        r = base()
+        self.add_standard_item_id(r, "0160")
+        self.assertNotIn("BR-64", fired(r))
+
+    def test_br_65_missing_list_id_fires(self):
+        r = base()
+        self.add_classification(r, None)
+        self.assertIn("BR-65", fired(r))
+        self.assertNotIn("BR-65", fired(base()))
+
+    def test_br_65_with_list_id_holds(self):
+        r = base()
+        self.add_classification(r, "TST")
+        self.assertNotIn("BR-65", fired(r))
+
+    # ---- BR-CO-03: VAT point date XOR VAT point date code ------------------
+    def add_tax_point_date(self, root):
+        tpd = ET.Element(q(NS_CBC, "TaxPointDate"))
+        tpd.text = "2018-09-30"
+        root.insert(
+            list(root).index(child(root, NS_CBC, "DocumentCurrencyCode")),
+            tpd)
+
+    def test_br_co_03_both_present_fires(self):
+        r = base()
+        self.add_tax_point_date(r)
+        ET.SubElement(self.doc_period(r),
+                      q(NS_CBC, "DescriptionCode")).text = "35"
+        self.assertIn("BR-CO-03", fired(r))
+        self.assertNotIn("BR-CO-03", fired(base()))
+
+    def test_br_co_03_date_alone_holds(self):
+        r = base()
+        self.add_tax_point_date(r)
+        self.assertNotIn("BR-CO-03", fired(r))
+
+    def test_br_co_03_code_alone_holds(self):
+        r = base()
+        ET.SubElement(self.doc_period(r),
+                      q(NS_CBC, "DescriptionCode")).text = "35"
+        self.assertNotIn("BR-CO-03", fired(r))
+
+    # ---- BR-CO-09: VAT identifier country-code prefix ----------------------
+    def test_br_co_09_unlisted_prefix_fires(self):
+        # 'XX' is neither a token of the official UBL prefix string nor any
+        # two adjacent characters of it.
+        r = base()
+        self.seller_company_id(r).text = "XX12345678"
+        self.assertIn("BR-CO-09", fired(r))
+        self.assertNotIn("BR-CO-09", fired(base()))
+
+    def test_br_co_09_greece_el_prefix_holds(self):
+        # The documented exception: Greece may use 'EL' instead of 'GR'.
+        r = base()
+        self.seller_company_id(r).text = "EL123456789"
+        self.assertNotIn("BR-CO-09", fired(r))
+
+    def test_br_co_09_short_id_holds_on_ubl(self):
+        # The UBL predicate is contains(list, substring(CompanyID, 1, 2)) with
+        # NO space-wrapping: a 1-character identifier always matches somewhere
+        # in the list string, so the official UBL artifact does NOT fire.
+        # (The CII binding space-wraps and DOES fire — see test_rules_cii.py.)
+        r = base()
+        self.seller_company_id(r).text = "D"
+        self.assertNotIn("BR-CO-09", fired(r))
+
+    def test_br_co_09_buyer_prefix_also_checked(self):
+        r = base()
+        pts = child(buyer_party(r), NS_CAC, "PartyTaxScheme")
+        child(pts, NS_CBC, "CompanyID").text = "XX87654321"
+        self.assertIn("BR-CO-09", fired(r))
+
+    # ---- BR-CO-19: invoicing period must be filled --------------------------
+    def test_br_co_19_empty_period_fires(self):
+        r = base()
+        period = self.doc_period(r)
+        period.remove(child(period, NS_CBC, "StartDate"))
+        period.remove(child(period, NS_CBC, "EndDate"))
+        self.assertIn("BR-CO-19", fired(r))
+        self.assertNotIn("BR-CO-19", fired(base()))
+
+    def test_br_co_19_start_date_alone_holds(self):
+        r = base()
+        period = self.doc_period(r)
+        period.remove(child(period, NS_CBC, "EndDate"))
+        self.assertNotIn("BR-CO-19", fired(r))
+
+    def test_br_co_19_description_code_alone_holds(self):
+        # The UBL binding's third disjunct: a DescriptionCode-only period is
+        # "filled" (it names the VAT point date code instead of dates).
+        r = base()
+        period = self.doc_period(r)
+        period.remove(child(period, NS_CBC, "StartDate"))
+        period.remove(child(period, NS_CBC, "EndDate"))
+        ET.SubElement(period, q(NS_CBC, "DescriptionCode")).text = "35"
+        self.assertNotIn("BR-CO-19", fired(r))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

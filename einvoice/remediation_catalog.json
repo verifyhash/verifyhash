@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 211,
+  "rule_count": 221,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -388,6 +388,24 @@
       },
       "title_de": "Jeder Eintrag der Gruppe „RECHNUNGSPOSITION“ (BG-25) muss das Element „In Rechnung gestellte Menge“ (BT-129) enthalten.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine`: Jeder Eintrag der Gruppe „RECHNUNGSPOSITION“ (BG-25) muss das Element „In Rechnung gestellte Menge“ (BT-129) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-23": {
+      "title": "An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).",
+      "requires": "An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).",
+      "bt_bg": [
+        "BG-25",
+        "BT-130"
+      ],
+      "location_hint": "cac:InvoiceLine",
+      "fix": "Add the required element at `cac:InvoiceLine`: An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130)."
+      },
+      "title_de": "Jede Rechnungsposition (BG-25) muss den Code der Maßeinheit der in Rechnung gestellten Menge (BT-130) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine`: Jede Rechnungsposition (BG-25) muss den Code der Maßeinheit der in Rechnung gestellten Menge (BT-130) enthalten.",
       "de_source": "translation"
     },
     "BR-24": {
@@ -824,6 +842,61 @@
       "fix_de": "Korrigieren Sie `cac:PaymentMeans/cac:CardAccount/cbc:PrimaryAccountNumberID`, sodass gilt: Gemäß den Sicherheitsstandards für Kartenzahlungen darf eine Rechnung niemals eine vollständige Kartennummer (primäre Kontonummer der Zahlungskarte) (BT-87) enthalten. Derzeit hat das PCI Security Standards Council festgelegt, dass höchstens die ersten 6 und die letzten 4 Ziffern angezeigt werden dürfen.",
       "de_source": "translation"
     },
+    "BR-52": {
+      "title": "Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122).",
+      "requires": "Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122).",
+      "bt_bg": [
+        "BG-24",
+        "BT-122"
+      ],
+      "location_hint": "cac:AdditionalDocumentReference",
+      "fix": "Add the required element at `cac:AdditionalDocumentReference`: Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122)."
+      },
+      "title_de": "Jeder Eintrag der Gruppe „RECHNUNGSBEGRÜNDENDE UNTERLAGEN“ (BG-24) muss das Element „Kennung der rechnungsbegründenden Unterlage“ (BT-122) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:AdditionalDocumentReference`: Jeder Eintrag der Gruppe „RECHNUNGSBEGRÜNDENDE UNTERLAGEN“ (BG-24) muss das Element „Kennung der rechnungsbegründenden Unterlage“ (BT-122) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-53": {
+      "title": "If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.",
+      "requires": "If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.",
+      "bt_bg": [
+        "BT-6",
+        "BT-111"
+      ],
+      "location_hint": "cbc:TaxCurrencyCode",
+      "fix": "Add the required element at `cbc:TaxCurrencyCode`: If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided."
+      },
+      "title_de": "Wenn der Code der Währung der Umsatzsteuerabrechnung (BT-6) angegeben ist, muss der Gesamtbetrag der Umsatzsteuer in der Abrechnungswährung (BT-111) angegeben werden.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cbc:TaxCurrencyCode`: Wenn der Code der Währung der Umsatzsteuerabrechnung (BT-6) angegeben ist, muss der Gesamtbetrag der Umsatzsteuer in der Abrechnungswährung (BT-111) angegeben werden.",
+      "de_source": "translation"
+    },
+    "BR-54": {
+      "title": "Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).",
+      "requires": "Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).",
+      "bt_bg": [
+        "BG-32",
+        "BT-160",
+        "BT-161"
+      ],
+      "location_hint": "//cac:AdditionalItemProperty",
+      "fix": "Add the required element at `//cac:AdditionalItemProperty`: Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161)."
+      },
+      "title_de": "Jeder Eintrag der Gruppe „ARTIKELATTRIBUTE“ (BG-32) muss die Bezeichnung des Artikelattributs (BT-160) und den Wert des Artikelattributs (BT-161) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `//cac:AdditionalItemProperty`: Jeder Eintrag der Gruppe „ARTIKELATTRIBUTE“ (BG-32) muss die Bezeichnung des Artikelattributs (BT-160) und den Wert des Artikelattributs (BT-161) enthalten.",
+      "de_source": "translation"
+    },
     "BR-55": {
       "title": "Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25).",
       "requires": "Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25).",
@@ -840,6 +913,24 @@
       },
       "title_de": "Jeder Eintrag der Gruppe „Referenz auf die vorausgegangene Rechnung“ (BG-3) muss das Element „Kennung der vorausgegangenen Rechnung“ (BT-25) enthalten.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:BillingReference`: Jeder Eintrag der Gruppe „Referenz auf die vorausgegangene Rechnung“ (BG-3) muss das Element „Kennung der vorausgegangenen Rechnung“ (BT-25) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-56": {
+      "title": "Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63).",
+      "requires": "Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63).",
+      "bt_bg": [
+        "BG-11",
+        "BT-63"
+      ],
+      "location_hint": "cac:TaxRepresentativeParty",
+      "fix": "Correct `cac:TaxRepresentativeParty` so that Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63)."
+      },
+      "title_de": "Jeder Eintrag der Gruppe „STEUERVERTRETER DES VERKÄUFERS“ (BG-11) muss das Element „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:TaxRepresentativeParty`: Jeder Eintrag der Gruppe „STEUERVERTRETER DES VERKÄUFERS“ (BG-11) muss das Element „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
       "de_source": "translation"
     },
     "BR-57": {
@@ -910,6 +1001,40 @@
       },
       "title_de": "Die Elektronische Adresse des Erwerbers (BT-49) muss eine Schema-Kennung aufweisen.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:AccountingCustomerParty/cac:Party/cbc:EndpointID`: Die Elektronische Adresse des Erwerbers (BT-49) muss eine Schema-Kennung aufweisen.",
+      "de_source": "translation"
+    },
+    "BR-64": {
+      "title": "The Item standard identifier (BT-157) shall have a Scheme identifier.",
+      "requires": "The Item standard identifier (BT-157) shall have a Scheme identifier.",
+      "bt_bg": [
+        "BT-157"
+      ],
+      "location_hint": "cac:InvoiceLine/cac:Item/cac:StandardItemIdentification/cbc:ID",
+      "fix": "Add the required element at `cac:InvoiceLine/cac:Item/cac:StandardItemIdentification/cbc:ID`: The Item standard identifier (BT-157) shall have a Scheme identifier.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "The Item standard identifier (BT-157) shall have a Scheme identifier."
+      },
+      "title_de": "Die Kennung eines Artikels nach registriertem Schema (BT-157) muss eine Schema-Kennung enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine/cac:Item/cac:StandardItemIdentification/cbc:ID`: Die Kennung eines Artikels nach registriertem Schema (BT-157) muss eine Schema-Kennung enthalten.",
+      "de_source": "translation"
+    },
+    "BR-65": {
+      "title": "The Item classification identifier (BT-158) shall have a Scheme identifier.",
+      "requires": "The Item classification identifier (BT-158) shall have a Scheme identifier.",
+      "bt_bg": [
+        "BT-158"
+      ],
+      "location_hint": "cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode",
+      "fix": "Add the required element at `cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`: The Item classification identifier (BT-158) shall have a Scheme identifier.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "The Item classification identifier (BT-158) shall have a Scheme identifier."
+      },
+      "title_de": "Die Klassifikationskennung des Artikels (BT-158) muss eine Schema-Kennung enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`: Die Klassifikationskennung des Artikels (BT-158) muss eine Schema-Kennung enthalten.",
       "de_source": "translation"
     },
     "BR-CL-01": {
@@ -1143,6 +1268,24 @@
       "fix_de": "Codieren Sie `cbc:EmbeddedDocumentBinaryObject[@mimeCode]` mit einem gültigen Wert aus der geforderten Codeliste: Für den MIME-Code im Attribut ist MIMEMediaType zu verwenden.",
       "de_source": "translation"
     },
+    "BR-CO-03": {
+      "title": "Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.",
+      "requires": "Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.",
+      "bt_bg": [
+        "BT-7",
+        "BT-8"
+      ],
+      "location_hint": "cac:LegalMonetaryTotal",
+      "fix": "Add the required element at `cac:LegalMonetaryTotal`: Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive."
+      },
+      "title_de": "Das Datum der Steuerfälligkeit (BT-7) und der Code für das Datum der Steuerfälligkeit (BT-8) schließen sich gegenseitig aus.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:LegalMonetaryTotal`: Das Datum der Steuerfälligkeit (BT-7) und der Code für das Datum der Steuerfälligkeit (BT-8) schließen sich gegenseitig aus.",
+      "de_source": "translation"
+    },
     "BR-CO-04": {
       "title": "Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151).",
       "requires": "Each Invoice line (BG-25) shall be categorized with an Invoiced item VAT category code (BT-151).",
@@ -1159,6 +1302,25 @@
       },
       "title_de": "Jeder Eintrag der Gruppe RECHNUNGSPOSITION (BG-25) muss mit einem Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) kategorisiert werden.",
       "fix_de": "Korrigieren Sie `cac:InvoiceLine`, sodass gilt: Jeder Eintrag der Gruppe RECHNUNGSPOSITION (BG-25) muss mit einem Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) kategorisiert werden.",
+      "de_source": "translation"
+    },
+    "BR-CO-09": {
+      "title": "The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix 'EL'.",
+      "requires": "The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’.",
+      "bt_bg": [
+        "BT-31",
+        "BT-48",
+        "BT-63"
+      ],
+      "location_hint": "//cac:PartyTaxScheme[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Add the required element at `//cac:PartyTaxScheme[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’."
+      },
+      "title_de": "Der Umsatzsteuer-Identifikationsnummer des Verkäufers (BT-31), der Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers (BT-63) und der Umsatzsteuer-Identifikationsnummer des Erwerbers (BT-48) muss ein Präfix gemäß ISO 3166-1 Alpha-2 vorangestellt sein, anhand dessen das Land der Ausstellung bestimmt werden kann. Griechenland darf dennoch das Präfix „EL“ verwenden.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `//cac:PartyTaxScheme[cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: Der Umsatzsteuer-Identifikationsnummer des Verkäufers (BT-31), der Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers (BT-63) und der Umsatzsteuer-Identifikationsnummer des Erwerbers (BT-48) muss ein Präfix gemäß ISO 3166-1 Alpha-2 vorangestellt sein, anhand dessen das Land der Ausstellung bestimmt werden kann. Griechenland darf dennoch das Präfix „EL“ verwenden.",
       "de_source": "translation"
     },
     "BR-CO-10": {
@@ -1326,6 +1488,25 @@
       },
       "title_de": "Eine Rechnung muss mindestens einen Eintrag der Gruppe „UMSATZSTEUERAUFSCHLÜSSELUNG“ (BG-23) enthalten.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:TaxTotal/cac:TaxSubtotal`: Eine Rechnung muss mindestens einen Eintrag der Gruppe „UMSATZSTEUERAUFSCHLÜSSELUNG“ (BG-23) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-CO-19": {
+      "title": "If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.",
+      "requires": "If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.",
+      "bt_bg": [
+        "BG-14",
+        "BT-73",
+        "BT-74"
+      ],
+      "location_hint": "cac:InvoicePeriod",
+      "fix": "Add the required element at `cac:InvoicePeriod`: If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both."
+      },
+      "title_de": "Wenn die Gruppe „RECHNUNGSZEITRAUM“ (BG-14) verwendet wird, müssen das Startdatum des Rechnungszeitraums (BT-73) oder das Enddatum des Rechnungszeitraums (BT-74) oder beide angegeben werden.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoicePeriod`: Wenn die Gruppe „RECHNUNGSZEITRAUM“ (BG-14) verwendet wird, müssen das Startdatum des Rechnungszeitraums (BT-73) oder das Enddatum des Rechnungszeitraums (BT-74) oder beide angegeben werden.",
       "de_source": "translation"
     },
     "BR-DEC-01": {

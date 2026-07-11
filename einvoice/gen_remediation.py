@@ -296,6 +296,7 @@ GLOSSARY = {
     "BG-20": "NACHLÄSSE AUF DOKUMENTENEBENE",
     "BG-21": "ZUSCHLÄGE AUF DOKUMENTENEBENE",
     "BG-23": "UMSATZSTEUERAUFSCHLÜSSELUNG",
+    "BG-24": "RECHNUNGSBEGRÜNDENDE UNTERLAGEN",
     "BG-25": "RECHNUNGSPOSITION",
     "BG-27": "NACHLÄSSE AUF EBENE DER RECHNUNGSPOSITION",
     "BG-28": "ZUSCHLÄGE AUF EBENE DER RECHNUNGSPOSITION",
@@ -352,6 +353,7 @@ GLOSSARY = {
     "BT-118": "Code der Umsatzsteuerkategorie",
     "BT-119": "Umsatzsteuersatz der Umsatzsteuerkategorie",
     "BT-120": "Text für den Grund der Umsatzsteuerbefreiung",
+    "BT-122": "Kennung der rechnungsbegründenden Unterlage",
     "BT-121": "Code für den Grund der Umsatzsteuerbefreiung",
     "BT-126": "Kennung der Rechnungsposition",
     "BT-129": "In Rechnung gestellte Menge",
@@ -722,6 +724,37 @@ SPECIAL = {
     "any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code.":
         "Jede Schema-Kennung einer Kennung des Lieferorts (cac:DeliveryLocation/cbc:ID, BT-71) "
         "muss ein ISO-6523-ICD-Code (Extension) sein.",
+    # ---- Supporting-document / item-metadata / VAT-point batch (2026-07) ----
+    "An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).":
+        "Jede Rechnungsposition (BG-25) muss den Code der Maßeinheit der in Rechnung "
+        "gestellten Menge (BT-130) enthalten.",
+    "If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided.":
+        "Wenn der Code der Währung der Umsatzsteuerabrechnung (BT-6) angegeben ist, muss "
+        "der Gesamtbetrag der Umsatzsteuer in der Abrechnungswährung (BT-111) angegeben "
+        "werden.",
+    "Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161).":
+        "Jeder Eintrag der Gruppe „ARTIKELATTRIBUTE“ (BG-32) muss die Bezeichnung des "
+        "Artikelattributs (BT-160) und den Wert des Artikelattributs (BT-161) enthalten.",
+    "The Item standard identifier (BT-157) shall have a Scheme identifier.":
+        "Die Kennung eines Artikels nach registriertem Schema (BT-157) muss eine "
+        "Schema-Kennung enthalten.",
+    "The Item classification identifier (BT-158) shall have a Scheme identifier.":
+        "Die Klassifikationskennung des Artikels (BT-158) muss eine Schema-Kennung "
+        "enthalten.",
+    "Value added tax point date (BT-7) and Value added tax point date code (BT-8) are mutually exclusive.":
+        "Das Datum der Steuerfälligkeit (BT-7) und der Code für das Datum der "
+        "Steuerfälligkeit (BT-8) schließen sich gegenseitig aus.",
+    "The Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48) shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which the country of issue may be identified. Nevertheless, Greece may use the prefix ‘EL’.":
+        "Der Umsatzsteuer-Identifikationsnummer des Verkäufers (BT-31), der "
+        "Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers (BT-63) "
+        "und der Umsatzsteuer-Identifikationsnummer des Erwerbers (BT-48) muss ein "
+        "Präfix gemäß ISO 3166-1 Alpha-2 vorangestellt sein, anhand dessen das Land "
+        "der Ausstellung bestimmt werden kann. Griechenland darf dennoch das Präfix "
+        "„EL“ verwenden.",
+    "If Invoicing period (BG-14) is used, the Invoicing period start date (BT-73) or the Invoicing period end date (BT-74) shall be filled, or both.":
+        "Wenn die Gruppe „RECHNUNGSZEITRAUM“ (BG-14) verwendet wird, müssen das "
+        "Startdatum des Rechnungszeitraums (BT-73) oder das Enddatum des "
+        "Rechnungszeitraums (BT-74) oder beide angegeben werden.",
     "Amount due for payment (BT-115) = Invoice total amount with VAT (BT-112) - Paid amount (BT-113) + Rounding amount (BT-114) + Σ Third party payment amount (BT-DEX-002).":
         "Fälliger Zahlungsbetrag (BT-115) = Gesamtbetrag der Rechnung einschließlich "
         "Umsatzsteuer (BT-112) - Bereits gezahlter Betrag (BT-113) + Rundungsbetrag (BT-114) "

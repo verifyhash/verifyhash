@@ -3484,6 +3484,373 @@ def br_63(inv):
     return None
 
 
+# --------------------------------------------------------------------------- #
+# Supporting-document / item-metadata / VAT-point batch                        #
+# (BR-23, BR-52, BR-53, BR-54, BR-56, BR-64, BR-65, BR-CO-03/-09/-19)          #
+# --------------------------------------------------------------------------- #
+
+# BR-CO-09: both official artifacts embed the allowed VAT-identifier prefixes
+# as ONE literal space-separated string (ISO 3166-1 alpha-2 plus the documented
+# non-ISO entries '1A' Kosovo, 'EL' Greece and 'XI' Northern Ireland). The two
+# bindings pin DIFFERENT snapshots of that list: the UBL string carries 'SS'
+# (South Sudan) and orders '... BJ BL ...'; the CII string instead carries the
+# withdrawn 'AN' (Netherlands Antilles), lacks 'SS', and orders '... BL BJ ...'.
+# Each constant below is copied VERBATIM from its artifact (including the
+# leading/trailing space the contains() idiom relies on), and br_co_09
+# reproduces each binding's exact predicate rather than a cleaned-up union.
+_BR_CO_09_UBL_LIST = (
+    " 1A AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE "
+    "BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF "
+    "CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ "
+    "EC EE EG EH EL ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH "
+    "GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL "
+    "IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY "
+    "KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML "
+    "MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL "
+    "NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA "
+    "RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS "
+    "ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ "
+    "UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XI YE YT ZA ZM ZW ")
+_BR_CO_09_CII_LIST = (
+    " 1A AD AE AF AG AI AL AM AN AO AQ AR AS AT AU AW AX AZ BA BB BD "
+    "BE BF BG BH BI BL BJ BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD "
+    "CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO "
+    "DZ EC EE EG EH EL ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG "
+    "GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE "
+    "IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW "
+    "KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK "
+    "ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI "
+    "NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY "
+    "QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR "
+    "ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ "
+    "UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XI YE YT ZA ZM ZW ")
+
+
+def br_23(inv):
+    """BR-23: An Invoice line (BG-25) shall have an Invoiced quantity unit of
+    measure code (BT-130).
+
+    Official (context = each Invoice line)::
+
+        UBL: exists(cbc:InvoicedQuantity/@unitCode)
+             or exists(cbc:CreditedQuantity/@unitCode)
+        CII: (ram:SpecifiedLineTradeDelivery/ram:BilledQuantity/@unitCode)
+
+    Both are attribute EXISTENCE — an empty ``unitCode=""`` satisfies the rule,
+    only a missing attribute (or, in CII, a missing BilledQuantity altogether)
+    fires it. Each parser bakes its binding's check into
+    ``ln.has_quantity_unit_code``.
+    """
+    for ln in inv.lines:
+        if not ln.has_quantity_unit_code:
+            return Violation(
+                "BR-23",
+                "An Invoice line (BG-25) shall have an Invoiced quantity unit "
+                "of measure code (BT-130).",
+                ln.label + "/cbc:InvoicedQuantity/@unitCode")
+    return None
+
+
+def br_52(inv):
+    """BR-52: Each Additional supporting document (BG-24) shall contain a
+    Supporting document reference (BT-122).
+
+    Official (context = each supporting-document group, any depth)::
+
+        UBL (cac:AdditionalDocumentReference):   normalize-space(cbc:ID) != ''
+        CII (//ram:AdditionalReferencedDocument):
+                                    normalize-space(ram:IssuerAssignedID) != ''
+
+    NOT pure existence: an absent, empty or whitespace-only reference all
+    normalize-space to ``''`` and fire. The parsers store the normalized value
+    of each group's first reference child ('' when absent).
+    """
+    for ref in inv.supporting_doc_refs:
+        if not ref:
+            return Violation(
+                "BR-52",
+                "Each Additional supporting document (BG-24) shall contain a "
+                "Supporting document reference (BT-122).",
+                "cac:AdditionalDocumentReference/cbc:ID")
+    return None
+
+
+def br_53(inv):
+    """BR-53: If the VAT accounting currency code (BT-6) is present, then the
+    Invoice total VAT amount in accounting currency (BT-111) shall be provided.
+
+    The two bindings encode the same business rule with genuinely different
+    predicates, so the body branches on syntax:
+
+    UBL (context = the document root)::
+
+        every $taxcurrency in cbc:TaxCurrencyCode satisfies
+            exists(//cac:TaxTotal/cbc:TaxAmount[@currencyID = $taxcurrency])
+
+    — each BT-6 value must be matched by SOME TaxAmount's @currencyID; the
+    @currencyID = $taxcurrency comparison atomizes both sides RAW (no
+    normalize-space), hence ``tax_currency_codes_raw``. No BT-6 present =>
+    the ``every`` quantifier is vacuously true.
+
+    CII (context = //ram:SpecifiedTradeSettlementHeaderMonetarySummation, with
+    ABSOLUTE paths for BT-6/BT-5)::
+
+        not(TCC) or (TCC and (ram:TaxTotalAmount/@currencyID = TCC)
+                         and not(TCC = ICC))
+
+    where TCC/ICC are the settlement's ram:TaxCurrencyCode /
+    ram:InvoiceCurrencyCode. With BT-6 present the context summation must carry
+    a TaxTotalAmount whose @currencyID general-equals some TCC AND no TCC may
+    equal any ICC (the CII binding additionally rejects BT-6 == BT-5). With no
+    header summation the CII rule has no context node and cannot fire.
+    """
+    if not inv.tax_currency_codes_raw:
+        return None
+    if inv.syntax == "cii":
+        for currencies in inv.cii_summation_taxtotal_currencies:
+            matched = any(c in inv.tax_currency_codes_raw for c in currencies)
+            tcc_is_icc = any(t in inv.cii_invoice_currency_codes_raw
+                             for t in inv.tax_currency_codes_raw)
+            if not matched or tcc_is_icc:
+                return Violation(
+                    "BR-53",
+                    "If the VAT accounting currency code (BT-6) is present, "
+                    "then the Invoice total VAT amount in accounting currency "
+                    "(BT-111) shall be provided.",
+                    "ram:SpecifiedTradeSettlementHeaderMonetarySummation/"
+                    "ram:TaxTotalAmount/@currencyID")
+        return None
+    for tcc in inv.tax_currency_codes_raw:
+        if tcc not in inv.taxtotal_amount_currencies:
+            return Violation(
+                "BR-53",
+                "If the VAT accounting currency code (BT-6) is present, then "
+                "the Invoice total VAT amount in accounting currency (BT-111) "
+                "shall be provided.",
+                "cac:TaxTotal/cbc:TaxAmount/@currencyID")
+    return None
+
+
+def br_54(inv):
+    """BR-54: Each Item attribute (BG-32) shall contain an Item attribute name
+    (BT-160) and an Item attribute value (BT-161).
+
+    Official (context = each item-attribute group, any depth)::
+
+        UBL (//cac:AdditionalItemProperty):  exists(cbc:Name) and
+                                             exists(cbc:Value)
+        CII (//ram:ApplicableProductCharacteristic):
+                                             (ram:Description) and (ram:Value)
+
+    Pure child-element EXISTENCE on both bindings (present-but-empty children
+    satisfy it). The parsers store one (has_name, has_value) pair per group.
+    """
+    for has_name, has_value in inv.item_attributes:
+        if not (has_name and has_value):
+            return Violation(
+                "BR-54",
+                "Each Item attribute (BG-32) shall contain an Item attribute "
+                "name (BT-160) and an Item attribute value (BT-161).",
+                "cac:AdditionalItemProperty")
+    return None
+
+
+def br_56(inv):
+    """BR-56: Each Seller tax representative party (BG-11) shall have a Seller
+    tax representative VAT identifier (BT-63).
+
+    Official (context = each tax-representative party)::
+
+        UBL (cac:TaxRepresentativeParty):
+            exists(cac:PartyTaxScheme[cac:TaxScheme/
+                   (normalize-space(upper-case(cbc:ID)) = 'VAT')]/cbc:CompanyID)
+        CII (//ram:SellerTaxRepresentativeTradeParty):
+            normalize-space(ram:SpecifiedTaxRegistration/
+                            ram:ID[@schemeID='VA']) != ''
+
+    The bindings genuinely differ (UBL is pure existence — an EMPTY CompanyID
+    satisfies it; CII requires a non-empty VA-scheme id), so each parser bakes
+    ITS binding's verdict into one bool per representative party
+    (``taxrep_vat_ids_ok``) and the shared body just scans them.
+    """
+    for ok in inv.taxrep_vat_ids_ok:
+        if not ok:
+            return Violation(
+                "BR-56",
+                "Each Seller tax representative party (BG-11) shall have a "
+                "Seller tax representative VAT identifier (BT-63).",
+                "cac:TaxRepresentativeParty/cac:PartyTaxScheme/cbc:CompanyID")
+    return None
+
+
+def br_64(inv):
+    """BR-64: The Item standard identifier (BT-157) shall have a Scheme
+    identifier.
+
+    Official::
+
+        UBL (context = each line's cac:StandardItemIdentification/cbc:ID):
+            exists(@schemeID)                  -- empty schemeID="" satisfies
+        CII (context = //ram:IncludedSupplyChainTradeLineItem):
+            normalize-space(ram:SpecifiedTradeProduct/ram:GlobalID/@schemeID)
+                != ''  or  not(ram:SpecifiedTradeProduct/ram:GlobalID)
+
+    Each parser stores one bool per context node that CARRIES a standard
+    identifier, already evaluated under its binding's semantics (UBL attribute
+    existence; CII non-empty-after-normalize-space of the first GlobalID's
+    scheme, lines without a GlobalID contributing nothing).
+    """
+    for ok in inv.item_std_ids_scheme_ok:
+        if not ok:
+            return Violation(
+                "BR-64",
+                "The Item standard identifier (BT-157) shall have a Scheme "
+                "identifier.",
+                "cac:StandardItemIdentification/cbc:ID/@schemeID")
+    return None
+
+
+def br_65(inv):
+    """BR-65: The Item classification identifier (BT-158) shall have a Scheme
+    identifier.
+
+    Official::
+
+        UBL (context = each line's cac:CommodityClassification/
+             cbc:ItemClassificationCode):
+            exists(@listID)                    -- empty listID="" satisfies
+        CII (context = //ram:DesignatedProductClassification):
+            normalize-space(ram:ClassCode/@listID) != ''
+                or not(ram:ClassCode)
+
+    Same shape as BR-64: one pre-evaluated bool per identifier-carrying context
+    node, each under its own binding's semantics.
+    """
+    for ok in inv.item_class_ids_scheme_ok:
+        if not ok:
+            return Violation(
+                "BR-65",
+                "The Item classification identifier (BT-158) shall have a "
+                "Scheme identifier.",
+                "cac:CommodityClassification/cbc:ItemClassificationCode"
+                "/@listID")
+    return None
+
+
+def br_co_03(inv):
+    """BR-CO-03: Value added tax point date (BT-7) and Value added tax point
+    date code (BT-8) are mutually exclusive.
+
+    Official — both bindings' three-disjunct tests reduce to
+    ``not(BT-7 present and BT-8 present)``::
+
+        UBL (context = the document root):
+            BT-7 = cbc:TaxPointDate, BT-8 = cac:InvoicePeriod/cbc:DescriptionCode
+        CII (context = //ram:ApplicableHeaderTradeSettlement/
+             ram:ApplicableTradeTax):
+            BT-7 = //ram:TaxPointDate, BT-8 = //ram:DueDateTypeCode (GLOBAL
+            existence, asserted once per document-level VAT-breakdown row)
+
+    The CII context detail matters: a CII invoice with NO document-level
+    ApplicableTradeTax rows carries no BR-CO-03 assert at all, so the official
+    artifact stays silent there even when both BT-7 and BT-8 are present —
+    the CII branch gates on ``all_tax_subtotals`` (exactly those rows) to
+    match. UBL asserts at the always-present document root.
+    """
+    if not (inv.has_tax_point_date and inv.has_tax_point_date_code):
+        return None
+    if inv.syntax == "cii" and not inv.all_tax_subtotals:
+        return None
+    return Violation(
+        "BR-CO-03",
+        "Value added tax point date (BT-7) and Value added tax point date "
+        "code (BT-8) are mutually exclusive.",
+        "cbc:TaxPointDate")
+
+
+def br_co_09(inv):
+    """BR-CO-09: The Seller VAT identifier (BT-31), the Seller tax
+    representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48)
+    shall have a prefix in accordance with ISO code ISO 3166-1 alpha-2 by which
+    the country of issue may be identified. Nevertheless, Greece may use the
+    prefix 'EL'.
+
+    Official (the tested value is the RAW first two characters of the VAT
+    identifier — ``substring(..., 1, 2)`` — against the artifact's literal
+    prefix list; see the two verbatim list constants above)::
+
+        UBL (context = //cac:PartyTaxScheme[cac:TaxScheme/
+             normalize-space(upper-case(cbc:ID))='VAT']):
+            contains(' 1A AD ... ZW ', substring(cbc:CompanyID, 1, 2))
+        CII (context = //ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA']):
+            contains(' 1A AD ... ZW ', concat(' ', substring(., 1, 2), ' '))
+
+    The idioms differ materially and are reproduced exactly:
+
+      * UBL searches the prefix UNWRAPPED, so any 2-character substring of the
+        list matches — including cross-token windows like ``'D '`` or ``' A'``
+        — and a CompanyID shorter than 2 characters (or absent: substring of
+        the empty sequence is ``''``) ALWAYS satisfies the rule.
+      * CII wraps the prefix in spaces, so only whole listed tokens match and
+        a short or empty identifier always FIRES.
+    """
+    if inv.syntax == "cii":
+        for prefix in inv.vat_id_prefixes:
+            if (" " + prefix + " ") not in _BR_CO_09_CII_LIST:
+                return Violation(
+                    "BR-CO-09",
+                    "The Seller VAT identifier (BT-31), the Seller tax "
+                    "representative VAT identifier (BT-63) and the Buyer VAT "
+                    "identifier (BT-48) shall have a prefix in accordance "
+                    "with ISO code ISO 3166-1 alpha-2 by which the country "
+                    "of issue may be identified. Nevertheless, Greece may "
+                    "use the prefix 'EL'.",
+                    "ram:SpecifiedTaxRegistration/ram:ID")
+        return None
+    for prefix in inv.vat_id_prefixes:
+        if prefix not in _BR_CO_09_UBL_LIST:
+            return Violation(
+                "BR-CO-09",
+                "The Seller VAT identifier (BT-31), the Seller tax "
+                "representative VAT identifier (BT-63) and the Buyer VAT "
+                "identifier (BT-48) shall have a prefix in accordance with "
+                "ISO code ISO 3166-1 alpha-2 by which the country of issue "
+                "may be identified. Nevertheless, Greece may use the prefix "
+                "'EL'.",
+                "cac:PartyTaxScheme/cbc:CompanyID")
+    return None
+
+
+def br_co_19(inv):
+    """BR-CO-19: If Invoicing period (BG-14) is used, the Invoicing period
+    start date (BT-73) or the Invoicing period end date (BT-74) shall be
+    filled, or both.
+
+    Official (context = each document-level Invoicing period)::
+
+        UBL (cac:InvoicePeriod, the non-line BR-29 context set):
+            exists(cbc:StartDate) or exists(cbc:EndDate)
+            or (exists(cbc:DescriptionCode)
+                and not(exists(cbc:StartDate)) and not(exists(cbc:EndDate)))
+            -- logically: any of StartDate / EndDate / DescriptionCode exists
+        CII (//ram:ApplicableHeaderTradeSettlement/ram:BillingSpecifiedPeriod):
+            (ram:StartDateTime) or (ram:EndDateTime)
+            -- CII has no period DescriptionCode child; start/end only
+
+    Each parser stores one already-evaluated bool per context period
+    (``invoice_period_filled``) under its own binding's disjuncts.
+    """
+    for filled in inv.invoice_period_filled:
+        if not filled:
+            return Violation(
+                "BR-CO-19",
+                "If Invoicing period (BG-14) is used, the Invoicing period "
+                "start date (BT-73) or the Invoicing period end date (BT-74) "
+                "shall be filled, or both.",
+                "cac:InvoicePeriod")
+    return None
+
+
 # Ordered ruleset (evaluation order = document flow: header -> lines -> codes
 # -> arithmetic -> VAT-category consistency -> decimal precision).
 ALL_RULES = [
@@ -3491,18 +3858,19 @@ ALL_RULES = [
     br_09, br_10, br_11,
     br_12, br_13, br_14, br_15,
     br_16, br_17, br_18, br_19, br_20,
-    br_21, br_22, br_24, br_25, br_26, br_27, br_28, br_29, br_30,
+    br_21, br_22, br_23, br_24, br_25, br_26, br_27, br_28, br_29, br_30,
     br_31, br_32, br_33, br_36, br_37, br_38,
     br_41, br_42, br_43, br_44,
-    br_49, br_50, br_51, br_55, br_57, br_61, br_62, br_63,
+    br_49, br_50, br_51, br_52, br_53, br_54, br_55, br_56, br_57,
+    br_61, br_62, br_63, br_64, br_65,
     br_cl_01,
     br_cl_03, br_cl_04, br_cl_05, br_cl_13, br_cl_14,
     br_cl_16,
     br_cl_17, br_cl_18, br_cl_19, br_cl_20, br_cl_21, br_cl_22, br_cl_23,
     br_cl_24,
-    br_co_04,
-    br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15, br_co_16,
-    br_co_17, br_co_18,
+    br_co_03, br_co_04,
+    br_co_09, br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15,
+    br_co_16, br_co_17, br_co_18, br_co_19,
     br_45, br_46, br_47, br_48,
     br_s_01, br_z_01,
     br_s_02, br_s_03, br_s_04, br_s_05, br_s_06, br_s_07, br_s_09, br_s_10,

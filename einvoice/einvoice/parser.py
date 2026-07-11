@@ -110,7 +110,8 @@ def _localname(tag):
 class InvoiceLine:
     """One ``cac:InvoiceLine`` (BG-25), fields kept as text/None."""
 
-    __slots__ = ("id", "quantity", "line_extension_amount",
+    __slots__ = ("id", "quantity", "has_quantity_unit_code",
+                 "line_extension_amount",
                  "line_extension_amount_raw", "price_amount",
                  "price_base_amounts", "periods",
                  "item_name", "tax_category_ids", "item_tax_categories",
@@ -120,6 +121,10 @@ class InvoiceLine:
         self.index = index
         self.id = None                    # BT-126
         self.quantity = None              # BT-129 (text)
+        # BT-130 Invoiced quantity unit of measure: does any quantity element
+        # of the line CARRY a @unitCode attribute? (BR-23 is attribute
+        # EXISTENCE on both bindings — an empty unitCode="" satisfies it.)
+        self.has_quantity_unit_code = False
         self.line_extension_amount = None  # BT-131 (text)
         self.line_extension_amount_raw = None  # BT-131 raw text (BR-DEC-23)
         self.price_amount = None          # BT-146 (text)
@@ -390,6 +395,68 @@ class Invoice:
         # exists(cac:InvoicePeriod/*) at the Invoice level — a document-level
         # Invoicing period (BG-14) carrying at least one child element (BR-IC-11).
         self.doc_invoice_period_has_child = False
+        # --- Batch: BR-23/52/53/54/56/64/65/CO-03/CO-09/CO-19 extraction ----
+        # BR-52: one entry per Additional supporting document group (BG-24 —
+        # UBL cac:AdditionalDocumentReference / CII ram:AdditionalReferenced
+        # Document, any depth): the normalize-space'd string value of its FIRST
+        # document-reference child (UBL cbc:ID / CII ram:IssuerAssignedID), ''
+        # when that child is absent — both official tests are
+        # ``normalize-space(<ref>) != ''``.
+        self.supporting_doc_refs = []      # list[str]
+        # BR-53: RAW string values of the VAT accounting currency code (BT-6)
+        # at the official BR-53 context (UBL: /Invoice/cbc:TaxCurrencyCode;
+        # CII: .../ApplicableHeaderTradeSettlement/ram:TaxCurrencyCode). RAW —
+        # the official comparisons atomize the untyped node without
+        # normalize-space (unlike ``tax_currency_code`` above, which mirrors
+        # BR-CL-05's normalize-space'd test).
+        self.tax_currency_codes_raw = []   # list[str]
+        # BR-53 (UBL leg): raw @currencyID of every //cac:TaxTotal/cbc:TaxAmount
+        # that CARRIES the attribute — the official existence test is
+        # ``exists(//cac:TaxTotal/cbc:TaxAmount[@currencyID=$taxcurrency])``.
+        self.taxtotal_amount_currencies = []  # list[str]
+        # BR-53 (CII leg): per header monetary summation (the CII BR-53 context
+        # node), the raw @currencyID of its ram:TaxTotalAmount children; plus
+        # the raw InvoiceCurrencyCode values the CII test's third conjunct
+        # compares against. Both stay [] on the UBL side.
+        self.cii_summation_taxtotal_currencies = []  # list[list[str]]
+        self.cii_invoice_currency_codes_raw = []     # list[str]
+        # BR-54: one (has_name, has_value) pair per Item attribute group
+        # (BG-32 — UBL //cac:AdditionalItemProperty / CII
+        # //ram:ApplicableProductCharacteristic); both official tests are pure
+        # child-element existence.
+        self.item_attributes = []          # list[(bool, bool)]
+        # BR-56: one bool per Seller tax representative party (BG-11): does it
+        # carry a usable VAT identifier (BT-63)? UBL = exists(VAT-scheme
+        # cac:PartyTaxScheme/cbc:CompanyID) (pure existence); CII =
+        # normalize-space(ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA'])
+        # != '' (non-empty required) — each parser bakes ITS binding's
+        # semantics into the bool.
+        self.taxrep_vat_ids_ok = []        # list[bool]
+        # BR-64 / BR-65: one bool per Item standard identifier (BT-157) /
+        # Item classification identifier (BT-158) context node — True when the
+        # identifier carries its scheme per that syntax's official test
+        # (UBL: exists(@schemeID) / exists(@listID), empty attribute ok;
+        # CII: normalize-space of the attribute != '', per line/classification
+        # group with the not(exists(...)) guard applied by the parser).
+        self.item_std_ids_scheme_ok = []   # list[bool]
+        self.item_class_ids_scheme_ok = []  # list[bool]
+        # BR-CO-03: existence of the Value added tax point date (BT-7) and the
+        # VAT point date code (BT-8) at the official context nodes
+        # (UBL: /Invoice/cbc:TaxPointDate + cac:InvoicePeriod/cbc:DescriptionCode;
+        # CII: //ram:TaxPointDate + //ram:DueDateTypeCode).
+        self.has_tax_point_date = False
+        self.has_tax_point_date_code = False
+        # BR-CO-09: the raw first-two-characters (XPath substring(., 1, 2) /
+        # substring(cbc:CompanyID, 1, 2)) of each VAT identifier at the
+        # official context (UBL: //cac:PartyTaxScheme[VAT]/cbc:CompanyID;
+        # CII: //ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA']); '' when
+        # the UBL CompanyID child is absent (substring of the empty sequence).
+        self.vat_id_prefixes = []          # list[str]
+        # BR-CO-19: one bool per document-level Invoicing period (BG-14): True
+        # when the period is "filled" per that syntax's official test (UBL:
+        # exists StartDate/EndDate/DescriptionCode; CII: StartDateTime or
+        # EndDateTime present).
+        self.invoice_period_filled = []    # list[bool]
         # Totals
         self.line_extension_total = None  # BT-106
         self.tax_exclusive_amount = None  # BT-109
@@ -641,6 +708,63 @@ def build_model(root):
         if el.get("mimeCode") is not None
     ]
 
+    # --- BR-23/52/53/54/64/65/CO-03/CO-09/CO-19 context extraction (UBL) --- #
+    # BR-52 context = cac:AdditionalDocumentReference (a match pattern — any
+    # depth; in UBL 2.1 Invoice they are document-level). Test:
+    # ``normalize-space(cbc:ID) != ''`` over the FIRST cbc:ID child.
+    for adr_el in root.iter("{%s}AdditionalDocumentReference" % NS_CAC):
+        id_el = adr_el.find("cbc:ID", NS)
+        inv.supporting_doc_refs.append(
+            _norm_space(_strval(id_el)) if id_el is not None else "")
+    # BR-53 (UBL): ``every $taxcurrency in cbc:TaxCurrencyCode satisfies
+    # exists(//cac:TaxTotal/cbc:TaxAmount[@currencyID=$taxcurrency])`` —
+    # context /Invoice, RAW string values on both sides of the comparison.
+    inv.tax_currency_codes_raw = [
+        _strval(el) for el in root.findall("cbc:TaxCurrencyCode", NS)]
+    inv.taxtotal_amount_currencies = [
+        el.get("currencyID")
+        for el in root.findall(".//cac:TaxTotal/cbc:TaxAmount", NS)
+        if el.get("currencyID") is not None]
+    # BR-54 context = //cac:AdditionalItemProperty (BG-32). Test:
+    # ``exists(cbc:Name) and exists(cbc:Value)`` — pure existence.
+    for aip_el in root.iter("{%s}AdditionalItemProperty" % NS_CAC):
+        inv.item_attributes.append(
+            (aip_el.find("cbc:Name", NS) is not None,
+             aip_el.find("cbc:Value", NS) is not None))
+    # BR-64 context = cac:InvoiceLine/cac:Item/cac:StandardItemIdentification/
+    # cbc:ID. Test: ``exists(@schemeID)`` — attribute existence (empty ok).
+    inv.item_std_ids_scheme_ok = [
+        "schemeID" in el.attrib
+        for el in root.findall(
+            ".//cac:InvoiceLine/cac:Item/"
+            "cac:StandardItemIdentification/cbc:ID", NS)]
+    # BR-65 context = cac:InvoiceLine/cac:Item/cac:CommodityClassification/
+    # cbc:ItemClassificationCode. Test: ``exists(@listID)``.
+    inv.item_class_ids_scheme_ok = [
+        "listID" in el.attrib
+        for el in root.findall(
+            ".//cac:InvoiceLine/cac:Item/"
+            "cac:CommodityClassification/cbc:ItemClassificationCode", NS)]
+    # BR-CO-03 (UBL, context /Invoice): fires iff BOTH exist —
+    # ``cbc:TaxPointDate`` (BT-7) and the document-level
+    # ``cac:InvoicePeriod/cbc:DescriptionCode`` (BT-8).
+    inv.has_tax_point_date = root.find("cbc:TaxPointDate", NS) is not None
+    inv.has_tax_point_date_code = (
+        root.find("cac:InvoicePeriod/cbc:DescriptionCode", NS) is not None)
+    # BR-CO-09 context = //cac:PartyTaxScheme[cac:TaxScheme/
+    # normalize-space(upper-case(cbc:ID))='VAT']. The tested value is
+    # ``substring(cbc:CompanyID, 1, 2)`` — the RAW first two characters of the
+    # first CompanyID child ('' when absent: substring of the empty sequence).
+    for pts_el in root.iter("{%s}PartyTaxScheme" % NS_CAC):
+        scheme_el = pts_el.find("cac:TaxScheme/cbc:ID", NS)
+        scheme = (_norm_space(_strval(scheme_el).upper())
+                  if scheme_el is not None else None)
+        if scheme != "VAT":
+            continue
+        cid_el = pts_el.find("cbc:CompanyID", NS)
+        inv.vat_id_prefixes.append(
+            _strval(cid_el)[:2] if cid_el is not None else "")
+
     # Seller
     supplier = root.find("cac:AccountingSupplierParty/cac:Party", NS)
     if supplier is not None:
@@ -675,6 +799,9 @@ def build_model(root):
                     and pts_el.find("cbc:CompanyID", NS) is not None):
                 inv.taxrep_has_vat_company_id = True
                 break
+        # BR-56 (UBL test, per representative party): exists(cac:PartyTaxScheme
+        # [VAT scheme]/cbc:CompanyID) — pure existence, empty CompanyID ok.
+        inv.taxrep_vat_ids_ok.append(_party_has_vat_company_id(trp_el))
         name_el = trp_el.find("cac:PartyName/cbc:Name", NS)
         inv.tax_representatives.append(TaxRepresentative(
             _strval(name_el) if name_el is not None else None,
@@ -856,6 +983,15 @@ def build_model(root):
         for el in parent:
             if el.tag == _period_tag:
                 inv.invoice_periods.append(_build_period(el))
+                # BR-CO-19 (UBL test, same context node set as BR-29):
+                # exists(cbc:StartDate) or exists(cbc:EndDate)
+                #   or (exists(cbc:DescriptionCode) and not(StartDate) and
+                #       not(EndDate))
+                # — logically equivalent to "any of the three exists".
+                inv.invoice_period_filled.append(
+                    el.find("cbc:StartDate", NS) is not None
+                    or el.find("cbc:EndDate", NS) is not None
+                    or el.find("cbc:DescriptionCode", NS) is not None)
 
     # Document-level allowance/charge (BG-20/BG-21) — direct children of Invoice.
     for ac_el in root.findall("cac:AllowanceCharge", NS):
@@ -869,6 +1005,12 @@ def build_model(root):
         ln = InvoiceLine(i)
         ln.id = _text(ln_el.find("cbc:ID", NS))
         ln.quantity = _text(ln_el.find("cbc:InvoicedQuantity", NS))
+        # BR-23 (UBL test, per line): exists(cbc:InvoicedQuantity/@unitCode)
+        # or exists(cbc:CreditedQuantity/@unitCode) — attribute existence.
+        ln.has_quantity_unit_code = any(
+            q_el.get("unitCode") is not None
+            for tag in ("InvoicedQuantity", "CreditedQuantity")
+            for q_el in ln_el.findall("cbc:%s" % tag, NS))
         lea_el = ln_el.find("cbc:LineExtensionAmount", NS)
         ln.line_extension_amount = _text(lea_el)
         ln.line_extension_amount_raw = _rawtext(lea_el)

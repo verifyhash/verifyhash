@@ -85,6 +85,14 @@ GAP_A_RULES = {
     "BR-IC-10", "BR-S-08",
 }
 
+# Canary Islands IGIC (L) VAT category batch B (differentially proven the
+# same way; BR-AF-09 is UBL-proven only — the official CII artifact ships it
+# as a tautology).
+AF_RULES = {
+    "BR-AF-01", "BR-AF-02", "BR-AF-03", "BR-AF-04", "BR-AF-05", "BR-AF-06",
+    "BR-AF-07", "BR-AF-08", "BR-AF-09", "BR-AF-10",
+}
+
 # Export outside the EU (G) + Not subject to VAT (O) VAT category batch
 # (differentially proven the same way).
 GO_RULES = {
@@ -1193,6 +1201,202 @@ def add_buyer_vat_party_tax_scheme(root, company_id="DE987654321"):
                   q(NS_CBC, "ID")).text = "VAT"
 
 
+def igic_base():
+    """A clean IGIC (L) invoice: the S-25% base with the line + breakdown
+    category codes flipped to L. The 25% rate, amounts and seller VAT id stay,
+    so nothing fires — 25 satisfies the UBL ``(cbc:Percent) >= 0`` rate test
+    and the breakdown arithmetic already reconciles."""
+    r = base()
+    ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+    child(ctc, NS_CBC, "ID").text = "L"
+    child(subtotal_category(r), NS_CBC, "ID").text = "L"
+    return r
+
+
+class IgicBatch(unittest.TestCase):
+    """BR-AF-01..10 — Canary Islands IGIC (L) VAT category rules (UBL
+    semantics: the rate rules accept >= 0, the -08 sum is a strict ±1 band
+    gated on any invoice line existing, -09 is the BR-S-09 band)."""
+
+    def test_clean_igic_base_fires_nothing(self):
+        self.assertEqual(fired(igic_base()), set())
+
+    # -- BR-AF-01: items <-> breakdown agreement (bidirectional) --------------
+    def test_01_l_line_without_l_breakdown_fires(self):
+        r = base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "ID").text = "L"      # breakdown stays 'S'
+        self.assertIn("BR-AF-01", fired(r))
+        self.assertNotIn("BR-AF-01", fired(igic_base()))
+
+    def test_01_orphan_l_breakdown_fires(self):
+        r = base()                                # line stays 'S'
+        child(subtotal_category(r), NS_CBC, "ID").text = "L"
+        self.assertIn("BR-AF-01", fired(r))
+
+    def test_01_l_allowance_without_l_breakdown_fires(self):
+        r = base()
+        add_doc_allowance_charge(r, charge=False, percent="25", category="L",
+                                 amount="0.00")
+        self.assertIn("BR-AF-01", fired(r))
+
+    # -- BR-AF-02..04: seller VAT identifier ----------------------------------
+    def test_02_line_without_seller_vat_id_fires(self):
+        r = igic_base()
+        remove_seller_party_tax_scheme(r)
+        self.assertIn("BR-AF-02", fired(r))
+        self.assertNotIn("BR-AF-02", fired(igic_base()))
+
+    def test_02_tax_representative_satisfies(self):
+        r = igic_base()
+        remove_seller_party_tax_scheme(r)
+        trp = ET.Element(q(NS_CAC, "TaxRepresentativeParty"))
+        pts = ET.SubElement(trp, q(NS_CAC, "PartyTaxScheme"))
+        ET.SubElement(pts, q(NS_CBC, "CompanyID")).text = "ES999999999"
+        ET.SubElement(ET.SubElement(pts, q(NS_CAC, "TaxScheme")),
+                      q(NS_CBC, "ID")).text = "VAT"
+        r.insert(0, trp)
+        self.assertNotIn("BR-AF-02", fired(r))
+
+    def test_02_scheme_less_line_category_does_not_fire(self):
+        # Both disjuncts of the official BR-AF-02 test are VAT-scheme scoped
+        # (unlike BR-S-02): an L ClassifiedTaxCategory with NO TaxScheme
+        # matches neither node set, so the rule holds even without a seller id.
+        r = igic_base()
+        remove_seller_party_tax_scheme(r)
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        ctc.remove(ctc.find(q(NS_CAC, "TaxScheme")))
+        self.assertNotIn("BR-AF-02", fired(r))
+
+    def test_03_allowance_without_seller_vat_id_fires(self):
+        r = igic_base()
+        add_doc_allowance_charge(r, charge=False, percent="25", category="L",
+                                 amount="0.00")
+        remove_seller_party_tax_scheme(r)
+        self.assertIn("BR-AF-03", fired(r))
+        r2 = igic_base()
+        add_doc_allowance_charge(r2, charge=False, percent="25", category="L",
+                                 amount="0.00")
+        self.assertNotIn("BR-AF-03", fired(r2))
+
+    def test_04_charge_without_seller_vat_id_fires(self):
+        r = igic_base()
+        add_doc_allowance_charge(r, charge=True, percent="25", category="L",
+                                 amount="0.00")
+        remove_seller_party_tax_scheme(r)
+        self.assertIn("BR-AF-04", fired(r))
+        r2 = igic_base()
+        add_doc_allowance_charge(r2, charge=True, percent="25", category="L",
+                                 amount="0.00")
+        self.assertNotIn("BR-AF-04", fired(r2))
+
+    # -- BR-AF-05..07: VAT rate must be >= 0 (zero IS allowed on UBL) ----------
+    def test_05_negative_rate_line_fires(self):
+        r = igic_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "Percent").text = "-5"
+        self.assertIn("BR-AF-05", fired(r))
+
+    def test_05_zero_rate_holds_on_ubl(self):
+        # (cbc:Percent) >= 0 — the UBL binding accepts a 0% IGIC rate
+        # (the CII binding does not; see test_rules_cii.py).
+        r = igic_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        child(ctc, NS_CBC, "Percent").text = "0"
+        self.assertNotIn("BR-AF-05", fired(r))
+
+    def test_05_missing_rate_fires(self):
+        # () >= 0 is FALSE — an absent Percent fires.
+        r = igic_base()
+        ctc = first_line_item(r).find(q(NS_CAC, "ClassifiedTaxCategory"))
+        ctc.remove(child(ctc, NS_CBC, "Percent"))
+        self.assertIn("BR-AF-05", fired(r))
+
+    def test_06_negative_rate_allowance_fires(self):
+        r = igic_base()
+        add_doc_allowance_charge(r, charge=False, percent="-5", category="L",
+                                 amount="0.00")
+        self.assertIn("BR-AF-06", fired(r))
+        r2 = igic_base()
+        add_doc_allowance_charge(r2, charge=False, percent="0", category="L",
+                                 amount="0.00")
+        self.assertNotIn("BR-AF-06", fired(r2))  # zero rate holds on UBL
+
+    def test_07_negative_rate_charge_fires(self):
+        r = igic_base()
+        add_doc_allowance_charge(r, charge=True, percent="-5", category="L",
+                                 amount="0.00")
+        self.assertIn("BR-AF-07", fired(r))
+        r2 = igic_base()
+        add_doc_allowance_charge(r2, charge=True, percent="0", category="L",
+                                 amount="0.00")
+        self.assertNotIn("BR-AF-07", fired(r2))
+
+    # -- BR-AF-08: per-rate bucket sum, strict ±1 band -------------------------
+    def test_08_taxable_outside_band_fires(self):
+        r = igic_base()
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "625745.54"  # +2
+        self.assertIn("BR-AF-08", fired(r))
+        self.assertNotIn("BR-AF-08", fired(igic_base()))
+
+    def test_08_inside_band_holds(self):
+        # The band is strict ±1 around the bucket sum: +0.50 holds.
+        r = igic_base()
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "625744.04"
+        self.assertNotIn("BR-AF-08", fired(r))
+
+    def test_08_allowance_enters_the_sum(self):
+        r = igic_base()
+        add_doc_allowance_charge(r, charge=False, percent="25", category="L",
+                                 amount="10.00")
+        child(subtotal(r), NS_CBC, "TaxableAmount").text = "625733.54"
+        self.assertNotIn("BR-AF-08", fired(r))
+
+    def test_08_no_invoice_line_fires(self):
+        # The official band is gated on exists(//cac:InvoiceLine): an L
+        # breakdown with a rate on a line-less document fires.
+        r = igic_base()
+        for ln in r.findall(q(NS_CAC, "InvoiceLine")):
+            r.remove(ln)
+        self.assertIn("BR-AF-08", fired(r))
+
+    def test_08_missing_rate_is_vacuous(self):
+        # every $rate in () — an L breakdown without a Percent never fires
+        # BR-AF-08 (BR-48 guards the missing rate instead).
+        r = igic_base()
+        cat = subtotal_category(r)
+        cat.remove(child(cat, NS_CBC, "Percent"))
+        f = fired(r)
+        self.assertNotIn("BR-AF-08", f)
+        self.assertIn("BR-48", f)
+
+    # -- BR-AF-09: breakdown tax = taxable x rate (±1 band) --------------------
+    def test_09_tax_far_from_taxable_times_rate_fires(self):
+        r = igic_base()
+        child(subtotal(r), NS_CBC, "TaxAmount").text = "99.99"
+        self.assertIn("BR-AF-09", fired(r))
+        self.assertNotIn("BR-AF-09", fired(igic_base()))
+
+    def test_09_inside_band_holds(self):
+        r = igic_base()
+        child(subtotal(r), NS_CBC, "TaxAmount").text = "156436.39"  # +0.50
+        self.assertNotIn("BR-AF-09", fired(r))
+
+    # -- BR-AF-10: exemption reason forbidden ----------------------------------
+    def test_10_exemption_reason_fires(self):
+        r = igic_base()
+        ET.SubElement(subtotal_category(r),
+                      q(NS_CBC, "TaxExemptionReason")).text = "n/a"
+        self.assertIn("BR-AF-10", fired(r))
+        self.assertNotIn("BR-AF-10", fired(igic_base()))
+
+    def test_10_exemption_reason_code_fires(self):
+        r = igic_base()
+        ET.SubElement(subtotal_category(r),
+                      q(NS_CBC, "TaxExemptionReasonCode")).text = "VATEX-EU-O"
+        self.assertIn("BR-AF-10", fired(r))
+
+
 class NotSubjectToVatBatch(unittest.TestCase):
     """BR-O-02..14 — Not subject to VAT (O) VAT category rules.
 
@@ -1427,7 +1631,8 @@ class RulesetShape(unittest.TestCase):
         ids = {"-".join(p.upper() for p in fn.__name__.split("_"))
                for fn in rules.ALL_RULES}
         for rid in (NEW_RULES | LINE_RULES | PAYMENT_RULES | ZE_RULES
-                    | AEIC_RULES | GO_RULES | CALC_RULES | GAP_A_RULES):
+                    | AEIC_RULES | GO_RULES | CALC_RULES | GAP_A_RULES
+                    | AF_RULES):
             self.assertIn(rid, ids, rid)
         # No duplicate rule ids in the ruleset.
         all_ids = ["-".join(p.upper() for p in fn.__name__.split("_"))

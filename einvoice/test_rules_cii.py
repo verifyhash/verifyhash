@@ -1061,5 +1061,171 @@ class TestGapBatchACII(unittest.TestCase):
         self.assertIn("BR-48", got)
 
 
+class TestIgicBatchBCII(unittest.TestCase):
+    """CII-side coverage for the IGIC batch B — BR-AF-01..10 over the CII
+    model. Pins the CII-binding specifics the differential leg proved:
+
+      * the rate rules (BR-AF-05/06/07) require ``RateApplicablePercent > 0``
+        on CII (strictly greater — the UBL binding accepts 0);
+      * BR-AF-08 applies the EXACT per-rate round2 bucket equality (BR-S-08's
+        proven CII idiom). The SHIPPED CII assert is vacuously bound (its
+        context is the ApplicableTradeTax row, so ``../RateApplicablePercent``
+        is empty and ``every $rate in ()`` always holds) and can never fire —
+        the engine asserts the intended arithmetic anyway, CII-ungraded;
+      * BR-AF-09 is engine-asserted on the CII model too (the official CII
+        artifact ships it as ``test="true()"``, so it is deliberately NOT
+        CII-graded in the differential — the engine checks the real
+        arithmetic on both syntaxes).
+    """
+
+    def assert_fired(self, root, rule_id, expect=True):
+        got = _fired_ids(root)
+        if expect:
+            self.assertIn(rule_id, got,
+                          "%s should fire; fired=%s" % (rule_id, sorted(got)))
+        else:
+            self.assertNotIn(rule_id, got,
+                             "%s should NOT fire" % rule_id)
+
+    # ---- helpers -----------------------------------------------------------
+    def _to_igic(self, r):
+        """Flip every S CategoryCode (20 lines + 2 breakdown rows) to L: a
+        clean IGIC invoice — the 6/21 rates satisfy the CII > 0 predicate and
+        the bucket arithmetic is untouched."""
+        txn = r.find("rsm:SupplyChainTradeTransaction", NS)
+        for cc in txn.iter(_q(NSA, "CategoryCode")):
+            if cc.text == "S":
+                cc.text = "L"
+
+    def _igic_root(self):
+        r = _good_root()
+        self._to_igic(r)
+        return r
+
+    def _line_tax(self, r):
+        return _first_line(r).find(
+            "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", NS)
+
+    def _seller(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:SellerTradeParty", NS)
+
+    def _add_igic_ac(self, r, charge, rate):
+        """Document allowance/charge with an IGIC (L) CategoryTradeTax;
+        ActualAmount 0.00 keeps the totals and bucket sums unchanged."""
+        ac = ET.SubElement(_settlement(r),
+                           _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        ind = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+        ET.SubElement(
+            ind, "{urn:un:unece:uncefact:data:standard:"
+                 "UnqualifiedDataType:100}Indicator").text = (
+            "true" if charge else "false")
+        ET.SubElement(ac, _q(NSA, "ActualAmount")).text = "0.00"
+        ET.SubElement(ac, _q(NSA, "Reason")).text = (
+            "Freight" if charge else "Discount")
+        ctt = ET.SubElement(ac, _q(NSA, "CategoryTradeTax"))
+        ET.SubElement(ctt, _q(NSA, "TypeCode")).text = "VAT"
+        ET.SubElement(ctt, _q(NSA, "CategoryCode")).text = "L"
+        ET.SubElement(ctt, _q(NSA, "RateApplicablePercent")).text = rate
+
+    # ---- the clean converted base -----------------------------------------
+    def test_clean_igic_invoice_fires_nothing(self):
+        fired = _fired_ids(self._igic_root())
+        self.assertEqual(
+            fired, set(),
+            "clean all-L CII invoice unexpectedly fired: %s" % sorted(fired))
+
+    # ---- BR-AF-01 ------------------------------------------------------------
+    def test_01_l_line_without_l_breakdown_fires(self):
+        r = _good_root()
+        self._line_tax(r).find("ram:CategoryCode", NS).text = "L"
+        self.assert_fired(r, "BR-AF-01")
+        self.assert_fired(self._igic_root(), "BR-AF-01", expect=False)
+
+    # ---- BR-AF-02..04: seller VAT/tax registration ---------------------------
+    def test_02_line_without_seller_registration_fires(self):
+        r = self._igic_root()
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+        self.assert_fired(r, "BR-AF-02")
+        self.assert_fired(self._igic_root(), "BR-AF-02", expect=False)
+
+    def test_03_allowance_without_seller_registration_fires(self):
+        r = _good_root()
+        self._add_igic_ac(r, charge=False, rate="21")
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+        self.assert_fired(r, "BR-AF-03")
+        r2 = _good_root()
+        self._add_igic_ac(r2, charge=False, rate="21")
+        self.assert_fired(r2, "BR-AF-03", expect=False)
+
+    def test_04_charge_without_seller_registration_fires(self):
+        r = _good_root()
+        self._add_igic_ac(r, charge=True, rate="21")
+        seller = self._seller(r)
+        seller.remove(seller.find("ram:SpecifiedTaxRegistration", NS))
+        self.assert_fired(r, "BR-AF-04")
+
+    # ---- BR-AF-05..07: the CII binding requires rate > 0 ---------------------
+    def test_05_zero_rate_line_fires_on_cii(self):
+        # UBL accepts a 0% IGIC rate ((Percent) >= 0); the CII artifact tests
+        # RateApplicablePercent > 0, so zero FIRES here.
+        r = self._igic_root()
+        self._line_tax(r).find("ram:RateApplicablePercent", NS).text = "0"
+        self.assert_fired(r, "BR-AF-05")
+        self.assert_fired(self._igic_root(), "BR-AF-05", expect=False)
+
+    def test_06_zero_rate_allowance_fires_on_cii(self):
+        r = _good_root()
+        self._add_igic_ac(r, charge=False, rate="0")
+        self.assert_fired(r, "BR-AF-06")
+        r2 = _good_root()
+        self._add_igic_ac(r2, charge=False, rate="21")
+        self.assert_fired(r2, "BR-AF-06", expect=False)
+
+    def test_07_zero_rate_charge_fires_on_cii(self):
+        r = _good_root()
+        self._add_igic_ac(r, charge=True, rate="0")
+        self.assert_fired(r, "BR-AF-07")
+
+    # ---- BR-AF-08: EXACT per-rate round2 bucket equality (engine; the
+    # shipped CII assert is vacuously bound and never fires -> CII-ungraded) --
+    def test_08_shifted_basis_fires(self):
+        # +2 off the L/6 bucket (183.23 -> 185.23): the CII equality is exact,
+        # so even this small shift fires (no ±1 band on CII).
+        r = self._igic_root()
+        _first_breakdown(r).find("ram:BasisAmount", NS).text = "185.23"
+        self.assert_fired(r, "BR-AF-08")
+        self.assert_fired(self._igic_root(), "BR-AF-08", expect=False)
+
+    def test_08_off_by_a_cent_fires(self):
+        r = self._igic_root()
+        _first_breakdown(r).find("ram:BasisAmount", NS).text = "183.24"
+        self.assert_fired(r, "BR-AF-08")
+
+    # ---- BR-AF-09: engine-asserted on CII (officially a tautology) -----------
+    def test_09_tax_far_from_taxable_times_rate_fires(self):
+        # The official CII artifact ships BR-AF-09 as test="true()" (never
+        # fires); the ENGINE deliberately asserts the real ±1 band on the CII
+        # model too — this pins that strictness (CII-ungraded by design).
+        r = self._igic_root()
+        _first_breakdown(r).find("ram:CalculatedAmount", NS).text = "99.99"
+        self.assert_fired(r, "BR-AF-09")
+        self.assert_fired(self._igic_root(), "BR-AF-09", expect=False)
+
+    # ---- BR-AF-10: exemption reason forbidden --------------------------------
+    def test_10_exemption_reason_fires(self):
+        r = self._igic_root()
+        bd = _first_breakdown(r)
+        rate = bd.find("ram:RateApplicablePercent", NS)
+        reason = ET.Element(_q(NSA, "ExemptionReason"))
+        reason.text = "n/a"
+        bd.insert(list(bd).index(rate), reason)
+        self.assert_fired(r, "BR-AF-10")
+        self.assert_fired(self._igic_root(), "BR-AF-10", expect=False)
+
+
 if __name__ == "__main__":
     unittest.main()

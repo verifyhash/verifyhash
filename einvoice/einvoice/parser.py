@@ -18,7 +18,12 @@ from collections import namedtuple
 # document/line allowance-charge: the normalize-space()d category code (BT-151/
 # BT-95/BT-102), the upper-cased TaxScheme/ID, and the raw Percent text
 # (BT-152/BT-96/BT-103). Consumed by the Standard-rate rules BR-S-02..07.
-ItemTaxCategory = namedtuple("ItemTaxCategory", ["id", "scheme_id", "percent"])
+# ``raw_id`` is the UN-normalized category-code text (whitespace preserved):
+# BR-AF-04's official last disjunct gates on the RAW ``cbc:ID = 'L'`` node set
+# (no normalize-space — an artifact quirk), so that rule must see it.
+ItemTaxCategory = namedtuple("ItemTaxCategory",
+                             ["id", "scheme_id", "percent", "raw_id"],
+                             defaults=(None,))
 
 # One cac:InvoicePeriod (BG-14 document level / BG-26 line level): the stripped
 # StartDate/EndDate text, or None when the element is ABSENT ("" = present but
@@ -239,7 +244,8 @@ def _build_allowance_charge(ac_el):
         ac.tax_categories.append(ItemTaxCategory(
             _norm_space(_text(cat_el.find("cbc:ID", NS))),
             scheme.upper() if scheme else None,
-            _text(cat_el.find("cbc:Percent", NS))))
+            _text(cat_el.find("cbc:Percent", NS)),
+            _rawtext(cat_el.find("cbc:ID", NS))))
     ac.has_reason = (
         ac_el.find("cbc:AllowanceChargeReason", NS) is not None
         or ac_el.find("cbc:AllowanceChargeReasonCode", NS) is not None)
@@ -1067,7 +1073,8 @@ def build_model(root):
             ln.item_tax_categories.append(ItemTaxCategory(
                 _norm_space(_text(cat_el.find("cbc:ID", NS))),
                 scheme.upper() if scheme else None,
-                _text(cat_el.find("cbc:Percent", NS))))
+                _text(cat_el.find("cbc:Percent", NS)),
+                _rawtext(cat_el.find("cbc:ID", NS))))
         # Invoice line allowance/charge (BG-27/BG-28) — the official context is
         # //cac:InvoiceLine/cac:AllowanceCharge, i.e. AllowanceCharge children of
         # the line (UBL InvoiceLines are direct children of the Invoice root).

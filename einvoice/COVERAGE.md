@@ -23,9 +23,9 @@ XSLT and compares the fired-rule set. The sources:
 
 ## Coverage at a glance
 
-- **233 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **98** proven on both UBL and CII, **135** UBL-only, **0** CII-only.
-- Severity (blocking class): **223** fatal (block validity), **10** warning / information (reported, non-blocking).
+- **243 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **106** proven on both UBL and CII, **137** UBL-only, **0** CII-only.
+- Severity (blocking class): **233** fatal (block validity), **10** warning / information (reported, non-blocking).
 
 ## Rules
 
@@ -157,6 +157,16 @@ the non-blocking `warning` class for the severity column).
 | `BR-AE-08` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Reverse charge (AE) VAT breakdown taxable amount (BT-116) shall equal the exact sum of AE line nets − AE allowances + AE charges. |
 | `BR-AE-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The VAT category tax amount (BT-117) in a Reverse charge (AE) VAT breakdown shall equal 0. |
 | `BR-AE-10` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) meaning 'Reverse charge' or the reason text (BT-120) 'Reverse charge' — the presence-required shape shared with BR-E-10. |
+| `BR-AF-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | IGIC (L) items and the VAT breakdown (BG-23) must agree. |
+| `BR-AF-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An IGIC (L) Invoice line (BT-151) requires the Seller VAT identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63) — both official disjuncts are VAT-scoped (the BR-Z/E-02 symmetric shape, not BR-S-02's scheme-agnostic tail). |
+| `BR-AF-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An IGIC (L) Document level allowance (BT-95) requires the Seller VAT identifier disjunct (same shape as BR-AF-02). |
+| `BR-AF-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An IGIC (L) Document level charge (BT-102) requires the Seller VAT identifier disjunct. |
+| `BR-AF-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an IGIC (L) Invoice line the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero. |
+| `BR-AF-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an IGIC (L) Document level allowance the allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero. |
+| `BR-AF-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an IGIC (L) Document level charge the charge VAT rate (BT-103) shall be 0 (zero) or greater than zero. |
+| `BR-AF-08` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is 'IGIC', the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is 'IGIC' and the VAT rate equals BT-119. |
+| `BR-AF-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The VAT category tax amount (BT-117) in an IGIC (L) VAT breakdown shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119). |
+| `BR-AF-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with an IGIC (L) VAT category code (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120). |
 | `BR-E-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | 'Exempt from VAT' (E) items require exactly one E VAT breakdown (BG-23) row. |
 | `BR-E-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Exempt (E) Invoice line (BT-151) requires the Seller VAT identifier / tax registration id / tax representative VAT id. |
 | `BR-E-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Exempt (E) Document level allowance (BT-95) requires the Seller VAT identifier disjunct. |
@@ -305,6 +315,8 @@ graded set rather than approximated.
 - **BR-11** — same as BR-09 for the buyer postal address country code.
 - **BR-CO-14** — official CII context requires a document-currency BT-110 (ram:TaxTotalAmount) which a no-VAT CII invoice legitimately omits, so the assert never fires there; the UBL transcription would over-reject those documents.
 - **BR-CO-15** — the CII binding carries an extra GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for a no-VAT invoice with no BT-110; the UBL function has no such disjunct and would over-reject the same documents.
+- **BR-AF-08** — the CII artifact binds this assert to the ram:ApplicableTradeTax ROW — unlike BR-S-08, whose context node is the ram:CategoryCode CHILD — so the test's ../ram:RateApplicablePercent resolves against the header settlement (no such children) and 'every $rate in ()' is vacuously true: the shipped assert can never fire. The engine asserts the intended per-rate round2 bucket sum on CII anyway (deliberate strictness).
+- **BR-AF-09** — the official CII artifact ships this assert as test="true()" — a tautology that can never fire, whatever the arithmetic — so CII parity is impossible for a real check; the engine asserts the UBL binding's taxable × rate ±1 band on both syntaxes instead (deliberate strictness).
 - **BR-S-01** — the CII binding is a weak one-directional count that does not flag an orphan Standard-rated breakdown; the UBL biconditional would over-fire on such CII invoices.
 
 ### German CIUS rules fired on UBL, not evaluated on CII
@@ -337,7 +349,7 @@ Machine-checked complement of the rule table: for each CEN EN 16931 artifact, ev
 Deliberate exclusions counted against each universe (10 ids, all
 documented with reasons in the Exclusions section above): `BR-CL-06`, `BR-CL-07`, `BR-CL-08`, `BR-CL-10`, `BR-CL-11`, `BR-CL-15`, `BR-CL-25`, `BR-CL-26`, `BR-DEC-13`, `BR-DEC-15`.
 
-### `en16931-ubl` — 187 implemented + 10 excluded + 26 missing = 223 official `BR-*` rules
+### `en16931-ubl` — 197 implemented + 10 excluded + 16 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 756 non-`BR-*` asserts (`UBL-CR-*`, `UBL-DT-*`, `UBL-SR-*`) — syntax-binding cardinality/
@@ -350,16 +362,6 @@ outside this matrix's scope.
 | `BR-CO-06` | fatal | Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-07` | fatal | Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-08` | fatal | Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-AF-01` | fatal | An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IGIC" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IGIC". |
-| `BR-AF-02` | fatal | An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
-| `BR-AF-03` | fatal | An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
-| `BR-AF-04` | fatal | An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
-| `BR-AF-05` | fatal | In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" the invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero. |
-| `BR-AF-06` | fatal | In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero. |
-| `BR-AF-07` | fatal | In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero. |
-| `BR-AF-08` | fatal | For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "IGIC", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "IGIC" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119). |
-| `BR-AF-09` | fatal | The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is "IGIC" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119). |
-| `BR-AF-10` | fatal | A VAT breakdown (BG-23) with VAT Category code (BT-118) "IGIC" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120). |
 | `BR-AG-01` | fatal | An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IPSI" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IPSI". |
 | `BR-AG-02` | fatal | An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
 | `BR-AG-03` | fatal | An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
@@ -373,7 +375,7 @@ outside this matrix's scope.
 | `BR-B-01` | fatal | An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice. |
 | `BR-B-02` | fatal | An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”. |
 
-### `en16931-cii` — 187 implemented + 10 excluded + 26 missing = 223 official `BR-*` rules
+### `en16931-cii` — 197 implemented + 10 excluded + 16 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 583 non-`BR-*` asserts (`CII-DT-*`, `CII-SR-*`) — syntax-binding cardinality/
@@ -386,16 +388,6 @@ outside this matrix's scope.
 | `BR-CO-06` | fatal | Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-07` | fatal | Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
 | `BR-CO-08` | fatal | Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-AF-01` | fatal | An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IGIC" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IGIC". |
-| `BR-AF-02` | fatal | An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
-| `BR-AF-03` | fatal | An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
-| `BR-AF-04` | fatal | An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
-| `BR-AF-05` | fatal | In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" the invoiced item VAT rate (BT-152) shall be greater than 0 (zero). |
-| `BR-AF-06` | fatal | In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero. |
-| `BR-AF-07` | fatal | In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero. |
-| `BR-AF-08` | fatal | For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "IGIC", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "IGIC" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119). |
-| `BR-AF-09` | fatal | The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is "IGIC" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119). *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-AF-10` | fatal | A VAT Breakdown (BG-23) with VAT Category code (BT-118) "IGIC" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120). |
 | `BR-AG-01` | fatal | An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IPSI" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IPSI". |
 | `BR-AG-02` | fatal | An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |
 | `BR-AG-03` | fatal | An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63). |

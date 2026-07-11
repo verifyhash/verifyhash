@@ -23,9 +23,9 @@ What is checked (each its own test):
      missing rule carries non-empty official text and a flag, ids are sorted
      (deterministic output), and no missing id is secretly fireable by the
      engine or listed as an exclusion.
-  5. known families: the UBL gap contains the allowance/charge VAT blocks
-     (BR-AF-01, BR-AG-01) and the split-payment block (BR-B-01) — the spot
-     checks an independent measurement of the artifact produced.
+  5. known families: the UBL gap contains the IPSI VAT block (BR-AG-01), the
+     split-payment block (BR-B-01) and the remaining BR-CO block (BR-CO-05) —
+     the spot checks an independent measurement of the artifact produced.
 """
 
 from __future__ import annotations
@@ -151,7 +151,7 @@ class CoverageGapTest(unittest.TestCase):
     def test_known_missing_families_present_in_ubl_gap(self):
         ubl = {m["id"] for m in
                self.gap["artifacts"]["en16931-ubl"]["missing_rules"]}
-        for rid in ("BR-AF-01", "BR-AG-01", "BR-B-01"):
+        for rid in ("BR-AG-01", "BR-B-01", "BR-CO-05"):
             self.assertIn(rid, ubl, "expected known-missing %s in UBL gap" % rid)
 
     def test_excluded_ids_considered_matches_live_sources(self):

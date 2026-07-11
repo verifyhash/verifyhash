@@ -376,6 +376,14 @@ CII_SYNTAX_COVERAGE = {
                "net + charges − allowances at that rate",
     "BR-S-09": "Standard-rated breakdown tax = taxable × rate (±1)",
     "BR-S-10": "Standard-rated breakdown has no VAT exemption reason",
+    "BR-AF-01": "IGIC (L) items ⇔ an IGIC VAT breakdown row (BG-23)",
+    "BR-AF-02": "IGIC line ⇒ Seller VAT/tax id present",
+    "BR-AF-03": "IGIC document allowance ⇒ Seller VAT/tax id present",
+    "BR-AF-04": "IGIC document charge ⇒ Seller VAT/tax id present",
+    "BR-AF-05": "IGIC line VAT rate (BT-152) valid (CII binding: > 0)",
+    "BR-AF-06": "IGIC document allowance VAT rate (BT-96) valid (CII: > 0)",
+    "BR-AF-07": "IGIC document charge VAT rate (BT-103) valid (CII: > 0)",
+    "BR-AF-10": "IGIC breakdown has no VAT exemption reason",
     "BR-DEC-09": "≤2 decimals: Sum of Invoice line net amount (BT-106)",
     "BR-DEC-12": "≤2 decimals: Invoice total amount without VAT (BT-109)",
     "BR-DEC-14": "≤2 decimals: Invoice total amount with VAT (BT-112)",
@@ -402,6 +410,14 @@ CII_SYNTAX_EXCLUDED = {
     "BR-11": "same as BR-09 for the Buyer postal address country code",
     "BR-S-01": "CII binding is a weak one-directional count; UBL function is the "
                "strict biconditional (over-fires on an orphan S breakdown)",
+    "BR-AF-08": "the CII artifact binds the assert to the ApplicableTradeTax "
+                "ROW (not its CategoryCode child like BR-S-08), so its "
+                "../ram:RateApplicablePercent is empty and 'every $rate in ()' "
+                "is vacuously true — the shipped assert can never fire; the "
+                "engine asserts the intended per-rate bucket sum anyway",
+    "BR-AF-09": "the official CII artifact ships this assert as test=\"true()\" "
+                "— a tautology that can never fire; the engine asserts the real "
+                "taxable × rate arithmetic on both syntaxes instead",
 }
 
 

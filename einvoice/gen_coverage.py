@@ -105,6 +105,19 @@ CII_CORE_REASON = {
     "BR-S-01": "the CII binding is a weak one-directional count that does not "
                "flag an orphan Standard-rated breakdown; the UBL biconditional "
                "would over-fire on such CII invoices.",
+    "BR-AF-08": "the CII artifact binds this assert to the "
+                "ram:ApplicableTradeTax ROW — unlike BR-S-08, whose context "
+                "node is the ram:CategoryCode CHILD — so the test's "
+                "../ram:RateApplicablePercent resolves against the header "
+                "settlement (no such children) and 'every $rate in ()' is "
+                "vacuously true: the shipped assert can never fire. The "
+                "engine asserts the intended per-rate round2 bucket sum on "
+                "CII anyway (deliberate strictness).",
+    "BR-AF-09": "the official CII artifact ships this assert as test=\"true()\" "
+                "— a tautology that can never fire, whatever the arithmetic — "
+                "so CII parity is impossible for a real check; the engine "
+                "asserts the UBL binding's taxable × rate ±1 band on both "
+                "syntaxes instead (deliberate strictness).",
 }
 _CII_CORE_GENERIC = ("core rule not included in the CII differential leg (LEG 3) "
                      "graded subset; the syntax-agnostic rule body can run over "
@@ -219,8 +232,9 @@ def _prov(source_key, proven, reason=None):
     return entry
 
 
-_FAMILY_ORDER = ["BR", "BR-CL", "BR-CO", "BR-DEC", "BR-AE", "BR-E", "BR-G",
-                 "BR-IC", "BR-O", "BR-S", "BR-Z", "BR-DE", "BR-DE-TMP", "BR-DEX"]
+_FAMILY_ORDER = ["BR", "BR-CL", "BR-CO", "BR-DEC", "BR-AE", "BR-AF", "BR-E",
+                 "BR-G", "BR-IC", "BR-O", "BR-S", "BR-Z", "BR-DE", "BR-DE-TMP",
+                 "BR-DEX"]
 
 
 def _sort_key(rid):

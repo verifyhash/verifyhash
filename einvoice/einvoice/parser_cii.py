@@ -241,7 +241,8 @@ def _build_trade_tax_category(cat_el):
     return ItemTaxCategory(
         _norm_space(_text(cat_el.find("ram:CategoryCode", NS))),
         scheme.upper() if scheme else None,
-        _text(cat_el.find("ram:RateApplicablePercent", NS)))
+        _text(cat_el.find("ram:RateApplicablePercent", NS)),
+        _rawtext(cat_el.find("ram:CategoryCode", NS)))
 
 
 def _build_doc_allowance_charge(ac_el):

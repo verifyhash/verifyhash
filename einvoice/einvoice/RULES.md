@@ -30,7 +30,7 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**233 rules** in total — 223 fatal, 9 warning, 1 information — across 14 families.
+**255 rules** in total — 245 fatal, 9 warning, 1 information — across 17 families.
 
 ## Families
 
@@ -39,6 +39,9 @@ catalog.
 - **BR-CO** (19) — Calculation and consistency rules (cross-total arithmetic).
 - **BR-DEC** (19) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **BR-AE** (10) — VAT breakdown rules for VAT category code AE.
+- **BR-AF** (10) — VAT breakdown rules for VAT category code L (IGIC, Canary Islands general indirect tax).
+- **BR-AG** (10) — VAT breakdown rules for VAT category code M (IPSI, tax for Ceuta and Melilla).
+- **BR-B** (2) — VAT breakdown rules for VAT category code B (Italian split payment).
 - **BR-E** (10) — VAT breakdown rules for VAT category code E.
 - **BR-G** (10) — VAT breakdown rules for VAT category code G.
 - **BR-IC** (12) — VAT breakdown rules for the intra-community VAT category.
@@ -1157,6 +1160,216 @@ VAT breakdown rules for VAT category code AE.
 - **Fix:** Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'AE'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with VAT Category code (BT-118) "Reverse charge" shall have a VAT exemption reason code (BT-121), meaning "Reverse charge" or the VAT exemption reason text (BT-120) "Reverse charge" (or the equivalent standard text in another language).
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “A VAT breakdown (BG-23) with VAT Category code (BT-118) "Reverse charge" shall have a VAT exemption reason code (BT-121), meaning "Reverse charge" or the VAT exemption reason text (BT-120) "Reverse charge" (or the equivalent standard text in another language).”
+
+## BR-AF
+
+VAT breakdown rules for VAT category code L (IGIC, Canary Islands general indirect tax).
+
+### BR-AF-01 — IGIC (L) items and the VAT breakdown (BG-23) must agree.
+
+- **Requires:** An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IGIC" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IGIC".
+- **Business terms:** BG-20, BG-21, BG-23, BG-25, BT-95, BT-102, BT-118, BT-151
+- **Location:** `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']`
+- **Fix:** Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']` so that An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IGIC" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IGIC".
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IGIC" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IGIC".”
+
+### BR-AF-02 — An IGIC (L) Invoice line (BT-151) requires the Seller VAT identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63) — both official disjuncts are VAT-scoped (the BR-Z/E-02 symmetric shape, not BR-S-02's scheme-agnostic tail).
+
+- **Requires:** An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Business terms:** BG-25, BT-31, BT-32, BT-63, BT-151
+- **Location:** `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='L']`
+- **Fix:** Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='L']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).”
+
+### BR-AF-03 — An IGIC (L) Document level allowance (BT-95) requires the Seller VAT identifier disjunct (same shape as BR-AF-02).
+
+- **Requires:** An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Business terms:** BG-20, BT-31, BT-32, BT-63, BT-95
+- **Location:** `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']`
+- **Fix:** Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']` so that An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).”
+
+### BR-AF-04 — An IGIC (L) Document level charge (BT-102) requires the Seller VAT identifier disjunct.
+
+- **Requires:** An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Business terms:** BG-21, BT-31, BT-32, BT-63, BT-102
+- **Location:** `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']`
+- **Fix:** Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']` so that An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).”
+
+### BR-AF-05 — In an IGIC (L) Invoice line the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.
+
+- **Requires:** In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" the invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.
+- **Business terms:** BG-25, BT-151, BT-152
+- **Location:** `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" the invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IGIC" the invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.”
+
+### BR-AF-06 — In an IGIC (L) Document level allowance the allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.
+
+- **Requires:** In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.
+- **Business terms:** BG-20, BT-95, BT-96
+- **Location:** `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IGIC" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.”
+
+### BR-AF-07 — In an IGIC (L) Document level charge the charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.
+
+- **Requires:** In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.
+- **Business terms:** BG-21, BT-102, BT-103
+- **Location:** `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IGIC" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.”
+
+### BR-AF-08 — For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is 'IGIC', the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is 'IGIC' and the VAT rate equals BT-119.
+
+- **Requires:** For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "IGIC", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "IGIC" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).
+- **Business terms:** BG-23, BT-92, BT-95, BT-96, BT-99, BT-102, BT-103, BT-116, BT-118, BT-119, BT-131, BT-151, BT-152
+- **Location:** `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "IGIC", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "IGIC" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "IGIC", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "IGIC" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).”
+
+### BR-AF-09 — The VAT category tax amount (BT-117) in an IGIC (L) VAT breakdown shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).
+
+- **Requires:** The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is "IGIC" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).
+- **Business terms:** BG-23, BT-116, BT-117, BT-118, BT-119
+- **Location:** `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is "IGIC" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is "IGIC" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).”
+
+### BR-AF-10 — A VAT breakdown (BG-23) with an IGIC (L) VAT category code (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).
+
+- **Requires:** A VAT breakdown (BG-23) with VAT Category code (BT-118) "IGIC" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).
+- **Business terms:** BG-23, BT-118, BT-120, BT-121
+- **Location:** `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that A VAT breakdown (BG-23) with VAT Category code (BT-118) "IGIC" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “A VAT breakdown (BG-23) with VAT Category code (BT-118) "IGIC" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).”
+
+## BR-AG
+
+VAT breakdown rules for VAT category code M (IPSI, tax for Ceuta and Melilla).
+
+### BR-AG-01 — IPSI (M) items and the VAT breakdown (BG-23) must agree.
+
+- **Requires:** An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IPSI" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IPSI".
+- **Business terms:** BG-20, BG-21, BG-23, BG-25, BT-95, BT-102, BT-118, BT-151
+- **Location:** `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']`
+- **Fix:** Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']` so that An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IPSI" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IPSI".
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is "IPSI" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with "IPSI".”
+
+### BR-AG-02 — An IPSI (M) Invoice line (BT-151) requires the Seller VAT identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63) — both official disjuncts are VAT-scoped (the BR-Z/E/AF-02 symmetric shape, not BR-S-02's scheme-agnostic tail).
+
+- **Requires:** An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Business terms:** BG-25, BT-31, BT-32, BT-63, BT-151
+- **Location:** `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='M']`
+- **Fix:** Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='M']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).”
+
+### BR-AG-03 — An IPSI (M) Document level allowance (BT-95) requires the Seller VAT identifier disjunct (same shape as BR-AG-02).
+
+- **Requires:** An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Business terms:** BG-20, BT-31, BT-32, BT-63, BT-95
+- **Location:** `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']`
+- **Fix:** Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']` so that An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).”
+
+### BR-AG-04 — An IPSI (M) Document level charge (BT-102) requires the Seller VAT identifier disjunct.
+
+- **Requires:** An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Business terms:** BG-21, BT-31, BT-32, BT-63, BT-102
+- **Location:** `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']`
+- **Fix:** Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']` so that An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IPSI" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).”
+
+### BR-AG-05 — In an IPSI (M) Invoice line the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.
+
+- **Requires:** In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IPSI" the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.
+- **Business terms:** BG-25, BT-151, BT-152
+- **Location:** `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IPSI" the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is "IPSI" the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.”
+
+### BR-AG-06 — In an IPSI (M) Document level allowance the allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.
+
+- **Requires:** In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IPSI" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.
+- **Business terms:** BG-20, BT-95, BT-96
+- **Location:** `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IPSI" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is "IPSI" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.”
+
+### BR-AG-07 — In an IPSI (M) Document level charge the charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.
+
+- **Requires:** In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IPSI" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.
+- **Business terms:** BG-21, BT-102, BT-103
+- **Location:** `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IPSI" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "IPSI" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.”
+
+### BR-AG-08 — For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is 'IPSI', the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is 'IPSI' and the VAT rate equals BT-119.
+
+- **Requires:** For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "IPSI", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "IPSI" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).
+- **Business terms:** BG-23, BT-92, BT-95, BT-96, BT-99, BT-102, BT-103, BT-116, BT-118, BT-119, BT-131, BT-151, BT-152
+- **Location:** `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "IPSI", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "IPSI" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is "IPSI", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is "IPSI" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).”
+
+### BR-AG-09 — The VAT category tax amount (BT-117) in an IPSI (M) VAT breakdown shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).
+
+- **Requires:** The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is "IPSI" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).
+- **Business terms:** BG-23, BT-116, BT-117, BT-118, BT-119
+- **Location:** `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is "IPSI" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is "IPSI" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).”
+
+### BR-AG-10 — A VAT breakdown (BG-23) with an IPSI (M) VAT category code (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).
+
+- **Requires:** A VAT breakdown (BG-23) with VAT Category code (BT-118) "IPSI" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).
+- **Business terms:** BG-23, BT-118, BT-120, BT-121
+- **Location:** `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`
+- **Fix:** Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that A VAT breakdown (BG-23) with VAT Category code (BT-118) "IPSI" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “A VAT breakdown (BG-23) with VAT Category code (BT-118) "IPSI" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).”
+
+## BR-B
+
+VAT breakdown rules for VAT category code B (Italian split payment).
+
+### BR-B-01 — An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is 'Split payment' shall be a domestic Italian invoice.
+
+- **Requires:** An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice.
+- **Business terms:** BT-95, BT-102, BT-151
+- **Location:** `cbc:IdentificationCode`
+- **Fix:** Adjust the VAT breakdown at `cbc:IdentificationCode` so that An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice.”
+
+### BR-B-02 — An Invoice with a 'Split payment' (B) VAT category code (BT-151, BT-95, BT-118 or BT-102) shall not also contain a 'Standard rated' (S) VAT category code.
+
+- **Requires:** An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”.
+- **Business terms:** BG-20, BG-21, BG-25, BT-95, BT-102, BT-118, BT-151
+- **Location:** `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID`
+- **Fix:** Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID` so that An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”.”
 
 ## BR-E
 

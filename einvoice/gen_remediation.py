@@ -267,7 +267,7 @@ def derive_fix(rid, rec, requires, location, xr_fns):
         or "must contain" in requires.lower() or "must be transmitted" in requires.lower()
     if presence and (rid in xr_fns or not re.search(r"'[A-Z]{1,3}'", test)):
         return "Add the required element at %s: %s." % (loc, req)
-    if rid.split("-")[1] in ("AE", "E", "G", "S", "Z", "O", "IC"):
+    if rid.split("-")[1] in ("AE", "AF", "AG", "B", "E", "G", "S", "Z", "O", "IC"):
         return "Adjust the VAT breakdown at %s so that %s." % (loc, req)
     return "Correct %s so that %s." % (loc, req)
 
@@ -385,6 +385,11 @@ CATEGORY_DE = {
     "Intra-community supply": "innergemeinschaftliche Lieferung",
     "Intracommunity supply": "innergemeinschaftliche Lieferung",
     "Not subject to VAT": "nicht umsatzsteuerbar",
+    # IGIC/IPSI are the proper names of the Canary Islands / Ceuta-Melilla
+    # indirect taxes — untranslatable acronyms; the parenthesis only locates
+    # the tax regime, it invents no meaning beyond the official term.
+    "IGIC": "IGIC (Kanarische Inseln)",
+    "IPSI": "IPSI (Ceuta/Melilla)",
 }
 
 
@@ -498,12 +503,14 @@ def _bg_of(ctx):
             "a Document level charge": "BG-21"}[ctx]
 
 # x-05/06/07: In <ctx> where <code> is C the <rate> shall be 0 / greater than zero
-@frame(r'^In (an Invoice line|a Document level allowance|a Document level charge) \(BG-\d+\) where (?:the )?(.+? VAT category code) \((BT-\d+)\) is "([^"]+)",? the (.+? VAT rate) \((BT-\d+)\) shall be (0 \(zero\)|greater than zero)\.$')
+@frame(r'^In (an Invoice line|a Document level allowance|a Document level charge) \(BG-\d+\) where (?:the )?(.+? VAT category code) \((BT-\d+)\) is "([^"]+)",? the (.+? VAT rate) \((BT-\d+)\) shall be (0 \(zero\) or greater than zero|0 \(zero\)|greater than zero)\.$')
 def _f(m):
     ctx, code_bt, cat, rate_bt, val = m.group(1), m.group(3), m.group(4), m.group(6), m.group(7)
     de_ctx, rel = CTX_DAT[ctx]
     if val == "greater than zero":
         tail = "muss der %s (%s) größer als null sein." % (GLOSSARY[rate_bt], rate_bt)
+    elif val == "0 (zero) or greater than zero":
+        tail = "muss der %s (%s) 0 (null) oder größer als null sein." % (GLOSSARY[rate_bt], rate_bt)
     else:
         tail = "muss der %s (%s) 0 (null) betragen." % (GLOSSARY[rate_bt], rate_bt)
     return ("Bei %s (%s), bei %s der %s (%s) %s lautet, %s"
@@ -536,6 +543,45 @@ def _f(m):
     return ("Der Umsatzsteuerbetrag der Umsatzsteuerkategorie (BT-117) in einer "
             "UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23), bei der der Code der Umsatzsteuerkategorie "
             "(BT-118) %s lautet, muss 0 (null) betragen." % C(cat))
+
+# x-08 (per-rate form, e.g. BR-AF-08/BR-AG-08): for each different VAT rate the
+# taxable amount equals the categorised line/allowance/charge sum. Same sentence
+# as the "Standard rated" SPECIAL entry, parameterised over the category literal
+# (the backreference \1 keeps both category mentions identical).
+@frame(r'^For each different value of VAT category rate \(BT-119\) where the VAT category code \(BT-118\) is "([^"]+)", the VAT category taxable amount \(BT-116\) in a VAT breakdown \(BG-23\) shall equal the sum of Invoice line net amounts \(BT-131\) plus the sum of document level charge amounts \(BT-99\) minus the sum of document level allowance amounts \(BT-92\) where the VAT category code \(BT-151, BT-102, BT-95\) is "\1" and the VAT rate \(BT-152, BT-103, BT-96\) equals the VAT category rate \(BT-119\)\.$')
+def _f(m):
+    cat = m.group(1)
+    return ("Für jeden einzelnen Wert des Umsatzsteuersatzes der Umsatzsteuerkategorie "
+            "(BT-119), bei dem der Code der Umsatzsteuerkategorie (BT-118) %s "
+            "lautet, muss der nach Umsatzsteuerkategorie zu versteuernde Betrag (BT-116) in "
+            "einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) gleich der Summe der Nettobeträge der "
+            "Rechnungspositionen (BT-131) zuzüglich der Summe der Beträge der Zuschläge auf "
+            "Dokumentenebene (BT-99) abzüglich der Summe der Beträge der Nachlässe auf "
+            "Dokumentenebene (BT-92) sein, für die der Code der Umsatzsteuerkategorie "
+            "(BT-151, BT-102, BT-95) %s lautet und der Umsatzsteuersatz "
+            "(BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie "
+            "(BT-119) ist." % (C(cat), C(cat)))
+
+# x-09 (multiplication form, e.g. BR-AF-09/BR-AG-09): tax amount = taxable
+# amount x rate.
+@frame(r'^The VAT category tax amount \(BT-117\) in a VAT breakdown \(BG-23\) where (?:the )?VAT category code \(BT-118\) is "([^"]+)" shall equal the VAT category taxable amount \(BT-116\) multiplied by the VAT category rate \(BT-119\)\.$')
+def _f(m):
+    cat = m.group(1)
+    return ("Der Umsatzsteuerbetrag der Umsatzsteuerkategorie (BT-117) in einer "
+            "UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23), bei der der Code der Umsatzsteuerkategorie "
+            "(BT-118) %s lautet, muss gleich dem nach Umsatzsteuerkategorie zu "
+            "versteuernden Betrag (BT-116) multipliziert mit dem Umsatzsteuersatz der "
+            "Umsatzsteuerkategorie (BT-119) sein." % C(cat))
+
+# x-10 (e.g. BR-AF-10/BR-AG-10): a breakdown of this category carries no VAT
+# exemption reason.
+@frame(r'^A VAT breakdown \(BG-23\) with VAT Category code \(BT-118\) "([^"]+)" shall not have a VAT exemption reason code \(BT-121\) or VAT exemption reason text \(BT-120\)\.$')
+def _f(m):
+    cat = m.group(1)
+    return ("Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie "
+            "(BT-118) %s darf keinen Code für den Grund der Umsatzsteuerbefreiung "
+            "(BT-121) und keinen Text für den Grund der Umsatzsteuerbefreiung (BT-120) "
+            "enthalten." % C(cat))
 
 # ---- BR-CO arithmetic/aggregation formulas ----
 _CO_TERM = re.compile(r"([A-Za-z][A-Za-z ]*?) \((BT-\d+)\)")
@@ -805,6 +851,24 @@ SPECIAL = {
         "(BT-151, BT-102, BT-95) „Regelbesteuerung“ lautet und der Umsatzsteuersatz "
         "(BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie "
         "(BT-119) ist.",
+    # ---- Italian split-payment batch C (2026-07). The English keys reproduce
+    # the vendored CEN asserts byte-exactly, INCLUDING their inconsistent curly/
+    # straight quoting around the category literals. "Split payment" is kept
+    # untranslated in the German: it is the code-list meaning of UNCL5305 code
+    # B, for which no official German rendering exists.
+    "An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice.":
+        "Eine Rechnung, bei der der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder "
+        "BT-102) „Split payment“ lautet, muss eine inländische italienische "
+        "Rechnung sein.",
+    'An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”.':
+        "Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf "
+        "Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei "
+        "der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95, BT-118 oder "
+        "BT-102) „Split payment“ lautet, so darf sie keine Rechnungsposition "
+        "(BG-25), keinen Nachlass auf Dokumentenebene (BG-20) und keinen Zuschlag auf "
+        "Dokumentenebene (BG-21) enthalten, bei der bzw. dem der Code der "
+        "Umsatzsteuerkategorie (BT-151, BT-95, BT-118 oder BT-102) "
+        "„Regelbesteuerung“ lautet.",
 }
 
 
@@ -851,7 +915,7 @@ def _fix_family(rid, rec, requires):
         or "must contain" in requires.lower() or "must be transmitted" in requires.lower()
     if presence:
         return "presence"
-    if rid.split("-")[1] in ("AE", "E", "G", "S", "Z", "O", "IC"):
+    if rid.split("-")[1] in ("AE", "AF", "AG", "B", "E", "G", "S", "Z", "O", "IC"):
         return "vat"
     return "correct"
 
@@ -946,8 +1010,9 @@ def _sort_key(rid):
         toks = toks[:-1]
     num = int(toks[-1]) if toks[-1].isdigit() else -1
     family = "-".join(toks[:-1]) if toks[-1].isdigit() else "-".join(toks)
-    order = ["BR", "BR-CL", "BR-CO", "BR-DEC", "BR-AE", "BR-E", "BR-G",
-             "BR-IC", "BR-O", "BR-S", "BR-Z", "BR-DE", "BR-DE-TMP", "BR-DEX"]
+    order = ["BR", "BR-CL", "BR-CO", "BR-DEC", "BR-AE", "BR-AF", "BR-AG",
+             "BR-B", "BR-E", "BR-G", "BR-IC", "BR-O", "BR-S", "BR-Z",
+             "BR-DE", "BR-DE-TMP", "BR-DEX"]
     rank = order.index(family) if family in order else len(order)
     return (rank, family, num, suffix)
 

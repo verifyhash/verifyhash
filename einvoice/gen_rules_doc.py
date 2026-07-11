@@ -48,6 +48,12 @@ FAMILY_LABELS = {
     "BR-DEC": "Decimal-places rules — amounts must not exceed the allowed "
               "number of decimals.",
     "BR-AE": "VAT breakdown rules for VAT category code AE.",
+    "BR-AF": "VAT breakdown rules for VAT category code L (IGIC, Canary "
+             "Islands general indirect tax).",
+    "BR-AG": "VAT breakdown rules for VAT category code M (IPSI, tax for "
+             "Ceuta and Melilla).",
+    "BR-B": "VAT breakdown rules for VAT category code B (Italian "
+            "split payment).",
     "BR-E": "VAT breakdown rules for VAT category code E.",
     "BR-G": "VAT breakdown rules for VAT category code G.",
     "BR-IC": "VAT breakdown rules for the intra-community VAT category.",

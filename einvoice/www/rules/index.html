@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EN 16931 / XRechnung rule index — einvoice rule reference</title>
-<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (233 rules across 14 families), grouped by rule family with a reference page for each.">
+<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (255 rules across 17 families), grouped by rule family with a reference page for each.">
 <link rel="canonical" href="https://verifyhash.com/einvoice/rules/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -69,7 +69,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../index.html">einvoice</a> / EN 16931 / XRechnung rule reference</p>
 <h1>Rule index</h1>
 <p class="lead">Every EN 16931 / XRechnung business rule the einvoice engine can fire, grouped by rule family. Each rule links to its own reference page: what it requires, the BT/BG business terms it touches, the XML location, a one-line fix, the engine severity, and the verbatim official Schematron assert.</p>
-<p><strong>233 rules</strong> in total — 223 fatal, 9 warning, 1 information — across 14 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
+<p><strong>255 rules</strong> in total — 245 fatal, 9 warning, 1 information — across 17 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
 <nav class="toc">
 <ul class="rules">
 <li><a href="#BR">BR</a> (58)</li>
@@ -77,6 +77,9 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="#BR-CO">BR-CO</a> (19)</li>
 <li><a href="#BR-DEC">BR-DEC</a> (19)</li>
 <li><a href="#BR-AE">BR-AE</a> (10)</li>
+<li><a href="#BR-AF">BR-AF</a> (10)</li>
+<li><a href="#BR-AG">BR-AG</a> (10)</li>
+<li><a href="#BR-B">BR-B</a> (2)</li>
 <li><a href="#BR-E">BR-E</a> (10)</li>
 <li><a href="#BR-G">BR-G</a> (10)</li>
 <li><a href="#BR-IC">BR-IC</a> (12)</li>
@@ -237,6 +240,46 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="BR-AE-08/index.html"><code>BR-AE-08</code></a> — The Reverse charge (AE) VAT breakdown taxable amount (BT-116) shall equal the exact sum of AE line nets − AE allowances + AE charges. <span class="sev">fatal</span></li>
 <li><a href="BR-AE-09/index.html"><code>BR-AE-09</code></a> — The VAT category tax amount (BT-117) in a Reverse charge (AE) VAT breakdown shall equal 0. <span class="sev">fatal</span></li>
 <li><a href="BR-AE-10/index.html"><code>BR-AE-10</code></a> — A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) meaning &#x27;Reverse charge&#x27; or the reason text (BT-120) &#x27;Reverse charge&#x27; — the presence-required shape shared with BR-E-10. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-AF">
+<h2>BR-AF <small>(10)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code L (IGIC, Canary Islands general indirect tax).</p>
+<ul class="rules">
+<li><a href="BR-AF-01/index.html"><code>BR-AF-01</code></a> — IGIC (L) items and the VAT breakdown (BG-23) must agree. <span class="sev">fatal</span></li>
+<li><a href="BR-AF-02/index.html"><code>BR-AF-02</code></a> — An IGIC (L) Invoice line (BT-151) requires the Seller VAT identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63) — both official disjuncts are VAT-scoped (the BR-Z/E-02 symmetric shape, not BR-S-02&#x27;s scheme-agnostic tail). <span class="sev">fatal</span></li>
+<li><a href="BR-AF-03/index.html"><code>BR-AF-03</code></a> — An IGIC (L) Document level allowance (BT-95) requires the Seller VAT identifier disjunct (same shape as BR-AF-02). <span class="sev">fatal</span></li>
+<li><a href="BR-AF-04/index.html"><code>BR-AF-04</code></a> — An IGIC (L) Document level charge (BT-102) requires the Seller VAT identifier disjunct. <span class="sev">fatal</span></li>
+<li><a href="BR-AF-05/index.html"><code>BR-AF-05</code></a> — In an IGIC (L) Invoice line the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-AF-06/index.html"><code>BR-AF-06</code></a> — In an IGIC (L) Document level allowance the allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-AF-07/index.html"><code>BR-AF-07</code></a> — In an IGIC (L) Document level charge the charge VAT rate (BT-103) shall be 0 (zero) or greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-AF-08/index.html"><code>BR-AF-08</code></a> — For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is &#x27;IGIC&#x27;, the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is &#x27;IGIC&#x27; and the VAT rate equals BT-119. <span class="sev">fatal</span></li>
+<li><a href="BR-AF-09/index.html"><code>BR-AF-09</code></a> — The VAT category tax amount (BT-117) in an IGIC (L) VAT breakdown shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119). <span class="sev">fatal</span></li>
+<li><a href="BR-AF-10/index.html"><code>BR-AF-10</code></a> — A VAT breakdown (BG-23) with an IGIC (L) VAT category code (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120). <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-AG">
+<h2>BR-AG <small>(10)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code M (IPSI, tax for Ceuta and Melilla).</p>
+<ul class="rules">
+<li><a href="BR-AG-01/index.html"><code>BR-AG-01</code></a> — IPSI (M) items and the VAT breakdown (BG-23) must agree. <span class="sev">fatal</span></li>
+<li><a href="BR-AG-02/index.html"><code>BR-AG-02</code></a> — An IPSI (M) Invoice line (BT-151) requires the Seller VAT identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63) — both official disjuncts are VAT-scoped (the BR-Z/E/AF-02 symmetric shape, not BR-S-02&#x27;s scheme-agnostic tail). <span class="sev">fatal</span></li>
+<li><a href="BR-AG-03/index.html"><code>BR-AG-03</code></a> — An IPSI (M) Document level allowance (BT-95) requires the Seller VAT identifier disjunct (same shape as BR-AG-02). <span class="sev">fatal</span></li>
+<li><a href="BR-AG-04/index.html"><code>BR-AG-04</code></a> — An IPSI (M) Document level charge (BT-102) requires the Seller VAT identifier disjunct. <span class="sev">fatal</span></li>
+<li><a href="BR-AG-05/index.html"><code>BR-AG-05</code></a> — In an IPSI (M) Invoice line the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-AG-06/index.html"><code>BR-AG-06</code></a> — In an IPSI (M) Document level allowance the allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-AG-07/index.html"><code>BR-AG-07</code></a> — In an IPSI (M) Document level charge the charge VAT rate (BT-103) shall be 0 (zero) or greater than zero. <span class="sev">fatal</span></li>
+<li><a href="BR-AG-08/index.html"><code>BR-AG-08</code></a> — For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is &#x27;IPSI&#x27;, the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is &#x27;IPSI&#x27; and the VAT rate equals BT-119. <span class="sev">fatal</span></li>
+<li><a href="BR-AG-09/index.html"><code>BR-AG-09</code></a> — The VAT category tax amount (BT-117) in an IPSI (M) VAT breakdown shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119). <span class="sev">fatal</span></li>
+<li><a href="BR-AG-10/index.html"><code>BR-AG-10</code></a> — A VAT breakdown (BG-23) with an IPSI (M) VAT category code (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120). <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="BR-B">
+<h2>BR-B <small>(2)</small></h2>
+<p class="intro">VAT breakdown rules for VAT category code B (Italian split payment).</p>
+<ul class="rules">
+<li><a href="BR-B-01/index.html"><code>BR-B-01</code></a> — An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is &#x27;Split payment&#x27; shall be a domestic Italian invoice. <span class="sev">fatal</span></li>
+<li><a href="BR-B-02/index.html"><code>BR-B-02</code></a> — An Invoice with a &#x27;Split payment&#x27; (B) VAT category code (BT-151, BT-95, BT-118 or BT-102) shall not also contain a &#x27;Standard rated&#x27; (S) VAT category code. <span class="sev">fatal</span></li>
 </ul>
 </section>
 <section class="fam" id="BR-E">

@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 233,
+  "rule_count": 255,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -2158,6 +2158,476 @@
       },
       "title_de": "Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie (BT-118) „Umkehrung der Steuerschuldnerschaft (Reverse Charge)“ muss einen Code für den Grund der Umsatzsteuerbefreiung (BT-121) mit der Bedeutung „Reverse charge“ oder den Text für den Grund der Umsatzsteuerbefreiung (BT-120) „Reverse charge“ (oder den entsprechenden Standardtext in einer anderen Sprache) enthalten.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'AE'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie (BT-118) „Umkehrung der Steuerschuldnerschaft (Reverse Charge)“ muss einen Code für den Grund der Umsatzsteuerbefreiung (BT-121) mit der Bedeutung „Reverse charge“ oder den Text für den Grund der Umsatzsteuerbefreiung (BT-120) „Reverse charge“ (oder den entsprechenden Standardtext in einer anderen Sprache) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AF-01": {
+      "title": "IGIC (L) items and the VAT breakdown (BG-23) must agree.",
+      "requires": "An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is \"IGIC\" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with \"IGIC\".",
+      "bt_bg": [
+        "BG-20",
+        "BG-21",
+        "BG-23",
+        "BG-25",
+        "BT-95",
+        "BT-102",
+        "BT-118",
+        "BT-151"
+      ],
+      "location_hint": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']",
+      "fix": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']` so that An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is \"IGIC\" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with \"IGIC\".",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is \"IGIC\" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with \"IGIC\"."
+      },
+      "title_de": "Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung in der UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mindestens einen Code der Umsatzsteuerkategorie (BT-118) mit dem Wert „IGIC (Kanarische Inseln)“ enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']`: Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung in der UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mindestens einen Code der Umsatzsteuerkategorie (BT-118) mit dem Wert „IGIC (Kanarische Inseln)“ enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AF-02": {
+      "title": "An IGIC (L) Invoice line (BT-151) requires the Seller VAT identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63) — both official disjuncts are VAT-scoped (the BR-Z/E-02 symmetric shape, not BR-S-02's scheme-agnostic tail).",
+      "requires": "An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "bt_bg": [
+        "BG-25",
+        "BT-31",
+        "BT-32",
+        "BT-63",
+        "BT-151"
+      ],
+      "location_hint": "cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='L']",
+      "fix": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='L']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+      },
+      "title_de": "Enthält eine Rechnung eine Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='L']`: Enthält eine Rechnung eine Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AF-03": {
+      "title": "An IGIC (L) Document level allowance (BT-95) requires the Seller VAT identifier disjunct (same shape as BR-AF-02).",
+      "requires": "An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "bt_bg": [
+        "BG-20",
+        "BT-31",
+        "BT-32",
+        "BT-63",
+        "BT-95"
+      ],
+      "location_hint": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']",
+      "fix": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']` so that An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+      },
+      "title_de": "Enthält eine Rechnung einen Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']`: Enthält eine Rechnung einen Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AF-04": {
+      "title": "An IGIC (L) Document level charge (BT-102) requires the Seller VAT identifier disjunct.",
+      "requires": "An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "bt_bg": [
+        "BG-21",
+        "BT-31",
+        "BT-32",
+        "BT-63",
+        "BT-102"
+      ],
+      "location_hint": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']",
+      "fix": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']` so that An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IGIC\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+      },
+      "title_de": "Enthält eine Rechnung einen Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']`: Enthält eine Rechnung einen Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AF-05": {
+      "title": "In an IGIC (L) Invoice line the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.",
+      "requires": "In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IGIC\" the invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.",
+      "bt_bg": [
+        "BG-25",
+        "BT-151",
+        "BT-152"
+      ],
+      "location_hint": "cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IGIC\" the invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IGIC\" the invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero."
+      },
+      "title_de": "Bei einer Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „IGIC (Kanarische Inseln)“ lautet, muss der Umsatzsteuersatz des in Rechnung gestellten Artikels (BT-152) 0 (null) oder größer als null sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Bei einer Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „IGIC (Kanarische Inseln)“ lautet, muss der Umsatzsteuersatz des in Rechnung gestellten Artikels (BT-152) 0 (null) oder größer als null sein.",
+      "de_source": "translation"
+    },
+    "BR-AF-06": {
+      "title": "In an IGIC (L) Document level allowance the allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.",
+      "requires": "In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IGIC\" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.",
+      "bt_bg": [
+        "BG-20",
+        "BT-95",
+        "BT-96"
+      ],
+      "location_hint": "cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IGIC\" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IGIC\" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero."
+      },
+      "title_de": "Bei einem Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „IGIC (Kanarische Inseln)“ lautet, muss der Umsatzsteuersatz des Nachlasses auf Dokumentenebene (BT-96) 0 (null) oder größer als null sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Bei einem Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „IGIC (Kanarische Inseln)“ lautet, muss der Umsatzsteuersatz des Nachlasses auf Dokumentenebene (BT-96) 0 (null) oder größer als null sein.",
+      "de_source": "translation"
+    },
+    "BR-AF-07": {
+      "title": "In an IGIC (L) Document level charge the charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.",
+      "requires": "In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IGIC\" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.",
+      "bt_bg": [
+        "BG-21",
+        "BT-102",
+        "BT-103"
+      ],
+      "location_hint": "cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IGIC\" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IGIC\" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero."
+      },
+      "title_de": "Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „IGIC (Kanarische Inseln)“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) 0 (null) oder größer als null sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „IGIC (Kanarische Inseln)“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) 0 (null) oder größer als null sein.",
+      "de_source": "translation"
+    },
+    "BR-AF-08": {
+      "title": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is 'IGIC', the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is 'IGIC' and the VAT rate equals BT-119.",
+      "requires": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"IGIC\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"IGIC\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).",
+      "bt_bg": [
+        "BG-23",
+        "BT-92",
+        "BT-95",
+        "BT-96",
+        "BT-99",
+        "BT-102",
+        "BT-103",
+        "BT-116",
+        "BT-118",
+        "BT-119",
+        "BT-131",
+        "BT-151",
+        "BT-152"
+      ],
+      "location_hint": "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"IGIC\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"IGIC\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"IGIC\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"IGIC\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119)."
+      },
+      "title_de": "Für jeden einzelnen Wert des Umsatzsteuersatzes der Umsatzsteuerkategorie (BT-119), bei dem der Code der Umsatzsteuerkategorie (BT-118) „IGIC (Kanarische Inseln)“ lautet, muss der nach Umsatzsteuerkategorie zu versteuernde Betrag (BT-116) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) gleich der Summe der Nettobeträge der Rechnungspositionen (BT-131) zuzüglich der Summe der Beträge der Zuschläge auf Dokumentenebene (BT-99) abzüglich der Summe der Beträge der Nachlässe auf Dokumentenebene (BT-92) sein, für die der Code der Umsatzsteuerkategorie (BT-151, BT-102, BT-95) „IGIC (Kanarische Inseln)“ lautet und der Umsatzsteuersatz (BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) ist.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: Für jeden einzelnen Wert des Umsatzsteuersatzes der Umsatzsteuerkategorie (BT-119), bei dem der Code der Umsatzsteuerkategorie (BT-118) „IGIC (Kanarische Inseln)“ lautet, muss der nach Umsatzsteuerkategorie zu versteuernde Betrag (BT-116) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) gleich der Summe der Nettobeträge der Rechnungspositionen (BT-131) zuzüglich der Summe der Beträge der Zuschläge auf Dokumentenebene (BT-99) abzüglich der Summe der Beträge der Nachlässe auf Dokumentenebene (BT-92) sein, für die der Code der Umsatzsteuerkategorie (BT-151, BT-102, BT-95) „IGIC (Kanarische Inseln)“ lautet und der Umsatzsteuersatz (BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) ist.",
+      "de_source": "translation"
+    },
+    "BR-AF-09": {
+      "title": "The VAT category tax amount (BT-117) in an IGIC (L) VAT breakdown shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).",
+      "requires": "The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is \"IGIC\" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).",
+      "bt_bg": [
+        "BG-23",
+        "BT-116",
+        "BT-117",
+        "BT-118",
+        "BT-119"
+      ],
+      "location_hint": "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is \"IGIC\" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is \"IGIC\" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119)."
+      },
+      "title_de": "Der Umsatzsteuerbetrag der Umsatzsteuerkategorie (BT-117) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23), bei der der Code der Umsatzsteuerkategorie (BT-118) „IGIC (Kanarische Inseln)“ lautet, muss gleich dem nach Umsatzsteuerkategorie zu versteuernden Betrag (BT-116) multipliziert mit dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Der Umsatzsteuerbetrag der Umsatzsteuerkategorie (BT-117) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23), bei der der Code der Umsatzsteuerkategorie (BT-118) „IGIC (Kanarische Inseln)“ lautet, muss gleich dem nach Umsatzsteuerkategorie zu versteuernden Betrag (BT-116) multipliziert mit dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) sein.",
+      "de_source": "translation"
+    },
+    "BR-AF-10": {
+      "title": "A VAT breakdown (BG-23) with an IGIC (L) VAT category code (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).",
+      "requires": "A VAT breakdown (BG-23) with VAT Category code (BT-118) \"IGIC\" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).",
+      "bt_bg": [
+        "BG-23",
+        "BT-118",
+        "BT-120",
+        "BT-121"
+      ],
+      "location_hint": "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that A VAT breakdown (BG-23) with VAT Category code (BT-118) \"IGIC\" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "A VAT breakdown (BG-23) with VAT Category code (BT-118) \"IGIC\" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120)."
+      },
+      "title_de": "Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie (BT-118) „IGIC (Kanarische Inseln)“ darf keinen Code für den Grund der Umsatzsteuerbefreiung (BT-121) und keinen Text für den Grund der Umsatzsteuerbefreiung (BT-120) enthalten.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'L'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie (BT-118) „IGIC (Kanarische Inseln)“ darf keinen Code für den Grund der Umsatzsteuerbefreiung (BT-121) und keinen Text für den Grund der Umsatzsteuerbefreiung (BT-120) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AG-01": {
+      "title": "IPSI (M) items and the VAT breakdown (BG-23) must agree.",
+      "requires": "An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is \"IPSI\" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with \"IPSI\".",
+      "bt_bg": [
+        "BG-20",
+        "BG-21",
+        "BG-23",
+        "BG-25",
+        "BT-95",
+        "BT-102",
+        "BT-118",
+        "BT-151"
+      ],
+      "location_hint": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']",
+      "fix": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']` so that An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is \"IPSI\" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with \"IPSI\".",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is \"IPSI\" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with \"IPSI\"."
+      },
+      "title_de": "Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „IPSI (Ceuta/Melilla)“ lautet, so muss die Rechnung in der UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mindestens einen Code der Umsatzsteuerkategorie (BT-118) mit dem Wert „IPSI (Ceuta/Melilla)“ enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']`: Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „IPSI (Ceuta/Melilla)“ lautet, so muss die Rechnung in der UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mindestens einen Code der Umsatzsteuerkategorie (BT-118) mit dem Wert „IPSI (Ceuta/Melilla)“ enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AG-02": {
+      "title": "An IPSI (M) Invoice line (BT-151) requires the Seller VAT identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63) — both official disjuncts are VAT-scoped (the BR-Z/E/AF-02 symmetric shape, not BR-S-02's scheme-agnostic tail).",
+      "requires": "An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "bt_bg": [
+        "BG-25",
+        "BT-31",
+        "BT-32",
+        "BT-63",
+        "BT-151"
+      ],
+      "location_hint": "cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='M']",
+      "fix": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='M']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+      },
+      "title_de": "Enthält eine Rechnung eine Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „IPSI (Ceuta/Melilla)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='M']`: Enthält eine Rechnung eine Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „IPSI (Ceuta/Melilla)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AG-03": {
+      "title": "An IPSI (M) Document level allowance (BT-95) requires the Seller VAT identifier disjunct (same shape as BR-AG-02).",
+      "requires": "An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "bt_bg": [
+        "BG-20",
+        "BT-31",
+        "BT-32",
+        "BT-63",
+        "BT-95"
+      ],
+      "location_hint": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']",
+      "fix": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']` so that An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+      },
+      "title_de": "Enthält eine Rechnung einen Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „IPSI (Ceuta/Melilla)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']`: Enthält eine Rechnung einen Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „IPSI (Ceuta/Melilla)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AG-04": {
+      "title": "An IPSI (M) Document level charge (BT-102) requires the Seller VAT identifier disjunct.",
+      "requires": "An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "bt_bg": [
+        "BG-21",
+        "BT-31",
+        "BT-32",
+        "BT-63",
+        "BT-102"
+      ],
+      "location_hint": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']",
+      "fix": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']` so that An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IPSI\" shall contain the Seller VAT Identifier (BT-31), the Seller Tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+      },
+      "title_de": "Enthält eine Rechnung einen Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „IPSI (Ceuta/Melilla)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='M']`: Enthält eine Rechnung einen Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „IPSI (Ceuta/Melilla)“ lautet, so muss die Rechnung „Umsatzsteuer-Identifikationsnummer des Verkäufers“ (BT-31), „Steuernummer des Verkäufers“ (BT-32) und/oder „Umsatzsteuer-Identifikationsnummer des Steuervertreters des Verkäufers“ (BT-63) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-AG-05": {
+      "title": "In an IPSI (M) Invoice line the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.",
+      "requires": "In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IPSI\" the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.",
+      "bt_bg": [
+        "BG-25",
+        "BT-151",
+        "BT-152"
+      ],
+      "location_hint": "cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IPSI\" the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "In an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"IPSI\" the Invoiced item VAT rate (BT-152) shall be 0 (zero) or greater than zero."
+      },
+      "title_de": "Bei einer Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „IPSI (Ceuta/Melilla)“ lautet, muss der Umsatzsteuersatz des in Rechnung gestellten Artikels (BT-152) 0 (null) oder größer als null sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Bei einer Rechnungsposition (BG-25), bei der der Code der Umsatzsteuerkategorie des in Rechnung gestellten Artikels (BT-151) „IPSI (Ceuta/Melilla)“ lautet, muss der Umsatzsteuersatz des in Rechnung gestellten Artikels (BT-152) 0 (null) oder größer als null sein.",
+      "de_source": "translation"
+    },
+    "BR-AG-06": {
+      "title": "In an IPSI (M) Document level allowance the allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.",
+      "requires": "In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IPSI\" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.",
+      "bt_bg": [
+        "BG-20",
+        "BT-95",
+        "BT-96"
+      ],
+      "location_hint": "cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IPSI\" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "In a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"IPSI\" the Document level allowance VAT rate (BT-96) shall be 0 (zero) or greater than zero."
+      },
+      "title_de": "Bei einem Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „IPSI (Ceuta/Melilla)“ lautet, muss der Umsatzsteuersatz des Nachlasses auf Dokumentenebene (BT-96) 0 (null) oder größer als null sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cac:AllowanceCharge[cbc:ChargeIndicator=false()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Bei einem Nachlass auf Dokumentenebene (BG-20), bei dem der Code der Umsatzsteuerkategorie des Nachlasses auf Dokumentenebene (BT-95) „IPSI (Ceuta/Melilla)“ lautet, muss der Umsatzsteuersatz des Nachlasses auf Dokumentenebene (BT-96) 0 (null) oder größer als null sein.",
+      "de_source": "translation"
+    },
+    "BR-AG-07": {
+      "title": "In an IPSI (M) Document level charge the charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.",
+      "requires": "In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IPSI\" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.",
+      "bt_bg": [
+        "BG-21",
+        "BT-102",
+        "BT-103"
+      ],
+      "location_hint": "cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IPSI\" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"IPSI\" the Document level charge VAT rate (BT-103) shall be 0 (zero) or greater than zero."
+      },
+      "title_de": "Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „IPSI (Ceuta/Melilla)“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) 0 (null) oder größer als null sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „IPSI (Ceuta/Melilla)“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) 0 (null) oder größer als null sein.",
+      "de_source": "translation"
+    },
+    "BR-AG-08": {
+      "title": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is 'IPSI', the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) plus document level charge amounts (BT-99) minus document level allowance amounts (BT-92) where the VAT category code is 'IPSI' and the VAT rate equals BT-119.",
+      "requires": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"IPSI\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"IPSI\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).",
+      "bt_bg": [
+        "BG-23",
+        "BT-92",
+        "BT-95",
+        "BT-96",
+        "BT-99",
+        "BT-102",
+        "BT-103",
+        "BT-116",
+        "BT-118",
+        "BT-119",
+        "BT-131",
+        "BT-151",
+        "BT-152"
+      ],
+      "location_hint": "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"IPSI\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"IPSI\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "For each different value of VAT category rate (BT-119) where the VAT category code (BT-118) is \"IPSI\", the VAT category taxable amount (BT-116) in a VAT breakdown (BG-23) shall equal the sum of Invoice line net amounts (BT-131) plus the sum of document level charge amounts (BT-99) minus the sum of document level allowance amounts (BT-92) where the VAT category code (BT-151, BT-102, BT-95) is \"IPSI\" and the VAT rate (BT-152, BT-103, BT-96) equals the VAT category rate (BT-119)."
+      },
+      "title_de": "Für jeden einzelnen Wert des Umsatzsteuersatzes der Umsatzsteuerkategorie (BT-119), bei dem der Code der Umsatzsteuerkategorie (BT-118) „IPSI (Ceuta/Melilla)“ lautet, muss der nach Umsatzsteuerkategorie zu versteuernde Betrag (BT-116) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) gleich der Summe der Nettobeträge der Rechnungspositionen (BT-131) zuzüglich der Summe der Beträge der Zuschläge auf Dokumentenebene (BT-99) abzüglich der Summe der Beträge der Nachlässe auf Dokumentenebene (BT-92) sein, für die der Code der Umsatzsteuerkategorie (BT-151, BT-102, BT-95) „IPSI (Ceuta/Melilla)“ lautet und der Umsatzsteuersatz (BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) ist.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: Für jeden einzelnen Wert des Umsatzsteuersatzes der Umsatzsteuerkategorie (BT-119), bei dem der Code der Umsatzsteuerkategorie (BT-118) „IPSI (Ceuta/Melilla)“ lautet, muss der nach Umsatzsteuerkategorie zu versteuernde Betrag (BT-116) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) gleich der Summe der Nettobeträge der Rechnungspositionen (BT-131) zuzüglich der Summe der Beträge der Zuschläge auf Dokumentenebene (BT-99) abzüglich der Summe der Beträge der Nachlässe auf Dokumentenebene (BT-92) sein, für die der Code der Umsatzsteuerkategorie (BT-151, BT-102, BT-95) „IPSI (Ceuta/Melilla)“ lautet und der Umsatzsteuersatz (BT-152, BT-103, BT-96) gleich dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) ist.",
+      "de_source": "translation"
+    },
+    "BR-AG-09": {
+      "title": "The VAT category tax amount (BT-117) in an IPSI (M) VAT breakdown shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).",
+      "requires": "The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is \"IPSI\" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).",
+      "bt_bg": [
+        "BG-23",
+        "BT-116",
+        "BT-117",
+        "BT-118",
+        "BT-119"
+      ],
+      "location_hint": "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is \"IPSI\" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is \"IPSI\" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119)."
+      },
+      "title_de": "Der Umsatzsteuerbetrag der Umsatzsteuerkategorie (BT-117) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23), bei der der Code der Umsatzsteuerkategorie (BT-118) „IPSI (Ceuta/Melilla)“ lautet, muss gleich dem nach Umsatzsteuerkategorie zu versteuernden Betrag (BT-116) multipliziert mit dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Der Umsatzsteuerbetrag der Umsatzsteuerkategorie (BT-117) in einer UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23), bei der der Code der Umsatzsteuerkategorie (BT-118) „IPSI (Ceuta/Melilla)“ lautet, muss gleich dem nach Umsatzsteuerkategorie zu versteuernden Betrag (BT-116) multipliziert mit dem Umsatzsteuersatz der Umsatzsteuerkategorie (BT-119) sein.",
+      "de_source": "translation"
+    },
+    "BR-AG-10": {
+      "title": "A VAT breakdown (BG-23) with an IPSI (M) VAT category code (BT-118) shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).",
+      "requires": "A VAT breakdown (BG-23) with VAT Category code (BT-118) \"IPSI\" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).",
+      "bt_bg": [
+        "BG-23",
+        "BT-118",
+        "BT-120",
+        "BT-121"
+      ],
+      "location_hint": "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']",
+      "fix": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that A VAT breakdown (BG-23) with VAT Category code (BT-118) \"IPSI\" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "A VAT breakdown (BG-23) with VAT Category code (BT-118) \"IPSI\" shall not have a VAT exemption reason code (BT-121) or VAT exemption reason text (BT-120)."
+      },
+      "title_de": "Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie (BT-118) „IPSI (Ceuta/Melilla)“ darf keinen Code für den Grund der Umsatzsteuerbefreiung (BT-121) und keinen Text für den Grund der Umsatzsteuerbefreiung (BT-120) enthalten.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'M'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` an, sodass gilt: Eine UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mit dem Code der Umsatzsteuerkategorie (BT-118) „IPSI (Ceuta/Melilla)“ darf keinen Code für den Grund der Umsatzsteuerbefreiung (BT-121) und keinen Text für den Grund der Umsatzsteuerbefreiung (BT-120) enthalten.",
+      "de_source": "translation"
+    },
+    "BR-B-01": {
+      "title": "An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is 'Split payment' shall be a domestic Italian invoice.",
+      "requires": "An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice.",
+      "bt_bg": [
+        "BT-95",
+        "BT-102",
+        "BT-151"
+      ],
+      "location_hint": "cbc:IdentificationCode",
+      "fix": "Adjust the VAT breakdown at `cbc:IdentificationCode` so that An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice where the VAT category code (BT-151, BT-95 or BT-102) is “Split payment” shall be a domestic Italian invoice."
+      },
+      "title_de": "Eine Rechnung, bei der der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „Split payment“ lautet, muss eine inländische italienische Rechnung sein.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cbc:IdentificationCode` an, sodass gilt: Eine Rechnung, bei der der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „Split payment“ lautet, muss eine inländische italienische Rechnung sein.",
+      "de_source": "translation"
+    },
+    "BR-B-02": {
+      "title": "An Invoice with a 'Split payment' (B) VAT category code (BT-151, BT-95, BT-118 or BT-102) shall not also contain a 'Standard rated' (S) VAT category code.",
+      "requires": "An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment\" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”.",
+      "bt_bg": [
+        "BG-20",
+        "BG-21",
+        "BG-25",
+        "BT-95",
+        "BT-102",
+        "BT-118",
+        "BT-151"
+      ],
+      "location_hint": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID",
+      "fix": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID` so that An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment\" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Split payment\" shall not contain an invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95, BT-118 or BT-102) is “Standard rated”."
+      },
+      "title_de": "Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95, BT-118 oder BT-102) „Split payment“ lautet, so darf sie keine Rechnungsposition (BG-25), keinen Nachlass auf Dokumentenebene (BG-20) und keinen Zuschlag auf Dokumentenebene (BG-21) enthalten, bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95, BT-118 oder BT-102) „Regelbesteuerung“ lautet.",
+      "fix_de": "Passen Sie die Umsatzsteueraufschlüsselung bei `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID` an, sodass gilt: Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95, BT-118 oder BT-102) „Split payment“ lautet, so darf sie keine Rechnungsposition (BG-25), keinen Nachlass auf Dokumentenebene (BG-20) und keinen Zuschlag auf Dokumentenebene (BG-21) enthalten, bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95, BT-118 oder BT-102) „Regelbesteuerung“ lautet.",
       "de_source": "translation"
     },
     "BR-E-01": {

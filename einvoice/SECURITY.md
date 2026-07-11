@@ -118,6 +118,40 @@ covered by the differential harness (0 divergences) and
 `test_golden_snapshot.py` (byte-identical output), which guarantee the
 hardening changed **no** validation result on any legitimate invoice.
 
+### Resource bounds on well-formed-but-hostile input
+
+Refusing DTDs/entities defeats *expansion* attacks, but a document with no DTD
+at all can still be hostile by sheer **size or shape**: a multi-hundred-megabyte
+body (memory pressure), millions of tiny sibling elements (a moderate-size file
+can still explode into ~1 GB of `Element` objects), or pathologically deep
+nesting (a stack-overflow / `RecursionError` risk for the pure-Python
+ElementTree fallback and any recursive tree consumer). `einvoice/_xmlsec.py`
+therefore enforces three hard, stdlib-only ceilings, each far above every
+legitimate invoice — the shipped corpus tops out at **3.3 MB, depth 9, ~900
+elements** — and each surfaced with a stable leading **error-id token**:
+
+| Bound | Limit (constant) | Error id | Enforcement |
+|-------|------------------|----------|-------------|
+| Input byte length | 64 MiB (`MAX_INPUT_BYTES`) | `input-too-large` | O(1) length check before expat; the file read is capped at the ceiling so an oversized file is never fully loaded |
+| Element nesting depth | 256 (`MAX_ELEMENT_DEPTH`) | `max-depth-exceeded` | refused mid-parse in the start-element handler, before the node is built |
+| Total element count | 2,000,000 (`MAX_ELEMENT_COUNT`) | `too-many-elements` | counted per start-element, refused once the ceiling is crossed |
+
+Each bound raises `_xmlsec.XMLResourceLimit` — like `XMLSecurityError`, a
+`xml.etree.ElementTree.ParseError` subclass — so it folds into the SAME
+actionable **`error: "not-well-formed"`** report (CLI exit **3**) as any other
+parse failure: **never** an OOM, a hang, a stack overflow, or a silent pass. The
+message always begins with the stable error id above. The ceilings are wired
+into both `parser.parse_file` (UBL) and `parser_cii.parse_file` (CII) and the
+PDF-container byte path, and are verified by
+[`test_robustness.py`](test_robustness.py), which drives each of six cases —
+(a) large well-formed, (b) deep nesting, (c) truncated/garbled, (d)
+wrong-root/non-invoice, (e) empty/zero-byte, (f) non-UTF-8/wrong-encoding —
+through `report.build_report` and asserts a bounded, non-crash, non-pass
+outcome. Because the limits sit orders of magnitude above real invoices, they
+change **no** legitimate output (again confirmed by `differential.py` and
+`test_golden_snapshot.py`). No benchmark numbers are quoted here; the wall-clock
+assertions live in the test.
+
 ## Deterministic, auditable output
 
 Given the same invoice and profile, the validator produces the same result;

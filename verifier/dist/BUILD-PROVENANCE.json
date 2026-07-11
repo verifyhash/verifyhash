@@ -5,16 +5,16 @@
     "verify": {
       "bundle": "verify-vh-standalone.js",
       "sidecar": "verify-vh-standalone.js.sha256",
-      "bundleBytes": 278235,
-      "bundleSha256": "699485793b6fb0e79281993e1c06e78ff331d26407796e871028200d29663b4f",
-      "sidecarLine": "699485793b6fb0e79281993e1c06e78ff331d26407796e871028200d29663b4f  verify-vh-standalone.js",
+      "bundleBytes": 278971,
+      "bundleSha256": "0b8590a8eed961d937876f8b8a08ecf0a9681c7d08a539b7f51f0c2fdda0120a",
+      "sidecarLine": "0b8590a8eed961d937876f8b8a08ecf0a9681c7d08a539b7f51f0c2fdda0120a  verify-vh-standalone.js",
       "modules": [
         {
           "id": "keccak256-vendored",
           "synthetic": false,
           "sourceFile": "verifier/lib/keccak256-vendored.js",
-          "sourceSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
-          "inlinedSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+          "sourceSha256": "a62f33e60ce90ef5ead3c65094b45f1c130f862eb47ee48af0fbf0e05ccafaad",
+          "inlinedSha256": "a62f33e60ce90ef5ead3c65094b45f1c130f862eb47ee48af0fbf0e05ccafaad",
           "entry": false
         },
         {
@@ -78,16 +78,16 @@
     "seal": {
       "bundle": "seal-vh-standalone.js",
       "sidecar": "seal-vh-standalone.js.sha256",
-      "bundleBytes": 39477,
-      "bundleSha256": "6e61e8638464475870e12760f326d30c7eefb5858ad1bccd2fdcd721b1b8a0c6",
-      "sidecarLine": "6e61e8638464475870e12760f326d30c7eefb5858ad1bccd2fdcd721b1b8a0c6  seal-vh-standalone.js",
+      "bundleBytes": 40213,
+      "bundleSha256": "62981ff2ca04eba4d3965a5ebac63997331c198504e51c5fef5fe3d58126d16b",
+      "sidecarLine": "62981ff2ca04eba4d3965a5ebac63997331c198504e51c5fef5fe3d58126d16b  seal-vh-standalone.js",
       "modules": [
         {
           "id": "keccak256-vendored",
           "synthetic": false,
           "sourceFile": "verifier/lib/keccak256-vendored.js",
-          "sourceSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
-          "inlinedSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+          "sourceSha256": "a62f33e60ce90ef5ead3c65094b45f1c130f862eb47ee48af0fbf0e05ccafaad",
+          "inlinedSha256": "a62f33e60ce90ef5ead3c65094b45f1c130f862eb47ee48af0fbf0e05ccafaad",
           "entry": false
         },
         {
@@ -119,9 +119,9 @@
     "verify-html": {
       "bundle": "verify-vh-standalone.html",
       "sidecar": "verify-vh-standalone.html.sha256",
-      "bundleBytes": 170029,
-      "bundleSha256": "9034bd6e3faee123ec86d22a0925c968d3b6f55d84559ec6d6e04427785ef9f5",
-      "sidecarLine": "9034bd6e3faee123ec86d22a0925c968d3b6f55d84559ec6d6e04427785ef9f5  verify-vh-standalone.html",
+      "bundleBytes": 171198,
+      "bundleSha256": "638b05fbffda98599ae82c959891affa78bec52928d2946ab5193cd3929cd924",
+      "sidecarLine": "638b05fbffda98599ae82c959891affa78bec52928d2946ab5193cd3929cd924  verify-vh-standalone.html",
       "modules": [
         {
           "id": "vh-buffer",
@@ -135,8 +135,8 @@
           "id": "keccak256-vendored",
           "synthetic": false,
           "sourceFile": "verifier/lib/keccak256-vendored.js",
-          "sourceSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
-          "inlinedSha256": "4f5f2dda618a5889ab5b3f8498dc64ddeacdd22b57349d97824f60960ee334a1",
+          "sourceSha256": "a62f33e60ce90ef5ead3c65094b45f1c130f862eb47ee48af0fbf0e05ccafaad",
+          "inlinedSha256": "a62f33e60ce90ef5ead3c65094b45f1c130f862eb47ee48af0fbf0e05ccafaad",
           "entry": false
         },
         {

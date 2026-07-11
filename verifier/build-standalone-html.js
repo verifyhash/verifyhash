@@ -23,8 +23,10 @@
 //   REJECT name that file — then drags their OWN sealed packet in. NO Node, no install, no network, no
 //   trust in us. The privacy/no-network claim is not prose, it is checkable: the emitted file contains NO
 //   network API token at all (no fetch(, no XMLHttpRequest, no WebSocket, no EventSource, no sendBeacon,
-//   no dynamic import( — pinned by test/verifier.standalone-html.test.js), so the browser devtools
-//   Network tab stays empty.
+//   no dynamic import( — pinned by test/verifier.standalone-html.test.js). The ONE deliberate exception
+//   (T-VHSITE.1) is a plain async <script src> page-view counter (GoatCounter, external
+//   stats.dankdev.com — NEVER a local service): it reports location.host+path only, carries NO
+//   packet/file data, and every feature works identically with it blocked or offline.
 //
 // WHAT THE EMITTED FILE CONTAINS
 //   (a) a DOM-FREE engine <script> between recognizable markers (__VERIFY_VH_ENGINE_BEGIN__ /
@@ -569,13 +571,35 @@ const GENERATED_BANNER = [
   "  HOW TO USE IT (no Node, no install, no account, no server): save this ONE file, open it in a",
   "  browser, click the built-in sample packet (ACCEPT), change one byte of a sample file in the page",
   "  (REJECT, naming the file) - then drag a real sealed packet + its files in. Everything runs inside",
-  "  the page: the file contains NO network API, so the packet bytes never leave this machine (verify",
-  "  in your browser devtools Network tab).",
+  "  the page: the verifier contains NO network API, so the packet bytes never leave this machine",
+  "  (verify in your browser devtools Network tab - the ONLY request is one anonymous GoatCounter",
+  "  page-view ping, which carries no file data; block it or go offline and everything still works).",
   "",
   "  HONEST BOUNDARY: ACCEPT is tamper-evidence that these exact bytes match the seal - and, for a",
   "  signed seal, WHO vouched (signer recovery + optional vendor pin). It is NOT a trusted timestamp",
   "  and NOT proof of WHEN. For CI/production gating use the node standalone (verify-vh-standalone.js).",
   "-->",
+].join("\n");
+
+// ---------------------------------------------------------------------------
+// Analytics (T-VHSITE.1) — ONE async GoatCounter page-view counter, ported from the live hand-patch so
+// a redeploy of the committed dist cannot strip it. Two facts keep this compatible with the page's
+// no-network discipline: (a) it is a plain external <script src> loader + a config object — it contains
+// NONE of the six pinned network-API tokens (no fetch(/XMLHttpRequest/WebSocket/EventSource/sendBeacon/
+// import(), so test/verifier.standalone-html.test.js §(3) still passes; (b) count.js reports ONLY
+// location.host+path (per-host attribution for multi-host deploys) and never touches packet/file bytes —
+// verification is byte-identical with it blocked or offline. Endpoint is the EXTERNAL
+// stats.dankdev.com ONLY — never a local goatcounter service (protected infra, constitution §4).
+// The window.goatcounter config MUST come before the loader: count.js reads it at load time. Emitted in
+// <head> (async loader — same placement discipline as public/index.html) and BEFORE the page's UI
+// <script>: test/verifier.standalone-html.test.js locates the UI script as the LAST bare <script> in
+// the file and evaluates it in a window-less vm, so nothing referencing `window` may follow it.
+// ---------------------------------------------------------------------------
+
+const ANALYTICS_SNIPPET = [
+  "<script>window.goatcounter={path:function(p){return location.host+p}}</scr" + "ipt>",
+  '<script data-goatcounter="https://stats.dankdev.com/count" async src="https://stats.dankdev.com/count.js"></scr' +
+    "ipt>",
 ].join("\n");
 
 const PAGE_STYLE = [
@@ -651,8 +675,9 @@ function pageBodyText() {
     '<p class="note">An INDEPENDENT, read-only, fully OFFLINE verifier for verifyhash evidence packets.',
     "It RE-DERIVES the keccak Merkle root from the bytes YOU drop in and recovers the signer with a",
     "pure-JS secp256k1 routine — it never trusts the artifact's own stored hashes. This one file contains",
-    "NO network API at all: your packet bytes never leave this machine (check the devtools Network tab, or",
-    "disconnect from the internet first — it still works).</p>",
+    "NO network API at all: your packet bytes never leave this machine (check the devtools Network tab:",
+    "the only request is one anonymous GoatCounter page-view ping, carrying no file data), or just",
+    "disconnect from the internet first — it still works.</p>",
     BOUNDARY_HTML,
     UNPINNED_BOUNDARY_HTML,
     "</header>",
@@ -1103,6 +1128,7 @@ function buildHtml() {
   parts.push('<meta name="viewport" content="width=device-width, initial-scale=1">');
   parts.push("<title>verify-vh — offline verifier (verifyhash)</title>");
   parts.push(PAGE_STYLE);
+  parts.push(ANALYTICS_SNIPPET);
   parts.push("</head>");
   parts.push("<body>");
   parts.push(pageBodyText());

@@ -30,8 +30,9 @@ Read §2 before trusting it with anything. The engine asserts **209 of the 223
 official EN 16931 `BR-*` rule ids** in each CEN syntax universe (UBL and CII)
 — **every official rule that can actually fire, except eight deferred
 `BR-CL-*` code-list checks** — plus, with `--profile=xrechnung`, the German
-XRechnung CIUS + extension layer (46 `BR-DE-*`/`BR-DEX-*` asserts on UBL, a
-20-rule `BR-DE-*` subset on CII). The machine-checked gap of official rules
+XRechnung CIUS + extension layer (55 `BR-DE-*`/`BR-DE-CVD-*`/`BR-TMP-*`/
+`BR-DEX-*` asserts on UBL, a 29-rule subset plus the CII-only `BR-TMP-3` on
+CII). The machine-checked gap of official rules
 neither implemented nor documented as a deliberate exclusion is **zero for
 both universes**: `test_coverage_gap.py` recomputes it from the vendored
 official Schematron on every run and fails if the fireable-missing count is
@@ -52,10 +53,10 @@ deliberately **not** an uncaveated "100%" claim.
 against the **official, normative compiled Schematron artifacts** (the legal
 rulesets). The 2026-07-11 run, all four legs at **zero divergences**:
 EN 16931 core on UBL — 209 rules × 1145 real invoices = **239,305
-comparisons**; XRechnung on UBL — 46 rules × 1030 invoices = **47,380
-comparisons**; EN 16931 core on CII — the 96-rule graded subset × 111
-invoices = **10,656 comparisons**; XRechnung on CII — the 20-rule graded
-subset × 76 invoices = **1,520 comparisons**. See
+comparisons**; XRechnung + KoSIT-vendored Peppol on UBL — 76 graded ids ×
+1067 invoices = **81,092 comparisons**; EN 16931 core on CII — the 96-rule
+graded subset × 111 invoices = **10,656 comparisons**; XRechnung + Peppol on
+CII — 52 graded ids × 117 invoices = **6,084 comparisons**. See
 [`CORRECTNESS.md`](CORRECTNESS.md) for the method, corpora, and the honest
 limits of those claims.
 
@@ -98,7 +99,7 @@ black-box web form.
 
 The static tables below are the FIRST-SLICE inventory (108 core + 32 BR-DE
 rules), kept for the family-by-family orientation they give; the engine has
-since grown to 209 core + 46 German-layer rules, and the machine-generated
+since grown to 209 core + 55 German-layer rules, and the machine-generated
 [`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` (regenerated from the
 live rule registries by `gen_coverage.py`, drift-gated by
 `test_coverage_matrix.py`) is the authoritative per-rule inventory wherever
@@ -131,7 +132,7 @@ Plus two structural checks: S-WF (well-formed XML) and S-ROOT (UBL Invoice-2
 root). Rule wording follows the vendored EN 16931 Schematron
 (`corpus/cen-en16931/ubl/schematron/abstract/EN16931-model.sch`) verbatim.
 
-### Implemented — XRechnung CIUS layer (`--profile=xrechnung`, first-slice 32 BR-DE table; now 46 incl. `BR-DEX-*`)
+### Implemented — XRechnung CIUS layer (`--profile=xrechnung`, first-slice 32 BR-DE table; now 55 incl. `BR-DE-CVD-*`/`BR-TMP-*`/`BR-DEX-*`)
 
 | Family | Rule IDs |
 |---|---|
@@ -146,10 +147,18 @@ That is every `BR-DE-*` assert in the official KoSIT XRechnung 3.0.2 UBL
 Schematron (the numbering has official gaps: no BR-DE-12/13/29 exist there).
 Severities mirror the official flags — only **fatal** rules affect the exit
 code; warnings/information are reported in `--json`. The 14 `BR-DEX-*`
-extension-profile rules have since been implemented as well (see
-`COVERAGE.md`); still NOT implemented: `BR-DE-CVD-*` (Clean Vehicle
-Directive profile) and `BR-TMP-2`. All 21 `PEPPOL-EN16931-R*` rules the
-same KoSIT artifact vendors are implemented in both bindings
+extension-profile rules have since been implemented as well, and so has the
+complete CVD/TMP family the same artifacts carry: the Clean-Vehicle-Directive
+profile (`BR-DE-CVD-01`–`05`, `BR-DE-CVD-06-a/-b`, `BR-TMP-CVD-01` — gated on
+the CVD `CustomizationID` `…xrechnung:cvd_0.9`, inert on plain invoices),
+`BR-TMP-2` (BT-124 must be an absolute URL; warning), and `BR-TMP-3` — which
+exists **only in the CII binding** (the vendored UBL artifact carries no such
+assert), so it is implemented and proven on CII only (`syntax = CII` in
+`COVERAGE.md`). Every family rule is differential-proven in each binding
+whose artifact carries it, with dedicated FIRE and PASS fixtures; the family
+enumeration is machine-checked (`cvd_tmp_family` in `coverage_matrix.json`,
+recomputed live by `test_coverage_gap.py`). All 21 `PEPPOL-EN16931-R*` rules
+the same KoSIT artifact vendors are implemented in both bindings
 (differential-proven; the family enumeration stays machine-checked in
 `COVERAGE.md`) — that is the KoSIT-vendored subset only, **not** Peppol BIS
 Billing 3.0 support.
@@ -164,9 +173,9 @@ disagreement is our bug. The 2026-07-11 run:
 
 ```
 LEG 1  EN 16931 core, UBL ............... 1145 invoices x 209 rules = 239,305
-LEG 2  XRechnung + Peppol batch, UBL .... 1041 invoices x  57 rules =  59,337
+LEG 2  XRechnung + Peppol batch, UBL .... 1067 invoices x  76 rules =  81,092
 LEG 3  EN 16931 core, CII ............... 111 invoices x 96 graded  =  10,656
-LEG 4  XRechnung + Peppol batch, CII ..... 88 invoices x 32 graded  =   2,816
+LEG 4  XRechnung + Peppol batch, CII .... 117 invoices x 52 graded  =   6,084
 TOTAL AGREEMENT ...... 100.0000% on every leg
 divergences .......... 0 false-positives + 0 misses, all legs
 ```
@@ -218,10 +227,12 @@ prints the offending file, block, and expected vs. actual rule IDs).
 
 ### NOT covered yet (deliberate first-slice cuts — do not rely on these)
 
-- **No `BR-DE-CVD-*` (Clean Vehicle Directive) rules** — the `BR-DE-*` CIUS
-  core and the `BR-DEX-*` extension layer are implemented (see
-  `COVERAGE.md`), but that ADDITIONAL German profile is not, and `BR-TMP-2`
-  from the same KoSIT artifact is also out of scope.
+- **`BR-TMP-3` is CII-only by artifact design** — the `BR-DE-*` CIUS core,
+  the `BR-DEX-*` extension layer AND the Clean-Vehicle-Directive/temporary
+  family (`BR-DE-CVD-*`, `BR-TMP-CVD-01`, `BR-TMP-2`, `BR-TMP-3`) are all
+  implemented (see `COVERAGE.md`), but the vendored UBL artifact carries no
+  `BR-TMP-3` assert, so that one rule is asserted and proven on the CII
+  syntax only — a UBL differential proof is impossible by construction.
 - **No Peppol BIS Billing 3.0 support.** All 21 `PEPPOL-EN16931-R*`
   rules KoSIT ships inside the official XRechnung Schematron artifact ARE
   implemented (both bindings, differential-proven; the enumeration stays
@@ -281,8 +292,8 @@ if not result.ok:
         print(v.rule_id, v.message)      # e.g. "BR-DE-15 The element ..."
 ```
 
-`--profile=xrechnung` layers the 46 German `BR-DE-*`/`BR-DEX-*` rules on top
-of the core (default profile: core only).
+`--profile=xrechnung` layers the 55 German `BR-DE-*`/`BR-DE-CVD-*`/
+`BR-TMP-*`/`BR-DEX-*` rules on top of the core (default profile: core only).
 
 Exit codes (stable contract):
 
@@ -345,7 +356,7 @@ conformance gate: 1/12 invoice(s) NON-CONFORMANT (profile=xrechnung) — FAIL
 ```
 
 Same honest scope as §2: the gate proves your invoices pass the
-**implemented** rule set (209 core + 46 German-layer rules — the
+**implemented** rule set (209 core + 55 German-layer rules — the
 authoritative list is `COVERAGE.md`), not the full standard. The gate's behaviour
 (fails naming the rule ID, passes conformant sets, refuses empty input) is
 itself under test in `test_packaging.py`.
@@ -444,8 +455,8 @@ A first slice earns further investment or it doesn't. The signal, timeboxed:
 **KILL** if neither happens: write up what was learned, archive the repo, and
 stop. The corpus and harness remain useful artifacts either way.
 
-Current status against this metric: 209 core rules + the 46-rule XRechnung
-CIUS/extension layer shipped (each batch differential-proven at 100% against
+Current status against this metric: 209 core rules + the 55-rule XRechnung
+CIUS/CVD/extension layer shipped (each batch differential-proven at 100% against
 its official Schematron, UBL and CII legs; fireable-missing = 0 in both CEN
 universes, with the 4 official `test="true()"` tautologies `BR-CO-05`–`08`
 documented as the only never-provable ids), 0 vendors contacted. Metric #2's

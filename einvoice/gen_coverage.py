@@ -524,6 +524,118 @@ def build_peppol_family():
     }
 
 
+CVD_TMP_FAMILY_LABEL = ("the Clean-Vehicle-Directive (BR-DE-CVD-*) and "
+                        "temporary (BR-TMP-*) rules of the official KoSIT "
+                        "XRechnung Schematron artifacts")
+
+_CVD_TMP_IMPLEMENTED_BY_ARTIFACT = {
+    "xrechnung-ubl": _coverage.cvd_tmp_ubl_rule_ids,
+    "xrechnung-cii": _coverage.cvd_tmp_cii_rule_ids,
+}
+
+# The vendored artifacts carrying the CVD/TMP family (same two KoSIT files as
+# the Peppol family).
+CVD_TMP_ARTIFACT_ORDER = ["xrechnung-ubl", "xrechnung-cii"]
+
+
+def build_cvd_tmp_family():
+    """Machine-checked enumeration of the KoSIT CVD/TMP family — computed
+    LIVE, never hand-transcribed (the same VHR.1 method as the Peppol family).
+
+    For BOTH vendored KoSIT artifacts the family is extracted with a real XML
+    parse of ``sch:assert/@id`` (:func:`einvoice.coverage.schematron_assert_index`)
+    filtered by :func:`einvoice.coverage.is_cvd_tmp_id` — ``BR-DE-CVD-*`` plus
+    ``BR-TMP-*`` (which covers ``BR-TMP-CVD-01``, ``BR-TMP-2`` and the
+    CII-only ``BR-TMP-3``), never ``BR-DE-TMP-32`` (that rule belongs to the
+    plain BR-DE CIUS layer and was implemented separately). Each artifact's
+    implemented set comes from the live per-binding registries in
+    :mod:`einvoice.rules_xrechnung` (``ALL_RULES`` for UBL, ``CII_DE_RULES``
+    for CII), each assert row carries the official ``@flag`` so the
+    severity-mirror claim stays machine-visible, and any not-yet-implemented
+    remainder is published as an explicit ``known_open_worklist`` with the
+    official rule text verbatim per binding. The family shares no prefix with
+    the CEN ``BR-*`` gap universes' ids, so it neither inflates the CEN
+    arithmetic nor touches the fireable-missing == 0 claim;
+    ``test_coverage_gap.py`` recomputes this whole section live so it can
+    never silently go stale after an artifact bump or a rule landing.
+    """
+    artifacts = {}
+    fam_index = {}
+    for key in CVD_TMP_ARTIFACT_ORDER:
+        rel = SCHEMATRON_SOURCES[key]["file"]
+        index = _coverage.schematron_assert_index(os.path.join(HERE, rel))
+        fam = {rid: e for rid, e in index.items()
+               if _coverage.is_cvd_tmp_id(rid)}
+        implemented = _CVD_TMP_IMPLEMENTED_BY_ARTIFACT[key]()
+        universe = set(fam)
+        stray = implemented - universe
+        if stray:
+            raise AssertionError(
+                "%s: engine claims CVD/TMP rules the vendored artifact does "
+                "not carry: %s" % (key, sorted(stray)))
+        fam_index[key] = fam
+        artifacts[key] = {
+            "source": rel,
+            "assert_ids": sorted(fam, key=_sort_key),
+            "family_universe": len(fam),
+            "implemented": len(universe & implemented),
+            "known_open": len(universe - implemented),
+            "asserts": [
+                {"id": rid,
+                 "flag": fam[rid]["flag"],
+                 "vacuous_in_artifact": fam[rid]["vacuous_in_artifact"]}
+                for rid in sorted(fam, key=_sort_key)
+            ],
+        }
+    all_ids = set()
+    for key in CVD_TMP_ARTIFACT_ORDER:
+        all_ids |= set(fam_index[key])
+    implemented_all = (_coverage.cvd_tmp_ubl_rule_ids()
+                       | _coverage.cvd_tmp_cii_rule_ids())
+    worklist = []
+    for rid in sorted(all_ids - implemented_all, key=_sort_key):
+        bindings = {}
+        for key in CVD_TMP_ARTIFACT_ORDER:
+            entry = fam_index[key].get(rid)
+            if entry is None:
+                continue
+            bindings[key] = [
+                {"assert_id": rid,
+                 "flag": entry["flag"],
+                 "vacuous_in_artifact": entry["vacuous_in_artifact"],
+                 "text": entry["text"]}
+            ]
+        worklist.append({"id": rid, "bindings": bindings})
+    return {
+        "label": CVD_TMP_FAMILY_LABEL,
+        "description": (
+            "Machine-checked enumeration of " + CVD_TMP_FAMILY_LABEL + " — "
+            "the Clean-Vehicle-Directive profile asserts (gated in the "
+            "artifacts behind the CVD CustomizationID "
+            "…#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9) plus the "
+            "ungated temporary BR-TMP-* asserts — extracted by a real XML "
+            "parse of sch:assert/@id from BOTH vendored KoSIT binding "
+            "artifacts (id prefix BR-DE-CVD-/BR-TMP-; BR-DE-TMP-32 is NOT in "
+            "this family — it belongs to the plain BR-DE CIUS layer and is "
+            "implemented separately). The UBL artifact carries nine asserts; "
+            "the CII artifact carries the same nine plus BR-TMP-3, which "
+            "exists ONLY in the CII binding (the matrix therefore tags "
+            "BR-TMP-3 syntax='cii', never 'both'). Implemented ids are read "
+            "from the live einvoice.rules_xrechnung registries per binding "
+            "and are differentially proven per binding (LEG 2 / LEG 4); each "
+            "assert row carries the official flag so the "
+            "severity-mirrors-the-artifact claim is machine-visible. "
+            "test_coverage_gap.py recomputes this section live from the "
+            "vendored .sch files and fails on any drift, so an artifact bump "
+            "that adds or un-gates a CVD/TMP assert reopens the worklist "
+            "automatically."),
+        "artifact_order": list(CVD_TMP_ARTIFACT_ORDER),
+        "artifacts": artifacts,
+        "implemented_ids": sorted(implemented_all, key=_sort_key),
+        "known_open_worklist": worklist,
+    }
+
+
 def build_matrix():
     """Assemble the coverage-matrix document from the live engine + graded sets."""
     entries = {}
@@ -565,11 +677,49 @@ def build_matrix():
             "ubl": _prov("xrechnung-ubl", rid in DE_UBL_PROVEN),
             "cii": _prov("xrechnung-cii", cii_ok, reason),
         }
+        if rid.startswith("BR-DEX"):
+            family = "xrechnung-extension"
+        elif _coverage.is_cvd_tmp_id(rid):
+            family = "xrechnung-cvd-tmp"
+        else:
+            family = "xrechnung-cius"
         entries[rid] = {
             "id": rid,
             "title": _title(fn, rid),
-            "family": "xrechnung-extension" if rid.startswith("BR-DEX") else "xrechnung-cius",
+            "family": family,
             "syntax": "both" if cii_ok else "ubl",
+            "severity": _severity_class(flag),
+            "flag": flag,
+            "provenance": prov,
+        }
+
+    # CII-only national rules (rules_xrechnung.CII_DE_RULES ids the UBL layer
+    # does not carry — currently exactly BR-TMP-3, whose assert exists ONLY in
+    # the vendored CII artifact). syntax is 'cii': there is no UBL assert to
+    # prove against, so 'both' would be a fabrication.
+    ubl_xr_ids = {fn.rule_id for fn in _rules_xr.ALL_RULES}
+    for fn in _rules_xr.CII_DE_RULES:
+        rid = fn.rule_id
+        if rid in ubl_xr_ids:
+            continue
+        flag = fn.severity
+        cii_ok = rid in DE_CII_PROVEN
+        prov = {
+            "ubl": _prov("xrechnung-ubl", False,
+                         "the vendored KoSIT XRechnung UBL artifact carries "
+                         "NO assert with this id — the rule exists only in "
+                         "the CII binding, so a UBL proof is impossible by "
+                         "construction (verified by a live XML parse in "
+                         "test_coverage_gap.py)."),
+            "cii": _prov("xrechnung-cii", cii_ok,
+                         None if cii_ok else _CII_DE_GENERIC),
+        }
+        entries[rid] = {
+            "id": rid,
+            "title": _title(fn, rid),
+            "family": ("xrechnung-cvd-tmp" if _coverage.is_cvd_tmp_id(rid)
+                       else "xrechnung-cius"),
+            "syntax": "cii" if cii_ok else "ubl",
             "severity": _severity_class(flag),
             "flag": flag,
             "provenance": prov,
@@ -664,6 +814,7 @@ def build_matrix():
         },
         "gap": build_gap(set(entries), deliberate_exclusion_ids()),
         "peppol_kosit_family": build_peppol_family(),
+        "cvd_tmp_family": build_cvd_tmp_family(),
     }
     return matrix
 

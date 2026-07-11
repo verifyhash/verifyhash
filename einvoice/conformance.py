@@ -257,6 +257,33 @@ XRECHNUNG_CIUS_COVERAGE = {
     "BR-DE-TMP-32": "invoice should state the delivery/service date via BT-72, "
                     "an Invoicing period (BG-14) or a per-line period (BG-26) "
                     "(information)",
+    # Clean-Vehicle-Directive profile (gated behind the CVD CustomizationID).
+    "BR-DE-CVD-01": "CVD invoice: Contract reference (BT-12) must be present "
+                    "(fatal)",
+    "BR-DE-CVD-02": "CVD invoice: Tender or lot reference (BT-17) must be "
+                    "present (fatal)",
+    "BR-DE-CVD-03": "CVD invoice: at least one line with a BT-158 scheme id "
+                    "'CVD' AND a BT-160 item attribute 'cva' (fatal)",
+    "BR-DE-CVD-04": "CVD invoice: a BT-158 with scheme id 'CVD' carries a "
+                    "vehicle category M1/M2/M3/N1/N2/N3 (fatal)",
+    "BR-DE-CVD-05": "CVD invoice: a 'cva' item attribute value (BT-161) is "
+                    "'clean', 'zero-emission' or 'other' (fatal)",
+    "BR-DE-CVD-06-a": "CVD invoice: a line with a 'CVD' BT-158 carries exactly "
+                      "one 'cva' item attribute (fatal)",
+    "BR-DE-CVD-06-b": "CVD invoice: a line with a 'cva' item attribute carries "
+                      "exactly one 'CVD' BT-158 (fatal)",
+}
+
+# Temporary (BR-TMP-*) national rules — same KoSIT artifacts, ids outside the
+# BR-DE- prefix. BR-TMP-3 exists ONLY in the CII binding (the vendored UBL
+# artifact carries no such assert), so it is asserted on the CII layer only.
+XRECHNUNG_TMP_COVERAGE = {
+    "BR-TMP-2": "External document location (BT-124) is an absolute URL with "
+                "a valid scheme (warning)",
+    "BR-TMP-CVD-01": "CVD invoice: every BT-158 scheme identifier comes from "
+                     "UNTDID 7143 (+ 'CVD') (fatal)",
+    "BR-TMP-3": "gross/net Item price base quantity (BT-149) and unit "
+                "(BT-150) are consistent — CII-only assert (fatal)",
 }
 
 
@@ -270,7 +297,18 @@ def xrechnung_cius_rule_ids():
     return {rid for rid in ids if rid.startswith("BR-DE-")}
 
 
+def xrechnung_tmp_rule_ids():
+    """The temporary (BR-TMP-*) national rule ids registered in
+    einvoice/rules_xrechnung.py — same ``@_rule`` scrape as the CIUS set. The
+    scrape covers BOTH the UBL and the CII registries (BR-TMP-3 is registered
+    on the CII layer only)."""
+    src = open(XR_RULES_SRC, encoding="utf-8").read()
+    ids = set(re.findall(r'@_rule\(\s*["\']([A-Za-z0-9-]+)["\']', src))
+    return {rid for rid in ids if rid.startswith("BR-TMP-")}
+
+
 _XR_CIUS_IMPLEMENTED = xrechnung_cius_rule_ids()
+_XR_TMP_IMPLEMENTED = xrechnung_tmp_rule_ids()
 
 # The CIUS manifest must match the implemented BR-DE rule set EXACTLY (in both
 # directions) so it can never silently drift from the code: no manifest entry
@@ -281,6 +319,12 @@ assert XRECHNUNG_CIUS_COVERAGE.keys() == _XR_CIUS_IMPLEMENTED, (
     "manifest-only: %s ; code-only: %s"
     % (sorted(XRECHNUNG_CIUS_COVERAGE.keys() - _XR_CIUS_IMPLEMENTED),
        sorted(_XR_CIUS_IMPLEMENTED - XRECHNUNG_CIUS_COVERAGE.keys())))
+# Same exact-match guarantee for the temporary (BR-TMP-*) manifest.
+assert XRECHNUNG_TMP_COVERAGE.keys() == _XR_TMP_IMPLEMENTED, (
+    "XRechnung TMP coverage manifest drifted from rules_xrechnung.py — "
+    "manifest-only: %s ; code-only: %s"
+    % (sorted(XRECHNUNG_TMP_COVERAGE.keys() - _XR_TMP_IMPLEMENTED),
+       sorted(_XR_TMP_IMPLEMENTED - XRECHNUNG_TMP_COVERAGE.keys())))
 
 
 # --------------------------------------------------------------------------- #
@@ -548,11 +592,17 @@ _CII_XR_ADMITTED_IDS = (
     "BR-DE-8", "BR-DE-9", "BR-DE-10", "BR-DE-11", "BR-DE-14", "BR-DE-15",
     "BR-DE-16", "BR-DE-17", "BR-DE-21", "BR-DE-26", "BR-DE-27", "BR-DE-28",
     "BR-DE-TMP-32",
+    # CVD/TMP family — the CII artifact carries all nine UBL family asserts
+    # plus the CII-only BR-TMP-3.
+    "BR-TMP-2", "BR-TMP-3",
+    "BR-DE-CVD-01", "BR-DE-CVD-02", "BR-DE-CVD-03", "BR-DE-CVD-04",
+    "BR-DE-CVD-05", "BR-DE-CVD-06-a", "BR-DE-CVD-06-b", "BR-TMP-CVD-01",
 )
-# Descriptions are reused verbatim from the UBL CIUS manifest — the rule SEMANTICS
-# are identical across syntaxes; only the bound syntax differs.
+# Descriptions are reused verbatim from the UBL CIUS/TMP manifests — the rule
+# SEMANTICS are identical across syntaxes; only the bound syntax differs.
 CII_XRECHNUNG_CIUS_COVERAGE = {
-    rid: XRECHNUNG_CIUS_COVERAGE[rid] for rid in _CII_XR_ADMITTED_IDS
+    rid: {**XRECHNUNG_CIUS_COVERAGE, **XRECHNUNG_TMP_COVERAGE}[rid]
+    for rid in _CII_XR_ADMITTED_IDS
 }
 CII_XRECHNUNG_CIUS_EXCLUDED = {
     "BR-DE-18": "Skonto grammar in BT-20 (free-text payment-terms structure not "
@@ -632,10 +682,15 @@ try:
         "differential.CII_XR_EXCLUDED_RULE_IDS — manifest-only: %s ; code-only: %s"
         % (sorted(CII_XRECHNUNG_CIUS_EXCLUDED.keys() - _CII_XR_EXCLUDED),
            sorted(_CII_XR_EXCLUDED - CII_XRECHNUNG_CIUS_EXCLUDED.keys())))
-    # Admitted CII BR-DE set must be a subset of the implemented UBL BR-DE set.
-    assert CII_XRECHNUNG_CIUS_COVERAGE.keys() <= _XR_CIUS_IMPLEMENTED, (
-        "CII BR-DE coverage names rules not implemented in rules_xrechnung.py: %s"
-        % sorted(CII_XRECHNUNG_CIUS_COVERAGE.keys() - _XR_CIUS_IMPLEMENTED))
+    # Admitted CII national set must be a subset of the rules registered in
+    # rules_xrechnung.py (BR-DE-* via the CIUS scrape, BR-TMP-* via the same
+    # @_rule scrape — BR-TMP-3 is registered on the CII layer only, which the
+    # source scrape covers; differential.CII_ONLY_XR_RULE_IDS documents it).
+    assert CII_XRECHNUNG_CIUS_COVERAGE.keys() <= (
+        _XR_CIUS_IMPLEMENTED | _XR_TMP_IMPLEMENTED), (
+        "CII coverage names rules not implemented in rules_xrechnung.py: %s"
+        % sorted(CII_XRECHNUNG_CIUS_COVERAGE.keys()
+                 - _XR_CIUS_IMPLEMENTED - _XR_TMP_IMPLEMENTED))
 except ImportError:  # pragma: no cover - differential harness always co-located
     pass
 

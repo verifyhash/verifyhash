@@ -39,6 +39,19 @@ _SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
 #: into two suffixed asserts).
 PEPPOL_FAMILY_PREFIX = "PEPPOL-EN16931-R"
 
+#: The KoSIT CVD/TMP family id prefixes: the Clean-Vehicle-Directive profile
+#: rules (``BR-DE-CVD-*``) plus the temporary rules (``BR-TMP-*``, which
+#: covers ``BR-TMP-CVD-01``, ``BR-TMP-2`` and the CII-only ``BR-TMP-3``).
+#: Deliberately does NOT match ``BR-DE-TMP-32`` (prefix ``BR-DE-TMP``): that
+#: rule is part of the plain BR-DE CIUS layer, implemented separately.
+CVD_TMP_FAMILY_PREFIXES = ("BR-DE-CVD-", "BR-TMP-")
+
+
+def is_cvd_tmp_id(rule_id):
+    """True iff ``rule_id`` belongs to the KoSIT CVD/TMP family
+    (``BR-DE-CVD-*`` / ``BR-TMP-*`` — never ``BR-DE-TMP-32``)."""
+    return rule_id.startswith(CVD_TMP_FAMILY_PREFIXES)
+
 
 # --------------------------------------------------------------------------- #
 # Programmatic rule-id enumeration straight off the live registries.          #
@@ -88,6 +101,21 @@ def peppol_cii_rule_ids():
     (``einvoice.rules_peppol.CII_RULES``; the two R043 CII asserts collapse
     onto the one canonical id a Violation reports)."""
     return {fn.rule_id for fn in _rules_pep.CII_RULES}
+
+
+def cvd_tmp_ubl_rule_ids():
+    """CVD/TMP family ids implemented over UBL (the family subset of
+    ``einvoice.rules_xrechnung.ALL_RULES``)."""
+    return {fn.rule_id for fn in _rules_xr.ALL_RULES
+            if is_cvd_tmp_id(fn.rule_id)}
+
+
+def cvd_tmp_cii_rule_ids():
+    """CVD/TMP family ids implemented over CII (the family subset of
+    ``einvoice.rules_xrechnung.CII_DE_RULES`` — includes the CII-only
+    ``BR-TMP-3``)."""
+    return {fn.rule_id for fn in _rules_xr.CII_DE_RULES
+            if is_cvd_tmp_id(fn.rule_id)}
 
 
 def peppol_canonical_id(assert_id):
@@ -487,6 +515,62 @@ def render_markdown(matrix, cii_parity=None):
             w("artifact ships the assert. The enumeration above stays")
             w("machine-checked, so a future artifact bump that adds a new")
             w("Peppol assert reopens this worklist automatically.")
+            w("")
+
+    # --- KoSIT CVD/TMP family (enumeration + known-open worklist) ----------
+    cvd = matrix.get("cvd_tmp_family")
+    if cvd:
+        w("## `BR-DE-CVD-*` / `BR-TMP-*` — %s" % cvd["label"])
+        w("")
+        w(cvd["description"].strip())
+        w("")
+        for key in cvd["artifact_order"]:
+            a = cvd["artifacts"][key]
+            w("### `%s` — %d implemented + %d known-open = %d family asserts"
+              % (key, a["implemented"], a["known_open"], a["family_universe"]))
+            w("")
+            w("Family parsed from `%s` (`sch:assert/@id`, prefix"
+              % a["source"])
+            w("`BR-DE-CVD-`/`BR-TMP-`). Official flags per assert:")
+            w("")
+            w("| id | official flag |")
+            w("| --- | --- |")
+            for row in a["asserts"]:
+                note = (" *(shipped as `test=\"true()\"` — a tautology)*"
+                        if row["vacuous_in_artifact"] else "")
+                w("| `%s` | %s%s |" % (row["id"], row["flag"], note))
+            w("")
+        w("Implemented (differentially proven per binding, see the rule table"
+          " above):")
+        w("%s." % ", ".join("`%s`" % i for i in cvd["implemented_ids"]))
+        w("")
+        if cvd["known_open_worklist"]:
+            w("### Known-open worklist (enumerated, not yet asserted)")
+            w("")
+            w("These ids are shipped by the vendored KoSIT artifacts but not")
+            w("yet implemented — an explicit worklist, not a hidden gap.")
+            w("Official rule text is carried verbatim per binding:")
+            w("")
+            w("| id | binding | flag | official rule text |")
+            w("| --- | --- | --- | --- |")
+            for row in cvd["known_open_worklist"]:
+                for key in cvd["artifact_order"]:
+                    for a in row["bindings"].get(key, []):
+                        w("| `%s` | `%s` | %s | %s |"
+                          % (row["id"], key, a["flag"],
+                             a["text"].replace("|", "\\|")))
+            w("")
+        else:
+            w("### Known-open worklist (enumerated, not yet asserted)")
+            w("")
+            w("**Empty.** Every `BR-DE-CVD-*` / `BR-TMP-*` assert the vendored")
+            w("KoSIT artifacts carry is implemented in every binding whose")
+            w("artifact ships it — nine asserts in both bindings plus the")
+            w("CII-only `BR-TMP-3` (tagged `syntax = CII` in the rule table,")
+            w("because no UBL assert exists to prove it against). The")
+            w("enumeration above stays machine-checked, so a future artifact")
+            w("bump that adds or un-gates a CVD/TMP assert reopens this")
+            w("worklist automatically.")
             w("")
 
     # --- CII proof parity (measured worklist, cii_parity.json) -------------

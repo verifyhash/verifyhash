@@ -130,21 +130,40 @@ class TestExtraction(unittest.TestCase):
 
 class TestReportWiringValid(unittest.TestCase):
     def test_valid_pdf_passes_and_matches_direct_xml(self):
+        """The container fixture wraps CII_example5.xml, which is EN-core
+        clean; under the xrechnung profile it fires the fatal BR-TMP-3 since
+        the CVD/TMP family landed (gross BasisQuantity '1.1' != net '1' —
+        mirroring the official KoSIT CII artifact, which fires BR-TMP-3 on
+        this file too). The invariant under test is unchanged: the PDF path
+        must equal validating the inner XML directly, per profile."""
         for profile in ("xrechnung", "en16931"):
             rep = report.build_report(VALID_PDF, profile=profile)
             self.assertNotIn("error", rep,
                              "valid PDF must not be an unsupported container")
-            self.assertTrue(rep["valid"], (profile, rep))
-            self.assertEqual(rep["fatal_count"], 0)
             self.assertEqual(_report_fired(rep),
                              _direct_cii_fired(VALID_INNER_XML, profile),
                              "PDF fired ids must equal validating inner XML "
                              "directly (%s)" % profile)
+            if profile == "en16931":
+                self.assertTrue(rep["valid"], (profile, rep))
+                self.assertEqual(rep["fatal_count"], 0)
+            else:
+                self.assertFalse(rep["valid"], (profile, rep))
+                fatals = [v["rule"] for v in rep["violations"]
+                          if v["severity"] == "fatal"]
+                self.assertEqual(fatals, ["BR-TMP-3"], rep)
 
     def test_valid_pdf_cli_exits_zero(self):
-        code, out, err = _run_cli(VALID_PDF)
+        # EN-core profile: the embedded invoice is clean -> exit 0.
+        code, out, err = _run_cli("--profile", "en16931", VALID_PDF)
         self.assertEqual(code, 0, err)
         self.assertIn('"valid":true', out)
+        # Default (xrechnung) profile: the fatal BR-TMP-3 -> exit 1, same as
+        # validating the inner XML directly.
+        code, out, err = _run_cli(VALID_PDF)
+        self.assertEqual(code, 1, err)
+        self.assertIn('"valid":false', out)
+        self.assertIn("BR-TMP-3", out)
 
 
 class TestReportWiringBad(unittest.TestCase):

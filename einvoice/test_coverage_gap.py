@@ -37,6 +37,17 @@ What is checked (each its own test):
      re-verified here against a fresh parse AND the raw artifact line, for
      both universes; and NOTHING from the now-implemented IGIC (BR-AF-*) /
      IPSI (BR-AG-*) / split-payment (BR-B-*) families lingers in any gap.
+  8. the KoSIT CVD/TMP family (BR-DE-CVD-* / BR-TMP-*): the committed
+     cvd_tmp_family section equals a LIVE recomputation — family extracted by
+     a real XML parse of sch:assert/@id from BOTH vendored KoSIT artifacts
+     (prefix filter that deliberately never matches BR-DE-TMP-32),
+     implemented ids read from the live einvoice.rules_xrechnung registries
+     per binding, implemented + known_open partitioning each artifact's
+     universe, engine severities mirroring the official artifact flags
+     exactly, the matrix syntax tags honest (BR-TMP-3 is CII-only: 'cii',
+     never 'both'), and no family id leaking into the CEN BR-* gap
+     arithmetic — so the family accounting can never silently go stale after
+     an artifact bump or a rule landing.
   7. the KoSIT-vendored Peppol family (PEPPOL-EN16931-R*): the committed
      peppol_kosit_family section equals a LIVE recomputation — family
      extracted by a real XML parse of sch:assert/@id from BOTH vendored KoSIT
@@ -448,6 +459,178 @@ class CoverageGapTest(unittest.TestCase):
                       "official XRechnung Schematron artifact", md)
         self.assertIn("NOT full Peppol BIS Billing 3.0", md)
         self.assertIn("### Known-open worklist", md)
+
+    # ---- 8. the KoSIT CVD/TMP family ----------------------------------------
+    # The complete family both vendored KoSIT artifacts carry (T-VHCVD.1): the
+    # UBL artifact ships the first NINE; the CII artifact ships the same nine
+    # plus the CII-only BR-TMP-3.
+    CVD_TMP_UBL_IDS = frozenset((
+        "BR-DE-CVD-01", "BR-DE-CVD-02", "BR-DE-CVD-03", "BR-DE-CVD-04",
+        "BR-DE-CVD-05", "BR-DE-CVD-06-a", "BR-DE-CVD-06-b",
+        "BR-TMP-CVD-01", "BR-TMP-2"))
+    CVD_TMP_CII_IDS = CVD_TMP_UBL_IDS | {"BR-TMP-3"}
+
+    def _cvd_fam(self):
+        fam = self.matrix.get("cvd_tmp_family")
+        self.assertIsNotNone(
+            fam, "coverage_matrix.json has no 'cvd_tmp_family' section")
+        return fam
+
+    def test_cvd_family_committed_equals_live(self):
+        """The committed family section is deep-equal to a fresh recomputation
+        off the vendored KoSIT .sch artifacts + the live rules_xrechnung
+        registries — the enumeration can neither be hand-edited nor go stale
+        (an artifact bump that adds/renames a CVD/TMP assert fails here until
+        gen_coverage.py is re-run and the diff reviewed)."""
+        self.assertEqual(
+            self._cvd_fam(), _gen.build_cvd_tmp_family(),
+            "committed cvd_tmp_family differs from a fresh computation off "
+            "the vendored KoSIT Schematron + live registries — re-run "
+            "gen_coverage.py")
+
+    def test_cvd_family_real_parse_of_both_artifacts(self):
+        """The family per binding equals a fresh REAL XML parse
+        (sch:assert/@id) of that vendored KoSIT artifact filtered by the
+        published prefix predicate — nine asserts in UBL, ten in CII;
+        BR-TMP-3 exists ONLY in the CII artifact; and the predicate
+        deliberately never matches BR-DE-TMP-32 (a plain BR-DE rule that IS
+        in both artifacts)."""
+        fam = self._cvd_fam()
+        self.assertEqual(fam["artifact_order"],
+                         ["xrechnung-ubl", "xrechnung-cii"])
+        expected = {"xrechnung-ubl": self.CVD_TMP_UBL_IDS,
+                    "xrechnung-cii": self.CVD_TMP_CII_IDS}
+        for key in fam["artifact_order"]:
+            art = fam["artifacts"][key]
+            path = os.path.join(HERE, _gen.SCHEMATRON_SOURCES[key]["file"])
+            self.assertEqual(art["source"], _gen.SCHEMATRON_SOURCES[key]["file"])
+            index = _coverage.schematron_assert_index(path)
+            self.assertIn("BR-DE-TMP-32", index,
+                          "%s: artifact lost BR-DE-TMP-32?!" % key)
+            self.assertFalse(_coverage.is_cvd_tmp_id("BR-DE-TMP-32"),
+                             "family predicate must NOT capture BR-DE-TMP-32")
+            fam_ids = {rid for rid in index if _coverage.is_cvd_tmp_id(rid)}
+            self.assertEqual(fam_ids, set(expected[key]),
+                             "%s: artifact family != the expected id set" % key)
+            self.assertEqual(art["assert_ids"],
+                             sorted(fam_ids, key=_gen._sort_key), key)
+            self.assertEqual(art["family_universe"], len(fam_ids), key)
+        ubl_index = _coverage.schematron_assert_index(
+            os.path.join(HERE, _gen.SCHEMATRON_SOURCES["xrechnung-ubl"]["file"]))
+        self.assertNotIn("BR-TMP-3", ubl_index,
+                         "the vendored UBL artifact now carries BR-TMP-3 — "
+                         "the CII-only classification (syntax='cii') is stale")
+
+    def test_cvd_family_partition_and_live_registries(self):
+        """Per binding: implemented + known_open == universe, with the
+        implemented set read from the LIVE per-binding registry — and the
+        family is CLOSED: every id the artifact carries is implemented in
+        that binding, the worklist is empty."""
+        from einvoice import rules_xrechnung as _rules_xr
+        fam = self._cvd_fam()
+        live_impl = {
+            "xrechnung-ubl": {fn.rule_id for fn in _rules_xr.ALL_RULES
+                              if _coverage.is_cvd_tmp_id(fn.rule_id)},
+            "xrechnung-cii": {fn.rule_id for fn in _rules_xr.CII_DE_RULES
+                              if _coverage.is_cvd_tmp_id(fn.rule_id)},
+        }
+        for key in fam["artifact_order"]:
+            art = fam["artifacts"][key]
+            universe = set(art["assert_ids"])
+            impl = live_impl[key]
+            self.assertLessEqual(
+                impl, universe,
+                "%s: engine claims CVD/TMP rules the vendored artifact does "
+                "not carry: %s" % (key, sorted(impl - universe)))
+            self.assertEqual(art["implemented"], len(universe & impl), key)
+            self.assertEqual(art["known_open"], len(universe - impl), key)
+            self.assertEqual(art["implemented"] + art["known_open"],
+                             art["family_universe"], key)
+            self.assertEqual(impl, universe,
+                             "%s: family not closed — artifact asserts the "
+                             "live registry does not implement: %s"
+                             % (key, sorted(universe - impl)))
+            self.assertEqual(art["known_open"], 0, key)
+        self.assertEqual(fam["known_open_worklist"], [],
+                         "family closed-out: the worklist must be empty")
+        self.assertEqual(set(fam["implemented_ids"]), self.CVD_TMP_CII_IDS)
+
+    def test_cvd_family_flags_mirror_artifact_and_engine(self):
+        """Severity honesty, per binding: every committed assert row's flag is
+        byte-equal to a fresh parse of the artifact, and the LIVE registry
+        function for that id carries exactly that severity — the
+        severities-mirror-the-official-flags claim, machine-checked."""
+        from einvoice import rules_xrechnung as _rules_xr
+        fam = self._cvd_fam()
+        registries = {
+            "xrechnung-ubl": {fn.rule_id: fn for fn in _rules_xr.ALL_RULES},
+            "xrechnung-cii": {fn.rule_id: fn for fn in _rules_xr.CII_DE_RULES},
+        }
+        for key in fam["artifact_order"]:
+            art = fam["artifacts"][key]
+            index = _coverage.schematron_assert_index(
+                os.path.join(HERE, art["source"]))
+            rows = {r["id"]: r for r in art["asserts"]}
+            self.assertEqual(set(rows), set(art["assert_ids"]), key)
+            for rid, row in rows.items():
+                self.assertEqual(row["flag"], index[rid]["flag"],
+                                 "%s/%s: committed flag differs from the "
+                                 "artifact" % (key, rid))
+                self.assertEqual(row["vacuous_in_artifact"],
+                                 index[rid]["vacuous_in_artifact"], rid)
+                self.assertFalse(row["vacuous_in_artifact"],
+                                 "%s/%s: a family assert became a tautology — "
+                                 "review the implementation claim" % (key, rid))
+                fn = registries[key].get(rid)
+                self.assertIsNotNone(fn, "%s/%s: no live registry function"
+                                     % (key, rid))
+                self.assertEqual(fn.severity, index[rid]["flag"],
+                                 "%s/%s: engine severity %r != official "
+                                 "artifact flag %r"
+                                 % (key, rid, fn.severity, index[rid]["flag"]))
+
+    def test_cvd_family_matrix_syntax_tags_honest(self):
+        """AC3, machine-checked: the nine both-binding family rules are tagged
+        syntax='both' (each differentially proven on LEG 2 AND LEG 4), and
+        BR-TMP-3 — which only the CII artifact carries — is tagged 'cii',
+        never 'both', with an unproven UBL provenance that says why."""
+        by_id = {r["id"]: r for r in self.matrix["rules"]}
+        for rid in sorted(self.CVD_TMP_UBL_IDS):
+            self.assertIn(rid, by_id, "%s missing from the rule table" % rid)
+            self.assertEqual(by_id[rid]["syntax"], "both", rid)
+        tmp3 = by_id.get("BR-TMP-3")
+        self.assertIsNotNone(tmp3, "BR-TMP-3 missing from the rule table")
+        self.assertEqual(tmp3["syntax"], "cii",
+                         "BR-TMP-3 must be tagged CII-only")
+        ubl_prov = tmp3["provenance"]["ubl"]
+        self.assertFalse(ubl_prov.get("differentially_proven"),
+                         "BR-TMP-3 claims a UBL proof that cannot exist")
+        self.assertTrue((ubl_prov.get("reason") or "").strip(),
+                        "BR-TMP-3's unproven UBL provenance lacks a reason")
+
+    def test_cvd_family_stays_out_of_cen_gap(self):
+        """The CVD/TMP family is OUTSIDE the CEN BR-* gap universes: no family
+        id may appear in any CEN missing list, in the deliberate-exclusion
+        ids, or in the CEN universes themselves — the fireable-missing == 0
+        claim is untouched by this family."""
+        for key in self.gap["artifact_order"]:
+            for m in self.gap["artifacts"][key]["missing_rules"]:
+                self.assertFalse(_coverage.is_cvd_tmp_id(m["id"]), key)
+            index = _index(key)
+            self.assertFalse(
+                {r for r in index if _coverage.is_cvd_tmp_id(r)},
+                "%s: CEN artifact unexpectedly carries CVD/TMP asserts" % key)
+        for rid in self.gap["excluded_ids_considered"]:
+            self.assertFalse(_coverage.is_cvd_tmp_id(rid), rid)
+
+    def test_cvd_markdown_section_rendered(self):
+        """COVERAGE.md carries the family section with the honest label, the
+        CII-only note for BR-TMP-3 and the closed (empty) worklist."""
+        md = open(os.path.join(HERE, "COVERAGE.md"), encoding="utf-8").read()
+        self.assertIn("the Clean-Vehicle-Directive (BR-DE-CVD-*) and "
+                      "temporary (BR-TMP-*) rules", md)
+        self.assertIn("BR-TMP-3", md)
+        self.assertIn("CII-only `BR-TMP-3`", md)
 
     def test_markdown_gap_section_rendered(self):
         """COVERAGE.md carries the rendered Gap section (render is separately

@@ -62,6 +62,12 @@ CORE_CODES = os.path.join(
     HERE, "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch")
 XR_VALIDATION = os.path.join(
     HERE, "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch")
+# The KoSIT CII artifact — needed ONLY for the CII-only asserts (BR-TMP-3 has
+# no UBL counterpart); wherever an id exists in a UBL artifact, the UBL assert
+# stays the canonical provenance (the CII index is merged FIRST, so the UBL
+# files override shared ids).
+XR_CII_VALIDATION = os.path.join(
+    HERE, "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch")
 
 
 # --------------------------------------------------------------------------- #
@@ -98,9 +104,12 @@ def _parse_sch(path):
 
 
 def load_schematron_index():
-    """Merge the three UBL Schematron artifacts into one id -> assert record.
-    Validation asserts win over the code-list file where both define an id."""
+    """Merge the vendored Schematron artifacts into one id -> assert record.
+    Validation asserts win over the code-list file where both define an id,
+    and the UBL artifacts win over the KoSIT CII artifact — the CII file
+    contributes only the CII-only asserts (BR-TMP-3)."""
     idx = {}
+    idx.update(_parse_sch(XR_CII_VALIDATION))
     idx.update(_parse_sch(CORE_CODES))
     idx.update(_parse_sch(CORE_VALIDATION))
     idx.update(_parse_sch(XR_VALIDATION))
@@ -115,7 +124,13 @@ def _core_fns():
 
 
 def _xr_fns():
-    return {fn.rule_id: fn for fn in _rules_xr.ALL_RULES}
+    """rule id -> live registry function of the national layer. The UBL
+    registry wins; the CII registry contributes only the CII-only ids
+    (BR-TMP-3) — severity and English docstring are identical for shared ids."""
+    out = {fn.rule_id: fn for fn in _rules_xr.ALL_RULES}
+    for fn in _rules_xr.CII_DE_RULES:
+        out.setdefault(fn.rule_id, fn)
+    return out
 
 
 def _pep_fns():
@@ -150,10 +165,14 @@ def engine_severity(rid, core_fns, xr_fns, pep_fns=None):
 
 def source_key(rid):
     """The coverage-matrix schematron_sources key the wording is derived from."""
-    if (rid.startswith("BR-DE") or rid.startswith("BR-DEX")
+    if rid == "BR-TMP-3":
+        # CII-only: the vendored UBL artifact carries no BR-TMP-3 assert.
+        return "xrechnung-cii"
+    if (rid.startswith("BR-DE") or rid.startswith("BR-TMP")
             or rid.startswith("PEPPOL-")):
-        # The PEPPOL-EN16931-R* family is vendored INSIDE the KoSIT XRechnung
-        # artifact (its peppol-ubl-* patterns), same file as BR-DE/BR-DEX.
+        # The PEPPOL-EN16931-R* family and the BR-TMP-* temporary rules are
+        # vendored INSIDE the KoSIT XRechnung artifact, same file as
+        # BR-DE/BR-DEX/BR-DE-CVD.
         return "xrechnung-ubl"
     return "en16931-ubl"
 
@@ -198,10 +217,17 @@ _ANY_PATH = re.compile(r"(?://)?((?:cac|cbc):[A-Za-z]+(?:/(?:cac|cbc):[A-Za-z]+)
 
 
 def canonical_context(ctx):
-    """The UBL branch of a Schematron context, with extension predicates and the
-    ``/*/`` wildcard normalised to a readable path."""
-    part = ctx.split("|")[0].strip()
-    part = part.replace("[$isExtension]", "")
+    """The UBL branch of a Schematron context, with extension/CVD predicates
+    and the ``/*/`` wildcard normalised to a readable path. The CVD contexts
+    are parenthesised unions with a trailing path — ``(/ubl:Invoice[$isCVD]/
+    cac:InvoiceLine | /cn:CreditNote…)/cac:Item`` — so the first branch is
+    re-joined with the tail after the closing parenthesis."""
+    part = re.sub(r"\[\$is[A-Za-z]+\]", "", ctx).strip()
+    m = re.match(r"^\((.*)\)(.*)$", part, re.S)
+    if m:
+        part = m.group(1).split("|")[0].strip() + m.group(2).strip()
+    else:
+        part = part.split("|")[0].strip()
     part = part.replace("/*/", "/ubl:Invoice/")
     return part.strip()
 

@@ -176,11 +176,12 @@ run by the repo's mechanical gate via `test/einvoice.test.js`).
 
 ### What the XRechnung layer does NOT cover
 
-- **`BR-DEX-*`** (the XRechnung *extension* profile) and **`BR-DE-CVD-*`**
-  (the Clean-Vehicle-Directive profile) — both are gated on their own
-  CustomizationIDs and are separate profiles, not the CIUS core;
-- **`BR-TMP-2`** (external-reference URL shape) and the **`PEPPOL-EN16931-*`**
-  rules that KoSIT ships in the same artifact — not BR-DE rules;
+- ~~`BR-DEX-*` / `BR-DE-CVD-*` / `BR-TMP-2`~~ — since implemented: the
+  extension profile, the Clean-Vehicle-Directive profile (each gated on its
+  own CustomizationID, inert on plain CIUS invoices), `BR-TMP-2` and the
+  CII-only `BR-TMP-3` are all shipped and differential-proven (see
+  `COVERAGE.md`); the **`PEPPOL-EN16931-*`** rules KoSIT ships in the same
+  artifact live in their own module (KoSIT-vendored subset only);
 - **CII syntax and UBL `CreditNote`** documents (our validator is UBL
   `Invoice` only; the official artifact also validates CreditNotes);
 - a `--profile=xrechnung` PASS still only means "none of our implemented
@@ -346,10 +347,11 @@ Specifically:
   than rushed in alongside the simpler S rules here. Until then it simply does
   not fire, and the differential grades only the 108 rules we do implement.
 - **The XRechnung `BR-DE-*` CIUS layer is complete** for the UBL-Invoice
-  artifact (all 32 asserts, §2a) — but the extension (`BR-DEX-*`) and CVD
-  (`BR-DE-CVD-*`) profiles are not implemented, and because the EN core is
-  only 108/~200 rules, `--profile=xrechnung` is **not** a complete XRechnung
-  compliance check either.
+  artifact (all 32 asserts, §2a); the extension (`BR-DEX-*`) and CVD/TMP
+  (`BR-DE-CVD-*`/`BR-TMP-*`) profiles have since been implemented too (see
+  `COVERAGE.md`) — but at the time of this snapshot the EN core was
+  only 108/~200 rules, so `--profile=xrechnung` was **not** a complete
+  XRechnung compliance check either.
 - **No XSD structural validation**, no CII syntax, no UBL `CreditNote`, no
   ZUGFeRD/Factur-X PDF containers, no signatures.
 - **Corpus, not universe.** 1085 real invoices is broad and adversarial but

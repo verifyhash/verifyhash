@@ -23,9 +23,9 @@ XSLT and compares the fired-rule set. The sources:
 
 ## Coverage at a glance
 
-- **276 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **187** proven on both UBL and CII, **89** UBL-only, **0** CII-only.
-- Severity (blocking class): **265** fatal (block validity), **11** warning / information (reported, non-blocking).
+- **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **196** proven on both UBL and CII, **89** UBL-only, **1** CII-only.
+- Severity (blocking class): **274** fatal (block validity), **12** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
   or a documented deliberate exclusion. This is deliberately NOT an uncaveated
@@ -301,6 +301,16 @@ the non-blocking `warning` class for the severity column).
 | `BR-DEX-12` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | 'Third party payment description' (BT-DEX-003, cbc:InstructionID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). |
 | `BR-DEX-13` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | 'Third party payment amount' (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, '.')) <= 2 (no '.' -> '' -> length 0 -> holds). |
 | `BR-DEX-14` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | The currency of 'Third party payment amount' (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -> fires. |
+| `BR-DE-CVD-01` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | A CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty). |
+| `BR-DE-CVD-02` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | A CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty). |
+| `BR-DE-CVD-03` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | A CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item. |
+| `BR-DE-CVD-04` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | In a CVD invoice, an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must contain one of the permitted vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison, per the official test). |
+| `BR-DE-CVD-05` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | In a CVD invoice, when the 'Item attribute name' (BT-160) within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value' (BT-161) must be one of 'clean', 'zero-emission', 'other' (normalize-space comparison; an absent cbc:Value normalizes to '' and fires). |
+| `BR-DE-CVD-06-a` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | In a CVD invoice line whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD', exactly one 'Item attribute name' (BT-160) with the value 'cva' must be present on that Item. |
+| `BR-DE-CVD-06-b` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | In a CVD invoice line whose Item carries an 'Item attribute name' (BT-160) with the value 'cva', exactly one 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must be present on that Item. |
+| `BR-TMP-2` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | The 'External document location' (BT-124) must be an absolute URL with a valid scheme. |
+| `BR-TMP-3` | CII | fatal | fatal | not proven | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | When the 'Item price base quantity' (BT-149) is present in BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line, the values must be identical, and when both carry a unit of measure code (BT-150) the unit codes must be identical too. |
+| `BR-TMP-CVD-01` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | In a CVD invoice, the scheme identifier of every 'Item classification identifier' (BT-158) must come from the code list UNTDID 7143 (extended with 'CVD'). Official membership test is contains() over the space-flanked official list — see :func:`_untdid_7143_cvd_ok`. |
 | `PEPPOL-EN16931-R001` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Business process MUST be provided. |
 | `PEPPOL-EN16931-R005` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | VAT accounting currency code MUST be different from invoice currency code when provided. |
 | `PEPPOL-EN16931-R008` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Document MUST not contain empty elements. |
@@ -478,6 +488,59 @@ KoSIT artifacts carry is implemented in every binding whose
 artifact ships the assert. The enumeration above stays
 machine-checked, so a future artifact bump that adds a new
 Peppol assert reopens this worklist automatically.
+
+## `BR-DE-CVD-*` / `BR-TMP-*` — the Clean-Vehicle-Directive (BR-DE-CVD-*) and temporary (BR-TMP-*) rules of the official KoSIT XRechnung Schematron artifacts
+
+Machine-checked enumeration of the Clean-Vehicle-Directive (BR-DE-CVD-*) and temporary (BR-TMP-*) rules of the official KoSIT XRechnung Schematron artifacts — the Clean-Vehicle-Directive profile asserts (gated in the artifacts behind the CVD CustomizationID …#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9) plus the ungated temporary BR-TMP-* asserts — extracted by a real XML parse of sch:assert/@id from BOTH vendored KoSIT binding artifacts (id prefix BR-DE-CVD-/BR-TMP-; BR-DE-TMP-32 is NOT in this family — it belongs to the plain BR-DE CIUS layer and is implemented separately). The UBL artifact carries nine asserts; the CII artifact carries the same nine plus BR-TMP-3, which exists ONLY in the CII binding (the matrix therefore tags BR-TMP-3 syntax='cii', never 'both'). Implemented ids are read from the live einvoice.rules_xrechnung registries per binding and are differentially proven per binding (LEG 2 / LEG 4); each assert row carries the official flag so the severity-mirrors-the-artifact claim is machine-visible. test_coverage_gap.py recomputes this section live from the vendored .sch files and fails on any drift, so an artifact bump that adds or un-gates a CVD/TMP assert reopens the worklist automatically.
+
+### `xrechnung-ubl` — 9 implemented + 0 known-open = 9 family asserts
+
+Family parsed from `corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch` (`sch:assert/@id`, prefix
+`BR-DE-CVD-`/`BR-TMP-`). Official flags per assert:
+
+| id | official flag |
+| --- | --- |
+| `BR-DE-CVD-01` | fatal |
+| `BR-DE-CVD-02` | fatal |
+| `BR-DE-CVD-03` | fatal |
+| `BR-DE-CVD-04` | fatal |
+| `BR-DE-CVD-05` | fatal |
+| `BR-DE-CVD-06-a` | fatal |
+| `BR-DE-CVD-06-b` | fatal |
+| `BR-TMP-2` | warning |
+| `BR-TMP-CVD-01` | fatal |
+
+### `xrechnung-cii` — 10 implemented + 0 known-open = 10 family asserts
+
+Family parsed from `corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch` (`sch:assert/@id`, prefix
+`BR-DE-CVD-`/`BR-TMP-`). Official flags per assert:
+
+| id | official flag |
+| --- | --- |
+| `BR-DE-CVD-01` | fatal |
+| `BR-DE-CVD-02` | fatal |
+| `BR-DE-CVD-03` | fatal |
+| `BR-DE-CVD-04` | fatal |
+| `BR-DE-CVD-05` | fatal |
+| `BR-DE-CVD-06-a` | fatal |
+| `BR-DE-CVD-06-b` | fatal |
+| `BR-TMP-2` | warning |
+| `BR-TMP-3` | fatal |
+| `BR-TMP-CVD-01` | fatal |
+
+Implemented (differentially proven per binding, see the rule table above):
+`BR-DE-CVD-01`, `BR-DE-CVD-02`, `BR-DE-CVD-03`, `BR-DE-CVD-04`, `BR-DE-CVD-05`, `BR-DE-CVD-06-a`, `BR-DE-CVD-06-b`, `BR-TMP-2`, `BR-TMP-3`, `BR-TMP-CVD-01`.
+
+### Known-open worklist (enumerated, not yet asserted)
+
+**Empty.** Every `BR-DE-CVD-*` / `BR-TMP-*` assert the vendored
+KoSIT artifacts carry is implemented in every binding whose
+artifact ships it — nine asserts in both bindings plus the
+CII-only `BR-TMP-3` (tagged `syntax = CII` in the rule table,
+because no UBL assert exists to prove it against). The
+enumeration above stays machine-checked, so a future artifact
+bump that adds or un-gates a CVD/TMP assert reopens this
+worklist automatically.
 
 ## CII proof parity
 

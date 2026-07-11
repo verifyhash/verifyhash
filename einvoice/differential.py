@@ -118,7 +118,7 @@ assert len(OUR_RULE_IDS) == 209, OUR_RULE_IDS
 # from the explicit .rule_id attribute, not derived from function names.
 XR_RULE_IDS = [fn.rule_id for fn in _rules_xr.ALL_RULES]
 XR_RULE_SET = set(XR_RULE_IDS)
-assert len(XR_RULE_IDS) == 46, XR_RULE_IDS
+assert len(XR_RULE_IDS) == 55, XR_RULE_IDS  # 32 BR-DE + 9 CVD/TMP + 14 BR-DEX
 
 # XRechnung national CIUS layer in CII syntax — the BR-DE-* rules evaluated over
 # the CII normalized model (rules_xrechnung.CII_DE_RULES), graded against the
@@ -128,8 +128,13 @@ assert len(XR_RULE_IDS) == 46, XR_RULE_IDS
 CII_XR_RULE_IDS = [fn.rule_id for fn in _rules_xr.CII_DE_RULES]
 CII_XR_RULE_SET = set(CII_XR_RULE_IDS)
 assert len(CII_XR_RULE_IDS) == len(CII_XR_RULE_SET), CII_XR_RULE_IDS
-assert CII_XR_RULE_SET <= XR_RULE_SET, (
-    "CII BR-DE set names rules not in the UBL BR-DE layer: %s"
+# Every CII-graded national rule is also in the UBL layer EXCEPT BR-TMP-3:
+# only the vendored CII artifact carries that assert (the UBL artifact has no
+# BR-TMP-3), so it is legitimately CII-only.
+CII_ONLY_XR_RULE_IDS = ("BR-TMP-3",)
+assert CII_XR_RULE_SET - XR_RULE_SET == set(CII_ONLY_XR_RULE_IDS), (
+    "CII BR-DE set names rules not in the UBL BR-DE layer (beyond the "
+    "documented CII-only BR-TMP-3): %s"
     % sorted(CII_XR_RULE_SET - XR_RULE_SET))
 
 # EXCLUDED from the CII-graded BR-DE set (kept out on purpose, not overlooked).
@@ -154,8 +159,10 @@ assert CII_XR_RULE_SET <= XR_RULE_SET, (
 #  * BR-DE-30 / BR-DE-31 (BT-90 / BT-91 with DIRECT DEBIT BG-19): the CII binding
 #    reconstructs BG-19 semantically from DirectDebitMandateID / CreditorReferenceID
 #    / PayerPartyDebtorFinancialAccount IBANID presence — none in the core model.
-#  * BR-DEX-01/04/05/06/07/08/15 and BR-DE-CVD-* (extension / clean-vehicle
-#    profiles): out of the CIUS scope of this leg (as on the UBL side).
+#  * BR-DEX-01/04/05/06/07/08/15 (extension profile): out of the CIUS scope of
+#    this leg (as on the UBL side). The CVD/TMP family (BR-DE-CVD-*,
+#    BR-TMP-CVD-01, BR-TMP-2 and the CII-only BR-TMP-3) IS graded here — the
+#    normalized model carries its facts (parser_cii._build_cii_br_de).
 CII_XR_EXCLUDED_RULE_IDS = (
     "BR-DE-18", "BR-DE-19", "BR-DE-20", "BR-DE-22",
     "BR-DE-23-a", "BR-DE-23-b", "BR-DE-24-a", "BR-DE-24-b",
@@ -2365,6 +2372,145 @@ def _gather_xr_ext_mutations(scratch: str):
         out_path = os.path.join(dst, "xrextmut_%s.xml" % name.replace("-", "_"))
         _write_doc(root, out_path)
         out.append(("XREXTMUT/%s" % name, out_path))
+    return out
+
+
+# --- CVD / TMP (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2) targeted mutations ----- #
+# The CVD base is the testsuite's clean Clean-Vehicle-Directive invoice
+# (technical-cases/cvd/02.01a — verified: fires NO CVD/TMP assert on the
+# official XSLT; it is also part of the real corpus, proving the PASS
+# direction of every family rule). Each mutation breaks exactly one guarded
+# fact in the FIRING direction. BR-TMP-2 is not CVD-gated, so its two
+# mutations run off the plain XR base.
+_XR_CVD_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src",
+                            "test", "technical-cases", "cvd",
+                            "02.01a-cvd_INVOICE_ubl.xml")
+
+
+def _cvd_first_item(r):
+    return r.find("cac:InvoiceLine/cac:Item", _NSD)
+
+
+def _cvd_add_item_property(item, name, value):
+    prop = ET.SubElement(item, _q(NS_CAC, "AdditionalItemProperty"))
+    _sub_el(prop, NS_CBC, "Name", name)
+    _sub_el(prop, NS_CBC, "Value", value)
+
+
+def _cvdmut_01(r):
+    r.remove(r.find("cac:ContractDocumentReference", _NSD))
+
+
+def _cvdmut_02(r):
+    r.remove(r.find("cac:OriginatorDocumentReference", _NSD))
+
+
+def _cvdmut_03(r):
+    # Remove BOTH the CVD classification and the cva attribute from line 1:
+    # no line carries the CVD+cva pair -> BR-DE-CVD-03 fires ALONE (06-a/06-b
+    # are vacuous without their trigger).
+    item = _cvd_first_item(r)
+    for cc in item.findall("cac:CommodityClassification", _NSD):
+        codes = cc.findall("cbc:ItemClassificationCode", _NSD)
+        if any(c.get("listID") == "CVD" for c in codes):
+            item.remove(cc)
+    for prop in item.findall("cac:AdditionalItemProperty", _NSD):
+        if any((n.text or "") == "cva"
+               for n in prop.findall("cbc:Name", _NSD)):
+            item.remove(prop)
+
+
+def _cvd_class_code(r, list_id):
+    for cc in _cvd_first_item(r).findall(
+            "cac:CommodityClassification/cbc:ItemClassificationCode", _NSD):
+        if cc.get("listID") == list_id:
+            return cc
+    raise AssertionError("no ItemClassificationCode with listID=%r" % list_id)
+
+
+def _cvdmut_04(r):
+    # 'L5' is no permitted vehicle category -> BR-DE-CVD-04.
+    _cvd_class_code(r, "CVD").text = "L5"
+
+
+def _cvdmut_05(r):
+    # 'hybrid' is not in the cva code set -> BR-DE-CVD-05.
+    for prop in _cvd_first_item(r).findall("cac:AdditionalItemProperty", _NSD):
+        if any((n.text or "") == "cva"
+               for n in prop.findall("cbc:Name", _NSD)):
+            prop.find("cbc:Value", _NSD).text = "hybrid"
+
+
+def _cvdmut_06a(r):
+    # A SECOND cva attribute on the CVD line -> count != 1 -> BR-DE-CVD-06-a.
+    _cvd_add_item_property(_cvd_first_item(r), "cva", "clean")
+
+
+def _cvdmut_06b(r):
+    # A cva attribute on line 2, which carries NO CVD classification
+    # -> BR-DE-CVD-06-b (line 1 keeps the pair, so CVD-03 holds).
+    items = r.findall("cac:InvoiceLine/cac:Item", _NSD)
+    _cvd_add_item_property(items[1], "cva", "clean")
+
+
+def _cvdmut_tmpcvd01(r):
+    # 'QQQQ' is in neither UNTDID 7143 nor the CVD extension -> BR-TMP-CVD-01
+    # (BR-DE-CVD-04 stays vacuous: the listID is not 'CVD').
+    _cvd_class_code(r, "IB").set("listID", "QQQQ")
+
+
+def _xr_add_external_reference(r, uri):
+    adr = ET.Element(_q(NS_CAC, "AdditionalDocumentReference"))
+    _sub_el(adr, NS_CBC, "ID", "ext-doc-1")
+    att = _sub_el(adr, NS_CAC, "Attachment")
+    ext = _sub_el(att, NS_CAC, "ExternalReference")
+    if uri is not None:
+        _sub_el(ext, NS_CBC, "URI", uri)
+    r.insert(list(r).index(r.find("cac:AccountingSupplierParty", _NSD)), adr)
+
+
+def _tmpmut_2(r):
+    # Relative URL (no scheme) -> BR-TMP-2 (warning) fires.
+    _xr_add_external_reference(r, "example.com/spec.pdf")
+
+
+def _tmpmut_2_ok(r):
+    # Absolute URL with a valid scheme -> the ENGAGED assert holds.
+    _xr_add_external_reference(r, "https://example.com/spec.pdf")
+
+
+_XR_CVD_MUTATIONS = [
+    ("BR-DE-CVD-01", _cvdmut_01), ("BR-DE-CVD-02", _cvdmut_02),
+    ("BR-DE-CVD-03", _cvdmut_03), ("BR-DE-CVD-04", _cvdmut_04),
+    ("BR-DE-CVD-05", _cvdmut_05), ("BR-DE-CVD-06-a", _cvdmut_06a),
+    ("BR-DE-CVD-06-b", _cvdmut_06b), ("BR-TMP-CVD-01", _cvdmut_tmpcvd01),
+]
+
+_XR_TMP_MUTATIONS = [
+    ("BR-TMP-2", _tmpmut_2), ("BR-TMP-2-ok", _tmpmut_2_ok),
+]
+
+
+def _gather_xr_cvd_mutations(scratch: str):
+    """One generated invoice per CVD-family mutation (off the clean CVD base)
+    plus the two BR-TMP-2 fixtures (off the plain XR base)."""
+    dst = os.path.join(scratch, "xr-cvd-mutations")
+    os.makedirs(dst, exist_ok=True)
+    out = []
+    for base_path, muts in ((_XR_CVD_BASE, _XR_CVD_MUTATIONS),
+                            (_XR_BASE, _XR_TMP_MUTATIONS)):
+        base_root = ET.parse(base_path).getroot()
+        for name, mut in muts:
+            root = copy.deepcopy(base_root)
+            try:
+                mut(root)
+            except Exception as e:  # pragma: no cover
+                print("  [XR-CVD mutation %s FAILED to build: %s]" % (name, e),
+                      file=sys.stderr)
+                continue
+            out_path = os.path.join(dst, "cvdmut_%s.xml" % name.replace("-", "_"))
+            _write_doc(root, out_path)
+            out.append(("XRCVDMUT/%s" % name, out_path))
     return out
 
 
@@ -4662,6 +4808,197 @@ def _gather_peppol_cii_mutations(scratch: str):
     return out
 
 
+# --- CVD / TMP (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2/3) CII mutations -------- #
+# Off the testsuite's clean CII Clean-Vehicle-Directive invoice
+# (technical-cases/cvd/02.01a-cvd_INVOICE_uncefact.xml — verified: fires NO
+# CVD/TMP assert on the official XSLT; also in the real corpus, proving the
+# PASS direction). BR-TMP-2 / BR-TMP-3 are not CVD-gated; their fixtures run
+# off the plain XRechnung-CII base.
+_XR_CII_CVD_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src",
+                                "test", "technical-cases", "cvd",
+                                "02.01a-cvd_INVOICE_uncefact.xml")
+
+
+def _cii_first_product(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:IncludedSupplyChainTradeLineItem/"
+                  "ram:SpecifiedTradeProduct", _NSC)
+
+
+def _cii_add_characteristic(product, description, value):
+    """Insert an ApplicableProductCharacteristic BEFORE the first
+    DesignatedProductClassification (official CII child order)."""
+    ch = ET.Element(_cq(NS_RAM, "ApplicableProductCharacteristic"))
+    _csub(ch, NS_RAM, "Description", description)
+    _csub(ch, NS_RAM, "Value", value)
+    dpc = product.find("ram:DesignatedProductClassification", _NSC)
+    if dpc is not None:
+        product.insert(list(product).index(dpc), ch)
+    else:
+        product.append(ch)
+
+
+def _cii_cvd_class_code(r, list_id):
+    for cc in _cii_first_product(r).findall(
+            "ram:DesignatedProductClassification/ram:ClassCode", _NSC):
+        if cc.get("listID") == list_id:
+            return cc
+    raise AssertionError("no ram:ClassCode with listID=%r" % list_id)
+
+
+def _cvdcmut_01(r):
+    agr = _cii_agreement(r)
+    agr.remove(agr.find("ram:ContractReferencedDocument", _NSC))
+
+
+def _cvdcmut_02(r):
+    agr = _cii_agreement(r)
+    for doc in agr.findall("ram:AdditionalReferencedDocument", _NSC):
+        if any((t.text or "").strip() == "50"
+               for t in doc.findall("ram:TypeCode", _NSC)):
+            agr.remove(doc)
+
+
+def _cvdcmut_03(r):
+    # Strip BOTH the CVD classification and the cva characteristic from the
+    # first product -> only BR-DE-CVD-03 fires.
+    product = _cii_first_product(r)
+    for dpc in product.findall("ram:DesignatedProductClassification", _NSC):
+        if any(cc.get("listID") == "CVD"
+               for cc in dpc.findall("ram:ClassCode", _NSC)):
+            product.remove(dpc)
+    for ch in product.findall("ram:ApplicableProductCharacteristic", _NSC):
+        if any((d.text or "") == "cva"
+               for d in ch.findall("ram:Description", _NSC)):
+            product.remove(ch)
+
+
+def _cvdcmut_04(r):
+    _cii_cvd_class_code(r, "CVD").text = "L5"
+
+
+def _cvdcmut_05(r):
+    product = _cii_first_product(r)
+    for ch in product.findall("ram:ApplicableProductCharacteristic", _NSC):
+        if any((d.text or "") == "cva"
+               for d in ch.findall("ram:Description", _NSC)):
+            ch.find("ram:Value", _NSC).text = "hybrid"
+
+
+def _cvdcmut_06a(r):
+    _cii_add_characteristic(_cii_first_product(r), "cva", "clean")
+
+
+def _cvdcmut_06b(r):
+    products = r.findall("rsm:SupplyChainTradeTransaction/"
+                         "ram:IncludedSupplyChainTradeLineItem/"
+                         "ram:SpecifiedTradeProduct", _NSC)
+    _cii_add_characteristic(products[1], "cva", "clean")
+
+
+def _cvdcmut_tmpcvd01(r):
+    _cii_cvd_class_code(r, "IB").set("listID", "QQQQ")
+
+
+def _cii_add_header_ref_doc(r, uri, type_code="916"):
+    agr = _cii_agreement(r)
+    doc = ET.Element(_cq(NS_RAM, "AdditionalReferencedDocument"))
+    _csub(doc, NS_RAM, "IssuerAssignedID", "ext-doc-1")
+    if uri is not None:
+        _csub(doc, NS_RAM, "URIID", uri)
+    _csub(doc, NS_RAM, "TypeCode", type_code)
+    project = agr.find("ram:SpecifiedProcuringProject", _NSC)
+    if project is not None:
+        agr.insert(list(agr).index(project), doc)
+    else:
+        agr.append(doc)
+
+
+def _tmpcmut_2(r):
+    # TypeCode 916 + relative URL -> BR-TMP-2 (warning) fires.
+    _cii_add_header_ref_doc(r, "example.com/spec.pdf")
+
+
+def _tmpcmut_2_ok(r):
+    # TypeCode 916 + absolute URL with a valid scheme -> the ENGAGED assert holds.
+    _cii_add_header_ref_doc(r, "https://example.com/spec.pdf")
+
+
+def _cii_add_gross_basis(r, value, unit=None, net_value="1", net_unit=None):
+    """Add a GrossPriceProductTradePrice with a BasisQuantity to the line's
+    SpecifiedLineTradeAgreement (before the NetPriceProductTradePrice — the
+    official child order) and a BasisQuantity on the Net price."""
+    la = r.find("rsm:SupplyChainTradeTransaction/"
+                "ram:IncludedSupplyChainTradeLineItem/"
+                "ram:SpecifiedLineTradeAgreement", _NSC)
+    npp = la.find("ram:NetPriceProductTradePrice", _NSC)
+    gpp = ET.Element(_cq(NS_RAM, "GrossPriceProductTradePrice"))
+    _csub(gpp, NS_RAM, "ChargeAmount", "11.78")
+    gbq = _csub(gpp, NS_RAM, "BasisQuantity", value)
+    if unit is not None:
+        gbq.set("unitCode", unit)
+    la.insert(list(la).index(npp), gpp)
+    nbq = _csub(npp, NS_RAM, "BasisQuantity", net_value)
+    if net_unit is not None:
+        nbq.set("unitCode", net_unit)
+
+
+def _tmp3cmut(r):
+    # Gross BasisQuantity '2' != Net BasisQuantity '1' -> BR-TMP-3 fires.
+    _cii_add_gross_basis(r, "2")
+
+
+def _tmp3cmut_ok(r):
+    # Both present and string-identical -> the ENGAGED assert holds.
+    _cii_add_gross_basis(r, "1")
+
+
+def _tmp3cmut_unit(r):
+    # Same value, both unit codes present but different -> BR-TMP-3 fires on
+    # the unit branch (the net unit XPP matches the line's BilledQuantity, so
+    # PEPPOL-EN16931-R130 stays clear).
+    _cii_add_gross_basis(r, "1", unit="KGM", net_unit="XPP")
+
+
+_XR_CII_CVD_MUTATIONS = [
+    ("BR-DE-CVD-01", _cvdcmut_01), ("BR-DE-CVD-02", _cvdcmut_02),
+    ("BR-DE-CVD-03", _cvdcmut_03), ("BR-DE-CVD-04", _cvdcmut_04),
+    ("BR-DE-CVD-05", _cvdcmut_05), ("BR-DE-CVD-06-a", _cvdcmut_06a),
+    ("BR-DE-CVD-06-b", _cvdcmut_06b), ("BR-TMP-CVD-01", _cvdcmut_tmpcvd01),
+]
+
+_XR_CII_TMP_MUTATIONS = [
+    ("BR-TMP-2", _tmpcmut_2), ("BR-TMP-2-ok", _tmpcmut_2_ok),
+    ("BR-TMP-3", _tmp3cmut), ("BR-TMP-3-ok", _tmp3cmut_ok),
+    ("BR-TMP-3-unit", _tmp3cmut_unit),
+]
+
+
+def _gather_xr_cii_cvd_mutations(scratch: str):
+    """One generated CII invoice per CVD-family mutation (off the clean CII
+    CVD base) plus the BR-TMP-2 / BR-TMP-3 fixtures (off the plain
+    XRechnung-CII base)."""
+    dst = os.path.join(scratch, "xr-cii-cvd-mutations")
+    os.makedirs(dst, exist_ok=True)
+    out = []
+    for base_path, muts in ((_XR_CII_CVD_BASE, _XR_CII_CVD_MUTATIONS),
+                            (_XR_CII_BASE, _XR_CII_TMP_MUTATIONS)):
+        base_root = ET.parse(base_path).getroot()
+        for name, mut in muts:
+            root = copy.deepcopy(base_root)
+            try:
+                mut(root)
+            except Exception as e:  # pragma: no cover
+                print("  [XR-CII-CVD mutation %s FAILED to build: %s]"
+                      % (name, e), file=sys.stderr)
+                continue
+            out_path = os.path.join(
+                dst, "cvdcmut_%s.xml" % name.replace("-", "_"))
+            _write_cii_doc(root, out_path)
+            out.append(("XRCIICVDMUT/%s" % name, out_path))
+    return out
+
+
 def _gather_xr_cii_reals():
     """(label, path) for the CEN CII examples + every real XRechnung CII invoice
     (*_uncefact.xml) in the xrechnung-testsuite — the adversarial real sample."""
@@ -4714,6 +5051,7 @@ def build_xr_cii_corpus(scratch: str):
     entries = []
     entries += _gather_xr_cii_reals()
     entries += _gather_xr_cii_mutations(scratch)
+    entries += _gather_xr_cii_cvd_mutations(scratch)
     entries += _gather_peppol_cii_mutations(scratch)
     seen, uniq = set(), []
     for label, path in entries:
@@ -4750,6 +5088,7 @@ def build_xr_corpus(scratch: str):
     entries += _split_cen_testsets(scratch)
     entries += _gather_xr_mutations(scratch)
     entries += _gather_xr_ext_mutations(scratch)
+    entries += _gather_xr_cvd_mutations(scratch)
     entries += _gather_peppol_mutations(scratch)
     seen, uniq = set(), []
     for label, path in entries:

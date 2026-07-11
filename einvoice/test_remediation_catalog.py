@@ -113,8 +113,8 @@ def _engine_severity():
             out[rid] = "warning"
         else:
             out[rid] = "fatal"
-    for fn in _rules_xr.ALL_RULES:
-        out[fn.rule_id] = fn.severity
+    for fn in _rules_xr.ALL_RULES + _rules_xr.CII_DE_RULES:
+        out.setdefault(fn.rule_id, fn.severity)
     for fn in _rules_pep.UBL_RULES + _rules_pep.CII_RULES:
         out[fn.rule_id] = fn.severity
     return out

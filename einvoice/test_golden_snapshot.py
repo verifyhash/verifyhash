@@ -110,13 +110,17 @@ FIXTURES = [
         "note": "A UBL CreditNote, not an Invoice: the structural root check "
                 "(S-ROOT) fires and validation stops.",
     },
-    # ---- CII, good ----
+    # ---- CII, good core / bad XRechnung-TMP ----
     {
         "name": "cii-good-xrechnung-example5",
         "path": "corpus/cen-en16931/cii/examples/CII_example5.xml",
         "syntax": "CII",
         "profile": "xrechnung",
-        "note": "CII invoice that passes: only a non-fatal BR-DE-21 note fires.",
+        "note": "CII invoice passing the EN core; under the xrechnung profile "
+                "it fires BR-DE-21 (warning) and, since the CVD/TMP family "
+                "landed, the fatal BR-TMP-3: its gross BasisQuantity '1.1' != "
+                "net '1' (string comparison, mirroring the official KoSIT CII "
+                "artifact, which fires BR-TMP-3 on this file too).",
     },
     {
         "name": "cii-good-xrechnung-huf",

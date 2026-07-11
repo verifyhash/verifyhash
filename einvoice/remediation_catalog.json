@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 276,
+  "rule_count": 286,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -2775,7 +2775,7 @@
       "de_source": "translation"
     },
     "BR-E-08": {
-      "title": "The Exempt (E) VAT breakdown taxable amount (BT-116) shall equal the exact sum of E line net amounts − E allowances + E charges.",
+      "title": "The Exempt (E) VAT breakdown taxable amount (BT-116) shall equal the sum of E line net amounts − E allowances + E charges (exact on UBL; the ±1 band around the round2 bucket sums on CII — see :func:`_breakdown_taxable_sum_mismatch`).",
       "requires": "In a VAT breakdown (BG-23) where the VAT category code (BT-118) is \"Exempt from VAT\" the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) minus the sum of Document level allowance amounts (BT-92) plus the sum of Document level charge amounts (BT-99) where the VAT category codes (BT-151, BT-95, BT-102) are \"Exempt from VAT\".",
       "bt_bg": [
         "BG-23",
@@ -2980,7 +2980,7 @@
       "de_source": "translation"
     },
     "BR-G-08": {
-      "title": "The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the exact sum of G line nets − G allowances + G charges.",
+      "title": "The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the sum of G line nets − G allowances + G charges (exact on UBL; the ±1 band around the round2 bucket sums on CII — see :func:`_breakdown_taxable_sum_mismatch`).",
       "requires": "In a VAT breakdown (BG-23) where the VAT category code (BT-118) is \"Export outside the EU\" the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) minus the sum of Document level allowance amounts (BT-92) plus the sum of Document level charge amounts (BT-99) where the VAT category codes (BT-151, BT-95, BT-102) are \"Export outside the EU\".",
       "bt_bg": [
         "BG-23",
@@ -4806,6 +4806,183 @@
       },
       "title_de": "Die Währungsangabe von \"Third party payment amount\" BT-DEX-002 muss BT-5 (\"Invoice currency code\") entsprechen.",
       "fix_de": "Korrigieren Sie den berechneten Betrag bei `/ubl:Invoice/cac:PrepaidPayment`, sodass gilt: Die Währungsangabe von \"Third party payment amount\" BT-DEX-002 muss BT-5 (\"Invoice currency code\") entsprechen.",
+      "de_source": "kosit"
+    },
+    "BR-DE-CVD-01": {
+      "title": "A CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty).",
+      "requires": "a CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty).",
+      "bt_bg": [
+        "BT-12"
+      ],
+      "location_hint": "cac:ContractDocumentReference/cbc:ID",
+      "fix": "Correct `cac:ContractDocumentReference/cbc:ID` so that a CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Das Element \"Contract reference\" (BT-12) muss übermittelt werden."
+      },
+      "title_de": "Das Element \"Contract reference\" (BT-12) muss übermittelt werden.",
+      "fix_de": "Korrigieren Sie `cac:ContractDocumentReference/cbc:ID`, sodass gilt: Das Element \"Contract reference\" (BT-12) muss übermittelt werden.",
+      "de_source": "kosit"
+    },
+    "BR-DE-CVD-02": {
+      "title": "A CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty).",
+      "requires": "a CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty).",
+      "bt_bg": [
+        "BT-17"
+      ],
+      "location_hint": "cac:OriginatorDocumentReference/cbc:ID",
+      "fix": "Correct `cac:OriginatorDocumentReference/cbc:ID` so that a CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Das Element \"Tender or lot reference\" (BT-17) muss übermittelt werden."
+      },
+      "title_de": "Das Element \"Tender or lot reference\" (BT-17) muss übermittelt werden.",
+      "fix_de": "Korrigieren Sie `cac:OriginatorDocumentReference/cbc:ID`, sodass gilt: Das Element \"Tender or lot reference\" (BT-17) muss übermittelt werden.",
+      "de_source": "kosit"
+    },
+    "BR-DE-CVD-03": {
+      "title": "A CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item.",
+      "requires": "a CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item.",
+      "bt_bg": [
+        "BG-25",
+        "BT-158",
+        "BT-160"
+      ],
+      "location_hint": "cac:InvoiceLine/cac:Item",
+      "fix": "Add the required element at `cac:InvoiceLine/cac:Item`: a CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "In einer Rechnung muss mindestens eine INVOICE LINE (BG-25) enthalten sein, in der der Scheme identifier von \"Item classification identifier\" (BT-158) den Wert 'CVD' und der \"Item attribute name\" (BT-160) den Wert 'cva' enthält."
+      },
+      "title_de": "In einer Rechnung muss mindestens eine INVOICE LINE (BG-25) enthalten sein, in der der Scheme identifier von \"Item classification identifier\" (BT-158) den Wert 'CVD' und der \"Item attribute name\" (BT-160) den Wert 'cva' enthält.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine/cac:Item`: In einer Rechnung muss mindestens eine INVOICE LINE (BG-25) enthalten sein, in der der Scheme identifier von \"Item classification identifier\" (BT-158) den Wert 'CVD' und der \"Item attribute name\" (BT-160) den Wert 'cva' enthält.",
+      "de_source": "kosit"
+    },
+    "BR-DE-CVD-04": {
+      "title": "In a CVD invoice, an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must contain one of the permitted vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison, per the official test).",
+      "requires": "in a CVD invoice, an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must contain one of the permitted vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison, per the official test).",
+      "bt_bg": [
+        "BT-158"
+      ],
+      "location_hint": "/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode",
+      "fix": "Add the required element at `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`: in a CVD invoice, an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must contain one of the permitted vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison, per the official test).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' muss einen Wert aus der Liste der zulässigen Fahrzeugkategorien enthalten."
+      },
+      "title_de": "Ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' muss einen Wert aus der Liste der zulässigen Fahrzeugkategorien enthalten.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`: Ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' muss einen Wert aus der Liste der zulässigen Fahrzeugkategorien enthalten.",
+      "de_source": "kosit"
+    },
+    "BR-DE-CVD-05": {
+      "title": "In a CVD invoice, when the 'Item attribute name' (BT-160) within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value' (BT-161) must be one of 'clean', 'zero-emission', 'other' (normalize-space comparison; an absent cbc:Value normalizes to '' and fires).",
+      "requires": "in a CVD invoice, when the 'Item attribute name' (BT-160) within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value' (BT-161) must be one of 'clean', 'zero-emission', 'other' (normalize-space comparison; an absent cbc:Value normalizes to '' and fires).",
+      "bt_bg": [
+        "BG-32",
+        "BT-160",
+        "BT-161"
+      ],
+      "location_hint": "/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:AdditionalItemProperty[cbc:Name = 'cva']",
+      "fix": "Correct `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:AdditionalItemProperty[cbc:Name = 'cva']` so that in a CVD invoice, when the 'Item attribute name' (BT-160) within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value' (BT-161) must be one of 'clean', 'zero-emission', 'other' (normalize-space comparison; an absent cbc:Value normalizes to '' and fires).",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Wenn innerhalb von ITEM ATTRIBUTES (BG-32) der \"Item attribute name\" (BT-160) den Wert 'cva' hat, muss der \"Item attribute value\" (BT-161) einen der zulässigen Werte enthalten."
+      },
+      "title_de": "Wenn innerhalb von ITEM ATTRIBUTES (BG-32) der \"Item attribute name\" (BT-160) den Wert 'cva' hat, muss der \"Item attribute value\" (BT-161) einen der zulässigen Werte enthalten.",
+      "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:AdditionalItemProperty[cbc:Name = 'cva']`, sodass gilt: Wenn innerhalb von ITEM ATTRIBUTES (BG-32) der \"Item attribute name\" (BT-160) den Wert 'cva' hat, muss der \"Item attribute value\" (BT-161) einen der zulässigen Werte enthalten.",
+      "de_source": "kosit"
+    },
+    "BR-DE-CVD-06-a": {
+      "title": "In a CVD invoice line whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD', exactly one 'Item attribute name' (BT-160) with the value 'cva' must be present on that Item.",
+      "requires": "in a CVD invoice line whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD', exactly one 'Item attribute name' (BT-160) with the value 'cva' must be present on that Item.",
+      "bt_bg": [
+        "BT-158",
+        "BT-160"
+      ],
+      "location_hint": "/ubl:Invoice/cac:InvoiceLine/cac:Item",
+      "fix": "Correct `/ubl:Invoice/cac:InvoiceLine/cac:Item` so that in a CVD invoice line whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD', exactly one 'Item attribute name' (BT-160) with the value 'cva' must be present on that Item.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Wenn der Scheme identifier von \"Item classification identifier\" (BT-158) mit dem Wert 'CVD' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item attribute name\" (BT-160) mit dem Wert 'cva' vorhanden sein."
+      },
+      "title_de": "Wenn der Scheme identifier von \"Item classification identifier\" (BT-158) mit dem Wert 'CVD' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item attribute name\" (BT-160) mit dem Wert 'cva' vorhanden sein.",
+      "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:InvoiceLine/cac:Item`, sodass gilt: Wenn der Scheme identifier von \"Item classification identifier\" (BT-158) mit dem Wert 'CVD' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item attribute name\" (BT-160) mit dem Wert 'cva' vorhanden sein.",
+      "de_source": "kosit"
+    },
+    "BR-DE-CVD-06-b": {
+      "title": "In a CVD invoice line whose Item carries an 'Item attribute name' (BT-160) with the value 'cva', exactly one 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must be present on that Item.",
+      "requires": "in a CVD invoice line whose Item carries an 'Item attribute name' (BT-160) with the value 'cva', exactly one 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must be present on that Item.",
+      "bt_bg": [
+        "BT-158",
+        "BT-160"
+      ],
+      "location_hint": "/ubl:Invoice/cac:InvoiceLine/cac:Item",
+      "fix": "Correct `/ubl:Invoice/cac:InvoiceLine/cac:Item` so that in a CVD invoice line whose Item carries an 'Item attribute name' (BT-160) with the value 'cva', exactly one 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must be present on that Item.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Wenn \"Item attribute name\" (BT-160) mit dem Wert 'cva' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' vorhanden sein."
+      },
+      "title_de": "Wenn \"Item attribute name\" (BT-160) mit dem Wert 'cva' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' vorhanden sein.",
+      "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:InvoiceLine/cac:Item`, sodass gilt: Wenn \"Item attribute name\" (BT-160) mit dem Wert 'cva' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' vorhanden sein.",
+      "de_source": "kosit"
+    },
+    "BR-TMP-2": {
+      "title": "The 'External document location' (BT-124) must be an absolute URL with a valid scheme.",
+      "requires": "the 'External document location' (BT-124) must be an absolute URL with a valid scheme.",
+      "bt_bg": [
+        "BT-124"
+      ],
+      "location_hint": "/ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/cac:ExternalReference",
+      "fix": "Correct `/ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/cac:ExternalReference` so that the 'External document location' (BT-124) must be an absolute URL with a valid scheme.",
+      "severity": "warning",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "BT-124 \"External document location\" muss eine absolute URL mit gültigem Schema enthalten."
+      },
+      "title_de": "BT-124 \"External document location\" muss eine absolute URL mit gültigem Schema enthalten.",
+      "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/cac:ExternalReference`, sodass gilt: BT-124 \"External document location\" muss eine absolute URL mit gültigem Schema enthalten.",
+      "de_source": "kosit"
+    },
+    "BR-TMP-3": {
+      "title": "When the 'Item price base quantity' (BT-149) is present in BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line, the values must be identical, and when both carry a unit of measure code (BT-150) the unit codes must be identical too.",
+      "requires": "when the 'Item price base quantity' (BT-149) is present in BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line, the values must be identical, and when both carry a unit of measure code (BT-150) the unit codes must be identical too.",
+      "bt_bg": [
+        "BT-149",
+        "BT-150"
+      ],
+      "location_hint": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem",
+      "fix": "Correct `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem` so that when the 'Item price base quantity' (BT-149) is present in BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line, the values must be identical, and when both carry a unit of measure code (BT-150) the unit codes must be identical too.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-cii",
+        "assert": "Wenn BT-149 (Item price base quantity) sowohl in GrossPriceProductTradePrice als auch in NetPriceProductTradePrice vorhanden ist, müssen die Werte identisch sein. Wenn BT-150 (unit of measure code) auf dem NetPrice-Pfad vorhanden ist, muss es auch auf dem GrossPrice-Pfad vorhanden und identisch sein."
+      },
+      "title_de": "Wenn BT-149 (Item price base quantity) sowohl in GrossPriceProductTradePrice als auch in NetPriceProductTradePrice vorhanden ist, müssen die Werte identisch sein. Wenn BT-150 (unit of measure code) auf dem NetPrice-Pfad vorhanden ist, muss es auch auf dem GrossPrice-Pfad vorhanden und identisch sein.",
+      "fix_de": "Korrigieren Sie `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem`, sodass gilt: Wenn BT-149 (Item price base quantity) sowohl in GrossPriceProductTradePrice als auch in NetPriceProductTradePrice vorhanden ist, müssen die Werte identisch sein. Wenn BT-150 (unit of measure code) auf dem NetPrice-Pfad vorhanden ist, muss es auch auf dem GrossPrice-Pfad vorhanden und identisch sein.",
+      "de_source": "kosit"
+    },
+    "BR-TMP-CVD-01": {
+      "title": "In a CVD invoice, the scheme identifier of every 'Item classification identifier' (BT-158) must come from the code list UNTDID 7143 (extended with 'CVD'). Official membership test is contains() over the space-flanked official list — see :func:`_untdid_7143_cvd_ok`.",
+      "requires": "in a CVD invoice, the scheme identifier of every 'Item classification identifier' (BT-158) must come from the code list UNTDID 7143 (extended with 'CVD'). Official membership test is contains() over the space-flanked official list — see :func:`_untdid_7143_cvd_ok`.",
+      "bt_bg": [
+        "BT-158"
+      ],
+      "location_hint": "/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode",
+      "fix": "Correct `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode` so that in a CVD invoice, the scheme identifier of every 'Item classification identifier' (BT-158) must come from the code list UNTDID 7143 (extended with 'CVD'). Official membership test is contains() over the space-flanked official list — see :func:`_untdid_7143_cvd_ok`.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Das Bildungsschema für \"Item classification identifier\" (BT-158) ist aus der Codeliste UNTDID 7143 zu wählen."
+      },
+      "title_de": "Das Bildungsschema für \"Item classification identifier\" (BT-158) ist aus der Codeliste UNTDID 7143 zu wählen.",
+      "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`, sodass gilt: Das Bildungsschema für \"Item classification identifier\" (BT-158) ist aus der Codeliste UNTDID 7143 zu wählen.",
       "de_source": "kosit"
     },
     "PEPPOL-EN16931-R001": {

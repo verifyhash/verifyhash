@@ -184,8 +184,9 @@ Known gaps in this first slice — each is a deliberate cut, not an oversight:
    vendored official artifact (`corpus/xrechnung-schematron/`, see
    `CORRECTNESS.md` §2a). The "failing fixture per rule" contract is honored
    via generated BR-DE-targeted mutations in `differential.py` plus the
-   pinned unit vectors in `test_xrechnung.py`. Still out of scope:
-   `BR-DEX-*` (extension profile) and `BR-DE-CVD-*` (CVD profile).
+   pinned unit vectors in `test_xrechnung.py`. The `BR-DEX-*` extension
+   profile and the `BR-DE-CVD-*`/`BR-TMP-*` CVD/temporary family have since
+   been implemented as well (see `COVERAGE.md`).
 3. **EN 16931 breadth:** ~180 further `BR-*` rules are unimplemented, including
    most `BR-CO-*` arithmetic (only 10/13/14/15 chosen), the full VAT-category
    matrices for E/G/O/IC/IP/IG/AE/K/L/M categories (only S-01, Z-01 chosen),

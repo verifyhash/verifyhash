@@ -30,11 +30,18 @@ fire ONLY when the document carries the extension ``CustomizationID`` (the
 Schematron gates them behind a global ``$isExtension`` let); on a plain CIUS
 invoice they are inert. See ``_is_extension`` and the ``BR-DEX-*`` functions.
 
-Out of scope (deliberately): ``BR-DE-CVD-*`` (the Clean-Vehicle-Directive
-profile) and ``BR-TMP-2``. The ``PEPPOL-EN16931-R*`` rules also present in the
-KoSIT artifact live in their own module, :mod:`einvoice.rules_peppol` (all 21
-canonical family rules implemented in both bindings; the enumeration stays
-machine-checked in the coverage matrix).
+This module also implements the ``BR-DE-CVD-*`` / ``BR-TMP-CVD-01`` layer —
+the Clean-Vehicle-Directive (CVD) profile rules the KoSIT artifact gates
+behind the CVD ``CustomizationID``
+(``…#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9``; on a plain CIUS
+invoice they are inert, see ``_is_cvd``) — and the ungated temporary rules
+``BR-TMP-2`` (BT-124 external document location must be an absolute URL;
+warning) and, on the CII binding only, ``BR-TMP-3`` (gross/net price base
+quantity consistency; the vendored UBL artifact carries no such assert).
+The ``PEPPOL-EN16931-R*`` rules also present in the KoSIT artifact live in
+their own module, :mod:`einvoice.rules_peppol` (all 21 canonical family rules
+implemented in both bindings; the enumeration stays machine-checked in the
+coverage matrix).
 
 Standard library only.
 """
@@ -127,6 +134,56 @@ _ISO_6523_ICD_EXT_CODES = frozenset(
 # CEF-EAS-EXT-CODES = concat($DIGA-CODES, $CEF-EAS-CODES)
 _CEF_EAS_EXT_CODES = frozenset(
     (_DIGA_CODES + " " + _CEF_EAS_CODES).split())
+
+# ---------------------------------------------------------------------------
+# CVD (BR-DE-CVD-* / BR-TMP-CVD-01) code lists — transcribed VERBATIM from
+# common.sch. The Schematron tests BR-TMP-CVD-01 membership with
+# contains($UNTDID-7143-CVD-CODES, concat(' ', normalize-space(@listID), ' '))
+# where UNTDID-7143-CVD-CODES = concat(' CVD ', ' AA AB … ZZZ ') — note the
+# DOUBLE space the concat produces between 'CVD' and 'AA': an absent/empty
+# @listID normalizes to '' and concat(' ', '', ' ') = '  ' IS contained, so
+# the official assert HOLDS for a missing scheme identifier. The literal
+# contains() transcription below reproduces that exactly (a token set would
+# not).
+# ---------------------------------------------------------------------------
+# common.sch: <let name="UNTDID-7143-CODES" ...> (space-flanked token string).
+_UNTDID_7143_CODES = (
+    " AA AB AC AD AE AF AG AH AI AJ AK AL AM AN AO AP AQ AR AS AT AU AV AW "
+    "AX AY AZ BA BB BC BD BE BF BG BH BI BJ BK BL BM BN BO BP BQ BR BS BT "
+    "BU BV BW BX BY BZ CC CG CL CR CV DR DW EC EF EMD EN FS GB GN GMN GS HS "
+    "IB IN IS IT IZ MA MF MN MP NB ON PD PL PO PPI PV QS RC RN RU RY SA SG "
+    "SK SN SRS SRT SRU SRV SRW SRX SRY SRZ SS SSA SSB SSC SSD SSE SSF SSG "
+    "SSH SSI SSJ SSK SSL SSM SSN SSO SSP SSQ SSR SSS SST SSU SSV SSW SSX "
+    "SSY SSZ ST STA STB STC STD STE STF STG STH STI STJ STK STL STM STN "
+    "STO STP STQ STR STS STT STU STV STW STX STY STZ SUA SUB SUC SUD SUE "
+    "SUF SUG SUH SUI SUJ SUK SUL SUM TG TSN TSO TSP TSQ TSR TSS TST TSU "
+    "UA UP VN VP VS VX ZZZ ")
+# common.sch: UNTDID-7143-CVD-CODES = concat($CVD-CODE, $UNTDID-7143-CODES)
+# with CVD-CODE = ' CVD ' — the double space between 'CVD' and 'AA' is real.
+_UNTDID_7143_CVD_CODES = " CVD " + _UNTDID_7143_CODES
+
+# common.sch: <let name="CVD-VEHICLE-CATEGORY" value="('M1','M2','M3','N1','N2','N3')"/>
+_CVD_VEHICLE_CATEGORIES = ("M1", "M2", "M3", "N1", "N2", "N3")
+# common.sch: <let name="CVA-CODES" value="('clean', 'zero-emission', 'other')"/>
+_CVA_CODES = ("clean", "zero-emission", "other")
+
+# common.sch: <let name="XR-URL-REGEX" value="'^([a-zA-Z])([a-zA-Z0-9+.-])+:.*'"/>
+# XPath fn:matches() anchors '^' at the start of the WHOLE string (no
+# MULTILINE) and the trailing '.*' constrains nothing under a substring
+# search, so re.search with the prefix regex is the exact same predicate.
+_XR_URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]+:")
+
+
+def _untdid_7143_cvd_ok(scheme_id):
+    """The official BR-TMP-CVD-01 test body over a raw ``@listID`` value:
+    ``not(contains(normalize-space(@listID), ' ')) and
+    contains($UNTDID-7143-CVD-CODES, concat(' ', normalize-space(@listID), ' '))``.
+    Transcribed with the literal contains() so the double-space quirk of the
+    official list (empty scheme identifier HOLDS) is reproduced exactly."""
+    nsp = _nsp(scheme_id)
+    return (" " not in nsp
+            and (" %s " % nsp) in _UNTDID_7143_CVD_CODES)
+
 
 # BR-DEX-01: MIME codes an Extension may use for an Attached Document (BT-125).
 _XR_EXT_MIME_CODES = frozenset((
@@ -802,6 +859,231 @@ def br_de_25_b(root):
 
 
 # ---------------------------------------------------------------------------
+# Temporary rules (BR-TMP-*), NOT gated behind a customization id.
+# ---------------------------------------------------------------------------
+@_rule("BR-TMP-2", "warning")
+def br_tmp_2(root):
+    """BR-TMP-2: the 'External document location' (BT-124) must be an absolute
+    URL with a valid scheme.
+
+    Official context is every cac:AdditionalDocumentReference/cac:Attachment/
+    cac:ExternalReference; test ``matches(cbc:URI, $XR-URL-REGEX)`` with
+    ``$XR-URL-REGEX = '^([a-zA-Z])([a-zA-Z0-9+.-])+:.*'``. An ABSENT cbc:URI is
+    the empty sequence, which fn:matches() reads as the zero-length string, so
+    the assert also fires when the URI element is missing. (More than one
+    cbc:URI is a dynamic error that aborts the official transform; we read the
+    first.)"""
+    for ext in root.findall(
+            "cac:AdditionalDocumentReference/cac:Attachment/"
+            "cac:ExternalReference", NS):
+        uri = _sv(ext.find("cbc:URI", NS)) or ""
+        if not _XR_URL_RE.search(uri):
+            return _v(br_tmp_2, "'External document location' (BT-124) must "
+                      "be an absolute URL with a valid scheme (e.g. "
+                      "https://…); found %r." % uri,
+                      "cac:AdditionalDocumentReference/cac:Attachment/"
+                      "cac:ExternalReference/cbc:URI")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Clean-Vehicle-Directive profile (BR-DE-CVD-* / BR-TMP-CVD-01), context gated
+# behind $isCVD. Transcribed from XRechnung-UBL-validation.sch, pattern
+# "ubl-cvd-pattern".
+# ---------------------------------------------------------------------------
+def _is_cvd(root):
+    """The Schematron ``$isCVD`` let (ubl-cvd-pattern): true iff a
+    cbc:CustomizationID text node has the EXACT CVD string value (untrimmed).
+    All BR-DE-CVD-* / BR-TMP-CVD-01 rules are gated behind this — on a plain
+    CIUS or Extension invoice they are inert."""
+    return any(_sv(e) == XR_CVD_ID
+               for e in root.findall("cbc:CustomizationID", NS))
+
+
+def _cvd_items(root):
+    """The (InvoiceLine | CreditNoteLine)/cac:Item context nodes of the CVD
+    line rules (this engine validates UBL Invoice documents, so only the
+    Invoice branch can ever be populated)."""
+    for line in (root.findall("cac:InvoiceLine", NS)
+                 + root.findall("cac:CreditNoteLine", NS)):
+        yield from line.findall("cac:Item", NS)
+
+
+def _item_cvd_class_codes(item):
+    """The cbc:ItemClassificationCode elements with ``@listID = 'CVD'``
+    (exact, untrimmed attribute comparison — the official predicate)."""
+    return [cc for cc in item.findall(
+                "cac:CommodityClassification/cbc:ItemClassificationCode", NS)
+            if cc.get("listID") == "CVD"]
+
+
+def _item_cva_properties(item):
+    """The cac:AdditionalItemProperty elements with a ``cbc:Name = 'cva'``
+    child (exact, untrimmed string-value comparison over the node set)."""
+    return [p for p in item.findall("cac:AdditionalItemProperty", NS)
+            if any(_sv(n) == "cva" for n in p.findall("cbc:Name", NS))]
+
+
+@_rule("BR-DE-CVD-01", "fatal")
+def br_de_cvd_01(root):
+    """BR-DE-CVD-01: a CVD invoice must transmit the 'Contract reference'
+    (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty)."""
+    if not _is_cvd(root):
+        return None
+    if _has_nonempty(root, "cac:ContractDocumentReference/cbc:ID"):
+        return None
+    return _v(br_de_cvd_01, "The element 'Contract reference' (BT-12) must "
+              "be transmitted in a Clean-Vehicle-Directive invoice.",
+              "cac:ContractDocumentReference/cbc:ID")
+
+
+@_rule("BR-DE-CVD-02", "fatal")
+def br_de_cvd_02(root):
+    """BR-DE-CVD-02: a CVD invoice must transmit the 'Tender or lot reference'
+    (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty)."""
+    if not _is_cvd(root):
+        return None
+    if _has_nonempty(root, "cac:OriginatorDocumentReference/cbc:ID"):
+        return None
+    return _v(br_de_cvd_02, "The element 'Tender or lot reference' (BT-17) "
+              "must be transmitted in a Clean-Vehicle-Directive invoice.",
+              "cac:OriginatorDocumentReference/cbc:ID")
+
+
+@_rule("BR-DE-CVD-03", "fatal")
+def br_de_cvd_03(root):
+    """BR-DE-CVD-03: a CVD invoice must contain at least one INVOICE LINE
+    (BG-25) whose Item carries an 'Item classification identifier' (BT-158)
+    with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with
+    the value 'cva' — both on the SAME cac:Item."""
+    if not _is_cvd(root):
+        return None
+    for item in _cvd_items(root):
+        has_cvd = any(cc.get("listID") == "CVD" for cc in item.findall(
+            "cac:CommodityClassification/cbc:ItemClassificationCode", NS))
+        has_cva = any(_sv(n) == "cva" for n in item.findall(
+            "cac:AdditionalItemProperty/cbc:Name", NS))
+        if has_cvd and has_cva:
+            return None
+    return _v(br_de_cvd_03, "A Clean-Vehicle-Directive invoice must contain "
+              "at least one INVOICE LINE (BG-25) in which the scheme "
+              "identifier of 'Item classification identifier' (BT-158) is "
+              "'CVD' and the 'Item attribute name' (BT-160) is 'cva'.",
+              "cac:InvoiceLine/cac:Item")
+
+
+@_rule("BR-DE-CVD-06-a", "fatal")
+def br_de_cvd_06_a(root):
+    """BR-DE-CVD-06-a: in a CVD invoice line whose Item carries an 'Item
+    classification identifier' (BT-158) with scheme identifier 'CVD', exactly
+    one 'Item attribute name' (BT-160) with the value 'cva' must be present
+    on that Item."""
+    if not _is_cvd(root):
+        return None
+    for item in _cvd_items(root):
+        if not _item_cvd_class_codes(item):
+            continue
+        if len(_item_cva_properties(item)) != 1:
+            return _v(br_de_cvd_06_a, "An Item with a BT-158 scheme "
+                      "identifier 'CVD' must carry exactly one 'Item "
+                      "attribute name' (BT-160) with the value 'cva' in the "
+                      "same invoice line.",
+                      "cac:InvoiceLine/cac:Item/cac:AdditionalItemProperty/"
+                      "cbc:Name")
+    return None
+
+
+@_rule("BR-DE-CVD-06-b", "fatal")
+def br_de_cvd_06_b(root):
+    """BR-DE-CVD-06-b: in a CVD invoice line whose Item carries an 'Item
+    attribute name' (BT-160) with the value 'cva', exactly one 'Item
+    classification identifier' (BT-158) with scheme identifier 'CVD' must be
+    present on that Item."""
+    if not _is_cvd(root):
+        return None
+    for item in _cvd_items(root):
+        if not _item_cva_properties(item):
+            continue
+        if len(_item_cvd_class_codes(item)) != 1:
+            return _v(br_de_cvd_06_b, "An Item with an 'Item attribute name' "
+                      "(BT-160) of 'cva' must carry exactly one 'Item "
+                      "classification identifier' (BT-158) with the scheme "
+                      "identifier 'CVD' in the same invoice line.",
+                      "cac:InvoiceLine/cac:Item/cac:CommodityClassification/"
+                      "cbc:ItemClassificationCode")
+    return None
+
+
+@_rule("BR-TMP-CVD-01", "fatal")
+def br_tmp_cvd_01(root):
+    """BR-TMP-CVD-01: in a CVD invoice, the scheme identifier of every 'Item
+    classification identifier' (BT-158) must come from the code list
+    UNTDID 7143 (extended with 'CVD'). Official membership test is
+    contains() over the space-flanked official list — see
+    :func:`_untdid_7143_cvd_ok`."""
+    if not _is_cvd(root):
+        return None
+    for item in _cvd_items(root):
+        for cc in item.findall(
+                "cac:CommodityClassification/cbc:ItemClassificationCode", NS):
+            if not _untdid_7143_cvd_ok(cc.get("listID")):
+                return _v(br_tmp_cvd_01, "The scheme identifier of 'Item "
+                          "classification identifier' (BT-158) must be "
+                          "chosen from the code list UNTDID 7143; found %r."
+                          % (cc.get("listID"),),
+                          "cac:InvoiceLine/cac:Item/"
+                          "cac:CommodityClassification/"
+                          "cbc:ItemClassificationCode/@listID")
+    return None
+
+
+@_rule("BR-DE-CVD-04", "fatal")
+def br_de_cvd_04(root):
+    """BR-DE-CVD-04: in a CVD invoice, an 'Item classification identifier'
+    (BT-158) with scheme identifier 'CVD' must contain one of the permitted
+    vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison,
+    per the official test)."""
+    if not _is_cvd(root):
+        return None
+    for item in _cvd_items(root):
+        for cc in item.findall(
+                "cac:CommodityClassification/cbc:ItemClassificationCode", NS):
+            if _nsp(cc.get("listID")) != "CVD":
+                continue
+            if _nsp(_sv(cc)) not in _CVD_VEHICLE_CATEGORIES:
+                return _v(br_de_cvd_04, "An 'Item classification identifier' "
+                          "(BT-158) with the scheme identifier 'CVD' must "
+                          "contain one of the permitted vehicle categories "
+                          "M1, M2, M3, N1, N2, N3; found %r." % _nsp(_sv(cc)),
+                          "cac:InvoiceLine/cac:Item/"
+                          "cac:CommodityClassification/"
+                          "cbc:ItemClassificationCode")
+    return None
+
+
+@_rule("BR-DE-CVD-05", "fatal")
+def br_de_cvd_05(root):
+    """BR-DE-CVD-05: in a CVD invoice, when the 'Item attribute name' (BT-160)
+    within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value'
+    (BT-161) must be one of 'clean', 'zero-emission', 'other'
+    (normalize-space comparison; an absent cbc:Value normalizes to '' and
+    fires)."""
+    if not _is_cvd(root):
+        return None
+    for item in _cvd_items(root):
+        for prop in _item_cva_properties(item):
+            value = prop.find("cbc:Value", NS)
+            if _nsp(_sv(value)) not in _CVA_CODES:
+                return _v(br_de_cvd_05, "When the 'Item attribute name' "
+                          "(BT-160) is 'cva', the 'Item attribute value' "
+                          "(BT-161) must be one of 'clean', 'zero-emission', "
+                          "'other'; found %r." % _nsp(_sv(value)),
+                          "cac:InvoiceLine/cac:Item/"
+                          "cac:AdditionalItemProperty/cbc:Value")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # XRechnung EXTENSION layer (BR-DEX-*), context gated behind $isExtension.
 # Transcribed from XRechnung-UBL-validation.sch, pattern "ubl-extension-pattern".
 # ---------------------------------------------------------------------------
@@ -1128,13 +1410,16 @@ def br_dex_14(root):
 
 
 # Ordered ruleset (document flow: header -> parties -> delivery -> VAT ->
-# payment means -> extension layer).
+# payment means -> temporary/CVD layer -> extension layer).
 ALL_RULES = [
     br_de_1, br_de_2, br_de_3, br_de_4, br_de_5, br_de_6, br_de_7,
     br_de_8, br_de_9, br_de_10, br_de_11, br_de_14, br_de_15, br_de_16,
     br_de_17, br_de_18, br_de_19, br_de_20, br_de_21, br_de_22,
     br_de_23_a, br_de_23_b, br_de_24_a, br_de_24_b, br_de_25_a, br_de_25_b,
     br_de_26, br_de_27, br_de_28, br_de_30, br_de_31, br_de_tmp_32,
+    br_tmp_2,
+    br_de_cvd_01, br_de_cvd_02, br_de_cvd_03, br_de_cvd_04, br_de_cvd_05,
+    br_de_cvd_06_a, br_de_cvd_06_b, br_tmp_cvd_01,
     br_dex_1, br_dex_2, br_dex_3, br_dex_4, br_dex_5, br_dex_6, br_dex_7,
     br_dex_8, br_dex_9, br_dex_10, br_dex_11, br_dex_12, br_dex_13, br_dex_14,
 ]
@@ -1176,9 +1461,13 @@ def evaluate(root):
 # ``CII_DE_RULES``). The rules whose CII binding needs structure the EN 16931
 # core model does not carry — payment-means type-code groups, IBAN mod-97
 # (BR-DE-19/20/23/24/25/30/31), the Skonto grammar (BR-DE-18), attachment
-# filename uniqueness (BR-DE-22) and the whole BR-DEX-* / BR-DE-CVD-* extension
-# layer — are EXCLUDED, not approximated (see the documented exclusion list in
-# ``differential.CII_XR_EXCLUDED_RULE_IDS``). Every admitted rule is
+# filename uniqueness (BR-DE-22) and the whole BR-DEX-* extension layer — are
+# EXCLUDED, not approximated (see the documented exclusion list in
+# ``differential.CII_XR_EXCLUDED_RULE_IDS``). The CVD/TMP family
+# (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2 and the CII-only BR-TMP-3) IS admitted:
+# ``parser_cii._build_cii_br_de`` carries its guarded facts (guideline ids,
+# header referenced documents, per-line trade-product classification /
+# characteristics and gross/net price base quantities). Every admitted rule is
 # differentially proven by ``differential.py xrechnung-cii``.
 # ===========================================================================
 def _mnz(text):
@@ -1453,6 +1742,256 @@ def cii_br_de_tmp_32(inv):
               "ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime")
 
 
+# ---------------------------------------------------------------------------
+# CII temporary rules (BR-TMP-2, BR-TMP-3) — NOT gated behind a customization
+# id — and the CVD profile (BR-DE-CVD-* / BR-TMP-CVD-01), gated behind $isCVD.
+# Transcribed from XRechnung-CII-validation.sch (patterns "cii" and
+# "cii-cvd-pattern"); the model surface they read is populated by
+# einvoice.parser_cii._build_cii_br_de.
+# ---------------------------------------------------------------------------
+def _cii_is_cvd(inv):
+    """The CII ``$isCVD`` let: true iff a GuidelineSpecifiedDocumentContext
+    Parameter/ram:ID text node equals the exact CVD specification identifier."""
+    return XR_CVD_ID in inv.guideline_ids
+
+
+def _cii_cva_characteristics(product):
+    """The ram:ApplicableProductCharacteristic records with a
+    ``ram:Description = 'cva'`` child (untrimmed node-set comparison)."""
+    return [ch for ch in product.characteristics if "cva" in ch.descriptions]
+
+
+def _cii_cvd_class_codes(product):
+    """The ram:ClassCode records with ``@listID = 'CVD'`` (exact, untrimmed)."""
+    return [cc for cc in product.class_codes if cc.list_id == "CVD"]
+
+
+@_rule("BR-TMP-2", "warning")
+def cii_br_tmp_2(inv):
+    """BR-TMP-2: the 'External document location' (BT-124) must be an absolute
+    URL with a valid scheme. CII context is each header-agreement
+    ram:AdditionalReferencedDocument[ram:TypeCode = '916']; test
+    ``not(exists(ram:URIID)) or matches(ram:URIID, $XR-URL-REGEX)`` — unlike
+    the UBL binding, an ABSENT ram:URIID HOLDS here."""
+    for doc in inv.header_ref_docs:
+        if "916" not in doc.type_codes:
+            continue
+        if not doc.uri_ids:
+            continue
+        if not _XR_URL_RE.search(doc.uri_ids[0]):
+            return _v(cii_br_tmp_2, "'External document location' (BT-124) "
+                      "must be an absolute URL with a valid scheme (e.g. "
+                      "https://…); found %r." % doc.uri_ids[0],
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:AdditionalReferencedDocument/ram:URIID")
+    return None
+
+
+@_rule("BR-TMP-3", "fatal")
+def cii_br_tmp_3(inv):
+    """BR-TMP-3: when the 'Item price base quantity' (BT-149) is present in
+    BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line,
+    the values must be identical, and when both carry a unit of measure code
+    (BT-150) the unit codes must be identical too.
+
+    CII-only: the vendored UBL artifact carries no BR-TMP-3 assert. The
+    official test is an untyped general comparison, i.e. STRING equality
+    ('1' differs from '1.0' even though numerically equal) with any-pair
+    semantics over the node sets — transcribed exactly."""
+    for price in inv.line_prices:
+        gross, net = price.gross_basis_quantities, price.net_basis_quantities
+        if not gross or not net:
+            continue
+        if not any(g[0] == n[0] for g in gross for n in net):
+            return _v(cii_br_tmp_3, "The 'Item price base quantity' (BT-149) "
+                      "differs between GrossPriceProductTradePrice and "
+                      "NetPriceProductTradePrice; the values must be "
+                      "identical (string comparison, per the official test).",
+                      "ram:SpecifiedLineTradeAgreement/"
+                      "ram:GrossPriceProductTradePrice/ram:BasisQuantity")
+        gross_units = [u for _v_, u in gross if u is not None]
+        net_units = [u for _v_, u in net if u is not None]
+        if gross_units and net_units and not any(
+                gu == nu for gu in gross_units for nu in net_units):
+            return _v(cii_br_tmp_3, "The 'Item price base quantity' unit of "
+                      "measure code (BT-150) differs between "
+                      "GrossPriceProductTradePrice and "
+                      "NetPriceProductTradePrice; when both are present they "
+                      "must be identical.",
+                      "ram:SpecifiedLineTradeAgreement/"
+                      "ram:GrossPriceProductTradePrice/ram:BasisQuantity/"
+                      "@unitCode")
+    return None
+
+
+@_rule("BR-DE-CVD-01", "fatal")
+def cii_br_de_cvd_01(inv):
+    """BR-DE-CVD-01: a CVD invoice must transmit the 'Contract reference'
+    (BT-12). CII context is the ApplicableHeaderTradeAgreement; assert
+    ram:ContractReferencedDocument/ram:IssuerAssignedID[normalize-space]."""
+    if not _cii_is_cvd(inv) or not inv.has_header_trade_agreement:
+        return None
+    if any(_mnz(t) for t in inv.contract_reference_ids):
+        return None
+    return _v(cii_br_de_cvd_01, "The element 'Contract reference' (BT-12) "
+              "must be transmitted in a Clean-Vehicle-Directive invoice.",
+              "ram:ApplicableHeaderTradeAgreement/"
+              "ram:ContractReferencedDocument/ram:IssuerAssignedID")
+
+
+@_rule("BR-DE-CVD-02", "fatal")
+def cii_br_de_cvd_02(inv):
+    """BR-DE-CVD-02: a CVD invoice must transmit the 'Tender or lot reference'
+    (BT-17). CII: an ApplicableHeaderTradeAgreement/AdditionalReferencedDocument
+    with normalize-space(ram:TypeCode) = '50' and a non-empty
+    ram:IssuerAssignedID."""
+    if not _cii_is_cvd(inv) or not inv.has_header_trade_agreement:
+        return None
+    for doc in inv.header_ref_docs:
+        type_code = doc.type_codes[0] if doc.type_codes else ""
+        issuer = doc.issuer_ids[0] if doc.issuer_ids else ""
+        if _nsp(type_code) == "50" and _mnz(issuer):
+            return None
+    return _v(cii_br_de_cvd_02, "The element 'Tender or lot reference' "
+              "(BT-17) must be transmitted in a Clean-Vehicle-Directive "
+              "invoice.",
+              "ram:ApplicableHeaderTradeAgreement/"
+              "ram:AdditionalReferencedDocument[ram:TypeCode='50']/"
+              "ram:IssuerAssignedID")
+
+
+@_rule("BR-DE-CVD-03", "fatal")
+def cii_br_de_cvd_03(inv):
+    """BR-DE-CVD-03: a CVD invoice must contain at least one INVOICE LINE
+    (BG-25) whose SpecifiedTradeProduct carries an 'Item classification
+    identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute
+    name' (BT-160) with the value 'cva' — both on the SAME product."""
+    if not _cii_is_cvd(inv) or not inv.has_supply_chain_transaction:
+        return None
+    for product in inv.trade_products:
+        if product is None:
+            continue
+        if (any(cc.list_id == "CVD" for cc in product.class_codes)
+                and any("cva" in ch.descriptions
+                        for ch in product.characteristics)):
+            return None
+    return _v(cii_br_de_cvd_03, "A Clean-Vehicle-Directive invoice must "
+              "contain at least one INVOICE LINE (BG-25) in which the scheme "
+              "identifier of 'Item classification identifier' (BT-158) is "
+              "'CVD' and the 'Item attribute name' (BT-160) is 'cva'.",
+              "ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct")
+
+
+@_rule("BR-DE-CVD-06-a", "fatal")
+def cii_br_de_cvd_06_a(inv):
+    """BR-DE-CVD-06-a: a CVD line whose product carries a BT-158 scheme
+    identifier 'CVD' must carry exactly one 'Item attribute name' (BT-160)
+    with the value 'cva' on the same product."""
+    if not _cii_is_cvd(inv):
+        return None
+    for product in inv.trade_products:
+        if product is None or not _cii_cvd_class_codes(product):
+            continue
+        if len(_cii_cva_characteristics(product)) != 1:
+            return _v(cii_br_de_cvd_06_a, "A product with a BT-158 scheme "
+                      "identifier 'CVD' must carry exactly one 'Item "
+                      "attribute name' (BT-160) with the value 'cva' in the "
+                      "same invoice line.",
+                      "ram:SpecifiedTradeProduct/"
+                      "ram:ApplicableProductCharacteristic/ram:Description")
+    return None
+
+
+@_rule("BR-DE-CVD-06-b", "fatal")
+def cii_br_de_cvd_06_b(inv):
+    """BR-DE-CVD-06-b: a CVD line whose product carries an 'Item attribute
+    name' (BT-160) of 'cva' must carry exactly one 'Item classification
+    identifier' (BT-158) with scheme identifier 'CVD' on the same product."""
+    if not _cii_is_cvd(inv):
+        return None
+    for product in inv.trade_products:
+        if product is None or not _cii_cva_characteristics(product):
+            continue
+        if len(_cii_cvd_class_codes(product)) != 1:
+            return _v(cii_br_de_cvd_06_b, "A product with an 'Item attribute "
+                      "name' (BT-160) of 'cva' must carry exactly one 'Item "
+                      "classification identifier' (BT-158) with the scheme "
+                      "identifier 'CVD' in the same invoice line.",
+                      "ram:SpecifiedTradeProduct/"
+                      "ram:DesignatedProductClassification/ram:ClassCode")
+    return None
+
+
+@_rule("BR-TMP-CVD-01", "fatal")
+def cii_br_tmp_cvd_01(inv):
+    """BR-TMP-CVD-01: in a CVD invoice, the scheme identifier of every 'Item
+    classification identifier' (BT-158) must come from the code list
+    UNTDID 7143 (extended with 'CVD'). Same literal contains() membership as
+    the UBL binding (:func:`_untdid_7143_cvd_ok`)."""
+    if not _cii_is_cvd(inv):
+        return None
+    for product in inv.trade_products:
+        if product is None:
+            continue
+        for cc in product.class_codes:
+            if not _untdid_7143_cvd_ok(cc.list_id):
+                return _v(cii_br_tmp_cvd_01, "The scheme identifier of 'Item "
+                          "classification identifier' (BT-158) must be "
+                          "chosen from the code list UNTDID 7143; found %r."
+                          % (cc.list_id,),
+                          "ram:SpecifiedTradeProduct/"
+                          "ram:DesignatedProductClassification/"
+                          "ram:ClassCode/@listID")
+    return None
+
+
+@_rule("BR-DE-CVD-04", "fatal")
+def cii_br_de_cvd_04(inv):
+    """BR-DE-CVD-04: in a CVD invoice, an 'Item classification identifier'
+    (BT-158) with scheme identifier 'CVD' must contain one of the permitted
+    vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison)."""
+    if not _cii_is_cvd(inv):
+        return None
+    for product in inv.trade_products:
+        if product is None:
+            continue
+        for cc in product.class_codes:
+            if _nsp(cc.list_id) != "CVD":
+                continue
+            if _nsp(cc.value) not in _CVD_VEHICLE_CATEGORIES:
+                return _v(cii_br_de_cvd_04, "An 'Item classification "
+                          "identifier' (BT-158) with the scheme identifier "
+                          "'CVD' must contain one of the permitted vehicle "
+                          "categories M1, M2, M3, N1, N2, N3; found %r."
+                          % _nsp(cc.value),
+                          "ram:SpecifiedTradeProduct/"
+                          "ram:DesignatedProductClassification/ram:ClassCode")
+    return None
+
+
+@_rule("BR-DE-CVD-05", "fatal")
+def cii_br_de_cvd_05(inv):
+    """BR-DE-CVD-05: in a CVD invoice, when the 'Item attribute name' (BT-160)
+    within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value'
+    (BT-161) must be one of 'clean', 'zero-emission', 'other'
+    (normalize-space; an absent ram:Value normalizes to '' and fires)."""
+    if not _cii_is_cvd(inv):
+        return None
+    for product in inv.trade_products:
+        if product is None:
+            continue
+        for ch in _cii_cva_characteristics(product):
+            value = ch.values[0] if ch.values else ""
+            if _nsp(value) not in _CVA_CODES:
+                return _v(cii_br_de_cvd_05, "When the 'Item attribute name' "
+                          "(BT-160) is 'cva', the 'Item attribute value' "
+                          "(BT-161) must be one of 'clean', 'zero-emission', "
+                          "'other'; found %r." % _nsp(value),
+                          "ram:SpecifiedTradeProduct/"
+                          "ram:ApplicableProductCharacteristic/ram:Value")
+    return None
+
+
 # Admitted CII BR-DE set — document flow order. Every id here is proven at exact
 # parity with the official XRechnung-CII Schematron by differential.py.
 CII_DE_RULES = [
@@ -1460,6 +1999,10 @@ CII_DE_RULES = [
     cii_br_de_6, cii_br_de_7, cii_br_de_8, cii_br_de_9, cii_br_de_10,
     cii_br_de_11, cii_br_de_14, cii_br_de_15, cii_br_de_16, cii_br_de_17,
     cii_br_de_21, cii_br_de_26, cii_br_de_27, cii_br_de_28, cii_br_de_tmp_32,
+    cii_br_tmp_2, cii_br_tmp_3,
+    cii_br_de_cvd_01, cii_br_de_cvd_02, cii_br_de_cvd_03, cii_br_de_cvd_04,
+    cii_br_de_cvd_05, cii_br_de_cvd_06_a, cii_br_de_cvd_06_b,
+    cii_br_tmp_cvd_01,
 ]
 
 

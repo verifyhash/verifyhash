@@ -63,6 +63,21 @@ FAMILY_LABELS = {
     "BR-Z": "VAT breakdown rules for VAT category code Z.",
     "BR-DE": "German XRechnung national CIUS rules (KoSIT).",
     "BR-DE-TMP": "German XRechnung national rules (BR-DE-TMP).",
+    "BR-DE-CVD": "German XRechnung Clean-Vehicle-Directive profile rules — "
+                 "applied only when the invoice carries the CVD "
+                 "specification identifier (BT-24 ending in "
+                 "…xrechnung:cvd_0.9); they require the contract and "
+                 "tender references plus the vehicle-classification data "
+                 "(BT-158 'CVD' + BT-160 'cva') that Clean Vehicle "
+                 "Directive reporting needs.",
+    "BR-TMP": "German XRechnung temporary rules (KoSIT BR-TMP): BR-TMP-2 "
+              "checks that an external document location (BT-124) is an "
+              "absolute URL with a valid scheme; BR-TMP-3 exists only in "
+              "the CII syntax binding and checks gross/net item-price "
+              "base-quantity (BT-149/BT-150) consistency.",
+    "BR-TMP-CVD": "German XRechnung Clean-Vehicle-Directive code-list rule — "
+                  "the BT-158 scheme identifier must come from UNTDID 7143 "
+                  "(extended with 'CVD').",
     "BR-DEX": "German XRechnung extension-layer rules (BR-DEX).",
     "PEPPOL-EN16931": "Peppol-derived rules as vendored inside the official "
                       "KoSIT XRechnung Schematron artifact — the "

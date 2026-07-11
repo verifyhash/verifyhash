@@ -30,7 +30,7 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**276 rules** in total — 265 fatal, 10 warning, 1 information — across 18 families.
+**286 rules** in total — 274 fatal, 11 warning, 1 information — across 21 families.
 
 ## Families
 
@@ -51,6 +51,9 @@ catalog.
 - **BR-DE** (31) — German XRechnung national CIUS rules (KoSIT).
 - **BR-DE-TMP** (1) — German XRechnung national rules (BR-DE-TMP).
 - **BR-DEX** (14) — German XRechnung extension-layer rules (BR-DEX).
+- **BR-DE-CVD** (7) — German XRechnung Clean-Vehicle-Directive profile rules — applied only when the invoice carries the CVD specification identifier (BT-24 ending in …xrechnung:cvd_0.9); they require the contract and tender references plus the vehicle-classification data (BT-158 'CVD' + BT-160 'cva') that Clean Vehicle Directive reporting needs.
+- **BR-TMP** (2) — German XRechnung temporary rules (KoSIT BR-TMP): BR-TMP-2 checks that an external document location (BT-124) is an absolute URL with a valid scheme; BR-TMP-3 exists only in the CII syntax binding and checks gross/net item-price base-quantity (BT-149/BT-150) consistency.
+- **BR-TMP-CVD** (1) — German XRechnung Clean-Vehicle-Directive code-list rule — the BT-158 scheme identifier must come from UNTDID 7143 (extended with 'CVD').
 - **PEPPOL-EN16931** (21) — Peppol-derived rules as vendored inside the official KoSIT XRechnung Schematron artifact — the KoSIT-vendored subset only, NOT full Peppol BIS Billing 3.0 support.
 
 ## BR
@@ -1439,7 +1442,7 @@ VAT breakdown rules for VAT category code E.
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "Exempt from VAT", the Document level charge VAT rate (BT-103) shall be 0 (zero).”
 
-### BR-E-08 — The Exempt (E) VAT breakdown taxable amount (BT-116) shall equal the exact sum of E line net amounts − E allowances + E charges.
+### BR-E-08 — The Exempt (E) VAT breakdown taxable amount (BT-116) shall equal the sum of E line net amounts − E allowances + E charges (exact on UBL; the ±1 band around the round2 bucket sums on CII — see :func:`_breakdown_taxable_sum_mismatch`).
 
 - **Requires:** In a VAT breakdown (BG-23) where the VAT category code (BT-118) is "Exempt from VAT" the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) minus the sum of Document level allowance amounts (BT-92) plus the sum of Document level charge amounts (BT-99) where the VAT category codes (BT-151, BT-95, BT-102) are "Exempt from VAT".
 - **Business terms:** BG-23, BT-92, BT-95, BT-99, BT-102, BT-116, BT-118, BT-131, BT-151
@@ -1533,7 +1536,7 @@ VAT breakdown rules for VAT category code G.
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is "Export outside the EU" the Document level charge VAT rate (BT-103) shall be 0 (zero).”
 
-### BR-G-08 — The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the exact sum of G line nets − G allowances + G charges.
+### BR-G-08 — The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the sum of G line nets − G allowances + G charges (exact on UBL; the ±1 band around the round2 bucket sums on CII — see :func:`_breakdown_taxable_sum_mismatch`).
 
 - **Requires:** In a VAT breakdown (BG-23) where the VAT category code (BT-118) is "Export outside the EU" the VAT category taxable amount (BT-116) shall equal the sum of Invoice line net amounts (BT-131) minus the sum of Document level allowance amounts (BT-92) plus the sum of Document level charge amounts (BT-99) where the VAT category codes (BT-151, BT-95, BT-102) are "Export outside the EU".
 - **Business terms:** BG-23, BT-92, BT-95, BT-99, BT-102, BT-116, BT-118, BT-131, BT-151
@@ -2415,6 +2418,108 @@ German XRechnung extension-layer rules (BR-DEX).
 - **Fix:** Correct the calculated amount at `/ubl:Invoice/cac:PrepaidPayment` so that the currency of 'Third party payment amount' (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -> fires.
 - **Severity:** fatal
 - **Provenance:** `xrechnung-ubl` — “Die Währungsangabe von "Third party payment amount" BT-DEX-002 muss BT-5 ("Invoice currency code") entsprechen.”
+
+## BR-DE-CVD
+
+German XRechnung Clean-Vehicle-Directive profile rules — applied only when the invoice carries the CVD specification identifier (BT-24 ending in …xrechnung:cvd_0.9); they require the contract and tender references plus the vehicle-classification data (BT-158 'CVD' + BT-160 'cva') that Clean Vehicle Directive reporting needs.
+
+### BR-DE-CVD-01 — A CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty).
+
+- **Requires:** a CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty).
+- **Business terms:** BT-12
+- **Location:** `cac:ContractDocumentReference/cbc:ID`
+- **Fix:** Correct `cac:ContractDocumentReference/cbc:ID` so that a CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty).
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Das Element "Contract reference" (BT-12) muss übermittelt werden.”
+
+### BR-DE-CVD-02 — A CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty).
+
+- **Requires:** a CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty).
+- **Business terms:** BT-17
+- **Location:** `cac:OriginatorDocumentReference/cbc:ID`
+- **Fix:** Correct `cac:OriginatorDocumentReference/cbc:ID` so that a CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty).
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Das Element "Tender or lot reference" (BT-17) muss übermittelt werden.”
+
+### BR-DE-CVD-03 — A CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item.
+
+- **Requires:** a CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item.
+- **Business terms:** BG-25, BT-158, BT-160
+- **Location:** `cac:InvoiceLine/cac:Item`
+- **Fix:** Add the required element at `cac:InvoiceLine/cac:Item`: a CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “In einer Rechnung muss mindestens eine INVOICE LINE (BG-25) enthalten sein, in der der Scheme identifier von "Item classification identifier" (BT-158) den Wert 'CVD' und der "Item attribute name" (BT-160) den Wert 'cva' enthält.”
+
+### BR-DE-CVD-04 — In a CVD invoice, an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must contain one of the permitted vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison, per the official test).
+
+- **Requires:** in a CVD invoice, an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must contain one of the permitted vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison, per the official test).
+- **Business terms:** BT-158
+- **Location:** `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`
+- **Fix:** Add the required element at `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`: in a CVD invoice, an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must contain one of the permitted vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison, per the official test).
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Ein "Item classification identifier" (BT-158) mit dem Scheme identifier 'CVD' muss einen Wert aus der Liste der zulässigen Fahrzeugkategorien enthalten.”
+
+### BR-DE-CVD-05 — In a CVD invoice, when the 'Item attribute name' (BT-160) within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value' (BT-161) must be one of 'clean', 'zero-emission', 'other' (normalize-space comparison; an absent cbc:Value normalizes to '' and fires).
+
+- **Requires:** in a CVD invoice, when the 'Item attribute name' (BT-160) within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value' (BT-161) must be one of 'clean', 'zero-emission', 'other' (normalize-space comparison; an absent cbc:Value normalizes to '' and fires).
+- **Business terms:** BG-32, BT-160, BT-161
+- **Location:** `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:AdditionalItemProperty[cbc:Name = 'cva']`
+- **Fix:** Correct `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:AdditionalItemProperty[cbc:Name = 'cva']` so that in a CVD invoice, when the 'Item attribute name' (BT-160) within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value' (BT-161) must be one of 'clean', 'zero-emission', 'other' (normalize-space comparison; an absent cbc:Value normalizes to '' and fires).
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Wenn innerhalb von ITEM ATTRIBUTES (BG-32) der "Item attribute name" (BT-160) den Wert 'cva' hat, muss der "Item attribute value" (BT-161) einen der zulässigen Werte enthalten.”
+
+### BR-DE-CVD-06-a — In a CVD invoice line whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD', exactly one 'Item attribute name' (BT-160) with the value 'cva' must be present on that Item.
+
+- **Requires:** in a CVD invoice line whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD', exactly one 'Item attribute name' (BT-160) with the value 'cva' must be present on that Item.
+- **Business terms:** BT-158, BT-160
+- **Location:** `/ubl:Invoice/cac:InvoiceLine/cac:Item`
+- **Fix:** Correct `/ubl:Invoice/cac:InvoiceLine/cac:Item` so that in a CVD invoice line whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD', exactly one 'Item attribute name' (BT-160) with the value 'cva' must be present on that Item.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Wenn der Scheme identifier von "Item classification identifier" (BT-158) mit dem Wert 'CVD' angegeben ist, muss in derselben Rechnungszeile genau ein "Item attribute name" (BT-160) mit dem Wert 'cva' vorhanden sein.”
+
+### BR-DE-CVD-06-b — In a CVD invoice line whose Item carries an 'Item attribute name' (BT-160) with the value 'cva', exactly one 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must be present on that Item.
+
+- **Requires:** in a CVD invoice line whose Item carries an 'Item attribute name' (BT-160) with the value 'cva', exactly one 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must be present on that Item.
+- **Business terms:** BT-158, BT-160
+- **Location:** `/ubl:Invoice/cac:InvoiceLine/cac:Item`
+- **Fix:** Correct `/ubl:Invoice/cac:InvoiceLine/cac:Item` so that in a CVD invoice line whose Item carries an 'Item attribute name' (BT-160) with the value 'cva', exactly one 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must be present on that Item.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Wenn "Item attribute name" (BT-160) mit dem Wert 'cva' angegeben ist, muss in derselben Rechnungszeile genau ein "Item classification identifier" (BT-158) mit dem Scheme identifier 'CVD' vorhanden sein.”
+
+## BR-TMP
+
+German XRechnung temporary rules (KoSIT BR-TMP): BR-TMP-2 checks that an external document location (BT-124) is an absolute URL with a valid scheme; BR-TMP-3 exists only in the CII syntax binding and checks gross/net item-price base-quantity (BT-149/BT-150) consistency.
+
+### BR-TMP-2 — The 'External document location' (BT-124) must be an absolute URL with a valid scheme.
+
+- **Requires:** the 'External document location' (BT-124) must be an absolute URL with a valid scheme.
+- **Business terms:** BT-124
+- **Location:** `/ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/cac:ExternalReference`
+- **Fix:** Correct `/ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/cac:ExternalReference` so that the 'External document location' (BT-124) must be an absolute URL with a valid scheme.
+- **Severity:** warning
+- **Provenance:** `xrechnung-ubl` — “BT-124 "External document location" muss eine absolute URL mit gültigem Schema enthalten.”
+
+### BR-TMP-3 — When the 'Item price base quantity' (BT-149) is present in BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line, the values must be identical, and when both carry a unit of measure code (BT-150) the unit codes must be identical too.
+
+- **Requires:** when the 'Item price base quantity' (BT-149) is present in BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line, the values must be identical, and when both carry a unit of measure code (BT-150) the unit codes must be identical too.
+- **Business terms:** BT-149, BT-150
+- **Location:** `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem`
+- **Fix:** Correct `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem` so that when the 'Item price base quantity' (BT-149) is present in BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line, the values must be identical, and when both carry a unit of measure code (BT-150) the unit codes must be identical too.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-cii` — “Wenn BT-149 (Item price base quantity) sowohl in GrossPriceProductTradePrice als auch in NetPriceProductTradePrice vorhanden ist, müssen die Werte identisch sein. Wenn BT-150 (unit of measure code) auf dem NetPrice-Pfad vorhanden ist, muss es auch auf dem GrossPrice-Pfad vorhanden und identisch sein.”
+
+## BR-TMP-CVD
+
+German XRechnung Clean-Vehicle-Directive code-list rule — the BT-158 scheme identifier must come from UNTDID 7143 (extended with 'CVD').
+
+### BR-TMP-CVD-01 — In a CVD invoice, the scheme identifier of every 'Item classification identifier' (BT-158) must come from the code list UNTDID 7143 (extended with 'CVD'). Official membership test is contains() over the space-flanked official list — see :func:`_untdid_7143_cvd_ok`.
+
+- **Requires:** in a CVD invoice, the scheme identifier of every 'Item classification identifier' (BT-158) must come from the code list UNTDID 7143 (extended with 'CVD'). Official membership test is contains() over the space-flanked official list — see :func:`_untdid_7143_cvd_ok`.
+- **Business terms:** BT-158
+- **Location:** `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`
+- **Fix:** Correct `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode` so that in a CVD invoice, the scheme identifier of every 'Item classification identifier' (BT-158) must come from the code list UNTDID 7143 (extended with 'CVD'). Official membership test is contains() over the space-flanked official list — see :func:`_untdid_7143_cvd_ok`.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Das Bildungsschema für "Item classification identifier" (BT-158) ist aus der Codeliste UNTDID 7143 zu wählen.”
 
 ## PEPPOL-EN16931
 

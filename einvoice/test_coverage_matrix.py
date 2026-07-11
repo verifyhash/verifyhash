@@ -73,9 +73,10 @@ def _engine_severity_and_flag():
         else:
             flag = "fatal"
         out[rid] = ("fatal" if flag == "fatal" else "warning", flag)
-    for fn in _rules_xr.ALL_RULES:
+    for fn in _rules_xr.ALL_RULES + _rules_xr.CII_DE_RULES:
         flag = fn.severity
-        out[fn.rule_id] = ("fatal" if flag == "fatal" else "warning", flag)
+        out.setdefault(fn.rule_id,
+                       ("fatal" if flag == "fatal" else "warning", flag))
     for fn in _rules_pep.UBL_RULES + _rules_pep.CII_RULES:
         flag = fn.severity
         out[fn.rule_id] = ("fatal" if flag == "fatal" else "warning", flag)
@@ -83,12 +84,19 @@ def _engine_severity_and_flag():
 
 
 def _proven_syntax(rid):
-    """The syntax tag the differential graded sets justify for ``rid``."""
-    core_cii = set(_diff.CII_RULE_SET)
-    de_cii = set(_diff.CII_XR_RULE_SET)
-    pep_cii = set(_diff.PEPPOL_CII_PROVEN_CANONICAL)
-    return "both" if (rid in core_cii or rid in de_cii or rid in pep_cii) \
-        else "ubl"
+    """The syntax tag the differential graded sets justify for ``rid``:
+    'both' only when the id is graded on a UBL leg AND a CII leg; 'cii' when
+    it is graded on a CII leg only (e.g. BR-TMP-3 — the vendored UBL artifact
+    carries no such assert); 'ubl' otherwise."""
+    ubl_proven = (rid in _diff.OUR_RULE_SET or rid in _diff.XR_RULE_SET
+                  or rid in _diff.PEPPOL_UBL_PROVEN_CANONICAL)
+    cii_proven = (rid in _diff.CII_RULE_SET or rid in _diff.CII_XR_RULE_SET
+                  or rid in _diff.PEPPOL_CII_PROVEN_CANONICAL)
+    if ubl_proven and cii_proven:
+        return "both"
+    if cii_proven:
+        return "cii"
+    return "ubl"
 
 
 def main():
@@ -145,16 +153,25 @@ def main():
         check(r["syntax"] == exp_syntax,
               "%s: syntax %r != differentially-proven %r"
               % (rid, r["syntax"], exp_syntax))
-        # A 'both' rule must carry a proven CII provenance; 'ubl' must not claim it.
+        # A 'both'/'cii' rule must carry a proven CII provenance; 'ubl' must
+        # not claim it — and symmetrically for the UBL provenance.
         cii_prov = (r.get("provenance") or {}).get("cii") or {}
         cii_proven = bool(cii_prov.get("differentially_proven"))
-        check(cii_proven == (r["syntax"] == "both"),
+        check(cii_proven == (r["syntax"] in ("both", "cii")),
               "%s: CII provenance proven=%s but syntax=%s"
               % (rid, cii_proven, r["syntax"]))
+        ubl_prov = (r.get("provenance") or {}).get("ubl") or {}
+        ubl_proven = bool(ubl_prov.get("differentially_proven"))
+        check(ubl_proven == (r["syntax"] in ("both", "ubl")),
+              "%s: UBL provenance proven=%s but syntax=%s"
+              % (rid, ubl_proven, r["syntax"]))
         # An unproven syntax must honestly say why.
         if not cii_proven:
             check(bool(cii_prov.get("reason")),
                   "%s: unproven CII provenance lacks a reason" % rid)
+        if not ubl_proven:
+            check(bool(ubl_prov.get("reason")),
+                  "%s: unproven UBL provenance lacks a reason" % rid)
 
     # ---- 4. COVERAGE.md is a byte-identical render of the JSON -----------
     rendered = _coverage.render_markdown(matrix)

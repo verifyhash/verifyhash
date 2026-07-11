@@ -78,12 +78,27 @@ def add_mandate(root, account_id):
 
 
 class RulesetShape(unittest.TestCase):
-    def test_46_rules_with_unique_ids_and_valid_severities(self):
+    def test_55_rules_with_unique_ids_and_valid_severities(self):
         ids = [fn.rule_id for fn in xr.ALL_RULES]
-        self.assertEqual(len(ids), 46)          # 32 BR-DE + 14 BR-DEX
-        self.assertEqual(len(set(ids)), 46)
+        self.assertEqual(len(ids), 55)   # 32 BR-DE + 9 CVD/TMP + 14 BR-DEX
+        self.assertEqual(len(set(ids)), 55)
         for fn in xr.ALL_RULES:
             self.assertIn(fn.severity, ("fatal", "warning", "information"))
+
+    def test_cvd_tmp_family_present_in_both_registries(self):
+        """The nine CVD/TMP ids live in the UBL layer; the CII layer carries
+        the same nine plus the CII-only BR-TMP-3 (the vendored UBL artifact
+        has no such assert)."""
+        family = ("BR-DE-CVD-01", "BR-DE-CVD-02", "BR-DE-CVD-03",
+                  "BR-DE-CVD-04", "BR-DE-CVD-05", "BR-DE-CVD-06-a",
+                  "BR-DE-CVD-06-b", "BR-TMP-CVD-01", "BR-TMP-2")
+        ubl_ids = {fn.rule_id for fn in xr.ALL_RULES}
+        cii_ids = {fn.rule_id for fn in xr.CII_DE_RULES}
+        for rid in family:
+            self.assertIn(rid, ubl_ids)
+            self.assertIn(rid, cii_ids)
+        self.assertNotIn("BR-TMP-3", ubl_ids)
+        self.assertIn("BR-TMP-3", cii_ids)
 
     def test_all_fourteen_brdex_rules_present(self):
         ids = {fn.rule_id for fn in xr.ALL_RULES}
@@ -93,14 +108,14 @@ class RulesetShape(unittest.TestCase):
     def test_severity_mapping_matches_official_flags(self):
         by_id = {fn.rule_id: fn.severity for fn in xr.ALL_RULES}
         for rid in ("BR-DE-17", "BR-DE-19", "BR-DE-20", "BR-DE-21",
-                    "BR-DE-26", "BR-DE-27", "BR-DE-28"):
+                    "BR-DE-26", "BR-DE-27", "BR-DE-28", "BR-TMP-2"):
             self.assertEqual(by_id[rid], "warning", rid)
         self.assertEqual(by_id["BR-DE-TMP-32"], "information")
         # BR-DEX-02 is a warning; BR-DEX-01/03..14 are fatal (official flags).
         self.assertEqual(by_id["BR-DEX-02"], "warning")
         warnings_infos = ("BR-DE-17", "BR-DE-19", "BR-DE-20", "BR-DE-21",
                           "BR-DE-26", "BR-DE-27", "BR-DE-28", "BR-DE-TMP-32",
-                          "BR-DEX-02")
+                          "BR-DEX-02", "BR-TMP-2")
         for rid, sev in by_id.items():
             if rid not in warnings_infos:
                 self.assertEqual(sev, "fatal", rid)
@@ -557,6 +572,149 @@ class ExtensionRules(unittest.TestCase):
         r2 = ext_base()
         add_prepaid(r2, id_="10", amount="0.00", currency="EUR", instr="tip")
         self.assertNotIn("BR-DEX-14", fired(r2))
+
+
+CVD_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
+                        "technical-cases", "cvd", "02.01a-cvd_INVOICE_ubl.xml")
+_CVD_BASE_ROOT = ET.parse(CVD_BASE).getroot()
+
+
+def cvd_base():
+    return copy.deepcopy(_CVD_BASE_ROOT)
+
+
+def _cvd_class_code(root, list_id):
+    for cc in root.findall("cac:InvoiceLine/cac:Item/cac:CommodityClassification/"
+                           "cbc:ItemClassificationCode", NS):
+        if cc.get("listID") == list_id:
+            return cc
+    raise AssertionError("no ItemClassificationCode with listID=%r" % list_id)
+
+
+def _cvd_cva_property(root):
+    for prop in root.findall("cac:InvoiceLine/cac:Item/"
+                             "cac:AdditionalItemProperty", NS):
+        if any((n.text or "") == "cva" for n in prop.findall("cbc:Name", NS)):
+            return prop
+    raise AssertionError("no cva AdditionalItemProperty in the CVD base")
+
+
+class CvdProfileRules(unittest.TestCase):
+    """Clean-Vehicle-Directive layer — fire/hold behaviour pinned from the
+    differential (the clean CVD testsuite invoice fires NONE of the family
+    on the official XSLT; each mutation was verified to fire exactly its
+    rule there)."""
+
+    CVD_IDS = {"BR-DE-CVD-01", "BR-DE-CVD-02", "BR-DE-CVD-03", "BR-DE-CVD-04",
+               "BR-DE-CVD-05", "BR-DE-CVD-06-a", "BR-DE-CVD-06-b",
+               "BR-TMP-CVD-01"}
+
+    def test_clean_cvd_base_fires_no_family_rule(self):
+        self.assertFalse(fired(cvd_base()) & (self.CVD_IDS | {"BR-TMP-2"}))
+
+    def test_cvd_rules_inert_without_cvd_customization_id(self):
+        """The $isCVD gate: break EVERY CVD guard, then flip BT-24 back to the
+        plain CIUS id — no CVD rule may fire."""
+        r = cvd_base()
+        r.remove(r.find("cac:ContractDocumentReference", NS))
+        r.remove(r.find("cac:OriginatorDocumentReference", NS))
+        _cvd_class_code(r, "CVD").text = "X9"
+        self.assertTrue(fired(r) & self.CVD_IDS)   # gate open: they fire
+        r.find("cbc:CustomizationID", NS).text = xr.XR_CIUS_ID
+        self.assertFalse(fired(r) & self.CVD_IDS)  # gate closed: inert
+
+    def test_cvd_01_contract_reference(self):
+        r = cvd_base()
+        r.remove(r.find("cac:ContractDocumentReference", NS))
+        self.assertIn("BR-DE-CVD-01", fired(r))
+        r2 = cvd_base()
+        r2.find("cac:ContractDocumentReference/cbc:ID", NS).text = "   "
+        self.assertIn("BR-DE-CVD-01", fired(r2))
+
+    def test_cvd_02_tender_or_lot_reference(self):
+        r = cvd_base()
+        r.remove(r.find("cac:OriginatorDocumentReference", NS))
+        self.assertEqual(fired(r) & self.CVD_IDS, {"BR-DE-CVD-02"})
+
+    def test_cvd_03_needs_one_line_with_cvd_and_cva(self):
+        r = cvd_base()
+        item = r.find("cac:InvoiceLine/cac:Item", NS)
+        for cc in item.findall("cac:CommodityClassification", NS):
+            if any(c.get("listID") == "CVD"
+                   for c in cc.findall("cbc:ItemClassificationCode", NS)):
+                item.remove(cc)
+        item.remove(_cvd_cva_property(r))
+        self.assertEqual(fired(r) & self.CVD_IDS, {"BR-DE-CVD-03"})
+
+    def test_cvd_04_vehicle_category(self):
+        r = cvd_base()
+        _cvd_class_code(r, "CVD").text = "L5"
+        self.assertEqual(fired(r) & self.CVD_IDS, {"BR-DE-CVD-04"})
+
+    def test_cvd_05_cva_value(self):
+        r = cvd_base()
+        _cvd_cva_property(r).find("cbc:Value", NS).text = "hybrid"
+        self.assertEqual(fired(r) & self.CVD_IDS, {"BR-DE-CVD-05"})
+
+    def test_cvd_06_a_exactly_one_cva(self):
+        r = cvd_base()
+        item = r.find("cac:InvoiceLine/cac:Item", NS)
+        prop = ET.SubElement(item, q(NS_CAC, "AdditionalItemProperty"))
+        ET.SubElement(prop, q(NS_CBC, "Name")).text = "cva"
+        ET.SubElement(prop, q(NS_CBC, "Value")).text = "clean"
+        self.assertEqual(fired(r) & self.CVD_IDS, {"BR-DE-CVD-06-a"})
+
+    def test_cvd_06_b_exactly_one_cvd_class(self):
+        r = cvd_base()
+        items = r.findall("cac:InvoiceLine/cac:Item", NS)
+        prop = ET.SubElement(items[1], q(NS_CAC, "AdditionalItemProperty"))
+        ET.SubElement(prop, q(NS_CBC, "Name")).text = "cva"
+        ET.SubElement(prop, q(NS_CBC, "Value")).text = "clean"
+        self.assertEqual(fired(r) & self.CVD_IDS, {"BR-DE-CVD-06-b"})
+
+    def test_tmp_cvd_01_scheme_from_untdid_7143(self):
+        r = cvd_base()
+        _cvd_class_code(r, "IB").set("listID", "QQQQ")
+        self.assertEqual(fired(r) & self.CVD_IDS, {"BR-TMP-CVD-01"})
+
+    def test_tmp_cvd_01_empty_listid_holds_like_the_artifact(self):
+        """The official concat produces a DOUBLE space between 'CVD' and the
+        UNTDID tokens, so an absent/empty @listID normalizes to '' and the
+        contains() test HOLDS — transcribed exactly, pinned here."""
+        r = cvd_base()
+        del _cvd_class_code(r, "IB").attrib["listID"]
+        self.assertNotIn("BR-TMP-CVD-01", fired(r))
+
+
+class TmpRules(unittest.TestCase):
+    """BR-TMP-2 (BT-124 URL shape, warning) — NOT gated on the CVD profile."""
+
+    def _add_external_reference(self, r, uri):
+        adr = ET.Element(q(NS_CAC, "AdditionalDocumentReference"))
+        ET.SubElement(adr, q(NS_CBC, "ID")).text = "ext-1"
+        att = ET.SubElement(adr, q(NS_CAC, "Attachment"))
+        ext = ET.SubElement(att, q(NS_CAC, "ExternalReference"))
+        if uri is not None:
+            ET.SubElement(ext, q(NS_CBC, "URI")).text = uri
+        r.insert(list(r).index(r.find("cac:AccountingSupplierParty", NS)), adr)
+
+    def test_tmp_2_relative_url_fires_as_warning(self):
+        r = base()  # plain CIUS invoice — no CVD gate involved
+        self._add_external_reference(r, "example.com/spec.pdf")
+        self.assertIn("BR-TMP-2", fired(r))
+        by_id = {v.rule_id: v for v in xr.evaluate(r)}
+        self.assertEqual(by_id["BR-TMP-2"].severity, "warning")
+
+    def test_tmp_2_absolute_url_holds(self):
+        r = base()
+        self._add_external_reference(r, "https://example.com/spec.pdf")
+        self.assertNotIn("BR-TMP-2", fired(r))
+
+    def test_tmp_2_missing_uri_fires(self):
+        """matches((), re) reads the empty sequence as '' -> fires."""
+        r = base()
+        self._add_external_reference(r, None)
+        self.assertIn("BR-TMP-2", fired(r))
 
 
 class ProfileWiring(unittest.TestCase):

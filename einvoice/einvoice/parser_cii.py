@@ -164,6 +164,36 @@ def _period_bound(period_el, which):
 CIIContact = namedtuple("CIIContact",
                         ["person_name", "department_name", "telephone", "email"])
 
+# One header-agreement ``ram:AdditionalReferencedDocument`` (BG-24 at the
+# agreement level), carrying the raw child node sets the CVD/TMP rules read:
+# BR-DE-CVD-02 keys on normalize-space(ram:TypeCode)='50' + a non-empty
+# ram:IssuerAssignedID; BR-TMP-2 keys on ram:TypeCode = '916' (untrimmed
+# node-set comparison) + ram:URIID. Lists preserve the official node-set
+# semantics (multiple children).
+CIIRefDoc = namedtuple("CIIRefDoc", ["type_codes", "issuer_ids", "uri_ids"])
+
+# One ``ram:ClassCode`` of a ``ram:DesignatedProductClassification`` (BT-158):
+# the raw @listID attribute (None when absent) and the raw element text — each
+# ClassCode element is its own rule context for BR-TMP-CVD-01 / BR-DE-CVD-04.
+CIIClassCode = namedtuple("CIIClassCode", ["list_id", "value"])
+
+# One ``ram:ApplicableProductCharacteristic`` (BG-32): the raw string values of
+# its ram:Description (BT-160) and ram:Value (BT-161) children, as lists (the
+# official tests are node-set comparisons).
+CIICharacteristic = namedtuple("CIICharacteristic", ["descriptions", "values"])
+
+# One line's ``ram:SpecifiedTradeProduct``: the BT-158 classification codes and
+# BG-32 characteristics the BR-DE-CVD-03/04/05/06-a/06-b / BR-TMP-CVD-01 rules
+# read.
+CIITradeProduct = namedtuple("CIITradeProduct", ["class_codes", "characteristics"])
+
+# One line's gross/net price base quantities (BR-TMP-3): each entry is a
+# ``(raw_text, unit_code_or_None)`` pair per ``ram:BasisQuantity`` under
+# GrossPriceProductTradePrice / NetPriceProductTradePrice.
+CIIPriceQuantities = namedtuple("CIIPriceQuantities",
+                                ["gross_basis_quantities",
+                                 "net_basis_quantities"])
+
 
 class CIILine(parser.InvoiceLine):
     """One ``ram:IncludedSupplyChainTradeLineItem`` (BG-25).
@@ -222,6 +252,16 @@ class Invoice(parser.Invoice):
         self.has_invoice_referenced_document = False  # BG-3 present (BR-DE-26)
         self.has_actual_delivery_date = False   # BT-72 present (BR-DE-TMP-32)
         self.has_billing_period = False         # BG-14 present (BR-DE-TMP-32)
+
+        # -- CVD / TMP surface (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2/3), also
+        #    populated by _build_cii_br_de from the official CII rule paths. --
+        self.guideline_ids = []                 # all BT-24 Guideline…/ram:ID texts
+        self.has_supply_chain_transaction = False  # BR-DE-CVD-03 context node
+        self.has_header_trade_agreement = False    # BR-DE-CVD-01/02 context node
+        self.contract_reference_ids = []        # BT-12 IssuerAssignedID raw texts
+        self.header_ref_docs = []               # [CIIRefDoc] (BR-DE-CVD-02, BR-TMP-2)
+        self.trade_products = []                # [CIITradeProduct|None] per line item
+        self.line_prices = []                   # [CIIPriceQuantities] per line item
 
 
 def parse_file(path):
@@ -934,9 +974,45 @@ def _build_cii_br_de(inv, root):
     rule contexts/paths, so the CII BR-DE rules in
     :mod:`einvoice.rules_xrechnung` (``CII_DE_RULES``) reach exact parity with it
     (proven by ``differential.py xrechnung-cii``)."""
+    # $isCVD gate (cii-cvd-pattern): every Guideline…/ram:ID text value.
+    # Populated before the transaction guard — the ExchangedDocumentContext
+    # lives outside rsm:SupplyChainTradeTransaction.
+    for gid in root.findall(
+            "rsm:ExchangedDocumentContext/"
+            "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID", NS):
+        inv.guideline_ids.append(gid.text or "")
     txn = root.find("rsm:SupplyChainTradeTransaction", NS)
     if txn is None:
         return
+    inv.has_supply_chain_transaction = True
+    # CVD line surface: one record per IncludedSupplyChainTradeLineItem (the
+    # BR-TMP-3 / BR-DE-CVD line contexts), independent of inv.lines.
+    for ln_el in txn.findall("ram:IncludedSupplyChainTradeLineItem", NS):
+        product_el = ln_el.find("ram:SpecifiedTradeProduct", NS)
+        if product_el is None:
+            inv.trade_products.append(None)
+        else:
+            class_codes = [
+                CIIClassCode(cc.get("listID"), cc.text or "")
+                for cc in product_el.findall(
+                    "ram:DesignatedProductClassification/ram:ClassCode", NS)]
+            characteristics = [
+                CIICharacteristic(
+                    [d.text or "" for d in ch.findall("ram:Description", NS)],
+                    [v.text or "" for v in ch.findall("ram:Value", NS)])
+                for ch in product_el.findall(
+                    "ram:ApplicableProductCharacteristic", NS)]
+            inv.trade_products.append(
+                CIITradeProduct(class_codes, characteristics))
+        line_agreement = ln_el.find("ram:SpecifiedLineTradeAgreement", NS)
+        gross, net = [], []
+        if line_agreement is not None:
+            for tag, dst in (("GrossPriceProductTradePrice", gross),
+                             ("NetPriceProductTradePrice", net)):
+                for bq in line_agreement.findall(
+                        "ram:%s/ram:BasisQuantity" % tag, NS):
+                    dst.append((bq.text or "", bq.get("unitCode")))
+        inv.line_prices.append(CIIPriceQuantities(gross, net))
     agreement = txn.find("ram:ApplicableHeaderTradeAgreement", NS)
     settlement = txn.find("ram:ApplicableHeaderTradeSettlement", NS)
     delivery = txn.find("ram:ApplicableHeaderTradeDelivery", NS)
@@ -954,6 +1030,17 @@ def _build_cii_br_de(inv, root):
             settlement.find("ram:BillingSpecifiedPeriod", NS) is not None)
 
     if agreement is not None:
+        inv.has_header_trade_agreement = True
+        # BR-DE-CVD-01: BT-12 Contract reference.
+        for cr in agreement.findall(
+                "ram:ContractReferencedDocument/ram:IssuerAssignedID", NS):
+            inv.contract_reference_ids.append(cr.text or "")
+        # BR-DE-CVD-02 / BR-TMP-2: header AdditionalReferencedDocument node sets.
+        for doc in agreement.findall("ram:AdditionalReferencedDocument", NS):
+            inv.header_ref_docs.append(CIIRefDoc(
+                [t.text or "" for t in doc.findall("ram:TypeCode", NS)],
+                [i.text or "" for i in doc.findall("ram:IssuerAssignedID", NS)],
+                [u.text or "" for u in doc.findall("ram:URIID", NS)]))
         # BR-DE-16: SELLER TAX REPRESENTATIVE PARTY (BG-11) present.
         inv.has_tax_representative = (
             agreement.find("ram:SellerTaxRepresentativeTradeParty", NS)

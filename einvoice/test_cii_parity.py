@@ -29,12 +29,19 @@ What is checked (each its own test):
      the id, and its committed ``artifact_evidence`` (verbatim @context/@test)
      EQUALS a live re-verification that the shipped assert still cannot fire
      (an artifact bump fixing the defect fails here and reopens the rule);
-     every binding-inapplicable entry has ``cii_artifact`` null AND its id
-     truly absent from EVERY vendored CII artifact; ``generated_from`` states
-     the exact artifact paths the computation reads.
+     every binding-inapplicable entry is either NOT carried by any vendored CII
+     artifact (``cii_artifact`` null, id absent everywhere) OR a
+     gen_cii_parity.BINDING_SCOPE_EXCLUSIONS entry whose named artifact carries
+     the id and whose committed ``artifact_evidence`` EQUALS a live
+     re-verification that the recorded CII-specific surface marker is still
+     present (an upstream re-binding onto the core model fails here and reopens
+     the rule); ``generated_from`` states the exact artifact paths read.
   5. measurement-only guard: each entry's family matches the matrix, and the
      matrix rules it derives from still all say ``syntax == "ubl"`` — this
      worklist never flips a tag.
+  6. TERMINAL close-out: zero rules remain cii-fireable and the frozen
+     both/ubl/cii + defective/inapplicable split is pinned, so any future
+     artifact bump that reopens the worklist fails the gate automatically.
 """
 
 from __future__ import annotations
@@ -167,14 +174,46 @@ class CiiParityTest(unittest.TestCase):
                     e["artifact_evidence"], live,
                     "%s: committed artifact_evidence differs from a live "
                     "re-verification of the vendored artifact" % e["id"])
+            elif e.get("cii_artifact"):
+                # Carried-but-out-of-core-model-scope binding-inapplicable: the
+                # id IS carried by the named artifact, is in the
+                # BINDING_SCOPE_EXCLUSIONS evidence table, and its committed
+                # artifact_evidence EQUALS a live re-verification (the recorded
+                # CII surface marker must still be present in the live
+                # @context/@test — an upstream re-binding onto the core model
+                # fails here and reopens the rule).
+                self.assertIn(e["id"], _gen.BINDING_SCOPE_EXCLUSIONS,
+                              "%s: binding-inapplicable with a cii_artifact but "
+                              "absent from the BINDING_SCOPE_EXCLUSIONS evidence "
+                              "table" % e["id"])
+                self.assertIn(e["cii_artifact"], ids_by_path,
+                              "%s: cii_artifact %r is not a vendored CII "
+                              "artifact path" % (e["id"], e["cii_artifact"]))
+                self.assertIn(e["id"], ids_by_path[e["cii_artifact"]],
+                              "%s: named artifact %s carries NO sch:assert with "
+                              "this @id (re-parsed live)"
+                              % (e["id"], e["cii_artifact"]))
+                path = e["cii_artifact"]
+                if path not in context_cache:
+                    context_cache[path] = _gen.cii_assert_context_index(path)
+                live = _gen.verify_binding_scope_exclusion(
+                    e["id"], index_by_path[path][e["id"]],
+                    context_cache[path].get(e["id"], ""))
+                self.assertEqual(
+                    e["artifact_evidence"], live,
+                    "%s: committed artifact_evidence differs from a live "
+                    "re-verification of the vendored artifact" % e["id"])
             else:
                 self.assertIsNone(e["cii_artifact"],
                                   "%s: binding-inapplicable but cii_artifact "
                                   "is not null" % e["id"])
                 self.assertNotIn(e["id"], all_cii_ids,
-                                 "%s: classified binding-inapplicable but a "
-                                 "vendored CII artifact DOES carry the id — "
-                                 "stale worklist" % e["id"])
+                                 "%s: classified binding-inapplicable (not "
+                                 "carried) but a vendored CII artifact DOES "
+                                 "carry the id — stale worklist" % e["id"])
+                self.assertNotIn(e["id"], _gen.BINDING_SCOPE_EXCLUSIONS,
+                                 "%s: a scope-exclusion id but recorded with no "
+                                 "cii_artifact/evidence" % e["id"])
         # Completeness: every ARTIFACT_DEFECTS id still on the UBL-only
         # worklist must be classified as the defect it records (none may
         # silently fall back to cii-fireable).
@@ -185,6 +224,49 @@ class CiiParityTest(unittest.TestCase):
                 self.assertEqual(classified[rid], _gen.CLASS_DEFECTIVE,
                                  "%s: in ARTIFACT_DEFECTS but classified %r"
                                  % (rid, classified[rid]))
+        # Every BINDING_SCOPE_EXCLUSIONS id still on the UBL-only worklist must
+        # be classified binding-inapplicable (never silently cii-fireable).
+        for rid in _gen.BINDING_SCOPE_EXCLUSIONS:
+            if rid in classified:
+                self.assertEqual(classified[rid], _gen.CLASS_INAPPLICABLE,
+                                 "%s: in BINDING_SCOPE_EXCLUSIONS but "
+                                 "classified %r" % (rid, classified[rid]))
+
+    # ---- 6. TERMINAL close-out: the worklist is frozen shut ----------------
+    def test_terminal_worklist_is_closed(self):
+        """T-VHCIIP.9 froze the CII proof-parity arc: ZERO rules may remain
+        cii-fireable, and the both/ubl/cii matrix split + the
+        defective/binding-inapplicable split are pinned so any future artifact
+        bump that REOPENS the worklist (a new carried assert, or a re-binding
+        onto the core model) fails this gate automatically."""
+        rules = self.committed["rules"]
+        n_fire = sum(1 for e in rules
+                     if e["classification"] == _gen.CLASS_FIREABLE)
+        n_defect = sum(1 for e in rules
+                       if e["classification"] == _gen.CLASS_DEFECTIVE)
+        n_inapp = sum(1 for e in rules
+                      if e["classification"] == _gen.CLASS_INAPPLICABLE)
+        n_scoped = sum(1 for e in rules
+                       if e["classification"] == _gen.CLASS_INAPPLICABLE
+                       and e.get("cii_artifact"))
+        n_absent = n_inapp - n_scoped
+        self.assertEqual(n_fire, 0,
+                         "TERMINAL invariant broken: cii-fireable worklist is "
+                         "not empty (%d open) — every carried CII assert must "
+                         "be flipped to syntax='both' or reclassified with "
+                         "evidence" % n_fire)
+        # Frozen terminal counts (live-recomputed above; a drift here means an
+        # artifact bump reopened the worklist and needs a fresh resolution).
+        self.assertEqual((n_defect, n_inapp, n_scoped, n_absent), (4, 26, 18, 8),
+                         "terminal cii_parity split drifted from the frozen "
+                         "(4 defective, 26 inapplicable = 18 scoped + 8 absent)")
+        mat = self.matrix["rules"]
+        n_both = sum(1 for r in mat if r["syntax"] == "both")
+        n_ubl = sum(1 for r in mat if r["syntax"] == "ubl")
+        n_cii = sum(1 for r in mat if r["syntax"] == "cii")
+        self.assertEqual((n_both, n_ubl, n_cii), (255, 30, 1),
+                         "terminal matrix syntax split drifted from the frozen "
+                         "(255 both, 30 UBL-only, 1 CII-only)")
 
     # ---- 5. measurement-only guard ----------------------------------------
     def test_families_match_matrix_and_no_tag_flipped(self):

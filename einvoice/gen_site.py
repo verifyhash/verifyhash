@@ -497,11 +497,13 @@ def render_landing():
       "both bindings</strong>. Proof parity between the two syntaxes is "
       "machine-tracked rather than frozen in prose: a test recomputes the "
       "worklist live from the coverage matrix and the vendored CII "
-      "Schematron, so the majority of rules are differential-proven on both "
-      "UBL and CII and the remainder is an explicit, always-current worklist "
-      "(as of 2026-07-11: 196 of 286 rules proven on both bindings, 81 "
-      "CII-fireable rules still on the worklist). All differential legs run "
-      "at <strong>0 divergences</strong> against the official Schematron.</p>")
+      "Schematron. That worklist is now <strong>closed</strong>: 255 of the "
+      "286 asserted rules are differential-proven on both UBL and CII, 30 are "
+      "officially UBL-only and 1 is CII-only, with <strong>0 rules left on the "
+      "cii-fireable worklist</strong> — every UBL-only rule is resolved with "
+      "verbatim artifact evidence (4 cii-artifact-defective, 26 "
+      "binding-inapplicable). All differential legs run at <strong>0 "
+      "divergences</strong> against the official Schematron.</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Coverage matrix (COVERAGE.md)</a> — the authoritative '
       "per-rule inventory: every asserted rule, the syntax it is proven in, "

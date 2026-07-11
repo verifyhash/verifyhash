@@ -229,6 +229,13 @@ class Invoice(parser.Invoice):
         self.has_header_monetary_summation = False
         self.tax_total_amount = None            # BT-110 ram:TaxTotalAmount (text)
         self.tax_total_amount_currency = None   # ram:TaxTotalAmount/@currencyID
+        # Raw value(s) of every ram:TaxTotalAmount whose @currencyID equals BT-5
+        # (ram:InvoiceCurrencyCode) — the exact BR-CO-14/15 CII rule context
+        # (a summation may also carry a tax-accounting-currency BT-111 total,
+        # which is NOT the context). Empty when BT-5 or the doc-currency total
+        # is absent, so both rules hold vacuously there (matching the official
+        # empty-context / vacuous-quantifier behaviour).
+        self.cii_doc_currency_tax_total_values = []
 
         # -- German-CIUS (BR-DE-*) surface, populated by _build_cii_br_de. -----
         # These carry the exact document parts the CII XRechnung national layer
@@ -855,6 +862,15 @@ def build_model(root):
                 inv.tax_total_amount = _text(tta_el)                  # BT-110
                 if tta_el is not None:
                     inv.tax_total_amount_currency = tta_el.get("currencyID")
+                # BR-CO-14/15 (CII) context = ram:TaxTotalAmount whose
+                # @currencyID = BT-5 (a missing @currencyID never matches, so
+                # it is excluded exactly like the official `@currencyID =
+                # InvoiceCurrencyCode` predicate).
+                inv.cii_doc_currency_tax_total_values = [
+                    _text(el)
+                    for el in summation.findall("ram:TaxTotalAmount", NS)
+                    if el.get("currencyID") == inv.document_currency_code
+                    and inv.document_currency_code is not None]
                 inv.tax_inclusive_amount = _text(
                     summation.find("ram:GrandTotalAmount", NS))       # BT-112
                 inv.prepaid_amount = _text(

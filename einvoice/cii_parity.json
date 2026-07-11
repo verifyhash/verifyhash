@@ -53,94 +53,160 @@
       }
     },
     {
-      "id": "BR-CO-14",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-CO-15",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
       "id": "BR-DE-18",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-terms-surface",
+        "context": "/rsm:CrossIndustryInvoice",
+        "test": "every $line                        in rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description[1]/tokenize(. , '(\\r?\\n)')[starts-with( normalize-space(.) , '#')]                        satisfies matches ( normalize-space ($line), $XR-SKONTO-REGEX ) and                     matches( rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description[1]/tokenize(. ,  '#.+#')[last()], '^\\s*\\n' )",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @test tokenizes ram:SpecifiedTradePaymentTerms/ram:Description free text against the KoSIT #SKONTO# grammar — a CII payment-terms surface the syntax-agnostic EN 16931 core model does not carry; fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-19",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-means-surface",
+        "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans[normalize-space(ram:TypeCode) = ('30','58')]",
+        "test": "not(normalize-space(ram:TypeCode) = '58') or                     matches(normalize-space(replace(ram:PayeePartyCreditorFinancialAccount/ram:IBANID, '([ \\n\\r\\t\\s])', '')), '^[A-Z]{2}[0-9]{2}[a-zA-Z0-9]{0,30}$') and                     xs:integer(string-join(for $cp in string-to-codepoints(concat(substring(normalize-space(replace(ram:PayeePartyCreditorFinancialAccount/ram:IBANID, '([ \\n\\r\\t\\s])', '')),5),upper-case(substring(normalize-space(replace(ram:PayeePartyCreditorFinancialAccount/ram:IBANID, '([ \\n\\r\\t\\s])', '')),1,2)),substring(normalize-space(replace(ram:PayeePartyCreditorFinancialAccount/ram:IBANID, '([ \\n\\r\\t\\s])', '')),3,2))) return  (if($cp > 64) then string($cp - 55) else  string($cp - 48)),'')) mod 97 = 1",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment instructions: type code + financial-account / card / mandate children) — a CII payment-means surface the syntax-agnostic EN 16931 core model does not carry; the national CIUS rule is fully differentially proven on the UBL leg and is deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-20",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-means-surface",
+        "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans[normalize-space(ram:TypeCode) = '59']",
+        "test": "not(normalize-space(ram:TypeCode) = '59') or                     matches(normalize-space(replace(ram:PayerPartyDebtorFinancialAccount/ram:IBANID, '([ \\n\\r\\t\\s])', '')), '^[A-Z]{2}[0-9]{2}[a-zA-Z0-9]{0,30}$') and                     xs:decimal(string-join(for $cp in string-to-codepoints(concat(substring(normalize-space(replace(ram:PayerPartyDebtorFinancialAccount/ram:IBANID, '([ \\n\\r\\t\\s])', '')),5),upper-case(substring(normalize-space(replace(ram:PayerPartyDebtorFinancialAccount/ram:IBANID, '([ \\n\\r\\t\\s])', '')),1,2)),substring(normalize-space(replace(ram:PayerPartyDebtorFinancialAccount/ram:IBANID, '([ \\n\\r\\t\\s])', '')),3,2))) return  (if($cp > 64) then string($cp - 55) else  string($cp - 48)),'')) mod 97 = 1",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment instructions: type code + financial-account / card / mandate children) — a CII payment-means surface the syntax-agnostic EN 16931 core model does not carry; the national CIUS rule is fully differentially proven on the UBL leg and is deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-22",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-attachment-surface",
+        "context": "/rsm:CrossIndustryInvoice",
+        "test": "count(//ram:AdditionalReferencedDocument) = count(//ram:AdditionalReferencedDocument[not(./ram:AttachmentBinaryObject/@filename = preceding-sibling::ram:AdditionalReferencedDocument/ram:AttachmentBinaryObject/@filename)])",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @test compares every ram:AdditionalReferencedDocument/ram:AttachmentBinaryObject/@filename for uniqueness — a CII attachment surface the syntax-agnostic EN 16931 core model does not carry; fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-23-a",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-means-surface",
+        "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans[normalize-space(ram:TypeCode) = ('30','58')]",
+        "test": "ram:PayeePartyCreditorFinancialAccount",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment instructions: type code + financial-account / card / mandate children) — a CII payment-means surface the syntax-agnostic EN 16931 core model does not carry; the national CIUS rule is fully differentially proven on the UBL leg and is deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-23-b",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-means-surface",
+        "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans[normalize-space(ram:TypeCode) = ('30','58')]",
+        "test": "not(ram:ApplicableTradeSettlementFinancialCard) and                     not(/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID or                         /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:CreditorReferenceID or                         ram:PayerPartyDebtorFinancialAccount/ram:IBANID)",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment instructions: type code + financial-account / card / mandate children) — a CII payment-means surface the syntax-agnostic EN 16931 core model does not carry; the national CIUS rule is fully differentially proven on the UBL leg and is deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-24-a",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-means-surface",
+        "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans[normalize-space(ram:TypeCode) = ('48','54','55')]",
+        "test": "ram:ApplicableTradeSettlementFinancialCard",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment instructions: type code + financial-account / card / mandate children) — a CII payment-means surface the syntax-agnostic EN 16931 core model does not carry; the national CIUS rule is fully differentially proven on the UBL leg and is deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-24-b",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-means-surface",
+        "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans[normalize-space(ram:TypeCode) = ('48','54','55')]",
+        "test": "not(ram:PayeePartyCreditorFinancialAccount) and                     not(/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID or                         /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:CreditorReferenceID or                         ram:PayerPartyDebtorFinancialAccount/ram:IBANID)",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment instructions: type code + financial-account / card / mandate children) — a CII payment-means surface the syntax-agnostic EN 16931 core model does not carry; the national CIUS rule is fully differentially proven on the UBL leg and is deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-25-a",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-means-surface",
+        "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans[normalize-space(ram:TypeCode) = '59']",
+        "test": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID or                     /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:CreditorReferenceID or                     ram:PayerPartyDebtorFinancialAccount/ram:IBANID",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment instructions: type code + financial-account / card / mandate children) — a CII payment-means surface the syntax-agnostic EN 16931 core model does not carry; the national CIUS rule is fully differentially proven on the UBL leg and is deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-25-b",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-payment-means-surface",
+        "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans[normalize-space(ram:TypeCode) = '59']",
+        "test": "not(ram:PayeePartyCreditorFinancialAccount) and                     not(ram:PayeeSpecifiedCreditorFinancialInstitution) and                     not(ram:PayerSpecifiedDebtorFinancialInstitution) and                     not(ram:ApplicableTradeSettlementFinancialCard)",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment instructions: type code + financial-account / card / mandate children) — a CII payment-means surface the syntax-agnostic EN 16931 core model does not carry; the national CIUS rule is fully differentially proven on the UBL leg and is deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-30",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-direct-debit-surface",
+        "context": "/rsm:CrossIndustryInvoice",
+        "test": "(($BT-89-path or $BT-91-path) and $BT-90-path) or $BG-19-not-existing",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @test reconstructs the DIRECT DEBIT group (BG-19) from ram:DirectDebitMandateID / ram:CreditorReferenceID / ram:PayerPartyDebtorFinancialAccount/ram:IBANID presence (the $BG-19-not-existing let) — a CII payment surface the syntax-agnostic EN 16931 core model does not carry; fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DE-31",
       "family": "xrechnung-cius",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-direct-debit-surface",
+        "context": "/rsm:CrossIndustryInvoice",
+        "test": "(($BT-89-path or $BT-90-path) and $BT-91-path) or $BG-19-not-existing",
+        "note": "carried by the vendored CII artifact and fires on a CII document, but its @test reconstructs the DIRECT DEBIT group (BG-19) from ram:DirectDebitMandateID / ram:CreditorReferenceID / ram:PayerPartyDebtorFinancialAccount/ram:IBANID presence (the $BG-19-not-existing let) — a CII payment surface the syntax-agnostic EN 16931 core model does not carry; fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DEX-01",
       "family": "xrechnung-extension",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-extension-profile",
+        "context": "ram:AttachmentBinaryObject[$isExtension]",
+        "test": ".[@mimeCode = 'application/pdf' or               @mimeCode = 'image/png' or               @mimeCode = 'image/jpeg' or               @mimeCode = 'text/csv' or               @mimeCode = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or               @mimeCode = 'application/vnd.oasis.opendocument.spreadsheet' or               @mimeCode = 'application/xml']",
+        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DEX-02",
@@ -157,32 +223,62 @@
     {
       "id": "BR-DEX-04",
       "family": "xrechnung-extension",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-extension-profile",
+        "context": "//ram:GlobalID[@schemeID and $isExtension][not(ancestor::ram:SpecifiedTradeProduct) and not(ancestor::ram:ShipToTradeParty)]",
+        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($ISO-6523-ICD-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
+        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DEX-05",
       "family": "xrechnung-extension",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-extension-profile",
+        "context": "ram:ID[@schemeID and $isExtension][not(ancestor::ram:SpecifiedTaxRegistration)]",
+        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($ISO-6523-ICD-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
+        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DEX-06",
       "family": "xrechnung-extension",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-extension-profile",
+        "context": "ram:SpecifiedTradeProduct/ram:GlobalID[@schemeID and $isExtension]",
+        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($ISO-6523-ICD-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
+        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DEX-07",
       "family": "xrechnung-extension",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-extension-profile",
+        "context": "ram:URIUniversalCommunication/ram:URIID[@schemeID and $isExtension]",
+        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($CEF-EAS-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
+        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DEX-08",
       "family": "xrechnung-extension",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch"
+      "classification": "binding-inapplicable",
+      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+      "artifact_evidence": {
+        "kind": "cii-extension-profile",
+        "context": "ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:GlobalID[@schemeID and $isExtension]",
+        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($ISO-6523-ICD-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
+        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
+      }
     },
     {
       "id": "BR-DEX-09",

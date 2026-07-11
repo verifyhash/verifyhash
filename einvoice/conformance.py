@@ -542,6 +542,12 @@ CII_SYNTAX_COVERAGE = {
                 "with an ISO 3166-1 alpha-2 country code (Greece: 'EL')",
     "BR-CO-10": "Sum of line net amount (BT-106) = Σ line net (BT-131)",
     "BR-CO-13": "Total without VAT (BT-109) = line-net − allowances + charges",
+    "BR-CO-14": "Invoice total VAT amount (BT-110) = Σ VAT category tax "
+                "(BT-117) (CII binding: context = the document-currency BT-110 "
+                "element, so a no-VAT invoice omitting it does not fire)",
+    "BR-CO-15": "Total with VAT (BT-112) = total without VAT (BT-109) + total "
+                "VAT (BT-110) (CII binding: extra BT-112 = BT-109 disjunct for "
+                "no-VAT invoices)",
     "BR-CO-16": "Amount due (BT-115) = total with VAT − paid + rounding",
     "BR-CO-17": "VAT category tax = taxable × rate/100 (±1 tolerance)",
     "BR-CO-18": "At least one VAT breakdown group (BG-23)",
@@ -663,10 +669,6 @@ CII_SYNTAX_COVERAGE = {
 # different semantics than the UBL binding; grading under the unmodified UBL
 # function would ship a divergence). Kept here so the exclusion is auditable.
 CII_SYNTAX_EXCLUDED = {
-    "BR-CO-14": "CII gates BT-110 = Σ BT-117 on a present doc-currency "
-                "TaxTotalAmount; no-VAT CII invoices omit it (UBL over-rejects)",
-    "BR-CO-15": "CII adds a GrandTotal=TaxBasis disjunct for no-VAT invoices "
-                "the UBL function lacks (UBL over-rejects BT-110-less invoices)",
     "BR-AF-08": "the CII artifact binds the assert to the ApplicableTradeTax "
                 "ROW (not its CategoryCode child like BR-S-08), so its "
                 "../ram:RateApplicablePercent is empty and 'every $rate in ()' "

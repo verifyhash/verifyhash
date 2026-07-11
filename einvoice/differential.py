@@ -478,6 +478,18 @@ CII_GRADED_RULES = [
     _rules.br_dec_01, _rules.br_dec_02, _rules.br_dec_05, _rules.br_dec_06,
     _rules.br_dec_10, _rules.br_dec_11, _rules.br_dec_16, _rules.br_dec_17,
     _rules.br_s_03, _rules.br_s_04, _rules.br_s_06, _rules.br_s_07,
+    # CII proof-parity batch 8 / TERMINAL close-out (T-VHCIIP.9): the last two
+    # core document-total reconciliations. Both were excluded through batch 7
+    # because the unmodified UBL body over-rejected no-VAT CII invoices; since
+    # this batch rules.br_co_14 / rules.br_co_15 branch on inv.syntax and
+    # transcribe the genuinely different CII binding EXACTLY (BR-CO-14: context
+    # = the document-currency BT-110 element itself, so a no-VAT invoice with no
+    # ram:TaxTotalAmount has no context node and never fires; BR-CO-15: the
+    # extra ``GrandTotalAmount = TaxBasisTotalAmount`` disjunct that holds for a
+    # BT-110-less no-VAT invoice). The assert is real and fireable on a VAT
+    # invoice with a wrong BT-110/BT-112 (the cmut fixtures below), so parity is
+    # provable — both are GRADED here, not approximated.
+    _rules.br_co_14, _rules.br_co_15,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -487,19 +499,17 @@ CII_GRADED_RULES = [
 # not weaken the shared rule function or approximate; we simply do not assert them
 # on CII (they remain fully graded on the EN/XRechnung UBL legs):
 #
-#  * BR-CO-14 (Invoice total VAT amount BT-110 = Σ VAT category tax BT-117):
-#    the official CII context is ``//SpecifiedTradeSettlementHeaderMonetary
-#    Summation/ram:TaxTotalAmount[@currencyID=InvoiceCurrencyCode]`` — the rule
-#    exists ONLY when a document-currency BT-110 element is present. CII invoices
-#    with no VAT (e.g. an all-"O"/Not-subject invoice) legitimately OMIT
-#    ram:TaxTotalAmount, so the official assert never fires there; the UBL
-#    transcription (which fires whenever a breakdown is present but the total is
-#    absent) over-rejects those documents (verified on CII_example7, XRechnung-O).
-#  * BR-CO-15 (total with VAT = total without VAT + total VAT): the CII binding
-#    carries an extra disjunct — ``GrandTotalAmount = TaxBasisTotalAmount`` — that
-#    HOLDS for a no-VAT invoice with no BT-110; the UBL function requires exactly
-#    one document-currency VAT total and has no such disjunct, so it over-rejects
-#    the same BT-110-less CII documents (same two examples).
+#  (BR-CO-14 / BR-CO-15 — the two document-total reconciliations — were
+#   excluded here from batch 1 through batch 7: the CII context of BR-CO-14 is
+#   ``//SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount
+#   [@currencyID=InvoiceCurrencyCode]`` (the rule exists ONLY when a
+#   document-currency BT-110 is present, which a no-VAT CII invoice legitimately
+#   omits), and BR-CO-15 carries an extra ``GrandTotalAmount = TaxBasisTotal
+#   Amount`` disjunct that holds for such BT-110-less documents — so the
+#   unmodified UBL bodies over-rejected them (verified on CII_example7,
+#   XRechnung-O). Since T-VHCIIP.9 rules.br_co_14 / rules.br_co_15 branch on
+#   inv.syntax and transcribe each CII binding EXACTLY, so both are GRADED
+#   above, not approximated.)
 #  (BR-09 / BR-11 — the seller/buyer country-code rules whose CII binding is
 #   evaluated from the DOCUMENT ROOT rather than the PostalAddress node — used
 #   to be excluded here for exactly that context mismatch; since T-VHCIIP.2
@@ -540,8 +550,7 @@ CII_GRADED_RULES = [
 #    shipped assert can ever fire on CII. Our engine asserts the intended
 #    arithmetic on the CII model anyway (deliberate strictness); both stay
 #    fully graded on the UBL leg.
-CII_EXCLUDED_RULE_IDS = ("BR-CO-14", "BR-CO-15",
-                         "BR-AF-08", "BR-AF-09", "BR-AG-08", "BR-AG-09")
+CII_EXCLUDED_RULE_IDS = ("BR-AF-08", "BR-AF-09", "BR-AG-08", "BR-AG-09")
 
 CII_RULE_IDS = [_fn_to_rule_id(fn) for fn in CII_GRADED_RULES]
 CII_RULE_SET = set(CII_RULE_IDS)
@@ -3118,6 +3127,18 @@ def _cmut_brco13(r):
     _cii_summation(r).find("ram:TaxBasisTotalAmount", _NSC).text = "111111.11"
 
 
+def _cmut_brco14(r):
+    # Document-currency BT-110 (ram:TaxTotalAmount) set away from the breakdown
+    # Σ CalculatedAmount -> BR-CO-14 fires (both engines).
+    _cii_summation(r).find("ram:TaxTotalAmount", _NSC).text = "999.99"
+
+
+def _cmut_brco15(r):
+    # BT-112 (ram:GrandTotalAmount) set away from BT-109 + BT-110 (and != BT-109,
+    # so the extra CII disjunct also fails) -> BR-CO-15 fires (both engines).
+    _cii_summation(r).find("ram:GrandTotalAmount", _NSC).text = "111111.11"
+
+
 def _cmut_brco16(r):
     _cii_summation(r).find("ram:DuePayableAmount", _NSC).text = "111111.11"
 
@@ -4991,6 +5012,7 @@ _CII_MUTATIONS = {
     "BR-CL-23": _cmut_brcl23, "BR-CL-24": _cmut_brcl24,
     "BR-CO-04": _cmut_brco04,
     "BR-CO-10": _cmut_brco10, "BR-CO-13": _cmut_brco13,
+    "BR-CO-14": _cmut_brco14, "BR-CO-15": _cmut_brco15,
     "BR-CO-16": _cmut_brco16, "BR-CO-17": _cmut_brco17,
     "BR-CO-18": _cmut_brco18,
     "BR-45": _cmut_br45, "BR-46": _cmut_br46, "BR-47": _cmut_br47,

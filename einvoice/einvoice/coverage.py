@@ -581,14 +581,30 @@ def render_markdown(matrix, cii_parity=None):
         inapp = [e for e in pr if e["classification"] == "binding-inapplicable"]
         defect = [e for e in pr
                   if e["classification"] == "cii-artifact-defective"]
+        # binding-inapplicable splits into two evidence classes: rules NO
+        # vendored CII artifact carries (cii_artifact null), and rules a CII
+        # artifact DOES carry but which bind a CII-specific surface outside the
+        # syntax-agnostic core model — a deliberate CII-leg exclusion carrying
+        # verbatim artifact evidence (cii_artifact set).
+        inapp_scoped = [e for e in inapp if e.get("cii_artifact")]
+        inapp_absent = [e for e in inapp if not e.get("cii_artifact")]
         w("## CII proof parity")
         w("")
-        w("**%d** rules in the table above are today differentially proven on"
-          % n_ubl_only)
-        w("the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how")
-        w("many of them the official CII artifacts actually carry, by a real")
-        w("XML parse of `sch:assert/@id` in the vendored CII Schematron files")
-        w("(no prose scraping, no hand lists):")
+        w("**TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **%d**"
+          % n_total)
+        w("business rules the engine asserts, **%d** are differentially proven"
+          % n_both)
+        w("on BOTH the UBL and CII bindings; **%d** are officially UBL-only and"
+          % n_ubl)
+        w("**%d** is CII-only. Every one of the **%d** UBL-only rules the"
+          % (n_cii, n_ubl_only))
+        w("official CII artifacts were measured against is now resolved with")
+        w("evidence — **%d remain on the cii-fireable worklist** — so no CII"
+          % len(fireable))
+        w("assert the vendored artifacts carry is left unproven or silently")
+        w("skipped. `gen_cii_parity.py` measures this by a real XML parse of")
+        w("`sch:assert/@id` in the vendored CII Schematron files (no prose")
+        w("scraping, no hand lists):")
         w("")
         for rel in cii_parity["generated_from"]:
             w("- `%s`" % rel)
@@ -598,9 +614,10 @@ def render_markdown(matrix, cii_parity=None):
         w("")
         w("- **%d cii-fireable** — an official CII assert with the same id"
           % len(fireable))
-        w("  exists in at least one vendored CII artifact. This is the real")
-        w("  QA worklist: the rule officially applies to CII invoices and the")
-        w("  engine's coverage there is not yet proven.")
+        w("  exists in a vendored CII artifact and its CII behaviour is not yet")
+        w("  differentially proven. This worklist is now **empty**: every such")
+        w("  rule has been either flipped to `syntax = UBL + CII` (a landed")
+        w("  differential proof) or reclassified below with evidence.")
         if defect:
             w("- **%d cii-artifact-defective** — a vendored CII artifact"
               % len(defect))
@@ -613,20 +630,37 @@ def render_markdown(matrix, cii_parity=None):
             w("  and re-verified live by `test_cii_parity.py`; an artifact")
             w("  bump that fixes such an assert fails that gate and reopens")
             w("  the rule as cii-fireable.")
-        w("- **%d binding-inapplicable** — no vendored CII artifact carries"
+        w("- **%d binding-inapplicable** — officially UBL-only for the"
           % len(inapp))
-        if inapp:
-            w("  the id (%s), so at the vendored"
-              % ", ".join("`%s`" % e["id"] for e in inapp))
-        else:
-            w("  the id, so at the vendored")
-        w("  artifact versions these rules are officially UBL-only; there is")
-        w("  nothing to prove against on the CII leg.")
+        w("  both-syntaxes core-model proof, in two evidence classes:")
+        if inapp_scoped:
+            w("  - **%d carried by a vendored CII artifact but out of"
+              % len(inapp_scoped))
+            w("    core-model scope** (%s):"
+              % ", ".join("`%s`" % e["id"] for e in inapp_scoped))
+            w("    the assert exists and fires on a CII document, but its")
+            w("    `@context`/`@test` binds a CII-specific surface — the")
+            w("    national-CIUS payment-means / payment-terms / direct-debit /")
+            w("    attachment nodes or the KoSIT XRechnung EXTENSION profile")
+            w("    (`$isExtension`) — that the syntax-agnostic EN 16931 core")
+            w("    model deliberately does not carry. Each is FULLY")
+            w("    differentially proven on the UBL XRechnung leg and carries")
+            w("    verbatim `@context`/`@test` + a surface note in")
+            w("    `cii_parity.json`, re-verified live by `test_cii_parity.py`;")
+            w("    an artifact bump that re-binds it onto the core model fails")
+            w("    that gate and reopens the rule.")
+        if inapp_absent:
+            w("  - **%d not carried by any vendored CII artifact** (%s):"
+              % (len(inapp_absent),
+                 ", ".join("`%s`" % e["id"] for e in inapp_absent)))
+            w("    at the vendored artifact versions these rules are officially")
+            w("    UBL-only — there is nothing to prove against on the CII leg.")
         w("")
-        w("This is a MEASUREMENT, not a claim: no `syntax` tag above flips on")
-        w("the strength of it. A cii-fireable rule stays `syntax = UBL` until")
-        w("its CII behaviour is differentially proven against the official")
-        w("artifact, exactly like every existing `UBL + CII` row.")
+        w("The `syntax` tags above are NOT flipped on the strength of this")
+        w("measurement: a rule reaches `syntax = UBL + CII` only via a landed")
+        w("`differential.py` proof (0 divergences on the CII leg). The worklist")
+        w("simply records, with evidence, why each remaining UBL-only rule is")
+        w("not — and cannot silently be — proven on CII.")
         w("")
 
     return "\n".join(lines) + "\n"

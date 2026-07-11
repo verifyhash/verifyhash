@@ -24,7 +24,7 @@ XSLT and compares the fired-rule set. The sources:
 ## Coverage at a glance
 
 - **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **253** proven on both UBL and CII, **32** UBL-only, **1** CII-only.
+- Syntax: **255** proven on both UBL and CII, **30** UBL-only, **1** CII-only.
 - Severity (blocking class): **274** fatal (block validity), **12** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -126,8 +126,8 @@ the non-blocking `warning` class for the severity column).
 | `BR-CO-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Sum of allowances on document level (BT-107) = Σ Document level allowance amount (BT-92). |
 | `BR-CO-12` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Sum of charges on document level (BT-108) = Σ Document level charge amount (BT-99). |
 | `BR-CO-13` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice total without VAT (BT-109) = Σ line net (BT-131) − document allowances (BT-107) + document charges (BT-108). |
-| `BR-CO-14` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Invoice total VAT amount (BT-110) = Σ VAT category tax amount (BT-117). |
-| `BR-CO-15` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Invoice total with VAT (BT-112) = total without VAT (BT-109) + total VAT (BT-110). |
+| `BR-CO-14` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice total VAT amount (BT-110) = Σ VAT category tax amount (BT-117). |
+| `BR-CO-15` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice total with VAT (BT-112) = total without VAT (BT-109) + total VAT (BT-110). |
 | `BR-CO-16` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Amount due for payment (BT-115) = Invoice total with VAT (BT-112) − Paid amount (BT-113) + Rounding amount (BT-114). |
 | `BR-CO-17` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | VAT category tax amount (BT-117) = VAT category taxable amount (BT-116) x (VAT category rate (BT-119) / 100), rounded to two decimals. |
 | `BR-CO-18` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice shall at least have one VAT breakdown group (BG-23). |
@@ -390,8 +390,6 @@ These core rules fire and are proven on the UBL leg; the official CII
 Schematron binds them differently, so they are excluded from the CII
 graded set rather than approximated.
 
-- **BR-CO-14** — official CII context requires a document-currency BT-110 (ram:TaxTotalAmount) which a no-VAT CII invoice legitimately omits, so the assert never fires there; the UBL transcription would over-reject those documents.
-- **BR-CO-15** — the CII binding carries an extra GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for a no-VAT invoice with no BT-110; the UBL function has no such disjunct and would over-reject the same documents.
 - **BR-AF-08** — the CII artifact binds this assert to the ram:ApplicableTradeTax ROW — unlike BR-S-08, whose context node is the ram:CategoryCode CHILD — so the test's ../ram:RateApplicablePercent resolves against the header settlement (no such children) and 'every $rate in ()' is vacuously true: the shipped assert can never fire. The engine asserts the intended per-rate round2 bucket sum on CII anyway (deliberate strictness).
 - **BR-AF-09** — the official CII artifact ships this assert as test="true()" — a tautology that can never fire, whatever the arithmetic — so CII parity is impossible for a real check; the engine asserts the UBL binding's taxable × rate ±1 band on both syntaxes instead (deliberate strictness).
 - **BR-AG-08** — the CII artifact repeats the BR-AF-08 binding defect for the IPSI (M) family: the assert is bound to the ram:ApplicableTradeTax ROW, so its ../ram:RateApplicablePercent is empty and 'every $rate in ()' is vacuously true — the shipped assert can never fire. The engine asserts the intended per-rate round2 bucket sum on CII anyway (deliberate strictness).
@@ -543,11 +541,16 @@ worklist automatically.
 
 ## CII proof parity
 
-**32** rules in the table above are today differentially proven on
-the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
-many of them the official CII artifacts actually carry, by a real
-XML parse of `sch:assert/@id` in the vendored CII Schematron files
-(no prose scraping, no hand lists):
+**TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **286**
+business rules the engine asserts, **255** are differentially proven
+on BOTH the UBL and CII bindings; **30** are officially UBL-only and
+**1** is CII-only. Every one of the **30** UBL-only rules the
+official CII artifacts were measured against is now resolved with
+evidence — **0 remain on the cii-fireable worklist** — so no CII
+assert the vendored artifacts carry is left unproven or silently
+skipped. `gen_cii_parity.py` measures this by a real XML parse of
+`sch:assert/@id` in the vendored CII Schematron files (no prose
+scraping, no hand lists):
 
 - `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch`
 - `corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch`
@@ -555,10 +558,11 @@ XML parse of `sch:assert/@id` in the vendored CII Schematron files
 Measured split (committed as `cii_parity.json`, live-recomputed by
 `test_cii_parity.py` so it can never silently go stale):
 
-- **20 cii-fireable** — an official CII assert with the same id
-  exists in at least one vendored CII artifact. This is the real
-  QA worklist: the rule officially applies to CII invoices and the
-  engine's coverage there is not yet proven.
+- **0 cii-fireable** — an official CII assert with the same id
+  exists in a vendored CII artifact and its CII behaviour is not yet
+  differentially proven. This worklist is now **empty**: every such
+  rule has been either flipped to `syntax = UBL + CII` (a landed
+  differential proof) or reclassified below with evidence.
 - **4 cii-artifact-defective** — a vendored CII artifact
   carries the id, but the SHIPPED assert can never fire
   (`BR-AF-08`, `BR-AF-09`, `BR-AG-08`, `BR-AG-09`:
@@ -569,13 +573,28 @@ Measured split (committed as `cii_parity.json`, live-recomputed by
   and re-verified live by `test_cii_parity.py`; an artifact
   bump that fixes such an assert fails that gate and reopens
   the rule as cii-fireable.
-- **8 binding-inapplicable** — no vendored CII artifact carries
-  the id (`BR-DEX-02`, `BR-DEX-03`, `BR-DEX-09`, `BR-DEX-10`, `BR-DEX-11`, `BR-DEX-12`, `BR-DEX-13`, `BR-DEX-14`), so at the vendored
-  artifact versions these rules are officially UBL-only; there is
-  nothing to prove against on the CII leg.
+- **26 binding-inapplicable** — officially UBL-only for the
+  both-syntaxes core-model proof, in two evidence classes:
+  - **18 carried by a vendored CII artifact but out of
+    core-model scope** (`BR-DE-18`, `BR-DE-19`, `BR-DE-20`, `BR-DE-22`, `BR-DE-23-a`, `BR-DE-23-b`, `BR-DE-24-a`, `BR-DE-24-b`, `BR-DE-25-a`, `BR-DE-25-b`, `BR-DE-30`, `BR-DE-31`, `BR-DEX-01`, `BR-DEX-04`, `BR-DEX-05`, `BR-DEX-06`, `BR-DEX-07`, `BR-DEX-08`):
+    the assert exists and fires on a CII document, but its
+    `@context`/`@test` binds a CII-specific surface — the
+    national-CIUS payment-means / payment-terms / direct-debit /
+    attachment nodes or the KoSIT XRechnung EXTENSION profile
+    (`$isExtension`) — that the syntax-agnostic EN 16931 core
+    model deliberately does not carry. Each is FULLY
+    differentially proven on the UBL XRechnung leg and carries
+    verbatim `@context`/`@test` + a surface note in
+    `cii_parity.json`, re-verified live by `test_cii_parity.py`;
+    an artifact bump that re-binds it onto the core model fails
+    that gate and reopens the rule.
+  - **8 not carried by any vendored CII artifact** (`BR-DEX-02`, `BR-DEX-03`, `BR-DEX-09`, `BR-DEX-10`, `BR-DEX-11`, `BR-DEX-12`, `BR-DEX-13`, `BR-DEX-14`):
+    at the vendored artifact versions these rules are officially
+    UBL-only — there is nothing to prove against on the CII leg.
 
-This is a MEASUREMENT, not a claim: no `syntax` tag above flips on
-the strength of it. A cii-fireable rule stays `syntax = UBL` until
-its CII behaviour is differentially proven against the official
-artifact, exactly like every existing `UBL + CII` row.
+The `syntax` tags above are NOT flipped on the strength of this
+measurement: a rule reaches `syntax = UBL + CII` only via a landed
+`differential.py` proof (0 divergences on the CII leg). The worklist
+simply records, with evidence, why each remaining UBL-only rule is
+not — and cannot silently be — proven on CII.
 

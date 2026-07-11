@@ -1960,7 +1960,7 @@
       "id": "BR-CO-14",
       "title": "Invoice total VAT amount (BT-110) = Σ VAT category tax amount (BT-117).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -1976,8 +1976,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "official CII context requires a document-currency BT-110 (ram:TaxTotalAmount) which a no-VAT CII invoice legitimately omits, so the assert never fires there; the UBL transcription would over-reject those documents."
+          "differentially_proven": true
         }
       }
     },
@@ -1985,7 +1984,7 @@
       "id": "BR-CO-15",
       "title": "Invoice total with VAT (BT-112) = total without VAT (BT-109) + total VAT (BT-110).",
       "family": "core",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -2001,8 +2000,7 @@
           "suite": "CEN EN 16931",
           "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
           "version": "1.3.16",
-          "differentially_proven": false,
-          "reason": "the CII binding carries an extra GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for a no-VAT invoice with no BT-110; the UBL function has no such disjunct and would over-reject the same documents."
+          "differentially_proven": true
         }
       }
     },
@@ -7064,14 +7062,6 @@
       }
     ],
     "cii_core_out_of_scope": [
-      {
-        "id": "BR-CO-14",
-        "reason": "official CII context requires a document-currency BT-110 (ram:TaxTotalAmount) which a no-VAT CII invoice legitimately omits, so the assert never fires there; the UBL transcription would over-reject those documents."
-      },
-      {
-        "id": "BR-CO-15",
-        "reason": "the CII binding carries an extra GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for a no-VAT invoice with no BT-110; the UBL function has no such disjunct and would over-reject the same documents."
-      },
       {
         "id": "BR-AF-08",
         "reason": "the CII artifact binds this assert to the ram:ApplicableTradeTax ROW — unlike BR-S-08, whose context node is the ram:CategoryCode CHILD — so the test's ../ram:RateApplicablePercent resolves against the header settlement (no such children) and 'every $rate in ()' is vacuously true: the shipped assert can never fire. The engine asserts the intended per-rate round2 bucket sum on CII anyway (deliberate strictness)."

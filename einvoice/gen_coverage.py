@@ -97,14 +97,6 @@ PEPPOL_ARTIFACT_ORDER = ["xrechnung-ubl", "xrechnung-cii"]
 # Honest reasons a core rule is NOT graded on the CII leg (verbatim intent from
 # differential.CII_EXCLUDED_RULE_IDS' block comment).
 CII_CORE_REASON = {
-    "BR-CO-14": "official CII context requires a document-currency BT-110 "
-                "(ram:TaxTotalAmount) which a no-VAT CII invoice legitimately "
-                "omits, so the assert never fires there; the UBL transcription "
-                "would over-reject those documents.",
-    "BR-CO-15": "the CII binding carries an extra "
-                "GrandTotalAmount = TaxBasisTotalAmount disjunct that holds for "
-                "a no-VAT invoice with no BT-110; the UBL function has no such "
-                "disjunct and would over-reject the same documents.",
     "BR-AF-08": "the CII artifact binds this assert to the "
                 "ram:ApplicableTradeTax ROW — unlike BR-S-08, whose context "
                 "node is the ram:CategoryCode CHILD — so the test's "

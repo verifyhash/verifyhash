@@ -109,6 +109,104 @@ ARTIFACT_DEFECTS = {
     "BR-AG-09": {"kind": "tautology", "note": _DEFECT_NOTE_TAUTOLOGY},
 }
 
+# Rules whose id IS carried by a vendored CII artifact (so the assert exists and
+# CAN fire on a CII document) but whose @context/@test bind a CII-SPECIFIC
+# document surface that the syntax-agnostic EN 16931 core model deliberately
+# does NOT carry — the national-CIUS payment-means / payment-terms / direct-debit
+# / attachment surfaces and the KoSIT XRechnung EXTENSION profile. These are the
+# T-VHCIIP.9 TERMINAL close-out's evidence-backed deliberate CII-leg exclusions
+# (the T-VHCIIP.8 note anticipated them): each is FULLY differentially proven on
+# the UBL XRechnung leg (LEG 2) but is out of scope for the both-syntaxes
+# core-model CII proof, so it can never move to syntax='both'. They are NOT
+# artifact defects — the shipped assert fires correctly on a CII document that
+# carries the surface; they simply are not part of the core-model proof.
+#
+# They classify as ``binding-inapplicable`` (like the not-carried UBL-only
+# rules), but — unlike those — they carry VERBATIM artifact_evidence
+# (@context + @test from a live parse + a one-line note naming the CII surface),
+# re-verified on every run and gate: ``verify_binding_scope_exclusion`` asserts
+# the recorded surface marker STILL appears in the live @context/@test, so an
+# artifact bump that re-binds the rule onto the core model (removing the marker)
+# fails generation loudly and forces a re-review. Each entry names the exact
+# surface marker that must remain present as the evidence anchor.
+_SCOPE_NOTE_PAYMENT_MEANS = (
+    "carried by the vendored CII artifact and fires on a CII document, but its "
+    "@context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment "
+    "instructions: type code + financial-account / card / mandate children) — a "
+    "CII payment-means surface the syntax-agnostic EN 16931 core model does not "
+    "carry; the national CIUS rule is fully differentially proven on the UBL "
+    "leg and is deliberately excluded from the both-syntaxes core-model CII "
+    "proof.")
+_SCOPE_NOTE_PAYMENT_TERMS = (
+    "carried by the vendored CII artifact and fires on a CII document, but its "
+    "@test tokenizes ram:SpecifiedTradePaymentTerms/ram:Description free text "
+    "against the KoSIT #SKONTO# grammar — a CII payment-terms surface the "
+    "syntax-agnostic EN 16931 core model does not carry; fully proven on the "
+    "UBL leg, deliberately excluded from the both-syntaxes core-model CII proof.")
+_SCOPE_NOTE_DIRECT_DEBIT = (
+    "carried by the vendored CII artifact and fires on a CII document, but its "
+    "@test reconstructs the DIRECT DEBIT group (BG-19) from "
+    "ram:DirectDebitMandateID / ram:CreditorReferenceID / "
+    "ram:PayerPartyDebtorFinancialAccount/ram:IBANID presence (the "
+    "$BG-19-not-existing let) — a CII payment surface the syntax-agnostic "
+    "EN 16931 core model does not carry; fully proven on the UBL leg, "
+    "deliberately excluded from the both-syntaxes core-model CII proof.")
+_SCOPE_NOTE_ATTACHMENT = (
+    "carried by the vendored CII artifact and fires on a CII document, but its "
+    "@test compares every ram:AdditionalReferencedDocument/"
+    "ram:AttachmentBinaryObject/@filename for uniqueness — a CII attachment "
+    "surface the syntax-agnostic EN 16931 core model does not carry; fully "
+    "proven on the UBL leg, deliberately excluded from the both-syntaxes "
+    "core-model CII proof.")
+_SCOPE_NOTE_EXTENSION = (
+    "carried by the vendored CII artifact but gated behind the KoSIT XRechnung "
+    "EXTENSION profile ($isExtension: the extension conformance "
+    "GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for "
+    "extension-profile CII documents, a national extension surface with no "
+    "both-syntaxes core-model counterpart (as on the UBL side); fully proven "
+    "on the UBL leg, deliberately excluded from the both-syntaxes core-model "
+    "CII proof.")
+
+# marker = a verbatim substring that MUST remain present in the live
+# @context + @test (the evidence anchor); kind = short slug; note = above.
+_SCOPE_PAYMENT_MEANS_IDS = (
+    "BR-DE-19", "BR-DE-20", "BR-DE-23-a", "BR-DE-23-b", "BR-DE-24-a",
+    "BR-DE-24-b", "BR-DE-25-a", "BR-DE-25-b")
+BINDING_SCOPE_EXCLUSIONS = {
+    "BR-DE-18": {"kind": "cii-payment-terms-surface",
+                 "marker": "ram:SpecifiedTradePaymentTerms",
+                 "note": _SCOPE_NOTE_PAYMENT_TERMS},
+    "BR-DE-22": {"kind": "cii-attachment-surface",
+                 "marker": "ram:AttachmentBinaryObject/@filename",
+                 "note": _SCOPE_NOTE_ATTACHMENT},
+    "BR-DE-30": {"kind": "cii-direct-debit-surface",
+                 "marker": "$BG-19-not-existing",
+                 "note": _SCOPE_NOTE_DIRECT_DEBIT},
+    "BR-DE-31": {"kind": "cii-direct-debit-surface",
+                 "marker": "$BG-19-not-existing",
+                 "note": _SCOPE_NOTE_DIRECT_DEBIT},
+    "BR-DEX-01": {"kind": "cii-extension-profile",
+                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
+    "BR-DEX-04": {"kind": "cii-extension-profile",
+                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
+    "BR-DEX-05": {"kind": "cii-extension-profile",
+                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
+    "BR-DEX-06": {"kind": "cii-extension-profile",
+                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
+    "BR-DEX-07": {"kind": "cii-extension-profile",
+                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
+    "BR-DEX-08": {"kind": "cii-extension-profile",
+                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
+}
+for _rid in _SCOPE_PAYMENT_MEANS_IDS:
+    BINDING_SCOPE_EXCLUSIONS[_rid] = {
+        "kind": "cii-payment-means-surface",
+        "marker": "ram:SpecifiedTradeSettlementPaymentMeans",
+        "note": _SCOPE_NOTE_PAYMENT_MEANS,
+    }
+assert not (set(ARTIFACT_DEFECTS) & set(BINDING_SCOPE_EXCLUSIONS)), (
+    "a rule is BOTH an artifact defect and a scope exclusion")
+
 _SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
 
 
@@ -154,6 +252,30 @@ def verify_artifact_defect(rid, entry, context):
             "%s: recorded as row-bound-context but the assert no longer "
             "quantifies over ../ram:RateApplicablePercent (@test=%r)"
             % (rid, test[:120]))
+    return {
+        "kind": spec["kind"],
+        "context": context,
+        "test": test,
+        "note": spec["note"],
+    }
+
+
+def verify_binding_scope_exclusion(rid, entry, context):
+    """Re-verify a recorded binding-scope exclusion against the LIVE parse;
+    returns the evidence dict to embed, or raises AssertionError when the
+    artifact no longer binds the recorded CII surface (the marker vanished — an
+    upstream re-binding onto the core model, at which point the rule must be
+    re-reviewed and either differentially proven or re-excluded)."""
+    spec = BINDING_SCOPE_EXCLUSIONS[rid]
+    test = entry["test"]
+    marker = spec["marker"]
+    haystack = (context or "") + "\n" + (test or "")
+    assert marker in haystack, (
+        "%s: recorded as a %s binding-scope exclusion anchored on %r, but that "
+        "surface marker is absent from the vendored artifact's live "
+        "@context/@test — the rule was re-bound upstream; re-review it "
+        "(prove it on CII or re-anchor the exclusion). context=%r test=%r"
+        % (rid, spec["kind"], marker, (context or "")[:80], (test or "")[:80]))
     return {
         "kind": spec["kind"],
         "context": context,
@@ -211,6 +333,24 @@ def build_parity(matrix=None, indexes=None):
                 "classification": CLASS_DEFECTIVE,
                 "cii_artifact": artifact,
                 "artifact_evidence": verify_artifact_defect(
+                    rid, indexes[artifact_key][rid],
+                    context_cache[artifact_key].get(rid, "")),
+            })
+            continue
+        if artifact and rid in BINDING_SCOPE_EXCLUSIONS:
+            # Carried by a CII artifact but binds a CII-specific surface outside
+            # the syntax-agnostic core model: a deliberate CII-leg exclusion
+            # (binding-inapplicable) with VERBATIM artifact evidence, re-verified
+            # live so an upstream re-binding onto the core model reopens it.
+            if artifact_key not in context_cache:
+                context_cache[artifact_key] = cii_assert_context_index(
+                    artifact)
+            entries.append({
+                "id": rid,
+                "family": rule["family"],
+                "classification": CLASS_INAPPLICABLE,
+                "cii_artifact": artifact,
+                "artifact_evidence": verify_binding_scope_exclusion(
                     rid, indexes[artifact_key][rid],
                     context_cache[artifact_key].get(rid, "")),
             })

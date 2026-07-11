@@ -1068,7 +1068,46 @@ def br_co_14(inv):
     casts to the empty sequence, so ``() = n`` is false and the assert FIRES
     (this is the large gap the differential surfaced, e.g. a bare
     ``<TaxTotal><TaxSubtotal/></TaxTotal>``).
+
+    The official CII binding (context = each ``ram:TaxTotalAmount`` whose
+    ``@currencyID`` equals BT-5, transcribed T-VHCIIP.9)::
+
+        . = round(sum(//ram:ApplicableHeaderTradeSettlement/
+                      ram:ApplicableTradeTax/ram:CalculatedAmount) * 10 * 10)
+              div 100
+
+    is GENUINELY different from the UBL binding in two ways the differential
+    pinned down, so the body branches on ``inv.syntax``:
+
+    * the rule context is the document-currency BT-110 element ITSELF, not the
+      breakdown — a no-VAT CII invoice that legitimately OMITS ram:TaxTotalAmount
+      has no context node, so the assert never fires (where the UBL binding,
+      which fires when a subtotal exists but the total is absent, over-rejects);
+    * the compared total is the round2 sum of EVERY breakdown BT-117
+      (``ram:CalculatedAmount``), with no per-TaxTotal grouping (CII carries a
+      single header breakdown).
     """
+    if inv.syntax == "cii":
+        totals = inv.cii_doc_currency_tax_total_values
+        if not totals:
+            return None  # no document-currency BT-110 -> empty context
+        breakdown_sum = Decimal("0")
+        for st in inv.all_tax_subtotals:
+            v = _dec(st.tax_amount)               # BT-117 ram:CalculatedAmount
+            if v is not None:
+                breakdown_sum += v
+        expected = _xr2(breakdown_sum)
+        for raw in totals:
+            stated = _dec(raw)
+            if stated is None or stated != expected:
+                return Violation(
+                    "BR-CO-14",
+                    "Invoice total VAT amount (BT-110=%s) must equal the sum of "
+                    "VAT category tax amounts (Σ BT-117=%s)."
+                    % ("(absent)" if stated is None else _q(stated), expected),
+                    "ram:SpecifiedTradeSettlementHeaderMonetarySummation/"
+                    "ram:TaxTotalAmount")
+        return None
     for tt in inv.tax_totals:
         if not tt.subtotals:
             continue  # not(cac:TaxSubtotal) -> assert holds
@@ -1109,10 +1148,56 @@ def br_co_15(inv):
       ``@currencyID`` equals the document currency counts, and there must be
       exactly one. Summing across foreign-currency tax totals (as we used to)
       over-rejects — the source of the false positives on mixed-currency samples.
+
+    The official CII binding (context ``/rsm:CrossIndustryInvoice``, transcribed
+    T-VHCIIP.9) is::
+
+        every $Currency in .../ram:InvoiceCurrencyCode satisfies
+          ( count(.../ram:TaxTotalAmount[@currencyID = $Currency]) = 1
+            and GrandTotalAmount[1]
+                  = round((TaxBasisTotalAmount[1]
+                           + TaxTotalAmount[@currencyID=$Currency][1]) * 100)
+                      div 100 )
+          or ( GrandTotalAmount[1] = TaxBasisTotalAmount[1] )
+
+    which carries an EXTRA disjunct — ``GrandTotalAmount = TaxBasisTotalAmount``
+    — with no UBL counterpart. It HOLDS for a no-VAT CII invoice that omits
+    BT-110 (BT-112 == BT-109 there), so the UBL function (which requires exactly
+    one document-currency VAT total and has no such disjunct) over-rejects those
+    documents. The body branches on ``inv.syntax`` and transcribes each binding
+    exactly. GrandTotalAmount=BT-112 (``tax_inclusive_amount``),
+    TaxBasisTotalAmount=BT-109 (``tax_exclusive_amount``).
     """
     cur = inv.document_currency_code
     if not cur:
         return None  # every $Currency in () satisfies ... -> vacuously true
+
+    if inv.syntax == "cii":
+        grand = _dec(inv.tax_inclusive_amount)   # BT-112 GrandTotalAmount[1]
+        basis = _dec(inv.tax_exclusive_amount)   # BT-109 TaxBasisTotalAmount[1]
+        # Disjunct 2: GrandTotalAmount = TaxBasisTotalAmount (a missing operand
+        # casts to () and the comparison is false, exactly like XPath).
+        if grand is not None and basis is not None and grand == basis:
+            return None
+        matching = list(inv.cii_doc_currency_tax_total_values)
+        if len(matching) == 1:
+            tax = _dec(matching[0])
+            if (grand is not None and basis is not None and tax is not None
+                    and grand == _xr2(basis + tax)):
+                return None
+            detail = ("Invoice total with VAT (BT-112=%s) must equal total "
+                      "without VAT (BT-109=%s) + total VAT (BT-110=%s)."
+                      % (inv.tax_inclusive_amount or "(absent)",
+                         inv.tax_exclusive_amount or "(absent)",
+                         matching[0] or "(absent)"))
+        else:
+            detail = ("exactly one VAT total (BT-110) in the document currency "
+                      "%r is required (or BT-112 = BT-109); found %d."
+                      % (cur, len(matching)))
+        return Violation(
+            "BR-CO-15", "Invoice total with VAT must reconcile: " + detail,
+            "ram:SpecifiedTradeSettlementHeaderMonetarySummation/"
+            "ram:GrandTotalAmount")
 
     # count(cac:TaxTotal/cbc:TaxAmount[@currencyID = document currency])
     matching = [_dec(tt.tax_amount) for tt in inv.tax_totals

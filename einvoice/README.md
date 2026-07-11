@@ -71,21 +71,27 @@ CII — 52 graded ids × 117 invoices = **6,084 comparisons**. See
 [`CORRECTNESS.md`](CORRECTNESS.md) for the method, corpora, and the honest
 limits of those claims.
 
-**CII proof parity is tracked live, not frozen.** The two bindings share one
+**CII proof parity — the worklist is now CLOSED.** The two bindings share one
 rule registry, but a rule only earns `syntax = UBL + CII` in the matrix once
-it is differentially proven on the CII artifact too. Which rules have that
-proof — and which remain UBL-proven-only — is machine-tracked:
-`test_cii_parity.py` recomputes the worklist (`cii_parity.json`) from the
-live coverage matrix plus a real XML parse of the vendored CII Schematron,
-and fails on any drift, so the parity gap can neither be hand-edited nor go
-stale. The majority of rules are differential-proven on both bindings; the
-remainder is an explicit, recomputed-live worklist. As of 2026-07-11: **196
-of the 286 rules proven on both bindings, 81 CII-fireable rules still on the
-worklist, 8 binding-inapplicable on CII** (the CII artifact ships them
-vacuous, as a tautology, or with a deliberately different binding — reasons
-per rule in `COVERAGE.md`), **and 1 CII-only rule** (`BR-TMP-3`). Those
-counts move as parity batches land — the committed worklist is the
-authoritative current state, not this paragraph.
+it is differentially proven on the CII artifact too, and which rules have that
+proof is machine-tracked: `test_cii_parity.py` recomputes the worklist
+(`cii_parity.json`) from the live coverage matrix plus a real XML parse of the
+vendored CII Schematron, and fails on any drift, so the parity gap can neither
+be hand-edited nor go stale. As of 2026-07-11 the arc is terminal: **255 of
+the 286 asserted rules are differential-proven on both the UBL and CII
+bindings, 30 are officially UBL-only, and 1 is CII-only** (`BR-TMP-3`).
+**Zero rules remain on the cii-fireable worklist** — every one of the 30
+UBL-only rules the vendored CII artifacts were measured against is resolved
+with evidence: **4 are cii-artifact-defective** (the CII artifact ships them
+as a `test="true()"` tautology or bound to a row whose `every $rate in ()` is
+vacuously true — they can never fire) and **26 are binding-inapplicable**
+(**18** carried by a CII artifact but binding a national-CIUS payment-means /
+payment-terms / direct-debit / attachment surface or the KoSIT XRechnung
+EXTENSION profile that the syntax-agnostic core model deliberately omits —
+each fully proven on the UBL leg and carrying verbatim `@context`/`@test`
+evidence — and **8** carried by no vendored CII artifact at all). Every one of
+those reasons is re-verified live against the vendored artifacts on each run;
+the committed worklist and `COVERAGE.md` are the authoritative state.
 
 ---
 

@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 255,
+  "rule_count": 276,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -4807,6 +4807,321 @@
       "title_de": "Die Währungsangabe von \"Third party payment amount\" BT-DEX-002 muss BT-5 (\"Invoice currency code\") entsprechen.",
       "fix_de": "Korrigieren Sie den berechneten Betrag bei `/ubl:Invoice/cac:PrepaidPayment`, sodass gilt: Die Währungsangabe von \"Third party payment amount\" BT-DEX-002 muss BT-5 (\"Invoice currency code\") entsprechen.",
       "de_source": "kosit"
+    },
+    "PEPPOL-EN16931-R001": {
+      "title": "Business process MUST be provided.",
+      "requires": "Business process MUST be provided.",
+      "bt_bg": [],
+      "location_hint": "cbc:ProfileID",
+      "fix": "Add the required element at `cbc:ProfileID`: Business process MUST be provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Business process MUST be provided."
+      },
+      "title_de": "Der Geschäftsprozess MUSS angegeben werden.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cbc:ProfileID`: Der Geschäftsprozess MUSS angegeben werden.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R005": {
+      "title": "VAT accounting currency code MUST be different from invoice currency code when provided.",
+      "requires": "VAT accounting currency code MUST be different from invoice currency code when provided.",
+      "bt_bg": [],
+      "location_hint": "cbc:TaxCurrencyCode",
+      "fix": "Correct `cbc:TaxCurrencyCode` so that VAT accounting currency code MUST be different from invoice currency code when provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "VAT accounting currency code MUST be different from invoice currency code when provided."
+      },
+      "title_de": "Der Code der Währung der Umsatzsteuerabrechnung MUSS sich vom Code der Rechnungswährung unterscheiden, sofern er angegeben ist.",
+      "fix_de": "Korrigieren Sie `cbc:TaxCurrencyCode`, sodass gilt: Der Code der Währung der Umsatzsteuerabrechnung MUSS sich vom Code der Rechnungswährung unterscheiden, sofern er angegeben ist.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R008": {
+      "title": "Document MUST not contain empty elements.",
+      "requires": "Document MUST not contain empty elements.",
+      "bt_bg": [],
+      "location_hint": "//*[not(*) and not(normalize-space())]",
+      "fix": "Correct `//*[not(*) and not(normalize-space())]` so that Document MUST not contain empty elements.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Document MUST not contain empty elements."
+      },
+      "title_de": "Das Dokument DARF keine leeren Elemente enthalten.",
+      "fix_de": "Korrigieren Sie `//*[not(*) and not(normalize-space())]`, sodass gilt: Das Dokument DARF keine leeren Elemente enthalten.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R010": {
+      "title": "Buyer electronic address MUST be provided.",
+      "requires": "Buyer electronic address MUST be provided",
+      "bt_bg": [],
+      "location_hint": "cac:AccountingCustomerParty/cac:Party/cbc:EndpointID",
+      "fix": "Add the required element at `cac:AccountingCustomerParty/cac:Party/cbc:EndpointID`: Buyer electronic address MUST be provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Buyer electronic address MUST be provided"
+      },
+      "title_de": "Die elektronische Adresse des Erwerbers MUSS angegeben werden.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:AccountingCustomerParty/cac:Party/cbc:EndpointID`: Die elektronische Adresse des Erwerbers MUSS angegeben werden.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R020": {
+      "title": "Seller electronic address MUST be provided.",
+      "requires": "Seller electronic address MUST be provided",
+      "bt_bg": [],
+      "location_hint": "cac:AccountingSupplierParty/cac:Party/cbc:EndpointID",
+      "fix": "Add the required element at `cac:AccountingSupplierParty/cac:Party/cbc:EndpointID`: Seller electronic address MUST be provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Seller electronic address MUST be provided"
+      },
+      "title_de": "Die elektronische Adresse des Verkäufers MUSS angegeben werden.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:AccountingSupplierParty/cac:Party/cbc:EndpointID`: Die elektronische Adresse des Verkäufers MUSS angegeben werden.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R040": {
+      "title": "Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists.",
+      "requires": "Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists",
+      "bt_bg": [],
+      "location_hint": "/ubl:Invoice/cac:AllowanceCharge",
+      "fix": "Correct the calculated amount at `/ubl:Invoice/cac:AllowanceCharge` so that Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists"
+      },
+      "title_de": "Der Betrag des Nachlasses bzw. Zuschlags muss gleich Grundbetrag * Prozentsatz/100 sein, wenn Grundbetrag und Prozentsatz angegeben sind.",
+      "fix_de": "Korrigieren Sie den berechneten Betrag bei `/ubl:Invoice/cac:AllowanceCharge`, sodass gilt: Der Betrag des Nachlasses bzw. Zuschlags muss gleich Grundbetrag * Prozentsatz/100 sein, wenn Grundbetrag und Prozentsatz angegeben sind.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R041": {
+      "title": "Allowance/charge base amount MUST be provided when allowance/charge percentage is provided.",
+      "requires": "Allowance/charge base amount MUST be provided when allowance/charge percentage is provided.",
+      "bt_bg": [],
+      "location_hint": "/ubl:Invoice/cac:AllowanceCharge[cbc:MultiplierFactorNumeric and not(cbc:BaseAmount)]",
+      "fix": "Add the required element at `/ubl:Invoice/cac:AllowanceCharge[cbc:MultiplierFactorNumeric and not(cbc:BaseAmount)]`: Allowance/charge base amount MUST be provided when allowance/charge percentage is provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Allowance/charge base amount MUST be provided when allowance/charge percentage is provided."
+      },
+      "title_de": "Der Grundbetrag des Nachlasses bzw. Zuschlags MUSS angegeben werden, wenn der Prozentsatz des Nachlasses bzw. Zuschlags angegeben ist.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AllowanceCharge[cbc:MultiplierFactorNumeric and not(cbc:BaseAmount)]`: Der Grundbetrag des Nachlasses bzw. Zuschlags MUSS angegeben werden, wenn der Prozentsatz des Nachlasses bzw. Zuschlags angegeben ist.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R042": {
+      "title": "Allowance/charge percentage MUST be provided when allowance/charge base amount is provided.",
+      "requires": "Allowance/charge percentage MUST be provided when allowance/charge base amount is provided.",
+      "bt_bg": [],
+      "location_hint": "/ubl:Invoice/cac:AllowanceCharge[not(cbc:MultiplierFactorNumeric) and cbc:BaseAmount]",
+      "fix": "Add the required element at `/ubl:Invoice/cac:AllowanceCharge[not(cbc:MultiplierFactorNumeric) and cbc:BaseAmount]`: Allowance/charge percentage MUST be provided when allowance/charge base amount is provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Allowance/charge percentage MUST be provided when allowance/charge base amount is provided."
+      },
+      "title_de": "Der Prozentsatz des Nachlasses bzw. Zuschlags MUSS angegeben werden, wenn der Grundbetrag des Nachlasses bzw. Zuschlags angegeben ist.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AllowanceCharge[not(cbc:MultiplierFactorNumeric) and cbc:BaseAmount]`: Der Prozentsatz des Nachlasses bzw. Zuschlags MUSS angegeben werden, wenn der Grundbetrag des Nachlasses bzw. Zuschlags angegeben ist.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R043": {
+      "title": "Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'.",
+      "requires": "Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'",
+      "bt_bg": [],
+      "location_hint": "/ubl:Invoice/cac:AllowanceCharge",
+      "fix": "Correct `/ubl:Invoice/cac:AllowanceCharge` so that Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'"
+      },
+      "title_de": "Der Wert des ChargeIndicator eines Nachlasses bzw. Zuschlags MUSS 'true' oder 'false' sein.",
+      "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:AllowanceCharge`, sodass gilt: Der Wert des ChargeIndicator eines Nachlasses bzw. Zuschlags MUSS 'true' oder 'false' sein.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R044": {
+      "title": "Charge on price level is NOT allowed. Only value 'false' allowed.",
+      "requires": "Charge on price level is NOT allowed. Only value 'false' allowed.",
+      "bt_bg": [],
+      "location_hint": "cac:Price/cac:AllowanceCharge",
+      "fix": "Correct `cac:Price/cac:AllowanceCharge` so that Charge on price level is NOT allowed. Only value 'false' allowed.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Charge on price level is NOT allowed. Only value 'false' allowed."
+      },
+      "title_de": "Ein Zuschlag auf Preisebene ist NICHT zulässig. Nur der Wert 'false' ist zulässig.",
+      "fix_de": "Korrigieren Sie `cac:Price/cac:AllowanceCharge`, sodass gilt: Ein Zuschlag auf Preisebene ist NICHT zulässig. Nur der Wert 'false' ist zulässig.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R046": {
+      "title": "Item net price MUST equal (Gross price - Allowance amount) when gross price is provided.",
+      "requires": "Item net price MUST equal (Gross price - Allowance amount) when gross price is provided.",
+      "bt_bg": [],
+      "location_hint": "cac:Price/cac:AllowanceCharge",
+      "fix": "Correct the calculated amount at `cac:Price/cac:AllowanceCharge` so that Item net price MUST equal (Gross price - Allowance amount) when gross price is provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Item net price MUST equal (Gross price - Allowance amount) when gross price is provided."
+      },
+      "title_de": "Der Nettopreis des Artikels MUSS gleich (Bruttopreis - Nachlassbetrag) sein, wenn der Bruttopreis angegeben ist.",
+      "fix_de": "Korrigieren Sie den berechneten Betrag bei `cac:Price/cac:AllowanceCharge`, sodass gilt: Der Nettopreis des Artikels MUSS gleich (Bruttopreis - Nachlassbetrag) sein, wenn der Bruttopreis angegeben ist.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R053": {
+      "title": "Only one tax total with tax subtotals MUST be provided.",
+      "requires": "Only one tax total with tax subtotals MUST be provided.",
+      "bt_bg": [],
+      "location_hint": "cac:TaxTotal",
+      "fix": "Correct `cac:TaxTotal` so that Only one tax total with tax subtotals MUST be provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Only one tax total with tax subtotals MUST be provided."
+      },
+      "title_de": "Es MUSS genau eine Steuergesamtsumme mit Steuerteilsummen angegeben werden.",
+      "fix_de": "Korrigieren Sie `cac:TaxTotal`, sodass gilt: Es MUSS genau eine Steuergesamtsumme mit Steuerteilsummen angegeben werden.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R054": {
+      "title": "Only one tax total without tax subtotals MUST be provided when tax currency code is provided.",
+      "requires": "Only one tax total without tax subtotals MUST be provided when tax currency code is provided.",
+      "bt_bg": [],
+      "location_hint": "cac:TaxTotal",
+      "fix": "Correct `cac:TaxTotal` so that Only one tax total without tax subtotals MUST be provided when tax currency code is provided.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Only one tax total without tax subtotals MUST be provided when tax currency code is provided."
+      },
+      "title_de": "Es MUSS genau eine Steuergesamtsumme ohne Steuerteilsummen angegeben werden, wenn ein Code für die Steuerwährung angegeben ist.",
+      "fix_de": "Korrigieren Sie `cac:TaxTotal`, sodass gilt: Es MUSS genau eine Steuergesamtsumme ohne Steuerteilsummen angegeben werden, wenn ein Code für die Steuerwährung angegeben ist.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R055": {
+      "title": "Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign.",
+      "requires": "Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign",
+      "bt_bg": [],
+      "location_hint": "cac:TaxTotal/cbc:TaxAmount",
+      "fix": "Correct `cac:TaxTotal/cbc:TaxAmount` so that Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign"
+      },
+      "title_de": "Der Gesamtbetrag der Umsatzsteuer und der Gesamtbetrag der Umsatzsteuer in der Abrechnungswährung MÜSSEN dasselbe Vorzeichen haben.",
+      "fix_de": "Korrigieren Sie `cac:TaxTotal/cbc:TaxAmount`, sodass gilt: Der Gesamtbetrag der Umsatzsteuer und der Gesamtbetrag der Umsatzsteuer in der Abrechnungswährung MÜSSEN dasselbe Vorzeichen haben.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R061": {
+      "title": "Mandate reference MUST be provided for direct debit.",
+      "requires": "Mandate reference MUST be provided for direct debit.",
+      "bt_bg": [],
+      "location_hint": "cac:PaymentMeans[some $code in tokenize('49 59', '\\s') satisfies normalize-space(cbc:PaymentMeansCode) = $code]/cac:PaymentMandate/cbc:ID",
+      "fix": "Add the required element at `cac:PaymentMeans[some $code in tokenize('49 59', '\\s') satisfies normalize-space(cbc:PaymentMeansCode) = $code]/cac:PaymentMandate/cbc:ID`: Mandate reference MUST be provided for direct debit.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Mandate reference MUST be provided for direct debit."
+      },
+      "title_de": "Die Mandatsreferenz MUSS bei Lastschrift angegeben werden.",
+      "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:PaymentMeans[some $code in tokenize('49 59', '\\s') satisfies normalize-space(cbc:PaymentMeansCode) = $code]/cac:PaymentMandate/cbc:ID`: Die Mandatsreferenz MUSS bei Lastschrift angegeben werden.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R101": {
+      "title": "Element Document reference can only be used for Invoice line object.",
+      "requires": "Element Document reference can only be used for Invoice line object",
+      "bt_bg": [],
+      "location_hint": "cac:InvoiceLine/cac:DocumentReference",
+      "fix": "Correct `cac:InvoiceLine/cac:DocumentReference` so that Element Document reference can only be used for Invoice line object.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Element Document reference can only be used for Invoice line object"
+      },
+      "title_de": "Das Element „Document reference“ darf nur für das Objekt der Rechnungsposition verwendet werden.",
+      "fix_de": "Korrigieren Sie `cac:InvoiceLine/cac:DocumentReference`, sodass gilt: Das Element „Document reference“ darf nur für das Objekt der Rechnungsposition verwendet werden.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R110": {
+      "title": "Start date of line period MUST be within invoice period. (Line start >= document invoice-period start.)",
+      "requires": "Start date of line period MUST be within invoice period.",
+      "bt_bg": [],
+      "location_hint": "/ubl:Invoice[cac:InvoicePeriod/cbc:StartDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:StartDate",
+      "fix": "Correct `/ubl:Invoice[cac:InvoicePeriod/cbc:StartDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:StartDate` so that Start date of line period MUST be within invoice period.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Start date of line period MUST be within invoice period."
+      },
+      "title_de": "Das Startdatum des Positionszeitraums MUSS innerhalb des Rechnungszeitraums liegen.",
+      "fix_de": "Korrigieren Sie `/ubl:Invoice[cac:InvoicePeriod/cbc:StartDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:StartDate`, sodass gilt: Das Startdatum des Positionszeitraums MUSS innerhalb des Rechnungszeitraums liegen.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R111": {
+      "title": "End date of line period MUST be within invoice period. (Line end <= document invoice-period end.)",
+      "requires": "End date of line period MUST be within invoice period.",
+      "bt_bg": [],
+      "location_hint": "/ubl:Invoice[cac:InvoicePeriod/cbc:EndDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:EndDate",
+      "fix": "Correct `/ubl:Invoice[cac:InvoicePeriod/cbc:EndDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:EndDate` so that End date of line period MUST be within invoice period.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "End date of line period MUST be within invoice period."
+      },
+      "title_de": "Das Enddatum des Positionszeitraums MUSS innerhalb des Rechnungszeitraums liegen.",
+      "fix_de": "Korrigieren Sie `/ubl:Invoice[cac:InvoicePeriod/cbc:EndDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:EndDate`, sodass gilt: Das Enddatum des Positionszeitraums MUSS innerhalb des Rechnungszeitraums liegen.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R120": {
+      "title": "Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount.",
+      "requires": "Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount",
+      "bt_bg": [],
+      "location_hint": "cac:InvoiceLine/cbc:LineExtensionAmount",
+      "fix": "Correct the calculated amount at `cac:InvoiceLine/cbc:LineExtensionAmount` so that Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount.",
+      "severity": "warning",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount"
+      },
+      "title_de": "Der Nettobetrag der Rechnungsposition MUSS gleich (In Rechnung gestellte Menge * (Nettopreis des Artikels/Basismenge des Preises) + Summe der Zuschläge auf Positionsebene - Summe der Nachlässe auf Positionsebene) sein.",
+      "fix_de": "Korrigieren Sie den berechneten Betrag bei `cac:InvoiceLine/cbc:LineExtensionAmount`, sodass gilt: Der Nettobetrag der Rechnungsposition MUSS gleich (In Rechnung gestellte Menge * (Nettopreis des Artikels/Basismenge des Preises) + Summe der Zuschläge auf Positionsebene - Summe der Nachlässe auf Positionsebene) sein.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R121": {
+      "title": "Base quantity MUST be a positive number above zero.",
+      "requires": "Base quantity MUST be a positive number above zero.",
+      "bt_bg": [],
+      "location_hint": "cac:InvoiceLine/cac:Price/cbc:BaseQuantity",
+      "fix": "Correct `cac:InvoiceLine/cac:Price/cbc:BaseQuantity` so that Base quantity MUST be a positive number above zero.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Base quantity MUST be a positive number above zero."
+      },
+      "title_de": "Die Basismenge MUSS eine positive Zahl größer als null sein.",
+      "fix_de": "Korrigieren Sie `cac:InvoiceLine/cac:Price/cbc:BaseQuantity`, sodass gilt: Die Basismenge MUSS eine positive Zahl größer als null sein.",
+      "de_source": "translation"
+    },
+    "PEPPOL-EN16931-R130": {
+      "title": "Unit code of price base quantity MUST be same as invoiced quantity.",
+      "requires": "Unit code of price base quantity MUST be same as invoiced quantity.",
+      "bt_bg": [],
+      "location_hint": "cac:Price/cbc:BaseQuantity[@unitCode]",
+      "fix": "Correct `cac:Price/cbc:BaseQuantity[@unitCode]` so that Unit code of price base quantity MUST be same as invoiced quantity.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "Unit code of price base quantity MUST be same as invoiced quantity."
+      },
+      "title_de": "Der Einheitencode der Basismenge des Preises MUSS mit dem Einheitencode der in Rechnung gestellten Menge übereinstimmen.",
+      "fix_de": "Korrigieren Sie `cac:Price/cbc:BaseQuantity[@unitCode]`, sodass gilt: Der Einheitencode der Basismenge des Preises MUSS mit dem Einheitencode der in Rechnung gestellten Menge übereinstimmen.",
+      "de_source": "translation"
     }
   }
 }

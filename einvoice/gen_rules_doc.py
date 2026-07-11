@@ -25,6 +25,7 @@ Standard library only; no network.
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -63,6 +64,10 @@ FAMILY_LABELS = {
     "BR-DE": "German XRechnung national CIUS rules (KoSIT).",
     "BR-DE-TMP": "German XRechnung national rules (BR-DE-TMP).",
     "BR-DEX": "German XRechnung extension-layer rules (BR-DEX).",
+    "PEPPOL-EN16931": "Peppol-derived rules as vendored inside the official "
+                      "KoSIT XRechnung Schematron artifact — the "
+                      "KoSIT-vendored subset only, NOT full Peppol BIS "
+                      "Billing 3.0 support.",
 }
 
 
@@ -72,12 +77,14 @@ def family_of(rule_id):
     Strips a trailing single-letter variant suffix (``-a`` / ``-b``) and the
     trailing rule number, leaving the family prefix: ``BR-01`` -> ``BR``,
     ``BR-DE-15`` -> ``BR-DE``, ``BR-DE-23-a`` -> ``BR-DE``,
-    ``BR-DE-TMP-32`` -> ``BR-DE-TMP``, ``BR-DEX-01`` -> ``BR-DEX``.
+    ``BR-DE-TMP-32`` -> ``BR-DE-TMP``, ``BR-DEX-01`` -> ``BR-DEX``,
+    ``PEPPOL-EN16931-R001`` -> ``PEPPOL-EN16931`` (the ``R``-prefixed rule
+    number of the Peppol family is stripped like a plain number).
     """
     toks = rule_id.split("-")
     if len(toks) > 2 and toks[-1].isalpha() and len(toks[-1]) == 1:
         toks = toks[:-1]
-    if toks[-1].isdigit():
+    if toks[-1].isdigit() or re.fullmatch(r"R\d+", toks[-1]):
         toks = toks[:-1]
     return "-".join(toks)
 

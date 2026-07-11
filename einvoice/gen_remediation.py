@@ -46,6 +46,7 @@ sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import rules as _rules              # noqa: E402
 from einvoice import rules_xrechnung as _rules_xr  # noqa: E402
+from einvoice import rules_peppol as _rules_pep    # noqa: E402
 from einvoice import coverage as _coverage         # noqa: E402
 
 OUT_PATH = os.path.join(HERE, "remediation_catalog.json")
@@ -117,6 +118,16 @@ def _xr_fns():
     return {fn.rule_id: fn for fn in _rules_xr.ALL_RULES}
 
 
+def _pep_fns():
+    """Canonical id -> one live registry function of the KoSIT-vendored
+    PEPPOL-EN16931-R* family (severity is identical across the bindings and
+    across the split CII asserts, so any representative works)."""
+    out = {}
+    for fn in _rules_pep.UBL_RULES + _rules_pep.CII_RULES:
+        out.setdefault(fn.rule_id, fn)
+    return out
+
+
 def _core_severity(fn):
     """Raw Schematron flag the core rule emits (fatal unless it passes a
     'warning'/'information' literal to Violation) — same read as gen_coverage."""
@@ -129,15 +140,20 @@ def _core_severity(fn):
     return "fatal"
 
 
-def engine_severity(rid, core_fns, xr_fns):
+def engine_severity(rid, core_fns, xr_fns, pep_fns=None):
     if rid in xr_fns:
         return xr_fns[rid].severity
+    if pep_fns and rid in pep_fns:
+        return pep_fns[rid].severity
     return _core_severity(core_fns[rid])
 
 
 def source_key(rid):
     """The coverage-matrix schematron_sources key the wording is derived from."""
-    if rid.startswith("BR-DE") or rid.startswith("BR-DEX"):
+    if (rid.startswith("BR-DE") or rid.startswith("BR-DEX")
+            or rid.startswith("PEPPOL-")):
+        # The PEPPOL-EN16931-R* family is vendored INSIDE the KoSIT XRechnung
+        # artifact (its peppol-ubl-* patterns), same file as BR-DE/BR-DEX.
         return "xrechnung-ubl"
     return "en16931-ubl"
 
@@ -190,12 +206,49 @@ def canonical_context(ctx):
     return part.strip()
 
 
+# The two PEPPOL asserts whose @test constrains a node it only reaches through
+# rule VARIABLES / trailing operands (no leading cac/cbc path to read): the
+# subject below is the node the official expression actually compares, read
+# out of the artifact's own <let>s (R120: $lineExtensionAmount :=
+# cbc:LineExtensionAmount) / comparison operands (R055: the
+# cac:TaxTotal/cbc:TaxAmount sign check). Nothing is invented.
+_PEPPOL_TEST_SUBJECT = {
+    "PEPPOL-EN16931-R120": "cac:InvoiceLine/cbc:LineExtensionAmount",
+    "PEPPOL-EN16931-R055": "cac:TaxTotal/cbc:TaxAmount",
+}
+
+
+def _peppol_location(rid, rec):
+    """Location for a PEPPOL-EN16931-R* assert: the UBL *Invoice* branch of
+    the (Invoice | CreditNote) context union, refined with the concrete
+    element read out of the @test XPath when the context is the document
+    root or a bare line."""
+    if rid in _PEPPOL_TEST_SUBJECT:
+        return _PEPPOL_TEST_SUBJECT[rid]
+    parts = [p.strip() for p in rec["context"].split("|")]
+    part = next((p for p in parts if "ubl-invoice:Invoice" in p), parts[0])
+    part = re.sub(r"\s+", " ", part)
+    canon = part.replace("ubl-invoice:Invoice", "/ubl:Invoice")
+    test = rec.get("test") or ""
+    m = _LEAD_PATH.match(test) or _ANY_PATH.search(test)
+    if canon == "/ubl:Invoice":
+        return m.group(1) if m else canon
+    if canon == "cac:InvoiceLine":
+        return "cac:InvoiceLine/" + m.group(1) if m else canon
+    if _PEPPOL_FIX_FAMILY.get(rid) == "presence" and m:
+        # A bare element-existence test: point at the element to ADD.
+        return canon + "/" + m.group(1)
+    return canon
+
+
 def derive_location(rid, rec):
     """The XML path/element the finding concerns.
 
     Uses the Schematron rule context; when that context is the whole document,
     reads the concrete target element out of the assert's @test XPath so the hint
     points at a real element rather than the document root."""
+    if rid.startswith("PEPPOL-"):
+        return _peppol_location(rid, rec)
     canon = canonical_context(rec["context"])
     if canon not in _DOC_ROOTS:
         return canon
@@ -246,6 +299,38 @@ _CODELIST_RE = re.compile(
     re.IGNORECASE)
 
 
+# Fix-verb family per PEPPOL-EN16931-R* assert, chosen from the official
+# @test shape (never from the prose): 'presence' = the test is a bare
+# element-existence path (add the element); 'calc' = the test is a
+# u:slack()/xs:decimal arithmetic equality over amounts (fix the arithmetic);
+# 'correct' = every other shape (counts, sign/equality constraints, code
+# values, date ordering). One closed map keyed by rule id so the English fix
+# and the German fix_de can never pick different verbs.
+_PEPPOL_FIX_FAMILY = {
+    "PEPPOL-EN16931-R001": "presence",  # test: cbc:ProfileID
+    "PEPPOL-EN16931-R005": "correct",
+    "PEPPOL-EN16931-R008": "correct",
+    "PEPPOL-EN16931-R010": "presence",  # test: cbc:EndpointID
+    "PEPPOL-EN16931-R020": "presence",  # test: cbc:EndpointID
+    "PEPPOL-EN16931-R040": "calc",      # u:slack(amount, base*pct/100, …)
+    "PEPPOL-EN16931-R041": "presence",  # context-filtered false(): add base
+    "PEPPOL-EN16931-R042": "presence",  # context-filtered false(): add pct
+    "PEPPOL-EN16931-R043": "correct",
+    "PEPPOL-EN16931-R044": "correct",
+    "PEPPOL-EN16931-R046": "calc",      # xs:decimal price arithmetic
+    "PEPPOL-EN16931-R053": "correct",
+    "PEPPOL-EN16931-R054": "correct",
+    "PEPPOL-EN16931-R055": "correct",
+    "PEPPOL-EN16931-R061": "presence",  # test: cac:PaymentMandate/cbc:ID
+    "PEPPOL-EN16931-R101": "correct",
+    "PEPPOL-EN16931-R110": "correct",
+    "PEPPOL-EN16931-R111": "correct",
+    "PEPPOL-EN16931-R120": "calc",      # u:slack(lineExt, qty*(price/base)…)
+    "PEPPOL-EN16931-R121": "correct",
+    "PEPPOL-EN16931-R130": "correct",
+}
+
+
 def derive_fix(rid, rec, requires, location, xr_fns):
     """A one-line, mechanically-composed imperative: an action verb chosen from
     the rule family / test shape, the target location, and the verbatim
@@ -254,6 +339,13 @@ def derive_fix(rid, rec, requires, location, xr_fns):
     test = rec.get("test") or ""
     loc = "`%s`" % location
 
+    if rid.startswith("PEPPOL-"):
+        fam = _PEPPOL_FIX_FAMILY[rid]
+        if fam == "presence":
+            return "Add the required element at %s: %s." % (loc, req)
+        if fam == "calc":
+            return "Correct the calculated amount at %s so that %s." % (loc, req)
+        return "Correct %s so that %s." % (loc, req)
     if rid.startswith("BR-CL"):
         m = _CODELIST_RE.search(rec.get("assert_text") or requires)
         code = m.group(1).strip() if m else "the required code list"
@@ -869,6 +961,74 @@ SPECIAL = {
         "Dokumentenebene (BG-21) enthalten, bei der bzw. dem der Code der "
         "Umsatzsteuerkategorie (BT-151, BT-95, BT-118 oder BT-102) "
         "„Regelbesteuerung“ lautet.",
+    # ---- PEPPOL-EN16931-R* family (T-VHPEP.1/2). The English keys are the
+    # vendored KoSIT/Peppol assert texts byte-exact (Peppol authors them in
+    # English, so no official German wording exists); each German value is a
+    # faithful rendering of the SAME requirement, nothing added.
+    "Business process MUST be provided.":
+        "Der Geschäftsprozess MUSS angegeben werden.",
+    "VAT accounting currency code MUST be different from invoice currency code when provided.":
+        "Der Code der Währung der Umsatzsteuerabrechnung MUSS sich vom Code "
+        "der Rechnungswährung unterscheiden, sofern er angegeben ist.",
+    "Document MUST not contain empty elements.":
+        "Das Dokument DARF keine leeren Elemente enthalten.",
+    "Buyer electronic address MUST be provided":
+        "Die elektronische Adresse des Erwerbers MUSS angegeben werden.",
+    "Seller electronic address MUST be provided":
+        "Die elektronische Adresse des Verkäufers MUSS angegeben werden.",
+    "Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists":
+        "Der Betrag des Nachlasses bzw. Zuschlags muss gleich Grundbetrag * "
+        "Prozentsatz/100 sein, wenn Grundbetrag und Prozentsatz angegeben "
+        "sind.",
+    "Allowance/charge base amount MUST be provided when allowance/charge percentage is provided.":
+        "Der Grundbetrag des Nachlasses bzw. Zuschlags MUSS angegeben "
+        "werden, wenn der Prozentsatz des Nachlasses bzw. Zuschlags "
+        "angegeben ist.",
+    "Allowance/charge percentage MUST be provided when allowance/charge base amount is provided.":
+        "Der Prozentsatz des Nachlasses bzw. Zuschlags MUSS angegeben "
+        "werden, wenn der Grundbetrag des Nachlasses bzw. Zuschlags "
+        "angegeben ist.",
+    "Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'":
+        "Der Wert des ChargeIndicator eines Nachlasses bzw. Zuschlags MUSS "
+        "'true' oder 'false' sein.",
+    "Charge on price level is NOT allowed. Only value 'false' allowed.":
+        "Ein Zuschlag auf Preisebene ist NICHT zulässig. Nur der Wert "
+        "'false' ist zulässig.",
+    "Item net price MUST equal (Gross price - Allowance amount) when gross price is provided.":
+        "Der Nettopreis des Artikels MUSS gleich (Bruttopreis - "
+        "Nachlassbetrag) sein, wenn der Bruttopreis angegeben ist.",
+    "Only one tax total with tax subtotals MUST be provided.":
+        "Es MUSS genau eine Steuergesamtsumme mit Steuerteilsummen "
+        "angegeben werden.",
+    "Only one tax total without tax subtotals MUST be provided when tax currency code is provided.":
+        "Es MUSS genau eine Steuergesamtsumme ohne Steuerteilsummen "
+        "angegeben werden, wenn ein Code für die Steuerwährung angegeben "
+        "ist.",
+    "Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign":
+        "Der Gesamtbetrag der Umsatzsteuer und der Gesamtbetrag der "
+        "Umsatzsteuer in der Abrechnungswährung MÜSSEN dasselbe Vorzeichen "
+        "haben.",
+    "Mandate reference MUST be provided for direct debit.":
+        "Die Mandatsreferenz MUSS bei Lastschrift angegeben werden.",
+    "Element Document reference can only be used for Invoice line object":
+        "Das Element „Document reference“ darf nur für das Objekt der "
+        "Rechnungsposition verwendet werden.",
+    "Start date of line period MUST be within invoice period.":
+        "Das Startdatum des Positionszeitraums MUSS innerhalb des "
+        "Rechnungszeitraums liegen.",
+    "End date of line period MUST be within invoice period.":
+        "Das Enddatum des Positionszeitraums MUSS innerhalb des "
+        "Rechnungszeitraums liegen.",
+    "Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount":
+        "Der Nettobetrag der Rechnungsposition MUSS gleich (In Rechnung "
+        "gestellte Menge * (Nettopreis des Artikels/Basismenge des Preises) "
+        "+ Summe der Zuschläge auf Positionsebene - Summe der Nachlässe auf "
+        "Positionsebene) sein.",
+    "Base quantity MUST be a positive number above zero.":
+        "Die Basismenge MUSS eine positive Zahl größer als null sein.",
+    "Unit code of price base quantity MUST be same as invoiced quantity.":
+        "Der Einheitencode der Basismenge des Preises MUSS mit dem "
+        "Einheitencode der in Rechnung gestellten Menge übereinstimmen.",
 }
 
 
@@ -904,6 +1064,8 @@ def _fix_family(rid, rec, requires):
     English requirement and the Schematron @test (all language-neutral), so the
     German fix picks the same imperative verb the English fix does."""
     test = rec.get("test") or ""
+    if rid.startswith("PEPPOL-"):
+        return _PEPPOL_FIX_FAMILY[rid]
     if rid.startswith("BR-CL"):
         return "codelist"
     if rid.startswith("BR-DEC"):
@@ -949,7 +1111,11 @@ def derive_german(rid, rec, requires, location):
       fixed EN 16931 term glossary + a closed frame/exact-match set. Any English
       requirement that matches no frame raises (no silent guess)."""
     assert_text = rec["assert_text"]
-    if assert_is_german(assert_text):
+    # The PEPPOL-EN16931-R* asserts KoSIT vendors are ENGLISH prose (Peppol
+    # authors them) — always the translation path, even where an English
+    # sentence happens to trip the German-word heuristic (e.g. R101's leading
+    # "Element …").
+    if assert_is_german(assert_text) and not rid.startswith("PEPPOL-"):
         return assert_text, derive_fix_de(rid, rec, requires, location, assert_text), "kosit"
     req_de = translate_requirement(rid, requires)
     if req_de is None:
@@ -969,6 +1135,7 @@ def build_catalog():
     idx = load_schematron_index()
     core_fns = _core_fns()
     xr_fns = _xr_fns()
+    pep_fns = _pep_fns()
     ids = sorted(_coverage.engine_fireable_ids(), key=_sort_key)
 
     catalog = {}
@@ -989,7 +1156,7 @@ def build_catalog():
             "bt_bg": derive_bt_bg(title, requires, rec["assert_text"]),
             "location_hint": location,
             "fix": derive_fix(rid, rec, requires, location, xr_fns),
-            "severity": engine_severity(rid, core_fns, xr_fns),
+            "severity": engine_severity(rid, core_fns, xr_fns, pep_fns),
             "provenance": {
                 "source": skey,
                 "assert": rec["assert_text"],
@@ -1003,6 +1170,10 @@ def build_catalog():
 
 
 def _sort_key(rid):
+    m = re.match(r"^PEPPOL-EN16931-R(\d+)$", rid)
+    if m:
+        # The Peppol family sorts as ONE numeric family after the BR-* block.
+        return (99, "PEPPOL-EN16931", int(m.group(1)), "")
     toks = rid.split("-")
     suffix = ""
     if toks[-1].isalpha() and len(toks[-1]) == 1:

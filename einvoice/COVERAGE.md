@@ -23,9 +23,9 @@ XSLT and compares the fired-rule set. The sources:
 
 ## Coverage at a glance
 
-- **266 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **127** proven on both UBL and CII, **139** UBL-only, **0** CII-only.
-- Severity (blocking class): **256** fatal (block validity), **10** warning / information (reported, non-blocking).
+- **276 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **137** proven on both UBL and CII, **139** UBL-only, **0** CII-only.
+- Severity (blocking class): **265** fatal (block validity), **11** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
   or a documented deliberate exclusion. This is deliberately NOT an uncaveated
@@ -312,6 +312,16 @@ the non-blocking `warning` class for the severity column).
 | `PEPPOL-EN16931-R043` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'. |
 | `PEPPOL-EN16931-R044` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Charge on price level is NOT allowed. Only value 'false' allowed. |
 | `PEPPOL-EN16931-R046` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Item net price MUST equal (Gross price - Allowance amount) when gross price is provided. |
+| `PEPPOL-EN16931-R053` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Only one tax total with tax subtotals MUST be provided. |
+| `PEPPOL-EN16931-R054` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Only one tax total without tax subtotals MUST be provided when tax currency code is provided. |
+| `PEPPOL-EN16931-R055` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign. |
+| `PEPPOL-EN16931-R061` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Mandate reference MUST be provided for direct debit. |
+| `PEPPOL-EN16931-R101` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Element Document reference can only be used for Invoice line object. |
+| `PEPPOL-EN16931-R110` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Start date of line period MUST be within invoice period. (Line start >= document invoice-period start.) |
+| `PEPPOL-EN16931-R111` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | End date of line period MUST be within invoice period. (Line end <= document invoice-period end.) |
+| `PEPPOL-EN16931-R120` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount. |
+| `PEPPOL-EN16931-R121` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Base quantity MUST be a positive number above zero. |
+| `PEPPOL-EN16931-R130` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Unit code of price base quantity MUST be same as invoiced quantity. |
 
 ## Exclusions (honest scope boundaries)
 
@@ -401,7 +411,7 @@ core model does not carry; excluded on the CII leg, still proven on UBL.
 
 ### Peppol scope
 
-Partially covered, scoped honestly: the engine asserts 11 of the 21 canonical PEPPOL-EN16931-R* rules that KoSIT ships inside the official XRechnung Schematron artifact (see the peppol_kosit_family section and the rule table; each is differentially proven per binding). This is NOT full Peppol BIS Billing 3.0 support: the OpenPeppol ruleset proper (its own Schematron + test corpus) is a separate, not-vendored artifact, and nothing beyond the KoSIT-vendored asserts is claimed. The remaining rules are the explicit known-open worklist in peppol_kosit_family, recomputed live by test_coverage_gap.py.
+Scoped honestly: the engine asserts ALL 21 canonical PEPPOL-EN16931-R* rules that KoSIT ships inside the official XRechnung Schematron artifact, in both bindings (see the peppol_kosit_family section and the rule table; each is differentially proven per binding). This is NOT full Peppol BIS Billing 3.0 support: the OpenPeppol ruleset proper (its own Schematron + test corpus) is a separate, not-vendored artifact, and nothing beyond the KoSIT-vendored asserts is claimed. The family enumeration stays machine-checked in peppol_kosit_family, recomputed live by test_coverage_gap.py, so an artifact bump that adds a new Peppol assert reopens the worklist automatically.
 
 ## Gap — official rules not yet asserted
 
@@ -452,43 +462,22 @@ Machine-checked enumeration of the Peppol-derived rules KoSIT ships inside the o
 asserts the vendored KoSIT artifact itself carries are enumerated,
 implemented, or claimed here.
 
-### `xrechnung-ubl` — 11 implemented + 10 known-open = 21 canonical rules (21 asserts)
+### `xrechnung-ubl` — 21 implemented + 0 known-open = 21 canonical rules (21 asserts)
 
 Family parsed from `corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch` (`sch:assert/@id`).
 
-### `xrechnung-cii` — 11 implemented + 10 known-open = 21 canonical rules (22 asserts)
+### `xrechnung-cii` — 21 implemented + 0 known-open = 21 canonical rules (22 asserts)
 
 Family parsed from `corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch` (`sch:assert/@id`).
 
 Implemented (differentially proven per binding, see the rule table above):
-`PEPPOL-EN16931-R001`, `PEPPOL-EN16931-R005`, `PEPPOL-EN16931-R008`, `PEPPOL-EN16931-R010`, `PEPPOL-EN16931-R020`, `PEPPOL-EN16931-R040`, `PEPPOL-EN16931-R041`, `PEPPOL-EN16931-R042`, `PEPPOL-EN16931-R043`, `PEPPOL-EN16931-R044`, `PEPPOL-EN16931-R046`.
+`PEPPOL-EN16931-R001`, `PEPPOL-EN16931-R005`, `PEPPOL-EN16931-R008`, `PEPPOL-EN16931-R010`, `PEPPOL-EN16931-R020`, `PEPPOL-EN16931-R040`, `PEPPOL-EN16931-R041`, `PEPPOL-EN16931-R042`, `PEPPOL-EN16931-R043`, `PEPPOL-EN16931-R044`, `PEPPOL-EN16931-R046`, `PEPPOL-EN16931-R053`, `PEPPOL-EN16931-R054`, `PEPPOL-EN16931-R055`, `PEPPOL-EN16931-R061`, `PEPPOL-EN16931-R101`, `PEPPOL-EN16931-R110`, `PEPPOL-EN16931-R111`, `PEPPOL-EN16931-R120`, `PEPPOL-EN16931-R121`, `PEPPOL-EN16931-R130`.
 
 ### Known-open worklist (enumerated, not yet asserted)
 
-These canonical ids are shipped by the vendored KoSIT artifacts
-but not yet implemented — an explicit worklist, not a hidden
-gap. Official rule text is carried verbatim per binding:
-
-| id | binding | assert id | flag | official rule text |
-| --- | --- | --- | --- | --- |
-| `PEPPOL-EN16931-R053` | `xrechnung-ubl` | `PEPPOL-EN16931-R053` | fatal | Only one tax total with tax subtotals MUST be provided. |
-| `PEPPOL-EN16931-R053` | `xrechnung-cii` | `PEPPOL-EN16931-R053` | fatal | No more than one tax total amount must be provided where currency id equals document currency code. |
-| `PEPPOL-EN16931-R054` | `xrechnung-ubl` | `PEPPOL-EN16931-R054` | fatal | Only one tax total without tax subtotals MUST be provided when tax currency code is provided. |
-| `PEPPOL-EN16931-R054` | `xrechnung-cii` | `PEPPOL-EN16931-R054` | fatal | Only one tax total amount must be provided where currency id equals tax currency code, if tax currency code (BT-6) is provided. |
-| `PEPPOL-EN16931-R055` | `xrechnung-ubl` | `PEPPOL-EN16931-R055` | fatal | Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign |
-| `PEPPOL-EN16931-R055` | `xrechnung-cii` | `PEPPOL-EN16931-R055` | fatal | Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign |
-| `PEPPOL-EN16931-R061` | `xrechnung-ubl` | `PEPPOL-EN16931-R061` | fatal | Mandate reference MUST be provided for direct debit. |
-| `PEPPOL-EN16931-R061` | `xrechnung-cii` | `PEPPOL-EN16931-R061` | fatal | Mandate reference MUST be provided for direct debit. |
-| `PEPPOL-EN16931-R101` | `xrechnung-ubl` | `PEPPOL-EN16931-R101` | fatal | Element Document reference can only be used for Invoice line object |
-| `PEPPOL-EN16931-R101` | `xrechnung-cii` | `PEPPOL-EN16931-R101` | fatal | Element Additional referenced document can only be used for Invoice line object. |
-| `PEPPOL-EN16931-R110` | `xrechnung-ubl` | `PEPPOL-EN16931-R110` | fatal | Start date of line period MUST be within invoice period. |
-| `PEPPOL-EN16931-R110` | `xrechnung-cii` | `PEPPOL-EN16931-R110` | fatal | Start date of line period MUST be within invoice period. |
-| `PEPPOL-EN16931-R111` | `xrechnung-ubl` | `PEPPOL-EN16931-R111` | fatal | End date of line period MUST be within invoice period. |
-| `PEPPOL-EN16931-R111` | `xrechnung-cii` | `PEPPOL-EN16931-R111` | fatal | End date of line period MUST be within invoice period. |
-| `PEPPOL-EN16931-R120` | `xrechnung-ubl` | `PEPPOL-EN16931-R120` | warning | Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount |
-| `PEPPOL-EN16931-R120` | `xrechnung-cii` | `PEPPOL-EN16931-R120` | warning | Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount |
-| `PEPPOL-EN16931-R121` | `xrechnung-ubl` | `PEPPOL-EN16931-R121` | fatal | Base quantity MUST be a positive number above zero. |
-| `PEPPOL-EN16931-R121` | `xrechnung-cii` | `PEPPOL-EN16931-R121` | fatal | Base quantity MUST be a positive number above zero. |
-| `PEPPOL-EN16931-R130` | `xrechnung-ubl` | `PEPPOL-EN16931-R130` | fatal | Unit code of price base quantity MUST be same as invoiced quantity. |
-| `PEPPOL-EN16931-R130` | `xrechnung-cii` | `PEPPOL-EN16931-R130` | fatal | Unit code of price base quantity MUST be same as invoiced quantity. |
+**Empty.** Every canonical `PEPPOL-EN16931-R*` id the vendored
+KoSIT artifacts carry is implemented in every binding whose
+artifact ships the assert. The enumeration above stays
+machine-checked, so a future artifact bump that adds a new
+Peppol assert reopens this worklist automatically.
 

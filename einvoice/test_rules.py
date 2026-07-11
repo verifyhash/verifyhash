@@ -2802,13 +2802,19 @@ class PeppolKositBatch1Ubl(unittest.TestCase):
         self.assertIn(_pep("R008"), got)
 
     # ---- R005 ---------------------------------------------------------------
+    # Since batch 2, a BT-6 with no subtotal-free TaxTotal ALSO fires R054
+    # (and R055 when no tax-currency TaxAmount exists) — exactly like the
+    # official artifact on the same fixture (differential-proven), so these
+    # fixtures now assert the full fired set.
     def test_r005_tax_currency_equal_to_doc_currency_fires(self):
         r = self.pep_base()
         dcc = child(r, NS_CBC, "DocumentCurrencyCode")
         tcc = ET.Element(q(NS_CBC, "TaxCurrencyCode"))
         tcc.text = dcc.text
         r.insert(list(r).index(dcc) + 1, tcc)
-        self.assertEqual(self.pep_fired(r), {_pep("R005")})
+        # R055 holds here: the existing (positive) EUR TaxAmount satisfies
+        # BOTH sides of the sign check when BT-6 == BT-5 == EUR.
+        self.assertEqual(self.pep_fired(r), {_pep("R005"), _pep("R054")})
 
     def test_r005_different_tax_currency_holds(self):
         r = self.pep_base()
@@ -2816,7 +2822,11 @@ class PeppolKositBatch1Ubl(unittest.TestCase):
         tcc = ET.Element(q(NS_CBC, "TaxCurrencyCode"))
         tcc.text = "USD"
         r.insert(list(r).index(dcc) + 1, tcc)
-        self.assertEqual(self.pep_fired(r), set())
+        fired = self.pep_fired(r)
+        self.assertNotIn(_pep("R005"), fired)
+        # The engaged batch-2 totals rules fire on this minimal fixture (no
+        # USD TaxTotal exists): R054 + R055, nothing else.
+        self.assertEqual(fired, {_pep("R054"), _pep("R055")})
 
     # ---- R008 ---------------------------------------------------------------
     def test_r008_empty_element_fires(self):
@@ -2955,6 +2965,254 @@ class PeppolKositBatch1Ubl(unittest.TestCase):
         r = self.pep_base()
         self.add_price_allowance(r, "false", base="289.79", amount="1.000")
         self.assertEqual(self.pep_fired(r), set())
+
+
+# --------------------------------------------------------------------------- #
+# KoSIT-vendored Peppol batch 2 (R053-R130), UBL binding — same clean 01.01a  #
+# base (line 1: PriceAmount 288.79, InvoicedQuantity 1 XPP, LineExtension-    #
+# Amount 288.79, line InvoicePeriod 2016-01-01..2016-12-31; PaymentMeans 58;  #
+# one subtotal-carrying EUR TaxTotal; no doc InvoicePeriod, no BT-6).         #
+# Differential agreement proven exhaustively by `differential.py xrechnung`.  #
+# --------------------------------------------------------------------------- #
+class PeppolKositBatch2Ubl(PeppolKositBatch1Ubl):
+    """Batch-2 fixtures. Inherits the batch-1 helpers AND re-runs the batch-1
+    tests against the grown registry (proving batch 2 introduced no
+    cross-rule interference on those fixtures)."""
+
+    def add_tax_currency(self, r, code="USD"):
+        dcc = child(r, NS_CBC, "DocumentCurrencyCode")
+        tcc = ET.Element(q(NS_CBC, "TaxCurrencyCode"))
+        tcc.text = code
+        r.insert(list(r).index(dcc) + 1, tcc)
+
+    def add_plain_tax_total(self, r, amount, currency):
+        """A subtotal-free cac:TaxTotal (the BT-111 carrier)."""
+        tt = ET.Element(q(NS_CAC, "TaxTotal"))
+        ta = ET.SubElement(tt, q(NS_CBC, "TaxAmount"))
+        ta.text = amount
+        ta.set("currencyID", currency)
+        r.insert(list(r).index(child(r, NS_CAC, "LegalMonetaryTotal")), tt)
+
+    def add_doc_period(self, r, start=None, end=None):
+        ip = ET.Element(q(NS_CAC, "InvoicePeriod"))
+        if start is not None:
+            ET.SubElement(ip, q(NS_CBC, "StartDate")).text = start
+        if end is not None:
+            ET.SubElement(ip, q(NS_CBC, "EndDate")).text = end
+        r.insert(list(r).index(child(r, NS_CAC, "AccountingSupplierParty")),
+                 ip)
+
+    def set_payment_means_code(self, r, code):
+        pm = r.find(q(NS_CAC, "PaymentMeans"))
+        child(pm, NS_CBC, "PaymentMeansCode").text = code
+        return pm
+
+    def add_line_doc_reference(self, r, type_code):
+        line = r.find(q(NS_CAC, "InvoiceLine"))
+        dr = ET.Element(q(NS_CAC, "DocumentReference"))
+        ET.SubElement(dr, q(NS_CBC, "ID")).text = "LINE-OBJ-1"
+        if type_code is not None:
+            ET.SubElement(dr, q(NS_CBC,
+                                "DocumentTypeCode")).text = type_code
+        line.insert(list(line).index(line.find(q(NS_CAC, "Item"))), dr)
+
+    def add_base_quantity(self, r, value, unit=None):
+        price = r.find("%s/%s" % (q(NS_CAC, "InvoiceLine"),
+                                  q(NS_CAC, "Price")))
+        bq = ET.SubElement(price, q(NS_CBC, "BaseQuantity"))
+        bq.text = value
+        if unit is not None:
+            bq.set("unitCode", unit)
+
+    # ---- R053 ---------------------------------------------------------------
+    def test_r053_two_subtotal_tax_totals_fire(self):
+        r = self.pep_base()
+        src = child(r, NS_CAC, "TaxTotal")
+        r.insert(list(r).index(src) + 1, copy.deepcopy(src))
+        self.assertEqual(self.pep_fired(r), {_pep("R053")})
+
+    def test_r053_zero_subtotal_tax_totals_fire_with_r054(self):
+        # Stripping the subtotal leaves count(with-subtotal)=0 (R053) AND a
+        # subtotal-free TaxTotal with no BT-6 (R054).
+        r = self.pep_base()
+        tt = child(r, NS_CAC, "TaxTotal")
+        tt.remove(tt.find(q(NS_CAC, "TaxSubtotal")))
+        self.assertEqual(self.pep_fired(r), {_pep("R053"), _pep("R054")})
+
+    # ---- R054 / R055 --------------------------------------------------------
+    def test_r054_tax_currency_without_plain_total_fires_with_r055(self):
+        # No tax-currency TaxAmount exists at all -> R055's general
+        # comparisons find nothing on the BT-6 side -> both fire.
+        r = self.pep_base()
+        self.add_tax_currency(r)
+        self.assertEqual(self.pep_fired(r), {_pep("R054"), _pep("R055")})
+
+    def test_r054_plain_total_without_tax_currency_fires(self):
+        r = self.pep_base()
+        self.add_plain_tax_total(r, "21.00", "USD")
+        self.assertEqual(self.pep_fired(r), {_pep("R054")})
+
+    def test_r054_r055_engaged_and_holding(self):
+        r = self.pep_base()
+        self.add_tax_currency(r)
+        self.add_plain_tax_total(r, "21.00", "USD")
+        self.assertEqual(self.pep_fired(r), set())
+
+    def test_r055_sign_flip_fires(self):
+        r = self.pep_base()
+        self.add_tax_currency(r)
+        self.add_plain_tax_total(r, "-21.00", "USD")
+        self.assertEqual(self.pep_fired(r), {_pep("R055")})
+
+    def test_r055_zero_satisfies_both_signs(self):
+        # 0 is both <= 0 and >= 0: the second alternative holds.
+        r = self.pep_base()
+        self.add_tax_currency(r)
+        self.add_plain_tax_total(r, "0", "USD")
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R061 ---------------------------------------------------------------
+    def test_r061_direct_debit_without_mandate_fires(self):
+        r = self.pep_base()
+        self.set_payment_means_code(r, "59")
+        self.assertEqual(self.pep_fired(r), {_pep("R061")})
+
+    def test_r061_code_49_also_fires(self):
+        r = self.pep_base()
+        self.set_payment_means_code(r, "49")
+        self.assertEqual(self.pep_fired(r), {_pep("R061")})
+
+    def test_r061_code_is_normalized(self):
+        r = self.pep_base()
+        self.set_payment_means_code(r, "  59  ")
+        self.assertEqual(self.pep_fired(r), {_pep("R061")})
+
+    def test_r061_with_mandate_holds(self):
+        r = self.pep_base()
+        pm = self.set_payment_means_code(r, "59")
+        mandate = ET.SubElement(pm, q(NS_CAC, "PaymentMandate"))
+        ET.SubElement(mandate, q(NS_CBC, "ID")).text = "MANDATE-1"
+        self.assertEqual(self.pep_fired(r), set())
+
+    def test_r061_other_code_not_engaged(self):
+        r = self.pep_base()
+        self.set_payment_means_code(r, "30")
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R101 ---------------------------------------------------------------
+    def test_r101_line_document_reference_fires(self):
+        r = self.pep_base()
+        self.add_line_doc_reference(r, "916")
+        self.assertEqual(self.pep_fired(r), {_pep("R101")})
+
+    def test_r101_missing_type_code_fires(self):
+        # No DocumentTypeCode at all: R101's '=130' finds nothing. (The bare
+        # DocumentReference/ID keeps R008 quiet: it has text.)
+        r = self.pep_base()
+        self.add_line_doc_reference(r, None)
+        self.assertEqual(self.pep_fired(r), {_pep("R101")})
+
+    def test_r101_invoice_line_object_130_holds(self):
+        r = self.pep_base()
+        self.add_line_doc_reference(r, "130")
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R110 / R111 --------------------------------------------------------
+    def test_r110_line_starts_before_doc_period_fires(self):
+        r = self.pep_base()
+        self.add_doc_period(r, start="2016-02-01")
+        self.assertEqual(self.pep_fired(r), {_pep("R110")})
+
+    def test_r111_line_ends_after_doc_period_fires(self):
+        r = self.pep_base()
+        self.add_doc_period(r, end="2016-06-30")
+        self.assertEqual(self.pep_fired(r), {_pep("R111")})
+
+    def test_r110_r111_line_within_doc_period_holds(self):
+        # Boundary dates are inclusive (>= / <=).
+        r = self.pep_base()
+        self.add_doc_period(r, start="2016-01-01", end="2016-12-31")
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R120 (warning) -----------------------------------------------------
+    def _set_line_extension(self, r, value):
+        line = r.find(q(NS_CAC, "InvoiceLine"))
+        child(line, NS_CBC, "LineExtensionAmount").text = value
+
+    def test_r120_line_net_amount_mismatch_fires(self):
+        r = self.pep_base()
+        self._set_line_extension(r, "298.79")
+        self.assertEqual(self.pep_fired(r), {_pep("R120")})
+
+    def test_r120_within_slack_holds(self):
+        # |288.81 - 288.79| = 0.02 <= slack 0.02 -> holds.
+        r = self.pep_base()
+        self._set_line_extension(r, "288.81")
+        self.assertEqual(self.pep_fired(r), set())
+
+    def test_r120_huf_widens_slack(self):
+        # 289.09 is 0.30 off: fires on EUR (slack 0.02), holds on HUF (0.5).
+        r = self.pep_base()
+        self._set_line_extension(r, "289.09")
+        self.assertEqual(self.pep_fired(r), {_pep("R120")})
+        r2 = self.pep_base()
+        child(r2, NS_CBC, "DocumentCurrencyCode").text = "HUF"
+        self._set_line_extension(r2, "289.09")
+        self.assertNotIn(_pep("R120"), self.pep_fired(r2))
+
+    def test_r120_is_a_warning(self):
+        from einvoice import rules_peppol as rp
+        self.assertEqual(rp.ubl_r120.severity, "warning")
+        r = self.pep_base()
+        self._set_line_extension(r, "298.79")
+        v = [x for x in rp.evaluate_ubl(r) if x.rule_id == _pep("R120")]
+        self.assertEqual(v[0].severity, "warning")
+
+    def test_r120_base_quantity_divides_price(self):
+        # BaseQuantity 2: 1 * (288.79 / 2) = 144.395 != 288.79 -> fires
+        # (R121/R130 stay quiet: 2 > 0, no unitCode attribute -> no context).
+        r = self.pep_base()
+        self.add_base_quantity(r, "2")
+        self.assertEqual(self.pep_fired(r), {_pep("R120")})
+
+    # ---- R121 ---------------------------------------------------------------
+    def test_r121_zero_base_quantity_fires(self):
+        # R120's own let maps a ZERO BaseQuantity to divisor 1, so only R121
+        # fires.
+        r = self.pep_base()
+        self.add_base_quantity(r, "0")
+        self.assertEqual(self.pep_fired(r), {_pep("R121")})
+
+    def test_r121_negative_base_quantity_fires_with_r120(self):
+        # -1 trips R121 AND flips R120's computed amount to -288.79.
+        r = self.pep_base()
+        self.add_base_quantity(r, "-1")
+        self.assertEqual(self.pep_fired(r), {_pep("R120"), _pep("R121")})
+
+    def test_r121_positive_base_quantity_holds(self):
+        r = self.pep_base()
+        self.add_base_quantity(r, "1")
+        self.assertEqual(self.pep_fired(r), set())
+
+    # ---- R130 ---------------------------------------------------------------
+    def test_r130_unit_code_mismatch_fires(self):
+        r = self.pep_base()
+        self.add_base_quantity(r, "1", unit="KGM")
+        self.assertEqual(self.pep_fired(r), {_pep("R130")})
+
+    def test_r130_matching_unit_code_holds(self):
+        r = self.pep_base()
+        self.add_base_quantity(r, "1", unit="XPP")
+        self.assertEqual(self.pep_fired(r), set())
+
+    def test_r130_quantity_without_unit_code_fires(self):
+        # $quantity/@unitCode is empty -> the general comparison finds no
+        # equal pair -> fires.
+        r = self.pep_base()
+        line = r.find(q(NS_CAC, "InvoiceLine"))
+        del child(line, NS_CBC, "InvoicedQuantity").attrib["unitCode"]
+        self.add_base_quantity(r, "1", unit="XPP")
+        self.assertEqual(self.pep_fired(r), {_pep("R130")})
 
 
 if __name__ == "__main__":

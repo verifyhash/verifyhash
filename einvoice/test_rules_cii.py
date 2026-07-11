@@ -1525,6 +1525,10 @@ class PeppolKositBatch1Cii(unittest.TestCase):
         self.assertEqual(_pep_cii_fired(r), {_pep("R001")})
 
     # ---- R005 ---------------------------------------------------------------
+    # Since batch 2, a BT-6 with no second TaxTotalAmount ALSO fires R054
+    # (and R055 when no tax-currency total exists) — exactly like the
+    # official artifact on the same fixture (differential-proven), so these
+    # fixtures now assert the full fired set.
     def test_r005_tax_currency_equal_to_invoice_currency_fires(self):
         r = _pep_cii_root()
         settle = self._settlement(r)
@@ -1532,7 +1536,9 @@ class PeppolKositBatch1Cii(unittest.TestCase):
         tcc = ET.Element(_q(NSA, "TaxCurrencyCode"))
         tcc.text = icc.text
         settle.insert(list(settle).index(icc), tcc)
-        self.assertEqual(_pep_cii_fired(r), {_pep("R005")})
+        # R055 holds here: the (positive) EUR TaxTotalAmount satisfies BOTH
+        # sides of the sign check when BT-6 == BT-5 == EUR.
+        self.assertEqual(_pep_cii_fired(r), {_pep("R005"), _pep("R054")})
 
     def test_r005_different_tax_currency_holds(self):
         r = _pep_cii_root()
@@ -1541,7 +1547,11 @@ class PeppolKositBatch1Cii(unittest.TestCase):
         tcc = ET.Element(_q(NSA, "TaxCurrencyCode"))
         tcc.text = "USD"
         settle.insert(list(settle).index(icc), tcc)
-        self.assertEqual(_pep_cii_fired(r), set())
+        fired = _pep_cii_fired(r)
+        self.assertNotIn(_pep("R005"), fired)
+        # The engaged batch-2 totals rules fire on this minimal fixture (no
+        # USD TaxTotalAmount exists): R054 + R055, nothing else.
+        self.assertEqual(fired, {_pep("R054"), _pep("R055")})
 
     # ---- R008 ---------------------------------------------------------------
     def test_r008_empty_element_fires(self):
@@ -1697,6 +1707,282 @@ class PeppolKositBatch1Cii(unittest.TestCase):
         r = _pep_cii_root()
         self.add_gross_price(r, "false", charge="12.780", actual="1.000")
         self.assertEqual(_pep_cii_fired(r), set())
+
+
+# --------------------------------------------------------------------------- #
+# KoSIT-vendored Peppol batch 2 (R053-R130), CII binding — same clean 01.02a  #
+# base (one line: BilledQuantity 1 XPP, net ChargeAmount 11.78,               #
+# LineTotalAmount 11.78; one EUR TaxTotalAmount 0.82; PaymentMeans TypeCode   #
+# 58; one SpecifiedTradePaymentTerms; no BillingSpecifiedPeriod, no BT-6).    #
+# Differential agreement proven exhaustively by                                #
+# `differential.py xrechnung-cii`.                                             #
+# --------------------------------------------------------------------------- #
+class PeppolKositBatch2Cii(PeppolKositBatch1Cii):
+    """Batch-2 fixtures. Inherits the batch-1 helpers AND re-runs the batch-1
+    tests against the grown registry (no cross-rule interference)."""
+
+    def _summation(self, r):
+        return self._settlement(r).find(
+            "ram:SpecifiedTradeSettlementHeaderMonetarySummation", NS)
+
+    def _line_settlement(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:IncludedSupplyChainTradeLineItem/"
+                      "ram:SpecifiedLineTradeSettlement", NS)
+
+    def add_tax_currency(self, r, code="USD"):
+        settle = self._settlement(r)
+        icc = settle.find("ram:InvoiceCurrencyCode", NS)
+        tcc = ET.Element(_q(NSA, "TaxCurrencyCode"))
+        tcc.text = code
+        settle.insert(list(settle).index(icc), tcc)
+
+    def add_tax_total(self, r, amount, currency):
+        summ = self._summation(r)
+        existing = summ.find("ram:TaxTotalAmount", NS)
+        tta = ET.Element(_q(NSA, "TaxTotalAmount"))
+        tta.text = amount
+        tta.set("currencyID", currency)
+        summ.insert(list(summ).index(existing) + 1, tta)
+
+    def _period(self, start, end):
+        bsp = ET.Element(_q(NSA, "BillingSpecifiedPeriod"))
+        for tag, val in (("StartDateTime", start), ("EndDateTime", end)):
+            if val is not None:
+                dt = ET.SubElement(bsp, _q(NSA, tag))
+                ds = ET.SubElement(dt, _q(NSU, "DateTimeString"))
+                ds.text = val
+                ds.set("format", "102")
+        return bsp
+
+    def add_header_period(self, r, start=None, end=None):
+        settle = self._settlement(r)
+        pt = settle.find("ram:SpecifiedTradePaymentTerms", NS)
+        settle.insert(list(settle).index(pt), self._period(start, end))
+
+    def add_line_period(self, r, start=None, end=None):
+        ls = self._line_settlement(r)
+        tax = ls.find("ram:ApplicableTradeTax", NS)
+        ls.insert(list(ls).index(tax) + 1, self._period(start, end))
+
+    def set_type_code(self, r, code):
+        settle = self._settlement(r)
+        settle.find("ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode",
+                    NS).text = code
+        return settle
+
+    def add_line_referenced_doc(self, r, type_code):
+        ls = self._line_settlement(r)
+        ard = ET.SubElement(ls, _q(NSA, "AdditionalReferencedDocument"))
+        ET.SubElement(ard, _q(NSA, "IssuerAssignedID")).text = "LINE-OBJ-1"
+        if type_code is not None:
+            ET.SubElement(ard, _q(NSA, "TypeCode")).text = type_code
+
+    def add_net_basis_quantity(self, r, value, unit=None):
+        npp = self._line_agreement(r).find("ram:NetPriceProductTradePrice",
+                                           NS)
+        bq = ET.SubElement(npp, _q(NSA, "BasisQuantity"))
+        bq.text = value
+        if unit is not None:
+            bq.set("unitCode", unit)
+
+    # ---- R053 ---------------------------------------------------------------
+    def test_r053_second_doc_currency_total_fires(self):
+        r = _pep_cii_root()
+        self.add_tax_total(r, "0.82", "EUR")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R053")})
+
+    def test_r053_second_total_in_other_currency_not_counted(self):
+        # Only @currencyID == BT-5 counts toward the <= 1 (but a lone non-EUR
+        # total with no BT-6 trips R054's want-0).
+        r = _pep_cii_root()
+        self.add_tax_total(r, "0.90", "USD")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R054")})
+
+    # ---- R054 / R055 --------------------------------------------------------
+    def test_r054_tax_currency_without_second_total_fires_with_r055(self):
+        r = _pep_cii_root()
+        self.add_tax_currency(r)
+        self.assertEqual(_pep_cii_fired(r), {_pep("R054"), _pep("R055")})
+
+    def test_r054_r055_engaged_and_holding(self):
+        r = _pep_cii_root()
+        self.add_tax_currency(r)
+        self.add_tax_total(r, "0.90", "USD")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r055_sign_flip_fires(self):
+        r = _pep_cii_root()
+        self.add_tax_currency(r)
+        self.add_tax_total(r, "-0.82", "USD")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R055")})
+
+    def test_r055_zero_on_tax_side_is_strict_negative_check(self):
+        # The CII first alternative is STRICT '< 0' (unlike UBL's '<= 0'),
+        # but 0 still satisfies the second alternative ('>= 0' both sides).
+        r = _pep_cii_root()
+        self.add_tax_currency(r)
+        self.add_tax_total(r, "0", "USD")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    # ---- R061 ---------------------------------------------------------------
+    def test_r061_direct_debit_without_mandate_fires(self):
+        r = _pep_cii_root()
+        self.set_type_code(r, "59")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R061")})
+
+    def test_r061_code_49_also_fires(self):
+        r = _pep_cii_root()
+        self.set_type_code(r, "49")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R061")})
+
+    def test_r061_with_mandate_holds(self):
+        r = _pep_cii_root()
+        settle = self.set_type_code(r, "59")
+        pt = settle.find("ram:SpecifiedTradePaymentTerms", NS)
+        ET.SubElement(pt, _q(NSA, "DirectDebitMandateID")).text = "MANDATE-1"
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r061_other_code_not_engaged(self):
+        r = _pep_cii_root()
+        self.set_type_code(r, "30")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    # ---- R101 ---------------------------------------------------------------
+    def test_r101_line_referenced_doc_fires(self):
+        r = _pep_cii_root()
+        self.add_line_referenced_doc(r, "916")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R101")})
+
+    def test_r101_missing_type_code_fires(self):
+        r = _pep_cii_root()
+        self.add_line_referenced_doc(r, None)
+        self.assertEqual(_pep_cii_fired(r), {_pep("R101")})
+
+    def test_r101_invoice_line_object_130_holds(self):
+        r = _pep_cii_root()
+        self.add_line_referenced_doc(r, "130")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    # ---- R110 / R111 --------------------------------------------------------
+    def test_r110_line_starts_before_header_period_fires(self):
+        r = _pep_cii_root()
+        self.add_header_period(r, start="20160201")
+        self.add_line_period(r, start="20160101")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R110")})
+
+    def test_r111_line_ends_after_header_period_fires(self):
+        r = _pep_cii_root()
+        self.add_header_period(r, end="20160630")
+        self.add_line_period(r, end="20161231")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R111")})
+
+    def test_r110_r111_line_within_header_period_holds(self):
+        r = _pep_cii_root()
+        self.add_header_period(r, start="20160101", end="20161231")
+        self.add_line_period(r, start="20160601", end="20160630")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r110_header_period_without_line_period_not_engaged(self):
+        # The context needs a LINE StartDateTime; a header-only period is
+        # fine.
+        r = _pep_cii_root()
+        self.add_header_period(r, start="20160101")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r110_line_period_without_header_period_not_engaged(self):
+        # The transaction filter needs the HEADER StartDateTime.
+        r = _pep_cii_root()
+        self.add_line_period(r, start="20150101")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r110_string_comparison_of_format_102(self):
+        # Untyped-vs-untyped general comparison = STRING comparison: equal
+        # boundary strings hold.
+        r = _pep_cii_root()
+        self.add_header_period(r, start="20160101")
+        self.add_line_period(r, start="20160101")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    # ---- R120 (warning) -----------------------------------------------------
+    def _set_line_total(self, r, value):
+        ms = self._line_settlement(r).find(
+            "ram:SpecifiedTradeSettlementLineMonetarySummation", NS)
+        ms.find("ram:LineTotalAmount", NS).text = value
+
+    def test_r120_line_net_amount_mismatch_fires(self):
+        r = _pep_cii_root()
+        self._set_line_total(r, "21.78")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R120")})
+
+    def test_r120_within_slack_holds(self):
+        # |11.80 - 11.78| = 0.02 <= slack 0.02 -> holds.
+        r = _pep_cii_root()
+        self._set_line_total(r, "11.80")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r120_is_a_warning(self):
+        self.assertEqual(rules_peppol.cii_r120.severity, "warning")
+        r = _pep_cii_root()
+        self._set_line_total(r, "21.78")
+        v = [x for x in rules_peppol.evaluate_cii(r)
+             if x.rule_id == _pep("R120")]
+        self.assertEqual(v[0].severity, "warning")
+
+    def test_r120_net_basis_quantity_divides_price(self):
+        # BasisQuantity 2: 1 * (11.78 / 2) = 5.89 != 11.78 -> fires (R121
+        # holds: 2 > 0; R130 not engaged: no unitCode attribute).
+        r = _pep_cii_root()
+        self.add_net_basis_quantity(r, "2")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R120")})
+
+    # ---- R121 ---------------------------------------------------------------
+    def test_r121_zero_basis_quantity_fires(self):
+        # R120's own let maps a ZERO BasisQuantity to divisor 1 -> only R121.
+        r = _pep_cii_root()
+        self.add_net_basis_quantity(r, "0")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R121")})
+
+    def test_r121_negative_basis_quantity_fires_with_r120(self):
+        r = _pep_cii_root()
+        self.add_net_basis_quantity(r, "-1")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R120"), _pep("R121")})
+
+    def test_r121_positive_basis_quantity_holds(self):
+        r = _pep_cii_root()
+        self.add_net_basis_quantity(r, "1")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r121_gross_price_basis_quantity_also_in_context(self):
+        # The CII context is Net | Gross price: a zero BasisQuantity on a
+        # GrossPriceProductTradePrice fires too (gross == net so R046 holds).
+        r = _pep_cii_root()
+        gp = self.add_gross_price(r, None, charge="11.78", actual=None)
+        ET.SubElement(gp, _q(NSA, "BasisQuantity")).text = "0"
+        self.assertEqual(_pep_cii_fired(r), {_pep("R121")})
+
+    # ---- R130 ---------------------------------------------------------------
+    def test_r130_unit_code_mismatch_fires(self):
+        r = _pep_cii_root()
+        self.add_net_basis_quantity(r, "1", unit="KGM")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R130")})
+
+    def test_r130_matching_unit_code_holds(self):
+        r = _pep_cii_root()
+        self.add_net_basis_quantity(r, "1", unit="XPP")
+        self.assertEqual(_pep_cii_fired(r), set())
+
+    def test_r130_no_billed_quantity_unit_code_fires(self):
+        # Unlike UBL, the CII R130 has NO hasQuantity guard: an absent
+        # BilledQuantity @unitCode -> the comparison finds nothing -> fires.
+        r = _pep_cii_root()
+        line = r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:IncludedSupplyChainTradeLineItem", NS)
+        bq = line.find("ram:SpecifiedLineTradeDelivery/ram:BilledQuantity",
+                       NS)
+        del bq.attrib["unitCode"]
+        self.add_net_basis_quantity(r, "1", unit="XPP")
+        self.assertEqual(_pep_cii_fired(r), {_pep("R130")})
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import rules as _rules              # noqa: E402
 from einvoice import rules_xrechnung as _rules_xr  # noqa: E402
+from einvoice import rules_peppol as _rules_pep    # noqa: E402
 from einvoice import coverage as _coverage         # noqa: E402
 from einvoice import remediation as _remediation   # noqa: E402
 
@@ -94,7 +95,9 @@ def _engine_fireable_ids():
         core.add(head)
     ubl_de = {fn.rule_id for fn in _rules_xr.ALL_RULES}
     cii_de = {fn.rule_id for fn in _rules_xr.CII_DE_RULES}
-    return core | ubl_de | cii_de
+    pep = ({fn.rule_id for fn in _rules_pep.UBL_RULES}
+           | {fn.rule_id for fn in _rules_pep.CII_RULES})
+    return core | ubl_de | cii_de | pep
 
 
 def _engine_severity():
@@ -111,6 +114,8 @@ def _engine_severity():
         else:
             out[rid] = "fatal"
     for fn in _rules_xr.ALL_RULES:
+        out[fn.rule_id] = fn.severity
+    for fn in _rules_pep.UBL_RULES + _rules_pep.CII_RULES:
         out[fn.rule_id] = fn.severity
     return out
 

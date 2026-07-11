@@ -457,5 +457,14 @@ def render_markdown(matrix):
                           % (row["id"], key, a["assert_id"], a["flag"],
                              a["text"].replace("|", "\\|")))
             w("")
+        else:
+            w("### Known-open worklist (enumerated, not yet asserted)")
+            w("")
+            w("**Empty.** Every canonical `PEPPOL-EN16931-R*` id the vendored")
+            w("KoSIT artifacts carry is implemented in every binding whose")
+            w("artifact ships the assert. The enumeration above stays")
+            w("machine-checked, so a future artifact bump that adds a new")
+            w("Peppol assert reopens this worklist automatically.")
+            w("")
 
     return "\n".join(lines) + "\n"

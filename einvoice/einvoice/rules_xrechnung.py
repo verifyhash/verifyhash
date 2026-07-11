@@ -32,9 +32,9 @@ invoice they are inert. See ``_is_extension`` and the ``BR-DEX-*`` functions.
 
 Out of scope (deliberately): ``BR-DE-CVD-*`` (the Clean-Vehicle-Directive
 profile) and ``BR-TMP-2``. The ``PEPPOL-EN16931-R*`` rules also present in the
-KoSIT artifact live in their own module, :mod:`einvoice.rules_peppol` (batch 1
-implemented, remainder an explicit known-open worklist in the coverage
-matrix).
+KoSIT artifact live in their own module, :mod:`einvoice.rules_peppol` (all 21
+canonical family rules implemented in both bindings; the enumeration stays
+machine-checked in the coverage matrix).
 
 Standard library only.
 """

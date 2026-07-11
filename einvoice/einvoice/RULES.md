@@ -30,7 +30,7 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**255 rules** in total — 245 fatal, 9 warning, 1 information — across 17 families.
+**276 rules** in total — 265 fatal, 10 warning, 1 information — across 18 families.
 
 ## Families
 
@@ -51,6 +51,7 @@ catalog.
 - **BR-DE** (31) — German XRechnung national CIUS rules (KoSIT).
 - **BR-DE-TMP** (1) — German XRechnung national rules (BR-DE-TMP).
 - **BR-DEX** (14) — German XRechnung extension-layer rules (BR-DEX).
+- **PEPPOL-EN16931** (21) — Peppol-derived rules as vendored inside the official KoSIT XRechnung Schematron artifact — the KoSIT-vendored subset only, NOT full Peppol BIS Billing 3.0 support.
 
 ## BR
 
@@ -2414,4 +2415,197 @@ German XRechnung extension-layer rules (BR-DEX).
 - **Fix:** Correct the calculated amount at `/ubl:Invoice/cac:PrepaidPayment` so that the currency of 'Third party payment amount' (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -> fires.
 - **Severity:** fatal
 - **Provenance:** `xrechnung-ubl` — “Die Währungsangabe von "Third party payment amount" BT-DEX-002 muss BT-5 ("Invoice currency code") entsprechen.”
+
+## PEPPOL-EN16931
+
+Peppol-derived rules as vendored inside the official KoSIT XRechnung Schematron artifact — the KoSIT-vendored subset only, NOT full Peppol BIS Billing 3.0 support.
+
+### PEPPOL-EN16931-R001 — Business process MUST be provided.
+
+- **Requires:** Business process MUST be provided.
+- **Business terms:** — (no single business term)
+- **Location:** `cbc:ProfileID`
+- **Fix:** Add the required element at `cbc:ProfileID`: Business process MUST be provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Business process MUST be provided.”
+
+### PEPPOL-EN16931-R005 — VAT accounting currency code MUST be different from invoice currency code when provided.
+
+- **Requires:** VAT accounting currency code MUST be different from invoice currency code when provided.
+- **Business terms:** — (no single business term)
+- **Location:** `cbc:TaxCurrencyCode`
+- **Fix:** Correct `cbc:TaxCurrencyCode` so that VAT accounting currency code MUST be different from invoice currency code when provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “VAT accounting currency code MUST be different from invoice currency code when provided.”
+
+### PEPPOL-EN16931-R008 — Document MUST not contain empty elements.
+
+- **Requires:** Document MUST not contain empty elements.
+- **Business terms:** — (no single business term)
+- **Location:** `//*[not(*) and not(normalize-space())]`
+- **Fix:** Correct `//*[not(*) and not(normalize-space())]` so that Document MUST not contain empty elements.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Document MUST not contain empty elements.”
+
+### PEPPOL-EN16931-R010 — Buyer electronic address MUST be provided.
+
+- **Requires:** Buyer electronic address MUST be provided
+- **Business terms:** — (no single business term)
+- **Location:** `cac:AccountingCustomerParty/cac:Party/cbc:EndpointID`
+- **Fix:** Add the required element at `cac:AccountingCustomerParty/cac:Party/cbc:EndpointID`: Buyer electronic address MUST be provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Buyer electronic address MUST be provided”
+
+### PEPPOL-EN16931-R020 — Seller electronic address MUST be provided.
+
+- **Requires:** Seller electronic address MUST be provided
+- **Business terms:** — (no single business term)
+- **Location:** `cac:AccountingSupplierParty/cac:Party/cbc:EndpointID`
+- **Fix:** Add the required element at `cac:AccountingSupplierParty/cac:Party/cbc:EndpointID`: Seller electronic address MUST be provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Seller electronic address MUST be provided”
+
+### PEPPOL-EN16931-R040 — Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists.
+
+- **Requires:** Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists
+- **Business terms:** — (no single business term)
+- **Location:** `/ubl:Invoice/cac:AllowanceCharge`
+- **Fix:** Correct the calculated amount at `/ubl:Invoice/cac:AllowanceCharge` so that Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists”
+
+### PEPPOL-EN16931-R041 — Allowance/charge base amount MUST be provided when allowance/charge percentage is provided.
+
+- **Requires:** Allowance/charge base amount MUST be provided when allowance/charge percentage is provided.
+- **Business terms:** — (no single business term)
+- **Location:** `/ubl:Invoice/cac:AllowanceCharge[cbc:MultiplierFactorNumeric and not(cbc:BaseAmount)]`
+- **Fix:** Add the required element at `/ubl:Invoice/cac:AllowanceCharge[cbc:MultiplierFactorNumeric and not(cbc:BaseAmount)]`: Allowance/charge base amount MUST be provided when allowance/charge percentage is provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Allowance/charge base amount MUST be provided when allowance/charge percentage is provided.”
+
+### PEPPOL-EN16931-R042 — Allowance/charge percentage MUST be provided when allowance/charge base amount is provided.
+
+- **Requires:** Allowance/charge percentage MUST be provided when allowance/charge base amount is provided.
+- **Business terms:** — (no single business term)
+- **Location:** `/ubl:Invoice/cac:AllowanceCharge[not(cbc:MultiplierFactorNumeric) and cbc:BaseAmount]`
+- **Fix:** Add the required element at `/ubl:Invoice/cac:AllowanceCharge[not(cbc:MultiplierFactorNumeric) and cbc:BaseAmount]`: Allowance/charge percentage MUST be provided when allowance/charge base amount is provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Allowance/charge percentage MUST be provided when allowance/charge base amount is provided.”
+
+### PEPPOL-EN16931-R043 — Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'.
+
+- **Requires:** Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'
+- **Business terms:** — (no single business term)
+- **Location:** `/ubl:Invoice/cac:AllowanceCharge`
+- **Fix:** Correct `/ubl:Invoice/cac:AllowanceCharge` so that Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'”
+
+### PEPPOL-EN16931-R044 — Charge on price level is NOT allowed. Only value 'false' allowed.
+
+- **Requires:** Charge on price level is NOT allowed. Only value 'false' allowed.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:Price/cac:AllowanceCharge`
+- **Fix:** Correct `cac:Price/cac:AllowanceCharge` so that Charge on price level is NOT allowed. Only value 'false' allowed.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Charge on price level is NOT allowed. Only value 'false' allowed.”
+
+### PEPPOL-EN16931-R046 — Item net price MUST equal (Gross price - Allowance amount) when gross price is provided.
+
+- **Requires:** Item net price MUST equal (Gross price - Allowance amount) when gross price is provided.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:Price/cac:AllowanceCharge`
+- **Fix:** Correct the calculated amount at `cac:Price/cac:AllowanceCharge` so that Item net price MUST equal (Gross price - Allowance amount) when gross price is provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Item net price MUST equal (Gross price - Allowance amount) when gross price is provided.”
+
+### PEPPOL-EN16931-R053 — Only one tax total with tax subtotals MUST be provided.
+
+- **Requires:** Only one tax total with tax subtotals MUST be provided.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:TaxTotal`
+- **Fix:** Correct `cac:TaxTotal` so that Only one tax total with tax subtotals MUST be provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Only one tax total with tax subtotals MUST be provided.”
+
+### PEPPOL-EN16931-R054 — Only one tax total without tax subtotals MUST be provided when tax currency code is provided.
+
+- **Requires:** Only one tax total without tax subtotals MUST be provided when tax currency code is provided.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:TaxTotal`
+- **Fix:** Correct `cac:TaxTotal` so that Only one tax total without tax subtotals MUST be provided when tax currency code is provided.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Only one tax total without tax subtotals MUST be provided when tax currency code is provided.”
+
+### PEPPOL-EN16931-R055 — Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign.
+
+- **Requires:** Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign
+- **Business terms:** — (no single business term)
+- **Location:** `cac:TaxTotal/cbc:TaxAmount`
+- **Fix:** Correct `cac:TaxTotal/cbc:TaxAmount` so that Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign”
+
+### PEPPOL-EN16931-R061 — Mandate reference MUST be provided for direct debit.
+
+- **Requires:** Mandate reference MUST be provided for direct debit.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:PaymentMeans[some $code in tokenize('49 59', '\s') satisfies normalize-space(cbc:PaymentMeansCode) = $code]/cac:PaymentMandate/cbc:ID`
+- **Fix:** Add the required element at `cac:PaymentMeans[some $code in tokenize('49 59', '\s') satisfies normalize-space(cbc:PaymentMeansCode) = $code]/cac:PaymentMandate/cbc:ID`: Mandate reference MUST be provided for direct debit.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Mandate reference MUST be provided for direct debit.”
+
+### PEPPOL-EN16931-R101 — Element Document reference can only be used for Invoice line object.
+
+- **Requires:** Element Document reference can only be used for Invoice line object
+- **Business terms:** — (no single business term)
+- **Location:** `cac:InvoiceLine/cac:DocumentReference`
+- **Fix:** Correct `cac:InvoiceLine/cac:DocumentReference` so that Element Document reference can only be used for Invoice line object.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Element Document reference can only be used for Invoice line object”
+
+### PEPPOL-EN16931-R110 — Start date of line period MUST be within invoice period. (Line start >= document invoice-period start.)
+
+- **Requires:** Start date of line period MUST be within invoice period.
+- **Business terms:** — (no single business term)
+- **Location:** `/ubl:Invoice[cac:InvoicePeriod/cbc:StartDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:StartDate`
+- **Fix:** Correct `/ubl:Invoice[cac:InvoicePeriod/cbc:StartDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:StartDate` so that Start date of line period MUST be within invoice period.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Start date of line period MUST be within invoice period.”
+
+### PEPPOL-EN16931-R111 — End date of line period MUST be within invoice period. (Line end <= document invoice-period end.)
+
+- **Requires:** End date of line period MUST be within invoice period.
+- **Business terms:** — (no single business term)
+- **Location:** `/ubl:Invoice[cac:InvoicePeriod/cbc:EndDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:EndDate`
+- **Fix:** Correct `/ubl:Invoice[cac:InvoicePeriod/cbc:EndDate]/cac:InvoiceLine/cac:InvoicePeriod/cbc:EndDate` so that End date of line period MUST be within invoice period.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “End date of line period MUST be within invoice period.”
+
+### PEPPOL-EN16931-R120 — Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount.
+
+- **Requires:** Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount
+- **Business terms:** — (no single business term)
+- **Location:** `cac:InvoiceLine/cbc:LineExtensionAmount`
+- **Fix:** Correct the calculated amount at `cac:InvoiceLine/cbc:LineExtensionAmount` so that Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount.
+- **Severity:** warning
+- **Provenance:** `xrechnung-ubl` — “Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount”
+
+### PEPPOL-EN16931-R121 — Base quantity MUST be a positive number above zero.
+
+- **Requires:** Base quantity MUST be a positive number above zero.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:InvoiceLine/cac:Price/cbc:BaseQuantity`
+- **Fix:** Correct `cac:InvoiceLine/cac:Price/cbc:BaseQuantity` so that Base quantity MUST be a positive number above zero.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Base quantity MUST be a positive number above zero.”
+
+### PEPPOL-EN16931-R130 — Unit code of price base quantity MUST be same as invoiced quantity.
+
+- **Requires:** Unit code of price base quantity MUST be same as invoiced quantity.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:Price/cbc:BaseQuantity[@unitCode]`
+- **Fix:** Correct `cac:Price/cbc:BaseQuantity[@unitCode]` so that Unit code of price base quantity MUST be same as invoiced quantity.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “Unit code of price base quantity MUST be same as invoiced quantity.”
 

@@ -175,12 +175,12 @@ assert not (CII_XR_RULE_SET & set(CII_XR_EXCLUDED_RULE_IDS)), (
 # --------------------------------------------------------------------------- #
 PEPPOL_UBL_RULE_IDS = [fn.assert_id for fn in _rules_pep.UBL_RULES]
 PEPPOL_UBL_RULE_SET = set(PEPPOL_UBL_RULE_IDS)
-assert len(PEPPOL_UBL_RULE_IDS) == len(PEPPOL_UBL_RULE_SET) == 11, \
+assert len(PEPPOL_UBL_RULE_IDS) == len(PEPPOL_UBL_RULE_SET) == 21, \
     PEPPOL_UBL_RULE_IDS
 
 PEPPOL_CII_RULE_IDS = [fn.assert_id for fn in _rules_pep.CII_RULES]
 PEPPOL_CII_RULE_SET = set(PEPPOL_CII_RULE_IDS)
-assert len(PEPPOL_CII_RULE_IDS) == len(PEPPOL_CII_RULE_SET) == 12, \
+assert len(PEPPOL_CII_RULE_IDS) == len(PEPPOL_CII_RULE_SET) == 22, \
     PEPPOL_CII_RULE_IDS
 
 # Canonical (family-id) views for the coverage matrix: a canonical id is
@@ -189,7 +189,7 @@ assert len(PEPPOL_CII_RULE_IDS) == len(PEPPOL_CII_RULE_SET) == 12, \
 PEPPOL_UBL_PROVEN_CANONICAL = {fn.rule_id for fn in _rules_pep.UBL_RULES}
 PEPPOL_CII_PROVEN_CANONICAL = {fn.rule_id for fn in _rules_pep.CII_RULES}
 assert PEPPOL_UBL_PROVEN_CANONICAL == PEPPOL_CII_PROVEN_CANONICAL, (
-    "batch 1 implements every rule in BOTH bindings; the canonical sets must "
+    "the family is implemented in BOTH bindings; the canonical sets must "
     "coincide")
 
 
@@ -2397,6 +2397,144 @@ def _pepmut_r046(r):
     _pep_add_price_allowance(r, "false", Decimal("5.00"))
 
 
+# --- batch 2 (R053-R130) helpers + mutations. Each rule gets a FIRE fixture; #
+# rules whose holds-direction is nontrivial (an engaged context that passes)  #
+# additionally get an -OK fixture. The clean base + the rest of the corpus    #
+# already exercise the not-engaged holds direction for everything.            #
+def _pep_add_tax_currency(r, code="USD"):
+    """cbc:TaxCurrencyCode (BT-6) right after cbc:DocumentCurrencyCode."""
+    dcc = _child(r, NS_CBC, "DocumentCurrencyCode")
+    tcc = ET.Element(_q(NS_CBC, "TaxCurrencyCode"))
+    tcc.text = code
+    r.insert(list(r).index(dcc) + 1, tcc)
+
+
+def _pep_add_plain_tax_total(r, amount, currency):
+    """A subtotal-free cac:TaxTotal (the BT-111 carrier) before the monetary
+    total."""
+    tt = ET.Element(_q(NS_CAC, "TaxTotal"))
+    _sub_el(tt, NS_CBC, "TaxAmount", amount).set("currencyID", currency)
+    r.insert(list(r).index(_child(r, NS_CAC, "LegalMonetaryTotal")), tt)
+
+
+def _pep_add_doc_period(r, start=None, end=None):
+    """Document cac:InvoicePeriod (BG-14) before AccountingSupplierParty. The
+    01.01a base's FIRST line already carries a line InvoicePeriod
+    2016-01-01..2016-12-31 — the doc period turns the R110/R111 contexts on."""
+    ip = ET.Element(_q(NS_CAC, "InvoicePeriod"))
+    if start is not None:
+        _sub_el(ip, NS_CBC, "StartDate", start)
+    if end is not None:
+        _sub_el(ip, NS_CBC, "EndDate", end)
+    r.insert(list(r).index(_child(r, NS_CAC, "AccountingSupplierParty")), ip)
+
+
+def _pep_set_payment_means_code(r, code):
+    pm = r.find("cac:PaymentMeans", _NSD)
+    pm.find("cbc:PaymentMeansCode", _NSD).text = code
+    return pm
+
+
+def _pep_add_line_doc_reference(r, type_code):
+    line = r.find("cac:InvoiceLine", _NSD)
+    dr = ET.Element(_q(NS_CAC, "DocumentReference"))
+    _sub_el(dr, NS_CBC, "ID", "LINE-OBJ-1")
+    _sub_el(dr, NS_CBC, "DocumentTypeCode", type_code)
+    line.insert(list(line).index(line.find("cac:Item", _NSD)), dr)
+
+
+def _pep_add_base_quantity(r, value, unit=None):
+    """cbc:BaseQuantity on the first line's cac:Price (whose PriceAmount is
+    288.79; the line's InvoicedQuantity is 1 XPP)."""
+    price = r.find("cac:InvoiceLine/cac:Price", _NSD)
+    bq = _sub_el(price, NS_CBC, "BaseQuantity", value)
+    if unit is not None:
+        bq.set("unitCode", unit)
+
+
+def _pepmut_r053(r):
+    # A SECOND subtotal-carrying cac:TaxTotal -> count = 2 != 1.
+    src = _child(r, NS_CAC, "TaxTotal")
+    r.insert(list(r).index(src) + 1, copy.deepcopy(src))
+
+
+def _pepmut_r054(r):
+    # BT-6 present but NO subtotal-free TaxTotal -> count 0 != 1. (R055 also
+    # fires officially: no tax-currency TaxAmount exists at all.)
+    _pep_add_tax_currency(r)
+
+
+def _pepmut_r054_ok(r):
+    # Engaged holds: BT-6 + exactly one subtotal-free USD TaxTotal, same sign
+    # as the EUR total -> R053/R054/R055 all hold.
+    _pep_add_tax_currency(r)
+    _pep_add_plain_tax_total(r, "21.00", "USD")
+
+
+def _pepmut_r055(r):
+    # Sign flip: USD total negative, EUR total positive -> R055 fires while
+    # R053/R054 hold.
+    _pep_add_tax_currency(r)
+    _pep_add_plain_tax_total(r, "-21.00", "USD")
+
+
+def _pepmut_r061(r):
+    # Direct debit (59) without cac:PaymentMandate/cbc:ID.
+    _pep_set_payment_means_code(r, "59")
+
+
+def _pepmut_r061_ok(r):
+    # Engaged holds: direct debit WITH a mandate reference.
+    pm = _pep_set_payment_means_code(r, "59")
+    _sub_el(_sub_el(pm, NS_CAC, "PaymentMandate"), NS_CBC, "ID", "MANDATE-1")
+
+
+def _pepmut_r101(r):
+    _pep_add_line_doc_reference(r, "916")  # only '130' is allowed
+
+
+def _pepmut_r101_ok(r):
+    _pep_add_line_doc_reference(r, "130")  # engaged holds
+
+
+def _pepmut_r110(r):
+    # Doc period starts AFTER the line period start (2016-01-01).
+    _pep_add_doc_period(r, start="2016-02-01")
+
+
+def _pepmut_r111(r):
+    # Doc period ends BEFORE the line period end (2016-12-31).
+    _pep_add_doc_period(r, end="2016-06-30")
+
+
+def _pepmut_r110_111_ok(r):
+    # Engaged holds: the line period lies within the doc period.
+    _pep_add_doc_period(r, start="2016-01-01", end="2016-12-31")
+
+
+def _pepmut_r120(r):
+    # LineExtensionAmount off by 10.00 from qty*(price/base) = 288.79.
+    line = r.find("cac:InvoiceLine", _NSD)
+    line.find("cbc:LineExtensionAmount", _NSD).text = "298.79"
+
+
+def _pepmut_r121(r):
+    _pep_add_base_quantity(r, "0")  # 0 is not > 0; R120 unaffected (0 -> 1)
+
+
+def _pepmut_r121_ok(r):
+    _pep_add_base_quantity(r, "1")  # engaged holds; R120's base stays 1
+
+
+def _pepmut_r130(r):
+    # unitCode KGM != the line's InvoicedQuantity unitCode XPP.
+    _pep_add_base_quantity(r, "1", unit="KGM")
+
+
+def _pepmut_r130_ok(r):
+    _pep_add_base_quantity(r, "1", unit="XPP")  # engaged holds
+
+
 _PEPPOL_MUTATIONS = [
     ("PEPPOL-R001", _pepmut_r001), ("PEPPOL-R005", _pepmut_r005),
     ("PEPPOL-R008", _pepmut_r008), ("PEPPOL-R010", _pepmut_r010),
@@ -2404,6 +2542,15 @@ _PEPPOL_MUTATIONS = [
     ("PEPPOL-R041", _pepmut_r041), ("PEPPOL-R042", _pepmut_r042),
     ("PEPPOL-R043", _pepmut_r043), ("PEPPOL-R044", _pepmut_r044),
     ("PEPPOL-R046", _pepmut_r046),
+    ("PEPPOL-R053", _pepmut_r053), ("PEPPOL-R054", _pepmut_r054),
+    ("PEPPOL-R054-OK", _pepmut_r054_ok), ("PEPPOL-R055", _pepmut_r055),
+    ("PEPPOL-R061", _pepmut_r061), ("PEPPOL-R061-OK", _pepmut_r061_ok),
+    ("PEPPOL-R101", _pepmut_r101), ("PEPPOL-R101-OK", _pepmut_r101_ok),
+    ("PEPPOL-R110", _pepmut_r110), ("PEPPOL-R111", _pepmut_r111),
+    ("PEPPOL-R110-111-OK", _pepmut_r110_111_ok),
+    ("PEPPOL-R120", _pepmut_r120), ("PEPPOL-R121", _pepmut_r121),
+    ("PEPPOL-R121-OK", _pepmut_r121_ok), ("PEPPOL-R130", _pepmut_r130),
+    ("PEPPOL-R130-OK", _pepmut_r130_ok),
 ]
 
 
@@ -3699,6 +3846,170 @@ def _pepcmut_r046(r):
     _pep_cii_add_gross_price(r, "false", Decimal("5.00"))
 
 
+# --- batch 2 (R053-R130) helpers + mutations, mirroring the UBL set. The     #
+# 01.02a base: one line (BilledQuantity 1 XPP, net ChargeAmount 11.78,        #
+# LineTotalAmount 11.78), one EUR TaxTotalAmount 0.82, PaymentMeans TypeCode  #
+# 58, one SpecifiedTradePaymentTerms.                                          #
+def _pep_cii_add_tax_currency(r, code="USD"):
+    """ram:TaxCurrencyCode (BT-6) — schema order puts it BEFORE
+    ram:InvoiceCurrencyCode."""
+    settle = _cii_settlement(r)
+    icc = settle.find("ram:InvoiceCurrencyCode", _NSC)
+    tcc = ET.Element(_cq(NS_RAM, "TaxCurrencyCode"))
+    tcc.text = code
+    settle.insert(list(settle).index(icc), tcc)
+
+
+def _pep_cii_add_tax_total(r, amount, currency):
+    """An additional ram:TaxTotalAmount right after the existing one."""
+    summ = _cii_settlement(r).find(
+        "ram:SpecifiedTradeSettlementHeaderMonetarySummation", _NSC)
+    existing = summ.find("ram:TaxTotalAmount", _NSC)
+    tta = ET.Element(_cq(NS_RAM, "TaxTotalAmount"))
+    tta.text = amount
+    tta.set("currencyID", currency)
+    summ.insert(list(summ).index(existing) + 1, tta)
+
+
+def _pep_cii_period(start, end):
+    bsp = ET.Element(_cq(NS_RAM, "BillingSpecifiedPeriod"))
+    for tag, val in (("StartDateTime", start), ("EndDateTime", end)):
+        if val is not None:
+            dt = _csub(bsp, NS_RAM, tag)
+            _csub(dt, NS_UDT, "DateTimeString", val).set("format", "102")
+    return bsp
+
+
+def _pep_cii_add_header_period(r, start=None, end=None):
+    """Header ram:BillingSpecifiedPeriod (BG-14), before the payment terms."""
+    settle = _cii_settlement(r)
+    pt = settle.find("ram:SpecifiedTradePaymentTerms", _NSC)
+    settle.insert(list(settle).index(pt), _pep_cii_period(start, end))
+
+
+def _pep_cii_line_settlement(r):
+    return r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:IncludedSupplyChainTradeLineItem/"
+                  "ram:SpecifiedLineTradeSettlement", _NSC)
+
+
+def _pep_cii_add_line_period(r, start=None, end=None):
+    """Line ram:BillingSpecifiedPeriod (BG-26), after ApplicableTradeTax."""
+    ls = _pep_cii_line_settlement(r)
+    tax = ls.find("ram:ApplicableTradeTax", _NSC)
+    ls.insert(list(ls).index(tax) + 1, _pep_cii_period(start, end))
+
+
+def _pep_cii_set_type_code(r, code):
+    settle = _cii_settlement(r)
+    settle.find("ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode",
+                _NSC).text = code
+    return settle
+
+
+def _pep_cii_add_line_referenced_doc(r, type_code):
+    ls = _pep_cii_line_settlement(r)
+    ard = _csub(ls, NS_RAM, "AdditionalReferencedDocument")
+    _csub(ard, NS_RAM, "IssuerAssignedID", "LINE-OBJ-1")
+    _csub(ard, NS_RAM, "TypeCode", type_code)
+
+
+def _pep_cii_add_basis_quantity(r, value, unit=None):
+    """ram:BasisQuantity on the line's NetPriceProductTradePrice (ChargeAmount
+    11.78; the line's BilledQuantity is 1 XPP)."""
+    npp = r.find("rsm:SupplyChainTradeTransaction/"
+                 "ram:IncludedSupplyChainTradeLineItem/"
+                 "ram:SpecifiedLineTradeAgreement/"
+                 "ram:NetPriceProductTradePrice", _NSC)
+    bq = _csub(npp, NS_RAM, "BasisQuantity", value)
+    if unit is not None:
+        bq.set("unitCode", unit)
+
+
+def _pepcmut_r053(r):
+    # A SECOND EUR TaxTotalAmount -> count(currency == BT-5) = 2 > 1.
+    _pep_cii_add_tax_total(r, "0.82", "EUR")
+
+
+def _pepcmut_r054(r):
+    # BT-6 present, no non-EUR TaxTotalAmount -> count 0 != 1. (R055 also
+    # fires officially: no tax-currency total exists at all.)
+    _pep_cii_add_tax_currency(r)
+
+
+def _pepcmut_r054_ok(r):
+    # Engaged holds: BT-6 + exactly one USD total, same sign as the EUR one.
+    _pep_cii_add_tax_currency(r)
+    _pep_cii_add_tax_total(r, "0.90", "USD")
+
+
+def _pepcmut_r055(r):
+    # Sign flip: USD total negative, EUR total positive -> only R055 fires.
+    _pep_cii_add_tax_currency(r)
+    _pep_cii_add_tax_total(r, "-0.82", "USD")
+
+
+def _pepcmut_r061(r):
+    # Direct debit (59) without ram:DirectDebitMandateID.
+    _pep_cii_set_type_code(r, "59")
+
+
+def _pepcmut_r061_ok(r):
+    settle = _pep_cii_set_type_code(r, "59")
+    pt = settle.find("ram:SpecifiedTradePaymentTerms", _NSC)
+    _csub(pt, NS_RAM, "DirectDebitMandateID", "MANDATE-1")
+
+
+def _pepcmut_r101(r):
+    _pep_cii_add_line_referenced_doc(r, "916")  # only '130' is allowed
+
+
+def _pepcmut_r101_ok(r):
+    _pep_cii_add_line_referenced_doc(r, "130")
+
+
+def _pepcmut_r110(r):
+    # Line period starts BEFORE the header period start.
+    _pep_cii_add_header_period(r, start="20160201")
+    _pep_cii_add_line_period(r, start="20160101")
+
+
+def _pepcmut_r111(r):
+    # Line period ends AFTER the header period end.
+    _pep_cii_add_header_period(r, end="20160630")
+    _pep_cii_add_line_period(r, end="20161231")
+
+
+def _pepcmut_r110_111_ok(r):
+    # Engaged holds: the line period lies within the header period.
+    _pep_cii_add_header_period(r, start="20160101", end="20161231")
+    _pep_cii_add_line_period(r, start="20160601", end="20160630")
+
+
+def _pepcmut_r120(r):
+    # LineTotalAmount off by 10.00 from qty*(price/base) = 11.78.
+    ms = _pep_cii_line_settlement(r).find(
+        "ram:SpecifiedTradeSettlementLineMonetarySummation", _NSC)
+    ms.find("ram:LineTotalAmount", _NSC).text = "21.78"
+
+
+def _pepcmut_r121(r):
+    _pep_cii_add_basis_quantity(r, "0")  # 0 is not > 0; R120's base -> 1
+
+
+def _pepcmut_r121_ok(r):
+    _pep_cii_add_basis_quantity(r, "1")
+
+
+def _pepcmut_r130(r):
+    # unitCode KGM != the line's BilledQuantity unitCode XPP.
+    _pep_cii_add_basis_quantity(r, "1", unit="KGM")
+
+
+def _pepcmut_r130_ok(r):
+    _pep_cii_add_basis_quantity(r, "1", unit="XPP")
+
+
 _PEPPOL_CII_MUTATIONS = [
     ("PEPPOL-R001", _pepcmut_r001), ("PEPPOL-R005", _pepcmut_r005),
     ("PEPPOL-R008", _pepcmut_r008), ("PEPPOL-R010", _pepcmut_r010),
@@ -3706,6 +4017,15 @@ _PEPPOL_CII_MUTATIONS = [
     ("PEPPOL-R041", _pepcmut_r041), ("PEPPOL-R042", _pepcmut_r042),
     ("PEPPOL-R043-1", _pepcmut_r043_1), ("PEPPOL-R043-2", _pepcmut_r043_2),
     ("PEPPOL-R044", _pepcmut_r044), ("PEPPOL-R046", _pepcmut_r046),
+    ("PEPPOL-R053", _pepcmut_r053), ("PEPPOL-R054", _pepcmut_r054),
+    ("PEPPOL-R054-OK", _pepcmut_r054_ok), ("PEPPOL-R055", _pepcmut_r055),
+    ("PEPPOL-R061", _pepcmut_r061), ("PEPPOL-R061-OK", _pepcmut_r061_ok),
+    ("PEPPOL-R101", _pepcmut_r101), ("PEPPOL-R101-OK", _pepcmut_r101_ok),
+    ("PEPPOL-R110", _pepcmut_r110), ("PEPPOL-R111", _pepcmut_r111),
+    ("PEPPOL-R110-111-OK", _pepcmut_r110_111_ok),
+    ("PEPPOL-R120", _pepcmut_r120), ("PEPPOL-R121", _pepcmut_r121),
+    ("PEPPOL-R121-OK", _pepcmut_r121_ok), ("PEPPOL-R130", _pepcmut_r130),
+    ("PEPPOL-R130-OK", _pepcmut_r130_ok),
 ]
 
 

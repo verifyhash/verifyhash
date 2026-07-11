@@ -34,7 +34,7 @@
       "license": "Apache-2.0"
     }
   },
-  "rule_count": 266,
+  "rule_count": 276,
   "rules": [
     {
       "id": "BR-01",
@@ -6563,6 +6563,246 @@
           "differentially_proven": true
         }
       }
+    },
+    {
+      "id": "PEPPOL-EN16931-R053",
+      "title": "Only one tax total with tax subtotals MUST be provided.",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R054",
+      "title": "Only one tax total without tax subtotals MUST be provided when tax currency code is provided.",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R055",
+      "title": "Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign.",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R061",
+      "title": "Mandate reference MUST be provided for direct debit.",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R101",
+      "title": "Element Document reference can only be used for Invoice line object.",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R110",
+      "title": "Start date of line period MUST be within invoice period. (Line start >= document invoice-period start.)",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R111",
+      "title": "End date of line period MUST be within invoice period. (Line end <= document invoice-period end.)",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R120",
+      "title": "Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount.",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "warning",
+      "flag": "warning",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R121",
+      "title": "Base quantity MUST be a positive number above zero.",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "PEPPOL-EN16931-R130",
+      "title": "Unit code of price base quantity MUST be same as invoiced quantity.",
+      "family": "peppol-kosit-vendored",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "xrechnung-ubl",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "version": "2.5.0 (XRechnung 3.0.2)",
+          "differentially_proven": true
+        }
+      }
     }
   ],
   "exclusions": {
@@ -6778,8 +7018,8 @@
       }
     ],
     "peppol": {
-      "status": "kosit-vendored-batch-1",
-      "note": "Partially covered, scoped honestly: the engine asserts 11 of the 21 canonical PEPPOL-EN16931-R* rules that KoSIT ships inside the official XRechnung Schematron artifact (see the peppol_kosit_family section and the rule table; each is differentially proven per binding). This is NOT full Peppol BIS Billing 3.0 support: the OpenPeppol ruleset proper (its own Schematron + test corpus) is a separate, not-vendored artifact, and nothing beyond the KoSIT-vendored asserts is claimed. The remaining rules are the explicit known-open worklist in peppol_kosit_family, recomputed live by test_coverage_gap.py."
+      "status": "kosit-vendored-family-complete",
+      "note": "Scoped honestly: the engine asserts ALL 21 canonical PEPPOL-EN16931-R* rules that KoSIT ships inside the official XRechnung Schematron artifact, in both bindings (see the peppol_kosit_family section and the rule table; each is differentially proven per binding). This is NOT full Peppol BIS Billing 3.0 support: the OpenPeppol ruleset proper (its own Schematron + test corpus) is a separate, not-vendored artifact, and nothing beyond the KoSIT-vendored asserts is claimed. The family enumeration stays machine-checked in peppol_kosit_family, recomputed live by test_coverage_gap.py, so an artifact bump that adds a new Peppol assert reopens the worklist automatically."
     }
   },
   "gap": {
@@ -6894,8 +7134,8 @@
           "PEPPOL-EN16931-R130"
         ],
         "family_universe": 21,
-        "implemented": 11,
-        "known_open": 10
+        "implemented": 21,
+        "known_open": 0
       },
       "xrechnung-cii": {
         "source": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
@@ -6948,8 +7188,8 @@
           "PEPPOL-EN16931-R130"
         ],
         "family_universe": 21,
-        "implemented": 11,
-        "known_open": 10
+        "implemented": 21,
+        "known_open": 0
       }
     },
     "implemented_ids": [
@@ -6963,219 +7203,18 @@
       "PEPPOL-EN16931-R042",
       "PEPPOL-EN16931-R043",
       "PEPPOL-EN16931-R044",
-      "PEPPOL-EN16931-R046"
+      "PEPPOL-EN16931-R046",
+      "PEPPOL-EN16931-R053",
+      "PEPPOL-EN16931-R054",
+      "PEPPOL-EN16931-R055",
+      "PEPPOL-EN16931-R061",
+      "PEPPOL-EN16931-R101",
+      "PEPPOL-EN16931-R110",
+      "PEPPOL-EN16931-R111",
+      "PEPPOL-EN16931-R120",
+      "PEPPOL-EN16931-R121",
+      "PEPPOL-EN16931-R130"
     ],
-    "known_open_worklist": [
-      {
-        "id": "PEPPOL-EN16931-R053",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R053",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Only one tax total with tax subtotals MUST be provided."
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R053",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "No more than one tax total amount must be provided where currency id equals document currency code."
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R054",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R054",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Only one tax total without tax subtotals MUST be provided when tax currency code is provided."
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R054",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Only one tax total amount must be provided where currency id equals tax currency code, if tax currency code (BT-6) is provided."
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R055",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R055",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign"
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R055",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign"
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R061",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R061",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Mandate reference MUST be provided for direct debit."
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R061",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Mandate reference MUST be provided for direct debit."
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R101",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R101",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Element Document reference can only be used for Invoice line object"
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R101",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Element Additional referenced document can only be used for Invoice line object."
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R110",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R110",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Start date of line period MUST be within invoice period."
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R110",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Start date of line period MUST be within invoice period."
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R111",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R111",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "End date of line period MUST be within invoice period."
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R111",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "End date of line period MUST be within invoice period."
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R120",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R120",
-              "flag": "warning",
-              "vacuous_in_artifact": false,
-              "text": "Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount"
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R120",
-              "flag": "warning",
-              "vacuous_in_artifact": false,
-              "text": "Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount"
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R121",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R121",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Base quantity MUST be a positive number above zero."
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R121",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Base quantity MUST be a positive number above zero."
-            }
-          ]
-        }
-      },
-      {
-        "id": "PEPPOL-EN16931-R130",
-        "bindings": {
-          "xrechnung-ubl": [
-            {
-              "assert_id": "PEPPOL-EN16931-R130",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Unit code of price base quantity MUST be same as invoiced quantity."
-            }
-          ],
-          "xrechnung-cii": [
-            {
-              "assert_id": "PEPPOL-EN16931-R130",
-              "flag": "fatal",
-              "vacuous_in_artifact": false,
-              "text": "Unit code of price base quantity MUST be same as invoiced quantity."
-            }
-          ]
-        }
-      }
-    ]
+    "known_open_worklist": []
   }
 }

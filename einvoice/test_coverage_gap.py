@@ -283,10 +283,14 @@ class CoverageGapTest(unittest.TestCase):
             self.assertRegex(rid, r"^BR-")
 
     # ---- 7. the KoSIT-vendored Peppol family --------------------------------
-    PEPPOL_BATCH_1 = frozenset(
+    # Batches 1 (T-VHPEP.1) + 2 (T-VHPEP.2) = the COMPLETE 21-rule canonical
+    # family both vendored KoSIT artifacts carry.
+    PEPPOL_FAMILY_ALL = frozenset(
         "PEPPOL-EN16931-" + r for r in
         ("R001", "R005", "R008", "R010", "R020",
-         "R040", "R041", "R042", "R043", "R044", "R046"))
+         "R040", "R041", "R042", "R043", "R044", "R046",
+         "R053", "R054", "R055", "R061", "R101",
+         "R110", "R111", "R120", "R121", "R130"))
 
     def _peppol_fam(self):
         fam = self.matrix.get("peppol_kosit_family")
@@ -364,21 +368,27 @@ class CoverageGapTest(unittest.TestCase):
         self.assertEqual(open_ids | impl_ids, all_universe,
                          "worklist + implemented do not partition the family")
 
-    def test_peppol_batch1_implemented_in_both_bindings(self):
-        """The 11 batch-1 rules are implemented wherever the vendored artifact
-        carries the assert — for batch 1 that is BOTH bindings."""
+    def test_peppol_family_implemented_in_both_bindings(self):
+        """ALL 21 canonical family rules (batches 1 + 2) are implemented
+        wherever the vendored artifact carries the assert — for this family
+        that is BOTH bindings — and the family is CLOSED: the live registries
+        implement exactly the canonical universe, no more, no less."""
         from einvoice import rules_peppol as _rules_pep
         fam = self._peppol_fam()
         for key, registry in (("xrechnung-ubl", _rules_pep.UBL_RULES),
                               ("xrechnung-cii", _rules_pep.CII_RULES)):
             art = fam["artifacts"][key]
             impl = {fn.rule_id for fn in registry}
-            self.assertLessEqual(self.PEPPOL_BATCH_1, impl,
-                                 "%s: batch-1 rule missing from the live "
-                                 "registry" % key)
-            self.assertLessEqual(self.PEPPOL_BATCH_1, set(art["canonical_ids"]),
-                                 "%s: batch-1 id not in the artifact family"
-                                 % key)
+            self.assertEqual(self.PEPPOL_FAMILY_ALL, impl,
+                             "%s: live registry does not implement exactly "
+                             "the 21-rule canonical family" % key)
+            self.assertEqual(self.PEPPOL_FAMILY_ALL,
+                             set(art["canonical_ids"]),
+                             "%s: artifact family != the 21 canonical ids"
+                             % key)
+            self.assertEqual(art["known_open"], 0,
+                             "%s: family closed-out, known_open must be 0"
+                             % key)
             # Every registered assert id must exist verbatim in the artifact.
             index = _coverage.schematron_assert_index(
                 os.path.join(HERE, art["source"]))
@@ -386,6 +396,8 @@ class CoverageGapTest(unittest.TestCase):
                 self.assertIn(fn.assert_id, index,
                               "%s: registry assert id %s not in the vendored "
                               "artifact" % (key, fn.assert_id))
+        self.assertEqual(fam["known_open_worklist"], [],
+                         "family closed-out: the worklist must be empty")
 
     def test_peppol_worklist_texts_verbatim_and_flags(self):
         """No fabricated prose: every known-open row carries the official rule

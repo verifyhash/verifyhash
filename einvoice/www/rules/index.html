@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EN 16931 / XRechnung rule index — einvoice rule reference</title>
-<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (255 rules across 17 families), grouped by rule family with a reference page for each.">
+<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (276 rules across 18 families), grouped by rule family with a reference page for each.">
 <link rel="canonical" href="https://verifyhash.com/einvoice/rules/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -69,7 +69,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../index.html">einvoice</a> / EN 16931 / XRechnung rule reference</p>
 <h1>Rule index</h1>
 <p class="lead">Every EN 16931 / XRechnung business rule the einvoice engine can fire, grouped by rule family. Each rule links to its own reference page: what it requires, the BT/BG business terms it touches, the XML location, a one-line fix, the engine severity, and the verbatim official Schematron assert.</p>
-<p><strong>255 rules</strong> in total — 245 fatal, 9 warning, 1 information — across 17 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
+<p><strong>276 rules</strong> in total — 265 fatal, 10 warning, 1 information — across 18 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
 <nav class="toc">
 <ul class="rules">
 <li><a href="#BR">BR</a> (58)</li>
@@ -89,6 +89,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="#BR-DE">BR-DE</a> (31)</li>
 <li><a href="#BR-DE-TMP">BR-DE-TMP</a> (1)</li>
 <li><a href="#BR-DEX">BR-DEX</a> (14)</li>
+<li><a href="#PEPPOL-EN16931">PEPPOL-EN16931</a> (21)</li>
 </ul>
 </nav>
 <section class="fam" id="BR">
@@ -446,6 +447,33 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="BR-DEX-12/index.html"><code>BR-DEX-12</code></a> — &#x27;Third party payment description&#x27; (BT-DEX-003, cbc:InstructionID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). <span class="sev">fatal</span></li>
 <li><a href="BR-DEX-13/index.html"><code>BR-DEX-13</code></a> — &#x27;Third party payment amount&#x27; (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, &#x27;.&#x27;)) &lt;= 2 (no &#x27;.&#x27; -&gt; &#x27;&#x27; -&gt; length 0 -&gt; holds). <span class="sev">fatal</span></li>
 <li><a href="BR-DEX-14/index.html"><code>BR-DEX-14</code></a> — The currency of &#x27;Third party payment amount&#x27; (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -&gt; fires. <span class="sev">fatal</span></li>
+</ul>
+</section>
+<section class="fam" id="PEPPOL-EN16931">
+<h2>PEPPOL-EN16931 <small>(21)</small></h2>
+<p class="intro">Peppol-derived rules as vendored inside the official KoSIT XRechnung Schematron artifact — the KoSIT-vendored subset only, NOT full Peppol BIS Billing 3.0 support.</p>
+<ul class="rules">
+<li><a href="PEPPOL-EN16931-R001/index.html"><code>PEPPOL-EN16931-R001</code></a> — Business process MUST be provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R005/index.html"><code>PEPPOL-EN16931-R005</code></a> — VAT accounting currency code MUST be different from invoice currency code when provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R008/index.html"><code>PEPPOL-EN16931-R008</code></a> — Document MUST not contain empty elements. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R010/index.html"><code>PEPPOL-EN16931-R010</code></a> — Buyer electronic address MUST be provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R020/index.html"><code>PEPPOL-EN16931-R020</code></a> — Seller electronic address MUST be provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R040/index.html"><code>PEPPOL-EN16931-R040</code></a> — Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R041/index.html"><code>PEPPOL-EN16931-R041</code></a> — Allowance/charge base amount MUST be provided when allowance/charge percentage is provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R042/index.html"><code>PEPPOL-EN16931-R042</code></a> — Allowance/charge percentage MUST be provided when allowance/charge base amount is provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R043/index.html"><code>PEPPOL-EN16931-R043</code></a> — Allowance/charge ChargeIndicator value MUST equal &#x27;true&#x27; or &#x27;false&#x27;. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R044/index.html"><code>PEPPOL-EN16931-R044</code></a> — Charge on price level is NOT allowed. Only value &#x27;false&#x27; allowed. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R046/index.html"><code>PEPPOL-EN16931-R046</code></a> — Item net price MUST equal (Gross price - Allowance amount) when gross price is provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R053/index.html"><code>PEPPOL-EN16931-R053</code></a> — Only one tax total with tax subtotals MUST be provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R054/index.html"><code>PEPPOL-EN16931-R054</code></a> — Only one tax total without tax subtotals MUST be provided when tax currency code is provided. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R055/index.html"><code>PEPPOL-EN16931-R055</code></a> — Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R061/index.html"><code>PEPPOL-EN16931-R061</code></a> — Mandate reference MUST be provided for direct debit. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R101/index.html"><code>PEPPOL-EN16931-R101</code></a> — Element Document reference can only be used for Invoice line object. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R110/index.html"><code>PEPPOL-EN16931-R110</code></a> — Start date of line period MUST be within invoice period. (Line start &gt;= document invoice-period start.) <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R111/index.html"><code>PEPPOL-EN16931-R111</code></a> — End date of line period MUST be within invoice period. (Line end &lt;= document invoice-period end.) <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R120/index.html"><code>PEPPOL-EN16931-R120</code></a> — Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount. <span class="sev">warning</span></li>
+<li><a href="PEPPOL-EN16931-R121/index.html"><code>PEPPOL-EN16931-R121</code></a> — Base quantity MUST be a positive number above zero. <span class="sev">fatal</span></li>
+<li><a href="PEPPOL-EN16931-R130/index.html"><code>PEPPOL-EN16931-R130</code></a> — Unit code of price base quantity MUST be same as invoiced quantity. <span class="sev">fatal</span></li>
 </ul>
 </section>
 <footer>

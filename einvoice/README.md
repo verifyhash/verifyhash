@@ -148,9 +148,9 @@ Severities mirror the official flags — only **fatal** rules affect the exit
 code; warnings/information are reported in `--json`. The 14 `BR-DEX-*`
 extension-profile rules have since been implemented as well (see
 `COVERAGE.md`); still NOT implemented: `BR-DE-CVD-*` (Clean Vehicle
-Directive profile) and `BR-TMP-2`. Of the 21 `PEPPOL-EN16931-R*` rules the
-same KoSIT artifact vendors, 11 are implemented in both bindings
-(differential-proven; the other 10 are an explicit known-open worklist in
+Directive profile) and `BR-TMP-2`. All 21 `PEPPOL-EN16931-R*` rules the
+same KoSIT artifact vendors are implemented in both bindings
+(differential-proven; the family enumeration stays machine-checked in
 `COVERAGE.md`) — that is the KoSIT-vendored subset only, **not** Peppol BIS
 Billing 3.0 support.
 
@@ -222,10 +222,10 @@ prints the offending file, block, and expected vs. actual rule IDs).
   core and the `BR-DEX-*` extension layer are implemented (see
   `COVERAGE.md`), but that ADDITIONAL German profile is not, and `BR-TMP-2`
   from the same KoSIT artifact is also out of scope.
-- **No Peppol BIS Billing 3.0 support.** 11 of the 21 `PEPPOL-EN16931-R*`
+- **No Peppol BIS Billing 3.0 support.** All 21 `PEPPOL-EN16931-R*`
   rules KoSIT ships inside the official XRechnung Schematron artifact ARE
-  implemented (both bindings, differential-proven; the remaining 10 are an
-  explicit known-open worklist in `COVERAGE.md`), but the OpenPeppol ruleset
+  implemented (both bindings, differential-proven; the enumeration stays
+  machine-checked in `COVERAGE.md`), but the OpenPeppol ruleset
   proper (its own Schematron + test corpus) is a separate, not-vendored
   artifact — nothing beyond the KoSIT-vendored asserts is claimed.
 - **14 official `BR-*` ids per CEN universe are documented deliberate

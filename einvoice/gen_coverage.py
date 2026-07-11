@@ -651,20 +651,21 @@ def build_matrix():
             "cii_core_out_of_scope": cii_core_oos,
             "cii_de_out_of_scope": cii_de_oos,
             "peppol": {
-                "status": "kosit-vendored-batch-1",
+                "status": "kosit-vendored-family-complete",
                 "note": (
-                    "Partially covered, scoped honestly: the engine asserts 11 "
-                    "of the 21 canonical PEPPOL-EN16931-R* rules that KoSIT "
-                    "ships inside the official XRechnung Schematron artifact "
+                    "Scoped honestly: the engine asserts ALL 21 canonical "
+                    "PEPPOL-EN16931-R* rules that KoSIT ships inside the "
+                    "official XRechnung Schematron artifact, in both bindings "
                     "(see the peppol_kosit_family section and the rule table; "
                     "each is differentially proven per binding). This is NOT "
                     "full Peppol BIS Billing 3.0 support: the OpenPeppol "
                     "ruleset proper (its own Schematron + test corpus) is a "
                     "separate, not-vendored artifact, and nothing beyond the "
-                    "KoSIT-vendored asserts is claimed. The remaining rules "
-                    "are the explicit known-open worklist in "
+                    "KoSIT-vendored asserts is claimed. The family "
+                    "enumeration stays machine-checked in "
                     "peppol_kosit_family, recomputed live by "
-                    "test_coverage_gap.py."),
+                    "test_coverage_gap.py, so an artifact bump that adds a "
+                    "new Peppol assert reopens the worklist automatically."),
             },
         },
         "gap": build_gap(set(entries), deliberate_exclusion_ids()),

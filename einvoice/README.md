@@ -26,17 +26,28 @@ PDF containers via `einvoice.report`).
   Actions / GitLab CI recipes) that fails a build on any non-conformant
   invoice, naming the violated rule ID. See [§4](#4-ci-conformance-gate).
 
-Read §2 before trusting it with anything. The engine asserts **209 of the 223
-official EN 16931 `BR-*` rule ids** in each CEN syntax universe (UBL and CII)
-— **every official rule that can actually fire, except eight deferred
-`BR-CL-*` code-list checks** — plus, with `--profile=xrechnung`, the German
-XRechnung CIUS + extension layer (55 `BR-DE-*`/`BR-DE-CVD-*`/`BR-TMP-*`/
-`BR-DEX-*` asserts on UBL, a 29-rule subset plus the CII-only `BR-TMP-3` on
-CII). The machine-checked gap of official rules
+Read §2 before trusting it with anything. The engine asserts **286 business
+rules** in total — the exact set the code fires, enumerated per rule in
+[`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` and drift-gated by
+`test_coverage_matrix.py` against the live rule registries. That total breaks
+down as: **209 of the 223 official EN 16931 `BR-*` rule ids** in each CEN
+syntax universe (UBL and CII) — **every official rule that can actually fire,
+except eight deferred `BR-CL-*` code-list checks** — plus, with
+`--profile=xrechnung`, the German XRechnung CIUS + extension layer
+(55 `BR-DE-*`/`BR-DE-CVD-*`/`BR-TMP-*`/`BR-DEX-*` asserts on UBL, a 29-rule
+subset plus the CII-only `BR-TMP-3` on CII) and the **21
+`PEPPOL-EN16931-R*` rules KoSIT ships inside the official XRechnung
+Schematron artifact** — the KoSIT-vendored subset only, **not** Peppol BIS
+Billing 3.0 support (see §2). The machine-checked gap of official rules
 neither implemented nor documented as a deliberate exclusion is **zero for
-both universes**: `test_coverage_gap.py` recomputes it from the vendored
-official Schematron on every run and fails if the fireable-missing count is
-ever nonzero.
+both universes** (`fireable_missing == 0`): `test_coverage_gap.py` recomputes
+it from the vendored official Schematron on every run and fails if the
+fireable-missing count is ever nonzero. The last admitted gap in the KoSIT
+XRechnung artifact — the Clean-Vehicle-Directive / temporary family
+(`BR-DE-CVD-*`, `BR-TMP-*`) — is **closed with differential proof in both
+bindings** as of 2026-07-11; the machine-checked KoSIT worklists
+(`cvd_tmp_family` and `peppol_kosit_family` in `coverage_matrix.json`) are
+empty.
 
 The caveat that keeps that claim honest, stated adjacent to it rather than in
 a footnote: **4 official ids (`BR-CO-05`–`BR-CO-08`) are shipped as literal
@@ -59,6 +70,22 @@ graded subset × 111 invoices = **10,656 comparisons**; XRechnung + Peppol on
 CII — 52 graded ids × 117 invoices = **6,084 comparisons**. See
 [`CORRECTNESS.md`](CORRECTNESS.md) for the method, corpora, and the honest
 limits of those claims.
+
+**CII proof parity is tracked live, not frozen.** The two bindings share one
+rule registry, but a rule only earns `syntax = UBL + CII` in the matrix once
+it is differentially proven on the CII artifact too. Which rules have that
+proof — and which remain UBL-proven-only — is machine-tracked:
+`test_cii_parity.py` recomputes the worklist (`cii_parity.json`) from the
+live coverage matrix plus a real XML parse of the vendored CII Schematron,
+and fails on any drift, so the parity gap can neither be hand-edited nor go
+stale. The majority of rules are differential-proven on both bindings; the
+remainder is an explicit, recomputed-live worklist. As of 2026-07-11: **196
+of the 286 rules proven on both bindings, 81 CII-fireable rules still on the
+worklist, 8 binding-inapplicable on CII** (the CII artifact ships them
+vacuous, as a tautology, or with a deliberately different binding — reasons
+per rule in `COVERAGE.md`), **and 1 CII-only rule** (`BR-TMP-3`). Those
+counts move as parity batches land — the committed worklist is the
+authoritative current state, not this paragraph.
 
 ---
 

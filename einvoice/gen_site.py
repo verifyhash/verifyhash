@@ -231,6 +231,8 @@ _REPO_URL = "https://github.com/verifyhash/verifyhash"
 _REPO_README = _REPO_URL + "/blob/main/einvoice/README.md"
 _REPO_CI = _REPO_URL + "/tree/main/einvoice/ci"
 _REPO_ACTION = _REPO_URL + "/tree/main/einvoice/action"
+_REPO_COVERAGE = _REPO_URL + "/blob/main/einvoice/COVERAGE.md"
+_REPO_REMEDIATION = _REPO_URL + "/blob/main/einvoice/remediation_catalog.json"
 _REPO_LICENSE = _REPO_URL + "/blob/main/LICENSE"
 _REPO_NOTICE = _REPO_URL + "/blob/main/einvoice/NOTICE"
 _REPO_ISSUES = _REPO_URL + "/issues"
@@ -422,9 +424,10 @@ def render_landing():
     title = ("EN 16931 / XRechnung conformance for German ERP & billing "
              "developers — einvoice")
     description = ("A free, zero-dependency EN 16931 / XRechnung conformance "
-                   "validator for German ERP and billing developers: what "
-                   "conformance is, who needs it, and how to wire the CI gate "
-                   "or GitHub Action in minutes.")
+                   "validator for German ERP and billing developers: 286 "
+                   "differentially-proven business rules, what conformance "
+                   "is, who needs it, and how to wire the CI gate or GitHub "
+                   "Action in minutes.")
     p = []
     w = p.append
     w(_doc_head(title, description, _url_landing()))
@@ -434,9 +437,13 @@ def render_landing():
     w("<h1>einvoice</h1>")
     w('<p class="lead">A zero-dependency, self-hostable conformance validator '
       "for <strong>EN 16931</strong> electronic invoices, targeting the German "
-      "<strong>XRechnung</strong> CIUS (UBL 2.1 <code>Invoice</code> syntax). "
-      "It runs offline against a vendored copy of the official rule corpus — "
-      "no lxml, no Java, no Schematron toolchain, no network calls.</p>")
+      "<strong>XRechnung</strong> CIUS (UBL 2.1 <code>Invoice</code> and "
+      "UN/CEFACT CII syntaxes). It asserts <strong>286 business rules</strong>, "
+      "each differentially proven against the official Schematron artifacts, "
+      "and runs offline against a vendored copy of the official rule corpus — "
+      "no lxml, no Java, no Saxon, no Schematron toolchain, no network calls. "
+      "Pure Python&nbsp;3 standard library, so the same check runs unchanged "
+      "in any CI job.</p>")
 
     w("<h2>What EN 16931 / XRechnung conformance means</h2>")
     w("<p><strong>EN 16931</strong> is the European standard that defines the "
@@ -466,16 +473,55 @@ def render_landing():
       "XRechnung or ZUGFeRD/Factur-X from an ERP, this is the gate that tells "
       "you whether the output is valid.</p>")
 
+    w("<h2>What is proven — the current coverage numbers</h2>")
+    w("<p>The engine asserts <strong>286 business rules</strong>: 209 of the "
+      "223 official EN 16931 <code>BR-*</code> rule ids per CEN syntax "
+      "universe (UBL and CII), the complete German XRechnung CIUS + extension "
+      "layer (<code>BR-DE-*</code>, <code>BR-DEX-*</code>, "
+      "<code>BR-DE-CVD-*</code>, <code>BR-TMP-*</code>), and the 21 "
+      "<code>PEPPOL-EN16931-R*</code> rules KoSIT ships inside the official "
+      "XRechnung Schematron artifact — the KoSIT-vendored subset only, "
+      "<em>not</em> Peppol&nbsp;BIS Billing&nbsp;3.0 support. The "
+      "machine-checked <strong>fireable-missing count is 0 in both CEN "
+      "EN&nbsp;16931 universes</strong>: every official <code>BR-*</code> "
+      "assert that can actually fire is either asserted by the engine or a "
+      "documented deliberate exclusion. That is deliberately <em>not</em> an "
+      "uncaveated 100&nbsp;% claim: 4 official ids "
+      "(<code>BR-CO-05</code>&#8211;<code>BR-CO-08</code>) are shipped as "
+      'literal <code>test="true()"</code> tautologies in the CEN artifacts — '
+      "asserts that can never fire, in either universe, so implementing them "
+      "with a differential proof is impossible by construction.</p>")
+    w("<p>The last admitted gap in the KoSIT XRechnung artifact — the "
+      "Clean-Vehicle-Directive family (<code>BR-DE-CVD-*</code>, "
+      "<code>BR-TMP-*</code>) — is <strong>closed with differential proof in "
+      "both bindings</strong>. Proof parity between the two syntaxes is "
+      "machine-tracked rather than frozen in prose: a test recomputes the "
+      "worklist live from the coverage matrix and the vendored CII "
+      "Schematron, so the majority of rules are differential-proven on both "
+      "UBL and CII and the remainder is an explicit, always-current worklist "
+      "(as of 2026-07-11: 196 of 286 rules proven on both bindings, 81 "
+      "CII-fireable rules still on the worklist). All differential legs run "
+      "at <strong>0 divergences</strong> against the official Schematron.</p>")
+    w('<ul class="rules">')
+    w('<li><a href="%s">Coverage matrix (COVERAGE.md)</a> — the authoritative '
+      "per-rule inventory: every asserted rule, the syntax it is proven in, "
+      "its severity, and every deliberate exclusion with verbatim artifact "
+      "evidence.</li>" % _h(_REPO_COVERAGE))
+    w('<li><a href="%s">Remediation catalog</a> — 286 machine-readable '
+      "entries (rule, plain-language fix, XML location, severity, English and "
+      "German), the single source of truth these rule pages are generated "
+      "from.</li>" % _h(_REPO_REMEDIATION))
+    w("</ul>")
+
     w('<h2>Honest scope</h2>')
-    w("<p>This is an early, auditable slice — not a legal guarantee. The engine "
-      "implements the <strong>full XRechnung <code>BR-DE-*</code> layer</strong> "
-      "and a large subset of the EN 16931 core rules, each "
-      "<em>differential-tested</em> at 100&nbsp;% agreement against the "
-      "official Schematron on thousands of real invoices. It does <em>not</em> "
-      "yet implement every EN 16931 core rule: a green result means &ldquo;no "
-      "implemented rule fired&rdquo;, not &ldquo;certified legally "
-      "conformant&rdquo;. The exact implemented set and its limits are written "
-      "up in the repository README and <code>CORRECTNESS.md</code>.</p>")
+    w("<p>Auditable, but not a legal guarantee. A green result means "
+      "&ldquo;no implemented fatal rule fired&rdquo;, not &ldquo;certified "
+      "legally conformant&rdquo;: 8 official <code>BR-CL-*</code> code-list "
+      "checks are deferred (documented deliberate exclusions, not coverage), "
+      "structural XSD validation is not performed, and there is no UBL "
+      "<code>CreditNote</code> root. The exact implemented set and its limits "
+      "are written up in the repository README, <code>COVERAGE.md</code> and "
+      "<code>CORRECTNESS.md</code>.</p>")
 
     w('<div class="onramp">')
     w("<h2>Free on-ramp</h2>")
@@ -505,6 +551,67 @@ def render_landing():
       "the severity, and the verbatim official Schematron assert (English and "
       'German). Start at the <a href="rules/index.html">rule index, grouped by '
       "family</a>.</p>")
+
+    # ---- German landing section (lang="de") --------------------------------
+    # Full content parity with the English sections above: same facts, same
+    # numbers, same caveats, same cross-links — honestly written German, not a
+    # thin teaser. The site's bilingual model is per-page (matching the rule
+    # pages and the licensing page), so the German landing lives here.
+    w('<section lang="de">')
+    w("<h2>Auf Deutsch: EN-16931-/XRechnung-Konformit&auml;t</h2>")
+    w("<p><strong>einvoice</strong> ist ein Konformit&auml;tspr&uuml;fer ohne "
+      "Abh&auml;ngigkeiten (reine Python-3-Standardbibliothek — kein Java, "
+      "kein Saxon, keine Schematron-Toolchain, keine Netzwerkzugriffe) "
+      "f&uuml;r elektronische Rechnungen nach <strong>EN&nbsp;16931</strong>, "
+      "mit Fokus auf die deutsche <strong>XRechnung</strong> (UBL&nbsp;2.1 "
+      "<code>Invoice</code> und UN/CEFACT CII). Er l&auml;uft offline gegen "
+      "eine mitgelieferte, auditierbare Kopie des offiziellen Regelwerks — "
+      "und damit unver&auml;ndert in jeder CI-Pipeline.</p>")
+    w("<p>Der Pr&uuml;fer setzt <strong>286 Gesch&auml;ftsregeln</strong> "
+      "durch: 209 der 223 offiziellen EN-16931-<code>BR-*</code>-Regeln je "
+      "CEN-Syntax-Universum (UBL und CII), die vollst&auml;ndige deutsche "
+      "XRechnung-Schicht (<code>BR-DE-*</code>, <code>BR-DEX-*</code>, "
+      "<code>BR-DE-CVD-*</code>, <code>BR-TMP-*</code>) sowie die 21 "
+      "<code>PEPPOL-EN16931-R*</code>-Regeln, die KoSIT im offiziellen "
+      "XRechnung-Schematron-Artefakt mitliefert — nur diese von KoSIT "
+      "mitgelieferte Teilmenge, <em>keine</em> Unterst&uuml;tzung f&uuml;r "
+      "Peppol&nbsp;BIS Billing&nbsp;3.0. Die maschinell gepr&uuml;fte "
+      "L&uuml;cke (&bdquo;fireable-missing&ldquo;) ist in beiden "
+      "CEN-Universen <strong>0</strong>: Jede offizielle "
+      "<code>BR-*</code>-Regel, die tats&auml;chlich ausl&ouml;sen kann, wird "
+      "entweder durchgesetzt oder ist eine dokumentierte, begr&uuml;ndete "
+      "Ausnahme. Das ist bewusst <em>keine</em> pauschale "
+      "100-%-Behauptung: 4 offizielle Regeln (<code>BR-CO-05</code>&#8211;"
+      "<code>BR-CO-08</code>) sind in den CEN-Artefakten als w&ouml;rtliche "
+      '<code>test="true()"</code>-Tautologien ausgeliefert — sie k&ouml;nnen '
+      "nie ausl&ouml;sen, ein differentieller Beweis ist f&uuml;r sie "
+      "konstruktionsbedingt unm&ouml;glich.</p>")
+    w("<p>Die letzte eingestandene L&uuml;cke im KoSIT-XRechnung-Artefakt — "
+      "die Clean-Vehicle-Directive-Familie (<code>BR-DE-CVD-*</code>, "
+      "<code>BR-TMP-*</code>) — ist mit differentiellem Beweis in beiden "
+      "Syntaxen <strong>geschlossen</strong>. Die Beweis-Parit&auml;t "
+      "zwischen UBL und CII wird maschinell nachgehalten und von einem Test "
+      "live neu berechnet, statt in Prosa eingefroren zu werden (Stand "
+      "2026-07-11: 196 von 286 Regeln auf beiden Syntaxen bewiesen, 81 "
+      "CII-ausl&ouml;sbare Regeln noch auf der Arbeitsliste). Alle "
+      "Differentiall&auml;ufe gegen das offizielle Schematron laufen mit "
+      "<strong>0 Abweichungen</strong>.</p>")
+    w("<p>Ehrlicher Geltungsbereich: Ein gr&uuml;nes Ergebnis bedeutet "
+      "&bdquo;keine implementierte fatale Regel hat ausgel&ouml;st&ldquo;, "
+      "nicht &bdquo;rechtsverbindlich konform&ldquo; — 8 offizielle "
+      "<code>BR-CL-*</code>-Codelisten-Pr&uuml;fungen sind "
+      "zur&uuml;ckgestellt, eine XSD-Strukturvalidierung findet nicht statt. "
+      'Details und Einstieg: die <a href="%s">Abdeckungsmatrix '
+      "(COVERAGE.md)</a> als ma&szlig;gebliches Regelinventar, der "
+      '<a href="%s">Korrektur-Katalog (remediation_catalog.json)</a> mit 286 '
+      'maschinenlesbaren Eintr&auml;gen, das <a href="%s">CI-Rezept</a> '
+      "(POSIX&nbsp;sh + GitHub&nbsp;Actions / GitLab&nbsp;CI) und die "
+      '<a href="licensing/index.html">Lizenzseite</a> (Apache-2.0 f&uuml;r '
+      "alle; kommerzielle Lizenz auf Anfrage). Jede Regel hat eine eigene "
+      '<a href="rules/index.html">Referenzseite</a> auf Englisch und '
+      "Deutsch.</p>"
+      % (_h(_REPO_COVERAGE), _h(_REPO_REMEDIATION), _h(_REPO_CI)))
+    w("</section>")
 
     w("<footer>")
     w('Free and open source under Apache-2.0 for everyone; closed-source '
@@ -850,6 +957,16 @@ def render_walkthrough(catalog):
       "until the invoice passes. Every finding below is produced by the real "
       "engine — the report is regenerated from the tool and a test fails the "
       "build if this page ever drifts from live output.</p>")
+    w("<p>The engine behind this walkthrough asserts <strong>286 EN 16931 / "
+      "XRechnung business rules</strong> — every official EN 16931 "
+      "<code>BR-*</code> rule that can actually fire in either CEN syntax "
+      "universe (UBL and CII) except eight deferred code-list checks, the "
+      "complete German KoSIT layer including the Clean-Vehicle-Directive "
+      "family, and the 21 <code>PEPPOL-EN16931-R*</code> rules KoSIT vendors "
+      "(that subset only, not Peppol BIS Billing 3.0) — each rule "
+      "differentially proven against the official Schematron artifacts at 0 "
+      "divergences. The per-rule inventory and its honest limits live in "
+      "<code>COVERAGE.md</code> in the repository.</p>")
     w("<p>You can reproduce every step yourself: you only need Python 3 and this "
       "repository, no dependencies and no network. Run the commands from the "
       "<code>einvoice/</code> directory.</p>")

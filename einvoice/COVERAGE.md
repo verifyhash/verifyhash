@@ -26,6 +26,16 @@ XSLT and compares the fired-rule set. The sources:
 - **255 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
 - Syntax: **116** proven on both UBL and CII, **139** UBL-only, **0** CII-only.
 - Severity (blocking class): **245** fatal (block validity), **10** warning / information (reported, non-blocking).
+- **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
+  EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
+  or a documented deliberate exclusion. This is deliberately NOT an uncaveated
+  100% claim: **4 official ids (`BR-CO-05`, `BR-CO-06`, `BR-CO-07`, `BR-CO-08`) are shipped as literal
+  `test="true()"` tautologies** in the CEN artifacts — asserts that can never
+  fire, in either universe, so implementing them with a differential proof is
+  impossible by construction (see the tautology exclusion class below,
+  with verbatim artifact evidence). `test_coverage_gap.py` recomputes
+  fireable-missing live from the vendored `.sch` files and fails if it
+  is ever nonzero.
 
 ## Rules
 
@@ -301,6 +311,32 @@ Rules deliberately NOT counted as coverage, documented so the matrix is honest a
 - **BR-DEC-13** — vacuous in official Schematron (predicate references a non-existent child of cbc:TaxAmount) — never fires
 - **BR-DEC-15** — vacuous in official Schematron (same defect, TaxCurrencyCode) — never fires
 
+### Official `test="true()"` tautologies (deliberate exclusion class)
+
+The CEN artifacts ship these 4 `BR-*` asserts with the literal test
+`true()` in BOTH preprocessed universes — an assert that is always
+satisfied and can NEVER fire, whatever the invoice contains, so no
+implementation could ever be differentially proven against it. They
+are excluded by construction rather than implemented on faith.
+Evidence is quoted verbatim from the vendored artifacts:
+
+- **BR-CO-05** — shipped as the literal tautology test="true()" in BOTH CEN preprocessed artifacts (UBL and CII) — the assert is always satisfied and can never fire, whatever the invoice contains, so no implementation of this rule could ever be differentially proven against the official Schematron; excluded by construction rather than implemented on faith.
+  Official rule text: “Document level allowance reason code (BT-98) and Document level allowance reason (BT-97) shall indicate the same type of allowance.”
+  - `en16931-cii`: `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` line 45 — `<assert id="BR-CO-05" test="true()">`
+  - `en16931-ubl`: `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` line 43 — `<assert id="BR-CO-05" test="true()">`
+- **BR-CO-06** — shipped as the literal tautology test="true()" in BOTH CEN preprocessed artifacts (UBL and CII) — the assert is always satisfied and can never fire, whatever the invoice contains, so no implementation of this rule could ever be differentially proven against the official Schematron; excluded by construction rather than implemented on faith.
+  Official rule text: “Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge.”
+  - `en16931-cii`: `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` line 54 — `<assert id="BR-CO-06" test="true()">`
+  - `en16931-ubl`: `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` line 52 — `<assert id="BR-CO-06" test="true()">`
+- **BR-CO-07** — shipped as the literal tautology test="true()" in BOTH CEN preprocessed artifacts (UBL and CII) — the assert is always satisfied and can never fire, whatever the invoice contains, so no implementation of this rule could ever be differentially proven against the official Schematron; excluded by construction rather than implemented on faith.
+  Official rule text: “Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason.”
+  - `en16931-cii`: `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` line 126 — `<assert id="BR-CO-07" test="true()">`
+  - `en16931-ubl`: `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` line 153 — `<assert id="BR-CO-07" test="true()">`
+- **BR-CO-08** — shipped as the literal tautology test="true()" in BOTH CEN preprocessed artifacts (UBL and CII) — the assert is always satisfied and can never fire, whatever the invoice contains, so no implementation of this rule could ever be differentially proven against the official Schematron; excluded by construction rather than implemented on faith.
+  Official rule text: “Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason.”
+  - `en16931-cii`: `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` line 134 — `<assert id="BR-CO-08" test="true()">`
+  - `en16931-ubl`: `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` line 161 — `<assert id="BR-CO-08" test="true()">`
+
 ### EN 16931 code-list rules present in the Schematron, not yet asserted
 
 These `BR-CL-*` code-list rules exist in the official codes Schematron
@@ -358,36 +394,42 @@ The Peppol BIS Billing 3.0 CIUS layer (the PEPPOL-EN16931-* rules) is NOT shippe
 
 ## Gap — official rules not yet asserted
 
-Machine-checked complement of the rule table: for each CEN EN 16931 artifact, every official BR-* assert id that is NEITHER implemented by the engine NOR listed as a deliberate exclusion — extracted by a real XML parse of sch:assert/@id from the vendored preprocessed Schematron, with the official rule text carried verbatim. test_coverage_gap.py recomputes this live from the .sch files and fails on any drift, so the gap can neither be hidden nor go stale. It is the exact worklist for the next rule batches.
+Machine-checked complement of the rule table: for each CEN EN 16931 artifact, every official BR-* assert id that is NEITHER implemented by the engine NOR listed as a deliberate exclusion — extracted by a real XML parse of sch:assert/@id from the vendored preprocessed Schematron, with the official rule text carried verbatim. fireable_missing further subtracts any missing assert the artifact itself ships as a literal test="true()" tautology (rules that can never fire officially belong to the official_tautology exclusion class, not this worklist). test_coverage_gap.py recomputes this live from the .sch files, fails on any drift, and asserts fireable_missing == 0 for every universe — so the gap can neither be hidden nor go stale, and any future artifact bump that turns a tautology into a real rule reopens the worklist automatically.
 
-Deliberate exclusions counted against each universe (10 ids, all
-documented with reasons in the Exclusions section above): `BR-CL-06`, `BR-CL-07`, `BR-CL-08`, `BR-CL-10`, `BR-CL-11`, `BR-CL-15`, `BR-CL-25`, `BR-CL-26`, `BR-DEC-13`, `BR-DEC-15`.
+Deliberate exclusions counted against each universe (14 ids, all
+documented with reasons in the Exclusions section above): `BR-CL-06`, `BR-CL-07`, `BR-CL-08`, `BR-CL-10`, `BR-CL-11`, `BR-CL-15`, `BR-CL-25`, `BR-CL-26`, `BR-CO-05`, `BR-CO-06`, `BR-CO-07`, `BR-CO-08`, `BR-DEC-13`, `BR-DEC-15`.
 
-### `en16931-ubl` — 209 implemented + 10 excluded + 4 missing = 223 official `BR-*` rules
+### `en16931-ubl` — 209 implemented + 14 excluded + 0 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 756 non-`BR-*` asserts (`UBL-CR-*`, `UBL-DT-*`, `UBL-SR-*`) — syntax-binding cardinality/
 data-type restrictions, not EN 16931 business rules, so they are
 outside this matrix's scope.
 
-| id | flag | official rule text |
-| --- | --- | --- |
-| `BR-CO-05` | fatal | Document level allowance reason code (BT-98) and Document level allowance reason (BT-97) shall indicate the same type of allowance. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-CO-06` | fatal | Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-CO-07` | fatal | Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-CO-08` | fatal | Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
+**Fireable missing: 0** — missing ids whose official assert
+is a real (non-`test="true()"`) test the engine does not yet
+assert and no documented exclusion covers.
 
-### `en16931-cii` — 209 implemented + 10 excluded + 4 missing = 223 official `BR-*` rules
+**None.** Every official `BR-*` assert in this artifact is either
+implemented (differential-proven) or a documented deliberate
+exclusion — including the official `test="true()"` tautologies
+listed in the Exclusions section above with verbatim artifact
+evidence.
+
+### `en16931-cii` — 209 implemented + 14 excluded + 0 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 583 non-`BR-*` asserts (`CII-DT-*`, `CII-SR-*`) — syntax-binding cardinality/
 data-type restrictions, not EN 16931 business rules, so they are
 outside this matrix's scope.
 
-| id | flag | official rule text |
-| --- | --- | --- |
-| `BR-CO-05` | fatal | Document level allowance reason code (BT-98) and Document level allowance reason (BT-97) shall indicate the same type of allowance. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-CO-06` | fatal | Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-CO-07` | fatal | Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
-| `BR-CO-08` | fatal | Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason. *(shipped as `test="true()"` in the artifact — a tautology that can never fire officially)* |
+**Fireable missing: 0** — missing ids whose official assert
+is a real (non-`test="true()"`) test the engine does not yet
+assert and no documented exclusion covers.
+
+**None.** Every official `BR-*` assert in this artifact is either
+implemented (differential-proven) or a documented deliberate
+exclusion — including the official `test="true()"` tautologies
+listed in the Exclusions section above with verbatim artifact
+evidence.
 

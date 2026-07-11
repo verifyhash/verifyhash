@@ -2,7 +2,8 @@
 
 A zero-dependency, embeddable, self-hostable conformance validator for
 **EN 16931** electronic invoices, targeting the German **XRechnung** CIUS
-(UBL 2.1 `Invoice` syntax).
+(UBL 2.1 `Invoice` and UN/CEFACT CII syntaxes, including Factur-X/ZUGFeRD
+PDF containers via `einvoice.report`).
 
 - **Zero dependency.** Python 3 (>=3.8) standard library only. No lxml, no
   Java, no Schematron toolchain, no network calls. `python3 einvoice.py
@@ -25,20 +26,38 @@ A zero-dependency, embeddable, self-hostable conformance validator for
   Actions / GitLab CI recipes) that fails a build on any non-conformant
   invoice, naming the violated rule ID. See [§4](#4-ci-conformance-gate).
 
-This is an **early slice**, not a product. Read §2 before trusting it with
-anything. It currently implements 108 of the roughly 200 EN 16931 core business
-rules, plus — with `--profile=xrechnung` — **all 32 XRechnung-specific
-`BR-DE-*` asserts** of the official KoSIT UBL artifact (the German national
-CIUS layer: BuyerReference, seller contact, payment-means grouping, Skonto
-grammar, IBAN checks, …).
+Read §2 before trusting it with anything. The engine asserts **209 of the 223
+official EN 16931 `BR-*` rule ids** in each CEN syntax universe (UBL and CII)
+— **every official rule that can actually fire, except eight deferred
+`BR-CL-*` code-list checks** — plus, with `--profile=xrechnung`, the German
+XRechnung CIUS + extension layer (46 `BR-DE-*`/`BR-DEX-*` asserts on UBL, a
+20-rule `BR-DE-*` subset on CII). The machine-checked gap of official rules
+neither implemented nor documented as a deliberate exclusion is **zero for
+both universes**: `test_coverage_gap.py` recomputes it from the vendored
+official Schematron on every run and fails if the fireable-missing count is
+ever nonzero.
 
-**How correctness is proven:** all 108 core rules are differential-tested
-against the **official, normative EN16931-UBL Schematron** (the legal ruleset)
-and agree with it on **1085 real invoices with zero divergences**; all 32
-`BR-DE-*` rules are differential-tested against the **official KoSIT
-XRechnung-UBL Schematron 2.5.0** and agree with it on **1016 invoices with
-zero divergences** — see [`CORRECTNESS.md`](CORRECTNESS.md) for the full
-method, corpora, and the honest limits of those claims.
+The caveat that keeps that claim honest, stated adjacent to it rather than in
+a footnote: **4 official ids (`BR-CO-05`–`BR-CO-08`) are shipped as literal
+`test="true()"` tautologies** in the CEN artifacts — asserts that can never
+fire, in either universe, so implementing them with a differential proof is
+impossible *by construction* — and 2 more (`BR-DEC-13/15`) are
+vacuous-by-defect there. Those 6, plus the 8 deferred code-list checks, are
+documented with verbatim artifact evidence in [`COVERAGE.md`](COVERAGE.md),
+the generated per-rule matrix that is the authoritative inventory (it
+supersedes the static first-slice tables in §2 where they disagree). This is
+deliberately **not** an uncaveated "100%" claim.
+
+**How correctness is proven:** every implemented rule is differential-tested
+against the **official, normative compiled Schematron artifacts** (the legal
+rulesets). The 2026-07-11 run, all four legs at **zero divergences**:
+EN 16931 core on UBL — 209 rules × 1145 real invoices = **239,305
+comparisons**; XRechnung on UBL — 46 rules × 1030 invoices = **47,380
+comparisons**; EN 16931 core on CII — the 96-rule graded subset × 111
+invoices = **10,656 comparisons**; XRechnung on CII — the 20-rule graded
+subset × 76 invoices = **1,520 comparisons**. See
+[`CORRECTNESS.md`](CORRECTNESS.md) for the method, corpora, and the honest
+limits of those claims.
 
 ---
 
@@ -74,10 +93,18 @@ black-box web form.
 
 ## 2. HONEST coverage — read this before using it
 
-**Profile:** XRechnung 3.x (the German CIUS of EN 16931-1:2017),
-**UBL 2.1 `Invoice` syntax only.**
+**Profile:** XRechnung 3.x (the German CIUS of EN 16931-1:2017), UBL 2.1
+`Invoice` and UN/CEFACT CII syntaxes.
 
-### Implemented — EN 16931 core (exactly these 108 rules)
+The static tables below are the FIRST-SLICE inventory (108 core + 32 BR-DE
+rules), kept for the family-by-family orientation they give; the engine has
+since grown to 209 core + 46 German-layer rules, and the machine-generated
+[`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` (regenerated from the
+live rule registries by `gen_coverage.py`, drift-gated by
+`test_coverage_matrix.py`) is the authoritative per-rule inventory wherever
+the two disagree.
+
+### Implemented — EN 16931 core (the first-slice 108 rules)
 
 | Family | Rule IDs |
 |---|---|
@@ -104,7 +131,7 @@ Plus two structural checks: S-WF (well-formed XML) and S-ROOT (UBL Invoice-2
 root). Rule wording follows the vendored EN 16931 Schematron
 (`corpus/cen-en16931/ubl/schematron/abstract/EN16931-model.sch`) verbatim.
 
-### Implemented — XRechnung CIUS layer (`--profile=xrechnung`, all 32 BR-DE asserts)
+### Implemented — XRechnung CIUS layer (`--profile=xrechnung`, first-slice 32 BR-DE table; now 46 incl. `BR-DEX-*`)
 
 | Family | Rule IDs |
 |---|---|
@@ -118,35 +145,27 @@ root). Rule wording follows the vendored EN 16931 Schematron
 That is every `BR-DE-*` assert in the official KoSIT XRechnung 3.0.2 UBL
 Schematron (the numbering has official gaps: no BR-DE-12/13/29 exist there).
 Severities mirror the official flags — only **fatal** rules affect the exit
-code; warnings/information are reported in `--json`. NOT implemented:
-`BR-DEX-*` (extension profile), `BR-DE-CVD-*` (Clean Vehicle Directive
-profile), `BR-TMP-2`, and the `PEPPOL-EN16931-*` rules in the same artifact.
+code; warnings/information are reported in `--json`. The 14 `BR-DEX-*`
+extension-profile rules have since been implemented as well (see
+`COVERAGE.md`); still NOT implemented: `BR-DE-CVD-*` (Clean Vehicle
+Directive profile), `BR-TMP-2`, and the `PEPPOL-EN16931-*` rules in the
+same artifact.
 
 ### Differential result vs. the OFFICIAL Schematron (this run)
 
 The strongest correctness evidence: `differential.py` runs each invoice through
-the **official, normative** compiled EN16931-UBL Schematron (Saxon → SVRL) and
-through our validator, then compares — for every invoice and every one of our
-108 rule IDs — whether each engine fires. The Schematron is the legal artifact;
-any disagreement is our bug.
+the **official, normative** compiled Schematron artifacts (Saxon → SVRL) and
+through our validator, then compares — for every invoice and every graded rule
+ID — whether each engine fires. The Schematron is the legal artifact; any
+disagreement is our bug. The 2026-07-11 run:
 
 ```
-corpus ............... 1085 real UBL Invoice documents
-comparisons .......... 117,180  (1085 invoices x 108 rules)
-TOTAL AGREEMENT ...... 117,180 / 117,180 = 100.0000%
-divergences .......... 0 false-positives + 0 misses
-```
-
-The **XRechnung leg** of the same harness compares our 32 `BR-DE-*` rules
-against the official **KoSIT XRechnung-UBL Schematron 2.5.0** (vendored at
-`corpus/xrechnung-schematron/`):
-
-```
-corpus ............... 1016 graded UBL Invoice documents (incl. the full
-                       KoSIT xrechnung-testsuite + 31 BR-DE-targeted mutations)
-comparisons .......... 32,512  (1016 invoices x 32 rules)
-TOTAL AGREEMENT ...... 32,512 / 32,512 = 100.0000%
-divergences .......... 0 false-positives + 0 misses
+LEG 1  EN 16931 core, UBL ....... 1145 invoices x 209 rules = 239,305
+LEG 2  XRechnung layer, UBL ..... 1030 invoices x  46 rules =  47,380
+LEG 3  EN 16931 core, CII ....... 111 invoices x 96 graded  =  10,656
+LEG 4  XRechnung layer, CII ..... 76 invoices x 20 graded   =   1,520
+TOTAL AGREEMENT ...... 100.0000% on every leg
+divergences .......... 0 false-positives + 0 misses, all legs
 ```
 
 All implemented rules agree with their official Schematron on every graded
@@ -154,7 +173,9 @@ invoice. Reproduce it (needs `saxonche` importable): `python3 differential.py`
 (or `... en` / `... xrechnung` for one leg). Method, corpus breakdown, the
 divergences that were found and fixed, and the honest scope limits are
 documented in [`CORRECTNESS.md`](CORRECTNESS.md). This proves faithfulness
-**only for these 108+32 rules** — not EN 16931 or XRechnung as a whole (see §2
+**only for the graded rule × syntax pairs** — the per-rule graded sets, and
+the reasons some implemented rules are not graded on CII, are enumerated in
+[`COVERAGE.md`](COVERAGE.md) — not EN 16931 or XRechnung as a whole (see §2
 "NOT covered").
 
 ### Conformance result (this run)
@@ -194,30 +215,30 @@ prints the offending file, block, and expected vs. actual rule IDs).
 
 ### NOT covered yet (deliberate first-slice cuts — do not rely on these)
 
-- **No `BR-DEX-*` (XRechnung extension) or `BR-DE-CVD-*` (Clean Vehicle
-  Directive) rules** — the `BR-DE-*` CIUS core is complete (see above), but
-  those two ADDITIONAL German profiles are not, and `BR-TMP-2` /
+- **No `BR-DE-CVD-*` (Clean Vehicle Directive) rules** — the `BR-DE-*` CIUS
+  core and the `BR-DEX-*` extension layer are implemented (see
+  `COVERAGE.md`), but that ADDITIONAL German profile is not, and `BR-TMP-2` /
   `PEPPOL-EN16931-*` from the same KoSIT artifact are also out of scope.
-- **~90 further EN 16931 `BR-*` rules unimplemented**: BR-23 (the quantity
-  unit-of-measure code), the rest of the BR-49..BR-67 range (BR-52/53/54
-  supporting documents, BR-56 tax-representative VAT id, BR-58..60/64..67),
-  the rest of the `BR-CO-*` arithmetic (BR-CO-03/09/11/12/25/26 …),
-  the deeper VAT matrices of the REMAINING category families (`-02..-10` of
-  AE/G/IC/O: seller-VAT-ID requirements, per-category taxable/tax sums,
-  exemption reasons; the L/M families entirely — the S, Z and E families ARE
-  covered, minus the deferred BR-S-08), the line-level `BR-DEC-*`
-  allowance/charge decimals (BT-136/137/141/142), and all `BR-CL-*` code
-  lists except BR-CL-01.
+- **14 official `BR-*` ids per CEN universe are documented deliberate
+  exclusions, NOT coverage**: 8 deferred `BR-CL-*` code-list checks
+  (BR-CL-06/07/08/10/11/15/25/26 — real, fireable official rules the engine
+  does not yet assert), `BR-DEC-13`/`BR-DEC-15` (vacuous-by-defect in the
+  official artifact — they can never fire there), and the 4 official
+  **tautologies** `BR-CO-05`–`BR-CO-08`, shipped as literal `test="true()"`
+  asserts in both CEN universes, so no implementation could ever be
+  differentially proven for them. Per-rule reasons and verbatim artifact
+  evidence: [`COVERAGE.md`](COVERAGE.md) §Exclusions.
 - **No XSD (structural schema) validation.** Layer S-XSD is deferred; only
-  well-formedness and the UBL root are checked structurally.
-- **No CII syntax, no UBL `CreditNote`, no ZUGFeRD/Factur-X PDF containers,
-  no signatures or attachments.**
-- **The 100% figures are agreement/pass rates for our 108+32 rules only** — the
-  66-vector `conformance.py` corpus and the 1085/1016-invoice
-  `differential.py` corpora. They are 100% of a limited, honest scope, **not**
-  100% of the ~200-rule standard. Broader KoSIT/CEN fixtures under `corpus/`
-  are used as differential input but the unimplemented rules are still
-  unchecked.
+  well-formedness and the root element are checked structurally.
+- **No UBL `CreditNote` root, no signatures.** CII (`CrossIndustryInvoice`)
+  and Factur-X/ZUGFeRD PDF containers ARE validated (via `einvoice.report`),
+  but only the graded CII rule subsets in `COVERAGE.md` are differentially
+  proven on that syntax.
+- **The 100% figures are agreement/pass rates for the implemented, graded
+  rule × syntax pairs only** (the `differential.py` legs and the
+  `conformance.py` vendored vectors quoted above). They are 100% of a
+  limited, honest scope, **not** 100% of the standard: the 8 deferred
+  code-list rules above are official and fireable, and remain unchecked.
 
 See `SPEC.md` §6 for the full deferred list.
 
@@ -251,8 +272,8 @@ if not result.ok:
         print(v.rule_id, v.message)      # e.g. "BR-DE-15 The element ..."
 ```
 
-`--profile=xrechnung` layers the 32 German `BR-DE-*` rules on top of the core
-(default profile: core only).
+`--profile=xrechnung` layers the 46 German `BR-DE-*`/`BR-DEX-*` rules on top
+of the core (default profile: core only).
 
 Exit codes (stable contract):
 
@@ -315,7 +336,8 @@ conformance gate: 1/12 invoice(s) NON-CONFORMANT (profile=xrechnung) — FAIL
 ```
 
 Same honest scope as §2: the gate proves your invoices pass the
-**implemented** 108+32 rules, not the full standard. The gate's behaviour
+**implemented** rule set (209 core + 46 German-layer rules — the
+authoritative list is `COVERAGE.md`), not the full standard. The gate's behaviour
 (fails naming the rule ID, passes conformant sets, refuses empty input) is
 itself under test in `test_packaging.py`.
 
@@ -412,11 +434,13 @@ A first slice earns further investment or it doesn't. The signal, timeboxed:
 **KILL** if neither happens: write up what was learned, archive the repo, and
 stop. The corpus and harness remain useful artifacts either way.
 
-Current status against this metric: 108 core rules + all 32 XRechnung
-`BR-DE-*` asserts shipped (each batch differential-proven at 100% against its
-official Schematron), 0 vendors contacted. Metric #2's rule-count/`BR-DE`
-half is met on the UBL side; "passing the full KoSIT test suite" still
-requires the unimplemented core rules and CII.
+Current status against this metric: 209 core rules + the 46-rule XRechnung
+CIUS/extension layer shipped (each batch differential-proven at 100% against
+its official Schematron, UBL and CII legs; fireable-missing = 0 in both CEN
+universes, with the 4 official `test="true()"` tautologies `BR-CO-05`–`08`
+documented as the only never-provable ids), 0 vendors contacted. Metric #2's
+rule-count/`BR-DE` half is comfortably met; metric #1 (a vendor) is now the
+whole game.
 
 ---
 

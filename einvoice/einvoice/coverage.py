@@ -94,14 +94,16 @@ def schematron_assert_index(path):
     """Index every ``<sch:assert>`` of a compiled Schematron file by ``@id``.
 
     A REAL XML parse (:mod:`xml.etree.ElementTree`), not a regex scrape of
-    prose. Returns ``{id: {"flag": str, "text": str, "vacuous_in_artifact":
-    bool}}`` where
+    prose. Returns ``{id: {"flag": str, "text": str, "test": str,
+    "vacuous_in_artifact": bool}}`` where
 
     * ``flag`` is the assert's raw ``@flag`` (``fatal`` when absent, matching
       ISO Schematron's unflagged default in these artifacts),
     * ``text`` is the assert's official rule prose — full element text with
       whitespace collapsed and the redundant leading ``[ID]-`` marker the CEN
-      artifacts prepend stripped off, and
+      artifacts prepend stripped off,
+    * ``test`` is the assert's raw ``@test`` XPath, verbatim (empty string when
+      absent) — the evidence field the tautology exclusions quote, and
     * ``vacuous_in_artifact`` is True when the assert's ``@test`` is literally
       ``true()`` (the artifact ships the rule as a tautology that can never
       fire — worth knowing before implementing it).
@@ -119,10 +121,12 @@ def schematron_assert_index(path):
         marker = "[%s]-" % rid
         if text.startswith(marker):
             text = text[len(marker):].strip()
+        test = a.get("test") or ""
         index[rid] = {
             "flag": a.get("flag") or "fatal",
             "text": text,
-            "vacuous_in_artifact": (a.get("test") or "").strip() == "true()",
+            "test": test,
+            "vacuous_in_artifact": test.strip() == "true()",
         }
     return index
 
@@ -215,6 +219,28 @@ def render_markdown(matrix):
       " CII-only." % (n_both, n_ubl, n_cii))
     w("- Severity (blocking class): **%d** fatal (block validity), **%d** warning"
       " / information (reported, non-blocking)." % (n_fatal, n_warn))
+    gap_head = matrix.get("gap")
+    taut_head = (matrix.get("exclusions") or {}).get("official_tautology")
+    if gap_head and taut_head is not None:
+        fm_total = sum(gap_head["artifacts"][k].get("fireable_missing", 0)
+                       for k in gap_head["artifact_order"])
+        w("- **Fireable missing: %d** in both CEN universes (%s) — every official"
+          % (fm_total, ", ".join("`%s`" % k for k in gap_head["artifact_order"])))
+        w("  EN 16931 `BR-*` assert that can actually fire is either asserted by"
+          " the engine")
+        w("  or a documented deliberate exclusion. This is deliberately NOT an"
+          " uncaveated")
+        w("  100%% claim: **%d official ids (`%s`) are shipped as literal"
+          % (len(taut_head),
+             "`, `".join(e["id"] for e in taut_head)))
+        w("  `test=\"true()\"` tautologies** in the CEN artifacts — asserts that"
+          " can never")
+        w("  fire, in either universe, so implementing them with a differential"
+          " proof is")
+        w("  impossible by construction (see the tautology exclusion class below,")
+        w("  with verbatim artifact evidence). `test_coverage_gap.py` recomputes")
+        w("  fireable-missing live from the vendored `.sch` files and fails if it")
+        w("  is ever nonzero.")
     w("")
 
     # --- Rule table ---
@@ -247,6 +273,29 @@ def render_markdown(matrix):
     for e in exc["vacuous"]:
         w("- **%s** — %s" % (e["id"], e["reason"]))
     w("")
+
+    tautologies = exc.get("official_tautology")
+    if tautologies:
+        w("### Official `test=\"true()\"` tautologies (deliberate exclusion "
+          "class)")
+        w("")
+        w("The CEN artifacts ship these %d `BR-*` asserts with the literal test"
+          % len(tautologies))
+        w("`true()` in BOTH preprocessed universes — an assert that is always")
+        w("satisfied and can NEVER fire, whatever the invoice contains, so no")
+        w("implementation could ever be differentially proven against it. They")
+        w("are excluded by construction rather than implemented on faith.")
+        w("Evidence is quoted verbatim from the vendored artifacts:")
+        w("")
+        for e in tautologies:
+            w("- **%s** — %s" % (e["id"], e["reason"]))
+            w("  Official rule text: “%s”" % e["official_text"])
+            for key in sorted(e["evidence"]):
+                ev = e["evidence"][key]
+                w("  - `%s`: `%s` line %d — `<assert id=\"%s\" "
+                  "test=\"%s\">`"
+                  % (key, ev["sch"], ev["line"], ev["assert_id"], ev["test"]))
+        w("")
 
     codelist_deferred = exc.get("codelist_not_asserted")
     if codelist_deferred:
@@ -313,14 +362,29 @@ def render_markdown(matrix):
             w("data-type restrictions, not EN 16931 business rules, so they are")
             w("outside this matrix's scope.")
             w("")
-            w("| id | flag | official rule text |")
-            w("| --- | --- | --- |")
-            for m in a["missing_rules"]:
-                note = (" *(shipped as `test=\"true()\"` in the artifact — a "
-                        "tautology that can never fire officially)*"
-                        if m["vacuous_in_artifact"] else "")
-                w("| `%s` | %s | %s%s |"
-                  % (m["id"], m["flag"], m["text"].replace("|", "\\|"), note))
+            if "fireable_missing" in a:
+                w("**Fireable missing: %d** — missing ids whose official assert"
+                  % a["fireable_missing"])
+                w("is a real (non-`test=\"true()\"`) test the engine does not yet")
+                w("assert and no documented exclusion covers.")
+                w("")
+            if a["missing_rules"]:
+                w("| id | flag | official rule text |")
+                w("| --- | --- | --- |")
+                for m in a["missing_rules"]:
+                    note = (" *(shipped as `test=\"true()\"` in the artifact — a "
+                            "tautology that can never fire officially)*"
+                            if m["vacuous_in_artifact"] else "")
+                    w("| `%s` | %s | %s%s |"
+                      % (m["id"], m["flag"], m["text"].replace("|", "\\|"), note))
+            else:
+                w("**None.** Every official `BR-*` assert in this artifact is"
+                  " either")
+                w("implemented (differential-proven) or a documented deliberate")
+                w("exclusion — including the official `test=\"true()\"`"
+                  " tautologies")
+                w("listed in the Exclusions section above with verbatim artifact")
+                w("evidence.")
             w("")
 
     return "\n".join(lines) + "\n"

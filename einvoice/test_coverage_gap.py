@@ -19,14 +19,24 @@ What is checked (each its own test):
   3. arithmetic: implemented + excluded + missing == official_universe for each
      artifact, and every published count matches the length of the underlying
      id set.
-  4. shape honesty: the gap is non-empty, every missing id matches ^BR-, every
-     missing rule carries non-empty official text and a flag, ids are sorted
-     (deterministic output), and no missing id is secretly fireable by the
-     engine or listed as an exclusion.
-  5. known families: the UBL gap contains the remaining BR-CO tautology block
-     (BR-CO-05..08) and NOTHING from the now-implemented IGIC (BR-AF-*) /
-     IPSI (BR-AG-*) / split-payment (BR-B-*) families — the spot checks an
-     independent measurement of the artifact produced.
+  4. shape honesty: every missing id matches ^BR-, every missing rule carries
+     non-empty official text and a flag, ids are sorted (deterministic
+     output), no missing id is secretly fireable by the engine or listed as
+     an exclusion, and the published fireable_missing count is consistent
+     with the rows.
+  5. FIREABLE-MISSING == 0, recomputed live for BOTH universes: fireable =
+     official BR-* universe minus the asserts the artifact itself ships as
+     literal test="true()" tautologies; every fireable id must be either
+     implemented by the live engine or a documented deliberate exclusion.
+     Nothing is hardcoded off the committed matrix — a vendored-artifact bump
+     that turns a tautology into a real rule fails this test until the rule
+     is implemented.
+  6. the official-tautology exclusion class: BR-CO-05..08 are classified as
+     official_tautology (NOT plain missing), each with verbatim
+     test="true()" evidence (artifact file + line + assert id) that is
+     re-verified here against a fresh parse AND the raw artifact line, for
+     both universes; and NOTHING from the now-implemented IGIC (BR-AF-*) /
+     IPSI (BR-AG-*) / split-payment (BR-B-*) families lingers in any gap.
 """
 
 from __future__ import annotations
@@ -52,11 +62,15 @@ def _live_gap():
                           _gen.deliberate_exclusion_ids())
 
 
+def _index(artifact_key):
+    """Fresh assert index of one CEN artifact, parsed from the .sch."""
+    path = os.path.join(HERE, _gen.GAP_ARTIFACT_SCH[artifact_key])
+    return _coverage.schematron_assert_index(path)
+
+
 def _universe(artifact_key):
     """Fresh BR-* universe of one CEN artifact, parsed from the .sch."""
-    path = os.path.join(HERE, _gen.GAP_ARTIFACT_SCH[artifact_key])
-    index = _coverage.schematron_assert_index(path)
-    return {rid for rid in index if rid.startswith("BR-")}
+    return {rid for rid in _index(artifact_key) if rid.startswith("BR-")}
 
 
 class CoverageGapTest(unittest.TestCase):
@@ -105,19 +119,27 @@ class CoverageGapTest(unittest.TestCase):
                              len(universe & self.excluded), key)
             self.assertEqual(art["missing"], len(art["missing_rules"]), key)
             self.assertEqual(
+                art["fireable_missing"],
+                sum(1 for m in art["missing_rules"]
+                    if not m["vacuous_in_artifact"]),
+                "%s: fireable_missing count inconsistent with the rows" % key)
+            self.assertLessEqual(art["fireable_missing"], art["missing"], key)
+            self.assertEqual(
                 art["implemented"] + art["excluded"] + art["missing"],
                 art["official_universe"],
                 "%s: implemented + excluded + missing != official universe" % key)
 
     # ---- 4. shape honesty --------------------------------------------------
-    def test_gap_nonempty_ids_br_texts_real_and_sorted(self):
+    def test_gap_shape_ids_br_texts_real_and_sorted(self):
+        """Every missing row (the list may legitimately be EMPTY now that the
+        four official test=\"true()\" tautologies are a documented exclusion
+        class — test_fireable_missing_zero_live proves emptiness is honest)
+        must carry a real BR- id, verbatim official text, and a valid flag."""
         self.assertTrue(self.gap["artifact_order"],
                         "gap covers no artifacts")
         for key in self.gap["artifact_order"]:
             art = self.gap["artifacts"][key]
             rows = art["missing_rules"]
-            self.assertGreater(len(rows), 0, "%s: empty gap is implausible "
-                               "while known rule families are unimplemented" % key)
             ids = [m["id"] for m in rows]
             self.assertEqual(len(ids), len(set(ids)), "%s: duplicate ids" % key)
             self.assertEqual(ids, sorted(ids, key=_gen._sort_key),
@@ -148,12 +170,90 @@ class CoverageGapTest(unittest.TestCase):
                                  % (key, m["id"]))
                 self.assertEqual(m["flag"], index[m["id"]]["flag"], m["id"])
 
-    # ---- 5. known-missing spot checks --------------------------------------
-    def test_known_missing_families_present_in_ubl_gap(self):
-        ubl = {m["id"] for m in
-               self.gap["artifacts"]["en16931-ubl"]["missing_rules"]}
+    # ---- 5. fireable-missing == 0, recomputed live -------------------------
+    def test_fireable_missing_zero_live(self):
+        """THE headline claim, recomputed from the artifacts + live registries
+        (never trusted from the committed matrix): for BOTH CEN universes,
+        every official BR-* assert whose @test is not the literal tautology
+        ``true()`` is either fired by the live engine or covered by a live
+        deliberate exclusion. A future artifact bump that adds a real rule (or
+        turns a tautology real) fails here until the rule is implemented —
+        counts are derived, never hardcoded."""
+        for key in self.gap["artifact_order"]:
+            index = _index(key)
+            universe = {rid for rid in index if rid.startswith("BR-")}
+            tautologies = {rid for rid in universe
+                           if index[rid]["test"].strip() == "true()"}
+            fireable = universe - tautologies
+            fireable_missing = fireable - self.implemented - self.excluded
+            self.assertEqual(
+                fireable_missing, set(),
+                "%s: fireable official rules neither implemented nor "
+                "excluded: %s" % (key, sorted(fireable_missing)))
+            # The committed per-artifact count must agree — and be zero.
+            self.assertEqual(
+                self.gap["artifacts"][key]["fireable_missing"], 0,
+                "%s: committed fireable_missing != 0" % key)
+
+    # ---- 6. the official-tautology exclusion class --------------------------
+    def test_official_tautology_class_with_verbatim_evidence(self):
+        """BR-CO-05..08 are classified as the official_tautology exclusion
+        class (distinct from plain missing), each carrying verbatim
+        test=\"true()\" evidence per universe that is re-verified against a
+        fresh XML parse AND the raw line of the vendored artifact."""
+        taut = (self.matrix.get("exclusions") or {}).get("official_tautology")
+        self.assertTrue(taut, "exclusions.official_tautology absent/empty")
+        # Committed class == a live recomputation off the artifacts.
+        self.assertEqual(taut, _gen.official_tautology_exclusions(),
+                         "committed official_tautology class differs from a "
+                         "live recomputation — re-run gen_coverage.py")
+        ids = [e["id"] for e in taut]
+        self.assertEqual(ids, sorted(ids, key=_gen._sort_key))
         for rid in ("BR-CO-05", "BR-CO-06", "BR-CO-07", "BR-CO-08"):
-            self.assertIn(rid, ubl, "expected known-missing %s in UBL gap" % rid)
+            self.assertIn(rid, ids,
+                          "expected official tautology %s in the class" % rid)
+        for e in taut:
+            self.assertTrue(e["official_text"].strip(),
+                            "%s: empty official text" % e["id"])
+            self.assertNotIn(e["id"], self.implemented,
+                             "%s: tautology claimed as fired coverage" % e["id"])
+            self.assertIn(e["id"], self.excluded,
+                          "%s: tautology not in the exclusion id set" % e["id"])
+            self.assertEqual(sorted(e["evidence"]),
+                             sorted(self.gap["artifact_order"]),
+                             "%s: evidence must cover BOTH universes" % e["id"])
+            for key, ev in e["evidence"].items():
+                index = _index(key)
+                self.assertEqual(ev["test"], "true()",
+                                 "%s/%s: evidence test not the literal "
+                                 "tautology" % (e["id"], key))
+                self.assertEqual(index[e["id"]]["test"].strip(), "true()",
+                                 "%s/%s: artifact @test is NOT true() — the "
+                                 "rule became real; implement it" % (e["id"], key))
+                self.assertEqual(ev["sch"], _gen.GAP_ARTIFACT_SCH[key])
+                with open(os.path.join(HERE, ev["sch"]),
+                          encoding="utf-8") as fh:
+                    lines = fh.read().splitlines()
+                cited = lines[ev["line"] - 1]
+                self.assertIn('id="%s"' % ev["assert_id"], cited,
+                              "%s/%s: cited line %d does not hold the assert"
+                              % (e["id"], key, ev["line"]))
+                self.assertIn('test="true()"', cited,
+                              "%s/%s: cited line %d lacks the verbatim "
+                              'test="true()" evidence' % (e["id"], key, ev["line"]))
+
+    def test_tautologies_promoted_out_of_missing(self):
+        """The four ids must NOT appear in any missing list (they were the
+        pre-promotion gap) and MUST be counted in excluded_ids_considered."""
+        considered = set(self.gap["excluded_ids_considered"])
+        for key in self.gap["artifact_order"]:
+            missing = {m["id"] for m in
+                       self.gap["artifacts"][key]["missing_rules"]}
+            for rid in ("BR-CO-05", "BR-CO-06", "BR-CO-07", "BR-CO-08"):
+                self.assertNotIn(rid, missing,
+                                 "%s: %s still listed as plain missing" % (key, rid))
+                self.assertIn(rid, considered,
+                              "%s not counted as a deliberate exclusion" % rid)
 
     def test_implemented_families_absent_from_every_gap(self):
         """The IGIC (batch B), IPSI and split-payment (batch C) families are
@@ -183,6 +283,10 @@ class CoverageGapTest(unittest.TestCase):
         self.assertIsNotNone(m, "UBL gap arithmetic line missing from COVERAGE.md")
         impl, excl, miss, uni = map(int, m.groups())
         self.assertEqual(impl + excl + miss, uni)
+        self.assertIn("Fireable missing:", md,
+                      "COVERAGE.md lost the fireable-missing headline")
+        self.assertIn('Official `test="true()"` tautologies', md,
+                      "COVERAGE.md lost the tautology exclusion section")
 
 
 if __name__ == "__main__":

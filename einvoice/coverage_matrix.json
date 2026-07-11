@@ -6308,6 +6308,84 @@
         "reason": "vacuous in official Schematron (same defect, TaxCurrencyCode) — never fires"
       }
     ],
+    "official_tautology": [
+      {
+        "id": "BR-CO-05",
+        "official_text": "Document level allowance reason code (BT-98) and Document level allowance reason (BT-97) shall indicate the same type of allowance.",
+        "reason": "shipped as the literal tautology test=\"true()\" in BOTH CEN preprocessed artifacts (UBL and CII) — the assert is always satisfied and can never fire, whatever the invoice contains, so no implementation of this rule could ever be differentially proven against the official Schematron; excluded by construction rather than implemented on faith.",
+        "evidence": {
+          "en16931-ubl": {
+            "sch": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
+            "line": 43,
+            "assert_id": "BR-CO-05",
+            "test": "true()"
+          },
+          "en16931-cii": {
+            "sch": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+            "line": 45,
+            "assert_id": "BR-CO-05",
+            "test": "true()"
+          }
+        }
+      },
+      {
+        "id": "BR-CO-06",
+        "official_text": "Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge.",
+        "reason": "shipped as the literal tautology test=\"true()\" in BOTH CEN preprocessed artifacts (UBL and CII) — the assert is always satisfied and can never fire, whatever the invoice contains, so no implementation of this rule could ever be differentially proven against the official Schematron; excluded by construction rather than implemented on faith.",
+        "evidence": {
+          "en16931-ubl": {
+            "sch": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
+            "line": 52,
+            "assert_id": "BR-CO-06",
+            "test": "true()"
+          },
+          "en16931-cii": {
+            "sch": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+            "line": 54,
+            "assert_id": "BR-CO-06",
+            "test": "true()"
+          }
+        }
+      },
+      {
+        "id": "BR-CO-07",
+        "official_text": "Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason.",
+        "reason": "shipped as the literal tautology test=\"true()\" in BOTH CEN preprocessed artifacts (UBL and CII) — the assert is always satisfied and can never fire, whatever the invoice contains, so no implementation of this rule could ever be differentially proven against the official Schematron; excluded by construction rather than implemented on faith.",
+        "evidence": {
+          "en16931-ubl": {
+            "sch": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
+            "line": 153,
+            "assert_id": "BR-CO-07",
+            "test": "true()"
+          },
+          "en16931-cii": {
+            "sch": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+            "line": 126,
+            "assert_id": "BR-CO-07",
+            "test": "true()"
+          }
+        }
+      },
+      {
+        "id": "BR-CO-08",
+        "official_text": "Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason.",
+        "reason": "shipped as the literal tautology test=\"true()\" in BOTH CEN preprocessed artifacts (UBL and CII) — the assert is always satisfied and can never fire, whatever the invoice contains, so no implementation of this rule could ever be differentially proven against the official Schematron; excluded by construction rather than implemented on faith.",
+        "evidence": {
+          "en16931-ubl": {
+            "sch": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
+            "line": 161,
+            "assert_id": "BR-CO-08",
+            "test": "true()"
+          },
+          "en16931-cii": {
+            "sch": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+            "line": 134,
+            "assert_id": "BR-CO-08",
+            "test": "true()"
+          }
+        }
+      }
+    ],
     "codelist_not_asserted": [
       {
         "id": "BR-CL-06",
@@ -6436,7 +6514,7 @@
     }
   },
   "gap": {
-    "description": "Machine-checked complement of the rule table: for each CEN EN 16931 artifact, every official BR-* assert id that is NEITHER implemented by the engine NOR listed as a deliberate exclusion — extracted by a real XML parse of sch:assert/@id from the vendored preprocessed Schematron, with the official rule text carried verbatim. test_coverage_gap.py recomputes this live from the .sch files and fails on any drift, so the gap can neither be hidden nor go stale. It is the exact worklist for the next rule batches.",
+    "description": "Machine-checked complement of the rule table: for each CEN EN 16931 artifact, every official BR-* assert id that is NEITHER implemented by the engine NOR listed as a deliberate exclusion — extracted by a real XML parse of sch:assert/@id from the vendored preprocessed Schematron, with the official rule text carried verbatim. fireable_missing further subtracts any missing assert the artifact itself ships as a literal test=\"true()\" tautology (rules that can never fire officially belong to the official_tautology exclusion class, not this worklist). test_coverage_gap.py recomputes this live from the .sch files, fails on any drift, and asserts fireable_missing == 0 for every universe — so the gap can neither be hidden nor go stale, and any future artifact bump that turns a tautology into a real rule reopens the worklist automatically.",
     "artifact_order": [
       "en16931-ubl",
       "en16931-cii"
@@ -6450,6 +6528,10 @@
       "BR-CL-15",
       "BR-CL-25",
       "BR-CL-26",
+      "BR-CO-05",
+      "BR-CO-06",
+      "BR-CO-07",
+      "BR-CO-08",
       "BR-DEC-13",
       "BR-DEC-15"
     ],
@@ -6458,78 +6540,30 @@
         "source": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
         "official_universe": 223,
         "implemented": 209,
-        "excluded": 10,
-        "missing": 4,
+        "excluded": 14,
+        "missing": 0,
+        "fireable_missing": 0,
         "non_business_rule_asserts": 756,
         "non_business_rule_families": [
           "UBL-CR",
           "UBL-DT",
           "UBL-SR"
         ],
-        "missing_rules": [
-          {
-            "id": "BR-CO-05",
-            "flag": "fatal",
-            "vacuous_in_artifact": true,
-            "text": "Document level allowance reason code (BT-98) and Document level allowance reason (BT-97) shall indicate the same type of allowance."
-          },
-          {
-            "id": "BR-CO-06",
-            "flag": "fatal",
-            "vacuous_in_artifact": true,
-            "text": "Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge."
-          },
-          {
-            "id": "BR-CO-07",
-            "flag": "fatal",
-            "vacuous_in_artifact": true,
-            "text": "Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason."
-          },
-          {
-            "id": "BR-CO-08",
-            "flag": "fatal",
-            "vacuous_in_artifact": true,
-            "text": "Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason."
-          }
-        ]
+        "missing_rules": []
       },
       "en16931-cii": {
         "source": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
         "official_universe": 223,
         "implemented": 209,
-        "excluded": 10,
-        "missing": 4,
+        "excluded": 14,
+        "missing": 0,
+        "fireable_missing": 0,
         "non_business_rule_asserts": 583,
         "non_business_rule_families": [
           "CII-DT",
           "CII-SR"
         ],
-        "missing_rules": [
-          {
-            "id": "BR-CO-05",
-            "flag": "fatal",
-            "vacuous_in_artifact": true,
-            "text": "Document level allowance reason code (BT-98) and Document level allowance reason (BT-97) shall indicate the same type of allowance."
-          },
-          {
-            "id": "BR-CO-06",
-            "flag": "fatal",
-            "vacuous_in_artifact": true,
-            "text": "Document level charge reason code (BT-105) and Document level charge reason (BT-104) shall indicate the same type of charge."
-          },
-          {
-            "id": "BR-CO-07",
-            "flag": "fatal",
-            "vacuous_in_artifact": true,
-            "text": "Invoice line allowance reason code (BT-140) and Invoice line allowance reason (BT-139) shall indicate the same type of allowance reason."
-          },
-          {
-            "id": "BR-CO-08",
-            "flag": "fatal",
-            "vacuous_in_artifact": true,
-            "text": "Invoice line charge reason code (BT-145) and Invoice line charge reason (BT-144) shall indicate the same type of charge reason."
-          }
-        ]
+        "missing_rules": []
       }
     }
   }

@@ -261,13 +261,87 @@ def _sort_key(rid):
     return (rank, family, num, suffix)
 
 
-def deliberate_exclusion_ids():
-    """Ids deliberately NOT asserted at all (vacuous + deferred code-list) —
-    the only exclusion buckets that subtract from an official universe. The
-    cii_*_out_of_scope buckets are IMPLEMENTED rules (proven on UBL, honestly
-    not graded on CII), so they already count as implemented, never excluded."""
+_OFFICIAL_TAUTOLOGY_REASON = (
+    "shipped as the literal tautology test=\"true()\" in BOTH CEN preprocessed "
+    "artifacts (UBL and CII) — the assert is always satisfied and can never "
+    "fire, whatever the invoice contains, so no implementation of this rule "
+    "could ever be differentially proven against the official Schematron; "
+    "excluded by construction rather than implemented on faith.")
+
+_TAUTOLOGY_CACHE = None
+
+
+def _assert_line(rel_path, rid):
+    """1-based line number of the (unique) ``<assert id=\"rid\"`` in a vendored
+    artifact — the citation the tautology evidence carries alongside the file."""
+    with open(os.path.join(HERE, rel_path), encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            if 'id="%s"' % rid in line:
+                return n
+    raise AssertionError("assert id %r not found in %s" % (rid, rel_path))
+
+
+def official_tautology_exclusions():
+    """The official-tautology deliberate-exclusion class, computed LIVE.
+
+    An id qualifies only when the vendored preprocessed CEN artifact of EVERY
+    gap universe ships its assert with the literal ``test=\"true()\"`` (so the
+    rule can never fire anywhere and differential proof is impossible BY
+    CONSTRUCTION), and the engine neither fires it nor lists it in another
+    exclusion bucket. Nothing is hardcoded: bump the vendored artifacts and an
+    id whose test becomes real drops out of this class automatically (and then
+    surfaces as fireable-missing until implemented). Each entry records the
+    verbatim ``@test`` evidence — artifact file + line + assert id — for every
+    universe, plus the official rule text.
+    """
+    global _TAUTOLOGY_CACHE
+    if _TAUTOLOGY_CACHE is not None:
+        return _TAUTOLOGY_CACHE
     from conformance import CALCULATION_ROUNDING_VACUOUS  # noqa: E402
-    return set(CALCULATION_ROUNDING_VACUOUS) | set(CODELIST_NOT_ASSERTED)
+    indexes = {
+        key: _coverage.schematron_assert_index(
+            os.path.join(HERE, GAP_ARTIFACT_SCH[key]))
+        for key in GAP_ARTIFACT_ORDER
+    }
+    common = None
+    for key in GAP_ARTIFACT_ORDER:
+        vac = {rid for rid, e in indexes[key].items()
+               if rid.startswith("BR-") and e["test"].strip() == "true()"}
+        common = vac if common is None else common & vac
+    other_exclusions = set(CALCULATION_ROUNDING_VACUOUS) | set(CODELIST_NOT_ASSERTED)
+    ids = sorted((common or set())
+                 - _coverage.engine_fireable_ids()
+                 - other_exclusions, key=_sort_key)
+    out = []
+    for rid in ids:
+        evidence = {}
+        for key in GAP_ARTIFACT_ORDER:
+            rel = GAP_ARTIFACT_SCH[key]
+            evidence[key] = {
+                "sch": rel,
+                "line": _assert_line(rel, rid),
+                "assert_id": rid,
+                "test": indexes[key][rid]["test"],
+            }
+        out.append({
+            "id": rid,
+            "official_text": indexes[GAP_ARTIFACT_ORDER[0]][rid]["text"],
+            "reason": _OFFICIAL_TAUTOLOGY_REASON,
+            "evidence": evidence,
+        })
+    _TAUTOLOGY_CACHE = out
+    return out
+
+
+def deliberate_exclusion_ids():
+    """Ids deliberately NOT asserted at all (vacuous-by-defect + deferred
+    code-list + official test=\"true()\" tautologies) — the only exclusion
+    buckets that subtract from an official universe. The cii_*_out_of_scope
+    buckets are IMPLEMENTED rules (proven on UBL, honestly not graded on CII),
+    so they already count as implemented, never excluded."""
+    from conformance import CALCULATION_ROUNDING_VACUOUS  # noqa: E402
+    return (set(CALCULATION_ROUNDING_VACUOUS) | set(CODELIST_NOT_ASSERTED)
+            | {e["id"] for e in official_tautology_exclusions()})
 
 
 def _non_br_families(index):
@@ -311,6 +385,8 @@ def build_gap(implemented_ids, excluded_ids):
             "implemented": len(impl_in),
             "excluded": len(excl_in),
             "missing": len(missing),
+            "fireable_missing": sum(
+                1 for rid in missing if not index[rid]["vacuous_in_artifact"]),
             "non_business_rule_asserts": len(index) - len(universe),
             "non_business_rule_families": _non_br_families(index),
             "missing_rules": [
@@ -328,10 +404,15 @@ def build_gap(implemented_ids, excluded_ids):
             "implemented by the engine NOR listed as a deliberate exclusion — "
             "extracted by a real XML parse of sch:assert/@id from the vendored "
             "preprocessed Schematron, with the official rule text carried "
-            "verbatim. test_coverage_gap.py recomputes this live from the "
-            ".sch files and fails on any drift, so the gap can neither be "
-            "hidden nor go stale. It is the exact worklist for the next rule "
-            "batches."),
+            "verbatim. fireable_missing further subtracts any missing assert "
+            "the artifact itself ships as a literal test=\"true()\" tautology "
+            "(rules that can never fire officially belong to the "
+            "official_tautology exclusion class, not this worklist). "
+            "test_coverage_gap.py recomputes this live from the .sch files, "
+            "fails on any drift, and asserts fireable_missing == 0 for every "
+            "universe — so the gap can neither be hidden nor go stale, and "
+            "any future artifact bump that turns a tautology into a real rule "
+            "reopens the worklist automatically."),
         "artifact_order": GAP_ARTIFACT_ORDER,
         "excluded_ids_considered": sorted(excluded_ids, key=_sort_key),
         "artifacts": artifacts,
@@ -424,6 +505,7 @@ def build_matrix():
                 "Rules deliberately NOT counted as coverage, documented so the "
                 "matrix is honest about its boundaries."),
             "vacuous": vacuous,
+            "official_tautology": official_tautology_exclusions(),
             "codelist_not_asserted": codelist_deferred,
             "cii_core_out_of_scope": cii_core_oos,
             "cii_de_out_of_scope": cii_de_oos,

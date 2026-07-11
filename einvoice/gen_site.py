@@ -232,6 +232,7 @@ _REPO_README = _REPO_URL + "/blob/main/einvoice/README.md"
 _REPO_CI = _REPO_URL + "/tree/main/einvoice/ci"
 _REPO_ACTION = _REPO_URL + "/tree/main/einvoice/action"
 _REPO_COVERAGE = _REPO_URL + "/blob/main/einvoice/COVERAGE.md"
+_REPO_SECURITY = _REPO_URL + "/blob/main/einvoice/SECURITY.md"
 _REPO_REMEDIATION = _REPO_URL + "/blob/main/einvoice/remediation_catalog.json"
 _REPO_LICENSE = _REPO_URL + "/blob/main/LICENSE"
 _REPO_NOTICE = _REPO_URL + "/blob/main/einvoice/NOTICE"
@@ -554,6 +555,28 @@ def render_landing():
       'German). Start at the <a href="rules/index.html">rule index, grouped by '
       "family</a>.</p>")
 
+    w("<h2>Safe on untrusted input</h2>")
+    w("<p>The invoices you validate arrive from <strong>untrusted "
+      "suppliers</strong>, so the XML parser is hardened against the classic "
+      "entity attacks. It uses only the Python standard library "
+      "(<code>xml.etree</code> / expat, no <code>lxml</code>, no "
+      "<code>defusedxml</code>): a <code>&lt;!DOCTYPE&gt;</code> — internal or "
+      "external subset — is rejected before any entity can be defined, so "
+      "entity <em>definition</em> and <em>expansion</em> never happen "
+      "(billion-laughs and quadratic-blowup payloads abort in constant time "
+      "and memory instead of exploding), and no external entity or external "
+      "DTD is ever resolved — expat opens no <code>file://</code> or "
+      "<code>http://</code> URL, so an <code>XXE</code> pointed at "
+      "<code>/etc/passwd</code> or an internal host reads and fetches nothing. "
+      "A hostile document is folded into the engine's ordinary "
+      "<em>not-well-formed</em> outcome (its own report finding, CLI exit "
+      "code&nbsp;3) — a bounded, actionable result, never a crash, a hang, or "
+      "a silent pass — and this adds <strong>zero runtime dependencies</strong>. "
+      'This is documented in the &ldquo;Untrusted input / XML entity '
+      'handling&rdquo; section of <a href="%s">SECURITY.md</a> and proven '
+      "end-to-end by <code>test_security.py</code> and "
+      "<code>test_robustness.py</code>.</p>" % _h(_REPO_SECURITY))
+
     # ---- German landing section (lang="de") --------------------------------
     # Full content parity with the English sections above: same facts, same
     # numbers, same caveats, same cross-links — honestly written German, not a
@@ -613,6 +636,30 @@ def render_landing():
       '<a href="rules/index.html">Referenzseite</a> auf Englisch und '
       "Deutsch.</p>"
       % (_h(_REPO_COVERAGE), _h(_REPO_REMEDIATION), _h(_REPO_CI)))
+    w("<h2>Sicher bei nicht vertrauensw&uuml;rdigen Eingaben</h2>")
+    w("<p>Die gepr&uuml;ften Rechnungen stammen von <strong>nicht "
+      "vertrauensw&uuml;rdigen Lieferanten</strong>, daher ist der XML-Parser "
+      "gegen die klassischen Entity-Angriffe geh&auml;rtet. Er nutzt "
+      "ausschlie&szlig;lich die Python-Standardbibliothek "
+      "(<code>xml.etree</code> / expat, kein <code>lxml</code>, kein "
+      "<code>defusedxml</code>): Ein <code>&lt;!DOCTYPE&gt;</code> — interne "
+      "oder externe Teilmenge — wird abgewiesen, bevor eine Entity definiert "
+      "werden kann, sodass Entity-<em>Definition</em> und -<em>Expansion</em> "
+      "gar nicht erst stattfinden (Billion-Laughs- und "
+      "Quadratic-Blowup-Angriffe brechen in konstanter Zeit und konstantem "
+      "Speicher ab), und keine externe Entity und kein externes DTD wird je "
+      "aufgel&ouml;st — expat &ouml;ffnet keine <code>file://</code>- oder "
+      "<code>http://</code>-URL, ein <code>XXE</code> auf "
+      "<code>/etc/passwd</code> oder einen internen Host liest und l&auml;dt "
+      "nichts. Eine b&ouml;sartige Eingabe f&auml;llt in das gew&ouml;hnliche "
+      "<em>not-well-formed</em>-Ergebnis (eigener Report-Befund, CLI-Exit-Code "
+      "3) — ein begrenztes, verwertbares Resultat, nie ein Absturz, ein "
+      "H&auml;nger oder ein stilles Durchwinken — und das ohne <strong>jede "
+      "zus&auml;tzliche Laufzeitabh&auml;ngigkeit</strong>. Dokumentiert im "
+      "Abschnitt &bdquo;Untrusted input / XML entity handling&ldquo; der "
+      '<a href="%s">SECURITY.md</a>, end-to-end belegt durch '
+      "<code>test_security.py</code> und <code>test_robustness.py</code>.</p>"
+      % _h(_REPO_SECURITY))
     w("</section>")
 
     w("<footer>")

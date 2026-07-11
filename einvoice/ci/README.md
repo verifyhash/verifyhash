@@ -12,6 +12,14 @@ Honest scope first: the gate checks the validator's **implemented** rules
 ~155 unimplemented core rules — a green gate means "no implemented rule
 fired", not "legally conformant". See [`../README.md`](../README.md) §2.
 
+Safe on untrusted input: because supplier XML runs through this gate in CI, the
+validator parses with the Python standard library only — no external-entity or
+external-DTD resolution (no XXE file-read/SSRF), and DTD/entity expansion is
+rejected (billion-laughs / quadratic-blowup payloads abort in bounded time), so
+a hostile invoice becomes an ordinary not-well-formed error (exit `3`), never a
+crash or silent pass. Details: [`../SECURITY.md`](../SECURITY.md) §"Untrusted
+input / XML entity handling".
+
 ## The entrypoint it drives
 
 Under the hood the gate calls the real conformance-report entrypoint, once per

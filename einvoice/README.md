@@ -26,6 +26,35 @@ PDF containers via `einvoice.report`).
   Actions / GitLab CI recipes) that fails a build on any non-conformant
   invoice, naming the violated rule ID. See [§4](#4-ci-conformance-gate).
 
+### Safe on untrusted input
+
+Supplier XML is untrusted input, so every production parse entry point is
+hardened against the classic `xml.etree`/expat attack classes — using **only
+the standard library** (`xml.etree.ElementTree` + `xml.parsers.expat`, no
+`lxml`, no `defusedxml`), so the zero-runtime-dependency contract above is
+unchanged and still proven by `test_packaging.py`. Concretely, the parser:
+
+- **rejects any `<!DOCTYPE>`/DTD** — internal *or* external subset — at the
+  expat `StartDoctypeDeclHandler`, *before* any entity can be defined;
+- therefore **defines and expands no custom entity** (a billion-laughs or
+  quadratic-blowup payload aborts in constant time and memory, never
+  materialising the expanded string), and **resolves no external entity or
+  external DTD** — expat opens no `file://`/`http://` URL, so an XXE such as
+  `<!ENTITY xxe SYSTEM 'file:///etc/passwd'>` reads nothing (no file-read, no
+  SSRF);
+- turns a refused payload into a **bounded, actionable failure** — the engine's
+  ordinary *not-well-formed* report finding and CLI exit code `3`, identical to
+  any ill-formed invoice — **never a crash, a hang, or a silent pass**.
+
+Full guarantee (including the byte-length / element-count / nesting-depth
+resource ceilings on well-formed-but-hostile input) is written up in
+[`SECURITY.md`](SECURITY.md) under **"Untrusted input / XML entity handling"**,
+and is proven end-to-end by `test_security.py` (billion-laughs,
+quadratic-blowup, `file://` external-entity read with a secret-canary
+leak check, `/etc/passwd` XXE, external-DTD `SYSTEM`) and `test_robustness.py`,
+which also assert that a benign XRechnung invoice still parses and validates
+unchanged.
+
 Read §2 before trusting it with anything. The engine asserts **286 business
 rules** in total — the exact set the code fires, enumerated per rule in
 [`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` and drift-gated by

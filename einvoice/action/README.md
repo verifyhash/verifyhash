@@ -137,6 +137,13 @@ explicit, reviewable change rather than a silent drift.
 - Factur-X / ZUGFeRD PDFs are validated by the same zero-dependency container
   extractor the entrypoint uses; a container it cannot open zero-dep is reported
   as an error (build fails), never a false pass.
+- **Safe to run on untrusted supplier XML** — CI is exactly where untrusted
+  invoices flow. The validator parses with the Python standard library only (no
+  external-entity or external-DTD resolution, so no XXE file-read/SSRF; DTD and
+  entity expansion are rejected, so billion-laughs/quadratic-blowup payloads
+  abort in bounded time); a hostile document becomes an ordinary error (build
+  fails), never a crash or silent pass. See
+  [`../SECURITY.md`](../SECURITY.md) §"Untrusted input / XML entity handling".
 
 ## Publishing is human / supervisor
 

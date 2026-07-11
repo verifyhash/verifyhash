@@ -32,7 +32,8 @@ Checks (each an independent hard assert):
   (d) ``gen_site.py --check`` returns 0 on the committed tree, and would return
       non-zero if a committed page were mutated (simulated on a temp copy).
   (e) NAV + SITEMAP INTEGRITY (VHW.3, mirrors weatherhack WXQ.3): the landing
-      page, rule index hub, sitemap.xml and robots.txt exist; every INTERNAL
+      page, rule index hub, walkthrough, licensing page, sitemap.xml and
+      robots.txt exist; every INTERNAL
       href in every generated HTML file resolves to a real generated file (no
       dangling link); sitemap.xml lists EXACTLY the generated canonical set
       (landing + hub + all rule pages) with no orphan/missing/duplicate; no
@@ -293,11 +294,13 @@ def main():
     landing_path = os.path.join(WWW_DIR, "index.html")
     hub_path = os.path.join(RULES_DIR, "index.html")
     walkthrough_path = os.path.join(WWW_DIR, "walkthrough", "index.html")
+    licensing_path = os.path.join(WWW_DIR, "licensing", "index.html")
     sitemap_path = os.path.join(WWW_DIR, "sitemap.xml")
     robots_path = os.path.join(WWW_DIR, "robots.txt")
     for pth, name in ((landing_path, "www/index.html"),
                       (hub_path, "www/rules/index.html"),
                       (walkthrough_path, "www/walkthrough/index.html"),
+                      (licensing_path, "www/licensing/index.html"),
                       (sitemap_path, "www/sitemap.xml"),
                       (robots_path, "www/robots.txt")):
         check(os.path.exists(pth), "surface file missing: %s" % name)
@@ -311,6 +314,8 @@ def main():
         html_files.append(hub_path)
     if os.path.exists(walkthrough_path):
         html_files.append(walkthrough_path)
+    if os.path.exists(licensing_path):
+        html_files.append(licensing_path)
     for rid in sorted(want & have):
         rp = os.path.join(RULES_DIR, rid, "index.html")
         if os.path.exists(rp):
@@ -346,7 +351,7 @@ def main():
         got = set(locs)
         check(len(locs) == len(got), "sitemap has duplicate <loc> entries")
         expected = {_gen._url_landing(), _gen._url_hub(),
-                    _gen._url_walkthrough()}
+                    _gen._url_walkthrough(), _gen._url_licensing()}
         expected |= {_gen._url_rule(rid) for rid in (want & have)}
         check(got == expected,
               "sitemap <loc> set != generated canonical set; missing=%s "
@@ -358,7 +363,8 @@ def main():
             r'<meta[^>]*name="robots"[^>]*noindex', re.IGNORECASE)
         loc_to_file = {_gen._url_landing(): landing_path,
                        _gen._url_hub(): hub_path,
-                       _gen._url_walkthrough(): walkthrough_path}
+                       _gen._url_walkthrough(): walkthrough_path,
+                       _gen._url_licensing(): licensing_path}
         for rid in (want & have):
             loc_to_file[_gen._url_rule(rid)] = os.path.join(
                 RULES_DIR, rid, "index.html")

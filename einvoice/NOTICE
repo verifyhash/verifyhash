@@ -1,0 +1,44 @@
+einvoice — EN 16931 / XRechnung conformance validator
+Copyright 2026 verifyhash
+
+This product is part of the verifyhash project
+(https://github.com/verifyhash/verifyhash).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. The full license text is the LICENSE file
+at the repository root.
+
+Dual licensing
+--------------
+
+The einvoice engine is open source under the Apache License 2.0 for
+everyone — including commercial use and integration into closed-source
+products, subject to the Apache-2.0 conditions (keep the license text and
+this NOTICE with redistributions, mark changed files).
+
+A commercial license is additionally available for closed-source
+redistribution/integration by vendors who need terms the Apache-2.0 does
+not provide (a privately negotiated license, contractual indemnity, or
+support). See www/licensing/ (published at
+https://verifyhash.com/einvoice/licensing/) and the repository LICENSE
+file; contact is via an issue on the GitHub repository. No prices are
+published.
+
+Vendored/derived third-party material (see einvoice/README.md
+"Sources / licenses" for details):
+
+- EN 16931 corpus & Schematron: ConnectingEurope/eInvoicing-EN16931
+  (EUPL-1.2), vendored under corpus/cen-en16931/.
+- XRechnung test suite: itplr-kosit/xrechnung-testsuite (Apache-2.0),
+  vendored under corpus/xrechnung-testsuite/.
+- XRechnung Schematron: itplr-kosit/xrechnung-schematron (Apache-2.0),
+  vendored under corpus/xrechnung-schematron/.

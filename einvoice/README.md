@@ -411,9 +411,10 @@ Explicitly ruled out, permanently: **no token, no coin, no on-chain payment
 instrument of any kind.** Nothing about invoice validation needs one, and
 this project will never fund itself by selling one.
 
-Nothing is for sale today. There is no license server, no pricing page, and
-no customer. This section exists so the incentive structure is on the record
-before the first conversation with a vendor, not after.
+There is no license server, no price list, and no customer today. A
+commercial license is offered on request (see [Licensing](#licensing)), but
+nothing has been sold. This section exists so the incentive structure is on
+the record before the first conversation with a vendor, not after.
 
 ---
 
@@ -441,6 +442,24 @@ universes, with the 4 official `test="true()"` tautologies `BR-CO-05`–`08`
 documented as the only never-provable ids), 0 vendors contacted. Metric #2's
 rule-count/`BR-DE` half is comfortably met; metric #1 (a vendor) is now the
 whole game.
+
+---
+
+## Licensing
+
+Everything in `einvoice/` is open source under
+[Apache-2.0](../LICENSE) — free for everyone, including commercial use and
+integration into closed-source products, subject to the usual Apache-2.0
+conditions: keep the license text and the attribution in
+[`NOTICE`](NOTICE) with redistributions, and mark changed files.
+
+Closed-source ERP/integrator vendors who need terms Apache-2.0 does not
+provide — a privately negotiated license, contractual indemnity, or a
+support commitment — can obtain a **commercial license**. The self-serve
+path is the licensing page ([`www/licensing/`](www/licensing/index.html),
+published at <https://verifyhash.com/einvoice/licensing/>); contact is an
+issue on the GitHub repository mentioning "commercial license". No prices
+are published — terms are agreed per vendor.
 
 ---
 

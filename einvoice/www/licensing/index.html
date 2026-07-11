@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Licensing — Apache-2.0 open source, commercial licenses for closed-source vendors — einvoice</title>
+<meta name="description" content="How the einvoice EN 16931 / XRechnung validator is licensed: Apache-2.0 open source for everyone; closed-source ERP and integrator vendors who need private terms, indemnity or support can obtain a commercial license via the GitHub repository.">
+<link rel="canonical" href="https://verifyhash.com/einvoice/licensing/">
+<style>:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  line-height: 1.5; margin: 0; padding: 2rem 1rem; color: #1f2328;
+  background: #ffffff; }
+main { max-width: 46rem; margin: 0 auto; }
+a { color: #0969da; }
+a:hover { text-decoration: none; }
+.crumb { color: #57606a; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; margin: 0 0 .5rem; }
+.crumb a { color: inherit; text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+.lead { font-size: 1.05rem; color: #24292f; }
+.fam { margin: 2rem 0 0; }
+.fam h2 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.25rem; margin: 0 0 .2rem; }
+.fam .intro { color: #57606a; font-size: .92rem; margin: 0 0 .6rem; }
+ul.rules { list-style: none; padding: 0; margin: 0; display: grid;
+  gap: .3rem; }
+ul.rules code { font-size: .85em; }
+.toc { columns: 2; column-gap: 2rem; font-size: .95rem; }
+.onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
+  margin: 1.5rem 0; }
+.onramp h2 { margin-top: 0; }
+h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.9rem; margin: 0; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
+.sev { display: inline-block; font-size: .8rem; font-weight: 700;
+  padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
+  margin: 0; }
+dt { font-weight: 700; color: #57606a; }
+dd { margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
+  font-size: .92em; overflow-wrap: anywhere; }
+.assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
+  color: #24292f; }
+.terms code { margin-right: .3rem; }
+footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid #d0d7de; padding-top: 1rem; }
+@media (max-width: 480px) {
+  dl { grid-template-columns: 1fr; gap: .15rem 0; }
+  dl dt { margin-top: .55rem; }
+  dl dt:first-child { margin-top: 0; }
+}
+@media (prefers-color-scheme: dark) {
+  body { color: #e6edf3; background: #0d1117; }
+  .title, .assert, dd, .lead { color: #e6edf3; }
+  .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
+  code { background: #161b22; }
+  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  a { color: #4493f8; }
+}</style>
+</head>
+<body>
+<main>
+<p class="crumb"><a href="../index.html">einvoice</a> / Licensing</p>
+<h1>Licensing</h1>
+<p class="lead">The <code>einvoice</code> EN&nbsp;16931 / XRechnung conformance engine is <strong>open source under the Apache License 2.0</strong> — for everyone, including commercial users. Vendors who ship closed-source products and need terms the Apache-2.0 does not provide can additionally obtain a <strong>commercial license</strong>. Both paths are described below; there is nothing else to it.</p>
+<h2>Open source for everyone (Apache-2.0)</h2>
+<p>Every part of the engine — the validator package, the vendored rule corpus integration, the CI recipes, the GitHub Action and this reference site generator — is licensed under the <a href="https://github.com/verifyhash/verifyhash/blob/main/LICENSE">Apache License 2.0</a> (the <code>LICENSE</code> file at the repository root). That grant is the same for a hobbyist, a consultancy and a commercial ERP vendor: you may use, modify, embed and redistribute the code, including inside closed-source products, at no cost.</p>
+<p>The Apache-2.0 conditions are the usual ones: keep the license text and the attribution in the <a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/NOTICE"><code>einvoice/NOTICE</code></a> file with any redistribution, and mark files you changed. The license also contains an express patent grant and — like all open-source licenses — provides the software <em>as is</em>, with no warranty and no indemnity.</p>
+<h2>Commercial licenses for closed-source vendors</h2>
+<p>Some ERP, billing and e-invoicing vendors integrating the validator into closed-source products need things an open-source license cannot give them:</p>
+<ul class="rules">
+<li><strong>Private licensing</strong> — a negotiated bilateral license contract in place of (or alongside) the public Apache-2.0 grant, e.g. for procurement or legal-review reasons.</li>
+<li><strong>Indemnity</strong> — contractual warranties or an indemnification clause, which the Apache-2.0 explicitly disclaims.</li>
+<li><strong>Support</strong> — a named contact and a commitment on answering integration questions and tracking rule-corpus updates.</li>
+</ul>
+<p>A commercial license covering any of these is available on request. Terms are agreed per vendor; no price list is published, and nothing on this page is a quote or an offer at a particular price. To be clear: you do <em>not</em> need a commercial license merely to embed or redistribute the engine — the Apache-2.0 already permits that, including in closed-source software, as long as you follow its conditions.</p>
+<h2>How to get in touch</h2>
+<p>Open an issue on the public repository at <a href="https://github.com/verifyhash/verifyhash/issues">github.com/verifyhash/verifyhash</a> (the <em>Issues</em> tab) mentioning &ldquo;commercial license&rdquo; and, if you can, what you are integrating the validator into. There is no contact form and no payment link on this site.</p>
+<section lang="de">
+<h2>Kurzfassung (Deutsch)</h2>
+<p>Der <code>einvoice</code>-Konformit&auml;tspr&uuml;fer f&uuml;r EN&nbsp;16931 / XRechnung ist f&uuml;r alle Open Source unter der Apache-Lizenz&nbsp;2.0 &mdash; kostenlose Nutzung, Einbettung und Weitergabe, auch kommerziell und auch in Closed-Source-Produkten, sofern die Apache-2.0-Bedingungen eingehalten werden (Lizenztext und <code>NOTICE</code>-Hinweis beilegen, &Auml;nderungen kennzeichnen). Anbieter von Closed-Source-ERP- oder Abrechnungssoftware, die dar&uuml;ber hinaus eine privat verhandelte Lizenz, vertragliche Haftungs&uuml;bernahme (Indemnity) oder Support ben&ouml;tigen, k&ouml;nnen eine kommerzielle Lizenz erhalten. Kontakt: ein Issue im GitHub-Repository er&ouml;ffnen; es gibt keine Preisliste und keinen Zahlungslink auf dieser Seite.</p>
+</section>
+<footer>
+Generated by <code>gen_site.py</code>. Self-contained: this page opens offline with no network requests. The authoritative license text is the repository <code>LICENSE</code> file; this page is a plain-language summary, not a replacement for it.
+</footer>
+</main>
+</body>
+</html>

@@ -1,5 +1,7 @@
 # verifyhash
 
+[![Sponsor on GitHub](https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?logo=githubsponsors)](https://github.com/sponsors/verifyhash)
+
 **Prove a file, folder, or dataset is byte-for-byte unaltered with one offline command — no account, no key, no chain required: `npx --yes -p verifyhash vh hash ./myfile.txt`.**
 
 A tamper-evident, permissionless, immutable on-chain registry of code-contribution hashes

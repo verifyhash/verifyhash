@@ -38,6 +38,9 @@ Beyond the per-rule pages this generator also emits, from the same catalog:
 * a RULE INDEX HUB at ``www/rules/index.html`` — every rule grouped by family,
   reusing :func:`gen_rules_doc.family_of` and its ``FAMILY_LABELS`` (no second
   hand-authored copy of the family labels);
+* a LICENSING page at ``www/licensing/index.html`` — plain factual dual-license
+  terms (Apache-2.0 open source for everyone; commercial licenses available to
+  closed-source vendors), no prices, no payment links (T-VHR.5);
 * ``www/sitemap.xml`` (landing + hub + every rule page) and ``www/robots.txt``
   (allow-all, with a ``Sitemap:`` line pointing at ``BASE_URL/sitemap.xml``).
 
@@ -95,6 +98,11 @@ RULES_DIR = os.path.join(SITE_DIR, "rules")
 # from the live engine by gen_examples.py and drift-guarded by test_examples.py),
 # and the corrected invoice. Nothing on the page is authored from memory.
 WALKTHROUGH_DIR = os.path.join(SITE_DIR, "walkthrough")
+
+# The licensing page is emitted at the stable canonical path
+# www/licensing/index.html (T-VHR.5). Same template contract as every other
+# surface page: inline CSS only, no <script>, canonical from BASE_URL.
+LICENSING_DIR = os.path.join(SITE_DIR, "licensing")
 EXAMPLE_DIR = os.path.join(HERE, "examples", "01-missing-fields")
 EX_BROKEN = os.path.join(EXAMPLE_DIR, "broken.xml")
 EX_FIXED = os.path.join(EXAMPLE_DIR, "fixed.xml")
@@ -206,6 +214,11 @@ def _url_walkthrough():
     return BASE_URL + "/walkthrough/"
 
 
+def _url_licensing():
+    """Absolute URL of the licensing (dual-license terms) page."""
+    return BASE_URL + "/licensing/"
+
+
 def _url_sitemap():
     """Absolute URL of the sitemap (used only in robots.txt)."""
     return BASE_URL + "/sitemap.xml"
@@ -218,6 +231,9 @@ _REPO_URL = "https://github.com/verifyhash/verifyhash"
 _REPO_README = _REPO_URL + "/blob/main/einvoice/README.md"
 _REPO_CI = _REPO_URL + "/tree/main/einvoice/ci"
 _REPO_ACTION = _REPO_URL + "/tree/main/einvoice/action"
+_REPO_LICENSE = _REPO_URL + "/blob/main/LICENSE"
+_REPO_NOTICE = _REPO_URL + "/blob/main/einvoice/NOTICE"
+_REPO_ISSUES = _REPO_URL + "/issues"
 
 # Honest, human-visible German-provenance labels keyed by the catalog's
 # ``de_source``. 'kosit' => the German is the official KoSIT assert text;
@@ -491,9 +507,126 @@ def render_landing():
       "family</a>.</p>")
 
     w("<footer>")
+    w('Free and open source under Apache-2.0 for everyone; closed-source '
+      'vendors who need commercial terms can read the '
+      '<a href="licensing/index.html">licensing page</a>. ')
     w("Generated from <code>remediation_catalog.json</code> (single source of "
       "truth) by <code>gen_site.py</code>. Self-contained: this page opens "
       "offline with no network requests.")
+    w("</footer>")
+    w("</main>")
+    w("</body>")
+    w("</html>")
+    return "\n".join(p) + "\n"
+
+
+def render_licensing():
+    """The licensing page (``www/licensing/index.html``) — pure, deterministic.
+
+    Plain factual dual-license terms (T-VHR.5): the einvoice engine is open
+    source under Apache-2.0 for everyone (repo LICENSE linked), and
+    closed-source ERP/integrator vendors who need terms Apache-2.0 does not
+    provide (a privately negotiated license, indemnity, support) can obtain a
+    commercial license via the GitHub repository. HONESTY LINES enforced in the
+    text itself: NO prices or pricing commitments, NO payment links — the only
+    contact path is the public GitHub issue tracker. Same self-containment
+    contract as every other surface page: one inline <style>, absolute
+    canonical from BASE_URL, no <script>, no external CSS/JS/CDN/font.
+    Includes a short German summary section (``lang="de"``), matching the
+    site's additive-German style.
+    """
+    title = ("Licensing — Apache-2.0 open source, commercial licenses for "
+             "closed-source vendors — einvoice")
+    description = ("How the einvoice EN 16931 / XRechnung validator is "
+                   "licensed: Apache-2.0 open source for everyone; "
+                   "closed-source ERP and integrator vendors who need private "
+                   "terms, indemnity or support can obtain a commercial "
+                   "license via the GitHub repository.")
+    p = []
+    w = p.append
+    w(_doc_head(title, description, _url_licensing()))
+    w("<body>")
+    w("<main>")
+    # Breadcrumb (relative, offline-resolvable): this page is
+    # www/licensing/index.html, so the landing is ../index.html.
+    w('<p class="crumb"><a href="../index.html">einvoice</a> / Licensing</p>')
+    w("<h1>Licensing</h1>")
+    w('<p class="lead">The <code>einvoice</code> EN&nbsp;16931 / XRechnung '
+      "conformance engine is <strong>open source under the Apache License "
+      "2.0</strong> — for everyone, including commercial users. Vendors who "
+      "ship closed-source products and need terms the Apache-2.0 does not "
+      "provide can additionally obtain a <strong>commercial license</strong>. "
+      "Both paths are described below; there is nothing else to it.</p>")
+
+    w("<h2>Open source for everyone (Apache-2.0)</h2>")
+    w("<p>Every part of the engine — the validator package, the vendored rule "
+      "corpus integration, the CI recipes, the GitHub Action and this "
+      "reference site generator — is licensed under the "
+      '<a href="%s">Apache License 2.0</a> (the <code>LICENSE</code> file at '
+      "the repository root). That grant is the same for a hobbyist, a "
+      "consultancy and a commercial ERP vendor: you may use, modify, embed "
+      "and redistribute the code, including inside closed-source products, "
+      "at no cost.</p>" % _h(_REPO_LICENSE))
+    w("<p>The Apache-2.0 conditions are the usual ones: keep the license text "
+      "and the attribution in the "
+      '<a href="%s"><code>einvoice/NOTICE</code></a> file with any '
+      "redistribution, and mark files you changed. The license also contains "
+      "an express patent grant and — like all open-source licenses — provides "
+      "the software <em>as is</em>, with no warranty and no indemnity.</p>"
+      % _h(_REPO_NOTICE))
+
+    w("<h2>Commercial licenses for closed-source vendors</h2>")
+    w("<p>Some ERP, billing and e-invoicing vendors integrating the validator "
+      "into closed-source products need things an open-source license cannot "
+      "give them:</p>")
+    w('<ul class="rules">')
+    w("<li><strong>Private licensing</strong> — a negotiated bilateral "
+      "license contract in place of (or alongside) the public Apache-2.0 "
+      "grant, e.g. for procurement or legal-review reasons.</li>")
+    w("<li><strong>Indemnity</strong> — contractual warranties or an "
+      "indemnification clause, which the Apache-2.0 explicitly "
+      "disclaims.</li>")
+    w("<li><strong>Support</strong> — a named contact and a commitment on "
+      "answering integration questions and tracking rule-corpus "
+      "updates.</li>")
+    w("</ul>")
+    w("<p>A commercial license covering any of these is available on request. "
+      "Terms are agreed per vendor; no price list is published, and nothing "
+      "on this page is a quote or an offer at a particular price. To be "
+      "clear: you do <em>not</em> need a commercial license merely to embed "
+      "or redistribute the engine — the Apache-2.0 already permits that, "
+      "including in closed-source software, as long as you follow its "
+      "conditions.</p>")
+
+    w("<h2>How to get in touch</h2>")
+    w("<p>Open an issue on the public repository at "
+      '<a href="%s">github.com/verifyhash/verifyhash</a> '
+      "(the <em>Issues</em> tab) mentioning &ldquo;commercial "
+      "license&rdquo; and, if you can, what you are integrating the "
+      "validator into. There is no contact form and no payment link on this "
+      "site.</p>" % _h(_REPO_ISSUES))
+
+    w('<section lang="de">')
+    w("<h2>Kurzfassung (Deutsch)</h2>")
+    w("<p>Der <code>einvoice</code>-Konformit&auml;tspr&uuml;fer f&uuml;r "
+      "EN&nbsp;16931 / XRechnung ist f&uuml;r alle Open Source unter der "
+      "Apache-Lizenz&nbsp;2.0 &mdash; kostenlose Nutzung, Einbettung und "
+      "Weitergabe, auch kommerziell und auch in Closed-Source-Produkten, "
+      "sofern die Apache-2.0-Bedingungen eingehalten werden (Lizenztext und "
+      "<code>NOTICE</code>-Hinweis beilegen, &Auml;nderungen kennzeichnen). "
+      "Anbieter von Closed-Source-ERP- oder Abrechnungssoftware, die "
+      "dar&uuml;ber hinaus eine privat verhandelte Lizenz, vertragliche "
+      "Haftungs&uuml;bernahme (Indemnity) oder Support ben&ouml;tigen, "
+      "k&ouml;nnen eine kommerzielle Lizenz erhalten. Kontakt: ein Issue im "
+      "GitHub-Repository er&ouml;ffnen; es gibt keine Preisliste und keinen "
+      "Zahlungslink auf dieser Seite.</p>")
+    w("</section>")
+
+    w("<footer>")
+    w("Generated by <code>gen_site.py</code>. Self-contained: this page opens "
+      "offline with no network requests. The authoritative license text is "
+      "the repository <code>LICENSE</code> file; this page is a plain-language "
+      "summary, not a replacement for it.")
     w("</footer>")
     w("</main>")
     w("</body>")
@@ -847,12 +980,12 @@ def render_walkthrough(catalog):
 def render_sitemap(catalog):
     """XML sitemap listing EXACTLY the canonical page set — pure, deterministic.
 
-    The URL set is: landing + rule index hub + the worked walkthrough + every
-    rule page, each <loc> built from the SAME BASE_URL as the canonical <link>s,
-    so canonical and sitemap can never disagree. Rule order follows the catalog
-    (stable).
+    The URL set is: landing + rule index hub + the worked walkthrough + the
+    licensing page + every rule page, each <loc> built from the SAME BASE_URL
+    as the canonical <link>s, so canonical and sitemap can never disagree.
+    Rule order follows the catalog (stable).
     """
-    locs = [_url_landing(), _url_hub(), _url_walkthrough()]
+    locs = [_url_landing(), _url_hub(), _url_walkthrough(), _url_licensing()]
     locs += [_url_rule(rid) for rid in catalog]
     lines = []
     w = lines.append
@@ -888,6 +1021,7 @@ def render_robots():
 LANDING_PATH = os.path.join(SITE_DIR, "index.html")
 HUB_PATH = os.path.join(RULES_DIR, "index.html")
 WALKTHROUGH_PATH = os.path.join(WALKTHROUGH_DIR, "index.html")
+LICENSING_PATH = os.path.join(LICENSING_DIR, "index.html")
 SITEMAP_PATH = os.path.join(SITE_DIR, "sitemap.xml")
 ROBOTS_PATH = os.path.join(SITE_DIR, "robots.txt")
 
@@ -895,12 +1029,14 @@ ROBOTS_PATH = os.path.join(SITE_DIR, "robots.txt")
 def render_surface(catalog):
     """Map absolute path -> rendered text for the surface files (pure).
 
-    Landing, rule index hub, worked walkthrough, sitemap.xml and robots.txt.
+    Landing, rule index hub, worked walkthrough, licensing page, sitemap.xml
+    and robots.txt.
     """
     return {
         LANDING_PATH: render_landing(),
         HUB_PATH: render_hub(catalog),
         WALKTHROUGH_PATH: render_walkthrough(catalog),
+        LICENSING_PATH: render_licensing(),
         SITEMAP_PATH: render_sitemap(catalog),
         ROBOTS_PATH: render_robots(),
     }
@@ -928,9 +1064,10 @@ def check(pages, surface):
 
     Fails (returns 1, with a diagnostic on stderr) if any expected per-rule
     page is missing/drifted, if there is an orphan rule directory with no
-    catalog entry, OR if any of the four surface files (landing, rule index
-    hub, sitemap.xml, robots.txt) is missing or byte-drifted from a fresh
-    render. ``surface`` maps absolute path -> expected text.
+    catalog entry, OR if any surface file (landing, rule index hub,
+    walkthrough, licensing, sitemap.xml, robots.txt) is missing or
+    byte-drifted from a fresh render. ``surface`` maps absolute path ->
+    expected text.
     """
     want = set(pages)
     have = _committed_rule_dirs()
@@ -961,7 +1098,7 @@ def check(pages, surface):
         if surface_bad:
             sys.stderr.write("  stale surface: %s\n" % surface_bad)
         return 1
-    print("site up to date (%d rule pages + landing + hub + walkthrough + sitemap + robots)"
+    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + sitemap + robots)"
           % len(want))
     return 0
 
@@ -986,7 +1123,7 @@ def write(pages, surface):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
-    print("wrote %d rule pages + landing + hub + walkthrough + sitemap + robots under %s"
+    print("wrote %d rule pages + landing + hub + walkthrough + licensing + sitemap + robots under %s"
           % (len(pages), os.path.relpath(SITE_DIR, HERE)))
     return 0
 

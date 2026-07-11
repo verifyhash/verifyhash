@@ -362,6 +362,24 @@ def build_model(root):
     inv.all_country_codes_raw = [
         _strval(el) for el in root.findall(".//ram:CountryID", NS)
     ]
+    # BR-AE-01 (CII binding) node sets: the official CII test counts RAW
+    # ``ram:CategoryCode='AE'`` rows over three //-global node sets — the
+    # header VAT breakdown rows, the line VAT rows and every
+    # ram:CategoryTradeTax (the latter is ``tax_category_ids_raw`` above) —
+    # with NO VAT TypeCode filter, unlike the VAT-scoped UBL binding.
+    # One list of raw CategoryCode string values per row, so the rule can
+    # count rows (a row matches when any of its codes equals the category).
+    inv.cii_header_trade_tax_code_rows = [
+        [_strval(cc) for cc in tt.findall("ram:CategoryCode", NS)]
+        for tt in root.findall(
+            ".//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax",
+            NS)
+    ]
+    inv.cii_line_trade_tax_code_rows = [
+        [_strval(cc) for cc in tt.findall("ram:CategoryCode", NS)]
+        for tt in root.findall(
+            ".//ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", NS)
+    ]
     # BR-CL-17 context = ram:CategoryTradeTax/ram:CategoryCode (CII): the VAT
     # category of a document/line allowance-charge (ram:SpecifiedTradeAllowance
     # Charge/ram:CategoryTradeTax). NOTE the CII Schematron splits the two
@@ -590,6 +608,103 @@ def build_model(root):
             or any(id_el.get("schemeID") == "VA"
                    for id_el in seller_el.findall(
                        "ram:SpecifiedTaxRegistration/ram:ID", NS)))
+
+    # --- Payment / references / deliver-to / endpoints batch (T-VHCIIP.3) --- #
+    # BR-49 context = //ram:SpecifiedTradeSettlementPaymentMeans (BG-16); test
+    # ``(ram:TypeCode)`` — element existence per payment means group.
+    # BR-50/BR-61 context = //ram:SpecifiedTradeSettlementPaymentMeans
+    # [ram:TypeCode='30' or ram:TypeCode='58']/ram:PayeePartyCreditorFinancial
+    # Account — the context predicate compares the RAW TypeCode string values
+    # (kept in ``codes_raw``), and the rules are evaluated PER ACCOUNT node:
+    #   BR-50 test: normalize-space(ram:IBANID) != '' or
+    #               normalize-space(ram:ProprietaryID) != ''  (non-empty value)
+    #   BR-61 test: (ram:IBANID) or (ram:ProprietaryID)       (pure existence)
+    # Each ``account_first_ids`` entry bakes BOTH facts in: None when neither
+    # element exists (BR-61's CII branch fires; BR-50 sees ''), else the first
+    # non-empty normalize-space of the two ('' when both are present-but-empty
+    # or whitespace — BR-50 fires, BR-61 holds). NOTE the CII BR-61 binding
+    # differs from UBL: a credit-transfer payment means with NO account group
+    # carries no context node, so nothing fires (rules.br_61 branches on
+    # inv.syntax and transcribes this exactly).
+    for pm_el in root.findall(".//ram:SpecifiedTradeSettlementPaymentMeans",
+                              NS):
+        code_els = pm_el.findall("ram:TypeCode", NS)
+        codes_raw = [_strval(e) for e in code_els]
+        account_first_ids = []
+        has_account_id = False
+        for acct_el in pm_el.findall("ram:PayeePartyCreditorFinancialAccount",
+                                     NS):
+            iban_el = acct_el.find("ram:IBANID", NS)
+            prop_el = acct_el.find("ram:ProprietaryID", NS)
+            if iban_el is None and prop_el is None:
+                account_first_ids.append(None)
+            else:
+                has_account_id = True
+                iban = _norm_space(_strval(iban_el)) if iban_el is not None else ""
+                prop = _norm_space(_strval(prop_el)) if prop_el is not None else ""
+                account_first_ids.append(iban or prop)
+        inv.payment_means.append(parser.PaymentMeans(
+            bool(code_els),
+            _norm_space(codes_raw[0]) if codes_raw else "",
+            codes_raw,
+            has_account_id,
+            account_first_ids))
+    # BR-51 context = //ram:ApplicableTradeSettlementFinancialCard (BG-18);
+    # test ``string-length(normalize-space(ram:ID)) <= 10``. An absent ram:ID
+    # string-values to '' (length 0, holds), so '' is appended then.
+    for card_el in root.findall(
+            ".//ram:ApplicableTradeSettlementFinancialCard", NS):
+        id_el = card_el.find("ram:ID", NS)
+        inv.card_pans.append(_strval(id_el) if id_el is not None else "")
+    # BR-55 context = /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+    # ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument (BG-3);
+    # test ``normalize-space(ram:IssuerAssignedID) != ''`` — non-empty required
+    # (the UBL binding is pure existence; each parser bakes its own semantics
+    # into the bool, exactly like taxrep_vat_ids_ok).
+    for ird_el in root.findall(
+            "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/"
+            "ram:InvoiceReferencedDocument", NS):
+        id_el = ird_el.find("ram:IssuerAssignedID", NS)
+        inv.billing_references.append(
+            id_el is not None and bool(_norm_space(_strval(id_el))))
+    # BR-57 context = /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+    # ram:ApplicableHeaderTradeDelivery (BG-13/BG-15); test:
+    #   (ram:ShipToTradeParty/ram:PostalTradeAddress and
+    #    normalize-space(ram:ShipToTradeParty/ram:PostalTradeAddress/
+    #                    ram:CountryID) != '')
+    #   or not (ram:ShipToTradeParty/ram:PostalTradeAddress)
+    # One verdict per header delivery WITH a deliver-to postal address; the
+    # normalize-space operand is the FIRST CountryID of that path node set.
+    for dlv_el in root.findall(
+            "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery",
+            NS):
+        if dlv_el.findall(
+                "ram:ShipToTradeParty/ram:PostalTradeAddress", NS):
+            cc_els = dlv_el.findall(
+                "ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CountryID",
+                NS)
+            inv.delivery_addresses.append(
+                bool(cc_els) and bool(_norm_space(_strval(cc_els[0]))))
+    # BR-62 / BR-63 (context = the document root): the Seller/Buyer electronic
+    # address (BT-34/BT-49). Test per party:
+    #   normalize-space(...ram:URIUniversalCommunication[1]/ram:URIID/@schemeID)
+    #     != ''  or  not (...ram:URIUniversalCommunication)
+    # — evaluated over the FIRST ram:URIUniversalCommunication only, and the
+    # @schemeID must be NON-EMPTY after normalize-space (the UBL binding is
+    # attribute existence; each parser bakes its own semantics into the bool).
+    for party_path, endpoints in (
+            ("rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/"
+             "ram:SellerTradeParty", inv.seller_endpoints),
+            ("rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/"
+             "ram:BuyerTradeParty", inv.buyer_endpoints)):
+        party_el = root.find(party_path, NS)
+        if party_el is None:
+            continue
+        uri_els = party_el.findall("ram:URIUniversalCommunication", NS)
+        if uri_els:
+            uid_el = uri_els[0].find("ram:URIID", NS)
+            scheme = uid_el.get("schemeID") if uid_el is not None else None
+            endpoints.append(bool(_norm_space(scheme or "")))
 
     # -- BT-24 Specification identifier (ExchangedDocumentContext) ----------
     inv.customization_id = _text(root.find(

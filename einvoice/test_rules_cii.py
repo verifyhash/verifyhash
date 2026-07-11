@@ -2306,5 +2306,407 @@ class CiiProofParityBatch1(unittest.TestCase):
             self.assertNotIn(rid, fired)
 
 
+# --------------------------------------------------------------------------- #
+# CII proof-parity batch 2 (T-VHCIIP.3): BR-41..44 (line allowance/charge),   #
+# BR-49/50/51/61 (payment instructions), BR-55 (preceding invoice reference), #
+# BR-57 (deliver-to country), BR-62/63 (electronic addresses) and             #
+# BR-AE-01/02/03 (reverse charge). Every firing shape below is the SAME       #
+# field-level breakage differential._CII_MUTATIONS ships, proven              #
+# officially-agreeing by `differential.py cii`; the holding siblings pin the  #
+# passing direction — including the places where the CII binding decides the  #
+# OPPOSITE of the UBL binding on the same shape.                              #
+# --------------------------------------------------------------------------- #
+class CiiProofParityBatch2(unittest.TestCase):
+    """Firing + holding CII fixtures for the T-VHCIIP.3 batch-2 rules."""
+
+    def fired(self, root):
+        return _fired_ids(root)
+
+    def assert_rule(self, root, rule_id, expect=True):
+        fired = self.fired(root)
+        if expect:
+            self.assertIn(rule_id, fired,
+                          "%s should fire; fired=%s" % (rule_id, sorted(fired)))
+        else:
+            self.assertNotIn(rule_id, fired,
+                             "%s should NOT fire; fired=%s"
+                             % (rule_id, sorted(fired)))
+
+    def _seller(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:SellerTradeParty", NS)
+
+    def _buyer(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:BuyerTradeParty", NS)
+
+    def _first_pm(self, r):
+        return _settlement(r).find(
+            "ram:SpecifiedTradeSettlementPaymentMeans", NS)
+
+    def _line_tax(self, r):
+        return _first_line(r).find(
+            "ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax", NS)
+
+    def add_line_ac(self, r, charge, amount="0.00", reason="Testing",
+                    reason_code=None):
+        """A LINE-level ram:SpecifiedTradeAllowanceCharge (BG-27/BG-28) on the
+        first line; 0.00 amount and no CategoryTradeTax keep every arithmetic
+        and VAT-family rule out of the picture."""
+        settle = _first_line(r).find("ram:SpecifiedLineTradeSettlement", NS)
+        ac = ET.SubElement(settle, _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        ind = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+        ET.SubElement(ind, _q(NSU, "Indicator")).text = (
+            "true" if charge else "false")
+        if amount is not None:
+            ET.SubElement(ac, _q(NSA, "ActualAmount")).text = amount
+        if reason_code is not None:
+            ET.SubElement(ac, _q(NSA, "ReasonCode")).text = reason_code
+        if reason is not None:
+            ET.SubElement(ac, _q(NSA, "Reason")).text = reason
+        return ac
+
+    def add_uri_endpoint(self, party, scheme, uri="mail@example.com"):
+        comm = ET.SubElement(party, _q(NSA, "URIUniversalCommunication"))
+        uid = ET.SubElement(comm, _q(NSA, "URIID"))
+        if scheme is not None:
+            uid.set("schemeID", scheme)
+        uid.text = uri
+        return comm
+
+    def add_shipto(self, r, with_address=True, country=None):
+        delivery = r.find("rsm:SupplyChainTradeTransaction/"
+                          "ram:ApplicableHeaderTradeDelivery", NS)
+        shipto = ET.SubElement(delivery, _q(NSA, "ShipToTradeParty"))
+        ET.SubElement(shipto, _q(NSA, "Name")).text = "Deliver-to name"
+        if with_address:
+            pta = ET.SubElement(shipto, _q(NSA, "PostalTradeAddress"))
+            ET.SubElement(pta, _q(NSA, "CityName")).text = "DeliveryCity"
+            if country is not None:
+                ET.SubElement(pta, _q(NSA, "CountryID")).text = country
+        return shipto
+
+    def add_ae_allowance(self, r, buyer_legal_id=None):
+        """A document ALLOWANCE with a Reverse-charge (AE) CategoryTradeTax at
+        rate 0 (the differential._cadd_ae_allowance shape)."""
+        if buyer_legal_id is not None:
+            lo = ET.SubElement(self._buyer(r),
+                               _q(NSA, "SpecifiedLegalOrganization"))
+            ET.SubElement(lo, _q(NSA, "ID")).text = buyer_legal_id
+        ac = ET.SubElement(_settlement(r),
+                           _q(NSA, "SpecifiedTradeAllowanceCharge"))
+        ind = ET.SubElement(ac, _q(NSA, "ChargeIndicator"))
+        ET.SubElement(ind, _q(NSU, "Indicator")).text = "false"
+        ET.SubElement(ac, _q(NSA, "ActualAmount")).text = "0.00"
+        ET.SubElement(ac, _q(NSA, "Reason")).text = "Discount"
+        ctt = ET.SubElement(ac, _q(NSA, "CategoryTradeTax"))
+        ET.SubElement(ctt, _q(NSA, "TypeCode")).text = "VAT"
+        ET.SubElement(ctt, _q(NSA, "CategoryCode")).text = "AE"
+        ET.SubElement(ctt, _q(NSA, "RateApplicablePercent")).text = "0"
+        return ac
+
+    def add_header_ae_row(self, r):
+        """Insert a Reverse-charge (AE) header VAT breakdown row (BG-23)."""
+        settle = _settlement(r)
+        first = settle.find("ram:ApplicableTradeTax", NS)
+        tt = ET.Element(_q(NSA, "ApplicableTradeTax"))
+        ET.SubElement(tt, _q(NSA, "CalculatedAmount")).text = "0.00"
+        ET.SubElement(tt, _q(NSA, "TypeCode")).text = "VAT"
+        ET.SubElement(tt, _q(NSA, "BasisAmount")).text = "0.00"
+        ET.SubElement(tt, _q(NSA, "CategoryCode")).text = "AE"
+        ET.SubElement(tt, _q(NSA, "RateApplicablePercent")).text = "0"
+        settle.insert(list(settle).index(first), tt)
+        return tt
+
+    def line_to_ae(self, r):
+        """Flip the first line's VAT category S -> AE at rate 0."""
+        tt = self._line_tax(r)
+        tt.find("ram:CategoryCode", NS).text = "AE"
+        tt.find("ram:RateApplicablePercent", NS).text = "0"
+
+    # ---- BR-41..44: line allowance/charge existence --------------------------
+    def test_br41_amountless_line_allowance_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=False, amount=None)
+        fired = self.fired(r)
+        self.assertIn("BR-41", fired)
+        self.assertNotIn("BR-42", fired)
+        self.assertNotIn("BR-CO-23", fired)
+
+    def test_br42_reasonless_line_allowance_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=False, reason=None)
+        fired = self.fired(r)
+        self.assertIn("BR-42", fired)
+        self.assertIn("BR-CO-23", fired)   # its twin official test
+        self.assertNotIn("BR-41", fired)
+
+    def test_br42_reason_code_alone_satisfies(self):
+        # ram:ReasonCode is the second disjunct of the official test; '95'
+        # (Discount) is UNCL 5189-valid, so BR-CL-19 stays quiet too.
+        r = _good_root()
+        self.add_line_ac(r, charge=False, reason=None, reason_code="95")
+        fired = self.fired(r)
+        for rid in ("BR-41", "BR-42", "BR-CO-23", "BR-CL-19"):
+            self.assertNotIn(rid, fired)
+
+    def test_complete_line_allowance_holds(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=False)
+        fired = self.fired(r)
+        for rid in ("BR-41", "BR-42", "BR-CO-23"):
+            self.assertNotIn(rid, fired)
+
+    def test_br43_amountless_line_charge_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=True, amount=None)
+        fired = self.fired(r)
+        self.assertIn("BR-43", fired)
+        self.assertNotIn("BR-44", fired)
+        self.assertNotIn("BR-CO-24", fired)
+
+    def test_br44_reasonless_line_charge_fires(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=True, reason=None)
+        fired = self.fired(r)
+        self.assertIn("BR-44", fired)
+        self.assertIn("BR-CO-24", fired)
+        self.assertNotIn("BR-43", fired)
+
+    def test_complete_line_charge_holds(self):
+        r = _good_root()
+        self.add_line_ac(r, charge=True)
+        fired = self.fired(r)
+        for rid in ("BR-43", "BR-44", "BR-CO-24"):
+            self.assertNotIn(rid, fired)
+
+    # ---- BR-49/50/51/61: payment instructions --------------------------------
+    def test_br49_codeless_payment_means_fires(self):
+        r = _good_root()
+        pm = self._first_pm(r)
+        _remove(r, pm.find("ram:TypeCode", NS))
+        fired = self.fired(r)
+        self.assertIn("BR-49", fired)
+        # Without a raw '30' TypeCode the group carries NO BR-50/61 context.
+        self.assertNotIn("BR-50", fired)
+        self.assertNotIn("BR-61", fired)
+
+    def test_br49_holds_on_clean_base(self):
+        self.assert_rule(_good_root(), "BR-49", expect=False)
+
+    def test_br50_whitespace_iban_fires_alone(self):
+        # normalize-space('   ') = '' fires BR-50, but the IBANID ELEMENT
+        # exists, so the per-account existence test of BR-61 holds.
+        r = _good_root()
+        self._first_pm(r).find(
+            "ram:PayeePartyCreditorFinancialAccount/ram:IBANID",
+            NS).text = "   "
+        fired = self.fired(r)
+        self.assertIn("BR-50", fired)
+        self.assertNotIn("BR-61", fired)
+
+    def test_br50_holds_on_clean_base(self):
+        self.assert_rule(_good_root(), "BR-50", expect=False)
+
+    def test_br61_elementless_account_fires_with_br50(self):
+        # Neither ram:IBANID nor ram:ProprietaryID on the account: BR-61
+        # fires, and BR-50 fires alongside (its normalize-space is '').
+        r = _good_root()
+        acct = self._first_pm(r).find(
+            "ram:PayeePartyCreditorFinancialAccount", NS)
+        _remove(r, acct.find("ram:IBANID", NS))
+        fired = self.fired(r)
+        self.assertIn("BR-61", fired)
+        self.assertIn("BR-50", fired)
+
+    def test_br61_proprietary_id_satisfies(self):
+        r = _good_root()
+        acct = self._first_pm(r).find(
+            "ram:PayeePartyCreditorFinancialAccount", NS)
+        iban = acct.find("ram:IBANID", NS)
+        iban.tag = _q(NSA, "ProprietaryID")
+        fired = self.fired(r)
+        self.assertNotIn("BR-61", fired)
+        self.assertNotIn("BR-50", fired)
+
+    def test_br61_accountless_credit_transfer_holds_on_cii(self):
+        # The CII binding difference: a TypeCode-30 payment means with NO
+        # PayeePartyCreditorFinancialAccount carries no BR-50/61 context node
+        # at all — neither fires (on UBL, BR-61 WOULD fire here).
+        r = _good_root()
+        pm = self._first_pm(r)
+        _remove(r, pm.find("ram:PayeePartyCreditorFinancialAccount", NS))
+        fired = self.fired(r)
+        self.assertNotIn("BR-61", fired)
+        self.assertNotIn("BR-50", fired)
+
+    def add_card(self, r, pan):
+        pm = self._first_pm(r)
+        card = ET.Element(_q(NSA, "ApplicableTradeSettlementFinancialCard"))
+        if pan is not None:
+            ET.SubElement(card, _q(NSA, "ID")).text = pan
+        pm.insert(list(pm).index(pm.find("ram:TypeCode", NS)) + 1, card)
+
+    def test_br51_full_pan_fires(self):
+        r = _good_root()
+        self.add_card(r, "5111111111111111")
+        self.assert_rule(r, "BR-51")
+
+    def test_br51_truncated_pan_holds(self):
+        r = _good_root()
+        self.add_card(r, "  511111 111  ")  # 10 chars after normalize-space
+        self.assert_rule(r, "BR-51", expect=False)
+
+    def test_br51_idless_card_holds(self):
+        # An absent ram:ID string-values to '' (length 0 <= 10).
+        r = _good_root()
+        self.add_card(r, None)
+        self.assert_rule(r, "BR-51", expect=False)
+
+    # ---- BR-55: preceding invoice reference ----------------------------------
+    def add_preceding_ref(self, r, ref):
+        ird = ET.SubElement(_settlement(r),
+                            _q(NSA, "InvoiceReferencedDocument"))
+        if ref is not None:
+            ET.SubElement(ird, _q(NSA, "IssuerAssignedID")).text = ref
+
+    def test_br55_empty_reference_group_fires(self):
+        r = _good_root()
+        self.add_preceding_ref(r, None)
+        self.assert_rule(r, "BR-55")
+
+    def test_br55_whitespace_reference_fires_on_cii(self):
+        # The CII test requires a NON-EMPTY normalize-space (the UBL binding
+        # is pure existence and would hold on this shape).
+        r = _good_root()
+        self.add_preceding_ref(r, "   ")
+        self.assert_rule(r, "BR-55")
+
+    def test_br55_real_reference_holds(self):
+        r = _good_root()
+        self.add_preceding_ref(r, "12115117")
+        self.assert_rule(r, "BR-55", expect=False)
+
+    # ---- BR-57: deliver-to country code --------------------------------------
+    def test_br57_countryless_shipto_address_fires(self):
+        r = _good_root()
+        self.add_shipto(r, country=None)
+        self.assert_rule(r, "BR-57")
+
+    def test_br57_country_coded_shipto_holds(self):
+        r = _good_root()
+        self.add_shipto(r, country="NL")
+        self.assert_rule(r, "BR-57", expect=False)
+
+    def test_br57_addressless_shipto_holds(self):
+        # not(ram:ShipToTradeParty/ram:PostalTradeAddress) — no deliver-to
+        # ADDRESS means no requirement.
+        r = _good_root()
+        self.add_shipto(r, with_address=False)
+        self.assert_rule(r, "BR-57", expect=False)
+
+    # ---- BR-62/63: electronic-address scheme identifiers ---------------------
+    def test_br62_schemeless_seller_uri_fires(self):
+        r = _good_root()
+        self.add_uri_endpoint(self._seller(r), scheme=None)
+        self.assert_rule(r, "BR-62")
+
+    def test_br62_empty_scheme_fires_on_cii(self):
+        # The CII test is normalize-space(@schemeID) != '' — an EMPTY
+        # schemeID="" fires (the UBL binding is attribute existence and
+        # would hold on this shape).
+        r = _good_root()
+        self.add_uri_endpoint(self._seller(r), scheme="")
+        self.assert_rule(r, "BR-62")
+
+    def test_br62_em_scheme_holds(self):
+        r = _good_root()
+        self.add_uri_endpoint(self._seller(r), scheme="EM")
+        self.assert_rule(r, "BR-62", expect=False)
+
+    def test_br63_schemeless_buyer_uri_fires(self):
+        r = _good_root()
+        self.add_uri_endpoint(self._buyer(r), scheme=None)
+        fired = self.fired(r)
+        self.assertIn("BR-63", fired)
+        self.assertNotIn("BR-62", fired)   # the seller is untouched
+
+    def test_br63_em_scheme_holds(self):
+        r = _good_root()
+        self.add_uri_endpoint(self._buyer(r), scheme="EM")
+        self.assert_rule(r, "BR-63", expect=False)
+
+    # ---- BR-AE-01/02/03: reverse charge ---------------------------------------
+    def test_brae01_orphan_ae_category_fires(self):
+        # An AE CategoryTradeTax with NO AE header breakdown row: the first
+        # official disjunct fails (CategoryTradeTax count = 1) and the second
+        # fails (header count = 0). The buyer legal id keeps BR-AE-03 quiet.
+        r = _good_root()
+        self.add_ae_allowance(r, buyer_legal_id="57151520")
+        fired = self.fired(r)
+        self.assertIn("BR-AE-01", fired)
+        self.assertNotIn("BR-AE-03", fired)
+
+    def test_brae01_orphan_ae_breakdown_row_fires_on_cii(self):
+        # The CII binding difference: ONE AE header breakdown row with no AE
+        # line/allowance/charge FIRES (header count = 1 but the second
+        # conjunct needs an AE line or CategoryTradeTax; the first disjunct
+        # needs header count = 0). On UBL the same orphan row HOLDS.
+        r = _good_root()
+        self.add_header_ae_row(r)
+        self.assert_rule(r, "BR-AE-01")
+
+    def test_brae01_paired_ae_line_and_row_holds(self):
+        r = _good_root()
+        self.line_to_ae(r)
+        self.add_header_ae_row(r)
+        self.assert_rule(r, "BR-AE-01", expect=False)
+
+    def test_brae01_holds_on_clean_base(self):
+        self.assert_rule(_good_root(), "BR-AE-01", expect=False)
+
+    def test_brae02_ae_line_without_buyer_id_fires(self):
+        # The base buyer carries neither a VAT registration nor a legal-
+        # organization id, so the buyer conjunct fails (the seller VA id is
+        # present). BR-AE-01 fires alongside (orphan AE line).
+        r = _good_root()
+        self.line_to_ae(r)
+        fired = self.fired(r)
+        self.assertIn("BR-AE-02", fired)
+        self.assertIn("BR-AE-01", fired)
+
+    def test_brae02_buyer_legal_id_satisfies(self):
+        r = _good_root()
+        self.line_to_ae(r)
+        lo = ET.SubElement(self._buyer(r),
+                           _q(NSA, "SpecifiedLegalOrganization"))
+        ET.SubElement(lo, _q(NSA, "ID")).text = "10202"
+        self.assert_rule(r, "BR-AE-02", expect=False)
+
+    def test_brae02_buyer_vat_id_satisfies(self):
+        r = _good_root()
+        self.line_to_ae(r)
+        reg = ET.SubElement(self._buyer(r),
+                            _q(NSA, "SpecifiedTaxRegistration"))
+        reg_id = ET.SubElement(reg, _q(NSA, "ID"))
+        reg_id.set("schemeID", "VA")
+        reg_id.text = "NL999999999B01"
+        self.assert_rule(r, "BR-AE-02", expect=False)
+
+    def test_brae03_ae_allowance_without_buyer_id_fires(self):
+        r = _good_root()
+        self.add_ae_allowance(r)
+        fired = self.fired(r)
+        self.assertIn("BR-AE-03", fired)
+        self.assertIn("BR-AE-01", fired)   # the orphan AE category
+
+    def test_brae03_buyer_legal_id_satisfies(self):
+        r = _good_root()
+        self.add_ae_allowance(r, buyer_legal_id="10202")
+        self.assert_rule(r, "BR-AE-03", expect=False)
+
+
 if __name__ == "__main__":
     unittest.main()

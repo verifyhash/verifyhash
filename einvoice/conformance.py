@@ -343,6 +343,36 @@ CII_SYNTAX_COVERAGE = {
     "BR-37": "Document level charge (BG-21) has a VAT category code (BT-102)",
     "BR-38": "Document level charge (BG-21) has a reason (BT-104) or reason "
              "code (BT-105)",
+    "BR-41": "Invoice line allowance (BG-27) has an amount (BT-136)",
+    "BR-42": "Invoice line allowance (BG-27) has a reason (BT-139) or "
+             "reason code (BT-140)",
+    "BR-43": "Invoice line charge (BG-28) has an amount (BT-141)",
+    "BR-44": "Invoice line charge (BG-28) has a reason (BT-144) or reason "
+             "code (BT-145)",
+    "BR-49": "Payment instruction (BG-16) has a payment means type code "
+             "(BT-81)",
+    "BR-50": "Credit-transfer account identifier (BT-84) non-empty",
+    "BR-51": "Payment card number (BT-87) truncated to ≤10 characters",
+    "BR-55": "Preceding invoice reference (BG-3) has a reference (BT-25) "
+             "(CII binding: non-empty required)",
+    "BR-57": "Deliver-to address (BG-15) has a country code (BT-80) (CII "
+             "binding: one verdict per header trade delivery)",
+    "BR-61": "Credit-transfer payment means has an account identifier "
+             "(BT-84) (CII binding: per account group — a means with no "
+             "account group fires nothing)",
+    "BR-62": "Seller electronic address (BT-34) has a scheme identifier "
+             "(CII binding: non-empty @schemeID on the first "
+             "URIUniversalCommunication)",
+    "BR-63": "Buyer electronic address (BT-49) has a scheme identifier "
+             "(CII binding: non-empty @schemeID on the first "
+             "URIUniversalCommunication)",
+    "BR-AE-01": "Reverse charge (AE) categories ⇒ exactly one AE VAT "
+                "breakdown row (CII binding: raw, VAT-scheme-unscoped "
+                "counts; an orphan AE breakdown row fires)",
+    "BR-AE-02": "Reverse charge (AE) line ⇒ Seller VAT/tax id AND Buyer "
+                "VAT/legal registration id present",
+    "BR-AE-03": "Reverse charge (AE) document allowance ⇒ Seller VAT/tax id "
+                "AND Buyer VAT/legal registration id present",
     "BR-CL-01": "Document type code (BT-3) in UNTDID 1001",
     "BR-CL-03": "currencyID (amount elements) in ISO 4217 alpha-3",
     "BR-CL-04": "Invoice currency code (BT-5) in ISO 4217 alpha-3",

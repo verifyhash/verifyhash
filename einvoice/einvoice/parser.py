@@ -340,6 +340,17 @@ class Invoice:
         self.doc_breakdown_category_ids_raw = []
         self.doc_ac_category_ids_raw = []
         self.all_country_codes_raw = []
+        # CII BR-AE-01 node sets (the official CII -01 test counts RAW
+        # ``ram:CategoryCode='AE'`` rows with NO VAT TypeCode filter, unlike
+        # the VAT-scoped UBL binding — br_ae_01 branches on inv.syntax):
+        #   cii_header_trade_tax_code_rows — one list of raw CategoryCode
+        #       string values per //ram:ApplicableHeaderTradeSettlement/
+        #       ram:ApplicableTradeTax row (the BG-23 breakdown rows);
+        #   cii_line_trade_tax_code_rows — the same per
+        #       //ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax row.
+        # Both stay [] on the UBL side.
+        self.cii_header_trade_tax_code_rows = []
+        self.cii_line_trade_tax_code_rows = []
         #   unit_codes — measurement unit codes at the BR-CL-23 context nodes
         #       (UBL: cbc:InvoicedQuantity|cbc:BaseQuantity|cbc:CreditedQuantity
         #        with @unitCode; CII: ram:BasisQuantity|ram:BilledQuantity with

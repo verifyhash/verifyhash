@@ -3634,9 +3634,54 @@ def _vat_exactly_one_breakdown(inv, code):
     return inv.breakdown_vat_category_codes().count(code) == 1
 
 
+def _cii_vat_exactly_one_breakdown(inv, code):
+    """The official CII -01 shape (context ``/rsm:CrossIndustryInvoice``),
+    transcribed for category ``code``::
+
+        (count(//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax
+               [ram:CategoryCode='X']) = 0
+         and count(//ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+               [ram:CategoryCode='X']) = 0
+         and count(//ram:CategoryTradeTax[ram:CategoryCode='X']) = 0)
+        or (count(//ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax
+               [ram:CategoryCode='X']) = 1
+            and (exists(//ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+                   [ram:CategoryCode='X'])
+                 or exists(//ram:CategoryTradeTax[ram:CategoryCode='X'])))
+
+    Two genuine differences from the UBL binding, transcribed exactly:
+    the comparisons are RAW (``ram:CategoryCode='X'``) with NO VAT TypeCode
+    filter anywhere, and one ORPHAN X breakdown row (header count = 1 with no
+    X line/allowance/charge) FIRES the rule — on UBL the same orphan holds.
+    """
+    hdr = sum(1 for row in inv.cii_header_trade_tax_code_rows if code in row)
+    line_any = any(code in row for row in inv.cii_line_trade_tax_code_rows)
+    cat_any = code in inv.tax_category_ids_raw
+    return ((hdr == 0 and not line_any and not cat_any)
+            or (hdr == 1 and (line_any or cat_any)))
+
+
 def br_ae_01(inv):
     """BR-AE-01: 'Reverse charge' (AE) items require exactly one AE VAT
-    breakdown (BG-23) row."""
+    breakdown (BG-23) row.
+
+    The CII binding differs from the UBL one (raw comparisons, no VAT scheme
+    filter, and an orphan AE breakdown row fires) — the body branches on
+    ``inv.syntax`` and transcribes each binding exactly (see
+    :func:`_cii_vat_exactly_one_breakdown`).
+    """
+    if inv.syntax == "cii":
+        if _cii_vat_exactly_one_breakdown(inv, "AE"):
+            return None
+        return Violation(
+            "BR-AE-01",
+            "An Invoice with a 'Reverse charge' (AE) VAT category (BT-151/"
+            "BT-95/BT-102) must contain exactly one AE VAT breakdown row "
+            "(BT-118); found %d."
+            % sum(1 for row in inv.cii_header_trade_tax_code_rows
+                  if "AE" in row),
+            "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+            "ram:CategoryCode")
     if _vat_exactly_one_breakdown(inv, "AE"):
         return None
     return Violation(
@@ -4297,7 +4342,35 @@ def br_61(inv):
     normalize-space here (unlike BR-50's raw context predicate): an absent code
     normalizes to '' and the second disjunct holds. Fires iff the normalized
     code is credit transfer (30/58) and no PayeeFinancialAccount/ID exists.
+
+    Official CII (context ``//ram:SpecifiedTradeSettlementPaymentMeans
+    [ram:TypeCode='30' or ram:TypeCode='58']/ram:PayeePartyCreditorFinancial
+    Account`` — the ACCOUNT node, unlike the UBL PaymentMeans context)::
+
+        (ram:IBANID) or (ram:ProprietaryID)
+
+    Two genuine binding differences, transcribed exactly: (1) the context
+    predicate compares the RAW TypeCode string values (as BR-50 does on UBL),
+    not normalize-space; (2) a credit-transfer payment means with NO account
+    group carries no context node at all, so nothing fires — the rule only
+    fires for an account that exists but carries NEITHER an ``ram:IBANID``
+    nor a ``ram:ProprietaryID`` element (the CII parser encodes that
+    existence fact as a ``None`` entry in ``account_first_ids``).
     """
+    if inv.syntax == "cii":
+        for pm in inv.payment_means:
+            if not any(c in ("30", "58") for c in pm.codes_raw):
+                continue
+            for first_id in pm.account_first_ids:
+                if first_id is None:
+                    return Violation(
+                        "BR-61",
+                        "If the Payment means type code (BT-81) means credit "
+                        "transfer, the Payment account identifier (BT-84) "
+                        "shall be present.",
+                        "ram:SpecifiedTradeSettlementPaymentMeans/"
+                        "ram:PayeePartyCreditorFinancialAccount/ram:IBANID")
+        return None
     for pm in inv.payment_means:
         if pm.code_norm in ("30", "58") and not pm.has_account_id:
             return Violation(

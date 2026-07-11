@@ -328,6 +328,27 @@ CII_GRADED_RULES = [
     _rules.br_ag_05, _rules.br_ag_06, _rules.br_ag_07,
     _rules.br_ag_10,
     _rules.br_b_01, _rules.br_b_02,
+    # CII proof-parity batch 2 (T-VHCIIP.3): line allowance/charge existence
+    # (BG-27/BG-28: BR-41..44 — the same ``ln.allowance_charges`` surface the
+    # graded BR-CO-23/24 and BR-DEC-24..28 already read), payment instructions
+    # (BG-16/BG-17/BG-18: BR-49/50/51/61 — the CII parser materializes the
+    # payment-means / financial-card model; the CII BR-61 binding is
+    # per-ACCOUNT — a credit-transfer payment means with no account group
+    # fires nothing — so the rule body branches on inv.syntax), preceding
+    # invoice reference (BG-3: BR-55, non-empty on CII vs pure existence on
+    # UBL — baked into the parser bool), deliver-to country (BG-15: BR-57,
+    # one verdict per header trade delivery), electronic-address schemes
+    # (BR-62/63: first-URIComm + non-empty @schemeID on CII vs per-EndpointID
+    # attribute existence on UBL — baked into the parser bools), and the
+    # Reverse-charge family heads (BR-AE-01, whose CII binding is
+    # raw-compared, unscoped by VAT TypeCode, and FIRED by an orphan AE
+    # breakdown row — the rule body branches on inv.syntax; BR-AE-02/03,
+    # whose party-identifier tests map onto the existing seller/buyer id
+    # surfaces unchanged).
+    _rules.br_41, _rules.br_42, _rules.br_43, _rules.br_44,
+    _rules.br_49, _rules.br_50, _rules.br_51, _rules.br_55, _rules.br_57,
+    _rules.br_61, _rules.br_62, _rules.br_63,
+    _rules.br_ae_01, _rules.br_ae_02, _rules.br_ae_03,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -3623,6 +3644,171 @@ def _cmut_br38(r):
     _cadd_doc_allowance_charge(r, charge=True, reason=None)
 
 
+# ---- CII proof-parity batch 2 (T-VHCIIP.3): BR-41..44, BR-49/50/51/55/57, --- #
+# ---- BR-61/62/63, BR-AE-01/02/03 -------------------------------------------- #
+def _cadd_line_ac_b2(r, charge, amount="0.00", reason="Testing"):
+    """Append a LINE-level ram:SpecifiedTradeAllowanceCharge (BG-27/BG-28) to
+    the first line with the exact field the target BR-41..44 rule guards
+    removed via the knobs. A 0.00 amount feeds no graded arithmetic and no
+    CategoryTradeTax is added, so only the targeted existence rules (and
+    their official twins BR-CO-23/24, when the reason is removed) react."""
+    settle = _cii_first_line(r).find("ram:SpecifiedLineTradeSettlement", _NSC)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = (
+        "true" if charge else "false")
+    if amount is not None:
+        ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = amount
+    if reason is not None:
+        ET.SubElement(ac, _cq(NS_RAM, "Reason")).text = reason
+
+
+def _cmut_br41(r):
+    # Line allowance with a Reason but NO ActualAmount -> BR-41 only (BR-42 /
+    # BR-CO-23 hold; BR-DEC-24's substring-after over the empty operand is 0).
+    _cadd_line_ac_b2(r, charge=False, amount=None)
+
+
+def _cmut_br42(r):
+    # Line allowance with an amount but NO Reason/ReasonCode -> BR-42 fires;
+    # its twin-test BR-CO-23 fires alongside on both engines.
+    _cadd_line_ac_b2(r, charge=False, reason=None)
+
+
+def _cmut_br43(r):
+    # Charge twins of BR-41/BR-42.
+    _cadd_line_ac_b2(r, charge=True, amount=None)
+
+
+def _cmut_br44(r):
+    _cadd_line_ac_b2(r, charge=True, reason=None)
+
+
+def _cii_first_payment_means(r):
+    return _cii_settlement(r).find(
+        "ram:SpecifiedTradeSettlementPaymentMeans", _NSC)
+
+
+def _cmut_br49(r):
+    # Strip the FIRST payment means' ram:TypeCode (BT-81): (ram:TypeCode)
+    # fails -> BR-49. Without a raw '30' code that group carries no BR-50/61
+    # context; the second payment means keeps its code + IBAN, and BR-CL-16
+    # still sees one valid '30'.
+    pm = _cii_first_payment_means(r)
+    _cii_remove(r, pm.find("ram:TypeCode", _NSC))
+
+
+def _cmut_br50(r):
+    # Blank the first credit-transfer account's IBANID to whitespace:
+    # normalize-space() = '' fires BR-50, while the ELEMENT still exists so
+    # the per-account existence test of BR-61 holds.
+    pm = _cii_first_payment_means(r)
+    pm.find("ram:PayeePartyCreditorFinancialAccount/ram:IBANID",
+            _NSC).text = "   "
+
+
+def _cmut_br51(r):
+    # Add a payment card (BG-18) whose ram:ID is a FULL 16-digit PAN:
+    # string-length(normalize-space()) > 10 fires BR-51.
+    pm = _cii_first_payment_means(r)
+    card = ET.Element(_cq(NS_RAM, "ApplicableTradeSettlementFinancialCard"))
+    ET.SubElement(card, _cq(NS_RAM, "ID")).text = "5111111111111111"
+    pm.insert(list(pm).index(pm.find("ram:TypeCode", _NSC)) + 1, card)
+
+
+def _cmut_br55(r):
+    # Header InvoiceReferencedDocument (BG-3) with NO IssuerAssignedID:
+    # normalize-space('') fires BR-55.
+    ET.SubElement(_cii_settlement(r),
+                  _cq(NS_RAM, "InvoiceReferencedDocument"))
+
+
+def _cmut_br57(r):
+    # Deliver-to party with a PostalTradeAddress but NO CountryID -> BR-57
+    # (CII_example1's ApplicableHeaderTradeDelivery is empty, so this is the
+    # only deliver-to address; no CountryID is added, BR-CL-14 unaffected).
+    delivery = r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeDelivery", _NSC)
+    shipto = ET.SubElement(delivery, _cq(NS_RAM, "ShipToTradeParty"))
+    pta = ET.SubElement(shipto, _cq(NS_RAM, "PostalTradeAddress"))
+    ET.SubElement(pta, _cq(NS_RAM, "CityName")).text = "DeliveryCity"
+
+
+def _cmut_br61(r):
+    # Remove the first credit-transfer account's IBANID ELEMENT entirely: the
+    # account node exists with neither ram:IBANID nor ram:ProprietaryID, so
+    # BR-61 fires — and BR-50 fires alongside (normalize-space of the absent
+    # path is '') on both engines.
+    pm = _cii_first_payment_means(r)
+    acct = pm.find("ram:PayeePartyCreditorFinancialAccount", _NSC)
+    _cii_remove(r, acct.find("ram:IBANID", _NSC))
+
+
+def _cmut_br62(r):
+    # Seller electronic address (BT-34) without a @schemeID: the first
+    # URIUniversalCommunication exists but normalize-space('') fires BR-62.
+    uri = ET.SubElement(_cii_seller(r),
+                        _cq(NS_RAM, "URIUniversalCommunication"))
+    ET.SubElement(uri, _cq(NS_RAM, "URIID")).text = "sales@dekoksmaat.nl"
+
+
+def _cmut_br63(r):
+    # Buyer twin of BR-62 (BT-49).
+    uri = ET.SubElement(_cii_buyer(r),
+                        _cq(NS_RAM, "URIUniversalCommunication"))
+    ET.SubElement(uri, _cq(NS_RAM, "URIID")).text = "odin@heemskerk.nl"
+
+
+def _cadd_ae_allowance(r, buyer_legal_id=None):
+    """Append a document ALLOWANCE carrying a Reverse-charge (AE)
+    CategoryTradeTax at rate 0. ActualAmount 0.00 keeps every graded
+    arithmetic (BR-CO-13, the S bucket sums) unchanged, the Reason satisfies
+    BR-33/BR-CO-21, and rate 0 satisfies the official BR-AE-06. With no AE
+    header breakdown row, BR-AE-01 fires on both engines (header count 0,
+    CategoryTradeTax count 1 — the official CII test has no first-disjunct
+    escape). Optionally gives the buyer a SpecifiedLegalOrganization/ID
+    (BT-47) so the BR-AE-03 party-identifier test can hold."""
+    if buyer_legal_id is not None:
+        lo = ET.SubElement(_cii_buyer(r),
+                           _cq(NS_RAM, "SpecifiedLegalOrganization"))
+        ET.SubElement(lo, _cq(NS_RAM, "ID")).text = buyer_legal_id
+    settle = _cii_settlement(r)
+    ac = ET.SubElement(settle, _cq(NS_RAM, "SpecifiedTradeAllowanceCharge"))
+    ind = ET.SubElement(ac, _cq(NS_RAM, "ChargeIndicator"))
+    ET.SubElement(ind, _cq(NS_UDT, "Indicator")).text = "false"
+    ET.SubElement(ac, _cq(NS_RAM, "ActualAmount")).text = "0.00"
+    ET.SubElement(ac, _cq(NS_RAM, "Reason")).text = "Discount"
+    ctt = ET.SubElement(ac, _cq(NS_RAM, "CategoryTradeTax"))
+    ET.SubElement(ctt, _cq(NS_RAM, "TypeCode")).text = "VAT"
+    ET.SubElement(ctt, _cq(NS_RAM, "CategoryCode")).text = "AE"
+    ET.SubElement(ctt, _cq(NS_RAM, "RateApplicablePercent")).text = "0"
+
+
+def _cmut_brae01(r):
+    # AE document allowance + a buyer legal-registration id: the buyer id
+    # keeps BR-AE-03 quiet (seller VA id + buyer legal id), so the ORPHAN AE
+    # category (no AE header breakdown row) makes BR-AE-01 the only graded
+    # rule to fire on both engines.
+    _cadd_ae_allowance(r, buyer_legal_id="57151520")
+
+
+def _cmut_brae02(r):
+    # Flip the FIRST line's VAT category S -> AE at rate 0 (satisfying the
+    # official BR-AE-05). The base buyer carries NO VAT registration and NO
+    # legal-organization id, so BR-AE-02 fires; BR-AE-01 fires alongside
+    # (line AE with header AE count 0) as does BR-S-08 (the flipped line
+    # leaves its S/6 bucket) — on both engines alike.
+    tt = _cii_line_tax(r)
+    tt.find("ram:CategoryCode", _NSC).text = "AE"
+    tt.find("ram:RateApplicablePercent", _NSC).text = "0"
+
+
+def _cmut_brae03(r):
+    # AE document allowance WITHOUT any buyer identifier -> BR-AE-03 fires;
+    # BR-AE-01 fires alongside (orphan AE category) on both engines.
+    _cadd_ae_allowance(r)
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -3638,6 +3824,13 @@ _CII_MUTATIONS = {
     "BR-28": _cmut_br28, "BR-29": _cmut_br29, "BR-30": _cmut_br30,
     "BR-31": _cmut_br31, "BR-32": _cmut_br32, "BR-33": _cmut_br33,
     "BR-36": _cmut_br36, "BR-37": _cmut_br37, "BR-38": _cmut_br38,
+    "BR-41": _cmut_br41, "BR-42": _cmut_br42, "BR-43": _cmut_br43,
+    "BR-44": _cmut_br44,
+    "BR-49": _cmut_br49, "BR-50": _cmut_br50, "BR-51": _cmut_br51,
+    "BR-55": _cmut_br55, "BR-57": _cmut_br57,
+    "BR-61": _cmut_br61, "BR-62": _cmut_br62, "BR-63": _cmut_br63,
+    "BR-AE-01": _cmut_brae01, "BR-AE-02": _cmut_brae02,
+    "BR-AE-03": _cmut_brae03,
     "BR-52": _cmut_br52, "BR-53": _cmut_br53, "BR-54": _cmut_br54,
     "BR-56": _cmut_br56, "BR-64": _cmut_br64, "BR-65": _cmut_br65,
     "BR-CO-03": _cmut_brco03, "BR-CO-09": _cmut_brco09,

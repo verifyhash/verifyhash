@@ -24,7 +24,7 @@ XSLT and compares the fired-rule set. The sources:
 ## Coverage at a glance
 
 - **276 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **152** proven on both UBL and CII, **124** UBL-only, **0** CII-only.
+- Syntax: **167** proven on both UBL and CII, **109** UBL-only, **0** CII-only.
 - Severity (blocking class): **265** fatal (block validity), **11** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -82,26 +82,26 @@ the non-blocking `warning` class for the severity column).
 | `BR-36` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level charge (BG-21) shall have a Document level charge amount (BT-99). |
 | `BR-37` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level charge (BG-21) shall have a Document level charge VAT category code (BT-102). |
 | `BR-38` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Document level charge (BG-21) shall have a Document level charge reason (BT-104) or a Document level charge reason code (BT-105). |
-| `BR-41` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Invoice line allowance (BG-27) shall have an Invoice line allowance amount (BT-136). |
-| `BR-42` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Invoice line allowance (BG-27) shall have an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140). |
-| `BR-43` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Invoice line charge (BG-28) shall have an Invoice line charge amount (BT-141). |
-| `BR-44` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Invoice line charge (BG-28) shall have an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145). |
+| `BR-41` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line allowance (BG-27) shall have an Invoice line allowance amount (BT-136). |
+| `BR-42` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line allowance (BG-27) shall have an Invoice line allowance reason (BT-139) or an Invoice line allowance reason code (BT-140). |
+| `BR-43` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line charge (BG-28) shall have an Invoice line charge amount (BT-141). |
+| `BR-44` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Invoice line charge (BG-28) shall have an Invoice line charge reason (BT-144) or an Invoice line charge reason code (BT-145). |
 | `BR-45` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each VAT breakdown (BG-23) shall have a VAT category taxable amount (BT-116). |
 | `BR-46` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each VAT breakdown (BG-23) shall have a VAT category tax amount (BT-117). |
 | `BR-47` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each VAT breakdown (BG-23) shall be defined through a VAT category code (BT-118). |
 | `BR-48` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each VAT breakdown (BG-23) shall have a VAT category rate (BT-119), except if the Invoice is not subject to VAT. |
-| `BR-49` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A Payment instruction (BG-16) shall specify the Payment means type code (BT-81). |
-| `BR-50` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A Payment account identifier (BT-84) shall be present if Credit transfer (BG-17) information is provided in the Invoice. |
-| `BR-51` | UBL | warning | warning | CEN EN 16931 1.3.16 | not proven | The last 4 to 6 digits of the Payment card primary account number (BT-87) shall be present if Payment card information (BG-18) is provided. |
+| `BR-49` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A Payment instruction (BG-16) shall specify the Payment means type code (BT-81). |
+| `BR-50` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A Payment account identifier (BT-84) shall be present if Credit transfer (BG-17) information is provided in the Invoice. |
+| `BR-51` | UBL + CII | warning | warning | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The last 4 to 6 digits of the Payment card primary account number (BT-87) shall be present if Payment card information (BG-18) is provided. |
 | `BR-52` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Additional supporting document (BG-24) shall contain a Supporting document reference (BT-122). |
 | `BR-53` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | If the VAT accounting currency code (BT-6) is present, then the Invoice total VAT amount in accounting currency (BT-111) shall be provided. |
 | `BR-54` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Item attribute (BG-32) shall contain an Item attribute name (BT-160) and an Item attribute value (BT-161). |
-| `BR-55` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25). |
+| `BR-55` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Preceding Invoice reference (BG-3) shall contain a Preceding Invoice reference (BT-25). |
 | `BR-56` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Seller tax representative party (BG-11) shall have a Seller tax representative VAT identifier (BT-63). |
-| `BR-57` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | Each Deliver to address (BG-15) shall contain a Deliver to country code (BT-80). |
-| `BR-61` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | If the Payment means type code (BT-81) means SEPA credit transfer, Local credit transfer or Non-SEPA international credit transfer, the Payment account identifier (BT-84) shall be present. |
-| `BR-62` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Seller electronic address (BT-34) shall have a Scheme identifier. |
-| `BR-63` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Buyer electronic address (BT-49) shall have a Scheme identifier. |
+| `BR-57` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Each Deliver to address (BG-15) shall contain a Deliver to country code (BT-80). |
+| `BR-61` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | If the Payment means type code (BT-81) means SEPA credit transfer, Local credit transfer or Non-SEPA international credit transfer, the Payment account identifier (BT-84) shall be present. |
+| `BR-62` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Seller electronic address (BT-34) shall have a Scheme identifier. |
+| `BR-63` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Buyer electronic address (BT-49) shall have a Scheme identifier. |
 | `BR-64` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Item standard identifier (BT-157) shall have a Scheme identifier. |
 | `BR-65` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Item classification identifier (BT-158) shall have a Scheme identifier. |
 | `BR-CL-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The document type code (BT-3) MUST be coded per UNTDID 1001. |
@@ -157,9 +157,9 @@ the non-blocking `warning` class for the severity column).
 | `BR-DEC-25` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice line allowance base amount (BT-137). Same line-level allowance context as BR-DEC-24, over ``cbc:BaseAmount`` (UBL) / ``../ram:BasisAmount`` (CII). |
 | `BR-DEC-27` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice line charge amount (BT-141). The charge twin of BR-DEC-24 (ChargeIndicator true() / 'true'). |
 | `BR-DEC-28` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice line charge base amount (BT-142). The charge twin of BR-DEC-25. |
-| `BR-AE-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | 'Reverse charge' (AE) items require exactly one AE VAT breakdown (BG-23) row. |
-| `BR-AE-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a Reverse charge (AE) Invoice line (BT-151) shall carry a Seller identifier AND a Buyer identifier. |
-| `BR-AE-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a Reverse charge (AE) Document level allowance (BT-95) shall carry a Seller identifier AND a Buyer identifier. |
+| `BR-AE-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | 'Reverse charge' (AE) items require exactly one AE VAT breakdown (BG-23) row. |
+| `BR-AE-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Reverse charge (AE) Invoice line (BT-151) shall carry a Seller identifier AND a Buyer identifier. |
+| `BR-AE-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Reverse charge (AE) Document level allowance (BT-95) shall carry a Seller identifier AND a Buyer identifier. |
 | `BR-AE-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a Reverse charge (AE) Document level charge (BT-102) shall carry a Seller identifier AND a Buyer identifier. |
 | `BR-AE-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
 | `BR-AE-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Reverse charge (AE) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
@@ -481,7 +481,7 @@ Peppol assert reopens this worklist automatically.
 
 ## CII proof parity
 
-**124** rules in the table above are today differentially proven on
+**109** rules in the table above are today differentially proven on
 the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
 many of them the official CII artifacts actually carry, by a real
 XML parse of `sch:assert/@id` in the vendored CII Schematron files
@@ -493,7 +493,7 @@ XML parse of `sch:assert/@id` in the vendored CII Schematron files
 Measured split (committed as `cii_parity.json`, live-recomputed by
 `test_cii_parity.py` so it can never silently go stale):
 
-- **116 cii-fireable** — an official CII assert with the same id
+- **101 cii-fireable** — an official CII assert with the same id
   exists in at least one vendored CII artifact. This is the real
   QA worklist: the rule officially applies to CII invoices and the
   engine's coverage there is not yet proven.

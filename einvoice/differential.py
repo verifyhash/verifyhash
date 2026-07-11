@@ -378,6 +378,30 @@ CII_GRADED_RULES = [
     _rules.br_g_01, _rules.br_g_02, _rules.br_g_03, _rules.br_g_04,
     _rules.br_g_05, _rules.br_g_06, _rules.br_g_07, _rules.br_g_08,
     _rules.br_g_09, _rules.br_g_10,
+    # CII proof-parity batch 4 (T-VHCIIP.5): the rest of the Reverse-charge
+    # family (BR-AE-04..10) and the whole Intra-community-supply family
+    # (BR-IC-01..09/-11/-12; BR-IC-10 was already graded above). BR-AE-04 is
+    # the charge twin of the batch-2 BR-AE-03 (same VA-or-FC seller + VAT-or-
+    # legal-org buyer disjuncts); the AE rate rules (-05/06/07), bucket-sum
+    # rule (-08, the shared ±1 round2 band branch) and breakdown rules
+    # (-09/-10) run on the shared Z/E/G-proven bodies unchanged. For the K
+    # family: the -01 head is the exact BR-AE-01 CII shape (raw, VAT-
+    # TypeCode-unscoped counts; an orphan K breakdown row fires) — the body
+    # branches on inv.syntax (T-VHCIIP.5 engine fix); the party-id rules
+    # (-02/03/04) are ALL-VAT-scoped (seller VA-only or tax-rep VA, buyer VA
+    # only — exactly ``seller_has_vat_scheme_company_id`` / ``taxrep_has_
+    # vat_company_id`` / ``buyer_has_vat_scheme_company_id`` on CII);
+    # -05..09 reuse the shared bodies like AE. BR-IC-11/-12 are genuinely
+    # different bindings on CII — pure NODE-EXISTENCE tests (OccurrenceDate
+    # Time/udt:DateTimeString or a BillingSpecifiedPeriod Start/EndDateTime
+    # child for -11; a ShipTo PostalTradeAddress/CountryID for -12) where
+    # UBL requires string-length()>1 / any-child — so the rule bodies branch
+    # on inv.syntax over dedicated parser surfaces (T-VHCIIP.5 engine fix).
+    _rules.br_ae_04, _rules.br_ae_05, _rules.br_ae_06, _rules.br_ae_07,
+    _rules.br_ae_08, _rules.br_ae_09, _rules.br_ae_10,
+    _rules.br_ic_01, _rules.br_ic_02, _rules.br_ic_03, _rules.br_ic_04,
+    _rules.br_ic_05, _rules.br_ic_06, _rules.br_ic_07, _rules.br_ic_08,
+    _rules.br_ic_09, _rules.br_ic_11, _rules.br_ic_12,
 ]
 
 # EXCLUDED from the CII graded set (kept out on purpose, not overlooked). Each was
@@ -3420,9 +3444,11 @@ def _cmut_brco26(r):
 
 def _cmut_bric10(r):
     # Add an Intra-community (K) VAT breakdown row with NO exemption reason:
-    # BR-IC-10 fires. Amounts are 0.00 so the graded arithmetic (BR-CO-17)
-    # holds; the official also fires the CII-ungraded BR-IC-01/-11/-12
-    # cascade, which the leg does not grade.
+    # BR-IC-10 fires. Amounts are 0.00 so the graded arithmetic (BR-CO-17,
+    # BR-IC-08/-09) holds; the ORPHAN K row (no K line/allowance) also fires
+    # BR-IC-01, and the base's empty ApplicableHeaderTradeDelivery + missing
+    # BillingSpecifiedPeriod fire BR-IC-11/-12 — all graded since batch 4
+    # (T-VHCIIP.5) and firing on BOTH engines alike.
     settle = _cii_settlement(r)
     first = settle.find("ram:ApplicableTradeTax", _NSC)
     tt = ET.Element(_cq(NS_RAM, "ApplicableTradeTax"))
@@ -4024,6 +4050,16 @@ def _cdrop_seller_tax_reg_b3(r):
     _cii_remove(r, _cii_seller(r).find("ram:SpecifiedTaxRegistration", _NSC))
 
 
+# The family's -10 ExemptionReason text per VAT category code (BR-E-10/
+# BR-G-10 from batch 3; BR-AE-10/BR-IC-10 from batch 4 reuse the helper).
+_B34_EXEMPTION_REASON = {
+    "E": "Exempt from VAT",
+    "G": "Export outside the EU",
+    "AE": "Reverse charge",
+    "K": "Intra-Community supply",
+}
+
+
 def _cadd_header_vat_row_b3(r, code, basis, calculated="0.00", reason=True):
     """Append a header VAT breakdown row (BG-23: ram:ApplicableTradeTax) for
     ``code`` at rate 0 — Basis/Calculated/Category/Rate all present so BR-45
@@ -4036,7 +4072,7 @@ def _cadd_header_vat_row_b3(r, code, basis, calculated="0.00", reason=True):
     ET.SubElement(tt, _cq(NS_RAM, "TypeCode")).text = "VAT"
     if reason:
         ET.SubElement(tt, _cq(NS_RAM, "ExemptionReason")).text = (
-            "Exempt from VAT" if code == "E" else "Export outside the EU")
+            _B34_EXEMPTION_REASON[code])
     ET.SubElement(tt, _cq(NS_RAM, "BasisAmount")).text = basis
     ET.SubElement(tt, _cq(NS_RAM, "CategoryCode")).text = code
     ET.SubElement(tt, _cq(NS_RAM, "RateApplicablePercent")).text = "0"
@@ -4172,6 +4208,202 @@ def _cmut_brg10(r):
     _cadd_header_vat_row_b3(r, "G", basis="19.90", reason=False)
 
 
+# ---- CII proof-parity batch 4 (T-VHCIIP.5): BR-AE-04..10 + BR-IC-01..12 --- #
+# The rest of the Reverse-charge (AE) family and the whole Intra-community-
+# supply (K) family, off the same CII_example1 base and REUSING the batch-3
+# helpers verbatim (they are code-parametric). Base facts that matter here:
+# the seller carries ONE VA tax registration (no FC, no tax representative),
+# the buyer carries NO tax registration and NO SpecifiedLegalOrganization/ID
+# (its bare ram:ID does not count for any official buyer-id disjunct), the
+# header ApplicableHeaderTradeDelivery is EMPTY, and the settlement has no
+# BillingSpecifiedPeriod — so a header K VAT row fires BR-IC-11/-12 on both
+# engines unless a fixture adds the delivery date / ship-to country back.
+def _cadd_buyer_vat_reg_b4(r):
+    """Give the buyer a VAT registration (BT-48): the ONLY buyer id the
+    BR-IC-02..04 disjunct accepts (VA-scoped — a legal-organization id does
+    NOT count, unlike BR-AE). The NL prefix keeps BR-CO-09 quiet on both
+    engines (the value joins the //ram:SpecifiedTaxRegistration/ram:ID
+    [@schemeID='VA'] prefix-checked node set)."""
+    reg = ET.SubElement(_cii_buyer(r), _cq(NS_RAM, "SpecifiedTaxRegistration"))
+    id_el = ET.SubElement(reg, _cq(NS_RAM, "ID"))
+    id_el.set("schemeID", "VA")
+    id_el.text = "NL999999999B01"
+
+
+def _cadd_delivery_date_b4(r):
+    """Give the (empty) header trade delivery an actual delivery date
+    (BT-72): ActualDeliverySupplyChainEvent/OccurrenceDateTime/udt:DateTime
+    String — the exact node whose EXISTENCE satisfies the official CII
+    BR-IC-11 first disjunct."""
+    dlv = _cii_delivery(r)
+    ev = ET.SubElement(dlv, _cq(NS_RAM, "ActualDeliverySupplyChainEvent"))
+    odt = ET.SubElement(ev, _cq(NS_RAM, "OccurrenceDateTime"))
+    dts = ET.SubElement(odt, _cq(NS_UDT, "DateTimeString"))
+    dts.set("format", "102")
+    dts.text = "20150105"
+
+
+def _cadd_shipto_country_b4(r):
+    """Give the (empty) header trade delivery a deliver-to country (BT-80):
+    ShipToTradeParty/PostalTradeAddress/ram:CountryID — the exact node whose
+    EXISTENCE satisfies the official CII BR-IC-12 test. Non-empty 'NL' also
+    keeps the graded BR-57 (per-delivery deliver-to country) quiet on both
+    engines."""
+    dlv = _cii_delivery(r)
+    shipto = ET.SubElement(dlv, _cq(NS_RAM, "ShipToTradeParty"))
+    addr = ET.SubElement(shipto, _cq(NS_RAM, "PostalTradeAddress"))
+    ET.SubElement(addr, _cq(NS_RAM, "CountryID")).text = "NL"
+
+
+def _cmut_brae04(r):
+    # AE document CHARGE (rate 0, seller VA id intact, buyer has NO VAT/legal
+    # id) -> BR-AE-04 (the charge twin of the batch-2 BR-AE-03 fixture);
+    # BR-AE-01 fires alongside (orphan AE category) on both engines.
+    _cadd_vatcat_ac_b3(r, "AE", charge=True)
+
+
+def _cmut_brae05(r):
+    # AE line KEEPING the base rate 6: ram:RateApplicablePercent = 0 fails ->
+    # BR-AE-05; BR-AE-01 (line AE, header AE count 0), BR-AE-02 (no buyer
+    # id) and BR-S-08 (line 1 left its S/6 bucket) fire alongside.
+    _cflip_line1_cat_b3(r, "AE", rate=None)
+
+
+def _cmut_brae06(r):
+    # AE document allowance at rate 21 -> BR-AE-06; BR-AE-01 (orphan AE
+    # category) and BR-AE-03 (no buyer id) fire alongside.
+    _cadd_vatcat_ac_b3(r, "AE", rate="21")
+
+
+def _cmut_brae07(r):
+    # Charge twin of BR-AE-06 -> BR-AE-07; BR-AE-01 and BR-AE-04 alongside.
+    _cadd_vatcat_ac_b3(r, "AE", charge=True, rate="21")
+
+
+def _cmut_brae08(r):
+    # AE line (LineTotalAmount 19.9) + header AE row whose BasisAmount 30.00
+    # sits OUTSIDE the official strict ±1 band around round2(19.9) ->
+    # BR-AE-08; BR-AE-01/09/10 hold (one header row + an AE line,
+    # CalculatedAmount 0, ExemptionReason present); BR-AE-02 (no buyer id)
+    # and BR-S-08 fire alongside.
+    _cflip_line1_cat_b3(r, "AE")
+    _cadd_header_vat_row_b3(r, "AE", basis="30.00")
+
+
+def _cmut_brae09(r):
+    # Correct BasisAmount (19.90) but CalculatedAmount 0.01: the official
+    # ``../ram:CalculatedAmount = 0`` fails -> BR-AE-09, while BR-CO-17
+    # still holds (round2(19.90 x 0) = 0 vs 0.01, inside its band).
+    # BR-AE-02 and BR-S-08 fire alongside.
+    _cflip_line1_cat_b3(r, "AE")
+    _cadd_header_vat_row_b3(r, "AE", basis="19.90", calculated="0.01")
+
+
+def _cmut_brae10(r):
+    # Correct AE header row WITHOUT ExemptionReason/Code -> BR-AE-10;
+    # BR-AE-02 and BR-S-08 fire alongside.
+    _cflip_line1_cat_b3(r, "AE")
+    _cadd_header_vat_row_b3(r, "AE", basis="19.90", reason=False)
+
+
+def _cmut_bric01(r):
+    # Orphan K document allowance (rate 0) + a buyer VAT registration: seller
+    # VA + buyer VA keep BR-IC-03 quiet, so the ORPHAN K category (header K
+    # count 0) makes BR-IC-01 the only graded rule to fire on both engines
+    # (BR-IC-11/-12 stay quiet: their context is the header K VAT row, and
+    # there is none).
+    _cadd_vatcat_ac_b3(r, "K")
+    _cadd_buyer_vat_reg_b4(r)
+
+
+def _cmut_bric02(r):
+    # K line (rate 0) with NO buyer VAT id (the base buyer has none) ->
+    # BR-IC-02; BR-IC-01 (line K, header K count 0) and BR-S-08 (line 1 left
+    # its S/6 bucket) fire alongside.
+    _cflip_line1_cat_b3(r, "K")
+
+
+def _cmut_bric03(r):
+    # K document allowance + NO buyer VAT id -> BR-IC-03; BR-IC-01 (orphan K
+    # category) fires alongside.
+    _cadd_vatcat_ac_b3(r, "K")
+
+
+def _cmut_bric04(r):
+    # Charge twin of BR-IC-03 -> BR-IC-04; BR-IC-01 alongside.
+    _cadd_vatcat_ac_b3(r, "K", charge=True)
+
+
+def _cmut_bric05(r):
+    # K line KEEPING the base rate 6 + a buyer VAT registration (so BR-IC-02
+    # holds — exercising the SATISFIED side of its all-VAT-scoped disjunct)
+    # -> BR-IC-05; BR-IC-01 and BR-S-08 fire alongside.
+    _cflip_line1_cat_b3(r, "K", rate=None)
+    _cadd_buyer_vat_reg_b4(r)
+
+
+def _cmut_bric06(r):
+    # K document allowance at rate 21 + buyer VAT id (BR-IC-03 holds) ->
+    # BR-IC-06; BR-IC-01 (orphan K category) fires alongside.
+    _cadd_vatcat_ac_b3(r, "K", rate="21")
+    _cadd_buyer_vat_reg_b4(r)
+
+
+def _cmut_bric07(r):
+    # Charge twin of BR-IC-06 -> BR-IC-07; BR-IC-01 alongside.
+    _cadd_vatcat_ac_b3(r, "K", charge=True, rate="21")
+    _cadd_buyer_vat_reg_b4(r)
+
+
+def _cmut_bric08(r):
+    # K line (LineTotalAmount 19.9) + header K row whose BasisAmount 30.00
+    # sits OUTSIDE the official strict ±1 band -> BR-IC-08; BR-IC-01/09/10
+    # hold (one header row + a K line, CalculatedAmount 0, ExemptionReason
+    # present); the buyer VAT id keeps BR-IC-02 quiet; the delivery date +
+    # ship-to country keep BR-IC-11/-12 quiet (both existence disjuncts
+    # exercised in the SATISFIED direction); BR-S-08 fires alongside.
+    _cflip_line1_cat_b3(r, "K")
+    _cadd_header_vat_row_b3(r, "K", basis="30.00")
+    _cadd_buyer_vat_reg_b4(r)
+    _cadd_delivery_date_b4(r)
+    _cadd_shipto_country_b4(r)
+
+
+def _cmut_bric09(r):
+    # Correct BasisAmount (19.90) but CalculatedAmount 0.01 -> BR-IC-09
+    # (BR-CO-17 holds: round2(19.90 x 0) = 0 vs 0.01, inside its band);
+    # buyer VAT id + delivery date + ship-to country keep BR-IC-02/-11/-12
+    # quiet; BR-S-08 fires alongside.
+    _cflip_line1_cat_b3(r, "K")
+    _cadd_header_vat_row_b3(r, "K", basis="19.90", calculated="0.01")
+    _cadd_buyer_vat_reg_b4(r)
+    _cadd_delivery_date_b4(r)
+    _cadd_shipto_country_b4(r)
+
+
+def _cmut_bric11(r):
+    # Correct K header row + K line + buyer VAT id + SHIP-TO COUNTRY but NO
+    # delivery date and NO billing period: the official CII BR-IC-11
+    # existence disjunction is all-empty -> BR-IC-11 fires; BR-IC-12 holds
+    # (the CountryID node exists — isolating the two bindings from each
+    # other); BR-IC-01/02/08/09/10 hold; BR-S-08 fires alongside.
+    _cflip_line1_cat_b3(r, "K")
+    _cadd_header_vat_row_b3(r, "K", basis="19.90")
+    _cadd_buyer_vat_reg_b4(r)
+    _cadd_shipto_country_b4(r)
+
+
+def _cmut_bric12(r):
+    # Correct K header row + K line + buyer VAT id + DELIVERY DATE but NO
+    # ship-to country: BR-IC-12 fires (no ShipToTradeParty/PostalTradeAddress/
+    # CountryID node anywhere); BR-IC-11 holds (the DateTimeString node
+    # exists); BR-IC-01/02/08/09/10 hold; BR-S-08 fires alongside.
+    _cflip_line1_cat_b3(r, "K")
+    _cadd_header_vat_row_b3(r, "K", basis="19.90")
+    _cadd_buyer_vat_reg_b4(r)
+    _cadd_delivery_date_b4(r)
+
+
 _CII_MUTATIONS = {
     "BR-01": _cmut_br01, "BR-02": _cmut_br02, "BR-03": _cmut_br03,
     "BR-04": _cmut_br04, "BR-05": _cmut_br05, "BR-06": _cmut_br06,
@@ -4194,6 +4426,16 @@ _CII_MUTATIONS = {
     "BR-61": _cmut_br61, "BR-62": _cmut_br62, "BR-63": _cmut_br63,
     "BR-AE-01": _cmut_brae01, "BR-AE-02": _cmut_brae02,
     "BR-AE-03": _cmut_brae03,
+    "BR-AE-04": _cmut_brae04, "BR-AE-05": _cmut_brae05,
+    "BR-AE-06": _cmut_brae06, "BR-AE-07": _cmut_brae07,
+    "BR-AE-08": _cmut_brae08, "BR-AE-09": _cmut_brae09,
+    "BR-AE-10": _cmut_brae10,
+    "BR-IC-01": _cmut_bric01, "BR-IC-02": _cmut_bric02,
+    "BR-IC-03": _cmut_bric03, "BR-IC-04": _cmut_bric04,
+    "BR-IC-05": _cmut_bric05, "BR-IC-06": _cmut_bric06,
+    "BR-IC-07": _cmut_bric07, "BR-IC-08": _cmut_bric08,
+    "BR-IC-09": _cmut_bric09, "BR-IC-11": _cmut_bric11,
+    "BR-IC-12": _cmut_bric12,
     "BR-E-01": _cmut_bre01, "BR-E-02": _cmut_bre02, "BR-E-03": _cmut_bre03,
     "BR-E-04": _cmut_bre04, "BR-E-05": _cmut_bre05, "BR-E-06": _cmut_bre06,
     "BR-E-07": _cmut_bre07, "BR-E-08": _cmut_bre08, "BR-E-09": _cmut_bre09,

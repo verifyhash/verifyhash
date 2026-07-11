@@ -2362,8 +2362,38 @@ def br_ic_11(inv):
 
     So it FIRES iff a K breakdown row exists AND neither a >1-char actual
     delivery date nor a document-level invoicing period with a child is present.
+
+    The CII binding (context = each header K VAT breakdown row's
+    ``ram:CategoryCode[.='K'][upper-case(../ram:TypeCode)='VAT']``) is a pure
+    NODE-EXISTENCE disjunction — no string-length test, no exists-any-child::
+
+        (/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+           ram:ApplicableHeaderTradeDelivery/ram:ActualDeliverySupplyChainEvent/
+           ram:OccurrenceDateTime/udt:DateTimeString)
+        or (../../ram:BillingSpecifiedPeriod/ram:StartDateTime)
+        or (../../ram:BillingSpecifiedPeriod/ram:EndDateTime)
+
+    (``../..`` = the header ApplicableHeaderTradeSettlement, so ONLY a period
+    Start/EndDateTime child counts — a BillingSpecifiedPeriod with some other
+    child does NOT satisfy the CII binding, while ANY child satisfies the UBL
+    one.) The body branches on ``inv.syntax`` and transcribes each binding
+    exactly.
     """
     if "K" not in inv.breakdown_vat_category_codes():
+        return None
+    if inv.syntax == "cii":
+        if not (inv.cii_delivery_datetime_string_present
+                or inv.cii_billing_period_start_present
+                or inv.cii_billing_period_end_present):
+            return Violation(
+                "BR-IC-11",
+                "In an Invoice with a VAT breakdown (BG-23) where the VAT "
+                "category code (BT-118) is 'Intra-community supply' the "
+                "Actual delivery date (BT-72) or the Invoicing period "
+                "(BG-14) shall not be blank.",
+                "ram:ApplicableHeaderTradeDelivery/"
+                "ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime/"
+                "udt:DateTimeString")
         return None
     date_ok = len(inv.doc_delivery_actual_date_raw or "") > 1
     if not (date_ok or inv.doc_invoice_period_has_child):
@@ -2389,8 +2419,28 @@ def br_ic_12(inv):
 
     FIRES iff a K breakdown row exists AND the document-level deliver-to country
     code is absent or 1 character or shorter.
+
+    The CII binding (same per-K-breakdown-row context as BR-IC-11) is a pure
+    NODE-EXISTENCE test — no string-length, so even an EMPTY element
+    satisfies it::
+
+        /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+          ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/
+          ram:PostalTradeAddress/ram:CountryID
+
+    The body branches on ``inv.syntax`` and transcribes each binding exactly.
     """
     if "K" not in inv.breakdown_vat_category_codes():
+        return None
+    if inv.syntax == "cii":
+        if not inv.cii_shipto_country_id_present:
+            return Violation(
+                "BR-IC-12",
+                "In an Invoice with a VAT breakdown (BG-23) where the VAT "
+                "category code (BT-118) is 'Intra-community supply' the "
+                "Deliver to country code (BT-80) shall not be blank.",
+                "ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/"
+                "ram:PostalTradeAddress/ram:CountryID")
         return None
     if len(inv.doc_delivery_country_code_raw or "") <= 1:
         return Violation(
@@ -3804,7 +3854,25 @@ def br_g_01(inv):
 
 def br_ic_01(inv):
     """BR-IC-01: 'Intra-community supply' (K) items require exactly one K VAT
-    breakdown (BG-23) row."""
+    breakdown (BG-23) row.
+
+    The CII binding is the exact BR-AE-01 shape for category 'K' (raw
+    comparisons, no VAT TypeCode filter, and an orphan K breakdown row
+    fires) — the body branches on ``inv.syntax`` like :func:`br_ae_01`
+    (see :func:`_cii_vat_exactly_one_breakdown`).
+    """
+    if inv.syntax == "cii":
+        if _cii_vat_exactly_one_breakdown(inv, "K"):
+            return None
+        return Violation(
+            "BR-IC-01",
+            "An Invoice with an 'Intra-community supply' (K) VAT category "
+            "(BT-151/BT-95/BT-102) must contain exactly one K VAT breakdown "
+            "row (BT-118); found %d."
+            % sum(1 for row in inv.cii_header_trade_tax_code_rows
+                  if "K" in row),
+            "ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/"
+            "ram:CategoryCode")
     if _vat_exactly_one_breakdown(inv, "K"):
         return None
     return Violation(

@@ -5,70 +5,52 @@
   ],
   "rules": [
     {
-      "id": "BR-AE-04",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-AE-05",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-AE-06",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-AE-07",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-AE-08",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-AE-09",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-AE-10",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
       "id": "BR-AF-08",
       "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+      "classification": "cii-artifact-defective",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+      "artifact_evidence": {
+        "kind": "row-bound-context",
+        "context": "//rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[ram:CategoryCode = 'L'][upper-case(ram:TypeCode) = 'VAT']",
+        "test": "every $rate in ../ram:RateApplicablePercent/xs:decimal(.) satisfies (../ram:BasisAmount = (round(sum(/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement[ram:ApplicableTradeTax/ram:CategoryCode = 'L' and ram:ApplicableTradeTax/xs:decimal(ram:RateApplicablePercent) =$rate]/ram:SpecifiedTradeSettlementLineMonetarySummation/xs:decimal(ram:LineTotalAmount)) * 10 * 10) div 100 + round(sum(/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[ram:ChargeIndicator/udt:Indicator=true() and ram:CategoryTradeTax/ram:CategoryCode='L' and ram:CategoryTradeTax/xs:decimal(ram:RateApplicablePercent)=$rate]/xs:decimal(ram:ActualAmount[1])) * 10 * 10) div 100 - round(sum(/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[ram:ChargeIndicator/udt:Indicator=false() and ram:CategoryTradeTax/ram:CategoryCode='L' and ram:CategoryTradeTax/xs:decimal(ram:RateApplicablePercent)=$rate]/xs:decimal(ram:ActualAmount[1])) * 10 * 10) div 100))",
+        "note": "assert bound to the ram:ApplicableTradeTax ROW, so ../ram:RateApplicablePercent is empty and 'every $rate in ()' is vacuously true — the shipped assert can never fire."
+      }
     },
     {
       "id": "BR-AF-09",
       "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+      "classification": "cii-artifact-defective",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+      "artifact_evidence": {
+        "kind": "tautology",
+        "context": "//rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[ram:CategoryCode = 'L'][upper-case(ram:TypeCode) = 'VAT']",
+        "test": "true()",
+        "note": "the artifact ships this assert as test=\"true()\" — a tautology that can never fire, whatever the arithmetic."
+      }
     },
     {
       "id": "BR-AG-08",
       "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+      "classification": "cii-artifact-defective",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+      "artifact_evidence": {
+        "kind": "row-bound-context",
+        "context": "//rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[ram:CategoryCode = 'M'][upper-case(ram:TypeCode) = 'VAT']",
+        "test": "every $rate in ../ram:RateApplicablePercent/xs:decimal(.) satisfies (../ram:BasisAmount = (round(sum(/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement[ram:ApplicableTradeTax/ram:CategoryCode = 'M' and ram:ApplicableTradeTax/xs:decimal(ram:RateApplicablePercent) =$rate]/ram:SpecifiedTradeSettlementLineMonetarySummation/xs:decimal(ram:LineTotalAmount)) * 10 * 10) div 100 + round(sum(/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[ram:ChargeIndicator/udt:Indicator=true() and ram:CategoryTradeTax/ram:CategoryCode='M' and ram:CategoryTradeTax/xs:decimal(ram:RateApplicablePercent)=$rate]/xs:decimal(ram:ActualAmount[1])) * 10 * 10) div 100 - round(sum(/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[ram:ChargeIndicator/udt:Indicator=false() and ram:CategoryTradeTax/ram:CategoryCode='M' and ram:CategoryTradeTax/xs:decimal(ram:RateApplicablePercent)=$rate]/xs:decimal(ram:ActualAmount[1])) * 10 * 10) div 100))",
+        "note": "assert bound to the ram:ApplicableTradeTax ROW, so ../ram:RateApplicablePercent is empty and 'every $rate in ()' is vacuously true — the shipped assert can never fire."
+      }
     },
     {
       "id": "BR-AG-09",
       "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
+      "classification": "cii-artifact-defective",
+      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
+      "artifact_evidence": {
+        "kind": "tautology",
+        "context": "//rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[ram:CategoryCode = 'M'][upper-case(ram:TypeCode) = 'VAT']",
+        "test": "true()",
+        "note": "the artifact ships this assert as test=\"true()\" — a tautology that can never fire, whatever the arithmetic."
+      }
     },
     {
       "id": "BR-CO-11",
@@ -297,72 +279,6 @@
       "family": "xrechnung-extension",
       "classification": "binding-inapplicable",
       "cii_artifact": null
-    },
-    {
-      "id": "BR-IC-01",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-02",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-03",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-04",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-05",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-06",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-07",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-08",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-09",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-11",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
-    },
-    {
-      "id": "BR-IC-12",
-      "family": "core",
-      "classification": "cii-fireable",
-      "cii_artifact": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch"
     },
     {
       "id": "BR-O-01",

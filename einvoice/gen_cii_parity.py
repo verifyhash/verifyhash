@@ -16,6 +16,14 @@ T-VHR.1 method, no regex-over-prose and no hand-transcribed lists):
 * ``binding-inapplicable`` — no vendored CII artifact carries the id. The
   rule is officially UBL-only at the vendored artifact versions; there is
   nothing to prove against on the CII leg.
+* ``cii-artifact-defective`` — a vendored CII artifact carries the id, but
+  the SHIPPED assert can never fire (a ``test="true()"`` tautology or a
+  row-bound context whose ``every $rate in ()`` is vacuously true). The
+  defect is re-verified against a live parse of the artifact on every run
+  and the verbatim ``@context``/``@test`` evidence is embedded in the entry
+  (see ``ARTIFACT_DEFECTS``); CII parity is impossible until an artifact
+  bump fixes the assert — at which point the live verification FAILS and
+  the rule rejoins the fireable worklist.
 
 The two CII artifacts read are EXACTLY the ones the existing coverage-gap
 tooling reads (single source of truth = ``gen_coverage.py``):
@@ -64,6 +72,94 @@ CII_ARTIFACT_SCH = {
 
 CLASS_FIREABLE = "cii-fireable"
 CLASS_INAPPLICABLE = "binding-inapplicable"
+CLASS_DEFECTIVE = "cii-artifact-defective"
+
+# Rules whose id IS carried by a vendored CII artifact but whose SHIPPED CII
+# assert can never fire — a defect of the official artifact, not a missing
+# proof. These leave the cii-fireable worklist with the artifact itself as
+# the evidence: build_parity() re-verifies each recorded defect against a
+# live parse of the artifact on every run (and test_cii_parity.py again on
+# every gate), embedding the VERBATIM rule @context and assert @test into the
+# committed entry — so an artifact bump that FIXES a defect makes generation
+# fail loudly and reopens the rule as cii-fireable. Two defect kinds exist
+# today, both long documented in differential.CII_EXCLUDED_RULE_IDS and
+# COVERAGE.md's per-rule notes — this table promotes them into the
+# classifier (T-VHCIIP.5):
+#
+# * ``tautology`` — the assert ships as ``test="true()"``: no document can
+#   ever make it fire (BR-AF-09, BR-AG-09).
+# * ``row-bound-context`` — the assert is bound to the
+#   ``ram:ApplicableTradeTax`` ROW (unlike BR-S-08, whose context node is
+#   the ``ram:CategoryCode`` CHILD), so its ``every $rate in
+#   ../ram:RateApplicablePercent`` steps to the header settlement — which
+#   has no RateApplicablePercent children — and quantifies over the empty
+#   sequence: vacuously true, the assert can never fire (BR-AF-08,
+#   BR-AG-08).
+_DEFECT_NOTE_ROW_BOUND = (
+    "assert bound to the ram:ApplicableTradeTax ROW, so "
+    "../ram:RateApplicablePercent is empty and 'every $rate in ()' is "
+    "vacuously true — the shipped assert can never fire.")
+_DEFECT_NOTE_TAUTOLOGY = (
+    "the artifact ships this assert as test=\"true()\" — a tautology that "
+    "can never fire, whatever the arithmetic.")
+ARTIFACT_DEFECTS = {
+    "BR-AF-08": {"kind": "row-bound-context", "note": _DEFECT_NOTE_ROW_BOUND},
+    "BR-AF-09": {"kind": "tautology", "note": _DEFECT_NOTE_TAUTOLOGY},
+    "BR-AG-08": {"kind": "row-bound-context", "note": _DEFECT_NOTE_ROW_BOUND},
+    "BR-AG-09": {"kind": "tautology", "note": _DEFECT_NOTE_TAUTOLOGY},
+}
+
+_SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
+
+
+def cii_assert_context_index(path):
+    """``{assert_id: verbatim sch:rule/@context}`` from a real XML parse —
+    the evidence surface the row-bound-context defect verification needs
+    (``schematron_assert_index`` carries flag/text/test but not the parent
+    rule's context). First occurrence wins, like the assert index."""
+    import xml.etree.ElementTree as ET
+    index = {}
+    for rule in ET.parse(os.path.join(HERE, path)).getroot().iter(
+            _SCH_NS + "rule"):
+        ctx = rule.get("context") or ""
+        for a in rule.iter(_SCH_NS + "assert"):
+            rid = a.get("id")
+            if rid and rid not in index:
+                index[rid] = ctx
+    return index
+
+
+def verify_artifact_defect(rid, entry, context):
+    """Re-verify a recorded artifact defect against the LIVE parse; returns
+    the evidence dict to embed, or raises AssertionError when the artifact no
+    longer exhibits the defect (e.g. a fixed upstream release was vendored —
+    the rule must then rejoin the cii-fireable worklist)."""
+    spec = ARTIFACT_DEFECTS[rid]
+    test = entry["test"]
+    if spec["kind"] == "tautology":
+        assert entry["vacuous_in_artifact"] and test.strip() == "true()", (
+            "%s: recorded as a tautology but the vendored artifact's @test "
+            "is no longer literally true() — the defect was fixed upstream; "
+            "remove it from ARTIFACT_DEFECTS and differentially prove the "
+            "rule instead (@test=%r)" % (rid, test[:120]))
+    else:  # row-bound-context
+        last_step = context.split("[", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+        assert last_step == "ram:ApplicableTradeTax", (
+            "%s: recorded as row-bound-context but the vendored artifact's "
+            "rule context no longer ends at the ram:ApplicableTradeTax row — "
+            "the defect was fixed upstream; remove it from ARTIFACT_DEFECTS "
+            "and differentially prove the rule instead (context=%r)"
+            % (rid, context))
+        assert test.startswith("every $rate in ../ram:RateApplicablePercent"), (
+            "%s: recorded as row-bound-context but the assert no longer "
+            "quantifies over ../ram:RateApplicablePercent (@test=%r)"
+            % (rid, test[:120]))
+    return {
+        "kind": spec["kind"],
+        "context": context,
+        "test": test,
+        "note": spec["note"],
+    }
 
 
 def cii_assert_indexes():
@@ -88,18 +184,37 @@ def build_parity(matrix=None, indexes=None):
 
     Deterministic: one entry per ``syntax == "ubl"`` matrix rule, sorted by
     id, each classified purely by ``@id`` membership in the parsed artifact
-    assert indexes.
+    assert indexes — except the ARTIFACT_DEFECTS rules, whose carried-but-
+    unfireable CII asserts are re-verified live and embedded verbatim as
+    ``artifact_evidence`` (see the table's docstring above).
     """
     if indexes is None:
         indexes = cii_assert_indexes()
+    context_cache = {}
     entries = []
     for rule in ubl_only_rules(matrix):
         rid = rule["id"]
         artifact = None
+        artifact_key = None
         for key in CII_ARTIFACT_ORDER:
             if rid in indexes[key]:
                 artifact = CII_ARTIFACT_SCH[key]
+                artifact_key = key
                 break
+        if artifact and rid in ARTIFACT_DEFECTS:
+            if artifact_key not in context_cache:
+                context_cache[artifact_key] = cii_assert_context_index(
+                    artifact)
+            entries.append({
+                "id": rid,
+                "family": rule["family"],
+                "classification": CLASS_DEFECTIVE,
+                "cii_artifact": artifact,
+                "artifact_evidence": verify_artifact_defect(
+                    rid, indexes[artifact_key][rid],
+                    context_cache[artifact_key].get(rid, "")),
+            })
+            continue
         entries.append({
             "id": rid,
             "family": rule["family"],
@@ -139,8 +254,12 @@ def main(argv):
     n = len(doc["rules"])
     n_fire = sum(1 for e in doc["rules"]
                  if e["classification"] == CLASS_FIREABLE)
-    print("wrote cii_parity.json: %d UBL-only-proven rules — %d %s, %d %s"
-          % (n, n_fire, CLASS_FIREABLE, n - n_fire, CLASS_INAPPLICABLE))
+    n_defect = sum(1 for e in doc["rules"]
+                   if e["classification"] == CLASS_DEFECTIVE)
+    print("wrote cii_parity.json: %d UBL-only-proven rules — %d %s, %d %s, "
+          "%d %s"
+          % (n, n_fire, CLASS_FIREABLE, n_defect, CLASS_DEFECTIVE,
+             n - n_fire - n_defect, CLASS_INAPPLICABLE))
     return 0
 
 

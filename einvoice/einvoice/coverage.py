@@ -579,6 +579,8 @@ def render_markdown(matrix, cii_parity=None):
         n_ubl_only = len(pr)
         fireable = [e for e in pr if e["classification"] == "cii-fireable"]
         inapp = [e for e in pr if e["classification"] == "binding-inapplicable"]
+        defect = [e for e in pr
+                  if e["classification"] == "cii-artifact-defective"]
         w("## CII proof parity")
         w("")
         w("**%d** rules in the table above are today differentially proven on"
@@ -599,6 +601,18 @@ def render_markdown(matrix, cii_parity=None):
         w("  exists in at least one vendored CII artifact. This is the real")
         w("  QA worklist: the rule officially applies to CII invoices and the")
         w("  engine's coverage there is not yet proven.")
+        if defect:
+            w("- **%d cii-artifact-defective** — a vendored CII artifact"
+              % len(defect))
+            w("  carries the id, but the SHIPPED assert can never fire")
+            w("  (%s:" % ", ".join("`%s`" % e["id"] for e in defect))
+            w("  a `test=\"true()\"` tautology, or an assert bound to the")
+            w("  `ram:ApplicableTradeTax` ROW whose `every $rate in ()` is")
+            w("  vacuously true — see the per-rule notes above). The verbatim")
+            w("  `@context`/`@test` evidence is embedded in `cii_parity.json`")
+            w("  and re-verified live by `test_cii_parity.py`; an artifact")
+            w("  bump that fixes such an assert fails that gate and reopens")
+            w("  the rule as cii-fireable.")
         w("- **%d binding-inapplicable** — no vendored CII artifact carries"
           % len(inapp))
         if inapp:

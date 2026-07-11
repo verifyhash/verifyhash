@@ -725,6 +725,31 @@ def build_model(root):
                 NS)
             inv.delivery_addresses.append(
                 bool(cc_els) and bool(_norm_space(_strval(cc_els[0]))))
+    # BR-IC-11 / BR-IC-12 (context = each header K VAT breakdown row's
+    # ram:CategoryCode): the official CII tests are pure NODE-EXISTENCE
+    # checks (a node set is truthy iff non-empty — even an EMPTY element
+    # satisfies them, unlike the UBL bindings' string-length()>1 tests):
+    #   BR-IC-11: (/rsm:...ApplicableHeaderTradeDelivery/ram:ActualDelivery
+    #                SupplyChainEvent/ram:OccurrenceDateTime/udt:DateTimeString)
+    #             or (../../ram:BillingSpecifiedPeriod/ram:StartDateTime)
+    #             or (../../ram:BillingSpecifiedPeriod/ram:EndDateTime)
+    #             — ../../ = the header ApplicableHeaderTradeSettlement;
+    #   BR-IC-12: /rsm:...ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/
+    #             ram:PostalTradeAddress/ram:CountryID
+    inv.cii_delivery_datetime_string_present = root.find(
+        "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/"
+        "ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime/"
+        "udt:DateTimeString", NS) is not None
+    inv.cii_billing_period_start_present = root.find(
+        "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/"
+        "ram:BillingSpecifiedPeriod/ram:StartDateTime", NS) is not None
+    inv.cii_billing_period_end_present = root.find(
+        "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/"
+        "ram:BillingSpecifiedPeriod/ram:EndDateTime", NS) is not None
+    inv.cii_shipto_country_id_present = root.find(
+        "rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/"
+        "ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CountryID",
+        NS) is not None
     # BR-62 / BR-63 (context = the document root): the Seller/Buyer electronic
     # address (BT-34/BT-49). Test per party:
     #   normalize-space(...ram:URIUniversalCommunication[1]/ram:URIID/@schemeID)

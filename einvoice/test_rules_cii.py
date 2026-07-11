@@ -3019,5 +3019,287 @@ class CiiProofParityBatch3(unittest.TestCase):
         self.assert_rule(r, "BR-G-10", expect=False)
 
 
+class CiiProofParityBatch4(CiiProofParityBatch3):
+    """Firing + holding CII fixtures for the T-VHCIIP.5 batch-4 rules:
+    BR-AE-04..10 and BR-IC-01..12 (subclasses the batch-3 case for its
+    fixture builders — they are VAT-category-code parametric; the inherited
+    batch-3 tests re-running here is a cheap, harmless side effect). The
+    three genuinely-different CII bindings this batch pinned down are each
+    exercised in BOTH directions: the BR-IC-01 orphan-row head, and the pure
+    NODE-EXISTENCE tests of BR-IC-11 (delivery DateTimeString /
+    billing-period Start/EndDateTime) and BR-IC-12 (ship-to CountryID)."""
+
+    def add_buyer_vat_reg(self, r):
+        buyer = r.find("rsm:SupplyChainTradeTransaction/"
+                       "ram:ApplicableHeaderTradeAgreement/"
+                       "ram:BuyerTradeParty", NS)
+        reg = ET.SubElement(buyer, _q(NSA, "SpecifiedTaxRegistration"))
+        id_el = ET.SubElement(reg, _q(NSA, "ID"))
+        id_el.set("schemeID", "VA")
+        id_el.text = "NL999999999B01"
+
+    def _delivery(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeDelivery", NS)
+
+    def add_delivery_datetime(self, r, text="20150105"):
+        ev = ET.SubElement(self._delivery(r),
+                           _q(NSA, "ActualDeliverySupplyChainEvent"))
+        odt = ET.SubElement(ev, _q(NSA, "OccurrenceDateTime"))
+        dts = ET.SubElement(odt, _q(NSU, "DateTimeString"))
+        dts.set("format", "102")
+        dts.text = text
+
+    def add_billing_period(self, r, which="StartDateTime"):
+        period = ET.SubElement(_settlement(r),
+                               _q(NSA, "BillingSpecifiedPeriod"))
+        dt = ET.SubElement(period, _q(NSA, which))
+        dts = ET.SubElement(dt, _q(NSU, "DateTimeString"))
+        dts.set("format", "102")
+        dts.text = "20150101"
+
+    def add_shipto_country(self, r, text="NL"):
+        shipto = ET.SubElement(self._delivery(r),
+                               _q(NSA, "ShipToTradeParty"))
+        addr = ET.SubElement(shipto, _q(NSA, "PostalTradeAddress"))
+        el = ET.SubElement(addr, _q(NSA, "CountryID"))
+        if text is not None:
+            el.text = text
+
+    # ---- BR-AE-04..07: charge party-ids + AE rates --------------------------
+    def test_brae04_ae_charge_without_buyer_id_fires(self):
+        # The base buyer has NO VAT registration and NO legal-organization id.
+        r = _good_root()
+        self.add_vatcat_ac(r, "AE", charge=True)
+        fired = self.fired(r)
+        self.assertIn("BR-AE-04", fired)
+        self.assertIn("BR-AE-01", fired)   # orphan AE category
+
+    def test_brae04_buyer_vat_id_satisfies(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "AE", charge=True)
+        self.add_buyer_vat_reg(r)
+        self.assert_rule(r, "BR-AE-04", expect=False)
+
+    def test_brae05_nonzero_rate_ae_line_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "AE", rate=None)   # keeps the base rate 6
+        self.assert_rule(r, "BR-AE-05")
+
+    def test_brae05_zero_rate_ae_line_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "AE")
+        self.assert_rule(r, "BR-AE-05", expect=False)
+
+    def test_brae06_nonzero_rate_ae_allowance_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "AE", rate="21")
+        self.assert_rule(r, "BR-AE-06")
+
+    def test_brae07_nonzero_rate_ae_charge_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "AE", charge=True, rate="21")
+        self.assert_rule(r, "BR-AE-07")
+
+    # ---- BR-AE-08..10: the AE breakdown-row rules ---------------------------
+    def test_brae08_out_of_band_basis_fires(self):
+        # 30.00 sits outside the CII strict ±1 band around round2(19.9).
+        r = _good_root()
+        self.flip_line1(r, "AE")
+        self.add_header_row(r, "AE", basis="30.00")
+        self.assert_rule(r, "BR-AE-08")
+
+    def test_brae08_inside_band_holds_on_cii(self):
+        r = _good_root()
+        self.flip_line1(r, "AE")
+        self.add_header_row(r, "AE", basis="20.50")   # |20.50-19.9| < 1
+        self.assert_rule(r, "BR-AE-08", expect=False)
+
+    def test_brae09_nonzero_tax_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "AE")
+        self.add_header_row(r, "AE", basis="19.90", calculated="0.01")
+        self.assert_rule(r, "BR-AE-09")
+
+    def test_brae10_reasonless_ae_breakdown_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "AE")
+        self.add_header_row(r, "AE", basis="19.90", reason=False)
+        self.assert_rule(r, "BR-AE-10")
+
+    def test_brae10_reasoned_ae_breakdown_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "AE")
+        self.add_header_row(r, "AE", basis="19.90")
+        self.assert_rule(r, "BR-AE-10", expect=False)
+
+    # ---- BR-IC-01: the orphan-row CII binding (the BR-AE-01 shape) ----------
+    def test_bric01_orphan_k_category_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "K")
+        self.add_buyer_vat_reg(r)     # keeps BR-IC-03 quiet
+        fired = self.fired(r)
+        self.assertIn("BR-IC-01", fired)
+        self.assertNotIn("BR-IC-03", fired)
+
+    def test_bric01_orphan_k_breakdown_row_fires_on_cii(self):
+        # The CII binding difference: ONE orphan K header breakdown row FIRES
+        # on CII; on UBL the same orphan holds.
+        r = _good_root()
+        self.add_header_row(r, "K", basis="0.00")
+        self.assert_rule(r, "BR-IC-01")
+
+    def test_bric01_paired_k_line_and_row_holds(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        self.assert_rule(r, "BR-IC-01", expect=False)
+
+    # ---- BR-IC-02..04: the all-VAT-scoped party-id disjunct -----------------
+    def test_bric02_k_line_without_buyer_vat_id_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.assert_rule(r, "BR-IC-02")
+
+    def test_bric02_buyer_vat_id_satisfies(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_buyer_vat_reg(r)
+        self.assert_rule(r, "BR-IC-02", expect=False)
+
+    def test_bric02_fc_seller_registration_does_not_satisfy_k(self):
+        # Unlike BR-AE, the K seller disjunct is VA-scoped only.
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_buyer_vat_reg(r)
+        self.set_seller_tax_reg_scheme(r, "FC")
+        self.assert_rule(r, "BR-IC-02")
+
+    def test_bric03_k_allowance_without_buyer_vat_id_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "K")
+        self.assert_rule(r, "BR-IC-03")
+
+    def test_bric04_k_charge_without_buyer_vat_id_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "K", charge=True)
+        self.assert_rule(r, "BR-IC-04")
+
+    # ---- BR-IC-05..07: K rates ----------------------------------------------
+    def test_bric05_nonzero_rate_k_line_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "K", rate=None)
+        self.assert_rule(r, "BR-IC-05")
+
+    def test_bric06_nonzero_rate_k_allowance_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "K", rate="21")
+        self.assert_rule(r, "BR-IC-06")
+
+    def test_bric07_nonzero_rate_k_charge_fires(self):
+        r = _good_root()
+        self.add_vatcat_ac(r, "K", charge=True, rate="21")
+        self.assert_rule(r, "BR-IC-07")
+
+    # ---- BR-IC-08/09: the K breakdown arithmetic ----------------------------
+    def test_bric08_out_of_band_basis_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="30.00")
+        self.assert_rule(r, "BR-IC-08")
+
+    def test_bric08_inside_band_holds_on_cii(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="20.50")
+        self.assert_rule(r, "BR-IC-08", expect=False)
+
+    def test_bric09_nonzero_tax_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90", calculated="0.01")
+        self.assert_rule(r, "BR-IC-09")
+
+    # ---- BR-IC-11/12: the pure NODE-EXISTENCE CII bindings ------------------
+    def test_bric11_no_date_no_period_fires(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        fired = self.fired(r)
+        self.assertIn("BR-IC-11", fired)
+        self.assertIn("BR-IC-12", fired)   # no ship-to country either
+
+    def test_bric11_delivery_datetime_node_satisfies(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        self.add_delivery_datetime(r)
+        self.assert_rule(r, "BR-IC-11", expect=False)
+
+    def test_bric11_empty_datetime_node_satisfies_on_cii(self):
+        # Pure node existence: even an EMPTY DateTimeString satisfies the
+        # official CII test (no string-length check, unlike the UBL
+        # binding's string-length()>1).
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        self.add_delivery_datetime(r, text=None)
+        self.assert_rule(r, "BR-IC-11", expect=False)
+
+    def test_bric11_billing_period_start_satisfies(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        self.add_billing_period(r, "StartDateTime")
+        self.assert_rule(r, "BR-IC-11", expect=False)
+
+    def test_bric11_billing_period_end_satisfies(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        self.add_billing_period(r, "EndDateTime")
+        self.assert_rule(r, "BR-IC-11", expect=False)
+
+    def test_bric11_childless_billing_period_does_not_satisfy_on_cii(self):
+        # The CII disjuncts name Start/EndDateTime specifically — a
+        # BillingSpecifiedPeriod with NEITHER does not satisfy them (the UBL
+        # binding accepts ANY InvoicePeriod child).
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        ET.SubElement(_settlement(r), _q(NSA, "BillingSpecifiedPeriod"))
+        self.assert_rule(r, "BR-IC-11")
+
+    def test_bric12_shipto_country_node_satisfies(self):
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        self.add_shipto_country(r)
+        self.assert_rule(r, "BR-IC-12", expect=False)
+
+    def test_bric12_empty_country_node_satisfies_on_cii(self):
+        # Pure node existence: an empty CountryID node still satisfies the
+        # official CII BR-IC-12 test (BR-57 fires instead — its CII binding
+        # requires a NON-empty first CountryID per deliver-to address).
+        r = _good_root()
+        self.flip_line1(r, "K")
+        self.add_header_row(r, "K", basis="19.90")
+        self.add_shipto_country(r, text=None)
+        fired = self.fired(r)
+        self.assertNotIn("BR-IC-12", fired)
+        self.assertIn("BR-57", fired)
+
+    def test_bric11_bric12_quiet_without_k_breakdown_row(self):
+        # Context = the header K VAT row: a K LINE alone (header count 0)
+        # fires neither -11 nor -12 (BR-IC-01/-02 fire instead).
+        r = _good_root()
+        self.flip_line1(r, "K")
+        fired = self.fired(r)
+        self.assertNotIn("BR-IC-11", fired)
+        self.assertNotIn("BR-IC-12", fired)
+        self.assertIn("BR-IC-01", fired)
+        self.assertIn("BR-IC-02", fired)
+
+
 if __name__ == "__main__":
     unittest.main()

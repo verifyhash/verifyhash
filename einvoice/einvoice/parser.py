@@ -445,6 +445,20 @@ class Invoice:
         # exists(cac:InvoicePeriod/*) at the Invoice level — a document-level
         # Invoicing period (BG-14) carrying at least one child element (BR-IC-11).
         self.doc_invoice_period_has_child = False
+        # CII bindings of BR-IC-11/BR-IC-12 (populated by parser_cii only —
+        # the official CII tests are pure NODE-EXISTENCE checks, unlike the
+        # UBL string-length()/exists-child tests above, so they get their own
+        # surfaces instead of overloading the raw-string fields):
+        #  * ram:ApplicableHeaderTradeDelivery/ram:ActualDeliverySupplyChain
+        #      Event/ram:OccurrenceDateTime/udt:DateTimeString      (BT-72),
+        #  * ram:ApplicableHeaderTradeSettlement/ram:BillingSpecifiedPeriod/
+        #      ram:StartDateTime / ram:EndDateTime                  (BG-14),
+        #  * ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/
+        #      ram:PostalTradeAddress/ram:CountryID                 (BT-80).
+        self.cii_delivery_datetime_string_present = False
+        self.cii_billing_period_start_present = False
+        self.cii_billing_period_end_present = False
+        self.cii_shipto_country_id_present = False
         # --- Batch: BR-23/52/53/54/56/64/65/CO-03/CO-09/CO-19 extraction ----
         # BR-52: one entry per Additional supporting document group (BG-24 —
         # UBL cac:AdditionalDocumentReference / CII ram:AdditionalReferenced

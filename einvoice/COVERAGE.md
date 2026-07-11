@@ -24,7 +24,7 @@ XSLT and compares the fired-rule set. The sources:
 ## Coverage at a glance
 
 - **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **196** proven on both UBL and CII, **89** UBL-only, **1** CII-only.
+- Syntax: **214** proven on both UBL and CII, **71** UBL-only, **1** CII-only.
 - Severity (blocking class): **274** fatal (block validity), **12** warning / information (reported, non-blocking).
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -160,13 +160,13 @@ the non-blocking `warning` class for the severity column).
 | `BR-AE-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | 'Reverse charge' (AE) items require exactly one AE VAT breakdown (BG-23) row. |
 | `BR-AE-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Reverse charge (AE) Invoice line (BT-151) shall carry a Seller identifier AND a Buyer identifier. |
 | `BR-AE-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Reverse charge (AE) Document level allowance (BT-95) shall carry a Seller identifier AND a Buyer identifier. |
-| `BR-AE-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a Reverse charge (AE) Document level charge (BT-102) shall carry a Seller identifier AND a Buyer identifier. |
-| `BR-AE-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
-| `BR-AE-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Reverse charge (AE) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
-| `BR-AE-07` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In a Reverse charge (AE) Document level charge the charge VAT rate (BT-103) shall be 0. |
-| `BR-AE-08` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Reverse charge (AE) VAT breakdown taxable amount (BT-116) shall equal the exact sum of AE line nets − AE allowances + AE charges. |
-| `BR-AE-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The VAT category tax amount (BT-117) in a Reverse charge (AE) VAT breakdown shall equal 0. |
-| `BR-AE-10` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) meaning 'Reverse charge' or the reason text (BT-120) 'Reverse charge' — the presence-required shape shared with BR-E-10. |
+| `BR-AE-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with a Reverse charge (AE) Document level charge (BT-102) shall carry a Seller identifier AND a Buyer identifier. |
+| `BR-AE-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In a Reverse charge (AE) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
+| `BR-AE-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In a Reverse charge (AE) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
+| `BR-AE-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In a Reverse charge (AE) Document level charge the charge VAT rate (BT-103) shall be 0. |
+| `BR-AE-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Reverse charge (AE) VAT breakdown taxable amount (BT-116) shall equal the exact sum of AE line nets − AE allowances + AE charges. |
+| `BR-AE-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in a Reverse charge (AE) VAT breakdown shall equal 0. |
+| `BR-AE-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) meaning 'Reverse charge' or the reason text (BT-120) 'Reverse charge' — the presence-required shape shared with BR-E-10. |
 | `BR-AF-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | IGIC (L) items and the VAT breakdown (BG-23) must agree. |
 | `BR-AF-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An IGIC (L) Invoice line (BT-151) requires the Seller VAT identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63) — both official disjuncts are VAT-scoped (the BR-Z/E-02 symmetric shape, not BR-S-02's scheme-agnostic tail). |
 | `BR-AF-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An IGIC (L) Document level allowance (BT-95) requires the Seller VAT identifier disjunct (same shape as BR-AF-02). |
@@ -209,18 +209,18 @@ the non-blocking `warning` class for the severity column).
 | `BR-G-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Export outside the EU (G) VAT breakdown taxable amount (BT-116) shall equal the sum of G line nets − G allowances + G charges (exact on UBL; the ±1 band around the round2 bucket sums on CII — see :func:`_breakdown_taxable_sum_mismatch`). |
 | `BR-G-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in an Export outside the EU (G) VAT breakdown shall equal 0. |
 | `BR-G-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with an Export outside the EU (G) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the presence-required shape shared with BR-E-10. |
-| `BR-IC-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | 'Intra-community supply' (K) items require exactly one K VAT breakdown (BG-23) row. |
-| `BR-IC-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. |
-| `BR-IC-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with an Intra-community supply (K) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. |
-| `BR-IC-04` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with an Intra-community supply (K) Document level charge (BT-102) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. |
-| `BR-IC-05` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Intra-community supply (K) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
-| `BR-IC-06` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
-| `BR-IC-07` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Intra-community supply (K) Document level charge the charge VAT rate (BT-103) shall be 0. |
-| `BR-IC-08` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The Intra-community supply (K) VAT breakdown taxable amount (BT-116) shall equal the exact sum of K line nets − K allowances + K charges. |
-| `BR-IC-09` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | The VAT category tax amount (BT-117) in an Intra-community supply (K) VAT breakdown shall equal 0. |
+| `BR-IC-01` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | 'Intra-community supply' (K) items require exactly one K VAT breakdown (BG-23) row. |
+| `BR-IC-02` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. |
+| `BR-IC-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with an Intra-community supply (K) Document level allowance (BT-95) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. |
+| `BR-IC-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | An Invoice with an Intra-community supply (K) Document level charge (BT-102) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier. |
+| `BR-IC-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Intra-community supply (K) Invoice line the Invoiced item VAT rate (BT-152) shall be 0. |
+| `BR-IC-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Intra-community supply (K) Document level allowance the allowance VAT rate (BT-96) shall be 0. |
+| `BR-IC-07` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Intra-community supply (K) Document level charge the charge VAT rate (BT-103) shall be 0. |
+| `BR-IC-08` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The Intra-community supply (K) VAT breakdown taxable amount (BT-116) shall equal the exact sum of K line nets − K allowances + K charges. |
+| `BR-IC-09` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | The VAT category tax amount (BT-117) in an Intra-community supply (K) VAT breakdown shall equal 0. |
 | `BR-IC-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | A VAT breakdown (BG-23) with the VAT category code (BT-118) "Intra-community supply" (K) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) — the K twin of BR-E-10 / BR-AE-10. |
-| `BR-IC-11` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank. |
-| `BR-IC-12` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Deliver to country code (BT-80) shall not be blank. |
+| `BR-IC-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Actual delivery date (BT-72) or the Invoicing period (BG-14) shall not be blank. |
+| `BR-IC-12` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | In an Invoice with an Intra-community supply (K) VAT breakdown (BG-23) the Deliver to country code (BT-80) shall not be blank. |
 | `BR-O-01` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | 'Not subject to VAT' (O) items require exactly one O VAT breakdown (BG-23) row. |
 | `BR-O-02` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall NOT contain a Seller/tax-representative/Buyer VAT identifier. |
 | `BR-O-03` | UBL | fatal | fatal | CEN EN 16931 1.3.16 | not proven | An Invoice with a 'Not subject to VAT' (O) Document level allowance (BT-95) shall NOT contain any VAT identifier. |
@@ -544,7 +544,7 @@ worklist automatically.
 
 ## CII proof parity
 
-**89** rules in the table above are today differentially proven on
+**71** rules in the table above are today differentially proven on
 the UBL leg only (`syntax = UBL`). `gen_cii_parity.py` measures how
 many of them the official CII artifacts actually carry, by a real
 XML parse of `sch:assert/@id` in the vendored CII Schematron files
@@ -556,10 +556,20 @@ XML parse of `sch:assert/@id` in the vendored CII Schematron files
 Measured split (committed as `cii_parity.json`, live-recomputed by
 `test_cii_parity.py` so it can never silently go stale):
 
-- **81 cii-fireable** — an official CII assert with the same id
+- **59 cii-fireable** — an official CII assert with the same id
   exists in at least one vendored CII artifact. This is the real
   QA worklist: the rule officially applies to CII invoices and the
   engine's coverage there is not yet proven.
+- **4 cii-artifact-defective** — a vendored CII artifact
+  carries the id, but the SHIPPED assert can never fire
+  (`BR-AF-08`, `BR-AF-09`, `BR-AG-08`, `BR-AG-09`:
+  a `test="true()"` tautology, or an assert bound to the
+  `ram:ApplicableTradeTax` ROW whose `every $rate in ()` is
+  vacuously true — see the per-rule notes above). The verbatim
+  `@context`/`@test` evidence is embedded in `cii_parity.json`
+  and re-verified live by `test_cii_parity.py`; an artifact
+  bump that fixes such an assert fails that gate and reopens
+  the rule as cii-fireable.
 - **8 binding-inapplicable** — no vendored CII artifact carries
   the id (`BR-DEX-02`, `BR-DEX-03`, `BR-DEX-09`, `BR-DEX-10`, `BR-DEX-11`, `BR-DEX-12`, `BR-DEX-13`, `BR-DEX-14`), so at the vendored
   artifact versions these rules are officially UBL-only; there is

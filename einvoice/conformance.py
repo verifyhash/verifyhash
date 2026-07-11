@@ -417,6 +417,41 @@ CII_SYNTAX_COVERAGE = {
                 "VAT/legal registration id present",
     "BR-AE-03": "Reverse charge (AE) document allowance ⇒ Seller VAT/tax id "
                 "AND Buyer VAT/legal registration id present",
+    "BR-AE-04": "Reverse charge (AE) document charge ⇒ Seller VAT/tax id "
+                "AND Buyer VAT/legal registration id present",
+    "BR-AE-05": "Reverse charge (AE) line VAT rate (BT-152) = 0",
+    "BR-AE-06": "Reverse charge (AE) document allowance VAT rate (BT-96) = 0",
+    "BR-AE-07": "Reverse charge (AE) document charge VAT rate (BT-103) = 0",
+    "BR-AE-08": "Reverse charge (AE) breakdown taxable (BT-116) = Σ AE line "
+                "net + charges − allowances (CII binding: ±1 band around "
+                "the round2 bucket sums)",
+    "BR-AE-09": "Reverse charge (AE) breakdown tax amount (BT-117) = 0",
+    "BR-AE-10": "Reverse charge (AE) breakdown has a VAT exemption reason "
+                "code (BT-121) or text (BT-120)",
+    "BR-IC-01": "Intra-community supply (K) categories ⇒ exactly one K VAT "
+                "breakdown row (CII binding: raw, VAT-scheme-unscoped "
+                "counts; an orphan K breakdown row fires)",
+    "BR-IC-02": "Intra-community (K) line ⇒ Seller VAT id (BT-31) or tax-"
+                "representative VAT id (BT-63) AND Buyer VAT id (BT-48) "
+                "present (all VA-scoped — no FC / legal-org fallback)",
+    "BR-IC-03": "Intra-community (K) document allowance ⇒ Seller VAT id or "
+                "tax-representative VAT id AND Buyer VAT id present",
+    "BR-IC-04": "Intra-community (K) document charge ⇒ Seller VAT id or "
+                "tax-representative VAT id AND Buyer VAT id present",
+    "BR-IC-05": "Intra-community (K) line VAT rate (BT-152) = 0",
+    "BR-IC-06": "Intra-community (K) document allowance VAT rate (BT-96) = 0",
+    "BR-IC-07": "Intra-community (K) document charge VAT rate (BT-103) = 0",
+    "BR-IC-08": "Intra-community (K) breakdown taxable (BT-116) = Σ K line "
+                "net + charges − allowances (CII binding: ±1 band around "
+                "the round2 bucket sums)",
+    "BR-IC-09": "Intra-community (K) breakdown tax amount (BT-117) = 0",
+    "BR-IC-11": "Intra-community (K) breakdown ⇒ actual delivery date "
+                "(BT-72) or invoicing period (BG-14) present (CII binding: "
+                "pure node existence — a delivery DateTimeString or a "
+                "billing-period Start/EndDateTime child)",
+    "BR-IC-12": "Intra-community (K) breakdown ⇒ deliver-to country code "
+                "(BT-80) present (CII binding: pure node existence of the "
+                "ship-to PostalTradeAddress/CountryID)",
     "BR-CL-01": "Document type code (BT-3) in UNTDID 1001",
     "BR-CL-03": "currencyID (amount elements) in ISO 4217 alpha-3",
     "BR-CL-04": "Invoice currency code (BT-5) in ISO 4217 alpha-3",

@@ -19,14 +19,19 @@ What is checked (each its own test):
   2. exact coverage of the UBL-only set: exactly one entry per live
      ``syntax == "ubl"`` matrix rule (count > 0), ids matching one-to-one,
      sorted, no duplicates.
-  3. arithmetic: #cii-fireable + #binding-inapplicable == total, and no entry
-     carries any other classification.
+  3. arithmetic: #cii-fireable + #cii-artifact-defective +
+     #binding-inapplicable == total, and no entry carries any other
+     classification.
   4. sourcing honesty: every cii-fireable entry names a vendored CII artifact
      that (re-parsed live) REALLY carries an ``sch:assert`` with that ``@id``,
-     the named path is one of ``generated_from``, and every
-     binding-inapplicable entry has ``cii_artifact`` null AND its id truly
-     absent from EVERY vendored CII artifact; ``generated_from`` states the
-     exact artifact paths the computation reads.
+     the named path is one of ``generated_from``; every cii-artifact-defective
+     entry is in gen_cii_parity.ARTIFACT_DEFECTS, its named artifact carries
+     the id, and its committed ``artifact_evidence`` (verbatim @context/@test)
+     EQUALS a live re-verification that the shipped assert still cannot fire
+     (an artifact bump fixing the defect fails here and reopens the rule);
+     every binding-inapplicable entry has ``cii_artifact`` null AND its id
+     truly absent from EVERY vendored CII artifact; ``generated_from`` states
+     the exact artifact paths the computation reads.
   5. measurement-only guard: each entry's family matches the matrix, and the
      matrix rules it derives from still all say ``syntax == "ubl"`` — this
      worklist never flips a tag.
@@ -89,11 +94,15 @@ class CiiParityTest(unittest.TestCase):
                      if e["classification"] == _gen.CLASS_FIREABLE)
         n_inapp = sum(1 for e in self.committed["rules"]
                       if e["classification"] == _gen.CLASS_INAPPLICABLE)
-        self.assertEqual(n_fire + n_inapp, len(self.committed["rules"]),
+        n_defect = sum(1 for e in self.committed["rules"]
+                       if e["classification"] == _gen.CLASS_DEFECTIVE)
+        self.assertEqual(n_fire + n_inapp + n_defect,
+                         len(self.committed["rules"]),
                          "an entry carries an unknown classification")
         for e in self.committed["rules"]:
             self.assertIn(e["classification"],
-                          (_gen.CLASS_FIREABLE, _gen.CLASS_INAPPLICABLE),
+                          (_gen.CLASS_FIREABLE, _gen.CLASS_INAPPLICABLE,
+                           _gen.CLASS_DEFECTIVE),
                           "%s: invalid classification %r"
                           % (e["id"], e["classification"]))
 
@@ -113,7 +122,12 @@ class CiiParityTest(unittest.TestCase):
             _gen.CII_ARTIFACT_SCH[k]: set(self.indexes[k])
             for k in _gen.CII_ARTIFACT_ORDER
         }
+        index_by_path = {
+            _gen.CII_ARTIFACT_SCH[k]: self.indexes[k]
+            for k in _gen.CII_ARTIFACT_ORDER
+        }
         all_cii_ids = set().union(*ids_by_path.values())
+        context_cache = {}
         for e in self.committed["rules"]:
             if e["classification"] == _gen.CLASS_FIREABLE:
                 self.assertIn(e["cii_artifact"], ids_by_path,
@@ -123,6 +137,36 @@ class CiiParityTest(unittest.TestCase):
                               "%s: named artifact %s carries NO sch:assert "
                               "with this @id (re-parsed live)"
                               % (e["id"], e["cii_artifact"]))
+                self.assertNotIn(e["id"], _gen.ARTIFACT_DEFECTS,
+                                 "%s: recorded as an artifact defect but "
+                                 "classified cii-fireable" % e["id"])
+            elif e["classification"] == _gen.CLASS_DEFECTIVE:
+                self.assertIn(e["id"], _gen.ARTIFACT_DEFECTS,
+                              "%s: classified %s but absent from the "
+                              "ARTIFACT_DEFECTS evidence table"
+                              % (e["id"], _gen.CLASS_DEFECTIVE))
+                self.assertIn(e["cii_artifact"], ids_by_path,
+                              "%s: cii_artifact %r is not a vendored CII "
+                              "artifact path" % (e["id"], e["cii_artifact"]))
+                self.assertIn(e["id"], ids_by_path[e["cii_artifact"]],
+                              "%s: named artifact %s carries NO sch:assert "
+                              "with this @id (re-parsed live)"
+                              % (e["id"], e["cii_artifact"]))
+                # The recorded evidence must EQUAL a live re-verification:
+                # verbatim @test from the assert index, verbatim @context
+                # from a fresh rule parse, and the defect itself must still
+                # hold (verify_artifact_defect raises when an artifact bump
+                # fixed the assert).
+                path = e["cii_artifact"]
+                if path not in context_cache:
+                    context_cache[path] = _gen.cii_assert_context_index(path)
+                live = _gen.verify_artifact_defect(
+                    e["id"], index_by_path[path][e["id"]],
+                    context_cache[path].get(e["id"], ""))
+                self.assertEqual(
+                    e["artifact_evidence"], live,
+                    "%s: committed artifact_evidence differs from a live "
+                    "re-verification of the vendored artifact" % e["id"])
             else:
                 self.assertIsNone(e["cii_artifact"],
                                   "%s: binding-inapplicable but cii_artifact "
@@ -131,6 +175,16 @@ class CiiParityTest(unittest.TestCase):
                                  "%s: classified binding-inapplicable but a "
                                  "vendored CII artifact DOES carry the id — "
                                  "stale worklist" % e["id"])
+        # Completeness: every ARTIFACT_DEFECTS id still on the UBL-only
+        # worklist must be classified as the defect it records (none may
+        # silently fall back to cii-fireable).
+        classified = {e["id"]: e["classification"]
+                      for e in self.committed["rules"]}
+        for rid in _gen.ARTIFACT_DEFECTS:
+            if rid in classified:
+                self.assertEqual(classified[rid], _gen.CLASS_DEFECTIVE,
+                                 "%s: in ARTIFACT_DEFECTS but classified %r"
+                                 % (rid, classified[rid]))
 
     # ---- 5. measurement-only guard ----------------------------------------
     def test_families_match_matrix_and_no_tag_flipped(self):

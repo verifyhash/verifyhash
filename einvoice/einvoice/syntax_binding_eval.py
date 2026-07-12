@@ -55,6 +55,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import xml.etree.ElementTree as ET
 
 # --------------------------------------------------------------------------- #
 # Namespaces — the eight prefixes declared in the vendored preprocessed CEN
@@ -69,6 +70,22 @@ NSMAP = {
     "cn":  "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2",
     "ubl": "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
     "xs":  "http://www.w3.org/2001/XMLSchema",
+}
+
+# --------------------------------------------------------------------------- #
+# CII namespaces — the four prefixes declared in the vendored preprocessed CEN
+# CII Schematron (corpus/.../EN16931-CII-validation-preprocessed.sch), matching
+# einvoice.parser_cii's URIs exactly. The ``udt``/``qdt`` prefixes deliberately
+# resolve to the UN/CEFACT URIs here (DISTINCT from the UBL ``udt``/``qdt`` URIs
+# in NSMAP) — which is precisely why QName resolution is threaded per-binding
+# rather than sharing one global map.
+# --------------------------------------------------------------------------- #
+CII_NSMAP = {
+    "rsm": "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100",
+    "ram": ("urn:un:unece:uncefact:data:standard:"
+            "ReusableAggregateBusinessInformationEntity:100"),
+    "udt": "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
+    "qdt": "urn:un:unece:uncefact:data:standard:QualifiedDataType:100",
 }
 
 #: The distinct report category these findings surface under.
@@ -92,25 +109,27 @@ _ATTR_NAME_RE = re.compile(r"^(?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*$")
 # --------------------------------------------------------------------------- #
 # QName / attribute resolution
 # --------------------------------------------------------------------------- #
-def _resolve_qname(qname):
-    """``prefix:Local`` -> Clark ``{uri}Local`` or None if the prefix is unknown."""
+def _resolve_qname(qname, ns=NSMAP):
+    """``prefix:Local`` -> Clark ``{uri}Local`` or None if the prefix is unknown
+    in ``ns`` (the active binding's namespace map — UBL ``NSMAP`` by default,
+    ``CII_NSMAP`` for the CII leg)."""
     if not _QNAME_RE.match(qname):
         return None
     prefix, local = qname.split(":", 1)
-    uri = NSMAP.get(prefix)
+    uri = ns.get(prefix)
     if uri is None:
         return None
     return "{%s}%s" % (uri, local)
 
 
-def _resolve_attr(name):
+def _resolve_attr(name, ns=NSMAP):
     """Attribute name -> the key ElementTree uses (bare ``local`` for a
     no-namespace attribute, Clark ``{uri}local`` for a prefixed one), or None."""
     if not _ATTR_NAME_RE.match(name):
         return None
     if ":" in name:
         prefix, local = name.split(":", 1)
-        uri = NSMAP.get(prefix)
+        uri = ns.get(prefix)
         if uri is None:
             return None
         return "{%s}%s" % (uri, local)
@@ -163,29 +182,29 @@ def _split_top(expr, sep):
     return parts
 
 
-def _parse_step(tok):
+def _parse_step(tok, ns=NSMAP):
     """Parse ONE path step into an _ElemStep / _AttrStep, or None if unsupported."""
     tok = tok.strip()
     if not tok:
         return None
     if tok.startswith("@"):
-        key = _resolve_attr(tok[1:])
+        key = _resolve_attr(tok[1:], ns)
         return _AttrStep(key) if key is not None else None
     if tok.startswith("(") and tok.endswith(")"):
         inner = tok[1:-1]
         members = [m.strip() for m in _split_top(inner, "|")]
         tags = []
         for m in members:
-            clark = _resolve_qname(m)
+            clark = _resolve_qname(m, ns)
             if clark is None:
                 return None
             tags.append(clark)
         return _ElemStep(frozenset(tags))
-    clark = _resolve_qname(tok)
+    clark = _resolve_qname(tok, ns)
     return _ElemStep(frozenset((clark,))) if clark is not None else None
 
 
-def parse_path(path):
+def parse_path(path, ns=NSMAP):
     """Parse a restricted location path into a :class:`_Path`, or None."""
     s = path.strip()
     descendant = False
@@ -202,7 +221,7 @@ def parse_path(path):
     raw_steps = _split_top(rest, "/")
     steps = []
     for i, raw in enumerate(raw_steps):
-        st = _parse_step(raw)
+        st = _parse_step(raw, ns)
         if st is None:
             return None
         if isinstance(st, _AttrStep) and i != len(raw_steps) - 1:
@@ -358,7 +377,7 @@ def _strip_outer_not(expr):
     return s[len("not("):-1]
 
 
-def compile_test(test):
+def compile_test(test, ns=NSMAP):
     """Compile a ``@test`` into a :class:`_Compiled`, or None if its form is
     outside the restricted grammar (=> the id is known-open)."""
     s = (test or "").strip()
@@ -368,7 +387,7 @@ def compile_test(test):
     # Form 1: bare not(P).
     inner = _strip_outer_not(s)
     if inner is not None:
-        p = parse_path(inner)
+        p = parse_path(inner, ns)
         return _Compiled("not", p) if p is not None else None
 
     # Form 2: not(P) or Q = 'literal'  (exactly two top-level disjuncts).
@@ -377,13 +396,13 @@ def compile_test(test):
         left_inner = _strip_outer_not(disjuncts[0].strip())
         if left_inner is None:
             return None
-        p = parse_path(left_inner)
+        p = parse_path(left_inner, ns)
         if p is None:
             return None
         m = _LITERAL_CMP_RE.match(disjuncts[1].strip())
         if not m:
             return None
-        q = parse_path(m.group("path").strip())
+        q = parse_path(m.group("path").strip(), ns)
         if q is None:
             return None
         return _Compiled("not_or_eq", p, q=q, literal=m.group("lit"))
@@ -424,7 +443,7 @@ def _strip_outer_parens(s):
 _COUNT_OP_RE = re.compile(r"^\s*(<=|>=|=|<|>)\s*(\d+)\s*$")
 
 
-def _parse_count_cmp(expr):
+def _parse_count_cmp(expr, ns=NSMAP):
     """Parse ``count(P) OP n`` into ``(_Path, op, n)`` or None. P must be a
     restricted location path; OP a single relational operator; n a non-negative
     integer literal. No arithmetic (``count(a) - count(b)``), no predicates and
@@ -438,13 +457,13 @@ def _parse_count_cmp(expr):
     m = _COUNT_OP_RE.match(tail)
     if not m:
         return None
-    p = parse_path(inner.strip())
+    p = parse_path(inner.strip(), ns)
     if p is None:
         return None
     return (p, m.group(1), int(m.group(2)))
 
 
-def compile_count_test(test):
+def compile_count_test(test, ns=NSMAP):
     """Compile a ``cardinality-count`` @test into a :class:`_Compiled`, or None
     if it is outside the closed grammar (=> the id is known-open).
 
@@ -462,16 +481,16 @@ def compile_count_test(test):
         left = _strip_outer_not(disj[0].strip())
         if left is None:
             return None
-        p1 = parse_path(left)
+        p1 = parse_path(left, ns)
         if p1 is None:
             return None
-        cc = _parse_count_cmp(disj[1].strip())
+        cc = _parse_count_cmp(disj[1].strip(), ns)
         if cc is None:
             return None
         p2, op, n = cc
         return _Compiled("not_or_count", p1, q=p2, op=op, n=n)
     if len(disj) == 1:
-        cc = _parse_count_cmp(s)
+        cc = _parse_count_cmp(s, ns)
         if cc is None:
             return None
         p, op, n = cc
@@ -479,7 +498,7 @@ def compile_count_test(test):
     return None
 
 
-def _exists_term(t):
+def _exists_term(t, ns=NSMAP):
     """Parse ONE existence term — ``exists(P)`` or a bare parenthesized location
     path ``(P)`` — into its restricted ``_Path``, or None."""
     t = t.strip()
@@ -487,16 +506,16 @@ def _exists_term(t):
         inner, tail = _match_paren(t, len("exists"))
         if inner is None or tail != "":
             return None
-        return parse_path(inner.strip())
+        return parse_path(inner.strip(), ns)
     if t.startswith("(") and t.endswith(")"):
         inner, tail = _match_paren(t, 0)
         if inner is None or tail != "":
             return None
-        return parse_path(inner.strip())
+        return parse_path(inner.strip(), ns)
     return None
 
 
-def compile_existence_test(test):
+def compile_existence_test(test, ns=NSMAP):
     """Compile an ``existence`` @test into a :class:`_Compiled` of kind
     ``exists_all``, or None. Accepted: a single existence term or an ``and``
     conjunction of them, where each term is ``exists(P)`` or ``(P)`` over a
@@ -507,7 +526,7 @@ def compile_existence_test(test):
         return None
     terms = []
     for part in _split_top(s, " and "):
-        p = _exists_term(part.strip())
+        p = _exists_term(part.strip(), ns)
         if p is None:
             return None
         terms.append(p)
@@ -516,7 +535,7 @@ def compile_existence_test(test):
     return _Compiled("exists_all", terms=terms)
 
 
-def compile_class_test(shape, test):
+def compile_class_test(shape, test, ns=NSMAP):
     """Dispatch @test compilation by the catalog's mechanical shape class. Only
     the shapes with a closed, provable grammar compile; everything else returns
     None (=> known-open). ``datatype-regex`` is deliberately never implemented
@@ -524,11 +543,11 @@ def compile_class_test(shape, test):
     function-context decimal-place check outside any closed element grammar, so
     it is left machine-listed as known-open rather than approximated."""
     if shape == "absence-restriction":
-        return compile_test(test)
+        return compile_test(test, ns)
     if shape == "cardinality-count":
-        return compile_count_test(test)
+        return compile_count_test(test, ns)
     if shape == "existence":
-        return compile_existence_test(test)
+        return compile_existence_test(test, ns)
     return None
 
 
@@ -586,7 +605,7 @@ def _branch_matches(el, br, parents):
     return True
 
 
-def compile_context(ctx):
+def compile_context(ctx, ns=NSMAP):
     """Compile a rule ``@context`` into a :class:`_Context`, or None if it uses a
     form outside the closed pattern grammar (a predicate ``[...]``, a function
     ``ends-with(...)``, an interior ``//``, an ``@attr`` step, ...). Such
@@ -596,14 +615,14 @@ def compile_context(ctx):
         return None
     branches = []
     for raw in _split_top(s, "|"):
-        b = _parse_ctx_branch(raw.strip())
+        b = _parse_ctx_branch(raw.strip(), ns)
         if b is None:
             return None
         branches.append(b)
     return _Context(branches) if branches else None
 
 
-def _parse_ctx_branch(s):
+def _parse_ctx_branch(s, ns=NSMAP):
     rooted = False
     if s.startswith("//"):
         rest = s[2:]
@@ -616,7 +635,7 @@ def _parse_ctx_branch(s):
         return None
     tags = []
     for step in _split_top(rest, "/"):
-        clark = _resolve_qname(step.strip())   # rejects predicates/functions/@attr
+        clark = _resolve_qname(step.strip(), ns)   # rejects predicates/functions/@attr
         if clark is None:
             return None
         tags.append(clark)
@@ -669,11 +688,29 @@ FIRING_UNOBSERVABLE = frozenset((
 #: Every UBL shape class the evaluator accounts for (partition covers each).
 ALL_CLASSES = ("absence-restriction",) + NEW_CLASSES
 
+#: CII cardinality-count ids whose FIRING direction crashes the official CEN
+#: EN16931-CII XSLT: violating the cap duplicates a leaf that a DOWNSTREAM
+#: official rule feeds to ``fn:normalize-space()`` / ``number()`` / a ``cast as``
+#: on a now >1-item sequence, aborting the whole transform (the official
+#: validator emits NOTHING). Unlike the UBL ``FIRING_UNOBSERVABLE`` ids, their
+#: targeted firing fixtures ARE shipped — each still fires in OUR evaluator and is
+#: a real per-id violation — but the differential SKIPS them on the OFFICIAL side
+#: (recorded as errors, never divergences). Their CLEARING direction is proven at
+#: 0 divergence over the full CII corpus. DOCUMENTATION ONLY: these stay
+#: IMPLEMENTED and graded — they are NOT removed from the id set. The set is a
+#: subset of the implemented cardinality-count ids (asserted live by the test).
+CII_FIRING_UNOBSERVABLE = frozenset((
+    "CII-SR-010", "CII-SR-014", "CII-SR-477", "CII-SR-478", "CII-SR-479",
+    "CII-SR-480", "CII-SR-481", "CII-SR-482", "CII-SR-484", "CII-SR-487",
+))
+
 
 class _Entry:
-    __slots__ = ("id", "flag", "test", "context", "compiled", "ctx", "shape")
+    __slots__ = ("id", "flag", "test", "context", "compiled", "ctx", "shape",
+                 "binding")
 
-    def __init__(self, rid, flag, test, context, compiled, ctx, shape):
+    def __init__(self, rid, flag, test, context, compiled, ctx, shape,
+                 binding="ubl"):
         self.id = rid
         self.flag = flag
         self.test = test
@@ -681,6 +718,7 @@ class _Entry:
         self.compiled = compiled    # compiled @test (_Compiled)
         self.ctx = ctx              # compiled rule @context (_Context)
         self.shape = shape
+        self.binding = binding      # "ubl" or "cii"
 
 
 def class_entries(shape, catalog=None):
@@ -742,8 +780,146 @@ def _partition_class(shape, catalog=None):
     return implemented, known_open
 
 
+# --------------------------------------------------------------------------- #
+# CII binding partition (T-VHSBL.4) — the SAME generic shape-class grammars,     #
+# driven by the catalog's ``binding == 'cii'`` entries and resolved through      #
+# CII_NSMAP. Unlike the UBL absence class (whose one supported context is the    #
+# document root), CII asserts bind to a variety of rule contexts (header trade   #
+# agreement / settlement, line items, //-anchored element types, ...), so a CII  #
+# entry is IMPLEMENTED iff BOTH its rule @context AND its class @test compile     #
+# under the closed grammars — exactly the class-partition rule, applied to every #
+# CII shape class. ``other-complex`` (CII-SR-119, a compound or/and predicate)   #
+# and ``datatype-regex`` (CII-DT-097, a ``matches()`` lexical restriction) never #
+# compile and stay machine-listed as known-open — never approximated.            #
+# --------------------------------------------------------------------------- #
+
+#: Every CII syntax-binding shape class the catalog enumerates (the partition
+#: covers each honestly, totalling the full CII population).
+CII_SHAPE_CLASSES = ("absence-restriction", "cardinality-count", "existence",
+                     "other-complex", "datatype-regex")
+
+
+def cii_class_entries(shape, catalog=None):
+    """The CII catalog entries of one shape class, in catalog document order."""
+    if catalog is None:
+        catalog = load_catalog()
+    if not catalog:
+        return []
+    return [e for e in catalog.get("entries", [])
+            if e.get("binding") == "cii" and e.get("shape") == shape]
+
+
+# --------------------------------------------------------------------------- #
+# Schematron rule-CLAIMING (T-VHSBL.4). Inside ONE Schematron pattern, an
+# element node is claimed by the FIRST rule whose @context matches it; later
+# rules in that pattern never evaluate on an already-claimed node (XSLT
+# apply-templates mode semantics). The CEN CII ``EN16931-CII-Syntax`` pattern
+# lists the universal rule ``//ram:TypeCode`` (CII-DT-008/009) BEFORE the
+# specific ``/rsm:.../ram:ExchangedDocument/ram:TypeCode`` rule
+# (CII-DT-010/011/012), so the document TypeCode — the only node the specific
+# rule matches — is always claimed first and those three asserts are DEAD: the
+# official validator can never fire them. Evaluating them independently would
+# over-fire, so they are machine-listed as known-open (claim-shadowed), backed
+# by the pattern order in the vendored artifact — never a hardcoded id list.
+#
+# The detector is a SOUND, restricted sufficient condition: an assert is
+# shadowed iff an EARLIER rule in the same pattern has a context that is a bare
+# universal single element type ``//X`` / ``X`` (one branch, unrooted, one QName
+# step, no predicate) AND every branch of the assert's own context ends in that
+# same element type X. That exactly captures the ``//ram:TypeCode`` case and
+# excludes nothing that could still legitimately fire. Any deeper claiming shape
+# a future artifact bump might introduce would surface as a differential
+# divergence and reopen the worklist — the same guardrail the rest of the leg
+# relies on.
+# --------------------------------------------------------------------------- #
+_SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
+CII_ARTIFACT_PATH = os.path.join(
+    os.path.dirname(_HERE), "corpus", "cen-en16931", "cii", "schematron",
+    "preprocessed", "EN16931-CII-validation-preprocessed.sch")
+
+
+def _universal_qname(ctx):
+    """If a compiled rule ``@context`` is a bare universal element type
+    (``//X`` / ``X``: one branch, unrooted, exactly one element QName step),
+    return that Clark tag X; else None."""
+    if ctx is None or len(ctx.branches) != 1:
+        return None
+    br = ctx.branches[0]
+    if br.rooted or len(br.tags) != 1:
+        return None
+    return br.tags[0]
+
+
+def _context_leaf_tags(ctx):
+    """Every branch's LEAF element tag (the element type each branch selects), or
+    None if any branch has no element leaf."""
+    if ctx is None:
+        return None
+    leaves = []
+    for br in ctx.branches:
+        if not br.tags:
+            return None
+        leaves.append(br.tags[-1])
+    return leaves
+
+
+def cii_claim_shadowed_ids(artifact_path=None):
+    """The set of CII assert ids that are DEAD by Schematron rule-claiming — an
+    earlier bare universal ``//X`` rule in the SAME pattern claims every node
+    their context could match. Read live from the vendored preprocessed CII
+    artifact; empty if the artifact is absent (e.g. the packaged wheel), in which
+    case the differential leg still keeps the leg honest."""
+    path = artifact_path or CII_ARTIFACT_PATH
+    if not os.path.exists(path):
+        return set()
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        return set()
+    shadowed = set()
+    for pattern in root.iter(_SCH_NS + "pattern"):
+        universal = set()
+        for rule in pattern.findall(_SCH_NS + "rule"):
+            ctx = compile_context(rule.get("context"), CII_NSMAP)
+            leaves = _context_leaf_tags(ctx)
+            if leaves is not None and universal and all(t in universal
+                                                        for t in leaves):
+                for a in rule.findall(_SCH_NS + "assert"):
+                    aid = a.get("id")
+                    if aid:
+                        shadowed.add(aid)
+            uq = _universal_qname(ctx)
+            if uq is not None:
+                universal.add(uq)
+    return shadowed
+
+
+def _partition_cii(shape, catalog=None, shadowed=None):
+    """Split one CII shape class into (implemented, known_open) using the closed
+    context + test grammars resolved through CII_NSMAP. Purely a function of the
+    catalog + the grammars + the artifact's rule-claiming order — no hardcoded id
+    list; an id whose context or test falls outside the grammar, or which is DEAD
+    by Schematron claiming (``shadowed``), is machine-listed as known-open, never
+    guessed."""
+    if shadowed is None:
+        shadowed = cii_claim_shadowed_ids()
+    implemented, known_open = [], []
+    for e in cii_class_entries(shape, catalog):
+        rid = e.get("id")
+        tc = compile_class_test(shape, e.get("test"), CII_NSMAP)
+        cc = compile_context(e.get("context"), CII_NSMAP) if tc is not None else None
+        if tc is not None and cc is not None and rid not in shadowed:
+            implemented.append(_Entry(rid, e.get("flag") or "fatal",
+                                      e.get("test"), e.get("context"),
+                                      tc, cc, shape, binding="cii"))
+        else:
+            known_open.append(rid)
+    return implemented, known_open
+
+
 _CACHE = {"ready": False, "abs_impl": None, "abs_ko": None,
-          "class_impl": None, "class_ko": None, "all_impl": None}
+          "class_impl": None, "class_ko": None, "all_impl": None,
+          "cii_impl": None, "cii_ko": None, "cii_all_impl": None}
 
 
 def _ensure_cache():
@@ -758,16 +934,27 @@ def _ensure_cache():
         all_impl = list(abs_impl)
         for shape in NEW_CLASSES:
             all_impl.extend(class_impl[shape])
+        cii_impl, cii_ko = {}, {}
+        cii_shadowed = cii_claim_shadowed_ids()
+        for shape in CII_SHAPE_CLASSES:
+            i, k = _partition_cii(shape, catalog, cii_shadowed)
+            cii_impl[shape] = i
+            cii_ko[shape] = k
+        cii_all_impl = []
+        for shape in CII_SHAPE_CLASSES:
+            cii_all_impl.extend(cii_impl[shape])
         _CACHE.update(ready=True, abs_impl=abs_impl, abs_ko=abs_ko,
                       class_impl=class_impl, class_ko=class_ko,
-                      all_impl=all_impl)
+                      all_impl=all_impl, cii_impl=cii_impl, cii_ko=cii_ko,
+                      cii_all_impl=cii_all_impl)
     return _CACHE
 
 
 def reset_cache():
     """Drop the cached partition (used by tests that reload the catalog)."""
     _CACHE.update(ready=False, abs_impl=None, abs_ko=None,
-                  class_impl=None, class_ko=None, all_impl=None)
+                  class_impl=None, class_ko=None, all_impl=None,
+                  cii_impl=None, cii_ko=None, cii_all_impl=None)
 
 
 def implemented_ids():
@@ -811,6 +998,47 @@ def implemented_entries():
     then the new classes in NEW_CLASSES order) — feeds report + differential."""
     c = _ensure_cache()
     return c["all_impl"]
+
+
+# --------------------------------------------------------------------------- #
+# CII public accessors (mirror the UBL ones, live from the catalog).           #
+# --------------------------------------------------------------------------- #
+def cii_implemented_ids():
+    """Sorted list of EVERY implemented CII syntax-binding id across all shape
+    classes — live-computed from the catalog + the restricted grammars. This is
+    exactly the id set ``differential.py``'s CII ``sbcii`` leg grades."""
+    c = _ensure_cache()
+    return sorted(e.id for e in c["cii_all_impl"])
+
+
+def cii_implemented_entries():
+    """Every compiled implemented CII entry across all classes (in
+    CII_SHAPE_CLASSES order) — feeds the CII fixture generator + differential."""
+    c = _ensure_cache()
+    return c["cii_all_impl"]
+
+
+def cii_class_implemented_ids(shape):
+    """Sorted implemented CII ids of ONE shape class (empty for a fully-known-open
+    class, e.g. ``other-complex`` / ``datatype-regex``)."""
+    c = _ensure_cache()
+    return sorted(e.id for e in c["cii_impl"].get(shape, []))
+
+
+def cii_class_known_open_ids(shape):
+    """Sorted known-open (machine-listed) CII ids of ONE shape class."""
+    c = _ensure_cache()
+    return sorted(c["cii_ko"].get(shape, []))
+
+
+def cii_known_open_ids():
+    """Sorted list of EVERY CII id left UNIMPLEMENTED (machine-listed as
+    known-open) across all shape classes."""
+    c = _ensure_cache()
+    out = []
+    for shape in CII_SHAPE_CLASSES:
+        out.extend(c["cii_ko"].get(shape, []))
+    return sorted(out)
 
 
 # --------------------------------------------------------------------------- #
@@ -858,41 +1086,40 @@ def _localname(tag):
 
 
 def _message(entry, path):
+    syn = "CII" if getattr(entry, "binding", "ubl") == "cii" else "UBL"
     k = entry.compiled.kind
     if k in ("not", "not_or_eq"):
         # absence-restriction wording — kept byte-identical to the T-VHSBL.2 form.
-        kind = ("forbidden UBL element/attribute is present"
+        kind = ("forbidden %s element/attribute is present" % syn
                 if k == "not"
-                else "restricted UBL element is present with a non-conforming value")
-        return ("Syntax-binding restriction %s (CEN EN 16931 UBL, flag=%s): %s at "
+                else "restricted %s element is present with a non-conforming value"
+                     % syn)
+        return ("Syntax-binding restriction %s (CEN EN 16931 %s, flag=%s): %s at "
                 "%s — the EN 16931 core model has no conformant slot for it "
-                "(@test=%s)." % (entry.id, entry.flag, kind, path, entry.test))
+                "(@test=%s)." % (entry.id, syn, entry.flag, kind, path, entry.test))
     if k in ("count", "not_or_count"):
-        detail = "UBL element repetition exceeds the EN 16931 syntax-binding cardinality cap"
+        detail = ("%s element repetition exceeds the EN 16931 syntax-binding "
+                  "cardinality cap" % syn)
     elif k == "exists_all":
-        detail = "a UBL element/attribute the EN 16931 syntax binding requires is absent"
+        detail = ("a %s element/attribute the EN 16931 syntax binding requires "
+                  "is absent" % syn)
     else:
         detail = "syntax-binding restriction violated"
-    return ("Syntax-binding restriction %s (CEN EN 16931 UBL, flag=%s): %s at %s "
-            "(@test=%s)." % (entry.id, entry.flag, detail, path, entry.test))
+    return ("Syntax-binding restriction %s (CEN EN 16931 %s, flag=%s): %s at %s "
+            "(@test=%s)." % (entry.id, syn, entry.flag, detail, path, entry.test))
 
 
-def evaluate(root):
-    """Evaluate every IMPLEMENTED syntax-binding assert (absence-restriction +
-    cardinality-count + existence) over a parsed UBL document ``root`` and return
-    the list of syntax-binding findings.
+#: The CII document root tag (Clark notation) — the CrossIndustryInvoice.
+CII_ROOT_TAG = "{%s}CrossIndustryInvoice" % CII_NSMAP["rsm"]
 
-    Each finding is a dict carrying ``id``, ``category`` (``"syntax-binding"``),
-    ``severity`` (mirroring the official @flag), ``flag``, ``message`` and
-    ``element`` (the offending node's location path). An assert is evaluated on
-    EVERY node its (restricted) rule context matches, so a cardinality cap fires
-    once per violating context node — exactly as the official Schematron fires
-    the assert per matched context. Non-UBL roots (or a missing catalog) yield an
-    empty list.
-    """
-    if root is None or root.tag not in _ROOT_TAGS:
-        return []
-    implemented = _ensure_cache()["all_impl"]
+
+def _evaluate_entries(root, implemented):
+    """Run a list of compiled implemented entries over a parsed document ``root``
+    and return syntax-binding findings. Binding-agnostic: an entry's compiled
+    @context / @test already carry Clark-resolved tags, so evaluation is the same
+    for UBL and CII. An assert is evaluated on EVERY node its (restricted) rule
+    context matches — exactly as the official Schematron fires per matched
+    context."""
     if not implemented:
         return []
     parents = {id(child): parent
@@ -914,8 +1141,42 @@ def evaluate(root):
     return findings
 
 
+def evaluate(root):
+    """Evaluate every IMPLEMENTED UBL syntax-binding assert (absence-restriction +
+    cardinality-count + existence) over a parsed UBL document ``root`` and return
+    the list of syntax-binding findings.
+
+    Each finding is a dict carrying ``id``, ``category`` (``"syntax-binding"``),
+    ``severity`` (mirroring the official @flag), ``flag``, ``message`` and
+    ``element`` (the offending node's location path). Non-UBL roots (or a missing
+    catalog) yield an empty list.
+    """
+    if root is None or root.tag not in _ROOT_TAGS:
+        return []
+    return _evaluate_entries(root, _ensure_cache()["all_impl"])
+
+
 def fired_ids(root):
-    """The set of implemented syntax-binding ids that FIRE on ``root`` — the
+    """The set of implemented UBL syntax-binding ids that FIRE on ``root`` — the
     fired-id projection ``differential.py`` compares against the official
     SVRL failed-assert set."""
     return {f["id"] for f in evaluate(root)}
+
+
+def evaluate_cii(root):
+    """Evaluate every IMPLEMENTED CII syntax-binding assert (CII-DT + CII-SR,
+    across absence-restriction / cardinality-count / existence) over a parsed
+    CrossIndustryInvoice ``root``. Same finding shape and @flag-mirroring
+    severity as :func:`evaluate`. A non-CII root (or a missing catalog) yields an
+    empty list — so a UBL document run through here fires nothing and vice
+    versa, keeping the two bindings' findings strictly separate."""
+    if root is None or root.tag != CII_ROOT_TAG:
+        return []
+    return _evaluate_entries(root, _ensure_cache()["cii_all_impl"])
+
+
+def cii_fired_ids(root):
+    """The set of implemented CII syntax-binding ids that FIRE on ``root`` — the
+    fired-id projection ``differential.py``'s CII ``sbcii`` leg compares against
+    the official CEN EN16931-CII SVRL failed-assert set."""
+    return {f["id"] for f in evaluate_cii(root)}

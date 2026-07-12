@@ -217,6 +217,21 @@ assert SB_RULE_IDS, "no implemented syntax-binding ids (catalog missing?)"
 assert not (SB_RULE_SET & OUR_RULE_SET), (
     "a syntax-binding id collides with a BR-* core rule id")
 
+# --------------------------------------------------------------------------- #
+# CII SYNTAX-BINDING leg (T-VHSBL.4) — the SAME generic shape-class evaluators   #
+# (absence-restriction / cardinality-count / existence) driven by the catalog's #
+# CII (CII-DT + CII-SR) entries, graded against the official CEN EN16931-CII     #
+# Schematron. The graded id set is LIVE-COMPUTED from the catalog + the          #
+# restricted grammar (syntax_binding_eval.cii_implemented_ids()) — no hardcoded  #
+# list. Disjoint from every BR-* set, so this leg cannot change any pre-existing #
+# leg's verdicts.                                                                #
+# --------------------------------------------------------------------------- #
+SB_CII_RULE_IDS = _sbe.cii_implemented_ids()
+SB_CII_RULE_SET = set(SB_CII_RULE_IDS)
+assert SB_CII_RULE_IDS, "no implemented CII syntax-binding ids (catalog missing?)"
+assert not (SB_CII_RULE_SET & OUR_RULE_SET), (
+    "a CII syntax-binding id collides with a BR-* core rule id")
+
 
 # --------------------------------------------------------------------------- #
 # CII leg — the SAME einvoice/rules.py core rule FUNCTIONS, run UNCHANGED over  #
@@ -673,6 +688,15 @@ def sb_our_fired(invoice_path: str) -> set:
     uses, then evaluated by :func:`einvoice.syntax_binding_eval.fired_ids`."""
     root = parse_file(invoice_path)
     return _sbe.fired_ids(root)
+
+
+def sb_cii_our_fired(invoice_path: str) -> set:
+    """Fired implemented CII syntax-binding ids of OUR restricted evaluator on a
+    CrossIndustryInvoice — parsed through the SAME hardened :func:`parse_file`
+    (embedded/untrusted-XML defenses from T-VHSEC.1 stay in force on the CII
+    path), then evaluated by :func:`einvoice.syntax_binding_eval.cii_fired_ids`."""
+    root = parse_file(invoice_path)
+    return _sbe.cii_fired_ids(root)
 
 
 def xr_cii_our_fired(invoice_path: str) -> set:
@@ -5929,6 +5953,37 @@ def build_sb_corpus(scratch: str):
     return uniq
 
 
+def _gather_sb_cii_fixtures():
+    """(label, abs_path) for the committed targeted CII syntax-binding fixtures
+    (einvoice/fixtures/) — the clean CII base + one violating CrossIndustryInvoice
+    per implemented CII assert. In a dedicated directory NOT swept by the UBL sb
+    leg, so they belong to the CII sb leg alone."""
+    out = []
+    d = os.path.join(HERE, "fixtures")
+    if not os.path.isdir(d):
+        return out
+    for name in sorted(os.listdir(d)):
+        if name.lower().endswith("_cii.xml"):
+            out.append(("sbcii-fixture/%s" % name, os.path.join(d, name)))
+    return out
+
+
+def build_sb_cii_corpus(scratch: str):
+    """Corpus for the CII syntax-binding leg: the broad CII corpus (CEN CII
+    examples + one mutation per graded core rule — adversarial for presence
+    checks) PLUS the committed targeted CII sb fixtures that exercise the FIRING
+    direction of every implemented CII assert."""
+    entries = list(build_cii_corpus(scratch)) + _gather_sb_cii_fixtures()
+    seen, uniq = set(), []
+    for label, path in entries:
+        key = os.path.abspath(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append((label, path))
+    return uniq
+
+
 def build_xr_corpus(scratch: str):
     """Corpus for the XRechnung leg: everything real (incl. the split CEN
     unit fragments — adversarial for the presence rules) + BR-DE mutations,
@@ -6062,7 +6117,8 @@ def _run_leg(title, xslt_path, rule_ids, our_fn, corpus):
     return tot_fp + tot_miss
 
 
-def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii", "sb")):
+def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii", "sb",
+                           "sbcii")):
     scratch = os.environ.get("DIFF_SCRATCH") or tempfile.mkdtemp(prefix="diffcorpus-")
     os.makedirs(scratch, exist_ok=True)
 
@@ -6121,6 +6177,18 @@ def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii", "sb")):
         print("  scratch dir: %s" % scratch)
         divergences += _run_leg("official EN16931-UBL Schematron (syntax-binding)",
                                 OFFICIAL_XSLT, SB_RULE_IDS, sb_our_fired, corpus)
+    if "sbcii" in legs:
+        corpus = build_sb_cii_corpus(scratch)
+        print("#" * 82)
+        print("# LEG 6 — EN 16931 CII syntax-binding (CII-DT + CII-SR) "
+              "(official CEN EN16931-CII Schematron)")
+        print("#" * 82)
+        print("Corpus assembled: %d CrossIndustryInvoice documents "
+              "(broad CII corpus + targeted CII sb fixtures)" % len(corpus))
+        print("  scratch dir: %s" % scratch)
+        divergences += _run_leg("official EN16931-CII Schematron (syntax-binding)",
+                                CII_OFFICIAL_XSLT, SB_CII_RULE_IDS,
+                                sb_cii_our_fired, corpus)
     print("OVERALL DIVERGENCES ACROSS LEGS: %d -> %s"
           % (divergences, "OK" if divergences == 0 else "DIVERGED"))
     return 0 if divergences == 0 else 1
@@ -6172,7 +6240,7 @@ def main(argv: list) -> int:
     if not argv:
         return run_differential()
     if len(argv) == 1 and argv[0] in ("en", "xrechnung", "cii", "xrechnung-cii",
-                                      "sb"):
+                                      "sb", "sbcii"):
         return run_differential(legs=(argv[0],))
     for s in argv:
         if not os.path.exists(s):

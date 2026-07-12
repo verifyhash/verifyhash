@@ -707,6 +707,7 @@ def _render_syntax_binding(w):
     w("")
 
     _render_sb_implementation(w, acct)
+    _render_sb_cii_classes(w, acct)
 
     w("### Id-family breakdown")
     w("")
@@ -873,6 +874,125 @@ def _render_sb_new_classes(w, acct):
                   " cannot be graded; a targeted firing fixture is therefore not"
                   " shipped, and the evaluator's firing on them is exercised"
                   " in-memory by `test_syntax_binding.py` instead:")
+                w("")
+                for rid in unobs:
+                    w("  - `%s` — `%s`" % (rid, tests.get(rid, "")))
+        else:
+            w("- None implemented — the entire class is left known-open (see the"
+              " per-id reasons below); nothing is approximated.")
+        w("")
+        w("Known-open worklist (machine-listed — the exact remainder; a regression"
+          " that stops supporting a form reappears here automatically):")
+        w("")
+        w("| id | @test (unsupported form) | context |")
+        w("| --- | --- | --- |")
+        for rid in known_open:
+            t = (tests.get(rid) or "").replace("|", "\\|")
+            c = (ctxs.get(rid) or "").replace("|", "\\|")
+            w("| `%s` | `%s` | `%s` |" % (rid, t, c))
+        w("")
+
+
+#: Human labels + one-line class notes for the CII syntax-binding shape classes
+#: (T-VHSBL.4), rendered live from the catalog + the CII evaluator. Mirrors the
+#: UBL subsections but drives every implemented id against the official CEN
+#: EN16931-CII Schematron (`differential.py` LEG 6, the `sbcii` leg).
+_SB_CII_CLASS_DOC = {
+    "absence-restriction": (
+        "absence-restriction",
+        "The dominant CII class — a bare `not(<path>)` presence restriction"
+        " asserting a CII element/attribute the EN 16931 core model has no slot"
+        " for MUST NOT appear. An assert is IMPLEMENTED iff BOTH its rule"
+        " `@context` (a `|`-union of element-step chains — a `//` descendant or a"
+        " rooted `/rsm:.../…` path, with NO predicate `[...]`, function, or `@attr`"
+        " step) AND its `@test` compile under the closed grammar, resolved through"
+        " the CII namespace map. A predicated / wildcard context"
+        " (`//ram:*[ends-with(name(),'ReferencedDocument')]`) or a `//`-inside-path"
+        " test is left known-open. Three ids"
+        " (`CII-DT-010`/`011`/`012`) whose `@test` DOES compile are additionally"
+        " machine-listed known-open as **claim-shadowed**: the earlier universal"
+        " `//ram:TypeCode` rule in the same Schematron pattern claims the document"
+        " `ram:TypeCode` node first, so the official validator can never fire them"
+        " (dead rules) — detected live from the vendored artifact's pattern order,"
+        " never a hardcoded id list."),
+    "cardinality-count": (
+        "cardinality-count",
+        "A `cardinality-count` assert caps how many times a repeatable CII element"
+        " may appear under a rule context, e.g. CII-SR-014 `count(ram:TypeCode) ="
+        " 1`. Implemented iff its context compiles and its `@test` is `count(P) OP"
+        " n` or `not(P) or count(P) OP n` over a restricted element path (`OP` one"
+        " of `<=`/`=`/`<`/`>`/`>=`, `n` an integer). A predicated / function path"
+        " or an arithmetic count difference is left known-open."),
+    "existence": (
+        "existence",
+        "An `existence` assert requires a CII node to be present, e.g. CII-SR-463"
+        " `(ram:ChargeIndicator)` on a `//ram:SpecifiedTradeAllowanceCharge`."
+        " Implemented iff its context compiles and its `@test` is a single"
+        " existence term `(P)` / `exists(P)` (or an `and`-conjunction) over"
+        " restricted element paths."),
+    "other-complex": (
+        "other-complex",
+        "The single CII `other-complex` assert (CII-SR-119) is a compound"
+        " `and`/`or` co-occurrence constraint over a gross-price applied"
+        " allowance/charge — outside every closed shape grammar, so per the"
+        " honesty line it is left machine-listed as known-open, never"
+        " approximated."),
+    "datatype-regex": (
+        "datatype-regex",
+        "The single CII `datatype-regex` assert (CII-DT-097,"
+        " `matches(.,'^\\s*(\\d{4})…$')`, a date lexical form) is a `matches()`"
+        " regex restriction outside any closed element grammar, so it is left"
+        " machine-listed as known-open rather than hand-faked with a regex"
+        " engine."),
+}
+
+#: The CII shape-class render order (dominant class first, then the worked
+#: classes, then the fully-known-open remainder classes).
+_SB_CII_CLASS_ORDER = ("absence-restriction", "cardinality-count", "existence",
+                       "other-complex", "datatype-regex")
+
+
+def _render_sb_cii_classes(w, acct):
+    """Append a live implemented-vs-known-open partition for EACH CII shape class
+    (T-VHSBL.4), machine-listed from `einvoice.syntax_binding_eval` + the catalog
+    exactly like the UBL subsections — so a catalog/artifact bump reopens the CII
+    worklist automatically. Uses the same `### CII <shape> — implemented vs
+    known-open` anchor pattern the UBL sections use."""
+    for shape in _SB_CII_CLASS_ORDER:
+        entries = _sbe.cii_class_entries(shape)
+        total = len(entries)
+        if not total:
+            continue
+        label, desc = _SB_CII_CLASS_DOC[shape]
+        tests = {e["id"]: e["test"] for e in entries}
+        ctxs = {e["id"]: e.get("context", "") for e in entries}
+        implemented = _sbe.cii_class_implemented_ids(shape)
+        known_open = _sbe.cii_class_known_open_ids(shape)
+        hist = acct["cii"]["shape_histogram"].get(shape, 0)
+
+        w("### CII %s — implemented vs known-open" % label)
+        w("")
+        w("%s" % desc)
+        w("")
+        w("- **%d implemented** (differential-proven) / **%d known-open** of the"
+          " **%d** CII `%s` asserts (histogram total **%d**)."
+          % (len(implemented), len(known_open), total, shape, hist))
+        if implemented:
+            w("- Every implemented id is graded in `differential.py` LEG 6 (the"
+              " `sbcii` leg) and agrees with the official CEN EN16931-CII"
+              " Schematron at **0 divergences**; findings surface under the"
+              " distinct **`syntax-binding`** report category mirroring the"
+              " official `@flag` (warnings do not change the exit code).")
+            unobs = sorted(set(implemented) & set(_sbe.CII_FIRING_UNOBSERVABLE))
+            if unobs:
+                w("- Firing-unobservable on the OFFICIAL side (still implemented +"
+                  " clearing-proven): violating these caps duplicates a leaf a"
+                  " downstream official rule feeds to `fn:normalize-space()` /"
+                  " `number()` / a `cast as`, which aborts the CEN CII XSLT on the"
+                  " now >1-item sequence. Their firing fixtures ARE shipped (each"
+                  " fires in our evaluator) but the differential SKIPS them on the"
+                  " official side (recorded as errors, NOT divergences); the"
+                  " clearing direction is proven across the corpus:")
                 w("")
                 for rid in unobs:
                     w("  - `%s` — `%s`" % (rid, tests.get(rid, "")))

@@ -59,6 +59,7 @@ import gen_sb_fixtures as _genfx  # noqa: E402  (in-memory fixture synthesis)
 CATALOG_PATH = os.path.join(HERE, "syntax_binding_catalog.json")
 COVERAGE_PATH = os.path.join(HERE, "COVERAGE.md")
 SB_FIXTURE_DIR = os.path.join(HERE, "corpus", "vendored", "syntax-binding")
+SB_CII_FIXTURE_DIR = os.path.join(HERE, "fixtures")
 _SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
 
 EXPECTED_TOTALS = {"ubl": 756, "cii": 583}
@@ -90,15 +91,16 @@ def _independent_parse(binding):
     return out
 
 
-def _coverage_known_open_ids(section):
+def _coverage_known_open_ids(section, binding="UBL"):
     """The set of ids machine-listed in the 'Known-open worklist' table of ONE
-    COVERAGE.md UBL syntax-binding subsection (``section`` = 'absence-restriction'
-    / 'cardinality-count' / 'existence' / 'datatype-regex') — parsed straight from
-    the rendered doc, so the test proves code and doc name the SAME remainder."""
+    COVERAGE.md syntax-binding subsection (``binding`` = 'UBL' / 'CII';
+    ``section`` = 'absence-restriction' / 'cardinality-count' / 'existence' /
+    'datatype-regex' / 'other-complex') — parsed straight from the rendered doc,
+    so the test proves code and doc name the SAME remainder."""
     if not os.path.exists(COVERAGE_PATH):
         return None
     text = open(COVERAGE_PATH, encoding="utf-8").read()
-    anchor = text.find("### UBL %s — implemented vs known-open" % section)
+    anchor = text.find("### %s %s — implemented vs known-open" % (binding, section))
     if anchor < 0:
         return set()
     marker = "Known-open worklist (machine-listed"
@@ -112,8 +114,8 @@ def _coverage_known_open_ids(section):
             m = re.match(r"^\|\s*`([^`]+)`", s)
             if m:
                 ids.add(m.group(1))
-        elif s.startswith("### ") and ids:
-            break  # next section — stop
+        elif s.startswith("### "):
+            break  # next section — stop (even if this section's worklist is empty)
     return ids
 
 
@@ -376,6 +378,144 @@ def main():
                       "firing-unobservable id %s does NOT fire on its in-memory "
                       "violating instance (evaluator broken)" % rid)
 
+    # ---- 8. CII IMPLEMENTATION accounting (T-VHSBL.4) — mirror the UBL
+    #         implemented-vs-known-open recompute so a catalog/artifact bump
+    #         reopens the CII worklist automatically. Does NOT weaken any UBL
+    #         assertion above.
+    cii_by_id = {e["id"]: e for e in entries if e.get("binding") == "cii"}
+    cii_impl_all = _sbe.cii_implemented_ids()
+
+    # 8a. per CII shape class: a clean cover of exactly the class, disjoint,
+    #     differential-covered, and the known-open remainder == COVERAGE.md.
+    cii_union_impl = set()
+    for shape in _sbe.CII_SHAPE_CLASSES:
+        cls_entries = _sbe.cii_class_entries(shape)
+        cls_ids = {e["id"] for e in cls_entries}
+        cls_impl = _sbe.cii_class_implemented_ids(shape)
+        cls_ko = _sbe.cii_class_known_open_ids(shape)
+        cls_hist = live_acct["cii"]["shape_histogram"].get(shape, 0)
+        check(len(cls_entries) == cls_hist,
+              "CII %s class size %d != histogram %d"
+              % (shape, len(cls_entries), cls_hist))
+        check(set(cls_impl).isdisjoint(cls_ko),
+              "CII %s: an id is both implemented and known-open" % shape)
+        check(set(cls_impl) | set(cls_ko) == cls_ids,
+              "CII %s: implemented + known-open is not exactly the class "
+              "(an assert was silently dropped)" % shape)
+        check(len(cls_impl) + len(cls_ko) == len(cls_entries),
+              "CII %s: implemented (%d) + known-open (%d) != class total (%d)"
+              % (shape, len(cls_impl), len(cls_ko), len(cls_entries)))
+        check(set(cls_impl).issubset(set(_diff.SB_CII_RULE_IDS)),
+              "CII %s: an implemented id is not in the differential graded set"
+              % shape)
+        cov_cls_ko = _coverage_known_open_ids(shape, "CII")
+        check(cov_cls_ko == set(cls_ko),
+              "COVERAGE.md CII %s known-open worklist %s != live %s"
+              % (shape, sorted(cov_cls_ko or []), sorted(cls_ko)))
+        cii_union_impl |= set(cls_impl)
+
+    # 8b. the class partitions exactly reconstruct the global CII implemented set,
+    #     which is EXACTLY the differential CII sb-leg graded set (LEG 6).
+    check(cii_union_impl == set(cii_impl_all),
+          "per-class CII implemented union != cii_implemented_ids()")
+    check(set(cii_impl_all) == set(_diff.SB_CII_RULE_IDS),
+          "cii_implemented_ids() != differential CII sb-leg graded set "
+          "(differential.SB_CII_RULE_IDS)")
+    check(set(cii_impl_all).isdisjoint(_diff.OUR_RULE_SET),
+          "a CII syntax-binding id collides with a BR-* core rule id")
+
+    # 8c. other-complex + datatype-regex stay fully known-open (honesty line — a
+    #     compound or regex restriction is never approximated).
+    check(_sbe.cii_class_implemented_ids("other-complex") == [],
+          "CII other-complex must stay known-open (no faked compound engine)")
+    check(_sbe.cii_class_implemented_ids("datatype-regex") == [],
+          "CII datatype-regex must stay known-open (no faked regex engine)")
+
+    # 8d. claim-shadowed ids are DEAD-by-Schematron: their @test DOES compile (so
+    #     they are excluded for rule-claiming, not for an unsupported form), and
+    #     they are all machine-listed known-open in the absence class.
+    shadowed = _sbe.cii_claim_shadowed_ids()
+    cii_abs_ko = set(_sbe.cii_class_known_open_ids("absence-restriction"))
+    for rid in shadowed:
+        e = cii_by_id.get(rid)
+        check(e is not None, "shadowed id %s not a CII catalog entry" % rid)
+        if e is not None:
+            check(_sbe.compile_class_test(e["shape"], e["test"],
+                                          _sbe.CII_NSMAP) is not None,
+                  "claim-shadowed id %s does NOT compile — it should be excluded "
+                  "by claiming, not by an unsupported form" % rid)
+        check(rid in cii_abs_ko,
+              "claim-shadowed id %s not machine-listed known-open" % rid)
+
+    # 8e. severity mirrors the official @flag for every implemented CII id.
+    for entry in _sbe.cii_implemented_entries():
+        want = "fatal" if cii_by_id[entry.id]["flag"] == "fatal" else "warning"
+        check(_sbe._severity_from_flag(entry.flag) == want,
+              "CII implemented id %s severity does not mirror @flag %r"
+              % (entry.id, entry.flag))
+
+    # 8f. the documented firing-unobservable CII ids are a subset of the
+    #     implemented cardinality-count class and are named in COVERAGE.md (so the
+    #     honesty note cannot silently disappear).
+    cii_unobs = set(_sbe.CII_FIRING_UNOBSERVABLE)
+    check(cii_unobs.issubset(set(_sbe.cii_class_implemented_ids(
+              "cardinality-count"))),
+          "CII_FIRING_UNOBSERVABLE %s is not a subset of the implemented "
+          "cardinality-count class" % sorted(cii_unobs))
+    cov_text = open(COVERAGE_PATH, encoding="utf-8").read()
+    for rid in sorted(cii_unobs):
+        check(("`%s`" % rid) in cov_text,
+              "firing-unobservable CII id %s is not documented in COVERAGE.md"
+              % rid)
+
+    # 8g. FIRING (saxon-free): the clean CII base fires nothing, and EVERY
+    #     implemented CII id fires on its committed violation fixture with a
+    #     well-formed, category-tagged, @flag-mirroring finding.
+    check(os.path.isdir(SB_CII_FIXTURE_DIR),
+          "targeted CII syntax-binding fixture dir missing: %s"
+          % SB_CII_FIXTURE_DIR)
+    if os.path.isdir(SB_CII_FIXTURE_DIR):
+        clean = os.path.join(SB_CII_FIXTURE_DIR, "sb-pass-clean_cii.xml")
+        check(os.path.exists(clean), "sb-pass-clean_cii.xml base missing")
+        if os.path.exists(clean):
+            check(not _sbe.cii_fired_ids(parse_file(clean)),
+                  "clean CII base fired syntax-binding ids: %s"
+                  % sorted(_sbe.cii_fired_ids(parse_file(clean))))
+        impl_set = set(cii_impl_all)
+        viol_seen = set()
+        for name in sorted(os.listdir(SB_CII_FIXTURE_DIR)):
+            m = re.match(r"^sb-viol-(CII-(?:DT|SR)-\d+)_cii\.xml$", name)
+            if not m:
+                continue
+            rid = m.group(1)
+            path = os.path.join(SB_CII_FIXTURE_DIR, name)
+            findings = _sbe.evaluate_cii(parse_file(path))
+            fired = {f["id"] for f in findings}
+            for f in findings:
+                check(f["category"] == "syntax-binding",
+                      "%s: finding %s not under 'syntax-binding' category"
+                      % (name, f.get("id")))
+                check(f["severity"] in ("warning", "fatal"),
+                      "%s: finding %s bad severity %r"
+                      % (name, f.get("id"), f.get("severity")))
+                check(bool(f.get("element")) and bool(f.get("message")),
+                      "%s: finding %s missing element/message"
+                      % (name, f.get("id")))
+            viol_seen.add(rid)
+            check(rid in impl_set,
+                  "CII fixture %s targets non-implemented id %s" % (name, rid))
+            check(rid in fired,
+                  "violating CII fixture %s did NOT fire its id %s (fired=%s)"
+                  % (name, rid, sorted(fired)[:20]))
+        # EVERY implemented CII id has a committed firing fixture (nothing is
+        # silently missing a firing proof — CII ships fixtures for all of them,
+        # incl. the firing-unobservable-on-official caps).
+        check(viol_seen == impl_set,
+              "CII implemented ids without a committed firing fixture: %s "
+              "(extra fixtures: %s)"
+              % (sorted(impl_set - viol_seen)[:20],
+                 sorted(viol_seen - impl_set)[:20]))
+
     # ---- report -----------------------------------------------------------
     if failures:
         sys.stderr.write("SYNTAX-BINDING TEST: FAIL (%d)\n" % len(failures))
@@ -400,6 +540,15 @@ def main():
              len(_sbe.class_known_open_ids("cardinality-count")),
              len(_sbe.class_known_open_ids("existence")),
              len(_sbe.class_known_open_ids("datatype-regex"))))
+    print("  CII syntax-binding implemented: %d total (== differential CII "
+          "sb-leg graded set) = %d absence-restriction + %d cardinality-count + "
+          "%d existence; %d known-open (incl. 3 claim-shadowed); %d fixtures "
+          "fire their id."
+          % (len(_sbe.cii_implemented_ids()),
+             len(_sbe.cii_class_implemented_ids("absence-restriction")),
+             len(_sbe.cii_class_implemented_ids("cardinality-count")),
+             len(_sbe.cii_class_implemented_ids("existence")),
+             len(_sbe.cii_known_open_ids()), len(_sbe.cii_implemented_ids())))
     return 0
 
 

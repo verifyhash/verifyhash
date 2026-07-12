@@ -37,6 +37,15 @@ from einvoice import syntax_binding_eval as sbe  # noqa: E402
 FIXTURE_DIR = os.path.join(HERE, "corpus", "vendored", "syntax-binding")
 BASE = os.path.join(FIXTURE_DIR, "sb-pass-clean_ubl.xml")
 
+# CII leg (T-VHSBL.4): fixtures live in einvoice/fixtures/ (a dedicated dir NOT
+# swept by the UBL sb leg's corpus/vendored/syntax-binding/). The clean CII base
+# is a re-serialization of the CEN CII_example1 (a 20-line S-rated grocery
+# invoice that fires NOTHING on the official CEN EN16931-CII Schematron).
+CII_FIXTURE_DIR = os.path.join(HERE, "fixtures")
+CII_SOURCE_BASE = os.path.join(HERE, "corpus", "cen-en16931", "cii", "examples",
+                               "CII_example1.xml")
+CII_BASE = os.path.join(CII_FIXTURE_DIR, "sb-pass-clean_cii.xml")
+
 # Implemented caps whose FIRING direction crashes the official XSLT (see the
 # authoritative note on einvoice.syntax_binding_eval.FIRING_UNOBSERVABLE): no
 # self-crashing firing fixture is shipped for them.
@@ -46,6 +55,11 @@ for _pfx, _uri in sbe.NSMAP.items():
     # Map the default namespace (UBL Invoice-2) to '' so <Invoice> stays
     # unprefixed; the rest keep their catalog prefixes.
     ET.register_namespace("" if _pfx == "ubl" else _pfx, _uri)
+
+for _pfx, _uri in sbe.CII_NSMAP.items():
+    # CII keeps its catalog prefixes (rsm/ram/udt/qdt) — the CrossIndustryInvoice
+    # root is rsm-prefixed, so nothing maps to the default namespace here.
+    ET.register_namespace(_pfx, _uri)
 
 
 def _parents(root):
@@ -110,6 +124,126 @@ def _mutate(entry):
     return tree
 
 
+# --------------------------------------------------------------------------- #
+# CII fixture synthesis (T-VHSBL.4).                                            #
+# --------------------------------------------------------------------------- #
+def _cii_find_child(parent, tag):
+    for ch in parent:
+        if ch.tag == tag:
+            return ch
+    return None
+
+
+def _cii_materialize_context(root, branch):
+    """Return the deepest element of ONE restricted context branch, creating any
+    missing ancestor under ``root`` and REUSING existing nodes where they exist
+    (so a fresh context is only built when the base lacks it). A rooted branch's
+    outermost step is the document root itself."""
+    cur = root
+    tags = branch.tags[1:] if branch.rooted else branch.tags
+    for tag in tags:
+        child = _cii_find_child(cur, tag)
+        if child is None:
+            child = ET.SubElement(cur, tag)
+        cur = child
+    return cur
+
+
+def _cii_fresh_context(root, branch):
+    """Always build a FRESH context node (never reuse) — used for the existence
+    class so every required existence term selects an empty node-set."""
+    cur = root
+    tags = branch.tags[1:] if branch.rooted else branch.tags
+    for i, tag in enumerate(tags):
+        # Reuse ancestors but force a fresh LEAF context element.
+        if i == len(tags) - 1:
+            cur = ET.SubElement(cur, tag)
+        else:
+            child = _cii_find_child(cur, tag)
+            cur = child if child is not None else ET.SubElement(cur, tag)
+    if not tags:                       # rooted single-step (== root) — cannot fresh
+        return root
+    return cur
+
+
+def _mutate_cii(entry):
+    """Build a targeted violating CII fixture for one implemented CII entry —
+    a SINGLE mechanical mutation of the clean CII base derived from the compiled
+    catalog entry (its rule @context + @test), never hand-tuned per id.
+
+      * absence-restriction (kind 'not'): add ONE fresh instance of the forbidden
+        path P under a context node — the base clears every id, so P is absent.
+      * cardinality-count: inject n+1 fresh copies of the counted path into a
+        context node so the count exceeds (or, for '= n', misses) the cap.
+      * existence: append a FRESH empty context node so every required term is
+        absent."""
+    tree = ET.parse(CII_BASE)
+    root = tree.getroot()
+    comp = entry.compiled
+
+    if comp.kind == "exists_all":
+        _cii_fresh_context(root, entry.ctx.branches[0])
+        return tree
+
+    parents = _parents(root)
+    nodes = entry.ctx.match(root, parents)
+    target = nodes[0] if nodes else _cii_materialize_context(
+        root, entry.ctx.branches[0])
+
+    if comp.kind == "not":
+        _add_path_instance(target, comp.p)
+        return tree
+
+    # cardinality-count: exceed the cap on one context node.
+    path = comp.q if comp.kind == "not_or_count" else comp.p
+    for _ in range(comp.n + 1):
+        _add_path_instance(target, path)
+    return tree
+
+
+def main_cii():
+    """Write sb-pass-clean_cii.xml + one sb-viol-<id>_cii.xml per implemented CII
+    id under einvoice/fixtures/, then self-check each fires its id in-evaluator."""
+    os.makedirs(CII_FIXTURE_DIR, exist_ok=True)
+    # (Re)materialize the clean base from the CEN example so the whole fixture
+    # family shares one serialization.
+    base_tree = ET.parse(CII_SOURCE_BASE)
+    base_tree.write(CII_BASE, encoding="utf-8", xml_declaration=True)
+
+    from einvoice.parser import parse_file  # noqa: E402
+    # Sanity: the clean base must fire NOTHING in our CII evaluator.
+    if sbe.cii_fired_ids(parse_file(CII_BASE)):
+        sys.stderr.write("CII clean base wrongly fires ids: %s\n"
+                         % sorted(sbe.cii_fired_ids(parse_file(CII_BASE))))
+        return 1
+
+    # Purge any stale sb-viol fixtures (e.g. for an id that just became
+    # known-open via claim-shadowing) so the committed set is EXACTLY the
+    # implemented ids.
+    for name in os.listdir(CII_FIXTURE_DIR):
+        if name.startswith("sb-viol-") and name.endswith("_cii.xml"):
+            os.remove(os.path.join(CII_FIXTURE_DIR, name))
+
+    written = []
+    for entry in sbe.cii_implemented_entries():
+        tree = _mutate_cii(entry)
+        out = os.path.join(CII_FIXTURE_DIR, "sb-viol-%s_cii.xml" % entry.id)
+        tree.write(out, encoding="utf-8", xml_declaration=True)
+        written.append(entry.id)
+
+    bad = []
+    for rid in written:
+        path = os.path.join(CII_FIXTURE_DIR, "sb-viol-%s_cii.xml" % rid)
+        if rid not in sbe.cii_fired_ids(parse_file(path)):
+            bad.append(rid)
+    if bad:
+        sys.stderr.write("CII FIXTURES THAT DO NOT FIRE THEIR ID: %s\n" % bad[:40])
+        return 1
+    print("wrote %d targeted sb-viol CII fixtures + clean base; all fire their id "
+          "in the restricted CII evaluator." % len(written))
+    return 0
+
+
 def main():
     written = []
     for entry in sbe.implemented_entries():
@@ -141,4 +275,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    rc = main()
+    if rc == 0:
+        rc = main_cii()
+    sys.exit(rc)

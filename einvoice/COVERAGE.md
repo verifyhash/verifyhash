@@ -694,6 +694,155 @@ Known-open worklist (machine-listed — the exact remainder; a regression that s
 | --- | --- | --- |
 | `UBL-DT-01` | `string-length(substring-after(.,'.'))<=2` | `//*[ends-with(name(), 'Amount') and not(ends-with(name(),'PriceAmount')) and not(ancestor::cac:Price/cac:AllowanceCharge)]` |
 
+### CII absence-restriction — implemented vs known-open
+
+The dominant CII class — a bare `not(<path>)` presence restriction asserting a CII element/attribute the EN 16931 core model has no slot for MUST NOT appear. An assert is IMPLEMENTED iff BOTH its rule `@context` (a `|`-union of element-step chains — a `//` descendant or a rooted `/rsm:.../…` path, with NO predicate `[...]`, function, or `@attr` step) AND its `@test` compile under the closed grammar, resolved through the CII namespace map. A predicated / wildcard context (`//ram:*[ends-with(name(),'ReferencedDocument')]`) or a `//`-inside-path test is left known-open. Three ids (`CII-DT-010`/`011`/`012`) whose `@test` DOES compile are additionally machine-listed known-open as **claim-shadowed**: the earlier universal `//ram:TypeCode` rule in the same Schematron pattern claims the document `ram:TypeCode` node first, so the official validator can never fire them (dead rules) — detected live from the vendored artifact's pattern order, never a hardcoded id list.
+
+- **463 implemented** (differential-proven) / **65 known-open** of the **528** CII `absence-restriction` asserts (histogram total **528**).
+- Every implemented id is graded in `differential.py` LEG 6 (the `sbcii` leg) and agrees with the official CEN EN16931-CII Schematron at **0 divergences**; findings surface under the distinct **`syntax-binding`** report category mirroring the official `@flag` (warnings do not change the exit code).
+
+Known-open worklist (machine-listed — the exact remainder; a regression that stops supporting a form reappears here automatically):
+
+| id | @test (unsupported form) | context |
+| --- | --- | --- |
+| `CII-DT-010` | `not(@listID)` | `/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode` |
+| `CII-DT-011` | `not(@listAgencyID)` | `/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode` |
+| `CII-DT-012` | `not(@listVersionID)` | `/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode` |
+| `CII-DT-015` | `not(ram:URIID) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-016` | `not(ram:StatusCode)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-017` | `not(ram:CopyIndicator)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-018` | `not(ram:TypeCode) or (self::ram:AdditionalReferencedDocument) and (ram:TypeCode='50' or ram:TypeCode='130' or ram:TypeCode='916')` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-019` | `not(ram:GlobalID)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-020` | `not(ram:RevisionID)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-021` | `not(ram:Name) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-022` | `not(ram:AttachmentBinaryObject) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-023` | `not(ram:Information)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-024` | `not(ram:ReferenceTypeCode) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='130')` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-025` | `not(ram:SectionName)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-026` | `not(ram:PreviousRevisionID)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-027` | `not(ram:FormattedIssueDateTime) or self::ram:InvoiceReferencedDocument` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-028` | `not(ram:EffectiveSpecifiedPeriod)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-029` | `not(ram:IssuerTradeParty)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-030` | `not(ram:AttachedSpecifiedBinaryFile)` | `//ram:*[ends-with(name(), 'ReferencedDocument')]` |
+| `CII-DT-031` | `not(@currencyID)` | `//ram:*[ends-with(name(), 'Amount') and not (self::ram:TaxTotalAmount)]` |
+| `CII-DT-032` | `not(@currencyCodeListVersionID)` | `//ram:*[ends-with(name(), 'Amount') and not (self::ram:TaxTotalAmount)]` |
+| `CII-DT-033` | `not(@unitCode) or (/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity/@unitCode)` | `//ram:*[ends-with(name(), 'Quantity')]` |
+| `CII-DT-034` | `not(@unitCodeListID)` | `//ram:*[ends-with(name(), 'Quantity')]` |
+| `CII-DT-035` | `not(@unitCodeListAgencyID)` | `//ram:*[ends-with(name(), 'Quantity')]` |
+| `CII-DT-036` | `not(@unitCodeListAgencyName)` | `//ram:*[ends-with(name(), 'Quantity')]` |
+| `CII-DT-037` | `not(ram:TypeCode) or (ram:TypeCode = 'VAT')` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-038` | `not(ram:CalculatedRate)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-039` | `not(ram:CalculationSequenceNumeric)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-040` | `not(ram:BasisQuantity)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-041` | `not(ram:BasisAmount) or (ancestor::ram:ApplicableHeaderTradeSettlement)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-042` | `not(ram:UnitBasisAmount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-043` | `not(ram:LineTotalBasisAmount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-044` | `not(ram:AllowanceChargeBasisAmount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-049` | `not(ram:CurrencyCode)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-050` | `not(ram:Jurisdiction)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-051` | `not(ram:CustomsDutyIndicator)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-052` | `not(ram:ExemptionReasonCode) or self::ram:ApplicableTradeTax` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-053` | `not(ram:TaxBasisAllowanceRate)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-054` | `not(ram:TaxPointDate)  or (ancestor::ram:ApplicableHeaderTradeSettlement)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-055` | `not(ram:Type)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-056` | `not(ram:InformationAmount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-057` | `not(ram:CategoryName)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-058` | `not(ram:DueDateTypeCode) or (ancestor::ram:ApplicableHeaderTradeSettlement)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-059` | `not(ram:RateApplicablePercent/@format)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-060` | `not(ram:SpecifiedTradeAccountingAccount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-061` | `not(ram:ServiceSupplyTradeCountry)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-062` | `not(ram:BuyerRepayableTaxSpecifiedTradeAccountingAccount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-063` | `not(ram:SellerPayableTaxSpecifiedTradeAccountingAccount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-064` | `not(ram:SellerRefundableTaxSpecifiedTradeAccountingAccount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-065` | `not(ram:BuyerDeductibleTaxSpecifiedTradeAccountingAccount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-066` | `not(ram:BuyerNonDeductibleTaxSpecifiedTradeAccountingAccount)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-067` | `not(ram:PlaceApplicableTradeLocation)` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-098` | `not(ram:ExemptionReason) or self::ram:ApplicableTradeTax` | `//ram:*[ends-with(name(), 'TradeTax')]` |
+| `CII-DT-101` | `not(@schemeName)` | `//ram:*[ends-with(name(), 'ID')]` |
+| `CII-DT-102` | `not(@schemeAgencyName)` | `//ram:*[ends-with(name(), 'ID')]` |
+| `CII-DT-103` | `not(@schemeDataURI)` | `//ram:*[ends-with(name(), 'ID')]` |
+| `CII-DT-104` | `not(@schemeURI)` | `//ram:*[ends-with(name(), 'ID')]` |
+| `CII-SR-04` | `not(ram:Value)` | `//*[ends-with(name(), 'DocumentContextParameter')]` |
+| `CII-SR-046` | `not(ram:GlobalID) or (ram:GlobalID/@schemeID)` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct` |
+| `CII-SR-05` | `not(ram:SpecifiedDocumentVersion)` | `//*[ends-with(name(), 'DocumentContextParameter')]` |
+| `CII-SR-449` | `(not(ram:ShipToTradeParty/ram:ID) and ram:ShipToTradeParty/ram:GlobalID) or (ram:ShipToTradeParty/ram:ID and not(ram:ShipToTradeParty/ram:GlobalID)) or (not(ram:ShipToTradeParty/ram:ID) and not(ram:ShipToTradeParty/ram:GlobalID))` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery` |
+| `CII-SR-450` | `(not(ram:BuyerTradeParty/ram:ID) and ram:BuyerTradeParty/ram:GlobalID) or (ram:BuyerTradeParty/ram:ID and not(ram:BuyerTradeParty/ram:GlobalID)) or (not(ram:BuyerTradeParty/ram:ID) and not(ram:BuyerTradeParty/ram:GlobalID))` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement` |
+| `CII-SR-451` | `(not(ram:PayeeTradeParty/ram:ID) and ram:PayeeTradeParty/ram:GlobalID) or (ram:PayeeTradeParty/ram:ID and not(ram:PayeeTradeParty/ram:GlobalID)) or (not(ram:PayeeTradeParty/ram:ID) and not(ram:PayeeTradeParty/ram:GlobalID))` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement` |
+| `CII-SR-465` | `not(ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName and ram:SellerTradeParty/ram:DefinedTradeContact/ram:DepartmentName)` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement` |
+| `CII-SR-466` | `not(ram:BuyerTradeParty/ram:DefinedTradeContact/ram:PersonName and ram:BuyerTradeParty/ram:DefinedTradeContact/ram:DepartmentName)` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement` |
+
+### CII cardinality-count — implemented vs known-open
+
+A `cardinality-count` assert caps how many times a repeatable CII element may appear under a rule context, e.g. CII-SR-014 `count(ram:TypeCode) = 1`. Implemented iff its context compiles and its `@test` is `count(P) OP n` or `not(P) or count(P) OP n` over a restricted element path (`OP` one of `<=`/`=`/`<`/`>`/`>=`, `n` an integer). A predicated / function path or an arithmetic count difference is left known-open.
+
+- **42 implemented** (differential-proven) / **10 known-open** of the **52** CII `cardinality-count` asserts (histogram total **52**).
+- Every implemented id is graded in `differential.py` LEG 6 (the `sbcii` leg) and agrees with the official CEN EN16931-CII Schematron at **0 divergences**; findings surface under the distinct **`syntax-binding`** report category mirroring the official `@flag` (warnings do not change the exit code).
+- Firing-unobservable on the OFFICIAL side (still implemented + clearing-proven): violating these caps duplicates a leaf a downstream official rule feeds to `fn:normalize-space()` / `number()` / a `cast as`, which aborts the CEN CII XSLT on the now >1-item sequence. Their firing fixtures ARE shipped (each fires in our evaluator) but the differential SKIPS them on the official side (recorded as errors, NOT divergences); the clearing direction is proven across the corpus:
+
+  - `CII-SR-010` — `count(ram:GuidelineSpecifiedDocumentContextParameter/ram:ID) = 1`
+  - `CII-SR-014` — `count(ram:TypeCode) = 1`
+  - `CII-SR-477` — `count(ram:LineTotalAmount) <= 1`
+  - `CII-SR-478` — `count(ram:ChargeTotalAmount) <= 1`
+  - `CII-SR-479` — `count(ram:AllowanceTotalAmount) <= 1`
+  - `CII-SR-480` — `count(ram:TaxBasisTotalAmount) <= 1`
+  - `CII-SR-481` — `count(ram:RoundingAmount) <= 1`
+  - `CII-SR-482` — `count(ram:GrandTotalAmount) <= 1`
+  - `CII-SR-484` — `count(ram:TotalPrepaidAmount) <= 1`
+  - `CII-SR-487` — `count(ram:DuePayableAmount) <= 1`
+
+Known-open worklist (machine-listed — the exact remainder; a regression that stops supporting a form reappears here automatically):
+
+| id | @test (unsupported form) | context |
+| --- | --- | --- |
+| `CII-SR-090` | `not (ram:OriginTradeCountry) or (count(ram:OriginTradeCountry/ram:ID) =1)` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct` |
+| `CII-SR-457` | `( count(ram:AdditionalReferencedDocument[ram:TypeCode='50'])  <= 1)` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement` |
+| `CII-SR-458` | `( count(ram:AdditionalReferencedDocument[ram:TypeCode='130'])  <= 1)` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement` |
+| `CII-SR-462` | `count(//ram:ApplicableTradeTax/ram:DueDateTypeCode) = 0 or count(distinct-values(//ram:ApplicableTradeTax/ram:DueDateTypeCode)) = 1` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement` |
+| `CII-SR-467` | `count(//ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode[normalize-space(.) != normalize-space((//ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode)[1])]) = 0` | `/rsm:CrossIndustryInvoice` |
+| `CII-SR-468` | `count(//ram:SpecifiedTradeSettlementPaymentMeans/ram:Information[normalize-space(.) != normalize-space((//ram:SpecifiedTradeSettlementPaymentMeans/ram:Information)[1])]) = 0` | `/rsm:CrossIndustryInvoice` |
+| `CII-SR-470` | `count(ram:SpecifiedTradeSettlementPaymentMeans[(normalize-space(ram:TypeCode) = '30' or normalize-space(ram:TypeCode) = '58') and not(ram:PayeePartyCreditorFinancialAccount/ram:IBANID or ram:PayeePartyCreditorFinancialAccount/ram:ProprietaryID)]) = 0` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement` |
+| `CII-SR-474` | `count(ram:AdditionalReferencedDocument[normalize-space(ram:TypeCode) = '130']) <= 1` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement` |
+| `CII-SR-475` | `count(ram:AdditionalReferencedDocument[normalize-space(ram:TypeCode) = '916']/ram:Name) <= 1` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement` |
+| `CII-SR-476` | `count(ram:AdditionalReferencedDocument[normalize-space(ram:TypeCode) = '916']/ram:AttachmentBinaryObject) <= 1` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement` |
+
+### CII existence — implemented vs known-open
+
+An `existence` assert requires a CII node to be present, e.g. CII-SR-463 `(ram:ChargeIndicator)` on a `//ram:SpecifiedTradeAllowanceCharge`. Implemented iff its context compiles and its `@test` is a single existence term `(P)` / `exists(P)` (or an `and`-conjunction) over restricted element paths.
+
+- **1 implemented** (differential-proven) / **0 known-open** of the **1** CII `existence` asserts (histogram total **1**).
+- Every implemented id is graded in `differential.py` LEG 6 (the `sbcii` leg) and agrees with the official CEN EN16931-CII Schematron at **0 divergences**; findings surface under the distinct **`syntax-binding`** report category mirroring the official `@flag` (warnings do not change the exit code).
+
+Known-open worklist (machine-listed — the exact remainder; a regression that stops supporting a form reappears here automatically):
+
+| id | @test (unsupported form) | context |
+| --- | --- | --- |
+
+### CII other-complex — implemented vs known-open
+
+The single CII `other-complex` assert (CII-SR-119) is a compound `and`/`or` co-occurrence constraint over a gross-price applied allowance/charge — outside every closed shape grammar, so per the honesty line it is left machine-listed as known-open, never approximated.
+
+- **0 implemented** (differential-proven) / **1 known-open** of the **1** CII `other-complex` asserts (histogram total **1**).
+- None implemented — the entire class is left known-open (see the per-id reasons below); nothing is approximated.
+
+Known-open worklist (machine-listed — the exact remainder; a regression that stops supporting a form reappears here automatically):
+
+| id | @test (unsupported form) | context |
+| --- | --- | --- |
+| `CII-SR-119` | `(ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ChargeIndicator[udt:Indicator=false()] and ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ActualAmount) or (not (ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ChargeIndicator) and not (ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ActualAmount))` | `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement` |
+
+### CII datatype-regex — implemented vs known-open
+
+The single CII `datatype-regex` assert (CII-DT-097, `matches(.,'^\s*(\d{4})…$')`, a date lexical form) is a `matches()` regex restriction outside any closed element grammar, so it is left machine-listed as known-open rather than hand-faked with a regex engine.
+
+- **0 implemented** (differential-proven) / **1 known-open** of the **1** CII `datatype-regex` asserts (histogram total **1**).
+- None implemented — the entire class is left known-open (see the per-id reasons below); nothing is approximated.
+
+Known-open worklist (machine-listed — the exact remainder; a regression that stops supporting a form reappears here automatically):
+
+| id | @test (unsupported form) | context |
+| --- | --- | --- |
+| `CII-DT-097` | `matches(.,'^\s*(\d{4})(1[0-2]\|0[1-9]){1}(3[01]\|[12][0-9]\|0[1-9]){1}\s*$')` | `//udt:DateTimeString[@format = '102']` |
+
 ### Id-family breakdown
 
 | binding | id prefix | asserts |

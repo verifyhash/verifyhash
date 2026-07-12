@@ -751,7 +751,7 @@ def _render_sb_implementation(w, acct):
     if not total:
         return
     tests = {e["id"]: e["test"] for e in entries}
-    implemented = _sbe.implemented_ids()
+    implemented = _sbe.absence_implemented_ids()
     known_open = _sbe.known_open_ids()
     ubl_abs_hist = acct["ubl"]["shape_histogram"].get("absence-restriction", 0)
 
@@ -790,3 +790,103 @@ def _render_sb_implementation(w, acct):
         t = (tests.get(rid) or "").replace("|", "\\|")
         w("| `%s` | `%s` |" % (rid, t))
     w("")
+
+    _render_sb_new_classes(w, acct)
+
+
+#: Human labels + one-line class notes for the newly-implemented UBL shape
+#: classes (T-VHSBL.3), rendered live from the catalog + the evaluator.
+_SB_NEW_CLASS_DOC = {
+    "cardinality-count": (
+        "cardinality-count",
+        "A `cardinality-count` assert caps how many times a repeatable UBL"
+        " element may appear under a rule context, e.g. UBL-SR-01"
+        " `count(cac:ContractDocumentReference/cbc:ID) <= 1`. An assert is"
+        " IMPLEMENTED iff BOTH its rule context compiles under the closed"
+        " context-pattern grammar (a `|`-union of element-step chains — the"
+        " document root, a `//` descendant, or a relative `a/b` path — with NO"
+        " predicate `[...]`, function, or `@attr` step) AND its `@test` is"
+        " `count(P) OP n` or `not(P) or count(P) OP n` over a restricted"
+        " element path (`OP` one of `<=`/`=`, `n` an integer literal). A"
+        " difference of counts (UBL-DT-18), a predicated / `upper-case()` /"
+        " `preceding::` path (UBL-SR-04/12/13/18/29/44/47), a predicated context"
+        " (UBL-SR-30/31), or an `and`-conjoined comparison (UBL-SR-19/20/21) is"
+        " left known-open."),
+    "existence": (
+        "existence",
+        "An `existence` assert requires a UBL node or attribute to be present,"
+        " e.g. UBL-SR-07 `(cac:InvoiceDocumentReference/cbc:ID)` or UBL-SR-53"
+        " `exists(cac:TaxScheme/cbc:ID) and exists(cbc:CompanyID)`. An assert is"
+        " IMPLEMENTED iff its context compiles and its `@test` is a single"
+        " existence term — `exists(P)` or a bare parenthesized path `(P)` — or an"
+        " `and`-conjunction of them, over restricted element paths. The two"
+        " `@attr`-presence asserts whose CONTEXT is a function predicate"
+        " (`//*[ends-with(name(),'BinaryObject')]`) are left known-open."),
+    "datatype-regex": (
+        "datatype-regex",
+        "The single UBL `datatype-regex` assert (UBL-DT-01,"
+        " `string-length(substring-after(.,'.'))<=2`, a 2-decimal cap on amounts)"
+        " is bound to a FUNCTION context (`//*[ends-with(name(),'Amount') and"
+        " ...]`) outside any closed element grammar, so per the honesty line it is"
+        " left machine-listed as known-open rather than approximated — never"
+        " hand-faked."),
+}
+
+
+def _render_sb_new_classes(w, acct):
+    """Append a live implemented-vs-known-open partition for EACH newly-worked UBL
+    shape class (cardinality-count, existence, datatype-regex), machine-listed
+    from `einvoice.syntax_binding_eval` + the catalog exactly like the dominant
+    absence-restriction subsection above — so a grammar regression reopens the
+    worklist automatically and nothing can silently drift."""
+    for shape in _sbe.NEW_CLASSES:
+        entries = _sbe.class_entries(shape)
+        total = len(entries)
+        if not total:
+            continue
+        label, desc = _SB_NEW_CLASS_DOC[shape]
+        tests = {e["id"]: e["test"] for e in entries}
+        ctxs = {e["id"]: e.get("context", "") for e in entries}
+        implemented = _sbe.class_implemented_ids(shape)
+        known_open = _sbe.class_known_open_ids(shape)
+        hist = acct["ubl"]["shape_histogram"].get(shape, 0)
+
+        w("### UBL %s — implemented vs known-open" % label)
+        w("")
+        w("%s" % desc)
+        w("")
+        w("- **%d implemented** (differential-proven) / **%d known-open** of the"
+          " **%d** UBL `%s` asserts (histogram total **%d**)."
+          % (len(implemented), len(known_open), total, shape, hist))
+        if implemented:
+            w("- Every implemented id is graded in `differential.py` LEG 5 (the"
+              " `sb` leg) and agrees with the official CEN EN16931-UBL Schematron"
+              " at **0 divergences**; findings surface under the distinct"
+              " **`syntax-binding`** report category mirroring the official"
+              " `@flag`.")
+            unobs = sorted(set(implemented) & set(_sbe.FIRING_UNOBSERVABLE))
+            if unobs:
+                w("- Firing-unobservable (still implemented + clearing-proven): the"
+                  " official artifact raises an XSLT `fn:normalize-space()` type"
+                  " error on ANY document that violates these caps (a leaf other"
+                  " rules normalize becomes plural), so their both-fire datapoint"
+                  " cannot be graded; a targeted firing fixture is therefore not"
+                  " shipped, and the evaluator's firing on them is exercised"
+                  " in-memory by `test_syntax_binding.py` instead:")
+                w("")
+                for rid in unobs:
+                    w("  - `%s` — `%s`" % (rid, tests.get(rid, "")))
+        else:
+            w("- None implemented — the entire class is left known-open (see the"
+              " per-id reasons below); nothing is approximated.")
+        w("")
+        w("Known-open worklist (machine-listed — the exact remainder; a regression"
+          " that stops supporting a form reappears here automatically):")
+        w("")
+        w("| id | @test (unsupported form) | context |")
+        w("| --- | --- | --- |")
+        for rid in known_open:
+            t = (tests.get(rid) or "").replace("|", "\\|")
+            c = (ctxs.get(rid) or "").replace("|", "\\|")
+            w("| `%s` | `%s` | `%s` |" % (rid, t, c))
+        w("")

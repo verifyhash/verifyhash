@@ -54,6 +54,7 @@ from einvoice import syntax_binding as _sb  # noqa: E402
 from einvoice import syntax_binding_eval as _sbe  # noqa: E402
 from einvoice.parser import parse_file  # noqa: E402
 import differential as _diff  # noqa: E402  (import-only; no saxon at import time)
+import gen_sb_fixtures as _genfx  # noqa: E402  (in-memory fixture synthesis)
 
 CATALOG_PATH = os.path.join(HERE, "syntax_binding_catalog.json")
 COVERAGE_PATH = os.path.join(HERE, "COVERAGE.md")
@@ -89,16 +90,15 @@ def _independent_parse(binding):
     return out
 
 
-def _coverage_known_open_ids():
-    """The set of ids machine-listed in COVERAGE.md's UBL absence-restriction
-    'Known-open worklist' table — parsed straight from the rendered doc, so the
-    test proves code and doc name the SAME remainder."""
+def _coverage_known_open_ids(section):
+    """The set of ids machine-listed in the 'Known-open worklist' table of ONE
+    COVERAGE.md UBL syntax-binding subsection (``section`` = 'absence-restriction'
+    / 'cardinality-count' / 'existence' / 'datatype-regex') — parsed straight from
+    the rendered doc, so the test proves code and doc name the SAME remainder."""
     if not os.path.exists(COVERAGE_PATH):
         return None
     text = open(COVERAGE_PATH, encoding="utf-8").read()
-    # Anchor on the UBL absence-restriction subsection specifically (there are
-    # other 'Known-open worklist' headers for the CVD/TMP families above).
-    anchor = text.find("### UBL absence-restriction — implemented vs known-open")
+    anchor = text.find("### UBL %s — implemented vs known-open" % section)
     if anchor < 0:
         return set()
     marker = "Known-open worklist (machine-listed"
@@ -190,63 +190,109 @@ def main():
 
     # ---- 5. IMPLEMENTATION accounting (live recompute + differential cover)-
     _sbe.reset_cache()
+    ubl_by_id = {e["id"]: e for e in entries if e.get("binding") == "ubl"}
     abs_entries = _sbe.absence_restriction_entries()
     abs_ids = {e["id"] for e in abs_entries}
-    implemented = _sbe.implemented_ids()
-    known_open = _sbe.known_open_ids()
+    abs_impl = _sbe.absence_implemented_ids()
+    abs_ko = _sbe.known_open_ids()
+    implemented = _sbe.implemented_ids()          # ALL classes (== SB leg set)
 
-    # 5a. the class total matches the histogram, and the partition is a clean
-    #     cover of exactly the 699 UBL absence-restriction ids (nothing dropped).
+    # 5a. the absence class total matches the histogram, and the partition is a
+    #     clean cover of exactly the 699 UBL absence-restriction ids (nothing
+    #     dropped).
     hist_total = (live_acct["ubl"]["shape_histogram"]
                   .get("absence-restriction", 0))
     check(len(abs_entries) == hist_total,
           "absence-restriction class size %d != histogram %d"
           % (len(abs_entries), hist_total))
-    check(set(implemented).isdisjoint(known_open),
-          "an id is both implemented and known-open")
-    check(set(implemented) | set(known_open) == abs_ids,
-          "implemented + known-open is not exactly the UBL absence-restriction "
-          "class (an assert was silently dropped)")
-    check(len(implemented) + len(known_open) == len(abs_entries),
-          "implemented (%d) + known-open (%d) != class total (%d)"
-          % (len(implemented), len(known_open), len(abs_entries)))
+    check(set(abs_impl).isdisjoint(abs_ko),
+          "an absence id is both implemented and known-open")
+    check(set(abs_impl) | set(abs_ko) == abs_ids,
+          "absence implemented + known-open is not exactly the UBL "
+          "absence-restriction class (an assert was silently dropped)")
+    check(len(abs_impl) + len(abs_ko) == len(abs_entries),
+          "absence implemented (%d) + known-open (%d) != class total (%d)"
+          % (len(abs_impl), len(abs_ko), len(abs_entries)))
 
-    # 5b. implemented count: recomputed live, with a floor so a silent collapse
-    #     of the evaluator (e.g. a grammar bug) fails the gate.
-    live_impl = [e["id"] for e in abs_entries
-                 if e.get("context") == _sbe.SUPPORTED_CONTEXT
-                 and _sbe.compile_test(e.get("test")) is not None]
-    check(sorted(live_impl) == sorted(implemented),
-          "implemented_ids() disagrees with a live re-partition of the catalog")
-    check(len(implemented) >= 690,
-          "implemented count collapsed to %d (< 690 floor) — evaluator "
-          "regression?" % len(implemented))
+    # 5b. absence implemented count: recomputed live, with a floor so a silent
+    #     collapse of the evaluator (e.g. a grammar bug) fails the gate.
+    live_abs_impl = [e["id"] for e in abs_entries
+                     if e.get("context") == _sbe.SUPPORTED_CONTEXT
+                     and _sbe.compile_test(e.get("test")) is not None]
+    check(sorted(live_abs_impl) == sorted(abs_impl),
+          "absence_implemented_ids() disagrees with a live re-partition")
+    check(len(abs_impl) >= 690,
+          "absence implemented count collapsed to %d (< 690 floor) — evaluator "
+          "regression?" % len(abs_impl))
 
-    # 5c. every implemented id is differential-covered: it is exactly the sb
-    #     leg's graded id set (differential.py LEG 5), which the differential
-    #     gate proves at 0 divergences against the official Schematron.
+    # 5c. every implemented id (ALL classes) is differential-covered: it is
+    #     exactly the sb leg's graded id set (differential.py LEG 5), which the
+    #     differential gate proves at 0 divergences against the official
+    #     Schematron. The class partitions are disjoint and cover the union.
     check(set(implemented) == set(_diff.SB_RULE_IDS),
           "implemented ids != differential sb-leg graded set "
           "(differential.SB_RULE_IDS) — a differential-uncovered id leaked in")
-    check(set(implemented).issubset(abs_ids),
-          "an implemented id is not a UBL absence-restriction assert")
+    check(set(abs_impl).issubset(abs_ids),
+          "an absence implemented id is not a UBL absence-restriction assert")
 
-    # 5d. the known-open remainder equals EXACTLY the machine-listed worklist in
-    #     COVERAGE.md (regression reopens the worklist automatically).
-    cov_known_open = _coverage_known_open_ids()
+    # 5d. the absence known-open remainder equals EXACTLY the machine-listed
+    #     worklist in COVERAGE.md (regression reopens the worklist automatically).
+    cov_known_open = _coverage_known_open_ids("absence-restriction")
     check(cov_known_open is not None, "COVERAGE.md missing")
     if cov_known_open is not None:
-        check(cov_known_open == set(known_open),
-              "COVERAGE.md known-open worklist %s != live known-open %s"
-              % (sorted(cov_known_open), sorted(known_open)))
+        check(cov_known_open == set(abs_ko),
+              "COVERAGE.md absence known-open worklist %s != live %s"
+              % (sorted(cov_known_open), sorted(abs_ko)))
 
-    # 5e. severity mirrors the official @flag for every implemented id.
-    flag_by_id = {e["id"]: e["flag"] for e in abs_entries}
+    # 5e. severity mirrors the official @flag for every implemented id (all
+    #     classes).
     for entry in _sbe.implemented_entries():
-        want = "fatal" if flag_by_id[entry.id] == "fatal" else "warning"
+        want = "fatal" if ubl_by_id[entry.id]["flag"] == "fatal" else "warning"
         check(_sbe._severity_from_flag(entry.flag) == want,
               "implemented id %s severity does not mirror @flag %r"
               % (entry.id, entry.flag))
+
+    # 5f. NEW shape classes (cardinality-count / existence / datatype-regex):
+    #     each partitions LIVE into implemented + known-open == class total; the
+    #     partitions are disjoint; every implemented id is in the differential
+    #     graded set; and the known-open remainder equals the machine-listed
+    #     COVERAGE.md worklist for that class — mirroring 5a/5c/5d exactly.
+    union_impl = set(abs_impl)
+    for shape in _sbe.NEW_CLASSES:
+        cls_entries = _sbe.class_entries(shape)
+        cls_ids = {e["id"] for e in cls_entries}
+        cls_impl = _sbe.class_implemented_ids(shape)
+        cls_ko = _sbe.class_known_open_ids(shape)
+        cls_hist = live_acct["ubl"]["shape_histogram"].get(shape, 0)
+        check(len(cls_entries) == cls_hist,
+              "%s class size %d != histogram %d"
+              % (shape, len(cls_entries), cls_hist))
+        check(set(cls_impl).isdisjoint(cls_ko),
+              "%s: an id is both implemented and known-open" % shape)
+        check(set(cls_impl) | set(cls_ko) == cls_ids,
+              "%s: implemented + known-open is not exactly the class "
+              "(an assert was silently dropped)" % shape)
+        check(len(cls_impl) + len(cls_ko) == len(cls_entries),
+              "%s: implemented (%d) + known-open (%d) != class total (%d)"
+              % (shape, len(cls_impl), len(cls_ko), len(cls_entries)))
+        check(set(cls_impl).issubset(set(_diff.SB_RULE_IDS)),
+              "%s: an implemented id is not in the differential graded set" % shape)
+        cov_cls_ko = _coverage_known_open_ids(shape)
+        check(cov_cls_ko == set(cls_ko),
+              "COVERAGE.md %s known-open worklist %s != live %s"
+              % (shape, sorted(cov_cls_ko or []), sorted(cls_ko)))
+        union_impl |= set(cls_impl)
+
+    # 5g. the four class partitions exactly reconstruct the global implemented
+    #     set — no id lives in two classes and none is dropped between them.
+    check(union_impl == set(implemented),
+          "per-class implemented union != implemented_ids() (a class leaked or "
+          "dropped an id)")
+
+    # 5h. datatype-regex is deliberately left fully known-open (honesty line —
+    #     the single UBL-DT lexical restriction is not approximated).
+    check(_sbe.class_implemented_ids("datatype-regex") == [],
+          "datatype-regex must stay known-open (no hand-faked regex engine)")
 
     # ---- 6. FIRING on the committed targeted fixtures (saxon-free) ----------
     check(os.path.isdir(SB_FIXTURE_DIR),
@@ -294,6 +340,42 @@ def main():
         check(len(viol_seen) >= 5,
               "expected >=5 distinct violating fixtures, saw %d" % len(viol_seen))
 
+        # ---- 7. every NEW-class implemented id either has a committed firing
+        #         fixture OR is an explicitly-documented firing-unobservable id;
+        #         nothing is silently missing a firing proof.
+        new_impl = (set(_sbe.class_implemented_ids("cardinality-count"))
+                    | set(_sbe.class_implemented_ids("existence")))
+        committed_new = viol_seen & new_impl
+        missing_fixture = new_impl - committed_new
+        unobs = set(_sbe.FIRING_UNOBSERVABLE)
+        check(unobs.issubset(new_impl),
+              "FIRING_UNOBSERVABLE %s is not a subset of the implemented new "
+              "classes" % sorted(unobs))
+        check(missing_fixture == unobs,
+              "new-class implemented ids without a firing fixture %s != the "
+              "documented firing-unobservable set %s"
+              % (sorted(missing_fixture), sorted(unobs)))
+        # 7b. the firing-unobservable ids are DOCUMENTED in COVERAGE.md (so the
+        #     honesty note cannot silently disappear).
+        cov_text = open(COVERAGE_PATH, encoding="utf-8").read()
+        for rid in sorted(unobs):
+            check(("`%s`" % rid) in cov_text,
+                  "firing-unobservable id %s is not documented in COVERAGE.md"
+                  % rid)
+        # 7c. NOT faked: our evaluator DOES fire each firing-unobservable id on an
+        #     in-memory synthesized violating instance (only the official XSLT —
+        #     which crashes on the plural leaf — cannot grade it).
+        entry_by_id = {e.id: e for e in _sbe.implemented_entries()}
+        for rid in sorted(unobs):
+            entry = entry_by_id.get(rid)
+            check(entry is not None, "unobservable id %s not an implemented entry"
+                  % rid)
+            if entry is not None:
+                root = _genfx._mutate(entry).getroot()
+                check(rid in _sbe.fired_ids(root),
+                      "firing-unobservable id %s does NOT fire on its in-memory "
+                      "violating instance (evaluator broken)" % rid)
+
     # ---- report -----------------------------------------------------------
     if failures:
         sys.stderr.write("SYNTAX-BINDING TEST: FAIL (%d)\n" % len(failures))
@@ -304,11 +386,20 @@ def main():
           "catalog == fresh extraction id-for-id, accounting live-consistent."
           % (EXPECTED_TOTALS["ubl"], EXPECTED_TOTALS["cii"],
              EXPECTED_TOTALS["ubl"] + EXPECTED_TOTALS["cii"]))
-    print("  UBL absence-restriction: %d implemented (== differential sb-leg "
-          "graded set) + %d known-open (== COVERAGE.md worklist) of %d; "
-          "targeted fixtures fire/clear as expected."
-          % (len(_sbe.implemented_ids()), len(_sbe.known_open_ids()),
-             len(_sbe.absence_restriction_entries())))
+    print("  UBL syntax-binding implemented: %d total (== differential sb-leg "
+          "graded set) = %d absence-restriction + %d cardinality-count + %d "
+          "existence + %d datatype-regex."
+          % (len(_sbe.implemented_ids()), len(_sbe.absence_implemented_ids()),
+             len(_sbe.class_implemented_ids("cardinality-count")),
+             len(_sbe.class_implemented_ids("existence")),
+             len(_sbe.class_implemented_ids("datatype-regex"))))
+    print("  Per-class known-open (== COVERAGE.md worklists): absence %d, "
+          "cardinality-count %d, existence %d, datatype-regex %d; targeted "
+          "fixtures fire/clear as expected."
+          % (len(_sbe.known_open_ids()),
+             len(_sbe.class_known_open_ids("cardinality-count")),
+             len(_sbe.class_known_open_ids("existence")),
+             len(_sbe.class_known_open_ids("datatype-regex"))))
     return 0
 
 

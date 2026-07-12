@@ -636,6 +636,64 @@ Known-open worklist (machine-listed — the exact remainder; a regression that s
 | `UBL-CR-673` | `not(//cac:AdditionalDocumentReference[cbc:DocumentTypeCode  = '130']/cbc:DocumentDescription)` |
 | `UBL-SR-43` | `((cbc:DocumentTypeCode='130') or ((local-name(/*) = 'CreditNote') and (cbc:DocumentTypeCode='50')) or (not(cbc:ID/@schemeID) and not(cbc:DocumentTypeCode)))` |
 
+### UBL cardinality-count — implemented vs known-open
+
+A `cardinality-count` assert caps how many times a repeatable UBL element may appear under a rule context, e.g. UBL-SR-01 `count(cac:ContractDocumentReference/cbc:ID) <= 1`. An assert is IMPLEMENTED iff BOTH its rule context compiles under the closed context-pattern grammar (a `|`-union of element-step chains — the document root, a `//` descendant, or a relative `a/b` path — with NO predicate `[...]`, function, or `@attr` step) AND its `@test` is `count(P) OP n` or `not(P) or count(P) OP n` over a restricted element path (`OP` one of `<=`/`=`, `n` an integer literal). A difference of counts (UBL-DT-18), a predicated / `upper-case()` / `preceding::` path (UBL-SR-04/12/13/18/29/44/47), a predicated context (UBL-SR-30/31), or an `and`-conjoined comparison (UBL-SR-19/20/21) is left known-open.
+
+- **39 implemented** (differential-proven) / **13 known-open** of the **52** UBL `cardinality-count` asserts (histogram total **52**).
+- Every implemented id is graded in `differential.py` LEG 5 (the `sb` leg) and agrees with the official CEN EN16931-UBL Schematron at **0 divergences**; findings surface under the distinct **`syntax-binding`** report category mirroring the official `@flag`.
+- Firing-unobservable (still implemented + clearing-proven): the official artifact raises an XSLT `fn:normalize-space()` type error on ANY document that violates these caps (a leaf other rules normalize becomes plural), so their both-fire datapoint cannot be graded; a targeted firing fixture is therefore not shipped, and the evaluator's firing on them is exercised in-memory by `test_syntax_binding.py` instead:
+
+  - `UBL-SR-09` — `(count(cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName) <= 1)`
+  - `UBL-SR-15` — `(count(cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName) <= 1)`
+  - `UBL-SR-22` — `(count(cac:PartyName/cbc:Name) <= 1)`
+  - `UBL-SR-27` — `(count(cbc:PaymentMeansCode) <= 1)`
+
+Known-open worklist (machine-listed — the exact remainder; a regression that stops supporting a form reappears here automatically):
+
+| id | @test (unsupported form) | context |
+| --- | --- | --- |
+| `UBL-DT-18` | `count(//@name) - count(//cbc:PaymentMeansCode/@name) <= 0` | `/ubl:Invoice \| /cn:CreditNote` |
+| `UBL-SR-04` | `(count(cac:AdditionalDocumentReference[cbc:DocumentTypeCode='130']/cbc:ID) <= 1)` | `/ubl:Invoice \| /cn:CreditNote` |
+| `UBL-SR-12` | `(count(cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/upper-case(cbc:ID)='VAT']/cbc:CompanyID) <= 1)` | `/ubl:Invoice \| /cn:CreditNote` |
+| `UBL-SR-13` | `(count(cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/upper-case(cbc:ID)!='VAT']/cbc:CompanyID) <= 1)` | `/ubl:Invoice \| /cn:CreditNote` |
+| `UBL-SR-18` | `(count(cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/upper-case(cbc:ID)='VAT']/cbc:CompanyID) <= 1)` | `/ubl:Invoice \| /cn:CreditNote` |
+| `UBL-SR-19` | `(count(cac:PartyName/cbc:Name) <= 1) and ((cac:PartyName/cbc:Name) != (../cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName))` | `cac:PayeeParty` |
+| `UBL-SR-20` | `(count(cac:PartyIdentification/cbc:ID[upper-case(@schemeID) != 'SEPA']) <= 1) and ((cac:PartyName/cbc:Name) != (../cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName))` | `cac:PayeeParty` |
+| `UBL-SR-21` | `(count(cac:PartyLegalEntity/cbc:CompanyID) <= 1) and ((cac:PartyName/cbc:Name) != (../cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName))` | `cac:PayeeParty` |
+| `UBL-SR-29` | `(count(//cac:PartyIdentification/cbc:ID[upper-case(@schemeID) = 'SEPA']) <= 1)` | `/ubl:Invoice \| /cn:CreditNote` |
+| `UBL-SR-30` | `(count(cbc:AllowanceChargeReason) <= 1)` | `cac:AllowanceCharge[cbc:ChargeIndicator = false()]` |
+| `UBL-SR-31` | `(count(cbc:AllowanceChargeReason) <= 1)` | `cac:AllowanceCharge[cbc:ChargeIndicator = true()]` |
+| `UBL-SR-44` | `count(//cbc:PaymentID[not(preceding::cbc:PaymentID/. = .)]) <= 1` | `/ubl:Invoice \| /cn:CreditNote` |
+| `UBL-SR-47` | `count(//cbc:PaymentMeansCode[not(preceding::cbc:PaymentMeansCode/. = .)]) <= 1` | `/ubl:Invoice \| /cn:CreditNote` |
+
+### UBL existence — implemented vs known-open
+
+An `existence` assert requires a UBL node or attribute to be present, e.g. UBL-SR-07 `(cac:InvoiceDocumentReference/cbc:ID)` or UBL-SR-53 `exists(cac:TaxScheme/cbc:ID) and exists(cbc:CompanyID)`. An assert is IMPLEMENTED iff its context compiles and its `@test` is a single existence term — `exists(P)` or a bare parenthesized path `(P)` — or an `and`-conjunction of them, over restricted element paths. The two `@attr`-presence asserts whose CONTEXT is a function predicate (`//*[ends-with(name(),'BinaryObject')]`) are left known-open.
+
+- **2 implemented** (differential-proven) / **2 known-open** of the **4** UBL `existence` asserts (histogram total **4**).
+- Every implemented id is graded in `differential.py` LEG 5 (the `sb` leg) and agrees with the official CEN EN16931-UBL Schematron at **0 divergences**; findings surface under the distinct **`syntax-binding`** report category mirroring the official `@flag`.
+
+Known-open worklist (machine-listed — the exact remainder; a regression that stops supporting a form reappears here automatically):
+
+| id | @test (unsupported form) | context |
+| --- | --- | --- |
+| `UBL-DT-06` | `(@mimeCode)` | `//*[ends-with(name(), 'BinaryObject')]` |
+| `UBL-DT-07` | `(@filename)` | `//*[ends-with(name(), 'BinaryObject')]` |
+
+### UBL datatype-regex — implemented vs known-open
+
+The single UBL `datatype-regex` assert (UBL-DT-01, `string-length(substring-after(.,'.'))<=2`, a 2-decimal cap on amounts) is bound to a FUNCTION context (`//*[ends-with(name(),'Amount') and ...]`) outside any closed element grammar, so per the honesty line it is left machine-listed as known-open rather than approximated — never hand-faked.
+
+- **0 implemented** (differential-proven) / **1 known-open** of the **1** UBL `datatype-regex` asserts (histogram total **1**).
+- None implemented — the entire class is left known-open (see the per-id reasons below); nothing is approximated.
+
+Known-open worklist (machine-listed — the exact remainder; a regression that stops supporting a form reappears here automatically):
+
+| id | @test (unsupported form) | context |
+| --- | --- | --- |
+| `UBL-DT-01` | `string-length(substring-after(.,'.'))<=2` | `//*[ends-with(name(), 'Amount') and not(ends-with(name(),'PriceAmount')) and not(ancestor::cac:Price/cac:AllowanceCharge)]` |
+
 ### Id-family breakdown
 
 | binding | id prefix | asserts |

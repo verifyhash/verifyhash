@@ -261,28 +261,84 @@ def _string_value(node):
 _LITERAL_CMP_RE = re.compile(r"^(?P<path>.+?)\s*=\s*'(?P<lit>[^']*)'$", re.S)
 
 
+def _cmp(count, op, n):
+    """Evaluate ``count OP n`` for the closed set of relational operators the
+    cardinality-count grammar admits."""
+    if op == "<=":
+        return count <= n
+    if op == "=":
+        return count == n
+    if op == "<":
+        return count < n
+    if op == ">=":
+        return count >= n
+    if op == ">":
+        return count > n
+    return False
+
+
 class _Compiled:
-    """A compiled @test: ``evaluate(ctx, root) -> (fires, offending_node)``."""
+    """A compiled @test: ``evaluate(ctx, root) -> (fires, offending_node)``.
 
-    __slots__ = ("kind", "p", "q", "literal")
+    ``kind`` is one of the closed shapes this restricted evaluator proves
+    equivalent to the official Schematron:
 
-    def __init__(self, kind, p, q=None, literal=None):
-        self.kind = kind        # "not" | "not_or_eq"
+      * ``not``          — ``not(P)``: fires when P is non-empty.
+      * ``not_or_eq``    — ``not(P) or Q = 'lit'``: fires when P non-empty and no
+                           Q string-value equals the literal.
+      * ``count``        — ``count(P) OP n``: fires when the count does NOT satisfy
+                           the bound.
+      * ``not_or_count`` — ``not(P1) or count(P2) OP n``: fires when P1 non-empty
+                           and the count of P2 does NOT satisfy the bound.
+      * ``exists_all``   — conjunction of existence terms (``exists(P)`` /
+                           ``(P)``): fires when ANY term selects an empty node-set.
+    """
+
+    __slots__ = ("kind", "p", "q", "literal", "op", "n", "terms")
+
+    def __init__(self, kind, p=None, q=None, literal=None, op=None, n=None,
+                 terms=None):
+        self.kind = kind
         self.p = p
         self.q = q
         self.literal = literal
+        self.op = op
+        self.n = n
+        self.terms = terms
 
     def evaluate(self, ctx, root):
-        p_nodes = _select(self.p, ctx, root)
-        if not p_nodes:
-            return (False, None)
-        if self.kind == "not":
+        kind = self.kind
+        if kind == "not":
+            p_nodes = _select(self.p, ctx, root)
+            return (True, p_nodes[0]) if p_nodes else (False, None)
+        if kind == "not_or_eq":
+            p_nodes = _select(self.p, ctx, root)
+            if not p_nodes:
+                return (False, None)
+            # not(P) or Q = 'literal' : passes if any Q string-value == literal.
+            q_nodes = _select(self.q, ctx, root)
+            if any(_string_value(n) == self.literal for n in q_nodes):
+                return (False, None)
             return (True, p_nodes[0])
-        # not(P) or Q = 'literal' : passes if any Q string-value == literal.
-        q_nodes = _select(self.q, ctx, root)
-        if any(_string_value(n) == self.literal for n in q_nodes):
+        if kind == "count":
+            nodes = _select(self.p, ctx, root)
+            if _cmp(len(nodes), self.op, self.n):
+                return (False, None)
+            return (True, nodes[0] if nodes else None)
+        if kind == "not_or_count":
+            p1 = _select(self.p, ctx, root)
+            if not p1:
+                return (False, None)
+            nodes = _select(self.q, ctx, root)
+            if _cmp(len(nodes), self.op, self.n):
+                return (False, None)
+            return (True, nodes[0] if nodes else p1[0])
+        if kind == "exists_all":
+            for term in self.terms:
+                if not _select(term, ctx, root):
+                    return (True, None)   # a required node-set is empty
             return (False, None)
-        return (True, p_nodes[0])
+        return (False, None)
 
 
 def _strip_outer_not(expr):
@@ -336,6 +392,238 @@ def compile_test(test):
 
 
 # --------------------------------------------------------------------------- #
+# cardinality-count + existence @test compilation
+# --------------------------------------------------------------------------- #
+def _match_paren(s, open_idx):
+    """From an opening ``(`` at ``open_idx``, return (inner_text, tail) where the
+    tail is everything after the MATCHING close paren, or (None, None)."""
+    depth = 0
+    for i in range(open_idx, len(s)):
+        ch = s[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return s[open_idx + 1:i], s[i + 1:]
+    return None, None
+
+
+def _strip_outer_parens(s):
+    """Strip whole-expression wrapping parens, e.g. ``(count(x) <= 1)`` -> the
+    inside. Leaves ``count(x) <= 1`` (parens not wrapping the whole) untouched."""
+    s = s.strip()
+    while s.startswith("(") and s.endswith(")"):
+        inner, tail = _match_paren(s, 0)
+        if inner is None or tail != "":
+            break
+        s = inner.strip()
+    return s
+
+
+_COUNT_OP_RE = re.compile(r"^\s*(<=|>=|=|<|>)\s*(\d+)\s*$")
+
+
+def _parse_count_cmp(expr):
+    """Parse ``count(P) OP n`` into ``(_Path, op, n)`` or None. P must be a
+    restricted location path; OP a single relational operator; n a non-negative
+    integer literal. No arithmetic (``count(a) - count(b)``), no predicates and
+    no functions inside P (those forms fall to known-open)."""
+    e = expr.strip()
+    if not e.startswith("count("):
+        return None
+    inner, tail = _match_paren(e, len("count"))
+    if inner is None:
+        return None
+    m = _COUNT_OP_RE.match(tail)
+    if not m:
+        return None
+    p = parse_path(inner.strip())
+    if p is None:
+        return None
+    return (p, m.group(1), int(m.group(2)))
+
+
+def compile_count_test(test):
+    """Compile a ``cardinality-count`` @test into a :class:`_Compiled`, or None
+    if it is outside the closed grammar (=> the id is known-open).
+
+    Accepted:
+      * ``count(P) OP n``                    -> kind ``count``
+      * ``not(P1) or count(P2) OP n``        -> kind ``not_or_count``
+    (each optionally wrapped in a single pair of outer parens). Anything else —
+    a difference of counts, a predicated / function path, an ``and`` conjunction
+    — is rejected."""
+    s = _strip_outer_parens((test or "").strip())
+    if not s:
+        return None
+    disj = _split_top(s, " or ")
+    if len(disj) == 2:
+        left = _strip_outer_not(disj[0].strip())
+        if left is None:
+            return None
+        p1 = parse_path(left)
+        if p1 is None:
+            return None
+        cc = _parse_count_cmp(disj[1].strip())
+        if cc is None:
+            return None
+        p2, op, n = cc
+        return _Compiled("not_or_count", p1, q=p2, op=op, n=n)
+    if len(disj) == 1:
+        cc = _parse_count_cmp(s)
+        if cc is None:
+            return None
+        p, op, n = cc
+        return _Compiled("count", p, op=op, n=n)
+    return None
+
+
+def _exists_term(t):
+    """Parse ONE existence term — ``exists(P)`` or a bare parenthesized location
+    path ``(P)`` — into its restricted ``_Path``, or None."""
+    t = t.strip()
+    if t.startswith("exists(") and t.endswith(")"):
+        inner, tail = _match_paren(t, len("exists"))
+        if inner is None or tail != "":
+            return None
+        return parse_path(inner.strip())
+    if t.startswith("(") and t.endswith(")"):
+        inner, tail = _match_paren(t, 0)
+        if inner is None or tail != "":
+            return None
+        return parse_path(inner.strip())
+    return None
+
+
+def compile_existence_test(test):
+    """Compile an ``existence`` @test into a :class:`_Compiled` of kind
+    ``exists_all``, or None. Accepted: a single existence term or an ``and``
+    conjunction of them, where each term is ``exists(P)`` or ``(P)`` over a
+    restricted location path. A ``normalize-space(...) != ''`` or a compound with
+    ``or`` / comparisons falls to known-open."""
+    s = (test or "").strip()
+    if not s:
+        return None
+    terms = []
+    for part in _split_top(s, " and "):
+        p = _exists_term(part.strip())
+        if p is None:
+            return None
+        terms.append(p)
+    if not terms:
+        return None
+    return _Compiled("exists_all", terms=terms)
+
+
+def compile_class_test(shape, test):
+    """Dispatch @test compilation by the catalog's mechanical shape class. Only
+    the shapes with a closed, provable grammar compile; everything else returns
+    None (=> known-open). ``datatype-regex`` is deliberately never implemented
+    here — the single UBL-DT lexical restriction (UBL-DT-01) is a
+    function-context decimal-place check outside any closed element grammar, so
+    it is left machine-listed as known-open rather than approximated."""
+    if shape == "absence-restriction":
+        return compile_test(test)
+    if shape == "cardinality-count":
+        return compile_count_test(test)
+    if shape == "existence":
+        return compile_existence_test(test)
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Restricted rule-CONTEXT matching (an XSLT-match-pattern subset)
+# --------------------------------------------------------------------------- #
+class _CtxBranch:
+    """One ``|``-branch of a rule context: a chain of element QNames plus a flag
+    for whether the branch is rooted at the document node (leading single
+    ``/``)."""
+
+    __slots__ = ("rooted", "tags")
+
+    def __init__(self, rooted, tags):
+        self.rooted = rooted     # True for '/ubl:Invoice'-style absolute steps
+        self.tags = tags         # Clark tags, outermost..self (document order)
+
+
+class _Context:
+    __slots__ = ("branches",)
+
+    def __init__(self, branches):
+        self.branches = branches
+
+    def match(self, root, parents):
+        """Every element matching ANY branch of this context, in document order.
+
+        Restricted to the closed pattern set the evaluator can prove equivalent
+        to XSLT match semantics for the actual UBL-syntax rules: an element
+        matches ``a/b/c`` iff its tag is ``c`` and its parent chain is ``b`` then
+        ``a`` (a rooted branch additionally requires the outermost step to BE the
+        document root). All supported contexts target pairwise-distinct element
+        types, so no 'first matching rule wins' claiming can occur between
+        implemented asserts (verified by the differential leg)."""
+        out = []
+        for el in root.iter():
+            for br in self.branches:
+                if _branch_matches(el, br, parents):
+                    out.append(el)
+                    break
+        return out
+
+
+def _branch_matches(el, br, parents):
+    tags = br.tags
+    cur = el
+    for i in range(len(tags) - 1, -1, -1):
+        if cur is None or cur.tag != tags[i]:
+            return False
+        if i > 0:
+            cur = parents.get(id(cur))
+    if br.rooted:
+        # The outermost step must itself be the document root (no parent).
+        return parents.get(id(cur)) is None
+    return True
+
+
+def compile_context(ctx):
+    """Compile a rule ``@context`` into a :class:`_Context`, or None if it uses a
+    form outside the closed pattern grammar (a predicate ``[...]``, a function
+    ``ends-with(...)``, an interior ``//``, an ``@attr`` step, ...). Such
+    contexts leave their asserts known-open by construction."""
+    s = (ctx or "").strip()
+    if not s:
+        return None
+    branches = []
+    for raw in _split_top(s, "|"):
+        b = _parse_ctx_branch(raw.strip())
+        if b is None:
+            return None
+        branches.append(b)
+    return _Context(branches) if branches else None
+
+
+def _parse_ctx_branch(s):
+    rooted = False
+    if s.startswith("//"):
+        rest = s[2:]
+    elif s.startswith("/"):
+        rooted = True
+        rest = s[1:]
+    else:
+        rest = s
+    if not rest or "//" in rest:
+        return None
+    tags = []
+    for step in _split_top(rest, "/"):
+        clark = _resolve_qname(step.strip())   # rejects predicates/functions/@attr
+        if clark is None:
+            return None
+        tags.append(clark)
+    return _CtxBranch(rooted, tags) if tags else None
+
+
+# --------------------------------------------------------------------------- #
 # Catalog loading + implemented / known-open partition (LIVE from the catalog).
 # --------------------------------------------------------------------------- #
 def load_catalog(path=None):
@@ -359,15 +647,52 @@ def absence_restriction_entries(catalog=None):
             and e.get("shape") == "absence-restriction"]
 
 
-class _Entry:
-    __slots__ = ("id", "flag", "test", "context", "compiled")
+#: The UBL syntax-binding shape classes this restricted evaluator partitions,
+#: beyond the dominant ``absence-restriction`` class.
+NEW_CLASSES = ("cardinality-count", "existence", "datatype-regex")
 
-    def __init__(self, rid, flag, test, context, compiled):
+#: Implemented cardinality-count ids whose FIRING direction is NOT differentially
+#: observable against the official CEN artifact. The only way to violate each cap
+#: is to duplicate a leaf (seller/customer ``PartyLegalEntity/RegistrationName``,
+#: ``PaymentMeans/PaymentMeansCode``, ``TaxRepresentativeParty`` ``PartyName/Name``)
+#: that OTHER official rules pass to XSLT ``fn:normalize-space()`` — which raises a
+#: type error on a >1-item sequence and aborts the entire transform, so the
+#: official validator emits NOTHING for such a document (the differential would
+#: SKIP, not grade, it). These ids stay IMPLEMENTED (grammar-driven) and their
+#: CLEARING direction is proven at 0 divergence over the full corpus; only the
+#: both-fire datapoint is unobtainable. The evaluator's firing on them is still
+#: exercised in-memory by ``test_syntax_binding.py`` — nothing is faked.
+FIRING_UNOBSERVABLE = frozenset((
+    "UBL-SR-09", "UBL-SR-15", "UBL-SR-22", "UBL-SR-27",
+))
+
+#: Every UBL shape class the evaluator accounts for (partition covers each).
+ALL_CLASSES = ("absence-restriction",) + NEW_CLASSES
+
+
+class _Entry:
+    __slots__ = ("id", "flag", "test", "context", "compiled", "ctx", "shape")
+
+    def __init__(self, rid, flag, test, context, compiled, ctx, shape):
         self.id = rid
         self.flag = flag
         self.test = test
         self.context = context
-        self.compiled = compiled
+        self.compiled = compiled    # compiled @test (_Compiled)
+        self.ctx = ctx              # compiled rule @context (_Context)
+        self.shape = shape
+
+
+def class_entries(shape, catalog=None):
+    """The UBL catalog entries of one shape class, in catalog document order."""
+    if shape == "absence-restriction":
+        return absence_restriction_entries(catalog)
+    if catalog is None:
+        catalog = load_catalog()
+    if not catalog:
+        return []
+    return [e for e in catalog.get("entries", [])
+            if e.get("binding") == "ubl" and e.get("shape") == shape]
 
 
 def _partition(catalog=None):
@@ -378,6 +703,7 @@ def _partition(catalog=None):
     Purely a function of the catalog + the grammar — no hardcoded id list.
     """
     implemented, known_open = [], []
+    root_ctx = compile_context(SUPPORTED_CONTEXT)
     for e in absence_restriction_entries(catalog):
         rid = e.get("id")
         compiled = None
@@ -385,47 +711,106 @@ def _partition(catalog=None):
             compiled = compile_test(e.get("test"))
         if compiled is not None:
             implemented.append(_Entry(rid, e.get("flag") or "fatal",
-                                      e.get("test"), e.get("context"), compiled))
+                                      e.get("test"), e.get("context"),
+                                      compiled, root_ctx, "absence-restriction"))
         else:
             known_open.append(rid)
     return implemented, known_open
 
 
-_CACHE = {"implemented": None, "known_open": None}
+def _partition_class(shape, catalog=None):
+    """Split one NEW shape class (cardinality-count / existence / datatype-regex)
+    into (implemented, known_open).
+
+    An entry is IMPLEMENTED iff BOTH its rule @context compiles under the closed
+    context-pattern grammar AND its @test compiles under that class's closed test
+    grammar. Anything outside either grammar is machine-listed as known-open —
+    never guessed, never dropped. Purely a function of the catalog + the two
+    grammars; no hardcoded id list.
+    """
+    implemented, known_open = [], []
+    for e in class_entries(shape, catalog):
+        rid = e.get("id")
+        tc = compile_class_test(shape, e.get("test"))
+        cc = compile_context(e.get("context")) if tc is not None else None
+        if tc is not None and cc is not None:
+            implemented.append(_Entry(rid, e.get("flag") or "fatal",
+                                      e.get("test"), e.get("context"),
+                                      tc, cc, shape))
+        else:
+            known_open.append(rid)
+    return implemented, known_open
+
+
+_CACHE = {"ready": False, "abs_impl": None, "abs_ko": None,
+          "class_impl": None, "class_ko": None, "all_impl": None}
 
 
 def _ensure_cache():
-    if _CACHE["implemented"] is None:
-        impl, ko = _partition()
-        _CACHE["implemented"] = impl
-        _CACHE["known_open"] = ko
-    return _CACHE["implemented"], _CACHE["known_open"]
+    if not _CACHE["ready"]:
+        catalog = load_catalog()
+        abs_impl, abs_ko = _partition(catalog)
+        class_impl, class_ko = {}, {}
+        for shape in NEW_CLASSES:
+            i, k = _partition_class(shape, catalog)
+            class_impl[shape] = i
+            class_ko[shape] = k
+        all_impl = list(abs_impl)
+        for shape in NEW_CLASSES:
+            all_impl.extend(class_impl[shape])
+        _CACHE.update(ready=True, abs_impl=abs_impl, abs_ko=abs_ko,
+                      class_impl=class_impl, class_ko=class_ko,
+                      all_impl=all_impl)
+    return _CACHE
 
 
 def reset_cache():
     """Drop the cached partition (used by tests that reload the catalog)."""
-    _CACHE["implemented"] = None
-    _CACHE["known_open"] = None
+    _CACHE.update(ready=False, abs_impl=None, abs_ko=None,
+                  class_impl=None, class_ko=None, all_impl=None)
 
 
 def implemented_ids():
-    """Sorted list of the differential-proven, implemented absence-restriction
-    ids — live-computed from the catalog + the restricted grammar."""
-    impl, _ = _ensure_cache()
-    return sorted(e.id for e in impl)
+    """Sorted list of EVERY differential-proven, implemented UBL syntax-binding
+    id across all shape classes (absence-restriction + cardinality-count +
+    existence) — live-computed from the catalog + the restricted grammars. This
+    is exactly the id set ``differential.py``'s ``sb`` leg grades."""
+    c = _ensure_cache()
+    return sorted(e.id for e in c["all_impl"])
 
 
 def known_open_ids():
-    """Sorted list of the absence-restriction ids left UNIMPLEMENTED (machine-
-    listed as known-open) — the exact remainder of the 699-strong class."""
-    _, ko = _ensure_cache()
-    return sorted(ko)
+    """Sorted list of the ``absence-restriction`` ids left UNIMPLEMENTED
+    (machine-listed as known-open) — the exact remainder of the 699-strong
+    dominant class. (Per-class remainders: :func:`class_known_open_ids`.)"""
+    c = _ensure_cache()
+    return sorted(c["abs_ko"])
+
+
+def absence_implemented_ids():
+    """Sorted implemented ids of the ``absence-restriction`` class only."""
+    c = _ensure_cache()
+    return sorted(e.id for e in c["abs_impl"])
+
+
+def class_implemented_ids(shape):
+    """Sorted implemented ids of ONE new shape class (empty for an unknown or
+    fully-known-open class, e.g. ``datatype-regex``)."""
+    c = _ensure_cache()
+    return sorted(e.id for e in c["class_impl"].get(shape, []))
+
+
+def class_known_open_ids(shape):
+    """Sorted known-open (machine-listed) ids of ONE new shape class."""
+    c = _ensure_cache()
+    return sorted(c["class_ko"].get(shape, []))
 
 
 def implemented_entries():
-    """The compiled implemented entries (for the report/differential pipeline)."""
-    impl, _ = _ensure_cache()
-    return impl
+    """Every compiled implemented entry across all classes (absence order first,
+    then the new classes in NEW_CLASSES order) — feeds report + differential."""
+    c = _ensure_cache()
+    return c["all_impl"]
 
 
 # --------------------------------------------------------------------------- #
@@ -473,34 +858,48 @@ def _localname(tag):
 
 
 def _message(entry, path):
-    kind = ("forbidden UBL element/attribute is present"
-            if entry.compiled.kind == "not"
-            else "restricted UBL element is present with a non-conforming value")
-    return ("Syntax-binding restriction %s (CEN EN 16931 UBL, flag=%s): %s at "
-            "%s — the EN 16931 core model has no conformant slot for it "
-            "(@test=%s)." % (entry.id, entry.flag, kind, path, entry.test))
+    k = entry.compiled.kind
+    if k in ("not", "not_or_eq"):
+        # absence-restriction wording — kept byte-identical to the T-VHSBL.2 form.
+        kind = ("forbidden UBL element/attribute is present"
+                if k == "not"
+                else "restricted UBL element is present with a non-conforming value")
+        return ("Syntax-binding restriction %s (CEN EN 16931 UBL, flag=%s): %s at "
+                "%s — the EN 16931 core model has no conformant slot for it "
+                "(@test=%s)." % (entry.id, entry.flag, kind, path, entry.test))
+    if k in ("count", "not_or_count"):
+        detail = "UBL element repetition exceeds the EN 16931 syntax-binding cardinality cap"
+    elif k == "exists_all":
+        detail = "a UBL element/attribute the EN 16931 syntax binding requires is absent"
+    else:
+        detail = "syntax-binding restriction violated"
+    return ("Syntax-binding restriction %s (CEN EN 16931 UBL, flag=%s): %s at %s "
+            "(@test=%s)." % (entry.id, entry.flag, detail, path, entry.test))
 
 
 def evaluate(root):
-    """Evaluate every IMPLEMENTED absence-restriction assert over a parsed UBL
-    document ``root`` and return the list of syntax-binding findings.
+    """Evaluate every IMPLEMENTED syntax-binding assert (absence-restriction +
+    cardinality-count + existence) over a parsed UBL document ``root`` and return
+    the list of syntax-binding findings.
 
     Each finding is a dict carrying ``id``, ``category`` (``"syntax-binding"``),
     ``severity`` (mirroring the official @flag), ``flag``, ``message`` and
-    ``element`` (the offending node's location path). Non-UBL roots (or a missing
-    catalog) yield an empty list.
+    ``element`` (the offending node's location path). An assert is evaluated on
+    EVERY node its (restricted) rule context matches, so a cardinality cap fires
+    once per violating context node — exactly as the official Schematron fires
+    the assert per matched context. Non-UBL roots (or a missing catalog) yield an
+    empty list.
     """
-    ctx_nodes = _context_nodes(root)
-    if not ctx_nodes:
+    if root is None or root.tag not in _ROOT_TAGS:
         return []
-    implemented, _ = _ensure_cache()
+    implemented = _ensure_cache()["all_impl"]
     if not implemented:
         return []
     parents = {id(child): parent
                for parent in root.iter() for child in parent}
     findings = []
     for entry in implemented:
-        for ctx in ctx_nodes:
+        for ctx in entry.ctx.match(root, parents):
             fires, node = entry.compiled.evaluate(ctx, root)
             if fires:
                 path = _node_path(node if node is not None else ctx, parents)
@@ -512,7 +911,6 @@ def evaluate(root):
                     "message": _message(entry, path),
                     "element": path,
                 })
-                break  # one finding per assert (the context is a single root)
     return findings
 
 

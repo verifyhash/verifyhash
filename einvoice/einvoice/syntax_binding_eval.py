@@ -390,7 +390,10 @@ def compile_test(test, ns=NSMAP):
         p = parse_path(inner, ns)
         return _Compiled("not", p) if p is not None else None
 
-    # Form 2: not(P) or Q = 'literal'  (exactly two top-level disjuncts).
+    # Form 2: not(P) or Q = 'literal'  (exactly two top-level disjuncts). The
+    # right disjunct may be wrapped in one pair of parens — the official CEN CII
+    # artifact writes it both ways (``... or (ram:TypeCode = 'VAT')`` for
+    # CII-DT-037 vs the bare ``... = '2.1'`` of UBL-CR-002).
     disjuncts = _split_top(s, " or ")
     if len(disjuncts) == 2:
         left_inner = _strip_outer_not(disjuncts[0].strip())
@@ -399,7 +402,7 @@ def compile_test(test, ns=NSMAP):
         p = parse_path(left_inner, ns)
         if p is None:
             return None
-        m = _LITERAL_CMP_RE.match(disjuncts[1].strip())
+        m = _LITERAL_CMP_RE.match(_strip_outer_parens(disjuncts[1].strip()))
         if not m:
             return None
         q = parse_path(m.group("path").strip(), ns)
@@ -566,6 +569,56 @@ class _CtxBranch:
         self.tags = tags         # Clark tags, outermost..self (document order)
 
 
+class _SuffixBranch:
+    """A predicated element-suffix context branch of the exact bounded form
+    ``//ram:*[ends-with(name(), 'SUFFIX')]`` (or the any-namespace
+    ``//*[ends-with(name(), 'SUFFIX')]``), optionally carrying the two guards the
+    official CEN CII/UBL Schematron uses:
+
+      * ``and not(self::ram:QName)``          — exclude one exact element type;
+      * ``and not(ends-with(name(), 'OTHER'))`` — exclude a second name-suffix.
+
+    An element matches iff (a) if a namespace-wildcard prefix is given, the
+    element is in that namespace; (b) its local name ends with SUFFIX; (c) it is
+    not one of the excluded ``self::`` QNames; (d) its local name ends with none
+    of the excluded suffixes.
+
+    ``ends-with(name(), 'S')`` compares the QUALIFIED name (``prefix:local``); but
+    since every SUFFIX here is a plain NCName fragment (no colon), a qualified
+    name can only end with it INSIDE its local part — so the local-name suffix
+    test used here is provably equivalent to the official ``name()`` test. No
+    general XPath: only this one predicate shape + the two bounded guards
+    compile; any other predicate falls to :func:`compile_context` -> None ->
+    known-open."""
+
+    __slots__ = ("ns_uri", "suffix", "exclude_tags", "exclude_suffixes")
+
+    def __init__(self, ns_uri, suffix, exclude_tags, exclude_suffixes):
+        self.ns_uri = ns_uri                    # required element ns URI, or None (//*)
+        self.suffix = suffix                    # required local-name suffix
+        self.exclude_tags = exclude_tags        # frozenset of Clark tags (self:: guards)
+        self.exclude_suffixes = exclude_suffixes  # tuple of excluded local-name suffixes
+
+    def matches(self, el):
+        tag = el.tag
+        if not isinstance(tag, str):
+            return False
+        if "}" in tag:
+            uri, local = tag[1:].split("}", 1)
+        else:
+            uri, local = "", tag
+        if self.ns_uri is not None and uri != self.ns_uri:
+            return False
+        if not local.endswith(self.suffix):
+            return False
+        if tag in self.exclude_tags:
+            return False
+        for s in self.exclude_suffixes:
+            if local.endswith(s):
+                return False
+        return True
+
+
 class _Context:
     __slots__ = ("branches",)
 
@@ -592,6 +645,8 @@ class _Context:
 
 
 def _branch_matches(el, br, parents):
+    if isinstance(br, _SuffixBranch):
+        return br.matches(el)
     tags = br.tags
     cur = el
     for i in range(len(tags) - 1, -1, -1):
@@ -615,11 +670,82 @@ def compile_context(ctx, ns=NSMAP):
         return None
     branches = []
     for raw in _split_top(s, "|"):
-        b = _parse_ctx_branch(raw.strip(), ns)
+        raw = raw.strip()
+        b = _parse_ctx_branch(raw, ns)
+        if b is None:
+            # Fall back to the bounded element-suffix predicate form
+            # //ram:*[ends-with(name(), 'X') (and <guard>)*].
+            b = _parse_suffix_ctx_branch(raw, ns)
         if b is None:
             return None
         branches.append(b)
     return _Context(branches) if branches else None
+
+
+_ENDS_WITH_RE = re.compile(r"^ends-with\(\s*name\(\)\s*,\s*'([^']*)'\s*\)$")
+
+
+def _strip_guard_not(g):
+    """``not(...)`` / ``not (...)`` (the official artifact writes both spacings) ->
+    inner text, or None if it is not a single whole-expression negation."""
+    g = g.strip()
+    if not g.startswith("not"):
+        return None
+    r = g[3:].lstrip()
+    if not r.startswith("("):
+        return None
+    inner, tail = _match_paren(r, 0)
+    if inner is None or tail.strip() != "":
+        return None
+    return inner.strip()
+
+
+def _parse_suffix_ctx_branch(s, ns=NSMAP):
+    """Parse ``//ram:*[ends-with(name(), 'X') (and <guard>)*]`` (or ``//*[...]``)
+    into a :class:`_SuffixBranch`, or None if it uses any form outside this exact
+    bounded grammar. Each ``<guard>`` is ``not(self::prefix:QName)`` or
+    ``not(ends-with(name(), 'Y'))`` — nothing else (an ``ancestor::`` guard, an
+    ``or`` in the predicate, a positional predicate, ... all fall to None ->
+    known-open)."""
+    s = s.strip()
+    if not s.startswith("//"):
+        return None
+    rest = s[2:]
+    lb = rest.find("[")
+    if lb < 0 or not rest.endswith("]"):
+        return None
+    head = rest[:lb].strip()
+    pred = rest[lb + 1:-1].strip()
+    if head == "*":
+        ns_uri = None                       # //* — any namespace
+    elif head.endswith(":*"):
+        ns_uri = ns.get(head[:-2])          # //prefix:* — that namespace only
+        if ns_uri is None:
+            return None
+    else:
+        return None
+    conj = _split_top(pred, " and ")
+    m = _ENDS_WITH_RE.match(conj[0].strip())
+    if not m or not m.group(1):
+        return None
+    suffix = m.group(1)
+    exclude_tags, exclude_suffixes = [], []
+    for guard in conj[1:]:
+        inner = _strip_guard_not(guard)
+        if inner is None:
+            return None
+        if inner.startswith("self::"):
+            tag = _resolve_qname(inner[len("self::"):].strip(), ns)
+            if tag is None:
+                return None
+            exclude_tags.append(tag)
+        else:
+            gm = _ENDS_WITH_RE.match(inner)
+            if not gm or not gm.group(1):
+                return None
+            exclude_suffixes.append(gm.group(1))
+    return _SuffixBranch(ns_uri, suffix, frozenset(exclude_tags),
+                         tuple(exclude_suffixes))
 
 
 def _parse_ctx_branch(s, ns=NSMAP):
@@ -845,7 +971,7 @@ def _universal_qname(ctx):
     if ctx is None or len(ctx.branches) != 1:
         return None
     br = ctx.branches[0]
-    if br.rooted or len(br.tags) != 1:
+    if isinstance(br, _SuffixBranch) or br.rooted or len(br.tags) != 1:
         return None
     return br.tags[0]
 
@@ -857,7 +983,7 @@ def _context_leaf_tags(ctx):
         return None
     leaves = []
     for br in ctx.branches:
-        if not br.tags:
+        if isinstance(br, _SuffixBranch) or not br.tags:
             return None
         leaves.append(br.tags[-1])
     return leaves
@@ -894,7 +1020,78 @@ def cii_claim_shadowed_ids(artifact_path=None):
     return shadowed
 
 
-def _partition_cii(shape, catalog=None, shadowed=None):
+# --------------------------------------------------------------------------- #
+# Element-suffix rule claim-safety (T-VHSBL.6). A predicated element-suffix rule
+# ``//ram:*[ends-with(name(), 'X')]`` matches EVERY element whose name ends with
+# X, but XSLT apply-templates gives each node to the FIRST rule in the pattern
+# that matches it. So if an EARLIER rule in the same pattern already claims some
+# of those nodes (its context selects an element whose local name also ends with
+# X), the suffix rule fires on FEWER nodes than a naive independent evaluation
+# would — a node-level (not whole-rule) claim. Evaluating such a suffix rule
+# independently would over-fire on the stolen nodes, so we conservatively leave
+# its asserts machine-listed known-open. The CEN CII artifact's ID family
+# (``//ram:*[ends-with(name(), 'ID')]``, CII-DT-101..104) is exactly this case:
+# the earlier specific ID-union rule (CII-DT-001/002/003) claims the four core
+# ``ram:ID`` / ``ram:LineID`` / ``ram:SellerAssignedID`` nodes first. The check is
+# a SOUND sufficient condition read live from the artifact (both directions: a
+# concrete rule whose leaf name ends with an EARLIER suffix is likewise stolen);
+# any deeper claim shape a future bump introduces would otherwise surface as a
+# differential divergence and reopen the worklist.
+# --------------------------------------------------------------------------- #
+def _suffix_branch_of(ctx):
+    """The single :class:`_SuffixBranch` of a compiled context, or None if the
+    context is not exactly one bare element-suffix branch."""
+    if ctx is None or len(ctx.branches) != 1:
+        return None
+    br = ctx.branches[0]
+    return br if isinstance(br, _SuffixBranch) else None
+
+
+def cii_suffix_claim_unsafe_ids(artifact_path=None):
+    """CII assert ids of element-suffix rules that a per-node Schematron claim
+    makes unsafe to evaluate independently (see the module note above). Read live
+    from the vendored preprocessed CII artifact; empty if it is absent."""
+    path = artifact_path or CII_ARTIFACT_PATH
+    if not os.path.exists(path):
+        return set()
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        return set()
+    unsafe = set()
+    for pattern in root.iter(_SCH_NS + "pattern"):
+        earlier_leaves = []       # local names of concrete rule leaves seen so far
+        earlier_suffixes = []     # suffixes of earlier element-suffix rules
+        for rule in pattern.findall(_SCH_NS + "rule"):
+            ctx = compile_context(rule.get("context"), CII_NSMAP)
+            sb = _suffix_branch_of(ctx)
+            if sb is not None:
+                suf = sb.suffix
+                clash = (any(lv.endswith(suf) for lv in earlier_leaves)
+                         or any(s.endswith(suf) or suf.endswith(s)
+                                for s in earlier_suffixes))
+                if clash:
+                    _add_rule_assert_ids(rule, unsafe)
+                earlier_suffixes.append(suf)
+            else:
+                leaves = _context_leaf_tags(ctx)
+                if leaves:
+                    locals_ = [_localname(t) for t in leaves]
+                    if any(lv.endswith(s) for lv in locals_
+                           for s in earlier_suffixes):
+                        _add_rule_assert_ids(rule, unsafe)
+                    earlier_leaves.extend(locals_)
+    return unsafe
+
+
+def _add_rule_assert_ids(rule, out):
+    for a in rule.findall(_SCH_NS + "assert"):
+        aid = a.get("id")
+        if aid:
+            out.add(aid)
+
+
+def _partition_cii(shape, catalog=None, shadowed=None, suffix_unsafe=None):
     """Split one CII shape class into (implemented, known_open) using the closed
     context + test grammars resolved through CII_NSMAP. Purely a function of the
     catalog + the grammars + the artifact's rule-claiming order — no hardcoded id
@@ -903,12 +1100,15 @@ def _partition_cii(shape, catalog=None, shadowed=None):
     guessed."""
     if shadowed is None:
         shadowed = cii_claim_shadowed_ids()
+    if suffix_unsafe is None:
+        suffix_unsafe = cii_suffix_claim_unsafe_ids()
     implemented, known_open = [], []
     for e in cii_class_entries(shape, catalog):
         rid = e.get("id")
         tc = compile_class_test(shape, e.get("test"), CII_NSMAP)
         cc = compile_context(e.get("context"), CII_NSMAP) if tc is not None else None
-        if tc is not None and cc is not None and rid not in shadowed:
+        if (tc is not None and cc is not None and rid not in shadowed
+                and rid not in suffix_unsafe):
             implemented.append(_Entry(rid, e.get("flag") or "fatal",
                                       e.get("test"), e.get("context"),
                                       tc, cc, shape, binding="cii"))
@@ -936,8 +1136,10 @@ def _ensure_cache():
             all_impl.extend(class_impl[shape])
         cii_impl, cii_ko = {}, {}
         cii_shadowed = cii_claim_shadowed_ids()
+        cii_suffix_unsafe = cii_suffix_claim_unsafe_ids()
         for shape in CII_SHAPE_CLASSES:
-            i, k = _partition_cii(shape, catalog, cii_shadowed)
+            i, k = _partition_cii(shape, catalog, cii_shadowed,
+                                  cii_suffix_unsafe)
             cii_impl[shape] = i
             cii_ko[shape] = k
         cii_all_impl = []

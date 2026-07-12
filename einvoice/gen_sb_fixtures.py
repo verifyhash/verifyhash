@@ -86,8 +86,14 @@ def _add_path_instance(parent, path):
 
 def _make_context(root, branch):
     """Materialize a node matching one restricted context branch. A rooted branch
-    is the document root itself; otherwise build the element chain under root and
-    return the deepest (self) element."""
+    is the document root itself; an element-suffix branch (T-VHSBL.6) becomes a
+    fresh representative element whose local name IS the required suffix (so the
+    official //X[ends-with(name(), 'suffix')] rule claims it, unmatched by any
+    earlier rule); otherwise build the element chain under root and return the
+    deepest (self) element."""
+    if isinstance(branch, sbe._SuffixBranch):
+        uri = branch.ns_uri or sbe.NSMAP["cbc"]
+        return ET.SubElement(root, "{%s}%s" % (uri, branch.suffix))
     if branch.rooted:
         return root
     cur = root
@@ -166,13 +172,27 @@ def _cii_fresh_context(root, branch):
     return cur
 
 
+def _cii_suffix_context_node(root, branch):
+    """A FRESH representative context element for an element-suffix branch
+    (T-VHSBL.6): local name == the required suffix, in the branch namespace (ram
+    for a ``//ram:*`` head, ram by default for ``//*``), appended under the
+    document root. Its name ends with the suffix so the official
+    ``//X[ends-with(name(), 'suffix')]`` rule claims it, while no earlier specific
+    rule matches a stray element of that name — so exactly the target assert fires
+    once the forbidden path is added."""
+    uri = branch.ns_uri or sbe.CII_NSMAP["ram"]
+    return ET.SubElement(root, "{%s}%s" % (uri, branch.suffix))
+
+
 def _mutate_cii(entry):
     """Build a targeted violating CII fixture for one implemented CII entry —
     a SINGLE mechanical mutation of the clean CII base derived from the compiled
     catalog entry (its rule @context + @test), never hand-tuned per id.
 
-      * absence-restriction (kind 'not'): add ONE fresh instance of the forbidden
-        path P under a context node — the base clears every id, so P is absent.
+      * absence-restriction (kind 'not' / 'not_or_eq'): add ONE fresh instance of
+        the forbidden path P under a context node — the base clears every id, so
+        P is absent; on a fresh element-suffix context the equality guard Q is
+        likewise absent/empty (!= the literal), so 'not_or_eq' fires too.
       * cardinality-count: inject n+1 fresh copies of the counted path into a
         context node so the count exceeds (or, for '= n', misses) the cap.
       * existence: append a FRESH empty context node so every required term is
@@ -180,17 +200,24 @@ def _mutate_cii(entry):
     tree = ET.parse(CII_BASE)
     root = tree.getroot()
     comp = entry.compiled
+    first = entry.ctx.branches[0]
+    suffix_ctx = isinstance(first, sbe._SuffixBranch)
 
     if comp.kind == "exists_all":
-        _cii_fresh_context(root, entry.ctx.branches[0])
+        if suffix_ctx:
+            _cii_suffix_context_node(root, first)
+        else:
+            _cii_fresh_context(root, first)
         return tree
 
-    parents = _parents(root)
-    nodes = entry.ctx.match(root, parents)
-    target = nodes[0] if nodes else _cii_materialize_context(
-        root, entry.ctx.branches[0])
+    if suffix_ctx:
+        target = _cii_suffix_context_node(root, first)
+    else:
+        parents = _parents(root)
+        nodes = entry.ctx.match(root, parents)
+        target = nodes[0] if nodes else _cii_materialize_context(root, first)
 
-    if comp.kind == "not":
+    if comp.kind in ("not", "not_or_eq"):
         _add_path_instance(target, comp.p)
         return tree
 

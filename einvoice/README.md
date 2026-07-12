@@ -383,6 +383,34 @@ and offending element. `--json` emits the full machine-readable result:
 A `valid: true` result means "no implemented fatal rule fired" — given §2, it
 does **not** yet mean "legally conformant XRechnung."
 
+### Syntax-binding findings (`syntax_bindings`)
+
+Alongside the EN 16931 / XRechnung `BR-*` business rules, the two vendored CEN
+preprocessed Schematron artifacts also carry **syntax-binding** asserts
+(`UBL-CR-*`/`UBL-DT-*`/`UBL-SR-*` for UBL, `CII-DT-*`/`CII-SR-*` for CII) — pure
+syntax-layer restrictions such as "this element MUST NOT appear", "at most one of
+X", or a decimal-place cap, *not* semantic business rules. A restricted,
+data-driven evaluator (`einvoice/syntax_binding_eval.py` — a closed XPath subset,
+not a general processor) mirrors **735 of 756 UBL + 506 of 583 CII** of them, each
+differential-proven equivalent to the official CEN Schematron at **0 divergences**
+over the corpus; the remaining **98 (21 UBL + 77 CII)** are left machine-listed as
+`known-open` in [`COVERAGE.md`](COVERAGE.md) — never guessed, never silently
+dropped. These counts are **kept strictly separate** from the 286 business rules
+and are recomputed live by `test_syntax_binding.py`.
+
+`einvoice validate --json` surfaces the UBL findings under a distinct
+`syntax_bindings` array (each with `id`, `category` `"syntax-binding"`,
+`severity`, `flag`, `message`, `element`), plus `syntax_binding_fatal_count` and
+`syntax_binding_warning_count`. All implemented ids carry the official
+`flag=warning`, and this category is **advisory only**: a syntax-binding finding
+**never** changes `valid` and **never** changes the exit code — the `0`/`1`
+verdict above stays driven solely by fatal `BR-*` violations. The human summary
+adds one line, `Syntax-binding warnings: N`. The CLI validates UBL `Invoice`
+documents (a CII document hits the `S-ROOT` structural rule under either profile),
+so it emits the UBL ids; the CII binding's syntax-binding layer is exercised
+through the report/library path. Full field docs:
+[`REPORT-SCHEMA.md`](REPORT-SCHEMA.md).
+
 ---
 
 ## 4. CI conformance gate

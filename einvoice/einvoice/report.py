@@ -329,6 +329,36 @@ def _report_from_invoice_bytes(xml_bytes, source, profile,
         list(result.violations) + extra, source, profile)
 
 
+def syntax_binding_section(root):
+    """The distinct **syntax-binding** category block for a parsed document
+    ``root`` — a small, reusable projection so both this report and the
+    ``einvoice validate`` CLI surface the SAME findings, from the SAME evaluator
+    (:func:`einvoice.syntax_binding_eval.evaluate`), with byte-identical field
+    names. No rule/evaluator logic lives here: it only runs the evaluator once
+    and counts the results by their official ``@flag``-derived severity.
+
+    Returns a dict with exactly three keys:
+
+        ``syntax_bindings``               list of finding dicts (each carrying
+                                          ``id``, ``category``, ``severity``,
+                                          ``flag``, ``message``, ``element``);
+        ``syntax_binding_fatal_count``    number of ``fatal`` findings;
+        ``syntax_binding_warning_count``  number of ``warning`` findings.
+
+    A non-UBL root (or a missing catalog) yields an empty list and zero counts.
+    Whether a ``fatal`` finding blocks validity is decided by the CALLER — the
+    packaged report lets it flip ``valid``; the CLI deliberately does not (its
+    exit contract stays driven solely by fatal business-rule violations).
+    """
+    sb_findings = _sbe.evaluate(root)
+    sb_fatal = sum(1 for f in sb_findings if f["severity"] == "fatal")
+    return {
+        "syntax_bindings": sb_findings,
+        "syntax_binding_fatal_count": sb_fatal,
+        "syntax_binding_warning_count": len(sb_findings) - sb_fatal,
+    }
+
+
 def build_report(path, profile="xrechnung"):
     """Validate ``path`` and return a machine-readable conformance report dict.
 
@@ -400,22 +430,18 @@ def build_report(path, profile="xrechnung"):
     # (the BR-DE warning convention); a `fatal` finding blocks validity like any
     # fatal violation. Surfaced under a SEPARATE top-level key so the `violations`
     # array, its counts, and every existing consumer stay byte-identical.
-    sb_findings = _sbe.evaluate(root)
-    sb_fatal = sum(1 for f in sb_findings if f["severity"] == "fatal")
-    sb_warning = len(sb_findings) - sb_fatal
+    sb = syntax_binding_section(root)
     return {
         "report_version": REPORT_VERSION,
         "schema": REPORT_SCHEMA_ID,
         "source": path,
         "profile": profile,
-        "valid": result.ok and sb_fatal == 0,
+        "valid": result.ok and sb["syntax_binding_fatal_count"] == 0,
         "fatal_count": fatal_count,
         "warning_count": warning_count,
         "violation_count": len(records),
         "violations": records,
-        "syntax_bindings": sb_findings,
-        "syntax_binding_fatal_count": sb_fatal,
-        "syntax_binding_warning_count": sb_warning,
+        **sb,
     }
 
 

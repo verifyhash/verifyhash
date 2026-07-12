@@ -42,8 +42,9 @@ import os
 import sys
 
 from .validate import validate_file, PROFILES, _severity
-from .parser import NotWellFormed
+from .parser import NotWellFormed, parse_file
 from .receipt import build_receipt, canonical_json
+from .report import syntax_binding_section
 
 USAGE = ("usage: einvoice validate <invoice.xml> "
          "[--json] [--profile=en16931|xrechnung]\n"
@@ -126,8 +127,22 @@ def main(argv=None):
             sys.stderr.write("S-WF: input is not well-formed XML: %s\n" % exc)
         return EXIT_PARSE
 
+    # Surface the distinct 'syntax-binding' category (the UBL
+    # absence-restriction / cardinality / existence asserts of
+    # einvoice.syntax_binding_eval) via the SAME projection report.py uses —
+    # reused verbatim, no evaluator re-implementation. These findings are
+    # reported as WARNINGS and NEVER change `valid` or the process exit code:
+    # exit stays driven solely by fatal business-rule violations, byte-identical
+    # to today. validate_file already parsed this file cleanly above, so this
+    # re-parse through the identical hardened parser cannot raise NotWellFormed.
+    sb = syntax_binding_section(parse_file(path))
+
     if as_json:
-        sys.stdout.write(json.dumps(result.to_dict(source=path), indent=2) + "\n")
+        out = result.to_dict(source=path)
+        # Adds the `syntax_bindings` array + its two count fields to the existing
+        # result shape; the original keys and their values stay byte-identical.
+        out.update(sb)
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
     else:
         if result.ok:
             non_fatal = len(result.violations)
@@ -139,6 +154,11 @@ def main(argv=None):
             v = next(x for x in result.violations if _severity(x) == "fatal")
             sys.stdout.write("FAIL: %s\n  %s: %s\n  offending element: %s\n"
                              % (path, v.rule_id, v.message, v.element))
+        # Syntax-binding warnings are a separate, non-blocking category — print
+        # the count on its own line so the exit-driving FAIL/PASS verdict above
+        # stays unambiguous.
+        sys.stdout.write("Syntax-binding warnings: %d\n"
+                         % sb["syntax_binding_warning_count"])
 
     return EXIT_OK if result.ok else EXIT_FAIL
 

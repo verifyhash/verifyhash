@@ -50,7 +50,12 @@ relies on):
 
 The JSON form additionally exposes `valid`, `fatal_count`, `warning_count`,
 `violation_count`, and a `violations[]` list of `{rule, severity, message,
-field}` records. Full schema: [`../REPORT-SCHEMA.md`](../REPORT-SCHEMA.md).
+field}` records. It also carries the distinct **syntax-binding** category —
+a `syntax_bindings[]` list plus `syntax_binding_fatal_count` /
+`syntax_binding_warning_count` — the UBL/CII `UBL-CR-*`/`CII-*` syntax-layer
+asserts (see [`../COVERAGE.md`](../COVERAGE.md)). These are advisory warnings:
+they do **not** affect the exit code the gate relies on. Full schema:
+[`../REPORT-SCHEMA.md`](../REPORT-SCHEMA.md).
 
 ## Files
 

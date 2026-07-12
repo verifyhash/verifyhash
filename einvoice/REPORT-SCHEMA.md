@@ -54,6 +54,25 @@ Programmatic entry point: `einvoice.report.build_report(path, profile='xrechnung
 | `error`           | string      | Present **only** when the input is not well-formed XML: the code `not-well-formed`. `valid` is then `false` and `violations` is empty. |
 | `message`         | string      | Present **only** alongside `error`: the parser's human message. |
 
+### Syntax-binding fields on `einvoice validate --json`
+
+The same three additive fields — `syntax_bindings`, `syntax_binding_fatal_count`,
+`syntax_binding_warning_count`, with the identical per-finding shape (`id`,
+`category` = `"syntax-binding"`, `severity`, `flag`, `message`, `element`) — are
+also emitted by the plain **`einvoice validate --json`** CLI (see the repository
+README §3). They are produced by the SAME `einvoice.syntax_binding_eval`
+evaluator this report uses (via `einvoice.report.syntax_binding_section`), so a
+`--json` consumer can read the category from either surface with one parser.
+
+One deliberate difference from the packaged report above: on the `validate` CLI a
+syntax-binding finding is **always** treated as a non-blocking warning — it
+**never** flips `valid` and **never** changes the CLI's exit code, which stays
+driven solely by fatal `BR-*` business-rule violations (CLI exit contract:
+`0`/`1`/`2`/`3` per the README, unchanged by this category). The CLI validates
+UBL `Invoice` documents, so it surfaces the UBL syntax-binding ids
+(`UBL-CR-*`/`UBL-DT-*`/`UBL-SR-*`); the CII binding's findings surface through the
+report/library path.
+
 ## Violation record
 
 Each entry of `violations` has **exactly** these eight keys. The first four are

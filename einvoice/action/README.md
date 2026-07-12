@@ -46,6 +46,11 @@ already exposes:
 - For **`fail-on: warning`** the runner parses the JSON report the entrypoint
   emits (`--format json` → `warning_count`) to detect warning-severity findings
   — there is no `--warning` engine flag, and none was added.
+- The report's distinct **syntax-binding** category (`syntax_bindings[]` +
+  `syntax_binding_warning_count` — the `UBL-CR-*`/`CII-*` syntax-layer asserts)
+  is advisory only and is **not** counted by `fail-on`: it never affects the
+  exit code, so this Action's build verdict is unchanged by it. See
+  [`../REPORT-SCHEMA.md`](../REPORT-SCHEMA.md).
 
 Result: `fail-on: fatal` fails only on fatals (exit 1) or unparseable files
 (exit 3); `fail-on: warning` additionally fails (exit 1) when any warning is

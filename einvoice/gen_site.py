@@ -505,6 +505,18 @@ def render_landing():
       "verbatim artifact evidence (4 cii-artifact-defective, 26 "
       "binding-inapplicable). All differential legs run at <strong>0 "
       "divergences</strong> against the official Schematron.</p>")
+    w("<p>Beyond the business rules, the two CEN artifacts also carry "
+      "<em>syntax-binding</em> asserts (<code>UBL-CR-*</code>/<code>CII-*</code>) "
+      "— pure syntax-layer restrictions like &ldquo;this element must not "
+      "appear&rdquo; or &ldquo;at most one of X&rdquo;. A restricted data-driven "
+      "evaluator mirrors "
+      "<strong>735 of 756 UBL + 506 of 583 CII</strong> of these per binding, "
+      "each differential-proven against the official Schematron at "
+      "<strong>0 divergences</strong>; the remaining 98 (21 UBL + 77 CII) are "
+      "machine-listed as known-open in <code>COVERAGE.md</code>, never guessed. "
+      "They surface under a distinct <code>syntax_bindings</code> category in "
+      "the <code>--json</code> output as advisory warnings that never change the "
+      "exit code, kept strictly separate from the 286 business-rule count.</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Coverage matrix (COVERAGE.md)</a> — the authoritative '
       "per-rule inventory: every asserted rule, the syntax it is proven in, "

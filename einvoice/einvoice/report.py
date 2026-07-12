@@ -79,13 +79,14 @@ from xml.sax.saxutils import escape, quoteattr
 from xml.etree import ElementTree as ET
 
 from .validate import validate_file, validate_root, PROFILES, _severity
-from .parser import NotWellFormed
+from .parser import NotWellFormed, parse_file
 from ._xmlsec import _safe_fromstring
 from .remediation import load_catalog
 from . import pdf_container
 from . import parser_cii as _parser_cii
 from . import rules as _rules
 from . import rules_xrechnung as _rules_xr
+from . import syntax_binding_eval as _sbe
 
 #: Bump when the report shape changes in a way a consumer must notice.
 REPORT_VERSION = 1
@@ -368,7 +369,10 @@ def build_report(path, profile="xrechnung"):
             container_findings=inspection.findings)
 
     try:
-        result = validate_file(path, profile=profile)
+        # Parse ONCE (hardened) so the syntax-binding evaluator sees the SAME
+        # raw tree the business rules validate — the absence-restriction asserts
+        # target literal UBL nodes the normalized model deliberately drops.
+        root = parse_file(path)
     except NotWellFormed as exc:
         return {
             "report_version": REPORT_VERSION,
@@ -384,20 +388,34 @@ def build_report(path, profile="xrechnung"):
             "violations": [],
         }
 
+    result = validate_root(root, profile=profile)
     catalog = _remediation_catalog()  # loaded once, not per violation record
     records = [_record(v, catalog) for v in result.violations]
     fatal_count = sum(1 for r in records if r["severity"] == "fatal")
     warning_count = sum(1 for r in records if r["severity"] == "warning")
+
+    # Distinct 'syntax-binding' category — the data-driven UBL absence-restriction
+    # findings (einvoice.syntax_binding_eval). Each mirrors the official CEN
+    # @flag: `warning` findings are reported but do NOT affect validity/exit code
+    # (the BR-DE warning convention); a `fatal` finding blocks validity like any
+    # fatal violation. Surfaced under a SEPARATE top-level key so the `violations`
+    # array, its counts, and every existing consumer stay byte-identical.
+    sb_findings = _sbe.evaluate(root)
+    sb_fatal = sum(1 for f in sb_findings if f["severity"] == "fatal")
+    sb_warning = len(sb_findings) - sb_fatal
     return {
         "report_version": REPORT_VERSION,
         "schema": REPORT_SCHEMA_ID,
         "source": path,
         "profile": profile,
-        "valid": result.ok,
+        "valid": result.ok and sb_fatal == 0,
         "fatal_count": fatal_count,
         "warning_count": warning_count,
         "violation_count": len(records),
         "violations": records,
+        "syntax_bindings": sb_findings,
+        "syntax_binding_fatal_count": sb_fatal,
+        "syntax_binding_warning_count": sb_warning,
     }
 
 
@@ -1584,7 +1602,12 @@ def main(argv=None):
     # the input to a validatable invoice".
     if report.get("error"):
         return EXIT_PARSE
-    return EXIT_OK if report["fatal_count"] == 0 else EXIT_FAIL
+    # A FATAL syntax-binding finding blocks validity exactly like a fatal
+    # business-rule violation; warning-severity syntax-binding findings never
+    # change the exit code (they mirror the official warning flag).
+    total_fatal = (report["fatal_count"]
+                   + report.get("syntax_binding_fatal_count", 0))
+    return EXIT_OK if total_fatal == 0 else EXIT_FAIL
 
 
 if __name__ == "__main__":

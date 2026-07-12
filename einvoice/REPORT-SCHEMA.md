@@ -43,11 +43,14 @@ Programmatic entry point: `einvoice.report.build_report(path, profile='xrechnung
 | `schema`          | string      | Stable schema id: `einvoice-conformance-report/v1`. Match on this to stay robust across tool versions. |
 | `source`          | string/null | The invoice path/label that was validated. |
 | `profile`         | string      | `en16931` or `xrechnung`. |
-| `valid`           | bool        | `true` iff there are **zero fatal** violations. Follows the official Schematron `flag` semantics — warnings/information do **not** invalidate. |
-| `fatal_count`     | int         | Number of `fatal` violations. |
-| `warning_count`   | int         | Number of `warning` violations. |
-| `violation_count` | int         | Total violations of every severity. |
-| `violations`      | list        | Violation records (below). Empty when the invoice is clean. |
+| `valid`           | bool        | `true` iff there are **zero fatal** violations **and zero fatal syntax-binding findings**. Follows the official Schematron `flag` semantics — warnings/information do **not** invalidate. |
+| `fatal_count`     | int         | Number of `fatal` **business-rule** violations (excludes syntax-binding findings, which are counted separately). |
+| `warning_count`   | int         | Number of `warning` **business-rule** violations. |
+| `violation_count` | int         | Total business-rule violations of every severity. |
+| `violations`      | list        | Business-rule violation records (below). Empty when the invoice is clean. |
+| `syntax_bindings` | list        | *(additive, `v1`)* Findings of the distinct **`syntax-binding`** category — the data-driven UBL absence-restriction asserts (`UBL-CR-*`/`UBL-DT-*`/`UBL-SR-*`) the restricted `einvoice.syntax_binding_eval` engine implements and differential-proves against the official CEN EN16931-UBL Schematron. Each carries `id`, `category` (`"syntax-binding"`), `severity` (mirrors the official `@flag`), `flag`, `message`, `element`. Kept **out of** `violations`/its counts so existing consumers are unchanged. Present on the plain single-file XML report. |
+| `syntax_binding_fatal_count`   | int | *(additive, `v1`)* Number of `fatal` syntax-binding findings. A nonzero value makes `valid` false and drives a nonzero exit code, exactly like a fatal violation; `warning` findings never affect the exit code. |
+| `syntax_binding_warning_count` | int | *(additive, `v1`)* Number of `warning` syntax-binding findings (reported, non-blocking). |
 | `error`           | string      | Present **only** when the input is not well-formed XML: the code `not-well-formed`. `valid` is then `false` and `violations` is empty. |
 | `message`         | string      | Present **only** alongside `error`: the parser's human message. |
 

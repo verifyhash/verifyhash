@@ -67,6 +67,7 @@ from einvoice import rules as _rules                  # noqa: E402
 from einvoice import rules_xrechnung as _rules_xr     # noqa: E402
 from einvoice import rules_peppol as _rules_pep       # noqa: E402
 from einvoice import parser_cii as _parser_cii        # noqa: E402
+from einvoice import syntax_binding_eval as _sbe      # noqa: E402
 
 # The OFFICIAL normative artifacts:
 #  * the compiled EN16931-UBL Schematron (CEN),
@@ -198,6 +199,23 @@ PEPPOL_CII_PROVEN_CANONICAL = {fn.rule_id for fn in _rules_pep.CII_RULES}
 assert PEPPOL_UBL_PROVEN_CANONICAL == PEPPOL_CII_PROVEN_CANONICAL, (
     "the family is implemented in BOTH bindings; the canonical sets must "
     "coincide")
+
+
+# --------------------------------------------------------------------------- #
+# SYNTAX-BINDING leg — the UBL absence-restriction class (UBL-CR/DT/SR)         #
+# implemented by the restricted, data-driven einvoice.syntax_binding_eval,      #
+# graded against the SAME official CEN EN16931-UBL Schematron that carries      #
+# those asserts. The graded id set is LIVE-COMPUTED from the catalog + the      #
+# restricted grammar (syntax_binding_eval.implemented_ids()) — no hardcoded     #
+# list — so an id drops out of the leg the instant the evaluator stops          #
+# supporting its form. Disjoint from every BR-* set, so this leg cannot change  #
+# any pre-existing leg's verdicts.                                              #
+# --------------------------------------------------------------------------- #
+SB_RULE_IDS = _sbe.implemented_ids()
+SB_RULE_SET = set(SB_RULE_IDS)
+assert SB_RULE_IDS, "no implemented syntax-binding ids (catalog missing?)"
+assert not (SB_RULE_SET & OUR_RULE_SET), (
+    "a syntax-binding id collides with a BR-* core rule id")
 
 
 # --------------------------------------------------------------------------- #
@@ -647,6 +665,14 @@ def xr_our_fired(invoice_path: str) -> set:
         if fn(root) is not None:
             fired.add(fn.assert_id)
     return fired
+
+
+def sb_our_fired(invoice_path: str) -> set:
+    """Fired implemented syntax-binding ids of OUR restricted evaluator on a UBL
+    document — parsed through the SAME hardened :func:`parse_file` the product
+    uses, then evaluated by :func:`einvoice.syntax_binding_eval.fired_ids`."""
+    root = parse_file(invoice_path)
+    return _sbe.fired_ids(root)
 
 
 def xr_cii_our_fired(invoice_path: str) -> set:
@@ -5871,6 +5897,38 @@ def build_corpus(scratch: str):
     return uniq
 
 
+def _gather_sb_fixtures():
+    """(label, abs_path) for the committed targeted syntax-binding fixtures
+    (corpus/vendored/syntax-binding/) — the passing + violating UBL invoices that
+    make representative implemented absence-restriction asserts FIRE. Kept in a
+    dedicated directory NOT swept by _gather_bare_invoices, so they belong to the
+    sb leg alone and never perturb the EN / XRechnung / CII legs."""
+    out = []
+    d = os.path.join(HERE, "corpus", "vendored", "syntax-binding")
+    if not os.path.isdir(d):
+        return out
+    for name in sorted(os.listdir(d)):
+        if name.lower().endswith(".xml"):
+            out.append(("sb-fixture/%s" % name, os.path.join(d, name)))
+    return out
+
+
+def build_sb_corpus(scratch: str):
+    """Corpus for the syntax-binding leg: the SAME broad UBL corpus as the EN leg
+    (real CEN examples, split CEN unit fragments, vendored fixtures, xrechnung
+    testsuite, EN mutations — adversarial for presence checks) PLUS the committed
+    targeted sb fixtures that exercise the FIRING direction."""
+    entries = list(build_corpus(scratch)) + _gather_sb_fixtures()
+    seen, uniq = set(), []
+    for label, path in entries:
+        key = os.path.abspath(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append((label, path))
+    return uniq
+
+
 def build_xr_corpus(scratch: str):
     """Corpus for the XRechnung leg: everything real (incl. the split CEN
     unit fragments — adversarial for the presence rules) + BR-DE mutations,
@@ -6004,7 +6062,7 @@ def _run_leg(title, xslt_path, rule_ids, our_fn, corpus):
     return tot_fp + tot_miss
 
 
-def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii")):
+def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii", "sb")):
     scratch = os.environ.get("DIFF_SCRATCH") or tempfile.mkdtemp(prefix="diffcorpus-")
     os.makedirs(scratch, exist_ok=True)
 
@@ -6052,6 +6110,17 @@ def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii")):
                                 XR_CII_OFFICIAL_XSLT,
                                 CII_XR_RULE_IDS + PEPPOL_CII_RULE_IDS,
                                 xr_cii_our_fired, corpus)
+    if "sb" in legs:
+        corpus = build_sb_corpus(scratch)
+        print("#" * 82)
+        print("# LEG 5 — EN 16931 UBL syntax-binding absence-restriction class "
+              "(official CEN EN16931-UBL Schematron)")
+        print("#" * 82)
+        print("Corpus assembled: %d UBL Invoice documents "
+              "(broad EN corpus + targeted sb fixtures)" % len(corpus))
+        print("  scratch dir: %s" % scratch)
+        divergences += _run_leg("official EN16931-UBL Schematron (syntax-binding)",
+                                OFFICIAL_XSLT, SB_RULE_IDS, sb_our_fired, corpus)
     print("OVERALL DIVERGENCES ACROSS LEGS: %d -> %s"
           % (divergences, "OK" if divergences == 0 else "DIVERGED"))
     return 0 if divergences == 0 else 1
@@ -6102,7 +6171,8 @@ def _print_report(invoice_path: str) -> None:
 def main(argv: list) -> int:
     if not argv:
         return run_differential()
-    if len(argv) == 1 and argv[0] in ("en", "xrechnung", "cii", "xrechnung-cii"):
+    if len(argv) == 1 and argv[0] in ("en", "xrechnung", "cii", "xrechnung-cii",
+                                      "sb"):
         return run_differential(legs=(argv[0],))
     for s in argv:
         if not os.path.exists(s):

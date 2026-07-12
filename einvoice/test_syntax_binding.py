@@ -24,6 +24,18 @@ What is checked (each an independent hard assert; non-zero exit on any failure):
      (this catalog is deliberately disjoint from the business-rule matrix).
   4. the committed accounting (histogram + prefix counts) equals a live
      recomputation from the artifacts.
+  5. IMPLEMENTATION accounting (the T-VHSBL.2 evaluator): the UBL
+     ``absence-restriction`` class partitions LIVE into implemented +
+     known-open with implemented + known-open == the class total; the
+     implemented count is recomputed (not asserted as a magic literal beyond a
+     floor); every implemented id is in the differential leg's graded set
+     (``differential.SB_RULE_IDS``) so it is differential-covered; and the
+     known-open remainder equals EXACTLY the machine-listed worklist in
+     COVERAGE.md (so a regression reopens the worklist automatically).
+  6. FIRING (saxon-free): each committed targeted fixture
+     (corpus/vendored/syntax-binding/) makes its named implemented assert fire
+     (violating) or clear (passing), and every finding carries the distinct
+     ``syntax-binding`` category with an @flag-mirroring severity.
 """
 
 from __future__ import annotations
@@ -39,8 +51,13 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import syntax_binding as _sb  # noqa: E402
+from einvoice import syntax_binding_eval as _sbe  # noqa: E402
+from einvoice.parser import parse_file  # noqa: E402
+import differential as _diff  # noqa: E402  (import-only; no saxon at import time)
 
 CATALOG_PATH = os.path.join(HERE, "syntax_binding_catalog.json")
+COVERAGE_PATH = os.path.join(HERE, "COVERAGE.md")
+SB_FIXTURE_DIR = os.path.join(HERE, "corpus", "vendored", "syntax-binding")
 _SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
 
 EXPECTED_TOTALS = {"ubl": 756, "cii": 583}
@@ -70,6 +87,34 @@ def _independent_parse(binding):
                 out.append((rid, context, a.get("test") or "",
                             a.get("flag") or "fatal"))
     return out
+
+
+def _coverage_known_open_ids():
+    """The set of ids machine-listed in COVERAGE.md's UBL absence-restriction
+    'Known-open worklist' table — parsed straight from the rendered doc, so the
+    test proves code and doc name the SAME remainder."""
+    if not os.path.exists(COVERAGE_PATH):
+        return None
+    text = open(COVERAGE_PATH, encoding="utf-8").read()
+    # Anchor on the UBL absence-restriction subsection specifically (there are
+    # other 'Known-open worklist' headers for the CVD/TMP families above).
+    anchor = text.find("### UBL absence-restriction — implemented vs known-open")
+    if anchor < 0:
+        return set()
+    marker = "Known-open worklist (machine-listed"
+    i = text.find(marker, anchor)
+    if i < 0:
+        return set()
+    ids = set()
+    for line in text[i:].splitlines():
+        s = line.strip()
+        if s.startswith("| `") and "` |" in s:
+            m = re.match(r"^\|\s*`([^`]+)`", s)
+            if m:
+                ids.add(m.group(1))
+        elif s.startswith("### ") and ids:
+            break  # next section — stop
+    return ids
 
 
 def main():
@@ -143,6 +188,112 @@ def main():
           "committed accounting (histogram/prefix) is stale vs a live "
           "recomputation from the artifacts")
 
+    # ---- 5. IMPLEMENTATION accounting (live recompute + differential cover)-
+    _sbe.reset_cache()
+    abs_entries = _sbe.absence_restriction_entries()
+    abs_ids = {e["id"] for e in abs_entries}
+    implemented = _sbe.implemented_ids()
+    known_open = _sbe.known_open_ids()
+
+    # 5a. the class total matches the histogram, and the partition is a clean
+    #     cover of exactly the 699 UBL absence-restriction ids (nothing dropped).
+    hist_total = (live_acct["ubl"]["shape_histogram"]
+                  .get("absence-restriction", 0))
+    check(len(abs_entries) == hist_total,
+          "absence-restriction class size %d != histogram %d"
+          % (len(abs_entries), hist_total))
+    check(set(implemented).isdisjoint(known_open),
+          "an id is both implemented and known-open")
+    check(set(implemented) | set(known_open) == abs_ids,
+          "implemented + known-open is not exactly the UBL absence-restriction "
+          "class (an assert was silently dropped)")
+    check(len(implemented) + len(known_open) == len(abs_entries),
+          "implemented (%d) + known-open (%d) != class total (%d)"
+          % (len(implemented), len(known_open), len(abs_entries)))
+
+    # 5b. implemented count: recomputed live, with a floor so a silent collapse
+    #     of the evaluator (e.g. a grammar bug) fails the gate.
+    live_impl = [e["id"] for e in abs_entries
+                 if e.get("context") == _sbe.SUPPORTED_CONTEXT
+                 and _sbe.compile_test(e.get("test")) is not None]
+    check(sorted(live_impl) == sorted(implemented),
+          "implemented_ids() disagrees with a live re-partition of the catalog")
+    check(len(implemented) >= 690,
+          "implemented count collapsed to %d (< 690 floor) — evaluator "
+          "regression?" % len(implemented))
+
+    # 5c. every implemented id is differential-covered: it is exactly the sb
+    #     leg's graded id set (differential.py LEG 5), which the differential
+    #     gate proves at 0 divergences against the official Schematron.
+    check(set(implemented) == set(_diff.SB_RULE_IDS),
+          "implemented ids != differential sb-leg graded set "
+          "(differential.SB_RULE_IDS) — a differential-uncovered id leaked in")
+    check(set(implemented).issubset(abs_ids),
+          "an implemented id is not a UBL absence-restriction assert")
+
+    # 5d. the known-open remainder equals EXACTLY the machine-listed worklist in
+    #     COVERAGE.md (regression reopens the worklist automatically).
+    cov_known_open = _coverage_known_open_ids()
+    check(cov_known_open is not None, "COVERAGE.md missing")
+    if cov_known_open is not None:
+        check(cov_known_open == set(known_open),
+              "COVERAGE.md known-open worklist %s != live known-open %s"
+              % (sorted(cov_known_open), sorted(known_open)))
+
+    # 5e. severity mirrors the official @flag for every implemented id.
+    flag_by_id = {e["id"]: e["flag"] for e in abs_entries}
+    for entry in _sbe.implemented_entries():
+        want = "fatal" if flag_by_id[entry.id] == "fatal" else "warning"
+        check(_sbe._severity_from_flag(entry.flag) == want,
+              "implemented id %s severity does not mirror @flag %r"
+              % (entry.id, entry.flag))
+
+    # ---- 6. FIRING on the committed targeted fixtures (saxon-free) ----------
+    check(os.path.isdir(SB_FIXTURE_DIR),
+          "targeted syntax-binding fixture dir missing: %s" % SB_FIXTURE_DIR)
+    if os.path.isdir(SB_FIXTURE_DIR):
+        impl_set = set(implemented)
+        viol_seen = set()
+        for name in sorted(os.listdir(SB_FIXTURE_DIR)):
+            if not name.endswith("_ubl.xml"):
+                continue
+            path = os.path.join(SB_FIXTURE_DIR, name)
+            findings = _sbe.evaluate(parse_file(path))
+            fired = {f["id"] for f in findings}
+            # every finding is well-formed + carries the distinct category.
+            for f in findings:
+                check(f["category"] == "syntax-binding",
+                      "%s: finding %s not under 'syntax-binding' category"
+                      % (name, f.get("id")))
+                check(f["severity"] in ("warning", "fatal"),
+                      "%s: finding %s bad severity %r"
+                      % (name, f.get("id"), f.get("severity")))
+                check(bool(f.get("element")) and bool(f.get("message")),
+                      "%s: finding %s missing element/message" % (name, f.get("id")))
+            m = re.match(r"^sb-viol-(UBL-(?:CR|DT|SR)-\d+)_ubl\.xml$", name)
+            if m:
+                rid = m.group(1)
+                viol_seen.add(rid)
+                check(rid in impl_set,
+                      "fixture %s targets non-implemented id %s" % (name, rid))
+                check(rid in fired,
+                      "violating fixture %s did NOT fire its id %s (fired=%s)"
+                      % (name, rid, sorted(fired)))
+            elif name.startswith("sb-pass-"):
+                # A passing fixture must NOT fire the id it is the clean twin of;
+                # sb-pass-clean must fire nothing at all.
+                m2 = re.match(r"^sb-pass-(UBL-(?:CR|DT|SR)-\d+)_ubl\.xml$", name)
+                if m2:
+                    check(m2.group(1) not in fired,
+                          "passing fixture %s wrongly fired %s"
+                          % (name, m2.group(1)))
+                elif name == "sb-pass-clean_ubl.xml":
+                    check(not fired,
+                          "clean fixture fired syntax-binding ids: %s"
+                          % sorted(fired))
+        check(len(viol_seen) >= 5,
+              "expected >=5 distinct violating fixtures, saw %d" % len(viol_seen))
+
     # ---- report -----------------------------------------------------------
     if failures:
         sys.stderr.write("SYNTAX-BINDING TEST: FAIL (%d)\n" % len(failures))
@@ -150,10 +301,14 @@ def main():
             sys.stderr.write("  !! " + m + "\n")
         return 1
     print("syntax-binding catalog OK: UBL %d + CII %d = %d non-BR asserts, "
-          "catalog == fresh extraction id-for-id, all entries carry "
-          "id/binding/context/test/flag/shape, accounting live-consistent."
+          "catalog == fresh extraction id-for-id, accounting live-consistent."
           % (EXPECTED_TOTALS["ubl"], EXPECTED_TOTALS["cii"],
              EXPECTED_TOTALS["ubl"] + EXPECTED_TOTALS["cii"]))
+    print("  UBL absence-restriction: %d implemented (== differential sb-leg "
+          "graded set) + %d known-open (== COVERAGE.md worklist) of %d; "
+          "targeted fixtures fire/clear as expected."
+          % (len(_sbe.implemented_ids()), len(_sbe.known_open_ids()),
+             len(_sbe.absence_restriction_entries())))
     return 0
 
 

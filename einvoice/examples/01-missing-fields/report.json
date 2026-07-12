@@ -4,6 +4,9 @@
   "report_version": 1,
   "schema": "einvoice-conformance-report/v1",
   "source": "examples/01-missing-fields/broken.xml",
+  "syntax_binding_fatal_count": 0,
+  "syntax_binding_warning_count": 0,
+  "syntax_bindings": [],
   "valid": false,
   "violation_count": 3,
   "violations": [

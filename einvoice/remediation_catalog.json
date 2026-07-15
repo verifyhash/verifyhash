@@ -1,6 +1,6 @@
 {
   "artifact": "einvoice per-rule remediation catalog",
-  "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement.",
+  "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement. message_de (present ONLY on de_source=='kosit' rules) is the official German <sch:assert> message VERBATIM, with a message_de_provenance {artifact, assert_id} tag naming the vendored file it was lifted from; the --lang de CLI surfaces it in place of the English message.",
   "generated_by": "gen_remediation.py",
   "rule_count": 286,
   "rules": {
@@ -4011,7 +4011,12 @@
       },
       "title_de": "Eine Rechnung (INVOICE) muss Angaben zu \"PAYMENT INSTRUCTIONS\" (BG-16) enthalten.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:PaymentMeans`: Eine Rechnung (INVOICE) muss Angaben zu \"PAYMENT INSTRUCTIONS\" (BG-16) enthalten.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Eine Rechnung (INVOICE) muss Angaben zu \"PAYMENT INSTRUCTIONS\" (BG-16) enthalten.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-1"
+      }
     },
     "BR-DE-2": {
       "title": "SELLER CONTACT (BG-6) must be transmitted.",
@@ -4028,7 +4033,12 @@
       },
       "title_de": "Die Gruppe \"SELLER CONTACT\" (BG-6) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AccountingSupplierParty`: Die Gruppe \"SELLER CONTACT\" (BG-6) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Die Gruppe \"SELLER CONTACT\" (BG-6) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-2"
+      }
     },
     "BR-DE-3": {
       "title": "Seller city (BT-37) must be transmitted (non-empty).",
@@ -4045,7 +4055,12 @@
       },
       "title_de": "Das Element \"Seller city\" (BT-37) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress`: Das Element \"Seller city\" (BT-37) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Seller city\" (BT-37) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-3"
+      }
     },
     "BR-DE-4": {
       "title": "Seller post code (BT-38) must be transmitted (non-empty).",
@@ -4062,7 +4077,12 @@
       },
       "title_de": "Das Element \"Seller post code\" (BT-38) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress`: Das Element \"Seller post code\" (BT-38) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Seller post code\" (BT-38) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-4"
+      }
     },
     "BR-DE-5": {
       "title": "Seller contact point (BT-41) must be transmitted (non-empty).",
@@ -4079,7 +4099,12 @@
       },
       "title_de": "Das Element \"Seller contact point\" (BT-41) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact`: Das Element \"Seller contact point\" (BT-41) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Seller contact point\" (BT-41) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-5"
+      }
     },
     "BR-DE-6": {
       "title": "Seller contact telephone number (BT-42) must be transmitted.",
@@ -4096,7 +4121,12 @@
       },
       "title_de": "Das Element \"Seller contact telephone number\" (BT-42) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact`: Das Element \"Seller contact telephone number\" (BT-42) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Seller contact telephone number\" (BT-42) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-6"
+      }
     },
     "BR-DE-7": {
       "title": "Seller contact email address (BT-43) must be transmitted.",
@@ -4113,7 +4143,12 @@
       },
       "title_de": "Das Element \"Seller contact email address\" (BT-43) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact`: Das Element \"Seller contact email address\" (BT-43) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Seller contact email address\" (BT-43) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-7"
+      }
     },
     "BR-DE-8": {
       "title": "Buyer city (BT-52) must be transmitted (non-empty).",
@@ -4130,7 +4165,12 @@
       },
       "title_de": "Das Element \"Buyer city\" (BT-52) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress`: Das Element \"Buyer city\" (BT-52) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Buyer city\" (BT-52) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-8"
+      }
     },
     "BR-DE-9": {
       "title": "Buyer post code (BT-53) must be transmitted (non-empty).",
@@ -4147,7 +4187,12 @@
       },
       "title_de": "Das Element \"Buyer post code\" (BT-53) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress`: Das Element \"Buyer post code\" (BT-53) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Buyer post code\" (BT-53) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-9"
+      }
     },
     "BR-DE-10": {
       "title": "Deliver to city (BT-77) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.",
@@ -4165,7 +4210,12 @@
       },
       "title_de": "Das Element \"Deliver to city\" (BT-77) muss übermittelt werden, wenn die Gruppe \"DELIVER TO ADDRESS\" (BG-15) übermittelt wird.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address`: Das Element \"Deliver to city\" (BT-77) muss übermittelt werden, wenn die Gruppe \"DELIVER TO ADDRESS\" (BG-15) übermittelt wird.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Deliver to city\" (BT-77) muss übermittelt werden, wenn die Gruppe \"DELIVER TO ADDRESS\" (BG-15) übermittelt wird.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-10"
+      }
     },
     "BR-DE-11": {
       "title": "Deliver to post code (BT-78) must be transmitted when DELIVER TO ADDRESS (BG-15) is present.",
@@ -4183,7 +4233,12 @@
       },
       "title_de": "Das Element \"Deliver to post code\" (BT-78) muss übermittelt werden, wenn die Gruppe \"DELIVER TO ADDRESS\" (BG-15) übermittelt wird.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address`: Das Element \"Deliver to post code\" (BT-78) muss übermittelt werden, wenn die Gruppe \"DELIVER TO ADDRESS\" (BG-15) übermittelt wird.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Deliver to post code\" (BT-78) muss übermittelt werden, wenn die Gruppe \"DELIVER TO ADDRESS\" (BG-15) übermittelt wird.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-11"
+      }
     },
     "BR-DE-14": {
       "title": "VAT category rate (BT-119) must be transmitted (non-empty) in every top-level VAT breakdown row.",
@@ -4200,7 +4255,12 @@
       },
       "title_de": "Das Element \"VAT category rate\" (BT-119) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal`: Das Element \"VAT category rate\" (BT-119) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"VAT category rate\" (BT-119) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-14"
+      }
     },
     "BR-DE-15": {
       "title": "Buyer reference (BT-10) must be transmitted (non-empty).",
@@ -4217,7 +4277,12 @@
       },
       "title_de": "Das Element \"Buyer reference\" (BT-10) muss übermittelt werden.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cbc:BuyerReference`: Das Element \"Buyer reference\" (BT-10) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Buyer reference\" (BT-10) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-15"
+      }
     },
     "BR-DE-16": {
       "title": "If VAT category codes S/Z/E/AE/K/G/L/M are used, one of Seller VAT identifier (BT-31), Seller tax registration identifier (BT-32) or SELLER TAX REPRESENTATIVE PARTY (BG-11) must be present.",
@@ -4236,7 +4301,12 @@
       },
       "title_de": "Wenn in einer Rechnung die Steuercodes S, Z, E, AE, K, G, L oder M verwendet werden, muss mindestens eines der Elemente \"Seller VAT identifier\" (BT-31), \"Seller tax registration identifier\" (BT-32) oder \"SELLER TAX REPRESENTATIVE PARTY\" (BG-11) übermittelt werden.",
       "fix_de": "Korrigieren Sie `cac:TaxRepresentativeParty`, sodass gilt: Wenn in einer Rechnung die Steuercodes S, Z, E, AE, K, G, L oder M verwendet werden, muss mindestens eines der Elemente \"Seller VAT identifier\" (BT-31), \"Seller tax registration identifier\" (BT-32) oder \"SELLER TAX REPRESENTATIVE PARTY\" (BG-11) übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn in einer Rechnung die Steuercodes S, Z, E, AE, K, G, L oder M verwendet werden, muss mindestens eines der Elemente \"Seller VAT identifier\" (BT-31), \"Seller tax registration identifier\" (BT-32) oder \"SELLER TAX REPRESENTATIVE PARTY\" (BG-11) übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-16"
+      }
     },
     "BR-DE-17": {
       "title": "BT-3 should be one of 326, 380, 384, 389, 381, 875, 876, 877.",
@@ -4253,7 +4323,12 @@
       },
       "title_de": "Mit dem Element \"Invoice type code\" (BT-3) sollen ausschließlich folgende Codes aus der Codeliste UNTDID 1001 übermittelt werden: 326 (Partial invoice), 380 (Commercial invoice), 384 (Corrected invoice), 389 (Self-billed invoice) und 381 (Credit note),875 (Partial construction invoice), 876 (Partial final construction invoice), 877 (Final construction invoice).",
       "fix_de": "Korrigieren Sie `cbc:InvoiceTypeCode`, sodass gilt: Mit dem Element \"Invoice type code\" (BT-3) sollen ausschließlich folgende Codes aus der Codeliste UNTDID 1001 übermittelt werden: 326 (Partial invoice), 380 (Commercial invoice), 384 (Corrected invoice), 389 (Self-billed invoice) und 381 (Credit note),875 (Partial construction invoice), 876 (Partial final construction invoice), 877 (Final construction invoice).",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Mit dem Element \"Invoice type code\" (BT-3) sollen ausschließlich folgende Codes aus der Codeliste UNTDID 1001 übermittelt werden: 326 (Partial invoice), 380 (Commercial invoice), 384 (Corrected invoice), 389 (Self-billed invoice) und 381 (Credit note),875 (Partial construction invoice), 876 (Partial final construction invoice), 877 (Final construction invoice).",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-17"
+      }
     },
     "BR-DE-18": {
       "title": "Skonto (cash-discount) lines in Payment terms (BT-20).",
@@ -4271,7 +4346,12 @@
       },
       "title_de": "Skonto Zeilen in müssen diesem regulärem Ausdruck entsprechen: . Die Informationen zur Gewährung von Skonto müssen wie folgt im Element \"Payment terms\" (BT-20) übermittelt werden: Anzugeben ist im ersten Segment \"SKONTO\", im zweiten \"TAGE=n\", im dritten \"PROZENT=n\". Prozentzahlen sind ohne Vorzeichen sowie mit Punkt getrennt von zwei Nachkommastellen anzugeben. Liegt dem zu berechnenden Betrag nicht BT-115, \"fälliger Betrag\" zugrunde, sondern nur ein Teil des fälligen Betrags der Rechnung, ist der Grundwert zur Berechnung von Skonto als viertes Segment \"BASISBETRAG=n\" gemäß dem semantischen Datentypen Amount anzugeben. Jeder Eintrag beginnt mit einer #, die Segmente sind mit einer # getrennt und eine Zeile schließt mit einer # ab. Am Ende einer vollständigen Skontoangabe muss ein XML-konformer Zeilenumbruch folgen. Alle Angaben zur Gewährung von Skonto müssen in Großbuchstaben gemacht werden. Zusätzliches Whitespace (Leerzeichen, Tabulatoren oder Zeilenumbrüche) ist nicht zulässig. Andere Zeichen oder Texte als in den oberen Vorgaben genannt sind nicht zulässig.",
       "fix_de": "Korrigieren Sie `cac:PaymentTerms/cbc:Note`, sodass gilt: Skonto Zeilen in müssen diesem regulärem Ausdruck entsprechen: . Die Informationen zur Gewährung von Skonto müssen wie folgt im Element \"Payment terms\" (BT-20) übermittelt werden: Anzugeben ist im ersten Segment \"SKONTO\", im zweiten \"TAGE=n\", im dritten \"PROZENT=n\". Prozentzahlen sind ohne Vorzeichen sowie mit Punkt getrennt von zwei Nachkommastellen anzugeben. Liegt dem zu berechnenden Betrag nicht BT-115, \"fälliger Betrag\" zugrunde, sondern nur ein Teil des fälligen Betrags der Rechnung, ist der Grundwert zur Berechnung von Skonto als viertes Segment \"BASISBETRAG=n\" gemäß dem semantischen Datentypen Amount anzugeben. Jeder Eintrag beginnt mit einer #, die Segmente sind mit einer # getrennt und eine Zeile schließt mit einer # ab. Am Ende einer vollständigen Skontoangabe muss ein XML-konformer Zeilenumbruch folgen. Alle Angaben zur Gewährung von Skonto müssen in Großbuchstaben gemacht werden. Zusätzliches Whitespace (Leerzeichen, Tabulatoren oder Zeilenumbrüche) ist nicht zulässig. Andere Zeichen oder Texte als in den oberen Vorgaben genannt sind nicht zulässig.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Skonto Zeilen in müssen diesem regulärem Ausdruck entsprechen: . Die Informationen zur Gewährung von Skonto müssen wie folgt im Element \"Payment terms\" (BT-20) übermittelt werden: Anzugeben ist im ersten Segment \"SKONTO\", im zweiten \"TAGE=n\", im dritten \"PROZENT=n\". Prozentzahlen sind ohne Vorzeichen sowie mit Punkt getrennt von zwei Nachkommastellen anzugeben. Liegt dem zu berechnenden Betrag nicht BT-115, \"fälliger Betrag\" zugrunde, sondern nur ein Teil des fälligen Betrags der Rechnung, ist der Grundwert zur Berechnung von Skonto als viertes Segment \"BASISBETRAG=n\" gemäß dem semantischen Datentypen Amount anzugeben. Jeder Eintrag beginnt mit einer #, die Segmente sind mit einer # getrennt und eine Zeile schließt mit einer # ab. Am Ende einer vollständigen Skontoangabe muss ein XML-konformer Zeilenumbruch folgen. Alle Angaben zur Gewährung von Skonto müssen in Großbuchstaben gemacht werden. Zusätzliches Whitespace (Leerzeichen, Tabulatoren oder Zeilenumbrüche) ist nicht zulässig. Andere Zeichen oder Texte als in den oberen Vorgaben genannt sind nicht zulässig.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-18"
+      }
     },
     "BR-DE-19": {
       "title": "With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription).",
@@ -4289,7 +4369,12 @@
       },
       "title_de": "\"Payment account identifier\" (BT-84) soll eine korrekte IBAN enthalten, wenn in \"Payment means type code\" (BT-81) mit dem Code 58 SEPA als Zahlungsmittel gefordert wird.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('30','58')]`, sodass gilt: \"Payment account identifier\" (BT-84) soll eine korrekte IBAN enthalten, wenn in \"Payment means type code\" (BT-81) mit dem Code 58 SEPA als Zahlungsmittel gefordert wird.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "\"Payment account identifier\" (BT-84) soll eine korrekte IBAN enthalten, wenn in \"Payment means type code\" (BT-81) mit dem Code 58 SEPA als Zahlungsmittel gefordert wird.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-19"
+      }
     },
     "BR-DE-20": {
       "title": "With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN.",
@@ -4307,7 +4392,12 @@
       },
       "title_de": "\"Debited account identifier\" (BT-91) soll eine korrekte IBAN enthalten, wenn in \"Payment means type code\" (BT-81) mit dem Code 59 SEPA als Zahlungsmittel gefordert wird.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = '59']`, sodass gilt: \"Debited account identifier\" (BT-91) soll eine korrekte IBAN enthalten, wenn in \"Payment means type code\" (BT-81) mit dem Code 59 SEPA als Zahlungsmittel gefordert wird.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "\"Debited account identifier\" (BT-91) soll eine korrekte IBAN enthalten, wenn in \"Payment means type code\" (BT-81) mit dem Code 59 SEPA als Zahlungsmittel gefordert wird.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-20"
+      }
     },
     "BR-DE-21": {
       "title": "BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) — untrimmed string equality.",
@@ -4324,7 +4414,12 @@
       },
       "title_de": "Das Element \"Specification identifier\" (BT-24) soll syntaktisch der Kennung des Standards XRechnung entsprechen.",
       "fix_de": "Korrigieren Sie `cbc:CustomizationID`, sodass gilt: Das Element \"Specification identifier\" (BT-24) soll syntaktisch der Kennung des Standards XRechnung entsprechen.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Specification identifier\" (BT-24) soll syntaktisch der Kennung des Standards XRechnung entsprechen.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-21"
+      }
     },
     "BR-DE-22": {
       "title": "The filename attribute of all EmbeddedDocumentBinaryObject elements must be unique (across cac:AdditionalDocumentReference).",
@@ -4339,7 +4434,12 @@
       },
       "title_de": "Das \"filename\"-Attribut aller \"EmbeddedDocumentBinaryObject\"-Elemente muss eindeutig sein",
       "fix_de": "Korrigieren Sie `cac:AdditionalDocumentReference`, sodass gilt: Das \"filename\"-Attribut aller \"EmbeddedDocumentBinaryObject\"-Elemente muss eindeutig sein.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das \"filename\"-Attribut aller \"EmbeddedDocumentBinaryObject\"-Elemente muss eindeutig sein",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-22"
+      }
     },
     "BR-DE-23-a": {
       "title": "Codes 30/58 (credit transfer) require CREDIT TRANSFER (BG-17).",
@@ -4357,7 +4457,12 @@
       },
       "title_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Überweisungen enthält (30, 58), muss BG-17 \"CREDIT TRANSFER\" übermittelt werden.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('30','58')]`, sodass gilt: Wenn BT-81 \"Payment means type code\" einen Schlüssel für Überweisungen enthält (30, 58), muss BG-17 \"CREDIT TRANSFER\" übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Überweisungen enthält (30, 58), muss BG-17 \"CREDIT TRANSFER\" übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-23-a"
+      }
     },
     "BR-DE-23-b": {
       "title": "Codes 30/58 forbid PAYMENT CARD (BG-18) and DIRECT DEBIT (BG-19).",
@@ -4376,7 +4481,12 @@
       },
       "title_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Überweisungen enthält (30, 58), dürfen BG-18 und BG-19 nicht übermittelt werden.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('30','58')]`, sodass gilt: Wenn BT-81 \"Payment means type code\" einen Schlüssel für Überweisungen enthält (30, 58), dürfen BG-18 und BG-19 nicht übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Überweisungen enthält (30, 58), dürfen BG-18 und BG-19 nicht übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-23-b"
+      }
     },
     "BR-DE-24-a": {
       "title": "Codes 48/54/55 (card) require PAYMENT CARD INFORMATION (BG-18).",
@@ -4394,7 +4504,12 @@
       },
       "title_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Kartenzahlungen enthält (48, 54, 55), muss genau BG-18 \"PAYMENT CARD INFORMATION\" übermittelt werden.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('48','54','55')]`, sodass gilt: Wenn BT-81 \"Payment means type code\" einen Schlüssel für Kartenzahlungen enthält (48, 54, 55), muss genau BG-18 \"PAYMENT CARD INFORMATION\" übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Kartenzahlungen enthält (48, 54, 55), muss genau BG-18 \"PAYMENT CARD INFORMATION\" übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-24-a"
+      }
     },
     "BR-DE-24-b": {
       "title": "Codes 48/54/55 forbid CREDIT TRANSFER (BG-17) and DIRECT DEBIT (BG-19).",
@@ -4413,7 +4528,12 @@
       },
       "title_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Kartenzahlungen enthält (48, 54, 55), dürfen BG-17 und BG-19 nicht übermittelt werden.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('48','54','55')]`, sodass gilt: Wenn BT-81 \"Payment means type code\" einen Schlüssel für Kartenzahlungen enthält (48, 54, 55), dürfen BG-17 und BG-19 nicht übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Kartenzahlungen enthält (48, 54, 55), dürfen BG-17 und BG-19 nicht übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-24-b"
+      }
     },
     "BR-DE-25-a": {
       "title": "Code 59 (direct debit) requires DIRECT DEBIT (BG-19).",
@@ -4431,7 +4551,12 @@
       },
       "title_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Lastschriften enthält (59), muss genau BG-19 \"DIRECT DEBIT\" übermittelt werden.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = '59']`, sodass gilt: Wenn BT-81 \"Payment means type code\" einen Schlüssel für Lastschriften enthält (59), muss genau BG-19 \"DIRECT DEBIT\" übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Lastschriften enthält (59), muss genau BG-19 \"DIRECT DEBIT\" übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-25-a"
+      }
     },
     "BR-DE-25-b": {
       "title": "Code 59 forbids CREDIT TRANSFER (BG-17) and PAYMENT CARD (BG-18).",
@@ -4450,7 +4575,12 @@
       },
       "title_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Lastschriften enthält (59), dürfen BG-17 und BG-18 nicht übermittelt werden.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = '59']`, sodass gilt: Wenn BT-81 \"Payment means type code\" einen Schlüssel für Lastschriften enthält (59), dürfen BG-17 und BG-18 nicht übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn BT-81 \"Payment means type code\" einen Schlüssel für Lastschriften enthält (59), dürfen BG-17 und BG-18 nicht übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-25-b"
+      }
     },
     "BR-DE-26": {
       "title": "Type code 384 (Corrected invoice) should carry a PRECEDING INVOICE REFERENCE (BG-3).",
@@ -4468,7 +4598,12 @@
       },
       "title_de": "Wenn im Element \"Invoice type code\" (BT-3) der Code 384 (Corrected invoice) übergeben wird, soll PRECEDING INVOICE REFERENCE BG-3 mind. einmal vorhanden sein.",
       "fix_de": "Korrigieren Sie `cbc:InvoiceTypeCode`, sodass gilt: Wenn im Element \"Invoice type code\" (BT-3) der Code 384 (Corrected invoice) übergeben wird, soll PRECEDING INVOICE REFERENCE BG-3 mind. einmal vorhanden sein.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn im Element \"Invoice type code\" (BT-3) der Code 384 (Corrected invoice) übergeben wird, soll PRECEDING INVOICE REFERENCE BG-3 mind. einmal vorhanden sein.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-26"
+      }
     },
     "BR-DE-27": {
       "title": "BT-42 should contain at least three digits. Evaluated per seller Contact; an ABSENT telephone normalizes to '' and fires too.",
@@ -4485,7 +4620,12 @@
       },
       "title_de": "In BT-42 sollen mindestens drei Ziffern enthalten sein.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact`, sodass gilt: In BT-42 sollen mindestens drei Ziffern enthalten sein.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "In BT-42 sollen mindestens drei Ziffern enthalten sein.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-27"
+      }
     },
     "BR-DE-28": {
       "title": "BT-43 should look like an email address (exactly one '@', flanked per the official regex).",
@@ -4502,7 +4642,12 @@
       },
       "title_de": "In BT-43 soll genau ein @-Zeichen enthalten sein, welches nicht von einem Leerzeichen, einem Punkt, aber mindestens zwei Zeichen auf beiden Seiten flankiert werden soll. Ein Punkt sollte nicht am Anfang oder am Ende stehen.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact`, sodass gilt: In BT-43 soll genau ein @-Zeichen enthalten sein, welches nicht von einem Leerzeichen, einem Punkt, aber mindestens zwei Zeichen auf beiden Seiten flankiert werden soll. Ein Punkt sollte nicht am Anfang oder am Ende stehen.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "In BT-43 soll genau ein @-Zeichen enthalten sein, welches nicht von einem Leerzeichen, einem Punkt, aber mindestens zwei Zeichen auf beiden Seiten flankiert werden soll. Ein Punkt sollte nicht am Anfang oder am Ende stehen.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-28"
+      }
     },
     "BR-DE-30": {
       "title": "DIRECT DEBIT (BG-19) requires the Bank assigned creditor identifier (BT-90: a SEPA-scheme PartyIdentification of the seller or payee).",
@@ -4520,7 +4665,12 @@
       },
       "title_de": "Wenn \"DIRECT DEBIT\" BG-19 vorhanden ist, dann muss \"Bank assigned creditor identifier\" BT-90 übermittelt werden.",
       "fix_de": "Korrigieren Sie `cac:PaymentMeans/cac:PaymentMandate`, sodass gilt: Wenn \"DIRECT DEBIT\" BG-19 vorhanden ist, dann muss \"Bank assigned creditor identifier\" BT-90 übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn \"DIRECT DEBIT\" BG-19 vorhanden ist, dann muss \"Bank assigned creditor identifier\" BT-90 übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-30"
+      }
     },
     "BR-DE-31": {
       "title": "DIRECT DEBIT (BG-19) requires the Debited account identifier (BT-91).",
@@ -4538,7 +4688,12 @@
       },
       "title_de": "Wenn \"DIRECT DEBIT\" BG-19 vorhanden ist, dann muss \"Debited account identifier\" BT-91 übermittelt werden.",
       "fix_de": "Korrigieren Sie `cac:PaymentMeans/cac:PaymentMandate`, sodass gilt: Wenn \"DIRECT DEBIT\" BG-19 vorhanden ist, dann muss \"Debited account identifier\" BT-91 übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn \"DIRECT DEBIT\" BG-19 vorhanden ist, dann muss \"Debited account identifier\" BT-91 übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-31"
+      }
     },
     "BR-DE-TMP-32": {
       "title": "An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.",
@@ -4557,7 +4712,12 @@
       },
       "title_de": "Eine Rechnung sollte zur Angabe des Liefer-/Leistungsdatums entweder BT-72 \"Actual delivery date\", BG-14 \"Invoicing period\" oder in jeder Rechnungsposition BG-26 \"Invoice line period\" enthalten.",
       "fix_de": "Korrigieren Sie `cac:Delivery/cbc:ActualDeliveryDate`, sodass gilt: Eine Rechnung sollte zur Angabe des Liefer-/Leistungsdatums entweder BT-72 \"Actual delivery date\", BG-14 \"Invoicing period\" oder in jeder Rechnungsposition BG-26 \"Invoice line period\" enthalten.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Eine Rechnung sollte zur Angabe des Liefer-/Leistungsdatums entweder BT-72 \"Actual delivery date\", BG-14 \"Invoicing period\" oder in jeder Rechnungsposition BG-26 \"Invoice line period\" enthalten.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-TMP-32"
+      }
     },
     "BR-DEX-01": {
       "title": "Every 'Attached Document' binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set).",
@@ -4574,7 +4734,12 @@
       },
       "title_de": "Das Element \"Attached Document\" (BT-125) benutzt einen nicht zulässigen MIME-Code: . Im Falle einer Extension darf zusätzlich zu der Liste der mime codes (definiert in Abschnitt 8.2, \"Binary Object\") der MIME-Code application/xml genutzt werden.",
       "fix_de": "Korrigieren Sie `cbc:EmbeddedDocumentBinaryObject`, sodass gilt: Das Element \"Attached Document\" (BT-125) benutzt einen nicht zulässigen MIME-Code: . Im Falle einer Extension darf zusätzlich zu der Liste der mime codes (definiert in Abschnitt 8.2, \"Binary Object\") der MIME-Code application/xml genutzt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Attached Document\" (BT-125) benutzt einen nicht zulässigen MIME-Code: . Im Falle einer Extension darf zusätzlich zu der Liste der mime codes (definiert in Abschnitt 8.2, \"Binary Object\") der MIME-Code application/xml genutzt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DEX-01"
+      }
     },
     "BR-DEX-02": {
       "title": "The 'Invoice line net amount' (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs' net amounts.",
@@ -4593,7 +4758,12 @@
       },
       "title_de": "Der Wert von \"Invoice line net amount\" (BT-131) einer \"INVOICE LINE\" (BG-25) oder einer \"SUB INVOICE LINE\" (BG-DEX-01) soll der Summe der \"Invoice line net amount\" (BT-131) der direkt darunterliegenden \"SUB INVOICE LINE\" (BG-DEX-01) entsprechen.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine`: Der Wert von \"Invoice line net amount\" (BT-131) einer \"INVOICE LINE\" (BG-25) oder einer \"SUB INVOICE LINE\" (BG-DEX-01) soll der Summe der \"Invoice line net amount\" (BT-131) der direkt darunterliegenden \"SUB INVOICE LINE\" (BG-DEX-01) entsprechen.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Der Wert von \"Invoice line net amount\" (BT-131) einer \"INVOICE LINE\" (BG-25) oder einer \"SUB INVOICE LINE\" (BG-DEX-01) soll der Summe der \"Invoice line net amount\" (BT-131) der direkt darunterliegenden \"SUB INVOICE LINE\" (BG-DEX-01) entsprechen.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DEX-02"
+      }
     },
     "BR-DEX-03": {
       "title": "A SUB INVOICE LINE (BG-DEX-01) must carry exactly one SUB INVOICE LINE VAT INFORMATION (BG-DEX-06) — i.e. its Item must have exactly one cac:ClassifiedTaxCategory. Fires if any sub-line item has 0 or >1.",
@@ -4611,7 +4781,12 @@
       },
       "title_de": "Eine Sub Invoice Line (BG-DEX-01) muss genau eine \"SUB INVOICE LINE VAT INFORMATION\" (BG-DEX-06) enthalten.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:SubInvoiceLine/cac:Item`: Eine Sub Invoice Line (BG-DEX-01) muss genau eine \"SUB INVOICE LINE VAT INFORMATION\" (BG-DEX-06) enthalten.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Eine Sub Invoice Line (BG-DEX-01) muss genau eine \"SUB INVOICE LINE VAT INFORMATION\" (BG-DEX-06) enthalten.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DEX-03"
+      }
     },
     "BR-DEX-04": {
       "title": "Any scheme identifier on a Party identifier (cac:Party Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or 'SEPA' when the identifier belongs to the Seller or the Payee.",
@@ -4735,7 +4910,12 @@
       },
       "title_de": "Das Element \"Third party payment type\" BT-DEX-001 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PrepaidPayment`, sodass gilt: Das Element \"Third party payment type\" BT-DEX-001 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Third party payment type\" BT-DEX-001 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DEX-10"
+      }
     },
     "BR-DEX-11": {
       "title": "'Third party payment amount' (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).",
@@ -4753,7 +4933,12 @@
       },
       "title_de": "Das Element \"Third party payment amount\" BT-DEX-002 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PrepaidPayment`, sodass gilt: Das Element \"Third party payment amount\" BT-DEX-002 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Third party payment amount\" BT-DEX-002 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DEX-11"
+      }
     },
     "BR-DEX-12": {
       "title": "'Third party payment description' (BT-DEX-003, cbc:InstructionID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09).",
@@ -4771,7 +4956,12 @@
       },
       "title_de": "Das Element \"Third party payment description\" BT-DEX-003 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:PrepaidPayment`, sodass gilt: Das Element \"Third party payment description\" BT-DEX-003 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Third party payment description\" BT-DEX-003 muss übermittelt werden, wenn die Gruppe \"THIRD PARTY PAYMENT\" (BG-DEX-09) übermittelt wird.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DEX-12"
+      }
     },
     "BR-DEX-13": {
       "title": "'Third party payment amount' (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, '.')) <= 2 (no '.' -> '' -> length 0 -> holds).",
@@ -4788,7 +4978,12 @@
       },
       "title_de": "Die maximale Anzahl zulässiger Nachkommastellen für das Element \"Third party payment amount\" (BT-DEX-002) ist 2.",
       "fix_de": "Korrigieren Sie den berechneten Betrag bei `/ubl:Invoice/cac:PrepaidPayment`, sodass gilt: Die maximale Anzahl zulässiger Nachkommastellen für das Element \"Third party payment amount\" (BT-DEX-002) ist 2.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Die maximale Anzahl zulässiger Nachkommastellen für das Element \"Third party payment amount\" (BT-DEX-002) ist 2.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DEX-13"
+      }
     },
     "BR-DEX-14": {
       "title": "The currency of 'Third party payment amount' (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -> fires.",
@@ -4806,7 +5001,12 @@
       },
       "title_de": "Die Währungsangabe von \"Third party payment amount\" BT-DEX-002 muss BT-5 (\"Invoice currency code\") entsprechen.",
       "fix_de": "Korrigieren Sie den berechneten Betrag bei `/ubl:Invoice/cac:PrepaidPayment`, sodass gilt: Die Währungsangabe von \"Third party payment amount\" BT-DEX-002 muss BT-5 (\"Invoice currency code\") entsprechen.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Die Währungsangabe von \"Third party payment amount\" BT-DEX-002 muss BT-5 (\"Invoice currency code\") entsprechen.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DEX-14"
+      }
     },
     "BR-DE-CVD-01": {
       "title": "A CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty).",
@@ -4823,7 +5023,12 @@
       },
       "title_de": "Das Element \"Contract reference\" (BT-12) muss übermittelt werden.",
       "fix_de": "Korrigieren Sie `cac:ContractDocumentReference/cbc:ID`, sodass gilt: Das Element \"Contract reference\" (BT-12) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Contract reference\" (BT-12) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-CVD-01"
+      }
     },
     "BR-DE-CVD-02": {
       "title": "A CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty).",
@@ -4840,7 +5045,12 @@
       },
       "title_de": "Das Element \"Tender or lot reference\" (BT-17) muss übermittelt werden.",
       "fix_de": "Korrigieren Sie `cac:OriginatorDocumentReference/cbc:ID`, sodass gilt: Das Element \"Tender or lot reference\" (BT-17) muss übermittelt werden.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Element \"Tender or lot reference\" (BT-17) muss übermittelt werden.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-CVD-02"
+      }
     },
     "BR-DE-CVD-03": {
       "title": "A CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item.",
@@ -4859,7 +5069,12 @@
       },
       "title_de": "In einer Rechnung muss mindestens eine INVOICE LINE (BG-25) enthalten sein, in der der Scheme identifier von \"Item classification identifier\" (BT-158) den Wert 'CVD' und der \"Item attribute name\" (BT-160) den Wert 'cva' enthält.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `cac:InvoiceLine/cac:Item`: In einer Rechnung muss mindestens eine INVOICE LINE (BG-25) enthalten sein, in der der Scheme identifier von \"Item classification identifier\" (BT-158) den Wert 'CVD' und der \"Item attribute name\" (BT-160) den Wert 'cva' enthält.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "In einer Rechnung muss mindestens eine INVOICE LINE (BG-25) enthalten sein, in der der Scheme identifier von \"Item classification identifier\" (BT-158) den Wert 'CVD' und der \"Item attribute name\" (BT-160) den Wert 'cva' enthält.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-CVD-03"
+      }
     },
     "BR-DE-CVD-04": {
       "title": "In a CVD invoice, an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must contain one of the permitted vehicle categories M1, M2, M3, N1, N2, N3 (normalize-space comparison, per the official test).",
@@ -4876,7 +5091,12 @@
       },
       "title_de": "Ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' muss einen Wert aus der Liste der zulässigen Fahrzeugkategorien enthalten.",
       "fix_de": "Ergänzen Sie das erforderliche Element bei `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`: Ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' muss einen Wert aus der Liste der zulässigen Fahrzeugkategorien enthalten.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' muss einen Wert aus der Liste der zulässigen Fahrzeugkategorien enthalten.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-CVD-04"
+      }
     },
     "BR-DE-CVD-05": {
       "title": "In a CVD invoice, when the 'Item attribute name' (BT-160) within ITEM ATTRIBUTES (BG-32) is 'cva', the 'Item attribute value' (BT-161) must be one of 'clean', 'zero-emission', 'other' (normalize-space comparison; an absent cbc:Value normalizes to '' and fires).",
@@ -4895,7 +5115,12 @@
       },
       "title_de": "Wenn innerhalb von ITEM ATTRIBUTES (BG-32) der \"Item attribute name\" (BT-160) den Wert 'cva' hat, muss der \"Item attribute value\" (BT-161) einen der zulässigen Werte enthalten.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:AdditionalItemProperty[cbc:Name = 'cva']`, sodass gilt: Wenn innerhalb von ITEM ATTRIBUTES (BG-32) der \"Item attribute name\" (BT-160) den Wert 'cva' hat, muss der \"Item attribute value\" (BT-161) einen der zulässigen Werte enthalten.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn innerhalb von ITEM ATTRIBUTES (BG-32) der \"Item attribute name\" (BT-160) den Wert 'cva' hat, muss der \"Item attribute value\" (BT-161) einen der zulässigen Werte enthalten.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-CVD-05"
+      }
     },
     "BR-DE-CVD-06-a": {
       "title": "In a CVD invoice line whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD', exactly one 'Item attribute name' (BT-160) with the value 'cva' must be present on that Item.",
@@ -4913,7 +5138,12 @@
       },
       "title_de": "Wenn der Scheme identifier von \"Item classification identifier\" (BT-158) mit dem Wert 'CVD' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item attribute name\" (BT-160) mit dem Wert 'cva' vorhanden sein.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:InvoiceLine/cac:Item`, sodass gilt: Wenn der Scheme identifier von \"Item classification identifier\" (BT-158) mit dem Wert 'CVD' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item attribute name\" (BT-160) mit dem Wert 'cva' vorhanden sein.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn der Scheme identifier von \"Item classification identifier\" (BT-158) mit dem Wert 'CVD' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item attribute name\" (BT-160) mit dem Wert 'cva' vorhanden sein.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-CVD-06-a"
+      }
     },
     "BR-DE-CVD-06-b": {
       "title": "In a CVD invoice line whose Item carries an 'Item attribute name' (BT-160) with the value 'cva', exactly one 'Item classification identifier' (BT-158) with scheme identifier 'CVD' must be present on that Item.",
@@ -4931,7 +5161,12 @@
       },
       "title_de": "Wenn \"Item attribute name\" (BT-160) mit dem Wert 'cva' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' vorhanden sein.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:InvoiceLine/cac:Item`, sodass gilt: Wenn \"Item attribute name\" (BT-160) mit dem Wert 'cva' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' vorhanden sein.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn \"Item attribute name\" (BT-160) mit dem Wert 'cva' angegeben ist, muss in derselben Rechnungszeile genau ein \"Item classification identifier\" (BT-158) mit dem Scheme identifier 'CVD' vorhanden sein.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-DE-CVD-06-b"
+      }
     },
     "BR-TMP-2": {
       "title": "The 'External document location' (BT-124) must be an absolute URL with a valid scheme.",
@@ -4948,7 +5183,12 @@
       },
       "title_de": "BT-124 \"External document location\" muss eine absolute URL mit gültigem Schema enthalten.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/cac:ExternalReference`, sodass gilt: BT-124 \"External document location\" muss eine absolute URL mit gültigem Schema enthalten.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "BT-124 \"External document location\" muss eine absolute URL mit gültigem Schema enthalten.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-TMP-2"
+      }
     },
     "BR-TMP-3": {
       "title": "When the 'Item price base quantity' (BT-149) is present in BOTH GrossPriceProductTradePrice and NetPriceProductTradePrice of a line, the values must be identical, and when both carry a unit of measure code (BT-150) the unit codes must be identical too.",
@@ -4966,7 +5206,12 @@
       },
       "title_de": "Wenn BT-149 (Item price base quantity) sowohl in GrossPriceProductTradePrice als auch in NetPriceProductTradePrice vorhanden ist, müssen die Werte identisch sein. Wenn BT-150 (unit of measure code) auf dem NetPrice-Pfad vorhanden ist, muss es auch auf dem GrossPrice-Pfad vorhanden und identisch sein.",
       "fix_de": "Korrigieren Sie `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem`, sodass gilt: Wenn BT-149 (Item price base quantity) sowohl in GrossPriceProductTradePrice als auch in NetPriceProductTradePrice vorhanden ist, müssen die Werte identisch sein. Wenn BT-150 (unit of measure code) auf dem NetPrice-Pfad vorhanden ist, muss es auch auf dem GrossPrice-Pfad vorhanden und identisch sein.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Wenn BT-149 (Item price base quantity) sowohl in GrossPriceProductTradePrice als auch in NetPriceProductTradePrice vorhanden ist, müssen die Werte identisch sein. Wenn BT-150 (unit of measure code) auf dem NetPrice-Pfad vorhanden ist, muss es auch auf dem GrossPrice-Pfad vorhanden und identisch sein.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+        "assert_id": "BR-TMP-3"
+      }
     },
     "BR-TMP-CVD-01": {
       "title": "In a CVD invoice, the scheme identifier of every 'Item classification identifier' (BT-158) must come from the code list UNTDID 7143 (extended with 'CVD'). Official membership test is contains() over the space-flanked official list — see :func:`_untdid_7143_cvd_ok`.",
@@ -4983,7 +5228,12 @@
       },
       "title_de": "Das Bildungsschema für \"Item classification identifier\" (BT-158) ist aus der Codeliste UNTDID 7143 zu wählen.",
       "fix_de": "Korrigieren Sie `/ubl:Invoice/cac:InvoiceLine/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode`, sodass gilt: Das Bildungsschema für \"Item classification identifier\" (BT-158) ist aus der Codeliste UNTDID 7143 zu wählen.",
-      "de_source": "kosit"
+      "de_source": "kosit",
+      "message_de": "Das Bildungsschema für \"Item classification identifier\" (BT-158) ist aus der Codeliste UNTDID 7143 zu wählen.",
+      "message_de_provenance": {
+        "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
+        "assert_id": "BR-TMP-CVD-01"
+      }
     },
     "PEPPOL-EN16931-R001": {
       "title": "Business process MUST be provided.",

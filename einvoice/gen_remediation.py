@@ -82,9 +82,13 @@ def _clean(text):
 
 
 def _parse_sch(path):
-    """id -> {context, test, flag, assert_text} for the FIRST assert of each id
-    in a Schematron file (XML-parsed, so ``>`` inside @test is handled)."""
+    """id -> {context, test, flag, assert_text, artifact, assert_id} for the
+    FIRST assert of each id in a Schematron file (XML-parsed, so ``>`` inside
+    @test is handled). ``artifact`` is the file's path relative to this build
+    script (used as the message_de provenance tag); ``assert_id`` is the
+    ``<sch:assert>/@id`` the text was lifted from."""
     root = ET.parse(path).getroot()
+    rel = os.path.relpath(path, HERE).replace(os.sep, "/")
     out = {}
     for rule in root.iter(SCH + "rule"):
         ctx = rule.get("context")
@@ -99,6 +103,8 @@ def _parse_sch(path):
                 "test": a.get("test"),
                 "flag": a.get("flag"),
                 "assert_text": _clean("".join(a.itertext())),
+                "artifact": rel,
+                "assert_id": rid,
             }
     return out
 
@@ -1191,6 +1197,28 @@ def build_catalog():
             "fix_de": fix_de,
             "de_source": de_source,
         }
+        # message_de: the human-facing message in German, but ONLY where an
+        # OFFICIAL German string already exists on disk — i.e. the vendored
+        # KoSIT XRechnung Schematron <sch:assert> for this id is itself German
+        # (de_source == "kosit"). It is that assert text VERBATIM (the same
+        # cleaned string stored in provenance.assert / title_de), never a
+        # machine translation. Rules whose only official wording is English get
+        # NO message_de field (silence-with-reason): the CLI falls back to the
+        # English message for them. The provenance tag records exactly which
+        # vendored artifact + assert id the German was lifted from.
+        if de_source == "kosit":
+            artifact = rec["artifact"]
+            if "xrechnung-schematron" not in artifact:
+                # Defensive: German verbatim text must come from a KoSIT
+                # XRechnung artifact, never a core EN 16931 / codelist file.
+                raise SystemExit(
+                    "kosit German assert for %s came from non-XRechnung "
+                    "artifact %r" % (rid, artifact))
+            entry["message_de"] = rec["assert_text"]
+            entry["message_de_provenance"] = {
+                "artifact": artifact,
+                "assert_id": rec["assert_id"],
+            }
         catalog[rid] = entry
     return catalog
 
@@ -1227,7 +1255,11 @@ def render(catalog):
             "Each entry also carries German title_de/fix_de: de_source=='kosit' "
             "means the German is the vendored KoSIT XRechnung Schematron assert "
             "verbatim; de_source=='translation' means a faithful, deterministic "
-            "German rendering of the same English EN 16931 / codelist requirement."),
+            "German rendering of the same English EN 16931 / codelist requirement. "
+            "message_de (present ONLY on de_source=='kosit' rules) is the official "
+            "German <sch:assert> message VERBATIM, with a message_de_provenance "
+            "{artifact, assert_id} tag naming the vendored file it was lifted from; "
+            "the --lang de CLI surfaces it in place of the English message."),
         "generated_by": "gen_remediation.py",
         "rule_count": len(catalog),
         "rules": catalog,

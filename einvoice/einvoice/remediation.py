@@ -50,3 +50,39 @@ def load_catalog(path=None):
 def entry_for(rule_id, path=None):
     """Remediation entry for a single rule id, or ``None`` if not catalogued."""
     return load_catalog(path).get(rule_id)
+
+
+#: Human-facing languages the resolver understands. English is always the
+#: fallback; German is surfaced only where an OFFICIAL German string exists.
+SUPPORTED_LANGS = ("en", "de")
+
+
+def official_message(rule_id, lang, catalog=None, path=None):
+    """The official human-facing message for ``rule_id`` in ``lang``, or ``None``.
+
+    ``lang == "de"`` returns the catalog's ``message_de`` — the vendored KoSIT
+    XRechnung ``<sch:assert>`` text VERBATIM — but ONLY for the BR-DE-family
+    rules that actually carry one (de_source == "kosit"); every other rule, and
+    every non-German ``lang``, returns ``None`` so the caller keeps its existing
+    (English) message. Nothing is translated here: this is pure lookup of a
+    string already lifted from disk by ``gen_remediation.py``.
+
+    ``catalog`` may be a preloaded ``rule_id -> entry`` mapping (avoids re-reading
+    the JSON per violation); otherwise the committed catalog is loaded.
+    """
+    if lang == "de":
+        entry = (catalog or load_catalog(path)).get(rule_id)
+        if entry is not None:
+            return entry.get("message_de")
+    return None
+
+
+def resolve_message(rule_id, english_message, lang="en", catalog=None, path=None):
+    """Return the message to show a human for ``rule_id`` in ``lang``.
+
+    Returns the official German ``message_de`` where one exists under
+    ``lang == "de"``, otherwise the ``english_message`` passed in (a clean
+    fallback). Rule ids, severities and which rules fire are never affected —
+    this only chooses the display string.
+    """
+    return official_message(rule_id, lang, catalog=catalog, path=path) or english_message

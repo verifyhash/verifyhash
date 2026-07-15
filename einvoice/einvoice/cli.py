@@ -12,6 +12,13 @@ Usage:
 Global flags:
     --version  print the packaged ``einvoice.__version__`` and exit 0. Takes
                precedence over everything else — no subcommand or file needed.
+    --lang     language of the HUMAN validate summary only: ``en`` (default,
+               unchanged behaviour) or ``de``. Under ``de`` a violated rule that
+               carries an OFFICIAL German message (the BR-DE family, whose
+               vendored KoSIT XRechnung ``<sch:assert>`` text is German) is shown
+               with that verbatim German string; every other rule keeps its
+               English message. ``--lang`` never affects ``--json`` output, rule
+               ids, severities or which rules fire — only the displayed text.
 
 Subcommands:
     validate   report conformance (human summary, or --json full result).
@@ -93,9 +100,10 @@ from .report import (
     build_batch_report, build_batch_report_from_files,
     batch_exit_code, build_batch_text,
 )
+from .remediation import resolve_message, SUPPORTED_LANGS
 
 USAGE = ("usage: einvoice validate <invoice.xml|-> "
-         "[--json] [--quiet] [--profile=en16931|xrechnung]\n"
+         "[--json] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de]\n"
          "       einvoice validate-batch <dir|glob> "
          "[--json] [--quiet] [--profile=en16931|xrechnung]\n"
          "       einvoice receipt <invoice.xml> "
@@ -188,6 +196,12 @@ def main(argv=None):
         args = [a for a in args if a != "--quiet"]
 
     profile = "en16931"
+    # --lang selects the language of the HUMAN-facing message only. 'en'
+    # (default) keeps today's behaviour byte-for-byte; 'de' swaps a violation's
+    # message to the official German KoSIT XRechnung <sch:assert> text where one
+    # exists (falling back to English otherwise). It NEVER touches --json output,
+    # rule ids, severities or which rules fire.
+    lang = "en"
     rest = []
     i = 0
     while i < len(args):
@@ -203,12 +217,27 @@ def main(argv=None):
             profile = a.split("=", 1)[1]
             i += 1
             continue
+        if a == "--lang":
+            if i + 1 >= len(args):
+                sys.stderr.write("error: --lang needs a value\n" + USAGE + "\n")
+                return EXIT_USAGE
+            lang = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--lang="):
+            lang = a.split("=", 1)[1]
+            i += 1
+            continue
         rest.append(a)
         i += 1
     args = rest
     if profile not in PROFILES:
         sys.stderr.write("error: unknown profile %r (choose from %s)\n%s\n"
                          % (profile, ", ".join(PROFILES), USAGE))
+        return EXIT_USAGE
+    if lang not in SUPPORTED_LANGS:
+        sys.stderr.write("error: unknown lang %r (choose from %s)\n%s\n"
+                         % (lang, ", ".join(SUPPORTED_LANGS), USAGE))
         return EXIT_USAGE
 
     # ``validate-batch`` has its own dir|glob dispatch (no stdin, no on-disk
@@ -306,9 +335,14 @@ def main(argv=None):
             else:
                 v = next(x for x in result.violations
                          if _severity(x) == "fatal")
+                # --lang de surfaces the official German message where the rule
+                # carries one (BR-DE family); every other rule keeps its English
+                # message. Only the DISPLAY string changes — rule_id/element and
+                # the exit code are untouched.
+                message = resolve_message(v.rule_id, v.message, lang)
                 sys.stdout.write(
                     "FAIL: %s\n  %s: %s\n  offending element: %s\n"
-                    % (display_path, v.rule_id, v.message, v.element))
+                    % (display_path, v.rule_id, message, v.element))
             # Syntax-binding warnings are a separate, non-blocking category —
             # print the count on its own line so the exit-driving FAIL/PASS
             # verdict above stays unambiguous.

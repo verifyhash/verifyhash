@@ -17,6 +17,10 @@ XML. Standard library only.
 
 from __future__ import annotations
 
+import os
+import typing
+import xml.etree.ElementTree as ET
+
 from . import parser as _parser
 from . import rules as _rules
 from . import rules_xrechnung as _rules_xr
@@ -55,23 +59,26 @@ class Result:
     ``--json`` report; the report format is unchanged by this class.
     """
 
-    def __init__(self, violations):
+    #: Every finding, in evaluation order (see the class docstring).
+    violations: list[Violation]
+
+    def __init__(self, violations: typing.Iterable[Violation]) -> None:
         self.violations = list(violations)
 
     @property
-    def ok(self):
+    def ok(self) -> bool:
         return not any(_severity(v) == "fatal" for v in self.violations)
 
     @property
-    def valid(self):
+    def valid(self) -> bool:
         """True iff there is no ``fatal`` violation (alias of :attr:`ok`)."""
         return self.ok
 
     @property
-    def first(self):
+    def first(self) -> Violation | None:
         return self.violations[0] if self.violations else None
 
-    def to_dict(self, source=None):
+    def to_dict(self, source: str | None = None) -> dict:
         return {
             "source": source,
             "valid": self.ok,
@@ -97,7 +104,7 @@ class Result:
         return rec
 
 
-def validate_root(root, profile="en16931"):
+def validate_root(root: ET.Element, profile: str = "en16931") -> Result:
     """Run structural + business rules over a parsed UBL Invoice root.
 
     :param root: a parsed UBL ``Invoice`` element (an ``xml.etree`` Element),
@@ -138,7 +145,10 @@ def validate_root(root, profile="en16931"):
     return Result(violations)
 
 
-def validate_file(path, profile="en16931"):
+def validate_file(
+    path: str | os.PathLike[str] | typing.BinaryIO,
+    profile: str = "en16931",
+) -> Result:
     """Parse an invoice and validate it.
 
     :param path: the invoice to read. Either a filesystem path (``str`` /

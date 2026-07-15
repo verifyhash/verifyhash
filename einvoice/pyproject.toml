@@ -39,3 +39,8 @@ einvoice = "einvoice.cli:main"
 [tool.setuptools]
 # Explicit: ship the pure-Python package only (never corpus/, ci/, tests).
 packages = ["einvoice"]
+
+[tool.setuptools.package-data]
+# PEP 561: ship the `py.typed` marker so the embedded type hints are honoured
+# by downstream type checkers (mypy/pyright) when einvoice is vendored/installed.
+einvoice = ["py.typed"]

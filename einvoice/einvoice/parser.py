@@ -86,6 +86,12 @@ class NotWellFormed(Exception):
     as a traceback or an entity expansion.
     """
 
+    def __init__(self, *args: object) -> None:
+        # Behaviourally identical to Exception.__init__ (sets ``self.args``);
+        # declared explicitly only so the public embedding API carries a
+        # type-checkable, introspectable constructor signature (PEP 561).
+        super().__init__(*args)
+
 
 def _sourceline(el):
     """The 1-based parser line stamped on ``el`` by :mod:`einvoice._xmlsec`.

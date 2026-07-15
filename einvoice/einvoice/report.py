@@ -69,6 +69,7 @@ Standard library only. No network.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import os
@@ -1152,6 +1153,139 @@ def build_sarif(report):
     }
 
 
+#: GitLab Code Quality (Code Climate) ``severity`` for each report severity.
+#: The Code Quality contract accepts only {info, minor, major, critical,
+#: blocker}: a FATAL/parse ``error`` is a build-breaking ``major``, a
+#: ``warning`` is ``minor``, and an advisory ``information`` finding is ``info``.
+#: See GitLab docs "Code Quality report format" / the Code Climate spec.
+_GITLAB_SEVERITY = {
+    "fatal": "major",
+    "error": "major",
+    "warning": "minor",
+    "information": "info",
+}
+
+
+def _gitlab_severity(severity):
+    """Map a report severity string onto a GitLab Code Quality ``severity``.
+
+    ``fatal``/``error`` -> ``major`` (build-breaking), ``warning`` -> ``minor``,
+    ``information`` (or any unknown value) -> ``info``. The result is always one
+    of the five documented enum values {info, minor, major, critical, blocker}.
+    """
+    return _GITLAB_SEVERITY.get(severity, "info")
+
+
+def _gitlab_fingerprint(check_name, path, line):
+    """Deterministic, byte-reproducible hex fingerprint for a Code Quality entry.
+
+    GitLab de-duplicates findings across pipeline runs by ``fingerprint``, so it
+    must be STABLE for the same finding at the same location. We hash a
+    normalized ``rule id | path | line`` triple with SHA-256; the pieces are
+    joined with a NUL separator and the line is rendered as its decimal string
+    (or empty when the finding is not attributed to a source line), so two runs
+    on the same input produce byte-identical digests and no rule logic leaks in.
+    """
+    line_part = "" if line is None else str(line)
+    payload = "\x00".join((check_name or "", path or "", line_part))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def build_gitlab(report):
+    """Project a report dict (from :func:`build_report`) into a GitLab Code
+    Quality (Code Climate) JSON array.
+
+    Emits the list GitLab consumes via ``artifacts:reports:codequality:`` — the
+    documented "Code Quality report format", a subset of the Code Climate engine
+    spec. Each element is one issue object with ``description``, ``check_name``,
+    ``fingerprint``, ``severity`` and a ``location`` carrying ``path`` (and, when
+    the finding is attributed to a source position, ``lines.begin``). GitLab
+    renders these as inline annotations on merge requests and as a Code Quality
+    widget/summary.
+
+    Like :func:`build_sarif` and :func:`build_junit`, this is a PURE, additional
+    PROJECTION of the very same validator outcome the JSON path emits — it adds
+    no rule logic, invents no wording, and re-reads nothing. Every field is
+    relayed from the record dict :func:`_record` already produced:
+
+      * ``description`` = the violation message, falling back to the catalog
+        ``title`` and then the rule id (never empty);
+      * ``check_name`` = the rule id;
+      * ``severity`` = :func:`_gitlab_severity` of the report severity;
+      * ``fingerprint`` = :func:`_gitlab_fingerprint` over the rule id and the
+        normalized location, so re-runs de-dup deterministically;
+      * ``location.path`` = the invoice ``source`` path (falling back to the
+        violation ``field`` and then the catalog ``location`` hint);
+      * ``location.lines.begin`` = the OPTIONAL ``source_line`` the record
+        carries when the finding is attributable — the ``lines`` member is
+        OMITTED entirely (never emitted as 0) when ``source_line`` is absent.
+
+    Emission scope: this projects the CONFORMANCE issues — the ``fatal`` and
+    ``warning`` findings that drive the valid flag and the process exit code.
+    Purely advisory ``information`` findings (which never make an invoice
+    non-conformant and are absent from ``fatal_count``/``warning_count``) are
+    NOT emitted, so a conformant invoice yields the EMPTY Code Quality report
+    that GitLab reads as "no quality issues" — the same verdict every other
+    format reports. No rule fires or stops firing here; this is a projection.
+
+    A not-well-formed input (``report`` has an ``error``) yields a single
+    object for the parse error — ``check_name`` = the error code, ``severity``
+    ``major``, ``description`` the parser message — mirroring the SARIF/JUnit
+    not-well-formed contract.
+
+    :param report: a dict as returned by :func:`build_report`.
+    :returns: a GitLab Code Quality document as a ``list`` of ``dict``.
+    """
+    source = report.get("source") or ""
+    issues = []
+
+    if report.get("error"):
+        # Not-well-formed XML: a single Code Quality entry for the parse error,
+        # the GitLab analogue of the SARIF single-error result. A parse failure
+        # is build-breaking, so it maps to ``major``.
+        code = report["error"]
+        path = source
+        issues.append({
+            "description": report.get("message", "") or code,
+            "check_name": code,
+            "fingerprint": _gitlab_fingerprint(code, path, None),
+            "severity": _gitlab_severity("error"),
+            "location": {"path": path},
+        })
+        return issues
+
+    for v in report.get("violations", []):
+        rule_id = v.get("rule") or ""
+        severity = v.get("severity") or "fatal"
+        # Advisory-only findings do not represent a conformance regression and
+        # are excluded so a conformant invoice produces the empty Code Quality
+        # report GitLab expects. fatal (-> major) and warning (-> minor) stay.
+        if severity == "information":
+            continue
+        title = v.get("title")
+        field = v.get("field")
+        location_hint = v.get("location")
+        # location.path is a FILE path: the validated invoice. Fall back to the
+        # element field / catalog location hint only if the source is missing.
+        path = source or field or location_hint or ""
+        source_line = v.get("source_line")
+
+        issue = {
+            "description": v.get("message") or title or rule_id,
+            "check_name": rule_id,
+            "fingerprint": _gitlab_fingerprint(rule_id, path, source_line),
+            "severity": _gitlab_severity(severity),
+            "location": {"path": path},
+        }
+        # Attach the 1-based begin line ONLY when the finding is attributed to a
+        # source position; omit ``lines`` entirely otherwise (never emit 0).
+        if source_line is not None:
+            issue["location"]["lines"] = {"begin": source_line}
+        issues.append(issue)
+
+    return issues
+
+
 def build_badge(report):
     """Project a report dict (from :func:`build_report`) into a shields.io
     ENDPOINT-badge JSON dict.
@@ -1410,7 +1544,7 @@ def build_html(report):
 
 USAGE = ("usage: python3 -m einvoice.report "
          "[--profile en16931|xrechnung] "
-         "[--format json|junit|sarif|html|badge|text] "
+         "[--format json|junit|sarif|gitlab|html|badge|text] "
          "[--pretty] [--recurse] "
          "[--baseline <prev-report.json>] <invoice.xml | directory>\n"
          "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
@@ -1575,10 +1709,10 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
-    if fmt not in ("json", "junit", "sarif", "html", "badge", "text"):
+    if fmt not in ("json", "junit", "sarif", "gitlab", "html", "badge", "text"):
         sys.stderr.write(
-            "error: unknown format %r (choose from json, junit, sarif, html, "
-            "badge, text)\n%s\n" % (fmt, USAGE))
+            "error: unknown format %r (choose from json, junit, sarif, gitlab, "
+            "html, badge, text)\n%s\n" % (fmt, USAGE))
         return EXIT_FAIL
 
     if profile not in PROFILES:
@@ -1586,8 +1720,8 @@ def main(argv=None):
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_FAIL
 
-    if baseline_path is not None and fmt in ("junit", "sarif", "html", "badge",
-                                             "text"):
+    if baseline_path is not None and fmt in ("junit", "sarif", "gitlab", "html",
+                                             "badge", "text"):
         sys.stderr.write(
             "error: --baseline emits a diff document and is not compatible "
             "with --format %s\n%s\n" % (fmt, USAGE))
@@ -1661,6 +1795,9 @@ def main(argv=None):
     elif fmt == "sarif":
         sys.stdout.write(
             json.dumps(build_sarif(report), indent=2, sort_keys=True) + "\n")
+    elif fmt == "gitlab":
+        sys.stdout.write(
+            json.dumps(build_gitlab(report), indent=2, sort_keys=True) + "\n")
     elif fmt == "html":
         sys.stdout.write(build_html(report))
     elif fmt == "badge":

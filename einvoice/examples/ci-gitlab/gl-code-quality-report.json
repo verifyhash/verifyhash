@@ -1,0 +1,20 @@
+[
+  {
+    "check_name": "BR-DE-2",
+    "description": "The group 'SELLER CONTACT' (BG-6) must be transmitted.",
+    "fingerprint": "1c10f038d6718d880094bbdeb6f7fc8e9dc97f3bef46d4330cfca24b5676c3d1",
+    "location": {
+      "path": "examples/01-missing-fields/broken.xml"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-15",
+    "description": "The element 'Buyer reference' (BT-10) must be transmitted.",
+    "fingerprint": "59a123715df408bbf0146050859fb9a97e1ac5e18089774b33f35351e6b50e1a",
+    "location": {
+      "path": "examples/01-missing-fields/broken.xml"
+    },
+    "severity": "major"
+  }
+]

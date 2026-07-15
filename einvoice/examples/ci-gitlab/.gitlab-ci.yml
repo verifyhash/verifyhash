@@ -1,0 +1,54 @@
+# Copy-paste GitLab CI job: validate an e-invoice against EN 16931 / XRechnung
+# on every push + merge request and surface each fatal/warning finding in the
+# GitLab **Code Quality** widget (and, on an MR, as inline annotations on the
+# changed lines) — while FAILING the pipeline on any fatal violation.
+#
+# It drives the real `python3 -m einvoice.report ... --format gitlab`
+# entrypoint, which emits the documented GitLab Code Quality (Code Climate) JSON
+# array. This job adds no validation logic of its own; it only wires that output
+# into GitLab's `artifacts:reports:codequality:`. Emission scope note: the
+# report lists the conformance issues (fatal -> "major", warning -> "minor");
+# purely advisory `information` findings are omitted, so a conformant invoice
+# produces an empty report and the Code Quality widget shows no issues.
+#
+# ---------------------------------------------------------------------------
+# INSTALL (copy this file into YOUR repo)
+#   1. Copy this file to your repo root as `.gitlab-ci.yml` (or merge the
+#      `einvoice-conformance:` job below into an existing pipeline).
+#   2. Vendor the zero-dependency einvoice product into your repo — e.g. at
+#      third_party/einvoice/ (the folder holding einvoice/, examples/, ...).
+#      No `pip install` is needed: the validator is Python-stdlib-only.
+#   3. Point INVOICE (and PYTHONPATH) at your file / vendor location below.
+# ---------------------------------------------------------------------------
+
+stages:
+  - quality
+
+einvoice-conformance:
+  stage: quality
+  # Any image with Python 3 on PATH works; the validator has zero runtime deps.
+  image: python:3.12-slim
+  variables:
+    # The invoice to validate and where the vendored package lives. Adjust both.
+    INVOICE: "invoices/invoice.xml"
+    PYTHONPATH: "third_party/einvoice"
+  script:
+    # Emit the Code Quality report. `--format gitlab` prints the JSON array to
+    # stdout; redirect it to the artifact file GitLab ingests below.
+    #   --profile xrechnung   (default) validates the German XRechnung CIUS;
+    #                          use en16931 for the plain EU core.
+    # `|| true` keeps THIS line from aborting the job before the artifact is
+    # written — the real gate is the exit-code re-check on the next line, so a
+    # non-conformant invoice still fails the pipeline AND uploads its report.
+    - >-
+      python3 -m einvoice.report "$INVOICE" --format gitlab
+      > gl-code-quality-report.json || true
+    # Re-run for the exit code so a fatal violation fails the pipeline (exit 1);
+    # a not-well-formed file exits 3. `--format text` gives a readable log line.
+    - python3 -m einvoice.report "$INVOICE" --format text
+  artifacts:
+    when: always            # upload the report even when the job failed
+    reports:
+      codequality: gl-code-quality-report.json
+    paths:
+      - gl-code-quality-report.json

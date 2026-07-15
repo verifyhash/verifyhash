@@ -377,3 +377,43 @@ added this way: they are **additive** on the **same** `einvoice-conformance-
 report/v1` schema id. The original `rule`/`severity`/`message`/`field` keys are
 unchanged and remain first, so existing consumers keep working untouched; the
 schema id is deliberately **not** revved.
+
+## Integrator export contract (`export/rules.json` + `export/coverage.json`)
+
+An ERP integrator who wants a stable artifact to pin against — to map their own
+internal checks to the engine's rule set, or to CI-gate on the published
+coverage headline — should consume the two files under `einvoice/export/`
+rather than reading engine internals or scraping `COVERAGE.md`:
+
+- **`export/rules.json`** — one entry per business-rule id the engine actually
+  fires (currently **286**). Each entry carries only what the engine already
+  proves: `id`, `title`, `family` (`core` / `xrechnung-cius` /
+  `xrechnung-extension` / `xrechnung-cvd-tmp` / `peppol-kosit-vendored`),
+  `syntax` (`both` / `ubl` / `cii`), `severity` (`fatal` blocks validity;
+  `warning` does not), the proven `bindings` (the `ubl` / `cii` syntax
+  binding(s) it is differentially proven to fire in, each with its source
+  Schematron artifact), and — where present — the verbatim `remediation`
+  (`title` + `fix`).
+- **`export/coverage.json`** — the honest headline numbers: `business_rules`
+  total, the `syntax_binding` UBL/CII `proven`/`total` figures, and the
+  per-`universes` implemented/excluded/missing counts.
+
+Both files are **generated, never hand-maintained**: `einvoice/gen_export.py`
+derives them from the committed machine sources (`coverage_matrix.json`,
+`syntax_binding_catalog.json`, `remediation_catalog.json`, `cii_parity.json`).
+The two syntax-binding *proven* counts are re-derived exactly as
+`differential.py`'s `sb` / `sbcii` legs compute them — no number is a typed
+literal. `test_export.py` pins byte-reproducibility (re-running the generator
+must leave the committed files byte-identical) and pins every headline count to
+the `COVERAGE.md` headline, so the export can never silently diverge.
+
+**Versioning / stability policy.** Both files carry an integer top-level
+`schemaVersion` (currently **1**). An **additive** change — a new optional
+top-level field, or a new optional per-rule key that consumers can ignore —
+leaves `schemaVersion` unchanged. A **breaking** change — renaming or removing a
+field, or changing a field's type — bumps `schemaVersion` to `2`. The *values*
+(rule set, counts) track the engine and move without a version bump; the
+`schemaVersion` governs only the artifact **shape**, so an integrator can pin
+`schemaVersion == 1` and safely re-pull the numbers. (The coverage prose itself
+lives only in `COVERAGE.md`; it is intentionally not restated here to avoid
+drift.)

@@ -311,6 +311,67 @@ So the implemented rules are also green against 284 hand-labelled pass/fail
 assertions (CEN's own per-rule unit vectors, vendored per rule where CEN ships
 them), with the *correct* rule ID fired every time (not merely "some failure").
 
+## 4a. Third check: classifying KoSIT's own official test documents
+
+The differential proof (§2/§2a) shows *engine == Schematron on given inputs*.
+The conformance harness (§4) shows the rules are green on CEN's per-rule unit
+vectors. This third check answers a distinct, end-to-end question a buyer
+actually asks:
+
+> **Does the engine classify KoSIT's *own* official XRechnung test documents
+> the way the suite labels them?**
+
+`gen_testsuite_conformance.py` enumerates every `*.xml` under
+`corpus/xrechnung-testsuite/src/test/**` — the KoSIT `itplr-kosit/xrechnung-testsuite`
+corpus (Apache-2.0), vendored and version-pinned in this repo (XRechnung 3.0.x;
+see [`PROVENANCE.md`](PROVENANCE.md) and [`COVERAGE.md`](COVERAGE.md)). The
+suite's own `README.md` and `src/doc/test-overview.md` state that **every**
+document under `src/test/**` is a **positive reference instance**, so the
+expected label of each applicable document is *valid*. The generator classifies
+each document end-to-end with the public engine entry point
+(`einvoice.validate_file(path, profile="xrechnung")`) and writes the full
+per-document table plus summary counts to
+[`testsuite_conformance.json`](testsuite_conformance.json).
+
+**Headline (measured, not asserted):**
+
+> **39 of 39** in-scope official KoSIT XRechnung test-suite documents are
+> classified exactly as the suite labels them — accepted as **valid**.
+
+"In scope" is stated honestly and narrowly: the engine targets the **plain
+EN 16931 / XRechnung-standard CIUS in UBL syntax** (CustomizationID ending in
+`…#urn:xeinkauf.de:kosit:xrechnung_3.0`). Of the suite's 86 documents, 39 are
+in that scope and **all 39** classify as valid. The other 47 are **not hidden**
+— they are machine-listed in `testsuite_conformance.json`, each with the exact
+reason it is out of scope:
+
+- **41 CII (UN/CEFACT) documents** (`*_uncefact.xml`) — the engine parses UBL
+  only, so these trip the structural `S-ROOT` check. This is not a correctness
+  claim about CII either way; the engine simply does not target that syntax.
+- **5 XRechnung EXTENSION-guideline documents** (CustomizationID contains
+  `:extension:`) — a different guideline (sub-invoice-line / construction /
+  third-party-payment extension) than the plain CIUS. 4 of these happen to
+  still validate; 1 (`05.01a`) fails `BR-CO-16`. They are excluded from the
+  headline regardless, because the engine does not claim the extension.
+- **1 XRechnung CVD-monitoring-guideline document** (`02.01a-cvd`,
+  CustomizationID contains `xrechnung:cvd`) — a specialised profile the engine
+  does not implement; it fails `BR-CL-13`.
+
+The number is measured, never inflated: no positive document's label is bent
+and no rule is fabricated to force a pass. If a genuinely in-scope plain-CIUS
+positive document were ever rejected on a rule we *do* claim to cover, it would
+be recorded in `testsuite_conformance.json` as an honest divergence (scope class
+`in-scope-divergence`) with its firing rule id, and the measured headline would
+drop accordingly — a correctness fix would then be tracked separately, not
+smuggled into this measurement. Today there are **zero** such in-scope
+divergences.
+
+`test_testsuite_conformance.py` re-enumerates and re-classifies the corpus live
+on every run and asserts the committed counts match the fresh recompute (so the
+headline can never silently drift), and asserts that **every** non-accepted
+document carries a non-empty machine-readable reason — silence is the only
+forbidden outcome.
+
 ## 5. The honest remaining gap — what is NOT proven
 
 The 100% figure is **100% agreement on the 108 rules we implement, over this

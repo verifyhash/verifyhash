@@ -287,6 +287,16 @@ passed. A green run means something because the harness demonstrably goes red.
 Reproduce it: `cd einvoice && python3 conformance.py` (exit 0 = pass; exit 1
 prints the offending file, block, and expected vs. actual rule IDs).
 
+### KoSIT test-suite conformance headline
+
+End-to-end, on KoSIT's *own* official documents: **39 of 39** in-scope
+XRechnung test-suite documents (the plain `xrechnung_3.0` CIUS in UBL syntax)
+are classified exactly as the suite labels them — accepted as valid. The 47
+out-of-scope documents (CII syntax, extension and CVD guidelines) are
+machine-listed with their exact reason in
+[`testsuite_conformance.json`](testsuite_conformance.json); see
+[`CORRECTNESS.md` §4a](CORRECTNESS.md) for provenance and scope.
+
 ### NOT covered yet (deliberate first-slice cuts — do not rely on these)
 
 - **`BR-TMP-3` is CII-only by artifact design** — the `BR-DE-*` CIUS core,

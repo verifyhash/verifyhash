@@ -1026,6 +1026,16 @@ SARIF_SCHEMA_URI = (
     "Schemata/sarif-schema-2.1.0.json"
 )
 
+#: Canonical base URL for a per-rule reference page, e.g.
+#: ``https://verifyhash.com/einvoice/rules/BR-01/``. This is the EXACT form
+#: ``gen_site.py`` emits via its ``_url_rule`` helper (BASE_URL
+#: ``https://verifyhash.com/einvoice`` + ``/rules/<id>/``, trailing slash). It
+#: is duplicated here as a plain string constant rather than imported because
+#: ``gen_site`` is a build script, not a runtime import; a static test pins the
+#: two forms together. Used only for a SARIF ``reportingDescriptor.helpUri``
+#: deep-link — no network is ever touched.
+SARIF_RULE_HELP_BASE_URL = "https://verifyhash.com/einvoice/rules/"
+
 #: SARIF result level for each report severity (fatal -> error, warning ->
 #: warning, everything else -> note). Static Analysis Results Interchange
 #: Format v2.1.0, section 3.27.10 (result.level).
@@ -1040,6 +1050,31 @@ def _sarif_level(severity):
     findings. See OASIS SARIF 2.1.0 section 3.27.10.
     """
     return _SARIF_LEVEL.get(severity, "note")
+
+
+#: The single, versioned key under which a SARIF ``result.partialFingerprints``
+#: digest is published. GitHub code-scanning uses ``partialFingerprints`` to
+#: track "the same finding" across runs even when line numbers shift, so the
+#: value MUST be stable across edits — see :func:`_sarif_fingerprint`.
+_SARIF_FINGERPRINT_KEY = "einvoice/v1"
+
+
+def _sarif_fingerprint(rule_id, loc_name):
+    """Deterministic, byte-reproducible fingerprint for a SARIF result.
+
+    GitHub code-scanning de-duplicates a finding across runs by
+    ``partialFingerprints``, so the digest must be STABLE when line numbers
+    shift (an invoice edit that moves a violation to a different source line is
+    still "the same finding"). We therefore hash ONLY the rule id and the
+    normalized logical location (the ``field``/``location`` member already used
+    for ``logicalLocations``) with SHA-256 — deliberately NOT ``source_line``,
+    which moves on every edit. ``rule_id`` and ``loc_name`` are joined by a
+    single space (``loc_name`` empty-string when absent), matching the spec's
+    ``rule_id + ' ' + (loc_name or '')`` form, so two runs on the same logical
+    finding produce byte-identical digests and no line dependence leaks in.
+    """
+    payload = (rule_id or "") + " " + (loc_name or "")
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def build_sarif(report):
@@ -1084,13 +1119,23 @@ def build_sarif(report):
     seen_rule_ids = set()
     results = []        # list of SARIF result dicts
 
+    # The set of ids for which an authoritative rule-reference page exists;
+    # only these earn a ``helpUri`` deep-link. Loaded once per call.
+    catalog_ids = load_catalog()
+
     if report.get("error"):
         # Not-well-formed XML: a single error result, no rule metadata — the
-        # SARIF analogue of the JUnit single-<error> testcase.
+        # SARIF analogue of the JUnit single-<error> testcase. The fingerprint
+        # is keyed on the error code alone (no source line, no page exists), so
+        # it is stable and gets NO helpUri.
+        error_code = report["error"]
         results.append({
-            "ruleId": report["error"],
+            "ruleId": error_code,
             "level": "error",
-            "message": {"text": report.get("message", "") or report["error"]},
+            "message": {"text": report.get("message", "") or error_code},
+            "partialFingerprints": {
+                _SARIF_FINGERPRINT_KEY: _sarif_fingerprint(error_code, None),
+            },
         })
     else:
         for v in report.get("violations", []):
@@ -1117,17 +1162,29 @@ def build_sarif(report):
                     "fullDescription": {"text": fix_hint or ""},
                     "help": {"text": help_text},
                 }
+                # Deep-link to the authoritative live rule-reference page, but
+                # ONLY for a real catalog rule id (that is where a page exists);
+                # a synthetic/unknown id gets no helpUri.
+                if rule_id in catalog_ids:
+                    descriptor["helpUri"] = (
+                        SARIF_RULE_HELP_BASE_URL + rule_id + "/")
                 rules.append(descriptor)
 
+            loc_name = field or location
             result = {
                 "ruleId": rule_id,
                 "level": _sarif_level(severity),
                 "message": {"text": v.get("message") or title or rule_id},
+                # Stable across line shifts: derived from rule id + logical
+                # location only, never the source line (see _sarif_fingerprint).
+                "partialFingerprints": {
+                    _SARIF_FINGERPRINT_KEY: _sarif_fingerprint(
+                        rule_id, loc_name),
+                },
             }
             # Attach a logical location when we know WHERE the finding is;
             # omit ``locations`` entirely when neither field nor location hint
             # is present (an empty locations array is not useful).
-            loc_name = field or location
             if loc_name:
                 result["locations"] = [{
                     "logicalLocations": [{

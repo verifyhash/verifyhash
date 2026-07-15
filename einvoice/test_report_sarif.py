@@ -30,7 +30,9 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from einvoice.report import build_report  # noqa: E402
+from einvoice.report import (  # noqa: E402
+    build_report, build_sarif, SARIF_RULE_HELP_BASE_URL)
+from einvoice.remediation import load_catalog  # noqa: E402
 
 # Reuse the exact fixture + bad-invoice construction the other fast gates use.
 BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
@@ -156,6 +158,140 @@ class UnknownFormatMentionsSarif(unittest.TestCase):
         proc = _run(["--format", "bogus", BASE])
         self.assertNotEqual(proc.returncode, 0, proc.stdout)
         self.assertIn("sarif", proc.stderr.lower(), proc.stderr)
+
+
+class SarifPartialFingerprints(unittest.TestCase):
+    """DELIVERABLE A: every result carries a stable, line-independent
+    partialFingerprints digest under a single named key."""
+
+    def _report(self, source_line):
+        # A minimal build_report-shaped dict with ONE catalog violation; only
+        # source_line differs between callers.
+        return {
+            "valid": False,
+            "violations": [{
+                "rule": "BR-01",
+                "severity": "fatal",
+                "field": "/Invoice/cbc:CustomizationID",
+                "location": "BT-24",
+                "message": "An Invoice shall have a Specification identifier.",
+                "title": "Missing Specification identifier",
+                "fix_hint": "Add cbc:CustomizationID.",
+                "terms": ["BT-24"],
+                "source_line": source_line,
+            }],
+        }
+
+    def test_every_result_has_named_fingerprint(self):
+        doc = build_sarif(self._report(42))
+        results = doc["runs"][0]["results"]
+        self.assertTrue(results)
+        for res in results:
+            fp = res.get("partialFingerprints")
+            self.assertIsInstance(fp, dict, res)
+            self.assertTrue(fp, "partialFingerprints must be non-empty")
+            self.assertIn("einvoice/v1", fp, fp)
+            self.assertTrue(fp["einvoice/v1"])
+
+    def test_fingerprint_independent_of_source_line(self):
+        # Criterion 2: same violation, two DIFFERENT parser source lines ->
+        # IDENTICAL fingerprint (survives an edit that shifts the line).
+        a = build_sarif(self._report(10))["runs"][0]["results"][0]
+        b = build_sarif(self._report(9999))["runs"][0]["results"][0]
+        self.assertEqual(a["partialFingerprints"], b["partialFingerprints"])
+        # And the two source lines really were different inputs.
+        self.assertNotEqual(10, 9999)
+
+    def test_fingerprint_deterministic_byte_identical(self):
+        # Criterion 3: build_sarif called twice on the same report is byte
+        # identical (json.dumps of the fingerprints agrees).
+        rep = self._report(7)
+        first = build_sarif(rep)
+        second = build_sarif(rep)
+        self.assertEqual(json.dumps(first, sort_keys=True),
+                         json.dumps(second, sort_keys=True))
+
+    def test_malformed_error_result_has_line_free_fingerprint(self):
+        # Criterion 5: the not-well-formed single-error path still emits a
+        # fingerprint and NO helpUri, and it is line-free (error code only).
+        doc = build_sarif({"valid": False, "error": "not-well-formed",
+                           "message": "no element found"})
+        results = doc["runs"][0]["results"]
+        self.assertEqual(len(results), 1)
+        fp = results[0]["partialFingerprints"]
+        self.assertIn("einvoice/v1", fp)
+        self.assertTrue(fp["einvoice/v1"])
+        # No driver rules -> no helpUri path taken at all.
+        self.assertEqual(_driver(doc)["rules"], [])
+
+
+class SarifHelpUri(unittest.TestCase):
+    """DELIVERABLE B: catalog rule descriptors deep-link via helpUri; a
+    non-catalog id (e.g. the parse-error code) gets none."""
+
+    def test_catalog_rule_descriptor_has_canonical_helpuri(self):
+        rep = {
+            "valid": False,
+            "violations": [{
+                "rule": "BR-01",
+                "severity": "fatal",
+                "field": "/Invoice/cbc:CustomizationID",
+                "message": "x", "title": "t", "fix_hint": "f", "terms": [],
+                "source_line": 3,
+            }],
+        }
+        doc = build_sarif(rep)
+        rules = _driver(doc)["rules"]
+        self.assertTrue(rules)
+        catalog_ids = set(load_catalog().keys())
+        self.assertIn("BR-01", catalog_ids)
+        by_id = {r["id"]: r for r in rules}
+        self.assertEqual(
+            by_id["BR-01"]["helpUri"],
+            "https://verifyhash.com/einvoice/rules/BR-01/")
+        # Exactly the gen_site canonical form (base + id + trailing slash).
+        self.assertEqual(
+            by_id["BR-01"]["helpUri"],
+            SARIF_RULE_HELP_BASE_URL + "BR-01" + "/")
+        # fullDescription still present and untouched (criterion 6).
+        self.assertIn("fullDescription", by_id["BR-01"])
+        self.assertEqual(by_id["BR-01"]["fullDescription"], {"text": "f"})
+
+    def test_every_catalog_descriptor_gets_helpuri(self):
+        # Against a real bad invoice: EVERY deduped descriptor whose id is a
+        # catalog id carries the canonical helpUri; non-catalog ids do not.
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = os.path.join(tmp, "bad.xml")
+            make_bad_invoice(bad)
+            report = build_report(bad, profile="xrechnung")
+        doc = build_sarif(report)
+        catalog_ids = set(load_catalog().keys())
+        rules = _driver(doc)["rules"]
+        self.assertTrue(rules)
+        for r in rules:
+            if r["id"] in catalog_ids:
+                self.assertEqual(
+                    r["helpUri"],
+                    "https://verifyhash.com/einvoice/rules/%s/" % r["id"], r)
+            else:
+                self.assertNotIn("helpUri", r, r)
+
+    def test_non_catalog_id_gets_no_helpuri(self):
+        # A synthetic rule id that is NOT in the catalog must not deep-link.
+        fake = "ZZ-NOT-A-REAL-RULE-999"
+        self.assertNotIn(fake, set(load_catalog().keys()))
+        rep = {
+            "valid": False,
+            "violations": [{
+                "rule": fake, "severity": "fatal", "field": "/x",
+                "message": "m", "title": "t", "fix_hint": "f", "terms": [],
+                "source_line": 1,
+            }],
+        }
+        doc = build_sarif(rep)
+        by_id = {r["id"]: r for r in _driver(doc)["rules"]}
+        self.assertIn(fake, by_id)
+        self.assertNotIn("helpUri", by_id[fake])
 
 
 if __name__ == "__main__":

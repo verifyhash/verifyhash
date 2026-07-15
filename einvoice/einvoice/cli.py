@@ -2,6 +2,7 @@
 
 Usage:
     einvoice validate <invoice.xml|-> [--json] [--quiet] [--profile=en16931|xrechnung]
+    einvoice validate-batch <dir|glob> [--json] [--quiet] [--profile=en16931|xrechnung]
     einvoice receipt  <invoice.xml> [--profile=en16931|xrechnung]
     einvoice --version
 
@@ -21,6 +22,30 @@ Subcommands:
                summary on stdout without changing the exit code; when combined
                with --json the JSON is still emitted (quiet only silences the
                human summary). --quiet has no effect on ``receipt``.
+    validate-batch
+               validate a WHOLE BATCH of invoices in one run. The argument is
+               EITHER a directory (every ``*.xml`` / ``*.pdf`` invoice file
+               under it, recursively, dotfiles skipped) OR a shell-style glob
+               (e.g. ``invoices/*.xml`` or ``**/*.xml`` for a recursive match).
+               Every file is validated through the SAME DTD/XXE/resource-
+               hardened parser and rule engine ``validate`` uses — a hostile
+               DOCTYPE/entity file is reported as an ERROR (never parsed, never
+               aborts the batch). The directory and glob forms produce
+               byte-identical aggregate counts over the same file set. This
+               subcommand REUSES the batch engine in ``einvoice.report``
+               (build_batch_report / build_batch_report_from_files /
+               batch_exit_code / build_batch_text) verbatim — it re-implements
+               no aggregation or rule logic; see that module for the aggregate
+               ``einvoice-conformance-batch/v1`` schema. Prints a per-file
+               PASS/FAIL/ERROR summary plus an aggregate tally (or, with
+               --json, the aggregate batch dict). ``--quiet`` suppresses the
+               human summary but preserves the exit code (and still emits the
+               JSON when --json is set). A zero-match glob / empty directory is
+               reported honestly as ``file_count: 0`` with a note, exit 0 — not
+               a traceback. Exit code (the report.py precedence, fatal outranks
+               parse): 0 when every file passes, 1 if ANY file has a fatal
+               violation, 3 if some file only errored (not-well-formed /
+               unsupported container) and none had a fatal.
     receipt    emit a CANONICAL, DETERMINISTIC JSON conformance receipt: a
                byte-stable attestation of the outcome (tool+version, profile,
                verdict, failed fatal rule ids, input-document SHA-256, and a
@@ -36,11 +61,15 @@ Profiles:
                        the official Schematron ``flag`` semantics.
 
 Exit codes (stable contract):
-    0  the invoice passes every implemented fatal rule
-    1  at least one implemented fatal rule failed
+    0  the invoice passes every implemented fatal rule (``validate-batch``:
+       every file passed, or the directory/glob matched no invoice files)
+    1  at least one implemented fatal rule failed (``validate-batch``: ANY file
+       has a fatal violation — fatal outranks a parse error)
     2  usage error
     3  input is not well-formed XML / parse error (``validate`` only; the
-       ``receipt`` subcommand folds this into a FAIL receipt, exit 1)
+       ``receipt`` subcommand folds this into a FAIL receipt, exit 1;
+       ``validate-batch`` returns 3 when some file only errored — not-well-
+       formed / unsupported container — and no file had a fatal)
 
 Default output on failure: the FIRST fatal violated rule id, a human message
 and the offending element. With --json, the full result (all violations,
@@ -49,6 +78,7 @@ each with its severity) is emitted.
 Standard library only.
 """
 
+import glob
 import json
 import os
 import sys
@@ -58,9 +88,15 @@ from . import __version__
 from .validate import validate_file, PROFILES, _severity
 from .parser import NotWellFormed, parse_file
 from .receipt import build_receipt, canonical_json
-from .report import syntax_binding_section
+from .report import (
+    syntax_binding_section,
+    build_batch_report, build_batch_report_from_files,
+    batch_exit_code, build_batch_text,
+)
 
 USAGE = ("usage: einvoice validate <invoice.xml|-> "
+         "[--json] [--quiet] [--profile=en16931|xrechnung]\n"
+         "       einvoice validate-batch <dir|glob> "
          "[--json] [--quiet] [--profile=en16931|xrechnung]\n"
          "       einvoice receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
@@ -70,6 +106,61 @@ EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_PARSE = 3
+
+
+def _run_validate_batch(rest, profile, as_json, quiet):
+    """Drive ``einvoice validate-batch <dir|glob>``.
+
+    REUSES the batch engine in :mod:`einvoice.report` verbatim — no aggregation
+    or rule logic is re-implemented here:
+
+      * a directory argument goes through :func:`einvoice.report.build_batch_report`
+        (which walks it via ``collect_invoice_files`` and aggregates through the
+        shared file-list helper), exactly as ``python3 -m einvoice.report <dir>``
+        does;
+      * anything else is treated as a shell-style glob, expanded with the stdlib
+        :mod:`glob` module (``recursive=True`` so ``**`` matches across
+        directories), filtered to regular files, sorted deterministically, and
+        aggregated through the SAME
+        :func:`einvoice.report.build_batch_report_from_files` helper — so the
+        aggregate dict is byte-identical to the directory form over the same set
+        of files.
+
+    Every batched file flows through the identical ``build_report`` ->
+    ``validate_file`` / ``parse_file`` path, so the DTD/XXE/resource hardening
+    applies to every input unchanged (a hostile DOCTYPE file becomes an ERROR
+    entry, never a parse or a crash). Prints the human per-file summary via
+    :func:`einvoice.report.build_batch_text` unless ``--quiet``; with ``--json``
+    emits the aggregate batch dict as ``json.dumps(batch, indent=2)`` (still
+    emitted under ``--quiet``). Returns
+    :func:`einvoice.report.batch_exit_code` (0 all-pass; 1 if any file has a
+    fatal; 3 if some file only errored and none fatal). A zero-match glob /
+    empty directory yields ``file_count: 0`` + a note, exit 0 — never a
+    traceback.
+    """
+    if len(rest) != 1:
+        sys.stderr.write(
+            "error: validate-batch takes exactly one <dir|glob> argument\n"
+            + USAGE + "\n")
+        return EXIT_USAGE
+
+    target = rest[0]
+    if os.path.isdir(target):
+        batch = build_batch_report(target, profile=profile)
+    else:
+        # Not an existing directory -> a shell-style glob. Expand it with the
+        # stdlib glob module (recursive ** allowed), keep only regular files,
+        # and sort so the batch output is deterministic across filesystems.
+        matches = sorted(
+            p for p in glob.glob(target, recursive=True) if os.path.isfile(p))
+        batch = build_batch_report_from_files(
+            matches, profile=profile, root=target)
+
+    if as_json:
+        sys.stdout.write(json.dumps(batch, indent=2) + "\n")
+    elif not quiet:
+        sys.stdout.write(build_batch_text(batch))
+    return batch_exit_code(batch)
 
 
 def main(argv=None):
@@ -119,6 +210,13 @@ def main(argv=None):
         sys.stderr.write("error: unknown profile %r (choose from %s)\n%s\n"
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_USAGE
+
+    # ``validate-batch`` has its own dir|glob dispatch (no stdin, no on-disk
+    # single-file check). Handle it before the single-file subcommand parsing
+    # so the ``validate``/``receipt`` path below stays byte-for-byte unchanged.
+    # It reuses the SAME already-parsed --json/--quiet/--profile flags.
+    if args and args[0] == "validate-batch":
+        return _run_validate_batch(args[1:], profile, as_json, quiet)
 
     if len(args) < 2 or args[0] not in ("validate", "receipt"):
         sys.stderr.write(USAGE + "\n")

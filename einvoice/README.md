@@ -336,9 +336,13 @@ Three ways in, one code path (`einvoice/cli.py` — proven identical by
 python3 einvoice.py validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
 python3 -m einvoice   validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
 
+# validate a whole folder or glob in one run (reuses the same rule engine):
+python3 -m einvoice   validate-batch <dir|glob> [--json] [--quiet] [--profile=…]
+
 # b) pip-install (from a checkout/vendored copy — NOT on PyPI yet, on purpose)
 python3 -m pip install /path/to/einvoice     # zero runtime dependencies
 einvoice validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
+einvoice validate-batch <dir|glob> [--json] [--quiet] [--profile=en16931|xrechnung]
 ```
 
 **c) embed in-process** — vendor the bare `einvoice/` package directory (the
@@ -425,6 +429,28 @@ bytes are staged to a temporary file and validated through the *identical*
 DTD/XXE/resource-hardened parser used for on-disk files — piping in does **not**
 get a relaxed parse path (see [`SECURITY.md`](SECURITY.md)). `receipt` reads a
 file only.
+
+**Batch — `validate-batch <dir|glob>`** validates a whole set of invoices in one
+run. The argument is **either a directory** (every `*.xml`/`*.pdf` invoice file
+under it, recursively; dotfiles and dot-directories skipped) **or a shell-style
+glob** (`invoices/*.xml`, or `'invoices/**/*.xml'` for a recursive match — quote
+it so your shell doesn't pre-expand it). Every file goes through the **same**
+hardened parser and rule engine as `validate`, so a hostile `DOCTYPE`/entity file
+is reported as an `ERROR` (never parsed, never aborts the batch), and the
+directory and glob forms produce **byte-identical aggregate counts** over the same
+file set. It reuses the batch engine in `einvoice/report.py`
+(`build_batch_report` / `build_batch_report_from_files` / `batch_exit_code` /
+`build_batch_text`) verbatim — no aggregation or rule logic is re-implemented, and
+each per-file report is byte-identical to validating that file on its own. Output
+is a per-file `PASS`/`FAIL`/`ERROR` summary plus an aggregate tally, or the
+aggregate `einvoice-conformance-batch/v1` dict with `--json`; `--quiet` suppresses
+the human summary but keeps the exit code (and still emits JSON under `--json`). An
+**empty directory or zero-match glob** is reported honestly as `file_count: 0`
+with a `note`, exit `0` — never a traceback. The **exit code** follows the
+documented report precedence (fatal outranks parse): `0` when every file passes,
+`1` if **any** file has a fatal violation, `3` if some file only errored
+(not-well-formed / unsupported container) and none had a fatal. Pinned by
+`test_cli_batch.py`.
 
 **`--json` shape** — the exact field-by-field schema of the `--json` result
 (including the `syntax_bindings` array and its two count fields) is documented

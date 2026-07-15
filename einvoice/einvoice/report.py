@@ -499,7 +499,34 @@ def build_batch_report(root, profile="xrechnung"):
     :param profile: 'xrechnung' (default) or 'en16931'.
     :returns: an aggregate dict (see :data:`REPORT_BATCH_SCHEMA`).
     """
-    files = collect_invoice_files(root)
+    return build_batch_report_from_files(
+        collect_invoice_files(root), profile=profile, root=root)
+
+
+def build_batch_report_from_files(files, profile="xrechnung", root=None):
+    """Aggregate an ALREADY-ORDERED list of invoice file paths into a batch
+    document (schema ``einvoice-conformance-batch/v1``).
+
+    This is the single shared aggregation path: :func:`build_batch_report`
+    calls it with ``collect_invoice_files(root)`` (the directory walk) and the
+    CLI glob mode calls it with the globbed, sorted file list. Because BOTH
+    drive the identical per-file :func:`build_report` projection and the SAME
+    counting here, the aggregate dict is byte-identical across the two entry
+    points for the same set of files — there is no second aggregation engine
+    and no re-implemented rule logic.
+
+    ``files`` must be the final, deterministically ordered list of paths (the
+    caller decides how they were discovered). ``root`` is only the label
+    recorded in the document (a directory path or a glob pattern); it never
+    affects the counts or the per-file reports. An empty ``files`` list yields
+    ``file_count == 0``, an empty ``files`` array and an explicit ``note`` —
+    never a traceback and never a fake pass over fabricated content.
+
+    :param files: ordered list of invoice file paths to validate.
+    :param profile: 'xrechnung' (default) or 'en16931'.
+    :param root: the label (directory or glob pattern) recorded in the document.
+    :returns: an aggregate dict (see :data:`REPORT_BATCH_SCHEMA`).
+    """
     reports = [build_report(p, profile=profile) for p in files]
 
     fatal_count = sum(r.get("fatal_count", 0) for r in reports)
@@ -521,8 +548,8 @@ def build_batch_report(root, profile="xrechnung"):
         "files": reports,
     }
     if not reports:
-        # Honest empty-directory result: nothing was validated, so say so
-        # rather than presenting a green pass over fabricated content.
+        # Honest empty result: nothing was validated, so say so rather than
+        # presenting a green pass over fabricated content.
         batch["note"] = "no invoice files found"
     return batch
 

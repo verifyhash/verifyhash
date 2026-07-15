@@ -26,6 +26,7 @@ XSLT and compares the fired-rule set. The sources:
 - **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
 - Syntax: **255** proven on both UBL and CII, **30** UBL-only, **1** CII-only.
 - Severity (blocking class): **274** fatal (block validity), **12** warning / information (reported, non-blocking).
+- **Official German messages: 50 rules** carry an official German assert message, surfaced by the CLI `--lang de` flag (report human-message only; `--json` and exit codes are unchanged). That text is lifted VERBATIM from the vendored KoSIT XRechnung Schematron (`de_source == "kosit"`), never machine-translated; every other rule is English-only by design (no official German assert text exists to quote). See the README `--lang de` section.
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
   or a documented deliberate exclusion. This is deliberately NOT an uncaveated

@@ -35,6 +35,13 @@
     }
   },
   "rule_count": 286,
+  "german_message_coverage": {
+    "official_message_de_count": 50,
+    "total_rules": 286,
+    "surface": "--lang de (CLI / report human message only; not in --json)",
+    "source": "verbatim from the vendored KoSIT XRechnung Schematron <sch:assert> text (de_source == \"kosit\"); never machine- or hand-translated",
+    "other_rules_policy": "all other rules are English-only by design — no official German assert text exists for them, so --lang de falls back to the English message"
+  },
   "rules": [
     {
       "id": "BR-01",

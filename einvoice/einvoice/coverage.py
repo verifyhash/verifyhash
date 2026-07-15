@@ -301,6 +301,16 @@ def render_markdown(matrix, cii_parity=None):
       " CII-only." % (n_both, n_ubl, n_cii))
     w("- Severity (blocking class): **%d** fatal (block validity), **%d** warning"
       " / information (reported, non-blocking)." % (n_fatal, n_warn))
+    gmc = matrix.get("german_message_coverage")
+    if gmc:
+        w("- **Official German messages: %d rules** carry an official German"
+          " assert message, surfaced by the CLI `--lang de` flag (report"
+          " human-message only; `--json` and exit codes are unchanged). That"
+          " text is lifted VERBATIM from the vendored KoSIT XRechnung"
+          " Schematron (`de_source == \"kosit\"`), never machine-translated;"
+          " every other rule is English-only by design (no official German"
+          " assert text exists to quote). See the README `--lang de` section."
+          % gmc["official_message_de_count"])
     gap_head = matrix.get("gap")
     taut_head = (matrix.get("exclusions") or {}).get("official_tautology")
     if gap_head and taut_head is not None:

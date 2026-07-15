@@ -31,6 +31,7 @@ from einvoice import rules as _rules            # noqa: E402
 from einvoice import rules_xrechnung as _rules_xr  # noqa: E402
 from einvoice import rules_peppol as _rules_pep  # noqa: E402
 from einvoice import coverage as _coverage       # noqa: E402
+from einvoice import remediation as _remediation  # noqa: E402
 import differential as _diff                      # noqa: E402
 
 JSON_PATH = os.path.join(HERE, "coverage_matrix.json")
@@ -625,6 +626,34 @@ def build_cvd_tmp_family():
     }
 
 
+def build_german_message_coverage():
+    """Derive the official-German-message coverage straight from the remediation
+    catalog (single source of truth): the exact count of rules carrying an
+    official ``message_de``. Every such entry is a ``de_source == "kosit"`` rule
+    whose vendored KoSIT XRechnung ``<sch:assert>`` is itself German, lifted
+    VERBATIM (proven byte-identical by ``test_lang.py``). Recomputed on every
+    build so the published number cannot drift from the catalog."""
+    catalog = _remediation.load_catalog()
+    de_ids = sorted(rid for rid, e in catalog.items()
+                    if isinstance(e, dict) and "message_de" in e)
+    # Cross-check: message_de is present on EXACTLY the de_source=="kosit" rules.
+    kosit_ids = sorted(rid for rid, e in catalog.items()
+                       if isinstance(e, dict) and e.get("de_source") == "kosit")
+    assert de_ids == kosit_ids, (
+        "message_de must be present on exactly the de_source=='kosit' rules")
+    return {
+        "official_message_de_count": len(de_ids),
+        "total_rules": len(catalog),
+        "surface": "--lang de (CLI / report human message only; not in --json)",
+        "source": ("verbatim from the vendored KoSIT XRechnung Schematron "
+                   "<sch:assert> text (de_source == \"kosit\"); never machine- "
+                   "or hand-translated"),
+        "other_rules_policy": ("all other rules are English-only by design — no "
+                               "official German assert text exists for them, so "
+                               "--lang de falls back to the English message"),
+    }
+
+
 def build_matrix():
     """Assemble the coverage-matrix document from the live engine + graded sets."""
     entries = {}
@@ -773,6 +802,7 @@ def build_matrix():
         "schematron_sources_order": SCHEMATRON_ORDER,
         "schematron_sources": SCHEMATRON_SOURCES,
         "rule_count": len(rules_list),
+        "german_message_coverage": build_german_message_coverage(),
         "rules": rules_list,
         "exclusions": {
             "description": (

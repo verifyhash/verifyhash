@@ -427,6 +427,12 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   the human summary). It has no effect on `receipt`, whose canonical JSON *is*
   its output.
 - `--profile=en16931|xrechnung` — select the rule set (default `en16931`).
+- `--lang=en|de` — language of the human failure message only (default `en`).
+  Under `de` a rule that has an **official** German assert renders it; all other
+  rules keep their English message. It changes nothing else — same rules fire,
+  same offending element, byte-identical `--json`, same exit code. See
+  [§German-language messages](#german-language-messages---lang-de) for the exact
+  coverage.
 
 **Input** — `validate <invoice.xml>` reads a file; `validate -` reads the
 invoice XML from **stdin** (e.g. `curl -s … | einvoice validate -`). The stdin
@@ -463,6 +469,45 @@ in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md). A machine-readable JSON Schema
 (`report.schema.json`) for this shape is planned; once published it will live
 alongside `REPORT-SCHEMA.md`, and this contract is written to stay compatible
 with it — the CLI does not depend on that file existing.
+
+### German-language messages (`--lang de`)
+
+`--lang de` swaps the language of the human-facing failure message **only**.
+Which rules fire, the offending element, the `--json` payload and the exit code
+are all unchanged — the JSON output is byte-identical with or without the flag
+(pinned by `test_lang.py`). The coverage is deliberately narrow, and stated here
+without spin:
+
+- **Exactly 50 rules carry an official German message**, surfaced by
+  `--lang de`. These are precisely the `remediation_catalog.json` entries tagged
+  `de_source == "kosit"` — the rules whose vendored KoSIT XRechnung
+  `<sch:assert>` text is *itself German* (the `BR-DE-*` / `BR-DE-CVD-*` /
+  `BR-TMP-*` / `BR-DEX` German-authored family). `test_lang.py` pins that count
+  and re-extracts each German string from the vendored `.sch` on disk to prove
+  it is genuinely present, not fabricated. The number here is the count of
+  `message_de` fields in the catalog; a build gate fails if the prose and the
+  catalog ever disagree, so it cannot silently drift.
+- **That German text is lifted VERBATIM** from the vendored KoSIT XRechnung
+  Schematron (`corpus/xrechnung-schematron/schematron/{ubl,cii}/XRechnung-*-validation.sch`),
+  byte-for-byte, each `message_de` tagged with the `{artifact, assert_id}` it
+  came from. We do **not** machine-translate and do **not** hand-translate any
+  error text: a `message_de` is only ever the official KoSIT assert as KoSIT
+  wrote it.
+- **Every other rule is English-only by design.** The EN 16931 core
+  (`BR-*`, `BR-CO-*`, `BR-CL-*`) and the other non-German-sourced rules (e.g.
+  the English-authored PEPPOL asserts) have **no** official German assert text
+  to quote, so under `--lang de` they fall back to their English message
+  unchanged. This is silence-with-reason, not a coverage gap: showing the
+  authoritative English assert is more honest than inventing a German one. There
+  is **no machine translation** anywhere in this surface.
+
+This official-German message is a **CLI / report human-message** feature: it is
+not injected into `--json`, and this task added no field to the generated
+`www/` rule pages. (Those bilingual rule pages already render the catalog's
+German `title`/`fix` verbatim from the same source, each honestly labelled by
+its `de_source` as either the official KoSIT assert or a clearly-marked
+translation — pre-existing behaviour, not part of the `--lang de` message
+surface.)
 
 ### Syntax-binding findings (`syntax_bindings`)
 

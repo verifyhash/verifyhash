@@ -328,6 +328,11 @@ See `SPEC.md` §6 for the full deferred list.
 
 ## 3. Install / embed / usage
 
+> **New here?** [`QUICKSTART.md`](QUICKSTART.md) is a tested 5-minute copy-paste
+> path: install, validate a passing and a failing sample invoice, and read the
+> exit code + `--json` — every command in it is run against the live engine by
+> `test_quickstart.py`.
+
 Three ways in, one code path (`einvoice/cli.py` — proven identical by
 `test_packaging.py`):
 

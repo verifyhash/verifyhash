@@ -19,7 +19,116 @@
       ]
     }
   },
-  "components": [],
+  "components": [
+    {
+      "type": "data",
+      "bom-ref": "corpus:eInvoicing-EN16931@1.3.16",
+      "name": "eInvoicing-EN16931",
+      "version": "1.3.16",
+      "description": "Vendored, version-pinned rule corpus from ConnectingEurope/eInvoicing-EN16931 (EUPL-1.2). Build/differential-test input only \u2014 NOT a runtime dependency and NOT shipped in the wheel.",
+      "licenses": [
+        {
+          "license": {
+            "id": "EUPL-1.2"
+          }
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/ConnectingEurope/eInvoicing-EN16931"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7abde1db21daf288359c280f5ef74ffbce033ccb269acc5871971a40b0e24a06"
+        }
+      ],
+      "properties": [
+        {
+          "name": "verifyhash:corpus-path",
+          "value": "corpus/cen-en16931"
+        },
+        {
+          "name": "verifyhash:version-source",
+          "value": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch header (<!--Schematron version 1.3.16 ...-->)"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "corpus:xrechnung-schematron@2.5.0",
+      "name": "xrechnung-schematron",
+      "version": "2.5.0",
+      "description": "Vendored, version-pinned rule corpus from itplr-kosit/xrechnung-schematron (Apache-2.0). Build/differential-test input only \u2014 NOT a runtime dependency and NOT shipped in the wheel.",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/itplr-kosit/xrechnung-schematron"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "86f2a261f8c4be3c46c4a7beccd665f49194a9c6d2eb3b0bd0b5b96e3d5f8f84"
+        }
+      ],
+      "properties": [
+        {
+          "name": "verifyhash:corpus-path",
+          "value": "corpus/xrechnung-schematron"
+        },
+        {
+          "name": "verifyhash:version-source",
+          "value": "PROVENANCE.md + corpus/xrechnung-schematron/VENDORED.md (release tag v2.5.0)"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "corpus:xrechnung-testsuite@2026-07-31-SNAPSHOT",
+      "name": "xrechnung-testsuite",
+      "version": "2026-07-31-SNAPSHOT",
+      "description": "Vendored, version-pinned rule corpus from itplr-kosit/xrechnung-testsuite (Apache-2.0). Build/differential-test input only \u2014 NOT a runtime dependency and NOT shipped in the wheel.",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/itplr-kosit/xrechnung-testsuite"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "afe01e9a1eb378ef6ac309938220dfc2ad1c323e16177ce0097e9a75b5981a74"
+        }
+      ],
+      "properties": [
+        {
+          "name": "verifyhash:corpus-path",
+          "value": "corpus/xrechnung-testsuite"
+        },
+        {
+          "name": "verifyhash:version-source",
+          "value": "corpus/xrechnung-testsuite/build.xml (property testsuite.version.date = \"2026-07-31-SNAPSHOT\")"
+        }
+      ]
+    }
+  ],
   "dependencies": [
     {
       "ref": "pkg:pypi/verifyhash-einvoice@0.1.0",

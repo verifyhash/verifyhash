@@ -383,6 +383,56 @@ and offending element. `--json` emits the full machine-readable result:
 A `valid: true` result means "no implemented fatal rule fired" — given §2, it
 does **not** yet mean "legally conformant XRechnung."
 
+### CLI contract
+
+The command line is a small, stable surface. Everything below is pinned by
+`test_cli.py` (ergonomics) and `test_cli_sb.py` / `test_packaging.py` (the
+exit-code and packaging invariants).
+
+**Exit codes** — the whole point of the tool is to gate a build, so the exit
+code is the contract, not the prose. The `receipt` subcommand collapses code
+`3` into a FAIL receipt (exit `1`) because a receipt must always emit a
+document; codes `2` and `3` below therefore describe `validate`:
+
+| Code | Meaning |
+|---|---|
+| `0` | passes every implemented **fatal** rule (advisory warnings may still be reported) |
+| `1` | at least one implemented **fatal** rule failed |
+| `2` | usage error — bad/missing arguments, no such file, or an unknown `--profile` |
+| `3` | input is **not well-formed** XML (or a rejected DTD/entity/XXE payload, folded to the same not-well-formed outcome) — `validate` only |
+
+Syntax-binding warnings and XRechnung `warning`/`information` findings are
+**advisory**: they are reported but never move the exit code off `0`/`1`.
+
+**Flags**
+
+- `--version` — prints the packaged `einvoice.__version__` (read from the
+  installed package, not a hardcoded string) and exits `0`. It takes precedence
+  over everything: no subcommand or file is required
+  (`einvoice --version` / `python3 -m einvoice --version`).
+- `--json` — emit the full machine-readable result instead of the human
+  summary (shape below and in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md)).
+- `--quiet` — suppress the human `PASS`/`FAIL`/`Syntax-binding warnings` summary
+  on stdout. The **exit code is unchanged**, and `--quiet` does *not* suppress
+  `--json`: `validate --quiet --json` still prints the JSON (quiet only silences
+  the human summary). It has no effect on `receipt`, whose canonical JSON *is*
+  its output.
+- `--profile=en16931|xrechnung` — select the rule set (default `en16931`).
+
+**Input** — `validate <invoice.xml>` reads a file; `validate -` reads the
+invoice XML from **stdin** (e.g. `curl -s … | einvoice validate -`). The stdin
+bytes are staged to a temporary file and validated through the *identical*
+DTD/XXE/resource-hardened parser used for on-disk files — piping in does **not**
+get a relaxed parse path (see [`SECURITY.md`](SECURITY.md)). `receipt` reads a
+file only.
+
+**`--json` shape** — the exact field-by-field schema of the `--json` result
+(including the `syntax_bindings` array and its two count fields) is documented
+in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md). A machine-readable JSON Schema
+(`report.schema.json`) for this shape is planned; once published it will live
+alongside `REPORT-SCHEMA.md`, and this contract is written to stay compatible
+with it — the CLI does not depend on that file existing.
+
 ### Syntax-binding findings (`syntax_bindings`)
 
 Alongside the EN 16931 / XRechnung `BR-*` business rules, the two vendored CEN

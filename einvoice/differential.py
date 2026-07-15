@@ -52,6 +52,7 @@ Exit code: 0 iff every graded comparison agreed (both legs).
 from __future__ import annotations
 
 import copy
+import hashlib
 import os
 import sys
 import tempfile
@@ -6025,10 +6026,45 @@ def build_xr_corpus(scratch: str):
 
 
 # --------------------------------------------------------------------------- #
+# OPT-IN corpus sharding (default OFF — byte-identical output when unset).
+# --------------------------------------------------------------------------- #
+# A divergence is counted per (rule, invoice); partitioning the corpus by
+# invoice therefore partitions the divergences, and summing the per-shard totals
+# reproduces the whole-corpus total exactly. ``prove.py`` uses this to run the
+# two heavy legs across CPU cores as independent subprocesses and fit the gate
+# time budget WITHOUT weakening the proof (every invoice is still graded once,
+# in exactly one shard). The partition key is a STABLE md5 of the corpus label
+# (NOT the builtin ``hash()``, which is per-process salted for str, and NOT the
+# list index, which would be unsound if two processes built the corpus in a
+# different order). When ``DIFF_SHARD`` is unset the corpus is returned
+# unchanged, so an ordinary ``python3 differential.py`` run is unaffected.
+def _maybe_shard(corpus):
+    spec = os.environ.get("DIFF_SHARD")
+    if not spec:
+        return corpus
+    i_str, _, n_str = spec.partition("/")
+    i, n = int(i_str), int(n_str)
+    if n <= 1:
+        return corpus
+    if not (0 <= i < n):
+        raise ValueError("DIFF_SHARD out of range: %r" % spec)
+    out = []
+    for item in corpus:
+        label = item[0]
+        h = int(hashlib.md5(label.encode("utf-8")).hexdigest(), 16)
+        if h % n == i:
+            out.append(item)
+    print("  [shard %d/%d] grading %d of %d corpus items" %
+          (i, n, len(out), len(corpus)))
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Full differential run (one "leg" per official ruleset).
 # --------------------------------------------------------------------------- #
 def _run_leg(title, xslt_path, rule_ids, our_fn, corpus):
     """Grade one official-vs-ours leg. Returns the divergence count."""
+    corpus = _maybe_shard(corpus)
     rule_set = set(rule_ids)
     print("  restricting comparison to OUR %d implemented rules:" % len(rule_ids))
     print("    " + ", ".join(rule_ids))

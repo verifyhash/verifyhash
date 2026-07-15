@@ -31,6 +31,7 @@ einvoice project. Temp fragment files are written to an auto-deleted temp dir.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -38,6 +39,34 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+
+
+# --------------------------------------------------------------------------- #
+# OPT-IN corpus sharding (default OFF — byte-identical output when unset).
+# --------------------------------------------------------------------------- #
+# Each conformance vector file is graded independently (a file's fragments are
+# all driven together), so partitioning the valid/invalid file lists by a stable
+# md5 of the filename partitions the hard-fails; summing the per-shard hard-fail
+# counts reproduces the whole-corpus total exactly. ``prove.py`` uses this to run
+# the corpus across CPU cores as independent subprocesses so the reproduce
+# entrypoint fits the gate time budget WITHOUT weakening the check (every vector
+# is still graded once, in exactly one shard; a shard only ever exercises a
+# SUBSET of rule ids, so the coverage-matrix "undocumented rule fired" guard can
+# never false-positive on a shard). When ``CONF_SHARD`` is unset the file lists
+# are returned unchanged, so an ordinary ``python3 conformance.py`` gate run is
+# byte-identical.
+def _maybe_shard_files(files):
+    spec = os.environ.get("CONF_SHARD")
+    if not spec:
+        return files
+    i_str, _, n_str = spec.partition("/")
+    i, n = int(i_str), int(n_str)
+    if n <= 1:
+        return files
+    if not (0 <= i < n):
+        raise ValueError("CONF_SHARD out of range: %r" % spec)
+    return [f for f in files
+            if int(hashlib.md5(f.encode("utf-8")).hexdigest(), 16) % n == i]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLI = os.path.join(HERE, "einvoice.py")
@@ -909,8 +938,8 @@ def main():
     exercised = set()
 
     # ---- 1. VALID vectors: must exit 0 -----------------------------------
-    valid_files = sorted(
-        f for f in os.listdir(VALID_DIR) if f.endswith(".xml"))
+    valid_files = _maybe_shard_files(sorted(
+        f for f in os.listdir(VALID_DIR) if f.endswith(".xml")))
     valid_total = len(valid_files)
     valid_pass = 0
     valid_rows = []
@@ -929,8 +958,8 @@ def main():
                 "FALSE POSITIVE: valid vector rejected -> %s (%s)" % (f, detail))
 
     # ---- 2. INVALID vectors: driven at the embedded-block level ----------
-    invalid_files = sorted(
-        f for f in os.listdir(INVALID_DIR) if f.endswith(".xml"))
+    invalid_files = _maybe_shard_files(sorted(
+        f for f in os.listdir(INVALID_DIR) if f.endswith(".xml")))
 
     # file-level (one row per MANIFEST invalid vector)
     file_rows = []

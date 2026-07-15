@@ -411,6 +411,56 @@ so it emits the UBL ids; the CII binding's syntax-binding layer is exercised
 through the report/library path. Full field docs:
 [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md).
 
+### Reproduce this yourself
+
+The whole "machine-proven-coverage" claim rebuilds from the vendored official
+artifacts with **one** committed command:
+
+```sh
+PYTHONPATH=$HOME/.local/lib/python3.10/site-packages python3 prove.py
+```
+
+[`prove.py`](prove.py) runs, end to end and exiting non-zero on any failure:
+
+1. [`differential.py`](differential.py) over **all six legs** — for every one of
+   our implemented rule and syntax-binding ids it asks the same yes/no question
+   ("does rule *R* fire on this document?") of the OFFICIAL vendored CEN / KoSIT
+   Schematron (via Saxon) and of our engine, across the whole corpus, and counts
+   **divergences** (a false positive or a miss). `prove.py` asserts and echoes
+   that this count is **0**.
+2. [`conformance.py`](conformance.py) — the targeted invalid/valid fragment
+   corpus — and asserts **0 hard fails** (no false positives; every covered
+   invalid vector detected with the correct rule id).
+3. the coverage headline, recomputed **live** this run and printed in the shape:
+
+   > *N* business rules / **0 divergences** across all differential legs / *U* of
+   > *Ut* UBL + *C* of *Ct* CII syntax-binding asserts differential-proven per
+   > binding
+
+`prove.py` reads no headline number from a string literal. What each field means
+and where it comes from:
+
+- **business rules** — `coverage_matrix.json['rule_count']`, the EN 16931 +
+  XRechnung/Peppol `BR-*` rules our engine implements. Independently re-checked
+  by [`test_coverage_matrix.py`](test_coverage_matrix.py) (the JSON is a live
+  re-render of what the engine fires, and `COVERAGE.md` is a byte-identical
+  render of the JSON).
+- **divergences** — the step-1 total; **0** means our verdict never departs from
+  the official Schematron over the corpus. This is the differential harness's own
+  `OVERALL DIVERGENCES ACROSS LEGS` line.
+- **U of Ut UBL / C of Ct CII** — the per-binding syntax-binding asserts our
+  restricted evaluator proves equivalent (`differential.py` LEG 5 `sb` / LEG 6
+  `sbcii`). The totals come from `einvoice.syntax_binding.accounting()` and the
+  proven counts from `einvoice.syntax_binding_eval.implemented_ids()` /
+  `cii_implemented_ids()` — the **same** recomputation
+  [`test_syntax_binding.py`](test_syntax_binding.py) asserts.
+
+Because it re-runs the full differential (all legs) plus the conformance corpus,
+`prove.py` takes a few minutes. [`test_prove.py`](test_prove.py) runs it and
+asserts it exits 0, prints `0 divergences`, and that the UBL / CII / rule numbers
+it printed equal a fresh independent recompute — so the entrypoint is verified to
+report live truth, never a frozen string.
+
 ---
 
 ## 4. CI conformance gate

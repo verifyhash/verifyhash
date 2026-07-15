@@ -10,6 +10,22 @@ layer only maps and counts the resulting violations.
 The machine-readable form of this contract lives in the `REPORT_SCHEMA`
 constant in `einvoice/report.py`; this file is its human companion.
 
+A **machine-checkable** JSON Schema (draft 2020-12) for this document is
+committed alongside it at [`report.schema.json`](report.schema.json). It pins
+the version by requiring `schema` == `"einvoice-conformance-report/v1"` (a JSON
+Schema `const`) and `report_version` == `1`, and describes both the core
+`violations` array and the `syntax_bindings` block. `test_report_schema.py`
+validates REAL `build_report` output (valid + invalid, UBL + CII) against it.
+Because the plain-XML UBL path additionally carries the `syntax_bindings` block
+while the Factur-X/CII and not-well-formed paths do not, those three keys are
+OPTIONAL in the schema and the nine core fields are required.
+
+**Stability / versioning policy.** The schema `$id` and the `schema` const are
+STABLE within v1: additive, backward-compatible fields may be introduced
+without changing them. Any BREAKING change to the report shape bumps the id
+(and the const) to `.../v2` — consumers should match on the `schema` string,
+not on `report_version` alone.
+
 ## Invocation
 
 ```

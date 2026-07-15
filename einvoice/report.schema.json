@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verifyhash.com/schemas/einvoice-conformance-report/v1/report.schema.json",
+  "title": "einvoice conformance report (v1)",
+  "description": "Machine-readable JSON Schema for the single-document EN 16931 / XRechnung conformance report produced by `python3 -m einvoice.report` / `einvoice.report.build_report`. This is the machine-checkable companion to the `REPORT_SCHEMA` constant in einvoice/report.py and to REPORT-SCHEMA.md. The report is a deterministic projection of einvoice.validate and adds no rule logic. Versioning policy: this $id and the `schema` const are STABLE within v1 - additive, backward-compatible fields may be added without changing them; any BREAKING change to the report shape bumps the id (and the const) to .../v2. Shape note (accurately reflected below): the plain-XML UBL path additionally carries the `syntax_bindings` array and its two count fields; the Factur-X/ZUGFeRD PDF (embedded-CII) path and the not-well-formed / unsupported-container error path do not, so those keys are OPTIONAL here while the nine core fields are required. The degenerate error report (carrying `error`/`message`, empty `violations`, no `syntax_bindings`) is accepted by allowing those optional keys.",
+  "type": "object",
+  "required": [
+    "schema",
+    "report_version",
+    "source",
+    "profile",
+    "valid",
+    "fatal_count",
+    "warning_count",
+    "violation_count",
+    "violations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "Stable schema id. Consumers should match on this exact string.",
+      "const": "einvoice-conformance-report/v1"
+    },
+    "report_version": {
+      "description": "Report shape version; pinned to 1 for this schema.",
+      "const": 1
+    },
+    "source": {
+      "description": "The invoice path or label passed in.",
+      "type": ["string", "null"]
+    },
+    "profile": {
+      "description": "Validation profile used.",
+      "enum": ["en16931", "xrechnung"]
+    },
+    "valid": {
+      "description": "True iff there are zero FATAL violations (and, on the UBL path, zero fatal syntax-binding findings).",
+      "type": "boolean"
+    },
+    "fatal_count": {
+      "description": "Number of violations with severity 'fatal'.",
+      "type": "integer"
+    },
+    "warning_count": {
+      "description": "Number of violations with severity 'warning'.",
+      "type": "integer"
+    },
+    "violation_count": {
+      "description": "Total violations of every severity.",
+      "type": "integer"
+    },
+    "violations": {
+      "description": "The core business-rule/structural violation records.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "rule",
+          "severity",
+          "message",
+          "field",
+          "title",
+          "fix_hint",
+          "terms",
+          "location"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rule": {
+            "description": "The rule id, e.g. 'BR-DE-15' (Violation.rule_id); may also be an 'FX-CONTAINER-*' id on the PDF path.",
+            "type": "string"
+          },
+          "severity": {
+            "description": "Official @flag-derived severity.",
+            "enum": ["fatal", "warning", "information"]
+          },
+          "message": {
+            "description": "The human/Schematron rule message.",
+            "type": "string"
+          },
+          "field": {
+            "description": "The offending element / path (Violation.element); null when unknown.",
+            "type": ["string", "null"]
+          },
+          "title": {
+            "description": "Plain-language rule title relayed from the remediation catalog; null if the rule has no catalog entry.",
+            "type": ["string", "null"]
+          },
+          "fix_hint": {
+            "description": "One-line 'how to fix' guidance from the catalog; null if none.",
+            "type": ["string", "null"]
+          },
+          "terms": {
+            "description": "BT-/BG- business-term ids the rule touches; empty list if none.",
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "location": {
+            "description": "The catalog's XML location/path hint; null if none.",
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "syntax_bindings": {
+      "description": "The distinct syntax-binding category findings (UBL absence-restriction / cardinality caps). Present on the plain-XML UBL path; absent on the PDF/CII and error paths.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "severity",
+          "flag",
+          "message",
+          "element"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Syntax-binding restriction id, e.g. 'UBL-SR-11'.",
+            "type": "string"
+          },
+          "category": {
+            "description": "Always the literal 'syntax-binding'.",
+            "const": "syntax-binding"
+          },
+          "severity": {
+            "description": "'fatal' blocks validity; every other flag maps to 'warning'.",
+            "enum": ["fatal", "warning"]
+          },
+          "flag": {
+            "description": "The raw official @flag value the severity was derived from.",
+            "type": "string"
+          },
+          "message": {
+            "description": "The human message describing the syntax-binding restriction.",
+            "type": "string"
+          },
+          "element": {
+            "description": "The XML path the finding targets.",
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "syntax_binding_fatal_count": {
+      "description": "Number of syntax-binding findings with severity 'fatal'.",
+      "type": "integer"
+    },
+    "syntax_binding_warning_count": {
+      "description": "Number of non-fatal syntax-binding findings.",
+      "type": "integer"
+    },
+    "error": {
+      "description": "Present ONLY when the input cannot be reduced to a validatable invoice: a short code string ('not-well-formed' or 'unsupported-container'). 'valid' is then false and 'violations' is empty.",
+      "enum": ["not-well-formed", "unsupported-container"]
+    },
+    "message": {
+      "description": "Present ONLY alongside 'error': the parser's / extractor's human message.",
+      "type": "string"
+    }
+  }
+}

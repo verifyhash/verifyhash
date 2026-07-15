@@ -116,7 +116,11 @@ EXIT_FAIL = 1
 EXIT_PARSE = 3
 
 #: Documentation of the versioned report shape. Every key the report can carry
-#: is described here; REPORT-SCHEMA.md renders the same contract for humans.
+#: is described here; REPORT-SCHEMA.md renders the same contract for humans, and
+#: ../report.schema.json is the MACHINE-CHECKABLE form (JSON Schema draft
+#: 2020-12) — it pins the version via a ``schema`` const of REPORT_SCHEMA_ID and
+#: ``report_version`` const 1, and is exercised against real build_report output
+#: by test_report_schema.py. Keep the three in sync when the shape changes.
 REPORT_SCHEMA = {
     "schema": REPORT_SCHEMA_ID,
     "report_version": REPORT_VERSION,

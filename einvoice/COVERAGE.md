@@ -338,6 +338,34 @@ the non-blocking `warning` class for the severity column).
 
 Rules deliberately NOT counted as coverage, documented so the matrix is honest about its boundaries.
 
+### UBL `CreditNote` root — recognized and cleanly rejected, not validated (T-VHCN.1)
+
+This engine validates UBL **Invoice** documents (root
+`{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice`). A UBL
+`CreditNote` document (root
+`{urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2}CreditNote`) is
+**recognized and cleanly rejected** with the fatal `S-ROOT` structural rule — it
+is neither crashed nor silently accepted. Concretely, `build_model()` sets
+`root_is_ubl_invoice=False` for a CreditNote root, so the structural layer emits
+a single fatal `S-ROOT` finding ("Root element must be Invoice in the UBL
+Invoice-2 namespace.") naming the offending `CreditNote` element, `valid` is
+`false`, and the CLI exits 1 — on the single-file path
+(`einvoice validate <creditnote.xml>`) and inside a batch
+(`einvoice validate-batch <dir>`), where the CreditNote is counted as a failing
+file rather than skipped. This behaviour is pinned by
+`test_creditnote_scope.py` against the committed corpus CreditNote shapes
+(`corpus/cen-en16931/ubl/examples/ubl-tc434-creditnote1.xml` and
+`corpus/cen-en16931/test/testfiles/CreditNote-Max_content.xml`).
+
+CreditNote-specific EN 16931 validation is **out of scope**: full parity would
+require a distinct CreditNote parser model (accepting the CreditNote root and
+mapping `cac:CreditNoteLine` → lines, `cbc:CreditedQuantity` → line quantity,
+etc.) *plus* a vendored CreditNote differential corpus proven at 0 divergences
+against the reference Schematron — a large, differential-risky delta. Until that
+model and corpus are vendored and proven, a CreditNote's only defined outcome is
+the honest `S-ROOT` rejection above (see T-VHCN.1; the terse one-line note lives
+in `README.md`).
+
 ### Vacuous / tautological rules (never fire — not asserted)
 
 - **BR-DEC-13** — vacuous in official Schematron (predicate references a non-existent child of cbc:TaxAmount) — never fires

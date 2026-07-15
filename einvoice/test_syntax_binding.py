@@ -291,10 +291,34 @@ def main():
           "per-class implemented union != implemented_ids() (a class leaked or "
           "dropped an id)")
 
-    # 5h. datatype-regex is deliberately left fully known-open (honesty line —
-    #     the single UBL-DT lexical restriction is not approximated).
-    check(_sbe.class_implemented_ids("datatype-regex") == [],
-          "datatype-regex must stay known-open (no hand-faked regex engine)")
+    # 5h. TERMINAL per-class counts (UBL) — the worklist is CLOSED at these exact
+    #     implemented/known-open numbers. A regression that drops an implemented id
+    #     (or an artifact bump that adds asserts) fails HERE and reopens the
+    #     worklist automatically. datatype-regex is now implemented ONLY as the
+    #     decimal-place cap (UBL-DT-01); a matches() regex is still rejected (no
+    #     hand-faked regex engine).
+    UBL_TERMINAL = {
+        "absence-restriction": (694, 5),
+        "cardinality-count": (42, 10),
+        "existence": (4, 0),
+        "datatype-regex": (1, 0),
+    }
+    for shape, (exp_i, exp_k) in UBL_TERMINAL.items():
+        if shape == "absence-restriction":
+            gi, gk = len(abs_impl), len(abs_ko)
+        else:
+            gi = len(_sbe.class_implemented_ids(shape))
+            gk = len(_sbe.class_known_open_ids(shape))
+        check((gi, gk) == (exp_i, exp_k),
+              "UBL %s terminal counts drifted: implemented %d / known-open %d, "
+              "expected %d / %d (worklist reopened)"
+              % (shape, gi, gk, exp_i, exp_k))
+    check(len(implemented) == 741,
+          "UBL implemented total drifted from terminal 741: %d" % len(implemented))
+    check(_sbe.class_implemented_ids("datatype-regex") == ["UBL-DT-01"],
+          "UBL datatype-regex implemented set must be exactly [UBL-DT-01]")
+    check(_sbe.compile_datatype_test("matches(.,'^x$')") is None,
+          "a matches() regex must NOT compile (no hand-faked regex engine)")
 
     # ---- 6. FIRING on the committed targeted fixtures (saxon-free) ----------
     check(os.path.isdir(SB_FIXTURE_DIR),
@@ -423,6 +447,26 @@ def main():
           "(differential.SB_CII_RULE_IDS)")
     check(set(cii_impl_all).isdisjoint(_diff.OUR_RULE_SET),
           "a CII syntax-binding id collides with a BR-* core rule id")
+
+    # 8b'. TERMINAL per-class counts (CII) — the CII worklist is CLOSED at these
+    #      exact implemented/known-open numbers (mirrors 5h). other-complex
+    #      (CII-SR-119) and datatype-regex (CII-DT-097) stay fully known-open.
+    CII_TERMINAL = {
+        "absence-restriction": (503, 25),
+        "cardinality-count": (42, 10),
+        "existence": (1, 0),
+        "other-complex": (0, 1),
+        "datatype-regex": (0, 1),
+    }
+    for shape, (exp_i, exp_k) in CII_TERMINAL.items():
+        gi = len(_sbe.cii_class_implemented_ids(shape))
+        gk = len(_sbe.cii_class_known_open_ids(shape))
+        check((gi, gk) == (exp_i, exp_k),
+              "CII %s terminal counts drifted: implemented %d / known-open %d, "
+              "expected %d / %d (worklist reopened)"
+              % (shape, gi, gk, exp_i, exp_k))
+    check(len(cii_impl_all) == 546,
+          "CII implemented total drifted from terminal 546: %d" % len(cii_impl_all))
 
     # 8c. other-complex + datatype-regex stay fully known-open (honesty line — a
     #     compound or regex restriction is never approximated).

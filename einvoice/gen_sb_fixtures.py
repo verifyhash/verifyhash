@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """gen_sb_fixtures.py — synthesize the targeted, per-id VIOLATING UBL fixtures for
-the newly-implemented syntax-binding shape classes (cardinality-count +
-existence), one `sb-viol-<id>_ubl.xml` per implemented id under
-corpus/vendored/syntax-binding/.
+the newly-implemented syntax-binding shape classes (cardinality-count, existence,
+and the decimal-cap datatype-regex UBL-DT-01), one `sb-viol-<id>_ubl.xml` per
+implemented id under corpus/vendored/syntax-binding/.
 
 Each fixture is the committed valid base invoice (`sb-pass-clean_ubl.xml`) with a
 SINGLE mechanical mutation that makes exactly the target assert FIRE, derived from
@@ -13,9 +13,14 @@ so only the firing direction needs a dedicated fixture.
   - cardinality-count: inject `n+1` fresh copies of the counted path into a node
     matching the rule context, so the count exceeds (or, for `= n`, misses) the
     cap. For the `not(P) or count(P)=1` shape this also makes P present, so the
-    assert fires on both conjuncts.
+    assert fires on both conjuncts. The difference-of-counts shape (UBL-DT-18)
+    adds one node counted by P1 but not P2; the `and`-conjoined shape
+    (UBL-SR-19/21) builds one A instance valued EQUAL to B so `(A) != (B)` is
+    false while the cap stays satisfied (no plural-leaf XSLT crash).
   - existence: append a FRESH, empty context node so every required existence
     term selects an empty node-set.
+  - datatype-regex (UBL-DT-01): give a context-matching amount `n+1` decimal
+    places so `string-length(substring-after(., '.')) > n`.
 
 Run:  python3 gen_sb_fixtures.py
 The differential leg (`differential.py`, sb leg) then grades every id against the
@@ -121,8 +126,42 @@ def _mutate(entry):
         _make_context(root, entry.ctx.branches[0])
         return tree
 
-    # cardinality-count: reach a count that violates the cap on one context node.
     comp = entry.compiled
+
+    if comp.kind == "decimal_le":
+        # datatype-regex decimal cap (UBL-DT-01): give a context-matching amount
+        # exactly n+1 decimal places so string-length(substring-after(.,'.')) > n.
+        parents = _parents(root)
+        nodes = entry.ctx.match(root, parents)
+        node = nodes[0] if nodes else _make_context(root, entry.ctx.branches[0])
+        txt = (node.text or "").strip()
+        intpart = txt.split(".", 1)[0] if "." in txt else (txt or "0")
+        node.text = (intpart or "0") + "." + ("0" * (comp.n + 1))
+        return tree
+
+    if comp.kind == "count_diff":
+        # difference-of-counts (UBL-DT-18 `count(//@name) - count(//PMC/@name)`):
+        # add ONE node counted by P1 but NOT P2 — a fresh carrier element under
+        # root carrying the P1 attribute — so the difference exceeds the bound.
+        carrier = ET.SubElement(root, "{%s}Note" % sbe.NSMAP["cbc"])
+        _add_path_instance(carrier, comp.p)
+        return tree
+
+    if comp.kind == "and_count_ne":
+        # and-conjoined cap + node-set inequality (UBL-SR-19/21): fire the RIGHT
+        # conjunct — build ONE instance of A valued EQUAL to B, so `(A) != (B)` is
+        # false while the count stays within the cap (no plural-leaf XSLT crash).
+        parents = _parents(root)
+        nodes = entry.ctx.match(root, parents)
+        target = nodes[0] if nodes else _make_context(root,
+                                                      entry.ctx.branches[0])
+        a_leaf = _add_path_instance(target, comp.a_path)
+        parents = _parents(root)
+        b_nodes = sbe._select(comp.b_path, target, root, parents)
+        a_leaf.text = sbe._string_value(b_nodes[0]) if b_nodes else ""
+        return tree
+
+    # cardinality-count: reach a count that violates the cap on one context node.
     path = comp.q if comp.kind == "not_or_count" else comp.p
     target = _target_context(root, entry, create_missing=False)
     for _ in range(comp.n + 1):
@@ -274,7 +313,8 @@ def main_cii():
 def main():
     written = []
     for entry in sbe.implemented_entries():
-        if entry.shape not in ("cardinality-count", "existence"):
+        if entry.shape not in ("cardinality-count", "existence",
+                               "datatype-regex"):
             continue
         if entry.id in FIRING_UNOBSERVABLE:
             # Would crash the official XSLT (see FIRING_UNOBSERVABLE) — no fixture.

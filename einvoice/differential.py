@@ -629,11 +629,25 @@ def _rule_id_from_failed_assert(fa: ET.Element):
     return None
 
 
+#: Cross-leg memo of the OFFICIAL side: (xslt_path, abspath(invoice)) -> fired set.
+#: The normative transform is a pure function of (stylesheet, file contents), and
+#: within one ``run_differential`` the scratch corpus files are written ONCE and
+#: never mutated, so caching by absolute path is sound. The syntax-binding legs
+#: (LEG 5 / LEG 6) reuse the SAME broad UBL / CII corpus as LEG 1 / LEG 3 under the
+#: SAME official XSLT, so those thousands of transforms become cache hits — only
+#: the targeted sb fixtures pay a fresh Saxon run. This does not alter any
+#: verdict; it only removes the duplicated official work that pushed the wall time
+#: over the gate budget. (Transform ERRORS are deliberately NOT cached — they are
+#: a tiny handful and re-raising keeps the SKIPPED/ERRORS accounting exact.)
+_OFFICIAL_FIRED_CACHE: dict = {}
+
+
 class Official:
     """Wraps a single compiled instance of a normative validation XSLT."""
 
     def __init__(self, xslt_path=OFFICIAL_XSLT):
         from saxonche import PySaxonProcessor
+        self._xslt_path = os.path.abspath(xslt_path)
         self._proc_cm = PySaxonProcessor(license=False)
         self._proc = self._proc_cm.__enter__()
         xp = self._proc.new_xslt30_processor()
@@ -641,6 +655,10 @@ class Official:
         self._xp = xp
 
     def fired(self, invoice_path: str) -> set:
+        key = (self._xslt_path, os.path.abspath(invoice_path))
+        cached = _OFFICIAL_FIRED_CACHE.get(key)
+        if cached is not None:
+            return set(cached)
         svrl = self._exe.transform_to_string(source_file=invoice_path)
         if svrl is None:
             raise RuntimeError("Saxon returned no SVRL for %s: %s"
@@ -651,6 +669,7 @@ class Official:
             rid = _rule_id_from_failed_assert(fa)
             if rid:
                 fired.add(rid)
+        _OFFICIAL_FIRED_CACHE[key] = frozenset(fired)
         return fired
 
     def close(self):

@@ -153,6 +153,15 @@ class _AttrStep:
         self.key = key    # ElementTree attribute key
 
 
+class _ParentStep:
+    """A ``..`` (parent-axis) step. Bounded: it selects the parent of each node in
+    the current node-set (via the document ``parents`` map). Used only by the
+    ``and``-conjoined UBL-SR-19/21 tests, whose right disjunct navigates
+    ``../cac:AccountingSupplierParty/…`` up from the ``cac:PayeeParty`` context."""
+
+    __slots__ = ()
+
+
 class _Path:
     __slots__ = ("descendant", "steps")
 
@@ -187,6 +196,8 @@ def _parse_step(tok, ns=NSMAP):
     tok = tok.strip()
     if not tok:
         return None
+    if tok == "..":
+        return _ParentStep()
     if tok.startswith("@"):
         key = _resolve_attr(tok[1:], ns)
         return _AttrStep(key) if key is not None else None
@@ -220,6 +231,7 @@ def parse_path(path, ns=NSMAP):
         return None
     raw_steps = _split_top(rest, "/")
     steps = []
+    seen_non_parent = False
     for i, raw in enumerate(raw_steps):
         st = _parse_step(raw, ns)
         if st is None:
@@ -227,6 +239,13 @@ def parse_path(path, ns=NSMAP):
         if isinstance(st, _AttrStep) and i != len(raw_steps) - 1:
             # An attribute step is only valid as the final step.
             return None
+        if isinstance(st, _ParentStep):
+            # A leading `..` chain only (`../a/b`); a `..` after an element step
+            # (`a/../b`) is outside the bounded form and stays known-open.
+            if seen_non_parent or descendant:
+                return None
+        else:
+            seen_non_parent = True
         steps.append(st)
     return _Path(descendant, steps)
 
@@ -234,20 +253,35 @@ def parse_path(path, ns=NSMAP):
 # --------------------------------------------------------------------------- #
 # Restricted-path evaluation over a parsed tree
 # --------------------------------------------------------------------------- #
-def _select(path, ctx, root):
+def _select(path, ctx, root, parents=None):
     """Return the node-set a restricted path selects.
 
     Elements are returned as Element objects; a trailing attribute step returns
     ``(element, attr_key)`` pairs. ``//`` starts the walk from
     descendant-or-self of ``root`` (the whole document), mirroring XPath's
     absolute-descendant semantics — which is context-independent, exactly as
-    Schematron evaluates a ``//`` inside a ``not(...)``.
+    Schematron evaluates a ``//`` inside a ``not(...)``. A leading ``..`` step
+    walks to the parent via ``parents`` (the document parent map, built on demand
+    when not supplied).
     """
     if path.descendant:
         current = list(root.iter())        # descendant-or-self::node()
     else:
         current = [ctx]
     for step in path.steps:
+        if isinstance(step, _ParentStep):
+            if parents is None:
+                parents = {id(c): p for p in root.iter() for c in p}
+            nxt, seen = [], set()
+            for el in current:
+                par = parents.get(id(el))
+                if par is not None and id(par) not in seen:
+                    seen.add(id(par))
+                    nxt.append(par)
+            current = nxt
+            if not current:
+                break
+            continue
         if isinstance(step, _AttrStep):
             out = []
             for el in current:
@@ -272,6 +306,21 @@ def _string_value(node):
         el, key = node
         return el.get(key) or ""
     return "".join(node.itertext())
+
+
+def _nodeset_ne(a_nodes, b_nodes):
+    """XPath ``A != B`` for two node-sets: True iff there exist ``a in A`` and
+    ``b in B`` whose string-values differ. An empty operand yields no pair, so the
+    result is False — matching both XPath 1.0 node-set ``!=`` and the XPath 2.0
+    general comparison Saxon evaluates for the CEN artifact (existential over
+    atomized string values). This is the exact semantics of the UBL-SR-19/21 right
+    conjunct."""
+    if not a_nodes or not b_nodes:
+        return False
+    a_vals = {_string_value(a) for a in a_nodes}
+    b_vals = {_string_value(b) for b in b_nodes}
+    # Differ iff the two value sets are not both the single same value.
+    return not (len(a_vals) == 1 and a_vals == b_vals)
 
 
 # --------------------------------------------------------------------------- #
@@ -311,12 +360,27 @@ class _Compiled:
                            and the count of P2 does NOT satisfy the bound.
       * ``exists_all``   — conjunction of existence terms (``exists(P)`` /
                            ``(P)``): fires when ANY term selects an empty node-set.
+      * ``count_diff``   — ``count(P1) - count(P2) OP n``: fires when the integer
+                           difference of the two counts does NOT satisfy the bound
+                           (the UBL-DT-18 difference-of-counts form).
+      * ``and_count_ne`` — ``(count(P) OP n) and ((A) != (B))``: fires when EITHER
+                           the count bound is violated OR the node-set inequality
+                           ``A != B`` is false (no differing string pair, or either
+                           side empty) — the UBL-SR-19/21 ``and``-conjoined form.
+                           ``A`` / ``B`` are restricted paths (``B`` may lead with
+                           ``..``); the ``!=`` is XPath's general node-set
+                           comparison (∃ a∈A, b∈B with different string values).
+      * ``decimal_le``   — ``string-length(substring-after(., '.')) <= n``: fires
+                           when the context node's string value has MORE than ``n``
+                           characters after its first ``.`` (the UBL-DT-01 decimal
+                           cap on amounts).
     """
 
-    __slots__ = ("kind", "p", "q", "literal", "op", "n", "terms")
+    __slots__ = ("kind", "p", "q", "literal", "op", "n", "terms",
+                 "a_path", "b_path")
 
     def __init__(self, kind, p=None, q=None, literal=None, op=None, n=None,
-                 terms=None):
+                 terms=None, a_path=None, b_path=None):
         self.kind = kind
         self.p = p
         self.q = q
@@ -324,37 +388,64 @@ class _Compiled:
         self.op = op
         self.n = n
         self.terms = terms
+        self.a_path = a_path
+        self.b_path = b_path
 
-    def evaluate(self, ctx, root):
+    def evaluate(self, ctx, root, parents=None):
         kind = self.kind
         if kind == "not":
-            p_nodes = _select(self.p, ctx, root)
+            p_nodes = _select(self.p, ctx, root, parents)
             return (True, p_nodes[0]) if p_nodes else (False, None)
         if kind == "not_or_eq":
-            p_nodes = _select(self.p, ctx, root)
+            p_nodes = _select(self.p, ctx, root, parents)
             if not p_nodes:
                 return (False, None)
             # not(P) or Q = 'literal' : passes if any Q string-value == literal.
-            q_nodes = _select(self.q, ctx, root)
+            q_nodes = _select(self.q, ctx, root, parents)
             if any(_string_value(n) == self.literal for n in q_nodes):
                 return (False, None)
             return (True, p_nodes[0])
         if kind == "count":
-            nodes = _select(self.p, ctx, root)
+            nodes = _select(self.p, ctx, root, parents)
             if _cmp(len(nodes), self.op, self.n):
                 return (False, None)
             return (True, nodes[0] if nodes else None)
         if kind == "not_or_count":
-            p1 = _select(self.p, ctx, root)
+            p1 = _select(self.p, ctx, root, parents)
             if not p1:
                 return (False, None)
-            nodes = _select(self.q, ctx, root)
+            nodes = _select(self.q, ctx, root, parents)
             if _cmp(len(nodes), self.op, self.n):
                 return (False, None)
             return (True, nodes[0] if nodes else p1[0])
+        if kind == "count_diff":
+            c1 = len(_select(self.p, ctx, root, parents))
+            c2 = len(_select(self.q, ctx, root, parents))
+            if _cmp(c1 - c2, self.op, self.n):
+                return (False, None)
+            return (True, None)
+        if kind == "and_count_ne":
+            nodes = _select(self.p, ctx, root, parents)
+            count_ok = _cmp(len(nodes), self.op, self.n)
+            a_nodes = _select(self.a_path, ctx, root, parents)
+            b_nodes = _select(self.b_path, ctx, root, parents)
+            ne_true = _nodeset_ne(a_nodes, b_nodes)
+            if count_ok and ne_true:
+                return (False, None)          # both conjuncts hold — assert passes
+            # Fires: point at the offending count node when the cap is what broke,
+            # else at the context node (the equality conjunct failed).
+            off = (nodes[0] if not count_ok and nodes else None)
+            return (True, off)
+        if kind == "decimal_le":
+            sval = _string_value(ctx)
+            idx = sval.find(".")
+            after = sval[idx + 1:] if idx >= 0 else ""
+            if len(after) <= self.n:
+                return (False, None)
+            return (True, ctx)
         if kind == "exists_all":
             for term in self.terms:
-                if not _select(term, ctx, root):
+                if not _select(term, ctx, root, parents):
                     return (True, None)   # a required node-set is empty
             return (False, None)
         return (False, None)
@@ -466,19 +557,88 @@ def _parse_count_cmp(expr, ns=NSMAP):
     return (p, m.group(1), int(m.group(2)))
 
 
+def _parse_count_diff(expr, ns=NSMAP):
+    """Parse ``count(P1) - count(P2) OP n`` into a ``count_diff`` compiled test, or
+    None. Both P1 and P2 must be restricted location paths, ``OP`` a single
+    relational operator, ``n`` an integer literal. Exactly the UBL-DT-18 shape
+    ``count(//@name) - count(//cbc:PaymentMeansCode/@name) <= 0``; any other
+    arithmetic (a product, a nested difference) stays known-open."""
+    e = expr.strip()
+    if not e.startswith("count("):
+        return None
+    inner1, tail1 = _match_paren(e, len("count"))
+    if inner1 is None:
+        return None
+    tail1 = tail1.strip()
+    if not tail1.startswith("-"):
+        return None
+    rest = tail1[1:].strip()
+    if not rest.startswith("count("):
+        return None
+    inner2, tail2 = _match_paren(rest, len("count"))
+    if inner2 is None:
+        return None
+    m = _COUNT_OP_RE.match(tail2)
+    if not m:
+        return None
+    p1 = parse_path(inner1.strip(), ns)
+    p2 = parse_path(inner2.strip(), ns)
+    if p1 is None or p2 is None:
+        return None
+    return _Compiled("count_diff", p1, q=p2, op=m.group(1), n=int(m.group(2)))
+
+
+def _parse_nodeset_ne(expr, ns=NSMAP):
+    """Parse ``(A) != (B)`` (a node-set inequality) into ``(_Path A, _Path B)`` or
+    None. A and B are restricted location paths (B may lead with ``..``). Only the
+    bare ``!=`` general comparison compiles; a ``=`` / ``<`` / string-function
+    comparison stays known-open."""
+    parts = _split_top(expr, "!=")
+    if len(parts) != 2:
+        return None
+    a = parse_path(_strip_outer_parens(parts[0].strip()), ns)
+    b = parse_path(_strip_outer_parens(parts[1].strip()), ns)
+    if a is None or b is None:
+        return None
+    return (a, b)
+
+
+def _compile_and_count_ne(left, right, ns=NSMAP):
+    """Compile ``(count(P) OP n) and ((A) != (B))`` into an ``and_count_ne``
+    compiled test, or None. Exactly the UBL-SR-19/21 shape: a cardinality cap
+    conjoined with a cross-branch node-set inequality. UBL-SR-20's left conjunct
+    carries an ``upper-case(@schemeID)`` predicate, so its count path fails
+    :func:`_parse_count_cmp` and it stays known-open — never approximated."""
+    cc = _parse_count_cmp(_strip_outer_parens(left.strip()), ns)
+    if cc is None:
+        return None
+    ne = _parse_nodeset_ne(_strip_outer_parens(right.strip()), ns)
+    if ne is None:
+        return None
+    p, op, n = cc
+    a, b = ne
+    return _Compiled("and_count_ne", p, op=op, n=n, a_path=a, b_path=b)
+
+
 def compile_count_test(test, ns=NSMAP):
     """Compile a ``cardinality-count`` @test into a :class:`_Compiled`, or None
     if it is outside the closed grammar (=> the id is known-open).
 
     Accepted:
-      * ``count(P) OP n``                    -> kind ``count``
-      * ``not(P1) or count(P2) OP n``        -> kind ``not_or_count``
+      * ``count(P) OP n``                       -> kind ``count``
+      * ``not(P1) or count(P2) OP n``           -> kind ``not_or_count``
+      * ``count(P1) - count(P2) OP n``          -> kind ``count_diff``   (UBL-DT-18)
+      * ``(count(P) OP n) and ((A) != (B))``    -> kind ``and_count_ne`` (UBL-SR-19/21)
     (each optionally wrapped in a single pair of outer parens). Anything else —
-    a difference of counts, a predicated / function path, an ``and`` conjunction
-    — is rejected."""
+    a predicated / function path, a difference other than of two plain counts —
+    is rejected."""
     s = _strip_outer_parens((test or "").strip())
     if not s:
         return None
+    # (count(P) OP n) and ((A) != (B))  — the and-conjoined cardinality form.
+    andp = _split_top(s, " and ")
+    if len(andp) == 2:
+        return _compile_and_count_ne(andp[0], andp[1], ns)
     disj = _split_top(s, " or ")
     if len(disj) == 2:
         left = _strip_outer_not(disj[0].strip())
@@ -493,6 +653,9 @@ def compile_count_test(test, ns=NSMAP):
         p2, op, n = cc
         return _Compiled("not_or_count", p1, q=p2, op=op, n=n)
     if len(disj) == 1:
+        cd = _parse_count_diff(s, ns)
+        if cd is not None:
+            return cd
         cc = _parse_count_cmp(s, ns)
         if cc is None:
             return None
@@ -538,19 +701,42 @@ def compile_existence_test(test, ns=NSMAP):
     return _Compiled("exists_all", terms=terms)
 
 
+_DECIMAL_LE_RE = re.compile(
+    r"^string-length\(\s*substring-after\(\s*\.\s*,\s*'\.'\s*\)\s*\)\s*<=\s*(\d+)$")
+
+
+def compile_datatype_test(test, ns=NSMAP):
+    """Compile a ``datatype-regex`` @test into a :class:`_Compiled`, or None.
+
+    The ONLY lexical restriction with a closed, provable form is the decimal-place
+    cap ``string-length(substring-after(., '.')) <= n`` (UBL-DT-01, ``n = 2``): a
+    node's string value may carry at most ``n`` characters after its first ``.``.
+    ``substring-after`` returns the part after the first ``.`` (or the empty string
+    when absent — length 0, which passes), so this is a pure string operation with
+    no rounding or number() coercion, exactly reproducible.
+
+    A ``matches(., '<regex>')`` restriction (CII-DT-097) is NOT compiled — a real
+    regex engine is outside the bounded grammar, so it stays machine-listed
+    known-open rather than hand-faked."""
+    m = _DECIMAL_LE_RE.match((test or "").strip())
+    if not m:
+        return None
+    return _Compiled("decimal_le", n=int(m.group(1)))
+
+
 def compile_class_test(shape, test, ns=NSMAP):
     """Dispatch @test compilation by the catalog's mechanical shape class. Only
     the shapes with a closed, provable grammar compile; everything else returns
-    None (=> known-open). ``datatype-regex`` is deliberately never implemented
-    here — the single UBL-DT lexical restriction (UBL-DT-01) is a
-    function-context decimal-place check outside any closed element grammar, so
-    it is left machine-listed as known-open rather than approximated."""
+    None (=> known-open). ``datatype-regex`` compiles ONLY the decimal-place cap
+    (UBL-DT-01); a ``matches()`` regex restriction (CII-DT-097) stays known-open."""
     if shape == "absence-restriction":
         return compile_test(test, ns)
     if shape == "cardinality-count":
         return compile_count_test(test, ns)
     if shape == "existence":
         return compile_existence_test(test, ns)
+    if shape == "datatype-regex":
+        return compile_datatype_test(test, ns)
     return None
 
 
@@ -576,30 +762,38 @@ class _SuffixBranch:
     official CEN CII/UBL Schematron uses:
 
       * ``and not(self::ram:QName)``          — exclude one exact element type;
-      * ``and not(ends-with(name(), 'OTHER'))`` — exclude a second name-suffix.
+      * ``and not(ends-with(name(), 'OTHER'))`` — exclude a second name-suffix;
+      * ``and not(ancestor::A/B)``            — exclude any element that has an
+        ``A`` ancestor carrying a ``B`` child (the UBL-DT-01 amount guard
+        ``not(ancestor::cac:Price/cac:AllowanceCharge)``).
 
     An element matches iff (a) if a namespace-wildcard prefix is given, the
     element is in that namespace; (b) its local name ends with SUFFIX; (c) it is
     not one of the excluded ``self::`` QNames; (d) its local name ends with none
-    of the excluded suffixes.
+    of the excluded suffixes; (e) none of the excluded ``ancestor::A/B`` node-sets
+    is non-empty for it.
 
     ``ends-with(name(), 'S')`` compares the QUALIFIED name (``prefix:local``); but
     since every SUFFIX here is a plain NCName fragment (no colon), a qualified
     name can only end with it INSIDE its local part — so the local-name suffix
     test used here is provably equivalent to the official ``name()`` test. No
-    general XPath: only this one predicate shape + the two bounded guards
+    general XPath: only this one predicate shape + the three bounded guards
     compile; any other predicate falls to :func:`compile_context` -> None ->
     known-open."""
 
-    __slots__ = ("ns_uri", "suffix", "exclude_tags", "exclude_suffixes")
+    __slots__ = ("ns_uri", "suffix", "exclude_tags", "exclude_suffixes",
+                 "exclude_ancestors")
 
-    def __init__(self, ns_uri, suffix, exclude_tags, exclude_suffixes):
+    def __init__(self, ns_uri, suffix, exclude_tags, exclude_suffixes,
+                 exclude_ancestors=()):
         self.ns_uri = ns_uri                    # required element ns URI, or None (//*)
         self.suffix = suffix                    # required local-name suffix
         self.exclude_tags = exclude_tags        # frozenset of Clark tags (self:: guards)
         self.exclude_suffixes = exclude_suffixes  # tuple of excluded local-name suffixes
+        # tuple of (ancestor_clark, (child_clark, ...)) ancestor-path guards.
+        self.exclude_ancestors = exclude_ancestors
 
-    def matches(self, el):
+    def matches(self, el, parents=None):
         tag = el.tag
         if not isinstance(tag, str):
             return False
@@ -615,6 +809,9 @@ class _SuffixBranch:
             return False
         for s in self.exclude_suffixes:
             if local.endswith(s):
+                return False
+        for anc_tag, child_chain in self.exclude_ancestors:
+            if _ancestor_path_present(el, anc_tag, child_chain, parents):
                 return False
         return True
 
@@ -644,9 +841,37 @@ class _Context:
         return out
 
 
+def _ancestor_path_present(el, anc_tag, child_chain, parents):
+    """XPath ``ancestor::<anc_tag>/<child_chain>`` non-empty test for element
+    ``el``: True iff some ancestor of ``el`` has tag ``anc_tag`` AND, following the
+    child-step chain from that ancestor, a non-empty node-set is reachable. Exactly
+    reproduces ``ancestor::cac:Price/cac:AllowanceCharge`` (child_chain =
+    ``(cac:AllowanceCharge,)``). ``parents`` is the document parent map."""
+    if parents is None:
+        return False
+    cur = parents.get(id(el)) if parents else None
+    while cur is not None:
+        if cur.tag == anc_tag and _child_chain_present(cur, child_chain):
+            return True
+        cur = parents.get(id(cur))
+    return False
+
+
+def _child_chain_present(node, child_chain):
+    """Whether following the child-step chain (a tuple of Clark tags) from
+    ``node`` reaches at least one element."""
+    current = [node]
+    for tag in child_chain:
+        nxt = [c for el in current for c in el if c.tag == tag]
+        if not nxt:
+            return False
+        current = nxt
+    return bool(current)
+
+
 def _branch_matches(el, br, parents):
     if isinstance(br, _SuffixBranch):
-        return br.matches(el)
+        return br.matches(el, parents)
     tags = br.tags
     cur = el
     for i in range(len(tags) - 1, -1, -1):
@@ -729,7 +954,7 @@ def _parse_suffix_ctx_branch(s, ns=NSMAP):
     if not m or not m.group(1):
         return None
     suffix = m.group(1)
-    exclude_tags, exclude_suffixes = [], []
+    exclude_tags, exclude_suffixes, exclude_ancestors = [], [], []
     for guard in conj[1:]:
         inner = _strip_guard_not(guard)
         if inner is None:
@@ -739,13 +964,38 @@ def _parse_suffix_ctx_branch(s, ns=NSMAP):
             if tag is None:
                 return None
             exclude_tags.append(tag)
+        elif inner.startswith("ancestor::"):
+            anc = _parse_ancestor_guard(inner, ns)
+            if anc is None:
+                return None
+            exclude_ancestors.append(anc)
         else:
             gm = _ENDS_WITH_RE.match(inner)
             if not gm or not gm.group(1):
                 return None
             exclude_suffixes.append(gm.group(1))
     return _SuffixBranch(ns_uri, suffix, frozenset(exclude_tags),
-                         tuple(exclude_suffixes))
+                         tuple(exclude_suffixes), tuple(exclude_ancestors))
+
+
+def _parse_ancestor_guard(inner, ns=NSMAP):
+    """Parse ``ancestor::A/B[/C...]`` into ``(anc_clark, (child_clark, ...))`` or
+    None. A is an element QName on the ancestor axis; B, C, ... are child-step
+    QNames. No predicates, no ``//``, no attribute step — only this bounded
+    ancestor-then-children path (the UBL-DT-01 amount-in-price guard)."""
+    body = inner[len("ancestor::"):].strip()
+    if not body or "//" in body:
+        return None
+    parts = _split_top(body, "/")
+    if len(parts) < 2:
+        return None
+    tags = []
+    for step in parts:
+        clark = _resolve_qname(step.strip(), ns)  # rejects predicates/@attr/functions
+        if clark is None:
+            return None
+        tags.append(clark)
+    return (tags[0], tuple(tags[1:]))
 
 
 def _parse_ctx_branch(s, ns=NSMAP):
@@ -1329,7 +1579,7 @@ def _evaluate_entries(root, implemented):
     findings = []
     for entry in implemented:
         for ctx in entry.ctx.match(root, parents):
-            fires, node = entry.compiled.evaluate(ctx, root)
+            fires, node = entry.compiled.evaluate(ctx, root, parents)
             if fires:
                 path = _node_path(node if node is not None else ctx, parents)
                 findings.append({

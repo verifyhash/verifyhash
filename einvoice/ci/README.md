@@ -92,6 +92,47 @@ they do **not** affect the exit code the gate relies on. Full schema:
    report is written into `EINVOICE_RESULTS_DIR` (see Knobs); point your CI's
    test-report upload at that directory.
 
+## Run in CI without installing (bare checkout)
+
+If all you need is a **red build when any invoice is non-conformant** — no
+JUnit artifacts, no `EINVOICE_CMD` plumbing — you can skip the install step
+entirely and drive the batch validator straight from a bare checkout of this
+directory. From inside `einvoice/` (the directory that holds the `einvoice/`
+package folder), run:
+
+```sh
+python3 -m einvoice validate-batch '<dir|glob>'
+```
+
+- `<dir|glob>` is one directory (walked recursively for `*.xml`) **or** one
+  shell-style glob (e.g. `'invoices/**/*.xml'`, quoted so the shell does not
+  pre-expand it). Add `--profile xrechnung` for the German CIUS layer
+  (`--profile en16931` is the default: core rules only).
+- **Zero runtime dependencies**: it imports the Python **standard library
+  only**, so a checkout plus any `python3` >= 3.8 is the whole toolchain — no
+  `pip install`, no `PYTHONPATH`, no virtualenv, no container, offline. This is
+  the same claim `test_packaging.py` pins. (You run from the package's parent
+  dir so `python3 -m einvoice` is importable off `sys.path[0]` — that is the
+  only setup.)
+
+**Exit-code contract** (what the build gate keys on — one code for the whole
+batch):
+
+| code | meaning |
+|---|---|
+| `0` | **no fatal** across **all** files — every invoice passed its implemented fatal rules |
+| `1` (non-zero) | **at least one** file has a fatal violation |
+| `3` (non-zero) | no fatal, but **at least one** file was not well-formed XML / could not be parsed |
+
+So a non-zero exit means "at least one file had a fatal or a parse error";
+treat any non-zero as a failed gate. The human summary lists every file as
+`PASS` / `FAIL` / `ERROR` and prints the aggregate `N files: X passed, Y
+failed  (F fatal, W warning across all files)`.
+
+Same honest scope as the rest of this gate: a `0` means **no implemented rule
+fired**, not legal EN 16931 conformance — the ~155 unimplemented core rules are
+not checked. See the scope note above and [`../README.md`](../README.md) §2.
+
 ## What failure looks like
 
 ```

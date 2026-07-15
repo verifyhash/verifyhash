@@ -328,34 +328,45 @@ see [`PROVENANCE.md`](PROVENANCE.md) and [`COVERAGE.md`](COVERAGE.md)). The
 suite's own `README.md` and `src/doc/test-overview.md` state that **every**
 document under `src/test/**` is a **positive reference instance**, so the
 expected label of each applicable document is *valid*. The generator classifies
-each document end-to-end with the public engine entry point
-(`einvoice.validate_file(path, profile="xrechnung")`) and writes the full
-per-document table plus summary counts to
+each document end-to-end through the shipped engine that owns its syntax: UBL
+documents through the public entry point
+(`einvoice.validate_file(path, profile="xrechnung")`); CII (UN/CEFACT,
+`*_uncefact.xml`) documents through the same shipped CII path the
+golden-snapshot and PDF-container tests exercise —
+`report._report_from_invoice_bytes`, which dispatches a `CrossIndustryInvoice`
+root to `parser_cii.build_model` + the syntax-agnostic `rules.ALL_RULES` core +
+`rules_xrechnung.evaluate_cii` (German CIUS). No rule logic is re-implemented.
+It writes the full per-document table plus summary counts to
 [`testsuite_conformance.json`](testsuite_conformance.json).
 
-**Headline (measured, not asserted):**
+**Headline (measured, not asserted) — stated separately per syntax binding:**
 
-> **39 of 39** in-scope official KoSIT XRechnung test-suite documents are
-> classified exactly as the suite labels them — accepted as **valid**.
+> **UBL:** **39 of 39** in-scope official KoSIT XRechnung test-suite documents
+> in UBL syntax are classified exactly as the suite labels them — accepted as
+> **valid**.
+>
+> **CII (UN/CEFACT):** **39 of 39** in-scope `*_uncefact.xml` documents, routed
+> through the shipped CII engine, are classified exactly as the suite labels
+> them — accepted as **valid**.
 
 "In scope" is stated honestly and narrowly: the engine targets the **plain
-EN 16931 / XRechnung-standard CIUS in UBL syntax** (CustomizationID ending in
-`…#urn:xeinkauf.de:kosit:xrechnung_3.0`). Of the suite's 86 documents, 39 are
-in that scope and **all 39** classify as valid. The other 47 are **not hidden**
-— they are machine-listed in `testsuite_conformance.json`, each with the exact
-reason it is out of scope:
+EN 16931 / XRechnung-standard CIUS** (CustomizationID ending in
+`…#urn:xeinkauf.de:kosit:xrechnung_3.0`) in **both** the UBL and the CII
+bindings. Of the suite's 86 documents, 78 are in that scope (39 UBL + 39 CII)
+and **all 78** classify as valid. The other 8 are **not hidden** — they are
+machine-listed in `testsuite_conformance.json`, each with the exact reason it is
+out of scope:
 
-- **41 CII (UN/CEFACT) documents** (`*_uncefact.xml`) — the engine parses UBL
-  only, so these trip the structural `S-ROOT` check. This is not a correctness
-  claim about CII either way; the engine simply does not target that syntax.
-- **5 XRechnung EXTENSION-guideline documents** (CustomizationID contains
+- **6 XRechnung EXTENSION-guideline documents** (CustomizationID contains
   `:extension:`) — a different guideline (sub-invoice-line / construction /
-  third-party-payment extension) than the plain CIUS. 4 of these happen to
-  still validate; 1 (`05.01a`) fails `BR-CO-16`. They are excluded from the
-  headline regardless, because the engine does not claim the extension.
-- **1 XRechnung CVD-monitoring-guideline document** (`02.01a-cvd`,
+  third-party-payment extension) than the plain CIUS. 4 of them (all UBL) happen
+  to still validate; the UBL `05.01a` fails `BR-CO-16` and the CII
+  `04.05a_uncefact` fails `BR-CL-21`. They are excluded from the headline
+  regardless, because the engine does not claim the extension.
+- **2 XRechnung CVD-monitoring-guideline documents** (`02.01a-cvd`,
   CustomizationID contains `xrechnung:cvd`) — a specialised profile the engine
-  does not implement; it fails `BR-CL-13`.
+  does not implement; the UBL doc fails `BR-CL-13`, the CII
+  `02.01a-cvd_uncefact` likewise fails `BR-CL-13`.
 
 The number is measured, never inflated: no positive document's label is bent
 and no rule is fabricated to force a pass. If a genuinely in-scope plain-CIUS

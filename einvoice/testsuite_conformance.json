@@ -1,5 +1,5 @@
 {
-  "_about": "End-to-end classification of the KoSIT XRechnung test-suite's own official POSITIVE reference documents by the public einvoice engine (einvoice.validate_file, profile=xrechnung). Every applicable document's expected label is 'valid'. Regenerate with gen_testsuite_conformance.py; drift-guarded by test_testsuite_conformance.py.",
+  "_about": "End-to-end classification of the KoSIT XRechnung test-suite's own official POSITIVE reference documents by the shipped einvoice engine (profile=xrechnung). UBL documents run through einvoice.validate_file; CII (UN/CEFACT) documents run through the shipped CII engine path report._report_from_invoice_bytes (parser_cii + rules.ALL_RULES + rules_xrechnung.evaluate_cii). Every applicable document's expected label is 'valid'. Regenerate with gen_testsuite_conformance.py; drift-guarded by test_testsuite_conformance.py.",
   "documents": [
     {
       "accepted": true,
@@ -58,13 +58,13 @@
       "category": "extension",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0",
       "fatal_rule_ids": [
-        "S-ROOT"
+        "BR-CL-21"
       ],
       "guideline": "xrechnung-3.0-extension",
       "in_scope": false,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/extension/04.05a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": "document declares the XRechnung EXTENSION guideline, which the engine does not target (it targets the plain xrechnung_3.0 CIUS); fatal: BR-CL-21",
+      "scope_class": "extension-guideline-out-of-scope",
       "syntax": "CII",
       "verdict": "invalid"
     },
@@ -97,19 +97,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.01a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -125,19 +123,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.02a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -153,19 +149,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.03a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -181,19 +175,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.04a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -209,19 +201,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.05a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -237,19 +227,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.06a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -265,19 +253,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.07a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -293,19 +279,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.08a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -321,19 +305,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.09a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -349,19 +331,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.10a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -377,19 +357,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.11a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -405,19 +383,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.12a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -433,19 +409,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.13a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -461,19 +435,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.14a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -489,19 +461,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.15a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -517,19 +487,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.17a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -545,19 +513,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.18a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -573,19 +539,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.19a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -601,19 +565,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.20a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -629,19 +591,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/01.21a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -657,19 +617,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/02.01a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -685,19 +643,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/02.02a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -713,19 +669,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/02.03a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -741,19 +695,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/02.04a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -769,19 +721,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/02.05a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -797,19 +747,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/02.06a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -825,19 +773,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/03.01a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -853,19 +799,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/03.02a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -881,19 +825,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/03.03a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -909,19 +851,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/03.04a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -937,19 +877,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/03.05a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -965,19 +903,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/03.06a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -993,19 +929,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "standard",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/standard/03.07a-INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -1021,19 +955,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "cius",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/technical-cases/cius/01.01_comprehensive_test_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -1049,19 +981,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "cius",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/technical-cases/cius/01.02_comprehensive_test_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -1077,19 +1007,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "cius",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/technical-cases/cius/01.03_comprehensive_test_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -1105,19 +1033,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "cius",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/technical-cases/cius/01.04_comprehensive_test_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -1133,19 +1059,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "cius",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/technical-cases/cius/01.05_minimal_test_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": true,
@@ -1161,19 +1085,17 @@
       "verdict": "valid"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "category": "cius",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
-      "fatal_rule_ids": [
-        "S-ROOT"
-      ],
+      "fatal_rule_ids": [],
       "guideline": "xrechnung-3.0",
-      "in_scope": false,
+      "in_scope": true,
       "path": "corpus/xrechnung-testsuite/src/test/technical-cases/cius/01.06_minimal_test_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": null,
+      "scope_class": "in-scope-plain-cius",
       "syntax": "CII",
-      "verdict": "invalid"
+      "verdict": "valid"
     },
     {
       "accepted": false,
@@ -1195,26 +1117,33 @@
       "category": "cvd",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9",
       "fatal_rule_ids": [
-        "S-ROOT"
+        "BR-CL-13"
       ],
       "guideline": "xrechnung-cvd",
       "in_scope": false,
       "path": "corpus/xrechnung-testsuite/src/test/technical-cases/cvd/02.01a-cvd_INVOICE_uncefact.xml",
-      "reason": "engine targets UBL syntax only; this CII (UN/CEFACT) document is not applicable and trips the structural check (fatal: S-ROOT)",
-      "scope_class": "unsupported-syntax-cii",
+      "reason": "document declares the XRechnung CVD monitoring guideline, a specialised profile the engine does not implement; fatal: BR-CL-13",
+      "scope_class": "cvd-guideline-out-of-scope",
       "syntax": "CII",
       "verdict": "invalid"
     }
   ],
   "engine": {
+    "cii_entry_point": "einvoice.report._report_from_invoice_bytes (parser_cii.build_model + rules.ALL_RULES + rules_xrechnung.evaluate_cii)",
     "entry_point": "einvoice.validate_file",
     "profile": "xrechnung",
-    "targets": "plain EN 16931 / XRechnung-standard CIUS, UBL syntax; the extension and CVD guidelines and CII syntax are out of scope and machine-listed below"
+    "targets": "plain EN 16931 / XRechnung-standard CIUS in BOTH the UBL and the CII (UN/CEFACT) syntax bindings; the extension and CVD guidelines are out of scope in either syntax and are machine-listed below"
   },
   "headline": {
     "accepted": 39,
     "applicable": 39,
-    "out_of_scope_machine_listed": 47,
+    "cii": {
+      "accepted": 39,
+      "applicable": 39,
+      "scope": "plain EN 16931 / XRechnung-standard CIUS in CII (UN/CEFACT) syntax (CustomizationID ends in xrechnung_3.0)",
+      "text": "39 of 39 in-scope CII (UN/CEFACT) official KoSIT XRechnung test-suite documents (the plain xrechnung_3.0 CIUS in CII syntax), routed through the shipped CII engine (parser_cii + rules.ALL_RULES + rules_xrechnung.evaluate_cii), are classified exactly as the suite labels them — i.e. accepted as valid"
+    },
+    "out_of_scope_machine_listed": 8,
     "scope": "plain EN 16931 / XRechnung-standard CIUS in UBL syntax (CustomizationID ends in xrechnung_3.0)",
     "text": "39 of 39 official KoSIT XRechnung test-suite documents that are in scope for this engine (the plain xrechnung_3.0 CIUS in UBL syntax) are classified exactly as the suite labels them — i.e. accepted as valid"
   },
@@ -1233,22 +1162,27 @@
       "standard": 66
     },
     "by_scope_class": {
-      "cvd-guideline-out-of-scope": 1,
-      "extension-guideline-out-of-scope": 5,
-      "in-scope-plain-cius": 39,
-      "unsupported-syntax-cii": 41
+      "cvd-guideline-out-of-scope": 2,
+      "extension-guideline-out-of-scope": 6,
+      "in-scope-plain-cius": 78
     },
     "by_syntax": {
       "CII": 41,
       "UBL": 45
     },
-    "engine_invalid": 43,
-    "engine_valid": 43,
-    "in_scope_accepted": 39,
+    "engine_invalid": 4,
+    "engine_valid": 82,
+    "in_scope_accepted": 78,
+    "in_scope_cii_accepted": 39,
+    "in_scope_cii_rejected": 0,
+    "in_scope_cii_total": 39,
     "in_scope_rejected": 0,
-    "in_scope_total": 39,
-    "not_accepted": 43,
-    "out_of_scope_total": 47,
+    "in_scope_total": 78,
+    "in_scope_ubl_accepted": 39,
+    "in_scope_ubl_rejected": 0,
+    "in_scope_ubl_total": 39,
+    "not_accepted": 4,
+    "out_of_scope_total": 8,
     "total_documents": 86
   }
 }

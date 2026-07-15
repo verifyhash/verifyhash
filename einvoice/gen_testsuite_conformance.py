@@ -17,7 +17,16 @@ document: its path, syntax (UBL / CII), category (cvd / cius / standard /
 extension), the guideline it declares, the engine verdict, and — for every
 document the engine does NOT accept — the exact machine-readable reason
 (the firing fatal rule id(s), plus a scope tag when the document declares a
-syntax or guideline the engine explicitly does not target).
+guideline the engine explicitly does not target).
+
+Both syntax bindings are shipped and tested, so each document is classified
+through the engine that owns its syntax: UBL documents through the public
+:func:`einvoice.validate_file`; CII (UN/CEFACT, ``*_uncefact.xml``) documents
+through the SAME shipped CII path the PDF-container and golden-snapshot tests
+exercise — :func:`einvoice.report._report_from_invoice_bytes`, which dispatches
+a ``CrossIndustryInvoice`` root to ``parser_cii.build_model`` + the
+syntax-agnostic ``rules.ALL_RULES`` core + ``rules_xrechnung.evaluate_cii``
+(German CIUS). No rule logic is re-implemented here.
 
 It is a MEASUREMENT tool. It changes no rule and bends no label. If a
 genuinely in-scope plain-CIUS positive document were rejected on a rule we
@@ -27,14 +36,14 @@ NEVER papered over.
 
 Scope of the citable headline
 -----------------------------
-The engine targets the **plain EN 16931 / XRechnung-standard CIUS in UBL
-syntax** (CustomizationID ``...#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0``
-with no further guideline segment). Three families of suite documents are,
-honestly, out of that scope and are machine-listed as such rather than hidden:
+The engine targets the **plain EN 16931 / XRechnung-standard CIUS**
+(CustomizationID ``...#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0`` with no
+further guideline segment) in **both** the UBL and the CII (UN/CEFACT) syntax
+bindings. The in-scope pass rate is reported SEPARATELY per binding (a UBL
+headline and a distinct CII headline) so neither number dilutes the other.
+Two families of suite documents are, honestly, out of that scope — in EITHER
+syntax — and are machine-listed as such rather than hidden:
 
-* **CII (UN/CEFACT) syntax** (``*_uncefact.xml``) — the engine parses UBL
-  only, so a CII document trips the structural ``S-ROOT`` check. Not a
-  correctness claim either way; the engine simply does not target CII.
 * **XRechnung EXTENSION guideline** documents (CustomizationID contains
   ``:extension:``) — a different guideline (sub-invoice-line / construction /
   third-party-payment extension) than the plain CIUS the engine targets.
@@ -63,6 +72,7 @@ PROFILE = "xrechnung"
 
 sys.path.insert(0, HERE)
 import einvoice  # noqa: E402  (local package; sys.path set above)
+from einvoice import report as _report  # noqa: E402  (shipped CII engine path)
 
 
 # --------------------------------------------------------------------------- #
@@ -146,11 +156,14 @@ def _guideline(customization_id):
 def _scope_class(syntax, guideline):
     """The applicability bucket of a document relative to the engine's claim.
 
-    Exactly one of these; ``in-scope-plain-cius`` is the only in-scope bucket.
+    Syntax-agnostic: both the UBL and the CII (UN/CEFACT) bindings are shipped
+    and tested, so a document's bucket is decided purely by the guideline it
+    declares — exactly the same way for both syntaxes. ``in-scope-plain-cius``
+    is the only in-scope bucket (the per-syntax split of the headline is done
+    downstream in :func:`build_summary`). A syntax that is neither UBL nor CII
+    is the only genuinely unsupported-syntax case.
     """
-    if syntax == "CII":
-        return "unsupported-syntax-cii"
-    if syntax != "UBL":
+    if syntax not in ("UBL", "CII"):
         return "unsupported-syntax"
     if guideline == "xrechnung-3.0-extension":
         return "extension-guideline-out-of-scope"
@@ -173,13 +186,9 @@ def _reason(scope_class, fatal_rule_ids):
     Never returns an empty string — silence is the one forbidden outcome.
     """
     rules = ", ".join(fatal_rule_ids) if fatal_rule_ids else "(no fatal rule)"
-    if scope_class == "unsupported-syntax-cii":
-        return ("engine targets UBL syntax only; this CII (UN/CEFACT) document "
-                "is not applicable and trips the structural check "
-                "(fatal: %s)" % rules)
     if scope_class == "unsupported-syntax":
-        return ("engine targets UBL syntax only; document syntax is not "
-                "recognised (fatal: %s)" % rules)
+        return ("engine targets the UBL and CII (UN/CEFACT) syntaxes; this "
+                "document's syntax is not recognised (fatal: %s)" % rules)
     if scope_class == "extension-guideline-out-of-scope":
         return ("document declares the XRechnung EXTENSION guideline, which "
                 "the engine does not target (it targets the plain "
@@ -199,6 +208,28 @@ def _reason(scope_class, fatal_rule_ids):
             % rules)
 
 
+def _classify_cii(abs_path, rel_path):
+    """Classify a CII (UN/CEFACT) document through the SHIPPED CII engine path.
+
+    Reuses :func:`einvoice.report._report_from_invoice_bytes` verbatim — the
+    exact end-to-end path ``test_golden_snapshot`` and ``test_rules_cii``
+    exercise. That helper dispatches a ``CrossIndustryInvoice`` root to
+    ``parser_cii.build_model`` + the syntax-agnostic ``rules.ALL_RULES`` core
+    rules + (profile=xrechnung) ``rules_xrechnung.evaluate_cii`` for the German
+    CIUS layer. This RE-IMPLEMENTS no rule logic; it feeds the raw bytes into
+    the shipped engine and reads back the verdict, exactly mirroring how the UBL
+    path decides accepted/rejected. NOT ``validate_file`` (which forces a UBL
+    root and would trip a structural ``S-ROOT`` on any CII document).
+    """
+    with open(abs_path, "rb") as fh:
+        xml_bytes = fh.read()
+    rep = _report._report_from_invoice_bytes(xml_bytes, rel_path, PROFILE)
+    accepted = bool(rep["valid"])
+    fatal = sorted({r["rule"] for r in rep["violations"]
+                    if r.get("severity") == "fatal"})
+    return accepted, fatal
+
+
 def classify_document(rel_path):
     """Full per-document record."""
     abs_path = os.path.join(HERE, rel_path)
@@ -208,9 +239,14 @@ def classify_document(rel_path):
     guideline = _guideline(cid)
     scope_class = _scope_class(syntax, guideline)
 
-    result = einvoice.validate_file(abs_path, profile=PROFILE)
-    accepted = bool(result.valid)
-    fatal = _fatal_rule_ids(result)
+    if syntax == "CII":
+        # CII goes through the shipped CII engine (parser_cii + rules.ALL_RULES
+        # + rules_xrechnung.evaluate_cii), NOT validate_file's UBL-only path.
+        accepted, fatal = _classify_cii(abs_path, rel_path)
+    else:
+        result = einvoice.validate_file(abs_path, profile=PROFILE)
+        accepted = bool(result.valid)
+        fatal = _fatal_rule_ids(result)
 
     rec = {
         "path": rel_path,
@@ -246,6 +282,12 @@ def build_summary(documents):
     in_scope_rejected = [d for d in in_scope if not d["accepted"]]
     not_accepted = [d for d in documents if not d["accepted"]]
 
+    # The headline is stated SEPARATELY per syntax binding (UBL, CII) so the
+    # long-standing UBL number is never diluted and the freshly-classified CII
+    # number is legible on its own. Both bindings are shipped and tested.
+    ubl_in_scope = [d for d in in_scope if d["syntax"] == "UBL"]
+    cii_in_scope = [d for d in in_scope if d["syntax"] == "CII"]
+
     summary = {
         "total_documents": len(documents),
         "by_syntax": _tally(d["syntax"] for d in documents),
@@ -257,23 +299,54 @@ def build_summary(documents):
         "in_scope_total": len(in_scope),
         "in_scope_accepted": len(in_scope_accepted),
         "in_scope_rejected": len(in_scope_rejected),
+        "in_scope_ubl_total": len(ubl_in_scope),
+        "in_scope_ubl_accepted": sum(1 for d in ubl_in_scope if d["accepted"]),
+        "in_scope_ubl_rejected": sum(1 for d in ubl_in_scope
+                                     if not d["accepted"]),
+        "in_scope_cii_total": len(cii_in_scope),
+        "in_scope_cii_accepted": sum(1 for d in cii_in_scope if d["accepted"]),
+        "in_scope_cii_rejected": sum(1 for d in cii_in_scope
+                                     if not d["accepted"]),
         "out_of_scope_total": len(documents) - len(in_scope),
     }
     return summary
 
 
 def build_headline(summary):
-    n = summary["in_scope_accepted"]
-    d = summary["in_scope_total"]
+    """The citable headline, stated SEPARATELY for each syntax binding.
+
+    The top-level (UBL) claim is kept verbatim so the long-standing "39 of 39"
+    number never drifts; a distinct ``cii`` sub-headline reports the freshly
+    classified CII (UN/CEFACT) in-scope pass rate on its own. Both are measured
+    end-to-end through the shipped engine, never asserted.
+    """
+    un = summary["in_scope_ubl_accepted"]
+    ud = summary["in_scope_ubl_total"]
+    cn = summary["in_scope_cii_accepted"]
+    cd = summary["in_scope_cii_total"]
     return {
         "scope": ("plain EN 16931 / XRechnung-standard CIUS in UBL syntax "
                   "(CustomizationID ends in xrechnung_3.0)"),
-        "accepted": n,
-        "applicable": d,
+        "accepted": un,
+        "applicable": ud,
         "text": ("%d of %d official KoSIT XRechnung test-suite documents that "
                  "are in scope for this engine (the plain xrechnung_3.0 CIUS "
                  "in UBL syntax) are classified exactly as the suite labels "
-                 "them — i.e. accepted as valid" % (n, d)),
+                 "them — i.e. accepted as valid" % (un, ud)),
+        "cii": {
+            "scope": ("plain EN 16931 / XRechnung-standard CIUS in CII "
+                      "(UN/CEFACT) syntax (CustomizationID ends in "
+                      "xrechnung_3.0)"),
+            "accepted": cn,
+            "applicable": cd,
+            "text": ("%d of %d in-scope CII (UN/CEFACT) official KoSIT "
+                     "XRechnung test-suite documents (the plain xrechnung_3.0 "
+                     "CIUS in CII syntax), routed through the shipped CII engine "
+                     "(parser_cii + rules.ALL_RULES + "
+                     "rules_xrechnung.evaluate_cii), are classified exactly as "
+                     "the suite labels them — i.e. accepted as valid"
+                     % (cn, cd)),
+        },
         "out_of_scope_machine_listed": summary["out_of_scope_total"],
     }
 
@@ -286,10 +359,13 @@ def build_report():
     report = {
         "_about": ("End-to-end classification of the KoSIT XRechnung "
                    "test-suite's own official POSITIVE reference documents by "
-                   "the public einvoice engine (einvoice.validate_file, "
-                   "profile=xrechnung). Every applicable document's expected "
-                   "label is 'valid'. Regenerate with "
-                   "gen_testsuite_conformance.py; drift-guarded by "
+                   "the shipped einvoice engine (profile=xrechnung). UBL "
+                   "documents run through einvoice.validate_file; CII "
+                   "(UN/CEFACT) documents run through the shipped CII engine "
+                   "path report._report_from_invoice_bytes (parser_cii + "
+                   "rules.ALL_RULES + rules_xrechnung.evaluate_cii). Every "
+                   "applicable document's expected label is 'valid'. Regenerate "
+                   "with gen_testsuite_conformance.py; drift-guarded by "
                    "test_testsuite_conformance.py."),
         "provenance": {
             "corpus": "KoSIT itplr-kosit/xrechnung-testsuite (Apache-2.0)",
@@ -302,10 +378,14 @@ def build_report():
         },
         "engine": {
             "entry_point": "einvoice.validate_file",
+            "cii_entry_point": ("einvoice.report._report_from_invoice_bytes "
+                                "(parser_cii.build_model + rules.ALL_RULES + "
+                                "rules_xrechnung.evaluate_cii)"),
             "profile": PROFILE,
-            "targets": ("plain EN 16931 / XRechnung-standard CIUS, UBL syntax; "
-                        "the extension and CVD guidelines and CII syntax are "
-                        "out of scope and machine-listed below"),
+            "targets": ("plain EN 16931 / XRechnung-standard CIUS in BOTH the "
+                        "UBL and the CII (UN/CEFACT) syntax bindings; the "
+                        "extension and CVD guidelines are out of scope in either "
+                        "syntax and are machine-listed below"),
         },
         "headline": build_headline(summary),
         "summary": summary,
@@ -335,8 +415,12 @@ def main(argv):
         return 0
     with open(JSON_PATH, "w", encoding="utf-8") as fh:
         fh.write(json_text)
-    print("wrote %s — %s"
-          % (os.path.basename(JSON_PATH), report["headline"]["text"]))
+    # Status goes to stderr so stdout is the pure, byte-reproducible artifact:
+    # `gen_testsuite_conformance.py > file` yields exactly the committed JSON.
+    sys.stderr.write("wrote %s — %s\n"
+                     % (os.path.basename(JSON_PATH),
+                        report["headline"]["text"]))
+    sys.stdout.write(json_text)
     return 0
 
 

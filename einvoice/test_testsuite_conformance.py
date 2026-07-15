@@ -83,11 +83,63 @@ class TestTestsuiteConformance(unittest.TestCase):
                          s["in_scope_total"])
         self.assertEqual(s["in_scope_total"] + s["out_of_scope_total"],
                          s["total_documents"])
-        # Headline numerator/denominator are exactly the in-scope tallies.
-        self.assertEqual(self.committed["headline"]["accepted"],
-                         s["in_scope_accepted"])
-        self.assertEqual(self.committed["headline"]["applicable"],
+        # The combined in-scope tally is exactly the per-syntax split.
+        self.assertEqual(s["in_scope_ubl_total"] + s["in_scope_cii_total"],
                          s["in_scope_total"])
+        self.assertEqual(
+            s["in_scope_ubl_accepted"] + s["in_scope_cii_accepted"],
+            s["in_scope_accepted"])
+        self.assertEqual(s["in_scope_ubl_accepted"] + s["in_scope_ubl_rejected"],
+                         s["in_scope_ubl_total"])
+        self.assertEqual(s["in_scope_cii_accepted"] + s["in_scope_cii_rejected"],
+                         s["in_scope_cii_total"])
+        # The UBL headline numerator/denominator are the UBL in-scope tallies;
+        # the distinct CII sub-headline is the CII in-scope tallies.
+        head = self.committed["headline"]
+        self.assertEqual(head["accepted"], s["in_scope_ubl_accepted"])
+        self.assertEqual(head["applicable"], s["in_scope_ubl_total"])
+        self.assertEqual(head["cii"]["accepted"], s["in_scope_cii_accepted"])
+        self.assertEqual(head["cii"]["applicable"], s["in_scope_cii_total"])
+
+    def test_cii_headline_is_classified_not_syntax_excluded(self):
+        """The CII half of the trust headline is genuinely classified.
+
+        Every CII (UN/CEFACT) document must be routed through the shipped CII
+        engine and either accepted or machine-listed as a guideline out-of-scope
+        case — never blanket-excluded on syntax. Concretely: the retired
+        ``unsupported-syntax-cii`` reason/scope must be gone entirely, and the
+        live-recomputed CII in-scope accepted count must equal the CII in-scope
+        total (all in-scope CII documents classify exactly as the suite labels
+        them). Recomputed live from the fresh sweep, not read from the file.
+        """
+        blob = json.dumps(self.committed)
+        self.assertNotIn(
+            "unsupported-syntax-cii", blob,
+            "CII must be genuinely classified, not syntax-excluded")
+        # There must actually BE CII documents in the sweep (guard vacuous pass).
+        cii_docs = [d for d in self.fresh["documents"] if d["syntax"] == "CII"]
+        self.assertTrue(cii_docs, "no CII documents were enumerated")
+        # Every non-accepted CII doc is an out-of-scope guideline case with a
+        # concrete fatal rule id — never a bare syntax exclusion.
+        for d in cii_docs:
+            if not d["accepted"]:
+                self.assertIn(d["scope_class"],
+                              ("extension-guideline-out-of-scope",
+                               "cvd-guideline-out-of-scope"),
+                              "rejected CII doc must be an out-of-scope "
+                              "guideline case, not syntax-excluded: %s"
+                              % d["path"])
+                self.assertTrue(d["fatal_rule_ids"], d["path"])
+        # The live CII in-scope pass rate equals the committed CII sub-headline.
+        s = self.fresh["summary"]
+        self.assertEqual(s["in_scope_cii_accepted"], s["in_scope_cii_total"])
+        self.assertEqual(self.fresh["headline"]["cii"]["accepted"],
+                         s["in_scope_cii_accepted"])
+        self.assertEqual(self.fresh["headline"]["cii"]["applicable"],
+                         s["in_scope_cii_total"])
+        # The committed CII sub-headline matches the live recompute exactly.
+        self.assertEqual(self.committed["headline"]["cii"],
+                         self.fresh["headline"]["cii"])
 
     def test_every_non_accepted_document_has_a_nonempty_reason(self):
         # The one forbidden outcome is silence: any document the engine does

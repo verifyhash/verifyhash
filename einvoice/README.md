@@ -290,10 +290,14 @@ prints the offending file, block, and expected vs. actual rule IDs).
 ### KoSIT test-suite conformance headline
 
 End-to-end, on KoSIT's *own* official documents: **39 of 39** in-scope
-XRechnung test-suite documents (the plain `xrechnung_3.0` CIUS in UBL syntax)
-are classified exactly as the suite labels them — accepted as valid. The 47
-out-of-scope documents (CII syntax, extension and CVD guidelines) are
-machine-listed with their exact reason in
+XRechnung test-suite documents in **UBL** syntax (the plain `xrechnung_3.0`
+CIUS) are classified exactly as the suite labels them — accepted as valid. The
+same holds for the **CII (UN/CEFACT)** binding: **39 of 39** in-scope
+`*_uncefact.xml` documents, routed through the shipped CII engine
+(`parser_cii` + `rules.ALL_RULES` + `rules_xrechnung.evaluate_cii`), are
+classified exactly as the suite labels them. The 8 out-of-scope documents (the
+extension and CVD guidelines, in both syntaxes) are machine-listed with their
+exact reason in
 [`testsuite_conformance.json`](testsuite_conformance.json); see
 [`CORRECTNESS.md` §4a](CORRECTNESS.md) for provenance and scope.
 

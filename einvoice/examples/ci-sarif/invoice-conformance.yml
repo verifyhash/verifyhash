@@ -1,0 +1,66 @@
+# Copy-paste GitHub Actions workflow: validate every e-invoice in your repo on
+# push + pull_request and surface each EN 16931 / XRechnung finding as an INLINE
+# code-scanning annotation on the offending file (via SARIF), while FAILING the
+# build on any fatal violation.
+#
+# It is a thin consumer of the committed einvoice composite Action
+# (`einvoice/action/`), which drives the real `python3 -m einvoice.report`
+# entrypoint and emits one merged SARIF file for `upload-sarif`. This workflow
+# adds no validation logic of its own — it only wires the Action's SARIF output
+# into GitHub code scanning. For the Action's input/output field reference and
+# the honest coverage note, see ../../action/README.md (do not re-read it here).
+#
+# ---------------------------------------------------------------------------
+# INSTALL (copy this file into YOUR repo)
+#   1. Copy this file to .github/workflows/invoice-conformance.yml.
+#   2. Vendor the zero-dependency einvoice product into your repo — e.g. at
+#      third_party/einvoice/ (the folder holding action/, einvoice/, ...).
+#   3. Point `uses:` at the vendored Action's directory. Below it is written
+#      `uses: ./action`, which assumes the einvoice `action/` folder sits at
+#      YOUR repo root; if you vendored under third_party/einvoice/ change it to
+#      `uses: ./third_party/einvoice/action`. Alternatively, once the Action is
+#      published, pin the marketplace version instead:
+#          uses: verifyhash/einvoice-action@v1   # pin a tag or 40-char SHA
+#   4. Put the invoices to validate under invoices/ (or set `path:` below).
+# No `pip install` is needed: the runner is Python-stdlib-only and the validator
+# has zero runtime dependencies (it is imported from the vendored package).
+# ---------------------------------------------------------------------------
+
+name: invoice-conformance
+
+on:
+  push:
+  pull_request:
+
+# `security-events: write` is REQUIRED for github/codeql-action/upload-sarif to
+# post findings to code scanning; without it the upload step is rejected.
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  invoice-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Drive the einvoice composite Action. It validates every *.xml / *.pdf
+      # under `path`, writes ONE merged SARIF 2.1.0 file (the engine's SARIF is
+      # single-file per invoice, so the Action merges them for a directory), and
+      # exits non-zero on any fatal — with fail-on: fatal (the default) that is
+      # exactly what fails this build.
+      - id: einvoice
+        uses: ./action
+        with:
+          path: invoices/
+          fail-on: fatal
+          # format: sarif   # default; the merged SARIF file is written either way
+
+      # Upload the merged SARIF even when the step above failed the build, so the
+      # findings still render inline on the pull request. `sarif-file` is the
+      # Action's own output (an absolute path to the merged document).
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.einvoice.outputs.sarif-file }}

@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-good-multiline",
+  "path": "corpus/synthetic/synth-ubl-good-multiline.xml",
+  "profile": "en16931",
+  "rules": [],
+  "syntax": "UBL",
+  "valid": true
+}

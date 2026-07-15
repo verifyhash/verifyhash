@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "synth-cii-good-zero-rated",
+  "path": "corpus/synthetic/synth-cii-good-zero-rated.xml",
+  "profile": "en16931",
+  "rules": [],
+  "syntax": "CII",
+  "valid": true
+}

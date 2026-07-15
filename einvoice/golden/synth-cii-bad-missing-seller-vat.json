@@ -1,0 +1,26 @@
+{
+  "exit_code": 1,
+  "name": "synth-cii-bad-missing-seller-vat",
+  "path": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml",
+  "profile": "en16931",
+  "rules": [
+    {
+      "rule": "BR-CO-26",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-S-02",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-S-03",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-S-04",
+      "severity": "fatal"
+    }
+  ],
+  "syntax": "CII",
+  "valid": false
+}

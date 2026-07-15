@@ -1,0 +1,18 @@
+{
+  "exit_code": 1,
+  "name": "synth-cii-bad-xrechnung-nocontact",
+  "path": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-2",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-21",
+      "severity": "warning"
+    }
+  ],
+  "syntax": "CII",
+  "valid": false
+}

@@ -144,6 +144,99 @@ FIXTURES = [
         "profile": "xrechnung",
         "note": "CII invoice failing many mandatory-field rules (BR-DE-1..4 etc.).",
     },
+    # ======================================================================
+    # SYNTHETIC real-SHAPE corpus (corpus/synthetic/). Ten hand-authored,
+    # fully FICTIONAL invoices (Muster GmbH / DE000000000 / placeholder IBAN)
+    # with realistic multi-line, multi-VAT-rate structure, document-level
+    # allowances/charges and payment terms. >=3 UBL + >=3 CII, each syntax
+    # carrying at least one VALID (passes its profile) and one INTENTIONALLY
+    # BROKEN (a known fatal fires) fixture. Goldens are the engine's own
+    # projection — regenerate with `python3 test_golden_snapshot.py --update`.
+    # ======================================================================
+    # ---- synthetic UBL, good ----
+    {
+        "name": "synth-ubl-good-multiline",
+        "path": "corpus/synthetic/synth-ubl-good-multiline.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "Valid EN 16931 UBL: 3 lines, two standard rates (19%/7%), a "
+                "document allowance + charge; all totals reconcile.",
+    },
+    {
+        "name": "synth-ubl-good-xrechnung",
+        "path": "corpus/synthetic/synth-ubl-good-xrechnung.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "Valid XRechnung 3.0 UBL: two S-rated lines + discount, German "
+                "mandatory data present (BuyerReference, seller contact, VAT id).",
+    },
+    # ---- synthetic UBL, bad ----
+    {
+        "name": "synth-ubl-bad-vat-mismatch",
+        "path": "corpus/synthetic/synth-ubl-bad-vat-mismatch.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "Document VAT total (BT-110) 300.00 != Σ breakdown 289.50 -> "
+                "BR-CO-14 fatal (VAT-total mismatch).",
+    },
+    {
+        "name": "synth-ubl-bad-missing-buyerref",
+        "path": "corpus/synthetic/synth-ubl-bad-missing-buyerref.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "XRechnung invoice with the Buyer reference (BT-10) dropped -> "
+                "BR-DE-15 fatal (a German-mandatory field is missing).",
+    },
+    {
+        "name": "synth-ubl-bad-exempt-noreason",
+        "path": "corpus/synthetic/synth-ubl-bad-exempt-noreason.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "Exempt (E) line + breakdown with no exemption reason "
+                "(BT-120/121) -> BR-E-10 fatal (invalid tax-category state).",
+    },
+    # ---- synthetic CII, good ----
+    {
+        "name": "synth-cii-good-multiline",
+        "path": "corpus/synthetic/synth-cii-good-multiline.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Valid EN 16931 CII: 3 lines, two standard rates (19%/7%), a "
+                "header allowance + charge; breakdown and totals reconcile.",
+    },
+    {
+        "name": "synth-cii-good-zero-rated",
+        "path": "corpus/synthetic/synth-cii-good-zero-rated.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Valid EN 16931 CII mixing a standard-rated (S 19%) and a "
+                "zero-rated (Z 0%) line; seller VAT id present, Z reasonless.",
+    },
+    # ---- synthetic CII, bad ----
+    {
+        "name": "synth-cii-bad-vat-mismatch",
+        "path": "corpus/synthetic/synth-cii-bad-vat-mismatch.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Header VAT total (BT-110) 230.00 != Σ breakdown 218.60 -> "
+                "BR-CO-14 fatal (VAT-total mismatch).",
+    },
+    {
+        "name": "synth-cii-bad-missing-seller-vat",
+        "path": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Seller VAT registration (BT-31) removed while S-rated items "
+                "remain -> BR-S-02 fatal (+ related seller-id rules).",
+    },
+    {
+        "name": "synth-cii-bad-xrechnung-nocontact",
+        "path": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml",
+        "syntax": "CII",
+        "profile": "xrechnung",
+        "note": "XRechnung CII with the seller contact (BG-6) removed -> "
+                "BR-DE-2 fatal (German-mandatory contact point missing).",
+    },
 ]
 
 

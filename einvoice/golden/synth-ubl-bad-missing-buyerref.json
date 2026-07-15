@@ -1,0 +1,22 @@
+{
+  "exit_code": 1,
+  "name": "synth-ubl-bad-missing-buyerref",
+  "path": "corpus/synthetic/synth-ubl-bad-missing-buyerref.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-15",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-DE-19",
+      "severity": "warning"
+    },
+    {
+      "rule": "BR-DE-TMP-32",
+      "severity": "information"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": false
+}

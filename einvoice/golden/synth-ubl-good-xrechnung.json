@@ -1,0 +1,18 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-good-xrechnung",
+  "path": "corpus/synthetic/synth-ubl-good-xrechnung.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-19",
+      "severity": "warning"
+    },
+    {
+      "rule": "BR-DE-TMP-32",
+      "severity": "information"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": true
+}

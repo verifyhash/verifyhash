@@ -353,6 +353,52 @@ def render_markdown(matrix, cii_parity=None):
              r["title"].replace("|", "\\|")))
     w("")
 
+    # --- Factur-X/ZUGFeRD profile scope (static, measured — see
+    #     test_facturx_profile_scope.py, which pins both the recognition table
+    #     and the end-to-end fact stated below against the live engine). ---
+    w("## Factur-X/ZUGFeRD profile scope")
+    w("")
+    w("A Factur-X 1.x / ZUGFeRD 2.x PDF declares one of six profiles"
+      " (\"conformance levels\"): **MINIMUM**, **BASIC WL**, **BASIC**,"
+      " **EN 16931** (a.k.a. COMFORT), **EXTENDED**, and the German"
+      " **XRECHNUNG** CIUS. `einvoice.pdf_container._canonical_profile` maps"
+      " each profile's XMP `ConformanceLevel` string and its embedded-CII"
+      " `CustomizationID` (BT-24) URN to a canonical token; that recognition"
+      " table is pinned by `test_facturx_profile_scope.py` so it cannot"
+      " silently drift.")
+    w("")
+    w("**Validated at EN 16931 depth.** EN 16931, BASIC and EXTENDED, and the"
+      " XRechnung CIUS all carry the full EN 16931 semantic model (BASIC is a"
+      " compliant CIUS whose `CustomizationID` embeds the"
+      " `urn:cen.eu:en16931:2017#compliant#…` marker; EXTENDED conforms to it;"
+      " XRechnung is a CIUS on top). For any of these, the embedded"
+      " CrossIndustryInvoice XML is validated to EN 16931 depth by the exact"
+      " same core rule engine (`einvoice.rules.ALL_RULES`) documented in the"
+      " table above — the PDF path runs the identical rules the raw"
+      " `factur-x.xml` would.")
+    w("")
+    w("**Recognized but out of scope for EN 16931 conformance: MINIMUM and"
+      " BASIC WL.** These two are by design **not EN 16931-conformant**"
+      " profiles — MINIMUM carries only a handful of header fields, and"
+      " BASIC WL (\"without lines\") omits the invoice lines (BG-25) and other"
+      " mandatory EN 16931 business terms. Declaring MINIMUM or BASIC WL does"
+      " **not** make the document EN 16931-conformant, and the engine does not"
+      " certify it as such.")
+    w("")
+    w("**What the engine actually emits.** The declared profile token is used"
+      " only for the container consistency cross-check"
+      " (`FX-CONTAINER-PROFILE`: XMP `ConformanceLevel` vs CII"
+      " `CustomizationID`). It is **never** used to select, gate, or skip which"
+      " business rules run. Every embedded CrossIndustryInvoice — whatever"
+      " profile it declares — is validated against the SAME full EN 16931 core"
+      " rule set. So for a MINIMUM or BASIC WL input the engine still runs the"
+      " EN 16931 rules and **reports the missing mandatory terms as"
+      " violations** (e.g. BR-16 \"at least one Invoice line\"): it does NOT"
+      " silently pass such a document, and it does NOT special-case-skip any"
+      " rule by declared profile. The engine applies the same rule set"
+      " regardless of the declared profile.")
+    w("")
+
     # --- Exclusions ---
     exc = matrix["exclusions"]
     w("## Exclusions (honest scope boundaries)")

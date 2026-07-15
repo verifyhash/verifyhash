@@ -334,37 +334,19 @@ the non-blocking `warning` class for the severity column).
 | `PEPPOL-EN16931-R121` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Base quantity MUST be a positive number above zero. |
 | `PEPPOL-EN16931-R130` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Unit code of price base quantity MUST be same as invoiced quantity. |
 
+## Factur-X/ZUGFeRD profile scope
+
+A Factur-X 1.x / ZUGFeRD 2.x PDF declares one of six profiles ("conformance levels"): **MINIMUM**, **BASIC WL**, **BASIC**, **EN 16931** (a.k.a. COMFORT), **EXTENDED**, and the German **XRECHNUNG** CIUS. `einvoice.pdf_container._canonical_profile` maps each profile's XMP `ConformanceLevel` string and its embedded-CII `CustomizationID` (BT-24) URN to a canonical token; that recognition table is pinned by `test_facturx_profile_scope.py` so it cannot silently drift.
+
+**Validated at EN 16931 depth.** EN 16931, BASIC and EXTENDED, and the XRechnung CIUS all carry the full EN 16931 semantic model (BASIC is a compliant CIUS whose `CustomizationID` embeds the `urn:cen.eu:en16931:2017#compliant#…` marker; EXTENDED conforms to it; XRechnung is a CIUS on top). For any of these, the embedded CrossIndustryInvoice XML is validated to EN 16931 depth by the exact same core rule engine (`einvoice.rules.ALL_RULES`) documented in the table above — the PDF path runs the identical rules the raw `factur-x.xml` would.
+
+**Recognized but out of scope for EN 16931 conformance: MINIMUM and BASIC WL.** These two are by design **not EN 16931-conformant** profiles — MINIMUM carries only a handful of header fields, and BASIC WL ("without lines") omits the invoice lines (BG-25) and other mandatory EN 16931 business terms. Declaring MINIMUM or BASIC WL does **not** make the document EN 16931-conformant, and the engine does not certify it as such.
+
+**What the engine actually emits.** The declared profile token is used only for the container consistency cross-check (`FX-CONTAINER-PROFILE`: XMP `ConformanceLevel` vs CII `CustomizationID`). It is **never** used to select, gate, or skip which business rules run. Every embedded CrossIndustryInvoice — whatever profile it declares — is validated against the SAME full EN 16931 core rule set. So for a MINIMUM or BASIC WL input the engine still runs the EN 16931 rules and **reports the missing mandatory terms as violations** (e.g. BR-16 "at least one Invoice line"): it does NOT silently pass such a document, and it does NOT special-case-skip any rule by declared profile. The engine applies the same rule set regardless of the declared profile.
+
 ## Exclusions (honest scope boundaries)
 
 Rules deliberately NOT counted as coverage, documented so the matrix is honest about its boundaries.
-
-### UBL `CreditNote` root — recognized and cleanly rejected, not validated (T-VHCN.1)
-
-This engine validates UBL **Invoice** documents (root
-`{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice`). A UBL
-`CreditNote` document (root
-`{urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2}CreditNote`) is
-**recognized and cleanly rejected** with the fatal `S-ROOT` structural rule — it
-is neither crashed nor silently accepted. Concretely, `build_model()` sets
-`root_is_ubl_invoice=False` for a CreditNote root, so the structural layer emits
-a single fatal `S-ROOT` finding ("Root element must be Invoice in the UBL
-Invoice-2 namespace.") naming the offending `CreditNote` element, `valid` is
-`false`, and the CLI exits 1 — on the single-file path
-(`einvoice validate <creditnote.xml>`) and inside a batch
-(`einvoice validate-batch <dir>`), where the CreditNote is counted as a failing
-file rather than skipped. This behaviour is pinned by
-`test_creditnote_scope.py` against the committed corpus CreditNote shapes
-(`corpus/cen-en16931/ubl/examples/ubl-tc434-creditnote1.xml` and
-`corpus/cen-en16931/test/testfiles/CreditNote-Max_content.xml`).
-
-CreditNote-specific EN 16931 validation is **out of scope**: full parity would
-require a distinct CreditNote parser model (accepting the CreditNote root and
-mapping `cac:CreditNoteLine` → lines, `cbc:CreditedQuantity` → line quantity,
-etc.) *plus* a vendored CreditNote differential corpus proven at 0 divergences
-against the reference Schematron — a large, differential-risky delta. Until that
-model and corpus are vendored and proven, a CreditNote's only defined outcome is
-the honest `S-ROOT` rejection above (see T-VHCN.1; the terse one-line note lives
-in `README.md`).
 
 ### Vacuous / tautological rules (never fire — not asserted)
 

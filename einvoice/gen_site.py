@@ -171,6 +171,11 @@ dd { margin: 0; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
   font-size: .92em; overflow-wrap: anywhere; }
+pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
+  padding: .7rem .9rem; overflow-x: auto; font-size: .82rem; line-height: 1.5;
+  margin: .6rem 0; }
+pre code { background: none; padding: 0; overflow-wrap: normal;
+  white-space: pre; }
 .assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
   color: #24292f; }
 .terms code { margin-right: .3rem; }
@@ -186,6 +191,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   .title, .assert, dd, .lead { color: #e6edf3; }
   .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
   code { background: #161b22; }
+  pre { background: #161b22; border-color: #30363d; }
   .sev, .assert, footer, .onramp { border-color: #30363d; }
   a { color: #4493f8; }
 }
@@ -234,6 +240,7 @@ _REPO_ACTION = _REPO_URL + "/tree/main/einvoice/action"
 _REPO_COVERAGE = _REPO_URL + "/blob/main/einvoice/COVERAGE.md"
 _REPO_SECURITY = _REPO_URL + "/blob/main/einvoice/SECURITY.md"
 _REPO_REMEDIATION = _REPO_URL + "/blob/main/einvoice/remediation_catalog.json"
+_REPO_PROVE = _REPO_URL + "/blob/main/einvoice/prove.py"
 _REPO_LICENSE = _REPO_URL + "/blob/main/LICENSE"
 _REPO_NOTICE = _REPO_URL + "/blob/main/einvoice/NOTICE"
 _REPO_ISSUES = _REPO_URL + "/issues"
@@ -527,6 +534,25 @@ def render_landing():
       "German), the single source of truth these rule pages are generated "
       "from.</li>" % _h(_REPO_REMEDIATION))
     w("</ul>")
+
+    w('<h2>Reproduce these numbers yourself</h2>')
+    w("<p>Every count on this page is rebuilt from the vendored official "
+      "artifacts by a single committed entrypoint &mdash; nothing here is a "
+      "hand-typed figure. From a checkout of <code>einvoice/</code>, run the "
+      "exact command the repository README documents:</p>")
+    w('<pre><code>%s</code></pre>'
+      % _h("PYTHONPATH=$HOME/.local/lib/python3.10/site-packages "
+           "python3 prove.py"))
+    w('<p><a href="%s"><code>prove.py</code></a> re-runs the full differential '
+      "harness over every leg plus the conformance corpus, asserts the "
+      "divergence count against the official CEN / KoSIT Schematron, and "
+      "prints the coverage headline recomputed live this run (it reads no "
+      "number from a string literal, so a stale figure cannot slip through). "
+      "It exits non-zero on any failure and takes a few minutes. The "
+      "authoritative per-rule inventory those figures roll up from is the "
+      '<a href="%s">coverage matrix (COVERAGE.md)</a>; consult it rather than '
+      "any digit copied into prose here, which could drift.</p>"
+      % (_h(_REPO_PROVE), _h(_REPO_COVERAGE)))
 
     w('<h2>Honest scope</h2>')
     w("<p>Auditable, but not a legal guarantee. A green result means "

@@ -77,7 +77,14 @@ NS = {"ubl": NS_INVOICE, "cac": NS_CAC, "cbc": NS_CBC}
 
 
 class NotWellFormed(Exception):
-    """Raised when the input is not well-formed XML (maps to CLI exit code 3)."""
+    """Raised when the input is not well-formed XML (maps to CLI exit code 3).
+
+    Part of the public embedding API (re-exported as ``einvoice.NotWellFormed``):
+    :func:`einvoice.validate_file` raises it when the payload cannot be parsed,
+    including the hardened parser's XXE / entity / resource-bound refusals,
+    which are folded into this one actionable exception rather than surfacing
+    as a traceback or an entity expansion.
+    """
 
 
 def _sourceline(el):

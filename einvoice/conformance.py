@@ -31,6 +31,7 @@ einvoice project. Temp fragment files are written to an auto-deleted temp dir.
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -859,6 +860,31 @@ def run_cli(path):
     return proc.returncode, ids, proc.stdout
 
 
+def run_cli_map(paths):
+    """Drive :func:`run_cli` over many paths concurrently; return {path: result}.
+
+    ``run_cli`` is a *pure function of its path* (it spawns an independent
+    ``einvoice.py`` subprocess and reads its JSON), so the grade for a vector is
+    the same whether it runs first, last or alongside others. The whole-corpus
+    harness spawns ~300 such subprocesses; each pays ~0.2s of interpreter +
+    package-import startup, which serialises to ~50s of wall time. Because
+    ``subprocess.run`` releases the GIL while the child runs, a small thread pool
+    overlaps those independent child processes across the CPU cores and brings
+    the standing gate back inside its time budget. This changes ONLY wall time:
+    every vector is still validated end-to-end by its own real-CLI subprocess,
+    with the identical assertions, and the callers below re-consume the results
+    in the original sorted order, so the printed report is byte-for-byte
+    unchanged from a sequential run. ``paths`` must be unique (the callers pass
+    unique corpus paths / uniquely-named fragment files)."""
+    workers = min(8, (os.cpu_count() or 1) + 2)
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(run_cli, p): p for p in paths}
+        for fut in concurrent.futures.as_completed(futures):
+            results[futures[fut]] = fut.result()
+    return results
+
+
 # --------------------------------------------------------------------------- #
 # testSet parsing                                                             #
 # --------------------------------------------------------------------------- #
@@ -943,9 +969,13 @@ def main():
     valid_total = len(valid_files)
     valid_pass = 0
     valid_rows = []
+    # Drive every valid vector's real-CLI subprocess concurrently, then grade in
+    # the original sorted order (byte-identical to a sequential run; see
+    # run_cli_map). run_cli is pure per-path, so the map is order-independent.
+    valid_results = run_cli_map([os.path.join(VALID_DIR, f) for f in valid_files])
     for f in valid_files:
         path = os.path.join(VALID_DIR, f)
-        code, ids, _ = run_cli(path)
+        code, ids, _ = valid_results[path]
         exercised |= set(ids)
         ok = (code == EXIT_OK and not ids)
         if ok:
@@ -973,20 +1003,39 @@ def main():
 
     tmpdir = tempfile.mkdtemp(prefix="einvoice-conf-")
     try:
+        # Phase 1 — parse every invalid vector and write each embedded <Invoice>
+        # fragment to its own uniquely-named file (cheap, sequential). This is
+        # exactly what the original loop wrote; it simply materialises all
+        # fragments up front so phase 2 can drive them concurrently.
+        frags_by_file = {}
+        all_frags = []
         for f in invalid_files:
             path = os.path.join(INVALID_DIR, f)
+            recs = []
+            for idx, (kind, rule, inv_el) in enumerate(iter_test_blocks(path)):
+                frag = write_fragment(
+                    inv_el, tmpdir, "%s.%d.xml" % (f[:-4], idx))
+                recs.append((idx, kind, rule, frag))
+                all_frags.append(frag)
+            frags_by_file[f] = recs
+
+        # Phase 2 — drive every fragment's real-CLI subprocess concurrently.
+        frag_results = run_cli_map(all_frags)
+
+        # Phase 3 — grade in the original sorted file/block order, reading the
+        # precomputed results, so counters, hard-fail order and the printed
+        # report are byte-identical to a sequential run.
+        for f in invalid_files:
             expected_file_rule = manifest.get("invalid/" + f, ("invalid", None))[1]
             file_impl = expected_file_rule in IMPLEMENTED
 
-            blocks = list(iter_test_blocks(path))
-            file_err_blocks = [b for b in blocks if b[0] == "error"]
+            recs = frags_by_file[f]
+            file_err_blocks = [r for r in recs if r[1] == "error"]
             file_err_detected = 0
             file_err_present = 0
 
-            for idx, (kind, rule, inv_el) in enumerate(blocks):
-                frag = write_fragment(
-                    inv_el, tmpdir, "%s.%d.xml" % (f[:-4], idx))
-                code, ids, _ = run_cli(frag)
+            for idx, kind, rule, frag in recs:
+                code, ids, _ = frag_results[frag]
                 exercised |= set(ids)
 
                 if kind == "error":

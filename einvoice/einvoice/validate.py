@@ -1,6 +1,18 @@
 """Orchestration: parse -> structural checks -> business rules -> result.
 
-Standard library only.
+This module is the validation entry point of the public API. It exposes the
+two callables and the result type that embedders use:
+
+    * :func:`validate_file` — validate a path (or a binary bytes buffer).
+    * :func:`validate_root` — validate an already-parsed UBL Invoice root.
+    * :class:`Result` — the outcome, carrying ``.valid`` and ``.violations``.
+
+Both callables return a :class:`Result`. Each entry in ``Result.violations``
+is an :class:`einvoice.rules.Violation` namedtuple with the fields
+``rule_id``, ``message``, ``element``, ``severity`` and the optional
+``source_line`` (the 1-based line of the offending element, or ``None``).
+``validate_file`` raises :class:`einvoice.parser.NotWellFormed` on malformed
+XML. Standard library only.
 """
 
 from __future__ import annotations
@@ -23,9 +35,24 @@ def _severity(v):
 class Result:
     """Outcome of validating one invoice.
 
-    ``ok`` follows the official Schematron ``flag`` semantics: only ``fatal``
-    violations make a document invalid; ``warning`` / ``information``
-    violations (XRechnung profile) are reported but do not block.
+    Attributes / properties:
+
+    * ``valid`` (bool) — ``True`` iff the document carries no ``fatal``
+      violation. This is the headline pass/fail flag; it follows the official
+      Schematron ``flag`` semantics, so ``warning`` / ``information``
+      violations (XRechnung profile) are reported but do NOT make ``valid``
+      false. ``ok`` is a back-compat alias of ``valid``.
+    * ``violations`` (list) — every finding, in evaluation order. Each item is
+      an :class:`einvoice.rules.Violation` namedtuple with fields
+      ``rule_id`` (e.g. ``"BR-02"``), ``message``, ``element``, ``severity``
+      (``"fatal"`` / ``"warning"`` / ``"information"``) and the optional
+      ``source_line`` (1-based line of the offending element, or ``None``).
+    * ``first`` — the first violation, or ``None`` when the list is empty.
+
+    ``to_dict(source=None)`` projects the result into the stable JSON record
+    (keys ``valid`` and a ``violations`` list of
+    ``{rule, message, element, severity[, source_line]}`` dicts) used by the
+    ``--json`` report; the report format is unchanged by this class.
     """
 
     def __init__(self, violations):
@@ -34,6 +61,11 @@ class Result:
     @property
     def ok(self):
         return not any(_severity(v) == "fatal" for v in self.violations)
+
+    @property
+    def valid(self):
+        """True iff there is no ``fatal`` violation (alias of :attr:`ok`)."""
+        return self.ok
 
     @property
     def first(self):
@@ -66,7 +98,15 @@ class Result:
 
 
 def validate_root(root, profile="en16931"):
-    """Run structural + business rules over a parsed UBL Invoice root."""
+    """Run structural + business rules over a parsed UBL Invoice root.
+
+    :param root: a parsed UBL ``Invoice`` element (an ``xml.etree`` Element),
+        e.g. from ``einvoice.parser.parse_file(...)``.
+    :param profile: ``"en16931"`` for the EN 16931 core rules only, or
+        ``"xrechnung"`` to also apply the German CIUS layer (BR-DE-*).
+        Any other value raises :class:`ValueError`.
+    :returns: a :class:`Result` (``.valid`` flag + ``.violations`` list).
+    """
     if profile not in PROFILES:
         raise ValueError("unknown profile: %r (choose from %s)"
                          % (profile, ", ".join(PROFILES)))
@@ -99,6 +139,20 @@ def validate_root(root, profile="en16931"):
 
 
 def validate_file(path, profile="en16931"):
-    """Parse ``path`` and validate it. Raises NotWellFormed on parse error."""
+    """Parse an invoice and validate it.
+
+    :param path: the invoice to read. Either a filesystem path (``str`` /
+        ``os.PathLike``) or an already-open binary file-like object — anything
+        with a ``read()`` method, e.g. ``io.BytesIO(payload_bytes)`` — so an
+        invoice received in memory as bytes can be validated without a temp
+        file.
+    :param profile: ``"en16931"`` (core) or ``"xrechnung"`` (core + BR-DE-*);
+        see :func:`validate_root`.
+    :returns: a :class:`Result` (``.valid`` flag + ``.violations`` list).
+    :raises einvoice.parser.NotWellFormed: if the input is not well-formed XML
+        (this also folds in the hardened parser's XXE / resource-bound
+        refusals), so a malformed payload is a single actionable exception
+        rather than a traceback.
+    """
     root = _parser.parse_file(path)
     return validate_root(root, profile=profile)

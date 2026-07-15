@@ -98,6 +98,10 @@
           "location": {
             "description": "The catalog's XML location/path hint; null if none.",
             "type": ["string", "null"]
+          },
+          "source_line": {
+            "description": "OPTIONAL, additive on this same v1 schema id: the 1-based parser line of the offending element in the source document. Present ONLY for an attributable field-level violation (a rule that held the concrete Element, e.g. BR-CL-01/04/05 on a present-but-invalid code); ABSENT when the finding is not attributable to a source position (an absence/document-level rule, or any finding without a proven element). Distinct from the remediation-catalog XML-path hint 'location'. A consumer may ignore it safely.",
+            "type": "integer"
           }
         }
       }

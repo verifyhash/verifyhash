@@ -174,6 +174,13 @@ REPORT_SCHEMA = {
                  "(from the catalog's bt_bg; empty list if none).",
         "location": "the catalog's XML location/path hint for the finding "
                     "(string or null).",
+        "source_line": "OPTIONAL, additive: the 1-based parser line of the "
+                       "offending element in the source document. Present ONLY "
+                       "for an attributable field-level violation (a rule that "
+                       "held the concrete Element); ABSENT when the finding is "
+                       "not attributable to a source position (an "
+                       "absence/document-level rule). Distinct from the "
+                       "catalog XML-path hint 'location'.",
     },
     "exit_codes": {
         "0": "no fatal violations (valid).",
@@ -229,7 +236,7 @@ def _record(v, catalog=None):
     if catalog is None:
         catalog = _remediation_catalog()
     entry = catalog.get(v.rule_id) or {}
-    return {
+    record = {
         "rule": v.rule_id,
         "severity": _severity(v),
         "message": v.message,
@@ -239,6 +246,18 @@ def _record(v, catalog=None):
         "terms": list(entry.get("bt_bg") or []),
         "location": entry.get("location_hint"),
     }
+    # Additive, OPTIONAL: the 1-based parser line of the offending element,
+    # present ONLY for an attributable field-level violation (see
+    # einvoice.rules). Absence of the key means "not attributable to a source
+    # position" (an absence/document-level rule, or a finding without a proven
+    # element). The eight identity/remediation keys above are unchanged, so a
+    # consumer that ignores source_line reads a byte-identical record. NOTE: the
+    # remediation-catalog XML-path hint is the SEPARATE `location` key; this new
+    # key is the source LINE and never collides with it.
+    source_line = getattr(v, "source_line", None)
+    if source_line is not None:
+        record["source_line"] = source_line
+    return record
 
 
 def _error_report(source, profile, code, message):

@@ -113,6 +113,31 @@ class XMLResourceLimit(ET.ParseError):
     """
 
 
+class _LineElement(ET.Element):
+    """An ElementTree element that can carry the expat source line of its start
+    tag.
+
+    Behaves identically to a stdlib :class:`~xml.etree.ElementTree.Element` for
+    EVERY tree operation (``tag``, ``text``, ``tail``, ``attrib``, children,
+    ``find``/``findall``/``iter``/``itertext``, serialization): it adds nothing
+    to the produced tree's structure, text, or attributes. The ONLY addition is
+    a private ``_sourceline`` int slot the hardened parser stamps during the
+    start-element callback (lxml-style ``el.sourceline``, but a leading-
+    underscore private name so it never collides with real invoice data). A
+    ``__slots__`` is used deliberately so a hostile document with millions of
+    tiny elements does not pay a per-element ``__dict__`` — the private line is
+    a single extra machine word, not an open attribute bag.
+
+    The stdlib C-accelerated ``Element`` type forbids arbitrary attribute
+    assignment, so the sourceline cannot be stamped onto it directly; a thin
+    subclass supplied to :class:`~xml.etree.ElementTree.TreeBuilder` via its
+    ``element_factory`` is the standard-library-only way to obtain elements that
+    accept the stamp while remaining ordinary Elements everywhere else.
+    """
+
+    __slots__ = ("_sourceline",)
+
+
 class XMLSecurityError(ET.ParseError):
     """A DTD, entity declaration, or external reference was found in input.
 
@@ -140,7 +165,11 @@ class _HardenedTreeParser:
 
     def __init__(self):
         parser = expat.ParserCreate(None, "}")
-        target = ET.TreeBuilder()
+        # element_factory=_LineElement so every built node can carry the private
+        # ``_sourceline`` stamp set in ``_start`` (the stdlib C Element forbids
+        # attribute assignment). The produced tree is otherwise byte-identical to
+        # ET.parse/ET.fromstring — _LineElement is an ordinary Element subclass.
+        target = ET.TreeBuilder(element_factory=_LineElement)
         self.parser = parser
         self.target = target
         self._error = expat.error
@@ -224,7 +253,14 @@ class _HardenedTreeParser:
         if attr_list:
             for i in range(0, len(attr_list), 2):
                 attrib[fixname(attr_list[i])] = attr_list[i + 1]
-        return self.target.start(tag, attrib)
+        el = self.target.start(tag, attrib)
+        # Stamp the 1-based line of this element's start tag. expat exposes
+        # CurrentLineNumber during the start-element callback; it rides on the
+        # returned Element object (which the model keeps references to), so a
+        # rule that holds a concrete Element can later attribute a violation to
+        # its source position. Purely additive — tree text/attributes unchanged.
+        el._sourceline = self.parser.CurrentLineNumber
+        return el
 
     def _end(self, tag):
         self._depth -= 1

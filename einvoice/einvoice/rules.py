@@ -33,8 +33,14 @@ from .codelists import (
 # ``severity`` mirrors the official Schematron ``flag``: every core rule is
 # ``fatal`` except BR-51, which the normative artifact flags as ``warning``
 # (validate.Result.ok only blocks on fatal violations).
-Violation = namedtuple("Violation", ["rule_id", "message", "element", "severity"])
-Violation.__new__.__defaults__ = ("fatal",)
+# ``source_line`` is an OPTIONAL 1-based parser line for the offending element,
+# populated ONLY where a rule holds a concrete Element whose position the parser
+# stamped (see einvoice._xmlsec / the ``*_line`` model fields). It defaults to
+# None so EVERY existing 3-/4-arg construction site keeps working unchanged, and
+# an absence rule (or any rule without a proven element position) leaves it None.
+Violation = namedtuple(
+    "Violation", ["rule_id", "message", "element", "severity", "source_line"])
+Violation.__new__.__defaults__ = ("fatal", None)
 
 # UNTDID 1001 invoice type codes accepted by EN 16931 for an Invoice document
 # (presence-in-list check only; the XRechnung-restricted subset is deferred).
@@ -560,11 +566,14 @@ def br_cl_01(inv):
     """BR-CL-01: The document type code (BT-3) MUST be coded per UNTDID 1001."""
     code = inv.invoice_type_code
     if code and code not in UNTDID_1001_INVOICE:
+        # Attributable: the rule fires only when the InvoiceTypeCode element is
+        # PRESENT (code truthy), so its stamped source line is unambiguous.
         return Violation(
             "BR-CL-01",
             "The document type code (BT-3) MUST be coded according to UNTDID 1001; "
             "%r is not a listed code." % code,
-            "cbc:InvoiceTypeCode")
+            "cbc:InvoiceTypeCode",
+            source_line=inv.invoice_type_code_line)
     return None
 
 
@@ -606,11 +615,14 @@ def br_cl_04(inv):
     """
     code = inv.document_currency_code
     if code is not None and _bad_code(code, CURRENCY_CODES):
+        # Attributable: the rule fires only for a PRESENT DocumentCurrencyCode
+        # (code is not None), so the stamped element line is exact.
         return Violation(
             "BR-CL-04",
             "Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3; "
             "%r is not a listed currency code." % code,
-            "cbc:DocumentCurrencyCode")
+            "cbc:DocumentCurrencyCode",
+            source_line=inv.document_currency_code_line)
     return None
 
 
@@ -622,11 +634,14 @@ def br_cl_05(inv):
     """
     code = inv.tax_currency_code
     if code is not None and _bad_code(code, CURRENCY_CODES):
+        # Attributable: the rule fires only for a PRESENT TaxCurrencyCode
+        # (code is not None), so the stamped element line is exact.
         return Violation(
             "BR-CL-05",
             "Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3; "
             "%r is not a listed currency code." % code,
-            "cbc:TaxCurrencyCode")
+            "cbc:TaxCurrencyCode",
+            source_line=inv.tax_currency_code_line)
     return None
 
 

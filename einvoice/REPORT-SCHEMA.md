@@ -91,8 +91,9 @@ report/library path.
 
 ## Violation record
 
-Each entry of `violations` has **exactly** these eight keys. The first four are
-the **identity** fields taken verbatim from the validator; the last four are
+Each entry of `violations` has these eight **always-present** keys, plus an
+OPTIONAL ninth (`source_line`, described below). The first four are the
+**identity** fields taken verbatim from the validator; the next four are
 **additive remediation** fields (added in `v1`, backward-compatible — see
 **Versioning**) that are **relayed** from the committed remediation catalog
 (`remediation_catalog.json`, via `einvoice.remediation.load_catalog`) keyed by
@@ -116,6 +117,32 @@ an error. (In practice the consistency test `test_remediation_catalog.py` proves
 every fireable rule has an entry, so this is only a safety fallback.) The
 baseline-diff identity key remains **`(rule, field, message, severity)`** — the
 additive fields do **not** affect diffing.
+
+### Optional `source_line` (additive, `v1`)
+
+| field         | source                       | meaning |
+|---------------|------------------------------|---------|
+| `source_line` | `Violation.source_line` (int)| The **1-based parser line** of the offending element in the source document. |
+
+`source_line` is **optional** and **only present when the violation is
+attributable to a concrete source position** — i.e. a rule that held the actual
+offending `Element` (currently the present-but-invalid header code-list rules
+**BR-CL-01** (BT-3), **BR-CL-04** (BT-5) and **BR-CL-05** (BT-6)). It is the
+1-based line reported by the standard-library expat parser for that element's
+start tag (stamped by `einvoice._xmlsec`).
+
+**Absence of the key means "not attributable to a source position"** — an
+absence / document-level rule (e.g. `BR-16` "no invoice line", `BR-05` "no
+currency code") never emits it, and neither does any finding without a proven
+element. It is therefore purely additive: a consumer that ignores it reads a
+byte-identical record, so — exactly like `title`/`fix_hint`/`terms`/`location`
+before it — it is added on the **same** `einvoice-conformance-report/v1` schema
+id and does **not** bump `report_version` (see **Versioning**). It also does
+**not** participate in the baseline-diff identity key. It is a distinct concept
+from the catalog `location` hint above: `location` is a static XML-path string
+from the remediation catalog, whereas `source_line` is the concrete line number
+in *this* document. The same optional key also appears in the `einvoice
+validate --json` per-violation records.
 
 ## Exit codes
 
@@ -373,10 +400,15 @@ violation-record key) bumps `report_version` to 2 and mints a new `schema` id
 never silently mis-read a newer report.
 
 The `title`, `fix_hint`, `terms` and `location` violation-record fields were
-added this way: they are **additive** on the **same** `einvoice-conformance-
-report/v1` schema id. The original `rule`/`severity`/`message`/`field` keys are
-unchanged and remain first, so existing consumers keep working untouched; the
-schema id is deliberately **not** revved.
+added this way, and the OPTIONAL `source_line` field follows the identical
+pattern: they are **additive** on the **same** `einvoice-conformance-report/v1`
+schema id. The original `rule`/`severity`/`message`/`field` keys are unchanged
+and remain first, so existing consumers keep working untouched; the schema id
+and `report_version` are deliberately **not** revved. (`source_line` goes
+further than the remediation keys — it is present only on the subset of
+violations that are attributable to a source position — but it is still
+strictly additive: a record without it is byte-identical to the previous
+shape.)
 
 ## Integrator export contract (`export/rules.json` + `export/coverage.json`)
 

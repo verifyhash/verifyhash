@@ -44,12 +44,25 @@ class Result:
             "source": source,
             "valid": self.ok,
             "violation_count": len(self.violations),
-            "violations": [
-                {"rule": v.rule_id, "message": v.message, "element": v.element,
-                 "severity": _severity(v)}
-                for v in self.violations
-            ],
+            "violations": [self._violation_dict(v) for v in self.violations],
         }
+
+    @staticmethod
+    def _violation_dict(v):
+        """Project one Violation into the --json record.
+
+        The four identity keys are unchanged. ``source_line`` (the optional
+        1-based parser line of the offending element) is added ONLY when the
+        violation actually carries one — an absence/document-level violation, or
+        any finding without a proven element position, omits the key entirely so
+        existing consumers see a byte-identical record.
+        """
+        rec = {"rule": v.rule_id, "message": v.message, "element": v.element,
+               "severity": _severity(v)}
+        source_line = getattr(v, "source_line", None)
+        if source_line is not None:
+            rec["source_line"] = source_line
+        return rec
 
 
 def validate_root(root, profile="en16931"):

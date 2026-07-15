@@ -80,6 +80,17 @@ class NotWellFormed(Exception):
     """Raised when the input is not well-formed XML (maps to CLI exit code 3)."""
 
 
+def _sourceline(el):
+    """The 1-based parser line stamped on ``el`` by :mod:`einvoice._xmlsec`.
+
+    Returns the expat start-tag line for a concrete Element, or None when the
+    element is absent or was not produced by the hardened parser (so it carries
+    no ``_sourceline``). Used to attribute a field-level violation to its source
+    position without changing anything the element already holds.
+    """
+    return getattr(el, "_sourceline", None)
+
+
 def _text(el):
     """Return stripped text of an element, or None if the element is absent."""
     if el is None:
@@ -303,6 +314,16 @@ class Invoice:
         self.document_currency_code = None  # BT-5
         self.tax_currency_code = None     # BT-6 (normalize-space; None = absent)
         self.buyer_reference = None       # BT-10
+        # Optional 1-based parser source line of the header code-list ELEMENTS
+        # (BT-3/BT-5/BT-6), stamped by einvoice._xmlsec on the concrete Element
+        # and captured here at parse time. None when the element is absent (the
+        # value rule then does not fire) or when parsing did not stamp a line
+        # (e.g. a CII document, which inherits this class but never sets them).
+        # Consumed by BR-CL-01/04/05 to attribute a present-but-invalid code to
+        # its source position; carried nowhere else.
+        self.invoice_type_code_line = None       # BT-3 element line
+        self.document_currency_code_line = None  # BT-5 element line
+        self.tax_currency_code_line = None       # BT-6 element line
         # Code-list rule inputs (BR-CL-03/13/14). Each is a list of the
         # normalized string values at exactly the context nodes the official
         # codelist Schematron matches, populated per-syntax by build_model.
@@ -687,9 +708,19 @@ def build_model(root):
     inv.customization_id = _text(root.find("cbc:CustomizationID", NS))
     inv.id = _text(root.find("cbc:ID", NS))
     inv.issue_date = _text(root.find("cbc:IssueDate", NS))
-    inv.invoice_type_code = _text(root.find("cbc:InvoiceTypeCode", NS))
-    inv.document_currency_code = _text(root.find("cbc:DocumentCurrencyCode", NS))
-    inv.tax_currency_code = _norm_space(_text(root.find("cbc:TaxCurrencyCode", NS)))
+    # Capture the concrete code-list ELEMENTS so their source line can be
+    # attributed to a present-but-invalid value (BR-CL-01/04/05). ``_text`` /
+    # ``_sourceline`` both tolerate a None (absent element) — the line is then
+    # None and the value rule does not fire, so nothing is mis-attributed.
+    _type_el = root.find("cbc:InvoiceTypeCode", NS)
+    inv.invoice_type_code = _text(_type_el)
+    inv.invoice_type_code_line = _sourceline(_type_el)
+    _cur_el = root.find("cbc:DocumentCurrencyCode", NS)
+    inv.document_currency_code = _text(_cur_el)
+    inv.document_currency_code_line = _sourceline(_cur_el)
+    _taxcur_el = root.find("cbc:TaxCurrencyCode", NS)
+    inv.tax_currency_code = _norm_space(_text(_taxcur_el))
+    inv.tax_currency_code_line = _sourceline(_taxcur_el)
     inv.buyer_reference = _text(root.find("cbc:BuyerReference", NS))
 
     # --- Code-list rule inputs (BR-CL-03/13/14) ---------------------------- #

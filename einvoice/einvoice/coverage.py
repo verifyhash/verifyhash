@@ -399,6 +399,21 @@ def render_markdown(matrix, cii_parity=None):
       " regardless of the declared profile.")
     w("")
 
+    # --- French CIUS scope (EN 16931 core covered; national FNFE-MPE / Chorus
+    #     Pro CIUS not vendored). Static, byte-for-byte prose — folded in here
+    #     (was previously a hand-edit to the GENERATED COVERAGE.md, T-VHFR.1,
+    #     which drifted the file from its generator) so `gen_coverage.py`
+    #     reproduces the committed file exactly. No validation behaviour. ---
+    w("## French CIUS scope (EN 16931 core covered; FNFE-MPE / Chorus Pro rules not vendored)")
+    w("")
+    w("This is a **technical** coverage statement, separate from the French *legislative* timeline in README §1 (reception mandatory September 2026, issuance phasing to September 2027 via the PDP / e-reporting model). France's B2B e-invoicing reform uses EN 16931 profiles: **Factur-X** (a CII payload in a PDF/A-3 container), UBL, and CII. Everything EN 16931 itself defines for such an invoice is already validated here:")
+    w("")
+    w("- **The EN 16931 core applies to a French invoice today.** A French UBL or CII invoice is graded against the full EN 16931 `BR-*` semantic model documented in the table above — the identical core the German XRechnung profile builds on. Nothing French-specific is needed for the core rules to fire.")
+    w("- **The Factur-X CII path is first-class.** `einvoice.pdf_container` extracts the embedded `CrossIndustryInvoice` XML from a Factur-X PDF/A-3 container and hands it to the same core rule engine (`einvoice.rules.ALL_RULES`), so a French Factur-X container's embedded CII is validated to EN 16931 depth exactly as a raw `factur-x.xml` would be (the profile token never gates which rules fire — measured end-to-end by `test_facturx_profile_scope.py`).")
+    w("")
+    w("**Not covered: the French national CIUS rule layer.** On top of EN 16931, a French invoice is expected to satisfy the **FNFE-MPE / Chorus Pro** Factur-X **French CIUS** — French-specific business rules and code lists (for example SIREN/SIRET party identification and Chorus Pro routing/e-reporting terms). Those rules live in the official FNFE-MPE / Chorus Pro Factur-X CIUS Schematron, which is **not vendored** in `corpus/`. Because this engine only asserts a rule it can differentially prove against a vendored normative artifact, **no French-CIUS-specific rule is checked, approximated, or fabricated** — the French CIUS layer is out of scope until that artifact is vendored (license permitting). Consequently \"validates the EN 16931 core for a French invoice\" is TRUE and useful, while **full French CIUS conformance is NOT claimed** — mirroring the honesty label applied to Peppol BIS Billing 3.0 in the Exclusions section.")
+    w("")
+
     # --- UBL CreditNote scope (stated SEPARATELY from the Invoice numbers) ---
     cn = matrix.get("creditnote_conformance")
     if cn:

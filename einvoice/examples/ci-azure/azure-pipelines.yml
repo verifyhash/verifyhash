@@ -1,0 +1,55 @@
+# Copy-paste Azure DevOps Pipelines job: validate every e-invoice in your repo
+# and surface each EN 16931 / XRechnung finding as an INLINE issue on the build
+# and pull-request summary — with NO extension install and NO SARIF upload. It
+# works by printing the validator's `--format azure` logging-command lines
+# (`##vso[task.logissue type=error ...]` / `type=warning`) straight to the job
+# log; the Azure Pipelines agent turns each line into a build issue and, when a
+# `sourcepath=`/`linenumber=` position is known, anchors it to the offending
+# file.
+#
+# This is the Azure DevOps counterpart to ../ci-github/invoice-annotations.yml
+# (GitHub Actions workflow commands). Same validator, same findings, same exit
+# codes — only the line protocol differs (`##vso[task.logissue]` vs `::error`).
+#
+# The validator has ZERO runtime dependencies (Python stdlib only), so there is
+# no `pip install` step: vendor the einvoice package into your repo and run it.
+#
+# ---------------------------------------------------------------------------
+# INSTALL (copy this file into YOUR repo)
+#   1. Copy this file to azure-pipelines.yml at your repo root (or add the
+#      `einvoice conformance issues` step below into your existing pipeline).
+#   2. Vendor the zero-dependency einvoice product into your repo — e.g. at
+#      third_party/einvoice/ (the folder holding einvoice/, examples/, ...).
+#   3. Point the workingDirectory below at wherever you vendored it.
+#   4. Put the invoices to validate under invoices/ (or edit the glob below).
+# ---------------------------------------------------------------------------
+
+trigger:
+  - main
+
+pr:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+
+  # Validate every invoice and stream Azure logging commands to the log. Each
+  # file is validated independently so one bad invoice does not hide the rest;
+  # `overall` records whether ANY file had a fatal violation so the step can
+  # fail at the end. `--format azure` prints one `##vso[task.logissue
+  # type=error ...]` per fatal and one `type=warning` per warning/advisory
+  # finding, with sourcepath= and code= (the rule id), which the agent renders
+  # as inline build/PR issues.
+  - script: |
+      set -u
+      overall=0
+      # *.xml and *.pdf (Factur-X) invoices; adjust the glob to your layout.
+      for f in $(git ls-files 'invoices/**/*.xml' 'invoices/**/*.pdf'); do
+        python3 -m einvoice.report --format azure "$(Build.SourcesDirectory)/$f" || overall=1
+      done
+      exit "$overall"
+    workingDirectory: third_party/einvoice   # where you vendored it
+    displayName: einvoice conformance issues

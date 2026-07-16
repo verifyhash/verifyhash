@@ -1,0 +1,3 @@
+##vso[task.logissue type=error;sourcepath=examples/01-missing-fields/broken.xml;code=BR-DE-2]The group 'SELLER CONTACT' (BG-6) must be transmitted.
+##vso[task.logissue type=error;sourcepath=examples/01-missing-fields/broken.xml;code=BR-DE-15]The element 'Buyer reference' (BT-10) must be transmitted.
+##vso[task.logissue type=warning;sourcepath=examples/01-missing-fields/broken.xml;code=BR-DE-TMP-32]The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line.

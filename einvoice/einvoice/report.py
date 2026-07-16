@@ -1483,6 +1483,157 @@ def build_github(report):
     return "".join(line + "\n" for line in lines)
 
 
+def _azure_level(severity):
+    """Map a report severity string onto an Azure DevOps logissue ``type``.
+
+    Azure Pipelines' ``##vso[task.logissue ...]`` logging command understands
+    exactly two issue types — ``error`` (red, and, when combined with
+    ``task.complete``, capable of failing the task) and ``warning`` (yellow,
+    advisory). Mirroring :func:`_github_level`'s fatal->error split, a ``fatal``
+    finding (the only severity that makes an invoice non-conformant and drives
+    exit code 1) becomes ``error``; every other severity (``warning``, the
+    advisory ``information``, or an unknown value) becomes ``warning``. The type
+    is a PRESENTATION mapping only: it never changes which rules fire or the
+    process exit code — an advisory ``information`` finding stays exit-0 exactly
+    as in the github surface.
+    """
+    return "error" if severity == "fatal" else "warning"
+
+
+def _azure_escape_data(text):
+    """Escape an Azure DevOps logging-command MESSAGE (the text after ``]``).
+
+    Azure Pipelines parses ``##vso[<area.action> <props>]<message>`` as a line
+    protocol, so a literal percent, CR or LF in the message would corrupt the
+    command. Azure's escaping DIFFERS from GitHub's: the percent sentinel is the
+    multi-byte ``%AZP25`` (not ``%25``), applied FIRST so the escape characters
+    we introduce are not themselves re-escaped, then CR -> ``%0D`` and
+    LF -> ``%0A``. This is deliberately NOT XML escaping — logging commands are a
+    line protocol, so :func:`escape`/:func:`quoteattr` are the wrong tool, and it
+    is NOT :func:`_github_escape_data` either — the percent byte-rule is
+    different, which is why this helper is dedicated.
+    """
+    return (str(text)
+            .replace("%", "%AZP25")
+            .replace("\r", "%0D")
+            .replace("\n", "%0A"))
+
+
+def _azure_escape_property(text):
+    """Escape an Azure logging-command PROPERTY value (``sourcepath=``/``code=``).
+
+    Property values live inside the ``;``-separated ``k=v`` list that ends at the
+    closing ``]``, so on top of the message escaping (:func:`_azure_escape_data`)
+    Azure's property escaping also encodes the two delimiters that would
+    otherwise split the list or close the command early: ``;`` -> ``%3B`` and
+    ``]`` -> ``%5D``. ``%`` is still escaped first (inside
+    :func:`_azure_escape_data`) so no escape sequence is double-encoded. Note the
+    delimiter set differs from GitHub's (``,``/``:``), which is why this is a
+    dedicated helper and NOT :func:`_github_escape_property`.
+    """
+    return (_azure_escape_data(text)
+            .replace(";", "%3B")
+            .replace("]", "%5D"))
+
+
+def build_azure(report):
+    """Project a report dict (from :func:`build_report`) into Azure DevOps
+    Pipelines ``##vso[task.logissue ...]`` logging-command lines.
+
+    Emits one ``task.logissue`` logging command per violation — the line
+    protocol an Azure DevOps Pipelines agent turns into an INLINE issue on the
+    build/PR summary (and, when a ``sourcepath``/``linenumber`` position is
+    known, anchored to the offending file). Any script step that simply prints
+    these lines to stdout gets file-anchored issues for free, with zero SARIF
+    upload and zero extension install. This is the Azure analogue of
+    :func:`build_github`'s GitHub Actions workflow commands, for the MS/SAP-stack
+    ERP buyer whose pipelines run on Azure DevOps rather than GitHub Actions.
+
+    Like :func:`build_github`, this is a PURE, additional PROJECTION of the very
+    same validator outcome the JSON path emits — it adds no rule logic, invents
+    no wording, and re-reads nothing:
+
+      * ``type=`` = :func:`_azure_level` of the severity — ``fatal`` ->
+        ``type=error`` (matches exit 1), ``warning``/``information`` ->
+        ``type=warning``;
+      * ``sourcepath=`` = the invoice ``source`` path (the same value
+        :func:`build_github` puts in ``file=``), falling back to the violation
+        ``field`` then the catalog ``location`` hint;
+      * ``linenumber=`` = the OPTIONAL 1-based ``source_line`` the record carries
+        when the finding is attributable — the ``linenumber`` key is OMITTED
+        ENTIRELY (never emitted as ``linenumber=0``) when ``source_line`` is
+        absent, mirroring :func:`build_github` omitting ``line=``;
+      * ``code=`` = the rule id;
+      * the message body (after ``]``) = the violation message (falling back to
+        the catalog ``title`` then the rule id).
+
+    Message and property values are escaped with :func:`_azure_escape_data` /
+    :func:`_azure_escape_property` — Azure's ``%AZP25``/``%3B``/``%5D`` rules,
+    NOT GitHub's ``%25``/``%2C``/``%3A`` — so a ``%``, ``;``, ``]`` or newline
+    cannot corrupt the line protocol.
+
+    Emission scope mirrors :func:`build_github` exactly: advisory ``information``
+    findings ARE surfaced (as ``type=warning``), never dropped, and this never
+    changes the exit code — only ``fatal`` findings do, and a conformant invoice
+    still exits 0. When there is nothing to report at all, a single ``#``
+    log-comment line is emitted (a true no-op to the agent — it is not a
+    ``##vso[`` command and creates no issue) so the surface is well-shaped and
+    non-empty like the other formats.
+
+    A not-well-formed input (``report`` has an ``error``) yields a single
+    ``type=error`` logissue for the parse error, mirroring the github
+    not-well-formed contract.
+
+    :param report: a dict as returned by :func:`build_report`.
+    :returns: a ``str`` of newline-terminated logging-command lines.
+    """
+    source = report.get("source") or ""
+    lines = []
+
+    if report.get("error"):
+        # Not-well-formed XML: one ``type=error`` logissue for the parse error,
+        # the Azure analogue of build_github's single ``::error`` parse entry.
+        code = report["error"]
+        props = ["type=error",
+                 "sourcepath=" + _azure_escape_property(source),
+                 "code=" + _azure_escape_property(code)]
+        message = report.get("message", "") or code
+        lines.append("##vso[task.logissue " + ";".join(props) + "]"
+                     + _azure_escape_data(message))
+        return "".join(line + "\n" for line in lines)
+
+    for v in report.get("violations", []):
+        rule_id = v.get("rule") or ""
+        severity = v.get("severity") or "fatal"
+        title = v.get("title")
+        field = v.get("field")
+        location_hint = v.get("location")
+        # sourcepath= is a FILE path: the validated invoice. Fall back to the
+        # element field / catalog location hint only if the source is missing.
+        path = source or field or location_hint or ""
+        source_line = v.get("source_line")
+
+        props = ["type=" + _azure_level(severity),
+                 "sourcepath=" + _azure_escape_property(path)]
+        # Attach the 1-based line ONLY when the finding is attributed to a source
+        # position; omit ``linenumber`` entirely otherwise (never ``=0``).
+        if source_line is not None:
+            props.append("linenumber=" + str(source_line))
+        props.append("code=" + _azure_escape_property(rule_id))
+        message = v.get("message") or title or rule_id
+        lines.append("##vso[task.logissue %s]%s"
+                     % (";".join(props), _azure_escape_data(message)))
+
+    if not lines:
+        # Nothing to report. Emit a plain log comment (NOT a ``##vso[`` command,
+        # so the agent raises no issue) to keep the surface non-empty and
+        # well-shaped, the Azure analogue of build_github's ``#`` no-op line.
+        lines.append("# einvoice: %s is conformant with EN 16931 — no "
+                     "issues" % (source or "input"))
+
+    return "".join(line + "\n" for line in lines)
+
+
 def build_badge(report):
     """Project a report dict (from :func:`build_report`) into a shields.io
     ENDPOINT-badge JSON dict.
@@ -1741,7 +1892,7 @@ def build_html(report):
 
 USAGE = ("usage: python3 -m einvoice.report "
          "[--profile en16931|xrechnung] "
-         "[--format json|junit|sarif|gitlab|github|html|badge|text] "
+         "[--format json|junit|sarif|gitlab|github|azure|html|badge|text] "
          "[--pretty] [--recurse] "
          "[--baseline <prev-report.json>] <invoice.xml | directory>\n"
          "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
@@ -1906,11 +2057,11 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
-    if fmt not in ("json", "junit", "sarif", "gitlab", "github", "html",
-                   "badge", "text"):
+    if fmt not in ("json", "junit", "sarif", "gitlab", "github", "azure",
+                   "html", "badge", "text"):
         sys.stderr.write(
             "error: unknown format %r (choose from json, junit, sarif, gitlab, "
-            "github, html, badge, text)\n%s\n" % (fmt, USAGE))
+            "github, azure, html, badge, text)\n%s\n" % (fmt, USAGE))
         return EXIT_FAIL
 
     if profile not in PROFILES:
@@ -1919,7 +2070,8 @@ def main(argv=None):
         return EXIT_FAIL
 
     if baseline_path is not None and fmt in ("junit", "sarif", "gitlab",
-                                             "github", "html", "badge", "text"):
+                                             "github", "azure", "html",
+                                             "badge", "text"):
         sys.stderr.write(
             "error: --baseline emits a diff document and is not compatible "
             "with --format %s\n%s\n" % (fmt, USAGE))
@@ -1998,6 +2150,8 @@ def main(argv=None):
             json.dumps(build_gitlab(report), indent=2, sort_keys=True) + "\n")
     elif fmt == "github":
         sys.stdout.write(build_github(report))
+    elif fmt == "azure":
+        sys.stdout.write(build_azure(report))
     elif fmt == "html":
         sys.stdout.write(build_html(report))
     elif fmt == "badge":

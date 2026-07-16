@@ -131,6 +131,23 @@ def _assert_well_shaped(testcase, fmt, out):
                                   "github command line missing file=: %r" % line)
                 testcase.assertIn("title=", line,
                                   "github command line missing title=: %r" % line)
+    elif fmt == "azure":
+        # Azure DevOps logging-command lines: every non-blank line is either a
+        # ``##vso[task.logissue ...]`` command or a ``#`` log comment (the
+        # conformant no-op). Command lines must carry sourcepath= and code=.
+        for line in out.splitlines():
+            if not line.strip():
+                continue
+            if line.startswith("##vso[task.logissue "):
+                testcase.assertIn("sourcepath=", line,
+                                  "azure logissue line missing sourcepath=: %r"
+                                  % line)
+                testcase.assertIn("code=", line,
+                                  "azure logissue line missing code=: %r" % line)
+            else:
+                testcase.assertTrue(
+                    line.startswith("#"),
+                    "azure line is not a logissue command or comment: %r" % line)
     elif fmt == "html":
         testcase.assertIn("<html", out.lower())
     elif fmt == "text":
@@ -197,8 +214,8 @@ class BidirectionalParity(unittest.TestCase):
         # Sanity: the accepted set is the full eight, not the batch subset.
         self.assertEqual(
             accepted,
-            {"json", "junit", "sarif", "gitlab", "github", "html", "badge",
-             "text"},
+            {"json", "junit", "sarif", "gitlab", "github", "azure", "html",
+             "badge", "text"},
             "report.py accepted-format set changed: %s" % sorted(accepted))
         # Forward: every accepted format has a documented row.
         missing_doc = accepted - doc_formats

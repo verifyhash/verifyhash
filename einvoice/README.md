@@ -702,6 +702,53 @@ and `--format text` (a concise one-line-per-file summary). `--format
 sarif/html/badge` validate a *single* file and are rejected on a directory with
 a clear error. Single-file invocation is completely unchanged.
 
+### Use as a pre-commit hook
+
+The CI gate above catches a bad invoice after it is pushed. To catch it one step
+earlier — at the commit itself — this repository ships a **provider-side hook
+manifest** at the repo ROOT
+([`.pre-commit-hooks.yaml`](../.pre-commit-hooks.yaml)) that
+[pre-commit](https://pre-commit.com) resolves **remotely**. Any repo can adopt
+the check with a `repos:` reference; nothing is copied or vendored in.
+
+Add this to **your** repo's `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/verifyhash/verifyhash
+    rev: v0.1.1            # pin to a tag or commit sha
+    hooks:
+      - id: einvoice
+```
+
+then run `pre-commit install` once. On every commit, pre-commit clones this
+repo at `rev`, reads the root manifest, and runs the `einvoice` hook over the
+`*.xml` you staged. A fatal EN 16931 / XRechnung violation blocks the commit and
+prints the offending rule id(s) — the same outcome CI would produce, because the
+hook drives the **same `python3 -m einvoice.report` entrypoint** (no second
+validator, no new format). It stays inert on any commit that stages no XML.
+
+**Prerequisite — the one thing you must install.** The manifest deliberately
+declares `language: script`, not `language: python`. The validator is the
+`einvoice` package under this repo's **`einvoice/` subdirectory** (its
+`pyproject.toml` sits at `einvoice/pyproject.toml`, not the repo root), so
+`language: python` would make pre-commit pip-install the repo ROOT — the
+Node/Hardhat project, which is not the package — and fail. `language: script`
+runs the committed wrapper (`einvoice/ci/pre-commit-einvoice.sh`) directly and
+installs nothing, which means the `einvoice` validator must already be
+importable in the environment `pre-commit` runs in. Install it once:
+
+```sh
+python3 -m pip install einvoice
+```
+
+(or export `EINVOICE_CMD` / `PYTHONPATH` to point the wrapper at a source
+checkout). If the validator is not importable the hook exits `2` with an install
+hint rather than passing silently — a broken hook fails loud, never quiet. Honest
+limit: because the hook reuses the validator, its scope is the validator's scope
+(§2) — a passing commit means "no **implemented** rule fired", not full legal
+EN 16931 conformance.
+
 ## 5. Intended revenue model
 
 If this continues past the first slice, the model is boring on purpose:

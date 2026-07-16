@@ -1,0 +1,45 @@
+# Provider-side pre-commit hook manifest (https://pre-commit.com).
+#
+# This is the file pre-commit resolves when ANOTHER repo references verifyhash
+# REMOTELY, e.g. in that repo's .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/verifyhash/verifyhash
+#       rev: v0.1.1                 # pin to a tag/sha
+#       hooks:
+#         - id: einvoice
+#
+# pre-commit clones this repo at `rev`, reads THIS manifest from the clone root,
+# and wires the `einvoice` hook below. No file is copied into the consumer repo
+# and no validation logic is vendored — the hook drives the exact same
+# `python3 -m einvoice.report` entrypoint the CI gate runs.
+#
+# LANGUAGE = script (deliberately, and honestly): the einvoice package lives in
+# the `einvoice/` SUBDIRECTORY (pyproject at einvoice/pyproject.toml), NOT at
+# this repo root. `language: python` would make pre-commit pip-install the repo
+# ROOT — which is the Node/Hardhat project, not the einvoice package — and fail.
+# `language: script` runs the committed wrapper directly and installs nothing,
+# so the ONE prerequisite is that the einvoice validator is importable in the
+# environment `pre-commit run` executes in. Install it once with:
+#     python3 -m pip install einvoice
+# (or point the wrapper at a source checkout via EINVOICE_CMD / PYTHONPATH).
+# See einvoice/README.md -> "Use as a pre-commit hook" for the copy-paste
+# block and the prerequisite in full.
+#
+# `entry` is resolved relative to THIS repo's clone root, which is why it is the
+# repo-root-relative path to the wrapper. The wrapper shells out to
+# `python3 -m einvoice.report` and reuses that entrypoint's exit-code contract
+# (0 = conformant, non-zero = fatal violation / not well-formed XML), so a
+# locally-blocked commit is exactly one CI would have failed.
+- id: einvoice
+  name: EN 16931 / XRechnung e-invoice conformance
+  description: >-
+    Block a commit that stages a non-conformant EN 16931 / XRechnung e-invoice.
+    Drives the real `python3 -m einvoice.report` entrypoint (the same validator
+    CI runs) and prints the offending rule id(s). Requires the `einvoice`
+    package to be importable (python3 -m pip install einvoice); installs nothing
+    itself. Scoped to *.xml, so it stays inert on every other commit.
+  entry: einvoice/ci/pre-commit-einvoice.sh
+  language: script
+  files: \.xml$
+  pass_filenames: true

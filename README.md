@@ -13,6 +13,19 @@ The registry contract (`contracts/ContributionRegistry.sol`) is deliberately own
 no pause, no upgrade path, and it never holds funds. Each content hash can be anchored exactly once
 (first-writer-wins) and can never be altered or deleted. That immutability is the product.
 
+## Also in this repo: `einvoice` — EN 16931 / XRechnung invoice validation
+
+This repository also ships **`einvoice`**, a separate, self-contained conformance validator for
+**EN 16931** electronic invoices, targeting the German **XRechnung** CIUS (UBL 2.1 and UN/CEFACT CII
+syntaxes, plus **Factur-X**/ZUGFeRD PDF containers). It is **zero runtime dependencies** (Python 3
+standard library only — no lxml, no Java, no Schematron toolchain), runs fully **offline** so invoice
+data never leaves your box, and is built to **gate a CI build** by exiting non-zero and naming the
+violated rule ID. It is Apache-2.0 open source.
+
+- Overview and reference site: **<https://verifyhash.com/einvoice/>**
+- 5-minute quickstart: [`einvoice/QUICKSTART.md`](einvoice/QUICKSTART.md)
+- Licensing (Apache-2.0 + optional commercial license): [`einvoice/www/licensing/index.html`](einvoice/www/licensing/index.html) — rendered at <https://verifyhash.com/einvoice/licensing/>
+
 ## Install / Quickstart
 
 > **Adopt in one line.** Want to *receive* and *check* sealed artifacts without an account or our toolchain?

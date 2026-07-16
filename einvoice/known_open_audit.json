@@ -1,0 +1,493 @@
+{
+  "generated_from": "de2370edbef91671390064282dc8124d6a3021fb",
+  "description": "MEASURE-ONLY terminal audit (T-VHCOV.1) of every live known-open syntax-binding assert (15 UBL + 37 CII) plus the machine-listed rule-family known-open universes of coverage_matrix.json. Each entry carries the exact official @test/@context verbatim and exactly one blocker class; nothing here changes any frozen coverage number, evaluator behavior, or verdict. Regenerate with python3 gen_known_open_audit.py (byte-stable); test_known_open_audit.py fails on any drift.",
+  "entries": [
+    {
+      "id": "CII-DT-010",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(@listID)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode",
+      "class": "needs-general-xpath",
+      "reason": "Claim-shadowed dead rule: not(@listID) itself compiles, but the earlier universal //ram:TypeCode rule in the same Schematron pattern claims the document TypeCode node first (XSLT apply-templates semantics), so the official validator can never fire this assert and an independent evaluation would over-fire — faithful support needs full Schematron rule-claiming, not a grammar extension."
+    },
+    {
+      "id": "CII-DT-011",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(@listAgencyID)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode",
+      "class": "needs-general-xpath",
+      "reason": "Claim-shadowed dead rule: not(@listAgencyID) itself compiles, but the earlier universal //ram:TypeCode rule in the same Schematron pattern claims the document TypeCode node first, so the official validator can never fire this assert and an independent evaluation would over-fire — faithful support needs full Schematron rule-claiming, not a grammar extension."
+    },
+    {
+      "id": "CII-DT-012",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(@listVersionID)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode",
+      "class": "needs-general-xpath",
+      "reason": "Claim-shadowed dead rule: not(@listVersionID) itself compiles, but the earlier universal //ram:TypeCode rule in the same Schematron pattern claims the document TypeCode node first, so the official validator can never fire this assert and an independent evaluation would over-fire — faithful support needs full Schematron rule-claiming, not a grammar extension."
+    },
+    {
+      "id": "CII-DT-015",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:URIID) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')",
+      "context": "//ram:*[ends-with(name(), 'ReferencedDocument')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct (self::ram:AdditionalReferencedDocument and ram:TypeCode='916') conjoins a self:: axis test with an equality — axes and boolean composition are outside the closed not(P)-or-Q='literal' test grammar (the suffix @context itself compiles)."
+    },
+    {
+      "id": "CII-DT-018",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:TypeCode) or (self::ram:AdditionalReferencedDocument) and (ram:TypeCode='50' or ram:TypeCode='130' or ram:TypeCode='916')",
+      "context": "//ram:*[ends-with(name(), 'ReferencedDocument')]",
+      "class": "needs-general-xpath",
+      "reason": "The right side (self::ram:AdditionalReferencedDocument) and (ram:TypeCode='50' or ...='130' or ...='916') is an and/or compound over a self:: axis test and three equality comparisons — axes and boolean composition are outside the closed test grammar."
+    },
+    {
+      "id": "CII-DT-021",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:Name) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')",
+      "context": "//ram:*[ends-with(name(), 'ReferencedDocument')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct (self::ram:AdditionalReferencedDocument and ram:TypeCode='916') conjoins a self:: axis test with an equality — axes and boolean composition are outside the closed test grammar."
+    },
+    {
+      "id": "CII-DT-022",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:AttachmentBinaryObject) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')",
+      "context": "//ram:*[ends-with(name(), 'ReferencedDocument')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct (self::ram:AdditionalReferencedDocument and ram:TypeCode='916') conjoins a self:: axis test with an equality — axes and boolean composition are outside the closed test grammar."
+    },
+    {
+      "id": "CII-DT-024",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:ReferenceTypeCode) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='130')",
+      "context": "//ram:*[ends-with(name(), 'ReferencedDocument')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct (self::ram:AdditionalReferencedDocument and ram:TypeCode='130') conjoins a self:: axis test with an equality — axes and boolean composition are outside the closed test grammar."
+    },
+    {
+      "id": "CII-DT-027",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:FormattedIssueDateTime) or self::ram:InvoiceReferencedDocument",
+      "context": "//ram:*[ends-with(name(), 'ReferencedDocument')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct self::ram:InvoiceReferencedDocument is a self:: axis test — an axis outside the restricted path grammar, and a bare (non-'literal') disjunct besides."
+    },
+    {
+      "id": "CII-DT-033",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(@unitCode) or (/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity/@unitCode)",
+      "context": "//ram:*[ends-with(name(), 'Quantity')]",
+      "class": "promotable-under-provable-extension",
+      "reason": "No predicate, function or axis: not(@unitCode) or (<rooted /rsm:... path>/@unitCode) needs only two bounded productions the closed grammar lacks — a bare node-set existence right-disjunct (fires when P is non-empty and Q empty) and a rooted (leading /) test path — an exactly provable extension."
+    },
+    {
+      "id": "CII-DT-041",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:BasisAmount) or (ancestor::ram:ApplicableHeaderTradeSettlement)",
+      "context": "//ram:*[ends-with(name(), 'TradeTax')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct (ancestor::ram:ApplicableHeaderTradeSettlement) is an ancestor:: axis test — an axis outside the restricted path grammar, and a bare (non-'literal') disjunct besides."
+    },
+    {
+      "id": "CII-DT-052",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:ExemptionReasonCode) or self::ram:ApplicableTradeTax",
+      "context": "//ram:*[ends-with(name(), 'TradeTax')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct self::ram:ApplicableTradeTax is a self:: axis test — an axis outside the restricted path grammar, and a bare (non-'literal') disjunct besides."
+    },
+    {
+      "id": "CII-DT-054",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:TaxPointDate)  or (ancestor::ram:ApplicableHeaderTradeSettlement)",
+      "context": "//ram:*[ends-with(name(), 'TradeTax')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct (ancestor::ram:ApplicableHeaderTradeSettlement) is an ancestor:: axis test — an axis outside the restricted path grammar, and a bare (non-'literal') disjunct besides."
+    },
+    {
+      "id": "CII-DT-058",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:DueDateTypeCode) or (ancestor::ram:ApplicableHeaderTradeSettlement)",
+      "context": "//ram:*[ends-with(name(), 'TradeTax')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct (ancestor::ram:ApplicableHeaderTradeSettlement) is an ancestor:: axis test — an axis outside the restricted path grammar, and a bare (non-'literal') disjunct besides."
+    },
+    {
+      "id": "CII-DT-097",
+      "binding": "CII",
+      "shape_class": "datatype-regex",
+      "test": "matches(.,'^\\s*(\\d{4})(1[0-2]|0[1-9]){1}(3[01]|[12][0-9]|0[1-9]){1}\\s*$')",
+      "context": "//udt:DateTimeString[@format = '102']",
+      "class": "needs-general-xpath",
+      "reason": "A matches(., '^\\s*(\\d{4})...$') regular-expression lexical restriction bound to the attribute-predicated @context //udt:DateTimeString[@format = '102'] — a regex engine and attribute-equality context predicates are both outside the closed grammars (no regex is hand-faked)."
+    },
+    {
+      "id": "CII-DT-098",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:ExemptionReason) or self::ram:ApplicableTradeTax",
+      "context": "//ram:*[ends-with(name(), 'TradeTax')]",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct self::ram:ApplicableTradeTax is a self:: axis test — an axis outside the restricted path grammar, and a bare (non-'literal') disjunct besides."
+    },
+    {
+      "id": "CII-DT-101",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(@schemeName)",
+      "context": "//ram:*[ends-with(name(), 'ID')]",
+      "class": "needs-general-xpath",
+      "reason": "Suffix-claim-unsafe: both the @context and not(@schemeName) compile, but earlier specific ID rules (CII-DT-001/002/003) in the same pattern claim the core ram:ID-family nodes first, so an independent evaluation of the //ram:*[ends-with(name(), 'ID')] rule would over-fire on the stolen nodes — faithful support needs per-node Schematron claiming, not a grammar extension."
+    },
+    {
+      "id": "CII-DT-102",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(@schemeAgencyName)",
+      "context": "//ram:*[ends-with(name(), 'ID')]",
+      "class": "needs-general-xpath",
+      "reason": "Suffix-claim-unsafe: both the @context and not(@schemeAgencyName) compile, but earlier specific ID rules in the same pattern claim the core ram:ID-family nodes first, so an independent evaluation of the //ram:*[ends-with(name(), 'ID')] rule would over-fire on the stolen nodes — faithful support needs per-node Schematron claiming, not a grammar extension."
+    },
+    {
+      "id": "CII-DT-103",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(@schemeDataURI)",
+      "context": "//ram:*[ends-with(name(), 'ID')]",
+      "class": "needs-general-xpath",
+      "reason": "Suffix-claim-unsafe: both the @context and not(@schemeDataURI) compile, but earlier specific ID rules in the same pattern claim the core ram:ID-family nodes first, so an independent evaluation of the //ram:*[ends-with(name(), 'ID')] rule would over-fire on the stolen nodes — faithful support needs per-node Schematron claiming, not a grammar extension."
+    },
+    {
+      "id": "CII-DT-104",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(@schemeURI)",
+      "context": "//ram:*[ends-with(name(), 'ID')]",
+      "class": "needs-general-xpath",
+      "reason": "Suffix-claim-unsafe: both the @context and not(@schemeURI) compile, but earlier specific ID rules in the same pattern claim the core ram:ID-family nodes first, so an independent evaluation of the //ram:*[ends-with(name(), 'ID')] rule would over-fire on the stolen nodes — faithful support needs per-node Schematron claiming, not a grammar extension."
+    },
+    {
+      "id": "CII-SR-046",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:GlobalID) or (ram:GlobalID/@schemeID)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct",
+      "class": "promotable-under-provable-extension",
+      "reason": "No predicate, function or axis: not(ram:GlobalID) or (ram:GlobalID/@schemeID) needs only the bare node-set existence right-disjunct production (fires when P is non-empty and Q empty) — a bounded, exactly provable extension."
+    },
+    {
+      "id": "CII-SR-090",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "not (ram:OriginTradeCountry) or (count(ram:OriginTradeCountry/ram:ID) =1)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct",
+      "class": "promotable-under-provable-extension",
+      "reason": "Already a closed-grammar form: after pure lexical normalization ('not (' -> 'not(' and stripping the redundant parens around the count comparison) the test compiles TODAY under the existing not(P) or count(Q) OP n production — only whitespace/paren tolerance is missing."
+    },
+    {
+      "id": "CII-SR-119",
+      "binding": "CII",
+      "shape_class": "other-complex",
+      "test": "(ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ChargeIndicator[udt:Indicator=false()] and ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ActualAmount) or (not (ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ChargeIndicator) and not (ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ActualAmount))",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement",
+      "class": "needs-general-xpath",
+      "reason": "A compound or(and, and) co-occurrence whose left branch carries the predicate ram:ChargeIndicator[udt:Indicator=false()] — an XPath-2.0 typed cast-to-boolean comparison — predicates, typed casts and general boolean composition are outside every closed class grammar."
+    },
+    {
+      "id": "CII-SR-449",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "(not(ram:ShipToTradeParty/ram:ID) and ram:ShipToTradeParty/ram:GlobalID) or (ram:ShipToTradeParty/ram:ID and not(ram:ShipToTradeParty/ram:GlobalID)) or (not(ram:ShipToTradeParty/ram:ID) and not(ram:ShipToTradeParty/ram:GlobalID))",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery",
+      "class": "promotable-under-provable-extension",
+      "reason": "No predicate, function or axis: a three-way or of and/not combinations over the two restricted paths ram:ShipToTradeParty/ram:ID and ram:ShipToTradeParty/ram:GlobalID (logically not(A and B)) — coverable by a bounded boolean-combination-of-existence-atoms production."
+    },
+    {
+      "id": "CII-SR-450",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "(not(ram:BuyerTradeParty/ram:ID) and ram:BuyerTradeParty/ram:GlobalID) or (ram:BuyerTradeParty/ram:ID and not(ram:BuyerTradeParty/ram:GlobalID)) or (not(ram:BuyerTradeParty/ram:ID) and not(ram:BuyerTradeParty/ram:GlobalID))",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
+      "class": "promotable-under-provable-extension",
+      "reason": "No predicate, function or axis: a three-way or of and/not combinations over the two restricted paths ram:BuyerTradeParty/ram:ID and ram:BuyerTradeParty/ram:GlobalID (logically not(A and B)) — coverable by a bounded boolean-combination-of-existence-atoms production."
+    },
+    {
+      "id": "CII-SR-451",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "(not(ram:PayeeTradeParty/ram:ID) and ram:PayeeTradeParty/ram:GlobalID) or (ram:PayeeTradeParty/ram:ID and not(ram:PayeeTradeParty/ram:GlobalID)) or (not(ram:PayeeTradeParty/ram:ID) and not(ram:PayeeTradeParty/ram:GlobalID))",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement",
+      "class": "promotable-under-provable-extension",
+      "reason": "No predicate, function or axis: a three-way or of and/not combinations over the two restricted paths ram:PayeeTradeParty/ram:ID and ram:PayeeTradeParty/ram:GlobalID (logically not(A and B)) — coverable by a bounded boolean-combination-of-existence-atoms production."
+    },
+    {
+      "id": "CII-SR-457",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "( count(ram:AdditionalReferencedDocument[ram:TypeCode='50'])  <= 1)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [ram:TypeCode='50'] — the closed count grammar admits no predicated steps."
+    },
+    {
+      "id": "CII-SR-458",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "( count(ram:AdditionalReferencedDocument[ram:TypeCode='130'])  <= 1)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [ram:TypeCode='130'] — the closed count grammar admits no predicated steps."
+    },
+    {
+      "id": "CII-SR-462",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "count(//ram:ApplicableTradeTax/ram:DueDateTypeCode) = 0 or count(distinct-values(//ram:ApplicableTradeTax/ram:DueDateTypeCode)) = 1",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct counts distinct-values(//ram:ApplicableTradeTax/ram:DueDateTypeCode) — an XPath-2.0 set function outside the closed count grammar."
+    },
+    {
+      "id": "CII-SR-465",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName and ram:SellerTradeParty/ram:DefinedTradeContact/ram:DepartmentName)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
+      "class": "promotable-under-provable-extension",
+      "reason": "No predicate, function or axis: not(A and B) over the two restricted child paths to the seller contact's PersonName and DepartmentName — coverable by a bounded negated-conjunction production (fires when both node-sets are non-empty)."
+    },
+    {
+      "id": "CII-SR-466",
+      "binding": "CII",
+      "shape_class": "absence-restriction",
+      "test": "not(ram:BuyerTradeParty/ram:DefinedTradeContact/ram:PersonName and ram:BuyerTradeParty/ram:DefinedTradeContact/ram:DepartmentName)",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
+      "class": "promotable-under-provable-extension",
+      "reason": "No predicate, function or axis: not(A and B) over the two restricted child paths to the buyer contact's PersonName and DepartmentName — coverable by a bounded negated-conjunction production (fires when both node-sets are non-empty)."
+    },
+    {
+      "id": "CII-SR-467",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "count(//ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode[normalize-space(.) != normalize-space((//ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode)[1])]) = 0",
+      "context": "/rsm:CrossIndustryInvoice",
+      "class": "needs-general-xpath",
+      "reason": "The count path's predicate compares normalize-space(.) against the positional first-node reference (...)[1] — functions, predicates and positional indexing are outside the closed count grammar."
+    },
+    {
+      "id": "CII-SR-468",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "count(//ram:SpecifiedTradeSettlementPaymentMeans/ram:Information[normalize-space(.) != normalize-space((//ram:SpecifiedTradeSettlementPaymentMeans/ram:Information)[1])]) = 0",
+      "context": "/rsm:CrossIndustryInvoice",
+      "class": "needs-general-xpath",
+      "reason": "The count path's predicate compares normalize-space(.) against the positional first-node reference (...)[1] — functions, predicates and positional indexing are outside the closed count grammar."
+    },
+    {
+      "id": "CII-SR-470",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "count(ram:SpecifiedTradeSettlementPaymentMeans[(normalize-space(ram:TypeCode) = '30' or normalize-space(ram:TypeCode) = '58') and not(ram:PayeePartyCreditorFinancialAccount/ram:IBANID or ram:PayeePartyCreditorFinancialAccount/ram:ProprietaryID)]) = 0",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement",
+      "class": "needs-general-xpath",
+      "reason": "The count path's predicate is an and/or compound over normalize-space() equality tests and a nested not() existence disjunction — functions and predicated boolean composition are outside the closed count grammar."
+    },
+    {
+      "id": "CII-SR-474",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "count(ram:AdditionalReferencedDocument[normalize-space(ram:TypeCode) = '130']) <= 1",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [normalize-space(ram:TypeCode) = '130'] — a function-bearing predicate outside the closed count grammar."
+    },
+    {
+      "id": "CII-SR-475",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "count(ram:AdditionalReferencedDocument[normalize-space(ram:TypeCode) = '916']/ram:Name) <= 1",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [normalize-space(ram:TypeCode) = '916'] — a function-bearing predicate outside the closed count grammar."
+    },
+    {
+      "id": "CII-SR-476",
+      "binding": "CII",
+      "shape_class": "cardinality-count",
+      "test": "count(ram:AdditionalReferencedDocument[normalize-space(ram:TypeCode) = '916']/ram:AttachmentBinaryObject) <= 1",
+      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [normalize-space(ram:TypeCode) = '916'] — a function-bearing predicate outside the closed count grammar."
+    },
+    {
+      "id": "UBL-CR-412",
+      "binding": "UBL",
+      "shape_class": "absence-restriction",
+      "test": "not(cac:PaymentMeans/cbc:PaymentDueDate) or ../cn:CreditNote",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The right disjunct ../cn:CreditNote is a bare node-set disjunct whose path leads with the parent axis (..) at the document root — the closed absence grammar admits only a Q = 'literal' right disjunct and its restricted paths have no parent-axis step."
+    },
+    {
+      "id": "UBL-CR-665",
+      "binding": "UBL",
+      "shape_class": "absence-restriction",
+      "test": "not(//cac:AdditionalDocumentReference[cbc:DocumentTypeCode != '130' or not(cbc:DocumentTypeCode)]/cbc:ID/@schemeID)",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The not() path carries the nested predicate [cbc:DocumentTypeCode != '130' or not(cbc:DocumentTypeCode)] — predicated location steps are outside the restricted path grammar."
+    },
+    {
+      "id": "UBL-CR-666",
+      "binding": "UBL",
+      "shape_class": "absence-restriction",
+      "test": "not(//cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cac:Attachment)",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The not() path carries the predicate [cbc:DocumentTypeCode = '130'] — predicated location steps are outside the restricted path grammar."
+    },
+    {
+      "id": "UBL-CR-673",
+      "binding": "UBL",
+      "shape_class": "absence-restriction",
+      "test": "not(//cac:AdditionalDocumentReference[cbc:DocumentTypeCode  = '130']/cbc:DocumentDescription)",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The not() path carries the predicate [cbc:DocumentTypeCode  = '130'] — predicated location steps are outside the restricted path grammar."
+    },
+    {
+      "id": "UBL-SR-04",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "(count(cac:AdditionalDocumentReference[cbc:DocumentTypeCode='130']/cbc:ID) <= 1)",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [cbc:DocumentTypeCode='130'] — the closed count grammar admits no predicated steps."
+    },
+    {
+      "id": "UBL-SR-12",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "(count(cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/upper-case(cbc:ID)='VAT']/cbc:CompanyID) <= 1)",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [cac:TaxScheme/upper-case(cbc:ID)='VAT'] using the XPath-2.0 function upper-case() — predicates and functions are outside the closed count grammar."
+    },
+    {
+      "id": "UBL-SR-13",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "(count(cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/upper-case(cbc:ID)!='VAT']/cbc:CompanyID) <= 1)",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [cac:TaxScheme/upper-case(cbc:ID)!='VAT'] using the XPath-2.0 function upper-case() — predicates and functions are outside the closed count grammar."
+    },
+    {
+      "id": "UBL-SR-18",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "(count(cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/upper-case(cbc:ID)='VAT']/cbc:CompanyID) <= 1)",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [cac:TaxScheme/upper-case(cbc:ID)='VAT'] using the XPath-2.0 function upper-case() — predicates and functions are outside the closed count grammar."
+    },
+    {
+      "id": "UBL-SR-20",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "(count(cac:PartyIdentification/cbc:ID[upper-case(@schemeID) != 'SEPA']) <= 1) and ((cac:PartyName/cbc:Name) != (../cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName))",
+      "context": "cac:PayeeParty",
+      "class": "needs-general-xpath",
+      "reason": "The left conjunct's count path carries the predicate [upper-case(@schemeID) != 'SEPA'] — a function-bearing predicate outside the closed count grammar (the and-conjoined (A) != (B) right side alone is a supported form)."
+    },
+    {
+      "id": "UBL-SR-29",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "(count(//cac:PartyIdentification/cbc:ID[upper-case(@schemeID) = 'SEPA']) <= 1)",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The count path carries the predicate [upper-case(@schemeID) = 'SEPA'] — a function-bearing predicate outside the closed count grammar."
+    },
+    {
+      "id": "UBL-SR-30",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "(count(cbc:AllowanceChargeReason) <= 1)",
+      "context": "cac:AllowanceCharge[cbc:ChargeIndicator = false()]",
+      "class": "needs-general-xpath",
+      "reason": "The @test itself compiles, but the rule @context cac:AllowanceCharge[cbc:ChargeIndicator = false()] is a predicated match pattern with a typed false() comparison — the closed context-pattern grammar admits no predicates."
+    },
+    {
+      "id": "UBL-SR-31",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "(count(cbc:AllowanceChargeReason) <= 1)",
+      "context": "cac:AllowanceCharge[cbc:ChargeIndicator = true()]",
+      "class": "needs-general-xpath",
+      "reason": "The @test itself compiles, but the rule @context cac:AllowanceCharge[cbc:ChargeIndicator = true()] is a predicated match pattern with a typed true() comparison — the closed context-pattern grammar admits no predicates."
+    },
+    {
+      "id": "UBL-SR-43",
+      "binding": "UBL",
+      "shape_class": "absence-restriction",
+      "test": "((cbc:DocumentTypeCode='130') or ((local-name(/*) = 'CreditNote') and (cbc:DocumentTypeCode='50')) or (not(cbc:ID/@schemeID) and not(cbc:DocumentTypeCode)))",
+      "context": "cac:AdditionalDocumentReference",
+      "class": "needs-general-xpath",
+      "reason": "A three-way or/and compound over bare equality comparisons and the local-name(/*) function call — general boolean composition and functions are outside the closed absence grammar (and the context cac:AdditionalDocumentReference is not the one supported document-root context of the UBL absence class)."
+    },
+    {
+      "id": "UBL-SR-44",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "count(//cbc:PaymentID[not(preceding::cbc:PaymentID/. = .)]) <= 1",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The count path's predicate [not(preceding::cbc:PaymentID/. = .)] uses the preceding:: axis and a node-set self-comparison (distinct-value emulation) — axes and predicates outside the closed count grammar."
+    },
+    {
+      "id": "UBL-SR-47",
+      "binding": "UBL",
+      "shape_class": "cardinality-count",
+      "test": "count(//cbc:PaymentMeansCode[not(preceding::cbc:PaymentMeansCode/. = .)]) <= 1",
+      "context": "/ubl:Invoice | /cn:CreditNote",
+      "class": "needs-general-xpath",
+      "reason": "The count path's predicate [not(preceding::cbc:PaymentMeansCode/. = .)] uses the preceding:: axis and a node-set self-comparison (distinct-value emulation) — axes and predicates outside the closed count grammar."
+    }
+  ],
+  "counts": {
+    "needs-general-xpath": 44,
+    "needs-external-codelist": 0,
+    "promotable-under-provable-extension": 8
+  },
+  "rule_family_known_open": {
+    "creditnote_conformance": {
+      "known_open": {},
+      "note": "universe recorded as EMPTY (0 known-open) — listed explicitly rather than omitted"
+    },
+    "cvd_tmp_family": {
+      "known_open_worklist": [],
+      "note": "universe recorded as EMPTY (0 known-open) — listed explicitly rather than omitted"
+    },
+    "peppol_kosit_family": {
+      "known_open_worklist": [],
+      "note": "universe recorded as EMPTY (0 known-open) — listed explicitly rather than omitted"
+    }
+  }
+}

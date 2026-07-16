@@ -12,6 +12,24 @@ Usage:
 Global flags:
     --version  print the packaged ``einvoice.__version__`` and exit 0. Takes
                precedence over everything else — no subcommand or file needed.
+    --fail-on  OPT-IN exit-code severity threshold for ``validate`` /
+               ``validate-batch`` (accepts ``--fail-on X`` and ``--fail-on=X``):
+               choose which finding severity trips exit code 1. This is a pure
+               POST-validation exit-code knob — it changes NEITHER the findings,
+               the validation logic, the ``--json`` payload nor the human
+               summary text; ONLY the process exit code. Values:
+                 ``fatal``        (DEFAULT — exit 1 iff >=1 fatal finding; this
+                                  is byte-identical to today, so OMITTING the
+                                  flag is exactly the historical contract and
+                                  the change is NON-BREAKING);
+                 ``warning``      exit 1 iff >=1 fatal OR >=1 warning finding;
+                 ``information``  strict: exit 1 iff >=1 finding of ANY severity.
+               The threshold is measured over the validation findings (a
+               Violation's ``severity``); it never affects the ``receipt``
+               subcommand, and an invalid value is a usage error (exit 2). For
+               ``validate-batch`` it is applied across the aggregate: exit 1 if
+               ANY file crosses the chosen threshold; the parse-only ``3`` rule
+               (some file only errored, none crossed) is left intact.
     --lang     language of the HUMAN validate summary only: ``en`` (default,
                unchanged behaviour) or ``de``. Under ``de`` a violated rule that
                carries an OFFICIAL German message (the BR-DE family, whose
@@ -103,9 +121,11 @@ from .report import (
 from .remediation import resolve_message, SUPPORTED_LANGS
 
 USAGE = ("usage: einvoice validate <invoice.xml|-> "
-         "[--json] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de]\n"
+         "[--json] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de] "
+         "[--fail-on=fatal|warning|information]\n"
          "       einvoice validate-batch <dir|glob> "
-         "[--json] [--quiet] [--profile=en16931|xrechnung]\n"
+         "[--json] [--quiet] [--profile=en16931|xrechnung] "
+         "[--fail-on=fatal|warning|information]\n"
          "       einvoice receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
          "       einvoice --version")
@@ -115,8 +135,50 @@ EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_PARSE = 3
 
+#: Accepted ``--fail-on`` values (the codebase severity vocabulary). The
+#: DEFAULT is ``fatal`` — i.e. omitting the flag is byte-identical to today.
+FAIL_ON_LEVELS = ("fatal", "warning", "information")
 
-def _run_validate_batch(rest, profile, as_json, quiet):
+#: Severity ordering used to decide whether a finding CROSSES a chosen
+#: ``--fail-on`` threshold: a finding crosses iff its rank is >= the threshold's
+#: rank. So ``information`` (1) catches every severity, ``warning`` (2) catches
+#: warning + fatal, and ``fatal`` (3) catches only fatal (today's default).
+#: Any unknown severity is treated as ``fatal`` (matching ``validate._severity``).
+_SEVERITY_RANK = {"information": 1, "warning": 2, "fatal": 3}
+
+
+def _crosses_threshold(severity, fail_on):
+    """True iff a finding of ``severity`` should trip exit 1 at ``fail_on``."""
+    return (_SEVERITY_RANK.get(severity, _SEVERITY_RANK["fatal"])
+            >= _SEVERITY_RANK[fail_on])
+
+
+def _result_exit_code(result, fail_on):
+    """Exit code for a single ``validate`` result under a ``--fail-on`` level.
+
+    Layered on the EXISTING result (findings unchanged): EXIT_FAIL iff at least
+    one finding crosses the chosen threshold, else EXIT_OK. With the default
+    ``fatal`` this is exactly ``EXIT_OK if result.ok else EXIT_FAIL`` — byte-
+    identical to the historical contract.
+    """
+    crosses = any(_crosses_threshold(_severity(v), fail_on)
+                  for v in result.violations)
+    return EXIT_FAIL if crosses else EXIT_OK
+
+
+def _report_crosses(report, fail_on):
+    """True iff a batch per-file report dict crosses the ``--fail-on`` level.
+
+    Operates on the report's own ``violations`` records (each carrying a
+    ``severity``) — an errored (not-well-formed / unsupported-container) file
+    has no findings and therefore never crosses, so the parse-only ``EXIT_PARSE``
+    rule is left to :func:`einvoice.report.batch_exit_code`.
+    """
+    return any(_crosses_threshold(v.get("severity"), fail_on)
+               for v in report.get("violations", []))
+
+
+def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
     """Drive ``einvoice validate-batch <dir|glob>``.
 
     REUSES the batch engine in :mod:`einvoice.report` verbatim — no aggregation
@@ -168,6 +230,14 @@ def _run_validate_batch(rest, profile, as_json, quiet):
         sys.stdout.write(json.dumps(batch, indent=2) + "\n")
     elif not quiet:
         sys.stdout.write(build_batch_text(batch))
+    # Exit code, layered on the SAME aggregate (the printed report/JSON is
+    # untouched): if ANY file crosses the chosen threshold, EXIT_FAIL; otherwise
+    # defer to the existing report.py precedence (which yields EXIT_PARSE=3 for an
+    # error-only, no-fatal batch, else EXIT_OK). With the default ``fatal`` this
+    # is byte-identical to ``batch_exit_code(batch)``: the only files that cross a
+    # fatal threshold are exactly the files ``batch_exit_code`` already fails on.
+    if any(_report_crosses(r, fail_on) for r in batch.get("files", [])):
+        return EXIT_FAIL
     return batch_exit_code(batch)
 
 
@@ -202,10 +272,28 @@ def main(argv=None):
     # exists (falling back to English otherwise). It NEVER touches --json output,
     # rule ids, severities or which rules fire.
     lang = "en"
+    # --fail-on is an OPT-IN post-validation exit-code threshold. The default
+    # 'fatal' reproduces today's contract byte-for-byte (exit 1 iff >=1 fatal);
+    # it never touches the findings, --json payload or human summary — only the
+    # process exit code. Parsed globally (like --profile/--lang) but APPLIED only
+    # to validate / validate-batch.
+    fail_on = "fatal"
     rest = []
     i = 0
     while i < len(args):
         a = args[i]
+        if a == "--fail-on":
+            if i + 1 >= len(args):
+                sys.stderr.write(
+                    "error: --fail-on needs a value\n" + USAGE + "\n")
+                return EXIT_USAGE
+            fail_on = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--fail-on="):
+            fail_on = a.split("=", 1)[1]
+            i += 1
+            continue
         if a == "--profile":
             if i + 1 >= len(args):
                 sys.stderr.write("error: --profile needs a value\n" + USAGE + "\n")
@@ -239,13 +327,17 @@ def main(argv=None):
         sys.stderr.write("error: unknown lang %r (choose from %s)\n%s\n"
                          % (lang, ", ".join(SUPPORTED_LANGS), USAGE))
         return EXIT_USAGE
+    if fail_on not in FAIL_ON_LEVELS:
+        sys.stderr.write("error: unknown --fail-on value %r (choose from %s)\n%s\n"
+                         % (fail_on, ", ".join(FAIL_ON_LEVELS), USAGE))
+        return EXIT_USAGE
 
     # ``validate-batch`` has its own dir|glob dispatch (no stdin, no on-disk
     # single-file check). Handle it before the single-file subcommand parsing
     # so the ``validate``/``receipt`` path below stays byte-for-byte unchanged.
     # It reuses the SAME already-parsed --json/--quiet/--profile flags.
     if args and args[0] == "validate-batch":
-        return _run_validate_batch(args[1:], profile, as_json, quiet)
+        return _run_validate_batch(args[1:], profile, as_json, quiet, fail_on)
 
     if len(args) < 2 or args[0] not in ("validate", "receipt"):
         sys.stderr.write(USAGE + "\n")
@@ -349,7 +441,11 @@ def main(argv=None):
             sys.stdout.write("Syntax-binding warnings: %d\n"
                              % sb["syntax_binding_warning_count"])
 
-        return EXIT_OK if result.ok else EXIT_FAIL
+        # Exit code ONLY (the JSON payload / human summary above are already
+        # written and untouched by --fail-on). Default 'fatal' == today's
+        # ``EXIT_OK if result.ok else EXIT_FAIL``; a lower threshold trips
+        # EXIT_FAIL on warning/information findings too.
+        return _result_exit_code(result, fail_on)
     finally:
         if tmp_path is not None:
             try:

@@ -22,6 +22,42 @@ ever drifts.
 | `2` | Usage error — the tool was invoked wrong and did no validation. Bad or missing arguments, an unknown subcommand, an unknown `--profile` / `--lang` value, a `--profile`/`--lang` flag with no value, unexpected extra arguments, or a named input file that does not exist on disk. | `validate`/`validate-batch`/`receipt` with malformed argv or a missing file. | stderr: `error: <what>` and/or the `usage:` banner. |
 | `3` | Not-well-formed input — the XML could not be parsed (truncated document, syntax error, or an input rejected by the hardened DTD/XXE parser). `validate` only. `receipt` folds this case into a FAIL receipt (exit `1`); `validate-batch` returns `3` only when some file *only* errored (not-well-formed / unsupported container) and no file had a fatal. | `validate` on malformed XML; `validate-batch` error-only, no-fatal. | stderr: `S-WF: input is not well-formed XML: <parser detail>`. |
 
+## Opt-in `--fail-on <level>` severity threshold (non-breaking)
+
+By **default** only a `fatal` finding makes `validate` / `validate-batch` exit
+`1`; `warning` and `information` findings are reported but never affect the
+code. The **opt-in** `--fail-on` flag lets a pipeline choose a stricter
+threshold *without changing anything else*. It is a pure post-validation
+exit-code knob: it does **not** change the findings, the validation logic, the
+`--json` payload bytes, or the human summary text — **only** the process exit
+code. Both `--fail-on <level>` and `--fail-on=<level>` are accepted, exactly as
+`--profile` / `--lang` are.
+
+| `--fail-on` value | Exit `1` when… | Notes |
+|-------------------|----------------|-------|
+| _(flag omitted)_ | ≥1 **fatal** finding | The historical default. |
+| `fatal` | ≥1 **fatal** finding | **Byte-identical to omitting the flag** — the default is unchanged and this change is fully **non-breaking**. |
+| `warning` | ≥1 **fatal** OR ≥1 **warning** finding | |
+| `information` | ≥1 finding of **any** severity (strict) | |
+
+Scope and invariants:
+
+- The threshold is measured over the validation findings (each `Violation`'s
+  `severity`, per `einvoice.validate._severity`).
+- `--fail-on` **only** affects the `0` vs `1` decision. It never turns a usage
+  error (`2`) or a not-well-formed parse error (`3`) into something else: an
+  invalid file, bad argv, or malformed XML still lands on its usual code.
+- An **invalid** `--fail-on` value (anything other than
+  `fatal` / `warning` / `information`) is a **usage error** (`2`) with an
+  actionable `error: unknown --fail-on value …` on stderr plus the usage banner
+  — it is never silently ignored.
+- For `validate-batch` the threshold is applied across the **aggregate**: exit
+  `1` if **any** file crosses the chosen level. The parse-only `3` rule is left
+  intact — when no file crosses the threshold and some file *only* errored
+  (not-well-formed / unsupported container), the batch still returns `3`.
+- `--fail-on` is accepted for `validate` and `validate-batch`; it does not apply
+  to `receipt` (whose exit code always mirrors its PASS/FAIL verdict).
+
 ## Stability guarantee
 
 These codes are an append-only contract:

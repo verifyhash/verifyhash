@@ -33,7 +33,7 @@ import xml.dom.minidom
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from einvoice.report import EXIT_OK, EXIT_FAIL  # noqa: E402
+from einvoice.report import EXIT_OK, EXIT_FAIL, REPORT_FORMATS  # noqa: E402
 
 REPORT_PY = os.path.join(HERE, "einvoice", "report.py")
 DOC = os.path.join(HERE, "REPORT-FORMATS.md")
@@ -64,14 +64,18 @@ def run_cli(args, cwd=None):
 # genuinely have to agree.
 # --------------------------------------------------------------------------- #
 def accepted_formats():
-    """The single-file `--format` set report.py accepts (its widest `fmt not in`
-    tuple — the batch path advertises a strict subset)."""
+    """The single-file `--format` set report.py accepts: the NAMED module
+    constant ``einvoice.report.REPORT_FORMATS`` (hoisted from the old inline
+    tuple by T-VHINTRO.1; the batch path still advertises a strict inline
+    subset). The source assertion pins that the `--format` check site really
+    tests against that constant, so the imported set provably IS the enforced
+    vocabulary — the same anti-drift guarantee the old source-scrape gave."""
     with open(REPORT_PY, encoding="utf-8") as fh:
         src = fh.read()
-    tuples = re.findall(r"fmt not in \(([^)]*)\)", src)
-    assert tuples, "could not find any `fmt not in (...)` tuple in report.py"
-    sets = [set(re.findall(r"[\"']([a-z]+)[\"']", t)) for t in tuples]
-    return max(sets, key=len)
+    assert "fmt not in REPORT_FORMATS" in src, (
+        "report.py --format check no longer tests against REPORT_FORMATS — "
+        "accepted_formats() would drift from the enforced set")
+    return set(REPORT_FORMATS)
 
 
 def documented():

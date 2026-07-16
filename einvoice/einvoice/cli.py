@@ -4,6 +4,7 @@ Usage:
     einvoice validate <invoice.xml|-> [--json] [--quiet] [--profile=en16931|xrechnung]
     einvoice validate-batch <dir|glob> [--json] [--quiet] [--profile=en16931|xrechnung]
     einvoice receipt  <invoice.xml> [--profile=en16931|xrechnung]
+    einvoice info [--json]
     einvoice --version
 
 (also reachable as ``python3 -m einvoice ...`` and, from a source checkout,
@@ -71,6 +72,16 @@ Subcommands:
                parse): 0 when every file passes, 1 if ANY file has a fatal
                violation, 3 if some file only errored (not-well-formed /
                unsupported container) and none had a fatal.
+    info       READ-ONLY build introspection: print what THIS build contains —
+               package version, profiles, report format names, implemented
+               business-rule count, the frozen syntax-binding coverage
+               headline, and the attestation content hash. Takes no input
+               file, validates nothing, always exits 0 (or 2 on extra
+               arguments). Every value is read at runtime from the package
+               itself or its committed artifacts (export/rules.json,
+               attestation.json, the syntax-binding catalog) — nothing is
+               hardcoded. ``--json`` emits one sorted-keys JSON object
+               instead of the human ``key: value`` lines.
     receipt    emit a CANONICAL, DETERMINISTIC JSON conformance receipt: a
                byte-stable attestation of the outcome (tool+version, profile,
                verdict, failed fatal rule ids, input-document SHA-256, and a
@@ -144,6 +155,7 @@ USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "[--fail-on=fatal|warning|information]\n"
          "       einvoice receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
+         "       einvoice info [--json]\n"
          "       einvoice --version")
 
 EXIT_OK = 0
@@ -215,6 +227,127 @@ def _report_crosses(report, fail_on):
     """
     return any(_crosses_threshold(v.get("severity"), fail_on)
                for v in report.get("violations", []))
+
+
+def _artifact_json(name):
+    """Load a committed repo-root JSON artifact that sits NEXT TO the package
+    directory in a source checkout (``<repo>/attestation.json``,
+    ``<repo>/export/rules.json``, ...). Returns the parsed object, or ``None``
+    when the file is not reachable (e.g. an installed-package context, where
+    only the ``einvoice/`` package itself ships) or unparsable — ``info`` then
+    reports ``null`` for that field instead of crashing."""
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), name)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _info_payload():
+    """Assemble the ``einvoice info`` fields.
+
+    SOURCING RULE (deliberate — the whole point of the command): every value
+    is read or recomputed AT RUNTIME from the same source the test suite
+    asserts, never retyped:
+
+      * ``version``            ``einvoice.__version__`` (the packaged attribute).
+      * ``profiles``           ``einvoice.validate.PROFILES`` (the dispatch tuple).
+      * ``formats``            the ``einvoice.report.REPORT_FORMATS`` constant —
+                               the exact vocabulary the ``--format`` check
+                               enforces — plus the default ``text``.
+      * ``rule_count``         the committed ``coverage_matrix.json`` via
+                               :func:`einvoice.coverage.load_matrix` — the SAME
+                               source ``gen_export.py`` builds
+                               ``export/rules.json['rule_count']`` from (the
+                               generator asserts the two agree).
+      * ``coverage``           proven syntax-binding counts RECOMPUTED live via
+                               ``einvoice.syntax_binding_eval.implemented_ids``
+                               / ``cii_implemented_ids`` and the catalog's own
+                               accounting totals — exactly the calls
+                               ``gen_export.py`` makes for
+                               ``export/coverage.json``; ``business_rules``
+                               mirrors ``rule_count``.
+      * ``attestation_sha256`` ``content_sha256`` from the committed
+                               ``attestation.json`` (a generated hash — it has
+                               no in-module recompute by design).
+
+    Fields whose artifact is unreachable (installed-package context) degrade
+    to ``None`` rather than raising; test_info.py asserts artifact equality
+    from the source checkout, so any drift fails the suite.
+    """
+    # Local imports: only the info path needs the coverage-matrix loader and
+    # the syntax-binding evaluator; every other CLI path is left untouched.
+    from . import coverage as _coverage
+    from . import syntax_binding_eval as _sbe
+    from .report import REPORT_FORMATS
+
+    try:
+        matrix = _coverage.load_matrix()
+        rule_count = int(matrix["rule_count"])
+    except (OSError, KeyError, TypeError, ValueError):
+        rule_count = None
+
+    catalog = _sbe.load_catalog()
+    acct = (catalog or {}).get("accounting", {})
+
+    def _total(syntax):
+        total = acct.get(syntax, {}).get("total")
+        return int(total) if total is not None else None
+
+    coverage = {
+        "business_rules": {"total_asserted": rule_count},
+        "syntax_binding": {
+            "ubl": {"proven": len(_sbe.implemented_ids()),
+                    "total": _total("ubl")},
+            "cii": {"proven": len(_sbe.cii_implemented_ids()),
+                    "total": _total("cii")},
+        },
+    }
+
+    attestation = _artifact_json("attestation.json")
+    attestation_sha256 = (attestation or {}).get("content_sha256")
+
+    return {
+        "version": __version__,
+        "profiles": sorted(PROFILES),
+        "formats": sorted(set(REPORT_FORMATS) | {"text"}),
+        "rule_count": rule_count,
+        "coverage": coverage,
+        "attestation_sha256": attestation_sha256,
+    }
+
+
+def _info_lines(payload, prefix=""):
+    """Flatten the info payload into stable, sorted ``key: value`` lines
+    (nested objects become dotted keys, lists comma-joined)."""
+    lines = []
+    for key in sorted(payload):
+        value = payload[key]
+        full = prefix + key
+        if isinstance(value, dict):
+            lines.extend(_info_lines(value, prefix=full + "."))
+        elif isinstance(value, (list, tuple)):
+            lines.append("%s: %s" % (full, ", ".join(str(v) for v in value)))
+        else:
+            lines.append("%s: %s" % (full, value))
+    return lines
+
+
+def _run_info(as_json):
+    """Drive ``einvoice info``: read-only, no input, nothing on stderr.
+
+    ``--json``: exactly one ``json.dumps(..., sort_keys=True)`` object on
+    stdout. Human form: the same payload flattened to sorted ``key: value``
+    lines. Exit 0 either way.
+    """
+    payload = _info_payload()
+    if as_json:
+        sys.stdout.write(json.dumps(payload, sort_keys=True) + "\n")
+    else:
+        sys.stdout.write("\n".join(_info_lines(payload)) + "\n")
+    return EXIT_OK
 
 
 def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
@@ -378,6 +511,19 @@ def _main(argv=None):
         sys.stderr.write("error: unknown --fail-on value %r (choose from %s)\n%s\n"
                          % (fail_on, ", ".join(FAIL_ON_LEVELS), USAGE))
         return EXIT_USAGE
+
+    # ``info`` is a read-only build introspection: no input file, no
+    # validation. Dispatched before the file-driven subcommands; it reuses
+    # the already-parsed global ``--json`` flag and accepts NOTHING else —
+    # any extra argument or unknown flag is a usage error (exit 2),
+    # consistent with the existing argv discipline.
+    if args and args[0] == "info":
+        if len(args) != 1:
+            sys.stderr.write(
+                "error: info takes no arguments (got %r)\n%s\n"
+                % (" ".join(args[1:]), USAGE))
+            return EXIT_USAGE
+        return _run_info(as_json)
 
     # ``validate-batch`` has its own dir|glob dispatch (no stdin, no on-disk
     # single-file check). Handle it before the single-file subcommand parsing

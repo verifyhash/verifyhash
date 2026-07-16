@@ -502,6 +502,22 @@ documented report precedence (fatal outranks parse): `0` when every file passes,
 (not-well-formed / unsupported container) and none had a fatal. Pinned by
 `test_cli_batch.py`.
 
+**Build introspection — `einvoice info`** reports what *this* build contains,
+read-only: no input file, nothing validated, exit `0` (extra arguments are a
+usage error, exit `2`). Human form is stable `key: value` lines; `einvoice info
+--json` emits the same payload as **one** sorted-keys JSON object with exactly
+the keys `version`, `profiles`, `formats`, `rule_count`, `coverage` and
+`attestation_sha256`. Every value is read or recomputed **at runtime** from the
+package and its committed artifacts — the packaged `__version__`, the `PROFILES`
+tuple, the `einvoice.report.REPORT_FORMATS` constant, the committed coverage
+matrix, the live syntax-binding evaluator plus its catalog totals, and
+`attestation.json`'s `content_sha256` — never retyped literals, so the output
+can't silently drift from the build (pinned by `test_info.py`). Example:
+
+```
+python3 -m einvoice info --json | python3 -m json.tool
+```
+
 **`--json` shape** — the exact field-by-field schema of the `--json` result
 (including the `syntax_bindings` array and its two count fields) is documented
 in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md). A machine-readable JSON Schema

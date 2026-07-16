@@ -33,11 +33,12 @@ fixture each, plus batch and receipt):
   * ``python3 -m einvoice validate-batch <dir> --json``;
   * ``python3 -m einvoice receipt <file>`` (always canonical JSON).
 
-The format registry is DERIVED from einvoice/report.py source (the same
-``fmt not in (...)`` extraction test_report_formats.py already uses — the
-registry is an inline tuple there, so source extraction IS the enumeration),
-never hand-typed, so a newly added format automatically lands in this gate
-unless it is explicitly excluded below with a reason:
+The format registry is DERIVED from einvoice/report.py (the named
+``REPORT_FORMATS`` constant the ``--format`` check enforces, imported here —
+with a source assertion that the check site really tests against it, the same
+guard test_report_formats.py uses), never hand-typed, so a newly added format
+automatically lands in this gate unless it is explicitly excluded below with
+a reason:
 
   * ``text``   — the HUMAN summary; free prose by design, nothing parses it.
   * ``html``   — a human-facing browser document, not a CI-parsed data format.
@@ -67,6 +68,7 @@ sys.path.insert(0, HERE)
 from einvoice.cli import (  # noqa: E402
     EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_PARSE,
 )
+from einvoice.report import REPORT_FORMATS  # noqa: E402
 
 REPORT_PY = os.path.join(HERE, "einvoice", "report.py")
 
@@ -89,11 +91,10 @@ EXCLUDED = {
 
 
 def _format_tuples():
-    """Every ``fmt not in (...)`` tuple in report.py source, as sets of names.
-
-    The registry in report.py is an inline tuple (there is no named constant),
-    so extracting it from source is the honest enumeration — identical to the
-    approach test_report_formats.py already gates the docs with.
+    """Every remaining inline ``fmt not in (...)`` tuple in report.py source,
+    as sets of names (today: only the batch-mode subset — the single-file
+    registry was hoisted to the named ``REPORT_FORMATS`` constant by
+    T-VHINTRO.1 and is read via :func:`registry` below).
     """
     with open(REPORT_PY, encoding="utf-8") as fh:
         src = fh.read()
@@ -103,8 +104,17 @@ def _format_tuples():
 
 
 def registry():
-    """The full single-file ``--format`` registry (the widest tuple)."""
-    return max(_format_tuples(), key=len)
+    """The full single-file ``--format`` registry: the NAMED module constant
+    ``einvoice.report.REPORT_FORMATS`` (hoisted by T-VHINTRO.1). The source
+    assertion pins that the ``--format`` check site still tests against that
+    constant — so the imported set provably IS what the CLI enforces, the
+    same drift guard the old source-scrape gave."""
+    with open(REPORT_PY, encoding="utf-8") as fh:
+        src = fh.read()
+    assert "fmt not in REPORT_FORMATS" in src, (
+        "report.py --format check no longer tests against REPORT_FORMATS — "
+        "registry() would drift from the enforced set")
+    return set(REPORT_FORMATS)
 
 
 def batch_registry():

@@ -116,6 +116,14 @@ EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_PARSE = 3
 
+#: Every ``--format`` name the report CLI accepts (including the default
+#: human ``text`` form). This is the single source of truth for the format
+#: vocabulary: the ``--format`` validation below iterates it, and
+#: ``einvoice info`` derives its ``formats`` field from it — so a new emitter
+#: only ever has to be registered here.
+REPORT_FORMATS = ("json", "junit", "sarif", "gitlab", "github", "azure",
+                  "html", "badge", "text")
+
 #: Documentation of the versioned report shape. Every key the report can carry
 #: is described here; REPORT-SCHEMA.md renders the same contract for humans, and
 #: ../report.schema.json is the MACHINE-CHECKABLE form (JSON Schema draft
@@ -2057,11 +2065,10 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
-    if fmt not in ("json", "junit", "sarif", "gitlab", "github", "azure",
-                   "html", "badge", "text"):
+    if fmt not in REPORT_FORMATS:
         sys.stderr.write(
-            "error: unknown format %r (choose from json, junit, sarif, gitlab, "
-            "github, azure, html, badge, text)\n%s\n" % (fmt, USAGE))
+            "error: unknown format %r (choose from %s)\n%s\n"
+            % (fmt, ", ".join(REPORT_FORMATS), USAGE))
         return EXIT_FAIL
 
     if profile not in PROFILES:

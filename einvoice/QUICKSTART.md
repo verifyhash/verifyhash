@@ -154,6 +154,28 @@ document is additionally pinned by a machine-checkable JSON Schema,
 by `test_report_schema.py`). This quickstart cross-links those rather than
 restating them.
 
+## 5. What does this build contain? `einvoice info`
+
+Before trusting a green result, ask the tool itself what it implements:
+
+```
+python3 -m einvoice info
+```
+
+prints stable `key: value` lines (exit `0`, read-only — nothing is validated):
+the package `version`, the two `profiles`, the report `formats`, the
+implemented business-rule count (`rule_count`) and the syntax-binding coverage
+headline, plus the `attestation_sha256` content hash from the committed
+`attestation.json`. Add `--json` for one machine-readable object:
+
+```
+python3 -m einvoice info --json | python3 -c "import json,sys; print(json.load(sys.stdin)['rule_count'])"
+```
+
+Every number is read or recomputed at runtime from the same committed
+artifacts the test suite asserts against — nothing in the output is a retyped
+literal, so `info` cannot drift from the build it ships in.
+
 ## Next steps
 
 - **Fix the invoice and re-run.** [`examples/README.md`](examples/README.md)

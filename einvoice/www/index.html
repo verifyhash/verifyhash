@@ -30,6 +30,10 @@ ul.rules code { font-size: .85em; }
 .onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
   margin: 1.5rem 0; }
 .onramp h2 { margin-top: 0; }
+.page-cta { border: 1px solid #d0d7de; border-radius: .6rem;
+  padding: .9rem 1.1rem; margin: 1.75rem 0 0; font-size: .95rem; }
+.page-cta p { margin: 0 0 .5rem; color: #57606a; }
+.page-cta ul.rules { gap: .45rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
 .title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
@@ -66,7 +70,8 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
   code { background: #161b22; }
   pre { background: #161b22; border-color: #30363d; }
-  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  .sev, .assert, footer, .onramp, .page-cta { border-color: #30363d; }
+  .page-cta p { color: #8b949e; }
   a { color: #4493f8; }
 }</style>
 </head>
@@ -94,7 +99,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p><a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/prove.py"><code>prove.py</code></a> re-runs the full differential harness over every leg plus the conformance corpus, asserts the divergence count against the official CEN / KoSIT Schematron, and prints the coverage headline recomputed live this run (it reads no number from a string literal, so a stale figure cannot slip through). It exits non-zero on any failure and takes a few minutes. The authoritative per-rule inventory those figures roll up from is the <a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md">coverage matrix (COVERAGE.md)</a>; consult it rather than any digit copied into prose here, which could drift.</p>
 <h2>Honest scope</h2>
 <p>Auditable, but not a legal guarantee. A green result means &ldquo;no implemented fatal rule fired&rdquo;, not &ldquo;certified legally conformant&rdquo;: 8 official <code>BR-CL-*</code> code-list checks are deferred (documented deliberate exclusions, not coverage), structural XSD validation is not performed, and there is no UBL <code>CreditNote</code> root. The exact implemented set and its limits are written up in the repository README, <code>COVERAGE.md</code> and <code>CORRECTNESS.md</code>.</p>
-<div class="onramp">
+<div class="onramp" id="onramp">
 <h2>Free on-ramp</h2>
 <p>New here? The fastest way in is the <a href="walkthrough/index.html">5-minute worked walkthrough</a>: it takes a broken XRechnung invoice, runs the checker, shows the real report it prints, and applies the two-element fix until the invoice passes.</p>
 <p>Everything is free and open source (Apache-2.0). Start here:</p>

@@ -30,6 +30,10 @@ ul.rules code { font-size: .85em; }
 .onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
   margin: 1.5rem 0; }
 .onramp h2 { margin-top: 0; }
+.page-cta { border: 1px solid #d0d7de; border-radius: .6rem;
+  padding: .9rem 1.1rem; margin: 1.75rem 0 0; font-size: .95rem; }
+.page-cta p { margin: 0 0 .5rem; color: #57606a; }
+.page-cta ul.rules { gap: .45rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
 .title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
@@ -66,7 +70,8 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
   code { background: #161b22; }
   pre { background: #161b22; border-color: #30363d; }
-  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  .sev, .assert, footer, .onramp, .page-cta { border-color: #30363d; }
+  .page-cta p { color: #8b949e; }
   a { color: #4493f8; }
 }</style>
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-CO-22 — Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.", "alternativeHeadline": "Jeder ZUSCHLAG AUF DOKUMENTENEBENE (BG-21) muss einen Grund für den Zuschlag auf Dokumentenebene (BT-104) oder einen Code für den Grund des Zuschlags auf Dokumentenebene (BT-105) oder beides enthalten.", "identifier": "BR-CO-22", "about": {"@type": "Thing", "name": "BR-CO-22"}, "description": "BR-CO-22 (EN 16931 / XRechnung rule): Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both. Fix: Add the required element at `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`: Each Document le", "articleBody": "Add the required element at `/ubl:Invoice/cac:AllowanceCharge[cbc:ChargeIndicator = true()]`: Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
@@ -76,7 +81,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../../index.html">einvoice</a> / <a href="../index.html">EN 16931 / XRechnung rule reference</a></p>
 <h1>BR-CO-22</h1>
 <p class="title">Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.</p>
-<p class="title-de" lang="de">Jeder ZUSCHLAG AUF DOKUMENTENEBENE (BG-21) muss einen Grund für den Zuschlag auf Dokumentenebene (BT-104) oder einen Code für den Grund des Zuschlags auf Dokumentenebene (BT-105) oder beides enthalten.</p>
+<p class="title-de" lang="de" id="de">Jeder ZUSCHLAG AUF DOKUMENTENEBENE (BG-21) muss einen Grund für den Zuschlag auf Dokumentenebene (BT-104) oder einen Code für den Grund des Zuschlags auf Dokumentenebene (BT-105) oder beides enthalten.</p>
 <p class="prov-de">Deutsche Fassung: Übersetzung der gleichen BT/BG-Semantik (translation — not the official assert).</p>
 <dl>
 <dt>Requires</dt><dd>Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.</dd>
@@ -88,6 +93,14 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <dt>Provenance source</dt><dd><code>en16931-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">Each Document level charge (BG-21) shall contain a Document level charge reason (BT-104) or a Document level charge reason code (BT-105), or both.</p></dd>
 </dl>
+<div class="page-cta">
+<p>Everything here is free and open source — pick up whatever helps, at your own pace:</p>
+<ul class="rules">
+<li><a href="../../licensing/index.html">Licensing</a> — Apache-2.0 for everyone, including closed-source embedding; an optional $29 / $290 commercial license adds support and rule-corpus update notices.</li>
+<li><a href="#de">German remediation (<code>--lang de</code>)</a> — the German fix for this rule is in the section above; the CLI surfaces it in place of the English message with <code>--lang de</code>.</li>
+<li><a href="../../index.html#onramp">Quickstart / free on-ramp</a> — the README, a copy-paste CI-gate recipe, and a 5-minute worked walkthrough.</li>
+</ul>
+</div>
 <footer>
 Rendered verbatim from <code>remediation_catalog.json</code> (single source of truth); regenerate with <code>gen_site.py</code>. This page is self-contained and opens offline with no network requests.
 </footer>

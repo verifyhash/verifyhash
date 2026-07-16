@@ -30,6 +30,10 @@ ul.rules code { font-size: .85em; }
 .onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
   margin: 1.5rem 0; }
 .onramp h2 { margin-top: 0; }
+.page-cta { border: 1px solid #d0d7de; border-radius: .6rem;
+  padding: .9rem 1.1rem; margin: 1.75rem 0 0; font-size: .95rem; }
+.page-cta p { margin: 0 0 .5rem; color: #57606a; }
+.page-cta ul.rules { gap: .45rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
 .title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
@@ -66,7 +70,8 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
   code { background: #161b22; }
   pre { background: #161b22; border-color: #30363d; }
-  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  .sev, .assert, footer, .onramp, .page-cta { border-color: #30363d; }
+  .page-cta p { color: #8b949e; }
   a { color: #4493f8; }
 }</style>
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-E-07 — In an Exempt (E) Document level charge the charge VAT rate (BT-103) shall be 0.", "alternativeHeadline": "Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „von der Umsatzsteuer befreit“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) 0 (null) betragen.", "identifier": "BR-E-07", "about": {"@type": "Thing", "name": "BR-E-07"}, "description": "BR-E-07 (EN 16931 / XRechnung rule): In an Exempt (E) Document level charge the charge VAT rate (BT-103) shall be 0. Fix: Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='E'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']", "articleBody": "Adjust the VAT breakdown at `cac:AllowanceCharge[cbc:ChargeIndicator=true()]/cac:TaxCategory[normalize-space(cbc:ID)='E'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"Exempt from VAT\", the Document level charge VAT rate (BT-103) shall be 0 (zero).", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
@@ -76,7 +81,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../../index.html">einvoice</a> / <a href="../index.html">EN 16931 / XRechnung rule reference</a></p>
 <h1>BR-E-07</h1>
 <p class="title">In an Exempt (E) Document level charge the charge VAT rate (BT-103) shall be 0.</p>
-<p class="title-de" lang="de">Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „von der Umsatzsteuer befreit“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) 0 (null) betragen.</p>
+<p class="title-de" lang="de" id="de">Bei einem Zuschlag auf Dokumentenebene (BG-21), bei dem der Code der Umsatzsteuerkategorie des Zuschlags auf Dokumentenebene (BT-102) „von der Umsatzsteuer befreit“ lautet, muss der Umsatzsteuersatz des Zuschlags auf Dokumentenebene (BT-103) 0 (null) betragen.</p>
 <p class="prov-de">Deutsche Fassung: Übersetzung der gleichen BT/BG-Semantik (translation — not the official assert).</p>
 <dl>
 <dt>Requires</dt><dd>In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is &quot;Exempt from VAT&quot;, the Document level charge VAT rate (BT-103) shall be 0 (zero).</dd>
@@ -88,6 +93,14 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <dt>Provenance source</dt><dd><code>en16931-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">In a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is &quot;Exempt from VAT&quot;, the Document level charge VAT rate (BT-103) shall be 0 (zero).</p></dd>
 </dl>
+<div class="page-cta">
+<p>Everything here is free and open source — pick up whatever helps, at your own pace:</p>
+<ul class="rules">
+<li><a href="../../licensing/index.html">Licensing</a> — Apache-2.0 for everyone, including closed-source embedding; an optional $29 / $290 commercial license adds support and rule-corpus update notices.</li>
+<li><a href="#de">German remediation (<code>--lang de</code>)</a> — the German fix for this rule is in the section above; the CLI surfaces it in place of the English message with <code>--lang de</code>.</li>
+<li><a href="../../index.html#onramp">Quickstart / free on-ramp</a> — the README, a copy-paste CI-gate recipe, and a 5-minute worked walkthrough.</li>
+</ul>
+</div>
 <footer>
 Rendered verbatim from <code>remediation_catalog.json</code> (single source of truth); regenerate with <code>gen_site.py</code>. This page is self-contained and opens offline with no network requests.
 </footer>

@@ -175,6 +175,10 @@ ul.rules code { font-size: .85em; }
 .onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
   margin: 1.5rem 0; }
 .onramp h2 { margin-top: 0; }
+.page-cta { border: 1px solid #d0d7de; border-radius: .6rem;
+  padding: .9rem 1.1rem; margin: 1.75rem 0 0; font-size: .95rem; }
+.page-cta p { margin: 0 0 .5rem; color: #57606a; }
+.page-cta ul.rules { gap: .45rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
 .title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
@@ -211,7 +215,8 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
   code { background: #161b22; }
   pre { background: #161b22; border-color: #30363d; }
-  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  .sev, .assert, footer, .onramp, .page-cta { border-color: #30363d; }
+  .page-cta p { color: #8b949e; }
   a { color: #4493f8; }
 }
 """.strip()
@@ -389,8 +394,10 @@ def render_page(rule_id, entry):
       '<a href="../index.html">EN 16931 / XRechnung rule reference</a></p>')
     w("<h1>%s</h1>" % _h(rule_id))
     w('<p class="title">%s</p>' % _h(title))
-    # German title (additive; English above stays canonical/primary).
-    w('<p class="title-de" lang="de">%s</p>' % _h(title_de))
+    # German title (additive; English above stays canonical/primary). Carries
+    # a stable id="de" so the page CTA can anchor at the in-page German
+    # remediation (title_de/fix_de) without inventing a separate German page.
+    w('<p class="title-de" lang="de" id="de">%s</p>' % _h(title_de))
     w('<p class="prov-de">%s</p>' % _h(de_note))
     w("<dl>")
     w("<dt>Requires</dt><dd>%s</dd>" % _h(requires))
@@ -403,6 +410,30 @@ def render_page(rule_id, entry):
     w("<dt>Provenance assert</dt><dd><p class=\"assert\">%s</p></dd>"
       % _h(prov_assert))
     w("</dl>")
+    # ---- Honest, non-pressuring page CTA (T-BUY.2) -------------------------
+    # Exactly one <div class="page-cta"> per page with three links, each to an
+    # already-generated target (relative, offline-resolvable, NO external
+    # http(s) resource — keeps test_site.py's no-external invariant intact):
+    #   (1) the licensing page (../../licensing/index.html);
+    #   (2) the in-page German remediation section (the lang="de" id="de" block
+    #       above), which the CLI surfaces via --lang de — NOT a new page;
+    #   (3) the landing page's free on-ramp (../../index.html#onramp).
+    # Self-serve only: no urgency, no fear, no "required for compliance" framing.
+    w('<div class="page-cta">')
+    w("<p>Everything here is free and open source — pick up whatever helps, at "
+      "your own pace:</p>")
+    w('<ul class="rules">')
+    w('<li><a href="../../licensing/index.html">Licensing</a> — Apache-2.0 for '
+      "everyone, including closed-source embedding; an optional $29 / $290 "
+      "commercial license adds support and rule-corpus update notices.</li>")
+    w('<li><a href="#de">German remediation (<code>--lang de</code>)</a> '
+      "— the German fix for this rule is in the section above; the CLI surfaces "
+      "it in place of the English message with <code>--lang de</code>.</li>")
+    w('<li><a href="../../index.html#onramp">Quickstart / free on-ramp</a> — '
+      "the README, a copy-paste CI-gate recipe, and a 5-minute worked "
+      "walkthrough.</li>")
+    w("</ul>")
+    w("</div>")
     w("<footer>")
     w("Rendered verbatim from <code>remediation_catalog.json</code> "
       "(single source of truth); regenerate with <code>gen_site.py</code>. "
@@ -587,7 +618,7 @@ def render_landing():
       "are written up in the repository README, <code>COVERAGE.md</code> and "
       "<code>CORRECTNESS.md</code>.</p>")
 
-    w('<div class="onramp">')
+    w('<div class="onramp" id="onramp">')
     w("<h2>Free on-ramp</h2>")
     w("<p>New here? The fastest way in is the "
       '<a href="walkthrough/index.html">5-minute worked walkthrough</a>: it '

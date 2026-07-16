@@ -30,6 +30,10 @@ ul.rules code { font-size: .85em; }
 .onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
   margin: 1.5rem 0; }
 .onramp h2 { margin-top: 0; }
+.page-cta { border: 1px solid #d0d7de; border-radius: .6rem;
+  padding: .9rem 1.1rem; margin: 1.75rem 0 0; font-size: .95rem; }
+.page-cta p { margin: 0 0 .5rem; color: #57606a; }
+.page-cta ul.rules { gap: .45rem; }
 h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.9rem; margin: 0; }
 .title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
@@ -66,7 +70,8 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
   code { background: #161b22; }
   pre { background: #161b22; border-color: #30363d; }
-  .sev, .assert, footer, .onramp { border-color: #30363d; }
+  .sev, .assert, footer, .onramp, .page-cta { border-color: #30363d; }
+  .page-cta p { color: #8b949e; }
   a { color: #4493f8; }
 }</style>
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "BR-AF-01 — IGIC (L) items and the VAT breakdown (BG-23) must agree.", "alternativeHeadline": "Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung in der UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mindestens einen Code der Umsatzsteuerkategorie (BT-118) mit dem Wert „IGIC (Kanarische Inseln)“ enthalten.", "identifier": "BR-AF-01", "about": {"@type": "Thing", "name": "BR-AF-01"}, "description": "BR-AF-01 (EN 16931 / XRechnung rule): IGIC (L) items and the VAT breakdown (BG-23) must agree. Fix: Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']` so that An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level", "articleBody": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='L']` so that An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is \"IGIC\" shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with \"IGIC\".", "inLanguage": ["en", "de"], "isPartOf": "einvoice EN 16931 / XRechnung rule reference"}</script>
@@ -76,7 +81,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../../index.html">einvoice</a> / <a href="../index.html">EN 16931 / XRechnung rule reference</a></p>
 <h1>BR-AF-01</h1>
 <p class="title">IGIC (L) items and the VAT breakdown (BG-23) must agree.</p>
-<p class="title-de" lang="de">Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung in der UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mindestens einen Code der Umsatzsteuerkategorie (BT-118) mit dem Wert „IGIC (Kanarische Inseln)“ enthalten.</p>
+<p class="title-de" lang="de" id="de">Enthält eine Rechnung eine Rechnungsposition (BG-25), einen Nachlass auf Dokumentenebene (BG-20) oder einen Zuschlag auf Dokumentenebene (BG-21), bei der bzw. dem der Code der Umsatzsteuerkategorie (BT-151, BT-95 oder BT-102) „IGIC (Kanarische Inseln)“ lautet, so muss die Rechnung in der UMSATZSTEUERAUFSCHLÜSSELUNG (BG-23) mindestens einen Code der Umsatzsteuerkategorie (BT-118) mit dem Wert „IGIC (Kanarische Inseln)“ enthalten.</p>
 <p class="prov-de">Deutsche Fassung: Übersetzung der gleichen BT/BG-Semantik (translation — not the official assert).</p>
 <dl>
 <dt>Requires</dt><dd>An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is &quot;IGIC&quot; shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with &quot;IGIC&quot;.</dd>
@@ -88,6 +93,14 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <dt>Provenance source</dt><dd><code>en16931-ubl</code></dd>
 <dt>Provenance assert</dt><dd><p class="assert">An Invoice that contains an Invoice line (BG-25), a Document level allowance (BG-20) or a Document level charge (BG-21) where the VAT category code (BT-151, BT-95 or BT-102) is &quot;IGIC&quot; shall contain in the VAT breakdown (BG-23) at least one VAT category code (BT-118) equal with &quot;IGIC&quot;.</p></dd>
 </dl>
+<div class="page-cta">
+<p>Everything here is free and open source — pick up whatever helps, at your own pace:</p>
+<ul class="rules">
+<li><a href="../../licensing/index.html">Licensing</a> — Apache-2.0 for everyone, including closed-source embedding; an optional $29 / $290 commercial license adds support and rule-corpus update notices.</li>
+<li><a href="#de">German remediation (<code>--lang de</code>)</a> — the German fix for this rule is in the section above; the CLI surfaces it in place of the English message with <code>--lang de</code>.</li>
+<li><a href="../../index.html#onramp">Quickstart / free on-ramp</a> — the README, a copy-paste CI-gate recipe, and a 5-minute worked walkthrough.</li>
+</ul>
+</div>
 <footer>
 Rendered verbatim from <code>remediation_catalog.json</code> (single source of truth); regenerate with <code>gen_site.py</code>. This page is self-contained and opens offline with no network requests.
 </footer>

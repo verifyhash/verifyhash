@@ -27,6 +27,10 @@ MEASURE-FIRST FINDINGS (what the sibling tests already pin, read 2026-07-16)
   a permuted ``build_batch_report_from_files`` input list — but that entry
   point's docstring explicitly defines input order as CALLER-owned contract,
   so there may be nothing left to bind.
+  [RESOLVED by T-VHIDEMPOT.2, 2026-07-16: ``TestBatchOrderIndependence``
+  below pins exactly that remaining leg — aggregate invariance under a
+  permuted input list — and records the verify-and-close finding that the
+  CLI/directory leg was already pinned by test_report_batch.py.]
 
 WHAT THIS FILE BINDS (the missing legs)
 ---------------------------------------
@@ -79,7 +83,9 @@ Offline, saxonche-free, runs in a few seconds.
 import io
 import json
 import os
+import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -93,6 +99,9 @@ from einvoice import report  # noqa: E402
 # Reuse the golden harness's CII engine invocation verbatim (no duplication;
 # it is the same parser_cii + ALL_RULES + evaluate_cii + report._record path).
 from test_golden_snapshot import _cii_report  # noqa: E402
+# Reuse the batch suite's fixture makers verbatim (same corpus base file, same
+# BR-DE-15 mutation) — no duplicated fixture logic for the batch leg below.
+from test_report_batch import BASE as BATCH_BASE, make_bad_invoice  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # LEG A fixtures: >=1 valid + >=1 invalid in EACH syntax. All are existing
@@ -339,6 +348,154 @@ class LegBOrderIndependence(unittest.TestCase):
                 outputs[0], outputs[1],
                 "report bytes for %s differ across hash seeds"
                 % os.path.basename(path))
+
+
+class TestBatchOrderIndependence(unittest.TestCase):
+    """T-VHIDEMPOT.2 — the LAST stability leg: the AGGREGATE outcome of
+    ``build_batch_report_from_files`` is invariant under any permutation of the
+    caller-supplied input list.
+
+    VERIFY-AND-CLOSE, CLI/DIRECTORY LEG (recorded here so the epic's
+    measurement trail is complete): the CLI batch path (``validate-batch`` /
+    ``python3 -m einvoice.report <dir-or-glob>``) normalizes input order
+    BEFORE aggregation — ``collect_invoice_files`` documents and returns a
+    ``sorted`` recursive walk, and the glob mode sorts likewise — and
+    ``test_report_batch.py`` already pins that leg:
+    ``test_mixed_folder_aggregate_shape_and_counts`` asserts
+    ``sources == sorted(sources)`` and ``SingleFileUnchanged`` asserts every
+    per-file report inside a batch is byte-identical to a standalone
+    ``build_report`` run. The CLI leg is therefore ALREADY pinned and is NOT
+    duplicated here. CLOSED as verified 2026-07-16.
+
+    THE ONE PREVIOUSLY-UNPINNED LEG, bound below: the library entry point
+    ``build_batch_report_from_files`` takes the file list AS GIVEN. Its
+    docstring defines presentation order as CALLER-owned ("``files`` must be
+    the final, deterministically ordered list of paths (the caller decides how
+    they were discovered)"), so the per-file ``files`` array MAY — and does —
+    follow input order; that is the documented contract, not a defect, and
+    this test asserts it explicitly. What must NEVER vary with input order is
+    the OUTCOME: aggregate exit code, every aggregate count/summary field, and
+    each file's full report content. Only the ORDER may differ between
+    permutations — never a verdict, count, or finding.
+
+    Method: one temp fixture set reusing test_report_batch.py's makers
+    (valid UBL + BR-DE-15-fatal UBL from ``BASE``/``make_bad_invoice``) plus a
+    parse-error file and a bare CII corpus file (the second syntax, as far as
+    the single-file ``.xml`` dispatch allows: it deterministically yields a
+    fatal report — the existing single-file contract, merely aggregated here).
+    The SAME four paths are fed through >=4 DISTINCT deterministic orderings
+    (sorted baseline + fixed-seed ``random.Random(160716).shuffle`` — zero
+    nondeterminism). Per-file comparison reuses the SingleFileUnchanged
+    approach: byte-identical compact JSON vs the standalone ``build_report``
+    of the same path, regardless of position. No sort/dedup is applied to any
+    finding list — nothing is hidden, dropped, or merged.
+    """
+
+    #: aggregate summary fields that must be identical across permutations
+    AGG_KEYS = ("schema", "report_version", "profile", "root", "file_count",
+                "fatal_count", "warning_count", "violation_count",
+                "failed_file_count")
+
+    def _make_fixture_files(self):
+        """Four files, four behaviors: PASS (UBL), FATAL (UBL, BR-DE-15),
+        PARSE ERROR (not-well-formed), and a bare CII invoice (fatal via the
+        single-file dispatch contract). Returns the sorted path list."""
+        tmp = tempfile.mkdtemp(prefix="vh-batchperm-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        good = os.path.join(tmp, "good.xml")
+        shutil.copyfile(BATCH_BASE, good)
+        bad = os.path.join(tmp, "bad.xml")
+        make_bad_invoice(bad)  # BR-DE-15 fatal, same mutation the batch suite pins
+        broken = os.path.join(tmp, "broken.xml")
+        with open(broken, "w", encoding="utf-8") as fh:
+            fh.write("<Invoice><unclosed>")  # error: not-well-formed
+        cii = os.path.join(tmp, "cii.xml")
+        shutil.copyfile(CII_VALID, cii)
+        return sorted([good, bad, broken, cii])
+
+    def _distinct_permutations(self, paths, want=4):
+        """Deterministic: the sorted baseline plus fixed-seed shuffles until
+        ``want`` DISTINCT orderings exist. Same seed -> same permutations on
+        every run; asserts they really differ so the test is not vacuous."""
+        rng = random.Random(160716)
+        perms = [list(paths)]
+        while len(perms) < want:
+            cand = list(paths)
+            rng.shuffle(cand)
+            if cand not in perms:
+                perms.append(cand)
+        for i, p in enumerate(perms):
+            self.assertEqual(sorted(p), sorted(paths))
+            for q in perms[i + 1:]:
+                self.assertNotEqual(p, q, "permutations must be distinct")
+        return perms
+
+    def test_aggregate_invariant_under_permuted_input_list(self):
+        """>=4 fixed-seed permutations of the SAME four-file list through
+        build_batch_report_from_files: identical aggregate exit code,
+        identical aggregate counts/summary fields, and every per-file report
+        byte-identical to its standalone build_report — position-independent.
+        The files-array ORDER follows the caller's input order (the documented
+        caller-owned contract), and ONLY the order differs."""
+        paths = self._make_fixture_files()
+        # Standalone single-file truth, computed once per path.
+        standalone_bytes = {
+            p: json.dumps(report.build_report(p, profile=PROFILE),
+                          separators=(",", ":")).encode("utf-8")
+            for p in paths}
+
+        outcomes = []
+        for perm in self._distinct_permutations(paths, want=4):
+            batch = report.build_batch_report_from_files(
+                list(perm), profile=PROFILE, root="<permuted>")
+            # Documented caller-owned contract: presentation follows input order.
+            self.assertEqual([r["source"] for r in batch["files"]], perm)
+            # Position-independence: each per-file report is byte-identical to
+            # its standalone run (SingleFileUnchanged approach), wherever it
+            # sits in the input list. Full report — every finding verbatim.
+            for r in batch["files"]:
+                self.assertEqual(
+                    json.dumps(r, separators=(",", ":")).encode("utf-8"),
+                    standalone_bytes[r["source"]],
+                    "per-file report for %s changed with input position"
+                    % os.path.basename(r["source"]))
+            aggregate = {k: batch[k] for k in self.AGG_KEYS}
+            outcomes.append((report.batch_exit_code(batch), aggregate))
+
+        first_code, first_agg = outcomes[0]
+        for code, agg in outcomes[1:]:
+            self.assertEqual(code, first_code,
+                             "aggregate exit code varied with input order")
+            self.assertEqual(agg, first_agg,
+                             "aggregate summary varied with input order")
+
+        # Non-vacuous expectations on the invariant outcome itself: the fatal
+        # UBL file forces EXIT_FAIL (fatal outranks the parse error), all four
+        # files are counted, and exactly the bad + broken + cii files fail.
+        self.assertEqual(first_code, report.EXIT_FAIL)
+        self.assertEqual(first_agg["file_count"], 4)
+        self.assertGreaterEqual(first_agg["fatal_count"], 2)
+        self.assertEqual(first_agg["failed_file_count"], 3)
+
+    def test_empty_and_single_element_lists_are_trivially_stable(self):
+        """Degenerate inputs: the empty list yields the honest empty batch
+        (note + exit 0), and a one-element list equals itself under its only
+        permutation — byte-identical aggregate JSON across repeated calls."""
+        empty = report.build_batch_report_from_files([], profile=PROFILE,
+                                                     root="<none>")
+        self.assertEqual(empty["file_count"], 0)
+        self.assertIn("no invoice files found", empty["note"])
+        self.assertEqual(report.batch_exit_code(empty), report.EXIT_OK)
+
+        paths = self._make_fixture_files()[:1]
+        one_a = report.build_batch_report_from_files(paths, profile=PROFILE,
+                                                     root="<one>")
+        one_b = report.build_batch_report_from_files(list(paths),
+                                                     profile=PROFILE,
+                                                     root="<one>")
+        self.assertEqual(
+            json.dumps(one_a, separators=(",", ":")),
+            json.dumps(one_b, separators=(",", ":")))
 
 
 if __name__ == "__main__":

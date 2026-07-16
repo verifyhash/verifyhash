@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Cryptographic provenance you can check yourself — offline, with zero trust in the producer. A single-file verifier you can reproduce from source.">
+<meta name="description" content="Paste one prompt into any coding agent: it reads llms.txt, downloads the standalone verifier, checks its published SHA-256, and adds a CI gate — with the trust boundary kept intact.">
 <meta name="theme-color" content="#0B0E13">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%225%22 fill=%22none%22 stroke=%22%235AD2E0%22 stroke-width=%222%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%221.6%22 fill=%22%235AD2E0%22/%3E%3C/svg%3E">
-<title>verifyhash — verify it yourself</title>
+<title>Wire up verifyhash with your AI coding agent (Claude Code, Cursor)</title>
 <style>
   :root{
     --ink:#0B0E13; --ink2:#0E131B; --panel:#151B25; --panel2:#1A222E;
@@ -303,101 +303,6 @@
 </header>
 
 <main id="top">
-  <!-- HERO -->
-  <div class="hero">
-    <div class="wrap">
-      <p class="eyebrow reveal d1">Offline · Zero-trust · Reproducible from source</p>
-      <h1 class="reveal d2">Don't trust us.<br><span class="off">Verify it yourself.</span></h1>
-      <p class="lede reveal d3">A sealed artifact carries its own proof. You re-derive it from the bytes on
-        <strong>your own machine</strong> — you don't take our word, and you don't call our server.
-        There isn't one.</p>
-      <div class="hero-cta reveal d3">
-        <a class="btn btn-primary" href="/verify-vh-standalone.html">Open the verifier — try the built-in sample</a>
-        <a class="btn btn-ghost" href="/guarantees.html">What it proves — and what it doesn't</a>
-        <a class="btn btn-ghost" href="/einvoice/">Validate an e-invoice — EN 16931 / XRechnung ↗</a>
-      </div>
-
-      <!-- LIVE INSTRUMENT -->
-      <div class="instrument reveal d4" id="verify">
-        <div class="inst-head">
-          <span class="dot" aria-hidden="true"></span> LIVE SHA-256 · COMPUTED IN THIS PAGE
-          <span class="net">requests sent: <b id="netcount">0</b></span>
-        </div>
-        <div class="inst-body">
-          <div class="inst-in">
-            <label for="payload">Payload — edit anything</label>
-            <textarea id="payload" spellcheck="false" aria-describedby="verdicthint">verifyhash: a proof you can check without trusting the producer.</textarea>
-            <p class="hint" id="verdicthint">This box is pinned to the digest of its original text. Change one
-              character and watch it flip to <kbd>REJECT</kbd> — that's the entire product, running with zero network.</p>
-          </div>
-          <div class="inst-out">
-            <div>
-              <div class="digest-label"><span>Recomputed digest</span><span>sha256</span></div>
-              <div class="digest" id="digest">…</div>
-            </div>
-            <div class="pinned"><b>pinned&nbsp;→</b> <span id="pinned">…</span></div>
-            <div class="verdict ok" id="verdict" role="status" aria-live="polite">
-              <span class="glyph" id="vglyph">✓</span><span id="vtext">ACCEPT — bytes match the pin</span>
-              <span class="exit" id="vexit">exit 0</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PROOF PROPERTIES -->
-  <section>
-    <div class="wrap">
-      <p class="eyebrow">Why it's trustworthy</p>
-      <div class="sec-head"><h2>The trust model is: there is no trust.</h2></div>
-      <div class="props">
-        <div class="prop"><div class="k">0</div><div class="t">Servers to trust</div><div class="d">Verification is a pure function of the bytes. Nothing is phoned home; there is no backend to compromise or subpoena.</div></div>
-        <div class="prop"><div class="k">0</div><div class="t">Accounts, keys, tracking</div><div class="d">Download one file and run it. No signup, no telemetry, no API key to check a proof.</div></div>
-        <div class="prop"><div class="k">0<small>/3</small></div><div class="t">A plain exit code</div><div class="d">Exit <code>0</code> accepted, <code>3</code> rejected. Drop it into CI to gate on the sealed file set — add <code>--exact-dir</code> when gating a build directory, so a file the seal never named is rejected too.</div></div>
-        <div class="prop"><div class="k">1:1</div><div class="t">Reproducible bundle</div><div class="d">Rebuild the verifier from source in memory and confirm it's byte-for-byte what we published.</div></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- START -->
-  <section id="start">
-    <div class="wrap">
-      <p class="eyebrow">Three ways to start</p>
-      <div class="sec-head"><h2>Check a sealed packet in under a minute.</h2>
-        <p>Someone sends you a <code>.vhevidence.json</code> packet and the address they signed with. You confirm the bytes are unaltered and the signer is who they claim — offline.</p></div>
-      <div class="starts">
-        <div class="card">
-          <div class="top"><span class="num">01</span><h3>In your browser</h3></div>
-          <p>No terminal. Open <a href="/verify-vh-standalone.html">one offline page</a>
-            (<a href="/verify-vh-standalone.html.sha256">SHA-256 sidecar</a>) — it has a built-in
-            sample packet, so you can watch ACCEPT, tamper one byte, and watch REJECT before you ever
-            drop a real packet in. The page contains no network API at all — the devtools Network tab
-            stays empty. For CI/production gating use the node standalone, card 02.</p>
-          <p style="margin:.6rem 1.1rem 1.1rem"><a class="btn btn-primary" href="/verify-vh-standalone.html">Open the verifier</a></p>
-        </div>
-        <div class="card">
-          <div class="top"><span class="num">02</span><h3>In the terminal</h3></div>
-          <p>One file, zero dependencies, Node core only. Built for CI gating.</p>
-          <pre><code>curl -O https://verifyhash.com/<span class="a">verify-vh-standalone.js</span>
-node verify-vh-standalone.js <span class="a">packet.json</span> --vendor 0x…</code></pre>
-          <p class="pubhash"><span>Published SHA-256:</span><code>0b8590a8eed961d937876f8b8a08ecf0a9681c7d08a539b7f51f0c2fdda0120a</code></p>
-        </div>
-        <div class="card">
-          <div class="top"><span class="num">03</span><h3>From npm</h3></div>
-          <p>Install the full <code>vh</code> toolchain — hash, anchor, seal, verify.</p>
-          <pre><code>npm i -g <span class="a">verifyhash</span>   <span class="c"># or, no install: npx --yes -p verifyhash vh</span>
-vh --help</code></pre>
-        </div>
-      </div>
-      <p class="repro-note"><b style="color:var(--fg);font-weight:600">Don't trust our checksum either.</b>
-        Rebuild the verifier from source in memory and confirm it's byte-for-byte what we published —
-        <code>node verifier/build-standalone.js --check</code>. The <a href="/build-provenance.json">build-provenance
-        manifest</a> maps every published hash back to the exact source modules it inlines, so you can root trust in code you read. <a href="https://github.com/verifyhash/verifyhash">Read the full source on GitHub →</a></p>
-    </div>
-  </section>
-
-  <!-- FOR AGENTS -->
   <section id="agents">
     <div class="wrap">
       <p class="eyebrow">For your coding assistant</p>
@@ -411,114 +316,6 @@ vh --help</code></pre>
 2. add a CI step that runs it on any *.vhevidence.json artifacts and fails the build on exit 3,
 3. show me how to seal our build outputs.
 Keep verifyhash's trust boundary intact — a seal proves tamper-evidence + signer-pin, not time or identity.</code></pre>
-      </div>
-    </div>
-  </section>
-
-  <!-- REPRODUCE + BOUNDARY -->
-  <section id="reproduce">
-    <div class="wrap">
-      <p class="eyebrow">The honest part</p>
-      <div class="sec-head"><h2>What a seal proves — and what it does not.</h2>
-        <p>Most tools oversell. A verifyhash seal makes exactly two guarantees, and we lead with the four it doesn't, so nobody builds on a promise we never made.</p></div>
-      <div class="boundary">
-        <div class="bcol proves">
-          <div class="h"><span>✓</span> It proves</div>
-          <ul>
-            <li><span class="m">→</span><span><b>Tamper-evidence.</b> Every byte re-derives to the same root, or the check fails and names the file that drifted.</span></li>
-            <li><span class="m">→</span><span><b>Signer-pin.</b> The packet was signed by the exact key whose address you pinned — a forged or swapped signature is rejected, never silently passed.</span></li>
-            <li><span class="m">→</span><span><b>Build integrity.</b> The published verifier is faithfully built from the source you can read.</span></li>
-          </ul>
-        </div>
-        <div class="bcol not">
-          <div class="h"><span>✗</span> It does NOT prove</div>
-          <ul>
-            <li><span class="m">→</span><span><b>A trusted timestamp.</b> "Sealed at time T" needs an external anchor — a seal alone can't date itself.</span></li>
-            <li><span class="m">→</span><span><b>That the logic is correct.</b> Reproducibility proves the build, not that the source does what you want. Read it; run the conformance corpus.</span></li>
-            <li><span class="m">→</span><span><b>Real-world identity.</b> A pinned address is a key, not a legal person.</span></li>
-            <li><span class="m">→</span><span><b>Anything about the producer's intent.</b> It attests bytes, not honesty of the URI they attached.</span></li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- COMPARE -->
-  <section id="compare">
-    <div class="wrap">
-      <p class="eyebrow">The head-on question</p>
-      <div class="sec-head"><h2>Why not sha256sum + a signed git tag — or cosign + Rekor?</h2>
-        <p>Because for many needs those free tools are the right answer. Their strengths are real, and
-          we state them as strengths — then say exactly what verifyhash adds, and what it does not do.</p></div>
-      <div class="cmp-scroll">
-        <table class="cmp">
-          <tbody>
-            <tr>
-              <th>What <code>sha256sum</code>, a signed git tag, or <code>cosign</code> + Rekor already give you</th>
-              <td>Real strengths: SHA-256 is a <b>FIPS 180-4</b> hash; git + GPG and Sigstore are <b>large, mature ecosystems</b> your counterparty may already run; and <b>Rekor's public transparency log</b> records an <b>inclusion timestamp</b> — an existence bound you get out of the box. If these cover your need, use them.</td>
-            </tr>
-            <tr>
-              <th>What verifyhash adds</th>
-              <td><b>One offline, single-file verifier</b> your counterparty runs with <b>no toolchain, no account, no CA</b> — no git/GPG install, no Sigstore account or OIDC identity, no certificate authority to trust; one file plus Node (or the browser page), run on the bytes in hand. Plus <b>signer-pin + per-file tamper localization</b> — a REJECT names the exact file that changed, not just a digest mismatch — and an <b>optional permissionless existence anchor</b> (the ownerless on-chain registry below: no account there either, only gas).</td>
-            </tr>
-            <tr>
-              <th>What verifyhash does NOT do</th>
-              <td><b>No trusted timestamp without the anchor</b> — a seal alone never proves "sealed at time T"; Rekor gives an inclusion timestamp by default, while here that property arrives only once you anchor. And <b>keccak256 is not a FIPS-approved hash</b> — the Merkle cores here are keccak256, so a compliance regime that requires FIPS-approved digests end-to-end is better served by the tools above today.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ON-CHAIN -->
-  <section id="onchain">
-    <div class="wrap">
-      <p class="eyebrow">Permissionless anchoring</p>
-      <div class="sec-head"><h2>An ownerless registry, live on Polygon.</h2>
-        <p>Anchor a file or repository hash on-chain; anyone can later prove content is byte-for-byte what was anchored — trusting no server, admin, or key.</p></div>
-      <div class="chain">
-        <div class="meta">
-          <div class="badge">Polygon mainnet · chain 137</div>
-          <h3>ContributionRegistry</h3>
-          <p>No admin. No pause. No upgrade path. It never holds funds. Each hash anchors once, first-writer-wins, and can never be altered or deleted. That immutability is the product.</p>
-        </div>
-        <div class="addr">
-          <a href="https://polygonscan.com/address/0x77d8eF881D5aeEda64788968D13f9146fE1A609B" target="_blank" rel="noopener">0x77d8eF881D5aeEda64788968D13f9146fE1A609B</a>
-          <div class="cap"><span>Pin this out-of-band</span><span>view on polygonscan →</span></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- PRICING -->
-  <section id="pricing">
-    <div class="wrap">
-      <p class="eyebrow">Pricing</p>
-      <div class="sec-head"><h2>Verifying is free. Forever.</h2>
-        <p>Checking proofs never costs anything — that's what keeps the trust story true. You pay only when you want verifyhash to <em>be your trust anchor</em> or run signing for you at scale.</p></div>
-      <div class="tiers">
-        <div class="tier">
-          <span class="tag">Free</span>
-          <div class="price">$0</div>
-          <ul>
-            <li><span class="m">✓</span> Verify any sealed packet, offline</li>
-            <li><span class="m">✓</span> The browser + Node standalone verifiers</li>
-            <li><span class="m">✓</span> Produce your own unsigned seals</li>
-            <li><span class="m">✓</span> Anchor & read the on-chain registry</li>
-          </ul>
-        </div>
-        <div class="tier paid">
-          <span class="tag">Producer / trust anchor</span>
-          <div class="price">Let's talk</div>
-          <ul>
-            <li><span class="m">→</span> Be verifyhash-anchored — your customers pin one identity; seals verify as <em>you</em></li>
-            <li><span class="m">→</span> Managed signing &amp; key custody done right (or bring your own — we never hold it)</li>
-            <li><span class="m">→</span> Batch, policy-gated &amp; compliance-pack evidence at scale</li>
-            <li><span class="m">→</span> Priority support + integration help</li>
-          </ul>
-          <a class="btn btn-primary" href="mailto:hello@verifyhash.com?subject=verifyhash%20%E2%80%94%20producer%20interest" style="margin-top:.6rem;align-self:flex-start">Talk to us →</a>
-        </div>
       </div>
     </div>
   </section>
@@ -541,80 +338,15 @@ Keep verifyhash's trust boundary intact — a seal proves tamper-evidence + sign
 
 <script>
 (function(){
-  "use strict";
-  // Compact, dependency-free SHA-256 (UTF-8) — a fallback so the demo works even where crypto.subtle is unavailable.
-  function sha256utf8(str){
-    function rr(v,a){return (v>>>a)|(v<<(32-a));}
-    var bytes=unescape(encodeURIComponent(str));
-    var h=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
-    var k=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
-    var l=bytes.length, bl=l*8, i;
-    var w=[];
-    for(i=0;i<l;i++){ w[i>>2]|=bytes.charCodeAt(i)<<((3-(i%4))*8); }
-    w[l>>2]|=0x80<<((3-(l%4))*8);
-    w[((l+8)>>6)*16+15]=bl;
-    for(var jj=0;jj<w.length;jj+=16){
-      var a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7],t;
-      var s=[];
-      for(i=0;i<64;i++){
-        if(i<16){ s[i]=w[jj+i]|0; }
-        else{
-          var x=s[i-15],y=s[i-2];
-          s[i]=(s[i-16]+(rr(x,7)^rr(x,18)^(x>>>3))+s[i-7]+(rr(y,17)^rr(y,19)^(y>>>10)))|0;
-        }
-        var S1=rr(e,6)^rr(e,11)^rr(e,25);
-        var ch=(e&f)^((~e)&g);
-        var t1=(hh+S1+ch+k[i]+s[i])|0;
-        var S0=rr(a,2)^rr(a,13)^rr(a,22);
-        var maj=(a&b)^(a&c)^(b&c);
-        var t2=(S0+maj)|0;
-        hh=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0;
-      }
-      h[0]=(h[0]+a)|0;h[1]=(h[1]+b)|0;h[2]=(h[2]+c)|0;h[3]=(h[3]+d)|0;
-      h[4]=(h[4]+e)|0;h[5]=(h[5]+f)|0;h[6]=(h[6]+g)|0;h[7]=(h[7]+hh)|0;
-    }
-    var out="";
-    for(i=0;i<8;i++){ out+=("00000000"+(h[i]>>>0).toString(16)).slice(-8); }
-    return out;
-  }
-  async function hashHex(str){
-    try{
-      if(window.crypto&&crypto.subtle&&crypto.subtle.digest){
-        var buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(str));
-        return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
-      }
-    }catch(e){}
-    return sha256utf8(str);
-  }
-
-  var el=document.getElementById("payload");
-  var dEl=document.getElementById("digest");
-  var pEl=document.getElementById("pinned");
-  var vEl=document.getElementById("verdict");
-  var vGlyph=document.getElementById("vglyph");
-  var vText=document.getElementById("vtext");
-  var vExit=document.getElementById("vexit");
-  var pinned=null;
-
-  function shorten(hex){ return hex.slice(0,32)+"…"+hex.slice(-8); }
-
-  async function render(){
-    var cur=await hashHex(el.value);
-    // highlight the leading run that still matches the pin
-    var match=0; if(pinned){ while(match<cur.length&&cur[match]===pinned[match]) match++; }
-    dEl.innerHTML='<span class="lead">'+cur.slice(0,match)+'</span>'+cur.slice(match);
-    var ok=(cur===pinned);
-    vEl.className="verdict "+(ok?"ok":"bad");
-    vGlyph.textContent=ok?"✓":"✗";
-    vText.textContent=ok?"ACCEPT — bytes match the pin":"REJECT — bytes do not match the pin";
-    vExit.textContent=ok?"exit 0":"exit 3";
-  }
-  (async function(){
-    pinned=await hashHex(el.value);
-    pEl.textContent=shorten(pinned);
-    await render();
-    el.addEventListener("input",render);
-  })();
+  var t=document.getElementById("navtoggle"),n=document.getElementById("primary-nav");
+  if(!t||!n)return;
+  t.addEventListener("click",function(){
+    t.setAttribute("aria-expanded",t.getAttribute("aria-expanded")==="true"?"false":"true");
+  });
+  // collapse after picking a destination
+  n.addEventListener("click",function(e){
+    if(e.target.closest("a")) t.setAttribute("aria-expanded","false");
+  });
 })();
 </script>
 <script>
@@ -626,19 +358,6 @@ Keep verifyhash's trust boundary intact — a seal proves tamper-evidence + sign
     var done=function(){b.textContent="Copied ✓";setTimeout(function(){b.textContent="Copy";},1600);};
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,done);}
     else{try{var ta=document.createElement("textarea");ta.value=t;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);done();}catch(e){}}
-  });
-})();
-</script>
-<script>
-(function(){
-  var t=document.getElementById("navtoggle"),n=document.getElementById("primary-nav");
-  if(!t||!n)return;
-  t.addEventListener("click",function(){
-    t.setAttribute("aria-expanded",t.getAttribute("aria-expanded")==="true"?"false":"true");
-  });
-  // collapse after picking a destination
-  n.addEventListener("click",function(e){
-    if(e.target.closest("a")) t.setAttribute("aria-expanded","false");
   });
 })();
 </script>

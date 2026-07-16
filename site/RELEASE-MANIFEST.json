@@ -1,8 +1,8 @@
 {
   "schema": "vh-site-release-manifest@1",
   "publishSet": "site/publish-set.json",
-  "fileCount": 33,
-  "totalBytes": 1155466,
+  "fileCount": 39,
+  "totalBytes": 1293963,
   "files": [
     {
       "path": "LICENSE",
@@ -17,10 +17,22 @@
       "sha256": "f2bf597ab5de1973890e588d4c8c1f3e2a79720d7a82723ca68d30dc284a4e1b"
     },
     {
+      "path": "agents.html",
+      "source": "site/agents.html",
+      "bytes": 22398,
+      "sha256": "6a398393113f035c78dc9fa3cfc834a4a0937c11c9a7b886be6ff412b58c85d9"
+    },
+    {
       "path": "build-provenance.json",
       "source": "verifier/dist/BUILD-PROVENANCE.json",
       "bytes": 9676,
       "sha256": "e6d3e750e3541a6956c6ff9da523d154831fae5d12a438cd8ab5679d91d96b6a"
+    },
+    {
+      "path": "compare.html",
+      "source": "site/compare.html",
+      "bytes": 22832,
+      "sha256": "aba36f2f35eca46457865e465d3dbee1afae7e99a5cc4b359688ebf2ae54af57"
     },
     {
       "path": "docs/ADOPT.md",
@@ -139,8 +151,8 @@
     {
       "path": "docs/overview.md",
       "source": "README.md",
-      "bytes": 75149,
-      "sha256": "2990c9f6cb50860eec7e23e35c0facc0cb26100c294696b2aca32510397b1743"
+      "bytes": 76249,
+      "sha256": "99535b0c4a9fb758a7fca3e219211b8ea259d5831cc111426d7f7bcaafa615b6"
     },
     {
       "path": "docs/pilot-README.md",
@@ -155,16 +167,34 @@
       "sha256": "fa48e35fab766bdf2688aea218ee46d47f8f82a89d37181daa545dbfd986d6be"
     },
     {
+      "path": "guarantees.html",
+      "source": "site/guarantees.html",
+      "bytes": 22552,
+      "sha256": "381574efe8fbe837c63955697a9a67d92a19dc3c8f20adf958cb8ea9ed59c8a1"
+    },
+    {
       "path": "index.html",
       "source": "site/index.html",
-      "bytes": 37047,
-      "sha256": "554969da145d4b032984b916c363e7f29713386e943ab7e09484adf6c691da31"
+      "bytes": 39306,
+      "sha256": "4240d74f6ac1926c363b03c1473ad39f3d09128f5cebff15214b57425b4d9ac0"
     },
     {
       "path": "llms.txt",
       "source": "site/llms.txt",
       "bytes": 3081,
       "sha256": "9e7e982bca72058f3e3a6b878c1387ca14793fdf9a0fbb9513b602e6c622e89f"
+    },
+    {
+      "path": "onchain.html",
+      "source": "site/onchain.html",
+      "bytes": 21714,
+      "sha256": "f80a83f021170c89e7ebd7edaf6b6ace8cc5b58a71b2a05dc442a8ec0b505ecb"
+    },
+    {
+      "path": "pricing.html",
+      "source": "site/pricing.html",
+      "bytes": 22359,
+      "sha256": "dece0f4ab4f005000e1521c3186ee0d5a7c1cdcea1f59b7bba4d797f18801657"
     },
     {
       "path": "seal-vh-standalone.js",
@@ -177,6 +207,12 @@
       "source": "verifier/dist/seal-vh-standalone.js.sha256",
       "bytes": 88,
       "sha256": "5a01e37b05ea795f05c6d456a267fc29c8aa394e578380ee32b5ec769f851635"
+    },
+    {
+      "path": "start.html",
+      "source": "site/start.html",
+      "bytes": 23283,
+      "sha256": "13f33199884f1f4420113abe792562c73f3e5357b813f4b8aa56e2cdab48469e"
     },
     {
       "path": "verify-vh-standalone.html",

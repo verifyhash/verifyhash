@@ -60,7 +60,9 @@ function walk(dir, prefix, out) {
 const EXPECTED_PUBLISHED = [
   "LICENSE",
   "NOTICE",
+  "agents.html",
   "build-provenance.json",
+  "compare.html",
   "docs/ADOPT.md",
   "docs/CONFORMANCE.md",
   "docs/DATALEDGER.md",
@@ -83,10 +85,14 @@ const EXPECTED_PUBLISHED = [
   "docs/overview.md",
   "docs/pilot-README.md",
   "docs/verifier-README.md",
+  "guarantees.html",
   "index.html",
   "llms.txt",
+  "onchain.html",
+  "pricing.html",
   "seal-vh-standalone.js",
   "seal-vh-standalone.js.sha256",
+  "start.html",
   "verify-vh-standalone.html",
   "verify-vh-standalone.html.sha256",
   "verify-vh-standalone.js",
@@ -260,7 +266,7 @@ describe("T-67.1: scripts/site-release.js — deterministic site-release assembl
       sr.writeAssembly(outDir, sr.assemble(REPO));
     });
 
-    it("the publish set is EXACTLY the expected 33 published paths", function () {
+    it("the publish set is EXACTLY the expected 39 published paths", function () {
       const set = sr.loadPublishSet(REPO);
       expect(Object.keys(set.publish).sort()).to.deep.equal(EXPECTED_PUBLISHED);
     });

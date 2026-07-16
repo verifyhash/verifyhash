@@ -16,7 +16,9 @@ PDF containers via `einvoice.report`).
   ERP or billing system can import it in-process instead of shelling out to
   a validator service — copying the bare `einvoice/` package directory into
   your tree is a supported (and tested) install method.
-- **Self-hostable.** Everything runs offline. The rule corpus and test
+- **Self-hostable.** Runs fully offline — zero network egress, enforced at
+  the socket layer by `test_network_egress.py` (see
+  [`SECURITY.md`](SECURITY.md)). The rule corpus and test
   fixtures are vendored in-repo (`corpus/`), so the thing you validate against
   is auditable and pinned — no dependency on a third-party validation API. The
   supply-chain posture (zero runtime deps, offline, vendored corpus) is

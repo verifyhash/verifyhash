@@ -162,6 +162,26 @@ change **no** legitimate output (again confirmed by `differential.py` and
 `test_golden_snapshot.py`). No benchmark numbers are quoted here; the wall-clock
 assertions live in the test.
 
+### Fuzz totality — measured
+
+Beyond the targeted attack classes above, totality over *arbitrary* garbage is
+measured, not assumed. A fixed-seed (`0xF0221A7`) fuzz corpus of **240 mutated
+blobs** — derived at test time from a committed golden invoice across **6
+mutation strategies** (byte flip, byte delete, byte insert, truncate,
+range-duplicate, tag corruption) — is driven through `report.build_report`
+in-process, and a deterministic **40-blob subset** through the real `validate`
+subprocess boundary with the exit code pinned to `{0, 1, 2, 3}`, no traceback
+on stdout/stderr, and a per-case timeout so a hang fails the suite instead of
+stalling it. All **9 registered report formats** are then emitted over all 240
+fuzz Results with per-format well-formedness checks. Measured result: **zero**
+crashes, hangs, or emitter throws were found, and no source fix was required —
+the shipped pipeline was already total over this corpus. That guarantee is
+enforced as a permanent regression gate by
+[`test_fuzz_input.py`](test_fuzz_input.py) and
+[`test_fuzz_report_formats.py`](test_fuzz_report_formats.py); no fuzz fixtures
+are committed because there is no offending input to pin. Honesty note: this
+covers the fixed-seed corpus those tests generate, not all possible inputs.
+
 ## Deterministic, auditable output
 
 Given the same invoice and profile, the validator produces the same result;

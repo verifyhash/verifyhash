@@ -22,6 +22,8 @@ ever drifts.
 | `2` | Usage error — the tool was invoked wrong and did no validation. Bad or missing arguments, an unknown subcommand, an unknown `--profile` / `--lang` value, a `--profile`/`--lang` flag with no value, unexpected extra arguments, or a named input file that does not exist on disk. | `validate`/`validate-batch`/`receipt` with malformed argv or a missing file. | stderr: `error: <what>` and/or the `usage:` banner. |
 | `3` | Not-well-formed input — the XML could not be parsed (truncated document, syntax error, or an input rejected by the hardened DTD/XXE parser). `validate` only. `receipt` folds this case into a FAIL receipt (exit `1`); `validate-batch` returns `3` only when some file *only* errored (not-well-formed / unsupported container) and no file had a fatal. | `validate` on malformed XML; `validate-batch` error-only, no-fatal. | stderr: `S-WF: input is not well-formed XML: <parser detail>`. |
 | `141` | Broken pipe — the stdout **consumer closed early** (`… \| head`, a dying `jq`, a closed CI log pipe) while the CLI was still writing its report. `141 = 128 + SIGPIPE(13)`, the standard shell convention for a pipe-killed process. The CLI exits **quietly**: no traceback, nothing further written to stdout. The verdict for that run is simply unavailable — the reader walked away mid-report; codes `0/1/2/3` are untouched. See the section below. | Any subcommand whose stdout write raises `BrokenPipeError` — in practice a large `validate-batch` report (text or `--json`) piped into a reader that exits before consuming it all. | stderr: *(nothing — deliberately silent; a broken pipe is the caller's plumbing, not a validation outcome)*. |
+| `130` | Interrupted — **SIGINT** (Ctrl-C) aborted the run mid-validation. `130 = 128 + SIGINT(2)`, the standard shell convention for an interrupted process. The CLI exits **quietly**: no Python traceback, nothing further written, and the `validate -` stdin temp file is removed on the way out. The verdict for the aborted run is simply unavailable; codes `0/1/2/3/141` are untouched. See the interrupt section below. | Any subcommand hit by SIGINT / Ctrl-C while running (`validate`, `validate-batch`, `receipt`). | stderr: *(nothing — an interrupt is the operator's action, not a validation outcome)*. |
+| `143` | Terminated — **SIGTERM** (e.g. a CI timeout kill, `kill <pid>`, container stop) aborted the run. `143 = 128 + SIGTERM(15)`, the standard shell convention for a terminated process. The entry point converts the signal into an exception so the same temp-file cleanup runs, then exits **quietly** with this code — no traceback, no stray `einvoice-stdin-*` file. See the interrupt section below. | Any subcommand hit by SIGTERM while running. | stderr: *(nothing)*. |
 
 ## Code `141` — broken pipe / early-closed consumer (additive)
 
@@ -58,6 +60,51 @@ What `141` does and does not tell you:
 asserting exit `141` with zero traceback bytes on stderr — plus a
 no-early-close control on the same corpus proving the reports and verdicts
 are unchanged.
+
+## Codes `130` / `143` — clean interrupt / termination abort (additive)
+
+These two rows were added after **measuring** the CLI's behavior under
+mid-run signals (a `validate-batch` over ~500 files and a `validate -` fed a
+multi-second invoice through stdin, each signaled while genuinely
+mid-validation):
+
+- **SIGINT before the fix**: Python's unhandled `KeyboardInterrupt` dumped a
+  raw multi-frame traceback (runpy + cli frames) on stderr before the process
+  died — crash-looking output for a routine operator Ctrl-C, on every code
+  path. The stdin temp file *was* cleaned (the exception propagates through
+  the cleanup `finally`), so the only defect was the traceback.
+- **SIGTERM before the fix**: the default disposition kills the process with
+  **no `finally` cleanup at all**. Measured consequence: a SIGTERM landing
+  while `validate -` was validating its staged stdin bytes left a stray
+  `einvoice-stdin-*.xml` file in the temp directory. (The batch path leaked
+  nothing — it stages no temp file — but died silently with the raw signal.)
+
+The fix mirrors the `141` broken-pipe pattern and is deliberately minimal —
+two arms at the single CLI entry point, no signal logic anywhere else:
+
+- `KeyboardInterrupt` is caught at the entry point and becomes a **quiet**
+  exit `130` (`EXIT_INT` in `einvoice/cli.py`) — no traceback, nothing
+  further written.
+- A SIGTERM handler (installed at entry, previous disposition restored on the
+  way out) converts the signal into an internal exception, so every cleanup
+  `finally` on the stack runs — the stdin temp file is unlinked — and the
+  exit is a **quiet** `143` (`EXIT_TERM`).
+
+What `130`/`143` do and do not tell you:
+
+- They mean **the run was aborted from outside** — operator Ctrl-C or a
+  supervisor's TERM. No verdict was delivered for that run; treat it as
+  "unknown", never as PASS or FAIL.
+- They never mask a real outcome: a run that completes still returns
+  `0/1/2/3` exactly as documented, byte-identical reports included.
+- A signal that lands in the first milliseconds of interpreter startup
+  (before the CLI entry point is reached) can still surface Python's default
+  behavior; the codes above cover a signal arriving any time the tool is
+  actually validating.
+
+`test_interrupt.py` pins both rows by driving the real CLI mid-run (batch
+and stdin paths), sending each signal, and asserting the documented code,
+zero traceback bytes on stderr, and zero stray `einvoice-stdin-*` files.
 
 ## Opt-in `--fail-on <level>` severity threshold (non-breaking)
 

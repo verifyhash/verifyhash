@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from einvoice.cli import (  # noqa: E402
-    main, EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_PARSE,
+    main, EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_PARSE, EXIT_INT, EXIT_TERM,
 )
 
 # Reused verbatim from test_cli.py — no new fixtures introduced.
@@ -139,6 +139,34 @@ class ExitCode3(unittest.TestCase):
                 self.assertIn("S-WF: input is not well-formed XML", cap.err)
         finally:
             os.unlink(tmp)
+
+
+class SignalAbortCodes(unittest.TestCase):
+    """130/143 = clean SIGINT/SIGTERM abort (T-VHPIPE.3, additive rows).
+
+    The LIVE mid-run signal behavior — documented code, quiet stderr, no
+    stray einvoice-stdin-* temp file — is driven end-to-end by
+    ``test_interrupt.py``; here the contract table itself is pinned: the
+    symbolic constants equal the 128+signal shell conventions, are distinct
+    from every pre-existing code, and are documented in EXIT-CODES.md."""
+
+    def test_constants_are_the_shell_conventions(self):
+        self.assertEqual(EXIT_INT, 130)    # 128 + SIGINT(2)
+        self.assertEqual(EXIT_TERM, 143)   # 128 + SIGTERM(15)
+
+    def test_codes_are_additive_never_repurposed(self):
+        existing = {EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_PARSE, 141}
+        self.assertNotIn(EXIT_INT, existing)
+        self.assertNotIn(EXIT_TERM, existing)
+
+    def test_documented_in_exit_codes_md(self):
+        with open(os.path.join(HERE, "EXIT-CODES.md"), encoding="utf-8") as fh:
+            doc = fh.read()
+        self.assertIn("`130`", doc)
+        self.assertIn("`143`", doc)
+        low = doc.lower()
+        self.assertIn("sigint", low)
+        self.assertIn("sigterm", low)
 
 
 class SubprocessSpotCheck(unittest.TestCase):

@@ -100,6 +100,16 @@ Exit codes (stable contract):
        no traceback and writes nothing further; the verdict for that run is
        simply unavailable (the reader walked away). Purely additive — codes
        0/1/2/3 are untouched.
+  130  interrupted — SIGINT / Ctrl-C aborted the run mid-validation;
+       128+SIGINT, the shell convention. Quiet exit: no traceback, nothing
+       further written, and the ``validate -`` stdin temp file is cleaned up
+       (KeyboardInterrupt propagates through the cleanup ``finally`` before
+       being caught at the entry point). Purely additive.
+  143  terminated — SIGTERM aborted the run; 128+SIGTERM, the shell
+       convention. The entry point converts the signal into an exception so
+       the SAME temp-file cleanup runs (default signal death skips ``finally``
+       and measurably leaked a stray ``einvoice-stdin-*.xml``), then exits
+       quietly with this code. Purely additive.
 
 Default output on failure: the FIRST fatal violated rule id, a human message
 and the offending element. With --json, the full result (all violations,
@@ -111,6 +121,7 @@ Standard library only.
 import glob
 import json
 import os
+import signal
 import sys
 import tempfile
 
@@ -145,6 +156,23 @@ EXIT_PARSE = 3
 #: instead of dumping a traceback. Purely additive — no existing code (0/1/2/3)
 #: is ever repurposed; see EXIT-CODES.md.
 EXIT_PIPE = 141
+#: 128 + SIGINT(2) — the shell convention for "interrupted" (Ctrl-C / SIGINT).
+#: MEASURED defect this fixes: an unhandled KeyboardInterrupt mid-run dumped a
+#: raw multi-frame traceback on stderr (runpy + cli frames) before the process
+#: died — crash-looking output for a routine operator abort. Now :func:`main`
+#: catches KeyboardInterrupt exactly like BrokenPipeError and returns this
+#: code QUIETLY. The interrupt propagates as a normal exception first, so the
+#: ``finally`` in :func:`_main` still unlinks the ``validate -`` stdin temp
+#: file. Purely additive — codes 0/1/2/3/141 are untouched; see EXIT-CODES.md.
+EXIT_INT = 130
+#: 128 + SIGTERM(15) — the shell convention for "terminated". MEASURED defect
+#: this fixes: default SIGTERM disposition kills the process instantly, so NO
+#: ``finally`` runs — a SIGTERM landing while ``validate -`` is validating its
+#: staged stdin bytes left a stray ``einvoice-stdin-*.xml`` in the temp dir
+#: (confirmed live before this handler existed). :func:`main` now converts
+#: SIGTERM into the :class:`_Terminated` exception so the same cleanup path
+#: runs, then returns this code quietly. Purely additive; see EXIT-CODES.md.
+EXIT_TERM = 143
 
 #: Accepted ``--fail-on`` values (the codebase severity vocabulary). The
 #: DEFAULT is ``fatal`` — i.e. omitting the flag is byte-identical to today.
@@ -255,9 +283,12 @@ def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
 def _main(argv=None):
     """Run the CLI. Returns the process exit code (see module docstring).
 
-    This is the real dispatcher; :func:`main` wraps it ONLY to convert a
-    BrokenPipeError (stdout consumer closed early, e.g. ``... | head``) into
-    the quiet, documented ``EXIT_PIPE`` (141) exit. Nothing else is added.
+    This is the real dispatcher; :func:`main` wraps it ONLY to convert three
+    abort conditions into quiet, documented exits: BrokenPipeError (stdout
+    consumer closed early, e.g. ``... | head``) -> ``EXIT_PIPE`` (141),
+    KeyboardInterrupt (SIGINT / Ctrl-C) -> ``EXIT_INT`` (130), and SIGTERM
+    (via the handler main installs) -> ``EXIT_TERM`` (143). Nothing else is
+    added.
     """
     if argv is None:
         argv = sys.argv[1:]
@@ -470,8 +501,23 @@ def _main(argv=None):
                 pass
 
 
+class _Terminated(Exception):
+    """SIGTERM, converted to a regular exception by the handler :func:`main`
+    installs. Raising (instead of dying at the default disposition) lets every
+    ``try/finally`` on the stack run — most importantly the ``validate -``
+    stdin temp-file unlink in :func:`_main` — before :func:`main` catches it
+    and returns the quiet, documented ``EXIT_TERM`` (143)."""
+
+
+def _raise_terminated(signum, frame):
+    """SIGTERM handler: surface the signal as :class:`_Terminated` at the
+    current execution point so cleanup ``finally`` blocks run."""
+    raise _Terminated()
+
+
 def main(argv=None):
-    """CLI entry point: :func:`_main` + broken-pipe totality (EXIT_PIPE=141).
+    """CLI entry point: :func:`_main` + broken-pipe totality (EXIT_PIPE=141)
+    + clean interrupt/termination abort (EXIT_INT=130, EXIT_TERM=143).
 
     When the stdout consumer exits early (``einvoice validate-batch ... | head``,
     a dying ``jq``, a closed CI log pipe), a stdout write past the OS pipe
@@ -488,13 +534,52 @@ def main(argv=None):
     write to surface here (not at shutdown), so the exit code is deterministic
     even when the report fits Python's userspace buffer.
 
+    Interrupt/termination (both MEASURED live before the fix, see
+    EXIT-CODES.md):
+
+    * SIGINT (Ctrl-C) raised KeyboardInterrupt, which nothing caught — a raw
+      multi-frame traceback on stderr for a routine operator abort. Now it is
+      caught HERE, exactly mirroring the BrokenPipeError pattern below, and
+      becomes a quiet, documented ``EXIT_INT`` (130 = 128+SIGINT). Because
+      KeyboardInterrupt propagates as a normal exception, the ``finally`` in
+      :func:`_main` has already unlinked the ``validate -`` stdin temp file by
+      the time it reaches this handler.
+    * SIGTERM's DEFAULT disposition kills the process with no ``finally``
+      cleanup at all — measured to leak a stray ``einvoice-stdin-*.xml`` temp
+      file when the signal landed while ``validate -`` was mid-validation. So
+      a handler installed here converts SIGTERM to :class:`_Terminated`; the
+      cleanup runs and the exit is the quiet, documented ``EXIT_TERM``
+      (143 = 128+SIGTERM). The previous SIGTERM disposition is restored on
+      the way out, so an in-process caller's signal handling is untouched.
+
+    Neither abort path writes anything further: like a broken pipe, an
+    interrupt is the operator's plumbing, not a validation outcome — the
+    verdict for the aborted run is simply unavailable.
+
     This wrapper changes NOTHING else: no validation logic, no report bytes,
-    no verdicts, and every existing exit code (0/1/2/3) is returned untouched.
+    no verdicts, and every existing exit code (0/1/2/3/141) is returned
+    untouched.
     """
+    try:
+        # Convert SIGTERM into an exception so cleanup ``finally`` blocks run
+        # (the ValueError arm: signal handlers can only be installed in the
+        # main thread — an in-process harness on another thread just keeps
+        # the default disposition, exactly as before this handler existed).
+        _previous_sigterm = signal.signal(signal.SIGTERM, _raise_terminated)
+        _restore_sigterm = True
+    except ValueError:
+        _restore_sigterm = False
     try:
         code = _main(argv)
         sys.stdout.flush()
         return code
+    except KeyboardInterrupt:
+        # SIGINT / Ctrl-C: quiet documented abort — no traceback, nothing
+        # further written. _main's finally already removed any stdin temp file.
+        return EXIT_INT
+    except _Terminated:
+        # SIGTERM, post-cleanup (the handler raised, so every finally ran).
+        return EXIT_TERM
     except BrokenPipeError:
         # Point stdout's fd at devnull BEFORE returning: Python flushes
         # sys.stdout at interpreter shutdown, and flushing a broken pipe there
@@ -508,6 +593,12 @@ def main(argv=None):
             # harness) — nothing to redirect, and nothing left to flush.
             pass
         return EXIT_PIPE
+    finally:
+        # Leave the process's SIGTERM disposition exactly as we found it —
+        # in-process callers (tests, embedding harnesses) keep their own
+        # handler once main() returns.
+        if _restore_sigterm and _previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, _previous_sigterm)
 
 
 if __name__ == "__main__":

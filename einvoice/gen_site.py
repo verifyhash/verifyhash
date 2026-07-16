@@ -38,9 +38,12 @@ Beyond the per-rule pages this generator also emits, from the same catalog:
 * a RULE INDEX HUB at ``www/rules/index.html`` — every rule grouped by family,
   reusing :func:`gen_rules_doc.family_of` and its ``FAMILY_LABELS`` (no second
   hand-authored copy of the family labels);
-* a LICENSING page at ``www/licensing/index.html`` — plain factual dual-license
-  terms (Apache-2.0 open source for everyone; commercial licenses available to
-  closed-source vendors), no prices, no payment links (T-VHR.5);
+* a LICENSING page at ``www/licensing/index.html`` — dual-license terms that
+  sell honestly (Apache-2.0 open source and free for everyone incl. closed-source
+  embedding; an optional $29/$290 commercial license adds support, rule-corpus
+  update notices and vendor-key convenience) with a self-serve checkout sourced
+  from the committed CHECKOUT_URL placeholder + hello@verifyhash.com contact
+  (T-BUY.1, superseding the no-prices T-VHR.5 copy);
 * ``www/sitemap.xml`` (landing + hub + every rule page) and ``www/robots.txt``
   (allow-all, with a ``Sitemap:`` line pointing at ``BASE_URL/sitemap.xml``).
 
@@ -129,6 +132,22 @@ EX_REL = os.path.relpath(EXAMPLE_DIR, HERE)
 # No live DNS is pointed and nothing is deployed by this generator; it only
 # writes files under einvoice/www/.
 BASE_URL = "https://verifyhash.com/einvoice"
+
+# CHECKOUT_URL — the ONE committed placeholder for the commercial-license
+# self-serve checkout (T-BUY.1). It is intentionally EMPTY in the repo: no
+# live payment link is committed. When empty, render_licensing() emits an
+# HONEST fallback line ("Checkout opening shortly — email hello@verifyhash.com")
+# instead of a dead/broken link. When the human/supervisor pastes the real
+# hosted-checkout URL here (one line) and re-runs `python3 gen_site.py`, the
+# licensing page renders a real "buy" button pointing at it. Nothing else in
+# the page changes. This mirrors the BASE_URL placeholder discipline: one
+# committed constant, bound at deploy, no secret and no live endpoint here.
+CHECKOUT_URL = ""
+
+# The single private commercial contact for license buyers (replaces the old
+# public-GitHub-issue-only route). Kept as one constant so the generated page
+# and any future copy stay in sync.
+COMMERCIAL_EMAIL = "hello@verifyhash.com"
 
 # The one and only stylesheet: inline, tiny, no external references.
 _STYLE = """
@@ -417,7 +436,11 @@ def _doc_head(title, description, canonical, style_extra=""):
     w("<title>%s</title>" % _h(title))
     w('<meta name="description" content="%s">' % _h(description))
     w('<link rel="canonical" href="%s">' % _h(canonical))
-    w("<style>%s</style>" % _STYLE)
+    # ONE inline <style> element (the self-containment contract): any
+    # page-specific rules are APPENDED inside the same block, never a second
+    # <style> and never an external sheet. style_extra is empty for every page
+    # except the licensing page (its small buy-button/tier styling).
+    w("<style>%s%s</style>" % (_STYLE, style_extra))
     w("</head>")
     return "\n".join(h)
 
@@ -717,28 +740,47 @@ def render_landing():
 def render_licensing():
     """The licensing page (``www/licensing/index.html``) — pure, deterministic.
 
-    Plain factual dual-license terms (T-VHR.5): the einvoice engine is open
-    source under Apache-2.0 for everyone (repo LICENSE linked), and
-    closed-source ERP/integrator vendors who need terms Apache-2.0 does not
-    provide (a privately negotiated license, indemnity, support) can obtain a
-    commercial license via the GitHub repository. HONESTY LINES enforced in the
-    text itself: NO prices or pricing commitments, NO payment links — the only
-    contact path is the public GitHub issue tracker. Same self-containment
-    contract as every other surface page: one inline <style>, absolute
-    canonical from BASE_URL, no <script>, no external CSS/JS/CDN/font.
-    Includes a short German summary section (``lang="de"``), matching the
-    site's additive-German style.
+    Dual-license terms that SELL honestly (T-BUY.1): the einvoice engine is
+    open source under Apache-2.0 for everyone (repo LICENSE linked). Because
+    Apache-2.0 already permits closed-source embedding at no cost, the paid
+    commercial license does NOT sell permission or "compliance" — it sells
+    support, prioritised rule-corpus updates, and vendor-key convenience, at a
+    published, self-serve price ($29 single developer, $290 whole vendor team).
+    HONESTY LINES enforced in the text itself: state plainly that you do NOT
+    need this to embed the engine; NO fear/compliance-pressure, NO
+    sales-call/negotiated-contract/metered-API language. The checkout link is
+    sourced from the single committed CHECKOUT_URL placeholder — when empty (as
+    committed) an honest "Checkout opening shortly — email hello@verifyhash.com"
+    fallback renders instead of a dead link. Same self-containment contract as
+    every other surface page: one inline <style>, absolute canonical from
+    BASE_URL, no <script>, no external CSS/JS/CDN/font. Includes a short German
+    summary section (``lang="de"``), matching the site's additive-German style.
     """
-    title = ("Licensing — Apache-2.0 open source, commercial licenses for "
-             "closed-source vendors — einvoice")
+    title = ("Licensing — Apache-2.0 open source, $29 / $290 commercial "
+             "license — einvoice")
     description = ("How the einvoice EN 16931 / XRechnung validator is "
-                   "licensed: Apache-2.0 open source for everyone; "
-                   "closed-source ERP and integrator vendors who need private "
-                   "terms, indemnity or support can obtain a commercial "
-                   "license via the GitHub repository.")
+                   "licensed: Apache-2.0 open source and free for everyone, "
+                   "including closed-source embedding. A $29 (single "
+                   "developer) or $290 (whole vendor team) commercial license "
+                   "adds support, prioritised rule-corpus updates and "
+                   "vendor-key convenience — never required to use the engine.")
+    # Licensing-only styling, appended inside the single shared <style> block
+    # (no second stylesheet) so it never touches any other page.
+    style_extra = (
+        "\n.tiers { border: 1px solid #d0d7de; border-radius: .6rem;"
+        " padding: 1rem 1.2rem; margin: 1.2rem 0; }"
+        "\n.tiers h3 { margin: 0 0 .2rem; font-size: 1.05rem; }"
+        "\n.tiers .price { font-weight: 700; font-size: 1.15rem; }"
+        "\n.buy { display: inline-block; background: #1f883d; color: #ffffff;"
+        " padding: .55rem 1.1rem; border-radius: .5rem; text-decoration: none;"
+        " font-weight: 700; margin: .4rem 0; }"
+        "\n.buy:hover { background: #1a7f37; text-decoration: none; }"
+        "\n.buy-fallback { font-weight: 600; }"
+        "\n@media (prefers-color-scheme: dark) {"
+        " .tiers { border-color: #30363d; } }")
     p = []
     w = p.append
-    w(_doc_head(title, description, _url_licensing()))
+    w(_doc_head(title, description, _url_licensing(), style_extra=style_extra))
     w("<body>")
     w("<main>")
     # Breadcrumb (relative, offline-resolvable): this page is
@@ -747,10 +789,12 @@ def render_licensing():
     w("<h1>Licensing</h1>")
     w('<p class="lead">The <code>einvoice</code> EN&nbsp;16931 / XRechnung '
       "conformance engine is <strong>open source under the Apache License "
-      "2.0</strong> — for everyone, including commercial users. Vendors who "
-      "ship closed-source products and need terms the Apache-2.0 does not "
-      "provide can additionally obtain a <strong>commercial license</strong>. "
-      "Both paths are described below; there is nothing else to it.</p>")
+      "2.0</strong> — free for everyone, including embedding it inside a "
+      "closed-source product. An optional <strong>commercial license</strong> "
+      "(<strong>$29</strong> for one developer, <strong>$290</strong> for a "
+      "whole vendor team) adds support, prioritised rule-corpus updates and a "
+      "ready-to-use vendor key. It buys convenience, not permission — you "
+      "never need it to run or embed the engine.</p>")
 
     w("<h2>Open source for everyone (Apache-2.0)</h2>")
     w("<p>Every part of the engine — the validator package, the vendored rule "
@@ -769,36 +813,62 @@ def render_licensing():
       "the software <em>as is</em>, with no warranty and no indemnity.</p>"
       % _h(_REPO_NOTICE))
 
-    w("<h2>Commercial licenses for closed-source vendors</h2>")
-    w("<p>Some ERP, billing and e-invoicing vendors integrating the validator "
-      "into closed-source products need things an open-source license cannot "
-      "give them:</p>")
-    w('<ul class="rules">')
-    w("<li><strong>Private licensing</strong> — a negotiated bilateral "
-      "license contract in place of (or alongside) the public Apache-2.0 "
-      "grant, e.g. for procurement or legal-review reasons.</li>")
-    w("<li><strong>Indemnity</strong> — contractual warranties or an "
-      "indemnification clause, which the Apache-2.0 explicitly "
-      "disclaims.</li>")
-    w("<li><strong>Support</strong> — a named contact and a commitment on "
-      "answering integration questions and tracking rule-corpus "
-      "updates.</li>")
-    w("</ul>")
-    w("<p>A commercial license covering any of these is available on request. "
-      "Terms are agreed per vendor; no price list is published, and nothing "
-      "on this page is a quote or an offer at a particular price. To be "
-      "clear: you do <em>not</em> need a commercial license merely to embed "
-      "or redistribute the engine — the Apache-2.0 already permits that, "
-      "including in closed-source software, as long as you follow its "
-      "conditions.</p>")
+    w("<h2>Commercial license — $29 and $290</h2>")
+    w("<p>Apache-2.0 already lets you embed, modify and ship the engine inside "
+      "a closed-source product at no cost, so the commercial license is not "
+      "about permission and it is not a compliance requirement. It is a small, "
+      "self-serve purchase that adds the practical extras a running product "
+      "wants: a person to email, a heads-up when the rule corpus changes, and "
+      "a vendor key you can drop straight into your build. Two flat prices, "
+      "one-time, no contract to negotiate and no call to book:</p>")
 
-    w("<h2>How to get in touch</h2>")
-    w("<p>Open an issue on the public repository at "
-      '<a href="%s">github.com/verifyhash/verifyhash</a> '
-      "(the <em>Issues</em> tab) mentioning &ldquo;commercial "
-      "license&rdquo; and, if you can, what you are integrating the "
-      "validator into. There is no contact form and no payment link on this "
-      "site.</p>" % _h(_REPO_ISSUES))
+    w('<div class="tiers">')
+    w("<h3>Single developer &mdash; <span class=\"price\">$29</span></h3>")
+    w("<p>For one developer embedding <code>einvoice</code> in a product. "
+      "Covers:</p>")
+    w('<ul class="rules">')
+    w("<li><strong>Email support</strong> from the maintainer for integration "
+      "questions (best-effort, typically same working day).</li>")
+    w("<li><strong>Rule-corpus update notices</strong> — a heads-up when the "
+      "EN&nbsp;16931 / XRechnung rule set changes, so your validation stays "
+      "current.</li>")
+    w("<li><strong>Vendor key</strong> — a ready-made attribution/vendor "
+      "identifier so you skip wiring one up by hand.</li>")
+    w("</ul>")
+    w("<h3>Vendor team &mdash; <span class=\"price\">$290</span></h3>")
+    w("<p>The same three things, but for an <strong>entire company / vendor "
+      "team</strong> (any number of developers) rather than one person, plus "
+      "priority on support replies and corpus-update notices. If your ERP, "
+      "billing or e-invoicing platform ships <code>einvoice</code>, this is "
+      "the one to buy.</p>")
+    w('</div>')
+
+    # Checkout: sourced from the single committed CHECKOUT_URL placeholder. When
+    # empty (as committed) an HONEST fallback renders — never a dead link. When
+    # the human pastes the hosted-checkout URL into CHECKOUT_URL and re-runs the
+    # generator, a real self-serve "buy" button renders instead.
+    if CHECKOUT_URL:
+        w('<p><a class="buy" href="%s">Buy a commercial license '
+          "&mdash; secure checkout</a></p>" % _h(CHECKOUT_URL))
+    else:
+        w('<p class="buy-fallback">Checkout opening shortly &mdash; email '
+          "%s and we&rsquo;ll send a payment link and the vendor key the same "
+          "working day.</p>" % _h(COMMERCIAL_EMAIL))
+
+    w("<p>What the price is <em>not</em>: it is not a fee for using the engine, "
+      "not tied to any legal or tax &ldquo;compliance&rdquo; obligation, and "
+      "not metered by request volume. You can use, embed and redistribute "
+      "<code>einvoice</code> forever under Apache-2.0 without paying anything. "
+      "The commercial license simply buys you support, update notices and the "
+      "vendor-key convenience described above.</p>")
+
+    w("<h2>How to buy or ask a question</h2>")
+    w("<p>Email <a href=\"mailto:%s\">%s</a> to buy, to get the checkout "
+      "link, or to ask anything before you do. That is the private commercial "
+      "contact for licensing &mdash; you do not have to open a public issue. "
+      "The <a href=\"%s\">source and issue tracker</a> stay on GitHub for "
+      "bugs and code.</p>" % (_h(COMMERCIAL_EMAIL), _h(COMMERCIAL_EMAIL),
+                              _h(_REPO_ISSUES)))
 
     w('<section lang="de">')
     w("<h2>Kurzfassung (Deutsch)</h2>")
@@ -808,12 +878,15 @@ def render_licensing():
       "Weitergabe, auch kommerziell und auch in Closed-Source-Produkten, "
       "sofern die Apache-2.0-Bedingungen eingehalten werden (Lizenztext und "
       "<code>NOTICE</code>-Hinweis beilegen, &Auml;nderungen kennzeichnen). "
-      "Anbieter von Closed-Source-ERP- oder Abrechnungssoftware, die "
-      "dar&uuml;ber hinaus eine privat verhandelte Lizenz, vertragliche "
-      "Haftungs&uuml;bernahme (Indemnity) oder Support ben&ouml;tigen, "
-      "k&ouml;nnen eine kommerzielle Lizenz erhalten. Kontakt: ein Issue im "
-      "GitHub-Repository er&ouml;ffnen; es gibt keine Preisliste und keinen "
-      "Zahlungslink auf dieser Seite.</p>")
+      "Die Apache-2.0-Lizenz erlaubt das Einbetten in Closed-Source-Produkte "
+      "bereits kostenlos; die kommerzielle Lizenz ist daher keine "
+      "Nutzungserlaubnis und keine Compliance-Pflicht, sondern kauft nur "
+      "Support, bevorzugte Hinweise auf Regel-Updates und einen fertigen "
+      "Vendor-Key. Zwei feste Preise, einmalig, ohne Vertragsverhandlung: "
+      "<strong>$29</strong> f&uuml;r einen einzelnen Entwickler, "
+      "<strong>$290</strong> f&uuml;r ein ganzes Anbieter-Team. Kauf und "
+      "Fragen: <a href=\"mailto:%s\">%s</a>.</p>" % (_h(COMMERCIAL_EMAIL),
+                                                     _h(COMMERCIAL_EMAIL)))
     w("</section>")
 
     w("<footer>")

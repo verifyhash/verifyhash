@@ -386,6 +386,45 @@ def main():
               or "Disallow:" not in rb,
               "robots.txt does not allow crawling")
 
+    # ---- (f) licensing page SELLS honestly (T-BUY.1) -----------------------
+    # The commercial cash register must be OPEN on the generated page: both
+    # published prices, the private hello@ contact, and either a real checkout
+    # element (when CHECKOUT_URL is set) or the honest fallback line (when it is
+    # empty, as committed). No refusal/negotiated-contract copy may survive.
+    if os.path.exists(licensing_path):
+        lic_raw = open(licensing_path, encoding="utf-8").read()
+        lic_txt = _visible_text(lic_raw)
+        check("$29" in lic_txt, "licensing page missing $29 price")
+        check("$290" in lic_txt, "licensing page missing $290 price")
+        check("hello@verifyhash.com" in lic_raw,
+              "licensing page missing hello@verifyhash.com contact")
+        # A commercial contact must be reachable, not just printed: a mailto to
+        # hello@ (buy/ask path).
+        check('mailto:hello@verifyhash.com' in lic_raw,
+              "licensing page has no mailto:hello@verifyhash.com link")
+        # Checkout: a real self-serve buy element sourced from CHECKOUT_URL, OR
+        # the committed honest fallback line — never a dead link. Assert exactly
+        # the branch matching the committed CHECKOUT_URL value.
+        if _gen.CHECKOUT_URL:
+            check('class="buy"' in lic_raw and _gen.CHECKOUT_URL in lic_raw,
+                  "CHECKOUT_URL set but no buy button pointing at it")
+        else:
+            check("Checkout opening shortly" in lic_txt
+                  and "email hello@verifyhash.com" in lic_txt,
+                  "empty CHECKOUT_URL but honest fallback line is missing")
+        # The word 'checkout' must appear (element or fallback), matching the
+        # task's checkout gate.
+        check("checkout" in lic_raw.lower(),
+              "licensing page has no checkout element or fallback")
+        # HONESTY: the old refusal / negotiated-contract / metered pitch must be
+        # gone, and no fear/compliance-pressure framing may appear.
+        low = lic_txt.lower()
+        for banned in ("no price list is published", "no payment link",
+                       "negotiated bilateral", "required for compliance",
+                       "metered self-host"):
+            check(banned not in low,
+                  "licensing page still carries banned copy: %r" % banned)
+
     # ---- (d) --check is 0 on the committed tree, non-zero on a mutation -----
     check(_gen.main(["--check"]) == 0,
           "gen_site.py --check FAILED on the committed tree (stale/missing)")

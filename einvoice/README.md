@@ -751,21 +751,28 @@ EN 16931 conformance.
 
 ## 5. Intended revenue model
 
-If this continues past the first slice, the model is boring on purpose:
+If this continues past the first slice, the model is boring on purpose: a
+small, flat, self-serve **commercial license** for vendors (ERP, billing,
+e-invoicing platforms) who embed the validator in their product. Two prices,
+one-time, no contract and no sales call:
 
-- **Per-seat / per-embed license** for vendors (ERP, billing, e-invoicing
-  platforms) who ship the validator inside their product, or
-- **Metered self-host**: flat or volume-tiered pricing for running it inside
-  your own infrastructure, with the rule corpus kept current.
+- **$29** — single developer: email support, rule-corpus update notices, and
+  a ready-made vendor key.
+- **$290** — whole vendor team: the same, for an entire company, with priority
+  on support and update notices.
+
+The license sells **convenience, not permission**: Apache-2.0 already lets
+anyone embed the engine in a closed-source product at no cost, so this is
+never a usage fee, never a compliance requirement, and never metered by
+request volume.
 
 Explicitly ruled out, permanently: **no token, no coin, no on-chain payment
 instrument of any kind.** Nothing about invoice validation needs one, and
 this project will never fund itself by selling one.
 
-There is no license server, no price list, and no customer today. A
-commercial license is offered on request (see [Licensing](#licensing)), but
-nothing has been sold. This section exists so the incentive structure is on
-the record before the first conversation with a vendor, not after.
+No customer today, and nothing has been sold. This section exists so the
+incentive structure is on the record before the first conversation with a
+vendor, not after.
 
 ---
 
@@ -804,13 +811,23 @@ integration into closed-source products, subject to the usual Apache-2.0
 conditions: keep the license text and the attribution in
 [`NOTICE`](NOTICE) with redistributions, and mark changed files.
 
-Closed-source ERP/integrator vendors who need terms Apache-2.0 does not
-provide — a privately negotiated license, contractual indemnity, or a
-support commitment — can obtain a **commercial license**. The self-serve
-path is the licensing page ([`www/licensing/`](www/licensing/index.html),
-published at <https://verifyhash.com/einvoice/licensing/>); contact is an
-issue on the GitHub repository mentioning "commercial license". No prices
-are published — terms are agreed per vendor.
+Because Apache-2.0 already permits closed-source embedding for free, the
+optional **commercial license** does not sell permission or "compliance" —
+it adds **support, prioritised rule-corpus update notices, and vendor-key
+convenience** at a flat, self-serve price:
+
+- **$29** — single developer.
+- **$290** — whole vendor team (any number of developers).
+
+Both are one-time, with no contract to negotiate and no sales call. Buy or
+ask via **hello@verifyhash.com** (the private commercial contact); the
+self-serve page is the licensing page
+([`www/licensing/`](www/licensing/index.html), published at
+<https://verifyhash.com/einvoice/licensing/>). The checkout link is bound at
+deploy from a single `CHECKOUT_URL` placeholder in `gen_site.py`; until it is
+set the page shows an honest "checkout opening shortly — email
+hello@verifyhash.com" line rather than a dead link. You never need the
+commercial license to use, embed or redistribute the engine.
 
 ---
 

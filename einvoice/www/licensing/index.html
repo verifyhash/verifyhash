@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Licensing — Apache-2.0 open source, commercial licenses for closed-source vendors — einvoice</title>
-<meta name="description" content="How the einvoice EN 16931 / XRechnung validator is licensed: Apache-2.0 open source for everyone; closed-source ERP and integrator vendors who need private terms, indemnity or support can obtain a commercial license via the GitHub repository.">
+<title>Licensing — Apache-2.0 open source, $29 / $290 commercial license — einvoice</title>
+<meta name="description" content="How the einvoice EN 16931 / XRechnung validator is licensed: Apache-2.0 open source and free for everyone, including closed-source embedding. A $29 (single developer) or $290 (whole vendor team) commercial license adds support, prioritised rule-corpus updates and vendor-key convenience — never required to use the engine.">
 <link rel="canonical" href="https://verifyhash.com/einvoice/licensing/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -68,29 +68,43 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
   pre { background: #161b22; border-color: #30363d; }
   .sev, .assert, footer, .onramp { border-color: #30363d; }
   a { color: #4493f8; }
-}</style>
+}
+.tiers { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem; margin: 1.2rem 0; }
+.tiers h3 { margin: 0 0 .2rem; font-size: 1.05rem; }
+.tiers .price { font-weight: 700; font-size: 1.15rem; }
+.buy { display: inline-block; background: #1f883d; color: #ffffff; padding: .55rem 1.1rem; border-radius: .5rem; text-decoration: none; font-weight: 700; margin: .4rem 0; }
+.buy:hover { background: #1a7f37; text-decoration: none; }
+.buy-fallback { font-weight: 600; }
+@media (prefers-color-scheme: dark) { .tiers { border-color: #30363d; } }</style>
 </head>
 <body>
 <main>
 <p class="crumb"><a href="../index.html">einvoice</a> / Licensing</p>
 <h1>Licensing</h1>
-<p class="lead">The <code>einvoice</code> EN&nbsp;16931 / XRechnung conformance engine is <strong>open source under the Apache License 2.0</strong> — for everyone, including commercial users. Vendors who ship closed-source products and need terms the Apache-2.0 does not provide can additionally obtain a <strong>commercial license</strong>. Both paths are described below; there is nothing else to it.</p>
+<p class="lead">The <code>einvoice</code> EN&nbsp;16931 / XRechnung conformance engine is <strong>open source under the Apache License 2.0</strong> — free for everyone, including embedding it inside a closed-source product. An optional <strong>commercial license</strong> (<strong>$29</strong> for one developer, <strong>$290</strong> for a whole vendor team) adds support, prioritised rule-corpus updates and a ready-to-use vendor key. It buys convenience, not permission — you never need it to run or embed the engine.</p>
 <h2>Open source for everyone (Apache-2.0)</h2>
 <p>Every part of the engine — the validator package, the vendored rule corpus integration, the CI recipes, the GitHub Action and this reference site generator — is licensed under the <a href="https://github.com/verifyhash/verifyhash/blob/main/LICENSE">Apache License 2.0</a> (the <code>LICENSE</code> file at the repository root). That grant is the same for a hobbyist, a consultancy and a commercial ERP vendor: you may use, modify, embed and redistribute the code, including inside closed-source products, at no cost.</p>
 <p>The Apache-2.0 conditions are the usual ones: keep the license text and the attribution in the <a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/NOTICE"><code>einvoice/NOTICE</code></a> file with any redistribution, and mark files you changed. The license also contains an express patent grant and — like all open-source licenses — provides the software <em>as is</em>, with no warranty and no indemnity.</p>
-<h2>Commercial licenses for closed-source vendors</h2>
-<p>Some ERP, billing and e-invoicing vendors integrating the validator into closed-source products need things an open-source license cannot give them:</p>
+<h2>Commercial license — $29 and $290</h2>
+<p>Apache-2.0 already lets you embed, modify and ship the engine inside a closed-source product at no cost, so the commercial license is not about permission and it is not a compliance requirement. It is a small, self-serve purchase that adds the practical extras a running product wants: a person to email, a heads-up when the rule corpus changes, and a vendor key you can drop straight into your build. Two flat prices, one-time, no contract to negotiate and no call to book:</p>
+<div class="tiers">
+<h3>Single developer &mdash; <span class="price">$29</span></h3>
+<p>For one developer embedding <code>einvoice</code> in a product. Covers:</p>
 <ul class="rules">
-<li><strong>Private licensing</strong> — a negotiated bilateral license contract in place of (or alongside) the public Apache-2.0 grant, e.g. for procurement or legal-review reasons.</li>
-<li><strong>Indemnity</strong> — contractual warranties or an indemnification clause, which the Apache-2.0 explicitly disclaims.</li>
-<li><strong>Support</strong> — a named contact and a commitment on answering integration questions and tracking rule-corpus updates.</li>
+<li><strong>Email support</strong> from the maintainer for integration questions (best-effort, typically same working day).</li>
+<li><strong>Rule-corpus update notices</strong> — a heads-up when the EN&nbsp;16931 / XRechnung rule set changes, so your validation stays current.</li>
+<li><strong>Vendor key</strong> — a ready-made attribution/vendor identifier so you skip wiring one up by hand.</li>
 </ul>
-<p>A commercial license covering any of these is available on request. Terms are agreed per vendor; no price list is published, and nothing on this page is a quote or an offer at a particular price. To be clear: you do <em>not</em> need a commercial license merely to embed or redistribute the engine — the Apache-2.0 already permits that, including in closed-source software, as long as you follow its conditions.</p>
-<h2>How to get in touch</h2>
-<p>Open an issue on the public repository at <a href="https://github.com/verifyhash/verifyhash/issues">github.com/verifyhash/verifyhash</a> (the <em>Issues</em> tab) mentioning &ldquo;commercial license&rdquo; and, if you can, what you are integrating the validator into. There is no contact form and no payment link on this site.</p>
+<h3>Vendor team &mdash; <span class="price">$290</span></h3>
+<p>The same three things, but for an <strong>entire company / vendor team</strong> (any number of developers) rather than one person, plus priority on support replies and corpus-update notices. If your ERP, billing or e-invoicing platform ships <code>einvoice</code>, this is the one to buy.</p>
+</div>
+<p class="buy-fallback">Checkout opening shortly &mdash; email hello@verifyhash.com and we&rsquo;ll send a payment link and the vendor key the same working day.</p>
+<p>What the price is <em>not</em>: it is not a fee for using the engine, not tied to any legal or tax &ldquo;compliance&rdquo; obligation, and not metered by request volume. You can use, embed and redistribute <code>einvoice</code> forever under Apache-2.0 without paying anything. The commercial license simply buys you support, update notices and the vendor-key convenience described above.</p>
+<h2>How to buy or ask a question</h2>
+<p>Email <a href="mailto:hello@verifyhash.com">hello@verifyhash.com</a> to buy, to get the checkout link, or to ask anything before you do. That is the private commercial contact for licensing &mdash; you do not have to open a public issue. The <a href="https://github.com/verifyhash/verifyhash/issues">source and issue tracker</a> stay on GitHub for bugs and code.</p>
 <section lang="de">
 <h2>Kurzfassung (Deutsch)</h2>
-<p>Der <code>einvoice</code>-Konformit&auml;tspr&uuml;fer f&uuml;r EN&nbsp;16931 / XRechnung ist f&uuml;r alle Open Source unter der Apache-Lizenz&nbsp;2.0 &mdash; kostenlose Nutzung, Einbettung und Weitergabe, auch kommerziell und auch in Closed-Source-Produkten, sofern die Apache-2.0-Bedingungen eingehalten werden (Lizenztext und <code>NOTICE</code>-Hinweis beilegen, &Auml;nderungen kennzeichnen). Anbieter von Closed-Source-ERP- oder Abrechnungssoftware, die dar&uuml;ber hinaus eine privat verhandelte Lizenz, vertragliche Haftungs&uuml;bernahme (Indemnity) oder Support ben&ouml;tigen, k&ouml;nnen eine kommerzielle Lizenz erhalten. Kontakt: ein Issue im GitHub-Repository er&ouml;ffnen; es gibt keine Preisliste und keinen Zahlungslink auf dieser Seite.</p>
+<p>Der <code>einvoice</code>-Konformit&auml;tspr&uuml;fer f&uuml;r EN&nbsp;16931 / XRechnung ist f&uuml;r alle Open Source unter der Apache-Lizenz&nbsp;2.0 &mdash; kostenlose Nutzung, Einbettung und Weitergabe, auch kommerziell und auch in Closed-Source-Produkten, sofern die Apache-2.0-Bedingungen eingehalten werden (Lizenztext und <code>NOTICE</code>-Hinweis beilegen, &Auml;nderungen kennzeichnen). Die Apache-2.0-Lizenz erlaubt das Einbetten in Closed-Source-Produkte bereits kostenlos; die kommerzielle Lizenz ist daher keine Nutzungserlaubnis und keine Compliance-Pflicht, sondern kauft nur Support, bevorzugte Hinweise auf Regel-Updates und einen fertigen Vendor-Key. Zwei feste Preise, einmalig, ohne Vertragsverhandlung: <strong>$29</strong> f&uuml;r einen einzelnen Entwickler, <strong>$290</strong> f&uuml;r ein ganzes Anbieter-Team. Kauf und Fragen: <a href="mailto:hello@verifyhash.com">hello@verifyhash.com</a>.</p>
 </section>
 <footer>
 Generated by <code>gen_site.py</code>. Self-contained: this page opens offline with no network requests. The authoritative license text is the repository <code>LICENSE</code> file; this page is a plain-language summary, not a replacement for it.

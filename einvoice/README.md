@@ -315,6 +315,25 @@ exact reason in
   machine-checked in `COVERAGE.md`), but the OpenPeppol ruleset
   proper (its own Schematron + test corpus) is a separate, not-vendored
   artifact — nothing beyond the KoSIT-vendored asserts is claimed.
+- **French national CIUS not yet checked (the EN 16931 core for French
+  invoices IS).** This is a technical scope statement distinct from the French
+  *legislative* timeline in [§1](#1-why-this-exists-the-legal-forcing-function)
+  (reception mandatory Sept 2026, issuance phasing to Sept 2027). A French B2B
+  invoice — Factur-X (a CII payload in a PDF/A-3 container), UBL, or CII — is an
+  EN 16931 profile, so the full EN 16931 core (`BR-*` semantic model) already
+  applies to it here, and the **Factur-X** path is first-class: the shipped PDF
+  container extractor (`einvoice.pdf_container`) pulls the embedded
+  `CrossIndustryInvoice` XML and validates it to EN 16931 depth via the exact
+  same core engine (`einvoice.rules.ALL_RULES`) — measured end-to-end by
+  `test_facturx_profile_scope.py`, and detailed in `COVERAGE.md` under
+  "French CIUS scope". What a **French CIUS** adds on top of EN 16931 — the
+  **FNFE-MPE / Chorus Pro** Factur-X French national business rules and code
+  lists — is **not** checked: that official Schematron is **not vendored** in
+  `corpus/`, so those French-CIUS-specific rules are out of scope until it is
+  (nothing French-specific is fabricated or approximated from prose). So
+  "validates the EN 16931 core for a French invoice" is TRUE and useful, while
+  **full French CIUS conformance is NOT claimed** — the same honesty label this
+  README applies to Peppol BIS Billing 3.0 above.
 - **14 official `BR-*` ids per CEN universe are documented deliberate
   exclusions, NOT coverage**: 8 deferred `BR-CL-*` code-list checks
   (BR-CL-06/07/08/10/11/15/25/26 — real, fireable official rules the engine

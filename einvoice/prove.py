@@ -224,6 +224,13 @@ def main(argv):
     print("")
     print("HEADLINE: " + headline)
     print("")
+    print("To additionally confirm the PUBLISHED numbers match this source in "
+          "one fast step,")
+    print("run `python3 verify_attestation.py` — it recomputes attestation.json "
+          "and exits")
+    print("non-zero on any drift (a rule count, a coverage number, a pass rate, "
+          "or a corpus byte).")
+    print("")
     print("What each number means (all read live this run):")
     print("  - %d business rules       = coverage_matrix.json['rule_count'], the"
           % n["rule_count"])

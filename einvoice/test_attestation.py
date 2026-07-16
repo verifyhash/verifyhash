@@ -135,6 +135,68 @@ class TestCleanVerify(unittest.TestCase):
         )
 
 
+class TestDocReflectsAttestation(unittest.TestCase):
+    """The buyer-facing doc section must state ONLY numbers the attestation
+    pins, must name the one-command verifier, and that command must exit 0 --
+    so doc-drift (a stale number) or a broken verifier fails a fast gate."""
+
+    @staticmethod
+    def _norm(text):
+        # collapse markdown bold + line wraps so "**546 of\n  583 CII**"
+        # matches the canonical "546 of 583 CII".
+        import re
+        return re.sub(r"\s+", " ", text.replace("*", ""))
+
+    def _load(self):
+        att = json.loads((HERE / "attestation.json").read_text(encoding="utf-8"))
+        body = att["attestation"]
+        readme = self._norm((HERE / "README.md").read_text(encoding="utf-8"))
+        return body, readme
+
+    def test_doc_names_the_verifier(self):
+        readme = (HERE / "README.md").read_text(encoding="utf-8")
+        self.assertIn("verify_attestation.py", readme)
+        self.assertIn(
+            "python3 verify_attestation.py", readme,
+            "the doc must state the exact one-command buyer verify.",
+        )
+
+    def test_prove_points_to_the_verifier(self):
+        prove = (HERE / "prove.py").read_text(encoding="utf-8")
+        self.assertIn("verify_attestation.py", prove)
+
+    def test_every_doc_number_equals_attestation(self):
+        body, readme = self._load()
+
+        rules = body["rules"]["count"]
+        self.assertIn("%d business rules" % rules, readme,
+                      "rule count in the doc must equal attestation.json")
+
+        sb = body["coverage"]["syntax_binding"]
+        self.assertIn("%d of %d UBL" % (sb["ubl"]["proven"], sb["ubl"]["total"]),
+                      readme)
+        self.assertIn("%d of %d CII" % (sb["cii"]["proven"], sb["cii"]["total"]),
+                      readme)
+
+        ts = body["testsuite_conformance"]
+        self.assertIn("%d of %d UBL" % (ts["ubl"]["accepted"], ts["ubl"]["total"]),
+                      readme)
+        self.assertIn("%d of %d CII" % (ts["cii"]["accepted"], ts["cii"]["total"]),
+                      readme)
+
+        # the doc claims a corpus count; it must equal the pinned set size.
+        self.assertIn("%d vendored official corpora" % len(body["corpus"]),
+                      readme)
+
+    def test_verifier_exits_zero_so_doc_claim_holds(self):
+        proc = _run_verify(HERE)
+        self.assertEqual(
+            proc.returncode, 0,
+            "the one-command buyer verify the doc advertises must exit 0 on the "
+            "clean tree.\nstdout=%s\nstderr=%s" % (proc.stdout, proc.stderr),
+        )
+
+
 class TestTamperDetection(unittest.TestCase):
     def _assert_tamper_detected(self, mutate_rel, mutate):
         import tempfile

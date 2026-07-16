@@ -624,6 +624,42 @@ asserts it exits 0, prints `0 divergences`, and that the UBL / CII / rule number
 it printed equal a fresh independent recompute — so the entrypoint is verified to
 report live truth, never a frozen string.
 
+### Independently verify our conformance claim
+
+`prove.py` above rebuilds the claim from scratch (a few minutes, needs Saxon).
+If you instead want a **fast, single-command check that the published claim has
+not drifted from the committed source**, run:
+
+```sh
+python3 verify_attestation.py
+```
+
+This reads [`attestation.json`](attestation.json) — a byte-reproducible record
+that pins the exact numbers we publish — and confirms they still match the live
+source tree. It exits `0` only if nothing has moved. `attestation.json` pins:
+
+- **286 business rules** asserted by the engine (the frozen `rules.count`);
+- the frozen syntax-binding coverage headline: **741 of 756 UBL** + **546 of
+  583 CII** syntax-binding asserts differential-proven per binding;
+- the in-scope KoSIT test-suite pass rates: **39 of 39 UBL** and **39 of 39
+  CII** official documents accepted;
+- the SHA-256 of each of the **3** vendored official corpora (CEN EN 16931
+  1.3.16, XRechnung Schematron 2.5.0, XRechnung test-suite).
+
+`verify_attestation.py` runs two independent checks and exits **non-zero on any
+drift**: (1) it regenerates the attestation fresh from the four live source
+artifacts (`export/rules.json`, `export/coverage.json`,
+`testsuite_conformance.json`, `sbom/bom.json`) and requires it byte-for-byte
+equal to the committed `attestation.json` — so changing any recorded number (a
+rule count, a coverage figure, a pass rate, or a recorded corpus hash) fails the
+byte compare; (2) it re-walks each vendored corpus tree and requires its digest
+to equal the pinned SHA-256 — so editing a corpus byte without regenerating the
+attestation is caught too. A skeptical ERP or procurement evaluator can run this
+against the source and confirm the conformance claim for themselves.
+[`test_attestation.py`](test_attestation.py) asserts this command exits 0, that
+every number stated here equals the value in `attestation.json`, and that the
+tamper paths fail closed.
+
 ---
 
 ## 4. CI conformance gate

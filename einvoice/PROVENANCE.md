@@ -36,6 +36,38 @@ python3 gen_sbom.py --check    # CI drift guard: non-zero if the SBOM is stale
 python3 test_sbom.py           # asserts SBOM shape + zero-deps + pyproject agreement
 ```
 
+## Currency audit — 2026-07-16
+
+A measure-first check of every vendored Schematron/testsuite corpus against its
+upstream origin, done with anonymous public `GET` requests to the GitHub
+releases/tags API (`api.github.com/repos/<owner>/<repo>/releases/latest` and
+`/tags`) — no auth, no fetch-into-build. Result this run: **every artifact is
+already pinned to its latest official upstream release, so this is a documented
+no-op** (nothing bumped, nothing un-pinned). Numbers below reflect what is
+actually vendored and what upstream currently publishes.
+
+| Artifact | Repo / license | Vendored pin | Latest upstream tag (observed) | Newer? | Decision |
+| --- | --- | --- | --- | --- | --- |
+| XRechnung Schematron | `itplr-kosit/xrechnung-schematron`, Apache-2.0 | `v2.5.0` (asset `xrechnung-3.0.2-schematron-2.5.0.zip`, XRechnung 3.0.2) | `v2.5.0` (releases/latest, published 2026-02-05) | no | **No vendor** — already current. Keep pin `v2.5.0`. |
+| XRechnung testsuite | `itplr-kosit/xrechnung-testsuite`, Apache-2.0 | `2026-01-31` (CHANGELOG top released section; compatible with XRechnung 3.0.x) | `v2026-01-31` (releases/latest, published 2026-02-05) | no | **No vendor** — already current. Keep pin `2026-01-31`. |
+| CEN EN 16931 Schematron | `ConnectingEurope/eInvoicing-EN16931`, EUPL-1.2 | `1.3.16` (`corpus/cen-en16931/{ubl,cii}/schematron/*.sch`) | `validation-1.3.16` (releases/latest, published 2026-04-13) | no | **No vendor** — already current. Keep pin `1.3.16`. |
+
+Notes:
+
+- No newer official release exists for any artifact as of the audit date, so no
+  bump was performed and no license re-check was needed (Apache-2.0 and EUPL-1.2
+  remain compatible with this repo's Apache-2.0). No artifact was un-pinned.
+- The testsuite working tree carries an `UNRELEASED` CHANGELOG placeholder and a
+  `2026-07-31-SNAPSHOT` dev version in `build.xml`; those are upstream's
+  in-progress dev markers, **not** a published release, so they are correctly
+  ignored — the newest *released* tag is `v2026-01-31`, which is what we vendor.
+- Post-audit verification on the unchanged corpus: `test_xrechnung.py` (71 OK),
+  `test_packaging.py` (18 OK, 1 skip), `conformance.py` (PASS), and
+  `differential.py` (**0 divergences across all legs**) all stayed green.
+- Next audit action is only warranted when `releases/latest` for one of the three
+  repos advances past the pins above; at that point vendor the new tag pinned
+  with a sha256 checksum and regenerate `COVERAGE.md` from the fresh corpus.
+
 ## Honest scope
 
 This covers the **einvoice Python package only** — not the separate

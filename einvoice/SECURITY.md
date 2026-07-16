@@ -72,6 +72,16 @@ The validator makes **no network calls** — no schema downloads, no telemetry,
 no license phone-home. It runs fully offline and is safe to deploy in an
 air-gapped environment. `gen_sbom.py` is likewise offline.
 
+This is an **enforced** guarantee, not prose:
+[`test_network_egress.py`](test_network_egress.py) monkeypatches the stdlib
+network primitives (`socket.create_connection`, `socket.getaddrinfo`,
+`socket.socket.connect`/`connect_ex`/`sendto`, `urllib.request.urlopen`) to
+raise on any call, proves the guard is live with real canary connection
+attempts, then runs the full pipeline under it — valid/invalid UBL and CII,
+the XXE external-DTD payloads above, the Factur-X PDF-container extractor,
+and every registered report format — asserting **zero egress attempts** and
+that the guarded output is byte-identical to an unguarded run.
+
 ## Untrusted input / XML entity handling
 
 The invoices this validator parses come from **untrusted suppliers**, so every

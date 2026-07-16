@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "ubl-good-en16931-creditnote",
+  "path": "corpus/cen-en16931/test/testfiles/CreditNote-Max_content.xml",
+  "profile": "en16931",
+  "rules": [],
+  "syntax": "UBL",
+  "valid": true
+}

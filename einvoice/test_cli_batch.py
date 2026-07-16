@@ -10,8 +10,8 @@ corpus fixtures (no new corpus is added):
 
   * a business-rule-clean UBL invoice (``cen-bis3-positive_ubl.xml``) -> PASS
     under the CLI default profile (en16931);
-  * a UBL *CreditNote* (``ubl-tc434-creditnote1.xml``) -> hits the S-ROOT
-    structural FATAL under en16931 -> FAIL;
+  * an invalid UBL *CreditNote* (``creditnote-invalid-typecode_ubl.xml``) -> a
+    real BR-CL-01 fatal from the shared CreditNote engine under en16931 -> FAIL;
   * a hostile DOCTYPE/entity file synthesised into the temp dir -> the hardened
     parser rejects it, so it is reported as an ERROR (not parsed, no crash).
 
@@ -45,9 +45,12 @@ from einvoice.cli import (  # noqa: E402
 # Business-rule-clean UBL invoice: PASS under the CLI default profile en16931.
 PASS_FIXTURE = os.path.join(HERE, "corpus", "vendored", "valid",
                             "cen-bis3-positive_ubl.xml")
-# A UBL CreditNote root -> S-ROOT structural fatal under en16931 -> FAIL.
-FAIL_FIXTURE = os.path.join(HERE, "corpus", "cen-en16931", "ubl", "examples",
-                            "ubl-tc434-creditnote1.xml")
+# An invalid UBL CreditNote (BT-3 CreditNoteTypeCode = 999, off the UNTDID 1001
+# credit-note sub-list) -> a real BR-CL-01 fatal from the CreditNote engine ->
+# FAIL under en16931. (Since T-VHCN.2 a CreditNote is really validated, so a
+# failing CreditNote fails on its content, not on a structural S-ROOT.)
+FAIL_FIXTURE = os.path.join(HERE, "fixtures",
+                            "creditnote-invalid-typecode_ubl.xml")
 # A hostile DOCTYPE/entity payload: the hardened parser refuses to parse it, so
 # it is folded into an ERROR entry rather than being expanded or crashing.
 HOSTILE_XML = (

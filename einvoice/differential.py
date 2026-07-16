@@ -43,7 +43,8 @@ Requirements:
 
 Usage:
     python3 differential.py                 # FULL run: EN leg + XRechnung leg
-    python3 differential.py en              # EN 16931 core leg only
+    python3 differential.py en              # EN 16931 core leg only (Invoice)
+    python3 differential.py cn              # EN 16931 core leg only (CreditNote)
     python3 differential.py xrechnung       # XRechnung CIUS leg only
     python3 differential.py <invoice> ...   # ad-hoc per-invoice report
 Exit code: 0 iff every graded comparison agreed (both legs).
@@ -54,9 +55,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+import re
+import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -115,6 +119,27 @@ def _fn_to_rule_id(fn) -> str:
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
 assert len(OUR_RULE_IDS) == 209, OUR_RULE_IDS
+
+# --------------------------------------------------------------------------- #
+# CreditNote leg (T-VHCN.2) — the SAME einvoice/rules.py core rule engine, run  #
+# UNCHANGED over a UBL 2.1 CreditNote (root {CreditNote-2}CreditNote) through    #
+# the SAME einvoice.validate_file entry point. The official CEN EN16931-UBL      #
+# Schematron/XSLT binds the EN 16931 model to BOTH roots symmetrically           #
+# (``$Invoice = /ubl:Invoice | /cn:CreditNote``; ``$Invoice_line =               #
+# cac:InvoiceLine | cac:CreditNoteLine``), so that SAME official artifact is the #
+# oracle for CreditNote exactly as for Invoice. The whole implemented core rule  #
+# set reaches EXACT parity on the vendored CreditNote corpus — no rule is        #
+# excluded — so CN_RULE_IDS is the full OUR_RULE_IDS. Grading the full set makes  #
+# the leg a live regression guard: if a future rule change diverges on a         #
+# CreditNote shape, this leg turns the 0-divergence gate red.                    #
+# --------------------------------------------------------------------------- #
+CN_RULE_IDS = list(OUR_RULE_IDS)
+# Machine-listed known-open CreditNote bindings (rule ids that could NOT be
+# proven equivalent on the CreditNote corpus and are therefore held out of the
+# graded set with a reason). Empty: every implemented core rule reached parity.
+CN_KNOWN_OPEN: dict = {}
+assert not (set(CN_RULE_IDS) & set(CN_KNOWN_OPEN)), (
+    "a known-open CreditNote rule is also in the graded set")
 
 # XRechnung CIUS layer — the rule ids carry -a/-b suffixes, so they are read
 # from the explicit .rule_id attribute, not derived from function names.
@@ -879,6 +904,86 @@ def _split_cen_testsets(scratch: str):
             out.append(("cen-unit/%s#t%d" % (base, idx), out_path))
             idx += 1
     return out
+
+
+# --------------------------------------------------------------------------- #
+# CreditNote corpus assembly (T-VHCN.2).
+# --------------------------------------------------------------------------- #
+def _write_cn_doc(elem: ET.Element, out_path: str):
+    """Write a standalone UBL CreditNote, preserving the CreditNote-2 default
+    namespace (the Invoice writer would rewrite the default ns to Invoice-2)."""
+    ET.register_namespace("", NS_CN)
+    ET.register_namespace("cac", NS_CAC)
+    ET.register_namespace("cbc", NS_CBC)
+    ET.ElementTree(elem).write(out_path, encoding="utf-8", xml_declaration=True)
+
+
+def _split_cen_creditnote_testsets(scratch: str):
+    """Split every difi <testSet> CreditNote case into its own standalone file.
+
+    The mirror of :func:`_split_cen_testsets` for the vendored
+    ``CreditNote-unit-UBL`` corpus — each <test> is an independent CreditNote
+    whose ground truth is the official Schematron. Returns [(label, abs_path)].
+    """
+    src = os.path.join(HERE, "corpus", "cen-en16931", "test",
+                       "CreditNote-unit-UBL")
+    out = []
+    if not os.path.isdir(src):
+        return out
+    dst = os.path.join(scratch, "cn-split")
+    os.makedirs(dst, exist_ok=True)
+    for name in sorted(os.listdir(src)):
+        if not name.lower().endswith(".xml"):
+            continue
+        try:
+            root = ET.parse(os.path.join(src, name)).getroot()
+        except ET.ParseError:
+            continue
+        if _root_ns(root) != NS_DIFI:
+            continue
+        idx = 0
+        for test in root.iter("{%s}test" % NS_DIFI):
+            inner = None
+            for el in test:
+                if _root_ns(el) == NS_CN:
+                    inner = el
+                    break
+            if inner is None:
+                continue
+            base = name[:-4]
+            out_path = os.path.join(dst, "%s__t%d.xml" % (base, idx))
+            _write_cn_doc(inner, out_path)
+            out.append(("cn-unit/%s#t%d" % (base, idx), out_path))
+            idx += 1
+    return out
+
+
+def _gather_cn_fixtures():
+    """(label, abs_path) for every committed standalone CreditNote fixture:
+    the CEN example plus the Max/Min testfiles — real CreditNote documents,
+    not split cases."""
+    out = []
+    fixtures = [
+        os.path.join("corpus", "cen-en16931", "ubl", "examples",
+                     "ubl-tc434-creditnote1.xml"),
+        os.path.join("corpus", "cen-en16931", "test", "testfiles",
+                     "CreditNote-Max_content.xml"),
+        os.path.join("corpus", "cen-en16931", "test", "testfiles",
+                     "CreditNote-Min_content_with_VAT.xml"),
+        os.path.join("corpus", "cen-en16931", "test", "testfiles",
+                     "CreditNote-Min_content_without_VAT.xml"),
+    ]
+    for rel in fixtures:
+        p = os.path.join(HERE, rel)
+        if os.path.isfile(p):
+            out.append(("cn-fix/%s" % os.path.basename(p), p))
+    return out
+
+
+def build_cn_corpus(scratch: str):
+    """The full CreditNote differential corpus: every split CreditNote-unit-UBL
+    case + the committed CreditNote fixtures."""
+    return _split_cen_creditnote_testsets(scratch) + _gather_cn_fixtures()
 
 
 # ------- generated mutations: break exactly the field each rule guards ------ #
@@ -6172,7 +6277,7 @@ def _run_leg(title, xslt_path, rule_ids, our_fn, corpus):
     return tot_fp + tot_miss
 
 
-def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii", "sb",
+def run_differential(legs=("en", "cn", "xrechnung", "cii", "xrechnung-cii", "sb",
                            "sbcii")):
     scratch = os.environ.get("DIFF_SCRATCH") or tempfile.mkdtemp(prefix="diffcorpus-")
     os.makedirs(scratch, exist_ok=True)
@@ -6187,6 +6292,22 @@ def run_differential(legs=("en", "xrechnung", "cii", "xrechnung-cii", "sb",
         print("  scratch dir: %s" % scratch)
         divergences += _run_leg("official EN16931-UBL Schematron",
                                 OFFICIAL_XSLT, OUR_RULE_IDS, our_fired, corpus)
+    if "cn" in legs:
+        corpus = build_cn_corpus(scratch)
+        print("#" * 82)
+        print("# LEG 1b — EN 16931 core over UBL CreditNotes "
+              "(official CEN EN16931-UBL Schematron)")
+        print("#" * 82)
+        print("Corpus assembled: %d UBL CreditNote documents "
+              "(split CreditNote-unit-UBL cases + committed CreditNote fixtures)"
+              % len(corpus))
+        print("  scratch dir: %s" % scratch)
+        if CN_KNOWN_OPEN:
+            print("  known-open CreditNote bindings (held out, with reason):")
+            for rid, reason in sorted(CN_KNOWN_OPEN.items()):
+                print("    %-12s %s" % (rid, reason))
+        divergences += _run_leg("official EN16931-UBL Schematron (CreditNote)",
+                                OFFICIAL_XSLT, CN_RULE_IDS, our_fired, corpus)
     if "xrechnung" in legs:
         corpus = build_xr_corpus(scratch)
         print("#" * 82)
@@ -6291,11 +6412,127 @@ def _print_report(invoice_path: str) -> None:
                       xr_our_fired)
 
 
+# --------------------------------------------------------------------------- #
+# Default all-legs run — parallelised so the plain ``python3 differential.py``  #
+# gate fits a ~2-minute CI budget WITHOUT weakening the proof.                  #
+# --------------------------------------------------------------------------- #
+# The serial all-legs run is ~130 s (the two syntax-binding legs alone are ~30 s
+# + ~90 s of Saxon transforms), which overruns a 120 s gate wrapper. The legs
+# are mutually independent and a divergence is counted per (rule, invoice), so
+# partitioning a leg's corpus by invoice partitions its divergences and the
+# per-shard totals sum back to the EXACT whole-corpus total (the same soundness
+# ``prove.py`` relies on). We therefore run each light leg whole and each heavy
+# leg as several shards, as independent ``differential.py <leg>`` subprocesses
+# across the CPU cores, and sum the divergence counts. Every invoice is still
+# graded once against the official Schematron; only the wall-clock changes. A
+# single-leg invocation (``differential.py sb``) stays serial and unchanged, so
+# this only affects the no-argument default. When the opt-in ``DIFF_SHARD`` env
+# is already set (a child shard, or a caller pinning one shard) we do NOT
+# re-parallelise — the child just runs its serial leg.
+_LIGHT_LEGS = ("en", "cn", "xrechnung", "cii", "xrechnung-cii")
+_HEAVY_LEGS = ("sb", "sbcii")
+
+
+def _leg_child_env(shard):
+    """Environment for a single-leg differential subprocess: keep Saxon on
+    PYTHONPATH (prepend the documented local site so the child works even if the
+    parent's PYTHONPATH was trimmed) and set/clear the ``DIFF_SHARD`` selector."""
+    env = os.environ.copy()
+    local_site = os.path.expanduser("~/.local/lib/python3.10/site-packages")
+    parts = [local_site]
+    if env.get("PYTHONPATH"):
+        parts.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(parts)
+    if shard is not None:
+        env["DIFF_SHARD"] = shard
+    else:
+        env.pop("DIFF_SHARD", None)
+    return env
+
+
+def _run_leg_subprocess(leg, shard):
+    """Run one leg (optionally one shard) as a ``differential.py <leg>``
+    subprocess. Returns (leg, shard, returncode, divergence_count_or_None,
+    output)."""
+    proc = subprocess.run(
+        [sys.executable, os.path.abspath(__file__), leg],
+        cwd=HERE, env=_leg_child_env(shard),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    m = re.search(r"OVERALL DIVERGENCES ACROSS LEGS:\s*(\d+)", proc.stdout)
+    div = int(m.group(1)) if m else None
+    return (leg, shard, proc.returncode, div, proc.stdout)
+
+
+def run_differential_parallel() -> int:
+    """The no-argument default: run every leg (heavy legs sharded) concurrently
+    across the CPU cores and sum divergences. Prints the SAME final
+    ``OVERALL DIVERGENCES ACROSS LEGS`` line as the serial path and returns 0 iff
+    the total divergence count is 0."""
+    ncpu = os.cpu_count() or 4
+    shards = max(2, min(4, ncpu))  # shards per heavy leg
+
+    jobs = [(leg, None) for leg in _LIGHT_LEGS]
+    for leg in _HEAVY_LEGS:
+        for i in range(shards):
+            jobs.append((leg, "%d/%d" % (i, shards)))
+
+    print("#" * 82)
+    print("# differential.py — all %d legs (heavy legs %s sharded %dx across "
+          "%d cores)" % (len(_LIGHT_LEGS) + len(_HEAVY_LEGS),
+                         "/".join(_HEAVY_LEGS), shards, ncpu))
+    print("#" * 82)
+    print("Every invoice is still graded once against the official Schematron;")
+    print("divergences are counted per (rule, invoice) so the sharded totals sum")
+    print("to the exact whole-corpus total. Run a single leg serially with e.g.")
+    print("  python3 differential.py sbcii")
+    print()
+
+    # Heavy shards first so they are picked up early; threads only wait on the
+    # CPU-bound Saxon subprocesses, so a pool sized to the core count is right.
+    with ThreadPoolExecutor(max_workers=max(1, ncpu)) as ex:
+        futures = [ex.submit(_run_leg_subprocess, leg, shard)
+                   for (leg, shard) in reversed(jobs)]
+        results = [f.result() for f in futures]
+
+    divergences = 0
+    failed = False
+    per_leg = {}
+    for (leg, shard, rc, div, out) in results:
+        tag = leg if shard is None else "%s[%s]" % (leg, shard)
+        if rc != 0 or div is None:
+            failed = True
+            print("  FAILED leg %-16s rc=%d (no divergence line) — tail:"
+                  % (tag, rc))
+            sys.stdout.write(out[-2000:])
+            print()
+        else:
+            per_leg[leg] = per_leg.get(leg, 0) + div
+            print("  leg %-16s divergences=%d" % (tag, div))
+        divergences += (div or 0)
+
+    print()
+    for leg in _LIGHT_LEGS + _HEAVY_LEGS:
+        print("  LEG total  %-16s divergences=%d" % (leg, per_leg.get(leg, 0)))
+    print()
+
+    if failed:
+        print("OVERALL DIVERGENCES ACROSS LEGS: %d -> DIVERGED "
+              "(a leg/shard subprocess did not complete)" % divergences)
+        return 1
+    print("OVERALL DIVERGENCES ACROSS LEGS: %d -> %s"
+          % (divergences, "OK" if divergences == 0 else "DIVERGED"))
+    return 0 if divergences == 0 else 1
+
+
 def main(argv: list) -> int:
     if not argv:
-        return run_differential()
-    if len(argv) == 1 and argv[0] in ("en", "xrechnung", "cii", "xrechnung-cii",
-                                      "sb", "sbcii"):
+        # A child shard (or a caller pinning one shard) must NOT re-parallelise;
+        # it runs its serial leg. Only a top-level no-arg call fans out.
+        if os.environ.get("DIFF_SHARD"):
+            return run_differential()
+        return run_differential_parallel()
+    if len(argv) == 1 and argv[0] in ("en", "cn", "xrechnung", "cii",
+                                      "xrechnung-cii", "sb", "sbcii"):
         return run_differential(legs=(argv[0],))
     for s in argv:
         if not os.path.exists(s):

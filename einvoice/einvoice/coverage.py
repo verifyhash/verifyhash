@@ -399,6 +399,11 @@ def render_markdown(matrix, cii_parity=None):
       " regardless of the declared profile.")
     w("")
 
+    # --- UBL CreditNote scope (stated SEPARATELY from the Invoice numbers) ---
+    cn = matrix.get("creditnote_conformance")
+    if cn:
+        _render_creditnote(w, cn)
+
     # --- Exclusions ---
     exc = matrix["exclusions"]
     w("## Exclusions (honest scope boundaries)")
@@ -724,6 +729,53 @@ def render_markdown(matrix, cii_parity=None):
     _render_syntax_binding(w)
 
     return "\n".join(lines) + "\n"
+
+
+def _render_creditnote(w, cn):
+    """Append the '## UBL CreditNote scope' section. States the CreditNote
+    in-scope pass rate SEPARATELY from the Invoice headline — a CreditNote case
+    is NEVER folded into the Invoice numbers above."""
+    graded = cn["unit_corpus_graded_cases"]
+    agree = cn["unit_corpus_agree"]
+    pct = (100.0 * agree / graded) if graded else 0.0
+    w("## UBL CreditNote scope")
+    w("")
+    w("Stated **separately from the Invoice numbers above** — no CreditNote case"
+      " is folded into the Invoice headline. " + cn["scope"] + ".")
+    w("")
+    w("A UBL 2.1 credit-note is a first-class EN 16931 document here: it is"
+      " routed through the identical `einvoice.rules.ALL_RULES` engine an Invoice"
+      " runs through, differentially proven against the " + cn["oracle"] + ".")
+    w("")
+    w("- **CreditNote in-scope pass rate: %d of %d graded unit cases (%.1f%%)**"
+      " — over the vendored `CreditNote-unit-UBL` corpus, each split case whose"
+      " scope rule the engine implements is classified exactly as the corpus's"
+      " own difi `success`/`error` ground truth (the engine fires the scoped"
+      " `BR-*` rule iff the case is an `error` case)." % (agree, graded, pct))
+    w("- Graded across **%d implemented core rules**; **%d distinct `BR-*` rules**"
+      " are actually exercised by the CreditNote corpus (the rest have no"
+      " CreditNote unit case to fire on)." % (cn["graded_rule_count"],
+                                              cn["distinct_rules_exercised"]))
+    w("- **Standalone CreditNote fixtures: %d of %d validate clean** — the CEN"
+      " `ubl-tc434-creditnote1` example plus the `CreditNote-{Max,Min}_content`"
+      " testfiles all pass with no fatal (a real pass through the engine, not a"
+      " structural skip)." % (cn["standalone_fixtures_pass"],
+                              cn["standalone_fixtures_total"]))
+    w("- **Differential divergences on the CreditNote corpus: %d.** The"
+      " `differential.py cn` leg grades OUR fired-rule set against the official"
+      " XSLT over every split CreditNote case + fixture; 0 divergences must"
+      " never grow silently, so a future CreditNote regression turns the gate"
+      " red." % cn["differential_divergences"])
+    ko = cn.get("known_open") or {}
+    if ko:
+        w("- **Known-open CreditNote bindings (held out with a reason):**")
+        for rid, reason in sorted(ko.items()):
+            w("  - `%s` — %s" % (rid, reason))
+    else:
+        w("- **Known-open CreditNote bindings: none** — every implemented core"
+          " rule reached exact parity on the CreditNote corpus, so no binding is"
+          " fabricated from prose or silently passed.")
+    w("")
 
 
 def _render_syntax_binding(w):

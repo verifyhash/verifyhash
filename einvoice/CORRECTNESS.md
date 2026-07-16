@@ -182,8 +182,11 @@ run by the repo's mechanical gate via `test/einvoice.test.js`).
   CII-only `BR-TMP-3` are all shipped and differential-proven (see
   `COVERAGE.md`); the **`PEPPOL-EN16931-*`** rules KoSIT ships in the same
   artifact live in their own module (KoSIT-vendored subset only);
-- **CII syntax and UBL `CreditNote`** documents (our validator is UBL
-  `Invoice` only; the official artifact also validates CreditNotes);
+- ~~UBL `CreditNote`~~ — since implemented: a UBL 2.1 `CreditNote` (root
+  `CreditNote-2:CreditNote`) is validated by the SAME EN 16931 core engine as an
+  `Invoice`, differentially proven at 0 divergences over the vendored CreditNote
+  corpus (`differential.py cn`; see `COVERAGE.md` §"UBL CreditNote scope"). CII
+  is validated on its graded rule subsets;
 - a `--profile=xrechnung` PASS still only means "none of our implemented
   rules fired": the ~157 unimplemented EN core rules (§5) apply to XRechnung
   invoices too.
@@ -424,8 +427,10 @@ Specifically:
   `COVERAGE.md`) — but at the time of this snapshot the EN core was
   only 108/~200 rules, so `--profile=xrechnung` was **not** a complete
   XRechnung compliance check either.
-- **No XSD structural validation**, no CII syntax, no UBL `CreditNote`, no
-  ZUGFeRD/Factur-X PDF containers, no signatures.
+- **No XSD structural validation** and **no signatures** (still out of scope).
+  CII syntax, UBL `CreditNote`, and ZUGFeRD/Factur-X PDF containers were out of
+  scope *at the time of this snapshot* but have since been implemented and
+  differential-proven (see `COVERAGE.md`).
 - **Corpus, not universe.** 1085 real invoices is broad and adversarial but
   finite; agreement on it is strong evidence, not a formal proof over all
   possible inputs.

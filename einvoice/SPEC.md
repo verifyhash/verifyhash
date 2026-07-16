@@ -12,10 +12,13 @@ failing fixture in the vendored corpus.
 
 - **Profile:** XRechnung 3.x — the German CIUS (Core Invoice Usage Specification)
   of **EN 16931-1:2017**.
-- **Syntax (first slice):** **UBL 2.1 `Invoice`** only.
+- **Syntax:** **UBL 2.1 `Invoice`** and **UBL 2.1 `CreditNote`** (the latter
+  routed through the same EN 16931 core engine, differentially proven at 0
+  divergences — see COVERAGE.md), plus the UN/CEFACT **CII** syntax via
+  `einvoice.report` (graded rule subsets).
   - `CustomizationID = urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0`
-  - The UN/CEFACT CII syntax and the UBL `CreditNote` document are explicitly
-    out of scope for the first slice (see §6).
+  - The historical first-slice note (CII + CreditNote out of scope) has been
+    superseded; see §6 for the current per-syntax proof status.
 - **Rule stack the profile layers (outermost narrows innermost):**
   1. XML well-formedness
   2. UBL 2.1 XSD (`Invoice` schema) — structural validity
@@ -174,9 +177,12 @@ full schema-complete invoices, so the first-slice validator must assert that the
 
 Known gaps in this first slice — each is a deliberate cut, not an oversight:
 
-1. **Syntax:** UN/CEFACT **CII** invoices and UBL **CreditNote** documents are
-   not validated. Only UBL `Invoice` is in scope. (CII twins are present in the
-   corpus but unused.)
+1. **Syntax: SHIPPED** (no longer a gap). UBL `Invoice`, UBL `CreditNote`
+   (root `CreditNote-2:CreditNote`, routed through the same EN 16931 core engine
+   and differentially proven at 0 divergences over the vendored CreditNote
+   corpus — see COVERAGE.md §"UBL CreditNote scope"), and UN/CEFACT **CII**
+   (graded rule subsets via `einvoice.report`) are all validated. XML signature
+   verification remains out of scope.
 2. **XRechnung `BR-DE-*` rules: SHIPPED** (no longer a gap). All 32 `BR-DE-*`
    asserts of the official KoSIT XRechnung 3.0.2 UBL Schematron are
    implemented as a layered profile (`einvoice/rules_xrechnung.py`, enabled

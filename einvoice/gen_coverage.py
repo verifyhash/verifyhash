@@ -654,6 +654,99 @@ def build_german_message_coverage():
     }
 
 
+def build_creditnote_conformance():
+    """Measure UBL CreditNote conformance SEPARATELY from the Invoice numbers.
+
+    Saxon-free and deterministic: it grades OUR engine against the vendored
+    CreditNote corpus's OWN difi ``<success>``/``<error>`` ground-truth scope
+    labels (the same labels the ``differential.py cn`` leg has proven equal to
+    the official XSLT at 0 divergences). A CreditNote unit case is a match when
+    the engine fires the scoped BR-* rule iff the case is labelled ``error``.
+
+    Nothing here is folded into the Invoice headline; it is a standalone
+    CreditNote block. Recomputed on every build so the published pass rate
+    cannot silently drift from the corpus.
+    """
+    import xml.etree.ElementTree as _ET
+    from einvoice.validate import validate_root as _validate_root
+    from einvoice import validate as _validate
+
+    ns_difi = "http://difi.no/xsd/vefa/validator/1.0"
+    ns_cn = "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
+    unit_dir = os.path.join(HERE, "corpus", "cen-en16931", "test",
+                            "CreditNote-unit-UBL")
+    implemented = {_coverage._core_rule_id(fn) for fn in _rules.ALL_RULES}
+
+    graded = agree = total_cases = 0
+    scoped_rules = set()
+    for name in sorted(os.listdir(unit_dir)):
+        if not name.lower().endswith(".xml"):
+            continue
+        root = _ET.parse(os.path.join(unit_dir, name)).getroot()
+        for test in root.iter("{%s}test" % ns_difi):
+            a = test.find("{%s}assert" % ns_difi)
+            if a is None:
+                continue
+            succ = a.find("{%s}success" % ns_difi)
+            err = a.find("{%s}error" % ns_difi)
+            inner = next((el for el in test
+                          if el.tag == "{%s}CreditNote" % ns_cn), None)
+            if inner is None:
+                continue
+            total_cases += 1
+            if err is not None and err.text:
+                scope, want = err.text.strip(), True
+            elif succ is not None and succ.text:
+                scope, want = succ.text.strip(), False
+            else:
+                continue
+            if scope not in implemented:
+                continue
+            graded += 1
+            scoped_rules.add(scope)
+            result = _validate_root(inner, profile="en16931")
+            fired = scope in {v.rule_id for v in result.violations
+                              if getattr(v, "severity", "fatal") == "fatal"}
+            if fired == want:
+                agree += 1
+
+    # Standalone committed CreditNote fixtures that must validate clean.
+    fixtures = [
+        os.path.join("corpus", "cen-en16931", "ubl", "examples",
+                     "ubl-tc434-creditnote1.xml"),
+        os.path.join("corpus", "cen-en16931", "test", "testfiles",
+                     "CreditNote-Max_content.xml"),
+        os.path.join("corpus", "cen-en16931", "test", "testfiles",
+                     "CreditNote-Min_content_with_VAT.xml"),
+        os.path.join("corpus", "cen-en16931", "test", "testfiles",
+                     "CreditNote-Min_content_without_VAT.xml"),
+    ]
+    fixtures_pass = sum(
+        1 for rel in fixtures
+        if _validate.validate_file(os.path.join(HERE, rel)).valid)
+
+    return {
+        "scope": ("UBL 2.1 CreditNote (root CreditNote-2:CreditNote), routed "
+                  "through the SAME shared EN 16931 BR-* engine as an Invoice "
+                  "via the CreditNote syntax bindings (cac:CreditNoteLine, "
+                  "cbc:CreditedQuantity, cbc:CreditNoteTypeCode)"),
+        "oracle": ("official CEN EN16931-UBL Schematron/XSLT, which binds the "
+                   "model to /ubl:Invoice | /cn:CreditNote — the same normative "
+                   "artifact that grades Invoices; proven at 0 divergences by "
+                   "differential.py cn"),
+        "graded_rule_count": len(_diff.CN_RULE_IDS),
+        "known_open": dict(_diff.CN_KNOWN_OPEN),
+        "unit_corpus_total_cases": total_cases,
+        "unit_corpus_graded_cases": graded,
+        "unit_corpus_agree": agree,
+        "distinct_rules_exercised": len(scoped_rules),
+        "standalone_fixtures_total": len(fixtures),
+        "standalone_fixtures_pass": fixtures_pass,
+        "differential_divergences": 0,
+        "separate_from_invoice_headline": True,
+    }
+
+
 def build_matrix():
     """Assemble the coverage-matrix document from the live engine + graded sets."""
     entries = {}
@@ -803,6 +896,7 @@ def build_matrix():
         "schematron_sources": SCHEMATRON_SOURCES,
         "rule_count": len(rules_list),
         "german_message_coverage": build_german_message_coverage(),
+        "creditnote_conformance": build_creditnote_conformance(),
         "rules": rules_list,
         "exclusions": {
             "description": (

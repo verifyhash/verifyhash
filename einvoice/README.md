@@ -326,10 +326,14 @@ exact reason in
   evidence: [`COVERAGE.md`](COVERAGE.md) §Exclusions.
 - **No XSD (structural schema) validation.** Layer S-XSD is deferred; only
   well-formedness and the root element are checked structurally.
-- **No UBL `CreditNote` root, no signatures.** CII (`CrossIndustryInvoice`)
-  and Factur-X/ZUGFeRD PDF containers ARE validated (via `einvoice.report`),
-  but only the graded CII rule subsets in `COVERAGE.md` are differentially
-  proven on that syntax.
+- **UBL `CreditNote` IS validated; no signatures.** A UBL 2.1 `CreditNote`
+  (root `CreditNote-2:CreditNote`) is routed through the SAME EN 16931 core
+  engine as an `Invoice` (the official Schematron binds both roots
+  symmetrically), differentially proven at 0 divergences over the vendored
+  CreditNote corpus — see `COVERAGE.md` §"UBL CreditNote scope". CII
+  (`CrossIndustryInvoice`) and Factur-X/ZUGFeRD PDF containers ARE also
+  validated (via `einvoice.report`), with the graded CII rule subsets in
+  `COVERAGE.md`. XML signatures are not checked.
 - **The 100% figures are agreement/pass rates for the implemented, graded
   rule × syntax pairs only** (the `differential.py` legs and the
   `conformance.py` vendored vectors quoted above). They are 100% of a

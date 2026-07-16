@@ -1,39 +1,39 @@
 #!/usr/bin/env python3
-"""test_creditnote_scope.py — pin the UBL CreditNote honest-scope contract
-(T-VHCN.1).
+"""test_creditnote_scope.py — pin the UBL CreditNote validation contract
+through the user-facing surfaces (T-VHCN.2, updated from T-VHCN.1).
 
-Fast, stdlib-only, saxonche-free, offline. This is a MEASURE-FIRST guard, not a
-feature: it does NOT add any CreditNote parsing. It locks in the ONE behaviour
-this engine actually offers for a UBL 2.1 ``CreditNote`` document — a clean,
-actionable rejection rather than a crash or a silent pass — so that behaviour
-cannot regress into either failure mode.
+Fast, stdlib-only, saxonche-free, offline. This is the surface-level companion
+to ``test_creditnote_validation.py`` (which grades the CreditNote rule engine
+against the vendored corpus ground truth). Here we pin what a USER reaching for
+each entry point actually sees, now that a UBL 2.1 ``CreditNote`` (root
+``{urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2}CreditNote``) is a
+first-class EN 16931 document routed through the SAME shared BR-* rule engine as
+an Invoice.
 
-A UBL CreditNote has the root element
-``{urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2}CreditNote``. The
-parser's ``build_model()`` sets ``root_is_ubl_invoice=False`` for it, and the
-structural layer fires the fatal ``S-ROOT`` rule (see ``einvoice/validate.py``).
-The result is: exit code 1, a single fatal ``S-ROOT`` finding whose human
-message names the offending ``CreditNote`` root element, ``valid=false``, no
-silent pass, and no uncaught exception.
+Superseding the old T-VHCN.1 contract (a CreditNote was rejected at the root
+with a fatal ``S-ROOT``), the NEW proven contract is:
 
-This is exercised through BOTH surfaces a user reaches:
-  * the single-file path — ``python3 -m einvoice validate <creditnote.xml>``
-    (subprocess, packaged entry point) and ``einvoice.cli.main`` in-process, plus
-    the embedding API ``einvoice.validate_file`` directly;
-  * the batch path — ``python3 -m einvoice validate-batch <dir>`` (which reuses
-    the shared ``einvoice.report`` batch engine), proving a CreditNote inside a
-    batch is COUNTED as a failing file, never silently skipped or dropped.
+  * a business-rule-clean CreditNote is REALLY validated and PASSES — exit 0,
+    ``valid=true``, no ``S-ROOT``, no silent skip, no uncaught exception;
+  * an invalid CreditNote FAILS on its content with the correct real business
+    rule (here ``BR-CL-01`` for an out-of-range BT-3 credit-note type code) —
+    exit 1, never a structural ``S-ROOT``;
+  * the honest-error path is preserved for what is genuinely unsupported: a
+    non-Invoice / non-CreditNote root still trips the fatal ``S-ROOT``.
 
-Both existing committed corpus CreditNote shapes are checked (no new corpus is
-invented):
-  * ``corpus/cen-en16931/ubl/examples/ubl-tc434-creditnote1.xml``
-  * ``corpus/cen-en16931/test/testfiles/CreditNote-Max_content.xml``
+Exercised through BOTH surfaces a user reaches:
+  * the single-file path — ``python3 -m einvoice validate <cn.xml>`` (subprocess,
+    packaged entry point) and ``einvoice.cli.main`` in-process, plus the
+    embedding API ``einvoice.validate_file`` directly;
+  * the batch path — the shared ``einvoice.report`` batch engine, proving a
+    valid CreditNote is COUNTED as a passing file and an invalid one as a
+    failing file (never silently skipped or dropped).
 
-Full CreditNote EN 16931 validation is deliberately OUT OF SCOPE (it needs a
-CreditNote parser model plus a proven CreditNote differential corpus); see
-``COVERAGE.md`` and README.md. This test only proves the honest rejection path,
-so it must never require changing a rule, a fire decision, ``differential.py`` or
-any golden file.
+All CreditNote documents are committed corpus shapes (no new corpus invented);
+the one crafted fixture is the deliberately-broken
+``fixtures/creditnote-invalid-typecode_ubl.xml`` used to exercise the failing
+direction. This test asserts REAL validation where proven and the honest error
+where still unsupported — it is NOT weakened to merely pass.
 """
 
 import io
@@ -48,28 +48,31 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import einvoice  # noqa: E402
-from einvoice.cli import main, EXIT_FAIL  # noqa: E402
+from einvoice.cli import main, EXIT_FAIL, EXIT_OK  # noqa: E402
 from einvoice.report import (  # noqa: E402
     build_batch_report, batch_exit_code,
 )
 
-# The two committed UBL CreditNote shapes (root element = CreditNote). Both must
-# be cleanly rejected with the S-ROOT structural fatal — never crashed, never
-# silently passed.
-CREDITNOTE_FILES = [
+# Committed business-rule-clean UBL CreditNote shapes: really validated, PASS.
+VALID_CREDITNOTE_FILES = [
     os.path.join(HERE, "corpus", "cen-en16931", "ubl", "examples",
                  "ubl-tc434-creditnote1.xml"),
     os.path.join(HERE, "corpus", "cen-en16931", "test", "testfiles",
                  "CreditNote-Max_content.xml"),
+    os.path.join(HERE, "corpus", "cen-en16931", "test", "testfiles",
+                 "CreditNote-Min_content_with_VAT.xml"),
 ]
+# A committed invalid CreditNote: BT-3 CreditNoteTypeCode=999 (off the UNTDID
+# 1001 credit-note sub-list) -> a real BR-CL-01 fatal, exit 1.
+INVALID_CREDITNOTE_FILE = os.path.join(HERE, "fixtures",
+                                       "creditnote-invalid-typecode_ubl.xml")
 # A business-rule-clean UBL *Invoice* — used to prove a batch mixes a passing
 # invoice with a failing CreditNote and still counts the CreditNote as a failure.
 PASS_FIXTURE = os.path.join(HERE, "corpus", "vendored", "valid",
                             "cen-bis3-positive_ubl.xml")
 
-# What a correct rejection looks like, asserted verbatim.
 S_ROOT = "S-ROOT"
-CREDITNOTE_ROOT = "CreditNote"
+BR_CL_01 = "BR-CL-01"
 
 
 class _Capture:
@@ -97,8 +100,7 @@ class _Capture:
 def _run_cli(*cli_args):
     """Run ``python3 -m einvoice <args>`` as a subprocess (packaged entry point).
 
-    Returns (returncode, combined stdout+stderr text). Proves the installed
-    dispatcher, not just the in-process function.
+    Returns (returncode, combined stdout+stderr text).
     """
     proc = subprocess.run(
         [sys.executable, "-m", "einvoice", *cli_args],
@@ -107,123 +109,159 @@ def _run_cli(*cli_args):
     return proc.returncode, proc.stdout
 
 
-class CreditNoteSingleFileScope(unittest.TestCase):
-    """The single-file path cleanly rejects a UBL CreditNote (no crash, no pass)."""
+def _fatal_ids(result):
+    return {v.rule_id for v in result.violations
+            if getattr(v, "severity", "fatal") == "fatal"}
+
+
+class ValidCreditNoteSingleFile(unittest.TestCase):
+    """A clean UBL CreditNote is really validated and PASSES (not S-ROOT)."""
 
     def test_corpus_files_exist(self):
-        # Guard against a silently-moved corpus: the whole test is only
-        # meaningful if these committed CreditNote documents are present.
-        for path in CREDITNOTE_FILES:
-            self.assertTrue(os.path.isfile(path), "missing corpus file: %s" % path)
+        for path in VALID_CREDITNOTE_FILES + [INVALID_CREDITNOTE_FILE]:
+            self.assertTrue(os.path.isfile(path), "missing fixture: %s" % path)
 
-    def test_embedding_api_no_exception_valid_false_sroot(self):
-        # einvoice.validate_file must NOT raise on a CreditNote (no uncaught
-        # exception / traceback) and must return a fatal S-ROOT finding with
-        # valid=false — the silent-pass failure mode is explicitly excluded.
-        for path in CREDITNOTE_FILES:
+    def test_embedding_api_passes_no_exception_no_sroot(self):
+        for path in VALID_CREDITNOTE_FILES:
             with self.subTest(path=path):
                 result = einvoice.validate_file(path)  # must not raise
-                self.assertFalse(result.valid,
-                                 "CreditNote must not silently pass")
-                fatal = [v for v in result.violations
-                         if getattr(v, "severity", "fatal") == "fatal"]
-                self.assertTrue(fatal, "expected a fatal finding")
-                sroot = [v for v in fatal if v.rule_id == S_ROOT]
-                self.assertTrue(sroot, "expected the fatal S-ROOT rule to fire")
-                # The finding names the offending CreditNote root element.
-                self.assertEqual(sroot[0].element, CREDITNOTE_ROOT)
+                self.assertTrue(result.valid,
+                                "clean CreditNote must pass: fatals=%s"
+                                % sorted(_fatal_ids(result)))
+                self.assertNotIn(S_ROOT, _fatal_ids(result),
+                                 "a CreditNote must route through the engine, "
+                                 "never S-ROOT")
 
-    def test_cli_subprocess_exit1_names_creditnote_root(self):
-        # The packaged ``python3 -m einvoice validate`` path: exit 1, output
-        # contains S-ROOT and names the CreditNote root element.
-        for path in CREDITNOTE_FILES:
+    def test_cli_subprocess_exit0_pass(self):
+        for path in VALID_CREDITNOTE_FILES:
             with self.subTest(path=path):
                 rc, out = _run_cli("validate", path)
-                self.assertEqual(rc, 1, "CreditNote must exit 1, got %d" % rc)
-                self.assertIn(S_ROOT, out)
-                self.assertIn(CREDITNOTE_ROOT, out)
-                # The human summary attributes the failure to the root element.
-                self.assertIn("offending element: %s" % CREDITNOTE_ROOT, out)
-                self.assertIn("FAIL:", out)
+                self.assertEqual(rc, EXIT_OK,
+                                 "clean CreditNote must exit 0, got %d" % rc)
+                self.assertIn("PASS:", out)
+                self.assertNotIn(S_ROOT, out)
 
-    def test_cli_inprocess_json_valid_false_sroot_fatal(self):
-        # The same path in-process, via --json, so we can assert on the machine
-        # record: valid=false, a single fatal S-ROOT violation on CreditNote.
-        for path in CREDITNOTE_FILES:
+    def test_cli_inprocess_json_valid_true_no_fatal(self):
+        for path in VALID_CREDITNOTE_FILES:
             with self.subTest(path=path):
                 with _Capture(["validate", path, "--json"]) as cap:
                     pass
-                self.assertEqual(cap.rc, EXIT_FAIL)
+                self.assertEqual(cap.rc, EXIT_OK)
                 doc = json.loads(cap.out)
-                self.assertFalse(doc["valid"])
-                sroot = [v for v in doc["violations"]
-                         if v["rule"] == S_ROOT and v["severity"] == "fatal"]
-                self.assertEqual(len(sroot), 1)
-                self.assertEqual(sroot[0]["element"], CREDITNOTE_ROOT)
+                self.assertTrue(doc["valid"])
+                fatals = [v for v in doc["violations"]
+                          if v["severity"] == "fatal"]
+                self.assertEqual(fatals, [],
+                                 "clean CreditNote carries no fatal")
+
+
+class InvalidCreditNoteSingleFile(unittest.TestCase):
+    """An invalid CreditNote FAILS on its real content, never on S-ROOT."""
+
+    def test_embedding_api_fires_real_rule(self):
+        result = einvoice.validate_file(INVALID_CREDITNOTE_FILE)  # must not raise
+        self.assertFalse(result.valid, "invalid CreditNote must not pass")
+        fatal = _fatal_ids(result)
+        self.assertIn(BR_CL_01, fatal, "expected the real BR-CL-01 fatal")
+        self.assertNotIn(S_ROOT, fatal,
+                         "content failure, not a structural S-ROOT")
+
+    def test_cli_subprocess_exit1_names_real_rule(self):
+        rc, out = _run_cli("validate", INVALID_CREDITNOTE_FILE)
+        self.assertEqual(rc, 1, "invalid CreditNote must exit 1, got %d" % rc)
+        self.assertIn("FAIL:", out)
+        self.assertIn(BR_CL_01, out)
+        self.assertNotIn(S_ROOT, out)
+
+    def test_cli_inprocess_json_valid_false_br_cl_01(self):
+        with _Capture(["validate", INVALID_CREDITNOTE_FILE, "--json"]) as cap:
+            pass
+        self.assertEqual(cap.rc, EXIT_FAIL)
+        doc = json.loads(cap.out)
+        self.assertFalse(doc["valid"])
+        rules = {v["rule"] for v in doc["violations"]
+                 if v["severity"] == "fatal"}
+        self.assertIn(BR_CL_01, rules)
+        self.assertNotIn(S_ROOT, rules)
 
 
 class CreditNoteBatchScope(unittest.TestCase):
-    """A CreditNote inside a batch is counted as a FAILURE, never skipped."""
+    """A CreditNote in a batch is counted with its REAL verdict, never skipped."""
 
     def _make_mixed_dir(self, tmp):
-        """One passing UBL Invoice + one CreditNote (the fatal one) under tmp."""
-        good = os.path.join(tmp, "a-good-invoice.xml")
-        with open(PASS_FIXTURE, "rb") as src, open(good, "wb") as dst:
-            dst.write(src.read())
-        cn = os.path.join(tmp, "b-creditnote.xml")
-        with open(CREDITNOTE_FILES[0], "rb") as src, open(cn, "wb") as dst:
-            dst.write(src.read())
-        return good, cn
+        """One passing UBL Invoice + one passing CreditNote + one failing
+        CreditNote under tmp — proves the batch counts each real verdict."""
+        good_inv = os.path.join(tmp, "a-good-invoice.xml")
+        with open(PASS_FIXTURE, "rb") as s, open(good_inv, "wb") as d:
+            d.write(s.read())
+        good_cn = os.path.join(tmp, "b-good-creditnote.xml")
+        with open(VALID_CREDITNOTE_FILES[0], "rb") as s, open(good_cn, "wb") as d:
+            d.write(s.read())
+        bad_cn = os.path.join(tmp, "c-bad-creditnote.xml")
+        with open(INVALID_CREDITNOTE_FILE, "rb") as s, open(bad_cn, "wb") as d:
+            d.write(s.read())
+        return good_inv, good_cn, bad_cn
 
-    def test_batch_engine_counts_creditnote_as_failure(self):
-        # Drive the shared einvoice.report batch engine directly: the CreditNote
-        # entry is a fatal S-ROOT failure and the aggregate exit code is 1.
+    def test_batch_engine_counts_creditnote_verdicts(self):
         with tempfile.TemporaryDirectory() as tmp:
-            _good, cn = self._make_mixed_dir(tmp)
+            _gi, good_cn, bad_cn = self._make_mixed_dir(tmp)
             batch = build_batch_report(tmp, profile="en16931")
-            self.assertEqual(batch["file_count"], 2)
-            # The CreditNote is counted among the failed files (not skipped).
-            self.assertGreaterEqual(batch["failed_file_count"], 1)
+            self.assertEqual(batch["file_count"], 3)
+            # Exactly the failing CreditNote fails; the aggregate exit is 1.
+            self.assertEqual(batch["failed_file_count"], 1)
             self.assertEqual(batch_exit_code(batch), EXIT_FAIL)
-            cn_report = next(r for r in batch["files"]
-                             if os.path.abspath(r["source"]) == os.path.abspath(cn))
-            self.assertFalse(cn_report["valid"], "CreditNote must not pass")
-            self.assertGreaterEqual(cn_report["fatal_count"], 1)
-            sroot = [v for v in cn_report["violations"] if v["rule"] == S_ROOT]
-            self.assertTrue(sroot, "expected S-ROOT fatal on the CreditNote")
-            self.assertEqual(sroot[0]["severity"], "fatal")
 
-    def test_batch_cli_subprocess_exit1_reports_creditnote(self):
-        # The packaged ``python3 -m einvoice validate-batch <dir>`` path: exit 1
-        # (fatal outranks pass), the CreditNote is reported (not dropped), and
-        # S-ROOT is named in the JSON aggregate.
-        with tempfile.TemporaryDirectory() as tmp:
-            _good, _cn = self._make_mixed_dir(tmp)
-            rc, out = _run_cli("validate-batch", tmp, "--json")
-            self.assertEqual(rc, 1, "a CreditNote in a batch must fail (exit 1)")
-            doc = json.loads(out)
-            self.assertEqual(doc["file_count"], 2)
-            self.assertGreaterEqual(doc["failed_file_count"], 1)
-            self.assertGreaterEqual(doc["fatal_count"], 1)
-            # The CreditNote file is present in the per-file array (not skipped)
-            # and carries the fatal S-ROOT finding — no silent drop.
-            cn_reports = [r for r in doc["files"]
-                          if "b-creditnote.xml" in r["source"]]
-            self.assertEqual(len(cn_reports), 1)
-            self.assertFalse(cn_reports[0]["valid"])
-            rules = [v["rule"] for v in cn_reports[0]["violations"]]
-            self.assertIn(S_ROOT, rules)
+            def _report(path):
+                return next(r for r in batch["files"]
+                            if os.path.abspath(r["source"]) == os.path.abspath(path))
 
-    def test_batch_human_summary_marks_creditnote_failed(self):
-        # The non-JSON human batch summary marks the CreditNote as FAIL and the
-        # tally reports a failed file — the CreditNote is not silently absorbed.
+            # The clean CreditNote is counted as a PASS (not skipped, not S-ROOT).
+            good = _report(good_cn)
+            self.assertTrue(good["valid"], "clean CreditNote must pass in a batch")
+            self.assertNotIn(S_ROOT,
+                             {v["rule"] for v in good["violations"]})
+            # The broken CreditNote is counted as a FAIL on its real rule.
+            bad = _report(bad_cn)
+            self.assertFalse(bad["valid"])
+            self.assertGreaterEqual(bad["fatal_count"], 1)
+            rules = {v["rule"] for v in bad["violations"]}
+            self.assertIn(BR_CL_01, rules)
+            self.assertNotIn(S_ROOT, rules)
+
+    def test_batch_cli_subprocess_reports_both_creditnotes(self):
         with tempfile.TemporaryDirectory() as tmp:
             self._make_mixed_dir(tmp)
-            rc, out = _run_cli("validate-batch", tmp)
+            rc, out = _run_cli("validate-batch", tmp, "--json")
+            self.assertEqual(rc, 1, "the failing CreditNote must fail the batch")
+            doc = json.loads(out)
+            self.assertEqual(doc["file_count"], 3)
+            self.assertEqual(doc["failed_file_count"], 1)
+            # Both CreditNotes are present in the per-file array (not dropped).
+            good = [r for r in doc["files"]
+                    if "b-good-creditnote.xml" in r["source"]]
+            bad = [r for r in doc["files"]
+                   if "c-bad-creditnote.xml" in r["source"]]
+            self.assertEqual(len(good), 1)
+            self.assertEqual(len(bad), 1)
+            self.assertTrue(good[0]["valid"])
+            self.assertFalse(bad[0]["valid"])
+            self.assertIn(BR_CL_01, {v["rule"] for v in bad[0]["violations"]})
+
+
+class UnsupportedRootStaysHonestError(unittest.TestCase):
+    """What is genuinely out of scope still gets the honest S-ROOT fatal."""
+
+    def test_unrelated_root_exit1_sroot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "not-an-invoice.xml")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write('<catalog xmlns="urn:example:unrelated"><x/></catalog>')
+            result = einvoice.validate_file(path)
+            self.assertFalse(result.valid)
+            self.assertIn(S_ROOT, {v.rule_id for v in result.violations})
+            rc, out = _run_cli("validate", path)
             self.assertEqual(rc, 1)
-            self.assertIn("FAIL", out)
-            self.assertIn("b-creditnote.xml", out)
-            self.assertIn("1 failed", out)
+            self.assertIn(S_ROOT, out)
 
 
 if __name__ == "__main__":

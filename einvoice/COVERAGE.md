@@ -344,6 +344,18 @@ A Factur-X 1.x / ZUGFeRD 2.x PDF declares one of six profiles ("conformance leve
 
 **What the engine actually emits.** The declared profile token is used only for the container consistency cross-check (`FX-CONTAINER-PROFILE`: XMP `ConformanceLevel` vs CII `CustomizationID`). It is **never** used to select, gate, or skip which business rules run. Every embedded CrossIndustryInvoice — whatever profile it declares — is validated against the SAME full EN 16931 core rule set. So for a MINIMUM or BASIC WL input the engine still runs the EN 16931 rules and **reports the missing mandatory terms as violations** (e.g. BR-16 "at least one Invoice line"): it does NOT silently pass such a document, and it does NOT special-case-skip any rule by declared profile. The engine applies the same rule set regardless of the declared profile.
 
+## UBL CreditNote scope
+
+Stated **separately from the Invoice numbers above** — no CreditNote case is folded into the Invoice headline. UBL 2.1 CreditNote (root CreditNote-2:CreditNote), routed through the SAME shared EN 16931 BR-* engine as an Invoice via the CreditNote syntax bindings (cac:CreditNoteLine, cbc:CreditedQuantity, cbc:CreditNoteTypeCode).
+
+A UBL 2.1 credit-note is a first-class EN 16931 document here: it is routed through the identical `einvoice.rules.ALL_RULES` engine an Invoice runs through, differentially proven against the official CEN EN16931-UBL Schematron/XSLT, which binds the model to /ubl:Invoice | /cn:CreditNote — the same normative artifact that grades Invoices; proven at 0 divergences by differential.py cn.
+
+- **CreditNote in-scope pass rate: 192 of 192 graded unit cases (100.0%)** — over the vendored `CreditNote-unit-UBL` corpus, each split case whose scope rule the engine implements is classified exactly as the corpus's own difi `success`/`error` ground truth (the engine fires the scoped `BR-*` rule iff the case is an `error` case).
+- Graded across **209 implemented core rules**; **64 distinct `BR-*` rules** are actually exercised by the CreditNote corpus (the rest have no CreditNote unit case to fire on).
+- **Standalone CreditNote fixtures: 4 of 4 validate clean** — the CEN `ubl-tc434-creditnote1` example plus the `CreditNote-{Max,Min}_content` testfiles all pass with no fatal (a real pass through the engine, not a structural skip).
+- **Differential divergences on the CreditNote corpus: 0.** The `differential.py cn` leg grades OUR fired-rule set against the official XSLT over every split CreditNote case + fixture; 0 divergences must never grow silently, so a future CreditNote regression turns the gate red.
+- **Known-open CreditNote bindings: none** — every implemented core rule reached exact parity on the CreditNote corpus, so no binding is fabricated from prose or silently passed.
+
 ## Exclusions (honest scope boundaries)
 
 Rules deliberately NOT counted as coverage, documented so the matrix is honest about its boundaries.

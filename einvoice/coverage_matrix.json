@@ -42,6 +42,20 @@
     "source": "verbatim from the vendored KoSIT XRechnung Schematron <sch:assert> text (de_source == \"kosit\"); never machine- or hand-translated",
     "other_rules_policy": "all other rules are English-only by design — no official German assert text exists for them, so --lang de falls back to the English message"
   },
+  "creditnote_conformance": {
+    "scope": "UBL 2.1 CreditNote (root CreditNote-2:CreditNote), routed through the SAME shared EN 16931 BR-* engine as an Invoice via the CreditNote syntax bindings (cac:CreditNoteLine, cbc:CreditedQuantity, cbc:CreditNoteTypeCode)",
+    "oracle": "official CEN EN16931-UBL Schematron/XSLT, which binds the model to /ubl:Invoice | /cn:CreditNote — the same normative artifact that grades Invoices; proven at 0 divergences by differential.py cn",
+    "graded_rule_count": 209,
+    "known_open": {},
+    "unit_corpus_total_cases": 211,
+    "unit_corpus_graded_cases": 192,
+    "unit_corpus_agree": 192,
+    "distinct_rules_exercised": 64,
+    "standalone_fixtures_total": 4,
+    "standalone_fixtures_pass": 4,
+    "differential_divergences": 0,
+    "separate_from_invoice_headline": true
+  },
   "rules": [
     {
       "id": "BR-01",

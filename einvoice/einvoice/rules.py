@@ -52,6 +52,17 @@ UNTDID_1001_INVOICE = {
     "751", "780", "817", "870", "875", "876", "877", "935",
 }
 
+# UNTDID 1001 CREDIT NOTE type codes accepted by EN 16931 for a CreditNote
+# document. This is the exact ``cbc:CreditNoteTypeCode`` sub-list the official
+# CEN EN16931-UBL codelist Schematron (BR-CL-01) tests a CreditNote's BT-3
+# against — a DIFFERENT set from the Invoice list above (e.g. 261/262/296/308
+# are credit-note-only). Keyed on the type-code ELEMENT, mirroring the official
+# ``self::cbc:CreditNoteTypeCode`` axis.
+UNTDID_1001_CREDITNOTE = {
+    "81", "83", "261", "262", "296", "308", "381", "396", "420", "458",
+    "502", "503", "532",
+}
+
 _CENT = Decimal("0.01")
 
 
@@ -158,11 +169,18 @@ def br_03(inv):
 
 
 def br_04(inv):
-    """BR-04: An Invoice shall have an Invoice type code (BT-3)."""
+    """BR-04: An Invoice shall have an Invoice type code (BT-3).
+
+    The official binding is ``cbc:InvoiceTypeCode or cbc:CreditNoteTypeCode``;
+    a CreditNote carries the latter, so the absence finding names the element
+    the missing document is expected to hold.
+    """
     if not inv.invoice_type_code:
+        element = ("cbc:CreditNoteTypeCode" if inv.is_creditnote
+                   else "cbc:InvoiceTypeCode")
         return Violation("BR-04",
                          "An Invoice shall have an Invoice type code (BT-3).",
-                         "cbc:InvoiceTypeCode")
+                         element)
     return None
 
 
@@ -563,16 +581,26 @@ def br_30(inv):
 # Code list
 # ---------------------------------------------------------------------------
 def br_cl_01(inv):
-    """BR-CL-01: The document type code (BT-3) MUST be coded per UNTDID 1001."""
+    """BR-CL-01: The document type code (BT-3) MUST be coded per UNTDID 1001.
+
+    The official assert keys the accepted sub-list on the type-code ELEMENT
+    (its ``self::cbc:InvoiceTypeCode`` / ``self::cbc:CreditNoteTypeCode`` axis):
+    an Invoice's ``cbc:InvoiceTypeCode`` is graded against the invoice sub-list,
+    a CreditNote's ``cbc:CreditNoteTypeCode`` against the credit-note sub-list.
+    """
     code = inv.invoice_type_code
-    if code and code not in UNTDID_1001_INVOICE:
-        # Attributable: the rule fires only when the InvoiceTypeCode element is
+    if inv.invoice_type_code_from_creditnote:
+        allowed, element = UNTDID_1001_CREDITNOTE, "cbc:CreditNoteTypeCode"
+    else:
+        allowed, element = UNTDID_1001_INVOICE, "cbc:InvoiceTypeCode"
+    if code and code not in allowed:
+        # Attributable: the rule fires only when the type-code element is
         # PRESENT (code truthy), so its stamped source line is unambiguous.
         return Violation(
             "BR-CL-01",
             "The document type code (BT-3) MUST be coded according to UNTDID 1001; "
             "%r is not a listed code." % code,
-            "cbc:InvoiceTypeCode",
+            element,
             source_line=inv.invoice_type_code_line)
     return None
 

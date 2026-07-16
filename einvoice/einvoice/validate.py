@@ -121,12 +121,13 @@ def validate_root(root: ET.Element, profile: str = "en16931") -> Result:
 
     # Layer S — structural.
     inv = _parser.build_model(root)
-    if not inv.root_is_ubl_invoice:
+    if not (inv.root_is_ubl_invoice or inv.is_creditnote):
         violations.append(Violation(
             "S-ROOT",
-            "Root element must be Invoice in the UBL Invoice-2 namespace.",
+            "Root element must be Invoice in the UBL Invoice-2 namespace, or "
+            "CreditNote in the UBL CreditNote-2 namespace.",
             _parser._localname(root.tag)))
-        # Without a UBL Invoice root the business rules are meaningless.
+        # Without a supported UBL root the business rules are meaningless.
         return Result(violations)
 
     # Layer S-XSD is deferred (no XSD validator in the standard library; see

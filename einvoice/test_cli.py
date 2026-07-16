@@ -43,9 +43,12 @@ WRAPPER = os.path.join(HERE, "einvoice.py")
 # A committed, business-rule-clean UBL invoice -> exit 0 (default en16931).
 PASS_FIXTURE = os.path.join(HERE, "corpus", "vendored", "valid",
                             "cen-bis3-positive_ubl.xml")
-# A committed UBL *CreditNote* -> hits the S-ROOT structural fatal -> exit 1.
-FAIL_FIXTURE = os.path.join(HERE, "corpus", "cen-en16931", "ubl", "examples",
-                            "ubl-tc434-creditnote1.xml")
+# A committed invalid UBL *CreditNote* (BT-3 CreditNoteTypeCode = 999, an
+# out-of-range UNTDID 1001 credit-note code) -> a REAL BR-CL-01 fatal from the
+# CreditNote rule engine -> exit 1. (Since T-VHCN.2 a UBL CreditNote is really
+# validated, not S-ROOT-rejected, so a failing CreditNote fails on its content.)
+FAIL_FIXTURE = os.path.join(HERE, "fixtures",
+                            "creditnote-invalid-typecode_ubl.xml")
 # Deliberately truncated XML -> not-well-formed -> exit 3.
 MALFORMED_XML = b"<Invoice><never-closed>"
 

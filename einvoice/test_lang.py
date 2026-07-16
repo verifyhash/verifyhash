@@ -58,10 +58,13 @@ WITH_DE = {rid: e for rid, e in CATALOG.items() if "message_de" in e}
 # German message_de, so --lang de must surface the German assert text.
 BR_DE_FIXTURE = os.path.join(HERE, "corpus", "vendored", "valid",
                              "cen-bis3-positive_ubl.xml")
-# A UBL CreditNote: its first fatal is the structural S-ROOT rule, which has NO
+# An invalid UBL CreditNote (BT-3 CreditNoteTypeCode=999): really validated by
+# the shared engine, its first fatal is the CORE rule BR-CL-01, which has NO
 # official German message — so --lang de must fall back to the English message.
-FALLBACK_FIXTURE = os.path.join(HERE, "corpus", "cen-en16931", "ubl",
-                                "examples", "ubl-tc434-creditnote1.xml")
+# (A CreditNote is no longer S-ROOT-rejected since T-VHCN.2, so the fallback
+# path is exercised through a genuine core-rule fatal instead.)
+FALLBACK_FIXTURE = os.path.join(HERE, "fixtures",
+                                "creditnote-invalid-typecode_ubl.xml")
 
 
 def _extract_assert_text(sch_path, assert_id):
@@ -221,6 +224,9 @@ class Cli(unittest.TestCase):
         with _Capture(["validate", FALLBACK_FIXTURE]) as en:
             pass
         self.assertEqual(de.rc, en.rc)
+        # Non-vacuous: the fixture must actually FAIL so there is a FAIL line to
+        # read a (non-German) rule message off of.
+        self.assertEqual(de.rc, 1)
         de_rid, de_msg, _ = self._fail_line(de.out)
         en_rid, en_msg, _ = self._fail_line(en.out)
         self.assertEqual(de_rid, en_rid)

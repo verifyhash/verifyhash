@@ -70,6 +70,7 @@ PaymentMeans = namedtuple(
 # Namespaces
 # ---------------------------------------------------------------------------
 NS_INVOICE = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+NS_CREDITNOTE = "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
 NS_CAC = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
 NS_CBC = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
 
@@ -316,6 +317,21 @@ class Invoice:
 
     def __init__(self):
         self.root_is_ubl_invoice = False
+        # UBL document-kind discriminator. ``root_is_ubl_invoice`` stays TRUE
+        # only for the ``Invoice-2:Invoice`` root; ``is_creditnote`` is TRUE only
+        # for the ``CreditNote-2:CreditNote`` root. Both route through the SAME
+        # EN 16931 core rule engine (the official binding is symmetric:
+        # ``$Invoice = /ubl:Invoice | /cn:CreditNote``), and the two flags let
+        # the handful of syntax-bound rules that differ (BR-04 element name,
+        # BR-CL-01 UNTDID 1001 sub-list) transcribe the correct CreditNote
+        # binding. False on the CII path, which never reaches validate_root.
+        self.is_creditnote = False
+        # True iff BT-3 (self.invoice_type_code) was supplied by a
+        # ``cbc:CreditNoteTypeCode`` element rather than ``cbc:InvoiceTypeCode``.
+        # BR-CL-01 keys the UNTDID 1001 sub-list on the ELEMENT (its official
+        # self:: axis test), so this mirrors that decision exactly. Stays False
+        # on the Invoice and CII paths (byte-identical behaviour there).
+        self.invoice_type_code_from_creditnote = False
         # Syntax discriminator ("ubl" | "cii"): the codelist rules pick the
         # matching pinned country set (the UBL and CII BR-CL-14 lists differ).
         self.syntax = "ubl"
@@ -716,6 +732,17 @@ def build_model(root):
         or (_localname(root.tag) == "Invoice"
             and root.tag.startswith("{%s}" % NS_INVOICE))
     )
+    # A UBL 2.1 CreditNote (root {CreditNote-2}CreditNote) is a first-class
+    # EN 16931 document: the official Schematron binds the SAME BR-* model to
+    # ``/ubl:Invoice | /cn:CreditNote`` (EN16931-UBL-syntax.sch), so it routes
+    # through this same model builder and rule engine. Only the cbc:/cac:
+    # children differ in name for the line and type-code bindings below; the
+    # cbc:/cac: namespaces are identical between the two roots.
+    inv.is_creditnote = (
+        root.tag == "{%s}CreditNote" % NS_CREDITNOTE
+        or (_localname(root.tag) == "CreditNote"
+            and root.tag.startswith("{%s}" % NS_CREDITNOTE))
+    )
 
     # Header scalars
     inv.customization_id = _text(root.find("cbc:CustomizationID", NS))
@@ -725,7 +752,15 @@ def build_model(root):
     # attributed to a present-but-invalid value (BR-CL-01/04/05). ``_text`` /
     # ``_sourceline`` both tolerate a None (absent element) — the line is then
     # None and the value rule does not fire, so nothing is mis-attributed.
+    # BT-3 document type code. The official BR-04 binding is
+    # ``cbc:InvoiceTypeCode or cbc:CreditNoteTypeCode``; an Invoice carries the
+    # former, a CreditNote the latter. Read InvoiceTypeCode first (an Invoice is
+    # then byte-identical to before — CreditNoteTypeCode.find returns None on it)
+    # and fall back to CreditNoteTypeCode so a CreditNote's BT-3 is captured.
     _type_el = root.find("cbc:InvoiceTypeCode", NS)
+    if _type_el is None:
+        _type_el = root.find("cbc:CreditNoteTypeCode", NS)
+        inv.invoice_type_code_from_creditnote = _type_el is not None
     inv.invoice_type_code = _text(_type_el)
     inv.invoice_type_code_line = _sourceline(_type_el)
     _cur_el = root.find("cbc:DocumentCurrencyCode", NS)
@@ -888,18 +923,24 @@ def build_model(root):
              aip_el.find("cbc:Value", NS) is not None))
     # BR-64 context = cac:InvoiceLine/cac:Item/cac:StandardItemIdentification/
     # cbc:ID. Test: ``exists(@schemeID)`` — attribute existence (empty ok).
+    # The official line context is $Invoice_Line = cac:InvoiceLine |
+    # cac:CreditNoteLine (EN16931-UBL-model.sch), so a CreditNote's item
+    # identifiers are gathered from cac:CreditNoteLine too.
     inv.item_std_ids_scheme_ok = [
         "schemeID" in el.attrib
+        for line_tag in ("InvoiceLine", "CreditNoteLine")
         for el in root.findall(
-            ".//cac:InvoiceLine/cac:Item/"
-            "cac:StandardItemIdentification/cbc:ID", NS)]
-    # BR-65 context = cac:InvoiceLine/cac:Item/cac:CommodityClassification/
+            ".//cac:%s/cac:Item/"
+            "cac:StandardItemIdentification/cbc:ID" % line_tag, NS)]
+    # BR-65 context = $Invoice_Line/cac:Item/cac:CommodityClassification/
     # cbc:ItemClassificationCode. Test: ``exists(@listID)``.
     inv.item_class_ids_scheme_ok = [
         "listID" in el.attrib
+        for line_tag in ("InvoiceLine", "CreditNoteLine")
         for el in root.findall(
-            ".//cac:InvoiceLine/cac:Item/"
-            "cac:CommodityClassification/cbc:ItemClassificationCode", NS)]
+            ".//cac:%s/cac:Item/"
+            "cac:CommodityClassification/cbc:ItemClassificationCode" % line_tag,
+            NS)]
     # BR-CO-03 (UBL, context /Invoice): fires iff BOTH exist —
     # ``cbc:TaxPointDate`` (BT-7) and the document-level
     # ``cac:InvoicePeriod/cbc:DescriptionCode`` (BT-8).
@@ -1172,11 +1213,22 @@ def build_model(root):
             inv.doc_allowance_charge_category_ids.append(cat)
         inv.doc_allowance_charges.append(_build_allowance_charge(ac_el))
 
-    # InvoiceLines
-    for i, ln_el in enumerate(root.findall("cac:InvoiceLine", NS), start=1):
+    # Invoice/CreditNote lines. The official line node set is
+    # $Invoice_line = cac:InvoiceLine | cac:CreditNoteLine, so a CreditNote's
+    # cac:CreditNoteLine children feed the SAME per-line rule engine. On an
+    # Invoice the CreditNoteLine findall is empty, so the line list — and thus
+    # every line-scoped rule — is byte-identical to before.
+    _line_els = (root.findall("cac:InvoiceLine", NS)
+                 + root.findall("cac:CreditNoteLine", NS))
+    for i, ln_el in enumerate(_line_els, start=1):
         ln = InvoiceLine(i)
         ln.id = _text(ln_el.find("cbc:ID", NS))
-        ln.quantity = _text(ln_el.find("cbc:InvoicedQuantity", NS))
+        # BT-129 invoiced/credited quantity: cbc:InvoicedQuantity on an Invoice
+        # line, cbc:CreditedQuantity on a CreditNote line.
+        _qty_el = ln_el.find("cbc:InvoicedQuantity", NS)
+        if _qty_el is None:
+            _qty_el = ln_el.find("cbc:CreditedQuantity", NS)
+        ln.quantity = _text(_qty_el)
         # BR-23 (UBL test, per line): exists(cbc:InvoicedQuantity/@unitCode)
         # or exists(cbc:CreditedQuantity/@unitCode) — attribute existence.
         ln.has_quantity_unit_code = any(

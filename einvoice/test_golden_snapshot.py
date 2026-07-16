@@ -103,12 +103,22 @@ FIXTURES = [
                 "mandatory data trips BR-DE-2 (fatal) plus BR-DE warnings.",
     },
     {
-        "name": "ubl-bad-en16931-creditnote-root",
-        "path": "corpus/cen-en16931/ubl/examples/ubl-tc434-creditnote1.xml",
+        "name": "ubl-good-en16931-creditnote",
+        "path": "corpus/cen-en16931/test/testfiles/CreditNote-Max_content.xml",
         "syntax": "UBL",
         "profile": "en16931",
-        "note": "A UBL CreditNote, not an Invoice: the structural root check "
-                "(S-ROOT) fires and validation stops.",
+        "note": "A UBL 2.1 CreditNote (root CreditNote-2:CreditNote), really "
+                "validated through the shared EN 16931 engine (T-VHCN.2): it is "
+                "business-rule clean and passes with no fatal.",
+    },
+    {
+        "name": "ubl-bad-en16931-creditnote-typecode",
+        "path": "fixtures/creditnote-invalid-typecode_ubl.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "A UBL CreditNote with BT-3 CreditNoteTypeCode=999 (off the "
+                "UNTDID 1001 credit-note sub-list): the shared engine fires the "
+                "real BR-CL-01 fatal, proving CreditNote content is validated.",
     },
     # ---- CII, good core / bad XRechnung-TMP ----
     {

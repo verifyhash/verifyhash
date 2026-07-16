@@ -15,7 +15,7 @@ adds NO new fixtures with real company data — it reuses the exact fixtures
 already referenced by ``test_cli.py``:
 
   * a business-rule-clean UBL invoice        -> exit 0 (PASS)
-  * a UBL *CreditNote* (out-of-scope root)   -> exit 1 (S-ROOT fatal)
+  * an invalid UBL *CreditNote* (bad BT-3)   -> exit 1 (BR-CL-01 fatal)
   * a deliberately-truncated XML document    -> exit 3 (not-well-formed)
   * a missing file / unknown profile (argv)  -> exit 2 (usage)
 
@@ -40,8 +40,8 @@ from einvoice.cli import (  # noqa: E402
 # Reused verbatim from test_cli.py — no new fixtures introduced.
 PASS_FIXTURE = os.path.join(HERE, "corpus", "vendored", "valid",
                             "cen-bis3-positive_ubl.xml")
-FAIL_FIXTURE = os.path.join(HERE, "corpus", "cen-en16931", "ubl", "examples",
-                            "ubl-tc434-creditnote1.xml")
+FAIL_FIXTURE = os.path.join(HERE, "fixtures",
+                            "creditnote-invalid-typecode_ubl.xml")
 MALFORMED_XML = b"<Invoice><never-closed>"
 
 
@@ -86,20 +86,21 @@ class ExitCode0(unittest.TestCase):
 
 
 class ExitCode1(unittest.TestCase):
-    """1 = not-valid verdict / fatal violation. Out-of-scope inputs (a UBL
-    CreditNote) fold into THIS code via the S-ROOT structural fatal — they are
-    not a separate code, exactly as EXIT-CODES.md states."""
+    """1 = not-valid verdict / fatal violation. A UBL CreditNote is really
+    validated through the shared EN 16931 engine (T-VHCN.2), so an invalid one
+    folds into THIS code via its real business-rule fatal (here BR-CL-01, an
+    out-of-range BT-3 credit-note type code) — not a separate code."""
 
     def test_fatal_returncode_and_message(self):
         with _Capture(["validate", FAIL_FIXTURE]) as cap:
             self.assertEqual(cap.rc, EXIT_FAIL)
             # Documented actionable message: FAIL + the failing rule id.
             self.assertIn("FAIL:", cap.out)
-            self.assertIn("S-ROOT", cap.out)
+            self.assertIn("BR-CL-01", cap.out)
 
-    def test_unsupported_input_is_not_a_new_code(self):
-        # The honest-note contract: an out-of-scope UBL CreditNote never
-        # silently passes and never mints a distinct code; it is exit 1.
+    def test_invalid_creditnote_is_not_a_new_code(self):
+        # The honest contract: an invalid UBL CreditNote never silently passes
+        # and never mints a distinct code; it is exit 1 like any invalid doc.
         with _Capture(["validate", FAIL_FIXTURE]) as cap:
             self.assertEqual(cap.rc, EXIT_FAIL)
             self.assertNotEqual(cap.rc, EXIT_OK)

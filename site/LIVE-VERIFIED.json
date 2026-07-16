@@ -1,0 +1,17 @@
+{
+  "schema": "vh-site-live-verified@1",
+  "verifiedAt": "2026-07-16T14:39:36Z",
+  "releaseCommit": "4d7567a",
+  "manifestFileCount": 39,
+  "allMatch": true,
+  "verifierSha256": "638b05fbffda98599ae82c959891affa78bec52928d2946ab5193cd3929cd924",
+  "goatcounterSnippetPerPage": true,
+  "mobile390Checked": true,
+  "method": "scripts/verify-live-site.cjs",
+  "mismatches": [],
+  "notes": {
+    "scope": "GET-only full publish-set check: every RELEASE-MANIFEST.json entry fetched from https://verifyhash.com and sha256-compared against both the manifest hash and the on-disk public/ bytes; all 39 identical. Every .html page live-serves exactly one data-goatcounter= snippet (8 pages).",
+    "mobile390": "390px full-page screenshots of / and /verify-vh-standalone.html (throwaway, /tmp) reviewed: no horizontal overflow on either page, header nav and footer link list wrap correctly on the index (T-VHMOB.1 + footer-wrap fixes confirmed live), verifier form controls fit the viewport.",
+    "onMismatch": "a future non-empty mismatches[] means the live deploy drifted from commit — file a needs-human redeploy note; never edit live content from the repo side."
+  }
+}

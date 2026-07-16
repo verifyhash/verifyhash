@@ -21,6 +21,43 @@ ever drifts.
 | `1` | Not-valid verdict — at least one implemented **fatal** rule failed. This is also where **unsupported / out-of-scope inputs land** (see note below): they are not a separate code, they trip a real fatal rule (e.g. a wrong root namespace fails `S-ROOT`). A UBL `CreditNote` is now really validated through the shared engine, so an invalid one fails on its real business rule here too. For `receipt`: a `FAIL` verdict, *including* not-well-formed input, which `receipt` folds into a FAIL receipt rather than exit 3. For `validate-batch`: ANY file has a fatal violation (fatal outranks a parse error). | `validate` on an invoice or CreditNote with a fatal violation, or an out-of-scope document type; `receipt` FAIL; `validate-batch` any-fatal. | stdout: `FAIL: <src>` then `<RULE-ID>: <message>` and `offending element: <el>` (the first fatal rule id, e.g. `S-ROOT`). |
 | `2` | Usage error — the tool was invoked wrong and did no validation. Bad or missing arguments, an unknown subcommand, an unknown `--profile` / `--lang` value, a `--profile`/`--lang` flag with no value, unexpected extra arguments, or a named input file that does not exist on disk. | `validate`/`validate-batch`/`receipt` with malformed argv or a missing file. | stderr: `error: <what>` and/or the `usage:` banner. |
 | `3` | Not-well-formed input — the XML could not be parsed (truncated document, syntax error, or an input rejected by the hardened DTD/XXE parser). `validate` only. `receipt` folds this case into a FAIL receipt (exit `1`); `validate-batch` returns `3` only when some file *only* errored (not-well-formed / unsupported container) and no file had a fatal. | `validate` on malformed XML; `validate-batch` error-only, no-fatal. | stderr: `S-WF: input is not well-formed XML: <parser detail>`. |
+| `141` | Broken pipe — the stdout **consumer closed early** (`… \| head`, a dying `jq`, a closed CI log pipe) while the CLI was still writing its report. `141 = 128 + SIGPIPE(13)`, the standard shell convention for a pipe-killed process. The CLI exits **quietly**: no traceback, nothing further written to stdout. The verdict for that run is simply unavailable — the reader walked away mid-report; codes `0/1/2/3` are untouched. See the section below. | Any subcommand whose stdout write raises `BrokenPipeError` — in practice a large `validate-batch` report (text or `--json`) piped into a reader that exits before consuming it all. | stderr: *(nothing — deliberately silent; a broken pipe is the caller's plumbing, not a validation outcome)*. |
+
+## Code `141` — broken pipe / early-closed consumer (additive)
+
+`einvoice validate-batch invoices/ --json | head -c 200` (or any pipeline
+whose reader exits before consuming the whole report — `jq` erroring out, a
+CI log collector going away) closes the read end of the pipe while the CLI is
+still writing. The OS then fails the CLI's next stdout write with `EPIPE`,
+which Python surfaces as `BrokenPipeError`. Before this contract row was
+added, that meant a raw traceback on stderr plus Python's generic exit `1` —
+indistinguishable from a crash, and easily mistaken for a `FAIL` verdict.
+
+Now the CLI entry point catches `BrokenPipeError`, redirects the stdout file
+descriptor to `os.devnull` (the CPython-documented pattern, which prevents a
+*second* "Exception ignored" traceback from the interpreter-shutdown flush of
+the buffered stream), writes nothing further, and returns `141` — the
+`128 + signal` shell convention for `SIGPIPE` (13), i.e. the same code
+`grep -q`-style early-exit pipelines produce for any well-behaved Unix tool.
+The symbolic constant is `EXIT_PIPE = 141` in `einvoice/cli.py`.
+
+What `141` does and does not tell you:
+
+- It means **your pipeline's reader closed early** — it is plumbing feedback,
+  not a validation outcome. No verdict was (fully) delivered for that run.
+- It never masks a real outcome: a batch that runs to completion still
+  returns `0`/`1`/`3` exactly as documented above, byte-identical reports
+  included. The handler only fires when the write itself fails.
+- Practical note: a *small* report (under the OS pipe buffer, typically
+  64 KiB on Linux) may be fully buffered before the reader exits, in which
+  case the CLI never sees `EPIPE` and exits with its normal code. `141`
+  appears when the report is larger than what the departed reader drained.
+
+`test_pipe_discipline.py` pins this row by driving the real CLI against a
+>128 KiB batch report (text *and* `--json`), closing the pipe early, and
+asserting exit `141` with zero traceback bytes on stderr — plus a
+no-early-close control on the same corpus proving the reports and verdicts
+are unchanged.
 
 ## Opt-in `--fail-on <level>` severity threshold (non-breaking)
 

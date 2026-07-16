@@ -95,6 +95,11 @@ Exit codes (stable contract):
        ``receipt`` subcommand folds this into a FAIL receipt, exit 1;
        ``validate-batch`` returns 3 when some file only errored — not-well-
        formed / unsupported container — and no file had a fatal)
+  141  broken pipe — the stdout consumer closed early (``... | head``, a dying
+       ``jq``); 128+SIGPIPE, the shell convention. The CLI exits quietly with
+       no traceback and writes nothing further; the verdict for that run is
+       simply unavailable (the reader walked away). Purely additive — codes
+       0/1/2/3 are untouched.
 
 Default output on failure: the FIRST fatal violated rule id, a human message
 and the offending element. With --json, the full result (all violations,
@@ -134,6 +139,12 @@ EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_PARSE = 3
+#: 128 + SIGPIPE(13) — the shell convention for "killed by a broken pipe".
+#: Returned when the stdout consumer closes early (e.g. ``... --json | head``)
+#: and a write raises BrokenPipeError: the CLI exits QUIETLY with this code
+#: instead of dumping a traceback. Purely additive — no existing code (0/1/2/3)
+#: is ever repurposed; see EXIT-CODES.md.
+EXIT_PIPE = 141
 
 #: Accepted ``--fail-on`` values (the codebase severity vocabulary). The
 #: DEFAULT is ``fatal`` — i.e. omitting the flag is byte-identical to today.
@@ -241,8 +252,13 @@ def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
     return batch_exit_code(batch)
 
 
-def main(argv=None):
-    """Run the CLI. Returns the process exit code (see module docstring)."""
+def _main(argv=None):
+    """Run the CLI. Returns the process exit code (see module docstring).
+
+    This is the real dispatcher; :func:`main` wraps it ONLY to convert a
+    BrokenPipeError (stdout consumer closed early, e.g. ``... | head``) into
+    the quiet, documented ``EXIT_PIPE`` (141) exit. Nothing else is added.
+    """
     if argv is None:
         argv = sys.argv[1:]
     args = list(argv)
@@ -452,6 +468,46 @@ def main(argv=None):
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+
+def main(argv=None):
+    """CLI entry point: :func:`_main` + broken-pipe totality (EXIT_PIPE=141).
+
+    When the stdout consumer exits early (``einvoice validate-batch ... | head``,
+    a dying ``jq``, a closed CI log pipe), a stdout write past the OS pipe
+    buffer raises BrokenPipeError. Without handling, that surfaces as a raw
+    traceback on stderr plus Python's generic exit 1 — indistinguishable from a
+    crash. Here it becomes a QUIET exit with the documented ``EXIT_PIPE`` (141
+    = 128+SIGPIPE, the shell convention for a pipe-killed process).
+
+    The handler follows the stdlib-recommended pattern (python.org "Note on
+    SIGPIPE"): duplicate an ``os.devnull`` fd onto stdout's fd so the
+    interpreter-shutdown flush of the buffered stream cannot raise a SECONDARY
+    BrokenPipeError traceback, write nothing further, and return 141. The
+    ``sys.stdout.flush()`` INSIDE the ``try`` forces any buffered broken-pipe
+    write to surface here (not at shutdown), so the exit code is deterministic
+    even when the report fits Python's userspace buffer.
+
+    This wrapper changes NOTHING else: no validation logic, no report bytes,
+    no verdicts, and every existing exit code (0/1/2/3) is returned untouched.
+    """
+    try:
+        code = _main(argv)
+        sys.stdout.flush()
+        return code
+    except BrokenPipeError:
+        # Point stdout's fd at devnull BEFORE returning: Python flushes
+        # sys.stdout at interpreter shutdown, and flushing a broken pipe there
+        # would print the classic "Exception ignored ... BrokenPipeError"
+        # secondary traceback that this handler exists to prevent.
+        try:
+            devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull_fd, sys.stdout.fileno())
+        except (OSError, ValueError):
+            # No real fd behind sys.stdout (e.g. an in-process StringIO
+            # harness) — nothing to redirect, and nothing left to flush.
+            pass
+        return EXIT_PIPE
 
 
 if __name__ == "__main__":

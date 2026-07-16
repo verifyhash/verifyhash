@@ -1343,6 +1343,146 @@ def build_gitlab(report):
     return issues
 
 
+def _github_level(severity):
+    """Map a report severity string onto a GitHub Actions workflow-command level.
+
+    GitHub understands exactly three annotation commands — ``::error``,
+    ``::warning`` and ``::notice``. Mirroring :func:`_sarif_level`'s
+    fatal->error split, a ``fatal`` finding (the only severity that makes an
+    invoice non-conformant and drives exit code 1) becomes ``error``; every
+    other severity (``warning``, the advisory ``information``, or an unknown
+    value) becomes ``warning`` — a yellow, non-build-breaking annotation. The
+    level is a PRESENTATION mapping only: it never changes which rules fire or
+    the process exit code.
+    """
+    return "error" if severity == "fatal" else "warning"
+
+
+def _github_escape_data(text):
+    """Escape a workflow-command MESSAGE per GitHub's rules.
+
+    GitHub Actions parses ``::<cmd> ...::<message>`` line by line, so a literal
+    percent, CR or LF in the message would corrupt the command. Per the runner's
+    ``toolkit`` ``escapeData``: ``%`` -> ``%25`` (done FIRST so the escape
+    character we introduce is not itself re-escaped), then CR -> ``%0D`` and
+    LF -> ``%0A``. This is deliberately NOT XML escaping — workflow commands are
+    a line protocol, so :func:`escape`/:func:`quoteattr` are the wrong tool.
+    """
+    return (str(text)
+            .replace("%", "%25")
+            .replace("\r", "%0D")
+            .replace("\n", "%0A"))
+
+
+def _github_escape_property(text):
+    """Escape a workflow-command PROPERTY value (``file=``/``title=``/``line=``).
+
+    Property values live inside the comma-separated ``k=v`` list, so on top of
+    the message escaping (:func:`_github_escape_data`) GitHub's ``escapeProperty``
+    also encodes the two delimiters that would otherwise split the list or the
+    pair: ``,`` -> ``%2C`` and ``:`` -> ``%3A``. ``%`` is still escaped first
+    (inside :func:`_github_escape_data`) so no escape sequence is double-encoded.
+    """
+    return (_github_escape_data(text)
+            .replace(",", "%2C")
+            .replace(":", "%3A"))
+
+
+def build_github(report):
+    """Project a report dict (from :func:`build_report`) into GitHub Actions
+    workflow-command annotation lines.
+
+    Emits one ``::error`` / ``::warning`` workflow command per violation, the
+    line protocol a GitHub Actions runner turns into an INLINE annotation on the
+    offending file — with zero SARIF upload and zero GitHub Advanced Security /
+    code-scanning setup (unlike :func:`build_sarif`, which needs
+    ``upload-sarif`` and ``security-events: write``). Any step that simply prints
+    these lines to stdout gets file-anchored annotations for free.
+
+    Like :func:`build_sarif` and :func:`build_gitlab`, this is a PURE, additional
+    PROJECTION of the very same validator outcome the JSON path emits — it adds
+    no rule logic, invents no wording, and re-reads nothing:
+
+      * command = :func:`_github_level` of the severity — ``fatal`` -> ``::error``
+        (build-breaking, matches exit 1), ``warning``/``information`` ->
+        ``::warning``;
+      * ``file=`` = the invoice ``source`` path (the same value
+        :func:`build_gitlab` puts in ``location.path``), falling back to the
+        violation ``field`` then the catalog ``location`` hint;
+      * ``line=`` = the OPTIONAL 1-based ``source_line`` the record carries when
+        the finding is attributable — the ``line=`` key is OMITTED ENTIRELY
+        (never emitted as ``line=0``) when ``source_line`` is absent, mirroring
+        :func:`build_gitlab` omitting ``location.lines``;
+      * ``title=`` = the rule id;
+      * the message body = the violation message (falling back to the catalog
+        ``title`` then the rule id).
+
+    Message and property values are escaped with :func:`_github_escape_data` /
+    :func:`_github_escape_property` — NOT XML escaping — so a ``%`` or a newline
+    in a message cannot corrupt the line protocol.
+
+    Emission scope differs deliberately from :func:`build_gitlab`: GitHub
+    annotations are a developer-visible surface, so advisory ``information``
+    findings ARE surfaced (as ``::warning``), not dropped. This never changes the
+    exit code — only ``fatal`` findings do, and a conformant invoice still exits
+    0. When there is nothing to annotate at all, a single ``#`` log-comment line
+    is emitted (a true no-op to the runner — it is not a ``::`` command and
+    creates no annotation) so the surface is well-shaped and non-empty like the
+    other formats.
+
+    A not-well-formed input (``report`` has an ``error``) yields a single
+    ``::error`` command for the parse error, mirroring the SARIF/GitLab
+    not-well-formed contract.
+
+    :param report: a dict as returned by :func:`build_report`.
+    :returns: a ``str`` of newline-terminated workflow-command lines.
+    """
+    source = report.get("source") or ""
+    lines = []
+
+    if report.get("error"):
+        # Not-well-formed XML: one ``::error`` for the parse error, the GitHub
+        # analogue of the SARIF single-error result / GitLab parse entry.
+        code = report["error"]
+        props = ["file=" + _github_escape_property(source),
+                 "title=" + _github_escape_property(code)]
+        message = report.get("message", "") or code
+        lines.append("::error " + ",".join(props) + "::"
+                     + _github_escape_data(message))
+        return "".join(line + "\n" for line in lines)
+
+    for v in report.get("violations", []):
+        rule_id = v.get("rule") or ""
+        severity = v.get("severity") or "fatal"
+        title = v.get("title")
+        field = v.get("field")
+        location_hint = v.get("location")
+        # file= is a FILE path: the validated invoice. Fall back to the element
+        # field / catalog location hint only if the source is missing.
+        path = source or field or location_hint or ""
+        source_line = v.get("source_line")
+
+        props = ["file=" + _github_escape_property(path)]
+        # Attach the 1-based line ONLY when the finding is attributed to a source
+        # position; omit the ``line=`` key entirely otherwise (never ``line=0``).
+        if source_line is not None:
+            props.append("line=" + str(source_line))
+        props.append("title=" + _github_escape_property(rule_id))
+        message = v.get("message") or title or rule_id
+        lines.append("::%s %s::%s" % (_github_level(severity),
+                                      ",".join(props),
+                                      _github_escape_data(message)))
+
+    if not lines:
+        # Nothing to annotate. Emit a plain log comment (NOT a ``::`` command, so
+        # the runner creates no annotation) to keep the surface non-empty and
+        # well-shaped, the GitHub analogue of GitLab's empty ``[]`` result.
+        lines.append("# einvoice: %s is conformant with EN 16931 — no "
+                     "annotations" % (source or "input"))
+
+    return "".join(line + "\n" for line in lines)
+
+
 def build_badge(report):
     """Project a report dict (from :func:`build_report`) into a shields.io
     ENDPOINT-badge JSON dict.
@@ -1601,7 +1741,7 @@ def build_html(report):
 
 USAGE = ("usage: python3 -m einvoice.report "
          "[--profile en16931|xrechnung] "
-         "[--format json|junit|sarif|gitlab|html|badge|text] "
+         "[--format json|junit|sarif|gitlab|github|html|badge|text] "
          "[--pretty] [--recurse] "
          "[--baseline <prev-report.json>] <invoice.xml | directory>\n"
          "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
@@ -1766,10 +1906,11 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
-    if fmt not in ("json", "junit", "sarif", "gitlab", "html", "badge", "text"):
+    if fmt not in ("json", "junit", "sarif", "gitlab", "github", "html",
+                   "badge", "text"):
         sys.stderr.write(
             "error: unknown format %r (choose from json, junit, sarif, gitlab, "
-            "html, badge, text)\n%s\n" % (fmt, USAGE))
+            "github, html, badge, text)\n%s\n" % (fmt, USAGE))
         return EXIT_FAIL
 
     if profile not in PROFILES:
@@ -1777,8 +1918,8 @@ def main(argv=None):
                          % (profile, ", ".join(PROFILES), USAGE))
         return EXIT_FAIL
 
-    if baseline_path is not None and fmt in ("junit", "sarif", "gitlab", "html",
-                                             "badge", "text"):
+    if baseline_path is not None and fmt in ("junit", "sarif", "gitlab",
+                                             "github", "html", "badge", "text"):
         sys.stderr.write(
             "error: --baseline emits a diff document and is not compatible "
             "with --format %s\n%s\n" % (fmt, USAGE))
@@ -1855,6 +1996,8 @@ def main(argv=None):
     elif fmt == "gitlab":
         sys.stdout.write(
             json.dumps(build_gitlab(report), indent=2, sort_keys=True) + "\n")
+    elif fmt == "github":
+        sys.stdout.write(build_github(report))
     elif fmt == "html":
         sys.stdout.write(build_html(report))
     elif fmt == "badge":

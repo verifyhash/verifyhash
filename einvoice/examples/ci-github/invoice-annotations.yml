@@ -1,0 +1,60 @@
+# Copy-paste GitHub Actions workflow: validate every e-invoice in your repo on
+# push + pull_request and surface each EN 16931 / XRechnung finding as an INLINE
+# annotation on the offending file — with NO SARIF upload and NO GitHub Advanced
+# Security / code-scanning setup. It works by printing the validator's
+# `--format github` workflow-command lines (`::error` / `::warning`) straight to
+# the job log; the Actions runner turns each line into a file-anchored
+# annotation on the run summary and, when a `file=`/`line=` position is known, on
+# the diff.
+#
+# This is the zero-setup alternative to ../ci-sarif/invoice-conformance.yml:
+#   * ci-sarif  -> richer, persistent code-scanning alerts, but needs
+#                  `security-events: write` + the `upload-sarif` action (GHAS).
+#   * ci-github -> this file: annotations only, no permissions beyond
+#                  `contents: read`, no extra action. Good for private repos
+#                  without Advanced Security, or a fast first-pass gate.
+#
+# The validator has ZERO runtime dependencies (Python stdlib only), so there is
+# no `pip install` step: vendor the einvoice package into your repo and run it.
+#
+# ---------------------------------------------------------------------------
+# INSTALL (copy this file into YOUR repo)
+#   1. Copy this file to .github/workflows/invoice-annotations.yml.
+#   2. Vendor the zero-dependency einvoice product into your repo — e.g. at
+#      third_party/einvoice/ (the folder holding einvoice/, examples/, ...).
+#   3. Point PYTHONPATH / the module path below at wherever you vendored it.
+#   4. Put the invoices to validate under invoices/ (or edit the glob below).
+# ---------------------------------------------------------------------------
+
+name: invoice-annotations
+
+on:
+  push:
+  pull_request:
+
+# Annotations need NOTHING beyond read access — no security-events scope.
+permissions:
+  contents: read
+
+jobs:
+  invoice-annotations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Validate every invoice and stream GitHub annotations to the log. Each
+      # file is validated independently so one bad invoice does not hide the
+      # rest; `overall` records whether ANY file had a fatal violation so the
+      # job can fail at the end. `--format github` prints one `::error` per fatal
+      # and one `::warning` per warning/advisory finding, with file= and title=
+      # (the rule id), which the runner renders as inline annotations.
+      - name: einvoice conformance annotations
+        working-directory: third_party/einvoice   # where you vendored it
+        run: |
+          set -u
+          overall=0
+          # *.xml and *.pdf (Factur-X) invoices; adjust the glob to your layout.
+          for f in $(git -C "$GITHUB_WORKSPACE" ls-files 'invoices/**/*.xml' 'invoices/**/*.pdf'); do
+            python3 -m einvoice.report --format github "$GITHUB_WORKSPACE/$f" || overall=1
+          done
+          exit "$overall"

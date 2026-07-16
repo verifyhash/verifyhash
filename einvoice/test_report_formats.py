@@ -116,6 +116,21 @@ def _assert_well_shaped(testcase, fmt, out):
         dom = xml.dom.minidom.parseString(out)
         testcase.assertTrue(dom.getElementsByTagName("testsuite"),
                             "junit output has no <testsuite>")
+    elif fmt == "github":
+        # GitHub Actions workflow-command lines: every non-blank line is either a
+        # ``::error``/``::warning``/``::notice`` command or a ``#`` log comment
+        # (the conformant no-op). Command lines must carry file= and title=.
+        for line in out.splitlines():
+            if not line.strip():
+                continue
+            testcase.assertTrue(
+                line.startswith(("::error ", "::warning ", "::notice ", "#")),
+                "github line is not a workflow command or comment: %r" % line)
+            if line.startswith("::"):
+                testcase.assertIn("file=", line,
+                                  "github command line missing file=: %r" % line)
+                testcase.assertIn("title=", line,
+                                  "github command line missing title=: %r" % line)
     elif fmt == "html":
         testcase.assertIn("<html", out.lower())
     elif fmt == "text":
@@ -179,10 +194,11 @@ class BidirectionalParity(unittest.TestCase):
     def test_accepted_and_documented_sets_match(self):
         accepted = accepted_formats()
         doc_formats, doc_modes = documented()
-        # Sanity: the accepted set is the full seven, not the batch subset.
+        # Sanity: the accepted set is the full eight, not the batch subset.
         self.assertEqual(
             accepted,
-            {"json", "junit", "sarif", "gitlab", "html", "badge", "text"},
+            {"json", "junit", "sarif", "gitlab", "github", "html", "badge",
+             "text"},
             "report.py accepted-format set changed: %s" % sorted(accepted))
         # Forward: every accepted format has a documented row.
         missing_doc = accepted - doc_formats

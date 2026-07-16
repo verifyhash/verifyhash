@@ -441,9 +441,13 @@ def main():
             check('class="buy"' in lic_raw and _gen.CHECKOUT_URL in lic_raw,
                   "CHECKOUT_URL set but no buy button pointing at it")
         else:
-            check("Checkout opening shortly" in lic_txt
-                  and "email hello@verifyhash.com" in lic_txt,
+            check("Checkout is not open yet" in lic_txt
+                  and "hello@verifyhash.com" in lic_txt,
                   "empty CHECKOUT_URL but honest fallback line is missing")
+            # waitlist mode must NOT promise fulfilment we cannot deliver
+            for overpromise in ("payment link", "same working day and the vendor key"):
+                check(overpromise not in lic_txt.lower(),
+                      "licensing fallback over-promises: %r" % overpromise)
         # The word 'checkout' must appear (element or fallback), matching the
         # task's checkout gate.
         check("checkout" in lic_raw.lower(),

@@ -890,9 +890,11 @@ def render_licensing():
         w('<p><a class="buy" href="%s">Buy a commercial license '
           "&mdash; secure checkout</a></p>" % _h(CHECKOUT_URL))
     else:
-        w('<p class="buy-fallback">Checkout opening shortly &mdash; email '
-          "%s and we&rsquo;ll send a payment link and the vendor key the same "
-          "working day.</p>" % _h(COMMERCIAL_EMAIL))
+        w('<p class="buy-fallback">Checkout is not open yet &mdash; we are not '
+          "taking payments while the sales setup is completed. Email "
+          "%s with questions, or to be notified the moment licensing opens; "
+          "the published prices above are the prices you&rsquo;ll pay.</p>"
+          % _h(COMMERCIAL_EMAIL))
 
     w("<p>What the price is <em>not</em>: it is not a fee for using the engine, "
       "not tied to any legal or tax &ldquo;compliance&rdquo; obligation, and "
@@ -901,10 +903,11 @@ def render_licensing():
       "The commercial license simply buys you support, update notices and the "
       "vendor-key convenience described above.</p>")
 
-    w("<h2>How to buy or ask a question</h2>")
-    w("<p>Email <a href=\"mailto:%s\">%s</a> to buy, to get the checkout "
-      "link, or to ask anything before you do. That is the private commercial "
-      "contact for licensing &mdash; you do not have to open a public issue. "
+    w("<h2>Questions, or want to know when checkout opens?</h2>")
+    w("<p>Email <a href=\"mailto:%s\">%s</a> &mdash; the private commercial "
+      "contact for licensing; you do not have to open a public issue. Ask "
+      "anything, or just say &ldquo;tell me when I can buy&rdquo; and "
+      "you&rsquo;ll hear back when checkout opens. "
       "The <a href=\"%s\">source and issue tracker</a> stay on GitHub for "
       "bugs and code.</p>" % (_h(COMMERCIAL_EMAIL), _h(COMMERCIAL_EMAIL),
                               _h(_REPO_ISSUES)))
@@ -923,9 +926,10 @@ def render_licensing():
       "Support, bevorzugte Hinweise auf Regel-Updates und einen fertigen "
       "Vendor-Key. Zwei feste Preise, einmalig, ohne Vertragsverhandlung: "
       "<strong>$29</strong> f&uuml;r einen einzelnen Entwickler, "
-      "<strong>$290</strong> f&uuml;r ein ganzes Anbieter-Team. Kauf und "
-      "Fragen: <a href=\"mailto:%s\">%s</a>.</p>" % (_h(COMMERCIAL_EMAIL),
-                                                     _h(COMMERCIAL_EMAIL)))
+      "<strong>$290</strong> f&uuml;r ein ganzes Anbieter-Team. Der Checkout "
+      "ist noch nicht ge&ouml;ffnet &mdash; Fragen und Kaufinteresse: "
+      "<a href=\"mailto:%s\">%s</a>.</p>" % (_h(COMMERCIAL_EMAIL),
+                                             _h(COMMERCIAL_EMAIL)))
     w("</section>")
 
     w("<footer>")

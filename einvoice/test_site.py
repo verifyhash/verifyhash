@@ -21,9 +21,13 @@ Checks (each an independent hard assert):
       German-provenance label matches the entry's de_source (kosit=official
       KoSIT text vs. translation) — a translation is never labelled official.
   (b-seo) each page carries a <title> and a <meta name=description> that are
-      UNIQUE across all 211 pages, exactly one relative <link rel=canonical>,
-      and exactly one schema.org TechArticle JSON-LD block that parses via
-      json.loads, carries the rule id, and holds no unescaped '</script>'.
+      UNIQUE across every generated rule page (the count is exactly
+      len(remediation.load_catalog()) — computed live, never a magic number),
+      exactly one absolute <link rel=canonical> whose href is SELF-REFERENTIAL
+      (equals gen_site._url_rule(rid), so a mis-keyed canonical fails), and
+      exactly one schema.org JSON-LD block that parses via json.loads, whose
+      top-level "@type" is exactly "TechArticle", that carries the rule id, and
+      that holds no unescaped '</script>'.
   (c) NO page contains a raw '<' that came from catalog content (incl. the
       German strings — injection guard), and NO page references an external
       resource. A <script> is allowed ONLY as the inline ld+json block (no

@@ -133,6 +133,14 @@ EX_REL = os.path.relpath(EXAMPLE_DIR, HERE)
 # writes files under einvoice/www/.
 BASE_URL = "https://verifyhash.com/einvoice"
 
+# SITE_LASTMOD — the deterministic content-revision date emitted as <lastmod>
+# on every sitemap <url>. It is a FIXED constant (never datetime.now()/today())
+# so `gen_site.py` stays byte-for-byte reproducible and the regeneration-
+# determinism check in test_site.py stays green. Hand-bump this ISO-8601 date
+# whenever the rule surface (rule pages / landing / hub / walkthrough /
+# licensing) materially changes, so crawlers see an accurate last-modified.
+SITE_LASTMOD = "2026-07-16"
+
 # CHECKOUT_URL — the ONE committed placeholder for the commercial-license
 # self-serve checkout (T-BUY.1). It is intentionally EMPTY in the repo: no
 # live payment link is committed. When empty, render_licensing() emits an
@@ -1300,7 +1308,7 @@ def render_sitemap(catalog):
     w('<?xml version="1.0" encoding="UTF-8"?>')
     w('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
     for loc in locs:
-        w("  <url><loc>%s</loc></url>" % _h(loc))
+        w("  <url><loc>%s</loc><lastmod>%s</lastmod></url>" % (_h(loc), SITE_LASTMOD))
     w("</urlset>")
     return "\n".join(lines) + "\n"
 

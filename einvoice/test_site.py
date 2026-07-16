@@ -43,6 +43,7 @@ Checks (each an independent hard assert):
 
 from __future__ import annotations
 
+import datetime
 import html
 import json
 import os
@@ -356,6 +357,33 @@ def main():
         check(got == expected,
               "sitemap <loc> set != generated canonical set; missing=%s "
               "orphan=%s" % (sorted(expected - got)[:5], sorted(got - expected)[:5]))
+
+        # <lastmod> discipline (T-VHSEO.2): every <url> must carry EXACTLY one
+        # <lastmod> immediately after its <loc>, each a valid ISO-8601 date
+        # equal to the single gen_site.SITE_LASTMOD source of truth. Counts
+        # must line up 1:1: url-count == loc-count == lastmod-count.
+        url_count = len(re.findall(r"<url>", sm))
+        lastmods = re.findall(r"<lastmod>(.*?)</lastmod>", sm, re.S)
+        check(url_count == len(locs) == len(lastmods) > 0,
+              "sitemap url/loc/lastmod counts disagree: url=%d loc=%d lastmod=%d"
+              % (url_count, len(locs), len(lastmods)))
+        # Exactly one <lastmod> per <url> element (no url missing/doubling it).
+        per_url = re.findall(r"<url>.*?</url>", sm, re.S)
+        check(len(per_url) == url_count,
+              "sitemap has malformed <url> elements")
+        for elem in per_url:
+            check(len(re.findall(r"<lastmod>", elem)) == 1,
+                  "sitemap <url> does not carry exactly one <lastmod>: %s" % elem)
+        # Every <lastmod> parses as an ISO date AND equals SITE_LASTMOD, and
+        # there is exactly one distinct value across the whole sitemap.
+        for lm in lastmods:
+            datetime.date.fromisoformat(lm)  # raises on non-ISO -> test fails
+            check(lm == _gen.SITE_LASTMOD,
+                  "sitemap <lastmod> %r != gen_site.SITE_LASTMOD %r"
+                  % (lm, _gen.SITE_LASTMOD))
+        check(len(set(lastmods)) == 1,
+              "sitemap has multiple distinct <lastmod> values: %s"
+              % sorted(set(lastmods)))
 
         # No page listed in the sitemap may carry a noindex robots meta
         # (indexable/sitemap consistency). Map each loc back to its file.

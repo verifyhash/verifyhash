@@ -518,6 +518,10 @@ can't silently drift from the build (pinned by `test_info.py`). Example:
 python3 -m einvoice info --json | python3 -m json.tool
 ```
 
+A tested fail-fast CI recipe built on this output — assert a required
+profile/format in one line before your validate step — is in
+[`QUICKSTART.md`](QUICKSTART.md) §5 (pinned by `test_ci_capability_recipe.py`).
+
 **`--json` shape** — the exact field-by-field schema of the `--json` result
 (including the `syntax_bindings` array and its two count fields) is documented
 in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md). A machine-readable JSON Schema

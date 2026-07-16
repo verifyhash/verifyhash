@@ -176,6 +176,35 @@ Every number is read or recomputed at runtime from the same committed
 artifacts the test suite asserts against — nothing in the output is a retyped
 literal, so `info` cannot drift from the build it ships in.
 
+### Fail fast if the installed build lacks what you need
+
+`info --json` composes into a CI capability gate: drop one line in front of
+your validate step, and the job stops there — before any invoice is touched —
+if the installed build does not implement a profile or report format the rest
+of the pipeline depends on. The canonical form is pure python3 stdlib, the
+same zero-dependency footprint as the tool itself:
+
+```
+python3 -m einvoice info --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'xrechnung' in d['profiles'] and 'sarif' in d['formats']"
+```
+
+Exit `0` when both capabilities are present. A failed `assert` — or a broken
+`info` invocation feeding the pipe — exits non-zero, so any CI runner fails
+the step. The checkable ids are exactly the strings `info --json` prints under
+`profiles` and `formats` (this build: `en16931`/`xrechnung`, and the nine
+formats including `sarif` and `junit`); requiring an id the build does not
+claim — say a `peppol` profile — fails the same way, which is the point.
+`test_ci_capability_recipe.py` extracts this exact command from this file and
+runs it, present and absent case both, so the recipe cannot drift from the
+build.
+
+Optional alternative, only if your CI image already ships `jq` (it is **not**
+required and not a dependency of this tool):
+
+```
+python3 -m einvoice info --json | jq -e '(.profiles | index("xrechnung")) and (.formats | index("sarif"))' > /dev/null
+```
+
 ## Next steps
 
 - **Fix the invoice and re-run.** [`examples/README.md`](examples/README.md)

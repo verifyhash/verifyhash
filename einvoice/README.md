@@ -641,7 +641,7 @@ that pins the exact numbers we publish — and confirms they still match the liv
 source tree. It exits `0` only if nothing has moved. `attestation.json` pins:
 
 - **286 business rules** asserted by the engine (the frozen `rules.count`);
-- the frozen syntax-binding coverage headline: **741 of 756 UBL** + **546 of
+- the frozen syntax-binding coverage headline: **741 of 756 UBL** + **554 of
   583 CII** syntax-binding asserts differential-proven per binding;
 - the in-scope KoSIT test-suite pass rates: **39 of 39 UBL** and **39 of 39
   CII** official documents accepted;

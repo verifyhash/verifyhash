@@ -109,7 +109,7 @@ def _rules_section(rules):
 def _coverage_section(coverage):
     """Frozen coverage headline, copied verbatim from export/coverage.json.
 
-    The two syntax-binding fractions (UBL 741/756, CII 546/583 as they stand
+    The two syntax-binding fractions (UBL 741/756, CII 554/583 as they stand
     in the artifact) and the asserted business-rule total are copied, never
     recomputed-approximately.
     """

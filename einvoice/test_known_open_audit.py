@@ -14,8 +14,9 @@ What is checked (each an independent hard assert; non-zero exit on any failure):
      ``test_syntax_binding.py`` asserts against (``known_open_ids()`` /
      ``class_known_open_ids`` / ``cii_class_known_open_ids``) — an id missing
      from the audit fails, and a stale audit id no longer live fails. The
-     per-binding totals are pinned (15 UBL + 37 CII).
-  2. every entry's ``class`` is one of the three allowed blocker classes, and
+     per-binding totals are pinned (15 UBL + 29 CII — T-VHCOV.2 promoted the 8
+     promotable-under-provable-extension ids out of the CII remainder).
+  2. every entry's ``class`` is one of the two allowed blocker classes, and
      the committed ``counts`` equal a live recount of the entries.
   3. every entry carries a non-empty ``test`` / ``context`` / ``reason``, its
      ``binding``/``shape_class`` match the live partition, and the recorded
@@ -46,9 +47,11 @@ AUDIT_PATH = os.path.join(HERE, "known_open_audit.json")
 CATALOG_PATH = os.path.join(HERE, "syntax_binding_catalog.json")
 MATRIX_PATH = os.path.join(HERE, "coverage_matrix.json")
 
-ALLOWED_CLASSES = ("needs-general-xpath", "needs-external-codelist",
-                   "promotable-under-provable-extension")
-EXPECTED_TOTALS = {"UBL": 15, "CII": 37}
+# T-VHCOV.2: the promotable-under-provable-extension class is terminally
+# resolved (all 8 ids promoted + differential-proven at 0 divergences), so
+# only the two genuinely-terminal blocker classes remain allowed.
+ALLOWED_CLASSES = ("needs-general-xpath", "needs-external-codelist")
+EXPECTED_TOTALS = {"UBL": 15, "CII": 29}
 
 
 def _live_known_open():

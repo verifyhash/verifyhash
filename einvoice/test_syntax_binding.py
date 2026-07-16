@@ -452,8 +452,8 @@ def main():
     #      exact implemented/known-open numbers (mirrors 5h). other-complex
     #      (CII-SR-119) and datatype-regex (CII-DT-097) stay fully known-open.
     CII_TERMINAL = {
-        "absence-restriction": (503, 25),
-        "cardinality-count": (42, 10),
+        "absence-restriction": (510, 18),
+        "cardinality-count": (43, 9),
         "existence": (1, 0),
         "other-complex": (0, 1),
         "datatype-regex": (0, 1),
@@ -465,8 +465,8 @@ def main():
               "CII %s terminal counts drifted: implemented %d / known-open %d, "
               "expected %d / %d (worklist reopened)"
               % (shape, gi, gk, exp_i, exp_k))
-    check(len(cii_impl_all) == 546,
-          "CII implemented total drifted from terminal 546: %d" % len(cii_impl_all))
+    check(len(cii_impl_all) == 554,
+          "CII implemented total drifted from terminal 554: %d" % len(cii_impl_all))
 
     # 8c. other-complex + datatype-regex stay fully known-open (honesty line — a
     #     compound or regex restriction is never approximated).

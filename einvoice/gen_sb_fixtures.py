@@ -89,6 +89,26 @@ def _add_path_instance(parent, path):
     return cur
 
 
+def _add_path_reuse(parent, path):
+    """Materialize ONE instance of a restricted location path under ``parent``,
+    REUSING an existing child at each element step where one exists (so two
+    paths that share a prefix — ram:ShipToTradeParty/ram:ID and
+    ram:ShipToTradeParty/ram:GlobalID — land in the SAME intermediate element).
+    A trailing @attr step becomes an attribute on the deepest element."""
+    cur = parent
+    for st in path.steps:
+        if isinstance(st, sbe._AttrStep):
+            cur.set(st.key, "x")
+        else:
+            nxt = None
+            for ch in cur:
+                if ch.tag in st.tags:
+                    nxt = ch
+                    break
+            cur = nxt if nxt is not None else ET.SubElement(cur, _leaf_tag(st))
+    return cur
+
+
 def _make_context(root, branch):
     """Materialize a node matching one restricted context branch. A rooted branch
     is the document root itself; an element-suffix branch (T-VHSBL.6) becomes a
@@ -258,6 +278,31 @@ def _mutate_cii(entry):
 
     if comp.kind in ("not", "not_or_eq"):
         _add_path_instance(target, comp.p)
+        return tree
+
+    if comp.kind == "not_or_exists":
+        # not(P) or (Q): make P present and the required companion Q EMPTY.
+        # Adding a fresh P instance never carries Q's attribute/children, and
+        # any PRE-EXISTING Q nodes (e.g. the base's 20 BilledQuantity/@unitCode
+        # for CII-DT-033's rooted document-wide guard) are removed so the guard
+        # node-set is genuinely empty — the official rule then fires too.
+        _add_path_instance(target, comp.p)
+        parents = _parents(root)
+        for node in sbe._select(comp.q, target, root, parents):
+            if isinstance(node, tuple):
+                el, key = node
+                del el.attrib[key]
+            else:
+                parents[id(node)].remove(node)
+        return tree
+
+    if comp.kind == "not_and":
+        # not(A and B) (incl. the three-way mutual-exclusion form): make BOTH
+        # node-sets present, sharing ancestor elements (one ShipToTradeParty
+        # carrying ID + GlobalID — not two parties) so no official downstream
+        # rule sees an unrelated plural leaf.
+        for path in comp.terms:
+            _add_path_reuse(target, path)
         return tree
 
     # cardinality-count: exceed the cap on one context node.

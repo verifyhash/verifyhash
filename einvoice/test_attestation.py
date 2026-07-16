@@ -114,7 +114,7 @@ class TestByteReproducibility(unittest.TestCase):
         # coverage headline
         sb = body["coverage"]["syntax_binding"]
         self.assertEqual(sb["ubl"], {"proven": 741, "total": 756})
-        self.assertEqual(sb["cii"], {"proven": 546, "total": 583})
+        self.assertEqual(sb["cii"], {"proven": 554, "total": 583})
         # UBL + CII in-scope pass rates
         self.assertEqual(body["testsuite_conformance"]["ubl"]["total"], 39)
         self.assertEqual(body["testsuite_conformance"]["cii"]["total"], 39)
@@ -142,8 +142,8 @@ class TestDocReflectsAttestation(unittest.TestCase):
 
     @staticmethod
     def _norm(text):
-        # collapse markdown bold + line wraps so "**546 of\n  583 CII**"
-        # matches the canonical "546 of 583 CII".
+        # collapse markdown bold + line wraps so "**554 of\n  583 CII**"
+        # matches the canonical "554 of 583 CII".
         import re
         return re.sub(r"\s+", " ", text.replace("*", ""))
 

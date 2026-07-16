@@ -16,9 +16,16 @@ committed catalog and classifies the id into EXACTLY ONE blocker class:
     official validator). Terminal.
   * ``needs-external-codelist`` — would require a codelist artifact we do not
     vendor (none of the current remainder does).
-  * ``promotable-under-provable-extension`` — the text contains NO predicate,
-    function, or out-of-grammar axis; a bounded, provable grammatical extension
-    (named in the reason) would cover it.
+
+The third T-VHCOV.1 class, ``promotable-under-provable-extension``, was
+TERMINALLY RESOLVED by T-VHCOV.2: all 8 of its ids (CII-DT-033, CII-SR-046,
+CII-SR-090, CII-SR-449/450/451, CII-SR-465/466) were promoted into the
+restricted evaluator behind bounded grammar extensions (bare node-set existence
+right-disjunct incl. a rooted leading-/ guard path, negated conjunction
+``not(A and B)``, the truth-table-proven three-way mutual-exclusion DNF, and
+``not (`` / redundant-paren lexical tolerance for the count form) and are
+differential-proven at 0 divergences — so the class no longer appears here; a
+future artifact bump that reopens a promotable id must re-run the audit.
 
 The generator FAILS (non-zero exit) if the live known-open set and the
 classification table drift in either direction, so the audit can never silently
@@ -50,8 +57,10 @@ GENERATED_FROM = "de2370edbef91671390064282dc8124d6a3021fb"
 
 CLASS_GENERAL = "needs-general-xpath"
 CLASS_CODELIST = "needs-external-codelist"
-CLASS_PROMOTABLE = "promotable-under-provable-extension"
-ALLOWED_CLASSES = (CLASS_GENERAL, CLASS_CODELIST, CLASS_PROMOTABLE)
+# T-VHCOV.2: the T-VHCOV.1 promotable-under-provable-extension class is
+# terminally resolved (all 8 ids promoted + differential-proven), so only the
+# two genuinely-terminal blocker classes remain allowed.
+ALLOWED_CLASSES = (CLASS_GENERAL, CLASS_CODELIST)
 
 # --------------------------------------------------------------------------- #
 # The classification table: id -> (class, one factual sentence). Every reason
@@ -126,7 +135,7 @@ CLASSIFICATION = {
         " uses the preceding:: axis and a node-set self-comparison (distinct-"
         "value emulation) — axes and predicates outside the closed count "
         "grammar."),
-    # ---- CII absence-restriction (25) -------------------------------------- #
+    # ---- CII absence-restriction (18) -------------------------------------- #
     "CII-DT-010": (CLASS_GENERAL,
         "Claim-shadowed dead rule: not(@listID) itself compiles, but the "
         "earlier universal //ram:TypeCode rule in the same Schematron pattern "
@@ -175,12 +184,6 @@ CLASSIFICATION = {
         "The right disjunct self::ram:InvoiceReferencedDocument is a self:: "
         "axis test — an axis outside the restricted path grammar, and a bare "
         "(non-'literal') disjunct besides."),
-    "CII-DT-033": (CLASS_PROMOTABLE,
-        "No predicate, function or axis: not(@unitCode) or (<rooted "
-        "/rsm:... path>/@unitCode) needs only two bounded productions the "
-        "closed grammar lacks — a bare node-set existence right-disjunct "
-        "(fires when P is non-empty and Q empty) and a rooted (leading /) "
-        "test path — an exactly provable extension."),
     "CII-DT-041": (CLASS_GENERAL,
         "The right disjunct (ancestor::ram:ApplicableHeaderTradeSettlement) is "
         "an ancestor:: axis test — an axis outside the restricted path "
@@ -229,46 +232,7 @@ CLASSIFICATION = {
         "//ram:*[ends-with(name(), 'ID')] rule would over-fire on the stolen "
         "nodes — faithful support needs per-node Schematron claiming, not a "
         "grammar extension."),
-    "CII-SR-046": (CLASS_PROMOTABLE,
-        "No predicate, function or axis: not(ram:GlobalID) or "
-        "(ram:GlobalID/@schemeID) needs only the bare node-set existence "
-        "right-disjunct production (fires when P is non-empty and Q empty) — "
-        "a bounded, exactly provable extension."),
-    "CII-SR-449": (CLASS_PROMOTABLE,
-        "No predicate, function or axis: a three-way or of and/not "
-        "combinations over the two restricted paths ram:ShipToTradeParty/"
-        "ram:ID and ram:ShipToTradeParty/ram:GlobalID (logically not(A and B))"
-        " — coverable by a bounded boolean-combination-of-existence-atoms "
-        "production."),
-    "CII-SR-450": (CLASS_PROMOTABLE,
-        "No predicate, function or axis: a three-way or of and/not "
-        "combinations over the two restricted paths ram:BuyerTradeParty/ram:ID"
-        " and ram:BuyerTradeParty/ram:GlobalID (logically not(A and B)) — "
-        "coverable by a bounded boolean-combination-of-existence-atoms "
-        "production."),
-    "CII-SR-451": (CLASS_PROMOTABLE,
-        "No predicate, function or axis: a three-way or of and/not "
-        "combinations over the two restricted paths ram:PayeeTradeParty/ram:ID"
-        " and ram:PayeeTradeParty/ram:GlobalID (logically not(A and B)) — "
-        "coverable by a bounded boolean-combination-of-existence-atoms "
-        "production."),
-    "CII-SR-465": (CLASS_PROMOTABLE,
-        "No predicate, function or axis: not(A and B) over the two restricted "
-        "child paths to the seller contact's PersonName and DepartmentName — "
-        "coverable by a bounded negated-conjunction production (fires when "
-        "both node-sets are non-empty)."),
-    "CII-SR-466": (CLASS_PROMOTABLE,
-        "No predicate, function or axis: not(A and B) over the two restricted "
-        "child paths to the buyer contact's PersonName and DepartmentName — "
-        "coverable by a bounded negated-conjunction production (fires when "
-        "both node-sets are non-empty)."),
-    # ---- CII cardinality-count (10) ---------------------------------------- #
-    "CII-SR-090": (CLASS_PROMOTABLE,
-        "Already a closed-grammar form: after pure lexical normalization "
-        "('not (' -> 'not(' and stripping the redundant parens around the "
-        "count comparison) the test compiles TODAY under the existing "
-        "not(P) or count(Q) OP n production — only whitespace/paren tolerance "
-        "is missing."),
+    # ---- CII cardinality-count (9) ----------------------------------------- #
     "CII-SR-457": (CLASS_GENERAL,
         "The count path carries the predicate [ram:TypeCode='50'] — the "
         "closed count grammar admits no predicated steps."),
@@ -397,8 +361,10 @@ def main():
     audit = {
         "generated_from": GENERATED_FROM,
         "description": (
-            "MEASURE-ONLY terminal audit (T-VHCOV.1) of every live known-open "
-            "syntax-binding assert (15 UBL + 37 CII) plus the machine-listed "
+            "MEASURE-ONLY terminal audit (T-VHCOV.1, promotable class "
+            "terminally resolved by T-VHCOV.2: all 8 promotable ids promoted + "
+            "differential-proven) of every live known-open syntax-binding "
+            "assert (15 UBL + 29 CII) plus the machine-listed "
             "rule-family known-open universes of coverage_matrix.json. Each "
             "entry carries the exact official @test/@context verbatim and "
             "exactly one blocker class; nothing here changes any frozen "

@@ -66,6 +66,7 @@ GENERATORS = {
     "gen_sbom": ["sbom/bom.json"],
     "gen_cii_parity": ["cii_parity.json"],
     "gen_coverage": ["coverage_matrix.json", "COVERAGE.md"],
+    "gen_known_open_audit": ["known_open_audit.json"],
     "gen_remediation": ["remediation_catalog.json"],
     "gen_rules_doc": ["einvoice/RULES.md"],
     "gen_syntax_binding": ["syntax_binding_catalog.json"],

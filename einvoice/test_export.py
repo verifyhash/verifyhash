@@ -15,7 +15,7 @@ Checks (each an independent hard assert; mirrors the ACCEPTANCE CRITERIA):
       schemaVersion; rules.json is non-empty and EVERY entry carries the
       required fields id / family / syntax / severity / bindings (with a source
       Schematron artifact per binding).
-  (c) HEADLINE PARITY — coverage.json's 286 / 741 / 756 / 546 / 583 headline
+  (c) HEADLINE PARITY — coverage.json's 286 / 741 / 756 / 554 / 583 headline
       counts EQUAL the numbers parsed from COVERAGE.md, so the export can never
       silently diverge from the published headline.
 """
@@ -160,8 +160,8 @@ def main():
                   % (name, got, want))
         # Belt-and-suspenders: the exact published quintet.
         check((md["business_rules"], md["ubl_proven"], md["ubl_total"],
-               md["cii_proven"], md["cii_total"]) == (286, 741, 756, 546, 583),
-              "COVERAGE.md headline is no longer 286 / 741 of 756 / 546 of 583 "
+               md["cii_proven"], md["cii_total"]) == (286, 741, 756, 554, 583),
+              "COVERAGE.md headline is no longer 286 / 741 of 756 / 554 of 583 "
               "— update the export test if the engine's coverage genuinely moved")
 
     # ---- report ----------------------------------------------------------
@@ -172,7 +172,7 @@ def main():
         return 1
     print("export contract OK: %d rules, byte-reproducible, schemaVersion "
           "pinned, coverage headline == COVERAGE.md (286 / 741 of 756 UBL / "
-          "546 of 583 CII)." % len(rules))
+          "554 of 583 CII)." % len(rules))
     return 0
 
 

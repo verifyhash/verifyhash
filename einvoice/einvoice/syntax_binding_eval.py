@@ -31,6 +31,16 @@ AND its rule context is the document root ``/ubl:Invoice | /cn:CreditNote``):
                                      node in Q has string-value == LITERAL
                                      (e.g. UBL-CR-002:
                                      ``not(cbc:UBLVersionID) or cbc:UBLVersionID = '2.1'``).
+  3. ``not(P) or (Q)``             — bare node-set existence guard (T-VHCOV.2).
+                                     Fires when P is non-empty AND Q is EMPTY;
+                                     Q may be a rooted leading-``/`` path
+                                     (CII-DT-033's document-wide guard).
+  4. ``not(A and B)``              — negated conjunction (CII-SR-465/466), also
+                                     reached via the truth-table-proven
+                                     three-way mutual-exclusion DNF
+                                     ``(not(A) and B) or (A and not(B)) or
+                                     (not(A) and not(B))`` (CII-SR-449/450/451).
+                                     Fires when BOTH node-sets are non-empty.
 
 A *restricted location path* is::
 
@@ -163,11 +173,12 @@ class _ParentStep:
 
 
 class _Path:
-    __slots__ = ("descendant", "steps")
+    __slots__ = ("descendant", "steps", "rooted")
 
-    def __init__(self, descendant, steps):
+    def __init__(self, descendant, steps, rooted=False):
         self.descendant = descendant
         self.steps = steps
+        self.rooted = rooted   # leading single '/' — absolute from the document node
 
 
 def _split_top(expr, sep):
@@ -215,16 +226,27 @@ def _parse_step(tok, ns=NSMAP):
     return _ElemStep(frozenset((clark,))) if clark is not None else None
 
 
-def parse_path(path, ns=NSMAP):
-    """Parse a restricted location path into a :class:`_Path`, or None."""
+def parse_path(path, ns=NSMAP, allow_rooted=False):
+    """Parse a restricted location path into a :class:`_Path`, or None.
+
+    ``allow_rooted`` admits the ONE additional bounded form a leading single
+    ``/`` denotes — an absolute path evaluated from the document node (its first
+    step must be the document element). Off by default so every pre-existing
+    production keeps its exact grammar; only the bare node-set existence
+    right-disjunct (CII-DT-033's rooted ``/rsm:...`` guard) opts in."""
     s = path.strip()
     descendant = False
+    rooted = False
     if s.startswith("//"):
         descendant = True
         rest = s[2:]
     elif s.startswith("/"):
-        # Absolute-from-root (single leading slash) is not in the supported set.
-        return None
+        # Absolute-from-root (single leading slash): only where the calling
+        # production explicitly opts in; not in the base supported set.
+        if not allow_rooted:
+            return None
+        rooted = True
+        rest = s[1:]
     else:
         rest = s
     if not rest or "//" in rest:
@@ -241,13 +263,17 @@ def parse_path(path, ns=NSMAP):
             return None
         if isinstance(st, _ParentStep):
             # A leading `..` chain only (`../a/b`); a `..` after an element step
-            # (`a/../b`) is outside the bounded form and stays known-open.
-            if seen_non_parent or descendant:
+            # (`a/../b`) — or any `..` in a rooted path — is outside the bounded
+            # form and stays known-open.
+            if seen_non_parent or descendant or rooted:
                 return None
         else:
             seen_non_parent = True
         steps.append(st)
-    return _Path(descendant, steps)
+    if rooted and not isinstance(steps[0], _ElemStep):
+        # A rooted path's first step must be the document element.
+        return None
+    return _Path(descendant, steps, rooted)
 
 
 # --------------------------------------------------------------------------- #
@@ -266,6 +292,22 @@ def _select(path, ctx, root, parents=None):
     """
     if path.descendant:
         current = list(root.iter())        # descendant-or-self::node()
+    elif path.rooted:
+        # Absolute from the DOCUMENT node: the first (element) step selects the
+        # document element iff its tag matches — context-independent, exactly as
+        # Schematron evaluates a leading-/ path inside a @test. The remaining
+        # steps then walk down as usual.
+        first = path.steps[0]
+        current = [root] if root.tag in first.tags else []
+        for step in path.steps[1:]:
+            if isinstance(step, _AttrStep):
+                return [(el, step.key) for el in current
+                        if el.get(step.key) is not None]
+            current = [child for el in current for child in el
+                       if child.tag in step.tags]
+            if not current:
+                break
+        return current
     else:
         current = [ctx]
     for step in path.steps:
@@ -354,6 +396,13 @@ class _Compiled:
       * ``not``          — ``not(P)``: fires when P is non-empty.
       * ``not_or_eq``    — ``not(P) or Q = 'lit'``: fires when P non-empty and no
                            Q string-value equals the literal.
+      * ``not_or_exists`` — ``not(P) or (Q)``: fires when P is non-empty and the
+                           bare node-set Q is EMPTY (Q may be a rooted leading-/
+                           path — the CII-DT-033 document-wide guard).
+      * ``not_and``      — ``not(A and B)`` (also reached via the equivalent
+                           three-way ``(not(A) and B) or (A and not(B)) or
+                           (not(A) and not(B))`` mutual-exclusion form): fires
+                           when BOTH node-sets are non-empty.
       * ``count``        — ``count(P) OP n``: fires when the count does NOT satisfy
                            the bound.
       * ``not_or_count`` — ``not(P1) or count(P2) OP n``: fires when P1 non-empty
@@ -405,6 +454,21 @@ class _Compiled:
             if any(_string_value(n) == self.literal for n in q_nodes):
                 return (False, None)
             return (True, p_nodes[0])
+        if kind == "not_or_exists":
+            # not(P) or (Q): passes when P is empty OR Q is non-empty; fires
+            # when P is present and the required companion node-set Q is empty.
+            p_nodes = _select(self.p, ctx, root, parents)
+            if not p_nodes:
+                return (False, None)
+            if _select(self.q, ctx, root, parents):
+                return (False, None)
+            return (True, p_nodes[0])
+        if kind == "not_and":
+            # not(A and B): fires exactly when BOTH node-sets are non-empty.
+            sets = [_select(t, ctx, root, parents) for t in self.terms]
+            if all(sets):
+                return (True, sets[0][0])
+            return (False, None)
         if kind == "count":
             nodes = _select(self.p, ctx, root, parents)
             if _cmp(len(nodes), self.op, self.n):
@@ -452,20 +516,96 @@ class _Compiled:
 
 
 def _strip_outer_not(expr):
-    """If ``expr`` is exactly one ``not( ... )`` group, return its inner text,
-    else None."""
+    """If ``expr`` is exactly one ``not( ... )`` / ``not ( ... )`` group (the
+    official CEN CII artifact writes both spacings — CII-SR-090 uses ``not (``,
+    a pure lexical variant of the same XPath call), return its inner text, else
+    None."""
     s = expr.strip()
-    if not (s.startswith("not(") and s.endswith(")")):
+    if not s.startswith("not"):
+        return None
+    body = s[len("not"):].lstrip()
+    if not (body.startswith("(") and body.endswith(")")):
         return None
     depth = 0
-    for i, ch in enumerate(s):
+    for i, ch in enumerate(body):
         if ch == "(":
             depth += 1
         elif ch == ")":
             depth -= 1
-            if depth == 0 and i != len(s) - 1:
+            if depth == 0 and i != len(body) - 1:
                 return None
-    return s[len("not("):-1]
+    return body[1:-1]
+
+
+def _plain_child_path(expr, ns=NSMAP, allow_rooted=False):
+    """Parse ``expr`` as a restricted location path CONTAINING NO parent-axis
+    step (the ``..`` chain stays exclusive to the UBL-SR-19/21 ``and_count_ne``
+    form) — the path shape the T-VHCOV.2 absence extensions admit. Returns the
+    ``_Path`` or None."""
+    p = parse_path(expr, ns, allow_rooted=allow_rooted)
+    if p is None or any(isinstance(st, _ParentStep) for st in p.steps):
+        return None
+    return p
+
+
+def _parse_existence_atom(term, ns=NSMAP):
+    """Parse ONE possibly-negated existence atom — ``not(P)`` or a bare plain
+    child path ``P`` — into ``(path_text, _Path, positive)`` or None. Used by
+    the three-way mutual-exclusion production; the raw path text is the atom's
+    identity key (the mutual-exclusion check needs the SAME two paths across
+    all disjuncts)."""
+    t = term.strip()
+    inner = _strip_outer_not(t)
+    if inner is not None:
+        key = inner.strip()
+        p = _plain_child_path(key, ns)
+        return (key, p, False) if p is not None else None
+    p = _plain_child_path(t, ns)
+    return (t, p, True) if p is not None else None
+
+
+def _compile_mutual_exclusion(disjuncts, ns=NSMAP):
+    """Compile the exact three-way mutual-exclusion form
+    ``(not(A) and B) or (A and not(B)) or (not(A) and not(B))`` (any order of
+    the three disjuncts) into a ``not_and`` :class:`_Compiled` over A and B, or
+    None. The truth-table check is EXACT: the three sign-pairs must be
+    precisely every combination except (A present and B present), so the whole
+    @test is provably equivalent to ``not(A and B)`` — never approximated."""
+    if len(disjuncts) != 3:
+        return None
+    paths = {}          # path text -> _Path (must end up with exactly 2)
+    order = []          # first-seen order of the two path texts
+    sign_pairs = set()
+    for d in disjuncts:
+        conj = _split_top(_strip_outer_parens(d.strip()), " and ")
+        if len(conj) != 2:
+            return None
+        atoms = []
+        for term in conj:
+            a = _parse_existence_atom(term, ns)
+            if a is None:
+                return None
+            atoms.append(a)
+        keys = [a[0] for a in atoms]
+        if keys[0] == keys[1]:
+            return None                 # both atoms over the same path
+        for key, p, _pos in atoms:
+            if key not in paths:
+                paths[key] = p
+                order.append(key)
+        if len(paths) > 2:
+            return None
+        # Normalize the pair to (sign of path A, sign of path B).
+        signs = dict((key, pos) for key, _p, pos in atoms)
+        if set(signs) != set(order[:2]) or len(order) < 2:
+            return None
+        sign_pairs.add((signs[order[0]], signs[order[1]]))
+    if len(paths) != 2 or len(order) != 2:
+        return None
+    # Exactly the NAND truth table: every sign combination EXCEPT (True, True).
+    if sign_pairs != {(False, True), (True, False), (False, False)}:
+        return None
+    return _Compiled("not_and", terms=[paths[order[0]], paths[order[1]]])
 
 
 def compile_test(test, ns=NSMAP):
@@ -475,16 +615,30 @@ def compile_test(test, ns=NSMAP):
     if not s:
         return None
 
-    # Form 1: bare not(P).
+    # Form 1: bare not(P) — or the negated conjunction not(A and B) (CII-SR-465/
+    # 466: fires when both plain child node-sets are present).
     inner = _strip_outer_not(s)
     if inner is not None:
         p = parse_path(inner, ns)
-        return _Compiled("not", p) if p is not None else None
+        if p is not None:
+            return _Compiled("not", p)
+        conj = _split_top(inner, " and ")
+        if len(conj) == 2:
+            a = _plain_child_path(conj[0], ns)
+            b = _plain_child_path(conj[1], ns)
+            if a is not None and b is not None:
+                return _Compiled("not_and", terms=[a, b])
+        return None
 
     # Form 2: not(P) or Q = 'literal'  (exactly two top-level disjuncts). The
     # right disjunct may be wrapped in one pair of parens — the official CEN CII
     # artifact writes it both ways (``... or (ram:TypeCode = 'VAT')`` for
-    # CII-DT-037 vs the bare ``... = '2.1'`` of UBL-CR-002).
+    # CII-DT-037 vs the bare ``... = '2.1'`` of UBL-CR-002). A right disjunct
+    # that is a bare parenthesized node-set ``(Q)`` (no comparison) is the
+    # existence guard form (CII-SR-046 / CII-DT-033): the assert passes when Q
+    # is non-empty, so it FIRES when P is present and Q empty. Q must be a
+    # plain child path (optionally rooted at the document node — CII-DT-033's
+    # /rsm:... guard); a parent-axis (../) disjunct stays known-open.
     disjuncts = _split_top(s, " or ")
     if len(disjuncts) == 2:
         left_inner = _strip_outer_not(disjuncts[0].strip())
@@ -493,13 +647,25 @@ def compile_test(test, ns=NSMAP):
         p = parse_path(left_inner, ns)
         if p is None:
             return None
-        m = _LITERAL_CMP_RE.match(_strip_outer_parens(disjuncts[1].strip()))
-        if not m:
-            return None
-        q = parse_path(m.group("path").strip(), ns)
-        if q is None:
-            return None
-        return _Compiled("not_or_eq", p, q=q, literal=m.group("lit"))
+        right = _strip_outer_parens(disjuncts[1].strip())
+        m = _LITERAL_CMP_RE.match(right)
+        if m:
+            q = parse_path(m.group("path").strip(), ns)
+            if q is None:
+                return None
+            return _Compiled("not_or_eq", p, q=q, literal=m.group("lit"))
+        if disjuncts[1].strip().startswith("("):
+            # bare node-set existence right-disjunct — only in the explicitly
+            # parenthesized form the official artifact writes.
+            q = _plain_child_path(right, ns, allow_rooted=True)
+            if q is not None:
+                return _Compiled("not_or_exists", p, q=q)
+        return None
+
+    # Form 3: the three-way mutual-exclusion DNF (CII-SR-449/450/451),
+    # truth-table-proven equivalent to not(A and B).
+    if len(disjuncts) == 3:
+        return _compile_mutual_exclusion(disjuncts, ns)
 
     return None
 
@@ -647,7 +813,10 @@ def compile_count_test(test, ns=NSMAP):
         p1 = parse_path(left, ns)
         if p1 is None:
             return None
-        cc = _parse_count_cmp(disj[1].strip(), ns)
+        # The right disjunct may be wrapped in one redundant pair of parens —
+        # the official CII artifact writes CII-SR-090 as
+        # ``not (P) or (count(Q) =1)`` (pure lexical variance).
+        cc = _parse_count_cmp(_strip_outer_parens(disj[1].strip()), ns)
         if cc is None:
             return None
         p2, op, n = cc
@@ -1549,7 +1718,14 @@ def _message(entry, path):
         return ("Syntax-binding restriction %s (CEN EN 16931 %s, flag=%s): %s at "
                 "%s — the EN 16931 core model has no conformant slot for it "
                 "(@test=%s)." % (entry.id, syn, entry.flag, kind, path, entry.test))
-    if k in ("count", "not_or_count"):
+    if k == "not_or_exists":
+        detail = ("a restricted %s element is present without the companion "
+                  "element/attribute the EN 16931 syntax binding requires "
+                  "alongside it" % syn)
+    elif k == "not_and":
+        detail = ("two mutually-exclusive %s elements are both present — the "
+                  "EN 16931 syntax binding allows at most one of them" % syn)
+    elif k in ("count", "not_or_count"):
         detail = ("%s element repetition exceeds the EN 16931 syntax-binding "
                   "cardinality cap" % syn)
     elif k == "exists_all":

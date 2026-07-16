@@ -1,6 +1,6 @@
 {
   "generated_from": "de2370edbef91671390064282dc8124d6a3021fb",
-  "description": "MEASURE-ONLY terminal audit (T-VHCOV.1) of every live known-open syntax-binding assert (15 UBL + 37 CII) plus the machine-listed rule-family known-open universes of coverage_matrix.json. Each entry carries the exact official @test/@context verbatim and exactly one blocker class; nothing here changes any frozen coverage number, evaluator behavior, or verdict. Regenerate with python3 gen_known_open_audit.py (byte-stable); test_known_open_audit.py fails on any drift.",
+  "description": "MEASURE-ONLY terminal audit (T-VHCOV.1, promotable class terminally resolved by T-VHCOV.2: all 8 promotable ids promoted + differential-proven) of every live known-open syntax-binding assert (15 UBL + 29 CII) plus the machine-listed rule-family known-open universes of coverage_matrix.json. Each entry carries the exact official @test/@context verbatim and exactly one blocker class; nothing here changes any frozen coverage number, evaluator behavior, or verdict. Regenerate with python3 gen_known_open_audit.py (byte-stable); test_known_open_audit.py fails on any drift.",
   "entries": [
     {
       "id": "CII-DT-010",
@@ -82,15 +82,6 @@
       "context": "//ram:*[ends-with(name(), 'ReferencedDocument')]",
       "class": "needs-general-xpath",
       "reason": "The right disjunct self::ram:InvoiceReferencedDocument is a self:: axis test — an axis outside the restricted path grammar, and a bare (non-'literal') disjunct besides."
-    },
-    {
-      "id": "CII-DT-033",
-      "binding": "CII",
-      "shape_class": "absence-restriction",
-      "test": "not(@unitCode) or (/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity/@unitCode)",
-      "context": "//ram:*[ends-with(name(), 'Quantity')]",
-      "class": "promotable-under-provable-extension",
-      "reason": "No predicate, function or axis: not(@unitCode) or (<rooted /rsm:... path>/@unitCode) needs only two bounded productions the closed grammar lacks — a bare node-set existence right-disjunct (fires when P is non-empty and Q empty) and a rooted (leading /) test path — an exactly provable extension."
     },
     {
       "id": "CII-DT-041",
@@ -183,24 +174,6 @@
       "reason": "Suffix-claim-unsafe: both the @context and not(@schemeURI) compile, but earlier specific ID rules in the same pattern claim the core ram:ID-family nodes first, so an independent evaluation of the //ram:*[ends-with(name(), 'ID')] rule would over-fire on the stolen nodes — faithful support needs per-node Schematron claiming, not a grammar extension."
     },
     {
-      "id": "CII-SR-046",
-      "binding": "CII",
-      "shape_class": "absence-restriction",
-      "test": "not(ram:GlobalID) or (ram:GlobalID/@schemeID)",
-      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct",
-      "class": "promotable-under-provable-extension",
-      "reason": "No predicate, function or axis: not(ram:GlobalID) or (ram:GlobalID/@schemeID) needs only the bare node-set existence right-disjunct production (fires when P is non-empty and Q empty) — a bounded, exactly provable extension."
-    },
-    {
-      "id": "CII-SR-090",
-      "binding": "CII",
-      "shape_class": "cardinality-count",
-      "test": "not (ram:OriginTradeCountry) or (count(ram:OriginTradeCountry/ram:ID) =1)",
-      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct",
-      "class": "promotable-under-provable-extension",
-      "reason": "Already a closed-grammar form: after pure lexical normalization ('not (' -> 'not(' and stripping the redundant parens around the count comparison) the test compiles TODAY under the existing not(P) or count(Q) OP n production — only whitespace/paren tolerance is missing."
-    },
-    {
       "id": "CII-SR-119",
       "binding": "CII",
       "shape_class": "other-complex",
@@ -208,33 +181,6 @@
       "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement",
       "class": "needs-general-xpath",
       "reason": "A compound or(and, and) co-occurrence whose left branch carries the predicate ram:ChargeIndicator[udt:Indicator=false()] — an XPath-2.0 typed cast-to-boolean comparison — predicates, typed casts and general boolean composition are outside every closed class grammar."
-    },
-    {
-      "id": "CII-SR-449",
-      "binding": "CII",
-      "shape_class": "absence-restriction",
-      "test": "(not(ram:ShipToTradeParty/ram:ID) and ram:ShipToTradeParty/ram:GlobalID) or (ram:ShipToTradeParty/ram:ID and not(ram:ShipToTradeParty/ram:GlobalID)) or (not(ram:ShipToTradeParty/ram:ID) and not(ram:ShipToTradeParty/ram:GlobalID))",
-      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery",
-      "class": "promotable-under-provable-extension",
-      "reason": "No predicate, function or axis: a three-way or of and/not combinations over the two restricted paths ram:ShipToTradeParty/ram:ID and ram:ShipToTradeParty/ram:GlobalID (logically not(A and B)) — coverable by a bounded boolean-combination-of-existence-atoms production."
-    },
-    {
-      "id": "CII-SR-450",
-      "binding": "CII",
-      "shape_class": "absence-restriction",
-      "test": "(not(ram:BuyerTradeParty/ram:ID) and ram:BuyerTradeParty/ram:GlobalID) or (ram:BuyerTradeParty/ram:ID and not(ram:BuyerTradeParty/ram:GlobalID)) or (not(ram:BuyerTradeParty/ram:ID) and not(ram:BuyerTradeParty/ram:GlobalID))",
-      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
-      "class": "promotable-under-provable-extension",
-      "reason": "No predicate, function or axis: a three-way or of and/not combinations over the two restricted paths ram:BuyerTradeParty/ram:ID and ram:BuyerTradeParty/ram:GlobalID (logically not(A and B)) — coverable by a bounded boolean-combination-of-existence-atoms production."
-    },
-    {
-      "id": "CII-SR-451",
-      "binding": "CII",
-      "shape_class": "absence-restriction",
-      "test": "(not(ram:PayeeTradeParty/ram:ID) and ram:PayeeTradeParty/ram:GlobalID) or (ram:PayeeTradeParty/ram:ID and not(ram:PayeeTradeParty/ram:GlobalID)) or (not(ram:PayeeTradeParty/ram:ID) and not(ram:PayeeTradeParty/ram:GlobalID))",
-      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement",
-      "class": "promotable-under-provable-extension",
-      "reason": "No predicate, function or axis: a three-way or of and/not combinations over the two restricted paths ram:PayeeTradeParty/ram:ID and ram:PayeeTradeParty/ram:GlobalID (logically not(A and B)) — coverable by a bounded boolean-combination-of-existence-atoms production."
     },
     {
       "id": "CII-SR-457",
@@ -262,24 +208,6 @@
       "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement",
       "class": "needs-general-xpath",
       "reason": "The right disjunct counts distinct-values(//ram:ApplicableTradeTax/ram:DueDateTypeCode) — an XPath-2.0 set function outside the closed count grammar."
-    },
-    {
-      "id": "CII-SR-465",
-      "binding": "CII",
-      "shape_class": "absence-restriction",
-      "test": "not(ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName and ram:SellerTradeParty/ram:DefinedTradeContact/ram:DepartmentName)",
-      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
-      "class": "promotable-under-provable-extension",
-      "reason": "No predicate, function or axis: not(A and B) over the two restricted child paths to the seller contact's PersonName and DepartmentName — coverable by a bounded negated-conjunction production (fires when both node-sets are non-empty)."
-    },
-    {
-      "id": "CII-SR-466",
-      "binding": "CII",
-      "shape_class": "absence-restriction",
-      "test": "not(ram:BuyerTradeParty/ram:DefinedTradeContact/ram:PersonName and ram:BuyerTradeParty/ram:DefinedTradeContact/ram:DepartmentName)",
-      "context": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement",
-      "class": "promotable-under-provable-extension",
-      "reason": "No predicate, function or axis: not(A and B) over the two restricted child paths to the buyer contact's PersonName and DepartmentName — coverable by a bounded negated-conjunction production (fires when both node-sets are non-empty)."
     },
     {
       "id": "CII-SR-467",
@@ -473,8 +401,7 @@
   ],
   "counts": {
     "needs-general-xpath": 44,
-    "needs-external-codelist": 0,
-    "promotable-under-provable-extension": 8
+    "needs-external-codelist": 0
   },
   "rule_family_known_open": {
     "creditnote_conformance": {

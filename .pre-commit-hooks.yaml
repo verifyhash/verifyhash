@@ -21,7 +21,8 @@
 # `language: script` runs the committed wrapper directly and installs nothing,
 # so the ONE prerequisite is that the einvoice validator is importable in the
 # environment `pre-commit run` executes in. Install it once with:
-#     python3 -m pip install einvoice
+#     python3 -m pip install verifyhash-einvoice
+#     # (pending first publish — until then: python3 -m pip install /path/to/einvoice)
 # (or point the wrapper at a source checkout via EINVOICE_CMD / PYTHONPATH).
 # See einvoice/README.md -> "Use as a pre-commit hook" for the copy-paste
 # block and the prerequisite in full.
@@ -37,8 +38,9 @@
     Block a commit that stages a non-conformant EN 16931 / XRechnung e-invoice.
     Drives the real `python3 -m einvoice.report` entrypoint (the same validator
     CI runs) and prints the offending rule id(s). Requires the `einvoice`
-    package to be importable (python3 -m pip install einvoice); installs nothing
-    itself. Scoped to *.xml, so it stays inert on every other commit.
+    package to be importable (python3 -m pip install verifyhash-einvoice —
+    pending first publish; until then python3 -m pip install /path/to/einvoice);
+    installs nothing itself. Scoped to *.xml, so it stays inert on every commit.
   entry: einvoice/ci/pre-commit-einvoice.sh
   language: script
   files: \.xml$

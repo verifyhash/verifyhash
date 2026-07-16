@@ -121,7 +121,7 @@ def run_entry(entry, fixture):
     the repo (clone) root, cwd at that root, matched filename as an argument.
     PYTHONPATH points at the einvoice package dir so the wrapper's
     `python3 -m einvoice.report` shell-out imports cleanly regardless of a real
-    `pip install einvoice` in this sandbox."""
+    `pip install verifyhash-einvoice` in this sandbox."""
     env = dict(os.environ)
     env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
     return subprocess.run(
@@ -199,8 +199,9 @@ def main():
           "README section has the remote repos: block")
     check("- id: einvoice" in doc,
           "README repos: block references the einvoice hook id")
-    check("pip install einvoice" in doc,
-          "README documents the install prerequisite (pip install einvoice)")
+    check("pip install verifyhash-einvoice" in doc,
+          "README documents the install prerequisite "
+          "(pip install verifyhash-einvoice)")
     check("language: script" in doc,
           "README explains the honest language: script choice")
 

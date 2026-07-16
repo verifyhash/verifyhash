@@ -739,7 +739,9 @@ installs nothing, which means the `einvoice` validator must already be
 importable in the environment `pre-commit` runs in. Install it once:
 
 ```sh
-python3 -m pip install einvoice
+python3 -m pip install verifyhash-einvoice
+# (pending first publish — until then, install from a checkout/vendored copy:
+#  python3 -m pip install /path/to/einvoice)
 ```
 
 (or export `EINVOICE_CMD` / `PYTHONPATH` to point the wrapper at a source

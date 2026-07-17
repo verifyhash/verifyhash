@@ -21,6 +21,8 @@ XSLT and compares the fired-rule set. The sources:
 | `xrechnung-ubl` | KoSIT XRechnung (`corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch`) | 2.5.0 (XRechnung 3.0.2) | Apache-2.0 |
 | `xrechnung-cii` | KoSIT XRechnung (`corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch`) | 2.5.0 (XRechnung 3.0.2) | Apache-2.0 |
 
+The vendored German national rule set is **KoSIT XRechnung Schematron 2.5.0, which corresponds to the XRechnung 3.0.2 CIUS** (the German EN 16931 Core Invoice Usage Specification). Every `BR-DE-*`, `BR-DEX-*`, `BR-DE-CVD-*` and `BR-TMP-*` verdict on this page is the ground truth of that specific published version — no other XRechnung version is implied or supported. The version marker is taken verbatim from the vendored artifact's Schematron title line (`corpus/xrechnung-schematron/schematron/{ubl,cii}/XRechnung-*-validation.sch`) and `corpus/xrechnung-schematron/VENDORED.md`; `test_xrechnung_version_scope.py` fails if the corpus is bumped without this statement (and the table above) being updated to match.
+
 ## Coverage at a glance
 
 - **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).

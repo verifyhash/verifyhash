@@ -128,6 +128,7 @@ _KNOWN_PAGES = (
     os.path.join("walkthrough", "index.html"),
     os.path.join("licensing", "index.html"),
     os.path.join("de", "index.html"),
+    os.path.join("de", "walkthrough", "index.html"),
     os.path.join("rules", "BR-01", "index.html"),
 )
 

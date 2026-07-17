@@ -309,6 +309,7 @@ def main():
     walkthrough_path = os.path.join(WWW_DIR, "walkthrough", "index.html")
     licensing_path = os.path.join(WWW_DIR, "licensing", "index.html")
     de_path = os.path.join(WWW_DIR, "de", "index.html")
+    de_walkthrough_path = os.path.join(WWW_DIR, "de", "walkthrough", "index.html")
     sitemap_path = os.path.join(WWW_DIR, "sitemap.xml")
     robots_path = os.path.join(WWW_DIR, "robots.txt")
     for pth, name in ((landing_path, "www/index.html"),
@@ -316,6 +317,7 @@ def main():
                       (walkthrough_path, "www/walkthrough/index.html"),
                       (licensing_path, "www/licensing/index.html"),
                       (de_path, "www/de/index.html"),
+                      (de_walkthrough_path, "www/de/walkthrough/index.html"),
                       (sitemap_path, "www/sitemap.xml"),
                       (robots_path, "www/robots.txt")):
         check(os.path.exists(pth), "surface file missing: %s" % name)
@@ -333,6 +335,8 @@ def main():
         html_files.append(licensing_path)
     if os.path.exists(de_path):
         html_files.append(de_path)
+    if os.path.exists(de_walkthrough_path):
+        html_files.append(de_walkthrough_path)
     for rid in sorted(want & have):
         rp = os.path.join(RULES_DIR, rid, "index.html")
         if os.path.exists(rp):
@@ -369,7 +373,7 @@ def main():
         check(len(locs) == len(got), "sitemap has duplicate <loc> entries")
         expected = {_gen._url_landing(), _gen._url_hub(),
                     _gen._url_walkthrough(), _gen._url_licensing(),
-                    _gen._url_de()}
+                    _gen._url_de(), _gen._url_de_walkthrough()}
         expected |= {_gen._url_rule(rid) for rid in (want & have)}
         check(got == expected,
               "sitemap <loc> set != generated canonical set; missing=%s "
@@ -410,7 +414,8 @@ def main():
                        _gen._url_hub(): hub_path,
                        _gen._url_walkthrough(): walkthrough_path,
                        _gen._url_licensing(): licensing_path,
-                       _gen._url_de(): de_path}
+                       _gen._url_de(): de_path,
+                       _gen._url_de_walkthrough(): de_walkthrough_path}
         for rid in (want & have):
             loc_to_file[_gen._url_rule(rid)] = os.path.join(
                 RULES_DIR, rid, "index.html")
@@ -526,7 +531,7 @@ def main():
         surface_titles = []
         surface_descs = []
         for spath in (landing_path, hub_path, walkthrough_path,
-                      licensing_path, de_path):
+                      licensing_path, de_path, de_walkthrough_path):
             sraw = open(spath, encoding="utf-8").read()
             tm = _TITLE_RE.search(sraw)
             dm = _DESC_RE.search(sraw)
@@ -561,15 +566,56 @@ def main():
                       "command on the de page is NOT byte-identical to any "
                       "line of %s: %r" % (doc_rel, cmd))
 
-        # HARD LINE: no per-rule German pages and no extra German subtree —
-        # www/de/ holds EXACTLY one file, index.html.
+        # HARD LINE: no per-rule German pages (thin-content line) — www/de/
+        # holds EXACTLY the product page index.html plus the single worked
+        # walkthrough/ subdir (T-VHDE.3), and nothing else. The walkthrough
+        # subdir itself holds only its index.html — one German walkthrough, not
+        # a fan-out of pages.
         de_dir = os.path.dirname(de_path)
         check(not os.path.isdir(os.path.join(de_dir, "rules")),
               "per-rule German pages exist under www/de/rules/ (thin-content "
               "hard line)")
         de_entries = sorted(os.listdir(de_dir))
-        check(de_entries == ["index.html"],
-              "www/de/ must hold exactly index.html, got: %r" % de_entries)
+        check(de_entries == ["index.html", "walkthrough"],
+              "www/de/ must hold exactly index.html + walkthrough/, got: %r"
+              % de_entries)
+        de_walk_dir = os.path.join(de_dir, "walkthrough")
+        check(os.path.isdir(de_walk_dir)
+              and sorted(os.listdir(de_walk_dir)) == ["index.html"],
+              "www/de/walkthrough/ must hold exactly index.html (one German "
+              "walkthrough page), got: %r"
+              % (sorted(os.listdir(de_walk_dir))
+                 if os.path.isdir(de_walk_dir) else None))
+
+        # hreflang alternates BOTH directions between the two walkthroughs
+        # (T-VHDE.3): the German walkthrough references the English page
+        # (hreflang="en") and itself (hreflang="de"); the English walkthrough
+        # references the German page (hreflang="de") and itself (hreflang="en").
+        if os.path.exists(de_walkthrough_path) and os.path.exists(
+                walkthrough_path):
+            de_walk_raw = open(de_walkthrough_path, encoding="utf-8").read()
+            en_walk_raw = open(walkthrough_path, encoding="utf-8").read()
+            check('<html lang="de">' in de_walk_raw,
+                  "www/de/walkthrough/index.html does not declare lang=\"de\"")
+            dw_alts = {hl: href for hl, href in alt_re.findall(de_walk_raw)}
+            ew_alts = {hl: href for hl, href in alt_re.findall(en_walk_raw)}
+            check(dw_alts.get("en") == _gen._url_walkthrough(),
+                  "German walkthrough hreflang=\"en\" does not point at the "
+                  "English walkthrough (got %r)" % dw_alts.get("en"))
+            check(dw_alts.get("de") == _gen._url_de_walkthrough(),
+                  "German walkthrough lacks self hreflang=\"de\" (got %r)"
+                  % dw_alts.get("de"))
+            check(ew_alts.get("de") == _gen._url_de_walkthrough(),
+                  "English walkthrough hreflang=\"de\" does not point at the "
+                  "German walkthrough (got %r)" % ew_alts.get("de"))
+            check(ew_alts.get("en") == _gen._url_walkthrough(),
+                  "English walkthrough lacks self hreflang=\"en\" (got %r)"
+                  % ew_alts.get("en"))
+            # The German product page links to the German walkthrough with the
+            # de-relative href the task pins.
+            check('href="walkthrough/index.html"' in de_raw,
+                  "www/de/index.html has no href=\"walkthrough/index.html\" "
+                  "link to the German walkthrough")
 
     # ---- (d) --check is 0 on the committed tree, non-zero on a mutation -----
     check(_gen.main(["--check"]) == 0,

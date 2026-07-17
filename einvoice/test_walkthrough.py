@@ -52,9 +52,17 @@ from gen_examples import live_report_json           # noqa: E402
 
 WWW_DIR = os.path.join(HERE, "www")
 WALK_PATH = os.path.join(WWW_DIR, "walkthrough", "index.html")
+DE_WALK_PATH = os.path.join(WWW_DIR, "de", "walkthrough", "index.html")
 SITEMAP_PATH = os.path.join(WWW_DIR, "sitemap.xml")
 
 _TAG_RE = re.compile(r"<[^>]*>")
+# A CONCRETE rule id as the live report emits them (BR-DE-2, BR-DE-15,
+# BR-DE-TMP-32, BR-CO-05, ...): a BR- family token that ends in a numeric
+# segment. Deliberately does NOT match a family GLOB (``BR-DE-*``) or a
+# BT-/BG- business term, so it captures exactly the rule ids a page names.
+_RULE_ID_RE = re.compile(r"\bBR-[A-Z]+(?:-[A-Z0-9]+)*-\d+\b")
+# Every CLI invocation of the tool shown on a page (a command line, not XML).
+_CMD_RE = re.compile(r"python3 -m einvoice\.report[^<\n]*")
 
 
 def _visible_text(page):
@@ -179,11 +187,11 @@ class WalkthroughTest(unittest.TestCase):
 
     # (6) self-contained + indexable.
     def test_self_contained_and_indexable(self):
-        # The single absolute canonical <link> href is a legitimate https URL
-        # (the same BASE_URL the sitemap uses), NOT a fetched resource — strip
-        # it before the external-resource scan, exactly like test_site.py does.
-        scan = re.sub(r'<link\b[^>]*\brel="canonical"[^>]*>', " ", self.page,
-                      flags=re.IGNORECASE)
+        # The absolute canonical + hreflang-alternate <link> hrefs are legitimate
+        # https URLs (the same BASE_URL the sitemap uses), NOT fetched resources —
+        # strip every <link> before the external-resource scan, exactly like
+        # test_site.py does for the landing/de pages that carry alternates.
+        scan = re.sub(r"<link\b[^>]*>", " ", self.page, flags=re.IGNORECASE)
         # No external CSS/JS/CDN/font/network references remain.
         self.assertNotRegex(
             scan,
@@ -192,10 +200,17 @@ class WalkthroughTest(unittest.TestCase):
         # No <script> and no src= (no JS, no external asset).
         self.assertNotIn("<script", self.page.lower())
         self.assertNotRegex(self.page, r"\bsrc\s*=")
-        # The only <link> is the relative-free absolute rel=canonical.
+        # Every <link> is either the one self-referential rel=canonical or a
+        # rel=alternate hreflang link (all absolute BASE_URL, none a fetched
+        # resource) — no external stylesheet/icon/preload smuggled in.
         links = re.findall(r"<link\b[^>]*>", self.page, re.IGNORECASE)
-        self.assertEqual(len(links), 1, "expected exactly one <link> (canonical)")
-        self.assertIn('rel="canonical"', links[0])
+        canon_links = [l for l in links if 'rel="canonical"' in l]
+        alt_links = [l for l in links if 'rel="alternate"' in l]
+        self.assertEqual(len(canon_links), 1,
+                         "expected exactly one <link rel=canonical>")
+        self.assertEqual(len(links), len(canon_links) + len(alt_links),
+                         "walkthrough carries a <link> that is neither the "
+                         "canonical nor an hreflang alternate: %r" % links)
         # Indexable: no robots:noindex meta.
         self.assertNotRegex(
             self.page, r'<meta[^>]*name="robots"[^>]*noindex',
@@ -216,6 +231,118 @@ class WalkthroughTest(unittest.TestCase):
             sm = fh.read()
         self.assertIn(_gen._url_walkthrough(), sm,
                       "walkthrough not listed in sitemap.xml")
+
+    # (7) hreflang alternates in BOTH directions with the German walkthrough.
+    def test_hreflang_both_directions(self):
+        de = self._read_de()
+        alt_re = re.compile(
+            r'<link\b[^>]*\brel="alternate"[^>]*\bhreflang="([^"]*)"[^>]*'
+            r'\bhref="([^"]*)"', re.IGNORECASE)
+        en_alts = {hl: href for hl, href in alt_re.findall(self.page)}
+        de_alts = {hl: href for hl, href in alt_re.findall(de)}
+        # English page -> German page (hreflang="de") and itself (hreflang="en").
+        self.assertEqual(en_alts.get("de"), _gen._url_de_walkthrough(),
+                         "English walkthrough hreflang=de does not point at the "
+                         "German walkthrough")
+        self.assertEqual(en_alts.get("en"), _gen._url_walkthrough(),
+                         "English walkthrough lacks its self hreflang=en")
+        # German page -> English page (hreflang="en") and itself (hreflang="de").
+        self.assertEqual(de_alts.get("en"), _gen._url_walkthrough(),
+                         "German walkthrough hreflang=en does not point at the "
+                         "English walkthrough")
+        self.assertEqual(de_alts.get("de"), _gen._url_de_walkthrough(),
+                         "German walkthrough lacks its self hreflang=de")
+
+    # ---- German walkthrough: same anti-fabrication invariant as the English --
+    def _read_de(self):
+        self.assertTrue(os.path.isfile(DE_WALK_PATH),
+                        "German walkthrough missing — run `python3 gen_site.py`")
+        with open(DE_WALK_PATH, encoding="utf-8") as fh:
+            return fh.read()
+
+    # (8) committed German page is current with the generator (not stale).
+    def test_de_page_matches_fresh_render(self):
+        de = self._read_de()
+        fresh = _gen.render_de_walkthrough(self.catalog)
+        self.assertEqual(
+            de, fresh,
+            "www/de/walkthrough/index.html is STALE vs "
+            "gen_site.render_de_walkthrough — run `python3 gen_site.py`")
+        self.assertIn('<html lang="de">', de,
+                      "German walkthrough does not declare lang=\"de\"")
+
+    # (9) NO-DRIFT / NO-FABRICATION vs the LIVE engine: the German page names
+    # EXACTLY the rule ids of the live report — every live rule id is present,
+    # and no rule-id-shaped token absent from the report appears (so the German
+    # narrative can neither drop nor invent a finding).
+    def test_de_rule_ids_match_live_engine(self):
+        de = self._read_de()
+        de_vis = _visible_text(de)
+        live = live_report_json(_gen.EX_BROKEN)
+        live_rules = {v["rule"] for v in live.get("violations", [])}
+        self.assertTrue(live_rules, "live engine produced no findings")
+        # Every live rule id appears on the German page.
+        for rule in live_rules:
+            self.assertIn(rule, de_vis,
+                          "%s: live rule id not on the German walkthrough" % rule)
+        # The SET of concrete rule-id tokens on the German page is EXACTLY the
+        # live rule set — no fabricated or stray rule id.
+        page_rules = set(_RULE_ID_RE.findall(de_vis))
+        self.assertEqual(
+            page_rules, live_rules,
+            "German walkthrough rule-id set %s != live report rule set %s"
+            % (sorted(page_rules), sorted(live_rules)))
+        # One finding card per live violation — cannot drop/invent a finding.
+        self.assertEqual(
+            de.count('<div class="finding">'), len(live.get("violations", [])),
+            "German walkthrough finding-card count != live finding count")
+
+    # (10) the German page's CLI commands are byte-identical to the English
+    # walkthrough's (same drift-guard discipline as the English page).
+    def test_de_commands_match_english(self):
+        de = self._read_de()
+        en_cmds = set(_CMD_RE.findall(self.page))
+        de_cmds = set(_CMD_RE.findall(de))
+        self.assertTrue(en_cmds, "no CLI commands found on the English page")
+        self.assertEqual(
+            de_cmds, en_cmds,
+            "German walkthrough commands %s differ from English %s"
+            % (sorted(de_cmds), sorted(en_cmds)))
+
+    # (11) German page: self-contained + indexable (no external resource, one
+    # canonical + hreflang alternates only, no script, listed in the sitemap).
+    def test_de_self_contained_and_indexable(self):
+        de = self._read_de()
+        scan = re.sub(r"<link\b[^>]*>", " ", de, flags=re.IGNORECASE)
+        self.assertNotRegex(
+            scan, r'https?://|cdn\.|googleapis|fonts\.|goatcounter|url\(',
+            "German walkthrough references an external resource")
+        self.assertNotIn("<script", de.lower())
+        self.assertNotRegex(de, r"\bsrc\s*=")
+        links = re.findall(r"<link\b[^>]*>", de, re.IGNORECASE)
+        canon = [l for l in links if 'rel="canonical"' in l]
+        alt = [l for l in links if 'rel="alternate"' in l]
+        self.assertEqual(len(canon), 1,
+                         "German page expected exactly one rel=canonical")
+        self.assertEqual(len(links), len(canon) + len(alt),
+                         "German page has a non-canonical/non-alternate <link>")
+        self.assertNotRegex(
+            de, r'<meta[^>]*name="robots"[^>]*noindex',
+            "German walkthrough must not be noindex (it is in the sitemap)")
+        cmatch = re.search(r'rel="canonical" href="([^"]+)"', de)
+        self.assertEqual(cmatch.group(1), _gen._url_de_walkthrough())
+        with open(SITEMAP_PATH, encoding="utf-8") as fh:
+            sm = fh.read()
+        self.assertIn(_gen._url_de_walkthrough(), sm,
+                      "German walkthrough not listed in sitemap.xml")
+        # Injection guard: no unescaped '<' from live report strings survived.
+        live = live_report_json(_gen.EX_BROKEN)
+        for v in live.get("violations", []):
+            for key in ("title", "fix_hint"):
+                s = v.get(key, "")
+                if "<" in s:
+                    self.assertNotIn(s, de,
+                                     "report string appears UNESCAPED: %r" % s)
 
 
 if __name__ == "__main__":

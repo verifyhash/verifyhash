@@ -116,6 +116,13 @@ LICENSING_DIR = os.path.join(SITE_DIR, "licensing")
 # per-rule pages). The page and the English landing carry hreflang alternates
 # in BOTH directions.
 DE_DIR = os.path.join(SITE_DIR, "de")
+# The German-language worked walkthrough (T-VHDE.3) is emitted at the stable
+# canonical path www/de/walkthrough/index.html. It mirrors the English
+# render_walkthrough() over the SAME live-engine finding data (broken_xml,
+# fixed_xml, report from _walkthrough_inputs()) but carries ORIGINAL German
+# adoption prose — never a machine translation of the English page. The two
+# walkthroughs carry hreflang alternates in BOTH directions.
+DE_WALKTHROUGH_DIR = os.path.join(DE_DIR, "walkthrough")
 EXAMPLE_DIR = os.path.join(HERE, "examples", "01-missing-fields")
 EX_BROKEN = os.path.join(EXAMPLE_DIR, "broken.xml")
 EX_FIXED = os.path.join(EXAMPLE_DIR, "fixed.xml")
@@ -296,6 +303,11 @@ def _url_licensing():
 def _url_de():
     """Absolute URL of the German-language product/quickstart page."""
     return BASE_URL + "/de/"
+
+
+def _url_de_walkthrough():
+    """Absolute URL of the German-language worked walkthrough."""
+    return BASE_URL + "/de/walkthrough/"
 
 
 def _url_sitemap():
@@ -1181,9 +1193,11 @@ def render_de():
       "offizieller Schematron-Assert. Eigene deutsche Regelseiten gibt es "
       "bewusst nicht &mdash; der deutsche Text steht auf jeder Regelseite und "
       "in der CLI unter <code>--lang de</code>.</li>")
-    w('<li><a href="../walkthrough/index.html">Praxisbeispiel</a> (englisch) '
-      "&mdash; dieselbe kaputte Rechnung von oben, Schritt f&uuml;r Schritt "
-      "vom roten CI-Lauf zur bestandenen Pr&uuml;fung.</li>")
+    w('<li><a href="walkthrough/index.html">Praxisbeispiel &mdash; Schritt '
+      "f&uuml;r Schritt</a> &mdash; dieselbe kaputte Rechnung von oben, vom "
+      "roten CI-Lauf zur bestandenen Pr&uuml;fung, auf Deutsch "
+      '(auch als <a href="../walkthrough/index.html">englische Fassung</a>).'
+      "</li>")
     w('<li><a href="../licensing/index.html">Lizenz</a> &mdash; Apache-2.0 '
       "f&uuml;r alle, auch f&uuml;r Closed-Source-Einbettung; die optionale "
       "kommerzielle Lizenz ($29&nbsp;/&nbsp;$290) kauft Support und "
@@ -1403,6 +1417,16 @@ def render_walkthrough(catalog):
     w("<title>%s</title>" % _h(title))
     w('<meta name="description" content="%s">' % _h(description))
     w('<link rel="canonical" href="%s">' % _h(canonical))
+    # hreflang alternates BOTH directions with the German walkthrough (T-VHDE.3):
+    # this English page references itself (en) and the German page (de); x-default
+    # points at the English (canonical-language) walkthrough. These are absolute
+    # BASE_URL link elements (navigational/SEO, not fetched resources), built
+    # from the same origin as the canonical so they can never disagree.
+    w('<link rel="alternate" hreflang="en" href="%s">' % _h(_url_walkthrough()))
+    w('<link rel="alternate" hreflang="de" href="%s">'
+      % _h(_url_de_walkthrough()))
+    w('<link rel="alternate" hreflang="x-default" href="%s">'
+      % _h(_url_walkthrough()))
     # One inline <style> block: the shared base plus the walkthrough-only extra.
     # No external CSS/JS/CDN/font/script — offline-openable.
     w("<style>%s\n%s</style>" % (_STYLE, _WALK_STYLE))
@@ -1559,6 +1583,243 @@ def render_walkthrough(catalog):
     return "\n".join(p) + "\n"
 
 
+def render_de_walkthrough(catalog):
+    """The German-language worked walkthrough (``www/de/walkthrough/``) — pure.
+
+    Same live-engine source and same finding SET as :func:`render_walkthrough`
+    (it calls :func:`_walkthrough_inputs` for the identical broken/fixed XML +
+    report, and iterates the same violations in the same order), but wrapped in
+    ORIGINAL German adoption prose written for a German reader — NOT a
+    machine translation of the English page. The per-finding data (rule id,
+    severity, BT/BG terms, the engine's title and fix hint) is the live report
+    output verbatim; nothing about a rule is authored from memory, so this page
+    can neither drop, invent, nor rename a finding. Every shell command is
+    byte-identical to the English walkthrough's (drift-guarded by
+    test_walkthrough.py). Same self-containment contract: one inline <style>
+    (reusing the walkthrough-only _WALK_STYLE), an absolute self-referential
+    canonical, hreflang alternates BOTH directions with the English walkthrough,
+    no <script>, no external CSS/JS/CDN/font — offline-openable.
+
+    Relative links resolve offline from ``www/de/walkthrough/index.html``: the
+    landing/hub/rule pages are two levels up (``../../``), the German product
+    page one level up (``../``).
+    """
+    broken_xml, fixed_xml, report = _walkthrough_inputs()
+    source = report.get("source", "")
+    profile = report.get("profile", "")
+    violations = report.get("violations") or []
+    fatal_count = report.get("fatal_count", 0)
+    warning_count = report.get("warning_count", 0)
+    violation_count = report.get("violation_count", len(violations))
+    n_fatal = sum(1 for v in violations if v.get("severity") == "fatal")
+    fatal_rules = [v.get("rule", "") for v in violations
+                   if v.get("severity") == "fatal"]
+    body_diff = _body_diff(broken_xml, fixed_xml)
+
+    title = ("Vom roten CI-Lauf zur bestandenen E-Rechnung — ein "
+             "XRechnung-/EN-16931-Praxisbeispiel Schritt für Schritt — einvoice")
+    description = ("Durchgerechnetes Beispiel auf Deutsch: eine absichtlich "
+                   "fehlerhafte XRechnung (UBL), der echte Konformitätsbericht "
+                   "von einvoice (%d Befunde, %d fatal) und die exakte "
+                   "Zwei-Element-Korrektur, die sie besteht."
+                   % (violation_count, n_fatal))
+    canonical = _url_de_walkthrough()
+
+    p = []
+    w = p.append
+    w("<!doctype html>")
+    w('<html lang="de">')
+    w("<head>")
+    w('<meta charset="utf-8">')
+    w('<meta name="viewport" content="width=device-width, initial-scale=1">')
+    # INDEXABLE: no robots:noindex — this page is in the sitemap.
+    w("<title>%s</title>" % _h(title))
+    w('<meta name="description" content="%s">' % _h(description))
+    w('<link rel="canonical" href="%s">' % _h(canonical))
+    # hreflang alternates BOTH directions with the English walkthrough: this
+    # German page references itself (de) and the English page (en); x-default
+    # points at the English (canonical-language) walkthrough. Absolute BASE_URL
+    # link elements, same origin as the canonical.
+    w('<link rel="alternate" hreflang="en" href="%s">' % _h(_url_walkthrough()))
+    w('<link rel="alternate" hreflang="de" href="%s">'
+      % _h(_url_de_walkthrough()))
+    w('<link rel="alternate" hreflang="x-default" href="%s">'
+      % _h(_url_walkthrough()))
+    # Reuse the walkthrough-only inline style (same block as the English page).
+    w("<style>%s\n%s</style>" % (_STYLE, _WALK_STYLE))
+    w("</head>")
+    w("<body>")
+    w("<main>")
+    # Breadcrumb up to the landing + rule hub (relative, offline-resolvable):
+    # this page is www/de/walkthrough/index.html.
+    w('<p class="crumb"><a href="../../index.html">einvoice</a> / '
+      '<a href="../index.html">Deutsch</a> / '
+      '<a href="../../rules/index.html">EN 16931 / XRechnung Regel-Referenz</a>'
+      " / Praxisbeispiel</p>")
+    w("<h1>Vom roten CI-Lauf zur bestandenen Rechnung</h1>")
+    w('<p class="lead">Ein durchgerechnetes Beispiel in f&uuml;nf Minuten. '
+      "Wir nehmen eine echte deutsche <strong>XRechnung</strong> "
+      "(EN&nbsp;16931, UBL), entfernen zwei Pflichtangaben, lassen den "
+      "<code>einvoice</code>-Konformit&auml;tspr&uuml;fer genau so laufen, wie "
+      "es ein CI-Gate t&auml;te, lesen den tats&auml;chlich ausgegebenen "
+      "Bericht und korrigieren die Rechnung, bis sie besteht. Jeder Befund "
+      "unten stammt aus der echten Engine &mdash; der Bericht wird aus dem "
+      "Werkzeug neu erzeugt, und ein Test l&auml;sst den Build fehlschlagen, "
+      "sobald diese Seite von der Live-Ausgabe abweicht.</p>")
+    w("<p>Die Engine hinter diesem Beispiel setzt <strong>286 "
+      "Gesch&auml;ftsregeln aus EN&nbsp;16931 und XRechnung</strong> durch &mdash; "
+      "jede ausl&ouml;sbare offizielle <code>BR-*</code>-Regel in beiden "
+      "CEN-Syntaxwelten (UBL und CII) au&szlig;er acht zur&uuml;ckgestellten "
+      "Codelisten-Pr&uuml;fungen, die komplette deutsche KoSIT-Schicht und die "
+      "21 <code>PEPPOL-EN16931-R*</code>-Regeln, die KoSIT im offiziellen "
+      "XRechnung-Artefakt mitliefert (nur diese Teilmenge, nicht Peppol BIS "
+      "Billing&nbsp;3.0) &mdash; jede differentiell gegen die offiziellen "
+      "Schematron-Artefakte bewiesen, mit 0 Abweichungen. Das vollst&auml;ndige "
+      "Regelinventar samt ehrlicher Grenzen steht in <code>COVERAGE.md</code> "
+      "im Repository.</p>")
+    w("<p>Sie k&ouml;nnen jeden Schritt selbst nachvollziehen: Sie brauchen nur "
+      "Python&nbsp;3 und dieses Repository &mdash; keine Abh&auml;ngigkeiten, "
+      "kein Netz. F&uuml;hren Sie die Befehle aus dem Verzeichnis "
+      "<code>einvoice/</code> aus.</p>")
+
+    # ---- Schritt 1: die kaputte Rechnung ----------------------------------
+    w('<section class="step">')
+    w("<h2>1. Die kaputte Rechnung</h2>")
+    w("<p>Ein Lieferant hat diese UBL-Rechnung exportiert, aber zwei "
+      "Pflichtangaben fehlen: die <strong>K&auml;uferreferenz</strong> "
+      "(<code>BT-10</code>, die <em>Leitweg-ID</em> &mdash; die Routing-Kennung, "
+      "die ein deutscher &ouml;ffentlicher Auftraggeber verlangt) und die "
+      "Gruppe <strong>SELLER CONTACT</strong> (<code>BG-6</code>, ein "
+      "<code>cac:Contact</code> unter der Lieferantenpartei). Alles &Uuml;brige "
+      "ist eine byteweise Kopie eines g&uuml;ltigen KoSIT-Testdokuments, sodass "
+      "diese zwei Auslassungen der <em>einzige</em> Grund f&uuml;r das "
+      "Durchfallen sind. Die vollst&auml;ndige Datei ist "
+      "<code>%s/broken.xml</code>:</p>" % _h(EX_REL))
+    w("<pre>%s</pre>" % _h(broken_xml))
+    w("</section>")
+
+    # ---- Schritt 2: den Pruefer laufen lassen (das CI-Gate) ---------------
+    w('<section class="step">')
+    w("<h2>2. Den Pr&uuml;fer laufen lassen (das ist Ihr CI-Gate)</h2>")
+    w("<p>Richten Sie das Werkzeug auf die Rechnung. In einer CI-Pipeline ist "
+      "das der Befehl, dessen Exit-Code ungleich null den Build fehlschlagen "
+      "l&auml;sst:</p>")
+    w("<pre>$ python3 -m einvoice.report %s/broken.xml --format json</pre>"
+      % _h(EX_REL))
+    w("<p>Er endet mit <strong>1</strong> und gibt den Bericht unten aus. Nur "
+      "<code>fatal</code>-Befunde machen eine Rechnung ung&uuml;ltig (das "
+      "spiegelt die <code>flag</code>-Semantik des offiziellen Schematron); "
+      "<code>warning</code>- und <code>information</code>-Befunde sind beratend "
+      "und lassen den Build nicht scheitern.</p>")
+    w("</section>")
+
+    # ---- Schritt 3: den echten Bericht lesen ------------------------------
+    w('<section class="step">')
+    w("<h2>3. Den Bericht lesen</h2>")
+    w('<p class="summary">Die Engine meldet <code>valid: %s</code> f&uuml;r '
+      "<code>%s</code> unter dem Profil <code>%s</code>: insgesamt "
+      "<code>%d</code> Befunde, davon <code>%d</code> fatal und "
+      "<code>%d</code> Warnung. Jeder Befund nennt die verletzte Regel, die "
+      "betroffenen EN-16931-Gesch&auml;ftsbegriffe und einen konkreten "
+      "Korrekturhinweis. Die Regel-ID f&uuml;hrt zur ausf&uuml;hrlichen "
+      "Referenzseite.</p>"
+      % (_h(json.dumps(report.get("valid"))), _h(source), _h(profile),
+         violation_count, fatal_count, warning_count))
+
+    for v in violations:
+        rule = v.get("rule", "")
+        severity = v.get("severity", "")
+        vtitle = v.get("title", "")
+        hint = v.get("fix_hint", "")
+        terms = v.get("terms") or []
+        terms_html = " ".join("<code>%s</code>" % _h(t) for t in terms)
+        # Link the rule id back to its per-rule reference page (relative, resolves
+        # offline: this page is www/de/walkthrough/index.html, the rule page is
+        # www/rules/<id>/index.html). The guard keeps the link from dangling.
+        if rule in catalog:
+            rule_html = ('<a href="../../rules/%s/index.html"><code>%s</code>'
+                         "</a>" % (_h(rule), _h(rule)))
+        else:
+            rule_html = "<code>%s</code>" % _h(rule)
+        w('<div class="finding">')
+        w('<p class="fhead">%s <span class="sev">%s</span> %s</p>'
+          % (rule_html, _h(severity), terms_html))
+        w("<h3>%s</h3>" % _h(vtitle))
+        w('<p class="hint">%s</p>' % _h(hint))
+        w("</div>")
+
+    w("<p>Titel und Korrekturhinweis oben sind die unver&auml;nderte "
+      "Maschinenausgabe (Englisch). Denselben Befund gibt die CLI mit "
+      "<code>--lang de</code> auf Deutsch aus: wo das offizielle "
+      "KoSIT-Artefakt einen deutschen Text mitliefert, exakt diesen, sonst "
+      "eine klar als &Uuml;bersetzung gekennzeichnete Fassung. Die beiden "
+      "fatalen Befunde (%s) sind der Grund f&uuml;r die Ablehnung. Der "
+      "<code>information</code>-Befund ist beratend &mdash; wir lassen ihn "
+      "stehen, damit dies eine minimale Zwei-Feld-Korrektur bleibt. F&uuml;r "
+      "die vollst&auml;ndige Erl&auml;uterung einer Regel dient "
+      "<code>python3 -m einvoice.report --explain BR-DE-15</code>.</p>"
+      % " und ".join("<code>%s</code>" % _h(r) for r in fatal_rules))
+    w("</section>")
+
+    # ---- Schritt 4: die Korrektur -----------------------------------------
+    w('<section class="step">')
+    w("<h2>4. Die Korrektur anwenden</h2>")
+    w("<p>Stellen Sie die zwei fehlenden Elemente wieder her. Das ist der exakte "
+      "Diff von <code>broken.xml</code> zur korrigierten <code>fixed.xml</code> "
+      "(die Provenienz-Kommentark&ouml;pfe sind weggelassen; die "
+      "Rechnungsr&uuml;mpfe unterscheiden sich sonst durch nichts):</p>")
+    w("<pre>%s</pre>" % _h(body_diff))
+    w("<p>Ein <code>cac:Contact</code> braucht mindestens einen Namen, eine "
+      "Telefonnummer und/oder eine E-Mail-Adresse; die K&auml;uferreferenz ist "
+      "die Routing-Kennung (Leitweg-ID), die Ihnen Ihr Empf&auml;nger "
+      "vorgibt.</p>")
+    w("</section>")
+
+    # ---- Schritt 5: sie besteht -------------------------------------------
+    w('<section class="step">')
+    w("<h2>5. Die korrigierte Rechnung besteht</h2>")
+    w("<p>Denselben Befehl noch einmal auf der korrigierten Datei laufen lassen "
+      "(<code>%s/fixed.xml</code>):</p>" % _h(EX_REL))
+    w("<pre>$ python3 -m einvoice.report %s/fixed.xml --format json</pre>"
+      % _h(EX_REL))
+    w('<p class="pass">Sie endet jetzt mit <strong>0</strong> und meldet '
+      "<code>valid: true</code> bei <code>fatal_count: 0</code>. Beide "
+      "<code>BR-DE-*</code>-Fatalbefunde sind weg, und die Rechnung "
+      "best&uuml;nde diesen Vorab-Check. (Der Test dieser Seite l&auml;sst die "
+      "echte Engine erneut auf <code>fixed.xml</code> laufen und l&auml;sst den "
+      "Build scheitern, wenn sie nicht wirklich mit null fatalen Befunden "
+      "besteht.)</p>")
+    w("<p><strong>Ehrliche Grenze:</strong> Ein gr&uuml;nes Ergebnis "
+      "hei&szlig;t &bdquo;keine implementierte Regel hat ausgel&ouml;st&ldquo;, "
+      "nicht &bdquo;rechtsverbindlich konform zertifiziert&ldquo;. Das ist ein "
+      "schneller Vorab-Check, der die Fehler f&auml;ngt, an denen die meisten "
+      "Ersteinreichungen scheitern &mdash; lassen Sie vor dem tats&auml;chlichen "
+      "Einreichen trotzdem den offiziellen Validator Ihres Empf&auml;ngers "
+      "laufen.</p>")
+    w("</section>")
+
+    w('<section class="step">')
+    w("<h2>Weiter</h2>")
+    w('<p>Alle gepr&uuml;ften Regeln stehen im '
+      '<a href="../../rules/index.html">Regel-Index</a>; Installation, '
+      "erste Pr&uuml;fung und das CI-Gate-Rezept auf Deutsch stehen im "
+      '<a href="../index.html">deutschen Schnellstart</a>.</p>')
+    w("</section>")
+
+    w("<footer>")
+    w("Der Bericht auf dieser Seite wird aus "
+      "<code>examples/01-missing-fields/report.json</code> gerendert &mdash; "
+      "echte Engine-Ausgabe, neu erzeugt von <code>gen_examples.py</code> und "
+      "drift-gesch&uuml;tzt durch <code>test_examples.py</code> / "
+      "<code>test_walkthrough.py</code>. Eigenst&auml;ndig: Diese Seite "
+      "&ouml;ffnet offline ohne Netzwerkzugriffe.")
+    w("</footer>")
+    w("</main>")
+    w("</body>")
+    w("</html>")
+    return "\n".join(p) + "\n"
+
+
 def render_sitemap(catalog):
     """XML sitemap listing EXACTLY the canonical page set — pure, deterministic.
 
@@ -1569,7 +1830,7 @@ def render_sitemap(catalog):
     (stable).
     """
     locs = [_url_landing(), _url_hub(), _url_walkthrough(), _url_licensing(),
-            _url_de()]
+            _url_de(), _url_de_walkthrough()]
     locs += [_url_rule(rid) for rid in catalog]
     lines = []
     w = lines.append
@@ -1607,6 +1868,7 @@ HUB_PATH = os.path.join(RULES_DIR, "index.html")
 WALKTHROUGH_PATH = os.path.join(WALKTHROUGH_DIR, "index.html")
 LICENSING_PATH = os.path.join(LICENSING_DIR, "index.html")
 DE_PATH = os.path.join(DE_DIR, "index.html")
+DE_WALKTHROUGH_PATH = os.path.join(DE_WALKTHROUGH_DIR, "index.html")
 SITEMAP_PATH = os.path.join(SITE_DIR, "sitemap.xml")
 ROBOTS_PATH = os.path.join(SITE_DIR, "robots.txt")
 
@@ -1623,6 +1885,7 @@ def render_surface(catalog):
         WALKTHROUGH_PATH: render_walkthrough(catalog),
         LICENSING_PATH: render_licensing(),
         DE_PATH: render_de(),
+        DE_WALKTHROUGH_PATH: render_de_walkthrough(catalog),
         SITEMAP_PATH: render_sitemap(catalog),
         ROBOTS_PATH: render_robots(),
     }

@@ -84,11 +84,13 @@ def main():
     walkthrough_path = os.path.join(WWW_DIR, "walkthrough", "index.html")
     licensing_path = os.path.join(WWW_DIR, "licensing", "index.html")
     de_path = os.path.join(WWW_DIR, "de", "index.html")
+    de_walkthrough_path = os.path.join(WWW_DIR, "de", "walkthrough", "index.html")
     for pth, name in ((landing_path, "www/index.html"),
                       (hub_path, "www/rules/index.html"),
                       (walkthrough_path, "www/walkthrough/index.html"),
                       (licensing_path, "www/licensing/index.html"),
-                      (de_path, "www/de/index.html")):
+                      (de_path, "www/de/index.html"),
+                      (de_walkthrough_path, "www/de/walkthrough/index.html")):
         check(os.path.exists(pth),
               "surface file missing (run gen_site.py first): %s" % name)
     if failures:
@@ -111,10 +113,11 @@ def main():
 
     # Every generated HTML node in the site graph.
     node_paths = [landing_path, hub_path, walkthrough_path, licensing_path,
-                  de_path]
+                  de_path, de_walkthrough_path]
     node_paths += [rule_paths[rid] for rid in rule_ids]
     nodes = {os.path.realpath(p) for p in node_paths}
 
+    de_walkthrough_real = os.path.realpath(de_walkthrough_path)
     hub_real = os.path.realpath(hub_path)
     landing_real = os.path.realpath(landing_path)
     licensing_real = os.path.realpath(licensing_path)
@@ -196,6 +199,21 @@ def main():
           "the German page has no path back to the landing")
     check(hub_real in de_dist,
           "the German page cannot reach the rule hub through the graph")
+
+    # The German worked walkthrough (T-VHDE.3) is likewise a first-class node in
+    # BOTH directions: it is in the sitemap (indexable), so it must be reachable
+    # from the landing (via the German product page), and from it the landing —
+    # and through it the whole rule surface — must be reachable.
+    check(de_walkthrough_real in landing_dist,
+          "German walkthrough (www/de/walkthrough/index.html) is unreachable "
+          "from the landing — indexed orphan")
+    check(de_walkthrough_real in de_dist,
+          "German walkthrough is unreachable from the German product page")
+    de_walk_dist = bfs_hops(de_walkthrough_real)
+    check(landing_real in de_walk_dist,
+          "the German walkthrough has no path back to the landing")
+    check(hub_real in de_walk_dist,
+          "the German walkthrough cannot reach the rule hub through the graph")
 
     # ---- (2) CTA cross-link presence + resolution --------------------------
     # The landing must expose the on-ramp fragment target the rule CTAs point at.

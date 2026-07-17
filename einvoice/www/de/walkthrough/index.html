@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>From a failing CI check to a passing e-invoice — a worked EN 16931 / XRechnung walkthrough — einvoice</title>
-<meta name="description" content="A 5-minute worked example: a deliberately-broken XRechnung UBL invoice, the real conformance report einvoice produces (3 findings, 2 fatal), and the exact two-element fix that makes it pass.">
-<link rel="canonical" href="https://verifyhash.com/einvoice/walkthrough/">
+<title>Vom roten CI-Lauf zur bestandenen E-Rechnung — ein XRechnung-/EN-16931-Praxisbeispiel Schritt für Schritt — einvoice</title>
+<meta name="description" content="Durchgerechnetes Beispiel auf Deutsch: eine absichtlich fehlerhafte XRechnung (UBL), der echte Konformitätsbericht von einvoice (3 Befunde, 2 fatal) und die exakte Zwei-Element-Korrektur, die sie besteht.">
+<link rel="canonical" href="https://verifyhash.com/einvoice/de/walkthrough/">
 <link rel="alternate" hreflang="en" href="https://verifyhash.com/einvoice/walkthrough/">
 <link rel="alternate" hreflang="de" href="https://verifyhash.com/einvoice/de/walkthrough/">
 <link rel="alternate" hreflang="x-default" href="https://verifyhash.com/einvoice/walkthrough/">
@@ -99,14 +99,14 @@ pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
 </head>
 <body>
 <main>
-<p class="crumb"><a href="../index.html">einvoice</a> / <a href="../rules/index.html">EN 16931 / XRechnung rule reference</a> / Walkthrough</p>
-<h1>From failing CI to a fixed invoice</h1>
-<p class="lead">A five-minute worked example. We take a real German <strong>XRechnung</strong> (EN 16931 UBL) invoice with two required things removed, run the <code>einvoice</code> conformance checker exactly as a CI gate would, read the actual report it prints, and apply the fix until the invoice passes. Every finding below is produced by the real engine — the report is regenerated from the tool and a test fails the build if this page ever drifts from live output.</p>
-<p>The engine behind this walkthrough asserts <strong>286 EN 16931 / XRechnung business rules</strong> — every official EN 16931 <code>BR-*</code> rule that can actually fire in either CEN syntax universe (UBL and CII) except eight deferred code-list checks, the complete German KoSIT layer including the Clean-Vehicle-Directive family, and the 21 <code>PEPPOL-EN16931-R*</code> rules KoSIT vendors (that subset only, not Peppol BIS Billing 3.0) — each rule differentially proven against the official Schematron artifacts at 0 divergences. The per-rule inventory and its honest limits live in <code>COVERAGE.md</code> in the repository.</p>
-<p>You can reproduce every step yourself: you only need Python 3 and this repository, no dependencies and no network. Run the commands from the <code>einvoice/</code> directory.</p>
+<p class="crumb"><a href="../../index.html">einvoice</a> / <a href="../index.html">Deutsch</a> / <a href="../../rules/index.html">EN 16931 / XRechnung Regel-Referenz</a> / Praxisbeispiel</p>
+<h1>Vom roten CI-Lauf zur bestandenen Rechnung</h1>
+<p class="lead">Ein durchgerechnetes Beispiel in f&uuml;nf Minuten. Wir nehmen eine echte deutsche <strong>XRechnung</strong> (EN&nbsp;16931, UBL), entfernen zwei Pflichtangaben, lassen den <code>einvoice</code>-Konformit&auml;tspr&uuml;fer genau so laufen, wie es ein CI-Gate t&auml;te, lesen den tats&auml;chlich ausgegebenen Bericht und korrigieren die Rechnung, bis sie besteht. Jeder Befund unten stammt aus der echten Engine &mdash; der Bericht wird aus dem Werkzeug neu erzeugt, und ein Test l&auml;sst den Build fehlschlagen, sobald diese Seite von der Live-Ausgabe abweicht.</p>
+<p>Die Engine hinter diesem Beispiel setzt <strong>286 Gesch&auml;ftsregeln aus EN&nbsp;16931 und XRechnung</strong> durch &mdash; jede ausl&ouml;sbare offizielle <code>BR-*</code>-Regel in beiden CEN-Syntaxwelten (UBL und CII) au&szlig;er acht zur&uuml;ckgestellten Codelisten-Pr&uuml;fungen, die komplette deutsche KoSIT-Schicht und die 21 <code>PEPPOL-EN16931-R*</code>-Regeln, die KoSIT im offiziellen XRechnung-Artefakt mitliefert (nur diese Teilmenge, nicht Peppol BIS Billing&nbsp;3.0) &mdash; jede differentiell gegen die offiziellen Schematron-Artefakte bewiesen, mit 0 Abweichungen. Das vollst&auml;ndige Regelinventar samt ehrlicher Grenzen steht in <code>COVERAGE.md</code> im Repository.</p>
+<p>Sie k&ouml;nnen jeden Schritt selbst nachvollziehen: Sie brauchen nur Python&nbsp;3 und dieses Repository &mdash; keine Abh&auml;ngigkeiten, kein Netz. F&uuml;hren Sie die Befehle aus dem Verzeichnis <code>einvoice/</code> aus.</p>
 <section class="step">
-<h2>1. The broken invoice</h2>
-<p>A supplier exported this UBL invoice, but two mandatory items are missing: the <strong>Buyer reference</strong> (<code>BT-10</code>, the <em>Leitweg-ID</em> routing id a German public buyer requires) and the <strong>SELLER CONTACT</strong> group (<code>BG-6</code>, a <code>cac:Contact</code> under the supplier party). Everything else is a byte-for-byte copy of a valid KoSIT test document, so these two omissions are the <em>only</em> reason it fails. The full file is <code>examples/01-missing-fields/broken.xml</code>:</p>
+<h2>1. Die kaputte Rechnung</h2>
+<p>Ein Lieferant hat diese UBL-Rechnung exportiert, aber zwei Pflichtangaben fehlen: die <strong>K&auml;uferreferenz</strong> (<code>BT-10</code>, die <em>Leitweg-ID</em> &mdash; die Routing-Kennung, die ein deutscher &ouml;ffentlicher Auftraggeber verlangt) und die Gruppe <strong>SELLER CONTACT</strong> (<code>BG-6</code>, ein <code>cac:Contact</code> unter der Lieferantenpartei). Alles &Uuml;brige ist eine byteweise Kopie eines g&uuml;ltigen KoSIT-Testdokuments, sodass diese zwei Auslassungen der <em>einzige</em> Grund f&uuml;r das Durchfallen sind. Die vollst&auml;ndige Datei ist <code>examples/01-missing-fields/broken.xml</code>:</p>
 <pre>&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
 &lt;!--
   DELIBERATELY NON-CONFORMANT onboarding example (broken invoice).
@@ -264,34 +264,34 @@ pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
 </pre>
 </section>
 <section class="step">
-<h2>2. Run the checker (this is your CI gate)</h2>
-<p>Point the tool at the invoice. In a CI pipeline this is the command whose non-zero exit fails the build:</p>
+<h2>2. Den Pr&uuml;fer laufen lassen (das ist Ihr CI-Gate)</h2>
+<p>Richten Sie das Werkzeug auf die Rechnung. In einer CI-Pipeline ist das der Befehl, dessen Exit-Code ungleich null den Build fehlschlagen l&auml;sst:</p>
 <pre>$ python3 -m einvoice.report examples/01-missing-fields/broken.xml --format json</pre>
-<p>It exits <strong>1</strong> and prints the report below. Only <code>fatal</code> findings make an invoice invalid (mirroring the official Schematron <code>flag</code> semantics); <code>warning</code> and <code>information</code> findings are advisory and do not fail the build.</p>
+<p>Er endet mit <strong>1</strong> und gibt den Bericht unten aus. Nur <code>fatal</code>-Befunde machen eine Rechnung ung&uuml;ltig (das spiegelt die <code>flag</code>-Semantik des offiziellen Schematron); <code>warning</code>- und <code>information</code>-Befunde sind beratend und lassen den Build nicht scheitern.</p>
 </section>
 <section class="step">
-<h2>3. Read the report</h2>
-<p class="summary">The engine reports <code>valid: false</code> for <code>examples/01-missing-fields/broken.xml</code> under profile <code>xrechnung</code>: <code>3</code> findings in total, <code>2</code> fatal and <code>0</code> warning. Each finding names the violated rule, the EN 16931 business terms it touches, and a concrete fix hint. The rule id links to its full reference page.</p>
+<h2>3. Den Bericht lesen</h2>
+<p class="summary">Die Engine meldet <code>valid: false</code> f&uuml;r <code>examples/01-missing-fields/broken.xml</code> unter dem Profil <code>xrechnung</code>: insgesamt <code>3</code> Befunde, davon <code>2</code> fatal und <code>0</code> Warnung. Jeder Befund nennt die verletzte Regel, die betroffenen EN-16931-Gesch&auml;ftsbegriffe und einen konkreten Korrekturhinweis. Die Regel-ID f&uuml;hrt zur ausf&uuml;hrlichen Referenzseite.</p>
 <div class="finding">
-<p class="fhead"><a href="../rules/BR-DE-2/index.html"><code>BR-DE-2</code></a> <span class="sev">fatal</span> <code>BG-6</code></p>
+<p class="fhead"><a href="../../rules/BR-DE-2/index.html"><code>BR-DE-2</code></a> <span class="sev">fatal</span> <code>BG-6</code></p>
 <h3>SELLER CONTACT (BG-6) must be transmitted.</h3>
 <p class="hint">Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted.</p>
 </div>
 <div class="finding">
-<p class="fhead"><a href="../rules/BR-DE-15/index.html"><code>BR-DE-15</code></a> <span class="sev">fatal</span> <code>BT-10</code></p>
+<p class="fhead"><a href="../../rules/BR-DE-15/index.html"><code>BR-DE-15</code></a> <span class="sev">fatal</span> <code>BT-10</code></p>
 <h3>Buyer reference (BT-10) must be transmitted (non-empty).</h3>
 <p class="hint">Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty).</p>
 </div>
 <div class="finding">
-<p class="fhead"><a href="../rules/BR-DE-TMP-32/index.html"><code>BR-DE-TMP-32</code></a> <span class="sev">information</span> <code>BG-14</code> <code>BG-26</code> <code>BT-72</code></p>
+<p class="fhead"><a href="../../rules/BR-DE-TMP-32/index.html"><code>BR-DE-TMP-32</code></a> <span class="sev">information</span> <code>BG-14</code> <code>BG-26</code> <code>BT-72</code></p>
 <h3>An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.</h3>
 <p class="hint">Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.</p>
 </div>
-<p>The two <code>fatal</code> findings (<code>BR-DE-15</code> and <code>BR-DE-2</code>) are why the invoice is rejected. The <code>information</code> finding is advisory — we leave it as-is so this stays a minimal two-field fix. For a full remediation write-up of any rule, run <code>python3 -m einvoice.report --explain BR-DE-15</code>.</p>
+<p>Titel und Korrekturhinweis oben sind die unver&auml;nderte Maschinenausgabe (Englisch). Denselben Befund gibt die CLI mit <code>--lang de</code> auf Deutsch aus: wo das offizielle KoSIT-Artefakt einen deutschen Text mitliefert, exakt diesen, sonst eine klar als &Uuml;bersetzung gekennzeichnete Fassung. Die beiden fatalen Befunde (<code>BR-DE-2</code> und <code>BR-DE-15</code>) sind der Grund f&uuml;r die Ablehnung. Der <code>information</code>-Befund ist beratend &mdash; wir lassen ihn stehen, damit dies eine minimale Zwei-Feld-Korrektur bleibt. F&uuml;r die vollst&auml;ndige Erl&auml;uterung einer Regel dient <code>python3 -m einvoice.report --explain BR-DE-15</code>.</p>
 </section>
 <section class="step">
-<h2>4. Apply the fix</h2>
-<p>Restore the two missing elements. This is the exact diff from <code>broken.xml</code> to the corrected <code>fixed.xml</code> (the provenance comment headers are omitted; the invoice bodies differ by nothing else):</p>
+<h2>4. Die Korrektur anwenden</h2>
+<p>Stellen Sie die zwei fehlenden Elemente wieder her. Das ist der exakte Diff von <code>broken.xml</code> zur korrigierten <code>fixed.xml</code> (die Provenienz-Kommentark&ouml;pfe sind weggelassen; die Rechnungsr&uuml;mpfe unterscheiden sich sonst durch nichts):</p>
 <pre>--- broken.xml
 +++ fixed.xml
 @@ -9,6 +9,7 @@
@@ -314,21 +314,21 @@ pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
          &lt;/cac:Party&gt;
      &lt;/cac:AccountingSupplierParty&gt;
      &lt;cac:AccountingCustomerParty&gt;</pre>
-<p>A <code>cac:Contact</code> needs at least a name, telephone and/or e-mail; the buyer reference is the routing id your buyer gives you.</p>
+<p>Ein <code>cac:Contact</code> braucht mindestens einen Namen, eine Telefonnummer und/oder eine E-Mail-Adresse; die K&auml;uferreferenz ist die Routing-Kennung (Leitweg-ID), die Ihnen Ihr Empf&auml;nger vorgibt.</p>
 </section>
 <section class="step">
-<h2>5. The corrected invoice passes</h2>
-<p>Re-run the same command on the corrected file (<code>examples/01-missing-fields/fixed.xml</code>):</p>
+<h2>5. Die korrigierte Rechnung besteht</h2>
+<p>Denselben Befehl noch einmal auf der korrigierten Datei laufen lassen (<code>examples/01-missing-fields/fixed.xml</code>):</p>
 <pre>$ python3 -m einvoice.report examples/01-missing-fields/fixed.xml --format json</pre>
-<p class="pass">It now exits <strong>0</strong> and reports <code>valid: true</code> with <code>fatal_count: 0</code>. Both <code>BR-DE-*</code> fatals are gone and the invoice would pass this pre-flight. (This page&rsquo;s test re-runs the live engine on <code>fixed.xml</code> and fails the build unless it really passes with zero fatal findings.)</p>
-<p><strong>Honest limit:</strong> a green result means &ldquo;no implemented rule fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. This is a fast pre-flight that catches the mistakes which trip up most first submissions — still run your buyer&rsquo;s official validator before you file.</p>
+<p class="pass">Sie endet jetzt mit <strong>0</strong> und meldet <code>valid: true</code> bei <code>fatal_count: 0</code>. Beide <code>BR-DE-*</code>-Fatalbefunde sind weg, und die Rechnung best&uuml;nde diesen Vorab-Check. (Der Test dieser Seite l&auml;sst die echte Engine erneut auf <code>fixed.xml</code> laufen und l&auml;sst den Build scheitern, wenn sie nicht wirklich mit null fatalen Befunden besteht.)</p>
+<p><strong>Ehrliche Grenze:</strong> Ein gr&uuml;nes Ergebnis hei&szlig;t &bdquo;keine implementierte Regel hat ausgel&ouml;st&ldquo;, nicht &bdquo;rechtsverbindlich konform zertifiziert&ldquo;. Das ist ein schneller Vorab-Check, der die Fehler f&auml;ngt, an denen die meisten Ersteinreichungen scheitern &mdash; lassen Sie vor dem tats&auml;chlichen Einreichen trotzdem den offiziellen Validator Ihres Empf&auml;ngers laufen.</p>
 </section>
 <section class="step">
-<h2>Next</h2>
-<p>Browse every rule the engine checks in the <a href="../rules/index.html">rule index</a>, or start from the <a href="../index.html">overview</a> for install and the CI-gate recipe.</p>
+<h2>Weiter</h2>
+<p>Alle gepr&uuml;ften Regeln stehen im <a href="../../rules/index.html">Regel-Index</a>; Installation, erste Pr&uuml;fung und das CI-Gate-Rezept auf Deutsch stehen im <a href="../index.html">deutschen Schnellstart</a>.</p>
 </section>
 <footer>
-The report on this page is rendered from <code>examples/01-missing-fields/report.json</code> — real engine output regenerated by <code>gen_examples.py</code> and drift-guarded by <code>test_examples.py</code> / <code>test_walkthrough.py</code>. Self-contained: this page opens offline with no network requests.
+Der Bericht auf dieser Seite wird aus <code>examples/01-missing-fields/report.json</code> gerendert &mdash; echte Engine-Ausgabe, neu erzeugt von <code>gen_examples.py</code> und drift-gesch&uuml;tzt durch <code>test_examples.py</code> / <code>test_walkthrough.py</code>. Eigenst&auml;ndig: Diese Seite &ouml;ffnet offline ohne Netzwerkzugriffe.
 </footer>
 </main>
 </body>

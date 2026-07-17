@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-good-multivat",
+  "path": "corpus/synthetic/synth-ubl-good-multivat.xml",
+  "profile": "en16931",
+  "rules": [],
+  "syntax": "UBL",
+  "valid": true
+}

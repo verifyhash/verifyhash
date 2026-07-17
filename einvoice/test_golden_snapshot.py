@@ -248,6 +248,67 @@ FIXTURES = [
                 "BR-DE-2 fatal (German-mandatory contact point missing).",
     },
     # ======================================================================
+    # SYNTHETIC EDGE-BREADTH corpus (T-VHR.15). Five more fully fictional
+    # fixtures covering shapes the set above under-covers: per-rate multi-VAT
+    # aggregation (good + an isolated per-rate arithmetic error), all three
+    # allowance/charge groups at once (BG-20 + BG-21 + line-level BG-27),
+    # foreign document currency with a VAT accounting currency (BT-5 USD +
+    # BT-6 EUR + BT-111), and an exact half-cent rounding boundary. Goldens
+    # regenerate the same way: `python3 test_golden_snapshot.py --update`.
+    # ======================================================================
+    {
+        "name": "synth-ubl-good-multivat",
+        "path": "corpus/synthetic/synth-ubl-good-multivat.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "Valid EN 16931 UBL: 4 lines, TWO lines per rate (19%/7%), so "
+                "each per-rate TaxSubtotal aggregates multiple lines; no "
+                "document allowance/charge (that's multiline's shape).",
+    },
+    {
+        "name": "synth-ubl-bad-multivat-subtotal",
+        "path": "corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "Same multi-rate shape but the 7% subtotal's BT-117 is 19.00 "
+                "where 200.00 x 7% = 14.00 (outside the official +/-1 band) "
+                "-> BR-CO-17 + BR-S-09 fatals. BT-110/BT-112 are kept "
+                "consistent with the WRONG subtotal so BR-CO-14/15 HOLD — the "
+                "error is isolated to the per-rate rules, unlike the "
+                "BR-CO-14-shaped synth-*-bad-vat-mismatch fixtures.",
+    },
+    {
+        "name": "synth-ubl-good-allowance-charge",
+        "path": "corpus/synthetic/synth-ubl-good-allowance-charge.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "Valid EN 16931 UBL with ALL THREE allowance/charge groups: a "
+                "document allowance (BG-20) AND charge (BG-21) AND a "
+                "line-level allowance (BG-27, the only fixture carrying one); "
+                "BT-131 = 500 - 20, BT-109 = 600 - 50 + 30, totals reconcile.",
+    },
+    {
+        "name": "synth-cii-good-foreign-currency",
+        "path": "corpus/synthetic/synth-cii-good-foreign-currency.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Valid EN 16931 CII in USD (BT-5) with VAT accounting currency "
+                "EUR (BT-6): two ram:TaxTotalAmount — 190.00 USD (BT-110) and "
+                "176.70 EUR (BT-111) — satisfying BR-53's BT-6-present branch. "
+                "The only fixture with a BT-6 at all.",
+    },
+    {
+        "name": "synth-cii-good-rounding-boundary",
+        "path": "corpus/synthetic/synth-cii-good-rounding-boundary.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Valid EN 16931 CII whose S-19% breakdown sits exactly on a "
+                "half-cent: 50.50 x 19% = 9.595, stated as fn:round's "
+                "toward-+inf result 9.60; BT-110 = Σ BT-117 and BT-112 = "
+                "50.50 + 9.60 must then hold EXACTLY (BR-CO-14/15 have no "
+                "tolerance band, unlike BR-CO-17).",
+    },
+    # ======================================================================
     # CII credit notes (Gutschrift, BT-3 ram:TypeCode 381). Committed
     # synthetic fixtures from T-VHCNCII.1, differentially PROVEN at 0
     # divergences against the official CEN EN16931-CII Schematron under the

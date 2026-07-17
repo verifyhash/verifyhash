@@ -1,0 +1,18 @@
+{
+  "exit_code": 1,
+  "name": "synth-ubl-bad-multivat-subtotal",
+  "path": "corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml",
+  "profile": "en16931",
+  "rules": [
+    {
+      "rule": "BR-CO-17",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-S-09",
+      "severity": "fatal"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": false
+}

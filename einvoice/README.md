@@ -641,7 +641,10 @@ and where it comes from:
   [`test_syntax_binding.py`](test_syntax_binding.py) asserts.
 
 Because it re-runs the full differential (all legs) plus the conformance corpus,
-`prove.py` takes a few minutes. [`test_prove.py`](test_prove.py) runs it and
+`prove.py` takes a few minutes. It always pays that full cost: `prove.py` sets
+`DIFF_NO_CACHE=1` for every child it spawns, bypassing the local proof cache
+that speeds up ordinary `differential.py` gate runs, so a reproduce run is
+always a fully live Saxon re-proof — even on a warm development machine. [`test_prove.py`](test_prove.py) runs it and
 asserts it exits 0, prints `0 divergences`, and that the UBL / CII / rule numbers
 it printed equal a fresh independent recompute — so the entrypoint is verified to
 report live truth, never a frozen string.

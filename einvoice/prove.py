@@ -40,6 +40,12 @@ Standard library only. ``differential.py`` needs Saxon on ``PYTHONPATH``
 (``$HOME/.local/lib/python3.10/site-packages``); this script prepends that path
 to the child environment itself, so the single command above is enough.
 
+Every child this script spawns runs with ``DIFF_NO_CACHE=1``: this is the
+buyer-facing "reproduce this yourself" entrypoint, so the persistent
+content-addressed proof cache differential.py keeps for ordinary gate runs
+(``.official-cache/``) is unconditionally bypassed — a prove.py run is always a
+fully LIVE Saxon re-proof, never a replay of memoized verdicts from a warm box.
+
 Companion test: ``test_prove.py`` runs this script, asserts it exits 0 and
 prints ``0 divergences``, and asserts the printed UBL / CII / rule numbers equal
 a fresh independent recompute — proving this entrypoint reports live truth.
@@ -79,6 +85,10 @@ def _child_env(shard=None):
     if env.get("PYTHONPATH"):
         parts.append(env["PYTHONPATH"])
     env["PYTHONPATH"] = os.pathsep.join(parts)
+    # The reproduce entrypoint must ALWAYS be a fully live Saxon re-proof:
+    # unconditionally bypass differential.py's persistent proof cache
+    # (.official-cache/), which only ordinary gate runs may use.
+    env["DIFF_NO_CACHE"] = "1"
     if shard is not None:
         env["DIFF_SHARD"] = shard
     else:

@@ -31,6 +31,7 @@ Run: python3 test_config_file.py
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -351,6 +352,141 @@ class FallbackParser(unittest.TestCase):
             tomllib.loads(self.SAMPLE)["tool"]["einvoice"],
             einvoice_config._parse_toml_fallback(
                 self.SAMPLE)["tool"]["einvoice"])
+
+
+class MixedSourceCoexistence(_TmpCwd):
+    """Config-file setting for ONE key and an explicit CLI flag for a
+    DIFFERENT key take effect SIMULTANEOUSLY — neither source clobbers the
+    other. The existing suite only ever pins a flag OVERRIDING the SAME key
+    the config set (CliFlagBeatsConfig); this pins the orthogonal case where
+    the two sources contribute distinct settings that must both survive
+    resolution (cli.py ~552-569: fail-on / lang / format are each resolved
+    independently against ``cfg`` — a flag only overrides the one key it
+    names). The class/method names carry the 'mixed' token so the leg is
+    mechanically discoverable.
+    """
+
+    def test_mixed_config_fail_on_plus_flag_json(self):
+        # Config supplies fail-on=warning; the CLI supplies --json. The config's
+        # threshold must trip exit 1 on a warning-only file AND the flag's JSON
+        # output must be emitted — proving both sources coexist. valid stays
+        # True: --fail-on changes only the exit code, never the findings/payload.
+        self.write(".einvoice.toml", 'fail-on = "warning"\n')
+        with _Capture(["--json", "validate", "--profile=xrechnung",
+                       WARN_FIXTURE]) as cap:
+            self.assertEqual(cap.rc, EXIT_FAIL)         # config's fail-on tripped
+            payload = json.loads(cap.out)               # flag's JSON form emitted
+            self.assertTrue(payload["valid"])           # findings untouched
+            self.assertNotIn("PASS:", cap.out)          # not the human summary
+
+    def test_mixed_config_format_json_plus_flag_fail_on(self):
+        # The mirror image: config supplies format=json while the CLI supplies
+        # --fail-on=warning. JSON output comes from the config, the exit-1
+        # threshold comes from the flag — again both sources coexist, from
+        # opposite origins to the case above.
+        self.write(".einvoice.toml", 'format = "json"\n')
+        with _Capture(["validate", "--profile=xrechnung",
+                       "--fail-on=warning", WARN_FIXTURE]) as cap:
+            self.assertEqual(cap.rc, EXIT_FAIL)         # flag's fail-on tripped
+            payload = json.loads(cap.out)               # config's JSON form
+            self.assertTrue(payload["valid"])
+
+
+class ValidateBatchHonoursConfig(_TmpCwd):
+    """Config-file values flow into ``validate-batch`` identically to the
+    single-file ``validate`` path — the resolution at cli.py ~552 happens ONCE
+    at arg-parse level and the resolved ``fail_on`` is threaded into
+    ``_run_validate_batch`` (cli.py 602), so a config threshold changes the
+    batch aggregate exit code exactly as it changes a single-file exit code.
+    The T-VHDX.3 suite never touched validate-batch at all.
+    """
+
+    def _batch_dir_with_warn(self):
+        # A one-file batch dir holding the warning-only fixture. Kept tiny; the
+        # richer mixed-corpus batch fixtures live in test_cli_batch.py — here we
+        # only need to prove the config value REACHES the batch dispatch.
+        d = os.path.join(self._tmp.name, "batchdir")
+        os.mkdir(d)
+        shutil.copy(WARN_FIXTURE, os.path.join(d, "warn.xml"))
+        return d
+
+    def test_batch_honours_config_fail_on_warning(self):
+        # fail-on=warning in config -> the warning-only file crosses the
+        # threshold, so the batch aggregate exit code is 1 (the same effect the
+        # single-file KeysFromEinvoiceToml.test_fail_on_warning pins for
+        # ``validate``). Default 'fatal' would be exit 0 (asserted below).
+        batch = self._batch_dir_with_warn()
+        self.write(".einvoice.toml", 'fail-on = "warning"\n')
+        with _Capture(["validate-batch", "--profile=xrechnung", batch]) as cap:
+            self.assertEqual(cap.rc, EXIT_FAIL)
+
+    def test_batch_without_config_is_default_pass(self):
+        # Parity control: the SAME batch with NO config file stays at the
+        # built-in 'fatal' threshold, so a warning-only file passes (exit 0) —
+        # confirming the exit 1 above is the config's doing, not the fixture's.
+        batch = self._batch_dir_with_warn()
+        with _Capture(["validate-batch", "--profile=xrechnung", batch]) as cap:
+            self.assertEqual(cap.rc, EXIT_OK)
+
+
+class ReceiptIgnoresConfigFailOn(_TmpCwd):
+    """The ``receipt`` subcommand's exit code is its verdict, FULL STOP —
+    config ``fail-on`` never touches it (cli.py 669-678: the receipt branch
+    returns EXIT_OK/EXIT_FAIL off ``receipt["verdict"]`` and never consults
+    ``fail_on``). The CLI docs already promise ``--fail-on`` never affects
+    receipt for the FLAG; this pins the CONFIG leg of that same invariant.
+    """
+
+    def test_receipt_verdict_unchanged_by_config_fail_on(self):
+        # A warning-only file under xrechnung: its receipt verdict is PASS (no
+        # fatal), so ``receipt`` must exit 0 EVEN THOUGH fail-on=warning is set.
+        self.write(".einvoice.toml", 'fail-on = "warning"\n')
+        with _Capture(["receipt", "--profile=xrechnung", WARN_FIXTURE]) as cap:
+            self.assertEqual(cap.rc, EXIT_OK)          # verdict-based, not fail_on
+            self.assertEqual(
+                json.loads(cap.out)["receipt"]["verdict"], "PASS")
+
+    def test_same_config_trips_validate_but_not_receipt(self):
+        # The sharp contrast, one config + one fixture: fail-on=warning makes
+        # ``validate`` exit 1 on the warning yet leaves ``receipt`` at exit 0.
+        # Same source, same input — only the receipt verdict-vs-fail_on split
+        # explains the different codes.
+        self.write(".einvoice.toml", 'fail-on = "warning"\n')
+        with _Capture(["validate", "--profile=xrechnung",
+                       WARN_FIXTURE]) as val:
+            self.assertEqual(val.rc, EXIT_FAIL)
+        with _Capture(["receipt", "--profile=xrechnung",
+                       WARN_FIXTURE]) as rcpt:
+            self.assertEqual(rcpt.rc, EXIT_OK)
+
+
+class UnknownKeyAlongsideValidKeys(_TmpCwd):
+    """An unknown key mixed IN WITH valid keys still errors actionably (exit 2,
+    the bad key named) — the existing UnknownKeyErrors class only ever exercises
+    a LONE unknown key, so a real config that has good settings plus one typo
+    was untested. cli.py's load_config()/ConfigError path (548-551) validates
+    the whole table, so a valid neighbour must not mask the bogus key.
+    """
+
+    def test_unknown_alongside_valid_in_pyproject(self):
+        self.write("pyproject.toml",
+                   '[tool.einvoice]\nformat = "json"\nbogus = "x"\n')
+        with _Capture(["validate", CLEAN_FIXTURE]) as cap:
+            self.assertEqual(cap.rc, EXIT_USAGE)
+            self.assertIn("error: unknown key 'bogus'", cap.err)
+            self.assertIn("pyproject.toml", cap.err)
+            self.assertIn("fail-on, format, lang", cap.err)
+            self.assertEqual(cap.out, "")            # the good key never ran
+
+    def test_unknown_alongside_valid_in_einvoice_toml(self):
+        # Same, in .einvoice.toml: a valid lang= next to a typo'd key. The
+        # error names the typo, not the accepted neighbour.
+        self.write(".einvoice.toml", 'lang = "de"\nformt = "json"\n')
+        with _Capture(["validate", "--profile=xrechnung",
+                       CLEAN_FIXTURE]) as cap:
+            self.assertEqual(cap.rc, EXIT_USAGE)
+            self.assertIn("error: unknown key 'formt'", cap.err)
+            self.assertIn(".einvoice.toml", cap.err)
 
 
 if __name__ == "__main__":

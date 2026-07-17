@@ -69,10 +69,39 @@ published value, or reproduce the body yourself by re-running validation on the
 original input bytes (the receipt records `input_sha256` so you can confirm you
 have those exact bytes) and check the body matches.
 
+## The `format` version marker (`/N`) and its drift guard
+
+The body's `format` field — `einvoice-conformance-receipt/N` — is the receipt's
+**structure version**, deliberately separate from `tool.version` (the validator
+package version). `tool.version` moves whenever the *engine* changes; `format`
+moves only when the receipt's *canonical shape* changes. The trailing integer
+`N` is what a consumer keys on to know how to read an older receipt: it is a
+promise that "a receipt stamped `/N` has exactly this set of fields, in these
+nested positions".
+
+That promise is only worth anything if the marker is bumped whenever the shape
+actually changes. So a **canonical-structure change requires a version bump**:
+if you add, remove, or rename a receipt field (top-level or nested — e.g. a new
+key inside each `failed_fatal_rules` entry), you MUST increment the suffix
+(`/1` → `/2`) in `RECEIPT_FORMAT` (`einvoice/receipt.py`). A value change alone
+(a different hash, a different rule id, a flipped verdict) is **not** a
+structural change and must **not** bump `N`.
+
+This is enforced mechanically, not by convention.
+[`test_receipt_version.py`](test_receipt_version.py) freezes the exact set of
+key paths a `build_receipt` document emits, keyed by the integer parsed out of
+`RECEIPT_FORMAT`. If the shape drifts without a matching bump, the marker still
+claims the old `N` while the shape no longer matches it, and the test fails with
+an instruction to bump `RECEIPT_FORMAT` and register the new shape. Regenerating
+the golden receipts for an intentional structural change therefore cannot be
+done silently — the version guard makes the bump non-optional.
+
 Every claim above is exercised adversarially by
 [`test_receipt_tamper.py`](test_receipt_tamper.py), which mutates each field and
 region of a golden receipt in a table-driven loop and asserts recompute-and-
 compare rejects every one, plus the coordinated-rewrite limit; the receipt's
 behavioural properties (determinism, honest pass, `content_sha256 = f(body)`)
 are pinned by [`test_receipt.py`](test_receipt.py) and the committed golden
-receipts in [`test_golden_snapshot.py`](test_golden_snapshot.py).
+receipts in [`test_golden_snapshot.py`](test_golden_snapshot.py). The binding
+between the `format` version marker and the receipt's canonical shape is guarded
+by [`test_receipt_version.py`](test_receipt_version.py).

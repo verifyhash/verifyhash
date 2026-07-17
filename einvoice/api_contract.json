@@ -1,0 +1,48 @@
+{
+  "_contract": {
+    "policy": "API.md 'Stability policy': the eight names in einvoice.__all__ are the supported embedding API, back-compat within a report schema version. If test_api_contract.py reports drift, that is a deliberate-regeneration event: rerun `python3 gen_api_contract.py`, review the diff against the policy, and document the change in API.md — never loosen the test.",
+    "version": 1
+  },
+  "api": {
+    "NotWellFormed": {
+      "base": "Exception",
+      "init": "(self, *args: 'object') -> 'None'",
+      "kind": "exception"
+    },
+    "Result": {
+      "init": "(self, violations: 'typing.Iterable[Violation]') -> 'None'",
+      "kind": "class",
+      "public_members": [
+        "first",
+        "ok",
+        "to_dict",
+        "valid",
+        "violations"
+      ]
+    },
+    "capabilities": {
+      "kind": "function",
+      "signature": "() -> 'dict'"
+    },
+    "fails_at": {
+      "kind": "function",
+      "signature": "(result: 'Result', level: 'str') -> 'bool'"
+    },
+    "validate": {
+      "kind": "module",
+      "module": "einvoice.validate"
+    },
+    "validate_batch": {
+      "kind": "function",
+      "signature": "(paths: '_typing.Iterable[str | _os.PathLike[str]]', profile: 'str' = 'xrechnung') -> 'dict'"
+    },
+    "validate_file": {
+      "kind": "function",
+      "signature": "(path: 'str | os.PathLike[str] | typing.BinaryIO', profile: 'str' = 'en16931') -> 'Result'"
+    },
+    "validate_root": {
+      "kind": "function",
+      "signature": "(root: 'ET.Element', profile: 'str' = 'en16931') -> 'Result'"
+    }
+  }
+}

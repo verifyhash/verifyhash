@@ -71,6 +71,7 @@ GENERATORS = {
     "gen_rules_doc": ["einvoice/RULES.md"],
     "gen_syntax_binding": ["syntax_binding_catalog.json"],
     "gen_testsuite_conformance": ["testsuite_conformance.json"],
+    "gen_api_contract": ["api_contract.json"],
     # per-example JSON reports (one committed report.json per examples/<n>/)
     "gen_examples": ["examples/*/report.json"],
     # the static per-rule reference site: landing + hub + walkthrough +

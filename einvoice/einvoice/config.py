@@ -154,15 +154,19 @@ def _read_toml(path):
     """Read + parse ``path``; every failure becomes an actionable
     :class:`ConfigError` naming the file — never a traceback."""
     try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
+        with open(path, "rb") as fh:
+            raw = fh.read()
     except OSError as exc:
         raise ConfigError("cannot read config file %s: %s"
                           % (path, exc.strerror or exc))
     try:
+        # Decode INSIDE this try: a config file that is not valid UTF-8 is
+        # an unparseable file, not an OS-level read failure, so its
+        # UnicodeDecodeError must land here (not escape ``open``/``read`` as
+        # a traceback). tomllib.TOMLDecodeError subclasses ValueError.
+        text = raw.decode("utf-8")
         return _parse_toml(text)
     except (ValueError, UnicodeDecodeError) as exc:
-        # tomllib.TOMLDecodeError subclasses ValueError.
         raise ConfigError("invalid TOML in %s: %s" % (path, exc))
 
 
@@ -210,13 +214,19 @@ def load_config(cwd=None):
     if cwd is None:
         cwd = os.getcwd()
 
+    # ``os.path.exists`` (not ``isfile``) so a config PATH that exists but is
+    # not a readable regular file — most notably a DIRECTORY named
+    # ``.einvoice.toml`` / ``pyproject.toml`` — surfaces the documented
+    # "cannot read config file" ConfigError (open() raises IsADirectoryError,
+    # an OSError) instead of being silently dropped. A missing path is still
+    # simply "no config". Broken symlinks (exists() == False) stay no-config.
     path = os.path.join(cwd, CONFIG_FILENAME)
-    if os.path.isfile(path):
+    if os.path.exists(path):
         doc = _read_toml(path)
         return _validate_table(doc, CONFIG_FILENAME)
 
     path = os.path.join(cwd, PYPROJECT_FILENAME)
-    if os.path.isfile(path):
+    if os.path.exists(path):
         doc = _read_toml(path)
         tool = doc.get("tool")
         if not isinstance(tool, dict):

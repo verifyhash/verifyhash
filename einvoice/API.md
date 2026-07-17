@@ -190,6 +190,49 @@ if "sarif" in caps["formats"]:
     ...  # safe to request --format sarif from this build
 ```
 
+## Embed einvoice in your test suite
+
+If your project generates or stores e-invoices, the cheapest regression guard
+is a conformance test next to your other tests: validate a committed sample
+invoice on every run and fail the build the moment a rule fires. The recipe
+below is pytest-style — plain functions with bare `assert`s — but imports
+nothing beyond `einvoice` itself, so it also runs under `python3` directly or
+under `unittest`-based runners that collect plain functions. Point
+`INVOICE_PATH` at your fixture and pick the gate level: `"fatal"` is exactly
+`not result.valid` (so the two tests coincide there); `"warning"` or
+`"information"` make the second test strictly stricter than the first.
+
+```python
+# test_invoice_conformance.py — drop next to your other tests.
+import einvoice
+
+INVOICE_PATH = "billing/fixtures/sample-invoice_ubl.xml"  # your invoice under test
+FAIL_LEVEL = "fatal"   # gate threshold: "fatal", "warning", or "information"
+
+def test_invoice_is_valid():
+    result = einvoice.validate_file(INVOICE_PATH, profile="en16931")
+    assert result.valid, [v.rule_id for v in result.violations]
+
+def test_invoice_clears_severity_gate():
+    result = einvoice.validate_file(INVOICE_PATH, profile="en16931")
+    assert not einvoice.fails_at(result, FAIL_LEVEL), \
+        [(v.severity, v.rule_id) for v in result.violations]
+
+if __name__ == "__main__":   # no pytest installed? python3 test_invoice_conformance.py
+    test_invoice_is_valid()
+    test_invoice_clears_severity_gate()
+    print("invoice conformance: OK")
+```
+
+The assertion messages carry the violation rule IDs (e.g. `BR-02`,
+`BR-CL-01`), so a red build names the broken rule without a re-run. This exact
+fenced block is extracted from this page and executed verbatim by
+`einvoice/test_api_recipe.py` against the committed corpus — it is proven to
+pass on a known-good EN 16931 invoice and to raise `AssertionError` on a
+fatally-invalid one. Honest limit: as everywhere in this project, a green test
+means "no *implemented* rule fired", not "legally conformant" — see
+`COVERAGE.md` before trusting it as a compliance sign-off.
+
 ## Stability policy
 
 - **Public names.** The eight names above (`validate`, `validate_file`,
@@ -223,4 +266,5 @@ importable and present in `einvoice.__all__`, so this document cannot silently
 drift from the code. `einvoice/test_api_embed.py` additionally proves
 `validate_batch`, `fails_at`, and `capabilities` agree with the live CLI
 (`validate-batch --json`, `--fail-on`, `info --json`) on the committed
-fixtures.
+fixtures, and `einvoice/test_api_recipe.py` extracts the test-suite recipe
+above from this file and executes it verbatim in both directions.

@@ -210,6 +210,9 @@ python3 -m einvoice info --json | jq -e '(.profiles | index("xrechnung")) and (.
 - **Fix the invoice and re-run.** [`examples/README.md`](examples/README.md)
   walks the broken → fixed edit field by field, with the committed report next
   to each file.
+- **Embed the check in your Python test suite.** A copy-paste pytest-style
+  recipe (executed verbatim by `test_api_recipe.py`, no pytest required) is in
+  [`API.md`](API.md) § "Embed einvoice in your test suite".
 - **Gate a whole repo of invoices in CI.** The copy-paste GitHub/GitLab recipes
   and the `validate-invoices.sh` gate (fails the build naming the rule ID) are
   in [`ci/README.md`](ci/README.md) — this quickstart deliberately does not

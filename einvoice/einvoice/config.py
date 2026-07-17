@@ -194,14 +194,23 @@ def _validate_table(table, source):
     return out
 
 
-def load_config(cwd=None):
-    """Resolve the CLI's config-file defaults from ``cwd`` (default:
-    ``os.getcwd()``).
+def load_config_with_source(cwd=None):
+    """Resolve the CLI's config-file defaults AND report WHICH file they came
+    from, from ``cwd`` (default: ``os.getcwd()``).
 
-    Returns a dict holding a SUBSET of :data:`RECOGNIZED_KEYS` mapped to
-    their string values — ``{}`` when no config exists, so absence costs
-    nothing and changes nothing. Lookup order (documented rule:
-    ``.einvoice.toml`` wins when both files exist):
+    Returns a ``(cfg, source)`` pair. ``cfg`` is the same dict
+    :func:`load_config` returns (a SUBSET of :data:`RECOGNIZED_KEYS` mapped to
+    their string values — ``{}`` when no config exists). ``source`` is the
+    PLAIN config filename the values were read from —
+    :data:`CONFIG_FILENAME` (``.einvoice.toml``) or
+    :data:`PYPROJECT_FILENAME` (``pyproject.toml``) — or ``None`` when no
+    config file contributed (every setting then falls back to its built-in
+    default). The read-only observability path (``einvoice --show-config``)
+    uses ``source`` to attribute each effective setting to
+    flag / config-filename / default WITHOUT re-globbing the cwd.
+
+    Lookup order (documented rule: ``.einvoice.toml`` wins when both files
+    exist):
 
       1. ``<cwd>/.einvoice.toml`` — whole file, top-level keys;
       2. ``<cwd>/pyproject.toml`` — only its ``[tool.einvoice]`` table
@@ -223,23 +232,39 @@ def load_config(cwd=None):
     path = os.path.join(cwd, CONFIG_FILENAME)
     if os.path.exists(path):
         doc = _read_toml(path)
-        return _validate_table(doc, CONFIG_FILENAME)
+        return _validate_table(doc, CONFIG_FILENAME), CONFIG_FILENAME
 
     path = os.path.join(cwd, PYPROJECT_FILENAME)
     if os.path.exists(path):
         doc = _read_toml(path)
         tool = doc.get("tool")
         if not isinstance(tool, dict):
-            return {}
+            return {}, None
         table = tool.get("einvoice")
         if table is None:
-            return {}
+            return {}, None
         if not isinstance(table, dict):
             raise ConfigError(
                 "[tool.einvoice] in %s must be a table of keys "
                 "(accepted keys: %s)"
                 % (PYPROJECT_FILENAME, ", ".join(RECOGNIZED_KEYS)))
-        return _validate_table(
-            table, "%s [tool.einvoice]" % PYPROJECT_FILENAME)
+        return (_validate_table(table, "%s [tool.einvoice]" % PYPROJECT_FILENAME),
+                PYPROJECT_FILENAME)
 
-    return {}
+    return {}, None
+
+
+def load_config(cwd=None):
+    """Resolve the CLI's config-file defaults from ``cwd`` (default:
+    ``os.getcwd()``).
+
+    Thin wrapper over :func:`load_config_with_source` that drops the source
+    attribution — returns just the dict (a SUBSET of :data:`RECOGNIZED_KEYS`
+    mapped to their string values, ``{}`` when no config exists), preserving
+    the exact signature and contract every existing caller depends on. Callers
+    that need to attribute each setting to its origin file use
+    :func:`load_config_with_source` instead. Raises :class:`ConfigError`
+    identically.
+    """
+    cfg, _source = load_config_with_source(cwd)
+    return cfg

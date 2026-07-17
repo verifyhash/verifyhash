@@ -250,6 +250,31 @@ the file, and the accepted set (`fail-on, format, lang`); an invalid value
 same message, same exit `2` (see [`EXIT-CODES.md`](EXIT-CODES.md)). Every
 clause above is pinned by `test_config_file.py` against the live CLI.
 
+**See what actually resolved — `einvoice --show-config`.** Because precedence
+mixes three sources (flag, config file, default) it is easy to lose track of
+which one won. `--show-config` is a read-only dry run that resolves `format`,
+`fail-on` and `lang` exactly as a real `validate` run would and prints each
+with its **source** — then exits `0` without reading any invoice or running a
+single rule (like `info`, it writes only stdout, nothing on stderr):
+
+```
+$ einvoice --show-config          # in a dir with the config above
+format: json (source: pyproject.toml)
+fail-on: warning (source: pyproject.toml)
+lang: de (source: pyproject.toml)
+
+$ einvoice --fail-on=fatal --show-config
+format: json (source: pyproject.toml)
+fail-on: fatal (source: flag)          # the flag won for THIS key only
+lang: de (source: pyproject.toml)      # the sibling config value survives
+```
+
+With no config file present all three report `source: default` and the
+historical values (`text` / `fatal` / `en`). The value **and** its source come
+from the same resolution code the real run uses — there is no second copy of the
+precedence rule to drift — and a misconfigured file still errors `2` here, just
+as a real run would. Pinned by `test_show_config.py`.
+
 ## Next steps
 
 - **Fix the invoice and re-run.** [`examples/README.md`](examples/README.md)

@@ -475,6 +475,17 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   same offending element, byte-identical `--json`, same exit code. See
   [§German-language messages](#german-language-messages---lang-de) for the exact
   coverage.
+- `--show-config` — **read-only observability**: resolve the effective
+  `format` / `fail-on` / `lang` exactly as a real `validate` run would (explicit
+  flag > config file > built-in default) and print each with its **source** —
+  `flag`, the config filename (`.einvoice.toml` / `pyproject.toml`), or
+  `default` — then exit `0`. It reads no input file and runs no validation; like
+  `info` it writes only stdout, nothing on stderr on success. A misconfigured
+  config file still errors (`2`) with the same message a real run gives — the
+  resolution and vocabulary checks are shared, never re-implemented. Purely
+  additive: omitting the flag leaves every `validate` run byte-identical to
+  today. Pinned by `test_show_config.py`; the config-file layer it reports is
+  documented in [`QUICKSTART.md`](QUICKSTART.md) §6.
 
 **Input** — `validate <invoice.xml>` reads a file; `validate -` reads the
 invoice XML from **stdin** (e.g. `curl -s … | einvoice validate -`). The stdin

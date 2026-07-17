@@ -5,6 +5,7 @@ Usage:
     einvoice validate-batch <dir|glob> [--json] [--quiet] [--profile=en16931|xrechnung]
     einvoice receipt  <invoice.xml> [--profile=en16931|xrechnung]
     einvoice info [--json]
+    einvoice --show-config
     einvoice --version
 
 (also reachable as ``python3 -m einvoice ...`` and, from a source checkout,
@@ -13,6 +14,19 @@ Usage:
 Global flags:
     --version  print the packaged ``einvoice.__version__`` and exit 0. Takes
                precedence over everything else — no subcommand or file needed.
+    --show-config
+               READ-ONLY observability dry run: resolve the EFFECTIVE
+               ``format`` / ``fail-on`` / ``lang`` exactly as a real
+               ``validate`` run would (explicit flag > config file > built-in
+               default) and print each with its SOURCE — one of ``flag`` / the
+               config filename (``.einvoice.toml`` | ``pyproject.toml``) /
+               ``default`` — then exit 0. Reads NO input file and runs NO
+               validation; like ``info`` it writes only stdout, nothing on
+               stderr on success. A misconfigured file still errors (exit 2)
+               with the same message a real run would give — the resolution and
+               vocabulary checks are shared, not re-implemented. Purely
+               additive: an ordinary ``validate`` run with the flag absent is
+               byte-identical to today.
     --fail-on  OPT-IN exit-code severity threshold for ``validate`` /
                ``validate-batch`` (accepts ``--fail-on X`` and ``--fail-on=X``):
                choose which finding severity trips exit code 1. This is a pure
@@ -166,7 +180,7 @@ from .report import (
     batch_exit_code, build_batch_text,
 )
 from .remediation import resolve_message, SUPPORTED_LANGS
-from .config import load_config, ConfigError
+from .config import load_config_with_source, ConfigError
 
 USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "[--json] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de] "
@@ -177,6 +191,7 @@ USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "       einvoice receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
          "       einvoice info [--json]\n"
+         "       einvoice --show-config\n"
          "       einvoice --version")
 
 EXIT_OK = 0
@@ -378,6 +393,70 @@ def _run_info(as_json):
     return EXIT_OK
 
 
+def _resolve_output_settings(cfg, cfg_source, fail_on_flag, lang_flag, json_flag):
+    """Resolve the effective ``format`` / ``fail-on`` / ``lang`` AND the SOURCE
+    of each, using the ONE precedence rule the CLI has always applied: explicit
+    CLI flag > config file > built-in default.
+
+    This is the SINGLE resolution seam. The real ``validate`` / ``validate-batch``
+    dispatch in :func:`_main` reads its effective settings from here, and the
+    read-only ``--show-config`` view (:func:`_run_show_config`) reports the very
+    same triples — so a reported source can never drift from the value a run
+    actually uses (there is no second copy of this precedence logic).
+
+    Parameters are the RAW inputs already parsed from argv:
+
+      * ``fail_on_flag`` / ``lang_flag`` — the flag value, or ``None`` when the
+        flag was absent on the command line;
+      * ``json_flag`` — ``True`` iff ``--json`` was passed. The ``format`` setting
+        has no value-taking flag on this CLI; ``--json`` IS its flag, so a passed
+        ``--json`` resolves ``format`` to ``json`` with source ``flag`` (and, as
+        today, the config ``format`` key is not even consulted in that case).
+
+    ``cfg`` / ``cfg_source`` come from
+    :func:`einvoice.config.load_config_with_source`; ``cfg_source`` is the config
+    filename (``.einvoice.toml`` / ``pyproject.toml``) or ``None`` when no config
+    file contributed.
+
+    Returns a list of ``(name, value, source)`` triples in a stable DISPLAY order
+    (``format``, ``fail-on``, ``lang``), where ``source`` is one of ``'flag'`` /
+    the config filename / ``'default'``.
+    """
+    def resolve(flag_value, key, default):
+        if flag_value is not None:
+            return flag_value, "flag"
+        if key in cfg:
+            return cfg[key], cfg_source
+        return default, "default"
+
+    fmt_value, fmt_source = resolve("json" if json_flag else None, "format", "text")
+    fail_on_value, fail_on_source = resolve(fail_on_flag, "fail-on", "fatal")
+    lang_value, lang_source = resolve(lang_flag, "lang", "en")
+    return [
+        ("format", fmt_value, fmt_source),
+        ("fail-on", fail_on_value, fail_on_source),
+        ("lang", lang_value, lang_source),
+    ]
+
+
+def _run_show_config(resolved):
+    """Drive ``einvoice --show-config``: a READ-ONLY dry run of the config layer.
+
+    Prints the EFFECTIVE ``format`` / ``fail-on`` / ``lang`` and the SOURCE of
+    each (``flag`` / a config filename / ``default``), one per line, then exits 0.
+    Reads NO input file and runs NO validation — it mirrors the read-only,
+    stderr-clean discipline of ``info``: everything goes to stdout, nothing to
+    stderr on success.
+
+    ``resolved`` is the exact list of ``(name, value, source)`` triples
+    :func:`_resolve_output_settings` produced for this run, so every value and
+    its source attribution is identical to what a real ``validate`` run would use.
+    """
+    for name, value, source in resolved:
+        sys.stdout.write("%s: %s (source: %s)\n" % (name, value, source))
+    return EXIT_OK
+
+
 def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
     """Drive ``einvoice validate-batch <dir|glob>``.
 
@@ -473,6 +552,18 @@ def _main(argv=None):
         quiet = True
         args = [a for a in args if a != "--quiet"]
 
+    # --show-config is a READ-ONLY dry run of the config layer: it resolves the
+    # effective format/fail-on/lang exactly as a real validate run would, prints
+    # each with its SOURCE (flag / config filename / default), and exits 0 —
+    # reading no input file and running no validation. Parsed like the other
+    # global booleans; dispatched below, AFTER config resolution + the vocabulary
+    # checks (so a misconfigured file surfaces the same exit-2 error a real run
+    # would, never a false "config OK" report).
+    show_config = False
+    if "--show-config" in args:
+        show_config = True
+        args = [a for a in args if a != "--show-config"]
+
     profile = "en16931"
     # --lang selects the language of the HUMAN-facing message only. 'en'
     # (default) keeps today's behaviour byte-for-byte; 'de' swaps a violation's
@@ -545,28 +636,34 @@ def _main(argv=None):
     # With no config file, cfg == {} and every default below is byte-identical
     # to the historical contract.
     try:
-        cfg = load_config()
+        cfg, cfg_source = load_config_with_source()
     except ConfigError as exc:
         sys.stderr.write("error: %s\n%s\n" % (exc, USAGE))
         return EXIT_USAGE
-    if fail_on is None:
-        fail_on = cfg.get("fail-on", "fatal")
-    if lang is None:
-        lang = cfg.get("lang", "en")
-    if not as_json:
-        # The config 'format' key defaults the output form; an explicit
-        # --json flag already decided (and wins). 'text' is the built-in
-        # default, so absence of the key changes nothing. An unknown format
-        # name gets the same actionable exit-2 treatment as any bad flag
-        # value (there is no --format flag on THIS CLI to mistype, so the
-        # message names the config as the source).
-        fmt = cfg.get("format", "text")
-        if fmt not in OUTPUT_FORMATS:
-            sys.stderr.write(
-                "error: unknown format %r in config (choose from %s)\n%s\n"
-                % (fmt, ", ".join(OUTPUT_FORMATS), USAGE))
-            return EXIT_USAGE
-        as_json = fmt == "json"
+    # ONE resolution seam (flag > config > default), shared with --show-config:
+    # the effective value AND its source for each of format/fail-on/lang come
+    # from the same helper, so an observability report can never drift from what
+    # a real run uses. ``as_json`` here is the raw --json flag (True iff passed);
+    # it is REASSIGNED below to the resolved format.
+    resolved = _resolve_output_settings(cfg, cfg_source, fail_on, lang, as_json)
+    _resolved_by_name = {name: (value, source)
+                         for name, value, source in resolved}
+    fmt = _resolved_by_name["format"][0]
+    fail_on = _resolved_by_name["fail-on"][0]
+    lang = _resolved_by_name["lang"][0]
+    # The config 'format' key defaults the output form; an explicit --json flag
+    # already decided (and wins, so an invalid config 'format' is not even
+    # consulted then — resolved to 'json'/flag above). 'text' is the built-in
+    # default, so absence of the key changes nothing. Only a config-sourced
+    # 'format' can be invalid, and it gets the same actionable exit-2 treatment
+    # as any bad flag value (there is no --format flag on THIS CLI to mistype,
+    # so the message names the config as the source).
+    if fmt not in OUTPUT_FORMATS:
+        sys.stderr.write(
+            "error: unknown format %r in config (choose from %s)\n%s\n"
+            % (fmt, ", ".join(OUTPUT_FORMATS), USAGE))
+        return EXIT_USAGE
+    as_json = fmt == "json"
 
     if profile not in PROFILES:
         sys.stderr.write("error: unknown profile %r (choose from %s)\n%s\n"
@@ -580,6 +677,16 @@ def _main(argv=None):
         sys.stderr.write("error: unknown --fail-on value %r (choose from %s)\n%s\n"
                          % (fail_on, ", ".join(FAIL_ON_LEVELS), USAGE))
         return EXIT_USAGE
+
+    # ``--show-config`` prints the resolved settings + their source and exits 0.
+    # Dispatched HERE — after config resolution and every vocabulary check above
+    # (so a bad config still errors exit 2, exactly as a real run would) but
+    # BEFORE any subcommand/file handling — so it reads no input file, validates
+    # nothing, and takes NO subcommand argument. Read-only, stderr-clean; mirrors
+    # ``info``. ``resolved`` is the shared triple list, so its reported values and
+    # sources are byte-for-byte what a real validate run would use.
+    if show_config:
+        return _run_show_config(resolved)
 
     # ``info`` is a read-only build introspection: no input file, no
     # validation. Dispatched before the file-driven subcommands; it reuses

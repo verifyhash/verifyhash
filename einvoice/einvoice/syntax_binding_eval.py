@@ -1741,20 +1741,73 @@ def _message(entry, path):
 CII_ROOT_TAG = "{%s}CrossIndustryInvoice" % CII_NSMAP["rsm"]
 
 
+def _match_context_indexed(ctx, parents, by_tag, elems, positions):
+    """Every element matching ANY branch of compiled context ``ctx``, in document
+    order — semantically IDENTICAL to :meth:`_Context.match`, but consulting a
+    per-document Clark-tag index instead of re-walking the whole tree.
+
+    A concrete branch (``_CtxBranch``) can only match an element whose tag is the
+    branch's LEAF tag, so its candidate set is exactly ``by_tag[leaf]`` (already
+    in document order); each candidate is then verified with the SAME
+    :func:`_branch_matches` predicate the tree-walking path uses. A
+    ``_SuffixBranch`` has no single tag key, so it scans the full document-order
+    element list — the same node sequence ``root.iter()`` yields. De-duplication
+    (an element matching several branches counts once) plus a final sort on the
+    precomputed document-order position reproduces the tree walk's
+    first-matching-branch iteration order exactly."""
+    out, seen = [], set()
+    for br in ctx.branches:
+        candidates = elems if isinstance(br, _SuffixBranch) \
+            else by_tag.get(br.tags[-1], ())
+        for el in candidates:
+            if id(el) in seen:
+                continue
+            if _branch_matches(el, br, parents):
+                seen.add(id(el))
+                out.append(el)
+    if len(ctx.branches) > 1:
+        out.sort(key=lambda el: positions[id(el)])
+    return out
+
+
 def _evaluate_entries(root, implemented):
     """Run a list of compiled implemented entries over a parsed document ``root``
     and return syntax-binding findings. Binding-agnostic: an entry's compiled
     @context / @test already carry Clark-resolved tags, so evaluation is the same
     for UBL and CII. An assert is evaluated on EVERY node its (restricted) rule
     context matches — exactly as the official Schematron fires per matched
-    context."""
+    context.
+
+    PERF (T-VHPERF.2): the ONE walk that builds the ``parents`` map also builds a
+    per-document, in-memory index (Clark tag -> [elements, document order] + a
+    document-order position map), and each DISTINCT compiled rule context is
+    matched exactly once against that index (memoized by object identity for the
+    duration of this call — entry objects are alive throughout, so ``id()`` keys
+    are stable). Previously every one of the ~740 entries re-walked the full tree
+    in ``entry.ctx.match``; profiling put ~96% of evaluation time there. Nothing
+    about WHAT fires changes: candidates are verified with the same
+    ``_branch_matches`` predicate, per-entry iteration order and per-context node
+    order are preserved exactly, and the index lives only for this call — no disk
+    cache, no environment sensitivity."""
     if not implemented:
         return []
-    parents = {id(child): parent
-               for parent in root.iter() for child in parent}
+    parents, by_tag, elems, positions = {}, {}, [], {}
+    for i, el in enumerate(root.iter()):
+        elems.append(el)
+        positions[id(el)] = i
+        by_tag.setdefault(el.tag, []).append(el)
+        for child in el:
+            parents[id(child)] = el
+    ctx_nodes_memo = {}
     findings = []
     for entry in implemented:
-        for ctx in entry.ctx.match(root, parents):
+        key = id(entry.ctx)
+        ctx_nodes = ctx_nodes_memo.get(key)
+        if ctx_nodes is None:
+            ctx_nodes = _match_context_indexed(entry.ctx, parents, by_tag,
+                                               elems, positions)
+            ctx_nodes_memo[key] = ctx_nodes
+        for ctx in ctx_nodes:
             fires, node = entry.compiled.evaluate(ctx, root, parents)
             if fires:
                 path = _node_path(node if node is not None else ctx, parents)

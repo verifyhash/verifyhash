@@ -26,12 +26,13 @@ THE THREE MEASURED SERIES (and why these code paths)
   rule engine that actually validates CII content.
 * ``batch``       — :func:`einvoice.validate_batch` (the stable public
   batch entry point from T-VHEMBED.1) over an interleaved UBL+CII file
-  list (N/2 each). Composition note: per-file batch cost is dominated by
-  the UBL report path's syntax-binding section (~75-80 ms/invoice —
-  ``syntax_binding_eval.evaluate`` re-partitions and re-matches the
-  ~740-entry CEN catalog per document), while an interleaved CII XML file
-  short-circuits at S-ROOT (~1 ms), so the mixed per-invoice number is
-  roughly the average of the two.
+  list (N/2 each). Composition note AT T-VHPERF.1 TIME: per-file batch
+  cost was dominated by the UBL report path's syntax-binding section
+  (~75-80 ms/invoice — every one of the ~740 compiled catalog entries
+  re-walked the whole tree in ``entry.ctx.match``), while an interleaved
+  CII XML file short-circuits at S-ROOT (~1 ms). T-VHPERF.2 removed that
+  redundancy (see the AFTER block below): one per-document in-memory tag
+  index, each distinct rule context matched once.
 
 Fixture synthesis adapts the committed valid synthetic corpus invoices
 (``corpus/synthetic/synth-{ubl,cii}-good-multiline.xml``) — each of the N
@@ -59,11 +60,31 @@ per-invoice wall-time (median where reps > 1):
 LINEARITY VERDICT: linear. All three series hold per-invoice cost flat
 from N=100 to N=1000 (ratios 0.93-1.01x) — no O(n^2) growth, no per-file
 re-parse amplification with batch size. The interesting cost is the
-CONSTANT: the batch/report path spends ~48x more per UBL invoice than
+CONSTANT: the batch/report path spent ~48x more per UBL invoice than
 bare validate_file (79 ms vs 1.65 ms), almost entirely in the
 per-document syntax-binding catalog evaluation — that constant, not
-scaling, is T-VHPERF.2's real target. Peak RSS for the full 1+100+1000
+scaling, was T-VHPERF.2's real target. Peak RSS for the full 1+100+1000
 run (both syntaxes + batch): ru_maxrss 29192 KiB (~28.5 MiB).
+
+AFTER T-VHPERF.2 (same box, same day) — cProfile put ~92% of batch
+wall-time (3.66 s of 3.97 s over 40 report builds) in per-entry
+``_Context.match`` full-tree walks: 14,820 match calls (~740 entries x
+40 docs) driving 3.94M ``_branch_matches`` calls. ``_evaluate_entries``
+now builds one in-memory per-document Clark-tag index in the same pass
+as the parents map and matches each DISTINCT compiled context once
+(findings byte-identical over all 574 committed corpus fixtures,
+differential 0). Same-day re-run of this harness (fresh BEFORE that
+day: ubl 1.64 / cii 2.29 / batch 40.2 ms at N=1000):
+
+    series       N=1        N=100      N=1000     N=1000/N=100
+    ubl_single   1.66 ms    1.65 ms    1.65 ms    1.00x
+    cii_single   2.34 ms    2.33 ms    2.32 ms    0.99x
+    batch        6.13 ms    3.58 ms    3.89 ms    1.09x
+
+The batch constant drops ~10x (40.2 -> 3.89 ms/invoice at N=1000; the
+full UBL report path 77.9 -> 6.13 ms at N=1, now ~3.7x bare
+validate_file instead of ~48x). Peak RSS unchanged (29280 KiB
+~= 28.6 MiB). The profiled 40-doc loop itself: 3.97 s -> 0.31 s.
 
 Usage:  python3 bench_scale.py          (exits 0; prints one JSON object)
 """

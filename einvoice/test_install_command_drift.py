@@ -55,6 +55,79 @@ SELF = os.path.basename(__file__)
 WRONG = re.compile(r"pip\s+install\s+einvoice(?![\w./-])")
 
 
+# ---------------------------------------------------------------------------
+# German command parity (QUICKSTART.de.md).
+#
+# The German quickstart's contract is: every line shown inside a fenced code
+# block (commands AND sample output alike) must be BYTE-IDENTICAL to a line
+# that already appears inside a fenced code block of the English source-of-
+# truth docs — einvoice/QUICKSTART.md or einvoice/README.md — whose commands
+# the test suite executes against the live engine (test_quickstart.py,
+# test_ci_capability_recipe.py). Prose may be German; fenced content may
+# never diverge, so the two languages cannot drift apart on commands.
+QUICKSTART_DE = os.path.join(HERE, "QUICKSTART.de.md")
+ENGLISH_COMMAND_SOURCES = (
+    os.path.join(HERE, "QUICKSTART.md"),
+    os.path.join(HERE, "README.md"),
+)
+
+
+def fenced_block_lines(path):
+    """Return the non-blank lines inside ``` fenced code blocks of a Markdown
+    file, in order. Fence markers themselves (``` / ```sh / ```text ...) are
+    not content; blank lines carry no command to compare."""
+    lines = []
+    in_fence = False
+    with open(path, encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.rstrip("\n")
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence and line.strip():
+                lines.append(line)
+    return lines
+
+
+def german_parity_check():
+    """FAIL (return False, printing each offender) if QUICKSTART.de.md shows
+    any fenced-code line the English fenced blocks do not contain verbatim."""
+    if not os.path.isfile(QUICKSTART_DE):
+        print("  FAIL: %s is missing — the German quickstart is a shipped doc "
+              "this guard pins" % os.path.basename(QUICKSTART_DE))
+        return False
+
+    allowed = set()
+    for src in ENGLISH_COMMAND_SOURCES:
+        allowed.update(fenced_block_lines(src))
+    if not allowed:
+        print("  FAIL: no fenced-code lines found in the English docs "
+              "(QUICKSTART.md / README.md) — parity has nothing to check "
+              "against, which is itself a drift bug")
+        return False
+
+    de_lines = fenced_block_lines(QUICKSTART_DE)
+    if not de_lines:
+        print("  FAIL: QUICKSTART.de.md has no fenced-code lines — a "
+              "quickstart with no runnable commands is broken")
+        return False
+
+    offenders = [l for l in de_lines if l not in allowed]
+    if offenders:
+        print("\nFAIL: %d fenced-code line(s) in QUICKSTART.de.md are NOT "
+              "byte-identical to any fenced-code line in QUICKSTART.md / "
+              "README.md (German docs may never invent or vary commands):"
+              % len(offenders))
+        for line in offenders:
+            print("  QUICKSTART.de.md: %s" % line)
+        return False
+
+    print("  ok: German parity — %d fenced line(s) in QUICKSTART.de.md all "
+          "appear verbatim in the English fenced blocks (%d allowed line(s))"
+          % (len(de_lines), len(allowed)))
+    return True
+
+
 def is_changelog(name):
     return "changelog" in name.lower()
 
@@ -128,6 +201,11 @@ def main():
 
     print("  ok: scanned %d shipped .md/.yaml/.yml file(s) under %s"
           % (scanned, REPO_ROOT))
+
+    if not german_parity_check():
+        print("\nFAIL: German command-parity check failed (QUICKSTART.de.md "
+              "must only show commands the English docs already prove)")
+        sys.exit(1)
 
     if offenders:
         print("\nFAIL: %d install reference(s) name the WRONG package "

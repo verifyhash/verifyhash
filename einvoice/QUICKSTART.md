@@ -10,6 +10,10 @@ doc cannot drift from what the tool actually does.
 Zero dependencies, offline, Python 3 standard library only. If you have a
 checkout of this repository and `python3`, you can reproduce all of it.
 
+> **Deutsche Anleitung:** ein deutschsprachiger Schnellstart mit
+> byte-identischen, paritäts-geprüften Kommandos ist
+> [`QUICKSTART.de.md`](QUICKSTART.de.md).
+
 The two fixtures live in the repo and are the same ones the onboarding
 walkthrough uses ([`examples/README.md`](examples/README.md)):
 

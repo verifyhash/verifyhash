@@ -27,6 +27,9 @@ PDF containers via `einvoice.report`).
 - **CI-gateable.** `ci/` ships a copy-paste build gate (POSIX sh + GitHub
   Actions / GitLab CI recipes) that fails a build on any non-conformant
   invoice, naming the violated rule ID. See [§4](#4-ci-conformance-gate).
+- **Deutsche Anleitung.** A German-language quickstart whose shell commands
+  are kept byte-identical to the English docs by an automated parity check
+  (`test_install_command_drift.py`): [`QUICKSTART.de.md`](QUICKSTART.de.md).
 
 ### Safe on untrusted input
 

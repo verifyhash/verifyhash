@@ -87,3 +87,47 @@ Two consequences worth relying on:
    install locations. (Honest limit: if *you* pass an absolute path, that
    string is echoed back verbatim, including whatever it reveals — choose the
    spelling you are comfortable publishing.)
+
+## OS-level input errors
+
+Measured rule (2026-07-17, pinned by `test_os_error_formats.py` across the
+full matrix of {nonexistent path, unreadable `chmod 000` file, directory,
+dangling symlink} × all nine `--format` values): **when the input fails at
+the OS level, stdout stays completely empty — a machine consumer never sees
+a half-emitted or truncated document — and stderr carries exactly one
+actionable `error:` line; the exit code is `1`, this surface's usage/error
+code (report.py mints no exit `2`; the exit-`2` taxonomy in EXIT-CODES.md
+belongs to the `python3 -m einvoice` CLI).** Never a Python traceback, and
+never diagnostic text interleaved into a json/junit/sarif/gitlab document.
+
+Per input class:
+
+- **Nonexistent path** — every format: empty stdout, `error: no such file:
+  <path>` on stderr, exit `1`.
+- **Unreadable file** (exists, permission denied — e.g. `chmod 000`) — every
+  format: empty stdout, `error: cannot read <path>: Permission denied` on
+  stderr, exit `1`. (Before 2026-07-17 this leg leaked a raw
+  `PermissionError` traceback — the only class that violated the rule; the
+  read boundary in `report.py` now catches the `OSError` family before any
+  emitter writes a byte.)
+- **Directory** — *not* an OS error for `json`, `junit`, and `text`: a
+  directory positional is the designed batch mode and emits a complete,
+  parseable batch document (schema `einvoice-conformance-batch/v1` for
+  json) with the batch exit-code precedence — an empty directory
+  batch-passes with exit `0`. The six single-file-only formats (`sarif`,
+  `gitlab`, `github`, `azure`, `badge`, `html`) refuse with empty stdout and
+  `error: --format <F> validates a single file; use json/junit/text for a
+  directory`, exit `1`.
+- **Dangling symlink** (link exists, target missing) — every format: same
+  empty-stdout branch as a nonexistent path (`error: no such file: <path>`,
+  exit `1`); `isfile()` is false for it, and the stdout/exit discipline is
+  what this contract pins. (The friendlier "dangling symlink" wording exists
+  on the `python3 -m einvoice validate|receipt` surface, per EXIT-CODES.md.)
+
+Honest limit: the diagnostic is plain text on stderr, not a machine
+document — a CI step that wants a parseable failure artifact for a missing
+or unreadable input must branch on the exit code, not parse stdout (which
+is deliberately empty in every OS-error case). Note that `einvoice
+validate` itself exposes **no** `--format` flag (machine formats live on
+`python3 -m einvoice.report`); passing one is a usage error (exit `2`,
+empty stdout) — also pinned by `test_os_error_formats.py`.

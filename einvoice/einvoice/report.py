@@ -2146,7 +2146,26 @@ def main(argv=None):
             return EXIT_PARSE
         return EXIT_OK if diff["new_fatal_count"] == 0 else EXIT_FAIL
 
-    report = build_report(path, profile=profile)
+    # MEASURED defect this fixes (2026-07-17, T-VHOSERR.2): a file that
+    # passes the isfile() check above but cannot be READ (e.g. chmod 000)
+    # made open() inside build_report raise a raw PermissionError traceback
+    # on stderr — the only OS-error input class that broke the machine-format
+    # stdout discipline (every other class already emitted EMPTY stdout plus
+    # one ``error:`` diagnostic line on stderr). This arm catches exactly the
+    # OSError family at the read boundary — BEFORE any format emitter has
+    # written a byte, so stdout stays completely empty and no half-emitted
+    # json/junit/sarif/gitlab document can ever reach a parser. Same
+    # discipline (and message shape) as the cli.py single-file arm from
+    # T-VHOSERR.1; the exit code stays this surface's measured, documented
+    # EXIT_FAIL (1) — identical to the nonexistent-path row above, no new
+    # exit code is minted. BrokenPipeError cannot originate here (nothing has
+    # been written to stdout yet), so no re-raise arm is needed.
+    try:
+        report = build_report(path, profile=profile)
+    except OSError as exc:
+        sys.stderr.write("error: cannot read %s: %s\n"
+                         % (path, exc.strerror or exc))
+        return EXIT_FAIL
     if fmt == "junit":
         sys.stdout.write(build_junit(report))
     elif fmt == "sarif":

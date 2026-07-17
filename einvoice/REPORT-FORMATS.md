@@ -50,3 +50,40 @@ Each row runs against a committed known-good fixture
   both modes against the committed fixtures and asserts this table and
   `report.py` list the same set. Add or drop a format without editing both and
   the gate goes red.
+
+## Path echo
+
+Measured rule (pinned by `test_path_invariance.py`): **reports echo the input
+path exactly as the user supplied it on the command line — nothing is
+absolutized, resolved, or rewritten.** Pass `invoice.xml` from its own
+directory and every surface says `invoice.xml`; pass
+`/abs/path/to/invoice.xml` from anywhere and every surface says
+`/abs/path/to/invoice.xml`. Reading stdin (`validate -`) echoes `-`.
+
+Where the echoed path appears, per surface:
+
+- **text** (`einvoice validate`, `--format text`) — the `PASS:`/`FAIL:`
+  verdict line carries the path verbatim.
+- **json** (`validate --json`, `--format json`) — the `source` field is the
+  argv string verbatim.
+- **sarif** — contains **no filesystem path at all**: findings are anchored by
+  `logicalLocations` (offending element names), never
+  `physicalLocation`/`artifactLocation`, and the only URIs are the static
+  rule/help URLs. Relative-path and absolute-path invocations of the same file
+  produce byte-identical SARIF.
+
+Two consequences worth relying on:
+
+1. **The verdict and exit code are working-directory independent.** Only the
+   path *string* in the report differs between a relative and an absolute
+   invocation of the same file; findings, counts, and exit codes are
+   identical. Measured 2026-07-17 on both a passing and a failing fixture:
+   relative-from-parent vs absolute-from-a-temp-cwd produced identical
+   verdicts (exit 0 / exit 1) and, after normalizing the echoed path,
+   identical bytes.
+2. **No machine-internal paths leak.** Because the tool never absolutizes,
+   a relative invocation emits no absolute path anywhere in json or sarif —
+   reports are safe to commit or upload without exposing home directories or
+   install locations. (Honest limit: if *you* pass an absolute path, that
+   string is echoed back verbatim, including whatever it reveals — choose the
+   spelling you are comfortable publishing.)

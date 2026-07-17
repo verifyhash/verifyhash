@@ -79,12 +79,31 @@ def verify():
                 % (entry["name"], entry["sha256"], live)
             )
 
+    # --- Check 3: re-hash each bound trust artifact, confirm pinned sha. ------
+    # gen_attestation binds the raw-bytes SHA-256 of every committed generated
+    # trust artifact (api_contract.json, cii_parity.json, ...). Check 1 already
+    # fails closed on drift (the regenerated attestation would differ), but this
+    # gives a precise, per-artifact diagnostic and re-hashes the live file
+    # directly rather than trusting the regenerated copy.
+    artifacts = doc["attestation"].get("artifacts", {})
+    for rel, pinned in sorted(artifacts.items()):
+        path = HERE / rel
+        if not path.is_file():
+            return _fail("bound trust artifact is missing: %s" % path)
+        live = gen_attestation._sha256_hex(path.read_bytes())
+        if live != pinned:
+            return _fail(
+                "trust artifact %r content hash drifted: attestation pins %s but "
+                "the committed file hashes to %s" % (rel, pinned, live)
+            )
+
     sys.stdout.write(
         "attestation verify OK: %d rules, %d corpus artifacts, "
-        "content_sha256=%s\n"
+        "%d trust artifacts, content_sha256=%s\n"
         % (
             doc["attestation"]["rules"]["count"],
             len(corpus),
+            len(artifacts),
             doc["content_sha256"],
         )
     )

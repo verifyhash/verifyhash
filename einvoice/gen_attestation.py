@@ -61,6 +61,66 @@ ATTESTATION_PATH = HERE / "attestation.json"
 #: change), so a consumer can tell how to read an older attestation.
 ATTESTATION_FORMAT = "einvoice-conformance-attestation/1"
 
+#: Committed GENERATED TRUST artifacts that are bound by a raw-bytes SHA-256 in
+#: the ``artifacts`` section below. Each is a machine-readable conformance claim
+#: (an API contract, a CII-parity ledger, a known-open audit, a coverage matrix,
+#: a syntax-binding catalog, a remediation catalog) that a procurement evaluator
+#: could quote -- so the attestation pins the exact bytes and verify fails on any
+#: drift. Paths are RELATIVE to this directory. Keep sorted for readability; the
+#: emitted section is keyed by path and canonical_json sorts it regardless.
+TRUST_ARTIFACTS = [
+    "api_contract.json",
+    "cii_parity.json",
+    "coverage_matrix.json",
+    "known_open_audit.json",
+    "remediation_catalog.json",
+    "syntax_binding_catalog.json",
+]
+
+#: Generated trust artifacts that ARE bound, but by a DEDICATED body section
+#: (their meaningful numbers -- and for the corpus, their on-disk bytes -- are
+#: recomputed by verify_attestation.py), not by the generic raw-bytes ``artifacts``
+#: section. Recorded here (path -> which section binds it) so the completeness
+#: guard in test_attestation.py knows they are accounted for without hashing them
+#: twice. ``attestation.json`` is the document itself and cannot hash itself.
+BOUND_ELSEWHERE = {
+    "export/rules.json": "rules section (rule counts / families / rulesets)",
+    "export/coverage.json": "coverage section (syntax-binding + BR totals)",
+    "testsuite_conformance.json": "testsuite_conformance section (pass rates)",
+    "sbom/bom.json": "corpus section (per-corpus pinned + re-walked SHA-256)",
+    "attestation.json": "the attestation document itself (self-referential)",
+}
+
+#: Generator outputs that are deliberately NOT hash-bound because they are not
+#: machine trust claims. Each entry carries a one-line reason. Path/pattern keys
+#: mirror test_determinism.GENERATORS output patterns exactly, so the
+#: completeness guard can prove every generator output is either bound or exempt.
+EXEMPT = {
+    "COVERAGE.md": "human-readable coverage doc, not a machine trust claim",
+    "einvoice/RULES.md": "human-readable rules doc, not a machine trust claim",
+    "examples/*/report.json": (
+        "per-example demo validation report (illustrative output of the "
+        "validator); the tool's conformance CLAIM is bound above"
+    ),
+    "www/index.html": "static reference-site page, not a machine trust claim",
+    "www/robots.txt": "static site crawler directive, not a trust claim",
+    "www/sitemap.xml": "static site URL index, not a trust claim",
+    "www/rules/index.html": "static rules hub page, not a trust claim",
+    "www/rules/*/index.html": "static per-rule reference page, not a trust claim",
+    "www/walkthrough/index.html": "static walkthrough page, not a trust claim",
+    "www/licensing/index.html": "static licensing page, not a trust claim",
+    "www/de/index.html": "static German product page, not a trust claim",
+    "corpus/vendored/syntax-binding/sb-viol-*_ubl.xml": (
+        "synthesized syntax-binding UBL test fixture (XML input), not a claim"
+    ),
+    "fixtures/sb-pass-clean_cii.xml": (
+        "synthesized clean CII test fixture (XML input), not a claim"
+    ),
+    "fixtures/sb-viol-*_cii.xml": (
+        "synthesized syntax-binding CII violation fixture (XML input), not a claim"
+    ),
+}
+
 
 def canonical_json(obj):
     """Canonical serialization used for hashing AND for the file on disk.
@@ -190,6 +250,27 @@ def _corpus_section(bom):
     return entries
 
 
+def _artifacts_section():
+    """Raw-bytes SHA-256 of every committed GENERATED TRUST artifact.
+
+    Each digest is computed over the EXACT committed bytes of the live file (via
+    the module's own ``_sha256_hex`` -- no second hashing path, no reparse, no
+    approximation), so verify_attestation.py's recompute-and-compare catches any
+    drift in these machine trust claims. Keyed by repo-relative path; the mapping
+    is a pure function of the committed files, hence byte-reproducible.
+    """
+    out = {}
+    for rel in TRUST_ARTIFACTS:
+        path = HERE / rel
+        if not path.is_file():
+            raise SystemExit(
+                "gen_attestation: trust artifact %r is missing at %s -- refusing "
+                "to emit an attestation with an unbound trust claim" % (rel, path)
+            )
+        out[rel] = _sha256_hex(path.read_bytes())
+    return out
+
+
 def build_attestation():
     """Return the full attestation dict, deterministically, from source files.
 
@@ -208,6 +289,7 @@ def build_attestation():
         "coverage": _coverage_section(coverage),
         "testsuite_conformance": _testsuite_section(testsuite),
         "corpus": _corpus_section(bom),
+        "artifacts": _artifacts_section(),
     }
     content_sha256 = _sha256_hex(canonical_json(body).encode("utf-8"))
     return {"attestation": body, "content_sha256": content_sha256}

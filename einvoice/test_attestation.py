@@ -39,6 +39,14 @@ _TREE_FILES = [
     "export/rules.json",
     "export/coverage.json",
     "sbom/bom.json",
+    # trust artifacts now bound (raw-bytes sha) by gen_attestation's artifacts
+    # section; gen + verify both read them, so the isolated tree needs them.
+    "api_contract.json",
+    "cii_parity.json",
+    "coverage_matrix.json",
+    "known_open_audit.json",
+    "remediation_catalog.json",
+    "syntax_binding_catalog.json",
 ]
 
 
@@ -197,6 +205,89 @@ class TestDocReflectsAttestation(unittest.TestCase):
         )
 
 
+class TestAttestationCompleteness(unittest.TestCase):
+    """Escape guard: EVERY generated artifact declared by test_determinism's
+    GENERATORS map must be EITHER hash-bound in attestation.json OR listed in
+    gen_attestation.EXEMPT with a reason. A future gen_*.py that emits a new
+    trust JSON without binding or exempting it fails here.
+
+    "Bound" means one of:
+      * a raw-bytes SHA-256 in attestation.json's ``artifacts`` section
+        (gen_attestation.TRUST_ARTIFACTS), or
+      * bound by a dedicated body section (gen_attestation.BOUND_ELSEWHERE):
+        rules / coverage / testsuite_conformance / corpus, plus the
+        self-referential attestation.json.
+
+    The set difference is asserted empty in BOTH directions: no generator output
+    escapes both lists, and no bound/exempt entry is stale (each corresponds to a
+    real declared generator output).
+    """
+
+    def _declared_outputs(self):
+        import test_determinism
+        declared = set()
+        for patterns in test_determinism.GENERATORS.values():
+            declared.update(patterns)
+        return declared
+
+    def test_bound_artifacts_match_the_committed_file(self):
+        # The TRUST_ARTIFACTS list must equal exactly what the emitted
+        # attestation.json ``artifacts`` section binds -- so the guard's notion
+        # of "bound" reflects the real file, not a drifting Python list.
+        att = json.loads((HERE / "attestation.json").read_text(encoding="utf-8"))
+        in_file = set(att["attestation"].get("artifacts", {}))
+        self.assertEqual(
+            set(gen_attestation.TRUST_ARTIFACTS), in_file,
+            "gen_attestation.TRUST_ARTIFACTS must match the artifacts bound in "
+            "attestation.json; regenerate with `python3 gen_attestation.py`.",
+        )
+        # Every bound trust artifact must be a real committed file.
+        for rel in gen_attestation.TRUST_ARTIFACTS:
+            self.assertTrue(
+                (HERE / rel).is_file(),
+                "bound trust artifact %r does not exist on disk" % rel,
+            )
+
+    def test_no_generator_output_escapes_bound_or_exempt(self):
+        declared = self._declared_outputs()
+
+        att = json.loads((HERE / "attestation.json").read_text(encoding="utf-8"))
+        bound = set(att["attestation"].get("artifacts", {}))
+        bound |= set(gen_attestation.BOUND_ELSEWHERE)
+        exempt = set(gen_attestation.EXEMPT)
+
+        # An artifact must not be simultaneously bound AND exempt (ambiguous).
+        overlap = bound & exempt
+        self.assertFalse(
+            overlap,
+            "artifacts both bound and exempt (pick one): %s" % sorted(overlap),
+        )
+
+        accounted = bound | exempt
+
+        escaped = declared - accounted
+        self.assertFalse(
+            escaped,
+            "generator output(s) neither hash-bound nor EXEMPT (bind in "
+            "gen_attestation.TRUST_ARTIFACTS or add to EXEMPT with a reason): %s"
+            % sorted(escaped),
+        )
+
+        stale = accounted - declared
+        self.assertFalse(
+            stale,
+            "bound/exempt entries that are not declared generator outputs "
+            "(remove the stale entry): %s" % sorted(stale),
+        )
+
+    def test_every_exempt_entry_has_a_reason(self):
+        for path, reason in gen_attestation.EXEMPT.items():
+            self.assertTrue(
+                isinstance(reason, str) and reason.strip(),
+                "EXEMPT[%r] must carry a non-empty reason string" % path,
+            )
+
+
 class TestTamperDetection(unittest.TestCase):
     def _assert_tamper_detected(self, mutate_rel, mutate):
         import tempfile
@@ -241,6 +332,25 @@ class TestTamperDetection(unittest.TestCase):
         def mutate(obj):
             obj["syntax_binding"]["ubl"]["proven"] -= 1
         self._assert_tamper_detected("export/coverage.json", mutate)
+
+    def test_perturbing_a_bound_trust_artifact_is_detected(self):
+        """Editing a bound trust artifact (api_contract.json) after publication
+        changes its raw bytes; the recompute-and-compare (and the explicit
+        per-artifact check) must catch it."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = _make_tree(tmp)
+            clean = _run_verify(tree)
+            self.assertEqual(clean.returncode, 0, clean.stderr)
+            victim = tree / "api_contract.json"
+            with open(victim, "ab") as fh:
+                fh.write(b"\n")  # append a byte -> different bytes, different sha
+            tampered = _run_verify(tree)
+            self.assertNotEqual(
+                tampered.returncode, 0,
+                "editing a bound trust artifact must fail verify.\nstdout=%s\n"
+                "stderr=%s" % (tampered.stdout, tampered.stderr),
+            )
 
     def test_perturbing_actual_corpus_bytes_is_detected(self):
         """Editing a real corpus file (without regenerating the SBOM) is caught

@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -655,6 +656,19 @@ def _rule_id_from_failed_assert(fa: ET.Element):
     return None
 
 
+def _svrl_fired_ids(svrl_text: str) -> set:
+    """SVRL report text -> set of fired official rule ids. Factored out so the
+    persistent official cache can salt its keys with THIS extraction code: if
+    the SVRL->ids logic ever changes, every cached entry self-invalidates."""
+    root = ET.fromstring(svrl_text)
+    fired = set()
+    for fa in root.iter(f"{{{NS_SVRL}}}failed-assert"):
+        rid = _rule_id_from_failed_assert(fa)
+        if rid:
+            fired.add(rid)
+    return fired
+
+
 #: Cross-leg memo of the OFFICIAL side: (xslt_path, abspath(invoice)) -> fired set.
 #: The normative transform is a pure function of (stylesheet, file contents), and
 #: within one ``run_differential`` the scratch corpus files are written ONCE and
@@ -667,17 +681,225 @@ def _rule_id_from_failed_assert(fa: ET.Element):
 #: a tiny handful and re-raising keeps the SKIPPED/ERRORS accounting exact.)
 _OFFICIAL_FIRED_CACHE: dict = {}
 
+# --------------------------------------------------------------------------- #
+# Persistent OFFICIAL-side cache (content-addressed; NOT a weakening).
+# --------------------------------------------------------------------------- #
+# The in-process memo above dies with the process, so every gate run re-paid
+# ~140 s of Saxon CPU for transforms whose inputs had not changed a byte —
+# which no longer fits the CI gate wrapper's timeout on a loaded 4-core box.
+# This disk cache persists the SAME pure-function memo across runs:
+#   * OFFICIAL side, keyed sha256(XSLT bytes) x sha256(invoice bytes) x a salt
+#     over the SVRL->ids extraction code: the normative transform is a
+#     deterministic function of exactly those inputs, so replaying its recorded
+#     output for byte-identical inputs is memoization, not skipping.
+#   * OUR side, keyed sha256(invoice bytes) x our_fn x :func:`_our_salt` — a
+#     fingerprint of the Python version + EVERY einvoice package source file +
+#     this harness + the evaluator catalogs. A verdict is replayed ONLY when
+#     the code under test and its inputs are byte-for-byte the tree that was
+#     already proven; ANY edit anywhere in the package misses the whole
+#     our-side cache and re-runs the code LIVE. (Cross-process determinism of
+#     the pipeline is separately pinned by test_idempotence.py.)
+#   * ERRORS on either side are never cached (same policy as the in-process
+#     memo) — the SKIPPED/ERRORS accounting is always recomputed live.
+# Mutated corpus files are deterministic re-derivations of committed fixtures,
+# so they hit; anything that changed misses and pays a fresh run.
+# Set DIFF_NO_CACHE=1 to force a full from-scratch Saxon re-proof (or delete
+# einvoice/.official-cache/). DIFF_OFFICIAL_CACHE=<dir> relocates the cache.
+_DISK_CACHE_SCHEMA = 1
+_DISK_CACHE: dict = None  # lazily-loaded {key-string: frozenset(rule ids)}
+_EXTRACTION_SALT: str = None
+
+
+def _disk_cache_dir():
+    if os.environ.get("DIFF_NO_CACHE"):
+        return None
+    return (os.environ.get("DIFF_OFFICIAL_CACHE")
+            or os.path.join(HERE, ".official-cache"))
+
+
+def _extraction_salt() -> str:
+    global _EXTRACTION_SALT
+    if _EXTRACTION_SALT is None:
+        import inspect
+        src = (inspect.getsource(_rule_id_from_failed_assert)
+               + inspect.getsource(_svrl_fired_ids))
+        _EXTRACTION_SALT = hashlib.sha256(
+            ("v%d\n%s" % (_DISK_CACHE_SCHEMA, src)).encode("utf-8")
+        ).hexdigest()[:16]
+    return _EXTRACTION_SALT
+
+
+# OUR-side cache salt: a fingerprint of EVERYTHING our verdict is a function of
+# besides the invoice bytes — the Python version, every source file of the
+# einvoice package, THIS harness file (graded-rule lists + our_fn wrappers live
+# here), and the repo-root catalogs the evaluator loads. Any single-byte change
+# to any of them changes the salt and turns the whole our-side cache into
+# misses, forcing a fully LIVE re-run of the code under test. Replaying a
+# recorded verdict for a byte-identical (code, catalog, invoice) triple is
+# memoization of a deterministic function (cross-process determinism of the
+# pipeline is itself pinned by test_idempotence.py), not a skipped check.
+_OUR_SALT: str = None
+
+
+def _our_salt() -> str:
+    global _OUR_SALT
+    if _OUR_SALT is None:
+        h = hashlib.sha256()
+        h.update(("v%d\n%s\n" % (_DISK_CACHE_SCHEMA,
+                                 sys.version)).encode("utf-8"))
+        deps = [os.path.join(HERE, "differential.py"),
+                os.path.join(HERE, "syntax_binding_catalog.json"),
+                os.path.join(HERE, "remediation_catalog.json")]
+        pkg = os.path.join(HERE, "einvoice")
+        for root, dirs, names in os.walk(pkg):
+            dirs[:] = [x for x in dirs if x != "__pycache__"]
+            for n in names:
+                if n.endswith(".py"):
+                    deps.append(os.path.join(root, n))
+        for p in sorted(deps):
+            h.update(os.path.relpath(p, HERE).encode("utf-8") + b"\x00")
+            try:
+                with open(p, "rb") as f:
+                    h.update(hashlib.sha256(f.read()).digest() + b"\x00")
+            except OSError:
+                h.update(b"<absent>\x00")
+        _OUR_SALT = h.hexdigest()[:16]
+    return _OUR_SALT
+
+
+def _load_disk_cache() -> dict:
+    """Merge every ``*.json`` file in the cache dir (a consolidated cache.json
+    plus any un-consolidated per-process deltas). Corrupt or stale-schema files
+    are silently treated as misses — the cache can never FAIL the proof."""
+    global _DISK_CACHE
+    if _DISK_CACHE is not None:
+        return _DISK_CACHE
+    _DISK_CACHE = {}
+    d = _disk_cache_dir()
+    if not d or not os.path.isdir(d):
+        return _DISK_CACHE
+    for name in sorted(os.listdir(d)):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(d, name), encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("schema") != _DISK_CACHE_SCHEMA:
+                continue
+            for k, ids in data.get("entries", {}).items():
+                _DISK_CACHE[k] = frozenset(ids)
+        except Exception:
+            continue
+    return _DISK_CACHE
+
+
+def _consolidate_disk_cache():
+    """Merge all cache files into one canonical ``cache.json`` and delete the
+    per-process delta files. Called ONLY from the top-level no-arg parent after
+    every child has been joined, so there is no concurrent writer to race."""
+    d = _disk_cache_dir()
+    if not d or not os.path.isdir(d):
+        return
+    files = sorted(n for n in os.listdir(d) if n.endswith(".json"))
+    if len(files) <= 1:
+        return
+    merged = {}
+    for n in files:
+        try:
+            with open(os.path.join(d, n), encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("schema") == _DISK_CACHE_SCHEMA:
+                merged.update(data.get("entries", {}))
+        except Exception:
+            pass  # unreadable file: drop it; its entries just regenerate
+    try:
+        tmp = os.path.join(d, ".cache.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"schema": _DISK_CACHE_SCHEMA, "entries": merged}, f,
+                      sort_keys=True, separators=(",", ":"))
+        os.replace(tmp, os.path.join(d, "cache.json"))
+        for n in files:
+            if n != "cache.json":
+                try:
+                    os.unlink(os.path.join(d, n))
+                except OSError:
+                    pass
+    except Exception:
+        pass  # consolidation is tidiness only; failure must never fail the gate
+
+
+#: Fresh (uncached) verdicts accumulated by THIS process, awaiting an atomic
+#: flush to a uniquely-named delta file (official and our side share it).
+_DELTA: dict = {}
+
+
+def _flush_delta():
+    """Atomically write this process's fresh verdicts as a uniquely-named delta
+    file (no writer ever touches another writer's file, so concurrent shard
+    subprocesses cannot race)."""
+    global _DELTA
+    if not _DELTA:
+        return
+    d = _disk_cache_dir()
+    if d:
+        try:
+            os.makedirs(d, exist_ok=True)
+            name = "delta-%d-%s.json" % (os.getpid(), os.urandom(4).hex())
+            tmp = os.path.join(d, "." + name + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"schema": _DISK_CACHE_SCHEMA, "entries": _DELTA},
+                          f, sort_keys=True, separators=(",", ":"))
+            os.replace(tmp, os.path.join(d, name))
+        except Exception:
+            pass  # a cache write failure must never fail the proof
+    _DELTA = {}
+
+
+def _file_sha256(path: str) -> str:
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def _cached_our_fired(our_fn, invoice_path: str) -> set:
+    """OUR side with the content-addressed cache: replay the recorded fired set
+    only when the invoice bytes AND the full code fingerprint (:func:`_our_salt`)
+    are identical; otherwise run the code under test LIVE (and record it).
+    Exceptions always propagate live and are never cached."""
+    d = _disk_cache_dir()
+    if not d:
+        return our_fn(invoice_path)
+    key = "ours:%s:%s:%s" % (_our_salt(), our_fn.__name__,
+                             _file_sha256(invoice_path))
+    hit = _load_disk_cache().get(key)
+    if hit is not None:
+        return set(hit)
+    fired = our_fn(invoice_path)
+    _DELTA[key] = sorted(fired)
+    return fired
+
 
 class Official:
-    """Wraps a single compiled instance of a normative validation XSLT."""
+    """Wraps a single compiled instance of a normative validation XSLT.
+
+    Saxon compilation of the ~MB stylesheet is LAZY (first cache miss): a fully
+    warm run never has to import saxonche or compile at all."""
 
     def __init__(self, xslt_path=OFFICIAL_XSLT):
-        from saxonche import PySaxonProcessor
         self._xslt_path = os.path.abspath(xslt_path)
+        self._xslt_sha = _file_sha256(self._xslt_path)
+        self._proc_cm = None
+        self._proc = None
+        self._exe = None
+        self._xp = None
+
+    def _ensure_compiled(self):
+        if self._exe is not None:
+            return
+        from saxonche import PySaxonProcessor
         self._proc_cm = PySaxonProcessor(license=False)
         self._proc = self._proc_cm.__enter__()
         xp = self._proc.new_xslt30_processor()
-        self._exe = xp.compile_stylesheet(stylesheet_file=xslt_path)
+        self._exe = xp.compile_stylesheet(stylesheet_file=self._xslt_path)
         self._xp = xp
 
     def fired(self, invoice_path: str) -> set:
@@ -685,22 +907,28 @@ class Official:
         cached = _OFFICIAL_FIRED_CACHE.get(key)
         if cached is not None:
             return set(cached)
+        dkey = "%s:%s:%s" % (_extraction_salt(), self._xslt_sha,
+                             _file_sha256(invoice_path))
+        hit = _load_disk_cache().get(dkey)
+        if hit is not None:
+            _OFFICIAL_FIRED_CACHE[key] = hit
+            return set(hit)
+        self._ensure_compiled()
         svrl = self._exe.transform_to_string(source_file=invoice_path)
         if svrl is None:
             raise RuntimeError("Saxon returned no SVRL for %s: %s"
                                % (invoice_path, self._xp.error_message))
-        root = ET.fromstring(svrl)
-        fired = set()
-        for fa in root.iter(f"{{{NS_SVRL}}}failed-assert"):
-            rid = _rule_id_from_failed_assert(fa)
-            if rid:
-                fired.add(rid)
+        fired = _svrl_fired_ids(svrl)
         _OFFICIAL_FIRED_CACHE[key] = frozenset(fired)
+        if _disk_cache_dir():
+            _DELTA[dkey] = sorted(fired)
         return fired
 
     def close(self):
+        _flush_delta()
         try:
-            self._proc_cm.__exit__(None, None, None)
+            if self._proc_cm is not None:
+                self._proc_cm.__exit__(None, None, None)
         except Exception:
             pass
 
@@ -6194,7 +6422,7 @@ def _run_leg(title, xslt_path, rule_ids, our_fn, corpus):
             errors.append((label, "OFFICIAL", str(e)[:160]))
             continue
         try:
-            ours = our_fn(path) & rule_set
+            ours = _cached_our_fired(our_fn, path) & rule_set
         except NotWellFormed as e:
             errors.append((label, "OURS(not-well-formed)", str(e)[:160]))
             continue
@@ -6493,6 +6721,9 @@ def run_differential_parallel() -> int:
         futures = [ex.submit(_run_leg_subprocess, leg, shard)
                    for (leg, shard) in reversed(jobs)]
         results = [f.result() for f in futures]
+
+    # All children are joined — safe to fold their delta files into cache.json.
+    _consolidate_disk_cache()
 
     divergences = 0
     failed = False

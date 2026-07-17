@@ -73,3 +73,6 @@ einvoice/build/
 einvoice/dist/
 einvoice/*.egg-info/
 einvoice/**/*.egg-info/
+
+# differential.py persistent official-side memo cache (derived, never committed)
+einvoice/.official-cache/

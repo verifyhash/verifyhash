@@ -238,6 +238,126 @@ class CiiEngineVerdicts(unittest.TestCase):
         self.assertEqual([v["rule"] for v in rep["violations"]], ["BR-05"])
 
 
+class MachineFormatParity(unittest.TestCase):
+    """T-VHCNCII.2: the json / junit / sarif machine formats carry the 381
+    credit-note verdict EXACTLY as they do for an ordinary CII invoice.
+
+    Every report here is built by the same entry points the shipped product
+    uses — ``report._report_from_invoice_bytes`` (the embedded-CII path the
+    tests above already exercise) projected through ``json.dumps`` /
+    ``report.build_junit`` / ``report.build_sarif``. No new validation logic,
+    no re-implemented rules: these tests only pin that the PROJECTIONS agree
+    with the differentially proven engine verdicts.
+
+    Ordinary-invoice baselines (same profile, same entry points):
+      * corpus/synthetic/synth-cii-good-multiline.xml — a valid ordinary CII
+        invoice (golden: valid, zero rules);
+      * corpus/synthetic/synth-cii-bad-vat-mismatch.xml — an ordinary CII
+        invoice with a fatal (golden: BR-CO-14).
+    Parity = the 381 fixtures produce the SAME structural representation of
+    their verdict in each format as those ordinary invoices do.
+    """
+
+    ORDINARY_GOOD = os.path.join(
+        HERE, "corpus", "synthetic", "synth-cii-good-multiline.xml")
+    ORDINARY_BAD = os.path.join(
+        HERE, "corpus", "synthetic", "synth-cii-bad-vat-mismatch.xml")
+
+    @staticmethod
+    def _rep(path):
+        """The exact report dict the embedded-CII product path emits."""
+        with open(path, "rb") as fh:
+            return report._report_from_invoice_bytes(
+                fh.read(), source=path, profile="en16931")
+
+    # ---------------- json ----------------
+
+    def test_json_valid_381_zero_fatal_like_ordinary_invoice(self):
+        rep = json.loads(json.dumps(self._rep(VALID_CN_CII)))
+        ordinary = json.loads(json.dumps(self._rep(self.ORDINARY_GOOD)))
+        # identical machine-report shape (same keys) as an ordinary invoice…
+        self.assertEqual(set(rep), set(ordinary))
+        # …and the identical passing/zero-fatal verdict representation.
+        for r in (rep, ordinary):
+            self.assertIs(r["valid"], True)
+            self.assertEqual(r["fatal_count"], 0)
+            self.assertEqual(r["violations"], [])
+
+    def test_json_invalid_381_carries_fatal_br05(self):
+        rep = json.loads(json.dumps(self._rep(INVALID_CN_CII)))
+        ordinary = json.loads(json.dumps(self._rep(self.ORDINARY_BAD)))
+        self.assertEqual(set(rep), set(ordinary))
+        for r in (rep, ordinary):
+            self.assertIs(r["valid"], False)
+            self.assertGreaterEqual(r["fatal_count"], 1)
+        # the fatal finding is present WITH its rule id, exactly as an
+        # ordinary invoice's fatal is.
+        self.assertEqual(
+            [(v["rule"], v["severity"]) for v in rep["violations"]],
+            [("BR-05", "fatal")])
+        self.assertIn(("BR-CO-14", "fatal"),
+                      [(v["rule"], v["severity"])
+                       for v in ordinary["violations"]])
+
+    # ---------------- junit ----------------
+
+    @staticmethod
+    def _junit_root(rep):
+        return ET.fromstring(report.build_junit(rep))
+
+    def test_junit_valid_381_zero_failures_like_ordinary_invoice(self):
+        for path in (VALID_CN_CII, self.ORDINARY_GOOD):
+            with self.subTest(path=path):
+                root = self._junit_root(self._rep(path))
+                self.assertEqual(root.tag, "testsuites")
+                self.assertEqual(root.get("failures"), "0")
+                self.assertEqual(root.get("errors"), "0")
+                self.assertEqual(root.findall(".//failure"), [])
+
+    def test_junit_invalid_381_failure_testcase_named_br05(self):
+        root = self._junit_root(self._rep(INVALID_CN_CII))
+        self.assertEqual(root.get("failures"), "1")
+        self.assertEqual(root.get("errors"), "0")
+        cases = root.findall(".//testcase")
+        self.assertEqual([c.get("name") for c in cases], ["BR-05"])
+        self.assertEqual(len(cases[0].findall("failure")), 1,
+                         "the fatal must surface as a JUnit <failure>")
+        # the SAME failing representation an ordinary CII invoice gets:
+        # its fatal rule id as testcase name carrying a <failure> child.
+        obad = self._junit_root(self._rep(self.ORDINARY_BAD))
+        self.assertNotEqual(obad.get("failures"), "0")
+        self.assertIn("BR-CO-14",
+                      [c.get("name") for c in obad.findall(".//testcase")
+                       if c.find("failure") is not None])
+
+    # ---------------- sarif ----------------
+
+    def test_sarif_valid_381_zero_results_like_ordinary_invoice(self):
+        for path in (VALID_CN_CII, self.ORDINARY_GOOD):
+            with self.subTest(path=path):
+                sarif = report.build_sarif(self._rep(path))
+                json.dumps(sarif)  # serializable machine document
+                self.assertEqual(sarif["version"], "2.1.0")
+                run = sarif["runs"][0]
+                self.assertEqual(run["results"], [])
+                self.assertEqual(run["tool"]["driver"]["rules"], [])
+
+    def test_sarif_invalid_381_error_result_ruleid_br05(self):
+        sarif = report.build_sarif(self._rep(INVALID_CN_CII))
+        json.dumps(sarif)
+        run = sarif["runs"][0]
+        self.assertEqual(
+            [(r["ruleId"], r["level"]) for r in run["results"]],
+            [("BR-05", "error")])
+        self.assertEqual(
+            [d["id"] for d in run["tool"]["driver"]["rules"]], ["BR-05"])
+        # ordinary-invoice parity: a fatal on an ordinary CII invoice takes
+        # the identical shape — an "error"-level result carrying its rule id.
+        orun = report.build_sarif(self._rep(self.ORDINARY_BAD))["runs"][0]
+        self.assertIn(("BR-CO-14", "error"),
+                      [(r["ruleId"], r["level"]) for r in orun["results"]])
+
+
 class MergedCiiListTranscription(unittest.TestCase):
     """rules.UNTDID_1001_CII is a verbatim transcription of the official
     vendored CII BR-CL-01 code list — and the fix loosened NOTHING on UBL."""

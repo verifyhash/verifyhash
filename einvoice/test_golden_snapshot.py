@@ -247,6 +247,33 @@ FIXTURES = [
         "note": "XRechnung CII with the seller contact (BG-6) removed -> "
                 "BR-DE-2 fatal (German-mandatory contact point missing).",
     },
+    # ======================================================================
+    # CII credit notes (Gutschrift, BT-3 ram:TypeCode 381). Committed
+    # synthetic fixtures from T-VHCNCII.1, differentially PROVEN at 0
+    # divergences against the official CEN EN16931-CII Schematron under the
+    # en16931 profile (see test_cii_creditnote.py for the pinned sha256s and
+    # the full proof record). Snapshotting them here freezes the proven
+    # verdicts against silent drift.
+    # ======================================================================
+    {
+        "name": "cii-good-creditnote-381",
+        "path": "fixtures/creditnote-valid_cii.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Business-rule-clean CII credit note (BT-3=381): validates "
+                "CLEAN — 381 is on the official merged CII BR-CL-01 list. "
+                "Differential proof: OFFICIAL (none) vs OURS (none).",
+    },
+    {
+        "name": "cii-bad-creditnote-381",
+        "path": "fixtures/creditnote-invalid_cii.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "The same 381 credit note with BT-5 (InvoiceCurrencyCode) "
+                "removed: exactly the real BR-05 fatal fires, never a "
+                "fabricated rule. Differential proof: OFFICIAL BR-05 vs "
+                "OURS BR-05.",
+    },
 ]
 
 

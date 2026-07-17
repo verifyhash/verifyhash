@@ -1,0 +1,14 @@
+{
+  "exit_code": 1,
+  "name": "cii-bad-creditnote-381",
+  "path": "fixtures/creditnote-invalid_cii.xml",
+  "profile": "en16931",
+  "rules": [
+    {
+      "rule": "BR-05",
+      "severity": "fatal"
+    }
+  ],
+  "syntax": "CII",
+  "valid": false
+}

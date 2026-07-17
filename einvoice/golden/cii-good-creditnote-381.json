@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "cii-good-creditnote-381",
+  "path": "fixtures/creditnote-valid_cii.xml",
+  "profile": "en16931",
+  "rules": [],
+  "syntax": "CII",
+  "valid": true
+}

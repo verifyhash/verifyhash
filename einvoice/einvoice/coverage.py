@@ -419,6 +419,13 @@ def render_markdown(matrix, cii_parity=None):
     if cn:
         _render_creditnote(w, cn)
 
+    # --- CII credit-note scope (BT-3 = 381 on the ONE CrossIndustryInvoice
+    #     root). Static, byte-for-byte prose folded into the generator like
+    #     the French CIUS section above, so gen_coverage.py reproduces the
+    #     committed COVERAGE.md exactly (T-VHCNCII.1); the live measurement
+    #     behind every sentence is pinned by test_cii_creditnote.py. ---
+    _render_cii_creditnote(w)
+
     # --- Exclusions ---
     exc = matrix["exclusions"]
     w("## Exclusions (honest scope boundaries)")
@@ -790,6 +797,24 @@ def _render_creditnote(w, cn):
         w("- **Known-open CreditNote bindings: none** — every implemented core"
           " rule reached exact parity on the CreditNote corpus, so no binding is"
           " fabricated from prose or silently passed.")
+    w("")
+
+
+def _render_cii_creditnote(w):
+    """Append the '## CII credit-note scope' section. Static, strictly-factual
+    prose (T-VHCNCII.1): every claim below was MEASURED on 2026-07-17 and is
+    pinned live by ``test_cii_creditnote.py`` — the fixture sha256s quoted here
+    are re-asserted there, so the prose cannot silently outlive the proof."""
+    w("## CII credit-note scope")
+    w("")
+    w("Stated separately from the UBL CreditNote scope above. In CII there is **no separate credit-note root**: a credit note (e.g. a German Gutschrift) is the same `rsm:CrossIndustryInvoice` with BT-3 (`ram:ExchangedDocument/ram:TypeCode`) = **381**, so CII credit-note support is a property of the one CII engine, not a second document route. Measured and differentially proven 2026-07-17 (T-VHCNCII.1); pinned by `test_cii_creditnote.py`.")
+    w("")
+    w("- **The official CII BR-CL-01 list is one MERGED invoice+credit-note list.** The vendored CEN EN16931-CII Schematron grades BT-3 against a single 62-code UNTDID 1001 list that contains 381 — and also 471/472/473/500/501, codes present in **neither** UBL sub-list — so the CII list is transcribed verbatim as its own set (`rules.UNTDID_1001_CII`), never derived as a union. `br_cl_01` branches on `inv.syntax`; the UBL Invoice and UBL CreditNote sub-lists are byte-untouched (381 remains invalid for a UBL `cbc:InvoiceTypeCode`).")
+    w("- **Engine fix this measurement forced:** before T-VHCNCII.1 the shared `br_cl_01` graded every syntax against the UBL *Invoice* sub-list, so a valid CII 381 credit note wrongly fired BR-CL-01 (measured: OURS `{BR-CL-01}` vs OFFICIAL `{}` on the valid fixture). Fixed by exact transcription of the official CII binding — a correction *toward* the official artifact, not a loosening.")
+    w("- **Committed fixtures (fully synthesized, fictional parties/IBAN): 2.** `fixtures/creditnote-valid_cii.xml` — a business-rule-clean 381 credit note (sha256 `26496955cc831dd4079a8f2ef7ff2bc76b88504b63e7836cf36f4d9efdf7db29`) — and `fixtures/creditnote-invalid_cii.xml` — the same document with BT-5 `ram:InvoiceCurrencyCode` removed (sha256 `6b31125ce20755400dc5ae13145b70963e0202b252e3d3c3f1dda1c5d9539bdc`).")
+    w("- **Differential divergences on both fixtures: 0**, graded against the official vendored `EN16931-CII-validation.xslt` on BOTH EN16931-CII legs (core `CII_RULE_IDS` × `cii_our_fired` and syntax-binding `SB_CII_RULE_IDS` × `sb_cii_our_fired`): on the valid fixture official and ours both fire **nothing**; on the broken fixture both fire **exactly `BR-05`**. After the engine fix the full corpus legs were re-run on disk — `differential.py cii` and `differential.py sbcii`, **0 divergences each** — so the fix regressed nothing.")
+    w("- **The raw-XML CLI surface stays honestly UBL-only:** `einvoice validate` on a raw CII `.xml` file — valid 381 credit note or broken alike — returns the structural `S-ROOT` fatal with exit 1, in text and `--json` form (pinned). A CII credit note is graded for real on the CII engine path (the Factur-X/ZUGFeRD embedded-XML route): the valid 381 fixture passes clean, the broken one fails with exactly `BR-05`.")
+    w("- **Not proven / not claimed:** no XRechnung-CIUS (KoSIT) claim is made for the 381 shape — the fixtures declare `urn:cen.eu:en16931:2017` and the XRechnung-CII legs were not part of this proof.")
     w("")
 
 

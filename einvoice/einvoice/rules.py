@@ -63,6 +63,30 @@ UNTDID_1001_CREDITNOTE = {
     "502", "503", "532",
 }
 
+# UNTDID 1001 document type codes accepted by EN 16931 for a CII document.
+# In CII there is no separate credit-note root: an invoice AND a credit note
+# (e.g. a German Gutschrift, BT-3 = 381) are both emitted as the same
+# ``rsm:CrossIndustryInvoice``, so the official CEN EN16931-CII Schematron
+# tests the single BT-3 context (``ram:ExchangedDocument/ram:TypeCode``)
+# against ONE merged "invoice and credit note related code lists" set — 62
+# codes, transcribed verbatim from the vendored artifact (the two vendored
+# copies carry the identical list):
+#   corpus/cen-en16931/cii/schematron/preprocessed/
+#     EN16931-CII-validation-preprocessed.sch   (assert id="BR-CL-01")
+#   corpus/cen-en16931/cii/xslt/EN16931-CII-validation.xslt  (BR-CL-01)
+# NOTE: this is NOT the union of the two UBL sub-lists above — the CII list
+# additionally carries 471/472/473/500/501 — so it is pinned as its own set
+# rather than derived; each syntax's official binding is transcribed exactly.
+UNTDID_1001_CII = {
+    "71", "80", "81", "82", "83", "84", "102", "130", "202", "203", "204",
+    "211", "218", "219", "261", "262", "295", "296", "308", "325", "326",
+    "331", "380", "381", "382", "383", "384", "385", "386", "387", "388",
+    "389", "390", "393", "394", "395", "396", "420", "456", "457", "458",
+    "471", "472", "473", "500", "501", "502", "503", "527", "532", "553",
+    "575", "623", "633", "751", "780", "817", "870", "875", "876", "877",
+    "935",
+}
+
 _CENT = Decimal("0.01")
 
 
@@ -583,13 +607,25 @@ def br_30(inv):
 def br_cl_01(inv):
     """BR-CL-01: The document type code (BT-3) MUST be coded per UNTDID 1001.
 
-    The official assert keys the accepted sub-list on the type-code ELEMENT
-    (its ``self::cbc:InvoiceTypeCode`` / ``self::cbc:CreditNoteTypeCode`` axis):
+    The two syntaxes bind different accepted lists, each transcribed exactly:
+
+    UBL keys the accepted sub-list on the type-code ELEMENT (its
+    ``self::cbc:InvoiceTypeCode`` / ``self::cbc:CreditNoteTypeCode`` axis):
     an Invoice's ``cbc:InvoiceTypeCode`` is graded against the invoice sub-list,
     a CreditNote's ``cbc:CreditNoteTypeCode`` against the credit-note sub-list.
+
+    CII has no separate credit-note root — a credit note (e.g. a German
+    Gutschrift, BT-3 = 381) is the same ``rsm:CrossIndustryInvoice`` — so the
+    official CII assert grades the single ``ram:TypeCode`` context against ONE
+    merged invoice+credit-note list (``UNTDID_1001_CII``, 62 codes). Grading a
+    CII document against the UBL Invoice sub-list would wrongly fire on every
+    valid CII credit note (381 is absent from the Invoice sub-list) — measured
+    and differentially proven on ``fixtures/creditnote-valid_cii.xml``.
     """
     code = inv.invoice_type_code
-    if inv.invoice_type_code_from_creditnote:
+    if inv.syntax == "cii":
+        allowed, element = UNTDID_1001_CII, "ram:TypeCode"
+    elif inv.invoice_type_code_from_creditnote:
         allowed, element = UNTDID_1001_CREDITNOTE, "cbc:CreditNoteTypeCode"
     else:
         allowed, element = UNTDID_1001_INVOICE, "cbc:InvoiceTypeCode"

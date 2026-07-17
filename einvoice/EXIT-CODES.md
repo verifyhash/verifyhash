@@ -19,11 +19,49 @@ ever drifts.
 |------|---------|----------------------------------|-----------------------------|
 | `0` | Success — no fatal violations. The invoice passed every implemented fatal rule (warnings/information do not affect the code). For `validate-batch`: every file passed, or the directory/glob matched no invoice files (`file_count: 0`). For the read-only `info` subcommand: the introspection payload was emitted (it validates nothing, so `0` is its only success state). | `validate` on a conformant invoice; `receipt` whose verdict is `PASS`; `validate-batch` all-pass or empty match; `info` (with or without `--json`). | stdout: `PASS: <src> (all implemented fatal rules, profile=<p>)`. |
 | `1` | Not-valid verdict — at least one implemented **fatal** rule failed. This is also where **unsupported / out-of-scope inputs land** (see note below): they are not a separate code, they trip a real fatal rule (e.g. a wrong root namespace fails `S-ROOT`). A UBL `CreditNote` is now really validated through the shared engine, so an invalid one fails on its real business rule here too. For `receipt`: a `FAIL` verdict, *including* not-well-formed input, which `receipt` folds into a FAIL receipt rather than exit 3. For `validate-batch`: ANY file has a fatal violation (fatal outranks a parse error). | `validate` on an invoice or CreditNote with a fatal violation, or an out-of-scope document type; `receipt` FAIL; `validate-batch` any-fatal. | stdout: `FAIL: <src>` then `<RULE-ID>: <message>` and `offending element: <el>` (the first fatal rule id, e.g. `S-ROOT`). |
-| `2` | Usage error — the tool was invoked wrong and did no validation. Bad or missing arguments, an unknown subcommand, an unknown `--profile` / `--lang` value, a `--profile`/`--lang` flag with no value, unexpected extra arguments, or a named input file that does not exist on disk. `info` takes no arguments at all, so any extra argument or unknown flag after it lands here too. | `validate`/`validate-batch`/`receipt` with malformed argv or a missing file; `info` with any extra argument. | stderr: `error: <what>` and/or the `usage:` banner. |
+| `2` | Usage error — the tool was invoked wrong and did no validation. Bad or missing arguments, an unknown subcommand, an unknown `--profile` / `--lang` value, a `--profile`/`--lang` flag with no value, unexpected extra arguments, or a named input file that does not exist on disk. `info` takes no arguments at all, so any extra argument or unknown flag after it lands here too. **Also every OS-level input problem on the single-file subcommands** (`validate`/`receipt`): the named path is **unreadable** (permission denied, e.g. a `chmod 000` file), **is a directory**, or is a **dangling symlink**; and `validate -` when **stdin is closed** or unreadable. No validation happened in any of these, so no verdict code is minted — see the OS-error section below. | `validate`/`validate-batch`/`receipt` with malformed argv or a missing file; `info` with any extra argument; `validate`/`receipt` pointed at an unreadable file, a directory, or a dangling symlink; `validate -` with a closed stdin. | stderr: `error: <what>` and/or the `usage:` banner; OS-error inputs get one line naming the **path and the reason** (e.g. `error: cannot read <path>: Permission denied`) — never a traceback. |
 | `3` | Not-well-formed input — the XML could not be parsed (truncated document, syntax error, or an input rejected by the hardened DTD/XXE parser). `validate` only. `receipt` folds this case into a FAIL receipt (exit `1`); `validate-batch` returns `3` only when some file *only* errored (not-well-formed / unsupported container) and no file had a fatal. | `validate` on malformed XML; `validate-batch` error-only, no-fatal. | stderr: `S-WF: input is not well-formed XML: <parser detail>`. |
 | `141` | Broken pipe — the stdout **consumer closed early** (`… \| head`, a dying `jq`, a closed CI log pipe) while the CLI was still writing its report. `141 = 128 + SIGPIPE(13)`, the standard shell convention for a pipe-killed process. The CLI exits **quietly**: no traceback, nothing further written to stdout. The verdict for that run is simply unavailable — the reader walked away mid-report; codes `0/1/2/3` are untouched. See the section below. | Any subcommand whose stdout write raises `BrokenPipeError` — in practice a large `validate-batch` report (text or `--json`) piped into a reader that exits before consuming it all. | stderr: *(nothing — deliberately silent; a broken pipe is the caller's plumbing, not a validation outcome)*. |
 | `130` | Interrupted — **SIGINT** (Ctrl-C) aborted the run mid-validation. `130 = 128 + SIGINT(2)`, the standard shell convention for an interrupted process. The CLI exits **quietly**: no Python traceback, nothing further written, and the `validate -` stdin temp file is removed on the way out. The verdict for the aborted run is simply unavailable; codes `0/1/2/3/141` are untouched. See the interrupt section below. | Any subcommand hit by SIGINT / Ctrl-C while running (`validate`, `validate-batch`, `receipt`). | stderr: *(nothing — an interrupt is the operator's action, not a validation outcome)*. |
 | `143` | Terminated — **SIGTERM** (e.g. a CI timeout kill, `kill <pid>`, container stop) aborted the run. `143 = 128 + SIGTERM(15)`, the standard shell convention for a terminated process. The entry point converts the signal into an exception so the same temp-file cleanup runs, then exits **quietly** with this code — no traceback, no stray `einvoice-stdin-*` file. See the interrupt section below. | Any subcommand hit by SIGTERM while running. | stderr: *(nothing)*. |
+
+## Code `2` — OS-level input errors on the single-file paths (additive)
+
+These rows were added after **measuring** `validate` and `receipt` (2026-07-17)
+against the four classic OS input states plus the `-` stdin path. Two states
+were genuinely broken, two were non-zero but named the wrong reason, and two
+were already clean:
+
+| Input state | Before (measured) | Now (pinned) |
+|-------------|-------------------|--------------|
+| Nonexistent path | exit `2`, `error: no such file: <path>` — already clean | unchanged (verify-and-close). |
+| **Unreadable** file (exists, `chmod 000`) | **raw `PermissionError` traceback, exit `1`** — a fake FAIL verdict for a run that validated nothing | exit `2`, `error: cannot read <path>: Permission denied`, zero traceback. |
+| **Directory** passed where a file is expected | exit `2` but the wrong reason (`no such file` for a directory that plainly exists) | exit `2`, `error: is a directory (expected a single invoice file; use validate-batch for directories): <path>`. |
+| **Dangling symlink** (link exists, target missing) | exit `2`, misleading `no such file` (the link itself exists) | exit `2`, `error: dangling symlink (its target does not exist): <path>`. |
+| `validate -` with **stdin closed** (fd 0 closed at startup) | **raw `AttributeError` traceback, exit `1`** (`sys.stdin` is `None`) | exit `2`, `error: cannot read -: stdin is closed`, zero traceback. |
+| `validate -` with **empty** stdin | exit `3`, clean `S-WF` parse error — already actionable | unchanged (verify-and-close). |
+
+Every OS-error input lands on the **existing** usage code `2` — deliberately no
+new code: the tool was pointed at something that cannot be an invoice file and
+did no validation, exactly the meaning `2` has always had (a nonexistent path
+was already `2`). The stderr line always names **both the offending path and
+the OS reason**, and never a Python traceback.
+
+Implementation is boundary-only and verdict-neutral: `cli.py` triages the
+directory / dangling-symlink / nonexistent states before opening the file, and
+catches exactly the **`OSError` family** (`FileNotFoundError` /
+`PermissionError` / `IsADirectoryError` / `OSError`) around the single-file
+subcommand body — never a bare `except`; `BrokenPipeError` is explicitly
+re-raised so the `141` contract above is untouched, and `validate-batch` is
+untouched (its per-file resilience is pinned separately: an unreadable batch
+member becomes an ERROR entry, never a crash).
+
+Root caveat: a user that bypasses permission bits (root, `CAP_DAC_OVERRIDE`)
+can still read a `chmod 000` file, so the unreadable state cannot occur for it.
+`test_os_errors.py` pins every row above by driving the real CLI as a
+subprocess (both subcommands per row) and probes with `os.access` first,
+self-skipping the unreadable leg with a printed reason where the OS does not
+enforce the bits.
 
 ## Code `141` — broken pipe / early-closed consumer (additive)
 

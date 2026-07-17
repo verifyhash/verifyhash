@@ -101,7 +101,12 @@ Exit codes (stable contract):
        every file passed, or the directory/glob matched no invoice files)
     1  at least one implemented fatal rule failed (``validate-batch``: ANY file
        has a fatal violation — fatal outranks a parse error)
-    2  usage error
+    2  usage error — bad argv, or an OS-level input problem on the single-file
+       subcommands: the named path is nonexistent, unreadable (e.g. a
+       permission-denied open), a directory, or a dangling symlink; also
+       ``validate -`` when stdin is closed/unreadable. Each prints one
+       actionable ``error: ...`` line naming the path and the reason —
+       never a traceback (see EXIT-CODES.md).
     3  input is not well-formed XML / parse error (``validate`` only; the
        ``receipt`` subcommand folds this into a FAIL receipt, exit 1;
        ``validate-batch`` returns 3 when some file only errored — not-well-
@@ -551,7 +556,21 @@ def _main(argv=None):
     display_path = path
     tmp_path = None
     if path == "-" and subcommand == "validate":
-        data = sys.stdin.buffer.read()
+        # MEASURED defect this guards (2026-07-17): with fd 0 closed at
+        # startup (`einvoice validate - 0<&-`) CPython sets ``sys.stdin`` to
+        # None, so ``sys.stdin.buffer`` raised an AttributeError traceback
+        # with Python's generic exit 1. Both stdin failure modes (no stdin at
+        # all, or a read that fails at the OS level) are now the same
+        # actionable usage error naming ``-`` and the reason.
+        if sys.stdin is None:
+            sys.stderr.write("error: cannot read -: stdin is closed\n")
+            return EXIT_USAGE
+        try:
+            data = sys.stdin.buffer.read()
+        except OSError as exc:
+            sys.stderr.write("error: cannot read -: %s\n"
+                             % (exc.strerror or exc))
+            return EXIT_USAGE
         fd, tmp_path = tempfile.mkstemp(suffix=".xml", prefix="einvoice-stdin-")
         try:
             with os.fdopen(fd, "wb") as fh:
@@ -560,6 +579,24 @@ def _main(argv=None):
             os.unlink(tmp_path)
             raise
         path = tmp_path
+    # OS-level input triage for the single-file subcommands (validate/receipt
+    # only — validate-batch has its own resilience-tested dispatch above).
+    # ``os.path.isfile`` is False for all three states below, but each gets
+    # its ACCURATE reason: before this split, a directory or a dangling
+    # symlink was reported as "no such file" — non-zero and traceback-free,
+    # but naming the wrong cause. All three stay on the documented usage
+    # code (2): the tool was pointed at something that cannot be an invoice
+    # file, and no validation happened.
+    elif os.path.isdir(path):
+        sys.stderr.write(
+            "error: is a directory (expected a single invoice file; "
+            "use validate-batch for directories): %s\n" % display_path)
+        return EXIT_USAGE
+    elif os.path.islink(path) and not os.path.exists(path):
+        sys.stderr.write(
+            "error: dangling symlink (its target does not exist): %s\n"
+            % display_path)
+        return EXIT_USAGE
     elif not os.path.isfile(path):
         sys.stderr.write("error: no such file: %s\n" % display_path)
         return EXIT_USAGE
@@ -639,6 +676,27 @@ def _main(argv=None):
         # ``EXIT_OK if result.ok else EXIT_FAIL``; a lower threshold trips
         # EXIT_FAIL on warning/information findings too.
         return _result_exit_code(result, fail_on)
+    except BrokenPipeError:
+        # An early-closed stdout consumer keeps its own documented contract
+        # (EXIT_PIPE=141, handled in main()); it must never be folded into
+        # the OS-input arm below even though BrokenPipeError is an OSError.
+        raise
+    except OSError as exc:
+        # MEASURED defect this fixes (2026-07-17): an invoice file that
+        # exists but cannot be READ (e.g. chmod 000) passed the isfile()
+        # check, then open() inside validate_file/build_receipt raised
+        # PermissionError — a raw multi-frame traceback on stderr with
+        # Python's generic exit 1, indistinguishable from a FAIL verdict.
+        # This arm catches exactly the OSError family (FileNotFoundError /
+        # PermissionError / IsADirectoryError / ...) that an OS-level input
+        # failure raises at this boundary — never a bare except, and never a
+        # verdict change: no validation happened, so the honest code is the
+        # documented usage error (2), same as a nonexistent path. The message
+        # names the offending path AND the OS reason (exc.strerror, e.g.
+        # "Permission denied").
+        sys.stderr.write("error: cannot read %s: %s\n"
+                         % (display_path, exc.strerror or exc))
+        return EXIT_USAGE
     finally:
         if tmp_path is not None:
             try:

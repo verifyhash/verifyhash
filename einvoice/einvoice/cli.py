@@ -39,6 +39,21 @@ Global flags:
                English message. ``--lang`` never affects ``--json`` output, rule
                ids, severities or which rules fire — only the displayed text.
 
+Config file (opt-in defaults — see ``einvoice/config.py``):
+    A ``.einvoice.toml`` in the current working directory, else a
+    ``[tool.einvoice]`` table in ``./pyproject.toml`` (``.einvoice.toml``
+    WINS when both exist), may set DEFAULTS for exactly three keys:
+    ``format`` (``text``|``json`` — ``json`` is as if ``--json`` were
+    passed), ``fail-on`` and ``lang``. Precedence: explicit CLI flag >
+    config file > built-in default. Resolution happens ONCE at arg-parse
+    level (below), so ``validate`` and ``validate-batch`` behave
+    identically. An unknown key or non-string value is an actionable usage
+    error (exit 2) naming the key and the accepted set; an invalid VALUE
+    for a recognized key flows through the SAME vocabulary checks a bad
+    flag hits — one shared error path, nothing silently swallowed. With no
+    config file present, behavior is byte-identical to a build without
+    this feature.
+
 Subcommands:
     validate   report conformance (human summary, or --json full result).
                A source of ``-`` reads the invoice XML from stdin (the bytes
@@ -151,6 +166,7 @@ from .report import (
     batch_exit_code, build_batch_text,
 )
 from .remediation import resolve_message, SUPPORTED_LANGS
+from .config import load_config, ConfigError
 
 USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "[--json] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de] "
@@ -194,6 +210,13 @@ EXIT_TERM = 143
 #: Accepted ``--fail-on`` values (the codebase severity vocabulary). The
 #: DEFAULT is ``fatal`` — i.e. omitting the flag is byte-identical to today.
 FAIL_ON_LEVELS = ("fatal", "warning", "information")
+
+#: Accepted values for the config-file ``format`` key — the two output forms
+#: this CLI can emit: ``text`` (the human summary, the built-in default) and
+#: ``json`` (equivalent to passing ``--json``). This is deliberately NOT the
+#: nine-name ``einvoice.report`` ``--format`` vocabulary: that richer set
+#: belongs to ``python3 -m einvoice.report``, which this CLI does not front.
+OUTPUT_FORMATS = ("text", "json")
 
 #: Severity ordering used to decide whether a finding CROSSES a chosen
 #: ``--fail-on`` threshold: a finding crosses iff its rank is >= the threshold's
@@ -456,13 +479,17 @@ def _main(argv=None):
     # message to the official German KoSIT XRechnung <sch:assert> text where one
     # exists (falling back to English otherwise). It NEVER touches --json output,
     # rule ids, severities or which rules fire.
-    lang = "en"
+    # ``None`` = "not given on the command line": the single config-file
+    # resolution below then fills in the config value or the built-in default
+    # 'en', so an EXPLICIT flag always wins over a config file.
+    lang = None
     # --fail-on is an OPT-IN post-validation exit-code threshold. The default
     # 'fatal' reproduces today's contract byte-for-byte (exit 1 iff >=1 fatal);
     # it never touches the findings, --json payload or human summary — only the
     # process exit code. Parsed globally (like --profile/--lang) but APPLIED only
-    # to validate / validate-batch.
-    fail_on = "fatal"
+    # to validate / validate-batch. ``None`` = "not given on the command line"
+    # (the config value or the built-in 'fatal' fills it in below).
+    fail_on = None
     rest = []
     i = 0
     while i < len(args):
@@ -504,6 +531,43 @@ def _main(argv=None):
         rest.append(a)
         i += 1
     args = rest
+
+    # Config-file defaults (.einvoice.toml first, else [tool.einvoice] in
+    # ./pyproject.toml — einvoice/config.py). Resolved exactly ONCE, here at
+    # arg-parse level, so validate and validate-batch (and every other
+    # subcommand) share a single resolution — never per-subcommand copies.
+    # Precedence: explicit CLI flag > config file > built-in default. A config
+    # problem (unknown key, non-string value, unreadable file) is the SAME
+    # usage error a bad flag is: one actionable ``error:`` line on stderr,
+    # exit 2, never silently swallowed. An invalid VALUE for a recognized key
+    # ('lang'/'fail-on') deliberately falls through to the very vocabulary
+    # checks below that a bad flag hits, so both sources share one error path.
+    # With no config file, cfg == {} and every default below is byte-identical
+    # to the historical contract.
+    try:
+        cfg = load_config()
+    except ConfigError as exc:
+        sys.stderr.write("error: %s\n%s\n" % (exc, USAGE))
+        return EXIT_USAGE
+    if fail_on is None:
+        fail_on = cfg.get("fail-on", "fatal")
+    if lang is None:
+        lang = cfg.get("lang", "en")
+    if not as_json:
+        # The config 'format' key defaults the output form; an explicit
+        # --json flag already decided (and wins). 'text' is the built-in
+        # default, so absence of the key changes nothing. An unknown format
+        # name gets the same actionable exit-2 treatment as any bad flag
+        # value (there is no --format flag on THIS CLI to mistype, so the
+        # message names the config as the source).
+        fmt = cfg.get("format", "text")
+        if fmt not in OUTPUT_FORMATS:
+            sys.stderr.write(
+                "error: unknown format %r in config (choose from %s)\n%s\n"
+                % (fmt, ", ".join(OUTPUT_FORMATS), USAGE))
+            return EXIT_USAGE
+        as_json = fmt == "json"
+
     if profile not in PROFILES:
         sys.stderr.write("error: unknown profile %r (choose from %s)\n%s\n"
                          % (profile, ", ".join(PROFILES), USAGE))

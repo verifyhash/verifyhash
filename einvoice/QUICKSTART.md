@@ -205,6 +205,47 @@ required and not a dependency of this tool):
 python3 -m einvoice info --json | jq -e '(.profiles | index("xrechnung")) and (.formats | index("sarif"))' > /dev/null
 ```
 
+## 6. Project-wide defaults: the `[tool.einvoice]` config file
+
+Typing `--profile`-adjacent flags on every invocation gets old in a repo where
+every invoice is, say, XRechnung-bound and CI wants strict JSON. The CLI
+accepts opt-in **defaults** for exactly three keys — `format`, `fail-on`,
+`lang` — from a config file, resolved once at startup:
+
+1. `.einvoice.toml` in the **current working directory** (keys at the top
+   level, no table header). If this file exists it **wins outright** — the
+   `pyproject.toml` table below is not even read.
+2. else the `[tool.einvoice]` table in `./pyproject.toml`:
+
+```toml
+[tool.einvoice]
+format = "json"       # "text" (default) | "json" — as if --json were passed
+fail-on = "warning"   # "fatal" (default) | "warning" | "information"
+lang = "de"           # "en" (default) | "de"
+```
+
+Precedence is strict: **explicit CLI flag > config file > built-in default**.
+So with the table above, `einvoice validate --fail-on=fatal invoice.xml` still
+uses `fatal` — a flag on the command line always beats the file. With no
+config file at all, nothing changes: the defaults are byte-identical to a
+build without this feature.
+
+Two honest limits. First, there is no `--format` flag on this CLI (`--json`
+is the only format switch), so `format = "json"` can only be reverted by
+editing the config, not per-invocation; `format` here means the CLI's two
+output forms (`text`/`json`), **not** the nine-name `--format` vocabulary of
+`python3 -m einvoice.report`. Second, the keys never touch validation:
+`fail-on` moves only the exit-code threshold and `lang` only the human
+message text — findings, `--json` payloads and rule results are identical
+with and without a config file.
+
+Misconfiguration is never silently swallowed: an unknown key (`formt = ...`)
+or a non-string value exits `2` with one `error:` line naming the bad key,
+the file, and the accepted set (`fail-on, format, lang`); an invalid value
+(`lang = "fr"`) errors exactly like the equivalent bad flag (`--lang=fr`) —
+same message, same exit `2` (see [`EXIT-CODES.md`](EXIT-CODES.md)). Every
+clause above is pinned by `test_config_file.py` against the live CLI.
+
 ## Next steps
 
 - **Fix the invoice and re-run.** [`examples/README.md`](examples/README.md)

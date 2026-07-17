@@ -443,7 +443,11 @@ exit-code and packaging invariants).
 **Exit codes** — the whole point of the tool is to gate a build, so the exit
 code is the contract, not the prose. The `receipt` subcommand collapses code
 `3` into a FAIL receipt (exit `1`) because a receipt must always emit a
-document; codes `2` and `3` below therefore describe `validate`:
+document; codes `2` and `3` below therefore describe `validate`. A receipt's
+tamper-evidence is a recompute-and-compare of `content_sha256` over the
+canonical body — there is no `verify-receipt` subcommand; see
+[`RECEIPT-VERIFICATION.md`](RECEIPT-VERIFICATION.md) for the exact check and its
+honest limit (the outer hash is a body digest, not self-covering).
 
 | Code | Meaning |
 |---|---|

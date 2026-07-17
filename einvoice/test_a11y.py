@@ -14,7 +14,10 @@ heading (heading-structure signal). No other test asserts these:
 This guard walks EVERY ``*.html`` under ``www/`` and asserts, per page
 independently (the offending path is named in every failure message):
 
-  1. exactly one ``<html lang="en">`` opening tag;
+  1. exactly one ``<html lang="...">`` opening tag carrying the language the
+     page's PATH mandates — ``lang="de"`` for pages under ``www/de/`` (the
+     German product/quickstart page), ``lang="en"`` everywhere else — so the
+     German page is covered by the language check, not exempted;
   2. exactly one ``<meta charset="utf-8">``;
   3. exactly one ``<meta name="viewport" content="width=device-width...">``
      (matched permissively on attribute order/spacing);
@@ -50,10 +53,24 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WWW_DIR = os.path.join(HERE, "www")
 
 # --- matchers (permissive on attribute order/spacing, strict on presence) ----
-# The <html> opening tag carrying lang="en". Kept tolerant of extra attributes
-# and casing but requires the language value to be exactly "en".
-_HTML_LANG_RE = re.compile(
-    r'<html\b[^>]*\blang="en"[^>]*>', re.IGNORECASE)
+# The <html> opening tag carrying the EXPECTED document language. Pages under
+# www/de/ are German-language documents and must declare lang="de"; every
+# other page must declare lang="en". This keeps the German page COVERED by the
+# language check (with the correct expected value) rather than exempted.
+# Tolerant of extra attributes and casing but the language value must match
+# exactly.
+def _html_lang_re(lang):
+    return re.compile(r'<html\b[^>]*\blang="%s"[^>]*>' % re.escape(lang),
+                      re.IGNORECASE)
+
+
+_HTML_LANG_RE = _html_lang_re("en")
+
+
+def _expected_lang(rel):
+    """Expected <html lang> for a page, from its path relative to www/."""
+    parts = rel.replace("\\", "/").split("/")
+    return "de" if "de" in parts[:-1] else "en"
 # <meta charset="utf-8"> — tolerant of surrounding attributes / spacing / case.
 _CHARSET_RE = re.compile(
     r'<meta\b[^>]*\bcharset="utf-8"[^>]*>', re.IGNORECASE)
@@ -110,6 +127,7 @@ _KNOWN_PAGES = (
     os.path.join("rules", "index.html"),
     os.path.join("walkthrough", "index.html"),
     os.path.join("licensing", "index.html"),
+    os.path.join("de", "index.html"),
     os.path.join("rules", "BR-01", "index.html"),
 )
 
@@ -126,15 +144,20 @@ def _visible(text):
     return _TAG_RE.sub(" ", text).strip()
 
 
-def check_page(page, rel):
-    """Return a list of failure messages for one page (empty == pass)."""
+def check_page(page, rel, lang="en"):
+    """Return a list of failure messages for one page (empty == pass).
+
+    ``lang`` is the EXPECTED document language for this page (derived from its
+    path by :func:`_expected_lang`): the German product/quickstart page under
+    ``www/de/`` must declare ``lang="de"``, everything else ``lang="en"``.
+    """
     problems = []
 
-    langs = _HTML_LANG_RE.findall(page)
+    langs = _html_lang_re(lang).findall(page)
     if len(langs) != 1:
         problems.append(
-            '%s: expected exactly one \'<html lang="en">\' opening tag, '
-            "got %d" % (rel, len(langs)))
+            '%s: expected exactly one \'<html lang="%s">\' opening tag, '
+            "got %d" % (rel, lang, len(langs)))
 
     charsets = _CHARSET_RE.findall(page)
     if len(charsets) != 1:
@@ -307,7 +330,7 @@ def main():
         rel = os.path.relpath(path, HERE)
         with open(path, encoding="utf-8") as fh:
             page = fh.read()
-        failures.extend(check_page(page, rel))
+        failures.extend(check_page(page, rel, _expected_lang(rel)))
 
     # (anti-vacuous 1) the walk must have found a substantial number of pages.
     if total_files <= 100:
@@ -324,7 +347,8 @@ def main():
             continue
         with open(path, encoding="utf-8") as fh:
             page = fh.read()
-        failures.extend(check_page(page, os.path.join("www", rel)))
+        wrel = os.path.join("www", rel)
+        failures.extend(check_page(page, wrel, _expected_lang(wrel)))
 
     # (self-test) prove the guard actually fails on each regression, using an
     # in-memory copy of a known-good page (the landing page). If this page is
@@ -334,6 +358,24 @@ def main():
         with open(landing, encoding="utf-8") as fh:
             failures.extend(_self_test(fh.read(), "www/index.html"))
 
+    # (self-test, language) the German page's language check must be REAL: a
+    # copy of www/de/index.html whose <html lang="de"> is flipped to lang="en"
+    # must FAIL when checked with expected lang "de" (in-memory copy only).
+    de_page_path = os.path.join(WWW_DIR, "de", "index.html")
+    if os.path.exists(de_page_path):
+        with open(de_page_path, encoding="utf-8") as fh:
+            de_page = fh.read()
+        mutated = de_page.replace('lang="de"', 'lang="en"', 1)
+        if mutated == de_page:
+            failures.append(
+                "self-test: www/de/index.html carries no lang=\"de\" to "
+                "mutate — language matcher cannot be validated")
+        elif not check_page(mutated, "www/de/index.html", "de"):
+            failures.append(
+                "self-test: guard did NOT flag the German page with a "
+                "wrong (en) document language — it is blind to that "
+                "regression")
+
     if failures:
         sys.stderr.write("A11Y TEST: FAIL (%d)\n" % len(failures))
         for m in failures[:40]:
@@ -341,7 +383,8 @@ def main():
         return 1
 
     print("a11y OK: %d html files under www/; each carries exactly one "
-          '<html lang="en">, one <meta charset="utf-8">, one responsive '
+          '<html lang> matching its path (de under www/de/, en elsewhere), '
+          'one <meta charset="utf-8">, one responsive '
           "viewport meta, one non-empty <h1>, one <main>/role=main landmark, "
           "alt on every <img>, gap-free heading order, discernible <a href> "
           'text, and no non-JSON-LD <script> in <head>.' % total_files)

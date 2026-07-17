@@ -35,8 +35,16 @@ Checks (each an independent hard assert):
       http(s) token is the schema.org @context IRI inside that JSON-LD block.
   (d) ``gen_site.py --check`` returns 0 on the committed tree, and would return
       non-zero if a committed page were mutated (simulated on a temp copy).
+  (g) GERMAN PAGE (T-VHDE.1): www/de/index.html declares lang="de", carries a
+      self-referential canonical, hreflang alternates BOTH directions with the
+      English landing (which links it visibly), a unique title/description
+      among the surface pages, every shell command byte-identical to the
+      test-pinned English docs (gen_site.DE_COMMANDS, checked against both the
+      page and the doc), and www/de/ holds EXACTLY index.html — no per-rule
+      German pages (thin-content hard line).
   (e) NAV + SITEMAP INTEGRITY (VHW.3, mirrors weatherhack WXQ.3): the landing
-      page, rule index hub, walkthrough, licensing page, sitemap.xml and
+      page, rule index hub, walkthrough, licensing page, the German
+      product/quickstart page, sitemap.xml and
       robots.txt exist; every INTERNAL
       href in every generated HTML file resolves to a real generated file (no
       dangling link); sitemap.xml lists EXACTLY the generated canonical set
@@ -300,12 +308,14 @@ def main():
     hub_path = os.path.join(RULES_DIR, "index.html")
     walkthrough_path = os.path.join(WWW_DIR, "walkthrough", "index.html")
     licensing_path = os.path.join(WWW_DIR, "licensing", "index.html")
+    de_path = os.path.join(WWW_DIR, "de", "index.html")
     sitemap_path = os.path.join(WWW_DIR, "sitemap.xml")
     robots_path = os.path.join(WWW_DIR, "robots.txt")
     for pth, name in ((landing_path, "www/index.html"),
                       (hub_path, "www/rules/index.html"),
                       (walkthrough_path, "www/walkthrough/index.html"),
                       (licensing_path, "www/licensing/index.html"),
+                      (de_path, "www/de/index.html"),
                       (sitemap_path, "www/sitemap.xml"),
                       (robots_path, "www/robots.txt")):
         check(os.path.exists(pth), "surface file missing: %s" % name)
@@ -321,6 +331,8 @@ def main():
         html_files.append(walkthrough_path)
     if os.path.exists(licensing_path):
         html_files.append(licensing_path)
+    if os.path.exists(de_path):
+        html_files.append(de_path)
     for rid in sorted(want & have):
         rp = os.path.join(RULES_DIR, rid, "index.html")
         if os.path.exists(rp):
@@ -356,7 +368,8 @@ def main():
         got = set(locs)
         check(len(locs) == len(got), "sitemap has duplicate <loc> entries")
         expected = {_gen._url_landing(), _gen._url_hub(),
-                    _gen._url_walkthrough(), _gen._url_licensing()}
+                    _gen._url_walkthrough(), _gen._url_licensing(),
+                    _gen._url_de()}
         expected |= {_gen._url_rule(rid) for rid in (want & have)}
         check(got == expected,
               "sitemap <loc> set != generated canonical set; missing=%s "
@@ -396,7 +409,8 @@ def main():
         loc_to_file = {_gen._url_landing(): landing_path,
                        _gen._url_hub(): hub_path,
                        _gen._url_walkthrough(): walkthrough_path,
-                       _gen._url_licensing(): licensing_path}
+                       _gen._url_licensing(): licensing_path,
+                       _gen._url_de(): de_path}
         for rid in (want & have):
             loc_to_file[_gen._url_rule(rid)] = os.path.join(
                 RULES_DIR, rid, "index.html")
@@ -460,6 +474,102 @@ def main():
                        "metered self-host"):
             check(banned not in low,
                   "licensing page still carries banned copy: %r" % banned)
+
+    # ---- (g) German product/quickstart page (T-VHDE.1) ---------------------
+    # www/de/index.html is a first-class generated page: correct document
+    # language, self-referential canonical from BASE_URL, hreflang alternates
+    # in BOTH directions (de page <-> English landing), a visible landing
+    # link, every shell command byte-identical to the test-pinned English
+    # docs, and NO per-rule German pages (the thin-content hard line).
+    alt_re = re.compile(
+        r'<link\b[^>]*\brel="alternate"[^>]*\bhreflang="([^"]*)"[^>]*'
+        r'\bhref="([^"]*)"', re.IGNORECASE)
+    if os.path.exists(de_path) and os.path.exists(landing_path):
+        de_raw = open(de_path, encoding="utf-8").read()
+        landing_raw = open(landing_path, encoding="utf-8").read()
+
+        # Document language + canonical.
+        check('<html lang="de">' in de_raw,
+              "www/de/index.html does not declare <html lang=\"de\">")
+        cmatch = re.search(
+            r'<link\b[^>]*\brel="canonical"[^>]*\bhref="([^"]*)"', de_raw)
+        check(cmatch is not None and cmatch.group(1) == _gen._url_de(),
+              "www/de/index.html canonical is not gen_site._url_de() (%r)"
+              % (cmatch.group(1) if cmatch else None))
+
+        # hreflang alternates BOTH directions. The de page must reference the
+        # English landing (hreflang="en") and itself (hreflang="de"); the
+        # English landing must reference the de page (hreflang="de") and
+        # itself (hreflang="en").
+        de_alts = {hl: href for hl, href in alt_re.findall(de_raw)}
+        landing_alts = {hl: href for hl, href in alt_re.findall(landing_raw)}
+        check(de_alts.get("en") == _gen._url_landing(),
+              "de page hreflang=\"en\" does not point at the English landing "
+              "(got %r)" % de_alts.get("en"))
+        check(de_alts.get("de") == _gen._url_de(),
+              "de page lacks its self-referencing hreflang=\"de\" (got %r)"
+              % de_alts.get("de"))
+        check(landing_alts.get("de") == _gen._url_de(),
+              "English landing hreflang=\"de\" does not point at www/de/ "
+              "(got %r)" % landing_alts.get("de"))
+        check(landing_alts.get("en") == _gen._url_landing(),
+              "English landing lacks its self-referencing hreflang=\"en\" "
+              "(got %r)" % landing_alts.get("en"))
+
+        # The landing must carry a VISIBLE navigation link to the de page
+        # (hreflang <link>s live in <head> and are not user navigation).
+        check('href="de/index.html"' in landing_raw,
+              "English landing has no visible href=\"de/index.html\" link")
+
+        # Unique title + meta description across ALL five surface pages (the
+        # per-rule loop above already guarantees rule-page uniqueness).
+        surface_titles = []
+        surface_descs = []
+        for spath in (landing_path, hub_path, walkthrough_path,
+                      licensing_path, de_path):
+            sraw = open(spath, encoding="utf-8").read()
+            tm = _TITLE_RE.search(sraw)
+            dm = _DESC_RE.search(sraw)
+            check(tm is not None and dm is not None,
+                  "%s: missing <title> or meta description"
+                  % os.path.relpath(spath, HERE))
+            surface_titles.append(tm.group(1) if tm else "")
+            surface_descs.append(dm.group(1) if dm else "")
+        check(len(set(surface_titles)) == len(surface_titles),
+              "surface page <title>s are not unique: %r" % surface_titles)
+        check(len(set(surface_descs)) == len(surface_descs),
+              "surface page meta descriptions are not unique")
+
+        # COMMAND BYTE-IDENTITY, both directions: every command gen_site
+        # renders on the German page (gen_site.DE_COMMANDS) must appear
+        # VERBATIM (a) on the rendered de page and (b) in the English doc it
+        # is pinned to (QUICKSTART.md is executed by test_quickstart.py,
+        # ci/README.md's recipes by test_ci_recipe.py). A drifted or invented
+        # command fails here.
+        de_vis = html.unescape(de_raw)
+        check(len(_gen.DE_COMMANDS) >= 5,
+              "gen_site.DE_COMMANDS shrank below the install/validate/CI set")
+        for cmd, doc_rel in _gen.DE_COMMANDS:
+            check(cmd in de_vis,
+                  "de page is missing pinned command verbatim: %r" % cmd)
+            doc_path = os.path.join(HERE, doc_rel)
+            check(os.path.exists(doc_path),
+                  "DE_COMMANDS references a missing doc: %s" % doc_rel)
+            if os.path.exists(doc_path):
+                doc_text = open(doc_path, encoding="utf-8").read()
+                check(cmd in doc_text,
+                      "command on the de page is NOT byte-identical to any "
+                      "line of %s: %r" % (doc_rel, cmd))
+
+        # HARD LINE: no per-rule German pages and no extra German subtree —
+        # www/de/ holds EXACTLY one file, index.html.
+        de_dir = os.path.dirname(de_path)
+        check(not os.path.isdir(os.path.join(de_dir, "rules")),
+              "per-rule German pages exist under www/de/rules/ (thin-content "
+              "hard line)")
+        de_entries = sorted(os.listdir(de_dir))
+        check(de_entries == ["index.html"],
+              "www/de/ must hold exactly index.html, got: %r" % de_entries)
 
     # ---- (d) --check is 0 on the committed tree, non-zero on a mutation -----
     check(_gen.main(["--check"]) == 0,

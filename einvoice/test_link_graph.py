@@ -83,10 +83,12 @@ def main():
     hub_path = os.path.join(RULES_DIR, "index.html")
     walkthrough_path = os.path.join(WWW_DIR, "walkthrough", "index.html")
     licensing_path = os.path.join(WWW_DIR, "licensing", "index.html")
+    de_path = os.path.join(WWW_DIR, "de", "index.html")
     for pth, name in ((landing_path, "www/index.html"),
                       (hub_path, "www/rules/index.html"),
                       (walkthrough_path, "www/walkthrough/index.html"),
-                      (licensing_path, "www/licensing/index.html")):
+                      (licensing_path, "www/licensing/index.html"),
+                      (de_path, "www/de/index.html")):
         check(os.path.exists(pth),
               "surface file missing (run gen_site.py first): %s" % name)
     if failures:
@@ -108,13 +110,15 @@ def main():
                   for rid in rule_ids}
 
     # Every generated HTML node in the site graph.
-    node_paths = [landing_path, hub_path, walkthrough_path, licensing_path]
+    node_paths = [landing_path, hub_path, walkthrough_path, licensing_path,
+                  de_path]
     node_paths += [rule_paths[rid] for rid in rule_ids]
     nodes = {os.path.realpath(p) for p in node_paths}
 
     hub_real = os.path.realpath(hub_path)
     landing_real = os.path.realpath(landing_path)
     licensing_real = os.path.realpath(licensing_path)
+    de_real = os.path.realpath(de_path)
     rule_real = {rid: os.path.realpath(rule_paths[rid]) for rid in rule_ids}
 
     # ---- build the directed internal-link graph ----------------------------
@@ -180,6 +184,19 @@ def main():
           "rule pages the landing cannot reach through the graph: %s"
           % unreachable_land[:10])
 
+    # The German product/quickstart page (T-VHDE.1) is a first-class node in
+    # BOTH directions: the landing must reach it (it is in the sitemap, so an
+    # unreachable de page would be an indexed orphan), and from the de page
+    # the landing — and through it the whole rule surface — must be reachable.
+    check(de_real in landing_dist,
+          "German page (www/de/index.html) is unreachable from the landing "
+          "— indexed orphan")
+    de_dist = bfs_hops(de_real)
+    check(landing_real in de_dist,
+          "the German page has no path back to the landing")
+    check(hub_real in de_dist,
+          "the German page cannot reach the rule hub through the graph")
+
     # ---- (2) CTA cross-link presence + resolution --------------------------
     # The landing must expose the on-ramp fragment target the rule CTAs point at.
     landing_page = open(landing_path, encoding="utf-8").read()
@@ -234,7 +251,8 @@ def main():
             sys.stderr.write("  !! " + m + "\n")
         return 1
     print("link-graph OK: %d rule pages, all reachable within 2 hops of the "
-          "hub (0 orphans) and from the landing; every page carries the 3 CTA "
+          "hub (0 orphans) and from the landing; the German page is linked "
+          "both ways with the landing; every rule page carries the 3 CTA "
           "links (licensing / quickstart#onramp / #de), each resolving to a "
           "real generated target." % len(rule_ids))
     return 0

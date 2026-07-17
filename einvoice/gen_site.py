@@ -106,6 +106,16 @@ WALKTHROUGH_DIR = os.path.join(SITE_DIR, "walkthrough")
 # www/licensing/index.html (T-VHR.5). Same template contract as every other
 # surface page: inline CSS only, no <script>, canonical from BASE_URL.
 LICENSING_DIR = os.path.join(SITE_DIR, "licensing")
+
+# The German-language product/quickstart page (T-VHDE.1) is emitted at the
+# stable canonical path www/de/index.html. It is ORIGINAL German prose (what
+# the tool is, the honest coverage story, install + validate + CI wiring) —
+# NOT a translation of the English landing page, and there are deliberately NO
+# per-rule German pages (the thin-content line: official German remediation
+# text stays the vendored --lang de surface / the lang="de" islands on the
+# per-rule pages). The page and the English landing carry hreflang alternates
+# in BOTH directions.
+DE_DIR = os.path.join(SITE_DIR, "de")
 EXAMPLE_DIR = os.path.join(HERE, "examples", "01-missing-fields")
 EX_BROKEN = os.path.join(EXAMPLE_DIR, "broken.xml")
 EX_FIXED = os.path.join(EXAMPLE_DIR, "fixed.xml")
@@ -139,7 +149,7 @@ BASE_URL = "https://verifyhash.com/einvoice"
 # determinism check in test_site.py stays green. Hand-bump this ISO-8601 date
 # whenever the rule surface (rule pages / landing / hub / walkthrough /
 # licensing) materially changes, so crawlers see an accurate last-modified.
-SITE_LASTMOD = "2026-07-16"
+SITE_LASTMOD = "2026-07-17"
 
 # CHECKOUT_URL — the ONE committed placeholder for the commercial-license
 # self-serve checkout (T-BUY.1). It is intentionally EMPTY in the repo: no
@@ -156,6 +166,32 @@ CHECKOUT_URL = ""
 # public-GitHub-issue-only route). Kept as one constant so the generated page
 # and any future copy stay in sync.
 COMMERCIAL_EMAIL = "hello@verifyhash.com"
+
+# ---------------------------------------------------------------------------
+# DE_COMMANDS — every shell command shown on the German page (T-VHDE.1), each
+# BYTE-IDENTICAL to a command the committed English docs already carry and
+# test-pin (QUICKSTART.md is parsed and executed by test_quickstart.py;
+# ci/README.md's recipe files are executed by test_ci_recipe.py). The German
+# page NEVER invents a command: each tuple is (command, doc-relative-path) and
+# test_site.py asserts the command string appears verbatim BOTH in that doc and
+# on the rendered German page — so a command edit in the docs that is not
+# mirrored here (or vice versa) fails the guard.
+# ---------------------------------------------------------------------------
+DE_COMMANDS = (
+    ("python3 einvoice.py validate --profile xrechnung "
+     "examples/01-missing-fields/fixed.xml", "QUICKSTART.md"),
+    ("python3 -m pip install .", "QUICKSTART.md"),
+    ("einvoice validate --profile xrechnung "
+     "examples/01-missing-fields/fixed.xml", "QUICKSTART.md"),
+    ("python3 einvoice.py validate --profile xrechnung "
+     "examples/01-missing-fields/broken.xml", "QUICKSTART.md"),
+    ("python3 einvoice.py validate --json --profile xrechnung "
+     "examples/01-missing-fields/broken.xml", "QUICKSTART.md"),
+    ("python3 -m pip install ./third_party/einvoice",
+     os.path.join("ci", "README.md")),
+    ("sh third_party/einvoice/ci/validate-invoices.sh invoices/",
+     os.path.join("ci", "README.md")),
+)
 
 # The one and only stylesheet: inline, tiny, no external references.
 _STYLE = """
@@ -255,6 +291,11 @@ def _url_walkthrough():
 def _url_licensing():
     """Absolute URL of the licensing (dual-license terms) page."""
     return BASE_URL + "/licensing/"
+
+
+def _url_de():
+    """Absolute URL of the German-language product/quickstart page."""
+    return BASE_URL + "/de/"
 
 
 def _url_sitemap():
@@ -458,16 +499,25 @@ def render_all(catalog):
     return {rid: render_page(rid, catalog[rid]) for rid in catalog}
 
 
-def _doc_head(title, description, canonical, style_extra=""):
+def _doc_head(title, description, canonical, style_extra="", lang="en",
+              alternates=()):
     """Shared <head> lines for the landing + hub pages (indexable, no noindex).
 
     Same self-containment contract as the rule pages: one inline <style>, an
     absolute canonical from BASE_URL, no external CSS/JS/CDN/font, no <script>.
+
+    ``lang`` sets the document language on ``<html>`` (the German page passes
+    ``"de"``). ``alternates`` is an iterable of ``(hreflang, absolute-url)``
+    pairs emitted as ``<link rel="alternate" hreflang=...>`` right after the
+    canonical — used ONLY by the landing/German pair (both directions), never
+    by pages without a language counterpart. These are navigational/SEO link
+    elements (not fetched resources), built from the same BASE_URL as the
+    canonical, so canonical/hreflang/sitemap can never disagree.
     """
     h = []
     w = h.append
     w("<!doctype html>")
-    w('<html lang="en">')
+    w('<html lang="%s">' % _h(lang))
     w("<head>")
     w('<meta charset="utf-8">')
     w('<meta name="viewport" content="width=device-width, initial-scale=1">')
@@ -475,6 +525,9 @@ def _doc_head(title, description, canonical, style_extra=""):
     w("<title>%s</title>" % _h(title))
     w('<meta name="description" content="%s">' % _h(description))
     w('<link rel="canonical" href="%s">' % _h(canonical))
+    for hl, href in alternates:
+        w('<link rel="alternate" hreflang="%s" href="%s">'
+          % (_h(hl), _h(href)))
     # ONE inline <style> element (the self-containment contract): any
     # page-specific rules are APPENDED inside the same block, never a second
     # <style> and never an external sheet. style_extra is empty for every page
@@ -500,7 +553,12 @@ def render_landing():
                    "Action in minutes.")
     p = []
     w = p.append
-    w(_doc_head(title, description, _url_landing()))
+    # hreflang alternates BOTH directions (T-VHDE.1): the English landing and
+    # the German product/quickstart page reference each other (plus the
+    # required self-referencing entry and an x-default pointing at English).
+    w(_doc_head(title, description, _url_landing(),
+                alternates=(("en", _url_landing()), ("de", _url_de()),
+                            ("x-default", _url_landing()))))
     w("<body>")
     w("<main>")
     w('<p class="crumb">einvoice — EN 16931 / XRechnung conformance</p>')
@@ -684,6 +742,10 @@ def render_landing():
     # pages and the licensing page), so the German landing lives here.
     w('<section lang="de">')
     w("<h2>Auf Deutsch: EN-16931-/XRechnung-Konformit&auml;t</h2>")
+    w('<p><strong><a href="de/index.html">Deutschsprachige Produkt- und '
+      "Schnellstart-Seite</a></strong> &mdash; was das Werkzeug ist, was es "
+      "ehrlich abdeckt (und was nicht), Installation, erste Pr&uuml;fung und "
+      "CI-Anbindung, komplett auf Deutsch.</p>")
     w("<p><strong>einvoice</strong> ist ein Konformit&auml;tspr&uuml;fer ohne "
       "Abh&auml;ngigkeiten (reine Python-3-Standardbibliothek — kein Java, "
       "kein Saxon, keine Schematron-Toolchain, keine Netzwerkzugriffe) "
@@ -937,6 +999,206 @@ def render_licensing():
       "offline with no network requests. The authoritative license text is "
       "the repository <code>LICENSE</code> file; this page is a plain-language "
       "summary, not a replacement for it.")
+    w("</footer>")
+    w("</main>")
+    w("</body>")
+    w("</html>")
+    return "\n".join(p) + "\n"
+
+
+def render_de():
+    """The German product/quickstart page (``www/de/index.html``) — pure.
+
+    ORIGINAL German prose written for the German reader (T-VHDE.1) — a
+    quickstart-shaped page (install -> erste Pr&uuml;fung -> CI-Anbindung),
+    deliberately NOT a translation of the explainer-shaped English landing
+    page. HONESTY CONTRACT: every coverage/limit statement mirrors what the
+    committed conformance artifacts and the guarded English prose already
+    claim (286 rules, deferred BR-CL checks, no XSD validation, green != legal
+    conformance) — no claim appears here first. Every shell command is one of
+    :data:`DE_COMMANDS`, byte-identical to the test-pinned English docs
+    (test_site.py asserts this both ways); this page invents NO command.
+    Same self-containment contract as every surface page: one inline <style>,
+    absolute canonical from BASE_URL, hreflang alternates to/from the English
+    landing, no <script>, no external CSS/JS/CDN/font.
+    """
+    (cmd_validate_fixed, cmd_pip, cmd_console, cmd_validate_broken,
+     cmd_json, cmd_pip_vendor, cmd_gate) = (c for c, _doc in DE_COMMANDS)
+
+    title = ("E-Rechnung offline validieren: XRechnung / EN 16931 "
+             "Schnellstart auf Deutsch — einvoice")
+    description = ("XRechnung und EN 16931 E-Rechnungen offline prüfen, "
+                   "ohne Java, Saxon oder sonstige Abhängigkeiten: "
+                   "Installation, erste Prüfung mit Exit-Code, "
+                   "CI-Anbindung und die ehrliche Abdeckung der 286 "
+                   "Geschäftsregeln — der deutschsprachige Schnellstart "
+                   "für einvoice.")
+    p = []
+    w = p.append
+    # hreflang alternates BOTH directions: this German page references the
+    # English landing (and itself); the landing carries the mirror links.
+    w(_doc_head(title, description, _url_de(), lang="de",
+                alternates=(("de", _url_de()), ("en", _url_landing()),
+                            ("x-default", _url_landing()))))
+    w("<body>")
+    w("<main>")
+    w('<p class="crumb"><a href="../index.html">einvoice</a> / Deutsch</p>')
+    w("<h1>E-Rechnungen offline validieren</h1>")
+    w('<p class="lead"><strong>einvoice</strong> pr&uuml;ft elektronische '
+      "Rechnungen gegen die Gesch&auml;ftsregeln von <strong>EN&nbsp;16931"
+      "</strong> und der deutschen <strong>XRechnung</strong> &mdash; als "
+      "Kommandozeilenwerkzeug, komplett offline, mit <strong>null "
+      "Abh&auml;ngigkeiten</strong> (reine Python-3-Standardbibliothek: kein "
+      "Java, kein Saxon, keine Schematron-Toolchain, kein Netzwerkzugriff). "
+      "Diese Seite ist der deutschsprachige Schnellstart: was das Werkzeug "
+      "ist, was es ehrlich abdeckt, und wie Sie es installieren, eine erste "
+      "Rechnung pr&uuml;fen und als CI-Gate verdrahten.</p>")
+
+    # ---- Was ist das Werkzeug? --------------------------------------------
+    w("<h2>Was das Werkzeug ist</h2>")
+    w("<p>Ein Konformit&auml;tspr&uuml;fer f&uuml;r E-Rechnungen im Format "
+      "UBL&nbsp;2.1 <code>Invoice</code> oder UN/CEFACT&nbsp;CII, mit den "
+      "Profilen <code>en16931</code> (europ&auml;ischer Kern) und "
+      "<code>xrechnung</code> (Kern plus die deutsche KoSIT-Schicht: "
+      "<code>BR-DE-*</code>-Regeln wie Leitweg-ID/K&auml;uferreferenz, "
+      "Verk&auml;uferkontakt, Zahlungsangaben, Skonto-Grammatik). Insgesamt "
+      "setzt der Pr&uuml;fer <strong>286 Gesch&auml;ftsregeln</strong> durch; "
+      "jede ist differentiell gegen die offiziellen "
+      "CEN-/KoSIT-Schematron-Artefakte bewiesen, mit 0 Abweichungen. Das "
+      "Ergebnis kommt dreifach: als menschenlesbare Zusammenfassung, als "
+      "<strong>Exit-Code</strong> (das, worauf ein CI-Gate reagiert) und als "
+      "<code>--json</code>-Maschinenprotokoll.</p>")
+    w("<p>Die Fehlermeldungen gibt es auch auf Deutsch: mit "
+      "<code>--lang de</code> zeigt die CLI zu jeder Regel den deutschen "
+      "Korrekturtext &mdash; wo das offizielle KoSIT-Artefakt einen deutschen "
+      "Text mitliefert, exakt diesen; sonst eine klar als &Uuml;bersetzung "
+      "gekennzeichnete Fassung, die nie als amtlicher Text ausgegeben "
+      "wird.</p>")
+
+    # ---- Ehrliche Abdeckung ------------------------------------------------
+    w("<h2>Ehrliche Abdeckung: was ein gr&uuml;nes Ergebnis bedeutet</h2>")
+    w("<p>Ein gr&uuml;nes Ergebnis hei&szlig;t: <em>keine implementierte "
+      "fatale Regel hat ausgel&ouml;st</em>. Es hei&szlig;t nicht "
+      "&bdquo;rechtsverbindlich konforme XRechnung&ldquo;. Die Grenzen im "
+      "Einzelnen:</p>")
+    w('<ul class="rules">')
+    w("<li>8 offizielle <code>BR-CL-*</code>-Codelisten-Pr&uuml;fungen sind "
+      "bewusst zur&uuml;ckgestellt und als dokumentierte Ausnahmen "
+      "gef&uuml;hrt &mdash; nicht als Abdeckung gez&auml;hlt.</li>")
+    w("<li>Eine strukturelle <strong>XSD-Validierung findet nicht statt</strong>; "
+      "gepr&uuml;ft werden die Gesch&auml;ftsregeln, nicht das Schema. Ein "
+      "UBL-<code>CreditNote</code>-Wurzelelement wird nicht "
+      "unterst&uuml;tzt.</li>")
+    w("<li>4 offizielle Regeln (<code>BR-CO-05</code>&#8211;"
+      "<code>BR-CO-08</code>) sind in den CEN-Artefakten selbst als "
+      '<code>test="true()"</code>-Tautologien ausgeliefert — sie k&ouml;nnen '
+      "nie ausl&ouml;sen und sind deshalb nicht implementierbar; jede "
+      "andere ausl&ouml;sbare offizielle <code>BR-*</code>-Regel ist "
+      "implementiert oder eine dokumentierte, begr&uuml;ndete Ausnahme "
+      "(maschinell gepr&uuml;fte L&uuml;cke: 0 in beiden "
+      "CEN-Syntax-Universen).</li>")
+    w("<li>Von den <code>PEPPOL-EN16931-R*</code>-Regeln ist genau die "
+      "Teilmenge implementiert, die KoSIT im offiziellen "
+      "XRechnung-Artefakt mitliefert (21 Regeln) &mdash; das ist "
+      "<em>keine</em> Peppol-BIS-Billing-3.0-Unterst&uuml;tzung.</li>")
+    w("</ul>")
+    w("<p>Nichts davon m&uuml;ssen Sie glauben: Das ma&szlig;gebliche "
+      "Regelinventar mit jeder Ausnahme und w&ouml;rtlichen Artefakt-Belegen "
+      'ist die <a href="%s">Abdeckungsmatrix (COVERAGE.md)</a> im Repository, '
+      "und jede Zahl auf dieser Seite l&auml;sst sich dort nachrechnen. "
+      "Lassen Sie vor dem tats&auml;chlichen Einreichen trotzdem den "
+      "offiziellen Validator Ihres Empf&auml;ngers laufen &mdash; dieses "
+      "Werkzeug ist der schnelle Vorab-Check, der die typischen Fehler "
+      "fr&uuml;h f&auml;ngt.</p>" % _h(_REPO_COVERAGE))
+
+    # ---- Installation + erste Pruefung ------------------------------------
+    w("<h2>Installation und erste Pr&uuml;fung</h2>")
+    w("<p>Alles Folgende l&auml;uft aus dem <code>einvoice/</code>-Verzeichnis "
+      "eines Repository-Checkouts &mdash; offline, ohne weitere Installation. "
+      "Die beiden Beispielrechnungen liegen im Repository: eine g&uuml;ltige "
+      "XRechnung (<code>fixed.xml</code>) und dieselbe Datei mit zwei "
+      "entfernten Pflichtangaben (<code>broken.xml</code>: ohne "
+      "K&auml;uferreferenz <code>BT-10</code> und ohne "
+      "Verk&auml;uferkontakt <code>BG-6</code>).</p>")
+    w("<h3>1. Direkt aus dem Checkout &mdash; nichts zu installieren</h3>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_validate_fixed))
+    w("<p>Die g&uuml;ltige Rechnung endet mit <strong>Exit-Code 0</strong>. "
+      "Wer stattdessen das <code>einvoice</code>-Kommando im PATH will, "
+      "installiert das Paket (null Laufzeitabh&auml;ngigkeiten, "
+      "<code>dependencies = []</code> in <code>pyproject.toml</code>) und "
+      "ruft es direkt auf &mdash; derselbe Codepfad, best&auml;tigt per "
+      "Test:</p>")
+    w("<pre><code>%s\n%s</code></pre>" % (_h(cmd_pip), _h(cmd_console)))
+    w("<h3>2. Eine kaputte Rechnung f&auml;llt durch &mdash; mit Regel-ID</h3>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_validate_broken))
+    w("<p>Exit-Code <strong>1</strong>; die Ausgabe nennt die erste verletzte "
+      "fatale Regel (<code>BR-DE-2</code>, fehlender Verk&auml;uferkontakt) "
+      "samt betroffenem Element. Die Exit-Codes sind der ganze Vertrag, den "
+      "ein CI-Gate braucht: <code>0</code> = keine implementierte fatale "
+      "Regel verletzt, <code>1</code> = mindestens eine fatale Verletzung, "
+      "<code>2</code> = Bedienfehler, <code>3</code> = kein wohlgeformtes "
+      "XML.</p>")
+    w("<h3>3. Maschinenlesbar: <code>--json</code></h3>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_json))
+    w("<p>Gibt das vollst&auml;ndige Ergebnis als JSON auf stdout aus "
+      "(Exit-Code unver&auml;ndert <code>1</code>): hier alle drei Befunde "
+      "&mdash; die zwei fatalen Regeln <code>BR-DE-2</code> und "
+      "<code>BR-DE-15</code> plus ein beratender "
+      "<code>information</code>-Hinweis, der den Exit-Code nie bewegt. "
+      "Verlassen Sie sich in Skripten auf das Feld <code>valid</code> oder "
+      "den Exit-Code, nicht auf den menschenlesbaren Text.</p>")
+
+    # ---- CI-Anbindung ------------------------------------------------------
+    w("<h2>CI-Anbindung: kein Build mit kaputter Rechnung</h2>")
+    w("<p>F&uuml;r ein Repository voller Rechnungen gibt es ein fertiges "
+      "Gate-Skript (POSIX&nbsp;sh, keine Abh&auml;ngigkeiten au&szlig;er "
+      "<code>python3</code>): Es pr&uuml;ft rekursiv jede "
+      "<code>*.xml</code>-Datei, l&auml;sst den Build bei jeder fatalen "
+      "Verletzung mit der Regel-ID im Log fehlschlagen und schreibt pro "
+      "Rechnung einen JUnit-Report, den CI-Oberfl&auml;chen als Testergebnis "
+      "anzeigen. Das Werkzeug ist noch nicht auf PyPI &mdash; vendoren Sie "
+      "das Produktverzeichnis (z.&nbsp;B. nach "
+      "<code>third_party/einvoice/</code>) und installieren Sie es im "
+      "CI-Job:</p>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_pip_vendor))
+    w("<p>Dann das Gate &uuml;ber Ihre Rechnungsdateien laufen lassen:</p>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_gate))
+    w("<p>Kopierfertige GitHub-Actions- und GitLab-CI-Definitionen liegen "
+      'daneben im <a href="%s">CI-Rezept (einvoice/ci/)</a>; eine '
+      '<code>uses:</code>-pinnbare <a href="%s">GitHub Action</a> annotiert '
+      "Befunde per SARIF direkt im Pull Request. Jedes Kommando auf dieser "
+      "Seite ist byte-identisch mit den englischen Anleitungen, deren "
+      "Kommandos die Testsuite gegen die echte Engine ausf&uuml;hrt &mdash; "
+      "die Doku kann nicht von dem abdriften, was das Werkzeug wirklich "
+      "tut.</p>" % (_h(_REPO_CI), _h(_REPO_ACTION)))
+
+    # ---- Weiterfuehrend ----------------------------------------------------
+    w("<h2>Weiterf&uuml;hrend</h2>")
+    w('<ul class="rules">')
+    w('<li><a href="../rules/index.html">Regel-Referenz</a> &mdash; jede der '
+      "286 Regeln mit eigener Seite: Anforderung, BT-/BG-Begriffe, "
+      "XML-Position, Korrekturhinweis auf Englisch und Deutsch, w&ouml;rtlicher "
+      "offizieller Schematron-Assert. Eigene deutsche Regelseiten gibt es "
+      "bewusst nicht &mdash; der deutsche Text steht auf jeder Regelseite und "
+      "in der CLI unter <code>--lang de</code>.</li>")
+    w('<li><a href="../walkthrough/index.html">Praxisbeispiel</a> (englisch) '
+      "&mdash; dieselbe kaputte Rechnung von oben, Schritt f&uuml;r Schritt "
+      "vom roten CI-Lauf zur bestandenen Pr&uuml;fung.</li>")
+    w('<li><a href="../licensing/index.html">Lizenz</a> &mdash; Apache-2.0 '
+      "f&uuml;r alle, auch f&uuml;r Closed-Source-Einbettung; die optionale "
+      "kommerzielle Lizenz ($29&nbsp;/&nbsp;$290) kauft Support und "
+      "Update-Hinweise, nie die Nutzungserlaubnis.</li>")
+    w('<li><a href="../index.html">English overview</a> &mdash; die '
+      "ausf&uuml;hrliche englische Produktseite mit der vollst&auml;ndigen "
+      "Abdeckungs-Geschichte und den Sicherheitsdetails zum Parsen nicht "
+      "vertrauensw&uuml;rdiger XML-Eingaben.</li>")
+    w("</ul>")
+
+    w("<footer>")
+    w("Generiert von <code>gen_site.py</code>; alle Kommandos byte-identisch "
+      "mit den testgepr&uuml;ften englischen Anleitungen "
+      "(<code>QUICKSTART.md</code>, <code>ci/README.md</code>). Diese Seite "
+      "ist eigenst&auml;ndig und &ouml;ffnet offline ohne Netzwerkzugriffe.")
     w("</footer>")
     w("</main>")
     w("</body>")
@@ -1301,11 +1563,13 @@ def render_sitemap(catalog):
     """XML sitemap listing EXACTLY the canonical page set — pure, deterministic.
 
     The URL set is: landing + rule index hub + the worked walkthrough + the
-    licensing page + every rule page, each <loc> built from the SAME BASE_URL
-    as the canonical <link>s, so canonical and sitemap can never disagree.
-    Rule order follows the catalog (stable).
+    licensing page + the German product/quickstart page + every rule page,
+    each <loc> built from the SAME BASE_URL as the canonical <link>s, so
+    canonical and sitemap can never disagree. Rule order follows the catalog
+    (stable).
     """
-    locs = [_url_landing(), _url_hub(), _url_walkthrough(), _url_licensing()]
+    locs = [_url_landing(), _url_hub(), _url_walkthrough(), _url_licensing(),
+            _url_de()]
     locs += [_url_rule(rid) for rid in catalog]
     lines = []
     w = lines.append
@@ -1342,6 +1606,7 @@ LANDING_PATH = os.path.join(SITE_DIR, "index.html")
 HUB_PATH = os.path.join(RULES_DIR, "index.html")
 WALKTHROUGH_PATH = os.path.join(WALKTHROUGH_DIR, "index.html")
 LICENSING_PATH = os.path.join(LICENSING_DIR, "index.html")
+DE_PATH = os.path.join(DE_DIR, "index.html")
 SITEMAP_PATH = os.path.join(SITE_DIR, "sitemap.xml")
 ROBOTS_PATH = os.path.join(SITE_DIR, "robots.txt")
 
@@ -1349,14 +1614,15 @@ ROBOTS_PATH = os.path.join(SITE_DIR, "robots.txt")
 def render_surface(catalog):
     """Map absolute path -> rendered text for the surface files (pure).
 
-    Landing, rule index hub, worked walkthrough, licensing page, sitemap.xml
-    and robots.txt.
+    Landing, rule index hub, worked walkthrough, licensing page, the German
+    product/quickstart page, sitemap.xml and robots.txt.
     """
     return {
         LANDING_PATH: render_landing(),
         HUB_PATH: render_hub(catalog),
         WALKTHROUGH_PATH: render_walkthrough(catalog),
         LICENSING_PATH: render_licensing(),
+        DE_PATH: render_de(),
         SITEMAP_PATH: render_sitemap(catalog),
         ROBOTS_PATH: render_robots(),
     }
@@ -1418,7 +1684,7 @@ def check(pages, surface):
         if surface_bad:
             sys.stderr.write("  stale surface: %s\n" % surface_bad)
         return 1
-    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + sitemap + robots)"
+    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + de + sitemap + robots)"
           % len(want))
     return 0
 
@@ -1443,7 +1709,7 @@ def write(pages, surface):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
-    print("wrote %d rule pages + landing + hub + walkthrough + licensing + sitemap + robots under %s"
+    print("wrote %d rule pages + landing + hub + walkthrough + licensing + de + sitemap + robots under %s"
           % (len(pages), os.path.relpath(SITE_DIR, HERE)))
     return 0
 

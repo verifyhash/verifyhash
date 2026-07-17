@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E-Rechnung offline validieren: XRechnung / EN 16931 Schnellstart auf Deutsch — einvoice</title>
+<meta name="description" content="XRechnung und EN 16931 E-Rechnungen offline prüfen, ohne Java, Saxon oder sonstige Abhängigkeiten: Installation, erste Prüfung mit Exit-Code, CI-Anbindung und die ehrliche Abdeckung der 286 Geschäftsregeln — der deutschsprachige Schnellstart für einvoice.">
+<link rel="canonical" href="https://verifyhash.com/einvoice/de/">
+<link rel="alternate" hreflang="de" href="https://verifyhash.com/einvoice/de/">
+<link rel="alternate" hreflang="en" href="https://verifyhash.com/einvoice/">
+<link rel="alternate" hreflang="x-default" href="https://verifyhash.com/einvoice/">
+<style>:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  line-height: 1.5; margin: 0; padding: 2rem 1rem; color: #1f2328;
+  background: #ffffff; }
+main { max-width: 46rem; margin: 0 auto; }
+a { color: #0969da; }
+a:hover { text-decoration: none; }
+.crumb { color: #57606a; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; margin: 0 0 .5rem; }
+.crumb a { color: inherit; text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+.lead { font-size: 1.05rem; color: #24292f; }
+.fam { margin: 2rem 0 0; }
+.fam h2 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.25rem; margin: 0 0 .2rem; }
+.fam .intro { color: #57606a; font-size: .92rem; margin: 0 0 .6rem; }
+ul.rules { list-style: none; padding: 0; margin: 0; display: grid;
+  gap: .3rem; }
+ul.rules code { font-size: .85em; }
+.toc { columns: 2; column-gap: 2rem; font-size: .95rem; }
+.onramp { border: 1px solid #d0d7de; border-radius: .6rem; padding: 1rem 1.2rem;
+  margin: 1.5rem 0; }
+.onramp h2 { margin-top: 0; }
+.page-cta { border: 1px solid #d0d7de; border-radius: .6rem;
+  padding: .9rem 1.1rem; margin: 1.75rem 0 0; font-size: .95rem; }
+.page-cta p { margin: 0 0 .5rem; color: #57606a; }
+.page-cta ul.rules { gap: .45rem; }
+h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.9rem; margin: 0; }
+.title { font-size: 1.15rem; margin: .35rem 0 .3rem; color: #24292f; }
+.title-de { font-size: 1.05rem; margin: 0 0 .35rem; color: #57606a; }
+.prov-de { font-size: .78rem; color: #57606a; margin: 0 0 1.5rem; }
+[lang="de"] { }
+.sev { display: inline-block; font-size: .8rem; font-weight: 700;
+  padding: .1rem .5rem; border-radius: .5rem; border: 1px solid #d0d7de; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem;
+  margin: 0; }
+dt { font-weight: 700; color: #57606a; }
+dd { margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f6f8fa; padding: .1rem .3rem; border-radius: .3rem;
+  font-size: .92em; overflow-wrap: anywhere; }
+pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
+  padding: .7rem .9rem; overflow-x: auto; font-size: .82rem; line-height: 1.5;
+  margin: .6rem 0; }
+pre code { background: none; padding: 0; overflow-wrap: normal;
+  white-space: pre; }
+.assert { border-left: 3px solid #d0d7de; padding-left: .8rem; margin: 0;
+  color: #24292f; }
+.terms code { margin-right: .3rem; }
+footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
+  border-top: 1px solid #d0d7de; padding-top: 1rem; }
+@media (max-width: 480px) {
+  dl { grid-template-columns: 1fr; gap: .15rem 0; }
+  dl dt { margin-top: .55rem; }
+  dl dt:first-child { margin-top: 0; }
+}
+@media (prefers-color-scheme: dark) {
+  body { color: #e6edf3; background: #0d1117; }
+  .title, .assert, dd, .lead { color: #e6edf3; }
+  .crumb, dt, footer, .title-de, .prov-de, .fam .intro { color: #8b949e; }
+  code { background: #161b22; }
+  pre { background: #161b22; border-color: #30363d; }
+  .sev, .assert, footer, .onramp, .page-cta { border-color: #30363d; }
+  .page-cta p { color: #8b949e; }
+  a { color: #4493f8; }
+}</style>
+</head>
+<body>
+<main>
+<p class="crumb"><a href="../index.html">einvoice</a> / Deutsch</p>
+<h1>E-Rechnungen offline validieren</h1>
+<p class="lead"><strong>einvoice</strong> pr&uuml;ft elektronische Rechnungen gegen die Gesch&auml;ftsregeln von <strong>EN&nbsp;16931</strong> und der deutschen <strong>XRechnung</strong> &mdash; als Kommandozeilenwerkzeug, komplett offline, mit <strong>null Abh&auml;ngigkeiten</strong> (reine Python-3-Standardbibliothek: kein Java, kein Saxon, keine Schematron-Toolchain, kein Netzwerkzugriff). Diese Seite ist der deutschsprachige Schnellstart: was das Werkzeug ist, was es ehrlich abdeckt, und wie Sie es installieren, eine erste Rechnung pr&uuml;fen und als CI-Gate verdrahten.</p>
+<h2>Was das Werkzeug ist</h2>
+<p>Ein Konformit&auml;tspr&uuml;fer f&uuml;r E-Rechnungen im Format UBL&nbsp;2.1 <code>Invoice</code> oder UN/CEFACT&nbsp;CII, mit den Profilen <code>en16931</code> (europ&auml;ischer Kern) und <code>xrechnung</code> (Kern plus die deutsche KoSIT-Schicht: <code>BR-DE-*</code>-Regeln wie Leitweg-ID/K&auml;uferreferenz, Verk&auml;uferkontakt, Zahlungsangaben, Skonto-Grammatik). Insgesamt setzt der Pr&uuml;fer <strong>286 Gesch&auml;ftsregeln</strong> durch; jede ist differentiell gegen die offiziellen CEN-/KoSIT-Schematron-Artefakte bewiesen, mit 0 Abweichungen. Das Ergebnis kommt dreifach: als menschenlesbare Zusammenfassung, als <strong>Exit-Code</strong> (das, worauf ein CI-Gate reagiert) und als <code>--json</code>-Maschinenprotokoll.</p>
+<p>Die Fehlermeldungen gibt es auch auf Deutsch: mit <code>--lang de</code> zeigt die CLI zu jeder Regel den deutschen Korrekturtext &mdash; wo das offizielle KoSIT-Artefakt einen deutschen Text mitliefert, exakt diesen; sonst eine klar als &Uuml;bersetzung gekennzeichnete Fassung, die nie als amtlicher Text ausgegeben wird.</p>
+<h2>Ehrliche Abdeckung: was ein gr&uuml;nes Ergebnis bedeutet</h2>
+<p>Ein gr&uuml;nes Ergebnis hei&szlig;t: <em>keine implementierte fatale Regel hat ausgel&ouml;st</em>. Es hei&szlig;t nicht &bdquo;rechtsverbindlich konforme XRechnung&ldquo;. Die Grenzen im Einzelnen:</p>
+<ul class="rules">
+<li>8 offizielle <code>BR-CL-*</code>-Codelisten-Pr&uuml;fungen sind bewusst zur&uuml;ckgestellt und als dokumentierte Ausnahmen gef&uuml;hrt &mdash; nicht als Abdeckung gez&auml;hlt.</li>
+<li>Eine strukturelle <strong>XSD-Validierung findet nicht statt</strong>; gepr&uuml;ft werden die Gesch&auml;ftsregeln, nicht das Schema. Ein UBL-<code>CreditNote</code>-Wurzelelement wird nicht unterst&uuml;tzt.</li>
+<li>4 offizielle Regeln (<code>BR-CO-05</code>&#8211;<code>BR-CO-08</code>) sind in den CEN-Artefakten selbst als <code>test="true()"</code>-Tautologien ausgeliefert — sie k&ouml;nnen nie ausl&ouml;sen und sind deshalb nicht implementierbar; jede andere ausl&ouml;sbare offizielle <code>BR-*</code>-Regel ist implementiert oder eine dokumentierte, begr&uuml;ndete Ausnahme (maschinell gepr&uuml;fte L&uuml;cke: 0 in beiden CEN-Syntax-Universen).</li>
+<li>Von den <code>PEPPOL-EN16931-R*</code>-Regeln ist genau die Teilmenge implementiert, die KoSIT im offiziellen XRechnung-Artefakt mitliefert (21 Regeln) &mdash; das ist <em>keine</em> Peppol-BIS-Billing-3.0-Unterst&uuml;tzung.</li>
+</ul>
+<p>Nichts davon m&uuml;ssen Sie glauben: Das ma&szlig;gebliche Regelinventar mit jeder Ausnahme und w&ouml;rtlichen Artefakt-Belegen ist die <a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md">Abdeckungsmatrix (COVERAGE.md)</a> im Repository, und jede Zahl auf dieser Seite l&auml;sst sich dort nachrechnen. Lassen Sie vor dem tats&auml;chlichen Einreichen trotzdem den offiziellen Validator Ihres Empf&auml;ngers laufen &mdash; dieses Werkzeug ist der schnelle Vorab-Check, der die typischen Fehler fr&uuml;h f&auml;ngt.</p>
+<h2>Installation und erste Pr&uuml;fung</h2>
+<p>Alles Folgende l&auml;uft aus dem <code>einvoice/</code>-Verzeichnis eines Repository-Checkouts &mdash; offline, ohne weitere Installation. Die beiden Beispielrechnungen liegen im Repository: eine g&uuml;ltige XRechnung (<code>fixed.xml</code>) und dieselbe Datei mit zwei entfernten Pflichtangaben (<code>broken.xml</code>: ohne K&auml;uferreferenz <code>BT-10</code> und ohne Verk&auml;uferkontakt <code>BG-6</code>).</p>
+<h3>1. Direkt aus dem Checkout &mdash; nichts zu installieren</h3>
+<pre><code>python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/fixed.xml</code></pre>
+<p>Die g&uuml;ltige Rechnung endet mit <strong>Exit-Code 0</strong>. Wer stattdessen das <code>einvoice</code>-Kommando im PATH will, installiert das Paket (null Laufzeitabh&auml;ngigkeiten, <code>dependencies = []</code> in <code>pyproject.toml</code>) und ruft es direkt auf &mdash; derselbe Codepfad, best&auml;tigt per Test:</p>
+<pre><code>python3 -m pip install .
+einvoice validate --profile xrechnung examples/01-missing-fields/fixed.xml</code></pre>
+<h3>2. Eine kaputte Rechnung f&auml;llt durch &mdash; mit Regel-ID</h3>
+<pre><code>python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/broken.xml</code></pre>
+<p>Exit-Code <strong>1</strong>; die Ausgabe nennt die erste verletzte fatale Regel (<code>BR-DE-2</code>, fehlender Verk&auml;uferkontakt) samt betroffenem Element. Die Exit-Codes sind der ganze Vertrag, den ein CI-Gate braucht: <code>0</code> = keine implementierte fatale Regel verletzt, <code>1</code> = mindestens eine fatale Verletzung, <code>2</code> = Bedienfehler, <code>3</code> = kein wohlgeformtes XML.</p>
+<h3>3. Maschinenlesbar: <code>--json</code></h3>
+<pre><code>python3 einvoice.py validate --json --profile xrechnung examples/01-missing-fields/broken.xml</code></pre>
+<p>Gibt das vollst&auml;ndige Ergebnis als JSON auf stdout aus (Exit-Code unver&auml;ndert <code>1</code>): hier alle drei Befunde &mdash; die zwei fatalen Regeln <code>BR-DE-2</code> und <code>BR-DE-15</code> plus ein beratender <code>information</code>-Hinweis, der den Exit-Code nie bewegt. Verlassen Sie sich in Skripten auf das Feld <code>valid</code> oder den Exit-Code, nicht auf den menschenlesbaren Text.</p>
+<h2>CI-Anbindung: kein Build mit kaputter Rechnung</h2>
+<p>F&uuml;r ein Repository voller Rechnungen gibt es ein fertiges Gate-Skript (POSIX&nbsp;sh, keine Abh&auml;ngigkeiten au&szlig;er <code>python3</code>): Es pr&uuml;ft rekursiv jede <code>*.xml</code>-Datei, l&auml;sst den Build bei jeder fatalen Verletzung mit der Regel-ID im Log fehlschlagen und schreibt pro Rechnung einen JUnit-Report, den CI-Oberfl&auml;chen als Testergebnis anzeigen. Das Werkzeug ist noch nicht auf PyPI &mdash; vendoren Sie das Produktverzeichnis (z.&nbsp;B. nach <code>third_party/einvoice/</code>) und installieren Sie es im CI-Job:</p>
+<pre><code>python3 -m pip install ./third_party/einvoice</code></pre>
+<p>Dann das Gate &uuml;ber Ihre Rechnungsdateien laufen lassen:</p>
+<pre><code>sh third_party/einvoice/ci/validate-invoices.sh invoices/</code></pre>
+<p>Kopierfertige GitHub-Actions- und GitLab-CI-Definitionen liegen daneben im <a href="https://github.com/verifyhash/verifyhash/tree/main/einvoice/ci">CI-Rezept (einvoice/ci/)</a>; eine <code>uses:</code>-pinnbare <a href="https://github.com/verifyhash/verifyhash/tree/main/einvoice/action">GitHub Action</a> annotiert Befunde per SARIF direkt im Pull Request. Jedes Kommando auf dieser Seite ist byte-identisch mit den englischen Anleitungen, deren Kommandos die Testsuite gegen die echte Engine ausf&uuml;hrt &mdash; die Doku kann nicht von dem abdriften, was das Werkzeug wirklich tut.</p>
+<h2>Weiterf&uuml;hrend</h2>
+<ul class="rules">
+<li><a href="../rules/index.html">Regel-Referenz</a> &mdash; jede der 286 Regeln mit eigener Seite: Anforderung, BT-/BG-Begriffe, XML-Position, Korrekturhinweis auf Englisch und Deutsch, w&ouml;rtlicher offizieller Schematron-Assert. Eigene deutsche Regelseiten gibt es bewusst nicht &mdash; der deutsche Text steht auf jeder Regelseite und in der CLI unter <code>--lang de</code>.</li>
+<li><a href="../walkthrough/index.html">Praxisbeispiel</a> (englisch) &mdash; dieselbe kaputte Rechnung von oben, Schritt f&uuml;r Schritt vom roten CI-Lauf zur bestandenen Pr&uuml;fung.</li>
+<li><a href="../licensing/index.html">Lizenz</a> &mdash; Apache-2.0 f&uuml;r alle, auch f&uuml;r Closed-Source-Einbettung; die optionale kommerzielle Lizenz ($29&nbsp;/&nbsp;$290) kauft Support und Update-Hinweise, nie die Nutzungserlaubnis.</li>
+<li><a href="../index.html">English overview</a> &mdash; die ausf&uuml;hrliche englische Produktseite mit der vollst&auml;ndigen Abdeckungs-Geschichte und den Sicherheitsdetails zum Parsen nicht vertrauensw&uuml;rdiger XML-Eingaben.</li>
+</ul>
+<footer>
+Generiert von <code>gen_site.py</code>; alle Kommandos byte-identisch mit den testgepr&uuml;ften englischen Anleitungen (<code>QUICKSTART.md</code>, <code>ci/README.md</code>). Diese Seite ist eigenst&auml;ndig und &ouml;ffnet offline ohne Netzwerkzugriffe.
+</footer>
+</main>
+</body>
+</html>

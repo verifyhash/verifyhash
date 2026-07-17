@@ -75,7 +75,8 @@ GENERATORS = {
     # per-example JSON reports (one committed report.json per examples/<n>/)
     "gen_examples": ["examples/*/report.json"],
     # the static per-rule reference site: landing + hub + walkthrough +
-    # licensing + sitemap + robots + one index.html per rule
+    # licensing + the German product/quickstart page + sitemap + robots +
+    # one index.html per rule
     "gen_site": [
         "www/index.html",
         "www/robots.txt",
@@ -84,6 +85,7 @@ GENERATORS = {
         "www/rules/*/index.html",
         "www/walkthrough/index.html",
         "www/licensing/index.html",
+        "www/de/index.html",
     ],
     # synthesized syntax-binding violation fixtures: per-id UBL fixtures + the
     # CII clean base + per-id CII violation fixtures

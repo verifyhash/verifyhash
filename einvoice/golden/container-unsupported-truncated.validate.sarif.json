@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "message": {
+            "text": "unsupported container \u2014 could not extract embedded invoice XML: no classic PDF trailer \u2014 cross-reference stream / object-stream PDFs (PDF 1.5+) are not supported by the zero-dependency extractor"
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "1d2d808974c30d2ed3940de9eafe6e37e40cca5d4551810f39efc464aaac33e0"
+          },
+          "ruleId": "unsupported-container"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": []
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

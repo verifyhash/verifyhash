@@ -31,6 +31,12 @@ container declares ConformanceLevel ``EN 16931``:
   * facturx-pdfa3-missing.pdf XMP present with a valid Factur-X profile but NO
                              pdfaid identification schema -> FX-PDFA3-PART +
                              FX-PDFA3-CONFORMANCE (ISO 19005-3 identity subset)
+  * facturx-truncated.pdf    the FIRST 1024 BYTES of facturx-valid.pdf — a
+                             deterministic mid-stream truncation (the %PDF-
+                             header survives, the xref table + trailer are cut
+                             off), the canonical corrupted-container fixture
+                             for the golden-pinned 'unsupported-container'
+                             machine-format snapshots (T-VHPDFZ.2)
 
 Run ``python3 make_pdf_fixtures.py`` from this directory to regenerate; the
 outputs are byte-stable (deterministic zlib level 9), so the committed fixtures
@@ -231,6 +237,22 @@ def _example5():
     return _read(os.path.join(CORPUS, "CII_example5.xml"))
 
 
+#: Fixed truncation length (bytes) for facturx-truncated.pdf. 1024 bytes of a
+#: ~5KB facturx-valid.pdf keeps the ``%PDF-`` magic (so the file IS routed to
+#: the PDF-container path) but cuts the file mid-embedded-stream, before the
+#: xref table and trailer exist — the extractor then refuses it with
+#: ``UnsupportedContainer`` ("no classic PDF trailer"), which ``build_report``
+#: folds into the ``error='unsupported-container'`` non-pass report. Purely
+#: deterministic: a slice of an already-deterministic build, no randomness.
+TRUNCATE_AT = 1024
+
+
+def build_truncated_pdf():
+    """The canonical corrupted-container fixture: a deterministically
+    truncated copy of the valid Factur-X PDF (first ``TRUNCATE_AT`` bytes)."""
+    return build_facturx_pdf(_example5())[:TRUNCATE_AT]
+
+
 FIXTURES = {
     # --- MATCHING containers (no FX-CONTAINER-* finding) -------------------
     "facturx-valid.pdf": lambda: build_facturx_pdf(_example5()),
@@ -258,6 +280,11 @@ FIXTURES = {
     #  pdfaid identification schema -> FX-PDFA3-PART + FX-PDFA3-CONFORMANCE
     "facturx-pdfa3-missing.pdf": lambda: build_facturx_pdf(
         _example5(), include_pdfaid=False),
+    #  deterministic mid-stream truncation of the valid container (first
+    #  TRUNCATE_AT bytes): %PDF- magic intact, xref/trailer gone -> the
+    #  canonical 'unsupported-container' fixture for the golden machine-format
+    #  snapshots (test_golden_snapshot.py, T-VHPDFZ.2)
+    "facturx-truncated.pdf": build_truncated_pdf,
 }
 
 

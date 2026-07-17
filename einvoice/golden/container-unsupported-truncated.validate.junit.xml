@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="0" errors="1">
+  <testsuite name="xrechnung" tests="1" failures="0" errors="1">
+    <testcase name="unsupported-container" classname="xrechnung">
+      <error message="unsupported container — could not extract embedded invoice XML: no classic PDF trailer — cross-reference stream / object-stream PDFs (PDF 1.5+) are not supported by the zero-dependency extractor">unsupported container — could not extract embedded invoice XML: no classic PDF trailer — cross-reference stream / object-stream PDFs (PDF 1.5+) are not supported by the zero-dependency extractor</error>
+    </testcase>
+  </testsuite>
+</testsuites>

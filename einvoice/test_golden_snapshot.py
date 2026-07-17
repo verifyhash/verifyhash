@@ -59,7 +59,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 from einvoice import report
 from einvoice import parser_cii
@@ -338,6 +340,160 @@ FIXTURES = [
 ]
 
 
+# ==========================================================================
+# Unsupported-container CLI machine-format goldens (T-VHPDFZ.2)
+# ==========================================================================
+# The hostile-PDF discipline is verdict-pinned at the MACHINE-FORMAT level:
+# for the canonical corrupted-container fixture (corpus/pdf/
+# facturx-truncated.pdf — a deterministic 1024-byte truncation of the valid
+# Factur-X container, committed bytes reproducible from corpus/pdf/
+# make_pdf_fixtures.py), the REAL `python3 -m einvoice.report --format <fmt>`
+# CLI is driven for every machine format below and its ENTIRE stdout is
+# asserted byte-identical to a committed golden file, alongside the measured,
+# documented exit code 3 (EXIT_PARSE — the "could not reduce the input to a
+# validatable invoice" error family, see EXIT-CODES.md) and the
+# error='unsupported-container' non-pass shape. This freezes the honest
+# container-failure contract: NEVER a false pass, NEVER a traceback, NEVER a
+# silently drifting error document.
+#
+# Path normalization: the fixture path is passed RELATIVE with cwd=HERE, and
+# the report CLI echoes the input path exactly as supplied (the measured
+# path-echo rule pinned by test_path_invariance.py), so the emitted bytes are
+# independent of where this checkout lives. json/junit/sarif emitters are
+# already deterministic (sort_keys / fixed layout); no other normalization is
+# needed or applied.
+#
+# T-VHPDFZ.1 NOTE (explicitly skipped spec leg, not fabricated): .1 (commit
+# 1af8320) was a PURE test addition — test_fuzz_pdf_container.py, a
+# deterministic fixed-seed fuzz harness — with ZERO source changes and ZERO
+# real defects found, so there is NO ".1 regression fixture" to golden-pin.
+# That leg is moot and deliberately skipped; the canonical fixture pinned here
+# is a fresh deterministic truncation, not a fuzz-derived artifact.
+CONTAINER_FIXTURE_PATH = os.path.join("corpus", "pdf", "facturx-truncated.pdf")
+
+#: The three machine formats golden-pinned for the container-failure verdict,
+#: each with the measured, documented exit code (3 = EXIT_PARSE for ALL of
+#: them: report.py returns EXIT_PARSE whenever the report carries an `error`
+#: field, regardless of format).
+CONTAINER_FORMATS = ("json", "junit", "sarif")
+CONTAINER_EXIT_CODE = 3
+
+#: Golden file per format, following the existing golden/ conventions
+#: (committed, regenerated only via --update / REGEN=1 as a reviewed decision).
+CONTAINER_GOLDEN_NAMES = {
+    "json": "container-unsupported-truncated.validate.json",
+    "junit": "container-unsupported-truncated.validate.junit.xml",
+    "sarif": "container-unsupported-truncated.validate.sarif.json",
+}
+
+
+def _container_cli(fmt):
+    """Drive the REAL report CLI on the corrupted-container fixture with a
+    RELATIVE path from HERE (path-echo determinism). Returns (rc, stdout
+    bytes, stderr bytes)."""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [sys.executable, "-m", "einvoice.report", "--format", fmt,
+         CONTAINER_FIXTURE_PATH],
+        cwd=HERE, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _container_shape_failures(fmt, rc, out, err):
+    """Assert the error='unsupported-container' non-pass SHAPE (beyond byte
+    identity, so a golden regenerated over a regression cannot hide it).
+    Returns a list of human-readable failure lines (empty = shape OK)."""
+    fails = []
+    if rc != CONTAINER_EXIT_CODE:
+        fails.append("  exit code: documented=%d got=%d"
+                     % (CONTAINER_EXIT_CODE, rc))
+    if err != b"":
+        fails.append("  stderr not empty (traceback/diagnostic leak?): %r"
+                     % err[:200])
+    try:
+        if fmt == "json":
+            doc = json.loads(out.decode("utf-8"))
+            if doc.get("error") != "unsupported-container":
+                fails.append("  json error field: %r != 'unsupported-container'"
+                             % doc.get("error"))
+            if doc.get("valid") is not False:
+                fails.append("  json valid: %r (must be false — never a "
+                             "false pass)" % doc.get("valid"))
+            if doc.get("violations") != []:
+                fails.append("  json violations not empty")
+        elif fmt == "junit":
+            root = ET.fromstring(out.decode("utf-8"))
+            if root.tag != "testsuites" or root.get("errors") != "1":
+                fails.append("  junit: expected <testsuites errors=\"1\">, "
+                             "got tag=%r errors=%r"
+                             % (root.tag, root.get("errors")))
+            cases = root.findall("./testsuite/testcase")
+            if (len(cases) != 1
+                    or cases[0].get("name") != "unsupported-container"
+                    or cases[0].find("error") is None):
+                fails.append("  junit: expected one "
+                             "<testcase name='unsupported-container'> with an "
+                             "<error> child")
+        elif fmt == "sarif":
+            doc = json.loads(out.decode("utf-8"))
+            results = doc["runs"][0]["results"]
+            if (len(results) != 1
+                    or results[0].get("ruleId") != "unsupported-container"
+                    or results[0].get("level") != "error"):
+                fails.append("  sarif: expected one result with "
+                             "ruleId='unsupported-container' level='error', "
+                             "got %r" % results)
+    except Exception as exc:  # noqa: BLE001 — any parse failure IS the finding
+        fails.append("  %s output does not parse as a complete machine "
+                     "document: %s" % (fmt, exc))
+    return fails
+
+
+def _container_golden_path(fmt):
+    return os.path.join(GOLDEN_DIR, CONTAINER_GOLDEN_NAMES[fmt])
+
+
+def write_container_goldens():
+    """Regenerate the container-failure CLI goldens (only via --update)."""
+    if not os.path.isdir(GOLDEN_DIR):
+        os.makedirs(GOLDEN_DIR)
+    for fmt in CONTAINER_FORMATS:
+        rc, out, err = _container_cli(fmt)
+        shape = _container_shape_failures(fmt, rc, out, err)
+        if shape:
+            raise SystemExit(
+                "refusing to regenerate a golden over a BROKEN "
+                "container-failure shape (--format %s):\n%s"
+                % (fmt, "\n".join(shape)))
+        with open(_container_golden_path(fmt), "wb") as fh:
+            fh.write(out)
+    return len(CONTAINER_FORMATS)
+
+
+def check_container(failures):
+    """Byte-compare each machine format against its committed golden AND
+    assert the non-pass shape + exit code. Appends to `failures` in the same
+    (headline, lines) form the fixture check uses."""
+    for fmt in CONTAINER_FORMATS:
+        name = "container-unsupported-truncated --format %s" % fmt
+        gpath = _container_golden_path(fmt)
+        rc, out, err = _container_cli(fmt)
+        lines = _container_shape_failures(fmt, rc, out, err)
+        if not os.path.isfile(gpath):
+            failures.append(("MISSING golden for %r (run --update to create "
+                             "it)." % name, [name]))
+            continue
+        with open(gpath, "rb") as fh:
+            golden = fh.read()
+        if out != golden:
+            lines.append("  stdout drifted from committed golden %s "
+                         "(golden %d bytes, now %d bytes)"
+                         % (os.path.basename(gpath), len(golden), len(out)))
+        if lines:
+            failures.append((None, ["DRIFT in %r:" % name] + lines))
+
+
 # --------------------------------------------------------------------------
 # Engine invocation
 # --------------------------------------------------------------------------
@@ -443,7 +599,7 @@ def write_goldens():
         record = compute_projection(fixture)
         with open(_golden_path(fixture), "w", encoding="utf-8") as fh:
             fh.write(_dump(record))
-    return len(FIXTURES)
+    return len(FIXTURES) + write_container_goldens()
 
 
 def _rule_pairs(record):
@@ -510,13 +666,18 @@ def check(verbose=True):
         if golden != current:
             failures.append((None, _diff_lines(name, golden, current)))
 
+    # The unsupported-container CLI machine-format goldens (byte-identity +
+    # exit code + non-pass shape, see the T-VHPDFZ.2 section above).
+    check_container(failures)
+    total = len(FIXTURES) + len(CONTAINER_FORMATS)
+
     if verbose:
         if not failures:
-            sys.stdout.write("OK: %d golden snapshot(s) match.\n" % len(FIXTURES))
+            sys.stdout.write("OK: %d golden snapshot(s) match.\n" % total)
         else:
             sys.stdout.write(
                 "FAIL: %d of %d golden snapshot(s) drifted.\n"
-                % (len(failures), len(FIXTURES)))
+                % (len(failures), total))
             for headline, lines in failures:
                 if headline:
                     sys.stdout.write("  " + headline + "\n")

@@ -180,6 +180,40 @@ Scope and invariants:
 - `--fail-on` is accepted for `validate` and `validate-batch`; it does not apply
   to `receipt` (whose exit code always mirrors its PASS/FAIL verdict).
 
+## Code `3` — unsupported PDF container on the single-file path (additive)
+
+Measured 2026-07-17 and golden-pinned byte-for-byte by `test_golden_snapshot.py`
+(against the committed deterministic corrupted fixture
+`corpus/pdf/facturx-truncated.pdf`) plus `test_pdf_container.py` /
+`test_fuzz_pdf_container.py` (against `no-embedded.pdf`, `encrypted.pdf`, and a
+fixed-seed fuzz corpus of mangled containers):
+
+- **Single-file `python3 -m einvoice.report <file.pdf>`** (every `--format`
+  value): when the file carries the `%PDF-` magic but the zero-dependency
+  extractor cannot reach the embedded e-invoice XML — the container is
+  encrypted, has no `/EmbeddedFiles` name tree, is truncated / has no classic
+  `trailer`, uses cross-reference-stream layout (PDF 1.5+), or an unknown
+  stream filter — the run emits a **complete report document** carrying the
+  literal error code **`unsupported-container`** (`valid: false`, zero counts,
+  empty `violations`, and a `message` naming the concrete extractor reason)
+  and exits **`3`** (`EXIT_PARSE`). This is the existing "could not reduce the
+  input to a validatable invoice" error family — the same code as
+  not-well-formed XML, deliberately **no new code minted**: the `error` field,
+  not a distinct number, tells you *why*. Never `0` (a container we cannot
+  open is never a false pass) and never a traceback. How the error appears in
+  each machine format is specified in
+  [REPORT-FORMATS.md](REPORT-FORMATS.md#unsupported-pdf-container).
+- **`python3 -m einvoice validate <file.pdf>`** (the `cli.py` surface) has
+  **no PDF-container dispatch**: it reads the bytes as XML, so *any* `.pdf` —
+  including a fully valid Factur-X container — lands on the existing exit-`3`
+  `S-WF` not-well-formed row (measured). The `unsupported-container` token
+  only ever appears on the `python3 -m einvoice.report` surface; point
+  Factur-X/ZUGFeRD PDFs there.
+- **`validate-batch`**: unchanged, as already documented in the table above —
+  an unsupported container is an *errored* file, and the batch returns `3`
+  only when some file **only** errored and no file had a fatal (a fatal
+  anywhere outranks it with `1`).
+
 ## Stability guarantee
 
 These codes are an append-only contract:

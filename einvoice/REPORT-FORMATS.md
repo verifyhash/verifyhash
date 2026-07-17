@@ -131,3 +131,51 @@ is deliberately empty in every OS-error case). Note that `einvoice
 validate` itself exposes **no** `--format` flag (machine formats live on
 `python3 -m einvoice.report`); passing one is a usage error (exit `2`,
 empty stdout) — also pinned by `test_os_error_formats.py`.
+
+## Unsupported PDF container
+
+Measured rule (2026-07-17, golden-pinned **byte-for-byte** by
+`test_golden_snapshot.py` against the committed deterministic corrupted
+fixture `corpus/pdf/facturx-truncated.pdf`, plus `test_pdf_container.py` /
+`test_fuzz_pdf_container.py` for the no-`/EmbeddedFiles`, encrypted, and
+fuzz-mangled shapes): **unlike an OS-level input error, an unsupported PDF
+container IS a delivered verdict** — the file was read fine; its *contents*
+cannot be reduced to a validatable invoice. So the machine-format discipline
+is the opposite branch of the OS-error rule: **stdout carries a complete,
+parseable document** carrying the literal error code `unsupported-container`,
+**stderr is empty** (zero traceback bytes), and the exit code is **`3`** for
+every `--format` value — `report.py` returns `EXIT_PARSE` whenever the report
+carries an `error` field, the same family as not-well-formed XML (see
+EXIT-CODES.md). Never a false pass, never a half-emitted document.
+
+This fires whenever the input has the `%PDF-` magic but the zero-dependency
+extractor cannot reach the embedded e-invoice XML: encryption (`/Encrypt`),
+no `/EmbeddedFiles` name tree, a truncated file / missing classic `trailer`,
+cross-reference-stream layout (PDF 1.5+), or an unknown stream filter. The
+report's `message` names the concrete reason.
+
+How the error appears, per golden-pinned machine format:
+
+- **json** — the versioned `einvoice-conformance-report/v1` document with
+  `"error": "unsupported-container"`, `"valid": false`, all three counts `0`,
+  `"violations": []`, and `"message"` carrying the extractor reason (e.g.
+  `"unsupported container — could not extract embedded invoice XML: no
+  classic PDF trailer — …"`).
+- **junit** — `<testsuites tests="1" failures="0" errors="1">` containing a
+  single `<testcase name="unsupported-container">` with one `<error>` child
+  whose `message` is the extractor reason — the JUnit *error-not-failure*
+  convention (the input could not be tested, no rule "failed").
+- **sarif** — one `result` with `ruleId` `"unsupported-container"`, `level`
+  `"error"`, `message.text` = the extractor reason, an **empty**
+  `tool.driver.rules` array (no rule fired), a stable `partialFingerprints`
+  digest keyed on the error code alone, and — per the path-echo section
+  above — no filesystem path anywhere.
+
+The remaining surfaces relay the same error code (measured: `gitlab` as
+`check_name`, `github` as `title=`, `azure` as `code=`, `text` as an
+`ERROR <path> unsupported-container:` line) with the same exit `3`, but only
+the three machine formats above are byte-golden-pinned. Honest limit: the
+refusal list is a property of the deliberately zero-dependency extractor —
+it refuses containers it cannot open *honestly* instead of guessing; a
+password-protected or PDF-1.5+ xref-stream Factur-X file needs a full PDF
+library upstream of this tool.

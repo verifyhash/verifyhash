@@ -57,6 +57,7 @@ Standard library only. No network. Runs in well under a second.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -68,6 +69,7 @@ from einvoice import parser_cii
 from einvoice import rules
 from einvoice import rules_xrechnung
 from einvoice.parser import NotWellFormed
+from einvoice.receipt import build_receipt, receipt_json, canonical_json
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GOLDEN_DIR = os.path.join(HERE, "golden")
@@ -494,6 +496,178 @@ def check_container(failures):
             failures.append((None, ["DRIFT in %r:" % name] + lines))
 
 
+# ==========================================================================
+# Conformance-RECEIPT goldens (T-VHR.16): the tamper-evidence bridge, pinned.
+# ==========================================================================
+# test_receipt.py proves the receipt's BEHAVIOURAL properties (determinism,
+# honest pass, tamper-evidence, content-hash = f(body)); it does NOT pin the
+# receipt BYTES against committed golden files, so a canonicalization or
+# schema drift in einvoice/einvoice/receipt.py could silently change the
+# emitted receipt with no failing test. This section closes that gap by
+# freezing the EXACT `einvoice receipt` CLI stdout for five committed
+# fixtures — no new invoice fixtures are introduced.
+#
+# CODE PATH (identical to the CLI): the `receipt` subcommand emits
+# `canonical_json(build_receipt(path, profile=profile)) + "\n"` (cli.py). We
+# pin exactly that: `receipt_json(path, profile) + "\n"` IS the CLI's stdout
+# byte-for-byte. The receipt is deterministic by construction (no wall-clock
+# unless an explicit issued_at is passed — we never pass one), so the bytes
+# are stable across runs, paths and time.
+#
+# HONEST NOTE on the CII fixtures: build_receipt validates through the UBL
+# validator (validate_file), which is what the shipping `receipt` subcommand
+# actually does — it does NOT dispatch CII natively. A CII document is
+# well-formed XML with a non-UBL root, so every CII fixture below yields a
+# deterministic FAIL receipt whose sole fatal is the real structural S-ROOT
+# check, exactly as `einvoice receipt <cii.xml>` prints today. We pin that
+# true output rather than a prettier fiction; the five receipts still differ
+# byte-for-byte (each carries its own input_sha256), so the pin catches any
+# canonicalization / format / self-hash drift per fixture. This is PURE
+# pinning of existing output — receipt.py is not touched.
+#
+# TWO independent assertions per fixture (so BOTH a body drift and a
+# hash-field drift are caught):
+#   (i)  byte-identity of the freshly built receipt vs the committed golden;
+#   (ii) the embedded content_sha256 RECOMPUTES from the receipt body, checked
+#        on BOTH the freshly built receipt AND the committed golden file (so a
+#        hand-edited golden whose hash no longer matches its body also fails).
+#
+# Regeneration is the SAME one-command, reviewable convention as every other
+# golden here: `python3 test_golden_snapshot.py --update` (or REGEN=1).
+RECEIPT_FIXTURES = [
+    # ---- (a) valid UBL ----
+    {
+        "name": "receipt-ubl-valid-xr-01.01a",
+        "path": "corpus/vendored/valid/xr-01.01a_ubl.xml",
+        "profile": "en16931",
+        "note": "Valid EN 16931 UBL -> PASS receipt, failed_fatal_rules empty.",
+    },
+    # ---- (b) invalid UBL ----
+    {
+        "name": "receipt-ubl-invalid-creditnote-typecode",
+        "path": "fixtures/creditnote-invalid-typecode_ubl.xml",
+        "profile": "en16931",
+        "note": "UBL CreditNote with BT-3=999 -> FAIL receipt, one BR-CL-01 "
+                "fatal (the real rule, validated through the shared engine).",
+    },
+    # ---- (c) valid CII ----
+    {
+        "name": "receipt-cii-valid-example5",
+        "path": "corpus/cen-en16931/cii/examples/CII_example5.xml",
+        "profile": "en16931",
+        "note": "Reference EN 16931 CII invoice. Through the UBL-only receipt "
+                "code path it yields the deterministic S-ROOT FAIL receipt the "
+                "`receipt` CLI prints for any CII file today.",
+    },
+    # ---- (d) invalid CII ----
+    {
+        "name": "receipt-cii-invalid-vat-mismatch",
+        "path": "corpus/synthetic/synth-cii-bad-vat-mismatch.xml",
+        "profile": "en16931",
+        "note": "Synthetic CII with a VAT-total mismatch; via the receipt code "
+                "path it is the deterministic S-ROOT FAIL receipt (distinct "
+                "bytes: its own input_sha256).",
+    },
+    # ---- (e) the CII-381 credit note ----
+    {
+        "name": "receipt-cii-creditnote-381",
+        "path": "fixtures/creditnote-valid_cii.xml",
+        "profile": "en16931",
+        "note": "CII credit note (BT-3 ram:TypeCode 381); via the receipt code "
+                "path it is the deterministic S-ROOT FAIL receipt with its own "
+                "input_sha256, pinning the tamper-evidence bytes for the 381 "
+                "credit-note fixture.",
+    },
+]
+
+
+def _receipt_golden_path(fixture):
+    return os.path.join(GOLDEN_DIR, fixture["name"] + ".json")
+
+
+def _built_receipt_bytes(fixture):
+    """The EXACT `einvoice receipt` stdout for the fixture: the canonical
+    receipt JSON followed by a trailing newline (cli.py writes
+    ``canonical_json(build_receipt(...)) + "\\n"``). Deterministic."""
+    abs_path = os.path.join(HERE, fixture["path"])
+    return (receipt_json(abs_path, profile=fixture["profile"]) + "\n").encode("utf-8")
+
+
+def _selfhash_failures_for_doc(doc):
+    """Return failure lines if ``doc``'s embedded content_sha256 does not
+    recompute from its receipt body (empty list = self-hash is intact)."""
+    fails = []
+    try:
+        body = doc["receipt"]
+        embedded = doc["content_sha256"]
+    except (KeyError, TypeError) as exc:
+        return ["  receipt document missing receipt/content_sha256: %s" % exc]
+    recomputed = hashlib.sha256(canonical_json(body).encode("utf-8")).hexdigest()
+    if embedded != recomputed:
+        fails.append("  content_sha256 does not recompute from body: "
+                     "embedded=%r recomputed=%r" % (embedded, recomputed))
+    return fails
+
+
+def write_receipt_goldens():
+    """Regenerate the conformance-receipt goldens (only via --update)."""
+    if not os.path.isdir(GOLDEN_DIR):
+        os.makedirs(GOLDEN_DIR)
+    for fixture in RECEIPT_FIXTURES:
+        abs_path = os.path.join(HERE, fixture["path"])
+        doc = build_receipt(abs_path, profile=fixture["profile"])
+        selfhash = _selfhash_failures_for_doc(doc)
+        if selfhash:
+            raise SystemExit(
+                "refusing to regenerate a golden over a BROKEN receipt "
+                "self-hash (%s):\n%s"
+                % (fixture["name"], "\n".join(selfhash)))
+        with open(_receipt_golden_path(fixture), "wb") as fh:
+            fh.write(_built_receipt_bytes(fixture))
+    return len(RECEIPT_FIXTURES)
+
+
+def check_receipts(failures):
+    """For each receipt fixture assert (i) byte-identity of the freshly built
+    receipt vs the committed golden AND (ii) the embedded content_sha256
+    recomputes from the body — checked on BOTH the fresh receipt and the
+    committed golden. Appends to `failures` in the same (headline, lines)
+    form the fixture check uses."""
+    for fixture in RECEIPT_FIXTURES:
+        name = "receipt %s" % fixture["name"]
+        gpath = _receipt_golden_path(fixture)
+        abs_path = os.path.join(HERE, fixture["path"])
+
+        # (ii) freshly built receipt: self-hash must recompute from its body.
+        fresh_doc = build_receipt(abs_path, profile=fixture["profile"])
+        lines = _selfhash_failures_for_doc(fresh_doc)
+
+        built = _built_receipt_bytes(fixture)
+        if not os.path.isfile(gpath):
+            failures.append(("MISSING golden for %r (run --update to create "
+                             "it)." % name, [name]))
+            continue
+        with open(gpath, "rb") as fh:
+            golden = fh.read()
+        # (i) byte-identity against the committed golden.
+        if built != golden:
+            lines.append("  receipt bytes drifted from committed golden %s "
+                         "(golden %d bytes, now %d bytes)"
+                         % (os.path.basename(gpath), len(golden), len(built)))
+        # (ii, again) the committed golden's OWN self-hash must recompute too,
+        # so a hand-edited golden body (or hash field) is caught even if the
+        # code path were somehow made to agree with it.
+        try:
+            golden_doc = json.loads(golden.decode("utf-8"))
+        except ValueError as exc:
+            lines.append("  committed golden is not valid JSON: %s" % exc)
+        else:
+            lines.extend("  (committed golden)" + ln
+                         for ln in _selfhash_failures_for_doc(golden_doc))
+        if lines:
+            failures.append((None, ["DRIFT in %r:" % name] + lines))
+
+
 # --------------------------------------------------------------------------
 # Engine invocation
 # --------------------------------------------------------------------------
@@ -599,7 +773,7 @@ def write_goldens():
         record = compute_projection(fixture)
         with open(_golden_path(fixture), "w", encoding="utf-8") as fh:
             fh.write(_dump(record))
-    return len(FIXTURES) + write_container_goldens()
+    return len(FIXTURES) + write_container_goldens() + write_receipt_goldens()
 
 
 def _rule_pairs(record):
@@ -669,7 +843,11 @@ def check(verbose=True):
     # The unsupported-container CLI machine-format goldens (byte-identity +
     # exit code + non-pass shape, see the T-VHPDFZ.2 section above).
     check_container(failures)
-    total = len(FIXTURES) + len(CONTAINER_FORMATS)
+
+    # Conformance-receipt goldens (byte-identity + embedded self-hash recompute,
+    # see the T-VHR.16 section above).
+    check_receipts(failures)
+    total = len(FIXTURES) + len(CONTAINER_FORMATS) + len(RECEIPT_FIXTURES)
 
     if verbose:
         if not failures:

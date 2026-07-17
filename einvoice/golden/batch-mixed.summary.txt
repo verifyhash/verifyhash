@@ -1,0 +1,5 @@
+PASS  a-valid.xml  conformant
+FAIL  b-invalid.xml  1 fatal, 0 warning
+FAIL  c-unsupported.xml  1 fatal, 0 warning
+
+3 files: 1 passed, 2 failed  (2 fatal, 0 warning across all files)

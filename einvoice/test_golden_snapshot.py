@@ -62,6 +62,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 from einvoice import report
@@ -668,6 +669,221 @@ def check_receipts(failures):
             failures.append((None, ["DRIFT in %r:" % name] + lines))
 
 
+# ==========================================================================
+# validate-batch AGGREGATE goldens (T-VHR.17): the batch report, byte-pinned.
+# ==========================================================================
+# test_cli_batch.py proves the ``einvoice validate-batch`` subcommand's
+# BEHAVIOUR (per-file verdicts, exit-code precedence, glob==dir equivalence,
+# --json/--quiet flags) but it never freezes the aggregate output BYTES against
+# a committed golden — so a formatting or schema drift in build_batch_text /
+# build_batch_report (report.py) could silently change what the batch prints
+# with no failing test. This section closes that gap: it drives the REAL
+# ``python3 -m einvoice validate-batch`` CLI over a COMMITTED mixed fixture set
+# in BOTH the human-summary and the --json machine form, path-normalizes the
+# volatile tmp prefix to stable basenames, and asserts the whole stdout is
+# byte-identical to a committed golden alongside the measured aggregate exit
+# code. It adds NO new corpus and no rule logic — pure pinning of existing
+# output; cli.py / report.py are not touched.
+#
+# THE FIXTURE SET (existing committed fixtures only): three files are copied
+# into a tmp dir under STABLE relative basenames so both the directory walk and
+# a ``*.xml`` glob would collect exactly this set, and the snapshot is
+# reproducible on any host:
+#   * a-valid.xml       — corpus/vendored/valid/cen-bis3-positive_ubl.xml, a
+#                         business-rule-clean UBL invoice -> PASS under en16931.
+#   * b-invalid.xml     — fixtures/creditnote-invalid-typecode_ubl.xml, a UBL
+#                         CreditNote with BT-3=999 -> the real BR-CL-01 fatal
+#                         -> FAIL.
+#   * c-unsupported.xml — fixtures/creditnote-invalid_cii.xml, a CII document
+#                         fed through the UBL-only validate path: well-formed
+#                         XML with a non-UBL root -> the deterministic S-ROOT
+#                         "unsupported root" fatal (the batch's unsupported
+#                         leg), exactly as validate-batch prints for a CII file
+#                         today.
+# So the aggregate is 1 pass + 2 fatal-failing files -> EXIT_FAIL (1).
+#
+# PATH NORMALIZATION (host-independence): the batch echoes the walked directory
+# as ``root`` and each file's absolute path as ``source``. Both carry the
+# volatile tmp prefix, so the captured bytes are normalized down to the stable
+# basename (source ``/tmp/xxx/a-valid.xml`` -> ``a-valid.xml``) and the bare
+# root -> a fixed ``<BATCH_ROOT>`` token, mirroring how the container golden
+# keeps its input path host-independent. After normalization the bytes depend
+# only on the committed fixtures, never on where the checkout or $TMPDIR lives.
+#
+# Regeneration is the SAME reviewed one-command convention as every other
+# golden here: ``python3 test_golden_snapshot.py --update`` (or REGEN=1), and
+# the refuse-over-a-BROKEN-output guard below means a golden can never be
+# regenerated over a regression (a false pass, a wrong exit code, a stderr
+# leak, or an un-normalized path).
+
+#: (stable basename, committed source relative path) — existing fixtures only.
+BATCH_FIXTURES = [
+    ("a-valid.xml", os.path.join("corpus", "vendored", "valid",
+                                 "cen-bis3-positive_ubl.xml")),
+    ("b-invalid.xml", os.path.join("fixtures",
+                                   "creditnote-invalid-typecode_ubl.xml")),
+    ("c-unsupported.xml", os.path.join("fixtures",
+                                       "creditnote-invalid_cii.xml")),
+]
+
+#: The measured, documented aggregate exit code: EXIT_FAIL (1) because at least
+#: one batched file carries a fatal (batch_exit_code's fatal-outranks-parse
+#: precedence). Pinned alongside the byte-identity so a golden regenerated over
+#: a regression that changed the verdict cannot hide it.
+BATCH_EXIT_CODE = 1
+
+#: The two golden forms: the human per-file summary and exactly ONE machine
+#: format (--json). Filenames carry "batch" and follow the golden/ conventions.
+BATCH_GOLDEN_NAMES = {
+    "text": "batch-mixed.summary.txt",
+    "json": "batch-mixed.json",
+}
+
+#: The stable basenames, in the deterministic collect/sort order the batch
+#: emits them (used by the shape guard to prove path normalization + ordering).
+BATCH_BASENAMES = [base for base, _ in BATCH_FIXTURES]
+
+
+def _batch_stage(tmp):
+    """Copy the committed mixed fixture set into ``tmp`` under stable basenames."""
+    for base, rel in BATCH_FIXTURES:
+        with open(os.path.join(HERE, rel), "rb") as fh:
+            data = fh.read()
+        with open(os.path.join(tmp, base), "wb") as out:
+            out.write(data)
+
+
+def _batch_cli(tmp, as_json):
+    """Drive the REAL ``einvoice validate-batch <dir>`` CLI over ``tmp``.
+    Returns (rc, stdout bytes, stderr bytes)."""
+    args = [sys.executable, "-m", "einvoice", "validate-batch"]
+    if as_json:
+        args.append("--json")
+    args.append(tmp)
+    proc = subprocess.run(args, cwd=HERE, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _batch_normalize(out, tmp):
+    """Normalize the volatile tmp prefix in the captured bytes down to stable
+    basenames (source paths) and a fixed ``<BATCH_ROOT>`` token (the walked
+    root), so the snapshot is host- and $TMPDIR-independent. The longer
+    ``tmp + sep`` prefix is stripped first, leaving the bare ``tmp`` root to
+    become the token."""
+    out = out.replace((tmp + os.sep).encode("utf-8"), b"")
+    out = out.replace(tmp.encode("utf-8"), b"<BATCH_ROOT>")
+    return out
+
+
+def _batch_golden_path(form):
+    return os.path.join(GOLDEN_DIR, BATCH_GOLDEN_NAMES[form])
+
+
+def _batch_shape_failures(form, rc, norm, err):
+    """Assert the aggregate's non-fabricated SHAPE on the NORMALIZED output
+    (beyond byte identity, so a golden regenerated over a regression cannot
+    hide a false pass, a wrong exit code, a stderr leak, or an un-normalized
+    path). Returns a list of human-readable failure lines (empty = shape OK)."""
+    fails = []
+    if rc != BATCH_EXIT_CODE:
+        fails.append("  exit code: documented=%d got=%d"
+                     % (BATCH_EXIT_CODE, rc))
+    if err != b"":
+        fails.append("  stderr not empty (traceback/diagnostic leak?): %r"
+                     % err[:200])
+    text = norm.decode("utf-8", "replace")
+    # Path normalization must have stripped every tmp prefix: no OS-absolute
+    # path may survive in the pinned bytes.
+    if os.sep == "/" and "/tmp" in text:
+        fails.append("  an absolute /tmp path survived normalization")
+    try:
+        if form == "json":
+            doc = json.loads(norm.decode("utf-8"))
+            if doc.get("schema") != "einvoice-conformance-batch/v1":
+                fails.append("  json schema: %r != "
+                             "'einvoice-conformance-batch/v1'"
+                             % doc.get("schema"))
+            if doc.get("root") != "<BATCH_ROOT>":
+                fails.append("  json root not normalized: %r" % doc.get("root"))
+            if doc.get("file_count") != 3:
+                fails.append("  json file_count: %r != 3"
+                             % doc.get("file_count"))
+            if doc.get("fatal_count", 0) < 1:
+                fails.append("  json fatal_count < 1 (must not be a false "
+                             "all-pass): %r" % doc.get("fatal_count"))
+            if doc.get("failed_file_count") != 2:
+                fails.append("  json failed_file_count: %r != 2"
+                             % doc.get("failed_file_count"))
+            files = doc.get("files", [])
+            sources = [f.get("source") for f in files]
+            if sources != BATCH_BASENAMES:
+                fails.append("  json file sources not normalized/ordered: %r "
+                             "!= %r" % (sources, BATCH_BASENAMES))
+            valids = [f.get("valid") for f in files]
+            if valids != [True, False, False]:
+                fails.append("  json per-file valid verdicts: %r != "
+                             "[True, False, False]" % valids)
+        else:  # human summary
+            for token in ("PASS  a-valid.xml", "FAIL  b-invalid.xml",
+                          "FAIL  c-unsupported.xml",
+                          "3 files: 1 passed, 2 failed"):
+                if token not in text:
+                    fails.append("  human summary missing %r" % token)
+    except Exception as exc:  # noqa: BLE001 — any parse failure IS the finding
+        fails.append("  %s output does not parse as a complete batch "
+                     "document: %s" % (form, exc))
+    return fails
+
+
+def write_batch_goldens():
+    """Regenerate the validate-batch aggregate goldens (only via --update)."""
+    if not os.path.isdir(GOLDEN_DIR):
+        os.makedirs(GOLDEN_DIR)
+    with tempfile.TemporaryDirectory() as tmp:
+        _batch_stage(tmp)
+        for form in ("text", "json"):
+            rc, out, err = _batch_cli(tmp, as_json=(form == "json"))
+            norm = _batch_normalize(out, tmp)
+            shape = _batch_shape_failures(form, rc, norm, err)
+            if shape:
+                raise SystemExit(
+                    "refusing to regenerate a golden over a BROKEN "
+                    "validate-batch aggregate (%s form):\n%s"
+                    % (form, "\n".join(shape)))
+            with open(_batch_golden_path(form), "wb") as fh:
+                fh.write(norm)
+    return len(BATCH_GOLDEN_NAMES)
+
+
+def check_batch(failures):
+    """Byte-compare each batch form against its committed golden AND assert the
+    aggregate exit code + non-fabricated shape on the normalized output.
+    Appends to `failures` in the same (headline, lines) form the fixture check
+    uses."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _batch_stage(tmp)
+        for form in ("text", "json"):
+            name = "validate-batch mixed (%s)" % form
+            gpath = _batch_golden_path(form)
+            rc, out, err = _batch_cli(tmp, as_json=(form == "json"))
+            norm = _batch_normalize(out, tmp)
+            lines = _batch_shape_failures(form, rc, norm, err)
+            if not os.path.isfile(gpath):
+                failures.append(("MISSING golden for %r (run --update to "
+                                 "create it)." % name, [name]))
+                continue
+            with open(gpath, "rb") as fh:
+                golden = fh.read()
+            if norm != golden:
+                lines.append("  stdout drifted from committed golden %s "
+                             "(golden %d bytes, now %d bytes)"
+                             % (os.path.basename(gpath), len(golden),
+                                len(norm)))
+            if lines:
+                failures.append((None, ["DRIFT in %r:" % name] + lines))
+
+
 # --------------------------------------------------------------------------
 # Engine invocation
 # --------------------------------------------------------------------------
@@ -773,7 +989,8 @@ def write_goldens():
         record = compute_projection(fixture)
         with open(_golden_path(fixture), "w", encoding="utf-8") as fh:
             fh.write(_dump(record))
-    return len(FIXTURES) + write_container_goldens() + write_receipt_goldens()
+    return (len(FIXTURES) + write_container_goldens()
+            + write_receipt_goldens() + write_batch_goldens())
 
 
 def _rule_pairs(record):
@@ -847,7 +1064,12 @@ def check(verbose=True):
     # Conformance-receipt goldens (byte-identity + embedded self-hash recompute,
     # see the T-VHR.16 section above).
     check_receipts(failures)
-    total = len(FIXTURES) + len(CONTAINER_FORMATS) + len(RECEIPT_FIXTURES)
+
+    # validate-batch aggregate goldens (byte-identity + exit code + non-pass
+    # shape over the normalized output, see the T-VHR.17 section above).
+    check_batch(failures)
+    total = (len(FIXTURES) + len(CONTAINER_FORMATS) + len(RECEIPT_FIXTURES)
+             + len(BATCH_GOLDEN_NAMES))
 
     if verbose:
         if not failures:

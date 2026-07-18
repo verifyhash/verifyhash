@@ -308,6 +308,24 @@ FIXTURES = [
                 "the German CIUS: valid=true, exit 0, zero fired rules.",
     },
     {
+        "name": "synth-ubl-bad-fullshape",
+        "path": "fixtures/synth-ubl-bad-fullshape_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "NEGATIVE TWIN of synth-ubl-good-fullshape (T-VHR.19): byte-for-"
+                "byte identical EXCEPT the document-level grand total is "
+                "overstated — BT-112 (TaxInclusiveAmount) AND BT-115 "
+                "(PayableAmount) both stated 990.60 instead of the reconciling "
+                "780.00 + 120.60 = 900.60. The two grand-total fields move "
+                "together, so BR-CO-16 (payable = grand total) stays satisfied "
+                "and the ONLY fired rule is BR-CO-15 (fatal): invoice total with "
+                "VAT must equal total-without-VAT + total-VAT. Every mandatory BG "
+                "group is intact (still full-shape), isolating exactly one "
+                "distinct fatal — distinct from the BR-CO-14 vat-mismatch and "
+                "BR-DE-15 missing-buyerref pinned by the thin bad-synth goldens: "
+                "valid=false, exit 1.",
+    },
+    {
         "name": "synth-cii-good-foreign-currency",
         "path": "corpus/synthetic/synth-cii-good-foreign-currency.xml",
         "syntax": "CII",
@@ -605,6 +623,18 @@ RECEIPT_FIXTURES = [
                 "the whole product path (validate -> receipt) over the one "
                 "document that exercises every mandatory BG group together. The "
                 "SAME committed golden is byte-pinned by test_receipt.py.",
+    },
+    # ---- (g) the full-shape negative twin (T-VHR.19), end-to-end ----
+    {
+        "name": "receipt-ubl-bad-fullshape",
+        "path": "fixtures/synth-ubl-bad-fullshape_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.19 full-shape XRechnung negative twin through the "
+                "per-document attestation path: a FAIL receipt "
+                "(failed_fatal_rules contains BR-CO-15) under the German "
+                "profile, proving validate -> receipt end-to-end over a "
+                "full-shape invoice whose only defect is an overstated "
+                "grand total. Mirrors the receipt-ubl-fullshape PASS entry.",
     },
 ]
 

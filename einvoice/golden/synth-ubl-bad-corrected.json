@@ -1,0 +1,14 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-bad-corrected",
+  "path": "fixtures/synth-ubl-bad-corrected_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-26",
+      "severity": "warning"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": true
+}

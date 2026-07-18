@@ -497,6 +497,75 @@ FIXTURES = [
                 "distinct from the BR-G-10, BR-AE-10, BR-IC-02 and BR-CO fatals "
                 "pinned by the other bad-synth goldens: valid=false, exit 1.",
     },
+    # ---- synthetic UBL, document-TYPE axis: corrected (384) + self-billed
+    #      (389) + their broken twins (T-VHR.26) ----
+    {
+        "name": "synth-ubl-good-corrected",
+        "path": "fixtures/synth-ubl-good-corrected_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "Valid XRechnung 3.0 UBL CORRECTED invoice (T-VHR.26): the "
+                "full-shape body but issued as a correction — BT-3 "
+                "InvoiceTypeCode 384 (Corrected invoice) instead of 380. "
+                "Exercises the document-TYPE axis (distinct from the "
+                "VAT-category and UBL-vs-CII axes). Because BT-3 is 384, "
+                "XRechnung BR-DE-26 requires a PRECEDING INVOICE REFERENCE "
+                "(BG-3/BT-25); this fixture supplies it via "
+                "cac:BillingReference/cac:InvoiceDocumentReference (Preceding "
+                "Invoice reference SYNTH-UBL-XR-2024-0021 + issue date), so "
+                "BR-DE-26 is satisfied and the invoice validates CLEAN: "
+                "valid=true, exit 0, zero fired rules. Differential-proven "
+                "0-divergence against BOTH the EN16931-UBL and XRechnung-UBL "
+                "official Schematron.",
+    },
+    {
+        "name": "synth-ubl-bad-corrected",
+        "path": "fixtures/synth-ubl-bad-corrected_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "NEGATIVE TWIN of synth-ubl-good-corrected (T-VHR.26): "
+                "byte-for-byte identical EXCEPT the cac:BillingReference "
+                "(BG-3/BT-25 preceding-invoice reference) is DROPPED while BT-3 "
+                "stays 384, so XRechnung BR-DE-26 fires. HONEST pin: BR-DE-26 "
+                "is a WARNING, not a fatal, so the verdict does NOT flip — the "
+                "engine emits valid=true, exit 0, with exactly one fired rule "
+                "BR-DE-26 (warning). The official XRechnung Schematron "
+                "independently fires exactly BR-DE-26 on this document "
+                "(differential 0-divergence), so the golden pins the real "
+                "engine output, not a guessed FAIL.",
+    },
+    {
+        "name": "synth-ubl-good-selfbilled",
+        "path": "fixtures/synth-ubl-good-selfbilled_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "Valid XRechnung 3.0 UBL SELF-BILLED invoice (T-VHR.26): the "
+                "full-shape body issued under the self-billing "
+                "(Gutschriftverfahren) arrangement — BT-3 InvoiceTypeCode 389 "
+                "(Self-billed invoice) instead of 380. XRechnung BR-DE-17 "
+                "admits 389 and no other rule keys on it, so an otherwise "
+                "full-shape self-billed invoice validates CLEAN: valid=true, "
+                "exit 0, zero fired rules. Differential-proven 0-divergence "
+                "against BOTH the EN16931-UBL and XRechnung-UBL official "
+                "Schematron.",
+    },
+    {
+        "name": "synth-ubl-bad-selfbilled",
+        "path": "fixtures/synth-ubl-bad-selfbilled_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "NEGATIVE TWIN of synth-ubl-good-selfbilled (T-VHR.26): "
+                "byte-for-byte identical EXCEPT BT-3 InvoiceTypeCode is 71 "
+                "instead of 389. Code 71 is a valid UNTDID 1001 Invoice code "
+                "(EN 16931 BR-CL-01 stays clear) but is NOT in the "
+                "XRechnung-allowed BT-3 subset (326/380/384/389/381/875/876/"
+                "877), so XRechnung BR-DE-17 fires. HONEST pin: BR-DE-17 is a "
+                "WARNING, so the verdict does NOT flip — the engine emits "
+                "valid=true, exit 0, with exactly one fired rule BR-DE-17 "
+                "(warning). The official XRechnung Schematron independently "
+                "fires exactly BR-DE-17 on this document (differential "
+                "0-divergence).",
+    },
     {
         "name": "synth-cii-good-foreign-currency",
         "path": "corpus/synthetic/synth-cii-good-foreign-currency.xml",
@@ -1056,6 +1125,47 @@ RECEIPT_FIXTURES = [
                 "proving validate -> receipt end-to-end over an AE invoice whose "
                 "only defect is a missing exemption reason on the AE breakdown. "
                 "Mirrors the receipt-ubl-good-reverse-charge PASS entry.",
+    },
+    # ---- (i2) the document-TYPE axis (T-VHR.26), end-to-end ----
+    {
+        "name": "receipt-ubl-good-corrected",
+        "path": "fixtures/synth-ubl-good-corrected_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.26 CORRECTED (BT-3 384) XRechnung UBL invoice "
+                "through the per-document attestation path: a PASS receipt "
+                "(failed_fatal_rules empty) under the German profile, proving "
+                "validate -> receipt end-to-end over a correction that carries "
+                "its mandated preceding-invoice reference (BR-DE-26 satisfied).",
+    },
+    {
+        "name": "receipt-ubl-bad-corrected",
+        "path": "fixtures/synth-ubl-bad-corrected_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.26 corrected-invoice twin (BT-3 384, preceding "
+                "reference dropped) through the per-document attestation path. "
+                "BR-DE-26 is a WARNING, so this is STILL a PASS receipt "
+                "(failed_fatal_rules empty) — the receipt records the fatal "
+                "verdict, and the sole fired rule is the non-fatal BR-DE-26. "
+                "Pins the real receipt bytes for the twin.",
+    },
+    {
+        "name": "receipt-ubl-good-selfbilled",
+        "path": "fixtures/synth-ubl-good-selfbilled_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.26 SELF-BILLED (BT-3 389) XRechnung UBL invoice "
+                "through the per-document attestation path: a PASS receipt "
+                "(failed_fatal_rules empty) under the German profile, proving "
+                "validate -> receipt end-to-end over a self-billed document.",
+    },
+    {
+        "name": "receipt-ubl-bad-selfbilled",
+        "path": "fixtures/synth-ubl-bad-selfbilled_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.26 self-billed twin (BT-3 71, outside the XRechnung "
+                "subset) through the per-document attestation path. BR-DE-17 is "
+                "a WARNING, so this is STILL a PASS receipt (failed_fatal_rules "
+                "empty) — the sole fired rule is the non-fatal BR-DE-17. Pins "
+                "the real receipt bytes for the twin.",
     },
     # ---- (j) the export (G) invoice (T-VHR.22), end-to-end ----
     {

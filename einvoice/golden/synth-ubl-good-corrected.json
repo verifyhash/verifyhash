@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-good-corrected",
+  "path": "fixtures/synth-ubl-good-corrected_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [],
+  "syntax": "UBL",
+  "valid": true
+}

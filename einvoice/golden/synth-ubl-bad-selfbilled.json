@@ -1,0 +1,14 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-bad-selfbilled",
+  "path": "fixtures/synth-ubl-bad-selfbilled_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-DE-17",
+      "severity": "warning"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": true
+}

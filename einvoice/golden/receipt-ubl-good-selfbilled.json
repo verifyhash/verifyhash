@@ -1,0 +1,1 @@
+{"content_sha256":"2df9eafc19d1852e8b31ea955ca612a785f850be9101aabca6f483937acd705d","receipt":{"failed_fatal_rules":[],"format":"einvoice-conformance-receipt/1","input_sha256":"a73174e9e4b914da55625020133d06d4b3dcf99548c83366f485848d116468fc","profile":"xrechnung","tool":{"name":"einvoice","version":"0.1.0"},"verdict":"PASS","well_formed":true}}

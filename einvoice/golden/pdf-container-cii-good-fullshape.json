@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "pdf-container-cii-good-fullshape",
+  "path": "corpus/pdf/facturx-fullshape.pdf",
+  "profile": "en16931",
+  "rules": [],
+  "syntax": "PDF-CONTAINER",
+  "valid": true
+}

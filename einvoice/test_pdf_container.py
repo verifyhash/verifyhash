@@ -39,8 +39,14 @@ from einvoice.validate import _severity  # noqa: E402
 
 PDF_DIR = os.path.join(HERE, "corpus", "pdf")
 CII_DIR = os.path.join(HERE, "corpus", "cen-en16931", "cii", "examples")
+SYNTH_DIR = os.path.join(HERE, "corpus", "synthetic")
 
 VALID_PDF = os.path.join(PDF_DIR, "facturx-valid.pdf")
+# The full-shape synthetic CII invoice wrapped in a MATCHING Factur-X container
+# (T-VHR.23): the SAME invoice pinned as raw CII (synth-cii-good-fullshape) here
+# traverses the PDF-container e2e path and must validate identically.
+FULLSHAPE_PDF = os.path.join(PDF_DIR, "facturx-fullshape.pdf")
+FULLSHAPE_INNER_XML = os.path.join(SYNTH_DIR, "synth-cii-good-fullshape.xml")
 VALID_PDF_RAW = os.path.join(PDF_DIR, "facturx-valid-uncompressed.pdf")
 BAD_PDF = os.path.join(PDF_DIR, "facturx-bad.pdf")
 NO_EMBED_PDF = os.path.join(PDF_DIR, "no-embedded.pdf")
@@ -55,7 +61,7 @@ XMP_MISMATCH_PDF = os.path.join(PDF_DIR, "facturx-xmp-mismatch.pdf")
 PDFA3_MISSING_PDF = os.path.join(PDF_DIR, "facturx-pdfa3-missing.pdf")
 
 # The matching container fixtures (no FX-CONTAINER-* finding expected).
-MATCHING_PDFS = (VALID_PDF, VALID_PDF_RAW, BAD_PDF)
+MATCHING_PDFS = (VALID_PDF, VALID_PDF_RAW, BAD_PDF, FULLSHAPE_PDF)
 
 VALID_INNER_XML = os.path.join(CII_DIR, "CII_example5.xml")
 BAD_INNER_XML = os.path.join(CII_DIR, "CII_example6.xml")
@@ -164,6 +170,49 @@ class TestReportWiringValid(unittest.TestCase):
         self.assertEqual(code, 1, err)
         self.assertIn('"valid":false', out)
         self.assertIn("BR-TMP-3", out)
+
+
+class TestFullShapeContainerE2E(unittest.TestCase):
+    """T-VHR.23: the full-shape CII invoice through the PDF-CONTAINER path.
+
+    The container promise: validating the full-shape invoice via its Factur-X
+    PDF container must be IDENTICAL to validating the embedded inner XML
+    (corpus/synthetic/synth-cii-good-fullshape.xml) directly through the CII
+    path, and a valid full-shape Factur-X container must PASS. This mirrors the
+    MATCHING_PDFS fired-id equivalence for the distinct full-shape document."""
+
+    def test_fullshape_container_extraction_byte_exact(self):
+        self.assertEqual(pdf_container.extract_invoice_xml(FULLSHAPE_PDF),
+                         _read(FULLSHAPE_INNER_XML))
+
+    def test_fullshape_container_has_no_container_findings(self):
+        # A conformant container (XMP EN 16931 profile + PDF/A-3 pdfaid identity
+        # + /AFRelationship + /AF) -> no FX-CONTAINER-*/FX-PDFA3-* finding.
+        self.assertEqual(
+            [f.rule_id
+             for f in pdf_container.inspect_container(FULLSHAPE_PDF).findings],
+            [])
+
+    def test_fullshape_container_equals_direct_inner_xml_and_passes(self):
+        # Under BOTH profiles the container's fired ids EQUAL validating the
+        # embedded inner XML directly through the CII engine, and the valid
+        # full-shape container PASSES (no fatal) under each.
+        for profile in ("en16931", "xrechnung"):
+            rep = report.build_report(FULLSHAPE_PDF, profile=profile)
+            self.assertNotIn("error", rep,
+                             "valid full-shape PDF must not be an unsupported "
+                             "container (%s)" % profile)
+            self.assertEqual(_report_fired(rep),
+                             _direct_cii_fired(FULLSHAPE_INNER_XML, profile),
+                             "container fired ids must equal validating the "
+                             "inner XML directly (%s)" % profile)
+            self.assertTrue(rep["valid"], (profile, rep))
+            self.assertEqual(rep["fatal_count"], 0, (profile, rep))
+        # Under the EN 16931 core profile the full-shape invoice is fully clean:
+        # zero fired rules over the container, exactly as over the raw XML.
+        rep_en = report.build_report(FULLSHAPE_PDF, profile="en16931")
+        self.assertEqual(_report_fired(rep_en), [])
+        self.assertEqual(_direct_cii_fired(FULLSHAPE_INNER_XML, "en16931"), [])
 
 
 class TestReportWiringBad(unittest.TestCase):

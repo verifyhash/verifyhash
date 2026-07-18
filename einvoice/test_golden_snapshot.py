@@ -551,6 +551,26 @@ FIXTURES = [
                 "fatal, distinct from the BR-CO-14 / BR-S-02 / BR-DE-2 fatals "
                 "pinned by the other bad-synth CII goldens: valid=false, exit 1.",
     },
+    # ---- CII full-shape THROUGH THE PDF-CONTAINER path (T-VHR.23) ----
+    {
+        "name": "pdf-container-cii-good-fullshape",
+        "path": "corpus/pdf/facturx-fullshape.pdf",
+        "syntax": "PDF-CONTAINER",
+        "profile": "en16931",
+        "note": "The SAME full-shape EN 16931 CII invoice as "
+                "synth-cii-good-fullshape, but wrapped in a MATCHING Factur-X "
+                "PDF container (corpus/pdf/facturx-fullshape.pdf, byte-repro "
+                "from make_pdf_fixtures.py) and validated END-TO-END through the "
+                "PDF-container path: report.build_report detects the %PDF magic, "
+                "extracts the embedded CrossIndustryInvoice zero-dep and runs it "
+                "through the same CII engine. The container is conformant (XMP EN "
+                "16931 profile + PDF/A-3 pdfaid identity + /AFRelationship + /AF) "
+                "so NO FX-CONTAINER-*/FX-PDFA3-* finding fires and the extracted "
+                "verdict is IDENTICAL to validating the raw inner XML directly: "
+                "valid=true, exit 0, zero fired rules. Pins the container promise "
+                "over the full-shape invoice — the projection here must stay "
+                "identical to the synth-cii-good-fullshape raw-CII golden.",
+    },
     # ======================================================================
     # CII credit notes (Gutschrift, BT-3 ram:TypeCode 381). Committed
     # synthetic fixtures from T-VHCNCII.1, differentially PROVEN at 0
@@ -914,6 +934,25 @@ RECEIPT_FIXTURES = [
                 "prohibits. Mirrors the receipt-ubl-good-not-subject PASS "
                 "entry.",
     },
+    # ---- (n) the full-shape Factur-X PDF CONTAINER (T-VHR.23), end-to-end ----
+    {
+        "name": "receipt-pdf-container-fullshape",
+        "path": "corpus/pdf/facturx-fullshape.pdf",
+        "profile": "en16931",
+        "note": "The full-shape Factur-X PDF container "
+                "(corpus/pdf/facturx-fullshape.pdf) through the `einvoice "
+                "receipt` code path. HONEST LIMIT pinned: build_receipt "
+                "validates through validate_file (the UBL/XML path), which reads "
+                "the raw file bytes as XML — a PDF's %PDF-1.7 header is NOT "
+                "well-formed XML, so `einvoice receipt <pdf>` yields the "
+                "deterministic S-WF FAIL receipt it prints for any PDF today "
+                "(the receipt subcommand does not container-dispatch, unlike "
+                "`validate`, which does — see the pdf-container-cii-good-"
+                "fullshape validate golden that PASSES over the SAME file). This "
+                "pins that true, byte-stable output (its own input_sha256 over "
+                "the committed fixture bytes) so any future change to the receipt "
+                "path over a container surfaces here for review.",
+    },
 ]
 
 
@@ -1266,6 +1305,13 @@ def _engine_report(fixture):
         return report.build_report(abs_path, profile=fixture["profile"])
     if fixture["syntax"] == "CII":
         return _cii_report(abs_path, profile=fixture["profile"])
+    if fixture["syntax"] == "PDF-CONTAINER":
+        # The Factur-X / ZUGFeRD PDF-container path: report.build_report detects
+        # the %PDF magic, extracts the embedded CrossIndustryInvoice zero-dep via
+        # einvoice.pdf_container and validates it through the SAME CII engine. No
+        # re-implemented logic — the exact code path behind
+        # `python3 -m einvoice.report <invoice.pdf>`.
+        return report.build_report(abs_path, profile=fixture["profile"])
     raise ValueError("unknown syntax: %r" % fixture["syntax"])
 
 

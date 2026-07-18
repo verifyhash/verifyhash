@@ -18,6 +18,18 @@ CustomizationID ``urn:cen.eu:en16931:2017`` (the EN 16931 profile), so a matchin
 container declares ConformanceLevel ``EN 16931``:
 
   * facturx-valid.pdf        wraps CII_example5.xml, MATCHING container
+  * facturx-fullshape.pdf    wraps corpus/synthetic/synth-cii-good-fullshape.xml
+                             — the full-shape EN 16931 CII invoice (BG-4 seller
+                             + BG-6 contact + BT-31 VAT id, BG-7 buyer + BT-48
+                             VAT id, 3 lines / two rates, BG-27 line allowance +
+                             BG-28 line charge, BG-20 doc allowance + BG-21 doc
+                             charge, two BG-23 breakdowns) — through a MATCHING
+                             container (XMP EN 16931 profile + PDF/A-3 pdfaid
+                             identity + /AFRelationship /Alternative + /AF), so
+                             the SAME invoice that is golden-pinned as raw CII
+                             (synth-cii-good-fullshape) also traverses the
+                             PDF-container path and must validate identically
+                             (T-VHR.23)
   * facturx-bad.pdf          wraps CII_example6.xml (BR-DE fatals), MATCHING
                              container (only the XML is bad, not the container)
   * facturx-valid-uncompressed.pdf  as facturx-valid.pdf, unfiltered stream
@@ -49,6 +61,11 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORPUS = os.path.normpath(os.path.join(HERE, "..", "cen-en16931", "cii",
                                        "examples"))
+#: The synthetic (fully fictional, hand-authored) corpus. Holds
+#: ``synth-cii-good-fullshape.xml`` — the full-shape EN 16931 CII source behind
+#: the T-VHCII2.1 golden — which we ALSO wrap into a Factur-X PDF container here
+#: so the identical invoice traverses the PDF-container e2e path.
+CORPUS_SYNTH = os.path.normpath(os.path.join(HERE, "..", "synthetic"))
 
 
 def _assemble(objects, root_num, extra_trailer=b""):
@@ -256,6 +273,13 @@ def build_truncated_pdf():
 FIXTURES = {
     # --- MATCHING containers (no FX-CONTAINER-* finding) -------------------
     "facturx-valid.pdf": lambda: build_facturx_pdf(_example5()),
+    #  wraps the FULL-SHAPE synthetic CII (synth-cii-good-fullshape.xml, EN
+    #  16931 profile) through a matching container -> the same invoice pinned as
+    #  raw CII also traverses the PDF-container e2e path (T-VHR.23). Default
+    #  xmp_conformance_level "EN 16931" matches its CustomizationID
+    #  (urn:cen.eu:en16931:2017), so NO FX-CONTAINER-* / FX-PDFA3-* finding.
+    "facturx-fullshape.pdf": lambda: build_facturx_pdf(
+        _read(os.path.join(CORPUS_SYNTH, "synth-cii-good-fullshape.xml"))),
     "facturx-bad.pdf": lambda: build_facturx_pdf(
         _read(os.path.join(CORPUS, "CII_example6.xml"))),
     "facturx-valid-uncompressed.pdf": lambda: build_facturx_pdf(

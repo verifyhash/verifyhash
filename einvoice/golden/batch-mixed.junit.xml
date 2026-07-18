@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="2" failures="2" errors="0">
+  <testsuite name="a-valid.xml" tests="0" failures="0" errors="0">
+  </testsuite>
+  <testsuite name="b-invalid.xml" tests="1" failures="1" errors="0">
+    <testcase name="BR-CL-01" classname="en16931">
+      <failure message="The document type code (BT-3) MUST be coded according to UNTDID 1001; '999' is not a listed code.">fatal: cbc:CreditNoteTypeCode</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="c-unsupported.xml" tests="1" failures="1" errors="0">
+    <testcase name="S-ROOT" classname="en16931">
+      <failure message="Root element must be Invoice in the UBL Invoice-2 namespace, or CreditNote in the UBL CreditNote-2 namespace.">fatal: CrossIndustryInvoice</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

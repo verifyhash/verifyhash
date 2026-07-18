@@ -1445,11 +1445,18 @@ BATCH_FIXTURES = [
 #: a regression that changed the verdict cannot hide it.
 BATCH_EXIT_CODE = 1
 
-#: The two golden forms: the human per-file summary and exactly ONE machine
-#: format (--json). Filenames carry "batch" and follow the golden/ conventions.
+#: The batch golden forms: the human per-file summary plus the TWO machine
+#: formats a DIRECTORY input supports end to end — the default ``--json``
+#: aggregate and the ``--format junit`` aggregate (over a directory, junit
+#: dispatches to ``report.build_junit_batch(build_batch_report(dir))``; the
+#: other machine formats — sarif/gitlab/github/azure/html/badge — validate a
+#: single file only and are rejected for a directory, a rejection pinned by
+#: test_report_batch.py, so this is the CLOSED machine-format batch lane).
+#: Filenames carry "batch" and follow the golden/ conventions.
 BATCH_GOLDEN_NAMES = {
     "text": "batch-mixed.summary.txt",
     "json": "batch-mixed.json",
+    "junit": "batch-mixed.junit.xml",
 }
 
 #: The stable basenames, in the deterministic collect/sort order the batch
@@ -1466,13 +1473,25 @@ def _batch_stage(tmp):
             out.write(data)
 
 
-def _batch_cli(tmp, as_json):
-    """Drive the REAL ``einvoice validate-batch <dir>`` CLI over ``tmp``.
-    Returns (rc, stdout bytes, stderr bytes)."""
-    args = [sys.executable, "-m", "einvoice", "validate-batch"]
-    if as_json:
-        args.append("--json")
-    args.append(tmp)
+def _batch_cli(tmp, form):
+    """Drive the REAL einvoice batch CLI over ``tmp`` for one golden ``form``.
+
+    ``text`` and ``json`` go through ``einvoice validate-batch`` (the human
+    per-file summary and the default machine JSON; that CLI resolves the
+    en16931 profile). ``junit`` is a directory-batch machine format only the
+    ``einvoice.report`` CLI emits — over a directory it dispatches to
+    ``report.build_junit_batch(build_batch_report(dir))`` — so it is driven via
+    ``python -m einvoice.report --format junit`` with ``--profile en16931``
+    pinned so all three batch-mixed goldens describe the IDENTICAL aggregate
+    (1 pass + 2 fatal-failing files). Returns (rc, stdout bytes, stderr bytes)."""
+    if form == "junit":
+        args = [sys.executable, "-m", "einvoice.report",
+                "--profile", "en16931", "--format", "junit", tmp]
+    else:
+        args = [sys.executable, "-m", "einvoice", "validate-batch"]
+        if form == "json":
+            args.append("--json")
+        args.append(tmp)
     proc = subprocess.run(args, cwd=HERE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE)
     return proc.returncode, proc.stdout, proc.stderr
@@ -1537,6 +1556,31 @@ def _batch_shape_failures(form, rc, norm, err):
             if valids != [True, False, False]:
                 fails.append("  json per-file valid verdicts: %r != "
                              "[True, False, False]" % valids)
+        elif form == "junit":
+            root = ET.fromstring(norm.decode("utf-8"))
+            if root.tag != "testsuites":
+                fails.append("  junit root element: %r != 'testsuites'"
+                             % root.tag)
+            if root.get("name") != "einvoice-conformance":
+                fails.append("  junit suite-set name: %r != "
+                             "'einvoice-conformance'" % root.get("name"))
+            suites = root.findall("testsuite")
+            names = [s.get("name") for s in suites]
+            if names != BATCH_BASENAMES:
+                fails.append("  junit testsuite names not normalized/ordered: "
+                             "%r != %r" % (names, BATCH_BASENAMES))
+            # Per-file verdict: a-valid passes (0 failures), the other two each
+            # carry >=1 failure — the same [pass, fail, fail] the json/text
+            # goldens pin, so a regenerated junit golden cannot hide a false
+            # all-pass or a flipped verdict.
+            failing = [int(s.get("failures", "0")) > 0 for s in suites]
+            if failing != [False, True, True]:
+                fails.append("  junit per-file failing verdicts: %r != "
+                             "[False, True, True]" % failing)
+            total_failures = int(root.get("failures", "0"))
+            if total_failures < 1:
+                fails.append("  junit failures=%d < 1 (must not be a false "
+                             "all-pass)" % total_failures)
         else:  # human summary
             for token in ("PASS  a-valid.xml", "FAIL  b-invalid.xml",
                           "FAIL  c-unsupported.xml",
@@ -1555,8 +1599,8 @@ def write_batch_goldens():
         os.makedirs(GOLDEN_DIR)
     with tempfile.TemporaryDirectory() as tmp:
         _batch_stage(tmp)
-        for form in ("text", "json"):
-            rc, out, err = _batch_cli(tmp, as_json=(form == "json"))
+        for form in ("text", "json", "junit"):
+            rc, out, err = _batch_cli(tmp, form)
             norm = _batch_normalize(out, tmp)
             shape = _batch_shape_failures(form, rc, norm, err)
             if shape:
@@ -1576,10 +1620,10 @@ def check_batch(failures):
     uses."""
     with tempfile.TemporaryDirectory() as tmp:
         _batch_stage(tmp)
-        for form in ("text", "json"):
+        for form in ("text", "json", "junit"):
             name = "validate-batch mixed (%s)" % form
             gpath = _batch_golden_path(form)
-            rc, out, err = _batch_cli(tmp, as_json=(form == "json"))
+            rc, out, err = _batch_cli(tmp, form)
             norm = _batch_normalize(out, tmp)
             lines = _batch_shape_failures(form, rc, norm, err)
             if not os.path.isfile(gpath):

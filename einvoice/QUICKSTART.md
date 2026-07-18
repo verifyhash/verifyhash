@@ -234,6 +234,18 @@ uses `fatal` — a flag on the command line always beats the file. With no
 config file at all, nothing changes: the defaults are byte-identical to a
 build without this feature.
 
+**Config discovery is current-working-directory only — no parent-directory
+search.** Both files are looked up in the current working directory *alone*.
+Unlike git (which walks up the tree from the cwd hunting for a `.git`), or tools
+like ESLint/Prettier that climb parent folders for a config, einvoice never
+looks above the directory you run it from: a `.einvoice.toml` (or a
+`pyproject.toml` `[tool.einvoice]` table) sitting in a **parent** directory is
+**not** discovered when you invoke the CLI from a child subdirectory — you get
+the built-in defaults, exactly as if no config existed. Put the config file in
+the directory you actually run `einvoice` from. When **both** files are present
+in that one directory, `.einvoice.toml` takes **precedence** over
+`pyproject.toml` (the `[tool.einvoice]` table is not even read).
+
 Two honest limits. First, there is no `--format` flag on this CLI (`--json`
 is the only format switch), so `format = "json"` can only be reverted by
 editing the config, not per-invocation; `format` here means the CLI's two

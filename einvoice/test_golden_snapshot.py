@@ -590,6 +590,110 @@ FIXTURES = [
                 "BR-CO-15 / BR-CO-14 / BR-S-02 fatals pinned by the other "
                 "bad-synth CII goldens: valid=false, exit 1.",
     },
+    # ---- synthetic CII, INTRA-COMMUNITY (K) good + broken twin (T-VHCII2.3) ----
+    {
+        "name": "synth-cii-good-intra-community",
+        "path": "corpus/synthetic/synth-cii-good-intra-community.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Valid EN 16931 CII (ZUGFeRD/Factur-X-shaped) INTRA-COMMUNITY-"
+                "SUPPLY invoice (T-VHCII2.3) — the CII-syntax parity of the UBL "
+                "synth-ubl-good-intra-community (R.21): a German seller invoicing "
+                "a VAT-registered business in another EU member state (France) "
+                "for goods shipped across the border, an innergemeinschaftliche "
+                "Lieferung (Sec.4 Nr.1b / Sec.6a UStG) exempt under VAT category "
+                "K, so EVERY line carries ram:CategoryCode K at rate 0 and the "
+                "invoice shows ZERO VAT. Exercises the K family no other CII "
+                "fixture touches — DISTINCT from the AE reverse-charge (T-VHCII2.2) "
+                "and the S/Z/E shapes: BT-31 seller VAT id (VAT-scoped "
+                "SpecifiedTaxRegistration schemeID 'VA') AND BT-48 buyer VAT id "
+                "both present (BR-IC-02 needs BOTH), 2 K lines at rate 0 "
+                "(BR-IC-05), exactly one K VAT breakdown (BR-IC-01) with "
+                "BT-116 = Σ K nets = 10500.00 and BT-117 = 0.00 (BR-IC-08/09), "
+                "the mandated exemption reason — BT-121 code VATEX-EU-IC (on the "
+                "CEF VATEX list, BR-CL-22) AND BT-120 text (BR-IC-10) — plus the "
+                "two K-only document requirements the AE family has no analogue "
+                "for: BR-IC-11 (BT-72 actual delivery date via "
+                "ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime/"
+                "udt:DateTimeString) and BR-IC-12 (BT-80 deliver-to country FR "
+                "via ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CountryID). "
+                "Arithmetic reconciles so it validates CLEAN: valid=true, exit 0, "
+                "zero fired rules.",
+    },
+    {
+        "name": "synth-cii-bad-intra-community",
+        "path": "corpus/synthetic/synth-cii-bad-intra-community.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "NEGATIVE TWIN of synth-cii-good-intra-community (T-VHCII2.3): "
+                "byte-for-byte identical EXCEPT the Buyer VAT identifier (BT-48) "
+                "is deleted — the buyer trade party's whole "
+                "ram:SpecifiedTaxRegistration (ID schemeID 'VA' = FR00000000000) "
+                "is removed. For an intra-community supply (K) BR-IC-02 mandates "
+                "a VAT-scoped Seller identifier (still present) AND the Buyer VAT "
+                "identifier on any invoice carrying a K line; with BT-48 gone "
+                "that conjunction is broken. The arithmetic is untouched (VAT "
+                "total 0.00, taxable = Σ K nets = 10500.00, all totals "
+                "reconcile) and the K exemption reason, the actual delivery date "
+                "(BR-IC-11) and the deliver-to country FR (BR-IC-12) are all "
+                "intact, so no BR-CO totals rule and no other BR-IC rule fires: "
+                "the ONLY fired rule is BR-IC-02 (fatal). Exactly one distinct "
+                "fatal, isolating the CII binding of the BR-IC-02 shape "
+                "(parser_cii buyer VAT SpecifiedTaxRegistration → "
+                "buyer_has_vat_scheme_company_id) distinct from the BR-AE-10, "
+                "BR-CO-15/14 and BR-S-02 fatals pinned by the other bad-synth "
+                "CII goldens: valid=false, exit 1.",
+    },
+    # ---- synthetic CII, EXPORT-OUTSIDE-EU (G) good + broken twin (T-VHCII2.3) --
+    {
+        "name": "synth-cii-good-export",
+        "path": "corpus/synthetic/synth-cii-good-export.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Valid EN 16931 CII (ZUGFeRD/Factur-X-shaped) EXPORT-OUTSIDE-THE-"
+                "EU invoice (T-VHCII2.3) — the CII-syntax parity of the UBL "
+                "synth-ubl-good-export (R.22): a German seller invoicing a "
+                "business in a NON-EU third country (Switzerland) for goods "
+                "physically exported out of the Union, a steuerfreie "
+                "Ausfuhrlieferung (Sec.4 Nr.1a / Sec.6 UStG) exempt under VAT "
+                "category G, so EVERY line carries ram:CategoryCode G at rate 0 "
+                "and the invoice shows ZERO VAT. Exercises the G family no other "
+                "CII fixture touches — DISTINCT from the AE reverse-charge "
+                "(T-VHCII2.2), the K intra-community and the S/Z/E shapes: BT-31 "
+                "seller VAT id VAT-scoped (BR-G-02 needs a VAT-SCOPED seller id "
+                "BT-31/BT-63, the SAME scoping as BR-IC-02 but with NO buyer-VAT-"
+                "id conjunct — the export buyer in a third country carries none, "
+                "so the Swiss BuyerTradeParty has no SpecifiedTaxRegistration), "
+                "2 G lines at rate 0 (BR-G-05), exactly one G VAT breakdown "
+                "(BR-G-01) with BT-116 = Σ G nets = 11400.00 and BT-117 = 0.00 "
+                "(BR-G-08/09), plus the mandated exemption reason — BT-121 code "
+                "VATEX-EU-G (on the CEF VATEX list, BR-CL-22) AND BT-120 text "
+                "(BR-G-10). Arithmetic reconciles so it validates CLEAN: "
+                "valid=true, exit 0, zero fired rules.",
+    },
+    {
+        "name": "synth-cii-bad-export",
+        "path": "corpus/synthetic/synth-cii-bad-export.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "NEGATIVE TWIN of synth-cii-good-export (T-VHCII2.3): byte-for-"
+                "byte identical EXCEPT the mandated exemption reason is stripped "
+                "from the single G VAT breakdown — BOTH the BT-121 code "
+                "(ram:ExemptionReasonCode VATEX-EU-G) AND the BT-120 text "
+                "(ram:ExemptionReason) are removed. For an Export outside the EU "
+                "(G) BR-G-10 mandates a VAT exemption reason code OR text on any "
+                "G breakdown; with both gone that disjunction is broken. The "
+                "seller VAT id keeps BR-G-02 satisfied, the G line rates are "
+                "still 0 (BR-G-05), the breakdown taxable still equals Σ G nets "
+                "= 11400.00 (BR-G-08) and its tax is still 0.00 (BR-G-09), and "
+                "the arithmetic is untouched (all totals reconcile), so no BR-CO "
+                "totals rule and no other BR-G rule fires: the ONLY fired rule "
+                "is BR-G-10 (fatal). Exactly one distinct fatal, isolating the "
+                "CII binding of the BR-G-10 shape (parser_cii ram:ExemptionReason"
+                "/Code → TaxSubtotal) distinct from the BR-IC-02, BR-AE-10 and "
+                "BR-CO-15 fatals pinned by the other bad-synth CII goldens: "
+                "valid=false, exit 1.",
+    },
     # ---- CII full-shape THROUGH THE PDF-CONTAINER path (T-VHR.23) ----
     {
         "name": "pdf-container-cii-good-fullshape",

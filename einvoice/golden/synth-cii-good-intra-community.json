@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "synth-cii-good-intra-community",
+  "path": "corpus/synthetic/synth-cii-good-intra-community.xml",
+  "profile": "en16931",
+  "rules": [],
+  "syntax": "CII",
+  "valid": true
+}

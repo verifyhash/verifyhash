@@ -1,0 +1,18 @@
+{
+  "exit_code": 1,
+  "name": "synth-ubl-bad-large-mixed",
+  "path": "corpus/synthetic/synth-ubl-bad-large-mixed.xml",
+  "profile": "en16931",
+  "rules": [
+    {
+      "rule": "BR-CO-10",
+      "severity": "fatal"
+    },
+    {
+      "rule": "BR-CO-13",
+      "severity": "fatal"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": false
+}

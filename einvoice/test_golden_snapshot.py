@@ -292,6 +292,48 @@ FIXTURES = [
                 "line-level allowance (BG-27, the only fixture carrying one); "
                 "BT-131 = 500 - 20, BT-109 = 600 - 50 + 30, totals reconcile.",
     },
+    # ======================================================================
+    # SINGLE-DOCUMENT ERP-SCALE mixed-category aggregation (T-VHR.24). ONE
+    # realistic 24-line UBL invoice spanning THREE VAT categories together
+    # (S 19% + Z 0% + E 0%), each with a matching TaxSubtotal, plus a
+    # document-level allowance (BG-20) AND charge (BG-21) AND a line-level
+    # allowance (BG-27) — so the whole total-aggregation / VAT-breakdown
+    # BR-CO family (BR-CO-10..17) is exercised at ERP scale in one document,
+    # distinct from R.15's small multi-VAT fixtures (4 lines) and VHPERF's
+    # latency bench. Plus a negative twin with ONE isolated aggregation
+    # defect. Goldens regenerate via `python3 test_golden_snapshot.py --update`.
+    # ======================================================================
+    {
+        "name": "synth-ubl-good-large-mixed",
+        "path": "corpus/synthetic/synth-ubl-good-large-mixed.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "Valid EN 16931 UBL at single-document ERP scale: 24 lines "
+                "across THREE VAT categories together (S 19% x14, Z 0% x6, "
+                "E 0% x4), each with its own TaxSubtotal; a document allowance "
+                "(BG-20, 60.00) AND charge (BG-21, 40.00) both on S 19%, and a "
+                "line-level allowance (BG-27, 25.00 on line 1). BT-106=4700.00, "
+                "BT-109=4680.00, S taxable 2740.00 -> VAT 520.60, BT-112=5200.60 "
+                "— all BR-CO-10..17 reconcile: valid=true, exit 0, zero rules.",
+    },
+    {
+        "name": "synth-ubl-bad-large-mixed",
+        "path": "corpus/synthetic/synth-ubl-bad-large-mixed.xml",
+        "syntax": "UBL",
+        "profile": "en16931",
+        "note": "NEGATIVE TWIN of synth-ubl-good-large-mixed (T-VHR.24): "
+                "byte-for-byte identical EXCEPT BT-106 "
+                "(LineExtensionAmount) is stated 4600.00 where the 24 line net "
+                "amounts sum to 4700.00. That one stated total no longer sums to "
+                "its lines, firing exactly the two total-aggregation rules that "
+                "consume BT-106: BR-CO-10 (BT-106 = Sigma BT-131) AND BR-CO-13 "
+                "(BT-109 = BT-106 - BT-107 + BT-108, which reads the stated "
+                "BT-106), both fatal. Every other field stays consistent so "
+                "BR-CO-11/12/14/15/16/17 and the S/Z/E breakdown rules HOLD — "
+                "the defect is isolated to the line-sum aggregation, distinct "
+                "from bad-multivat-subtotal (BR-CO-17 + BR-S-09) and "
+                "bad-fullshape (BR-CO-15): valid=false, exit 1.",
+    },
     {
         "name": "synth-ubl-good-fullshape",
         "path": "fixtures/synth-ubl-good-fullshape_ubl.xml",
@@ -1101,6 +1143,21 @@ RECEIPT_FIXTURES = [
                 "profile, proving validate -> receipt end-to-end over a "
                 "full-shape invoice whose only defect is an overstated "
                 "grand total. Mirrors the receipt-ubl-fullshape PASS entry.",
+    },
+    # ---- (g2) the ERP-scale mixed-category invoice (T-VHR.24), end-to-end ----
+    {
+        "name": "receipt-ubl-good-large-mixed",
+        "path": "corpus/synthetic/synth-ubl-good-large-mixed.xml",
+        "profile": "en16931",
+        "note": "The T-VHR.24 single-document ERP-scale mixed-category (S/Z/E, "
+                "24 lines) XRechnung-free EN 16931 UBL invoice through the "
+                "per-document attestation path: a PASS receipt "
+                "(failed_fatal_rules empty) under the en16931 profile, proving "
+                "the whole product path (validate -> receipt) over the one "
+                "large document that exercises the total-aggregation / "
+                "VAT-breakdown BR-CO family (BR-CO-10..17) at scale. Pins the "
+                "tamper-evidence receipt bytes (its own input_sha256 over the "
+                "committed fixture).",
     },
     # ---- (h) the reverse-charge (AE) invoice (T-VHR.20), end-to-end ----
     {

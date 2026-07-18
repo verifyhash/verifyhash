@@ -293,6 +293,21 @@ FIXTURES = [
                 "BT-131 = 500 - 20, BT-109 = 600 - 50 + 30, totals reconcile.",
     },
     {
+        "name": "synth-ubl-good-fullshape",
+        "path": "fixtures/synth-ubl-good-fullshape_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "Valid XRechnung 3.0 UBL FULL-SHAPE invoice (T-VHR.18): the one "
+                "fixture combining EVERY mandatory BG group in a single document "
+                "— BG-4 seller + BG-6 contact + BT-31 VAT id, BG-7 buyer + BT-10 "
+                "BuyerReference, BG-13 delivery date, 4 lines across TWO VAT "
+                "rates (19%/7%), a BG-27 line allowance AND a BG-28 line charge, "
+                "a BG-20 document allowance (19%) AND a BG-21 document charge "
+                "(7%), and TWO BG-23 VAT breakdowns. BT-84 is the ISO 13616 "
+                "example IBAN (valid check digits) so it validates CLEAN under "
+                "the German CIUS: valid=true, exit 0, zero fired rules.",
+    },
+    {
         "name": "synth-cii-good-foreign-currency",
         "path": "corpus/synthetic/synth-cii-good-foreign-currency.xml",
         "syntax": "CII",
@@ -578,6 +593,18 @@ RECEIPT_FIXTURES = [
                 "path it is the deterministic S-ROOT FAIL receipt with its own "
                 "input_sha256, pinning the tamper-evidence bytes for the 381 "
                 "credit-note fixture.",
+    },
+    # ---- (f) the full-shape XRechnung invoice (T-VHR.18), end-to-end ----
+    {
+        "name": "receipt-ubl-fullshape",
+        "path": "fixtures/synth-ubl-good-fullshape_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.18 full-shape XRechnung UBL invoice through the "
+                "per-document attestation path: a PASS receipt "
+                "(failed_fatal_rules empty) under the German profile, proving "
+                "the whole product path (validate -> receipt) over the one "
+                "document that exercises every mandatory BG group together. The "
+                "SAME committed golden is byte-pinned by test_receipt.py.",
     },
 ]
 

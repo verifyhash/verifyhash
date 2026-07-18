@@ -199,5 +199,70 @@ class ContentHashIsFunctionOfBody(unittest.TestCase):
         self.assertNotIn("issued_at", build_receipt(PASS_INVOICE)["receipt"])
 
 
+# The T-VHR.18 full-shape XRechnung invoice: the one fixture that exercises
+# EVERY mandatory BG group together (2 VAT rates, document AND line
+# allowance+charge, seller+buyer+BuyerReference). Its receipt is the
+# per-document attestation, byte-pinned here against a committed golden.
+FULLSHAPE_INVOICE = os.path.join(HERE, "fixtures",
+                                 "synth-ubl-good-fullshape_ubl.xml")
+FULLSHAPE_PROFILE = "xrechnung"
+FULLSHAPE_RECEIPT_GOLDEN = os.path.join(HERE, "golden",
+                                        "receipt-ubl-fullshape.json")
+
+
+class FullShapeReceiptGolden(unittest.TestCase):
+    """Pin the per-document attestation (receipt) for the full-shape XRechnung
+    invoice: (i) byte-identity vs the committed golden and (ii) the embedded
+    content_sha256 recomputes from the receipt body — checked on BOTH the freshly
+    built receipt and the committed golden file. Mirrors the receipt-golden
+    discipline in test_golden_snapshot.py; the two suites share ONE golden file.
+
+    Regenerate the golden the same reviewed way as every other golden:
+        python3 test_golden_snapshot.py --update
+    """
+
+    def _built_bytes(self):
+        """The EXACT `einvoice receipt --profile xrechnung <fixture>` stdout:
+        canonical receipt JSON + trailing newline (cli.py). Deterministic."""
+        return (receipt_json(FULLSHAPE_INVOICE, profile=FULLSHAPE_PROFILE)
+                + "\n").encode("utf-8")
+
+    def _selfhash_ok(self, doc):
+        body = doc["receipt"]
+        recomputed = hashlib.sha256(
+            canonical_json(body).encode("utf-8")).hexdigest()
+        self.assertEqual(doc["content_sha256"], recomputed,
+                         "content_sha256 must recompute from the receipt body")
+
+    def test_receipt_is_a_clean_pass(self):
+        """The whole product path runs clean over this one document: it parses,
+        validates with zero fatals, and yields a PASS attestation."""
+        doc = build_receipt(FULLSHAPE_INVOICE, profile=FULLSHAPE_PROFILE)
+        receipt = doc["receipt"]
+        self.assertTrue(receipt["well_formed"])
+        self.assertEqual(receipt["verdict"], "PASS")
+        self.assertEqual(receipt["failed_fatal_rules"], [])
+        self.assertEqual(receipt["profile"], FULLSHAPE_PROFILE)
+        # input_sha256 binds to the real file bytes.
+        expected = hashlib.sha256(_file_bytes(FULLSHAPE_INVOICE)).hexdigest()
+        self.assertEqual(receipt["input_sha256"], expected)
+
+    def test_byte_identity_with_committed_golden(self):
+        self.assertTrue(os.path.isfile(FULLSHAPE_RECEIPT_GOLDEN),
+                        "run `python3 test_golden_snapshot.py --update`")
+        with open(FULLSHAPE_RECEIPT_GOLDEN, "rb") as fh:
+            golden = fh.read()
+        self.assertEqual(self._built_bytes(), golden,
+                         "receipt bytes drifted from the committed golden")
+
+    def test_self_hash_recomputes_fresh_and_golden(self):
+        # (ii) on the freshly built receipt ...
+        self._selfhash_ok(build_receipt(FULLSHAPE_INVOICE,
+                                        profile=FULLSHAPE_PROFILE))
+        # ... and on the committed golden file (catches a hand-edited body/hash).
+        with open(FULLSHAPE_RECEIPT_GOLDEN, "rb") as fh:
+            self._selfhash_ok(json.loads(fh.read().decode("utf-8")))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC FIXTURE: NEGATIVE TWIN of synth-ubl-good-not-subject_ubl.xml.
+     Byte-for-byte identical to that clean not-subject-to-VAT (category O)
+     invoice EXCEPT a VAT-scheme Seller PartyTaxScheme/CompanyID (BT-31,
+     DE000000000) is ADDED back to the Seller party.
+
+     Category O is the ODD ONE OUT: its BR-O-02 is a PROHIBITION, the inverse
+     polarity of every other family's -02 requirement. An Invoice carrying a
+     'Not subject to VAT' (O) invoice line SHALL NOT contain a Seller VAT
+     identifier (BT-31), a Seller tax representative VAT id (BT-63) or a Buyer
+     VAT identifier (BT-48). Re-introducing the Seller VAT id therefore makes
+     BR-O-02 fire — and it is the ONLY fired rule. Everything else is intact:
+     the O lines still carry no line VAT rate (BR-O-05), the single O breakdown
+     still has BT-119 = 0 (BR-DE-14), tax = 0.00 (BR-O-09), the mandated
+     VATEX-EU-O exemption reason (BR-O-10) and O-only exclusivity
+     (BR-O-11/12/13/14), and the arithmetic is untouched (VAT total 0.00, tax
+     inclusive = tax exclusive = 7500.00 all still reconcile). Adding a Seller
+     VAT id does NOT trip BR-DE-16 (O is not in its S/Z/E/AE/K/G/L/M trigger
+     set) and its DE000000000 value is format-clean, so no other rule fires.
+     Exactly one distinct fatal, isolating the BR-O-02 prohibition shape:
+     valid=false, exit 1. -->
+<ubl:Invoice xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+             xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+             xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>SYNTH-UBL-XR-2024-0034</cbc:ID>
+  <cbc:IssueDate>2024-06-20</cbc:IssueDate>
+  <cbc:DueDate>2024-07-20</cbc:DueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:Note>Nicht steuerbarer Umsatz (transaction outside the scope of VAT, Leistungsort ausserhalb der EU).</cbc:Note>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>04011000-DEMO-34</cbc:BuyerReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="EM">rechnung@musterberatung.example</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Musterberatung GmbH</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>Beratergasse 5</cbc:StreetName>
+        <cbc:CityName>Musterstadt</cbc:CityName>
+        <cbc:PostalZone>12345</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>DE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>DE000000000</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Musterberatung GmbH</cbc:RegistrationName>
+        <cbc:CompanyID>HRB 00003</cbc:CompanyID>
+      </cac:PartyLegalEntity>
+      <cac:Contact>
+        <cbc:Name>Carla Beispiel</cbc:Name>
+        <cbc:Telephone>+49 000 0000003</cbc:Telephone>
+        <cbc:ElectronicMail>rechnung@musterberatung.example</cbc:ElectronicMail>
+      </cac:Contact>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="EM">ap@beispiel-institut.example</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Beispiel Institut AG</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>Wissensweg 9</cbc:StreetName>
+        <cbc:CityName>Beispielhausen</cbc:CityName>
+        <cbc:PostalZone>54321</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>DE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Beispiel Institut AG</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:Delivery>
+    <cbc:ActualDeliveryDate>2024-06-16</cbc:ActualDeliveryDate>
+  </cac:Delivery>
+  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>DE89370400440532013000</cbc:ID>
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>
+  <cac:PaymentTerms>
+    <cbc:Note>Zahlbar innerhalb von 30 Tagen ohne Abzug.</cbc:Note>
+  </cac:PaymentTerms>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">7500.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>O</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cbc:TaxExemptionReasonCode>VATEX-EU-O</cbc:TaxExemptionReasonCode>
+        <cbc:TaxExemptionReason>Nicht steuerbarer Umsatz (not subject to VAT)</cbc:TaxExemptionReason>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">7500.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">7500.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">7500.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">7500.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">5000.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Strategieberatung Projekt Drittland (nicht steuerbar)</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>O</cbc:ID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">5000.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="HUR">10</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">2500.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Workshop-Stunden Projekt Drittland (nicht steuerbar)</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>O</cbc:ID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">250.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</ubl:Invoice>

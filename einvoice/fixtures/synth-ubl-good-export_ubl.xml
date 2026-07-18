@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC FIXTURE: fully fictional data (Musterwerk GmbH / DE000000000).
+     UBL Invoice, XRechnung 3.0 CIUS, expected VALID (clean) under the German
+     profile. This is the EXPORT-OUTSIDE-THE-EU fixture (VAT category G): a
+     German seller invoicing a business in a NON-EU third country (Switzerland)
+     for goods physically exported out of the Union. The supply is VAT-exempt as
+     an Ausfuhrlieferung (§ 4 Nr. 1a i.V.m. § 6 UStG, EU VAT Directive art. 146),
+     so every line carries VAT category code G ('Free export item, tax not
+     charged') at rate 0 and the invoice shows ZERO VAT.
+
+     It exercises the G family that the AE reverse-charge, the K
+     intra-community and the S/Z/E shapes never touch:
+       * BG-4 SELLER + BG-6 seller contact + BT-31 seller VAT id (DE000000000,
+         VAT-scoped) — BR-G-02 demands a VAT-SCOPED Seller identifier (BT-31)
+         or a tax-representative VAT id (BT-63); unlike BR-Z/BR-E it does NOT
+         accept an any-scheme / tax-registration fallback (same scoping as
+         BR-IC-02 but with NO buyer-VAT-id conjunct — an export buyer in a
+         third country has no EU VAT id, so BG-7 carries none),
+       * 2x BG-25 invoice lines, BOTH with BT-151 line VAT category = G and
+         BT-152 line VAT rate = 0 (BR-G-05),
+       * exactly ONE BG-23 VAT breakdown with BT-118 category G, BT-116 taxable
+         = Σ G line nets, and BT-117 tax amount = 0.00 (BR-G-08/09),
+       * the mandated export exemption reason on that breakdown: BT-121 code
+         VATEX-EU-G (on the CEF VATEX list, BR-CL-22) AND the BT-120 reason
+         text (BR-G-10, presence-required).
+     BT-84 is the ISO 13616 documentation example IBAN (valid check digits), so
+     the German SEPA IBAN check (BR-DE-19) is satisfied and the invoice is clean.
+
+     ARITHMETIC (all internally consistent, EUR, VAT = 0 throughout):
+       line 1 (G): 15 x 600.00 = 9000.00 -> BT-131 = 9000.00
+       line 2 (G): 30 x  80.00 = 2400.00 -> BT-131 = 2400.00
+       BT-106 sum of line nets = 9000 + 2400                  = 11400.00
+       G breakdown base BT-116 = 9000 + 2400 = 11400.00 -> BT-117 = 0.00
+       BT-109 tax exclusive = 11400.00 = sole breakdown base
+       BT-110 total VAT = 0.00
+       BT-112 tax inclusive = 11400.00 + 0.00 = 11400.00 = BT-115 payable -->
+<ubl:Invoice xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+             xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+             xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>SYNTH-UBL-XR-2024-0033</cbc:ID>
+  <cbc:IssueDate>2024-06-18</cbc:IssueDate>
+  <cbc:DueDate>2024-07-18</cbc:DueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:Note>Steuerfreie Ausfuhrlieferung (VAT exempt export outside the EU, Paragraf 4 Nr. 1a i.V.m. Paragraf 6 UStG).</cbc:Note>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>04011000-DEMO-33</cbc:BuyerReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="EM">rechnung@musterwerk.example</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Musterwerk GmbH</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>Industriestrasse 12</cbc:StreetName>
+        <cbc:CityName>Musterstadt</cbc:CityName>
+        <cbc:PostalZone>12345</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>DE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>DE000000000</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Musterwerk GmbH</cbc:RegistrationName>
+        <cbc:CompanyID>HRB 00002</cbc:CompanyID>
+      </cac:PartyLegalEntity>
+      <cac:Contact>
+        <cbc:Name>Bernd Beispiel</cbc:Name>
+        <cbc:Telephone>+49 000 0000002</cbc:Telephone>
+        <cbc:ElectronicMail>rechnung@musterwerk.example</cbc:ElectronicMail>
+      </cac:Contact>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="EM">einkauf@beispiel-handel.example</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Beispiel Handel AG</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>Bahnhofstrasse 21</cbc:StreetName>
+        <cbc:CityName>Zuerich</cbc:CityName>
+        <cbc:PostalZone>8001</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>CH</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Beispiel Handel AG</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:Delivery>
+    <cbc:ActualDeliveryDate>2024-06-14</cbc:ActualDeliveryDate>
+  </cac:Delivery>
+  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>DE89370400440532013000</cbc:ID>
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>
+  <cac:PaymentTerms>
+    <cbc:Note>Zahlbar innerhalb von 30 Tagen ohne Abzug.</cbc:Note>
+  </cac:PaymentTerms>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">11400.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>G</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cbc:TaxExemptionReasonCode>VATEX-EU-G</cbc:TaxExemptionReasonCode>
+        <cbc:TaxExemptionReason>Ausfuhrlieferung (export outside the EU)</cbc:TaxExemptionReason>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">11400.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">11400.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">11400.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">11400.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">15</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">9000.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Praezisionslager Typ PL-600 (Ausfuhr Drittland)</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>G</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">600.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">30</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">2400.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Ersatzteilsatz Dichtungen (Ausfuhr Drittland)</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>G</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">80.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</ubl:Invoice>

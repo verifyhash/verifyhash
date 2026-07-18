@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-good-not-subject",
+  "path": "fixtures/synth-ubl-good-not-subject_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [],
+  "syntax": "UBL",
+  "valid": true
+}

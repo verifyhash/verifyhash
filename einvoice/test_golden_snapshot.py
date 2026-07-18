@@ -407,6 +407,97 @@ FIXTURES = [
                 "goldens: valid=false, exit 1.",
     },
     {
+        "name": "synth-ubl-good-export",
+        "path": "fixtures/synth-ubl-good-export_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "Valid XRechnung 3.0 UBL EXPORT-OUTSIDE-THE-EU invoice "
+                "(T-VHR.22): a German seller invoicing a business in a NON-EU "
+                "third country (Switzerland) for goods physically exported out "
+                "of the Union — a steuerfreie Ausfuhrlieferung (§ 4 Nr. 1a / § 6 "
+                "UStG) exempt under VAT category G, so EVERY line carries BT-151 "
+                "category G at BT-152 rate 0 and the invoice shows ZERO VAT. "
+                "Exercises the G family no other fixture touches — DISTINCT from "
+                "the AE reverse-charge (T-VHR.20), the K intra-community "
+                "(T-VHR.21) and the S/Z/E shapes: BG-4 seller + BT-31 "
+                "VAT-scoped seller VAT id (BR-G-02 needs a VAT-SCOPED seller id "
+                "like BR-IC-02 but with NO buyer-VAT-id conjunct — the export "
+                "buyer in a third country carries none), 2 G lines (BR-G-05 rate "
+                "0), exactly one BG-23 G breakdown with BT-116 = Σ G nets = "
+                "11400.00 and BT-117 = 0.00 (BR-G-08/09), plus the mandated "
+                "exemption reason — BT-121 code VATEX-EU-G (on the CEF VATEX "
+                "list, BR-CL-22) AND BT-120 text (BR-G-10). Clean under the "
+                "German CIUS: valid=true, exit 0, zero fired rules.",
+    },
+    {
+        "name": "synth-ubl-bad-export",
+        "path": "fixtures/synth-ubl-bad-export_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "NEGATIVE TWIN of synth-ubl-good-export (T-VHR.22): byte-for-"
+                "byte identical EXCEPT the mandated exemption reason is stripped "
+                "from the single G VAT breakdown — BOTH the BT-121 code "
+                "(VATEX-EU-G) and the BT-120 text are deleted. For an Export "
+                "outside the EU BR-G-10 mandates a VAT exemption reason code OR "
+                "text on any G breakdown; with both gone that disjunction is "
+                "broken. The seller VAT id keeps BR-G-02 satisfied, the G line "
+                "rates are still 0 (BR-G-05), the breakdown taxable still equals "
+                "Σ G nets (BR-G-08) and its tax is still 0.00 (BR-G-09), and the "
+                "arithmetic is untouched (VAT total 0.00, tax inclusive = tax "
+                "exclusive all reconcile), so no BR-CO totals rule and no other "
+                "BR-G rule fires: the ONLY fired rule is BR-G-10 (fatal). "
+                "Exactly one distinct fatal, isolating the BR-G-10 shape "
+                "distinct from the BR-AE-10, BR-IC-02, BR-CO-15/14 and BR-DE-15 "
+                "fatals pinned by the other bad-synth goldens: valid=false, "
+                "exit 1.",
+    },
+    {
+        "name": "synth-ubl-good-not-subject",
+        "path": "fixtures/synth-ubl-good-not-subject_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "Valid XRechnung 3.0 UBL NOT-SUBJECT-TO-VAT invoice (T-VHR.22): "
+                "a German consultancy invoicing for a supply OUTSIDE the scope "
+                "of VAT (a nicht steuerbarer Umsatz — place of supply outside "
+                "the Union) under VAT category O, ZERO VAT. Category O is the "
+                "structural ODD ONE OUT — its BR-O family is PROHIBITIONS, so "
+                "this fixture deliberately OMITS what every other category "
+                "requires: NO VAT id anywhere (BR-O-02 forbids Seller BT-31 / "
+                "tax-rep BT-63 / Buyer BT-48; the seller is identified by its "
+                "BT-30 legal registration id alone, satisfying BR-CO-26, and "
+                "since O is NOT in the BR-DE-16 trigger set the missing seller "
+                "tax id does not trip BR-DE-16), NO line VAT rate (BR-O-05). The "
+                "single BG-23 O breakdown still carries BT-119 = 0 (the German "
+                "BR-DE-14 mandates a breakdown rate with no O carve-out), is "
+                "O-only (BR-O-11/12/13/14 exclusivity), has BT-116 = Σ O nets = "
+                "7500.00 and BT-117 = 0.00 (BR-O-08/09), plus the mandated "
+                "exemption reason — BT-121 code VATEX-EU-O (BR-CL-22) AND BT-120 "
+                "text (BR-O-10). Clean under the German CIUS: valid=true, exit "
+                "0, zero fired rules.",
+    },
+    {
+        "name": "synth-ubl-bad-not-subject",
+        "path": "fixtures/synth-ubl-bad-not-subject_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "NEGATIVE TWIN of synth-ubl-good-not-subject (T-VHR.22): byte-"
+                "for-byte identical EXCEPT a VAT-scheme Seller "
+                "PartyTaxScheme/CompanyID (BT-31, DE000000000) is ADDED back to "
+                "the Seller. Category O's BR-O-02 is a PROHIBITION (inverse "
+                "polarity of every other family's -02): an O invoice SHALL NOT "
+                "contain a Seller/tax-representative/Buyer VAT identifier, so "
+                "re-introducing the seller VAT id makes BR-O-02 fire. The O "
+                "lines still carry no line rate (BR-O-05), the O breakdown still "
+                "has BT-119 = 0, tax 0.00, the VATEX-EU-O reason and O-only "
+                "exclusivity, and the arithmetic is untouched, so no BR-CO rule "
+                "and no other BR-O rule fires; the added VAT id is format-clean "
+                "and O is not in the BR-DE-16 trigger set, so nothing else "
+                "fires: the ONLY fired rule is BR-O-02 (fatal). Exactly one "
+                "distinct fatal, isolating the BR-O-02 prohibition shape "
+                "distinct from the BR-G-10, BR-AE-10, BR-IC-02 and BR-CO fatals "
+                "pinned by the other bad-synth goldens: valid=false, exit 1.",
+    },
+    {
         "name": "synth-cii-good-foreign-currency",
         "path": "corpus/synthetic/synth-cii-good-foreign-currency.xml",
         "syntax": "CII",
@@ -740,6 +831,55 @@ RECEIPT_FIXTURES = [
                 "proving validate -> receipt end-to-end over an AE invoice whose "
                 "only defect is a missing exemption reason on the AE breakdown. "
                 "Mirrors the receipt-ubl-good-reverse-charge PASS entry.",
+    },
+    # ---- (j) the export (G) invoice (T-VHR.22), end-to-end ----
+    {
+        "name": "receipt-ubl-good-export",
+        "path": "fixtures/synth-ubl-good-export_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.22 export-outside-the-EU (G) XRechnung UBL invoice "
+                "through the per-document attestation path: a PASS receipt "
+                "(failed_fatal_rules empty) under the German profile, proving "
+                "the whole product path (validate -> receipt) over a § 6 UStG "
+                "Ausfuhrlieferung where every line is VAT category G at zero "
+                "VAT.",
+    },
+    # ---- (k) the export (G) negative twin (T-VHR.22), end-to-end ----
+    {
+        "name": "receipt-ubl-bad-export",
+        "path": "fixtures/synth-ubl-bad-export_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.22 export (G) negative twin through the per-document "
+                "attestation path: a FAIL receipt (failed_fatal_rules contains "
+                "BR-G-10) under the German profile, proving validate -> receipt "
+                "end-to-end over a G invoice whose only defect is a missing "
+                "exemption reason on the G breakdown. Mirrors the "
+                "receipt-ubl-good-export PASS entry.",
+    },
+    # ---- (l) the not-subject (O) invoice (T-VHR.22), end-to-end ----
+    {
+        "name": "receipt-ubl-good-not-subject",
+        "path": "fixtures/synth-ubl-good-not-subject_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.22 not-subject-to-VAT (O) XRechnung UBL invoice "
+                "through the per-document attestation path: a PASS receipt "
+                "(failed_fatal_rules empty) under the German profile, proving "
+                "the whole product path (validate -> receipt) over an "
+                "out-of-scope (nicht steuerbar) document where every line is "
+                "VAT category O.",
+    },
+    # ---- (m) the not-subject (O) negative twin (T-VHR.22), end-to-end ----
+    {
+        "name": "receipt-ubl-bad-not-subject",
+        "path": "fixtures/synth-ubl-bad-not-subject_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.22 not-subject (O) negative twin through the "
+                "per-document attestation path: a FAIL receipt "
+                "(failed_fatal_rules contains BR-O-02) under the German "
+                "profile, proving validate -> receipt end-to-end over an O "
+                "invoice whose only defect is a Seller VAT id that category O "
+                "prohibits. Mirrors the receipt-ubl-good-not-subject PASS "
+                "entry.",
     },
 ]
 

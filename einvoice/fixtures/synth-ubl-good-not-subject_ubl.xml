@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC FIXTURE: fully fictional data (Musterberatung GmbH).
+     UBL Invoice, XRechnung 3.0 CIUS, expected VALID (clean) under the German
+     profile. This is the NOT-SUBJECT-TO-VAT fixture (VAT category O): a German
+     consultancy invoicing for a supply that falls OUTSIDE the scope of VAT (a
+     nicht steuerbarer Umsatz — the place of supply is outside the Union, so no
+     EU VAT arises at all). Every line carries VAT category code O ('Services
+     outside scope of tax') and the invoice shows ZERO VAT.
+
+     Category O is the structural ODD ONE OUT — its BR-O family is a set of
+     PROHIBITIONS, so this fixture deliberately OMITS what every other category
+     requires:
+       * NO VAT registration identifier ANYWHERE: the Seller has NO VAT-scheme
+         PartyTaxScheme/CompanyID (BT-31) and the Buyer none (BT-48), because
+         BR-O-02 forbids a Seller/tax-representative/Buyer VAT identifier on an
+         O invoice. The Seller is instead identified by its BT-30 legal
+         registration id (PartyLegalEntity/CompanyID = HRB 00003), which alone
+         satisfies BR-CO-26. Since O is NOT in the BR-DE-16 trigger set
+         (S/Z/E/AE/K/G/L/M), the missing seller tax id does not trip BR-DE-16.
+       * NO LINE VAT RATE: the O invoice lines carry NO cbc:Percent element,
+         because BR-O-05 forbids a line VAT rate (BT-152). The BG-23 VAT
+         BREAKDOWN, however, DOES carry BT-119 = 0: the German CIUS BR-DE-14 is
+         stricter than the EN core and mandates a non-empty VAT category rate in
+         EVERY breakdown row with no O carve-out (no BR-O rule forbids the
+         breakdown rate, only the line rate), so a pure-O XRechnung needs it.
+       * exactly ONE BG-23 VAT breakdown, category O ONLY (BR-O-11/12/13/14
+         exclusivity — no other VAT category anywhere), BT-116 taxable = Σ O
+         line nets, BT-117 tax amount = 0.00 (BR-O-08/09),
+       * the mandated out-of-scope exemption reason on that breakdown: BT-121
+         code VATEX-EU-O (on the CEF VATEX list, BR-CL-22) AND the BT-120 reason
+         text (BR-O-10, presence-required).
+     BT-84 is the ISO 13616 documentation example IBAN (valid check digits), so
+     the German SEPA IBAN check (BR-DE-19) is satisfied and the invoice is clean.
+
+     ARITHMETIC (all internally consistent, EUR, VAT = 0 throughout):
+       line 1 (O): 1  x 5000.00 = 5000.00 -> BT-131 = 5000.00
+       line 2 (O): 10 x  250.00 = 2500.00 -> BT-131 = 2500.00
+       BT-106 sum of line nets = 5000 + 2500                  = 7500.00
+       O breakdown base BT-116 = 5000 + 2500 = 7500.00 -> BT-117 = 0.00
+       BT-109 tax exclusive = 7500.00 = sole breakdown base
+       BT-110 total VAT = 0.00
+       BT-112 tax inclusive = 7500.00 + 0.00 = 7500.00 = BT-115 payable -->
+<ubl:Invoice xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+             xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+             xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>SYNTH-UBL-XR-2024-0034</cbc:ID>
+  <cbc:IssueDate>2024-06-20</cbc:IssueDate>
+  <cbc:DueDate>2024-07-20</cbc:DueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:Note>Nicht steuerbarer Umsatz (transaction outside the scope of VAT, Leistungsort ausserhalb der EU).</cbc:Note>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>04011000-DEMO-34</cbc:BuyerReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="EM">rechnung@musterberatung.example</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Musterberatung GmbH</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>Beratergasse 5</cbc:StreetName>
+        <cbc:CityName>Musterstadt</cbc:CityName>
+        <cbc:PostalZone>12345</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>DE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Musterberatung GmbH</cbc:RegistrationName>
+        <cbc:CompanyID>HRB 00003</cbc:CompanyID>
+      </cac:PartyLegalEntity>
+      <cac:Contact>
+        <cbc:Name>Carla Beispiel</cbc:Name>
+        <cbc:Telephone>+49 000 0000003</cbc:Telephone>
+        <cbc:ElectronicMail>rechnung@musterberatung.example</cbc:ElectronicMail>
+      </cac:Contact>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="EM">ap@beispiel-institut.example</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Beispiel Institut AG</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>Wissensweg 9</cbc:StreetName>
+        <cbc:CityName>Beispielhausen</cbc:CityName>
+        <cbc:PostalZone>54321</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>DE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Beispiel Institut AG</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:Delivery>
+    <cbc:ActualDeliveryDate>2024-06-16</cbc:ActualDeliveryDate>
+  </cac:Delivery>
+  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>DE89370400440532013000</cbc:ID>
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>
+  <cac:PaymentTerms>
+    <cbc:Note>Zahlbar innerhalb von 30 Tagen ohne Abzug.</cbc:Note>
+  </cac:PaymentTerms>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">7500.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>O</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cbc:TaxExemptionReasonCode>VATEX-EU-O</cbc:TaxExemptionReasonCode>
+        <cbc:TaxExemptionReason>Nicht steuerbarer Umsatz (not subject to VAT)</cbc:TaxExemptionReason>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">7500.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">7500.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">7500.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">7500.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">5000.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Strategieberatung Projekt Drittland (nicht steuerbar)</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>O</cbc:ID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">5000.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="HUR">10</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">2500.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Workshop-Stunden Projekt Drittland (nicht steuerbar)</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>O</cbc:ID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">250.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</ubl:Invoice>

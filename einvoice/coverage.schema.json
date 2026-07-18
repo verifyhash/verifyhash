@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verifyhash.com/schemas/einvoice-conformance-coverage/v1/coverage.schema.json",
+  "title": "einvoice conformance coverage (v1)",
+  "description": "Machine-readable JSON Schema for the coverage matrix emitted at einvoice/coverage_matrix.json by einvoice/gen_coverage.py. This is the artifact a buyer reads to answer 'does it fire the rules my German ERP needs, in my CI?': it enumerates every EN 16931 / XRechnung business rule the engine actually asserts (proven by test_coverage_matrix.py against the live rule registries, not aspiration), the pinned official Schematron sources each was differentially proven against, the German-message coverage, the credit-note conformance headline, and the honestly-reasoned exclusion / gap / rule-family breakdowns. It carries no rule logic itself and adds no rule claim beyond what the code fires. Versioning policy: this coverage matrix does not embed a numeric version field; the schema/shape version is carried by the $id path segment (v1). Additive, backward-compatible keys may be added within v1; a breaking change bumps the $id to v2. The top-level key set is described strictly (additionalProperties:false); deep, artifact-specific inner blocks are described by type where their key sets legitimately vary, so the schema stays faithful without over-constraining honest additive detail. Subschemas are inlined (no $ref).",
+  "type": "object",
+  "required": [
+    "artifact",
+    "description",
+    "generated_by",
+    "schematron_sources_order",
+    "schematron_sources",
+    "rule_count",
+    "german_message_coverage",
+    "creditnote_conformance",
+    "rules",
+    "exclusions",
+    "gap",
+    "peppol_kosit_family",
+    "cvd_tmp_family"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Human label naming the artifact ('einvoice conformance coverage matrix').",
+      "type": "string"
+    },
+    "description": {
+      "description": "Human prose describing what the matrix reflects (what the code fires, not aspiration).",
+      "type": "string"
+    },
+    "generated_by": {
+      "description": "The generator that emitted this file (gen_coverage.py, derived from the live rule registries + differential.py graded sets).",
+      "type": "string"
+    },
+    "schematron_sources_order": {
+      "description": "Stable ordering of the Schematron source keys.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "schematron_sources": {
+      "description": "The pinned official Schematron artifacts, keyed by source id (e.g. 'en16931-ubl', 'xrechnung-cii'). Each entry pins the suite, file path, version and license.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["suite", "file", "version", "license"],
+        "additionalProperties": false,
+        "properties": {
+          "suite": { "description": "Standards suite, e.g. 'CEN EN 16931' / 'KoSIT XRechnung'.", "type": "string" },
+          "file": { "description": "Repo-relative path to the pinned Schematron artifact.", "type": "string" },
+          "version": { "description": "The pinned artifact version.", "type": "string" },
+          "license": { "description": "The artifact's license (e.g. 'EUPL-1.2', 'Apache-2.0').", "type": "string" }
+        }
+      }
+    },
+    "rule_count": {
+      "description": "Number of rule entries in `rules`.",
+      "type": "integer"
+    },
+    "german_message_coverage": {
+      "description": "How many rules carry an official German (de) human message and where those messages surface.",
+      "type": "object",
+      "required": ["official_message_de_count", "total_rules", "surface", "source", "other_rules_policy"],
+      "additionalProperties": false,
+      "properties": {
+        "official_message_de_count": { "description": "Rules carrying a verbatim official German message.", "type": "integer" },
+        "total_rules": { "description": "Total rule count for the ratio.", "type": "integer" },
+        "surface": { "description": "Where the German message is exposed (CLI/report human message with --lang de; not in --json).", "type": "string" },
+        "source": { "description": "Provenance of the German text (verbatim from the vendored KoSIT XRechnung Schematron).", "type": "string" },
+        "other_rules_policy": { "description": "Policy for rules without an official German message (never machine- or hand-translated).", "type": "string" }
+      }
+    },
+    "creditnote_conformance": {
+      "description": "The credit-note (BG-25/UNCL1001 381) conformance headline, kept SEPARATE from the invoice headline.",
+      "type": "object",
+      "required": [
+        "scope",
+        "oracle",
+        "graded_rule_count",
+        "known_open",
+        "unit_corpus_total_cases",
+        "unit_corpus_graded_cases",
+        "unit_corpus_agree",
+        "distinct_rules_exercised",
+        "standalone_fixtures_total",
+        "standalone_fixtures_pass",
+        "differential_divergences",
+        "separate_from_invoice_headline"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scope": { "description": "What the credit-note conformance covers.", "type": "string" },
+        "oracle": { "description": "The differential oracle graded against.", "type": "string" },
+        "graded_rule_count": { "description": "Rules graded on the credit-note leg.", "type": "integer" },
+        "known_open": { "description": "Map of known-open credit-note rule ids to reasons (empty when none).", "type": "object" },
+        "unit_corpus_total_cases": { "description": "Total credit-note unit corpus cases.", "type": "integer" },
+        "unit_corpus_graded_cases": { "description": "Credit-note unit corpus cases actually graded.", "type": "integer" },
+        "unit_corpus_agree": { "description": "Cases where the engine agrees with the oracle.", "type": "integer" },
+        "distinct_rules_exercised": { "description": "Distinct rules exercised by the credit-note corpus.", "type": "integer" },
+        "standalone_fixtures_total": { "description": "Standalone credit-note fixtures total.", "type": "integer" },
+        "standalone_fixtures_pass": { "description": "Standalone credit-note fixtures passing.", "type": "integer" },
+        "differential_divergences": { "description": "Differential divergences on the credit-note leg (0 == full agreement).", "type": "integer" },
+        "separate_from_invoice_headline": { "description": "True to flag that this metric is reported separately from the invoice headline.", "type": "boolean" }
+      }
+    },
+    "rules": {
+      "description": "One entry per asserted business rule, with the syntax it fires in, its blocking severity, the raw official @flag, and the per-syntax (UBL/CII) Schematron provenance.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "family", "syntax", "severity", "flag", "provenance"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "description": "The rule id, e.g. 'BR-01'.", "type": "string" },
+          "title": { "description": "Plain-language rule title.", "type": "string" },
+          "family": { "description": "The rule family (free string; the closed set is not guaranteed stable).", "type": "string" },
+          "syntax": { "description": "Which syntax(es) the rule fires in.", "enum": ["ubl", "cii", "both"] },
+          "severity": { "description": "Blocking severity derived from the official @flag.", "enum": ["fatal", "warning"] },
+          "flag": { "description": "The raw official @flag value (e.g. 'fatal', 'warning', 'information').", "type": "string" },
+          "provenance": {
+            "description": "Per-syntax Schematron provenance for this rule (both `ubl` and `cii` keys are always present; a key may explain, via `reason`, why a proof is impossible in that syntax).",
+            "type": "object",
+            "required": ["ubl", "cii"],
+            "additionalProperties": false,
+            "properties": {
+              "ubl": { "type": "object", "required": ["source", "suite", "sch", "version", "differentially_proven"], "additionalProperties": false,
+                "properties": {
+                  "source": { "description": "The Schematron source key, e.g. 'en16931-ubl'.", "type": "string" },
+                  "suite": { "description": "Standards suite.", "type": "string" },
+                  "sch": { "description": "Path to the Schematron artifact.", "type": "string" },
+                  "version": { "description": "Pinned artifact version.", "type": "string" },
+                  "differentially_proven": { "description": "True iff differentially proven to fire in UBL.", "type": "boolean" },
+                  "reason": { "description": "OPTIONAL: prose explaining a non-proof (e.g. the rule has no UBL binding, or the shipped assert is vacuous).", "type": "string" },
+                  "asserts": { "description": "OPTIONAL: the concrete Schematron assert ids this rule maps to when split across asserts.", "type": "array", "items": { "type": "string" } },
+                  "note": { "description": "OPTIONAL: a human note on a non-1:1 mapping.", "type": "string" }
+                }
+              },
+              "cii": { "type": "object", "required": ["source", "suite", "sch", "version", "differentially_proven"], "additionalProperties": false,
+                "properties": {
+                  "source": { "description": "The Schematron source key, e.g. 'en16931-cii'.", "type": "string" },
+                  "suite": { "description": "Standards suite.", "type": "string" },
+                  "sch": { "description": "Path to the Schematron artifact.", "type": "string" },
+                  "version": { "description": "Pinned artifact version.", "type": "string" },
+                  "differentially_proven": { "description": "True iff differentially proven to fire in CII.", "type": "boolean" },
+                  "reason": { "description": "OPTIONAL: prose explaining a non-proof.", "type": "string" },
+                  "asserts": { "description": "OPTIONAL: the concrete Schematron assert ids this rule maps to when split across asserts.", "type": "array", "items": { "type": "string" } },
+                  "note": { "description": "OPTIONAL: a human note on a non-1:1 mapping.", "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "exclusions": {
+      "description": "The honestly-reasoned set of official assertions the engine deliberately does NOT count as fired, grouped by reason category. Each category's entries carry per-rule ids and reasons; the inner shapes vary by category (e.g. `official_tautology` carries evidence), so they are typed by container here.",
+      "type": "object",
+      "required": ["description", "vacuous", "official_tautology", "codelist_not_asserted", "cii_core_out_of_scope", "cii_de_out_of_scope", "peppol"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "description": "What the exclusions block means.", "type": "string" },
+        "vacuous": { "description": "Asserts that can never fire as shipped (vacuous), with id + reason.", "type": "array", "items": { "type": "object" } },
+        "official_tautology": { "description": "Asserts shipped as tautologies (e.g. test=\"true()\"), with id, official text, reason and per-artifact evidence.", "type": "array", "items": { "type": "object" } },
+        "codelist_not_asserted": { "description": "Code-list checks the engine does not assert, with id + reason.", "type": "array", "items": { "type": "object" } },
+        "cii_core_out_of_scope": { "description": "CII core-model out-of-scope rules, with id + reason.", "type": "array", "items": { "type": "object" } },
+        "cii_de_out_of_scope": { "description": "CII German out-of-scope rules, with id + reason.", "type": "array", "items": { "type": "object" } },
+        "peppol": { "description": "Peppol exclusion status/note.", "type": "object" }
+      }
+    },
+    "gap": {
+      "description": "The gap analysis: for each official artifact universe, how many rules are implemented / excluded / missing, and which non-business-rule asserts were set aside.",
+      "type": "object",
+      "required": ["description", "artifact_order", "excluded_ids_considered", "artifacts"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "description": "What the gap block means.", "type": "string" },
+        "artifact_order": { "description": "Stable ordering of the gap artifact keys.", "type": "array", "items": { "type": "string" } },
+        "excluded_ids_considered": { "description": "The excluded rule ids the gap math accounts for.", "type": "array", "items": { "type": "string" } },
+        "artifacts": { "description": "Per-artifact universe/implemented/missing counts (keys are the artifact ids; inner counts described by the emitter).", "type": "object" }
+      }
+    },
+    "peppol_kosit_family": {
+      "description": "The Peppol/KoSIT vendored rule-family breakdown: labelled per-artifact universe/implemented/known-open counts and the implemented id list.",
+      "type": "object",
+      "required": ["label", "description", "artifact_order", "artifacts", "implemented_ids", "known_open_worklist"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "description": "Human label for the family.", "type": "string" },
+        "description": { "description": "What the family is.", "type": "string" },
+        "artifact_order": { "description": "Stable ordering of the artifact keys.", "type": "array", "items": { "type": "string" } },
+        "artifacts": { "description": "Per-artifact family counts (keys are artifact ids).", "type": "object" },
+        "implemented_ids": { "description": "The implemented family rule ids.", "type": "array", "items": { "type": "string" } },
+        "known_open_worklist": { "description": "Known-open family rule ids still to implement (empty when none).", "type": "array" }
+      }
+    },
+    "cvd_tmp_family": {
+      "description": "The XRechnung CVD-tmp rule-family breakdown (same shape as peppol_kosit_family): labelled per-artifact counts and implemented id list.",
+      "type": "object",
+      "required": ["label", "description", "artifact_order", "artifacts", "implemented_ids", "known_open_worklist"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "description": "Human label for the family.", "type": "string" },
+        "description": { "description": "What the family is.", "type": "string" },
+        "artifact_order": { "description": "Stable ordering of the artifact keys.", "type": "array", "items": { "type": "string" } },
+        "artifacts": { "description": "Per-artifact family counts (keys are artifact ids).", "type": "object" },
+        "implemented_ids": { "description": "The implemented family rule ids.", "type": "array", "items": { "type": "string" } },
+        "known_open_worklist": { "description": "Known-open family rule ids still to implement (empty when none).", "type": "array" }
+      }
+    }
+  }
+}

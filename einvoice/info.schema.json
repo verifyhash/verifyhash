@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verifyhash.com/schemas/einvoice-conformance-info/v1/info.schema.json",
+  "title": "einvoice conformance info (v1)",
+  "description": "Machine-readable JSON Schema for the capability/introspection object emitted by `python3 -m einvoice info --json` (einvoice.cli). This is the fail-fast handshake a CI consumer reads BEFORE feeding invoices: it advertises the engine version, how many EN 16931 / XRechnung business rules are asserted, which output formats and validation profiles are available, the syntax-binding coverage counts, and the SHA-256 of the committed attestation document so a consumer can pin the exact trust artifact. The object carries no rule logic and is a pure projection of the engine's registries + attestation.json. Versioning policy: this $id is STABLE within v1 - additive, backward-compatible keys may be added without changing it; any BREAKING change to the info shape bumps the id to .../v2. NOTE: `version` is the einvoice PACKAGE version (it advances with releases, e.g. 0.1.0), so it is a free string here, NOT a const - the schema/shape version is carried by the $id path segment. Subschemas are inlined (no $ref) so the stdlib structural validator that guards this schema exercises every constraint.",
+  "type": "object",
+  "required": [
+    "attestation_sha256",
+    "coverage",
+    "formats",
+    "profiles",
+    "rule_count",
+    "version"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "attestation_sha256": {
+      "description": "Lowercase hex SHA-256 of the committed attestation.json trust document; a consumer can pin this to detect an unexpected engine build.",
+      "type": "string"
+    },
+    "coverage": {
+      "description": "Headline coverage counts: how many business rules are asserted and how much of each Schematron syntax binding is differentially proven.",
+      "type": "object",
+      "required": ["business_rules", "syntax_binding"],
+      "additionalProperties": false,
+      "properties": {
+        "business_rules": {
+          "description": "EN 16931 / XRechnung business-rule coverage.",
+          "type": "object",
+          "required": ["total_asserted"],
+          "additionalProperties": false,
+          "properties": {
+            "total_asserted": {
+              "description": "Number of distinct business rules the engine actually asserts.",
+              "type": "integer"
+            }
+          }
+        },
+        "syntax_binding": {
+          "description": "Per-syntax (UBL / CII) syntax-binding proof counts.",
+          "type": "object",
+          "required": ["cii", "ubl"],
+          "additionalProperties": false,
+          "properties": {
+            "cii": {
+              "description": "CII (Factur-X/ZUGFeRD/CrossIndustryInvoice) syntax-binding proof counts.",
+              "type": "object",
+              "required": ["proven", "total"],
+              "additionalProperties": false,
+              "properties": {
+                "proven": {
+                  "description": "Number of syntax-binding restrictions differentially proven to fire.",
+                  "type": "integer"
+                },
+                "total": {
+                  "description": "Total syntax-binding restrictions in the official artifact universe.",
+                  "type": "integer"
+                }
+              }
+            },
+            "ubl": {
+              "description": "UBL syntax-binding proof counts.",
+              "type": "object",
+              "required": ["proven", "total"],
+              "additionalProperties": false,
+              "properties": {
+                "proven": {
+                  "description": "Number of syntax-binding restrictions differentially proven to fire.",
+                  "type": "integer"
+                },
+                "total": {
+                  "description": "Total syntax-binding restrictions in the official artifact universe.",
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "formats": {
+      "description": "The report output formats the CLI can emit (e.g. json, junit, sarif, github, gitlab, azure, html, badge, text).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "profiles": {
+      "description": "The validation profiles available to select.",
+      "type": "array",
+      "items": { "enum": ["en16931", "xrechnung"] }
+    },
+    "rule_count": {
+      "description": "Total number of business rules the engine asserts (mirrors coverage.business_rules.total_asserted).",
+      "type": "integer"
+    },
+    "version": {
+      "description": "The einvoice PACKAGE version string (advances with releases; not the schema version).",
+      "type": "string"
+    }
+  }
+}

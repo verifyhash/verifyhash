@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verifyhash.com/schemas/einvoice-conformance-rules/v1/rules.schema.json",
+  "title": "einvoice conformance rules (v1)",
+  "description": "Machine-readable JSON Schema for the rules export emitted at einvoice/export/rules.json by einvoice/gen_export.py. This is the adopter-facing catalog of every EN 16931 / XRechnung business rule the engine asserts, each with its family, blocking severity, the syntax it fires in, the plain-language remediation title/fix, and the per-syntax (UBL/CII) Schematron provenance that differentially proved it. Every field is copied verbatim from the committed machine sources (coverage_matrix.json + remediation_catalog.json); the export invents no rule claim. The top-level `schemaVersion` integer is pinned to 1 for this v1 schema (mirrors the report's report_version const); a breaking change to the export shape bumps both `schemaVersion` and this $id to v2. Subschemas are inlined (no $ref) so the stdlib structural validator exercises every constraint.",
+  "type": "object",
+  "required": [
+    "generated_by",
+    "provenance",
+    "rule_count",
+    "schemaVersion",
+    "rules"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "generated_by": {
+      "description": "The generator that emitted this file (einvoice/gen_export.py).",
+      "type": "string"
+    },
+    "provenance": {
+      "description": "Where the rows came from - a do-not-hand-edit note and the committed source JSONs the export was derived from.",
+      "type": "object",
+      "required": ["note", "sources"],
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "description": "Human note stating the file is generated and not to be hand-edited.",
+          "type": "string"
+        },
+        "sources": {
+          "description": "The committed machine-source filenames this export was projected from.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "rule_count": {
+      "description": "Number of rule entries in `rules` (kept consistent with len(rules)).",
+      "type": "integer"
+    },
+    "schemaVersion": {
+      "description": "Export shape version; pinned to 1 for this v1 schema.",
+      "const": 1
+    },
+    "rules": {
+      "description": "One entry per asserted business rule.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "family",
+          "syntax",
+          "severity",
+          "title",
+          "remediation",
+          "bindings"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The rule id, e.g. 'BR-01' / 'BR-DE-15'.",
+            "type": "string"
+          },
+          "family": {
+            "description": "The rule family, e.g. 'core', 'xrechnung-cius', 'xrechnung-extension', 'peppol-kosit-vendored', 'xrechnung-cvd-tmp'. Free string (families may be added); consumers should not assume a closed set.",
+            "type": "string"
+          },
+          "syntax": {
+            "description": "Which syntax(es) the rule fires in.",
+            "enum": ["ubl", "cii", "both"]
+          },
+          "severity": {
+            "description": "Blocking severity derived from the official @flag.",
+            "enum": ["fatal", "warning"]
+          },
+          "title": {
+            "description": "Plain-language rule title from the remediation catalog.",
+            "type": "string"
+          },
+          "remediation": {
+            "description": "The plain-language remediation for the rule.",
+            "type": "object",
+            "required": ["title", "fix"],
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "description": "Plain-language rule title.",
+                "type": "string"
+              },
+              "fix": {
+                "description": "One-line 'how to fix' guidance.",
+                "type": "string"
+              }
+            }
+          },
+          "bindings": {
+            "description": "Per-syntax Schematron provenance. At least one of `ubl`/`cii` is present (a rule fires in the syntax(es) named by `syntax`).",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ubl": {
+                "description": "UBL Schematron provenance for this rule.",
+                "type": "object",
+                "required": ["differentially_proven", "sch", "source", "suite", "version"],
+                "additionalProperties": false,
+                "properties": {
+                  "differentially_proven": {
+                    "description": "True iff this rule was differentially proven to fire against the official artifact.",
+                    "type": "boolean"
+                  },
+                  "sch": {
+                    "description": "Path to the Schematron artifact the rule was proven against.",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "The Schematron source key, e.g. 'en16931-ubl'.",
+                    "type": "string"
+                  },
+                  "suite": {
+                    "description": "The standards suite, e.g. 'CEN EN 16931' / 'KoSIT XRechnung'.",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "The pinned artifact version.",
+                    "type": "string"
+                  },
+                  "asserts": {
+                    "description": "OPTIONAL: the concrete Schematron assert ids this rule maps to when the artifact splits it across several asserts.",
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "note": {
+                    "description": "OPTIONAL: a human note explaining a non-1:1 mapping between the rule and the artifact.",
+                    "type": "string"
+                  }
+                }
+              },
+              "cii": {
+                "description": "CII Schematron provenance for this rule.",
+                "type": "object",
+                "required": ["differentially_proven", "sch", "source", "suite", "version"],
+                "additionalProperties": false,
+                "properties": {
+                  "differentially_proven": {
+                    "description": "True iff this rule was differentially proven to fire against the official artifact.",
+                    "type": "boolean"
+                  },
+                  "sch": {
+                    "description": "Path to the Schematron artifact the rule was proven against.",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "The Schematron source key, e.g. 'en16931-cii'.",
+                    "type": "string"
+                  },
+                  "suite": {
+                    "description": "The standards suite, e.g. 'CEN EN 16931' / 'KoSIT XRechnung'.",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "The pinned artifact version.",
+                    "type": "string"
+                  },
+                  "asserts": {
+                    "description": "OPTIONAL: the concrete Schematron assert ids this rule maps to when the artifact splits it across several asserts.",
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "note": {
+                    "description": "OPTIONAL: a human note explaining a non-1:1 mapping between the rule and the artifact.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

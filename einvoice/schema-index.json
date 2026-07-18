@@ -24,6 +24,27 @@
       "$id": "https://verifyhash.com/schemas/einvoice-conformance-attestation/v1/attestation.schema.json",
       "title": "einvoice conformance attestation (v1)",
       "version": "v1"
+    },
+    {
+      "name": "info",
+      "file": "info.schema.json",
+      "$id": "https://verifyhash.com/schemas/einvoice-conformance-info/v1/info.schema.json",
+      "title": "einvoice conformance info (v1)",
+      "version": "v1"
+    },
+    {
+      "name": "rules",
+      "file": "rules.schema.json",
+      "$id": "https://verifyhash.com/schemas/einvoice-conformance-rules/v1/rules.schema.json",
+      "title": "einvoice conformance rules (v1)",
+      "version": "v1"
+    },
+    {
+      "name": "coverage",
+      "file": "coverage.schema.json",
+      "$id": "https://verifyhash.com/schemas/einvoice-conformance-coverage/v1/coverage.schema.json",
+      "title": "einvoice conformance coverage (v1)",
+      "version": "v1"
     }
   ]
 }

@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-good-reverse-charge",
+  "path": "fixtures/synth-ubl-good-reverse-charge_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [],
+  "syntax": "UBL",
+  "valid": true
+}

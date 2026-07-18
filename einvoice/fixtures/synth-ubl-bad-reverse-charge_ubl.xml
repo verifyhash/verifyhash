@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC FIXTURE: fully fictional data (Musterbau GmbH / DE000000000).
+     NEGATIVE TWIN of synth-ubl-good-reverse-charge: byte-for-byte identical
+     (same § 13b UStG domestic reverse-charge invoice, all lines VAT category
+     AE at rate 0, ZERO VAT, every mandatory BG group intact) EXCEPT the ONE
+     targeted defect — the sole AE VAT breakdown (BG-23) carries NO exemption
+     reason at all: both the BT-121 reason code (VATEX-EU-AE) AND the BT-120
+     reason text ('Reverse charge') present in the good twin are removed.
+
+     Because the arithmetic is untouched (BT-110 total VAT = 0.00, taxable =
+     Σ AE line nets = 15000.00, tax inclusive = tax exclusive = 15000.00 still
+     reconcile exactly), NO BR-CO totals rule and NO other AE rule fires: the
+     ONLY fired rule is BR-AE-10 (fatal) — a VAT breakdown with a Reverse
+     charge (AE) category code SHALL carry a BT-121 code or BT-120 text meaning
+     'Reverse charge'. Exactly one distinct fatal, valid=false, exit 1. The ID
+     (BT-1) is bumped to -0032 so the twin has its own tamper-evidence bytes.
+
+     ARITHMETIC (all internally consistent, EUR, VAT = 0 throughout):
+       line 1 (AE): 1 x 12000.00 = 12000.00 -> BT-131 = 12000.00
+       line 2 (AE): 40 x   75.00 =  3000.00 -> BT-131 =  3000.00
+       BT-106 sum of line nets = 12000 + 3000                 = 15000.00
+       AE breakdown base BT-116 = 12000 + 3000 = 15000.00 -> BT-117 = 0.00
+       BT-109 tax exclusive = 15000.00 = sole breakdown base
+       BT-110 total VAT = 0.00
+       BT-112 tax inclusive = 15000.00 + 0.00 = 15000.00 = BT-115 payable -->
+<ubl:Invoice xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+             xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+             xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>SYNTH-UBL-XR-2024-0032</cbc:ID>
+  <cbc:IssueDate>2024-06-11</cbc:IssueDate>
+  <cbc:DueDate>2024-07-11</cbc:DueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:Note>Steuerschuldnerschaft des Leistungsempfaengers (Reverse charge, Paragraf 13b UStG). Umsatzsteuer wird vom Leistungsempfaenger geschuldet.</cbc:Note>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>04011000-DEMO-31</cbc:BuyerReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="EM">rechnung@musterbau.example</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Musterbau GmbH</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>Baustrasse 7</cbc:StreetName>
+        <cbc:CityName>Musterstadt</cbc:CityName>
+        <cbc:PostalZone>12345</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>DE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>DE000000000</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Musterbau GmbH</cbc:RegistrationName>
+        <cbc:CompanyID>HRB 00001</cbc:CompanyID>
+      </cac:PartyLegalEntity>
+      <cac:Contact>
+        <cbc:Name>Bernd Beispiel</cbc:Name>
+        <cbc:Telephone>+49 000 0000001</cbc:Telephone>
+        <cbc:ElectronicMail>rechnung@musterbau.example</cbc:ElectronicMail>
+      </cac:Contact>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="EM">ap@bautraeger.example</cbc:EndpointID>
+      <cac:PartyName>
+        <cbc:Name>Beispiel Bautraeger AG</cbc:Name>
+      </cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>Bauherrenweg 4</cbc:StreetName>
+        <cbc:CityName>Beispielhausen</cbc:CityName>
+        <cbc:PostalZone>54321</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>DE</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>DE000000001</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Beispiel Bautraeger AG</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:Delivery>
+    <cbc:ActualDeliveryDate>2024-06-07</cbc:ActualDeliveryDate>
+  </cac:Delivery>
+  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>DE89370400440532013000</cbc:ID>
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>
+  <cac:PaymentTerms>
+    <cbc:Note>Zahlbar innerhalb von 30 Tagen ohne Abzug.</cbc:Note>
+  </cac:PaymentTerms>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">15000.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>AE</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">15000.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">15000.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">15000.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="EUR">15000.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">12000.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Rohbauarbeiten Bauabschnitt 1 (Bauleistung Paragraf 13b UStG)</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>AE</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">12000.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="HUR">40</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">3000.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Geraetestunden Baustellenlogistik (Bauleistung Paragraf 13b UStG)</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>AE</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">75.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</ubl:Invoice>

@@ -326,6 +326,43 @@ FIXTURES = [
                 "valid=false, exit 1.",
     },
     {
+        "name": "synth-ubl-good-reverse-charge",
+        "path": "fixtures/synth-ubl-good-reverse-charge_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "Valid XRechnung 3.0 UBL REVERSE-CHARGE invoice (T-VHR.20): a "
+                "domestic German § 13b UStG subcontractor invoice where the tax "
+                "liability shifts to the recipient, so EVERY line carries BT-151 "
+                "VAT category AE ('Reverse charge') at BT-152 rate 0 and the "
+                "invoice shows ZERO VAT. Exercises the AE family the S-rated "
+                "full-shape fixture never touches: BG-4 seller + BG-6 contact + "
+                "BT-31 seller VAT id AND BG-7 buyer + BT-48 buyer VAT id (BR-AE-02 "
+                "needs BOTH), 2 AE lines (BR-AE-05 rate 0), exactly one BG-23 AE "
+                "breakdown with BT-116 = Σ AE nets = 15000.00 and BT-117 = 0.00 "
+                "(BR-AE-01/08/09), and the mandated exemption reason on that "
+                "breakdown — BT-121 code VATEX-EU-AE (on the CEF VATEX list, "
+                "BR-CL-22) AND BT-120 text 'Reverse charge' (BR-AE-10). Clean "
+                "under the German CIUS: valid=true, exit 0, zero fired rules.",
+    },
+    {
+        "name": "synth-ubl-bad-reverse-charge",
+        "path": "fixtures/synth-ubl-bad-reverse-charge_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "NEGATIVE TWIN of synth-ubl-good-reverse-charge (T-VHR.20): "
+                "byte-for-byte identical EXCEPT the sole AE VAT breakdown carries "
+                "NO exemption reason — both the BT-121 code (VATEX-EU-AE) AND the "
+                "BT-120 text ('Reverse charge') are removed. The arithmetic is "
+                "untouched (VAT total 0.00, taxable = Σ AE nets, tax inclusive = "
+                "tax exclusive all still reconcile) so NO BR-CO totals rule and "
+                "no other AE rule fires: the ONLY fired rule is BR-AE-10 (fatal) "
+                "— an AE breakdown SHALL carry a BT-121 code or BT-120 text "
+                "meaning 'Reverse charge'. Exactly one distinct fatal, isolating "
+                "the BR-AE-10 shape distinct from the BR-CO-15/14 and BR-DE-15 "
+                "fatals pinned by the other bad-synth goldens: valid=false, "
+                "exit 1.",
+    },
+    {
         "name": "synth-cii-good-foreign-currency",
         "path": "corpus/synthetic/synth-cii-good-foreign-currency.xml",
         "syntax": "CII",
@@ -635,6 +672,30 @@ RECEIPT_FIXTURES = [
                 "profile, proving validate -> receipt end-to-end over a "
                 "full-shape invoice whose only defect is an overstated "
                 "grand total. Mirrors the receipt-ubl-fullshape PASS entry.",
+    },
+    # ---- (h) the reverse-charge (AE) invoice (T-VHR.20), end-to-end ----
+    {
+        "name": "receipt-ubl-good-reverse-charge",
+        "path": "fixtures/synth-ubl-good-reverse-charge_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.20 reverse-charge (AE) XRechnung UBL invoice through "
+                "the per-document attestation path: a PASS receipt "
+                "(failed_fatal_rules empty) under the German profile, proving the "
+                "whole product path (validate -> receipt) over a § 13b "
+                "reverse-charge document where every line is VAT category AE at "
+                "zero VAT.",
+    },
+    # ---- (i) the reverse-charge (AE) negative twin (T-VHR.20), end-to-end ----
+    {
+        "name": "receipt-ubl-bad-reverse-charge",
+        "path": "fixtures/synth-ubl-bad-reverse-charge_ubl.xml",
+        "profile": "xrechnung",
+        "note": "The T-VHR.20 reverse-charge negative twin through the "
+                "per-document attestation path: a FAIL receipt "
+                "(failed_fatal_rules contains BR-AE-10) under the German profile, "
+                "proving validate -> receipt end-to-end over an AE invoice whose "
+                "only defect is a missing exemption reason on the AE breakdown. "
+                "Mirrors the receipt-ubl-good-reverse-charge PASS entry.",
     },
 ]
 

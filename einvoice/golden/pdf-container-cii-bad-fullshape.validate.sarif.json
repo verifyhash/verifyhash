@@ -1,0 +1,324 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "An invoice (INVOICE) must contain information on PAYMENT INSTRUCTIONS (BG-16)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "6f58f183ff609c95ebdcf4ae9200ea1c578e2734274a7481e36eb9adf54e97d1"
+          },
+          "ruleId": "BR-DE-1"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:SellerTradeParty/ram:DefinedTradeContact"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The group 'SELLER CONTACT' (BG-6) must be transmitted."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "71e34512bfb443e0e30ae45e90850e8d9abce3b89bb297f6e905ae015eb89045"
+          },
+          "ruleId": "BR-DE-2"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The element 'Seller city' (BT-37) must be transmitted."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "26497161b63dd644ddf8f3aee810c416417fb3aa674f257793a3b4360e9b03a7"
+          },
+          "ruleId": "BR-DE-3"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The element 'Seller post code' (BT-38) must be transmitted."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "1feb33f11352f7aa4dde0291648b46175dcc4394dd1b2b457f0c32118bc4ad0d"
+          },
+          "ruleId": "BR-DE-4"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The element 'Buyer city' (BT-52) must be transmitted."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "0a7d6e5d45cfb5a02b3703007d0534cb48a74b618dc44754a50cc89385cf1a0d"
+          },
+          "ruleId": "BR-DE-8"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The element 'Buyer post code' (BT-53) must be transmitted."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "1cde57b5e49be6070b791f0134a7688a0d5aee38c213c9f85ec0da374021fcb8"
+          },
+          "ruleId": "BR-DE-9"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:ApplicableHeaderTradeAgreement/ram:BuyerReference"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The element 'Buyer reference' (BT-10) must be transmitted."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "b79e8014d802a4fda4d975889419f30cb23bee149bcda02b469ad7f5946ffdce"
+          },
+          "ruleId": "BR-DE-15"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "ebafec8f490fa6560a14c3d197c7547862d327129a470c1eb2c57b2c586f8b20"
+          },
+          "ruleId": "BR-DE-21"
+        },
+        {
+          "level": "note",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:ApplicableHeaderTradeDelivery/ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "afa2fc095f19c3a6855bac81c408ceaf9a6394d989e080161a878eb914e8e4b7"
+          },
+          "ruleId": "BR-DE-TMP-32"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Add the required element at `cac:PaymentMeans`: An invoice must contain PAYMENT INSTRUCTIONS (BG-16)."
+              },
+              "help": {
+                "text": "Add the required element at `cac:PaymentMeans`: An invoice must contain PAYMENT INSTRUCTIONS (BG-16).\nBusiness terms: BG-16"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-1/",
+              "id": "BR-DE-1",
+              "name": "BR-DE-1",
+              "shortDescription": {
+                "text": "An invoice must contain PAYMENT INSTRUCTIONS (BG-16)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted.\nBusiness terms: BG-6"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-2/",
+              "id": "BR-DE-2",
+              "name": "BR-DE-2",
+              "shortDescription": {
+                "text": "SELLER CONTACT (BG-6) must be transmitted."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress`: Seller city (BT-37) must be transmitted (non-empty)."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress`: Seller city (BT-37) must be transmitted (non-empty).\nBusiness terms: BT-37"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-3/",
+              "id": "BR-DE-3",
+              "name": "BR-DE-3",
+              "shortDescription": {
+                "text": "Seller city (BT-37) must be transmitted (non-empty)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress`: Seller post code (BT-38) must be transmitted (non-empty)."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress`: Seller post code (BT-38) must be transmitted (non-empty).\nBusiness terms: BT-38"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-4/",
+              "id": "BR-DE-4",
+              "name": "BR-DE-4",
+              "shortDescription": {
+                "text": "Seller post code (BT-38) must be transmitted (non-empty)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress`: Buyer city (BT-52) must be transmitted (non-empty)."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress`: Buyer city (BT-52) must be transmitted (non-empty).\nBusiness terms: BT-52"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-8/",
+              "id": "BR-DE-8",
+              "name": "BR-DE-8",
+              "shortDescription": {
+                "text": "Buyer city (BT-52) must be transmitted (non-empty)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress`: Buyer post code (BT-53) must be transmitted (non-empty)."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress`: Buyer post code (BT-53) must be transmitted (non-empty).\nBusiness terms: BT-53"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-9/",
+              "id": "BR-DE-9",
+              "name": "BR-DE-9",
+              "shortDescription": {
+                "text": "Buyer post code (BT-53) must be transmitted (non-empty)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty)."
+              },
+              "help": {
+                "text": "Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty).\nBusiness terms: BT-10"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-15/",
+              "id": "BR-DE-15",
+              "name": "BR-DE-15",
+              "shortDescription": {
+                "text": "Buyer reference (BT-10) must be transmitted (non-empty)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Correct `cbc:CustomizationID` so that BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) \u2014 untrimmed string equality."
+              },
+              "help": {
+                "text": "Correct `cbc:CustomizationID` so that BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) \u2014 untrimmed string equality.\nBusiness terms: BT-24"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-21/",
+              "id": "BR-DE-21",
+              "name": "BR-DE-21",
+              "shortDescription": {
+                "text": "BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) \u2014 untrimmed string equality."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line."
+              },
+              "help": {
+                "text": "Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.\nBusiness terms: BG-14, BG-26, BT-72"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-TMP-32/",
+              "id": "BR-DE-TMP-32",
+              "name": "BR-DE-TMP-32",
+              "shortDescription": {
+                "text": "An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

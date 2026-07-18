@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "FX-CONTAINER-AFRELATIONSHIP",
+    "description": "embedded invoice file specification has an absent or invalid /AFRelationship (/Unspecified); Factur-X/ZUGFeRD require /Alternative (or /Data) per PDF 32000-1 \u00a77.11.3",
+    "fingerprint": "43506f96dcec1035c2ffbadb8379bd3bceaa8012220e3a8fb072e83b24fe1030",
+    "location": {
+      "path": "corpus/pdf/facturx-afrel-bad.pdf"
+    },
+    "severity": "minor"
+  }
+]

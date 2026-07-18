@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="0" errors="0">
+  <testsuite name="en16931" tests="1" failures="0" errors="0">
+    <testcase name="FX-CONTAINER-AFRELATIONSHIP" classname="en16931">
+      <system-out>warning: embedded invoice file specification has an absent or invalid /AFRelationship (/Unspecified); Factur-X/ZUGFeRD require /Alternative (or /Data) per PDF 32000-1 §7.11.3 (/EmbeddedFiles filespec /AFRelationship)</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>

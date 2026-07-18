@@ -1,0 +1,1 @@
+##vso[task.logissue type=warning;sourcepath=corpus/pdf/facturx-afrel-bad.pdf;code=FX-CONTAINER-AFRELATIONSHIP]embedded invoice file specification has an absent or invalid /AFRelationship (/Unspecified); Factur-X/ZUGFeRD require /Alternative (or /Data) per PDF 32000-1 §7.11.3

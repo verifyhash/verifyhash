@@ -1,0 +1,74 @@
+[
+  {
+    "check_name": "BR-DE-1",
+    "description": "An invoice (INVOICE) must contain information on PAYMENT INSTRUCTIONS (BG-16).",
+    "fingerprint": "c7665a5de23efda7b6040e6d9d20d84013be56081f3c0b8292f7c6d2fc8f84eb",
+    "location": {
+      "path": "corpus/pdf/facturx-bad.pdf"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-2",
+    "description": "The group 'SELLER CONTACT' (BG-6) must be transmitted.",
+    "fingerprint": "3b0cc18ce31d45c9a211813a318eca22751b5c40d322a8788c4c16dc97942cbd",
+    "location": {
+      "path": "corpus/pdf/facturx-bad.pdf"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-3",
+    "description": "The element 'Seller city' (BT-37) must be transmitted.",
+    "fingerprint": "6785c11d5ddc8013e5d163efb98214160bb3d661fec1bf137ff007f6edfb7999",
+    "location": {
+      "path": "corpus/pdf/facturx-bad.pdf"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-4",
+    "description": "The element 'Seller post code' (BT-38) must be transmitted.",
+    "fingerprint": "72c745b35331177f66c37fc9becb989783941fdb36eb5fbcb82e77b7c65bd939",
+    "location": {
+      "path": "corpus/pdf/facturx-bad.pdf"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-8",
+    "description": "The element 'Buyer city' (BT-52) must be transmitted.",
+    "fingerprint": "46c3fb2bdf84fe35e36c75ece9983571416f450aeb5611f419da10f805ddc1a0",
+    "location": {
+      "path": "corpus/pdf/facturx-bad.pdf"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-9",
+    "description": "The element 'Buyer post code' (BT-53) must be transmitted.",
+    "fingerprint": "20701053847db19566b1740950dbbb868c3b1756b5468b7f99a9eb31bc94eb17",
+    "location": {
+      "path": "corpus/pdf/facturx-bad.pdf"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-15",
+    "description": "The element 'Buyer reference' (BT-10) must be transmitted.",
+    "fingerprint": "f8961a5100b9cbb97042c20152847b2c6882b759d354c8840b0e7421202749b8",
+    "location": {
+      "path": "corpus/pdf/facturx-bad.pdf"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-21",
+    "description": "'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier.",
+    "fingerprint": "618d5213153b9d701b93af8c0a4d4b750f31a11bf13d35d661255365877716da",
+    "location": {
+      "path": "corpus/pdf/facturx-bad.pdf"
+    },
+    "severity": "minor"
+  }
+]

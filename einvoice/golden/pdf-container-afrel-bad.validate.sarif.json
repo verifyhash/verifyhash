@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "/EmbeddedFiles filespec /AFRelationship"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "embedded invoice file specification has an absent or invalid /AFRelationship (/Unspecified); Factur-X/ZUGFeRD require /Alternative (or /Data) per PDF 32000-1 \u00a77.11.3"
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "8c9b0fbde0e70bd9bb24fcbff62093942d917346831aa07c405947a433758105"
+          },
+          "ruleId": "FX-CONTAINER-AFRELATIONSHIP"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": ""
+              },
+              "help": {
+                "text": ""
+              },
+              "id": "FX-CONTAINER-AFRELATIONSHIP",
+              "name": "FX-CONTAINER-AFRELATIONSHIP",
+              "shortDescription": {
+                "text": "FX-CONTAINER-AFRELATIONSHIP"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

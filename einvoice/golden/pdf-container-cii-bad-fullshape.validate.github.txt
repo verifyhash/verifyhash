@@ -1,0 +1,9 @@
+::error file=corpus/pdf/facturx-bad.pdf,title=BR-DE-1::An invoice (INVOICE) must contain information on PAYMENT INSTRUCTIONS (BG-16).
+::error file=corpus/pdf/facturx-bad.pdf,title=BR-DE-2::The group 'SELLER CONTACT' (BG-6) must be transmitted.
+::error file=corpus/pdf/facturx-bad.pdf,title=BR-DE-3::The element 'Seller city' (BT-37) must be transmitted.
+::error file=corpus/pdf/facturx-bad.pdf,title=BR-DE-4::The element 'Seller post code' (BT-38) must be transmitted.
+::error file=corpus/pdf/facturx-bad.pdf,title=BR-DE-8::The element 'Buyer city' (BT-52) must be transmitted.
+::error file=corpus/pdf/facturx-bad.pdf,title=BR-DE-9::The element 'Buyer post code' (BT-53) must be transmitted.
+::error file=corpus/pdf/facturx-bad.pdf,title=BR-DE-15::The element 'Buyer reference' (BT-10) must be transmitted.
+::warning file=corpus/pdf/facturx-bad.pdf,title=BR-DE-21::'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier.
+::warning file=corpus/pdf/facturx-bad.pdf,title=BR-DE-TMP-32::The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line.

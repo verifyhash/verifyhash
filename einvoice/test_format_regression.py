@@ -47,6 +47,29 @@ verdicts are already pinned as normalized projections in
   * synth-cii-bad-vat-mismatch      BT-110 != Σ BT-117                -> FAIL, BR-CO-14
   * synth-cii-bad-xrechnung-nocontact XRechnung seller-contact gap    -> FAIL, BR-DE-2/BR-DE-21
 
+T-VHFMTP.5 extends the lock over the Factur-X/PDF-CONTAINER input path — the
+third native input syntax (alongside plain UBL XML and raw CII), and the first
+whose verdict can turn on CONTAINER integrity rather than the invoice body.
+These fixtures (``kind:"pdf"``) drive the SAME ``report.build_report`` the CLI
+runs: it auto-detects the PDF, extracts the embedded CII and runs the
+embedded-CII engine PLUS the container-integrity (``FX-CONTAINER-*``) checks.
+Crucially the report CLI dispatches a ``.pdf`` NATIVELY (unlike a raw CII
+``.xml``, which trips the S-ROOT structural check), so the emit==CLI
+byte-equivalence proof in ``_assert_emit_matches_cli`` runs for pdf fixtures too
+— these six-format goldens are CLI-verified, not merely engine-internal:
+  * pdf-container-cii-good-fullshape  full-shape valid CII in a MATCHING
+      Factur-X container (corpus/pdf/facturx-fullshape.pdf) -> PASS, no fired
+      rule. Same invoice as synth-cii-good-fullshape now travelling the PDF
+      path; reuses the committed projection golden
+      golden/pdf-container-cii-good-fullshape.json for the regen cross-check.
+  * pdf-container-cii-bad-fullshape   clean container, business-rule-invalid
+      embedded CII (corpus/pdf/facturx-bad.pdf) -> FAIL (BR-DE-* embedded-CII
+      business rules) under the xrechnung profile — a body verdict, container OK.
+  * pdf-container-afrel-bad           structurally-defective container
+      (corpus/pdf/facturx-afrel-bad.pdf, /AFRelationship /Unspecified) -> fires
+      FX-CONTAINER-AFRELATIONSHIP, the container-integrity verdict CLASS no
+      other machine golden covers (not a business rule).
+
 Each is a genuinely different document producing a genuinely different report,
 so its six machine goldens differ substantively (not near-duplicates): every
 pass case emits an empty GitLab array / zero-testcase JUnit / "conformant"
@@ -424,6 +447,55 @@ FIXTURES = [
         "note": "XRechnung-conformant UBL invoice -> PASS under the xrechnung "
                 "profile.",
     },
+    # --- T-VHFMTP.5: the Factur-X/PDF-CONTAINER input path. These drive the
+    # SAME build_report the CLI runs; it auto-detects the PDF, extracts the
+    # embedded CII and runs the embedded-CII engine PLUS container-integrity
+    # (FX-CONTAINER-*) checks. Because the report CLI dispatches a .pdf
+    # natively (unlike a raw CII .xml, which trips S-ROOT), the emit==CLI
+    # byte-equivalence proof runs for these too. Three genuinely-distinct
+    # verdict classes: a clean container + valid CII (PASS), a clean container
+    # wrapping business-rule-invalid CII (FAIL), and a STRUCTURALLY-defective
+    # container that fires an FX-CONTAINER-* finding no other machine golden
+    # covers. Each rel is confirmed on disk.
+    {
+        "name": "pdf-container-cii-good-fullshape",
+        "rel": "corpus/pdf/facturx-fullshape.pdf",
+        "kind": "pdf",
+        # Reuses the committed projection golden
+        # golden/pdf-container-cii-good-fullshape.json (en16931) for the regen
+        # cross-check: same full-shape CII as synth-cii-good-fullshape, now
+        # travelling the PDF-container path, must still validate.
+        "note": "full-shape valid embedded CII in a MATCHING Factur-X container "
+                "-> PASS (no fired rule); reuses the committed projection "
+                "golden for the regen cross-check.",
+    },
+    {
+        "name": "pdf-container-cii-bad-fullshape",
+        "rel": "corpus/pdf/facturx-bad.pdf",
+        "kind": "pdf",
+        # The container is clean; only the embedded CII is bad. Its BR-DE
+        # business rules fire ONLY under the xrechnung profile (as with
+        # synth-cii-bad-xrechnung-nocontact), so pin the genuinely-invalid
+        # verdict under xrechnung — a business-rule FAIL, distinct from the
+        # container-structure defect below.
+        "profile": "xrechnung",
+        "note": "clean Factur-X container wrapping business-rule-invalid "
+                "embedded CII -> FAIL (BR-DE-* embedded-CII business rules) "
+                "under the xrechnung profile.",
+    },
+    {
+        "name": "pdf-container-afrel-bad",
+        "rel": "corpus/pdf/facturx-afrel-bad.pdf",
+        "kind": "pdf",
+        # The embedded CII is valid; the CONTAINER is defective (invoice
+        # filespec /AFRelationship is /Unspecified, not /Alternative or /Data),
+        # firing FX-CONTAINER-AFRELATIONSHIP — a container-integrity verdict
+        # class no existing machine golden exercises.
+        "note": "structurally-defective Factur-X container "
+                "(/AFRelationship /Unspecified) -> fires "
+                "FX-CONTAINER-AFRELATIONSHIP, the container-integrity verdict "
+                "class (not a business rule).",
+    },
 ]
 
 
@@ -444,6 +516,20 @@ def build_report_dict(rel, kind, profile=PROFILE):
             xml_bytes = fh.read()
         # source is the RELATIVE path -> path-invariant echoed bytes.
         return report._report_from_invoice_bytes(xml_bytes, rel, profile)
+    if kind == "pdf":
+        # Factur-X/ZUGFeRD PDF container: build_report auto-detects the PDF,
+        # extracts the embedded CII and runs the SAME embedded-CII engine PLUS
+        # the container-integrity (FX-CONTAINER-*/FX-PDFA3-*) checks the CLI
+        # runs — no hand-authored bytes, no re-implemented rule logic. Identical
+        # cwd=HERE mechanism as the ubl branch below, so build_report's own file
+        # read and the echoed ``source`` stay the checkout-relative
+        # ``corpus/pdf/...`` string (path-invariant).
+        prev = os.getcwd()
+        try:
+            os.chdir(HERE)
+            return report.build_report(rel, profile=profile)
+        finally:
+            os.chdir(prev)
     # UBL: drive build_report with the relative path from cwd=HERE so its
     # own file read + echoed ``source`` stay checkout-independent.
     prev = os.getcwd()
@@ -493,14 +579,17 @@ def _path_leak(data):
 
 def _assert_emit_matches_cli(fx):
     """Prove ``emit(build_report_dict(...), fmt)`` is byte-identical to driving
-    the REAL ``python3 -m einvoice.report --format <fmt>`` CLI. Only meaningful
-    for the fixtures the plain-XML CLI dispatches natively (UBL); a CII raw .xml
-    trips S-ROOT in the CLI (documented above), so its native verdict is
+    the REAL ``python3 -m einvoice.report --format <fmt>`` CLI. Meaningful for
+    every fixture the report CLI dispatches natively: UBL plain-XML AND the
+    Factur-X/ZUGFeRD PDF container (build_report auto-detects the PDF and runs
+    the embedded-CII engine, so ``einvoice.report <fx>.pdf`` emits exactly these
+    bytes). ONLY a raw CII .xml is exempt — it trips the S-ROOT structural check
+    in the plain-XML CLI (documented above), so its native verdict is
     cross-checked instead against the committed projection. Returns a list of
     failure lines (empty = OK)."""
     fails = []
     rep = build_report_dict(fx["rel"], fx["kind"], fx_profile(fx))
-    if fx["kind"] != "ubl":
+    if fx["kind"] == "cii":
         return fails
     env = dict(os.environ)
     env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")

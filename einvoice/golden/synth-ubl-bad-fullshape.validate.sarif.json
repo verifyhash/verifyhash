@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "Invoice total with VAT must reconcile: Invoice total with VAT (BT-112=990.60) must equal total without VAT (BT-109=780.00) + total VAT (BT-110=120.60) = 900.60."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "ad02cca6892374d314000f73a6824e9a00505676bf2f5e083cf86836619852f3"
+          },
+          "ruleId": "BR-CO-15"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Correct the calculated amount at `cac:LegalMonetaryTotal` so that Invoice total amount with VAT (BT-112) = Invoice total amount without VAT (BT-109) + Invoice total VAT amount (BT-110)."
+              },
+              "help": {
+                "text": "Correct the calculated amount at `cac:LegalMonetaryTotal` so that Invoice total amount with VAT (BT-112) = Invoice total amount without VAT (BT-109) + Invoice total VAT amount (BT-110).\nBusiness terms: BT-109, BT-110, BT-112"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-CO-15/",
+              "id": "BR-CO-15",
+              "name": "BR-CO-15",
+              "shortDescription": {
+                "text": "Invoice total with VAT (BT-112) = total without VAT (BT-109) + total VAT (BT-110)."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

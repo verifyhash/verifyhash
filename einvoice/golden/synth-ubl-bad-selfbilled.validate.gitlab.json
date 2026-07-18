@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-DE-17",
+    "description": "'Invoice type code' (BT-3) should be one of the codes 326, 380, 384, 389, 381, 875, 876, 877 (UNTDID 1001 subset); found '71'.",
+    "fingerprint": "8390f05bb39ee54cede0da03168a4a11e23fb77797640d632b8dd8ade6780a17",
+    "location": {
+      "path": "fixtures/synth-ubl-bad-selfbilled_ubl.xml"
+    },
+    "severity": "minor"
+  }
+]

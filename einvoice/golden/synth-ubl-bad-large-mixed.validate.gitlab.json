@@ -1,0 +1,20 @@
+[
+  {
+    "check_name": "BR-CO-10",
+    "description": "Sum of Invoice line net amounts (BT-106=4600.00) must equal the sum of line net amounts (\u03a3 BT-131=4700.00).",
+    "fingerprint": "a845eb6a2844766eb438ce639aba52347e1e43172fee803e18073257fc585f24",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-bad-large-mixed.xml"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-CO-13",
+    "description": "Invoice total without VAT (BT-109=4680.00) must equal \u03a3 line net (BT-106=4600.00) \u2212 allowances (BT-107=60.00) + charges (BT-108=40.00) = 4580.00.",
+    "fingerprint": "fe69640d177bd1dd8634a248afdf611bb94b965bcd23746f66b9fa2e575b7f14",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-bad-large-mixed.xml"
+    },
+    "severity": "major"
+  }
+]

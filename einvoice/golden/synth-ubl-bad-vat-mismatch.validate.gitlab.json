@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-CO-14",
+    "description": "Invoice total VAT amount (BT-110=300.00) must equal the sum of VAT category tax amounts (\u03a3 BT-117=289.50).",
+    "fingerprint": "a9cf83a2ae2a87a613af48ce4616b2606b3689a014c9c62ec205af2d12cc4c80",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-bad-vat-mismatch.xml"
+    },
+    "severity": "major"
+  }
+]

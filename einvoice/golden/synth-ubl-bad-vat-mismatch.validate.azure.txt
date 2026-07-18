@@ -1,0 +1,1 @@
+##vso[task.logissue type=error;sourcepath=corpus/synthetic/synth-ubl-bad-vat-mismatch.xml;code=BR-CO-14]Invoice total VAT amount (BT-110=300.00) must equal the sum of VAT category tax amounts (Σ BT-117=289.50).

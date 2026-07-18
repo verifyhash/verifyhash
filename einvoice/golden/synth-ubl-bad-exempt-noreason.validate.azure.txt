@@ -1,0 +1,1 @@
+##vso[task.logissue type=error;sourcepath=corpus/synthetic/synth-ubl-bad-exempt-noreason.xml;code=BR-E-10]A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121) or a VAT exemption reason text (BT-120).

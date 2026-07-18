@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-E-10",
+    "description": "A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121) or a VAT exemption reason text (BT-120).",
+    "fingerprint": "4ab9dd9c19f62ba9620c1e23e2376818a96dfdc3d5423c61c1432cded25c9c78",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-bad-exempt-noreason.xml"
+    },
+    "severity": "major"
+  }
+]

@@ -1,0 +1,1 @@
+##vso[task.logissue type=error;sourcepath=fixtures/synth-ubl-bad-fullshape_ubl.xml;code=BR-CO-15]Invoice total with VAT must reconcile: Invoice total with VAT (BT-112=990.60) must equal total without VAT (BT-109=780.00) + total VAT (BT-110=120.60) = 900.60.

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "A VAT breakdown (BG-23) with an Export outside the EU (G) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121), meaning 'Export outside the EU', or the VAT exemption reason text (BT-120) 'Export outside the EU'."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "4f8d6d77011cc2b9018ab789b470f76e8dc84ff1b433791d00bd255d2c5860f0"
+          },
+          "ruleId": "BR-G-10"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'G'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with the VAT Category code (BT-118) \"Export outside the EU\" shall have a VAT exemption reason code (BT-121), meaning \"Export outside the EU\" or the VAT exemption reason text (BT-120) \"Export outside the EU\" (or the equivalent standard text in another language)."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'G'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with the VAT Category code (BT-118) \"Export outside the EU\" shall have a VAT exemption reason code (BT-121), meaning \"Export outside the EU\" or the VAT exemption reason text (BT-120) \"Export outside the EU\" (or the equivalent standard text in another language).\nBusiness terms: BG-23, BT-118, BT-120, BT-121"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-G-10/",
+              "id": "BR-G-10",
+              "name": "BR-G-10",
+              "shortDescription": {
+                "text": "A VAT breakdown (BG-23) with an Export outside the EU (G) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) \u2014 the presence-required shape shared with BR-E-10."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

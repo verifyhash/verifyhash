@@ -1,0 +1,20 @@
+[
+  {
+    "check_name": "BR-DE-15",
+    "description": "The element 'Buyer reference' (BT-10) must be transmitted.",
+    "fingerprint": "4df0089a4e123aa57f4e77cc53a10b17288ae01beecba97a38bfcc904661c713",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-bad-missing-buyerref.xml"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-19",
+    "description": "'Payment account identifier' (BT-84) should be a correct IBAN when 'Payment means type code' (BT-81) is 58 (SEPA).",
+    "fingerprint": "b84f2254446341ac2991894ff1227f28bd125640143eea2d18913a38083c6049",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-bad-missing-buyerref.xml"
+    },
+    "severity": "minor"
+  }
+]

@@ -1,0 +1,1 @@
+# einvoice: fixtures/synth-ubl-good-selfbilled_ubl.xml is conformant with EN 16931 — no issues

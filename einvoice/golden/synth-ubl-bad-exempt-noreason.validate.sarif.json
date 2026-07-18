@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121) or a VAT exemption reason text (BT-120)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "791c821bdca5e3c2b30884e56049174649ae240e0ae6930e133e32f285ead8dd"
+          },
+          "ruleId": "BR-E-10"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'E'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with VAT Category code (BT-118) \"Exempt from VAT\" shall have a VAT exemption reason code (BT-121) or a VAT exemption reason text (BT-120)."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'E'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with VAT Category code (BT-118) \"Exempt from VAT\" shall have a VAT exemption reason code (BT-121) or a VAT exemption reason text (BT-120).\nBusiness terms: BG-23, BT-118, BT-120, BT-121"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-E-10/",
+              "id": "BR-E-10",
+              "name": "BR-E-10",
+              "shortDescription": {
+                "text": "A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) or text (BT-120) \u2014 the presence-required mirror image of BR-Z-10/BR-S-10."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-O-02",
+    "description": "An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall not contain the Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) or the Buyer VAT identifier (BT-48).",
+    "fingerprint": "aa9516a22b536c78b5856ead7395f3b3dea8b154d57df2190c0ebdb80991689a",
+    "location": {
+      "path": "fixtures/synth-ubl-bad-not-subject_ubl.xml"
+    },
+    "severity": "major"
+  }
+]

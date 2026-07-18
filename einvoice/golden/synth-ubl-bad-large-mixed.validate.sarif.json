@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:LegalMonetaryTotal/cbc:LineExtensionAmount"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "Sum of Invoice line net amounts (BT-106=4600.00) must equal the sum of line net amounts (\u03a3 BT-131=4700.00)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "653bff85c6386a08bd328360774ddc047b8f6cdc19130d5c12d1370dfae6418c"
+          },
+          "ruleId": "BR-CO-10"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "Invoice total without VAT (BT-109=4680.00) must equal \u03a3 line net (BT-106=4600.00) \u2212 allowances (BT-107=60.00) + charges (BT-108=40.00) = 4580.00."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "1a394ffa7298879dfd76056865e19b96527ac03e1a0619caa5cbcf99259d62da"
+          },
+          "ruleId": "BR-CO-13"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Correct the calculated amount at `cac:LegalMonetaryTotal` so that Sum of Invoice line net amount (BT-106) = \u03a3 Invoice line net amount (BT-131)."
+              },
+              "help": {
+                "text": "Correct the calculated amount at `cac:LegalMonetaryTotal` so that Sum of Invoice line net amount (BT-106) = \u03a3 Invoice line net amount (BT-131).\nBusiness terms: BT-106, BT-131"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-CO-10/",
+              "id": "BR-CO-10",
+              "name": "BR-CO-10",
+              "shortDescription": {
+                "text": "Sum of Invoice line net amount (BT-106) = \u03a3 line net amount (BT-131)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Correct the calculated amount at `cac:LegalMonetaryTotal` so that Invoice total amount without VAT (BT-109) = \u03a3 Invoice line net amount (BT-131) - Sum of allowances on document level (BT-107) + Sum of charges on document level (BT-108)."
+              },
+              "help": {
+                "text": "Correct the calculated amount at `cac:LegalMonetaryTotal` so that Invoice total amount without VAT (BT-109) = \u03a3 Invoice line net amount (BT-131) - Sum of allowances on document level (BT-107) + Sum of charges on document level (BT-108).\nBusiness terms: BT-107, BT-108, BT-109, BT-131"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-CO-13/",
+              "id": "BR-CO-13",
+              "name": "BR-CO-13",
+              "shortDescription": {
+                "text": "Invoice total without VAT (BT-109) = \u03a3 line net (BT-131) \u2212 document allowances (BT-107) + document charges (BT-108)."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

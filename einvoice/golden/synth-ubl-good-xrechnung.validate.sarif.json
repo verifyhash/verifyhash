@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "'Payment account identifier' (BT-84) should be a correct IBAN when 'Payment means type code' (BT-81) is 58 (SEPA)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "f78fa36305d1732cb5c9bbf30df07a034d1ad189c987bf140bdd4f474d337567"
+          },
+          "ruleId": "BR-DE-19"
+        },
+        {
+          "level": "note",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:Delivery/cbc:ActualDeliveryDate"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "ed9149c1d54b0ddd1b6e1e49a4c43616f3d000765f50cccf6571b3ab0d967293"
+          },
+          "ruleId": "BR-DE-TMP-32"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Correct `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('30','58')]` so that with payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription)."
+              },
+              "help": {
+                "text": "Correct `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('30','58')]` so that with payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription).\nBusiness terms: BT-81, BT-84"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-19/",
+              "id": "BR-DE-19",
+              "name": "BR-DE-19",
+              "shortDescription": {
+                "text": "With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line."
+              },
+              "help": {
+                "text": "Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.\nBusiness terms: BG-14, BG-26, BT-72"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-TMP-32/",
+              "id": "BR-DE-TMP-32",
+              "name": "BR-DE-TMP-32",
+              "shortDescription": {
+                "text": "An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

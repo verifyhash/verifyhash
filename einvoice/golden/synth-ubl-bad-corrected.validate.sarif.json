@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:BillingReference/cac:InvoiceDocumentReference"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "'Invoice type code' (BT-3) is 384 (Corrected invoice), so PRECEDING INVOICE REFERENCE (BG-3) should be present at least once."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "78a50c0041f452afbf940b4338853c4a486392354e3f43918fd5d9857ff2f2e2"
+          },
+          "ruleId": "BR-DE-26"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Correct `cbc:InvoiceTypeCode` so that type code 384 (Corrected invoice) should carry a PRECEDING INVOICE REFERENCE (BG-3)."
+              },
+              "help": {
+                "text": "Correct `cbc:InvoiceTypeCode` so that type code 384 (Corrected invoice) should carry a PRECEDING INVOICE REFERENCE (BG-3).\nBusiness terms: BG-3, BT-3"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-26/",
+              "id": "BR-DE-26",
+              "name": "BR-DE-26",
+              "shortDescription": {
+                "text": "Type code 384 (Corrected invoice) should carry a PRECEDING INVOICE REFERENCE (BG-3)."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

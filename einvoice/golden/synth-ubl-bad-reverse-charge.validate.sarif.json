@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121), meaning 'Reverse charge', or the VAT exemption reason text (BT-120) 'Reverse charge'."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "71e84807d20c7a7e79a06b833491fdd0d6b31c3b11f78aab85db936c8a8f47e7"
+          },
+          "ruleId": "BR-AE-10"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'AE'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with VAT Category code (BT-118) \"Reverse charge\" shall have a VAT exemption reason code (BT-121), meaning \"Reverse charge\" or the VAT exemption reason text (BT-120) \"Reverse charge\" (or the equivalent standard text in another language)."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'AE'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']`: A VAT breakdown (BG-23) with VAT Category code (BT-118) \"Reverse charge\" shall have a VAT exemption reason code (BT-121), meaning \"Reverse charge\" or the VAT exemption reason text (BT-120) \"Reverse charge\" (or the equivalent standard text in another language).\nBusiness terms: BG-23, BT-118, BT-120, BT-121"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-AE-10/",
+              "id": "BR-AE-10",
+              "name": "BR-AE-10",
+              "shortDescription": {
+                "text": "A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) SHALL have a VAT exemption reason code (BT-121) meaning 'Reverse charge' or the reason text (BT-120) 'Reverse charge' \u2014 the presence-required shape shared with BR-E-10."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

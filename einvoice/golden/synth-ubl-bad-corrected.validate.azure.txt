@@ -1,0 +1,1 @@
+##vso[task.logissue type=warning;sourcepath=fixtures/synth-ubl-bad-corrected_ubl.xml;code=BR-DE-26]'Invoice type code' (BT-3) is 384 (Corrected invoice), so PRECEDING INVOICE REFERENCE (BG-3) should be present at least once.

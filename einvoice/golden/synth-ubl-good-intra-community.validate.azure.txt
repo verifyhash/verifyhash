@@ -1,0 +1,1 @@
+# einvoice: fixtures/synth-ubl-good-intra-community_ubl.xml is conformant with EN 16931 — no issues

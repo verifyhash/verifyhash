@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-DE-19",
+    "description": "'Payment account identifier' (BT-84) should be a correct IBAN when 'Payment means type code' (BT-81) is 58 (SEPA).",
+    "fingerprint": "8faaafacc9444c35769497106a5debdf61142bbbd41d889d279db721cbdb0156",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-good-xrechnung.xml"
+    },
+    "severity": "minor"
+  }
+]

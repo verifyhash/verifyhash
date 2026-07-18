@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="2" failures="0" errors="0">
+  <testsuite name="xrechnung" tests="2" failures="0" errors="0">
+    <testcase name="BR-DE-19" classname="xrechnung">
+      <system-out>warning: 'Payment account identifier' (BT-84) should be a correct IBAN when 'Payment means type code' (BT-81) is 58 (SEPA). (cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID)</system-out>
+    </testcase>
+    <testcase name="BR-DE-TMP-32" classname="xrechnung">
+      <system-out>information: The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line. (cac:Delivery/cbc:ActualDeliveryDate)</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>

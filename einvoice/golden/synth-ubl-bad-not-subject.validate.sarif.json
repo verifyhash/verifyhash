@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall not contain the Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) or the Buyer VAT identifier (BT-48)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "9302ba14ac3df5faced99950973908767b56fe5338e2bd5d607363dc1a6bed25"
+          },
+          "ruleId": "BR-O-02"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='O']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"Not subject to VAT\" shall not contain the Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) or the Buyer VAT identifier (BT-48)."
+              },
+              "help": {
+                "text": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='O']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"Not subject to VAT\" shall not contain the Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) or the Buyer VAT identifier (BT-48).\nBusiness terms: BG-25, BT-31, BT-48, BT-63, BT-151"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-O-02/",
+              "id": "BR-O-02",
+              "name": "BR-O-02",
+              "shortDescription": {
+                "text": "An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall NOT contain a Seller/tax-representative/Buyer VAT identifier."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="1" errors="0">
+  <testsuite name="en16931" tests="1" failures="1" errors="0">
+    <testcase name="BR-E-10" classname="en16931">
+      <failure message="A VAT breakdown (BG-23) with an Exempt from VAT (E) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121) or a VAT exemption reason text (BT-120).">fatal: cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

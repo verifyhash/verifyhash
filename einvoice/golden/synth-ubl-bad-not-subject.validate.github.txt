@@ -1,0 +1,1 @@
+::error file=fixtures/synth-ubl-bad-not-subject_ubl.xml,title=BR-O-02::An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall not contain the Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) or the Buyer VAT identifier (BT-48).

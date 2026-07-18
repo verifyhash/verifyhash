@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "VAT category tax amount (BT-117=19.00) must equal VAT category taxable amount (BT-116=200.00) x (VAT rate (BT-119=7) / 100), rounded to two decimals."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "5d4c6ff1dd907271b3a42dbbd33c20eb4e549512f7e5a948bf91df15ebcb104a"
+          },
+          "ruleId": "BR-CO-17"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The VAT category tax amount (BT-117=19.00) in a Standard rated (S) VAT breakdown must equal the VAT category taxable amount (BT-116=200.00) x (VAT rate (BT-119=7) / 100)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "6cb48233c83346b85a5ece741a3c95f7a1e2fdbcbdfe80e368ed0b470f275dec"
+          },
+          "ruleId": "BR-S-09"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Correct the calculated amount at `cac:TaxTotal/cac:TaxSubtotal` so that VAT category tax amount (BT-117) = VAT category taxable amount (BT-116) x (VAT category rate (BT-119) / 100), rounded to two decimals."
+              },
+              "help": {
+                "text": "Correct the calculated amount at `cac:TaxTotal/cac:TaxSubtotal` so that VAT category tax amount (BT-117) = VAT category taxable amount (BT-116) x (VAT category rate (BT-119) / 100), rounded to two decimals.\nBusiness terms: BT-116, BT-117, BT-119"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-CO-17/",
+              "id": "BR-CO-17",
+              "name": "BR-CO-17",
+              "shortDescription": {
+                "text": "VAT category tax amount (BT-117) = VAT category taxable amount (BT-116) x (VAT category rate (BT-119) / 100), rounded to two decimals."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is \"Standard rated\" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119)."
+              },
+              "help": {
+                "text": "Adjust the VAT breakdown at `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[normalize-space(cbc:ID) = 'S'][cac:TaxScheme/normalize-space(upper-case(cbc:ID))='VAT']` so that The VAT category tax amount (BT-117) in a VAT breakdown (BG-23) where VAT category code (BT-118) is \"Standard rated\" shall equal the VAT category taxable amount (BT-116) multiplied by the VAT category rate (BT-119).\nBusiness terms: BG-23, BT-116, BT-117, BT-118, BT-119"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-S-09/",
+              "id": "BR-S-09",
+              "name": "BR-S-09",
+              "shortDescription": {
+                "text": "The VAT category tax amount (BT-117) in a Standard-rated (S) VAT breakdown shall equal the VAT category taxable amount (BT-116) x the VAT category rate (BT-119)."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

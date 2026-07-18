@@ -1,0 +1,20 @@
+[
+  {
+    "check_name": "BR-CO-17",
+    "description": "VAT category tax amount (BT-117=19.00) must equal VAT category taxable amount (BT-116=200.00) x (VAT rate (BT-119=7) / 100), rounded to two decimals.",
+    "fingerprint": "d52570098b2bbcbd8dbbabba1d0dde039967033008eeb79a0320001118ff75d5",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-S-09",
+    "description": "The VAT category tax amount (BT-117=19.00) in a Standard rated (S) VAT breakdown must equal the VAT category taxable amount (BT-116=200.00) x (VAT rate (BT-119=7) / 100).",
+    "fingerprint": "625dfc12ea0afb0d4d16e26b8ec58811fc0a724e5275f8d22d0c777b157183de",
+    "location": {
+      "path": "corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml"
+    },
+    "severity": "major"
+  }
+]

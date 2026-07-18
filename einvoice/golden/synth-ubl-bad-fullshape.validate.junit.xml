@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="1" errors="0">
+  <testsuite name="xrechnung" tests="1" failures="1" errors="0">
+    <testcase name="BR-CO-15" classname="xrechnung">
+      <failure message="Invoice total with VAT must reconcile: Invoice total with VAT (BT-112=990.60) must equal total without VAT (BT-109=780.00) + total VAT (BT-110=120.60) = 900.60.">fatal: cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

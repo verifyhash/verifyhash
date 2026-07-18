@@ -1,0 +1,2 @@
+##vso[task.logissue type=error;sourcepath=corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml;code=BR-CO-17]VAT category tax amount (BT-117=19.00) must equal VAT category taxable amount (BT-116=200.00) x (VAT rate (BT-119=7) / 100), rounded to two decimals.
+##vso[task.logissue type=error;sourcepath=corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml;code=BR-S-09]The VAT category tax amount (BT-117=19.00) in a Standard rated (S) VAT breakdown must equal the VAT category taxable amount (BT-116=200.00) x (VAT rate (BT-119=7) / 100).

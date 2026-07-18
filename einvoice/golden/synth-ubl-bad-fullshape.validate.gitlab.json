@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-CO-15",
+    "description": "Invoice total with VAT must reconcile: Invoice total with VAT (BT-112=990.60) must equal total without VAT (BT-109=780.00) + total VAT (BT-110=120.60) = 900.60.",
+    "fingerprint": "e5aab2f56eb8d1251274a95ab2fe417b096ca647b7d2b030e7592d4e5c767045",
+    "location": {
+      "path": "fixtures/synth-ubl-bad-fullshape_ubl.xml"
+    },
+    "severity": "major"
+  }
+]

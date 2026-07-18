@@ -1,0 +1,2 @@
+::error file=corpus/synthetic/synth-ubl-bad-large-mixed.xml,title=BR-CO-10::Sum of Invoice line net amounts (BT-106=4600.00) must equal the sum of line net amounts (Σ BT-131=4700.00).
+::error file=corpus/synthetic/synth-ubl-bad-large-mixed.xml,title=BR-CO-13::Invoice total without VAT (BT-109=4680.00) must equal Σ line net (BT-106=4600.00) − allowances (BT-107=60.00) + charges (BT-108=40.00) = 4580.00.

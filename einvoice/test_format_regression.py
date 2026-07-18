@@ -255,6 +255,175 @@ FIXTURES = [
         "note": "XRechnung seller-contact gap -> FAIL (BR-DE-2, BR-DE-21) "
                 "under the xrechnung profile.",
     },
+    # --- T-VHFMTP.4: the remaining economically-distinct UBL-syntax source
+    # fixtures. Measure-first (see module head) found every synth-ubl-*
+    # projection golden that still lacked a machine-format golden set; each is
+    # driven through the SAME native-UBL plain-XML CLI path (build_report) as
+    # the FMTP.1 synth-ubl-bad-intra-community entry, and its emit==CLI
+    # equivalence is proved for all six formats on every regeneration. The
+    # profile per entry MATCHES the one its projection golden
+    # (golden/<name>.json) was pinned under in test_golden_snapshot.py, so the
+    # frozen bytes reflect exactly the already-committed fired-rule set (the
+    # verdict cross-check enforces this): fixtures whose distinguishing rule is
+    # a German BR-DE national rule pin under ``xrechnung``; the rest under
+    # ``en16931``. Each rel is confirmed to resolve to a committed UBL source.
+    {
+        "name": "synth-ubl-good-fullshape",
+        "rel": "fixtures/synth-ubl-good-fullshape_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "full-shape valid UBL (XRechnung CIUS) -> PASS; the positive "
+                "parity twin of synth-ubl-bad-fullshape.",
+    },
+    {
+        "name": "synth-ubl-bad-fullshape",
+        "rel": "fixtures/synth-ubl-bad-fullshape_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "negative twin of the full-shape UBL invoice -> FAIL under the "
+                "xrechnung profile.",
+    },
+    {
+        "name": "synth-ubl-good-reverse-charge",
+        "rel": "fixtures/synth-ubl-good-reverse-charge_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "reverse-charge (VAT category AE) valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-bad-reverse-charge",
+        "rel": "fixtures/synth-ubl-bad-reverse-charge_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "reverse-charge (AE) broken UBL twin -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-good-intra-community",
+        "rel": "fixtures/synth-ubl-good-intra-community_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "intra-community supply (VAT category K) valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-good-export",
+        "rel": "fixtures/synth-ubl-good-export_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "export supply (VAT category G) valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-bad-export",
+        "rel": "fixtures/synth-ubl-bad-export_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "export UBL missing exemption reason -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-good-not-subject",
+        "rel": "fixtures/synth-ubl-good-not-subject_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "not-subject-to-VAT (category O) valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-bad-not-subject",
+        "rel": "fixtures/synth-ubl-bad-not-subject_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "not-subject (O) broken UBL twin -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-good-corrected",
+        "rel": "fixtures/synth-ubl-good-corrected_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "corrective invoice (type 384) valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-bad-corrected",
+        "rel": "fixtures/synth-ubl-bad-corrected_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "corrective-invoice broken UBL twin -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-good-selfbilled",
+        "rel": "fixtures/synth-ubl-good-selfbilled_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "self-billed invoice (type 389) valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-bad-selfbilled",
+        "rel": "fixtures/synth-ubl-bad-selfbilled_ubl.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "self-billed broken UBL twin -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-bad-missing-buyerref",
+        "rel": "corpus/synthetic/synth-ubl-bad-missing-buyerref.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "buyer reference (BT-10) absent -> FAIL (BR-DE-15) under the "
+                "xrechnung profile.",
+    },
+    {
+        "name": "synth-ubl-good-multiline",
+        "rel": "corpus/synthetic/synth-ubl-good-multiline.xml",
+        "kind": "ubl",
+        "note": "multiple invoice lines, valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-good-multivat",
+        "rel": "corpus/synthetic/synth-ubl-good-multivat.xml",
+        "kind": "ubl",
+        "note": "several VAT breakdown categories, valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-bad-multivat-subtotal",
+        "rel": "corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml",
+        "kind": "ubl",
+        "note": "a VAT category subtotal disagrees with its lines -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-good-allowance-charge",
+        "rel": "corpus/synthetic/synth-ubl-good-allowance-charge.xml",
+        "kind": "ubl",
+        "note": "document-level allowance + charge, valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-good-large-mixed",
+        "rel": "corpus/synthetic/synth-ubl-good-large-mixed.xml",
+        "kind": "ubl",
+        "note": "large mixed-category invoice, valid UBL -> PASS.",
+    },
+    {
+        "name": "synth-ubl-bad-large-mixed",
+        "rel": "corpus/synthetic/synth-ubl-bad-large-mixed.xml",
+        "kind": "ubl",
+        "note": "large mixed-category broken twin -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-bad-exempt-noreason",
+        "rel": "corpus/synthetic/synth-ubl-bad-exempt-noreason.xml",
+        "kind": "ubl",
+        "note": "exempt (category E) with no exemption reason -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-bad-vat-mismatch",
+        "rel": "corpus/synthetic/synth-ubl-bad-vat-mismatch.xml",
+        "kind": "ubl",
+        "note": "invoice total VAT != sum of category VAT -> FAIL.",
+    },
+    {
+        "name": "synth-ubl-good-xrechnung",
+        "rel": "corpus/synthetic/synth-ubl-good-xrechnung.xml",
+        "kind": "ubl",
+        "profile": "xrechnung",
+        "note": "XRechnung-conformant UBL invoice -> PASS under the xrechnung "
+                "profile.",
+    },
 ]
 
 

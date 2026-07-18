@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="1" errors="0">
+  <testsuite name="xrechnung" tests="1" failures="1" errors="0">
+    <testcase name="BR-O-02" classname="xrechnung">
+      <failure message="An Invoice with a 'Not subject to VAT' (O) Invoice line (BT-151) shall not contain the Seller VAT identifier (BT-31), the Seller tax representative VAT identifier (BT-63) or the Buyer VAT identifier (BT-48).">fatal: cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

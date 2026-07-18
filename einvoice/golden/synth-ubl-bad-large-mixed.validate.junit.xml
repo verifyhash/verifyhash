@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="2" failures="2" errors="0">
+  <testsuite name="en16931" tests="2" failures="2" errors="0">
+    <testcase name="BR-CO-10" classname="en16931">
+      <failure message="Sum of Invoice line net amounts (BT-106=4600.00) must equal the sum of line net amounts (Σ BT-131=4700.00).">fatal: cac:LegalMonetaryTotal/cbc:LineExtensionAmount</failure>
+    </testcase>
+    <testcase name="BR-CO-13" classname="en16931">
+      <failure message="Invoice total without VAT (BT-109=4680.00) must equal Σ line net (BT-106=4600.00) − allowances (BT-107=60.00) + charges (BT-108=40.00) = 4580.00.">fatal: cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

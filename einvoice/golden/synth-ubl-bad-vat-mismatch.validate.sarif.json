@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:TaxTotal/cbc:TaxAmount"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "Invoice total VAT amount (BT-110=300.00) must equal the sum of VAT category tax amounts (\u03a3 BT-117=289.50)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "751c922a6f896a4ac27f6b6dffdbaa085b0471b95bcfbd4f9bdf950e5c1aff2c"
+          },
+          "ruleId": "BR-CO-14"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Correct the calculated amount at `/ubl:Invoice/cac:TaxTotal` so that Invoice total VAT amount (BT-110) = \u03a3 VAT category tax amount (BT-117)."
+              },
+              "help": {
+                "text": "Correct the calculated amount at `/ubl:Invoice/cac:TaxTotal` so that Invoice total VAT amount (BT-110) = \u03a3 VAT category tax amount (BT-117).\nBusiness terms: BT-110, BT-117"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-CO-14/",
+              "id": "BR-CO-14",
+              "name": "BR-CO-14",
+              "shortDescription": {
+                "text": "Invoice total VAT amount (BT-110) = \u03a3 VAT category tax amount (BT-117)."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

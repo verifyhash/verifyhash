@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="0" errors="0">
+  <testsuite name="xrechnung" tests="1" failures="0" errors="0">
+    <testcase name="BR-DE-26" classname="xrechnung">
+      <system-out>warning: 'Invoice type code' (BT-3) is 384 (Corrected invoice), so PRECEDING INVOICE REFERENCE (BG-3) should be present at least once. (cac:BillingReference/cac:InvoiceDocumentReference)</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>

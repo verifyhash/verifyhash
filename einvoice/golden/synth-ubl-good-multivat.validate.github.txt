@@ -1,0 +1,1 @@
+# einvoice: corpus/synthetic/synth-ubl-good-multivat.xml is conformant with EN 16931 — no annotations

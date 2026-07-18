@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-DE-26",
+    "description": "'Invoice type code' (BT-3) is 384 (Corrected invoice), so PRECEDING INVOICE REFERENCE (BG-3) should be present at least once.",
+    "fingerprint": "bdaf7a2f1e3e5b421b03f67a4c3bf088942113372d130afea816b0be263372f7",
+    "location": {
+      "path": "fixtures/synth-ubl-bad-corrected_ubl.xml"
+    },
+    "severity": "minor"
+  }
+]

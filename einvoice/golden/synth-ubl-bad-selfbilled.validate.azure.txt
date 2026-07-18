@@ -1,0 +1,1 @@
+##vso[task.logissue type=warning;sourcepath=fixtures/synth-ubl-bad-selfbilled_ubl.xml;code=BR-DE-17]'Invoice type code' (BT-3) should be one of the codes 326, 380, 384, 389, 381, 875, 876, 877 (UNTDID 1001 subset); found '71'.

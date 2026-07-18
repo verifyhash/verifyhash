@@ -29,6 +29,7 @@ Fast, offline, saxonche-free.
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -273,6 +274,73 @@ class MalformedReportsRejected(unittest.TestCase):
             "terms": [], "location": None})
         self.assertTrue(schema_errors(report, load_schema()),
                         "an out-of-enum severity must be rejected")
+
+
+class FailReportsValidateAgainstSchema(unittest.TestCase):
+    """The FAIL-report shapes the REAL engine emits must ALSO validate against
+    report.schema.json — an adopter's CI validates failing reports, not just
+    passing ones.
+
+    build_report can return three distinct FAIL (valid=False) report shapes;
+    this class proves each one is admitted by the committed schema (the
+    `error`/`message` keys are declared optional, additionalProperties:false):
+
+      (1) MALFORMED-INPUT   — a not-well-formed XML input folds into a report
+          with error='not-well-formed', valid=False, empty violations.
+          Asserted here (test_malformed_input_report_validates).
+      (2) UNSUPPORTED-CONTAINER — a PDF container we cannot open zero-dep
+          (here corpus/pdf/encrypted.pdf) folds into a report with
+          error='unsupported-container', valid=False, empty violations.
+          Asserted here (test_unsupported_container_report_validates).
+      (3) INVALID-DOCUMENT  — a well-formed invoice that FAILS its business
+          rules (fatal violations, valid=False, populated `violations`). This
+          shape is ALREADY covered by RealEngineOutputValidates.test_invalid_ubl
+          and .test_invalid_cii above, so it is deliberately NOT duplicated
+          here; it is named so the coverage of all three FAIL shapes is legible
+          in one place.
+
+    OS-ERROR is NOT a fourth report shape. An OS-error input (a nonexistent or
+    unreadable file) does NOT emit a JSON report at all: build_report raises
+    FileNotFoundError / OSError, and the CLI format path (report.py ~line 2126
+    for the missing-file arm and ~line 2163 for the unreadable-file arm) writes
+    a stderr ``error:`` diagnostic and returns EXIT_FAIL(1) with EMPTY stdout —
+    there is deliberately no report artifact to validate. The schema is
+    therefore correctly NOT stretched to admit a non-existent output. (Recorded
+    here so a future strategist does not re-seed an 'OS-error report' shape.)
+    """
+
+    def test_malformed_input_report_validates(self):
+        # A not-well-formed XML input: build_report folds the parse failure into
+        # an error report rather than raising.
+        fd, path = tempfile.mkstemp(suffix=".xml")
+        try:
+            os.write(fd, b"<Invoice><unclosed>")
+            os.close(fd)
+            report = build_report(path, profile="xrechnung")
+        finally:
+            os.unlink(path)
+        self.assertEqual(report["error"], "not-well-formed")
+        self.assertIs(report["valid"], False)
+        errors = schema_errors(report, load_schema())
+        self.assertEqual(
+            errors, [],
+            "schema rejected a real not-well-formed FAIL report:\n%s\nreport=%s"
+            % ("\n".join(errors), json.dumps(report)[:2000]))
+
+    def test_unsupported_container_report_validates(self):
+        # A PDF container we cannot open zero-dep (encrypted) folds into an
+        # explicit unsupported-container report — never a false pass, never a
+        # traceback.
+        fixture = os.path.join(HERE, "corpus", "pdf", "encrypted.pdf")
+        self.assertTrue(os.path.exists(fixture), "fixture missing: %s" % fixture)
+        report = build_report(fixture, profile="xrechnung")
+        self.assertEqual(report["error"], "unsupported-container")
+        self.assertIs(report["valid"], False)
+        errors = schema_errors(report, load_schema())
+        self.assertEqual(
+            errors, [],
+            "schema rejected a real unsupported-container FAIL report:\n%s\n"
+            "report=%s" % ("\n".join(errors), json.dumps(report)[:2000]))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ Fast, stdlib-only, offline. Adds no validation, rule, or report code.
 """
 
 import io
+import json
 import os
 import shutil
 import sys
@@ -268,6 +269,112 @@ class ThresholdMatrixBatch(unittest.TestCase):
         for level in LEVELS:
             rc = self._rc(["validate-batch", "--quiet", "--fail-on", level, d])
             self.assertEqual(rc, EXIT_PARSE, level)
+
+
+# --- The new broken twins (T-VHFMTP.2) --------------------------------------
+# Committed synthetic UBL twin pairs: a "good" invoice and its "bad" sibling
+# that trips exactly ONE fatal Business Rule for the vat-category shape it
+# exercises. Each bad twin is the negative case for its category:
+#   * full-shape       -> BR-CO-15 (VAT total reconciliation) on a dense invoice
+#   * reverse-charge AE -> BR-AE-10 (reverse charge: one VAT breakdown, rate 0)
+#   * intra-community K -> BR-IC-02 (intra-community supply requires seller VAT)
+#   * export G          -> BR-G-10 (export/zero-rated: rate must be 0)
+#   * not-subject O     -> BR-O-02 (out-of-scope: no line VAT category other O)
+# NOTE ON CII: cli.py's ``validate`` fronts the UBL parser, so a CII
+# CrossIndustryInvoice document reports the structural ``S-ROOT`` fatal rather
+# than the category BR rule (that CII path lives in report.py / conformance.py,
+# which do NOT expose ``--fail-on``). The golden/ CII twins are therefore not a
+# meaningful ``--fail-on`` severity-gating case through the real CLI resolution
+# path, so this golden is pinned on the UBL twins the CLI validates end-to-end.
+_FX = lambda n: os.path.join(HERE, "fixtures", n)
+
+
+class NewBrokenTwins(unittest.TestCase):
+    """--fail-on severity-gating golden over the new broken twins.
+
+    For every twin the verdict and exit code come from the REAL fail-on
+    resolution path in ``einvoice.cli.main`` driven against the committed
+    fixture — never a hand-authored parallel table. Each bad twin's single
+    finding is ``fatal`` (the top severity), so it CROSSES every threshold
+    (fatal rank 3 >= information/warning/fatal) and is GATED at each, and by
+    default (which equals ``--fail-on fatal``). Because no severity ranks above
+    ``fatal``, the not-gated arm of the gated/not-gated contrast is the twin's
+    GOOD sibling: it carries NO finding, so it crosses NO threshold and is NOT
+    gated even at the strictest ``information`` level.
+    """
+
+    # (label, bad fixture, good fixture, the single rule the bad twin trips)
+    TWINS = [
+        ("fullshape-negative", "synth-ubl-bad-fullshape_ubl.xml",
+         "synth-ubl-good-fullshape_ubl.xml", "BR-CO-15"),
+        ("reverse-charge-AE", "synth-ubl-bad-reverse-charge_ubl.xml",
+         "synth-ubl-good-reverse-charge_ubl.xml", "BR-AE-10"),
+        ("intra-community-K", "synth-ubl-bad-intra-community_ubl.xml",
+         "synth-ubl-good-intra-community_ubl.xml", "BR-IC-02"),
+        ("export-G", "synth-ubl-bad-export_ubl.xml",
+         "synth-ubl-good-export_ubl.xml", "BR-G-10"),
+        ("not-subject-O", "synth-ubl-bad-not-subject_ubl.xml",
+         "synth-ubl-good-not-subject_ubl.xml", "BR-O-02"),
+    ]
+
+    def test_new_broken_twins_committed(self):
+        for label, bad, good, _rule in self.TWINS:
+            self.assertTrue(os.path.isfile(_FX(bad)), "%s bad" % label)
+            self.assertTrue(os.path.isfile(_FX(good)), "%s good" % label)
+
+    def test_fail_on_new_broken_twins(self):
+        for label, bad_name, good_name, rule in self.TWINS:
+            bad, good = _FX(bad_name), _FX(good_name)
+
+            # (0) Ground truth from the REAL --json path: the bad twin trips
+            #     exactly one finding, at severity `fatal`, with rule `rule`.
+            #     This is the finding that crosses the threshold below.
+            with _Capture(["validate", "--json", bad]) as j:
+                self.assertEqual(j.rc, EXIT_FAIL, "%s json rc" % label)
+                payload = json.loads(j.out)
+            self.assertFalse(payload["valid"], label)
+            self.assertEqual(payload["violation_count"], 1, label)
+            crossing = payload["violations"]
+            self.assertEqual([v["rule"] for v in crossing], [rule], label)
+            self.assertEqual([v["severity"] for v in crossing], ["fatal"],
+                             label)
+
+            # (1) DEFAULT (no --fail-on) is unchanged: a fatal twin exits 1,
+            #     byte-identical to --fail-on fatal (stdout + rc). The opt-in
+            #     default contract is untouched.
+            with _Capture(["validate", bad]) as d:
+                self.assertEqual(d.rc, EXIT_FAIL, "%s default rc" % label)
+                with _Capture(["validate", "--fail-on", "fatal", bad]) as f:
+                    self.assertEqual(d.rc, f.rc, "%s default==fatal" % label)
+                    self.assertEqual(d.out, f.out, "%s default out" % label)
+
+            # (2) GATED at/below the twin's fatal severity: the fatal finding
+            #     crosses fatal (rank 3>=3), warning (3>=2) and information
+            #     (3>=1), so every threshold gates -> EXIT_FAIL. Both flag
+            #     spellings, sourced from cli.py's resolution.
+            for level in LEVELS:
+                with _Capture(["validate", "--fail-on", level, bad]) as g:
+                    self.assertEqual(g.rc, EXIT_FAIL,
+                                     "%s bad @ --fail-on %s" % (label, level))
+                with _Capture(["validate", "--fail-on=" + level, bad]) as g2:
+                    self.assertEqual(g2.rc, EXIT_FAIL,
+                                     "%s bad @ --fail-on=%s" % (label, level))
+
+            # (3) NOT GATED: the good sibling carries no finding, so it crosses
+            #     no threshold. Not gated by default nor at ANY level, up to the
+            #     strictest `information`. (A fatal finding has no severity above
+            #     it, so this clean sibling is the not-gated half of the pair.)
+            with _Capture(["validate", "--json", good]) as gj:
+                self.assertEqual(gj.rc, EXIT_OK, "%s good rc" % label)
+                gpayload = json.loads(gj.out)
+            self.assertTrue(gpayload["valid"], label)
+            self.assertEqual(gpayload["violations"], [], label)
+            with _Capture(["validate", good]) as gd:
+                self.assertEqual(gd.rc, EXIT_OK, "%s good default" % label)
+            for level in LEVELS:
+                with _Capture(["validate", "--fail-on", level, good]) as gg:
+                    self.assertEqual(gg.rc, EXIT_OK,
+                                     "%s good @ --fail-on %s" % (label, level))
 
 
 if __name__ == "__main__":

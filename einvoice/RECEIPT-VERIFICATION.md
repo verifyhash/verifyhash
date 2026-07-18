@@ -85,6 +85,51 @@ one-command check is a convenience over the manual recipe, not a stronger
 guarantee — for a zero-trust check that does not run our binary, use the recipe
 below.
 
+## Verify a supplied receipt in CI
+
+A common shape: a party hands you a conformance receipt alongside an invoice —
+a supplier, a customer, an upstream service — and you want your pipeline to
+**fail the build** if that receipt has been altered in transit or at rest. That
+is one command, safe to drop into any CI step:
+
+```
+einvoice receipt --verify receipt.json
+```
+
+Exit status is the whole contract, straight from the
+[EXIT-CODES.md](EXIT-CODES.md) taxonomy — nothing to parse for the pass/fail
+decision:
+
+- `0` — **VERIFIED**: the receipt body re-hashes to its stored `content_sha256`.
+- `1` — **TAMPERED**: a body field was altered (or `content_sha256` itself was
+  corrupted); the recomputed and stored hashes are both printed so you can see
+  which side moved.
+- `2` — **unreadable / not a receipt**: non-JSON, truncated, a JSON document
+  missing `receipt` / `content_sha256`, or a path that does not exist. This is a
+  *usage* failure, distinct from a tamper.
+
+Because the check is pure exit-code, a shell gate needs no branching — `einvoice
+receipt --verify receipt.json` on its own line fails the step on exit 1 or 2. If
+you want to branch on the outcome programmatically (e.g. treat "unreadable"
+differently from "tampered"), add `--json` and read `verdict` /
+`match` from the single sorted-keys object it prints on stdout:
+
+```
+$ einvoice receipt --verify --json receipt.json
+{"content_sha256":"…","match":true,"recomputed":"…","stored":"…","verdict":"VERIFIED"}
+```
+
+Honest limit: this proves the receipt is *internally* consistent — its body
+matches its own stored hash. It does **not** prove the receipt is the one the
+issuer really produced; a party who rewrote the body *and* recomputed
+`content_sha256` over the forgery passes this check. To defend against that,
+anchor `content_sha256` against an independently held value, or re-run
+validation on the original input bytes yourself — see
+[What it catches — and its honest limit](#what-it-catches--and-its-honest-limit).
+And if you would rather not run our binary at all in CI, the
+[zero-trust recompute-and-compare](#the-check) below is the same check in ~4
+lines of any language's standard library.
+
 ## The check
 
 Prefer not to run our binary — or working in another language? The check is

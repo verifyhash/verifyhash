@@ -207,6 +207,13 @@ USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "       einvoice --show-config\n"
          "       einvoice --version")
 
+#: The valid top-level subcommands, in one place so the dispatch membership
+#: test and the unknown-subcommand error message can never drift apart. Note
+#: ``validate-batch`` (and ``info``/``--show-config``/``--version``) are
+#: dispatched a few lines EARLIER than the single-file ``validate``/``receipt``
+#: leg; this tuple names the file-driven set an ERP adopter is choosing from.
+VALID_SUBCOMMANDS = ("validate", "validate-batch", "receipt")
+
 EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
@@ -827,11 +834,31 @@ def _main(argv=None):
     if args and args[0] == "validate-batch":
         return _run_validate_batch(args[1:], profile, as_json, quiet, fail_on)
 
-    if len(args) < 2 or args[0] not in ("validate", "receipt"):
-        sys.stderr.write(USAGE + "\n")
+    if len(args) < 2 or args[0] not in VALID_SUBCOMMANDS:
+        # Distinguish a genuine MISTYPED subcommand (name it + the valid set,
+        # the actionable first-run message) from the bare no-subcommand or
+        # valid-subcommand-with-missing-file case (unchanged: plain USAGE, no
+        # false "unknown subcommand"). ``validate-batch``/``info`` are already
+        # dispatched above, so a token in VALID_SUBCOMMANDS reaching here is
+        # ``validate``/``receipt`` with a missing file argument.
+        if args and args[0] not in VALID_SUBCOMMANDS:
+            sys.stderr.write(
+                "error: unknown subcommand %r (choose from %s)\n%s\n"
+                % (args[0], ", ".join(VALID_SUBCOMMANDS), USAGE))
+        else:
+            sys.stderr.write(USAGE + "\n")
         return EXIT_USAGE
     if len(args) > 2:
-        sys.stderr.write("error: unexpected extra arguments\n" + USAGE + "\n")
+        # Name the offending token(s). A mistyped flag (e.g. ``--badflag``)
+        # is the common ERP first-run slip: it is not consumed by the global
+        # flag parser and lands here as a stray positional, so surface any
+        # flag-looking leftovers first, else the surplus positional args.
+        leftover = args[1:]
+        unknown_flags = [a for a in leftover if a.startswith("-") and a != "-"]
+        offending = unknown_flags if unknown_flags else args[2:]
+        sys.stderr.write(
+            "error: unexpected argument %s\n%s\n"
+            % (", ".join(repr(a) for a in offending), USAGE))
         return EXIT_USAGE
 
     subcommand = args[0]

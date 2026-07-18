@@ -271,5 +271,62 @@ def b_source_label(json_text):
     return json.loads(json_text).get("source")
 
 
+class UsageErrorNamesTheOffendingToken(unittest.TestCase):
+    """First-run ergonomics: a mistyped subcommand or flag must NAME what was
+    wrong (and, for subcommands, the valid set), while every existing usage
+    error keeps exit code 2 and the bare-usage cases stay bare."""
+
+    def test_unknown_subcommand_names_token_and_valid_set_exit2(self):
+        with _Capture(["bogusverb", "x.xml"]) as cap:
+            self.assertEqual(cap.rc, EXIT_USAGE)
+            self.assertIn("unknown subcommand", cap.err)
+            self.assertIn("bogusverb", cap.err)
+            # The valid set is surfaced from the single-source tuple.
+            for verb in ("validate", "validate-batch", "receipt"):
+                self.assertIn(verb, cap.err)
+            self.assertIn("usage:", cap.err)
+
+    def test_unknown_flag_is_named_exit2(self):
+        with _Capture(["validate", "--badflag", PASS_FIXTURE]) as cap:
+            self.assertEqual(cap.rc, EXIT_USAGE)
+            self.assertIn("--badflag", cap.err)
+            # A stray flag is NOT a "unknown subcommand" — different leg.
+            self.assertNotIn("unknown subcommand", cap.err)
+
+    def test_missing_file_is_not_falsely_an_unknown_subcommand(self):
+        # REGRESSION: a VALID subcommand with a missing file keeps its existing
+        # bare-usage error and must never be mislabelled "unknown subcommand".
+        with _Capture(["validate", "does-not-exist.xml"]) as cap:
+            self.assertEqual(cap.rc, EXIT_USAGE)
+            self.assertNotIn("unknown subcommand", cap.err)
+
+    def test_no_subcommand_stays_bare_usage(self):
+        with _Capture([]) as cap:
+            self.assertEqual(cap.rc, EXIT_USAGE)
+            self.assertNotIn("unknown subcommand", cap.err)
+            self.assertIn("usage:", cap.err)
+
+    def test_valid_subcommand_missing_argument_stays_bare_usage(self):
+        # `validate` with no file at all: len(args) < 2 but args[0] is valid,
+        # so the plain USAGE block (not the unknown-subcommand line) is shown.
+        with _Capture(["validate"]) as cap:
+            self.assertEqual(cap.rc, EXIT_USAGE)
+            self.assertNotIn("unknown subcommand", cap.err)
+
+    def test_error_message_valid_set_matches_the_dispatch_tuple(self):
+        # The message is driven by the SAME tuple the dispatcher checks, so it
+        # can never drift from what is actually accepted.
+        from einvoice.cli import VALID_SUBCOMMANDS
+        with _Capture(["bogusverb"]) as cap:
+            for verb in VALID_SUBCOMMANDS:
+                self.assertIn(verb, cap.err)
+
+    def test_unknown_subcommand_subprocess_exit2(self):
+        proc = run_module("bogusverb", "x.xml")
+        self.assertEqual(proc.returncode, EXIT_USAGE)
+        self.assertIn(b"unknown subcommand",
+                      proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

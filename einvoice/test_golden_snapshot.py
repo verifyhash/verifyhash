@@ -551,6 +551,45 @@ FIXTURES = [
                 "fatal, distinct from the BR-CO-14 / BR-S-02 / BR-DE-2 fatals "
                 "pinned by the other bad-synth CII goldens: valid=false, exit 1.",
     },
+    # ---- synthetic CII, REVERSE-CHARGE (AE) good + broken twin (T-VHCII2.2) ----
+    {
+        "name": "synth-cii-good-reverse-charge",
+        "path": "corpus/synthetic/synth-cii-good-reverse-charge.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Valid EN 16931 CII (ZUGFeRD/Factur-X-shaped) REVERSE-CHARGE "
+                "invoice (T-VHCII2.2) — the CII-syntax parity of the UBL "
+                "synth-ubl-good-reverse-charge (R.20): a domestic § 13b UStG "
+                "reverse-charge document where EVERY line is VAT category AE at "
+                "rate 0 and the invoice shows ZERO VAT. Exercises the AE family "
+                "the S/Z/E CII fixtures do not: BT-31 seller VAT id AND BT-48 "
+                "buyer VAT id both present (BR-AE-02 needs BOTH), 2 AE lines at "
+                "rate 0 (BR-AE-05), exactly one AE VAT breakdown (BR-AE-01) with "
+                "BT-116 = Σ AE nets = 700.00 and BT-117 = 0.00 (BR-AE-08/09), and "
+                "the mandated exemption reason on that breakdown — BT-121 code "
+                "VATEX-EU-AE (on the CEF VATEX list, BR-CL-22) AND BT-120 text "
+                "'Reverse charge' (BR-AE-10). Arithmetic reconciles so it "
+                "validates CLEAN: valid=true, exit 0, zero fired rules.",
+    },
+    {
+        "name": "synth-cii-bad-reverse-charge",
+        "path": "corpus/synthetic/synth-cii-bad-reverse-charge.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "NEGATIVE TWIN of synth-cii-good-reverse-charge (T-VHCII2.2): "
+                "byte-for-byte identical EXCEPT the sole AE VAT breakdown carries "
+                "NO exemption reason — both the BT-120 text (ram:ExemptionReason "
+                "'Reverse charge') AND the BT-121 code (ram:ExemptionReasonCode "
+                "VATEX-EU-AE) are removed. The arithmetic is untouched (VAT total "
+                "0.00, taxable = Σ AE nets = 700.00) and both party VAT ids stay "
+                "present, so no other AE rule fires: the ONLY fired rule is "
+                "BR-AE-10 (fatal) — an AE breakdown SHALL carry a BT-121 code or "
+                "BT-120 text meaning 'Reverse charge'. Exactly one distinct fatal, "
+                "isolating the CII binding of the BR-AE-10 shape (parser_cii "
+                "ram:ExemptionReason/Code → TaxSubtotal) distinct from the "
+                "BR-CO-15 / BR-CO-14 / BR-S-02 fatals pinned by the other "
+                "bad-synth CII goldens: valid=false, exit 1.",
+    },
     # ---- CII full-shape THROUGH THE PDF-CONTAINER path (T-VHR.23) ----
     {
         "name": "pdf-container-cii-good-fullshape",
@@ -836,6 +875,35 @@ RECEIPT_FIXTURES = [
                 "path it is the deterministic S-ROOT FAIL receipt with its own "
                 "input_sha256, pinning the tamper-evidence bytes for the 381 "
                 "credit-note fixture.",
+    },
+    # ---- (e2) the reverse-charge (AE) CII invoice + twin (T-VHCII2.2) ----
+    {
+        "name": "receipt-cii-good-reverse-charge",
+        "path": "corpus/synthetic/synth-cii-good-reverse-charge.xml",
+        "profile": "en16931",
+        "note": "The T-VHCII2.2 reverse-charge (AE) CII invoice through the "
+                "`einvoice receipt` code path. HONEST LIMIT pinned (identical to "
+                "every other receipt-cii-* entry): build_receipt validates through "
+                "the UBL-only validate_file, so a CrossIndustryInvoice — "
+                "well-formed XML with a non-UBL root — yields the deterministic "
+                "S-ROOT FAIL receipt the `receipt` subcommand prints for any CII "
+                "file today (it does NOT dispatch CII natively). The AE document's "
+                "genuine PASS is pinned separately on the native CII validate path "
+                "by the synth-cii-good-reverse-charge FIXTURES golden; this entry "
+                "pins the tamper-evidence receipt bytes (its own input_sha256 over "
+                "the committed fixture) so any receipt-path drift over the AE "
+                "document surfaces here.",
+    },
+    {
+        "name": "receipt-cii-bad-reverse-charge",
+        "path": "corpus/synthetic/synth-cii-bad-reverse-charge.xml",
+        "profile": "en16931",
+        "note": "The T-VHCII2.2 reverse-charge negative twin through the "
+                "`einvoice receipt` code path: the same deterministic S-ROOT FAIL "
+                "receipt (distinct bytes: its own input_sha256 over the twin). The "
+                "twin's engine-level defect (only BR-AE-10 fires) is pinned on the "
+                "native CII validate path by the synth-cii-bad-reverse-charge "
+                "FIXTURES golden; this pins the receipt bytes for the twin.",
     },
     # ---- (f) the full-shape XRechnung invoice (T-VHR.18), end-to-end ----
     {

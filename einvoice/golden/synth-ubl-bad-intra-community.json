@@ -1,0 +1,14 @@
+{
+  "exit_code": 1,
+  "name": "synth-ubl-bad-intra-community",
+  "path": "fixtures/synth-ubl-bad-intra-community_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [
+    {
+      "rule": "BR-IC-02",
+      "severity": "fatal"
+    }
+  ],
+  "syntax": "UBL",
+  "valid": false
+}

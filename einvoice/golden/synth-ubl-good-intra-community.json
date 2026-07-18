@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "name": "synth-ubl-good-intra-community",
+  "path": "fixtures/synth-ubl-good-intra-community_ubl.xml",
+  "profile": "xrechnung",
+  "rules": [],
+  "syntax": "UBL",
+  "valid": true
+}

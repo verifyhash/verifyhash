@@ -363,6 +363,50 @@ FIXTURES = [
                 "exit 1.",
     },
     {
+        "name": "synth-ubl-good-intra-community",
+        "path": "fixtures/synth-ubl-good-intra-community_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "Valid XRechnung 3.0 UBL INTRA-COMMUNITY-SUPPLY invoice "
+                "(T-VHR.21): a German seller invoicing a VAT-registered business "
+                "in another EU member state (France) for goods shipped across "
+                "the border — an innergemeinschaftliche Lieferung (§ 4 Nr. 1b / "
+                "§ 6a UStG) exempt under VAT category K, so EVERY line carries "
+                "BT-151 category K at BT-152 rate 0 and the invoice shows ZERO "
+                "VAT. Exercises the K family no other fixture touches — DISTINCT "
+                "from the AE reverse-charge (T-VHR.20) and the S/Z/E shapes: "
+                "BG-4 seller + BT-31 VAT-scoped seller VAT id AND BG-7 buyer + "
+                "BT-48 buyer VAT id (BR-IC-02 needs BOTH), 2 K lines (BR-IC-05 "
+                "rate 0), exactly one BG-23 K breakdown with BT-116 = Σ K nets = "
+                "10500.00 and BT-117 = 0.00 (BR-IC-01/08/09), the mandated "
+                "exemption reason — BT-121 code VATEX-EU-IC (on the CEF VATEX "
+                "list, BR-CL-22) AND BT-120 text (BR-IC-10), plus the K-only "
+                "document requirements BR-IC-11 (BT-72 actual delivery date) "
+                "and BR-IC-12 (BT-80 deliver-to country FR). Clean under the "
+                "German CIUS: valid=true, exit 0, zero fired rules.",
+    },
+    {
+        "name": "synth-ubl-bad-intra-community",
+        "path": "fixtures/synth-ubl-bad-intra-community_ubl.xml",
+        "syntax": "UBL",
+        "profile": "xrechnung",
+        "note": "NEGATIVE TWIN of synth-ubl-good-intra-community (T-VHR.21): "
+                "byte-for-byte identical EXCEPT the Buyer VAT identifier (BT-48) "
+                "is removed — the customer's cac:PartyTaxScheme[VAT]/CompanyID "
+                "(FR00000000000) is deleted. For an intra-community supply "
+                "BR-IC-02 mandates a VAT-scoped Seller identifier AND the Buyer "
+                "VAT identifier on any invoice carrying a K line; with BT-48 "
+                "gone that conjunction is broken. The arithmetic is untouched "
+                "(VAT total 0.00, taxable = Σ K nets, tax inclusive = tax "
+                "exclusive all still reconcile) and the K exemption reason, "
+                "delivery date and deliver-to country are all intact, so no "
+                "BR-CO totals rule and no other BR-IC rule fires: the ONLY "
+                "fired rule is BR-IC-02 (fatal). Exactly one distinct fatal, "
+                "isolating the BR-IC-02 shape distinct from the BR-AE-10, "
+                "BR-CO-15/14 and BR-DE-15 fatals pinned by the other bad-synth "
+                "goldens: valid=false, exit 1.",
+    },
+    {
         "name": "synth-cii-good-foreign-currency",
         "path": "corpus/synthetic/synth-cii-good-foreign-currency.xml",
         "syntax": "CII",

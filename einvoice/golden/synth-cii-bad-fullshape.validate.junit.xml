@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="1" errors="0">
+  <testsuite name="en16931" tests="1" failures="1" errors="0">
+    <testcase name="BR-CO-15" classname="en16931">
+      <failure message="Invoice total with VAT must reconcile: Invoice total with VAT (BT-112=1991.80) must equal total without VAT (BT-109=1620.00) + total VAT (BT-110=271.80).">fatal: ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

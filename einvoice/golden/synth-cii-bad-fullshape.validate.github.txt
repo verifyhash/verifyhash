@@ -1,0 +1,1 @@
+::error file=corpus/synthetic/synth-cii-bad-fullshape.xml,title=BR-CO-15::Invoice total with VAT must reconcile: Invoice total with VAT (BT-112=1991.80) must equal total without VAT (BT-109=1620.00) + total VAT (BT-110=271.80).

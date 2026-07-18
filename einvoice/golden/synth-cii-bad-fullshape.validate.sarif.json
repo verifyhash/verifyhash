@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "Invoice total with VAT must reconcile: Invoice total with VAT (BT-112=1991.80) must equal total without VAT (BT-109=1620.00) + total VAT (BT-110=271.80)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "5590ef4c15228b6ada8cab4c97491a1ab26c130e42d1a3360f0f0b01163b836e"
+          },
+          "ruleId": "BR-CO-15"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Correct the calculated amount at `cac:LegalMonetaryTotal` so that Invoice total amount with VAT (BT-112) = Invoice total amount without VAT (BT-109) + Invoice total VAT amount (BT-110)."
+              },
+              "help": {
+                "text": "Correct the calculated amount at `cac:LegalMonetaryTotal` so that Invoice total amount with VAT (BT-112) = Invoice total amount without VAT (BT-109) + Invoice total VAT amount (BT-110).\nBusiness terms: BT-109, BT-110, BT-112"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-CO-15/",
+              "id": "BR-CO-15",
+              "name": "BR-CO-15",
+              "shortDescription": {
+                "text": "Invoice total with VAT (BT-112) = total without VAT (BT-109) + total VAT (BT-110)."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

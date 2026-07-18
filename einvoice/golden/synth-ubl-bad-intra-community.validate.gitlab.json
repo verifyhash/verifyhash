@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-IC-02",
+    "description": "An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31) or the Seller tax representative VAT identifier (BT-63) AND the Buyer VAT identifier (BT-48).",
+    "fingerprint": "f45c6fc473c3c5d1d5c3395b060fd89ea40ff7b0bf91f695c64294901f80b505",
+    "location": {
+      "path": "fixtures/synth-ubl-bad-intra-community_ubl.xml"
+    },
+    "severity": "major"
+  }
+]

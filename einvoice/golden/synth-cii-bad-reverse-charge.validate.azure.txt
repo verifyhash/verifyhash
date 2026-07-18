@@ -1,0 +1,1 @@
+##vso[task.logissue type=error;sourcepath=corpus/synthetic/synth-cii-bad-reverse-charge.xml;code=BR-AE-10]A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121), meaning 'Reverse charge', or the VAT exemption reason text (BT-120) 'Reverse charge'.

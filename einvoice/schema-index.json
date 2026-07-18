@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verifyhash.com/schemas/index.json",
+  "title": "einvoice conformance schema index",
+  "description": "Plain catalog of the adopter-facing EN 16931 / XRechnung conformance JSON Schemas published under einvoice/. It carries NO rule logic and NO hashes of the schema bodies: every field below is re-derivable by reading the listed schema files, and test_schema_index.py proves the catalog stays in sync (completeness + $id/title fidelity + version consistency). Consumers can use it to discover the stable $id, title, filename and version of each published schema.",
+  "schemas": [
+    {
+      "name": "report",
+      "file": "report.schema.json",
+      "$id": "https://verifyhash.com/schemas/einvoice-conformance-report/v1/report.schema.json",
+      "title": "einvoice conformance report (v1)",
+      "version": "v1"
+    },
+    {
+      "name": "receipt",
+      "file": "receipt.schema.json",
+      "$id": "https://verifyhash.com/schemas/einvoice-conformance-receipt/v1/receipt.schema.json",
+      "title": "einvoice conformance receipt (v1)",
+      "version": "v1"
+    },
+    {
+      "name": "attestation",
+      "file": "attestation.schema.json",
+      "$id": "https://verifyhash.com/schemas/einvoice-conformance-attestation/v1/attestation.schema.json",
+      "title": "einvoice conformance attestation (v1)",
+      "version": "v1"
+    }
+  ]
+}

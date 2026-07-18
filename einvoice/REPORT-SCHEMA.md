@@ -449,3 +449,62 @@ field, or changing a field's type — bumps `schemaVersion` to `2`. The *values*
 `schemaVersion == 1` and safely re-pull the numbers. (The coverage prose itself
 lives only in `COVERAGE.md`; it is intentionally not restated here to avoid
 drift.)
+
+## Conformance receipt schema (`einvoice-conformance-receipt/1`)
+
+The `report` document above is the rich, CI-facing projection of a validation.
+The **conformance receipt** is a different, smaller artifact with a different
+job: a canonical, **byte-stable** attestation of one validation outcome, meant
+to be hashed, anchored, and re-derived by an untrusting third party.
+`python3 -m einvoice receipt <invoice.xml>` / `einvoice.receipt.build_receipt`
+emits an envelope
+
+```json
+{"receipt": { ...body... }, "content_sha256": "<hex>"}
+```
+
+where `content_sha256` is the SHA-256 of the canonicalized body
+(`json.dumps(body, sort_keys=True, separators=(",",":"))`, UTF-8). The body
+carries no rule logic of its own — `verdict` / `well_formed` /
+`failed_fatal_rules` are a deterministic projection of
+`einvoice.validate.validate_file`. Determinism is the product: identical input
+bytes + profile always yield a byte-identical receipt and content hash, with no
+wall-clock leak (the only timestamp, `issued_at`, appears **only** if a caller
+passes it, and is then part of the hashed body).
+
+A **machine-checkable** JSON Schema (draft 2020-12) for this envelope is
+committed at [`receipt.schema.json`](receipt.schema.json), with the stable
+`$id` `https://verifyhash.com/schemas/einvoice-conformance-receipt/v1/receipt.schema.json`.
+
+- **Envelope** (`additionalProperties: false`): requires `receipt` (the body
+  object) and `content_sha256` (hex string).
+- **Body** (`additionalProperties: false`): requires the seven core fields —
+  `format`, `tool` (`{name, version}`), `profile`, `well_formed`, `verdict`,
+  `input_sha256`, `failed_fatal_rules` (array of `{rule, message}`). `profile`
+  is an enum `["en16931", "xrechnung"]`; `verdict` is an enum `["PASS",
+  "FAIL"]`. `issued_at` is the one OPTIONAL body field.
+- **Version binding.** The body `format` **const** is
+  `"einvoice-conformance-receipt/1"`, bound to the `RECEIPT_FORMAT` constant in
+  `einvoice/receipt.py`. `test_receipt_schema.py` imports `RECEIPT_FORMAT` and
+  asserts the schema const equals it, so bumping the format without bumping the
+  schema (or vice versa) turns the suite red — the same drift discipline the
+  report schema uses for its `schema` const.
+
+`test_receipt_schema.py` also validates REAL `build_receipt` output over the
+committed golden fixtures (a valid + an invalid UBL and a valid + an invalid
+CII/Factur-X invoice) against the schema, and asserts four malformed receipts
+(flipped `verdict`, missing `content_sha256`, an unexpected extra body key, a
+wrong `format` const) are rejected — using the same stdlib-only recursive
+checker `test_report_schema.py` uses, so no runtime dependency is added.
+
+**Note on the CII path.** `build_receipt` validates through the UBL-only
+`validate_file` code path, so a CII/Factur-X XML today yields the deterministic
+`S-ROOT` FAIL receipt (`well_formed: true`, one `S-ROOT` fatal). That is a real,
+on-disk receipt shape and the schema accepts it; only the receipt **bytes**
+(its `input_sha256`) distinguish one CII document from another under this path.
+
+**Stability / versioning policy.** The `$id` and the `format` const are STABLE
+within v1: additive, backward-compatible fields (like the optional `issued_at`)
+may appear without changing them. Any BREAKING change to the receipt shape bumps
+both `RECEIPT_FORMAT` and the schema `$id` to `.../v2` — consumers should match
+on the `format` string.

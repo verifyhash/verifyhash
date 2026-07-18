@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verifyhash.com/schemas/einvoice-conformance-receipt/v1/receipt.schema.json",
+  "title": "einvoice conformance receipt (v1)",
+  "description": "Machine-readable JSON Schema for the deterministic EN 16931 / XRechnung conformance receipt produced by `python3 -m einvoice receipt` / `einvoice.receipt.build_receipt`. This is the machine-checkable companion to the `RECEIPT_FORMAT` constant in einvoice/receipt.py and to RECEIPT-VERIFICATION.md / REPORT-SCHEMA.md. The receipt is the canonical, byte-stable attestation of a single validation outcome: an envelope `{receipt: <body>, content_sha256: <hex>}` where `content_sha256` is the SHA-256 of the canonicalized body (json.dumps(body, sort_keys=True, separators=(',',':')), UTF-8). The body carries no rule logic of its own — verdict/well_formed/failed_fatal_rules are a deterministic projection of einvoice.validate.validate_file. Versioning policy: this `$id` and the body `format` const are STABLE within v1 — additive, backward-compatible fields (e.g. the optional `issued_at`) may be present without changing them; any BREAKING change to the receipt shape bumps the id (and RECEIPT_FORMAT) to `.../v2`. Shape note: the body always carries the seven core fields; `issued_at` is OPTIONAL and present only when a caller passes it explicitly (it is then part of the hashed body).",
+  "type": "object",
+  "required": [
+    "receipt",
+    "content_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "receipt": {
+      "description": "The attested body. Its canonical serialization is what `content_sha256` hashes.",
+      "type": "object",
+      "required": [
+        "format",
+        "tool",
+        "profile",
+        "well_formed",
+        "verdict",
+        "input_sha256",
+        "failed_fatal_rules"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "description": "Stable receipt-format id; bound to RECEIPT_FORMAT in einvoice/receipt.py. Consumers should match on this exact string.",
+          "const": "einvoice-conformance-receipt/1"
+        },
+        "tool": {
+          "description": "The validator's identity: its import/console name and the single-source-of-truth package version (einvoice.__version__ — never a second hardcoded copy).",
+          "type": "object",
+          "required": [
+            "name",
+            "version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "description": "Tool name; the literal 'einvoice' (TOOL_NAME).",
+              "type": "string"
+            },
+            "version": {
+              "description": "Package version string, e.g. '0.1.0'.",
+              "type": "string"
+            }
+          }
+        },
+        "profile": {
+          "description": "The rule-set id used: 'en16931' core, or 'xrechnung' (core + the German BR-DE-* CIUS).",
+          "enum": [
+            "en16931",
+            "xrechnung"
+          ]
+        },
+        "well_formed": {
+          "description": "True iff the input parsed as well-formed XML. False when the input is not well-formed (the receipt is still emitted, with an 'S-WF' fatal entry and verdict FAIL).",
+          "type": "boolean"
+        },
+        "verdict": {
+          "description": "'PASS' iff no fatal rule failed, else 'FAIL' (official Schematron flag semantics: only fatal violations invalidate a document).",
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "input_sha256": {
+          "description": "Lowercase hex SHA-256 of the input document's raw bytes.",
+          "type": "string"
+        },
+        "failed_fatal_rules": {
+          "description": "The fatal rule ids that failed, each with its human message, in the validator's deterministic rule-evaluation order. Empty list on a PASS.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rule",
+              "message"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "rule": {
+                "description": "The fatal rule id, e.g. 'BR-02', 'BR-CL-01', 'S-ROOT', or 'S-WF' on the not-well-formed path.",
+                "type": "string"
+              },
+              "message": {
+                "description": "The human/Schematron rule message.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "issued_at": {
+          "description": "OPTIONAL. Present ONLY when a caller passes it explicitly; it is then copied verbatim into the hashed body (a different timestamp is a different receipt). Absent by default so the receipt is fully deterministic with no wall-clock leak. Documented as an ISO 8601 timestamp string.",
+          "type": "string"
+        }
+      }
+    },
+    "content_sha256": {
+      "description": "Lowercase hex SHA-256 of the canonicalized body (json.dumps(body, sort_keys=True, separators=(',',':')) encoded UTF-8). Changes iff the body changes.",
+      "type": "string"
+    }
+  }
+}

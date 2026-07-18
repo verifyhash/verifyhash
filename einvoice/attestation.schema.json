@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verifyhash.com/schemas/einvoice-conformance-attestation/v1/attestation.schema.json",
+  "title": "einvoice conformance attestation (v1)",
+  "description": "Machine-readable JSON Schema for the deterministic conformance-CLAIM attestation produced by `python3 einvoice/gen_attestation.py` / `einvoice.gen_attestation.build_attestation`. Where receipt.schema.json describes the attestation of validating ONE invoice, this describes the attestation of the TOOL's OWN published conformance claim: an envelope `{attestation: <body>, content_sha256: <hex>}` where `content_sha256` is the SHA-256 of the canonicalized body (`json.dumps(body, sort_keys=True, separators=(',',':'))`, UTF-8) — byte-identical canonicalization to receipt.py. The body copies (never re-derives-approximately) numbers out of four already-drift-guarded source artifacts — export/rules.json, export/coverage.json, testsuite_conformance.json and sbom/bom.json — plus raw-bytes SHA-256 digests of the committed generated trust artifacts. There is NO wall-clock timestamp in the hashed body: identical source artifacts always yield a byte-identical attestation and content hash, which is exactly what lets a third party recompute and compare. Versioning policy mirrors the receipt/report schemas: this `$id` and the body `format` const are STABLE within v1; any BREAKING layout change bumps both ATTESTATION_FORMAT and the `$id` to `.../v2`.",
+  "type": "object",
+  "required": [
+    "attestation",
+    "content_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "attestation": {
+      "description": "The attested body. Its canonical serialization is what `content_sha256` hashes.",
+      "type": "object",
+      "required": [
+        "format",
+        "rules",
+        "coverage",
+        "testsuite_conformance",
+        "corpus",
+        "artifacts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "description": "Stable attestation-format id; bound to ATTESTATION_FORMAT in einvoice/gen_attestation.py. Consumers should match on this exact string.",
+          "const": "einvoice-conformance-attestation/1"
+        },
+        "rules": {
+          "description": "Rule-set id(s) + counts, copied from export/rules.json (drift-guarded by test_export.py).",
+          "type": "object",
+          "required": [
+            "by_family",
+            "count",
+            "rulesets"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "by_family": {
+              "description": "Deterministic tally of rule records by their `family` tag; each value is a non-negative integer count. Keys are the family ids present in export/rules.json (e.g. 'core', 'xrechnung-cius'), so the property set is open.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            },
+            "count": {
+              "description": "The artifact's own `rule_count` (the same number test_export.py pins).",
+              "type": "integer"
+            },
+            "rulesets": {
+              "description": "Sorted set of binding `source` ids the rules bind to (e.g. 'en16931-ubl', 'xrechnung-cii') — the machine ids of the rule sets under attestation.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "coverage": {
+          "description": "Frozen coverage headline, copied verbatim from export/coverage.json (drift-guarded by test_export.py).",
+          "type": "object",
+          "required": [
+            "business_rules_total_asserted",
+            "syntax_binding"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "business_rules_total_asserted": {
+              "description": "The asserted business-rule total (`business_rules.total_asserted`).",
+              "type": "integer"
+            },
+            "syntax_binding": {
+              "description": "Proven/total syntax-binding fractions for each syntax, copied from `syntax_binding`.",
+              "type": "object",
+              "required": [
+                "cii",
+                "ubl"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "cii": {
+                  "type": "object",
+                  "required": [
+                    "proven",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "proven": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "ubl": {
+                  "type": "object",
+                  "required": [
+                    "proven",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "proven": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "testsuite_conformance": {
+          "description": "In-scope UBL + CII test-suite pass rates from testsuite_conformance.json (drift-guarded by test_testsuite_conformance.py). `accepted` of `total` in-scope cases pass.",
+          "type": "object",
+          "required": [
+            "cii",
+            "ubl"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "cii": {
+              "type": "object",
+              "required": [
+                "accepted",
+                "total"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "accepted": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                }
+              }
+            },
+            "ubl": {
+              "type": "object",
+              "required": [
+                "accepted",
+                "total"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "accepted": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "corpus": {
+          "description": "Pinned SHA-256 of every vendored corpus artifact, taken verbatim from sbom/bom.json (produced by gen_sbom.py's `corpus_sha256`; no second hashing path). Emitted sorted by `path`.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "path",
+              "sha256",
+              "version"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "The corpus component name, e.g. 'eInvoicing-EN16931'.",
+                "type": "string"
+              },
+              "path": {
+                "description": "Repo-relative path of the vendored corpus tree, e.g. 'corpus/cen-en16931'.",
+                "type": "string"
+              },
+              "sha256": {
+                "description": "Lowercase hex SHA-256 pinned for the corpus tree in sbom/bom.json.",
+                "type": "string"
+              },
+              "version": {
+                "description": "The corpus component version string as recorded in the SBOM.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "artifacts": {
+          "description": "Raw-bytes SHA-256 of every committed GENERATED TRUST artifact, keyed by repo-relative path (e.g. 'api_contract.json' -> hex digest). The property set is the TRUST_ARTIFACTS list in gen_attestation.py, so it is open here; each value is a lowercase hex SHA-256 string.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "content_sha256": {
+      "description": "Lowercase hex SHA-256 of the canonicalized body (json.dumps(body, sort_keys=True, separators=(',',':')) encoded UTF-8). Changes iff the body changes.",
+      "type": "string"
+    }
+  }
+}

@@ -508,3 +508,54 @@ within v1: additive, backward-compatible fields (like the optional `issued_at`)
 may appear without changing them. Any BREAKING change to the receipt shape bumps
 both `RECEIPT_FORMAT` and the schema `$id` to `.../v2` — consumers should match
 on the `format` string.
+
+## Conformance attestation schema (`einvoice-conformance-attestation/1`)
+
+The receipt above attests validating **one** invoice. The **conformance
+attestation** attests the **tool's own published conformance claim** — the rule
+set, the coverage headline, the test-suite pass rates and the pinned corpus
+content hashes — so a skeptical procurement evaluator can independently confirm
+none of them have drifted since publication.
+`python3 gen_attestation.py` / `einvoice.gen_attestation.build_attestation`
+emits an envelope
+
+```json
+{"attestation": { ...body... }, "content_sha256": "<hex>"}
+```
+
+with the same canonicalization as the receipt (`json.dumps(body,
+sort_keys=True, separators=(",",":"))`, UTF-8) and, deliberately, **no**
+wall-clock timestamp: identical source artifacts always yield a byte-identical
+attestation and content hash, which is exactly what lets a third party recompute
+and compare.
+
+A **machine-checkable** JSON Schema (draft 2020-12) for this envelope is
+committed at [`attestation.schema.json`](attestation.schema.json), with the
+stable `$id`
+`https://verifyhash.com/schemas/einvoice-conformance-attestation/v1/attestation.schema.json`.
+
+- **Envelope** (`additionalProperties: false`): requires `attestation` (the body
+  object) and `content_sha256` (hex string).
+- **Body** (`additionalProperties: false`): requires six sections — `format`,
+  `rules` (`{by_family, count, rulesets}`), `coverage`
+  (`{business_rules_total_asserted, syntax_binding{cii, ubl}}`),
+  `testsuite_conformance` (`{cii, ubl}` each `{accepted, total}`), `corpus`
+  (array of `{name, path, sha256, version}`), and `artifacts` (an open map of
+  repo-relative path → hex SHA-256 string).
+- **Version binding.** The body `format` **const** is
+  `"einvoice-conformance-attestation/1"`, bound to the `ATTESTATION_FORMAT`
+  constant in `einvoice/gen_attestation.py`. `test_attestation_schema.py`
+  imports `ATTESTATION_FORMAT` and asserts the schema const equals it, so
+  bumping the format without bumping the schema (or vice versa) turns the suite
+  red — the same drift discipline the receipt and report schemas use.
+
+`test_attestation_schema.py` also validates the committed `attestation.json` and
+fresh `build_attestation()` output against the schema, and asserts malformed
+attestations (wrong `format` const, missing `content_sha256`, an unexpected
+extra body key, a wrong-typed `coverage` count, a corpus entry missing its
+`sha256`) are rejected — using the same stdlib-only recursive checker the
+receipt/report schema tests use, so no runtime dependency is added.
+
+**Stability / versioning policy.** The `$id` and the `format` const are STABLE
+within v1; any BREAKING layout change bumps both `ATTESTATION_FORMAT` and the
+schema `$id` to `.../v2`.

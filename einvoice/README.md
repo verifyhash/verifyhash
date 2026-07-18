@@ -445,8 +445,10 @@ code is the contract, not the prose. The `receipt` subcommand collapses code
 `3` into a FAIL receipt (exit `1`) because a receipt must always emit a
 document; codes `2` and `3` below therefore describe `validate`. A receipt's
 tamper-evidence is a recompute-and-compare of `content_sha256` over the
-canonical body — there is no `verify-receipt` subcommand; see
-[`RECEIPT-VERIFICATION.md`](RECEIPT-VERIFICATION.md) for the exact check and its
+canonical body. `einvoice receipt --verify <receipt.json>` runs exactly that
+check for you in one command (details under **`receipt --verify`** below); the
+same check is reproducible in any language without our binary — see
+[`RECEIPT-VERIFICATION.md`](RECEIPT-VERIFICATION.md) for the exact recipe and its
 honest limit (the outer hash is a body digest, not self-covering).
 
 | Code | Meaning |
@@ -497,6 +499,30 @@ bytes are staged to a temporary file and validated through the *identical*
 DTD/XXE/resource-hardened parser used for on-disk files — piping in does **not**
 get a relaxed parse path (see [`SECURITY.md`](SECURITY.md)). `receipt` reads a
 file only.
+
+**`receipt --verify <receipt.json>`** — the one-command integrity check for a
+receipt `einvoice receipt` previously emitted. It re-hashes the receipt's
+canonical body with the *exact same* canonicalizer that built it and compares to
+the stored `content_sha256`, then reports the result. It validates nothing and
+changes no verdict — it only re-hashes bytes already in the receipt:
+
+```
+$ einvoice receipt invoice.xml > receipt.json
+$ einvoice receipt --verify receipt.json
+VERIFIED: receipt.json
+  content_sha256 = 6459697e0a75de9454eeac449a0c79f5a172945470fa6e1db4dbf49e6699b391
+```
+
+Exit codes reuse the existing taxonomy (no new code): `0` + `VERIFIED` when the
+hash matches; `1` + `TAMPERED` (with the recomputed vs stored hash) when the
+body no longer matches its hash — whether a field was altered or `content_sha256`
+itself was corrupted; `2` + an `error:` line on stderr (no traceback) when the
+file is not a readable receipt (non-JSON / garbage / truncated, valid JSON that
+is not a receipt, or a nonexistent path). `--verify` is valid only for `receipt`.
+This is a convenience over the manual recipe, not a stronger guarantee: it shares
+the recompute-and-compare limit documented in
+[`RECEIPT-VERIFICATION.md`](RECEIPT-VERIFICATION.md), which also gives the
+zero-trust recipe for consumers who won't run our binary.
 
 **Batch — `validate-batch <dir|glob>`** validates a whole set of invoices in one
 run. The argument is **either a directory** (every `*.xml`/`*.pdf` invoice file

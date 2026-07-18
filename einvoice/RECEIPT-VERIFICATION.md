@@ -2,9 +2,19 @@
 
 A conformance receipt is the small JSON document `einvoice receipt <invoice.xml>`
 emits — see [`einvoice/receipt.py`](einvoice/receipt.py) for how it is built. Its
-tamper-evidence is not a signature and there is **no `verify-receipt`
-subcommand**: the integrity check IS a recompute-and-compare that any consumer
-can run with only a SHA-256 implementation and a JSON canonicalizer.
+tamper-evidence is not a signature: the integrity check IS a
+recompute-and-compare of the receipt body's SHA-256.
+
+There are two ways to run that check, and they check the **same** thing:
+
+- **One command, if you have the tool** — `einvoice receipt --verify
+  <receipt.json>` re-hashes the receipt body with the exact canonicalizer that
+  produced it and compares to the stored `content_sha256`. See
+  [The one-command check](#the-one-command-check-einvoice-receipt---verify) below.
+- **Zero-trust, in any language** — because the check is just SHA-256 over a
+  canonical JSON body, any consumer can reproduce it with only a SHA-256
+  implementation and a JSON canonicalizer, without installing einvoice or
+  trusting whoever produced the receipt. See [The check](#the-check) below.
 
 ## The document
 
@@ -24,7 +34,62 @@ canonical_json(body) = json.dumps(body, sort_keys=True, separators=(",", ":"))
 i.e. keys sorted, no insignificant whitespace, UTF-8 encoded. The canonical form
 is what makes the receipt byte-stable and independently reproducible.
 
+## The one-command check (`einvoice receipt --verify`)
+
+If you have the tool installed, the whole check is one command:
+
+```
+$ einvoice receipt --verify receipt.json
+VERIFIED: receipt.json
+  content_sha256 = 6459697e0a75de9454eeac449a0c79f5a172945470fa6e1db4dbf49e6699b391
+$ echo $?
+0
+```
+
+It reads the receipt document, re-hashes the canonical body with the **exact
+same** `canonical_json` + `_sha256_hex` that `einvoice receipt` used to build it
+(one canonicalizer, no drift), and compares to the stored `content_sha256`. It
+validates nothing and touches no verdict — it only re-hashes bytes already in
+the receipt.
+
+Exit codes (all from the existing [EXIT-CODES.md](EXIT-CODES.md) taxonomy — no
+new code is minted):
+
+| Outcome | stdout | Exit |
+|---------|--------|------|
+| Hash matches — **VERIFIED** | `VERIFIED: <path>` + the `content_sha256` | `0` |
+| Hash mismatch — **TAMPERED** (a body field was altered, or `content_sha256` itself corrupted) | `TAMPERED: <path>` + the recomputed vs stored hash | `1` |
+| Not a readable receipt — non-JSON / garbage / truncated file, valid JSON that is not a receipt (missing `receipt` / `content_sha256`), or a nonexistent / unreadable path | `error: …` on **stderr**, no traceback | `2` |
+
+A `TAMPERED` result on stdout prints both the recomputed and the stored hash, so
+you can see exactly which side moved:
+
+```
+$ einvoice receipt --verify tampered.json
+TAMPERED: tampered.json
+  recomputed = 1f78c76d6f9c29c2499e742f86967ddf4e925249bc4acb7e5ab4bd9c967c5e9c
+  stored     = 6459697e0a75de9454eeac449a0c79f5a172945470fa6e1db4dbf49e6699b391
+$ echo $?
+1
+```
+
+`--verify` is valid only for the `receipt` subcommand; passing it to `validate`
+is a usage error (exit `2`). This path is pinned end-to-end by
+[`test_receipt_verify.py`](test_receipt_verify.py), which drives the real CLI
+against a clean receipt, every tamper class below, and each malformed-file case.
+
+**Its honest limit is exactly the recompute-and-compare limit** described under
+[What it catches](#what-it-catches--and-its-honest-limit): a single
+self-contained document cannot detect a *coordinated* body-and-hash rewrite. The
+one-command check is a convenience over the manual recipe, not a stronger
+guarantee — for a zero-trust check that does not run our binary, use the recipe
+below.
+
 ## The check
+
+Prefer not to run our binary — or working in another language? The check is
+small enough to reproduce anywhere, and this is the **zero-trust alternative**
+for consumers who won't (or can't) install einvoice:
 
 ```
 recompute = sha256( canonical_json(doc["receipt"]) ).hexdigest()

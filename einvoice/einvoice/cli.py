@@ -4,6 +4,7 @@ Usage:
     einvoice validate <invoice.xml|-> [--json] [--quiet] [--profile=en16931|xrechnung]
     einvoice validate-batch <dir|glob> [--json] [--quiet] [--profile=en16931|xrechnung]
     einvoice receipt  <invoice.xml> [--profile=en16931|xrechnung]
+    einvoice receipt  --verify <receipt.json>
     einvoice info [--json]
     einvoice --show-config
     einvoice --version
@@ -117,6 +118,13 @@ Subcommands:
                SHA-256 content hash of the receipt body). Re-running on the
                same bytes yields byte-identical output — the tamper-evidence
                bridge. See ``einvoice/receipt.py``.
+               ``receipt --verify <receipt.json>`` is the symmetric CHECK: it
+               re-hashes an existing receipt's canonical body (reusing the very
+               canonicalizer that built it) and compares to the stored
+               ``content_sha256`` — prints ``VERIFIED`` (exit 0) on a match,
+               ``TAMPERED`` (exit 1) when the body no longer matches its hash,
+               and a usage error (exit 2) on a non-JSON / non-receipt file. It
+               validates nothing and changes no verdict.
 
 Profiles:
     en16931 (default)  the EN 16931 core business rules
@@ -173,7 +181,7 @@ import tempfile
 from . import __version__
 from .validate import validate_file, PROFILES, _severity
 from .parser import NotWellFormed, parse_file
-from .receipt import build_receipt, canonical_json
+from .receipt import build_receipt, canonical_json, _sha256_hex
 from .report import (
     syntax_binding_section,
     build_batch_report, build_batch_report_from_files,
@@ -190,6 +198,7 @@ USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "[--fail-on=fatal|warning|information]\n"
          "       einvoice receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
+         "       einvoice receipt --verify <receipt.json>\n"
          "       einvoice info [--json]\n"
          "       einvoice --show-config\n"
          "       einvoice --version")
@@ -520,6 +529,77 @@ def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
     return batch_exit_code(batch)
 
 
+def _run_receipt_verify(path, display_path=None):
+    """Drive ``einvoice receipt --verify <receipt.json>``: the one-command
+    integrity check for a conformance receipt.
+
+    The check IS recompute-and-compare, and it REUSES the receipt's own
+    canonicalization — :func:`einvoice.receipt.canonical_json` +
+    :func:`einvoice.receipt._sha256_hex`, exactly what ``build_receipt`` used to
+    produce ``content_sha256`` — so there is no second, drifting canonicalizer.
+    It re-hashes the receipt *body* (``doc["receipt"]``) and compares the result
+    to the stored ``doc["content_sha256"]``. It validates NOTHING and changes no
+    verdict; it only re-hashes bytes already in the receipt.
+
+    Exit codes (all drawn from the existing documented taxonomy — see
+    EXIT-CODES.md; no new code is minted):
+
+      * ``EXIT_OK`` (0)    — recomputed hash == stored hash: **VERIFIED**.
+      * ``EXIT_FAIL`` (1)  — recomputed hash != stored hash: **TAMPERED**. The
+                             receipt body no longer matches its own content hash
+                             (some field was altered, or ``content_sha256`` was
+                             corrupted). This mirrors ``receipt`` build's use of
+                             exit 1 for a non-clean outcome.
+      * ``EXIT_USAGE`` (2) — the file is not a readable conformance receipt: not
+                             valid JSON (garbage / truncated), or valid JSON that
+                             is not a receipt document (missing the ``receipt`` /
+                             ``content_sha256`` keys). One actionable ``error:``
+                             line, never a traceback — the same class the OS-error
+                             / bad-input taxonomy already uses. (A nonexistent /
+                             unreadable / directory path is triaged to EXIT_USAGE
+                             by the caller before this function runs.)
+
+    ``display_path`` is what appears in the messages (defaults to ``path``).
+    """
+    shown = display_path if display_path is not None else path
+    # open() may raise OSError (e.g. a mid-run permission change); that
+    # propagates to the OSError arm in _main, which reports EXIT_USAGE — the same
+    # OS-error handling every single-file subcommand shares.
+    with open(path, "rb") as fh:
+        raw = fh.read()
+
+    try:
+        doc = json.loads(raw)
+    except ValueError as exc:
+        # Non-JSON / garbage / truncated receipt file: actionable, no traceback.
+        sys.stderr.write(
+            "error: not a valid receipt: %s is not JSON (%s)\n" % (shown, exc))
+        return EXIT_USAGE
+
+    if (not isinstance(doc, dict)
+            or "receipt" not in doc or "content_sha256" not in doc):
+        # Valid JSON, but not a conformance-receipt document.
+        sys.stderr.write(
+            "error: not a conformance receipt: %s lacks the required "
+            "\"receipt\" and \"content_sha256\" fields\n" % shown)
+        return EXIT_USAGE
+
+    body = doc["receipt"]
+    stored = doc["content_sha256"]
+    # Recompute over the canonical body using the SAME functions build_receipt
+    # used — reuse, not a parallel canonicalizer.
+    recomputed = _sha256_hex(canonical_json(body).encode("utf-8"))
+
+    if recomputed == stored:
+        sys.stdout.write(
+            "VERIFIED: %s\n  content_sha256 = %s\n" % (shown, recomputed))
+        return EXIT_OK
+    sys.stdout.write(
+        "TAMPERED: %s\n  recomputed = %s\n  stored     = %s\n"
+        % (shown, recomputed, stored))
+    return EXIT_FAIL
+
+
 def _main(argv=None):
     """Run the CLI. Returns the process exit code (see module docstring).
 
@@ -551,6 +631,17 @@ def _main(argv=None):
     if "--quiet" in args:
         quiet = True
         args = [a for a in args if a != "--quiet"]
+
+    # --verify switches the ``receipt`` subcommand from BUILD mode (validate an
+    # invoice and emit a fresh receipt) to CHECK mode: read an existing receipt
+    # JSON document and recompute-and-compare its content hash. It is a pure
+    # re-hash of the receipt body — it validates nothing and touches no verdict.
+    # Parsed like the other global booleans; it is a usage error on any
+    # subcommand other than ``receipt`` (checked at dispatch below).
+    verify = False
+    if "--verify" in args:
+        verify = True
+        args = [a for a in args if a != "--verify"]
 
     # --show-config is a READ-ONLY dry run of the config layer: it resolves the
     # effective format/fail-on/lang exactly as a real validate run would, prints
@@ -718,6 +809,15 @@ def _main(argv=None):
     subcommand = args[0]
     path = args[1]
 
+    # ``--verify`` is meaningful ONLY for ``receipt`` (it re-checks a receipt
+    # document); on any other subcommand it is a usage error, never silently
+    # ignored.
+    if verify and subcommand != "receipt":
+        sys.stderr.write(
+            "error: --verify is only valid for the receipt subcommand\n"
+            + USAGE + "\n")
+        return EXIT_USAGE
+
     # ``validate -`` reads the invoice XML from stdin. The bytes are staged to a
     # temp file and validated through validate_file/parse_file exactly as any
     # on-disk invoice would be — the SAME DTD/XXE/resource-hardened parser
@@ -774,6 +874,12 @@ def _main(argv=None):
 
     try:
         if subcommand == "receipt":
+            # ``receipt --verify <receipt.json>`` is CHECK mode: re-hash an
+            # existing receipt document and compare, changing no verdict. It is
+            # dispatched BEFORE the build path so the byte-for-byte build
+            # behaviour below is untouched when --verify is absent.
+            if verify:
+                return _run_receipt_verify(path, display_path)
             # A conformance receipt always emits a canonical JSON document (the
             # receipt IS the output); the exit code mirrors the verdict so it can
             # gate a build. Not-well-formed input is folded into a FAIL receipt by

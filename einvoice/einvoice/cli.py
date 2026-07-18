@@ -118,13 +118,17 @@ Subcommands:
                SHA-256 content hash of the receipt body). Re-running on the
                same bytes yields byte-identical output — the tamper-evidence
                bridge. See ``einvoice/receipt.py``.
-               ``receipt --verify <receipt.json>`` is the symmetric CHECK: it
-               re-hashes an existing receipt's canonical body (reusing the very
-               canonicalizer that built it) and compares to the stored
+               ``receipt --verify <receipt.json> [--json]`` is the symmetric
+               CHECK: it re-hashes an existing receipt's canonical body (reusing
+               the very canonicalizer that built it) and compares to the stored
                ``content_sha256`` — prints ``VERIFIED`` (exit 0) on a match,
                ``TAMPERED`` (exit 1) when the body no longer matches its hash,
                and a usage error (exit 2) on a non-JSON / non-receipt file. It
-               validates nothing and changes no verdict.
+               validates nothing and changes no verdict. With ``--json`` it
+               emits one sorted-keys JSON object (``verdict`` / ``match`` /
+               ``recomputed`` / ``stored`` / ``path`` / ``display_path``)
+               instead of the human lines; the exit code is unchanged, and the
+               usage-error leg still emits only its ``error:`` stderr line.
 
 Profiles:
     en16931 (default)  the EN 16931 core business rules
@@ -198,7 +202,7 @@ USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "[--fail-on=fatal|warning|information]\n"
          "       einvoice receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
-         "       einvoice receipt --verify <receipt.json>\n"
+         "       einvoice receipt --verify <receipt.json> [--json]\n"
          "       einvoice info [--json]\n"
          "       einvoice --show-config\n"
          "       einvoice --version")
@@ -529,7 +533,7 @@ def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
     return batch_exit_code(batch)
 
 
-def _run_receipt_verify(path, display_path=None):
+def _run_receipt_verify(path, display_path=None, as_json=False):
     """Drive ``einvoice receipt --verify <receipt.json>``: the one-command
     integrity check for a conformance receipt.
 
@@ -560,6 +564,16 @@ def _run_receipt_verify(path, display_path=None):
                              by the caller before this function runs.)
 
     ``display_path`` is what appears in the messages (defaults to ``path``).
+
+    ``as_json`` (the global ``--json`` flag): when set, emit exactly ONE
+    ``json.dumps(..., sort_keys=True)`` object on stdout INSTEAD of the human
+    ``VERIFIED:`` / ``TAMPERED:`` lines — mirroring :func:`_run_info` /
+    :func:`_run_validate_batch`. The object carries only values this code path
+    already computes (``verdict`` / ``match`` / ``path`` / ``display_path`` /
+    ``recomputed`` / ``stored``); the exit code is UNCHANGED (0 / 1). The
+    usage-error legs (malformed / not-a-receipt) emit their actionable
+    ``error:`` stderr line and NO JSON body — exactly like every other
+    subcommand's usage-error path.
     """
     shown = display_path if display_path is not None else path
     # open() may raise OSError (e.g. a mid-run permission change); that
@@ -590,7 +604,21 @@ def _run_receipt_verify(path, display_path=None):
     # used — reuse, not a parallel canonicalizer.
     recomputed = _sha256_hex(canonical_json(body).encode("utf-8"))
 
-    if recomputed == stored:
+    match = recomputed == stored
+    verdict = "VERIFIED" if match else "TAMPERED"
+
+    if as_json:
+        sys.stdout.write(json.dumps({
+            "verdict": verdict,
+            "match": match,
+            "path": path,
+            "display_path": shown,
+            "recomputed": recomputed,
+            "stored": stored,
+        }, sort_keys=True) + "\n")
+        return EXIT_OK if match else EXIT_FAIL
+
+    if match:
         sys.stdout.write(
             "VERIFIED: %s\n  content_sha256 = %s\n" % (shown, recomputed))
         return EXIT_OK
@@ -879,7 +907,7 @@ def _main(argv=None):
             # dispatched BEFORE the build path so the byte-for-byte build
             # behaviour below is untouched when --verify is absent.
             if verify:
-                return _run_receipt_verify(path, display_path)
+                return _run_receipt_verify(path, display_path, as_json=as_json)
             # A conformance receipt always emits a canonical JSON document (the
             # receipt IS the output); the exit code mirrors the verdict so it can
             # gate a build. Not-well-formed input is folded into a FAIL receipt by

@@ -62,6 +62,13 @@ def _run_verify(receipt_path):
         capture_output=True, text=True)
 
 
+def _run_verify_json(receipt_path):
+    """Drive the REAL CLI with the machine flag: ``receipt --verify --json``."""
+    return subprocess.run(
+        [sys.executable, WRAPPER, "receipt", "--verify", "--json", receipt_path],
+        capture_output=True, text=True)
+
+
 def _write_doc(doc):
     """Serialize a receipt document to a temp .json file; return its path."""
     fd, path = tempfile.mkstemp(suffix=".json", prefix="receipt-verify-test-")
@@ -251,6 +258,77 @@ class MalformedFilesError(unittest.TestCase):
         path = os.path.join(tempfile.gettempdir(), "no-such-receipt-xyz-12345.json")
         self.assertFalse(os.path.exists(path))
         self._assert_usage_error(path, "nonexistent", cleanup=False)
+
+
+class JsonMachineShape(unittest.TestCase):
+    """--json emits exactly one sorted-keys object mirroring the code path,
+    with the exit code unchanged. Usage-error legs emit NO JSON body."""
+
+    def _parse_single_object(self, stdout):
+        # Exactly one JSON object on stdout — json.loads rejects trailing text,
+        # so this also proves nothing else was printed alongside it.
+        stripped = stdout.strip()
+        self.assertTrue(stripped, "expected a JSON object on stdout, got empty")
+        obj = json.loads(stripped)
+        self.assertIsInstance(obj, dict)
+        # sort_keys=True means the serialized keys are in ascending order.
+        self.assertEqual(list(obj.keys()), sorted(obj.keys()),
+                         "object must be emitted with sort_keys=True")
+        return obj
+
+    def test_clean_receipt_json_shape(self):
+        path = _write_doc(build_receipt(PASS_FIXTURE))
+        try:
+            proc = _run_verify_json(path)
+        finally:
+            os.remove(path)
+        self.assertEqual(proc.returncode, 0,
+                         "clean receipt must exit 0 (stderr: %s)" % proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        obj = self._parse_single_object(proc.stdout)
+        self.assertEqual(obj["verdict"], "VERIFIED")
+        self.assertIs(obj["match"], True)
+        self.assertEqual(obj["recomputed"], obj["stored"])
+        # No human line leaked into the machine output.
+        self.assertNotIn("VERIFIED:", proc.stdout)
+
+    def test_tampered_receipt_json_shape(self):
+        doc = _flip_verdict(build_receipt(PASS_FIXTURE))
+        path = _write_doc(doc)
+        try:
+            proc = _run_verify_json(path)
+        finally:
+            os.remove(path)
+        self.assertEqual(proc.returncode, 1,
+                         "tampered receipt must exit 1 (stderr: %s)" % proc.stderr)
+        obj = self._parse_single_object(proc.stdout)
+        self.assertEqual(obj["verdict"], "TAMPERED")
+        self.assertIs(obj["match"], False)
+        self.assertNotEqual(obj["recomputed"], obj["stored"])
+
+    def test_garbage_json_emits_no_object(self):
+        path = _write_bytes(b"this is not json at all {{{")
+        try:
+            proc = _run_verify_json(path)
+        finally:
+            os.remove(path)
+        self.assertEqual(proc.returncode, 2,
+                         "garbage must exit 2 (got %d)" % proc.returncode)
+        self.assertIn("error:", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+        # A usage-error leg emits NO JSON body on stdout, exactly like the other
+        # subcommands — stdout stays empty even under --json.
+        self.assertEqual(proc.stdout.strip(), "")
+
+    def test_not_a_receipt_json_emits_no_object(self):
+        path = _write_bytes(b'{"hello": "world"}')
+        try:
+            proc = _run_verify_json(path)
+        finally:
+            os.remove(path)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("error:", proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "")
 
 
 class MisuseIsAUsageError(unittest.TestCase):

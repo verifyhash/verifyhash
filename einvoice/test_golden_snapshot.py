@@ -518,6 +518,39 @@ FIXTURES = [
                 "50.50 + 9.60 must then hold EXACTLY (BR-CO-14/15 have no "
                 "tolerance band, unlike BR-CO-17).",
     },
+    # ---- synthetic CII, FULL-SHAPE good + broken twin (T-VHCII2.1) ----
+    {
+        "name": "synth-cii-good-fullshape",
+        "path": "corpus/synthetic/synth-cii-good-fullshape.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "Valid EN 16931 CII (ZUGFeRD/Factur-X-shaped) FULL-SHAPE "
+                "invoice — the CII-syntax parity of synth-ubl-good-fullshape: "
+                "the one CII fixture combining BG-4 seller (address + BT-31 VAT "
+                "id + BG-6 contact) AND BG-7 buyer (address + BT-48 VAT id), "
+                "three lines across TWO standard rates (19%/7%), a BG-27 "
+                "line-level allowance AND a BG-28 line-level charge, a BG-20 "
+                "document allowance (19%) AND a BG-21 document charge (19%), and "
+                "TWO BG-23 VAT breakdowns; every total reconciles so it "
+                "validates CLEAN: valid=true, exit 0, zero fired rules.",
+    },
+    {
+        "name": "synth-cii-bad-fullshape",
+        "path": "corpus/synthetic/synth-cii-bad-fullshape.xml",
+        "syntax": "CII",
+        "profile": "en16931",
+        "note": "NEGATIVE TWIN of synth-cii-good-fullshape (mirrors R.19's "
+                "shape in CII): byte-for-byte identical EXCEPT the document "
+                "grand total is overstated — ram:GrandTotalAmount (BT-112) AND "
+                "ram:DuePayableAmount (BT-115) both state 1991.80 instead of the "
+                "reconciling 1620.00 + 271.80 = 1891.80. The two fields move "
+                "together so BR-CO-16 (amount due = grand total) stays satisfied "
+                "and the CII BR-CO-15 disjunct GrandTotal=TaxBasisTotal is also "
+                "broken, so the ONLY fired rule is BR-CO-15 (fatal): total with "
+                "VAT must equal total-without-VAT + total-VAT. One distinct "
+                "fatal, distinct from the BR-CO-14 / BR-S-02 / BR-DE-2 fatals "
+                "pinned by the other bad-synth CII goldens: valid=false, exit 1.",
+    },
     # ======================================================================
     # CII credit notes (Gutschrift, BT-3 ram:TypeCode 381). Committed
     # synthetic fixtures from T-VHCNCII.1, differentially PROVEN at 0

@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC FIXTURE: fully fictional data (Muster GmbH / DE000000000 / placeholder IBAN).
+     CII (UN/CEFACT CrossIndustryInvoice), the ZUGFeRD/Factur-X-shaped EN 16931 syntax German
+     ERPs (DATEV/SAP/Lexware) actually emit. Expected INVALID under the EN 16931 core.
+
+     NEGATIVE TWIN of synth-cii-good-fullshape: byte-for-byte identical EXCEPT the document
+     grand total is overstated by 100.00 — BOTH ram:GrandTotalAmount (BT-112) AND
+     ram:DuePayableAmount (BT-115) are stated 1991.80 instead of the reconciling 1620.00 +
+     271.80 = 1891.80. The two grand-total fields move TOGETHER, so BR-CO-16 (amount due =
+     grand total, no prepaid/rounding) stays satisfied and the ONLY fired rule is BR-CO-15
+     (fatal): the invoice total with VAT (BT-112) must equal total without VAT (BT-109) + total
+     VAT (BT-110). Every mandatory BG group is intact and the per-breakdown VAT (BR-CO-14),
+     line-sum (BR-CO-10) and tax-basis (BR-CO-13) arithmetic all still reconcile, so exactly one
+     distinct fatal is isolated — distinct from the BR-CO-14 (synth-cii-bad-vat-mismatch),
+     BR-S-02 (synth-cii-bad-missing-seller-vat) and BR-DE-2 (synth-cii-bad-xrechnung-nocontact)
+     fatals the other bad-synth CII goldens pin.
+
+     Arithmetic (all EUR):
+       Line 1  Widget   qty 10 @ 100.00 = 1000.00, -50.00 line allowance -> BT-131 950.00 (19%)
+       Line 2  Install  qty  5 @  80.00 =  400.00, +30.00 line charge     -> BT-131 430.00 (19%)
+       Line 3  Manual   qty 12 @  25.00 =  300.00                          -> BT-131 300.00 ( 7%)
+       Sum of line net amounts (BT-106)            = 950.00 + 430.00 + 300.00 = 1680.00
+       Document allowance (BT-107, 19%)            = 100.00
+       Document charge    (BT-108, 19%)            =  40.00
+       19% breakdown basis = 950 + 430 - 100 + 40  = 1320.00 -> VAT 250.80
+        7% breakdown basis = 300                    =  300.00 -> VAT  21.00
+       Tax basis total (BT-109) = 1680 - 100 + 40   = 1620.00
+       VAT total       (BT-110) = 250.80 + 21.00    =  271.80
+       Grand total     (BT-112) SHOULD be 1891.80 but is OVERSTATED to 1991.80  <- BR-CO-15
+       Amount due      (BT-115) moved in lockstep to 1991.80 (keeps BR-CO-16)   -->
+<rsm:CrossIndustryInvoice
+    xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+    xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+    xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+  <rsm:ExchangedDocumentContext>
+    <ram:GuidelineSpecifiedDocumentContextParameter>
+      <ram:ID>urn:cen.eu:en16931:2017</ram:ID>
+    </ram:GuidelineSpecifiedDocumentContextParameter>
+  </rsm:ExchangedDocumentContext>
+  <rsm:ExchangedDocument>
+    <ram:ID>SYNTH-CII-2024-0012</ram:ID>
+    <ram:TypeCode>380</ram:TypeCode>
+    <ram:IssueDateTime>
+      <udt:DateTimeString format="102">20240712</udt:DateTimeString>
+    </ram:IssueDateTime>
+  </rsm:ExchangedDocument>
+  <rsm:SupplyChainTradeTransaction>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument>
+        <ram:LineID>1</ram:LineID>
+      </ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct>
+        <ram:Name>Widget, standard grade</ram:Name>
+      </ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>100.00</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery>
+        <ram:BilledQuantity unitCode="C62">10</ram:BilledQuantity>
+      </ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>19</ram:RateApplicablePercent>
+        </ram:ApplicableTradeTax>
+        <ram:SpecifiedTradeAllowanceCharge>
+          <ram:ChargeIndicator>
+            <udt:Indicator>false</udt:Indicator>
+          </ram:ChargeIndicator>
+          <ram:ActualAmount>50.00</ram:ActualAmount>
+          <ram:Reason>Loyalty rebate</ram:Reason>
+        </ram:SpecifiedTradeAllowanceCharge>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>950.00</ram:LineTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument>
+        <ram:LineID>2</ram:LineID>
+      </ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct>
+        <ram:Name>On-site installation, per hour</ram:Name>
+      </ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>80.00</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery>
+        <ram:BilledQuantity unitCode="HUR">5</ram:BilledQuantity>
+      </ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>19</ram:RateApplicablePercent>
+        </ram:ApplicableTradeTax>
+        <ram:SpecifiedTradeAllowanceCharge>
+          <ram:ChargeIndicator>
+            <udt:Indicator>true</udt:Indicator>
+          </ram:ChargeIndicator>
+          <ram:ActualAmount>30.00</ram:ActualAmount>
+          <ram:Reason>After-hours callout</ram:Reason>
+        </ram:SpecifiedTradeAllowanceCharge>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>430.00</ram:LineTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument>
+        <ram:LineID>3</ram:LineID>
+      </ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct>
+        <ram:Name>Printed manual (reduced-rate)</ram:Name>
+      </ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>25.00</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery>
+        <ram:BilledQuantity unitCode="C62">12</ram:BilledQuantity>
+      </ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>7</ram:RateApplicablePercent>
+        </ram:ApplicableTradeTax>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>300.00</ram:LineTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:ApplicableHeaderTradeAgreement>
+      <ram:BuyerReference>PO-DEMO-311</ram:BuyerReference>
+      <ram:SellerTradeParty>
+        <ram:Name>Muster Handels GmbH</ram:Name>
+        <ram:DefinedTradeContact>
+          <ram:PersonName>Erika Mustermann</ram:PersonName>
+          <ram:TelephoneUniversalCommunication>
+            <ram:CompleteNumber>+49 000 0000000</ram:CompleteNumber>
+          </ram:TelephoneUniversalCommunication>
+          <ram:EmailURIUniversalCommunication>
+            <ram:URIID>billing@muster-handels.example</ram:URIID>
+          </ram:EmailURIUniversalCommunication>
+        </ram:DefinedTradeContact>
+        <ram:PostalTradeAddress>
+          <ram:PostcodeCode>12345</ram:PostcodeCode>
+          <ram:LineOne>Musterstrasse 1</ram:LineOne>
+          <ram:CityName>Musterstadt</ram:CityName>
+          <ram:CountryID>DE</ram:CountryID>
+        </ram:PostalTradeAddress>
+        <ram:URIUniversalCommunication>
+          <ram:URIID schemeID="EM">billing@muster-handels.example</ram:URIID>
+        </ram:URIUniversalCommunication>
+        <ram:SpecifiedTaxRegistration>
+          <ram:ID schemeID="VA">DE000000000</ram:ID>
+        </ram:SpecifiedTaxRegistration>
+      </ram:SellerTradeParty>
+      <ram:BuyerTradeParty>
+        <ram:Name>Beispiel Einkauf AG</ram:Name>
+        <ram:PostalTradeAddress>
+          <ram:PostcodeCode>54321</ram:PostcodeCode>
+          <ram:LineOne>Beispielweg 2</ram:LineOne>
+          <ram:CityName>Beispielhausen</ram:CityName>
+          <ram:CountryID>DE</ram:CountryID>
+        </ram:PostalTradeAddress>
+        <ram:URIUniversalCommunication>
+          <ram:URIID schemeID="EM">ap@beispiel-einkauf.example</ram:URIID>
+        </ram:URIUniversalCommunication>
+        <ram:SpecifiedTaxRegistration>
+          <ram:ID schemeID="VA">DE111111111</ram:ID>
+        </ram:SpecifiedTaxRegistration>
+      </ram:BuyerTradeParty>
+    </ram:ApplicableHeaderTradeAgreement>
+    <ram:ApplicableHeaderTradeDelivery>
+      <ram:ActualDeliverySupplyChainEvent>
+        <ram:OccurrenceDateTime>
+          <udt:DateTimeString format="102">20240712</udt:DateTimeString>
+        </ram:OccurrenceDateTime>
+      </ram:ActualDeliverySupplyChainEvent>
+    </ram:ApplicableHeaderTradeDelivery>
+    <ram:ApplicableHeaderTradeSettlement>
+      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+      <ram:SpecifiedTradeSettlementPaymentMeans>
+        <ram:TypeCode>58</ram:TypeCode>
+        <ram:PayeePartyCreditorFinancialAccount>
+          <ram:IBANID>DE00000000000000000000</ram:IBANID>
+        </ram:PayeePartyCreditorFinancialAccount>
+      </ram:SpecifiedTradeSettlementPaymentMeans>
+      <ram:ApplicableTradeTax>
+        <ram:CalculatedAmount>250.80</ram:CalculatedAmount>
+        <ram:TypeCode>VAT</ram:TypeCode>
+        <ram:BasisAmount>1320.00</ram:BasisAmount>
+        <ram:CategoryCode>S</ram:CategoryCode>
+        <ram:RateApplicablePercent>19</ram:RateApplicablePercent>
+      </ram:ApplicableTradeTax>
+      <ram:ApplicableTradeTax>
+        <ram:CalculatedAmount>21.00</ram:CalculatedAmount>
+        <ram:TypeCode>VAT</ram:TypeCode>
+        <ram:BasisAmount>300.00</ram:BasisAmount>
+        <ram:CategoryCode>S</ram:CategoryCode>
+        <ram:RateApplicablePercent>7</ram:RateApplicablePercent>
+      </ram:ApplicableTradeTax>
+      <ram:SpecifiedTradeAllowanceCharge>
+        <ram:ChargeIndicator>
+          <udt:Indicator>false</udt:Indicator>
+        </ram:ChargeIndicator>
+        <ram:ActualAmount>100.00</ram:ActualAmount>
+        <ram:Reason>Volume discount</ram:Reason>
+        <ram:CategoryTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>19</ram:RateApplicablePercent>
+        </ram:CategoryTradeTax>
+      </ram:SpecifiedTradeAllowanceCharge>
+      <ram:SpecifiedTradeAllowanceCharge>
+        <ram:ChargeIndicator>
+          <udt:Indicator>true</udt:Indicator>
+        </ram:ChargeIndicator>
+        <ram:ActualAmount>40.00</ram:ActualAmount>
+        <ram:Reason>Freight and packaging</ram:Reason>
+        <ram:CategoryTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>19</ram:RateApplicablePercent>
+        </ram:CategoryTradeTax>
+      </ram:SpecifiedTradeAllowanceCharge>
+      <ram:SpecifiedTradePaymentTerms>
+        <ram:Description>Payable within 30 days without deduction.</ram:Description>
+        <ram:DueDateDateTime>
+          <udt:DateTimeString format="102">20240811</udt:DateTimeString>
+        </ram:DueDateDateTime>
+      </ram:SpecifiedTradePaymentTerms>
+      <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        <ram:LineTotalAmount>1680.00</ram:LineTotalAmount>
+        <ram:ChargeTotalAmount>40.00</ram:ChargeTotalAmount>
+        <ram:AllowanceTotalAmount>100.00</ram:AllowanceTotalAmount>
+        <ram:TaxBasisTotalAmount>1620.00</ram:TaxBasisTotalAmount>
+        <ram:TaxTotalAmount currencyID="EUR">271.80</ram:TaxTotalAmount>
+        <ram:GrandTotalAmount>1991.80</ram:GrandTotalAmount>
+        <ram:DuePayableAmount>1991.80</ram:DuePayableAmount>
+      </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+    </ram:ApplicableHeaderTradeSettlement>
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>

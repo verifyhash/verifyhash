@@ -1,0 +1,1 @@
+##vso[task.logissue type=error;sourcepath=corpus/synthetic/synth-cii-bad-intra-community.xml;code=BR-IC-02]An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31) or the Seller tax representative VAT identifier (BT-63) AND the Buyer VAT identifier (BT-48).

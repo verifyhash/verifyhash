@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="2" failures="1" errors="0">
+  <testsuite name="xrechnung" tests="2" failures="1" errors="0">
+    <testcase name="BR-DE-2" classname="xrechnung">
+      <failure message="The group 'SELLER CONTACT' (BG-6) must be transmitted.">fatal: ram:SellerTradeParty/ram:DefinedTradeContact</failure>
+    </testcase>
+    <testcase name="BR-DE-21" classname="xrechnung">
+      <system-out>warning: 'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier. (ram:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID)</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>

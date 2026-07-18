@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:SellerTradeParty/ram:DefinedTradeContact"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "The group 'SELLER CONTACT' (BG-6) must be transmitted."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "71e34512bfb443e0e30ae45e90850e8d9abce3b89bb297f6e905ae015eb89045"
+          },
+          "ruleId": "BR-DE-2"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "ram:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "ebafec8f490fa6560a14c3d197c7547862d327129a470c1eb2c57b2c586f8b20"
+          },
+          "ruleId": "BR-DE-21"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted."
+              },
+              "help": {
+                "text": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted.\nBusiness terms: BG-6"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-2/",
+              "id": "BR-DE-2",
+              "name": "BR-DE-2",
+              "shortDescription": {
+                "text": "SELLER CONTACT (BG-6) must be transmitted."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Correct `cbc:CustomizationID` so that BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) \u2014 untrimmed string equality."
+              },
+              "help": {
+                "text": "Correct `cbc:CustomizationID` so that BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) \u2014 untrimmed string equality.\nBusiness terms: BT-24"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-21/",
+              "id": "BR-DE-21",
+              "name": "BR-DE-21",
+              "shortDescription": {
+                "text": "BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) \u2014 untrimmed string equality."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

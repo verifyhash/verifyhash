@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="1" errors="0">
+  <testsuite name="en16931" tests="1" failures="1" errors="0">
+    <testcase name="BR-CO-14" classname="en16931">
+      <failure message="Invoice total VAT amount (BT-110=230.00) must equal the sum of VAT category tax amounts (Σ BT-117=218.6).">fatal: ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

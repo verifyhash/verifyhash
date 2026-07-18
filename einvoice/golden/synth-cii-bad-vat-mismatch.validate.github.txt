@@ -1,0 +1,1 @@
+::error file=corpus/synthetic/synth-cii-bad-vat-mismatch.xml,title=BR-CO-14::Invoice total VAT amount (BT-110=230.00) must equal the sum of VAT category tax amounts (Σ BT-117=218.6).

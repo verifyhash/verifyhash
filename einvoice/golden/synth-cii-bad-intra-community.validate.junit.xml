@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="1" failures="1" errors="0">
+  <testsuite name="en16931" tests="1" failures="1" errors="0">
+    <testcase name="BR-IC-02" classname="en16931">
+      <failure message="An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31) or the Seller tax representative VAT identifier (BT-63) AND the Buyer VAT identifier (BT-48).">fatal: cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,1 @@
+# einvoice: corpus/synthetic/synth-cii-good-zero-rated.xml is conformant with EN 16931 — no annotations

@@ -1,0 +1,11 @@
+[
+  {
+    "check_name": "BR-G-10",
+    "description": "A VAT breakdown (BG-23) with an Export outside the EU (G) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121), meaning 'Export outside the EU', or the VAT exemption reason text (BT-120) 'Export outside the EU'.",
+    "fingerprint": "44aee57b58af89492c67cb63ffa200eed22201b0cbbe7efc2c9728890c25ca8d",
+    "location": {
+      "path": "corpus/synthetic/synth-cii-bad-export.xml"
+    },
+    "severity": "major"
+  }
+]

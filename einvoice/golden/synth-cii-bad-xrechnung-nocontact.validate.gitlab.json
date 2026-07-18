@@ -1,0 +1,20 @@
+[
+  {
+    "check_name": "BR-DE-2",
+    "description": "The group 'SELLER CONTACT' (BG-6) must be transmitted.",
+    "fingerprint": "5af4b96d29609e36f5bcdddb1b5ccda46bcd9a509705978766dcb9024d38733c",
+    "location": {
+      "path": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-DE-21",
+    "description": "'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier.",
+    "fingerprint": "a0f10d2c23b3ba65d30ec761f74345976c65c576c3a795aece711703a1a5a159",
+    "location": {
+      "path": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml"
+    },
+    "severity": "minor"
+  }
+]

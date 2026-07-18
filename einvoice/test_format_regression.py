@@ -21,16 +21,36 @@ registered machine/CI format and asserting byte-identity with a committed
 golden under ``golden/``. It is a pure regression LOCK: it adds no format,
 changes no emitter, and asserts no verdict this repo doesn't already produce.
 
-FIXTURES (four distinct economic verdicts, one machine golden set each)
-----------------------------------------------------------------------
+FIXTURES (distinct economic verdicts, one machine golden set each)
+------------------------------------------------------------------
+The original T-VHFMTP.1 subset:
   * synth-cii-good-fullshape      full-shape valid CII      -> PASS (no fired rule)
   * synth-cii-bad-fullshape       its negative twin         -> FAIL, BR-CO-15
   * synth-cii-bad-reverse-charge  reverse-charge (AE) twin  -> FAIL, BR-AE-10
   * synth-ubl-bad-intra-community intra-community (K) UBL    -> FAIL, BR-IC-02
+
+T-VHFMTP.3 closes the remaining CII-syntax gap — every economically-distinct
+CII source fixture on disk that still lacked a machine-format golden set. These
+are the native-CII documents (``corpus/synthetic/synth-cii-*.xml``) whose
+verdicts are already pinned as normalized projections in
+``test_golden_snapshot.py`` but whose EXACT machine bytes were never frozen:
+  * synth-cii-good-export           export/zero-rated supply (cat G)  -> PASS
+  * synth-cii-good-foreign-currency non-EUR invoice + EUR VAT accting -> PASS
+  * synth-cii-good-intra-community  intra-community (cat K)           -> PASS
+  * synth-cii-good-multiline        several line items                -> PASS
+  * synth-cii-good-reverse-charge   reverse-charge (cat AE)           -> PASS
+  * synth-cii-good-rounding-boundary half-cent rounding edge          -> PASS
+  * synth-cii-good-zero-rated       zero-rated (cat Z)                -> PASS
+  * synth-cii-bad-export            export missing exemption reason   -> FAIL, BR-G-10
+  * synth-cii-bad-intra-community   intra-community missing reason    -> FAIL, BR-IC-02
+  * synth-cii-bad-missing-seller-vat seller VAT id absent, std-rated  -> FAIL, BR-CO-26/BR-S-02/03/04
+  * synth-cii-bad-vat-mismatch      BT-110 != Σ BT-117                -> FAIL, BR-CO-14
+  * synth-cii-bad-xrechnung-nocontact XRechnung seller-contact gap    -> FAIL, BR-DE-2/BR-DE-21
+
 Each is a genuinely different document producing a genuinely different report,
-so its six machine goldens differ substantively (not near-duplicates): the
+so its six machine goldens differ substantively (not near-duplicates): every
 pass case emits an empty GitLab array / zero-testcase JUnit / "conformant"
-GitHub+Azure lines, while each FAIL case carries its own rule id, message,
+GitHub+Azure lines, while each FAIL case carries its own rule id(s), message,
 location and stable fingerprint.
 
 CODE PATH (the REAL emitters — no re-implemented rule logic, no hand-authored
@@ -153,10 +173,99 @@ FIXTURES = [
         "note": "intra-community (K) broken UBL twin -> FAIL (BR-IC-02); the "
                 "native UBL CLI plain-XML path.",
     },
+    # --- T-VHFMTP.3: the remaining economically-distinct CII source fixtures.
+    # Same native-CII engine (_report_from_invoice_bytes) as the FMTP.1 CII
+    # entries; each rel is the checkout-relative corpus path echoed into output.
+    {
+        "name": "synth-cii-good-export",
+        "rel": "corpus/synthetic/synth-cii-good-export.xml",
+        "kind": "cii",
+        "note": "export supply (VAT category G) -> PASS (no fired rule).",
+    },
+    {
+        "name": "synth-cii-good-foreign-currency",
+        "rel": "corpus/synthetic/synth-cii-good-foreign-currency.xml",
+        "kind": "cii",
+        "note": "non-EUR invoice with EUR VAT accounting currency -> PASS.",
+    },
+    {
+        "name": "synth-cii-good-intra-community",
+        "rel": "corpus/synthetic/synth-cii-good-intra-community.xml",
+        "kind": "cii",
+        "note": "intra-community supply (VAT category K) -> PASS.",
+    },
+    {
+        "name": "synth-cii-good-multiline",
+        "rel": "corpus/synthetic/synth-cii-good-multiline.xml",
+        "kind": "cii",
+        "note": "multiple invoice lines -> PASS (no fired rule).",
+    },
+    {
+        "name": "synth-cii-good-reverse-charge",
+        "rel": "corpus/synthetic/synth-cii-good-reverse-charge.xml",
+        "kind": "cii",
+        "note": "reverse-charge (VAT category AE) valid document -> PASS.",
+    },
+    {
+        "name": "synth-cii-good-rounding-boundary",
+        "rel": "corpus/synthetic/synth-cii-good-rounding-boundary.xml",
+        "kind": "cii",
+        "note": "half-cent rounding-boundary totals -> PASS.",
+    },
+    {
+        "name": "synth-cii-good-zero-rated",
+        "rel": "corpus/synthetic/synth-cii-good-zero-rated.xml",
+        "kind": "cii",
+        "note": "zero-rated supply (VAT category Z) -> PASS.",
+    },
+    {
+        "name": "synth-cii-bad-export",
+        "rel": "corpus/synthetic/synth-cii-bad-export.xml",
+        "kind": "cii",
+        "note": "export missing exemption reason -> FAIL (BR-G-10).",
+    },
+    {
+        "name": "synth-cii-bad-intra-community",
+        "rel": "corpus/synthetic/synth-cii-bad-intra-community.xml",
+        "kind": "cii",
+        "note": "intra-community missing exemption reason -> FAIL (BR-IC-02).",
+    },
+    {
+        "name": "synth-cii-bad-missing-seller-vat",
+        "rel": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml",
+        "kind": "cii",
+        "note": "standard-rated with no seller VAT id -> FAIL "
+                "(BR-CO-26, BR-S-02, BR-S-03, BR-S-04).",
+    },
+    {
+        "name": "synth-cii-bad-vat-mismatch",
+        "rel": "corpus/synthetic/synth-cii-bad-vat-mismatch.xml",
+        "kind": "cii",
+        "note": "invoice total VAT (BT-110) != sum of category VAT (BT-117) "
+                "-> FAIL (BR-CO-14).",
+    },
+    {
+        "name": "synth-cii-bad-xrechnung-nocontact",
+        "rel": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml",
+        "kind": "cii",
+        # XRechnung national rules (BR-DE-*) fire ONLY under the xrechnung
+        # profile; under en16931 this document is valid. Pin its genuinely-
+        # distinct verdict under the profile its projection golden uses.
+        "profile": "xrechnung",
+        "note": "XRechnung seller-contact gap -> FAIL (BR-DE-2, BR-DE-21) "
+                "under the xrechnung profile.",
+    },
 ]
 
 
-def build_report_dict(rel, kind):
+def fx_profile(fx):
+    """The profile a fixture is pinned under (default PROFILE=en16931). A single
+    fixture — synth-cii-bad-xrechnung-nocontact — pins under ``xrechnung`` where
+    its national BR-DE rules actually fire."""
+    return fx.get("profile", PROFILE)
+
+
+def build_report_dict(rel, kind, profile=PROFILE):
     """Return the shipped-engine report dict for ``rel`` via the SAME code path
     the CLI uses: native UBL (build_report) or native CII
     (_report_from_invoice_bytes, the Factur-X embedded-CII engine)."""
@@ -165,13 +274,13 @@ def build_report_dict(rel, kind):
         with open(abspath, "rb") as fh:
             xml_bytes = fh.read()
         # source is the RELATIVE path -> path-invariant echoed bytes.
-        return report._report_from_invoice_bytes(xml_bytes, rel, PROFILE)
+        return report._report_from_invoice_bytes(xml_bytes, rel, profile)
     # UBL: drive build_report with the relative path from cwd=HERE so its
     # own file read + echoed ``source`` stay checkout-independent.
     prev = os.getcwd()
     try:
         os.chdir(HERE)
-        return report.build_report(rel, profile=PROFILE)
+        return report.build_report(rel, profile=profile)
     finally:
         os.chdir(prev)
 
@@ -221,7 +330,7 @@ def _assert_emit_matches_cli(fx):
     cross-checked instead against the committed projection. Returns a list of
     failure lines (empty = OK)."""
     fails = []
-    rep = build_report_dict(fx["rel"], fx["kind"])
+    rep = build_report_dict(fx["rel"], fx["kind"], fx_profile(fx))
     if fx["kind"] != "ubl":
         return fails
     env = dict(os.environ)
@@ -229,7 +338,7 @@ def _assert_emit_matches_cli(fx):
     for fmt in MACHINE_FORMATS:
         proc = subprocess.run(
             [sys.executable, "-m", "einvoice.report", "--format", fmt,
-             "--profile", PROFILE, fx["rel"]],
+             "--profile", fx_profile(fx), fx["rel"]],
             cwd=HERE, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         want = emit(rep, fmt)
         if proc.stdout != want:
@@ -271,7 +380,7 @@ def write_goldens():
         os.makedirs(GOLDEN_DIR)
     written = 0
     for fx in FIXTURES:
-        rep = build_report_dict(fx["rel"], fx["kind"])
+        rep = build_report_dict(fx["rel"], fx["kind"], fx_profile(fx))
         guard = _regen_guard(fx, rep) + _assert_emit_matches_cli(fx)
         if guard:
             raise SystemExit("refusing to regenerate goldens for %s:\n%s"
@@ -295,7 +404,7 @@ def check(verbose=True):
     Returns (ok, failures)."""
     failures = []
     for fx in FIXTURES:
-        rep = build_report_dict(fx["rel"], fx["kind"])
+        rep = build_report_dict(fx["rel"], fx["kind"], fx_profile(fx))
         for line in _regen_guard(fx, rep):
             failures.append(line)
         for fmt in MACHINE_FORMATS:

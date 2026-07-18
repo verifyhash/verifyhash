@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="einvoice-conformance" tests="4" failures="4" errors="0">
+  <testsuite name="en16931" tests="4" failures="4" errors="0">
+    <testcase name="BR-CO-26" classname="en16931">
+      <failure message="In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.">fatal: cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID</failure>
+    </testcase>
+    <testcase name="BR-S-02" classname="en16931">
+      <failure message="An Invoice with a Standard rated (S) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).">fatal: cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID</failure>
+    </testcase>
+    <testcase name="BR-S-03" classname="en16931">
+      <failure message="An Invoice with a Standard rated (S) Document level allowance (BT-95) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).">fatal: cac:AllowanceCharge/cac:TaxCategory/cbc:ID</failure>
+    </testcase>
+    <testcase name="BR-S-04" classname="en16931">
+      <failure message="An Invoice with a Standard rated (S) Document level charge (BT-102) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).">fatal: cac:AllowanceCharge/cac:TaxCategory/cbc:ID</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

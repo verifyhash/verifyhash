@@ -1,0 +1,154 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "086f97704f9a4aeb63b2a827d76e05455bfcc44e2fd20336759831e14537cd8f"
+          },
+          "ruleId": "BR-CO-26"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "An Invoice with a Standard rated (S) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "413cf45a8672054262d84d43dab27472e666f2e03c3cc1acc06ec01296b647ce"
+          },
+          "ruleId": "BR-S-02"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:AllowanceCharge/cac:TaxCategory/cbc:ID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "An Invoice with a Standard rated (S) Document level allowance (BT-95) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "916b7eec258028ce798a4e2f43b063d248b512e64fe5f0b33f951a1e88ecf3b5"
+          },
+          "ruleId": "BR-S-03"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:AllowanceCharge/cac:TaxCategory/cbc:ID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "An Invoice with a Standard rated (S) Document level charge (BT-102) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "8fe7c7713fca1d3c95b0752c510d39ff42af0a2403825d15c2f8d26866df5dce"
+          },
+          "ruleId": "BR-S-04"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Correct `cac:AccountingSupplierParty` so that In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present."
+              },
+              "help": {
+                "text": "Correct `cac:AccountingSupplierParty` so that In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.\nBusiness terms: BT-29, BT-30, BT-31"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-CO-26/",
+              "id": "BR-CO-26",
+              "name": "BR-CO-26",
+              "shortDescription": {
+                "text": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='S']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"Standard rated\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+              },
+              "help": {
+                "text": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='S']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"Standard rated\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).\nBusiness terms: BG-25, BT-31, BT-32, BT-63, BT-151"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-S-02/",
+              "id": "BR-S-02",
+              "name": "BR-S-02",
+              "shortDescription": {
+                "text": "An Invoice with a Standard-rated (S) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31), Seller tax registration id (BT-32) and/or Seller tax representative VAT id (BT-63)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='S']` so that An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"Standard rated\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+              },
+              "help": {
+                "text": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='S']` so that An Invoice that contains a Document level allowance (BG-20) where the Document level allowance VAT category code (BT-95) is \"Standard rated\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).\nBusiness terms: BG-20, BT-31, BT-32, BT-63, BT-95"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-S-03/",
+              "id": "BR-S-03",
+              "name": "BR-S-03",
+              "shortDescription": {
+                "text": "An Invoice with a Standard-rated (S) Document level allowance (BT-95) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02)."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='S']` so that An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"Standard rated\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63)."
+              },
+              "help": {
+                "text": "Adjust the VAT breakdown at `cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory[cbc:ID='S']` so that An Invoice that contains a Document level charge (BG-21) where the Document level charge VAT category code (BT-102) is \"Standard rated\" shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).\nBusiness terms: BG-21, BT-31, BT-32, BT-63, BT-102"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-S-04/",
+              "id": "BR-S-04",
+              "name": "BR-S-04",
+              "shortDescription": {
+                "text": "An Invoice with a Standard-rated (S) Document level charge (BT-102) shall contain the Seller VAT id / tax registration id / tax rep VAT id (same seller disjunct as BR-S-02)."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

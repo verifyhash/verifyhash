@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
+                  "name": "cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31) or the Seller tax representative VAT identifier (BT-63) AND the Buyer VAT identifier (BT-48)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "8f02d4e0564088683945d11cdb2c3094bd8636a500370f630cdf1f5c26c1a875"
+          },
+          "ruleId": "BR-IC-02"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/verifyhash/verifyhash",
+          "name": "einvoice",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='K']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"Intra-community supply\" shall contain the Seller VAT Identifier (BT-31) or the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48)."
+              },
+              "help": {
+                "text": "Adjust the VAT breakdown at `cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory[cbc:ID='K']` so that An Invoice that contains an Invoice line (BG-25) where the Invoiced item VAT category code (BT-151) is \"Intra-community supply\" shall contain the Seller VAT Identifier (BT-31) or the Seller tax representative VAT identifier (BT-63) and the Buyer VAT identifier (BT-48).\nBusiness terms: BG-25, BT-31, BT-48, BT-63, BT-151"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-IC-02/",
+              "id": "BR-IC-02",
+              "name": "BR-IC-02",
+              "shortDescription": {
+                "text": "An Invoice with an Intra-community supply (K) Invoice line (BT-151) shall carry a VAT-scoped Seller identifier AND the Buyer VAT identifier."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

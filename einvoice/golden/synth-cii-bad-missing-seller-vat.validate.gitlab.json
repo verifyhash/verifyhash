@@ -1,0 +1,38 @@
+[
+  {
+    "check_name": "BR-CO-26",
+    "description": "In order for the buyer to automatically identify a supplier, the Seller identifier (BT-29), the Seller legal registration identifier (BT-30) and/or the Seller VAT identifier (BT-31) shall be present.",
+    "fingerprint": "a5b6e51b85153470cf160a2b71cd059ef156e1854d9d645cbefa8afc453a9b8e",
+    "location": {
+      "path": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-S-02",
+    "description": "An Invoice with a Standard rated (S) Invoice line (BT-151) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+    "fingerprint": "2981027ef3dd5368103b7cd150dd4c92b7ef7baad977d43ae8dc13afece259e7",
+    "location": {
+      "path": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-S-03",
+    "description": "An Invoice with a Standard rated (S) Document level allowance (BT-95) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+    "fingerprint": "7edd33bc6eed700c6df48563be8171086b62a6f777348979cdcbb771f96b7f80",
+    "location": {
+      "path": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml"
+    },
+    "severity": "major"
+  },
+  {
+    "check_name": "BR-S-04",
+    "description": "An Invoice with a Standard rated (S) Document level charge (BT-102) shall contain the Seller VAT Identifier (BT-31), the Seller tax registration identifier (BT-32) and/or the Seller tax representative VAT identifier (BT-63).",
+    "fingerprint": "39beda82612740d8fd71778e7ea2e5f1f800afcff2a2ad1f0003dc1dc1c00479",
+    "location": {
+      "path": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml"
+    },
+    "severity": "major"
+  }
+]

@@ -1,0 +1,2 @@
+::error file=corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml,title=BR-DE-2::The group 'SELLER CONTACT' (BG-6) must be transmitted.
+::warning file=corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml,title=BR-DE-21::'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier.

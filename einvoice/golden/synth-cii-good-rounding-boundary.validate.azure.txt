@@ -1,0 +1,1 @@
+# einvoice: corpus/synthetic/synth-cii-good-rounding-boundary.xml is conformant with EN 16931 — no issues

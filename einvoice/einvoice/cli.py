@@ -205,7 +205,8 @@ USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "       einvoice receipt --verify <receipt.json> [--json]\n"
          "       einvoice info [--json]\n"
          "       einvoice --show-config\n"
-         "       einvoice --version")
+         "       einvoice --version\n"
+         "       einvoice --help")
 
 #: The valid top-level subcommands, in one place so the dispatch membership
 #: test and the unknown-subcommand error message can never drift apart. Note
@@ -252,6 +253,34 @@ FAIL_ON_LEVELS = ("fatal", "warning", "information")
 #: nine-name ``einvoice.report`` ``--format`` vocabulary: that richer set
 #: belongs to ``python3 -m einvoice.report``, which this CLI does not front.
 OUTPUT_FORMATS = ("text", "json")
+
+#: The ``--help`` / ``-h`` text: the machine-readable ``USAGE`` synopsis PLUS a
+#: one-line-per-command description block. Every entry names a real command so
+#: an ERP adopter's first ``einvoice --help`` explains what each does rather
+#: than erroring. The command names here MUST cover every ``VALID_SUBCOMMANDS``
+#: entry and every informational command (``info`` / ``--show-config`` /
+#: ``--version``); ``test_cli_help.py`` is a completeness guard that fails if a
+#: subcommand is added to the registry but not documented here. The output-form
+#: line is sourced from ``OUTPUT_FORMATS`` so it can never advertise a form this
+#: CLI cannot emit (note: this CLI has NO ``--format`` flag — the richer
+#: nine-name report vocabulary lives in ``python3 -m einvoice.report``).
+HELP = (
+    USAGE + "\n\n"
+    "Commands:\n"
+    "  validate <invoice.xml|->   validate one EN 16931 / XRechnung invoice\n"
+    "                             (XML file, or '-' to read from stdin);\n"
+    "                             exit 0 = conformant, 1 = findings, 3 = not XML\n"
+    "  validate-batch <dir|glob>  validate every matching invoice and summarise\n"
+    "  receipt <invoice.xml>      emit a JSON conformance receipt for one invoice\n"
+    "                             (receipt --verify <receipt.json> re-checks one)\n"
+    "  info                       print read-only build/version metadata; run nothing\n"
+    "  --show-config              resolve and print the effective config; run nothing\n"
+    "  --version                  print the packaged einvoice version and exit\n"
+    "  --help, -h                 show this help and exit\n\n"
+    "Output form: %s (text is the default; --json selects json). "
+    "See README.md for the full flag set.\n"
+    "This CLI validates; it never sends your invoice anywhere."
+    % " or ".join(OUTPUT_FORMATS))
 
 #: Severity ordering used to decide whether a finding CROSSES a chosen
 #: ``--fail-on`` threshold: a finding crosses iff its rank is >= the threshold's
@@ -653,6 +682,15 @@ def _main(argv=None):
     # Print the packaged version (never a hardcoded literal) and exit 0.
     if "--version" in args:
         sys.stdout.write("einvoice %s\n" % __version__)
+        return EXIT_OK
+
+    # --help / -h is an informational precedence flag, mirroring --version:
+    # handled BEFORE any subcommand or file dispatch, printed to STDOUT (not
+    # stderr), exit 0. Purely additive — it does NOT touch the unknown-subcommand
+    # / bare-usage error paths below, so a genuinely mistyped subcommand (e.g.
+    # ``bogus x.xml``, no -h/--help present) still exits 2 as before.
+    if "--help" in args or "-h" in args:
+        sys.stdout.write(HELP + "\n")
         return EXIT_OK
 
     as_json = False

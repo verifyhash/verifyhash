@@ -467,6 +467,14 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   installed package, not a hardcoded string) and exits `0`. It takes precedence
   over everything: no subcommand or file is required
   (`einvoice --version` / `python3 -m einvoice --version`).
+- `--help` / `-h` — print the usage synopsis plus a one-line description of every
+  command (`validate`, `validate-batch`, `receipt`, `info`, `--show-config`,
+  `--version`) to **stdout** and exit `0`. Like `--version` it is an
+  informational precedence flag — handled before any subcommand or file, so
+  `einvoice --help` is a valid first command; `-h` is a byte-identical alias.
+  It changes no validation behaviour and reads no input file. The two-word set of
+  commands it lists is bound to the `VALID_SUBCOMMANDS` registry by
+  `test_cli_help.py`, so a new subcommand cannot go silently undocumented.
 - `--json` — emit the full machine-readable result instead of the human
   summary (shape below and in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md)).
 - `--quiet` — suppress the human `PASS`/`FAIL`/`Syntax-binding warnings` summary

@@ -60,7 +60,9 @@ Checks (each an independent hard assert):
       byte-identical (regeneration byte-identity: catches dict/set-order or
       wall-clock leakage). The emitted set must cover every page family
       (landing, hub, walkthrough, licensing, compare/, de/, de/walkthrough/,
-      sitemap.xml, robots.txt, and one page per catalog rule). PATH
+      sitemap.xml, robots.txt, the validate/engine/ bundle files traced by
+      gen_site.engine_bundle_modules() + manifest.json (T-VHWEB.1), and one
+      page per catalog rule). PATH
       INVARIANCE: no emitted byte contains $HOME, the repo's absolute path,
       the temp output dir's own path, or the username — the tree is
       publishable from any machine. (Committed-tree identity to a fresh
@@ -342,6 +344,7 @@ def main():
     de_walkthrough_path = os.path.join(WWW_DIR, "de", "walkthrough", "index.html")
     sitemap_path = os.path.join(WWW_DIR, "sitemap.xml")
     robots_path = os.path.join(WWW_DIR, "robots.txt")
+    engine_dir = os.path.join(WWW_DIR, "validate", "engine")
     for pth, name in ((landing_path, "www/index.html"),
                       (hub_path, "www/rules/index.html"),
                       (walkthrough_path, "www/walkthrough/index.html"),
@@ -352,6 +355,19 @@ def main():
                       (sitemap_path, "www/sitemap.xml"),
                       (robots_path, "www/robots.txt")):
         check(os.path.exists(pth), "surface file missing: %s" % name)
+
+    # Engine bundle (T-VHWEB.1): the committed tree must carry the traced
+    # module set + manifest — computed LIVE from gen_site's import tracer
+    # (exactly like the rule-page set is computed live from the catalog, never
+    # a hardcoded count). Byte-level correctness of each file is
+    # test_web_bundle.py's job; presence in the generated surface is pinned
+    # here.
+    engine_mods = _gen.engine_bundle_modules()
+    check("validate" in engine_mods and "__init__" in engine_mods,
+          "engine_bundle_modules() lost a seed module: %r" % engine_mods)
+    for fn in ["manifest.json"] + [m + ".py" for m in engine_mods]:
+        check(os.path.exists(os.path.join(engine_dir, fn)),
+              "surface file missing: www/validate/engine/%s" % fn)
 
     # Enumerate EVERY generated HTML file (landing + hub + walkthrough + all
     # rule pages) so every internal link on each is integrity-checked.
@@ -827,6 +843,15 @@ def main():
         for rid in sorted(want):
             check(os.path.join("rules", rid, "index.html") in t1,
                   "regenerated tree is missing rule page for %s" % rid)
+        # Engine bundle (T-VHWEB.1): the regenerated tree carries the traced
+        # module set + manifest.json — same live tracer as the committed-tree
+        # pin above, so the run-twice byte-identity and path-invariance scans
+        # cover every engine file too.
+        for fn in ["manifest.json"] + [m + ".py"
+                                       for m in _gen.engine_bundle_modules()]:
+            check(os.path.join("validate", "engine", fn) in t1,
+                  "regenerated tree is missing engine file "
+                  "validate/engine/%s" % fn)
 
         # PATH INVARIANCE: no emitted byte may carry $HOME, the repo dir,
         # the temp output dir's own path, or the username — the tree must be

@@ -68,7 +68,9 @@ Standard library only; no network.
 
 from __future__ import annotations
 
+import ast
 import difflib
+import hashlib
 import html
 import json
 import os
@@ -81,6 +83,10 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import remediation as _remediation  # noqa: E402
+# The engine-bundle manifest's "version" field is READ from the package —
+# never hardcoded — so a version bump can't leave a stale manifest behind
+# (test_web_bundle.py binds manifest["version"] to einvoice.__version__).
+from einvoice import __version__ as _ENGINE_VERSION  # noqa: E402
 # LIVE registries for the comparison page (T-VHCMP.1): every engine fact the
 # compare page states (rule count, Peppol-subset size, report formats, exit
 # codes) is read from these at render time — NO hand-typed figure in the
@@ -142,6 +148,34 @@ DE_DIR = os.path.join(SITE_DIR, "de")
 # adoption prose — never a machine translation of the English page. The two
 # walkthroughs carry hreflang alternates in BOTH directions.
 DE_WALKTHROUGH_DIR = os.path.join(DE_DIR, "walkthrough")
+
+# ---------------------------------------------------------------------------
+# In-browser validator ENGINE BUNDLE (T-VHWEB.1) — www/validate/engine/.
+#
+# A BYTE-IDENTICAL copy of every einvoice package module (.py) the validate
+# path transitively imports, plus a manifest.json (sorted file list, sha256
+# per file, package version). The bundle is what a future Pyodide page
+# (T-VHWEB.2 — NOT built here) loads to validate an invoice fully in the
+# browser with zero install; the byte-identity drift guard in
+# test_web_bundle.py means the browser can never run a stale or divergent
+# engine.
+#
+# The module set is NOT hand-listed: :func:`engine_bundle_modules` traces
+# import statements (via ``ast``, so function-level imports count too) from
+# the seeds ``__init__`` + ``validate`` to a transitive closure over the
+# package. As of T-VHWEB.1 that closure is every package module EXCEPT
+# ``__main__`` (nothing in the closure imports it — it exists only for
+# ``python -m einvoice``). Files are copied as raw BYTES — never re-encoded
+# or rewritten — and the manifest is rendered with sort_keys, so emission is
+# deterministic and the run-twice byte-identity check in test_site.py holds.
+# ---------------------------------------------------------------------------
+VALIDATE_DIR = os.path.join(SITE_DIR, "validate")
+ENGINE_DIR = os.path.join(VALIDATE_DIR, "engine")
+# The source package the bundle mirrors.
+PKG_DIR = os.path.join(HERE, "einvoice")
+# Trace roots: the package init (public API) + the validate module itself.
+ENGINE_SEEDS = ("__init__", "validate")
+
 EXAMPLE_DIR = os.path.join(HERE, "examples", "01-missing-fields")
 EX_BROKEN = os.path.join(EXAMPLE_DIR, "broken.xml")
 EX_FIXED = os.path.join(EXAMPLE_DIR, "fixed.xml")
@@ -2166,6 +2200,97 @@ def render_robots():
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# Engine bundle (T-VHWEB.1): import tracing + deterministic emission.
+# ---------------------------------------------------------------------------
+
+def _pkg_module_names():
+    """Set of top-level module names in the einvoice package (``foo.py`` ->
+    ``foo``). Sorted access only ever happens downstream; this is a set."""
+    return {fn[:-3] for fn in os.listdir(PKG_DIR)
+            if fn.endswith(".py") and
+            os.path.isfile(os.path.join(PKG_DIR, fn))}
+
+
+def _module_internal_deps(name, mods):
+    """Package-internal modules ``name`` imports, found by AST walk.
+
+    Uses ``ast`` (not a regex) so function-level imports count — e.g. the
+    lazy ``from .cli import ...`` inside ``__init__.validate_batch`` — and so
+    a string that merely LOOKS like an import can never register. Only
+    RELATIVE imports (level >= 1) can reference a package sibling; absolute
+    imports are stdlib by the package's zero-dependency contract (enforced
+    separately by test_web_bundle.py's self-containment audit).
+    """
+    with open(os.path.join(PKG_DIR, name + ".py"), "rb") as fh:
+        tree = ast.parse(fh.read())
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.level or 0) >= 1:
+            if node.module:
+                top = node.module.split(".")[0]
+                if top in mods:
+                    out.add(top)
+            else:
+                # ``from . import X`` — X is a submodule (or, like
+                # ``from . import __version__``, an attribute of the package
+                # init, which the else-branch below accounts for).
+                out.add("__init__")
+            for alias in node.names:
+                if alias.name in mods:
+                    out.add(alias.name)
+    return out
+
+
+def engine_bundle_modules():
+    """Sorted transitive import closure from ENGINE_SEEDS over the package.
+
+    This IS the bundle's file set (plus manifest.json). Deterministic: the
+    closure is a fixed point of :func:`_module_internal_deps` and the result
+    is sorted. Modules outside the closure (as of T-VHWEB.1: only
+    ``__main__``) are provably never imported by the validate path — the
+    only exclusion ground the task allows.
+    """
+    mods = _pkg_module_names()
+    seen = set()
+    frontier = set(ENGINE_SEEDS)
+    while frontier:
+        m = frontier.pop()
+        seen.add(m)
+        frontier |= _module_internal_deps(m, mods) - seen
+    return sorted(seen)
+
+
+def render_engine():
+    """Map absolute path -> raw BYTES for www/validate/engine/ (pure).
+
+    Every traced module is copied byte-identically (read ``rb``, emitted
+    ``wb`` — no decode/re-encode, no newline translation, no rewriting).
+    manifest.json carries the sorted file list, a sha256 per file, and the
+    package version read live from ``einvoice.__version__``. Rendered with
+    ``sort_keys=True`` + fixed indent, so it is byte-deterministic.
+    """
+    out = {}
+    files = []
+    hashes = {}
+    for mod in engine_bundle_modules():
+        fn = mod + ".py"
+        with open(os.path.join(PKG_DIR, fn), "rb") as fh:
+            data = fh.read()
+        out[os.path.join(ENGINE_DIR, fn)] = data
+        files.append(fn)
+        hashes[fn] = hashlib.sha256(data).hexdigest()
+    manifest = {
+        "files": sorted(files),
+        "sha256": hashes,
+        "version": _ENGINE_VERSION,
+    }
+    out[os.path.join(ENGINE_DIR, "manifest.json")] = (
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    return out
+
+
 # Paths of the surface-level (non-per-rule) generated files.
 LANDING_PATH = os.path.join(SITE_DIR, "index.html")
 HUB_PATH = os.path.join(RULES_DIR, "index.html")
@@ -2179,12 +2304,15 @@ ROBOTS_PATH = os.path.join(SITE_DIR, "robots.txt")
 
 
 def render_surface(catalog):
-    """Map absolute path -> rendered text for the surface files (pure).
+    """Map absolute path -> rendered content for the surface files (pure).
 
     Landing, rule index hub, worked walkthrough, licensing page, comparison
-    page, the German product/quickstart page, sitemap.xml and robots.txt.
+    page, the German product/quickstart page, sitemap.xml, robots.txt, and
+    the validator engine bundle (T-VHWEB.1). Values are ``str`` for the
+    rendered text pages and raw ``bytes`` for the byte-identical engine
+    files; :func:`check` and :func:`write` branch on the type.
     """
-    return {
+    surface = {
         LANDING_PATH: render_landing(),
         HUB_PATH: render_hub(catalog),
         WALKTHROUGH_PATH: render_walkthrough(catalog),
@@ -2195,6 +2323,8 @@ def render_surface(catalog):
         SITEMAP_PATH: render_sitemap(catalog),
         ROBOTS_PATH: render_robots(),
     }
+    surface.update(render_engine())
+    return surface
 
 
 def _page_path(rule_id):
@@ -2212,6 +2342,14 @@ def _committed_rule_dirs():
 def _read_or_none(path):
     return (open(path, encoding="utf-8").read()
             if os.path.exists(path) else None)
+
+
+def _read_bytes_or_none(path):
+    """Raw bytes of ``path`` (engine-bundle comparisons are byte-exact)."""
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as fh:
+        return fh.read()
 
 
 def check(pages, surface):
@@ -2236,11 +2374,26 @@ def check(pages, surface):
         if cur != pages[rid]:
             stale.append(rid)
 
-    # Surface files (landing / hub / sitemap / robots) — missing or drifted.
+    # Surface files (landing / hub / sitemap / robots / engine bundle) —
+    # missing or drifted. Engine-bundle entries are bytes: compared raw.
     surface_bad = []
     for path, text in surface.items():
-        if _read_or_none(path) != text:
+        cur = (_read_bytes_or_none(path) if isinstance(text, bytes)
+               else _read_or_none(path))
+        if cur != text:
             surface_bad.append(os.path.relpath(path, HERE))
+
+    # Orphan engine files: anything under www/validate/engine/ that a fresh
+    # render would NOT emit is drift (e.g. a module removed from the package
+    # whose stale copy lingers in the bundle).
+    expected_engine = {os.path.basename(p) for p in surface
+                       if os.path.dirname(p) == ENGINE_DIR}
+    if os.path.isdir(ENGINE_DIR):
+        for fn in sorted(os.listdir(ENGINE_DIR)):
+            if fn not in expected_engine:
+                surface_bad.append(
+                    os.path.relpath(os.path.join(ENGINE_DIR, fn), HERE)
+                    + " (orphan engine file)")
 
     if missing or orphan or stale or surface_bad:
         sys.stderr.write("stale site (re-run gen_site.py):\n")
@@ -2253,7 +2406,7 @@ def check(pages, surface):
         if surface_bad:
             sys.stderr.write("  stale surface: %s\n" % surface_bad)
         return 1
-    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots)"
+    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots + engine bundle)"
           % len(want))
     return 0
 
@@ -2282,15 +2435,31 @@ def write(pages, surface, out_dir=None):
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as fh:
             fh.write(text)
-    # Surface files: landing, rule index hub, walkthrough, sitemap, robots.
-    # Ensure each parent dir exists (the walkthrough lives in its own subdir).
+    # Surface files: landing, rule index hub, walkthrough, sitemap, robots,
+    # and the engine bundle. Ensure each parent dir exists (the walkthrough
+    # and engine live in their own subdirs). Engine entries are BYTES and are
+    # written raw ("wb") so the copies stay byte-identical to the package
+    # sources; text pages keep their utf-8 text path.
     for path, text in surface.items():
         dest = (path if out_dir is None
                 else os.path.join(out_dir, os.path.relpath(path, SITE_DIR)))
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "w", encoding="utf-8") as fh:
-            fh.write(text)
-    print("wrote %d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots under %s"
+        if isinstance(text, bytes):
+            with open(dest, "wb") as fh:
+                fh.write(text)
+        else:
+            with open(dest, "w", encoding="utf-8") as fh:
+                fh.write(text)
+    # Prune orphan engine files (a module dropped from the traced closure
+    # must not linger as a stale bundled copy).
+    engine_dir = os.path.join(site_dir, "validate", "engine")
+    expected_engine = {os.path.basename(p) for p in surface
+                       if os.path.dirname(p) == ENGINE_DIR}
+    if os.path.isdir(engine_dir):
+        for fn in os.listdir(engine_dir):
+            if fn not in expected_engine:
+                os.remove(os.path.join(engine_dir, fn))
+    print("wrote %d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots + engine bundle under %s"
           % (len(pages), os.path.relpath(site_dir, HERE)))
     return 0
 

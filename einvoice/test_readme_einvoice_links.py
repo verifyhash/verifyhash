@@ -40,6 +40,7 @@ USES_RE = re.compile(r"uses:\s*verifyhash/verifyhash/(\S+?)@")
 EXTERNAL_ALLOWLIST = {
     "https://verifyhash.com/einvoice/",
     "https://verifyhash.com/einvoice/licensing/",
+    "https://verifyhash.com/einvoice/validate/",
 }
 
 
@@ -134,6 +135,12 @@ def main():
     required = [
         "https://verifyhash.com/einvoice/",
         "einvoice/QUICKSTART.md",
+        # T-VHWEB.3: the zero-install path must stay surfaced AND bound to the
+        # committed page — the live URL plus the in-repo path (the generic
+        # repo-relative pass below asserts that path exists on disk, so a
+        # future move of www/validate/index.html breaks this gate).
+        "https://verifyhash.com/einvoice/validate/",
+        "einvoice/www/validate/index.html",
     ]
     for req in required:
         assert req in links, "required link missing from einvoice block: %s" % req

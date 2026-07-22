@@ -27,6 +27,14 @@ violated rule ID. It is Apache-2.0 open source.
 - Zero-install CI gate: the committed GitHub Action at [`einvoice/action/`](einvoice/action/README.md) — pin `uses: verifyhash/verifyhash/einvoice/action@<ref>` for a build gate with SARIF inline PR annotations (in-repo path; not on the Marketplace)
 - Licensing (Apache-2.0 + optional commercial license): [`einvoice/www/licensing/index.html`](einvoice/www/licensing/index.html) — rendered at <https://verifyhash.com/einvoice/licensing/>
 
+### Validate in your browser
+
+The same engine also runs client-side, with nothing to install: <https://verifyhash.com/einvoice/validate/>
+loads it as WebAssembly (Pyodide) after an explicit one-time runtime download (~13 MB), then validates an
+XRechnung XML or ZUGFeRD/Factur-X PDF entirely in your browser — the invoice is never uploaded. The page
+goes live with the next site redeploy; for offline use, the identical committed page is
+[`einvoice/www/validate/index.html`](einvoice/www/validate/index.html).
+
 ## Install / Quickstart
 
 > **Adopt in one line.** Want to *receive* and *check* sealed artifacts without an account or our toolchain?

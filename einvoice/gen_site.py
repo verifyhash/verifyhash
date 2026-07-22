@@ -1389,6 +1389,14 @@ def render_compare():
       "cheap enough to run on every push, proven against the artifact the "
       "official tool runs.</p>")
 
+    # ---- Hands-on next step (T-VHWEB.3): the zero-install evaluation ------
+    w("<p>Want to try that verdict before wiring anything into CI? The "
+      '<a href="../validate/index.html">in-browser validator</a> runs the '
+      'same <span data-claim="rule-count">%d</span>-rule engine in your '
+      "browser via WebAssembly (Pyodide) &mdash; drop an XRechnung XML or a "
+      "ZUGFeRD/Factur-X PDF and read the findings; the invoice never leaves "
+      "your machine.</p>" % n_rules)
+
     w("<footer>")
     w("Every engine figure on this page (rule count, Peppol subset, report "
       "formats, exit codes) is rendered from the live registries by "
@@ -1572,6 +1580,11 @@ def render_de():
     # ---- Weiterfuehrend ----------------------------------------------------
     w("<h2>Weiterf&uuml;hrend</h2>")
     w('<ul class="rules">')
+    w('<li><a href="../validate/index.html">Im Browser validieren</a> '
+      "&mdash; dieselbe Engine l&auml;uft per WebAssembly (Pyodide) direkt "
+      "im Browser: Rechnung ausw&auml;hlen, Befunde lesen, nichts "
+      "installieren. Die Rechnung verl&auml;sst Ihren Rechner nie; nur die "
+      "Laufzeit wird nach einem Klick einmalig geladen (~13&nbsp;MB).</li>")
     w('<li><a href="../rules/index.html">Regel-Referenz</a> &mdash; jede der '
       "286 Regeln mit eigener Seite: Anforderung, BT-/BG-Begriffe, "
       "XML-Position, Korrekturhinweis auf Englisch und Deutsch, w&ouml;rtlicher "

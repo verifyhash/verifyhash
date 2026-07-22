@@ -125,6 +125,7 @@ table.cmp th { background: #f6f8fa; }
 <li><strong>You validate UBL <code>CreditNote</code> documents.</strong> There is no UBL <code>CreditNote</code> root support here; the official toolchain handles them.</li>
 </ul>
 <p>The honest summary: use the official KoSIT validator as your authority, Mustangproject when Java or PDF-writing is in play, and <code>einvoice</code> when you want the same business-rule verdict as a zero-dependency Python gate inside every CI run and pre-commit — cheap enough to run on every push, proven against the artifact the official tool runs.</p>
+<p>Want to try that verdict before wiring anything into CI? The <a href="../validate/index.html">in-browser validator</a> runs the same <span data-claim="rule-count">286</span>-rule engine in your browser via WebAssembly (Pyodide) &mdash; drop an XRechnung XML or a ZUGFeRD/Factur-X PDF and read the findings; the invoice never leaves your machine.</p>
 <footer>
 Every engine figure on this page (rule count, Peppol subset, report formats, exit codes) is rendered from the live registries by <code>gen_site.py</code> and drift-guarded by <code>test_site.py</code> — no hand-typed numbers. Self-contained: this page opens offline with no network requests. <a href="../index.html">Back to the overview</a>.
 </footer>

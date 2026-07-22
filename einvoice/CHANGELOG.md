@@ -11,10 +11,35 @@ Versions here are the single source of truth together with
 (`__version__`); `test_release_discipline.py` fails the build if the three
 ever diverge.
 
-> Note: `verifyhash-einvoice` is **not** yet published to PyPI — publishing is
-> a deliberate human-gated step (see `REPUBLISH-PYPI.md`). Install it from a
-> checkout or vendored copy. Each section below records what the tree actually
-> ships at that version, not a PyPI release event.
+> Note: `verifyhash-einvoice` is published to PyPI as of 0.2.0 (2026-07-22);
+> republishing remains a deliberate human-gated step (see `REPUBLISH-PYPI.md`).
+> Each section below records what the tree actually ships at that version —
+> only sections from 0.2.0 onward correspond to a PyPI release event.
+
+## [0.2.1] - 2026-07-22
+
+Metadata correction only — **no engine change**: the engine still fires 286
+rules, identical to 0.2.0 (`test_docs_rule_claims.py` binds that number to
+the live `coverage.engine_fireable_ids()` registry).
+
+### Changed
+
+- **`pyproject.toml` description trued up to the shipped engine.** The 0.2.0
+  wheel went to PyPI still carrying the 0.1.0-era description ("50 of ~200
+  EN 16931 core rules … `BR-DEX-*`/`BR-DE-CVD-*` not yet implemented") — false
+  for the engine it packaged. The description now states the 286
+  differential-tested business rules including the national `BR-DE-*` and
+  `BR-DEX-*` layers, with the same implemented-set scope caveat README §2 and
+  `CORRECTNESS.md` carry. The pyproject header comment no longer claims the
+  package is unpublished.
+- **`action/README.md` "Honest scope" corrected the same way**, from the same
+  source of truth (README §2).
+- **Drift guards extended** (`test_packaging.py`,
+  `test_docs_rule_claims.py`): the rule count claimed in the pyproject
+  description and in `action/README.md` is now computed from
+  `engine_fireable_ids()` and fails on divergence, so this class of metadata
+  staleness cannot recur at a future version bump. Ready to republish
+  (supervisor-gated, `REPUBLISH-PYPI.md`).
 
 ## [0.2.0] - 2026-07-22
 

@@ -489,5 +489,80 @@ class ChangelogFireableCountBound(unittest.TestCase):
         self.assertIn(str(len(fireable())), section)
 
 
+# --------------------------------------------------------------------------- #
+# T-VHMETA.1: PyPI front-door metadata drift guard.
+#
+# The two install-surface documents a pip-searching evaluator reads FIRST —
+# the pyproject description (rendered on the live PyPI card / `pip show`) and
+# action/README.md's "Honest scope" section — each state the engine's total
+# business-rule count in prose. Both went stale once already: the 0.1.0-era
+# "50 of ~200" claim survived the 0.2.0 version bump onto the published PyPI
+# page. Bind both counts to len(engine_fireable_ids()), the same live
+# registry every other guard in this file uses, so metadata staleness at a
+# future version bump is structurally impossible. Doc fixes only — never
+# touch the engine to satisfy the metadata.
+# --------------------------------------------------------------------------- #
+PYPROJECT = os.path.join(HERE, "pyproject.toml")
+ACTION_README = os.path.join(HERE, "action", "README.md")
+# "… 286 business rules …" — the guarded claim grammar shared by both
+# surfaces. Reword the docs only together with this pattern.
+N_BUSINESS_RULES_RE = re.compile(r"\b(\d+)\s+business\s+rules\b")
+STALE_PHRASES = ("50 of ~200", "not yet implemented")
+
+
+def _read(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+class InstallSurfaceRuleCountBound(unittest.TestCase):
+    """pyproject description + action/README.md counts == live registry."""
+
+    def _assert_counts_live(self, text, label):
+        claims = [int(n) for n in N_BUSINESS_RULES_RE.findall(text)]
+        self.assertTrue(
+            claims,
+            "%s no longer contains the guarded '<N> business rules' phrase "
+            "— if the wording was deliberately changed, update "
+            "N_BUSINESS_RULES_RE in the same edit so the count stays bound "
+            "to the engine" % label)
+        live = len(fireable())
+        for n in claims:
+            self.assertEqual(
+                n, live,
+                "%s claims %d business rules but engine_fireable_ids() "
+                "returns %d — update the doc (metadata fix), never the "
+                "engine" % (label, n, live))
+
+    def test_pyproject_description_count_is_live(self):
+        text = _read(PYPROJECT)
+        m = re.search(r'(?m)^description\s*=\s*"([^"]+)"', text)
+        self.assertIsNotNone(m, "pyproject.toml lost its description line")
+        self._assert_counts_live(m.group(1), "pyproject.toml description")
+
+    def test_action_readme_count_is_live(self):
+        self._assert_counts_live(_read(ACTION_README), "action/README.md")
+
+    def test_no_stale_claims_on_install_surfaces(self):
+        # The 0.1.0-era phrasing that actually shipped stale to PyPI must
+        # never resurface on either install surface.
+        for path, label in ((PYPROJECT, "pyproject.toml"),
+                            (ACTION_README, "action/README.md")):
+            low = _read(path).lower()
+            for stale in STALE_PHRASES:
+                self.assertNotIn(
+                    stale, low,
+                    "stale 0.1.0-era claim %r resurfaced in %s"
+                    % (stale, label))
+
+    def test_guard_is_not_vacuous(self):
+        # Non-vacuity: both surfaces really carry the literal live count, and
+        # the grammar really extracts it (a reworded doc fails loudly above,
+        # not silently here).
+        live = str(len(fireable()))
+        self.assertIn(live, _read(PYPROJECT))
+        self.assertIn(live, _read(ACTION_README))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -132,24 +132,56 @@ class PackagingMetadata(unittest.TestCase):
         self.assertEqual(m.group(1), einvoice.__version__)
 
     def test_description_scopes_the_100pct_claim(self):
-        """The one-line package card (`pip show` / a future PyPI card) must
-        keep the SAME scope caveat README + CORRECTNESS.md keep. A
-        legally-forced compliance product must not imply full-standard
-        conformance on metadata a buyer might read alone."""
+        """The one-line package card (`pip show` / the live PyPI card) must
+        state the ENGINE-DERIVED rule count and keep the SAME scope caveat
+        README §2 + CORRECTNESS.md keep. A legally-forced compliance product
+        must not imply full-standard conformance on metadata a buyer might
+        read alone — and it must not UNDERclaim either: the 0.1.0-era
+        '50 of ~200 … not yet implemented' wording survived the 0.2.0 bump
+        onto the live PyPI page, repelling the exact audience the engine
+        already serves. Rule-count truth lives in
+        coverage.engine_fireable_ids(); this guard (with the cross-file
+        binding in test_docs_rule_claims.py, which covers action/README.md
+        too) makes that staleness structurally impossible at future bumps."""
         m = re.search(r'^description\s*=\s*"([^"]+)"', self.text, re.M)
         self.assertIsNotNone(m, "pyproject.toml must declare a description")
-        desc = m.group(1).lower()
-        self.assertIn("200", desc,
-                      "description must show it is a slice of the ~200-rule "
-                      "standard, not the whole standard")
+        desc = m.group(1)
+        low = desc.lower()
+        # The claimed rule count is bound to the live engine registry — the
+        # number is never folklore. (Same source of truth as the README /
+        # CHANGELOG guards in test_docs_rule_claims.py.)
+        from einvoice import coverage
+        live = len(coverage.engine_fireable_ids())
+        counts = [int(n) for n in
+                  re.findall(r"\b(\d+)\s+business\s+rules\b", desc)]
         self.assertTrue(
-            "subset" in desc or "not yet implemented" in desc,
-            "description must qualify coverage to the implemented subset")
-        if "100%" in desc:
+            counts,
+            "description must state the rule count as '<N> business rules' "
+            "so this guard can bind it to engine_fireable_ids()")
+        for n in counts:
+            self.assertEqual(
+                n, live,
+                "description claims %d business rules but "
+                "engine_fireable_ids() returns %d — update the description "
+                "(metadata fix), never the engine" % (n, live))
+        # Honest-scope caveat, same shape as README §2: scoped to the
+        # implemented set, pointing at CORRECTNESS.md.
+        self.assertIn("within the implemented set", low,
+                      "description must scope its differential claim to the "
+                      "implemented set, as README §2 does")
+        self.assertIn("correctness.md", low,
+                      "description must point at CORRECTNESS.md for the "
+                      "honest remaining scope")
+        # The stale 0.1.0-era phrasings must never come back.
+        for stale in ("50 of ~200", "not yet implemented"):
+            self.assertNotIn(stale, low,
+                             "stale 0.1.0-era claim %r resurfaced in the "
+                             "description" % stale)
+        if "100%" in low:
             self.assertIn(
-                "subset", desc,
+                "implemented", low,
                 "a bare '100% agreement' claim on the metadata card is an "
-                "overclaim; scope it to the implemented subset")
+                "overclaim; scope it to the implemented set")
 
     def test_only_the_package_ships(self):
         m = re.search(r'^packages\s*=\s*\[\s*"einvoice"\s*\]', self.text, re.M)

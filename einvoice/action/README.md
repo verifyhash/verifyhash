@@ -128,11 +128,15 @@ explicit, reviewable change rather than a silent drift.
 
 ## Honest scope
 
-- The validator implements **50 of ~200** EN 16931 core rules plus the **32**
-  national `BR-DE-*` XRechnung CIUS asserts, each differential-tested to 100%
-  agreement with the official Schematron **within that implemented subset**
-  (`BR-DEX-*` / `BR-DE-CVD-*` are **not** yet implemented). See
-  [`../README.md`](../README.md) and [`../CORRECTNESS.md`](../CORRECTNESS.md).
+- The validator asserts **286 business rules** in total: 209 of the 223
+  official EN 16931 `BR-*` rule ids in each syntax universe (UBL and CII),
+  plus — with `--profile=xrechnung` — the German XRechnung CIUS + extension
+  layer (`BR-DE-*`, `BR-DE-CVD-*`, `BR-TMP-*`, `BR-DEX-*`) and the 21
+  KoSIT-vendored `PEPPOL-EN16931-R*` rules. Each implemented rule is
+  differential-tested to 0 divergences against the official Schematron
+  **within the implemented set**; 8 `BR-CL-*` code-list checks stay deferred.
+  See [`../README.md`](../README.md) §2 and
+  [`../CORRECTNESS.md`](../CORRECTNESS.md) for what is NOT covered.
   A green gate means "no *implemented* rule fired", **not** "legally
   conformant". Treat it as a regression fence, not a compliance certificate.
 - `sarif` output is single-file in the engine; for a directory this Action

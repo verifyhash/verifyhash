@@ -6,8 +6,9 @@
 #   * ships ONLY the `einvoice` package — the multi-hundred-MB rule corpus,
 #     differential harness and test vectors stay in the repo, not the wheel.
 #
-# NOT published to PyPI (publishing is a needs-human step). Install from a
-# checkout / vendored copy:  python3 -m pip install /path/to/einvoice
+# Published to PyPI as `verifyhash-einvoice` since 0.2.0 (2026-07-22);
+# republishing stays a human-gated step (see REPUBLISH-PYPI.md). Also
+# installable from a checkout:  python3 -m pip install /path/to/einvoice
 
 [build-system]
 requires = ["setuptools>=61"]
@@ -15,8 +16,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "verifyhash-einvoice"
-version = "0.2.0"
-description = "Zero-dependency EN 16931 / XRechnung (UBL) e-invoice conformance validator — an early slice: 50 of ~200 EN 16931 core rules + the 32 national BR-DE-* CIUS asserts, each differential-tested to 100% agreement with the official Schematron WITHIN that implemented subset (BR-DEX-*/BR-DE-CVD-* not yet implemented); see CORRECTNESS.md."
+version = "0.2.1"
+description = "Zero-dependency EN 16931 / XRechnung (UBL + CII) e-invoice conformance validator — 286 business rules including the national BR-DE and BR-DEX CIUS/extension layers, each differential-tested to 0 divergences against the official Schematron within the implemented set (8 BR-CL-* code-list checks stay deferred); see CORRECTNESS.md for the honest remaining scope."
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [

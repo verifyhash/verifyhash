@@ -193,6 +193,7 @@ from .report import (
 )
 from .remediation import resolve_message, SUPPORTED_LANGS
 from .config import load_config_with_source, ConfigError
+from .pdf_container import is_pdf_file
 
 USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "[--json] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de] "
@@ -994,8 +995,34 @@ def _main(argv=None):
                     "message": str(exc),
                 }, indent=2) + "\n")
             else:
+                # First-run ergonomics (T-VHUX.4, measured 2026-07-22): the two
+                # most common wrong-file-type mistakes both landed on the bare
+                # parser detail with no route forward — (1) a JSON/CSV export
+                # fed to `validate` learned nothing about the PDF container
+                # route, (2) a Factur-X/ZUGFeRD *PDF* fed to `validate` was
+                # told "not well-formed XML" instead of the correct entry
+                # point. Sniff the %PDF- magic (bytes, never the extension —
+                # reuses the shipped pdf_container.is_pdf_file, which returns
+                # False instead of raising on any read problem) and append ONE
+                # route-naming line. The first line is byte-identical to
+                # before (its prefix is pinned by test_exit_codes.py /
+                # test_stdout_purity.py), the --json payload is untouched
+                # (stable machine contract), and the exit code stays the
+                # documented EXIT_PARSE=3 in both branches.
                 sys.stderr.write(
                     "S-WF: input is not well-formed XML: %s\n" % exc)
+                if is_pdf_file(path):
+                    sys.stderr.write(
+                        "  hint: this file is a PDF — validate a Factur-X/"
+                        "ZUGFeRD PDF container with 'python3 -m "
+                        "einvoice.report <invoice.pdf>' instead\n")
+                else:
+                    sys.stderr.write(
+                        "  hint: not a PDF container either — supported "
+                        "inputs are a UBL/CII e-invoice as well-formed XML "
+                        "('validate') or a Factur-X/ZUGFeRD PDF/A-3 "
+                        "container ('python3 -m einvoice.report "
+                        "<invoice.pdf>')\n")
             return EXIT_PARSE
 
         # Surface the distinct 'syntax-binding' category (the UBL

@@ -21,6 +21,8 @@ or a fatal rule violation), never a bare traceback / hang / OOM.
   (d) wrong-root / non-invoice    -> fatal ``S-ROOT`` (structural), non-pass
   (e) empty / zero-byte input     -> ``not-well-formed``
   (f) non-UTF-8 / wrong-encoding  -> ``not-well-formed``
+  (g) first-run ergonomics (T-VHUX.3/.4): wrong-root and wrong-file-type
+      CLI messages pinned end-to-end on committed fixtures
 
 The resource ceilings (a)/(b) are enforced in :mod:`einvoice._xmlsec` with
 stable error ids and sit orders of magnitude above every legitimate invoice
@@ -289,6 +291,81 @@ class TestCLIActionableExit(unittest.TestCase):
         self.assertEqual(proc.returncode, _cli.EXIT_PARSE,
                          "expected not-well-formed exit %d, got %d\nstderr=%s"
                          % (_cli.EXIT_PARSE, proc.returncode, proc.stderr))
+        self.assertNotIn("Traceback", proc.stderr)
+
+
+class TestFirstRunErgonomics(unittest.TestCase):
+    """T-VHUX.3/.4: the FIRST error a mistyping evaluator sees must be an
+    actionable sentence, pinned end-to-end through the real CLI on committed
+    fixtures.
+
+    * wrong root (well-formed UBL *Order*): fatal S-ROOT naming BOTH expected
+      roots (Invoice / CreditNote) and the offending root, exit 1.
+    * wrong file type (JSON, i.e. non-XML/non-PDF): S-WF plus a hint naming
+      BOTH supported input shapes — well-formed XML and the Factur-X/ZUGFeRD
+      PDF container route — exit 3; actual %PDF bytes get the PDF-specific
+      redirect instead.
+    """
+
+    WRONG_ROOT = os.path.join(HERE, "fixtures", "wrong-root-order_ubl.xml")
+    WRONG_TYPE = os.path.join(HERE, "fixtures", "wrong-file-type.json")
+
+    def _run_validate(self, path):
+        return subprocess.run(
+            [sys.executable, CLI, "validate", path],
+            capture_output=True, text=True, timeout=30)
+
+    def test_wrong_root_actionable(self):
+        # Verify-and-close (planner pre-measurement 2026-07-22 confirmed at
+        # HEAD be2b051): the S-ROOT fatal already names both expected roots
+        # AND prints the offending root on its own labelled line, so no
+        # message change was needed — this pins that shape against
+        # regressions in future S-ROOT routing work.
+        self.assertTrue(os.path.isfile(self.WRONG_ROOT),
+                        "committed wrong-root fixture missing")
+        proc = self._run_validate(self.WRONG_ROOT)
+        self.assertEqual(proc.returncode, _cli.EXIT_FAIL,
+                         "wrong root must be the fatal FAIL exit %d, got %d\n"
+                         "stdout=%s\nstderr=%s" % (_cli.EXIT_FAIL,
+                         proc.returncode, proc.stdout, proc.stderr))
+        self.assertIn("S-ROOT", proc.stdout)
+        # Names BOTH expected roots...
+        self.assertIn("must be Invoice in the UBL Invoice-2 namespace",
+                      proc.stdout)
+        self.assertIn("CreditNote in the UBL CreditNote-2 namespace",
+                      proc.stdout)
+        # ...and the offending root the user actually fed it.
+        self.assertIn("offending element: Order", proc.stdout)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_wrong_file_type_actionable(self):
+        self.assertTrue(os.path.isfile(self.WRONG_TYPE),
+                        "committed wrong-file-type fixture missing")
+        proc = self._run_validate(self.WRONG_TYPE)
+        self.assertEqual(proc.returncode, _cli.EXIT_PARSE,
+                         "non-XML input must keep the documented parse exit "
+                         "%d, got %d\nstderr=%s" % (_cli.EXIT_PARSE,
+                         proc.returncode, proc.stderr))
+        # The stable pinned prefix (also asserted by test_exit_codes.py)...
+        self.assertIn("S-WF: input is not well-formed XML", proc.stderr)
+        # ...now followed by a hint naming BOTH supported input shapes.
+        self.assertIn("not a PDF container either", proc.stderr)
+        self.assertIn("well-formed XML", proc.stderr)
+        self.assertIn("python3 -m einvoice.report", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_wrong_file_type_pdf_bytes_get_pdf_route(self):
+        # Companion pin: real %PDF magic fed to `validate` is redirected to
+        # the container entry point (sniffed by bytes via the shipped
+        # pdf_container.is_pdf_file, never the extension) — same exit 3.
+        with tempfile.TemporaryDirectory() as td:
+            path = _write(td, "invoice.pdf", b"%PDF-1.7 not a real body")
+            proc = self._run_validate(path)
+        self.assertEqual(proc.returncode, _cli.EXIT_PARSE)
+        self.assertIn("S-WF: input is not well-formed XML", proc.stderr)
+        self.assertIn("this file is a PDF", proc.stderr)
+        self.assertIn("python3 -m einvoice.report", proc.stderr)
+        self.assertNotIn("not a PDF container either", proc.stderr)
         self.assertNotIn("Traceback", proc.stderr)
 
 

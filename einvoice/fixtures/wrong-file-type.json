@@ -1,0 +1,9 @@
+{
+  "_comment": "Deliberately NOT an e-invoice. Pinned by test_robustness.py::test_wrong_file_type_actionable: feeding the validator a JSON export (a classic first-run mistake — many ERPs emit UBL-shaped JSON) must exit 3 with a message that names BOTH supported input routes: well-formed XML (UBL/CII) and the Factur-X / ZUGFeRD PDF container.",
+  "invoice": {
+    "id": "INV-2026-0042",
+    "issueDate": "2026-07-22",
+    "currency": "EUR",
+    "total": 119.0
+  }
+}

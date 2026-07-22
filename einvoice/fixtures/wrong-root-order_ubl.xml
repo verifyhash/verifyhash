@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Well-formed UBL *Order* (not an invoice). Pinned by
+     test_robustness.py::test_wrong_root_actionable: pointing `validate` at a
+     UBL document whose root is neither Invoice nor CreditNote must FAIL with
+     the structural S-ROOT fatal that names BOTH expected roots AND the
+     offending root element — never a silent pass, never a traceback. -->
+<Order xmlns="urn:oasis:names:specification:ubl:schema:xsd:Order-2"
+       xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+       xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>ORDER-2026-0042</cbc:ID>
+  <cbc:IssueDate>2026-07-22</cbc:IssueDate>
+  <cac:BuyerCustomerParty>
+    <cac:Party>
+      <cac:PartyName>
+        <cbc:Name>Beispiel Einkauf GmbH</cbc:Name>
+      </cac:PartyName>
+    </cac:Party>
+  </cac:BuyerCustomerParty>
+  <cac:SellerSupplierParty>
+    <cac:Party>
+      <cac:PartyName>
+        <cbc:Name>Lieferant AG</cbc:Name>
+      </cac:PartyName>
+    </cac:Party>
+  </cac:SellerSupplierParty>
+  <cac:OrderLine>
+    <cac:LineItem>
+      <cbc:ID>1</cbc:ID>
+      <cbc:Quantity unitCode="C62">10</cbc:Quantity>
+    </cac:LineItem>
+  </cac:OrderLine>
+</Order>

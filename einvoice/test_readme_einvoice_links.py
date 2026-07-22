@@ -20,6 +20,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
 README = os.path.join(REPO_ROOT, "README.md")
 
+# --- GitHub-Action drift guard (T-VHDIST.4) -------------------------------
+# The front-door docs advertise the committed composite Action by in-repo
+# path: `uses: verifyhash/verifyhash/einvoice/action@<ref>`. Bind that
+# documented path to the committed manifest so a future move/rename of
+# einvoice/action/ (or a typo in a doc) fails this gate instead of shipping
+# a dead snippet.
+ACTION_MANIFEST_RELPATH = os.path.join("einvoice", "action", "action.yml")
+ACTION_DOCS = (
+    README,                                  # root README einvoice blurb
+    os.path.join(HERE, "README.md"),         # einvoice README §4 CI section
+    os.path.join(HERE, "QUICKSTART.md"),     # quickstart "Next steps" pointer
+)
+# owner/repo/<path>@ref — capture <path>; \S+? stops at the mandatory @.
+USES_RE = re.compile(r"uses:\s*verifyhash/verifyhash/(\S+?)@")
+
 # External https targets the block is allowed to reference (exact match, trailing
 # slash significant). Checked offline against this list, never fetched.
 EXTERNAL_ALLOWLIST = {
@@ -62,6 +77,52 @@ def _extract_links(section):
     return links
 
 
+def _check_action_uses_drift():
+    """Assert the committed Action manifest exists and every documented
+    `uses: verifyhash/verifyhash/einvoice/action@<ref>` reference in the
+    front-door docs points at exactly that committed path."""
+    manifest = os.path.join(REPO_ROOT, ACTION_MANIFEST_RELPATH)
+    assert os.path.isfile(manifest), (
+        "committed Action manifest missing: %s — the docs advertise "
+        "`uses: verifyhash/verifyhash/einvoice/action@<ref>`, so einvoice/action/ "
+        "may not move or lose action.yml without updating them" % ACTION_MANIFEST_RELPATH
+    )
+
+    problems = []
+    einvoice_readme_refs = 0
+    for doc in ACTION_DOCS:
+        if not os.path.isfile(doc):
+            problems.append("action-drift: doc missing on disk: %s" % doc)
+            continue
+        with open(doc, encoding="utf-8") as fh:
+            doc_text = fh.read()
+        for m in USES_RE.finditer(doc_text):
+            path = m.group(1)
+            if "einvoice" not in path:
+                continue  # e.g. the root README's verifier/action reference
+            if path != "einvoice/action":
+                problems.append(
+                    "action-drift: %s documents uses: path %r but the committed "
+                    "Action lives at einvoice/action" % (os.path.basename(doc), path)
+                )
+            elif not os.path.isfile(os.path.join(REPO_ROOT, path, "action.yml")):
+                problems.append(
+                    "action-drift: %s documents uses: path %r but %s/action.yml "
+                    "does not exist" % (os.path.basename(doc), path, path)
+                )
+            if doc == os.path.join(HERE, "README.md"):
+                einvoice_readme_refs += 1
+
+    # The CI section of einvoice/README.md must actually carry the snippet —
+    # silently dropping it would un-surface the Action from the main front door.
+    if einvoice_readme_refs == 0:
+        problems.append(
+            "action-drift: einvoice/README.md no longer documents "
+            "`uses: verifyhash/verifyhash/einvoice/action@<ref>`"
+        )
+    return problems
+
+
 def main():
     with open(README, encoding="utf-8") as fh:
         text = fh.read()
@@ -95,11 +156,15 @@ def main():
             if not os.path.exists(target):
                 problems.append("repo-relative link does not exist on disk: %s" % link)
 
+    problems.extend(_check_action_uses_drift())
+
     if problems:
         for p in problems:
             print("BROKEN LINK: %s" % p, file=sys.stderr)
         raise SystemExit(1)
 
+    print("OK: action uses:-path drift guard green "
+          "(documented uses: path == committed einvoice/action/action.yml)")
     print("OK: %d einvoice-block link(s) resolve (%d repo-relative, %d external allowlisted)" % (
         len(links),
         sum(1 for l in links if not l.startswith("http") and not l.startswith("#") and not l.startswith("mailto:")),

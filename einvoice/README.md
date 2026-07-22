@@ -755,6 +755,27 @@ the violated rule ID named in the job log. Everything lives in
   `.github/workflows/invoice-conformance.yml`.
 - [`ci/gitlab-ci.yml`](ci/gitlab-ci.yml) — merge into your `.gitlab-ci.yml`.
 
+**Zero-install alternative (GitHub only): the committed composite Action.**
+Instead of copying a workflow and pip-installing a vendored copy, pin the
+Action that ships in this repo at [`action/`](action/README.md) — the
+zero-dependency validator travels *inside* the pinned ref, so there is nothing
+to install, and it additionally merges per-file SARIF for
+`github/codeql-action/upload-sarif` → inline PR annotations:
+
+```yaml
+- uses: verifyhash/verifyhash/einvoice/action@<ref>   # pin a full commit SHA you trust
+  with:
+    path: invoices/
+    fail-on: fatal
+```
+
+It is a thin wrapper around the same `python3 -m einvoice.report` entrypoint
+(no second engine, no new rules) and is gated by `test_action.py`. Full inputs
+(`path`, `format`, `fail-on`, `sarif-file`, `profile`), the `fail-on` →
+exit-code mapping, and the SARIF-upload step live in
+[`action/README.md`](action/README.md). It is referenced by in-repo path as
+shown — it is **not** listed on the GitHub Marketplace.
+
 The 60-second version (any CI system):
 
 ```sh

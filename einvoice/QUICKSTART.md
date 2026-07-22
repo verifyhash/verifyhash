@@ -299,6 +299,13 @@ as a real run would. Pinned by `test_show_config.py`.
   and the `validate-invoices.sh` gate (fails the build naming the rule ID) are
   in [`ci/README.md`](ci/README.md) — this quickstart deliberately does not
   duplicate them.
+- **Or gate your CI in one step (GitHub only).** The committed composite
+  GitHub Action in this repo packages the same gate as a single pinnable step —
+  `uses: verifyhash/verifyhash/einvoice/action@<ref>` — with nothing to
+  install (the zero-dependency validator travels inside the pinned ref) and
+  SARIF upload for inline PR annotations. Inputs, `fail-on` semantics, and the
+  full workflow are in [`action/README.md`](action/README.md). (Referenced by
+  in-repo path as shown; it is not a Marketplace listing.)
 - **Read the honest coverage limits** before trusting a green result: README §2
   and [`COVERAGE.md`](COVERAGE.md). A pass means "no *implemented* fatal rule
   fired," not "legally conformant XRechnung."

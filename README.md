@@ -24,6 +24,7 @@ violated rule ID. It is Apache-2.0 open source.
 
 - Overview and reference site: **<https://verifyhash.com/einvoice/>**
 - 5-minute quickstart: [`einvoice/QUICKSTART.md`](einvoice/QUICKSTART.md)
+- Zero-install CI gate: the committed GitHub Action at [`einvoice/action/`](einvoice/action/README.md) — pin `uses: verifyhash/verifyhash/einvoice/action@<ref>` for a build gate with SARIF inline PR annotations (in-repo path; not on the Marketplace)
 - Licensing (Apache-2.0 + optional commercial license): [`einvoice/www/licensing/index.html`](einvoice/www/licensing/index.html) — rendered at <https://verifyhash.com/einvoice/licensing/>
 
 ## Install / Quickstart

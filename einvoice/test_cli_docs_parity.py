@@ -290,10 +290,17 @@ def subcommand_is_accepted(sub):
     Probe: ``einvoice <sub> <pass-fixture>``. A real subcommand either runs
     (exit 0: validate / validate-batch / receipt on a passing invoice) or emits
     its OWN actionable ``error:`` line (``info`` rejects the extra arg). An
-    unknown subcommand falls through to the top-level dispatch, which writes only
-    the bare ``usage:`` banner (no ``error:`` line) and exits 2.
+    unknown subcommand falls through to the top-level dispatch, which — since
+    T-VHUX.1 (990b508) — names it with ``error: unknown subcommand ...`` (it
+    used to write only the bare ``usage:`` banner, which is what this probe's
+    original ``"error:" in err`` fallback keyed on; that heuristic stopped
+    discriminating the day the dispatcher's message became actionable, so the
+    negative discriminator is checked first — same pattern as
+    ``flag_is_recognized`` above).
     """
     rc, _out, err = drive([sub, PASS_FIXTURE])
+    if "unknown subcommand" in err:
+        return False
     return rc == EXIT_OK or "error:" in err
 
 
@@ -474,6 +481,37 @@ class LegCExitCodes(unittest.TestCase):
         self.assertEqual((EXIT_PIPE, EXIT_INT, EXIT_TERM), (141, 130, 143))
         self.assertEqual(len({EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_PARSE,
                               EXIT_PIPE, EXIT_INT, EXIT_TERM}), 7)
+
+    def test_every_producible_code_is_a_documented_table_row(self):
+        """T-VHDOCV.5 reverse direction. The leg-(c) test above proves
+        documented ⊆ producible, and its minimum-set check pins today's seven
+        literal codes — but nothing yet bound the DERIVED producible set to
+        the table: a newly minted-and-returned ``EXIT_NEW`` constant would
+        ship undocumented without tripping anything. This closes that: every
+        ``return EXIT_*`` site in cli.py is resolved to its value via the live
+        module (so an unresolvable name errors loudly rather than being
+        silently dropped, unlike returnable_exit_codes()'s fixed dict) and
+        each value must be a row in the EXIT-CODES.md main code table."""
+        src = _cli_source()
+        names = set(re.findall(r"return\s+(EXIT_[A-Z_]+)", src))
+        # Non-vacuity anchor: all seven known constants are still returned
+        # directly (a refactor to sys.exit()-style would blind this guard —
+        # fail loudly instead of silently shrinking the producible set).
+        self.assertTrue(
+            {"EXIT_OK", "EXIT_FAIL", "EXIT_USAGE", "EXIT_PARSE",
+             "EXIT_PIPE", "EXIT_INT", "EXIT_TERM"} <= names,
+            "cli.py no longer returns a known EXIT_* constant directly — "
+            "update this guard's derivation alongside the refactor: %r"
+            % sorted(names))
+        producible = {getattr(cli, n) for n in names}
+        doc_rows = documented_exit_codes()
+        for code in sorted(producible):
+            self.assertIn(
+                code, doc_rows,
+                "cli.py can return exit code %d but the EXIT-CODES.md main "
+                "table has no `%d` row — add the row (doc change only; "
+                "never remove the return path to satisfy the doc)"
+                % (code, code))
 
 
 if __name__ == "__main__":

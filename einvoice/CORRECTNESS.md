@@ -404,15 +404,19 @@ Specifically:
   range (BR-52/53/54 supporting documents, BR-56 tax-representative VAT id,
   BR-58..60/64..67 identifier-scheme and item rules — BR-17..20, BR-49/50/51,
   BR-55, BR-57 and BR-61/62/63 ARE now covered),
-  the rest of the `BR-CO-*` arithmetic
-  (BR-CO-03/09/11/12/25/26 …), and the deeper VAT-category matrices for the
-  **remaining** categories (`BR-AE/G/IC/O-02..10`: their seller-VAT-ID,
-  taxable/tax-sum and exemption-reason rules — of AE/G/IC/O only the `-01`
-  is implemented). The Standard-rated (S), Zero-rated (Z) and Exempt (E)
-  families ARE now fully covered (BR-S-01..10, BR-Z-01..10,
+  and the rest of the `BR-CO-*` arithmetic
+  (BR-CO-03/09/11/12/25/26 …). The Standard-rated (S), Zero-rated (Z) and
+  Exempt (E) families ARE now fully covered (BR-S-01..10, BR-Z-01..10,
   BR-E-01..10 — BR-S-08, the one member deferred at the time of this
   snapshot, has since been implemented and differential-proven; see the
-  note below). Also missing: the remaining `BR-DEC-*` (BT-136/137/141/142
+  note below). The Reverse charge (AE), Export outside the EU (G),
+  Intra-community supply (IC) and Not subject to VAT (O) families — of
+  which only the `-01` breakdown-presence rule existed at this snapshot —
+  ARE now fully covered as well (BR-AE-01..10, BR-G-01..10, BR-IC-01..12
+  and BR-O-01..14): their seller-VAT-ID, rate, taxable/tax-sum and
+  exemption-reason matrices have since been implemented and
+  differential-proven (graded in `differential.py`) and are unit-pinned,
+  positive and negative per rule, in `test_rules.py`. Also missing: the remaining `BR-DEC-*` (BT-136/137/141/142
   line allowance/charge amounts) and the `BR-CL-*` code lists beyond BR-CL-01. A
   `valid: true` result means "none of our implemented rules fired", not "this
   invoice is legally conformant". (BR-IG-*/BR-IP-* do not exist in the vendored CEN

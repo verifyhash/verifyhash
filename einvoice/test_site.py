@@ -42,9 +42,20 @@ Checks (each an independent hard assert):
       test-pinned English docs (gen_site.DE_COMMANDS, checked against both the
       page and the doc), and www/de/ holds EXACTLY index.html — no per-rule
       German pages (thin-content hard line).
+  (h) COMPARE PAGE (T-VHCMP.1): www/compare/index.html names KoSIT and
+      Mustangproject honestly (they are free; KoSIT is the official reference
+      implementation), carries a 'When to prefer them' concession section (no
+      XSD validation here, no full Peppol BIS, Mustangproject writes ZUGFeRD
+      PDFs), states that our correctness claim DERIVES FROM the official
+      KoSIT artifact, and is ENGLISH-only. CLAIMS-DRIFT guard: every engine
+      figure the page states (rule count, Peppol subset, report-format list,
+      exit codes) is parsed back out of the emitted HTML via its data-claim
+      attribute and bound to the live registries (coverage.engine_fireable_ids,
+      the Peppol id sets, report.REPORT_FORMATS, the cli exit-code constants)
+      — the page can never silently lie about the engine.
   (e) NAV + SITEMAP INTEGRITY (VHW.3, mirrors weatherhack WXQ.3): the landing
-      page, rule index hub, walkthrough, licensing page, the German
-      product/quickstart page, sitemap.xml and
+      page, rule index hub, walkthrough, licensing page, the comparison page,
+      the German product/quickstart page, sitemap.xml and
       robots.txt exist; every INTERNAL
       href in every generated HTML file resolves to a real generated file (no
       dangling link); sitemap.xml lists EXACTLY the generated canonical set
@@ -67,6 +78,12 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import remediation as _remediation  # noqa: E402
+# Live registries for the compare-page CLAIMS-DRIFT guard (T-VHCMP.1): the
+# same sources gen_site.render_compare() reads at render time. The test
+# re-reads them here and fails if any figure emitted on the page disagrees.
+from einvoice import coverage as _coverage         # noqa: E402
+from einvoice import cli as _cli                   # noqa: E402
+from einvoice.report import REPORT_FORMATS as _REPORT_FORMATS  # noqa: E402
 import gen_site as _gen                            # noqa: E402
 
 WWW_DIR = os.path.join(HERE, "www")
@@ -308,6 +325,7 @@ def main():
     hub_path = os.path.join(RULES_DIR, "index.html")
     walkthrough_path = os.path.join(WWW_DIR, "walkthrough", "index.html")
     licensing_path = os.path.join(WWW_DIR, "licensing", "index.html")
+    compare_path = os.path.join(WWW_DIR, "compare", "index.html")
     de_path = os.path.join(WWW_DIR, "de", "index.html")
     de_walkthrough_path = os.path.join(WWW_DIR, "de", "walkthrough", "index.html")
     sitemap_path = os.path.join(WWW_DIR, "sitemap.xml")
@@ -316,6 +334,7 @@ def main():
                       (hub_path, "www/rules/index.html"),
                       (walkthrough_path, "www/walkthrough/index.html"),
                       (licensing_path, "www/licensing/index.html"),
+                      (compare_path, "www/compare/index.html"),
                       (de_path, "www/de/index.html"),
                       (de_walkthrough_path, "www/de/walkthrough/index.html"),
                       (sitemap_path, "www/sitemap.xml"),
@@ -333,6 +352,8 @@ def main():
         html_files.append(walkthrough_path)
     if os.path.exists(licensing_path):
         html_files.append(licensing_path)
+    if os.path.exists(compare_path):
+        html_files.append(compare_path)
     if os.path.exists(de_path):
         html_files.append(de_path)
     if os.path.exists(de_walkthrough_path):
@@ -373,6 +394,7 @@ def main():
         check(len(locs) == len(got), "sitemap has duplicate <loc> entries")
         expected = {_gen._url_landing(), _gen._url_hub(),
                     _gen._url_walkthrough(), _gen._url_licensing(),
+                    _gen._url_compare(),
                     _gen._url_de(), _gen._url_de_walkthrough()}
         expected |= {_gen._url_rule(rid) for rid in (want & have)}
         check(got == expected,
@@ -414,6 +436,7 @@ def main():
                        _gen._url_hub(): hub_path,
                        _gen._url_walkthrough(): walkthrough_path,
                        _gen._url_licensing(): licensing_path,
+                       _gen._url_compare(): compare_path,
                        _gen._url_de(): de_path,
                        _gen._url_de_walkthrough(): de_walkthrough_path}
         for rid in (want & have):
@@ -480,6 +503,127 @@ def main():
             check(banned not in low,
                   "licensing page still carries banned copy: %r" % banned)
 
+    # ---- (h) COMPARE page (T-VHCMP.1): honest + CLAIMS-DRIFT guard ---------
+    # www/compare/index.html must exist, name both alternatives, concede the
+    # honest limits (official reference status, no XSD validation, no full
+    # Peppol BIS, Mustangproject writes ZUGFeRD PDFs), state that our
+    # correctness claim DERIVES FROM the official KoSIT artifact, and be
+    # ENGLISH-only (no /de/ variant — the VHDE thin-content cap). Every
+    # engine figure on the page carries a data-claim attribute; each one is
+    # parsed back out of the emitted HTML here and bound to the SAME live
+    # registry gen_site rendered it from, so the page can never silently lie.
+    check(os.path.exists(compare_path),
+          "www/compare/index.html missing (T-VHCMP.1)")
+    if os.path.exists(compare_path):
+        cmp_raw = open(compare_path, encoding="utf-8").read()
+        cmp_txt = _visible_text(cmp_raw)
+
+        # Names both alternatives, honestly framed.
+        check("KoSIT" in cmp_txt, "compare page never names KoSIT")
+        check("Mustangproject" in cmp_txt,
+              "compare page never names Mustangproject")
+        check("reference implementation" in cmp_txt,
+              "compare page does not concede KoSIT's official reference "
+              "status")
+        check("free" in cmp_txt.lower(),
+              "compare page does not say the alternatives are free")
+
+        # The 'when to prefer them' concession section with its hard items.
+        check("When to prefer them" in cmp_txt,
+              "compare page has no 'When to prefer them' section")
+        check("XSD" in cmp_txt and "not" in cmp_txt.lower(),
+              "compare page does not concede the missing XSD validation")
+        check("Peppol BIS" in cmp_txt,
+              "compare page does not concede the Peppol BIS limit")
+        check("ZUGFeRD" in cmp_txt,
+              "compare page does not concede Mustangproject's ZUGFeRD "
+              "PDF-writing capability")
+
+        # The derives-from relationship must be explicit.
+        check("derives from" in cmp_txt.lower(),
+              "compare page does not state the correctness claim derives "
+              "from the official KoSIT artifact")
+
+        # CLAIMS-DRIFT: rule count — every data-claim="rule-count" figure on
+        # the page must equal the LIVE engine-fireable id count (and at least
+        # one must be present).
+        live_rules = len(_coverage.engine_fireable_ids())
+        counts = re.findall(r'data-claim="rule-count">(\d+)<', cmp_raw)
+        check(len(counts) >= 1, "compare page emits no rule-count claim")
+        for c in counts:
+            check(int(c) == live_rules,
+                  "compare page rule-count claim %s != live "
+                  "engine_fireable_ids count %d" % (c, live_rules))
+
+        # CLAIMS-DRIFT: Peppol subset size — bound to the live Peppol id sets.
+        live_peppol = len(_coverage.peppol_ubl_rule_ids()
+                          | _coverage.peppol_cii_rule_ids())
+        pcounts = re.findall(r'data-claim="peppol-count">(\d+)<', cmp_raw)
+        check(len(pcounts) >= 1, "compare page emits no peppol-count claim")
+        for c in pcounts:
+            check(int(c) == live_peppol,
+                  "compare page peppol-count claim %s != live Peppol subset "
+                  "size %d" % (c, live_peppol))
+
+        # CLAIMS-DRIFT: output-format list — the page's stated format set
+        # must equal report.REPORT_FORMATS exactly, and each rendered group
+        # of format claims must preserve the registry's order.
+        fmts = re.findall(r'data-claim="report-format">([a-z]+)<', cmp_raw)
+        check(len(fmts) >= len(_REPORT_FORMATS),
+              "compare page emits fewer format claims (%d) than "
+              "REPORT_FORMATS (%d)" % (len(fmts), len(_REPORT_FORMATS)))
+        check(set(fmts) == set(_REPORT_FORMATS),
+              "compare page format set %r != live REPORT_FORMATS %r"
+              % (sorted(set(fmts)), sorted(_REPORT_FORMATS)))
+        check(len(fmts) % len(_REPORT_FORMATS) == 0 and all(
+            tuple(fmts[i:i + len(_REPORT_FORMATS)]) == tuple(_REPORT_FORMATS)
+            for i in range(0, len(fmts), len(_REPORT_FORMATS))),
+              "compare page format claims are not the full REPORT_FORMATS "
+              "tuple in registry order: %r" % fmts)
+
+        # CLAIMS-DRIFT: exit codes — bound to the live cli constants.
+        for name, live in (("ok", _cli.EXIT_OK), ("fail", _cli.EXIT_FAIL),
+                           ("usage", _cli.EXIT_USAGE),
+                           ("parse", _cli.EXIT_PARSE)):
+            got = re.findall(r'data-claim="exit-code-%s">(\d+)<' % name,
+                             cmp_raw)
+            check(len(got) >= 1,
+                  "compare page emits no exit-code-%s claim" % name)
+            for c in got:
+                check(int(c) == live,
+                      "compare page exit-code-%s claim %s != live cli value "
+                      "%d" % (name, c, live))
+
+        # ENGLISH-only (VHDE cap): the page declares lang="en" and there is
+        # no /de/ variant of it.
+        check('<html lang="en">' in cmp_raw,
+              "compare page does not declare <html lang=\"en\">")
+        check(not os.path.exists(
+            os.path.join(WWW_DIR, "de", "compare", "index.html")),
+              "a German /de/compare/ variant exists (VHDE cap violation)")
+
+        # Self-referential canonical from the same BASE_URL builder.
+        ccm = re.search(
+            r'<link\b[^>]*\brel="canonical"[^>]*\bhref="([^"]*)"', cmp_raw)
+        check(ccm is not None and ccm.group(1) == _gen._url_compare(),
+              "compare page canonical is not gen_site._url_compare() (%r)"
+              % (ccm.group(1) if ccm else None))
+
+        # Reachable from the landing page (visible navigation, so the
+        # link-graph pass above covers it).
+        if os.path.exists(landing_path):
+            landing_doc = open(landing_path, encoding="utf-8").read()
+            check('href="compare/index.html"' in landing_doc,
+                  "English landing has no visible href=\"compare/index.html\" "
+                  "link to the comparison page")
+
+        # NO FUD: the copy must not disparage the free official tools.
+        low_cmp = cmp_txt.lower()
+        for banned in ("outdated", "unreliable", "insecure", "abandoned",
+                       "avoid kosit", "avoid mustang"):
+            check(banned not in low_cmp,
+                  "compare page carries FUD-adjacent copy: %r" % banned)
+
     # ---- (g) German product/quickstart page (T-VHDE.1) ---------------------
     # www/de/index.html is a first-class generated page: correct document
     # language, self-referential canonical from BASE_URL, hreflang alternates
@@ -531,7 +675,8 @@ def main():
         surface_titles = []
         surface_descs = []
         for spath in (landing_path, hub_path, walkthrough_path,
-                      licensing_path, de_path, de_walkthrough_path):
+                      licensing_path, compare_path, de_path,
+                      de_walkthrough_path):
             sraw = open(spath, encoding="utf-8").read()
             tm = _TITLE_RE.search(sraw)
             dm = _DESC_RE.search(sraw)

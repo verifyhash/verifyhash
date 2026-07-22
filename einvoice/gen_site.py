@@ -81,6 +81,13 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import remediation as _remediation  # noqa: E402
+# LIVE registries for the comparison page (T-VHCMP.1): every engine fact the
+# compare page states (rule count, Peppol-subset size, report formats, exit
+# codes) is read from these at render time — NO hand-typed figure in the
+# template, so the page can never silently drift from the engine.
+from einvoice import coverage as _coverage        # noqa: E402
+from einvoice import cli as _cli                  # noqa: E402
+from einvoice.report import REPORT_FORMATS as _REPORT_FORMATS  # noqa: E402
 # Reuse the ONE family grouping + family-label source of truth (do NOT
 # hand-author a second copy of the family labels — constitution §7 / VHW.3 AC5).
 # family_of() classifies a rule id; FAMILY_LABELS holds the explanatory intro
@@ -106,6 +113,18 @@ WALKTHROUGH_DIR = os.path.join(SITE_DIR, "walkthrough")
 # www/licensing/index.html (T-VHR.5). Same template contract as every other
 # surface page: inline CSS only, no <script>, canonical from BASE_URL.
 LICENSING_DIR = os.path.join(SITE_DIR, "licensing")
+
+# The honest comparison page (T-VHCMP.1) is emitted at the stable canonical
+# path www/compare/index.html. It answers the #1 German-ERP-developer
+# evaluation question ("why not the free official KoSIT validator, or
+# Mustangproject?") strictly factually: both alternatives are free, KoSIT is
+# the official reference implementation, and this page concedes plainly where
+# they do more (XSD schema validation, full Peppol BIS ecosystems, writing
+# ZUGFeRD PDFs). ENGLISH-only by design (VHDE cap) — no /de/ variant. Every
+# engine figure on the page is rendered from the live registries imported
+# above and carries a data-claim attribute that test_site.py binds to the same
+# registries (claims-drift guard).
+COMPARE_DIR = os.path.join(SITE_DIR, "compare")
 
 # The German-language product/quickstart page (T-VHDE.1) is emitted at the
 # stable canonical path www/de/index.html. It is ORIGINAL German prose (what
@@ -156,7 +175,7 @@ BASE_URL = "https://verifyhash.com/einvoice"
 # determinism check in test_site.py stays green. Hand-bump this ISO-8601 date
 # whenever the rule surface (rule pages / landing / hub / walkthrough /
 # licensing) materially changes, so crawlers see an accurate last-modified.
-SITE_LASTMOD = "2026-07-17"
+SITE_LASTMOD = "2026-07-22"
 
 # CHECKOUT_URL — the ONE committed placeholder for the commercial-license
 # self-serve checkout (T-BUY.1). It is intentionally EMPTY in the repo: no
@@ -298,6 +317,11 @@ def _url_walkthrough():
 def _url_licensing():
     """Absolute URL of the licensing (dual-license terms) page."""
     return BASE_URL + "/licensing/"
+
+
+def _url_compare():
+    """Absolute URL of the honest KoSIT/Mustangproject comparison page."""
+    return BASE_URL + "/compare/"
 
 
 def _url_de():
@@ -695,6 +719,10 @@ def render_landing():
       "<code>CreditNote</code> root. The exact implemented set and its limits "
       "are written up in the repository README, <code>COVERAGE.md</code> and "
       "<code>CORRECTNESS.md</code>.</p>")
+    w("<p>Weighing this against the free official toolchain? Read the honest "
+      '<a href="compare/index.html">comparison with the official KoSIT '
+      "validator and Mustangproject</a> — what each is best at, and exactly "
+      "when to prefer them over this tool.</p>")
 
     w('<div class="onramp" id="onramp">')
     w("<h2>Free on-ramp</h2>")
@@ -839,7 +867,9 @@ def render_landing():
     w("<footer>")
     w('Free and open source under Apache-2.0 for everyone; closed-source '
       'vendors who need commercial terms can read the '
-      '<a href="licensing/index.html">licensing page</a>. ')
+      '<a href="licensing/index.html">licensing page</a>; evaluators can read '
+      'the honest <a href="compare/index.html">KoSIT / Mustangproject '
+      'comparison</a>. ')
     w("Generated from <code>remediation_catalog.json</code> (single source of "
       "truth) by <code>gen_site.py</code>. Self-contained: this page opens "
       "offline with no network requests.")
@@ -1011,6 +1041,280 @@ def render_licensing():
       "offline with no network requests. The authoritative license text is "
       "the repository <code>LICENSE</code> file; this page is a plain-language "
       "summary, not a replacement for it.")
+    w("</footer>")
+    w("</main>")
+    w("</body>")
+    w("</html>")
+    return "\n".join(p) + "\n"
+
+
+
+# External anchor targets for the comparison page — the two alternatives'
+# public homes plus the official Schematron artifact our differential proof
+# runs against. Plain navigated anchors (never fetched resources), exactly
+# like the _REPO_* links above.
+_KOSIT_VALIDATOR_URL = "https://github.com/itplr-kosit/validator"
+_KOSIT_SCHEMATRON_URL = "https://github.com/itplr-kosit/xrechnung-schematron"
+_MUSTANG_URL = "https://github.com/ZUGFeRD/mustangproject"
+
+
+def render_compare():
+    """The honest comparison page (``www/compare/index.html``) — pure.
+
+    Answers the evaluator question "why not the free official KoSIT validator,
+    or Mustangproject?" strictly factually (T-VHCMP.1). HARD HONESTY LINES,
+    enforced in the copy itself: both alternatives are FREE; the KoSIT
+    validator is the OFFICIAL reference implementation; our own correctness
+    claim DERIVES FROM their Schematron artifact (stated explicitly); and a
+    "when to prefer them" section concedes what they do that we do not (XSD
+    schema validation, full Peppol BIS ecosystems, writing ZUGFeRD PDFs). No
+    FUD, no fabricated figures.
+
+    DATA DISCIPLINE: every figure about OUR engine is computed at render time
+    from the live registries (``coverage.engine_fireable_ids()``, the Peppol
+    id sets, ``report.REPORT_FORMATS``, the ``cli`` exit-code constants) and
+    is wrapped in a ``data-claim`` attribute; test_site.py re-reads the same
+    registries and fails if any emitted figure disagrees (claims-drift guard).
+    NO hand-typed engine figure appears in this template.
+
+    ENGLISH-only by design (the VHDE thin-content cap) — deliberately no
+    ``/de/`` variant and no hreflang pair. Same self-containment contract as
+    every surface page: one inline <style>, absolute canonical from BASE_URL,
+    no <script>, no external CSS/JS/CDN/font.
+    """
+    n_rules = len(_coverage.engine_fireable_ids())
+    n_peppol = len(_coverage.peppol_ubl_rule_ids()
+                   | _coverage.peppol_cii_rule_ids())
+    formats = _REPORT_FORMATS
+    formats_html = ", ".join('<code data-claim="report-format">%s</code>'
+                             % _h(f) for f in formats)
+    exit_ok = _cli.EXIT_OK
+    exit_fail = _cli.EXIT_FAIL
+    exit_usage = _cli.EXIT_USAGE
+    exit_parse = _cli.EXIT_PARSE
+
+    title = ("einvoice vs. the official KoSIT validator and Mustangproject — "
+             "an honest comparison")
+    description = ("Should you use the free official KoSIT validator, "
+                   "Mustangproject, or einvoice for EN 16931 / XRechnung "
+                   "checking? An honest comparison: what each tool is best "
+                   "at, %d differentially-proven business rules, %d CI output "
+                   "formats, and exactly when to prefer the alternatives."
+                   % (n_rules, len(formats)))
+    # Comparison-table styling only, appended inside the single shared <style>
+    # block (no second stylesheet, no external sheet).
+    style_extra = (
+        # The 4-column table is intrinsically wider than a phone viewport;
+        # the scroll wrapper confines the overflow to the table itself
+        # (horizontal pan inside the box) instead of widening the whole
+        # document, which is what a 390px render check flags.
+        "\n.cmp-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch;"
+        " margin: 1.2rem 0; max-width: 100%; }"
+        "\ntable.cmp { border-collapse: collapse; width: 100%;"
+        " min-width: 34rem; margin: 0; font-size: .9rem; }"
+        "\ntable.cmp th, table.cmp td { border: 1px solid #d0d7de;"
+        " padding: .45rem .6rem; text-align: left; vertical-align: top; }"
+        "\ntable.cmp th { background: #f6f8fa; }"
+        "\n@media (prefers-color-scheme: dark) {"
+        " table.cmp th, table.cmp td { border-color: #30363d; }"
+        " table.cmp th { background: #161b22; } }")
+    p = []
+    w = p.append
+    w(_doc_head(title, description, _url_compare(), style_extra=style_extra))
+    w("<body>")
+    w("<main>")
+    # Breadcrumb (relative, offline-resolvable): this page is
+    # www/compare/index.html, so the landing is ../index.html.
+    w('<p class="crumb"><a href="../index.html">einvoice</a> / Comparison</p>')
+    w("<h1>Why not KoSIT or Mustangproject?</h1>")
+    w('<p class="lead">Fair question — it is the first one every German ERP '
+      "developer should ask. The <strong>official KoSIT validator</strong> and "
+      "<strong>Mustangproject</strong> are both free, mature, and in wide "
+      "production use; for several jobs they are the better choice, and this "
+      "page says exactly which jobs those are. <code>einvoice</code> earns its "
+      "place on one axis only: it is a <strong>zero-dependency, pure-Python, "
+      "CI-native</strong> conformance gate — no Java, no Saxon, no Schematron "
+      "toolchain — whose correctness is differentially proven "
+      "<em>against</em> the official KoSIT artifact.</p>")
+
+    # ---- What each tool is (strictly factual) ------------------------------
+    w("<h2>What each tool is</h2>")
+    w("<p><strong><a href=\"%s\">KoSIT validator</a></strong> — the official "
+      "validation tool from the Koordinierungsstelle f&uuml;r IT-Standards "
+      "(KoSIT), the body that publishes the XRechnung standard itself. It is "
+      "the <strong>reference implementation</strong>: a Java tool that runs "
+      "the official XSD schema validation <em>and</em> the official "
+      "Schematron business rules via an XSLT pipeline. Free and open source. "
+      "When the KoSIT validator and anything else disagree, the KoSIT "
+      "validator is right by definition.</p>" % _h(_KOSIT_VALIDATOR_URL))
+    w("<p><strong><a href=\"%s\">Mustangproject</a></strong> — a free, "
+      "open-source Java library and CLI centred on "
+      "<strong>ZUGFeRD&nbsp;/&nbsp;Factur-X</strong>: hybrid e-invoices that "
+      "embed the structured XML inside a PDF/A-3. Its standout capability is "
+      "that it <strong>writes</strong> invoices, not just validates them — it "
+      "can create a ZUGFeRD PDF from your data or embed XML into an existing "
+      "PDF, and it validates what it reads. If you need to <em>produce</em> "
+      "hybrid PDF invoices from Java, it is the obvious tool.</p>"
+      % _h(_MUSTANG_URL))
+    w("<p><strong><code>einvoice</code></strong> (this project) — a "
+      "validation-only conformance gate in <strong>pure Python&nbsp;3 "
+      "standard library</strong> (zero runtime dependencies, fully offline). "
+      'It asserts <strong><span data-claim="rule-count">%d</span> EN&nbsp;'
+      "16931 / XRechnung business rules</strong>, each differentially proven "
+      "at <strong>0 divergences</strong> against the official "
+      '<a href="%s">KoSIT XRechnung Schematron artifact</a> — see the honest '
+      "dependency note below. It emits %s reports, ships a "
+      '<code>uses:</code>-pinnable <a href="%s">GitHub Action</a> and a '
+      "pre-commit hook, and documents every rule on a per-rule reference "
+      "page in English and German.</p>"
+      % (n_rules, _h(_KOSIT_SCHEMATRON_URL), formats_html,
+         _h(_REPO_ACTION)))
+
+    # ---- Our correctness claim DERIVES FROM their artifact -----------------
+    w("<h2>Our correctness claim derives from KoSIT&rsquo;s artifact</h2>")
+    w("<p>Being explicit about the relationship: <code>einvoice</code> is not "
+      "an independent reading of the EN&nbsp;16931 specification. Its "
+      "correctness claim <strong>derives from the official KoSIT/CEN "
+      "Schematron artifacts</strong> — a differential harness runs this "
+      "engine and the official Schematron side by side over generated and "
+      "official test invoices and requires <strong>0 divergences</strong> on "
+      "every proven rule, in both the UBL and CII syntax bindings. The "
+      "official artifact is the ground truth; this engine is a re-"
+      "implementation proven equivalent against it, rule by rule. Without "
+      "KoSIT&rsquo;s published artifact that proof would be impossible, "
+      "which is one more reason this page has no interest in talking the "
+      "official toolchain down.</p>")
+
+    # ---- Side-by-side table (strictly factual) -----------------------------
+    w("<h2>Side by side</h2>")
+    w('<div class="cmp-scroll">')
+    w('<table class="cmp">')
+    w("<tr><th></th><th><code>einvoice</code></th><th>KoSIT validator</th>"
+      "<th>Mustangproject</th></tr>")
+    w("<tr><th>Runtime</th>"
+      "<td>Pure Python&nbsp;3 standard library — zero dependencies, no "
+      "toolchain</td>"
+      "<td>Java (JRE) + Saxon XSLT pipeline</td>"
+      "<td>Java (JRE), library or CLI</td></tr>")
+    w("<tr><th>Official status</th>"
+      "<td>Independent; proven against the official artifact</td>"
+      "<td><strong>The official reference implementation</strong></td>"
+      "<td>Community open source, widely used</td></tr>")
+    w("<tr><th>Price</th>"
+      "<td>Free (Apache-2.0); optional $29&nbsp;/&nbsp;$290 support "
+      "license</td>"
+      "<td>Free, open source</td>"
+      "<td>Free, open source</td></tr>")
+    w("<tr><th>XSD schema validation</th>"
+      "<td><strong>No</strong> — business rules only</td>"
+      "<td>Yes</td>"
+      "<td>Yes (ZUGFeRD&nbsp;/&nbsp;Factur-X focus)</td></tr>")
+    w("<tr><th>EN 16931 / XRechnung business rules</th>"
+      '<td><span data-claim="rule-count">%d</span> rules, differential-proven '
+      "at 0 divergences</td>"
+      "<td>Yes — runs the official Schematron itself</td>"
+      "<td>Yes, for the profiles it targets</td></tr>" % n_rules)
+    w("<tr><th>Peppol BIS Billing 3.0</th>"
+      '<td><strong>No</strong> — only the <span data-claim="peppol-count">'
+      "%d</span> <code>PEPPOL-EN16931-R*</code> rules KoSIT vendors inside "
+      "the XRechnung artifact</td>"
+      "<td>Validates whatever scenario/artifact you configure; the official "
+      "ecosystem covers more here</td>"
+      "<td>Broader e-invoicing ecosystem support</td></tr>" % n_peppol)
+    w("<tr><th>Writes / creates invoices</th>"
+      "<td><strong>No</strong> — validation only</td>"
+      "<td>No — validation only</td>"
+      "<td><strong>Yes</strong> — creates ZUGFeRD PDFs and embeds XML into "
+      "PDF/A-3</td></tr>")
+    w("<tr><th>CI reports</th>"
+      "<td>%s</td>"
+      "<td>XML / HTML validation report</td>"
+      "<td>Java API and CLI output</td></tr>" % formats_html)
+    w("</table>")
+    w("</div>")
+    w("<p>A caution about the table: the <code>einvoice</code> column is "
+      "machine-derived from this engine&rsquo;s own registries; the other two "
+      "columns state only what those tools are publicly known for, and where "
+      "we were not confident of a detail we described the ecosystem rather "
+      "than guessing a feature. Check their documentation for anything "
+      "load-bearing.</p>")
+
+    # ---- Where einvoice earns its keep -------------------------------------
+    w("<h2>Where <code>einvoice</code> earns its keep</h2>")
+    w('<ul class="rules">')
+    w("<li><strong>No Java/Saxon toolchain in CI.</strong> The whole engine "
+      "is Python&nbsp;3 standard library — <code>dependencies = []</code> — "
+      "so the gate runs in any CI image that has <code>python3</code>, "
+      "offline, with nothing to install or license.</li>")
+    w("<li><strong>CI-native outputs.</strong> One flag switches the report "
+      "between %s — SARIF gives inline PR annotations, the GitLab and JUnit "
+      "forms surface findings as native CI results.</li>" % formats_html)
+    w("<li><strong>A stable exit-code contract.</strong> "
+      '<code data-claim="exit-code-ok">%d</code> = no implemented fatal rule '
+      'fired, <code data-claim="exit-code-fail">%d</code> = at least one '
+      'fatal violation, <code data-claim="exit-code-usage">%d</code> = usage '
+      'error, <code data-claim="exit-code-parse">%d</code> = not well-formed '
+      "XML. That is the entire integration surface a CI gate needs.</li>"
+      % (exit_ok, exit_fail, exit_usage, exit_parse))
+    w('<li><strong>Pinnable automation.</strong> A <code>uses:</code>-'
+      'pinnable <a href="%s">GitHub Action</a>, a copy-paste '
+      '<a href="%s">CI recipe</a> (POSIX&nbsp;sh + GitHub&nbsp;Actions / '
+      "GitLab&nbsp;CI) and a pre-commit hook ship in the repository.</li>"
+      % (_h(_REPO_ACTION), _h(_REPO_CI)))
+    w('<li><strong>Per-rule reference pages.</strong> Every asserted rule has '
+      'its own page — requirement, BT/BG terms, XML location, one-line fix, '
+      "severity, verbatim official assert — in English and German: the "
+      '<a href="../rules/index.html">rule index</a>.</li>')
+    w("<li><strong>A person to email.</strong> An optional commercial license "
+      "($29 single developer / $290 vendor team) adds maintainer support and "
+      "rule-corpus update notices — see <a href=\"../licensing/index.html\">"
+      "licensing</a>. It is never required to use or embed the engine.</li>")
+    w("</ul>")
+
+    # ---- When to prefer them (the honest concessions) ----------------------
+    w("<h2>When to prefer them</h2>")
+    w("<p>Honestly, in several situations you should not use "
+      "<code>einvoice</code> at all, or should use it only alongside the "
+      "official tool:</p>")
+    w('<ul class="rules">')
+    w("<li><strong>You need the official verdict.</strong> The KoSIT "
+      "validator is the official reference implementation from the body that "
+      "publishes XRechnung. Before an invoice actually goes to a government "
+      "portal, run the official validator (or your receiver&rsquo;s): its "
+      "answer is the one that counts. <code>einvoice</code> is the fast "
+      "pre-flight in CI, not the final word.</li>")
+    w("<li><strong>You need XSD schema validation.</strong> We do "
+      "<strong>not</strong> perform structural XSD validation — only the "
+      "business rules. The KoSIT validator runs the official XSD schemas as "
+      "part of its pipeline; if schema-level structure is in question, use "
+      "it.</li>")
+    w("<li><strong>You need full Peppol BIS Billing 3.0.</strong> We assert "
+      "only the KoSIT-vendored <code>PEPPOL-EN16931-R*</code> subset "
+      '(<span data-claim="peppol-count">%d</span> rules). The KoSIT and '
+      "Mustangproject ecosystems do more here; for real Peppol network "
+      "validation use tooling built for it.</li>" % n_peppol)
+    w("<li><strong>You need to <em>create</em> ZUGFeRD / Factur-X PDFs.</strong> "
+      "Mustangproject writes them — builds the PDF/A-3, embeds the XML. "
+      "<code>einvoice</code> is validation-only and will never produce an "
+      "invoice.</li>")
+    w("<li><strong>You validate UBL <code>CreditNote</code> documents.</strong> "
+      "There is no UBL <code>CreditNote</code> root support here; the "
+      "official toolchain handles them.</li>")
+    w("</ul>")
+    w("<p>The honest summary: use the official KoSIT validator as your "
+      "authority, Mustangproject when Java or PDF-writing is in play, and "
+      "<code>einvoice</code> when you want the same business-rule verdict as "
+      "a zero-dependency Python gate inside every CI run and pre-commit — "
+      "cheap enough to run on every push, proven against the artifact the "
+      "official tool runs.</p>")
+
+    w("<footer>")
+    w("Every engine figure on this page (rule count, Peppol subset, report "
+      "formats, exit codes) is rendered from the live registries by "
+      "<code>gen_site.py</code> and drift-guarded by "
+      "<code>test_site.py</code> — no hand-typed numbers. Self-contained: "
+      "this page opens offline with no network requests. "
+      '<a href="../index.html">Back to the overview</a>.')
     w("</footer>")
     w("</main>")
     w("</body>")
@@ -1824,13 +2128,13 @@ def render_sitemap(catalog):
     """XML sitemap listing EXACTLY the canonical page set — pure, deterministic.
 
     The URL set is: landing + rule index hub + the worked walkthrough + the
-    licensing page + the German product/quickstart page + every rule page,
-    each <loc> built from the SAME BASE_URL as the canonical <link>s, so
-    canonical and sitemap can never disagree. Rule order follows the catalog
-    (stable).
+    licensing page + the comparison page + the German product/quickstart page
+    + every rule page, each <loc> built from the SAME BASE_URL as the
+    canonical <link>s, so canonical and sitemap can never disagree. Rule
+    order follows the catalog (stable).
     """
     locs = [_url_landing(), _url_hub(), _url_walkthrough(), _url_licensing(),
-            _url_de(), _url_de_walkthrough()]
+            _url_compare(), _url_de(), _url_de_walkthrough()]
     locs += [_url_rule(rid) for rid in catalog]
     lines = []
     w = lines.append
@@ -1867,6 +2171,7 @@ LANDING_PATH = os.path.join(SITE_DIR, "index.html")
 HUB_PATH = os.path.join(RULES_DIR, "index.html")
 WALKTHROUGH_PATH = os.path.join(WALKTHROUGH_DIR, "index.html")
 LICENSING_PATH = os.path.join(LICENSING_DIR, "index.html")
+COMPARE_PATH = os.path.join(COMPARE_DIR, "index.html")
 DE_PATH = os.path.join(DE_DIR, "index.html")
 DE_WALKTHROUGH_PATH = os.path.join(DE_WALKTHROUGH_DIR, "index.html")
 SITEMAP_PATH = os.path.join(SITE_DIR, "sitemap.xml")
@@ -1876,14 +2181,15 @@ ROBOTS_PATH = os.path.join(SITE_DIR, "robots.txt")
 def render_surface(catalog):
     """Map absolute path -> rendered text for the surface files (pure).
 
-    Landing, rule index hub, worked walkthrough, licensing page, the German
-    product/quickstart page, sitemap.xml and robots.txt.
+    Landing, rule index hub, worked walkthrough, licensing page, comparison
+    page, the German product/quickstart page, sitemap.xml and robots.txt.
     """
     return {
         LANDING_PATH: render_landing(),
         HUB_PATH: render_hub(catalog),
         WALKTHROUGH_PATH: render_walkthrough(catalog),
         LICENSING_PATH: render_licensing(),
+        COMPARE_PATH: render_compare(),
         DE_PATH: render_de(),
         DE_WALKTHROUGH_PATH: render_de_walkthrough(catalog),
         SITEMAP_PATH: render_sitemap(catalog),
@@ -1947,7 +2253,7 @@ def check(pages, surface):
         if surface_bad:
             sys.stderr.write("  stale surface: %s\n" % surface_bad)
         return 1
-    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + de + sitemap + robots)"
+    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots)"
           % len(want))
     return 0
 
@@ -1972,7 +2278,7 @@ def write(pages, surface):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
-    print("wrote %d rule pages + landing + hub + walkthrough + licensing + de + sitemap + robots under %s"
+    print("wrote %d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots under %s"
           % (len(pages), os.path.relpath(SITE_DIR, HERE)))
     return 0
 

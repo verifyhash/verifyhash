@@ -1,0 +1,118 @@
+{
+  "_meta": {
+    "purpose": "Provenance lock for every embedded code list exported by einvoice/codelists.py. test_codelists_manifest.py recomputes count and sha256 from the live module; any in-code edit without a matching manifest update is a red test.",
+    "vendored_corpus": "https://github.com/ConnectingEurope/eInvoicing-EN16931 (EUPL-1.2)",
+    "vendored_corpus_version": "validation-1.3.16 (released 2026-04-10)",
+    "corpus_version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "hash_recipe": "sha256 over '\\n'.join(sorted(entries)) encoded utf-8",
+    "audited": "2026-07-22, repo at dd7798a \u2014 audit and lock only, zero list-value changes"
+  },
+  "ALLOWANCE_REASON_CODES": {
+    "official_list": "UNCL 5189 allowance or charge identification code (allowance subset)",
+    "issuing_body": "UNECE (UNCL 5189)",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), assert BR-CL-19",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 19,
+    "sha256_sorted_newline_joined": "75f1abab58475852299d606d1acf64d1579ea69fe0c50fbaf85b0171e605347b"
+  },
+  "CHARGE_REASON_CODES": {
+    "official_list": "UNTDID 7161 special service description code",
+    "issuing_body": "UNECE (UNCL 7161)",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), assert BR-CL-20",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 178,
+    "sha256_sorted_newline_joined": "28b9fb10ade5adc771ae07f9c617f00c3f0735e4a75efd3ecf6e6cf66ae7f004"
+  },
+  "CII_COUNTRY_CODES": {
+    "official_list": "ISO 3166-1 alpha-2 country codes (CII binding; has AN, no SS)",
+    "issuing_body": "International Organization for Standardization (ISO)",
+    "source": "corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch, assert BR-CL-14 (context ram:CountryID)",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 251,
+    "sha256_sorted_newline_joined": "4d0030673c99059cbf6a4f44c38a2782537521d3bdd0b80219a62760850b7f2d"
+  },
+  "CURRENCY_CODES": {
+    "official_list": "ISO 4217 alpha-3 currency codes",
+    "issuing_body": "International Organization for Standardization (ISO)",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), asserts BR-CL-03/04/05",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 178,
+    "sha256_sorted_newline_joined": "fdd6947f4342525be1cbd6f8a578e5b95566c25062f239794dd33dbd39592c5a"
+  },
+  "ITEM_CLASS_LIST_CODES": {
+    "official_list": "UNTDID 7143 item type identification code",
+    "issuing_body": "UNECE (UN Trade Data Interchange Directory)",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), assert BR-CL-13",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 185,
+    "sha256_sorted_newline_joined": "a356d4acb2c43116e0b0523028309946b0335e1239c7001a2baf119d411c87f0"
+  },
+  "ITEM_SCHEME_ID_CODES": {
+    "official_list": "ISO/IEC 6523 International Code Designator (ICD) register",
+    "issuing_body": "ISO/IEC",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), assert BR-CL-21 (pinned from the Schematron inline enumeration, not the register PDF)",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 243,
+    "sha256_sorted_newline_joined": "b1a8b25e4ca479b806cb91dd04610c54923471af8597b0341905210992254a26"
+  },
+  "MIME_CODES": {
+    "official_list": "EN 16931 MIMEMediaType subset (six literals of assert BR-CL-24)",
+    "issuing_body": "CEN/TC 434 (EN 16931-1)",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), assert BR-CL-24 (direct string-equality disjunction, not a whitespace-split list)",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 6,
+    "sha256_sorted_newline_joined": "dab819a3235b5c48b0dbb72f0939ccb3beaa759b67e557e5735732e1f6ccf8d1"
+  },
+  "PAYMENT_MEANS_CODES": {
+    "official_list": "UNCL 4461 payment means code (EN 16931 subset)",
+    "issuing_body": "UNECE (UNCL 4461)",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), assert BR-CL-16",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 84,
+    "sha256_sorted_newline_joined": "8c4570105ad878267d1f645317638d7cd33bf98ed0d2ccefc89b25334f16ad37"
+  },
+  "UBL_COUNTRY_CODES": {
+    "official_list": "ISO 3166-1 alpha-2 country codes (UBL binding; has SS, no AN)",
+    "issuing_body": "International Organization for Standardization (ISO)",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch, assert BR-CL-14 (context cac:Country/cbc:IdentificationCode)",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 251,
+    "sha256_sorted_newline_joined": "5bd0fbb04aeca3b44e1533361bed6cddd51e7325a3de398af2ab3ebb68062892"
+  },
+  "UNIT_CODES": {
+    "official_list": "UN/ECE Recommendation 20 unit codes + Rec 21 packaging codes (X-prefixed)",
+    "issuing_body": "UNECE",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), assert BR-CL-23",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 2162,
+    "sha256_sorted_newline_joined": "3847fd1bdbb74b8d0891703a5a602ebfa8408373a9554b9486093cd1267838b3"
+  },
+  "VATEX_CODES": {
+    "official_list": "CEF VATEX VAT exemption reason code list",
+    "issuing_body": "European Commission (CEF eInvoicing / DIGITAL)",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), assert BR-CL-22",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 88,
+    "sha256_sorted_newline_joined": "4d0dca0f58203318698e9c49ed5015452b1598b45d9eefda0c9d538efdbbdb23"
+  },
+  "VAT_CATEGORY_CODES": {
+    "official_list": "UNCL 5305 duty/tax/fee category code (EN 16931 ten-code subset)",
+    "issuing_body": "UNECE (UNCL 5305), subset selected by CEN/TC 434",
+    "source": "corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch + corpus/cen-en16931/cii/schematron/codelist/EN16931-CII-codes.sch (inline strings verified identical at extraction), asserts BR-CL-17/18",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 10,
+    "sha256_sorted_newline_joined": "a5b43e45c93bfbc75050704d5b9f5517049a52db0f3f3089061b05bc011e96a0"
+  }
+}

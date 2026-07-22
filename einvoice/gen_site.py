@@ -211,6 +211,39 @@ BASE_URL = "https://verifyhash.com/einvoice"
 # licensing) materially changes, so crawlers see an accurate last-modified.
 SITE_LASTMOD = "2026-07-22"
 
+# ---------------------------------------------------------------------------
+# Pyodide CDN pin (T-VHWEB.2) — the in-browser validator page's ONLY external
+# resource, and it is NEVER fetched on page load: the generated
+# www/validate/index.html injects this <script> dynamically, on an explicit
+# button click, with the SRI integrity attribute below and
+# crossorigin="anonymous". EXACT version pin (never @latest / a range) so the
+# integrity hash can never silently stop matching.
+#
+# Pyodide is MPL-2.0, so it is deliberately NOT vendored into this repo (the
+# vendoring policy is MIT/Apache/BSD only); only the URL + hash live here.
+# The SRI hash below is the real sha384 of the pinned file, computed once at
+# build time from the exact bytes jsDelivr serves for this immutable version:
+#
+#   curl -sS https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.js \
+#     | openssl dgst -sha384 -binary | openssl base64 -A
+#
+# To bump the version: change PYODIDE_VERSION, recompute the hash with the
+# command above, paste it, re-run `python3 gen_site.py`. A mismatched hash
+# makes the browser refuse to execute the script (that is the point).
+# ---------------------------------------------------------------------------
+PYODIDE_VERSION = "314.0.2"
+PYODIDE_JS_URL = ("https://cdn.jsdelivr.net/pyodide/v%s/full/pyodide.js"
+                  % PYODIDE_VERSION)
+PYODIDE_INDEX_URL = ("https://cdn.jsdelivr.net/pyodide/v%s/full/"
+                     % PYODIDE_VERSION)
+PYODIDE_SRI = ("sha384-"
+               "Y0xVpf8xnYY2wjyRPIe9ZRoE61jRI5ihohgCmZlml2k7pWtPdL7ebjaNml0Esgzg")
+# Honest download figure shown on the load button: the pinned Pyodide runtime
+# (pyodide.js ~19 KB + pyodide.asm.wasm ~9.6 MB + python_stdlib.zip ~2.5 MB +
+# pyodide-lock.json ~0.1 MB) plus the ~1 MB engine bundle — ~13 MB uncompressed
+# (the CDN serves it compressed, so the wire cost is lower).
+PYODIDE_APPROX_MB = 13
+
 # CHECKOUT_URL — the ONE committed placeholder for the commercial-license
 # self-serve checkout (T-BUY.1). It is intentionally EMPTY in the repo: no
 # live payment link is committed. When empty, render_licensing() emits an
@@ -356,6 +389,11 @@ def _url_licensing():
 def _url_compare():
     """Absolute URL of the honest KoSIT/Mustangproject comparison page."""
     return BASE_URL + "/compare/"
+
+
+def _url_validate():
+    """Absolute URL of the in-browser validator page (T-VHWEB.2)."""
+    return BASE_URL + "/validate/"
 
 
 def _url_de():
@@ -779,6 +817,15 @@ def render_landing():
       "as an inline PR annotation via SARIF.</li>" % _h(_REPO_ACTION))
     w("</ul>")
     w("</div>")
+
+    w("<h2>Try it in your browser — zero install</h2>")
+    w("<p>Want a verdict before installing anything? The "
+      '<a href="validate/index.html">in-browser validator</a> runs the same '
+      "engine on your machine via WebAssembly (Pyodide): drop an XRechnung "
+      "XML or a ZUGFeRD/Factur-X PDF and read the findings, each linked to "
+      "its rule page. The invoice is never uploaded — after an explicit "
+      "one-time runtime download (~%d&nbsp;MB), validation happens entirely "
+      "in your browser.</p>" % PYODIDE_APPROX_MB)
 
     w("<h2>Browse the rules</h2>")
     w('<p>Every rule the engine can fire has its own reference page — what it '
@@ -2158,6 +2205,475 @@ def render_de_walkthrough(catalog):
     return "\n".join(p) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# In-browser validator PAGE (T-VHWEB.2) — www/validate/index.html.
+#
+# The zero-install conversion moment: a visitor drags an XRechnung XML or a
+# ZUGFeRD/Factur-X PDF onto the page and the REAL engine (the byte-identical
+# bundle under www/validate/engine/, T-VHWEB.1) grades it in their browser via
+# Pyodide. Protocol lines this template enforces BY CONSTRUCTION:
+#
+#   * NOTHING external is fetched on page load. The static HTML carries no
+#     <script src=...>, no external <link>, no external resource at all. The
+#     ONE external script (the pinned Pyodide loader) is injected dynamically,
+#     only after the visitor clicks the load button, with the exact-version
+#     URL + SRI sha384 integrity + crossorigin="anonymous" pinned in
+#     PYODIDE_JS_URL / PYODIDE_SRI above.
+#   * The invoice never leaves the browser: the file is read with FileReader,
+#     written into Pyodide's in-memory filesystem, and validated there. No
+#     request ever carries its bytes (the only network traffic is downloading
+#     the runtime + engine files themselves).
+#   * Render only engine output: the findings table is built verbatim from
+#     report.build_report()'s JSON (severity / rule / message, plus its own
+#     fatal/warning counts). Nothing is authored client-side.
+#   * Honest failure: if the CDN, WebAssembly, or the engine mount fails, the
+#     page says so and shows the pip-install fallback — never a fake result.
+#
+# All JS is inline and assembled with .replace() tokens (no %-formatting, so
+# JS percent signs can never collide with Python formatting). Deterministic:
+# every input is a module constant or the sorted catalog id list.
+# ---------------------------------------------------------------------------
+
+_VALIDATE_JS = r"""
+"use strict";
+(function () {
+  var PYODIDE_JS_URL = "@@PYODIDE_JS_URL@@";
+  var PYODIDE_INDEX_URL = "@@PYODIDE_INDEX_URL@@";
+  var PYODIDE_SRI = "@@PYODIDE_SRI@@";
+  // Rule ids that have a generated reference page under ../rules/<id>/ —
+  // emitted from the same catalog the site is generated from, so a finding
+  // links out only when the target page really exists.
+  var RULE_PAGES = @@RULE_PAGES_JSON@@;
+  var RULE_SET = {};
+  for (var i = 0; i < RULE_PAGES.length; i++) { RULE_SET[RULE_PAGES[i]] = 1; }
+
+  var loadBtn = document.getElementById("load-btn");
+  var statusEl = document.getElementById("status");
+  var fallbackEl = document.getElementById("fallback");
+  var pickerEl = document.getElementById("picker");
+  var dropzoneEl = document.getElementById("dropzone");
+  var fileInput = document.getElementById("file-input");
+  var profileSel = document.getElementById("profile");
+  var resultEl = document.getElementById("result");
+
+  var pyodide = null;
+  var validateFn = null;
+  var engineVersion = "";
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = "status" + (cls ? " " + cls : "");
+  }
+
+  function fail(message) {
+    setStatus(message, "err");
+    fallbackEl.hidden = false;
+    loadBtn.disabled = false;
+    loadBtn.hidden = false;
+  }
+
+  function bufToHex(buf) {
+    var bytes = new Uint8Array(buf);
+    var out = "";
+    for (var j = 0; j < bytes.length; j++) {
+      out += (bytes[j] < 16 ? "0" : "") + bytes[j].toString(16);
+    }
+    return out;
+  }
+
+  function injectPyodideScript() {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.integrity = PYODIDE_SRI;
+      s.crossOrigin = "anonymous";
+      s.onload = function () { resolve(); };
+      s.onerror = function () {
+        reject(new Error("could not fetch the Pyodide runtime from the CDN " +
+                         "(offline, blocked, or an integrity mismatch)"));
+      };
+      s.src = PYODIDE_JS_URL;
+      document.head.appendChild(s);
+    });
+  }
+
+  async function mountEngine() {
+    var resp = await fetch("engine/manifest.json");
+    if (!resp.ok) {
+      throw new Error("engine/manifest.json failed to load (HTTP " +
+                      resp.status + ")");
+    }
+    var manifest = await resp.json();
+    engineVersion = String(manifest.version || "");
+    var files = manifest.files || [];
+    pyodide.FS.mkdirTree("/engine/einvoice");
+    for (var k = 0; k < files.length; k++) {
+      var fn = files[k];
+      setStatus("Mounting engine module " + (k + 1) + " / " + files.length +
+                " (" + fn + ")…");
+      var r = await fetch("engine/" + fn);
+      if (!r.ok) {
+        throw new Error("engine/" + fn + " failed to load (HTTP " +
+                        r.status + ")");
+      }
+      var buf = await r.arrayBuffer();
+      // Verify each module against the manifest's sha256 pin when the
+      // browser exposes WebCrypto (secure contexts); a mismatch is a hard
+      // stop, never a silent run of drifted code.
+      if (window.crypto && window.crypto.subtle && manifest.sha256 &&
+          manifest.sha256[fn]) {
+        var digest = await window.crypto.subtle.digest("SHA-256", buf);
+        if (bufToHex(digest) !== manifest.sha256[fn]) {
+          throw new Error("engine/" + fn +
+                          " does not match its manifest sha256 pin");
+        }
+      }
+      pyodide.FS.writeFile("/engine/einvoice/" + fn, new Uint8Array(buf));
+    }
+    pyodide.runPython(
+      'import sys, json\n' +
+      'sys.path.insert(0, "/engine")\n' +
+      'from einvoice import report as _einvoice_report\n' +
+      'def _browser_validate(path, profile):\n' +
+      '    return json.dumps(\n' +
+      '        _einvoice_report.build_report(path, profile=profile))\n');
+    validateFn = pyodide.globals.get("_browser_validate");
+  }
+
+  async function loadValidator() {
+    loadBtn.disabled = true;
+    fallbackEl.hidden = true;
+    try {
+      setStatus("Fetching the Pyodide runtime from jsDelivr " +
+                "(exact pinned version, integrity-checked)…");
+      await injectPyodideScript();
+      setStatus("Starting the Python runtime (WebAssembly)… this is " +
+                "the slow part on a first visit.");
+      pyodide = await loadPyodide({ indexURL: PYODIDE_INDEX_URL });
+      setStatus("Mounting the engine modules…");
+      await mountEngine();
+      loadBtn.hidden = true;
+      pickerEl.hidden = false;
+      fileInput.disabled = false;
+      setStatus("Validator ready (engine " + engineVersion + ", running " +
+                "locally in your browser). Drop an invoice below — it " +
+                "will not be uploaded anywhere.", "ok");
+    } catch (e) {
+      fail("The validator could not load: " + (e && e.message ? e.message :
+           String(e)) + " Your invoice was NOT read or sent anywhere. You " +
+           "can run the identical engine locally instead — see the " +
+           "command below.");
+    }
+  }
+
+  function severityCell(sev) {
+    var td = document.createElement("td");
+    var span = document.createElement("span");
+    span.className = "sev";
+    span.textContent = sev;
+    td.appendChild(span);
+    return td;
+  }
+
+  function ruleCell(ruleId) {
+    var td = document.createElement("td");
+    var code = document.createElement("code");
+    code.textContent = ruleId;
+    if (RULE_SET[ruleId]) {
+      var a = document.createElement("a");
+      a.href = "../rules/" + encodeURIComponent(ruleId) + "/";
+      a.appendChild(code);
+      td.appendChild(a);
+    } else {
+      td.appendChild(code);
+    }
+    return td;
+  }
+
+  function renderReport(report, displayName) {
+    resultEl.textContent = "";
+    var h = document.createElement("h2");
+    h.textContent = "Findings for " + displayName;
+    resultEl.appendChild(h);
+
+    var summary = document.createElement("p");
+    summary.className = "verdict " + (report.valid ? "pass" : "failv");
+    if (report.error) {
+      summary.textContent = "Not validated (" + report.error + "): " +
+        (report.message || "");
+      resultEl.appendChild(summary);
+      return;
+    }
+    summary.textContent = (report.valid
+      ? "PASS — no fatal rule fired. "
+      : "FAIL — at least one fatal rule fired. ") +
+      report.violation_count + " finding(s): " + report.fatal_count +
+      " fatal, " + report.warning_count + " warning, profile " +
+      report.profile + ".";
+    resultEl.appendChild(summary);
+
+    var v = report.violations || [];
+    if (v.length === 0) { return; }
+    var wrap = document.createElement("div");
+    wrap.className = "cmp-scroll";
+    var table = document.createElement("table");
+    table.className = "cmp";
+    var thead = document.createElement("thead");
+    var hr = document.createElement("tr");
+    ["Severity", "Rule", "Message"].forEach(function (label) {
+      var th = document.createElement("th");
+      th.scope = "col";
+      th.textContent = label;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    var tbody = document.createElement("tbody");
+    for (var m = 0; m < v.length; m++) {
+      var tr = document.createElement("tr");
+      tr.appendChild(severityCell(v[m].severity));
+      tr.appendChild(ruleCell(v[m].rule));
+      var msg = document.createElement("td");
+      msg.textContent = v[m].message;
+      tr.appendChild(msg);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    resultEl.appendChild(wrap);
+  }
+
+  async function validateFile(file) {
+    if (!validateFn || !file) { return; }
+    setStatus("Validating " + file.name + " locally…");
+    try {
+      var buf = await file.arrayBuffer();
+      var safe = (file.name || "invoice").replace(/[^A-Za-z0-9._-]/g, "_");
+      if (!safe) { safe = "invoice"; }
+      pyodide.FS.mkdirTree("/work");
+      var path = "/work/" + safe;
+      pyodide.FS.writeFile(path, new Uint8Array(buf));
+      var report = JSON.parse(validateFn(path, profileSel.value));
+      renderReport(report, file.name || safe);
+      setStatus("Done — validated locally; nothing was uploaded.", "ok");
+    } catch (e) {
+      setStatus("Validation errored: " + (e && e.message ? e.message :
+                String(e)), "err");
+    }
+  }
+
+  loadBtn.addEventListener("click", loadValidator);
+  fileInput.addEventListener("change", function () {
+    if (fileInput.files && fileInput.files[0]) {
+      validateFile(fileInput.files[0]);
+    }
+  });
+  dropzoneEl.addEventListener("dragover", function (ev) {
+    ev.preventDefault();
+    if (!fileInput.disabled) { dropzoneEl.classList.add("drag"); }
+  });
+  dropzoneEl.addEventListener("dragleave", function () {
+    dropzoneEl.classList.remove("drag");
+  });
+  dropzoneEl.addEventListener("drop", function (ev) {
+    ev.preventDefault();
+    dropzoneEl.classList.remove("drag");
+    if (fileInput.disabled) { return; }
+    if (ev.dataTransfer && ev.dataTransfer.files &&
+        ev.dataTransfer.files[0]) {
+      validateFile(ev.dataTransfer.files[0]);
+    }
+  });
+})();
+""".strip()
+
+
+def render_validate(catalog):
+    """The in-browser validator page (``www/validate/index.html``) — pure.
+
+    See the block comment above for the protocol lines. Deterministic: the
+    only inputs are module constants, the live rule-count registry (same
+    data-claim discipline as :func:`render_compare`) and the sorted catalog
+    id list (which rules get a hyperlink).
+    """
+    n_rules = len(_coverage.engine_fireable_ids())
+    title = ("Validate an XRechnung / ZUGFeRD invoice in your browser — "
+             "no install, no upload — einvoice")
+    description = ("Drag an XRechnung UBL XML or ZUGFeRD/Factur-X PDF onto "
+                   "this page and the real %d-rule EN 16931 engine grades it "
+                   "in your browser via Pyodide (WebAssembly). Nothing is "
+                   "installed and the invoice is never uploaded — validation "
+                   "runs locally after a one-time ~%d MB runtime download."
+                   % (n_rules, PYODIDE_APPROX_MB))
+    canonical = _url_validate()
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "einvoice in-browser XRechnung / EN 16931 validator",
+        "url": canonical,
+        "description": description,
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": ("Any browser with WebAssembly; the invoice is "
+                            "processed locally and never uploaded"),
+        "isAccessibleForFree": True,
+    }
+    ld_json = json.dumps(ld, ensure_ascii=False).replace("<", "\\u003c")
+
+    rule_pages_json = json.dumps(sorted(catalog),
+                                 separators=(",", ":")).replace("<", "\\u003c")
+    js = (_VALIDATE_JS
+          .replace("@@PYODIDE_JS_URL@@", PYODIDE_JS_URL)
+          .replace("@@PYODIDE_INDEX_URL@@", PYODIDE_INDEX_URL)
+          .replace("@@PYODIDE_SRI@@", PYODIDE_SRI)
+          .replace("@@RULE_PAGES_JSON@@", rule_pages_json))
+
+    style_extra = (
+        "\nbutton.load { font: inherit; font-weight: 700; cursor: pointer;"
+        " padding: .55rem 1.1rem; border-radius: .5rem;"
+        " border: 1px solid #0969da; background: #0969da; color: #ffffff; }"
+        "\nbutton.load[disabled] { opacity: .6; cursor: wait; }"
+        "\n.status { border-left: 3px solid #d0d7de; padding-left: .8rem;"
+        " min-height: 1.2rem; }"
+        "\n.status.err { border-color: #cf222e; color: #cf222e; }"
+        "\n.status.ok { border-color: #1a7f37; }"
+        "\n.dropzone { display: block; border: 2px dashed #d0d7de;"
+        " border-radius: .6rem; padding: 1.6rem 1rem; text-align: center;"
+        " cursor: pointer; margin: 1rem 0 .6rem; }"
+        "\n.dropzone.drag { border-color: #0969da; }"
+        "\n.verdict { font-weight: 700; }"
+        "\n.verdict.pass { color: #1a7f37; }"
+        "\n.verdict.failv { color: #cf222e; }"
+        "\n.cmp-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch;"
+        " margin: 1.2rem 0; max-width: 100%; }"
+        "\ntable.cmp { border-collapse: collapse; width: 100%;"
+        " min-width: 30rem; margin: 0; font-size: .9rem; }"
+        "\ntable.cmp th, table.cmp td { border: 1px solid #d0d7de;"
+        " padding: .45rem .6rem; text-align: left; vertical-align: top; }"
+        "\ntable.cmp th { background: #f6f8fa; }"
+        "\n@media (prefers-color-scheme: dark) {"
+        " table.cmp th, table.cmp td { border-color: #30363d; }"
+        " table.cmp th { background: #161b22; }"
+        " .dropzone { border-color: #30363d; }"
+        " .status { border-color: #30363d; } }")
+
+    p = []
+    w = p.append
+    # Head is hand-built (like the rule pages) so the honest JSON-LD block can
+    # live in <head> next to the canonical; same self-containment contract —
+    # one inline <style>, absolute canonical from BASE_URL, and NO external
+    # resource in the static document (the Pyodide loader is injected by the
+    # inline script only after the explicit button click).
+    w("<!doctype html>")
+    w('<html lang="en">')
+    w("<head>")
+    w('<meta charset="utf-8">')
+    w('<meta name="viewport" content="width=device-width, initial-scale=1">')
+    w("<title>%s</title>" % _h(title))
+    w('<meta name="description" content="%s">' % _h(description))
+    w('<link rel="canonical" href="%s">' % _h(canonical))
+    w("<style>%s%s</style>" % (_STYLE, style_extra))
+    w('<script type="application/ld+json">%s</script>' % ld_json)
+    w("</head>")
+    w("<body>")
+    w("<main>")
+    w('<p class="crumb"><a href="../index.html">einvoice</a> / '
+      "Browser validator</p>")
+    w("<h1>Validate an invoice in your browser</h1>")
+    w('<p class="lead">Drop an <strong>XRechnung</strong> UBL XML or a '
+      "<strong>ZUGFeRD&nbsp;/&nbsp;Factur-X</strong> PDF here and the same "
+      '<strong><span data-claim="rule-count">%d</span>-rule</strong> '
+      "EN&nbsp;16931 engine that powers the CLI grades it — no account, no "
+      "install. The engine runs <em>inside your browser</em> (CPython on "
+      "WebAssembly via Pyodide), so the invoice itself is never uploaded: "
+      "after the one-time runtime download, validation makes no network "
+      "request that carries your file.</p>" % n_rules)
+
+    w("<h2>Step 1 — load the validator</h2>")
+    w("<p>Nothing is fetched until you click. The button downloads the "
+      "pinned Pyodide runtime from the jsDelivr CDN (exact version "
+      "<code>%s</code>, subresource-integrity checked) plus the engine "
+      "modules from this site — about %d&nbsp;MB uncompressed, less on the "
+      "wire. On a slow connection the first start can take a minute; "
+      "afterwards your browser cache makes it quick.</p>"
+      % (_h(PYODIDE_VERSION), PYODIDE_APPROX_MB))
+    w('<p><button id="load-btn" type="button" class="load">'
+      "Load validator (~%d&nbsp;MB)</button></p>" % PYODIDE_APPROX_MB)
+    w('<p id="status" class="status" role="status" aria-live="polite"></p>')
+
+    w('<div id="fallback" hidden>')
+    w("<p>No browser run today? The identical engine is a pip install away "
+      "(Python&nbsp;3.10+, zero dependencies):</p>")
+    w("<pre><code>python3 -m pip install verifyhash-einvoice\n"
+      "einvoice validate --profile xrechnung invoice.xml</code></pre>")
+    w("</div>")
+
+    w('<div id="picker" hidden>')
+    w("<h2>Step 2 — pick an invoice</h2>")
+    w('<label class="dropzone" id="dropzone" for="file-input">'
+      "Drag &amp; drop an invoice here, or click to choose a file "
+      "(<code>.xml</code> UBL XRechnung, or a ZUGFeRD/Factur-X "
+      "<code>.pdf</code>)</label>")
+    w('<p><input type="file" id="file-input" '
+      'accept=".xml,.pdf,application/xml,text/xml,application/pdf" disabled> '
+      '<label for="profile">Profile:</label> '
+      '<select id="profile">'
+      '<option value="xrechnung" selected>xrechnung (EN 16931 + German '
+      "CIUS)</option>"
+      '<option value="en16931">en16931 (core only)</option>'
+      "</select></p>")
+    w("</div>")
+
+    w('<div id="result" aria-live="polite"></div>')
+
+    w("<h2>What you get, and honest limits</h2>")
+    w("<p>The output is the engine&rsquo;s own conformance report: a "
+      "pass/fail verdict (fail means a <em>fatal</em> rule fired), the fatal "
+      "and warning counts, and one row per finding with its severity, rule "
+      "id and message. Every rule id that has a reference page links to it — "
+      "the same pages under <a href=\"../rules/index.html\">the rule "
+      "index</a>, with the official Schematron assert, the BT/BG terms and a "
+      "concrete fix in English and German.</p>")
+    w("<p>Same limits as the CLI, stated plainly: no XSD structural "
+      "validation, UBL <code>Invoice</code> and CII (via the ZUGFeRD/"
+      "Factur-X PDF container) only — no UBL <code>CreditNote</code> — and 8 "
+      "official <code>BR-CL-*</code> code-list checks are documented "
+      "deferrals. A green result means &ldquo;no implemented fatal rule "
+      "fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. "
+      "Browser-specific: the ~%d&nbsp;MB runtime is real — on a metered or "
+      "very slow connection the terminal route below is the better tool. "
+      "Encrypted or exotic PDF containers the zero-dependency extractor "
+      "cannot open are reported honestly as "
+      "<code>unsupported-container</code>, never silently passed.</p>"
+      % PYODIDE_APPROX_MB)
+
+    w("<h2>Prefer the terminal?</h2>")
+    w("<p>The browser page and the package run the <em>same</em> engine "
+      "modules — the copies under <code>engine/</code> are byte-identical "
+      "to the released package, pinned by sha256 in a committed manifest. "
+      "Locally that is:</p>")
+    w("<pre><code>python3 -m pip install verifyhash-einvoice\n"
+      "einvoice validate --profile xrechnung invoice.xml\n"
+      "einvoice validate --json --profile xrechnung invoice.xml</code></pre>")
+    w("<p>Start with the <a href=\"../walkthrough/index.html\">5-minute "
+      "worked walkthrough</a>, or read the honest "
+      "<a href=\"../compare/index.html\">comparison with the official KoSIT "
+      "validator and Mustangproject</a>.</p>")
+
+    w("<footer>")
+    w("Free and open source (Apache-2.0); see "
+      '<a href="../licensing/index.html">licensing</a>. '
+      "Generated by <code>gen_site.py</code>. This page itself loads with no "
+      "network requests; clicking &ldquo;Load validator&rdquo; downloads the "
+      "pinned Pyodide runtime (<code>%s</code>, MPL-2.0, not vendored) from "
+      "jsDelivr and the engine modules from this site — your invoice is "
+      "never uploaded." % _h(PYODIDE_VERSION))
+    w("</footer>")
+    w("</main>")
+    w("<script>%s</script>" % js)
+    w("</body>")
+    w("</html>")
+    return "\n".join(p) + "\n"
+
+
 def render_sitemap(catalog):
     """XML sitemap listing EXACTLY the canonical page set — pure, deterministic.
 
@@ -2168,7 +2684,7 @@ def render_sitemap(catalog):
     order follows the catalog (stable).
     """
     locs = [_url_landing(), _url_hub(), _url_walkthrough(), _url_licensing(),
-            _url_compare(), _url_de(), _url_de_walkthrough()]
+            _url_compare(), _url_validate(), _url_de(), _url_de_walkthrough()]
     locs += [_url_rule(rid) for rid in catalog]
     lines = []
     w = lines.append
@@ -2297,6 +2813,7 @@ HUB_PATH = os.path.join(RULES_DIR, "index.html")
 WALKTHROUGH_PATH = os.path.join(WALKTHROUGH_DIR, "index.html")
 LICENSING_PATH = os.path.join(LICENSING_DIR, "index.html")
 COMPARE_PATH = os.path.join(COMPARE_DIR, "index.html")
+VALIDATE_PATH = os.path.join(VALIDATE_DIR, "index.html")
 DE_PATH = os.path.join(DE_DIR, "index.html")
 DE_WALKTHROUGH_PATH = os.path.join(DE_WALKTHROUGH_DIR, "index.html")
 SITEMAP_PATH = os.path.join(SITE_DIR, "sitemap.xml")
@@ -2307,7 +2824,8 @@ def render_surface(catalog):
     """Map absolute path -> rendered content for the surface files (pure).
 
     Landing, rule index hub, worked walkthrough, licensing page, comparison
-    page, the German product/quickstart page, sitemap.xml, robots.txt, and
+    page, the in-browser validator page (T-VHWEB.2), the German
+    product/quickstart page, sitemap.xml, robots.txt, and
     the validator engine bundle (T-VHWEB.1). Values are ``str`` for the
     rendered text pages and raw ``bytes`` for the byte-identical engine
     files; :func:`check` and :func:`write` branch on the type.
@@ -2318,6 +2836,7 @@ def render_surface(catalog):
         WALKTHROUGH_PATH: render_walkthrough(catalog),
         LICENSING_PATH: render_licensing(),
         COMPARE_PATH: render_compare(),
+        VALIDATE_PATH: render_validate(catalog),
         DE_PATH: render_de(),
         DE_WALKTHROUGH_PATH: render_de_walkthrough(catalog),
         SITEMAP_PATH: render_sitemap(catalog),
@@ -2406,7 +2925,7 @@ def check(pages, surface):
         if surface_bad:
             sys.stderr.write("  stale surface: %s\n" % surface_bad)
         return 1
-    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots + engine bundle)"
+    print("site up to date (%d rule pages + landing + hub + walkthrough + licensing + compare + validate + de + sitemap + robots + engine bundle)"
           % len(want))
     return 0
 
@@ -2459,7 +2978,7 @@ def write(pages, surface, out_dir=None):
         for fn in os.listdir(engine_dir):
             if fn not in expected_engine:
                 os.remove(os.path.join(engine_dir, fn))
-    print("wrote %d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots + engine bundle under %s"
+    print("wrote %d rule pages + landing + hub + walkthrough + licensing + compare + validate + de + sitemap + robots + engine bundle under %s"
           % (len(pages), os.path.relpath(site_dir, HERE)))
     return 0
 

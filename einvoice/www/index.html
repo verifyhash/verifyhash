@@ -113,6 +113,8 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="https://github.com/verifyhash/verifyhash/tree/main/einvoice/action">GitHub Action</a> (<code>einvoice/action/</code>) — a <code>uses:</code>-pinnable composite action that surfaces each finding as an inline PR annotation via SARIF.</li>
 </ul>
 </div>
+<h2>Try it in your browser — zero install</h2>
+<p>Want a verdict before installing anything? The <a href="validate/index.html">in-browser validator</a> runs the same engine on your machine via WebAssembly (Pyodide): drop an XRechnung XML or a ZUGFeRD/Factur-X PDF and read the findings, each linked to its rule page. The invoice is never uploaded — after an explicit one-time runtime download (~13&nbsp;MB), validation happens entirely in your browser.</p>
 <h2>Browse the rules</h2>
 <p>Every rule the engine can fire has its own reference page — what it requires, the BT/BG terms it touches, the XML location, a one-line fix, the severity, and the verbatim official Schematron assert (English and German). Start at the <a href="rules/index.html">rule index, grouped by family</a>.</p>
 <h2>Safe on untrusted input</h2>

@@ -67,8 +67,22 @@ Checks (each an independent hard assert):
       the temp output dir's own path, or the username — the tree is
       publishable from any machine. (Committed-tree identity to a fresh
       render is separately pinned by (d) --check.)
+  (j) IN-BROWSER VALIDATOR PAGE (T-VHWEB.2): www/validate/index.html is a
+      first-class generated page (part of the pinned canonical set — a
+      PRODUCTION page earning its place, not gate-weakening). STATIC asserts
+      only (no browser, no network, per the task's constitution line): the
+      static document references NO external resource eagerly (no <script
+      src=...>, no non-canonical <link>); the pinned Pyodide CDN URL +
+      sha384 SRI + crossorigin="anonymous" appear ONLY inside the inline
+      script (dynamic injection on explicit click); the pip-install fallback
+      snippet is present; the embedded RULE_PAGES id list equals the live
+      catalog EXACTLY (so findings hyperlink only to real ../rules/<id>/
+      pages); the rule-count data-claim binds to the live registry; the
+      canonical is gen_site._url_validate(); the landing page links to it
+      visibly.
   (e) NAV + SITEMAP INTEGRITY (VHW.3, mirrors weatherhack WXQ.3): the landing
       page, rule index hub, walkthrough, licensing page, the comparison page,
+      the in-browser validator page,
       the German product/quickstart page, sitemap.xml and
       robots.txt exist; every INTERNAL
       href in every generated HTML file resolves to a real generated file (no
@@ -340,6 +354,7 @@ def main():
     walkthrough_path = os.path.join(WWW_DIR, "walkthrough", "index.html")
     licensing_path = os.path.join(WWW_DIR, "licensing", "index.html")
     compare_path = os.path.join(WWW_DIR, "compare", "index.html")
+    validate_path = os.path.join(WWW_DIR, "validate", "index.html")
     de_path = os.path.join(WWW_DIR, "de", "index.html")
     de_walkthrough_path = os.path.join(WWW_DIR, "de", "walkthrough", "index.html")
     sitemap_path = os.path.join(WWW_DIR, "sitemap.xml")
@@ -350,6 +365,7 @@ def main():
                       (walkthrough_path, "www/walkthrough/index.html"),
                       (licensing_path, "www/licensing/index.html"),
                       (compare_path, "www/compare/index.html"),
+                      (validate_path, "www/validate/index.html"),
                       (de_path, "www/de/index.html"),
                       (de_walkthrough_path, "www/de/walkthrough/index.html"),
                       (sitemap_path, "www/sitemap.xml"),
@@ -382,6 +398,8 @@ def main():
         html_files.append(licensing_path)
     if os.path.exists(compare_path):
         html_files.append(compare_path)
+    if os.path.exists(validate_path):
+        html_files.append(validate_path)
     if os.path.exists(de_path):
         html_files.append(de_path)
     if os.path.exists(de_walkthrough_path):
@@ -422,7 +440,7 @@ def main():
         check(len(locs) == len(got), "sitemap has duplicate <loc> entries")
         expected = {_gen._url_landing(), _gen._url_hub(),
                     _gen._url_walkthrough(), _gen._url_licensing(),
-                    _gen._url_compare(),
+                    _gen._url_compare(), _gen._url_validate(),
                     _gen._url_de(), _gen._url_de_walkthrough()}
         expected |= {_gen._url_rule(rid) for rid in (want & have)}
         check(got == expected,
@@ -465,6 +483,7 @@ def main():
                        _gen._url_walkthrough(): walkthrough_path,
                        _gen._url_licensing(): licensing_path,
                        _gen._url_compare(): compare_path,
+                       _gen._url_validate(): validate_path,
                        _gen._url_de(): de_path,
                        _gen._url_de_walkthrough(): de_walkthrough_path}
         for rid in (want & have):
@@ -652,6 +671,133 @@ def main():
             check(banned not in low_cmp,
                   "compare page carries FUD-adjacent copy: %r" % banned)
 
+    # ---- (j) in-browser validator page (T-VHWEB.2): STATIC pins only -------
+    # No browser, no network, per the task's constitution line — every assert
+    # below reads the committed bytes. The page joins the pinned canonical
+    # set as a production page (its sitemap/determinism/link-graph membership
+    # is asserted in the shared sections of this test).
+    check(os.path.exists(validate_path),
+          "www/validate/index.html missing (T-VHWEB.2)")
+    if os.path.exists(validate_path):
+        val_raw = open(validate_path, encoding="utf-8").read()
+        val_txt = _visible_text(val_raw)
+
+        # NOTHING external is fetched eagerly: no <script> tag carries a src
+        # attribute (the ld+json block and the app script are inline), every
+        # <link> is the canonical, and no img/iframe can pull a resource.
+        check(not re.search(r'<script\b[^>]*\bsrc\s*=', val_raw,
+                            re.IGNORECASE),
+              "validate page has a <script src=...> (eager external script)")
+        check(not re.search(r'<link\b(?![^>]*\brel="canonical")', val_raw,
+                            re.IGNORECASE),
+              "validate page has a non-canonical <link>")
+        check("<img" not in val_raw.lower()
+              and "<iframe" not in val_raw.lower(),
+              "validate page embeds an img/iframe element")
+
+        # Pyodide pin: the page carries EXACTLY gen_site's pinned CDN URL
+        # (an exact-version /pyodide/vX.Y.Z/ path — never @latest/a range),
+        # the sha384 SRI hash, and crossorigin=anonymous, all inside the
+        # inline script (guaranteed non-eager by the src-free assert above),
+        # injected only from the explicit load-button click handler.
+        check(re.fullmatch(
+            r"https://cdn\.jsdelivr\.net/pyodide/v\d+\.\d+\.\d+"
+            r"/full/pyodide\.js", _gen.PYODIDE_JS_URL) is not None,
+              "gen_site.PYODIDE_JS_URL is not an exact-version jsDelivr pin: "
+              "%r" % _gen.PYODIDE_JS_URL)
+        check(_gen.PYODIDE_JS_URL in val_raw,
+              "validate page does not carry the pinned Pyodide URL")
+        check(re.fullmatch(r"sha384-[A-Za-z0-9+/]{64}", _gen.PYODIDE_SRI)
+              is not None,
+              "gen_site.PYODIDE_SRI is not a sha384 SRI value: %r"
+              % _gen.PYODIDE_SRI)
+        check(_gen.PYODIDE_SRI in val_raw,
+              "validate page does not carry the SRI sha384 integrity hash")
+        check('s.integrity = PYODIDE_SRI' in val_raw,
+              "injected script element does not set the integrity attribute")
+        check('s.crossOrigin = "anonymous"' in val_raw,
+              "injected script element does not set crossorigin=anonymous")
+        check('id="load-btn"' in val_raw
+              and 'loadBtn.addEventListener("click", loadValidator)'
+              in val_raw,
+              "no explicit load-button click wiring (Pyodide must never "
+              "load eagerly)")
+
+        # Honest CDN-failure state: the pip-install fallback snippet is in
+        # the static document (revealed by the failure handler).
+        check("pip install verifyhash-einvoice" in val_raw,
+              "validate page is missing the pip install fallback snippet")
+        check('id="fallback"' in val_raw and "fallbackEl.hidden = false"
+              in val_raw,
+              "failure handler never reveals the fallback block")
+
+        # Engine mount is manifest-driven and sibling-relative.
+        check('fetch("engine/manifest.json")' in val_raw,
+              "validate page does not fetch engine/manifest.json")
+
+        # Findings hyperlink rule ids into ../rules/<id>/ and ONLY for ids
+        # whose page really exists: the embedded RULE_PAGES list must equal
+        # the live catalog id set exactly.
+        check('"../rules/"' in val_raw,
+              "findings renderer does not link into ../rules/")
+        rp = re.search(r"var RULE_PAGES = (\[[^\]]*\]);", val_raw)
+        check(rp is not None,
+              "validate page embeds no RULE_PAGES id list")
+        if rp:
+            try:
+                embedded_ids = json.loads(rp.group(1))
+            except Exception as exc:  # noqa: BLE001
+                embedded_ids = None
+                check(False, "RULE_PAGES does not parse as JSON: %s" % exc)
+            if embedded_ids is not None:
+                check(set(embedded_ids) == set(catalog),
+                      "RULE_PAGES != live catalog ids; missing=%s orphan=%s"
+                      % (sorted(set(catalog) - set(embedded_ids))[:5],
+                         sorted(set(embedded_ids) - set(catalog))[:5]))
+
+        # CLAIMS-DRIFT: the rule-count figure binds to the live registry
+        # (same discipline as the compare page).
+        live_rules_v = len(_coverage.engine_fireable_ids())
+        vcounts = re.findall(r'data-claim="rule-count">(\d+)<', val_raw)
+        check(len(vcounts) >= 1,
+              "validate page emits no rule-count claim")
+        for c in vcounts:
+            check(int(c) == live_rules_v,
+                  "validate page rule-count claim %s != live "
+                  "engine_fireable_ids count %d" % (c, live_rules_v))
+
+        # Canonical / language / JSON-LD.
+        check('<html lang="en">' in val_raw,
+              "validate page does not declare <html lang=\"en\">")
+        vcm = re.search(
+            r'<link\b[^>]*\brel="canonical"[^>]*\bhref="([^"]*)"', val_raw)
+        check(vcm is not None and vcm.group(1) == _gen._url_validate(),
+              "validate page canonical is not gen_site._url_validate() (%r)"
+              % (vcm.group(1) if vcm else None))
+        vld = _LD_RE.findall(val_raw)
+        check(len(vld) == 1,
+              "validate page: expected exactly 1 ld+json block, got %d"
+              % len(vld))
+        if vld:
+            try:
+                vobj = json.loads(vld[0])
+            except Exception as exc:  # noqa: BLE001
+                vobj = None
+                check(False, "validate page JSON-LD does not parse: %s" % exc)
+            if vobj is not None:
+                check(vobj.get("@type") == "WebApplication",
+                      "validate page JSON-LD @type is not WebApplication")
+
+        # The factual privacy line is stated (never a uniqueness claim), and
+        # the landing page links the validator visibly (link-graph entry).
+        check("never uploaded" in val_txt,
+              "validate page does not state the local-processing property")
+        if os.path.exists(landing_path):
+            landing_doc_v = open(landing_path, encoding="utf-8").read()
+            check('href="validate/index.html"' in landing_doc_v,
+                  "English landing has no visible href=\"validate/"
+                  "index.html\" link to the browser validator")
+
     # ---- (g) German product/quickstart page (T-VHDE.1) ---------------------
     # www/de/index.html is a first-class generated page: correct document
     # language, self-referential canonical from BASE_URL, hreflang alternates
@@ -703,7 +849,7 @@ def main():
         surface_titles = []
         surface_descs = []
         for spath in (landing_path, hub_path, walkthrough_path,
-                      licensing_path, compare_path, de_path,
+                      licensing_path, compare_path, validate_path, de_path,
                       de_walkthrough_path):
             sraw = open(spath, encoding="utf-8").read()
             tm = _TITLE_RE.search(sraw)
@@ -835,6 +981,7 @@ def main():
                     os.path.join("walkthrough", "index.html"),
                     os.path.join("licensing", "index.html"),
                     os.path.join("compare", "index.html"),
+                    os.path.join("validate", "index.html"),
                     os.path.join("de", "index.html"),
                     os.path.join("de", "walkthrough", "index.html"),
                     "sitemap.xml", "robots.txt"):

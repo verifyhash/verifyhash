@@ -30,6 +30,29 @@ from .rules import Violation
 #: "xrechnung" = core rules PLUS the German national CIUS layer (BR-DE-*).
 PROFILES = ("en16931", "xrechnung")
 
+#: The structural S-ROOT message for a generic (non-CII) unsupported root.
+#: Text unchanged from the original single-message era; tests and goldens pin
+#: it, so treat it as frozen.
+S_ROOT_MESSAGE = (
+    "Root element must be Invoice in the UBL Invoice-2 namespace, or "
+    "CreditNote in the UBL CreditNote-2 namespace.")
+
+#: The S-ROOT message when the unsupported root IS a CII
+#: ``CrossIndustryInvoice`` (matched by localname, namespace-tolerant, so a
+#: wrong-namespace CII root still gets the helpful text). Same rule id, same
+#: fatal severity, same exit code — ONLY the message differs, because "must be
+#: UBL" is misleading for a ZUGFeRD/Factur-X adopter: CII is fully supported
+#: here, just on the PDF container route (``python3 -m einvoice.report`` on
+#: the Factur-X/ZUGFeRD PDF extracts the embedded CII and grades it on the
+#: real CII engine). Raw-CII dispatch on this path is deliberately NOT added —
+#: the raw-XML surface stays honestly UBL-only (see coverage.py, "CII
+#: credit-note scope"). Single source for every emitter of the CII-case text.
+S_ROOT_CII_MESSAGE = (
+    "CrossIndustryInvoice (CII) root detected: direct XML validation is "
+    "UBL-only. CII invoices (ZUGFeRD/Factur-X) are fully supported via the "
+    "PDF container path — validate the Factur-X/ZUGFeRD PDF with "
+    "'python3 -m einvoice.report <invoice.pdf>' (see README).")
+
 
 def _severity(v):
     """Severity of a violation; core Violations carry none and are fatal."""
@@ -122,11 +145,16 @@ def validate_root(root: ET.Element, profile: str = "en16931") -> Result:
     # Layer S — structural.
     inv = _parser.build_model(root)
     if not (inv.root_is_ubl_invoice or inv.is_creditnote):
-        violations.append(Violation(
-            "S-ROOT",
-            "Root element must be Invoice in the UBL Invoice-2 namespace, or "
-            "CreditNote in the UBL CreditNote-2 namespace.",
-            _parser._localname(root.tag)))
+        localname = _parser._localname(root.tag)
+        # A genuine CII root gets an actionable message naming the supported
+        # ZUGFeRD/Factur-X container route instead of the misleading "must be
+        # UBL" text. Localname match only (namespace-tolerant, mirroring the
+        # spirit of parser_cii.build_model's root check) so a wrong-namespace
+        # CrossIndustryInvoice still earns the pointer. Verdict, rule id and
+        # exit code are IDENTICAL either way — message text only.
+        message = (S_ROOT_CII_MESSAGE if localname == "CrossIndustryInvoice"
+                   else S_ROOT_MESSAGE)
+        violations.append(Violation("S-ROOT", message, localname))
         # Without a supported UBL root the business rules are meaningless.
         return Result(violations)
 

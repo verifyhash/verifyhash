@@ -238,6 +238,15 @@ naming the failing rule and the offending element. (A UBL `CreditNote` is now a
 *supported* root — it is really validated through the shared EN 16931 engine, so
 an invalid CreditNote surfaces as exit `1` on its real business-rule fatal, not
 on `S-ROOT`.)
+One deliberate refinement of that message (same rule id `S-ROOT`, same fatal
+verdict, same exit `1`): when the unsupported root IS a CII
+`CrossIndustryInvoice` — the ZUGFeRD/Factur-X payload root — the message
+instead points at the supported route ("CrossIndustryInvoice (CII) root
+detected: direct XML validation is UBL-only. CII invoices (ZUGFeRD/Factur-X)
+are fully supported via the PDF container path — validate the Factur-X/ZUGFeRD
+PDF with 'python3 -m einvoice.report <invoice.pdf>' (see README)."), because
+"must be UBL" alone would misleadingly imply CII is unsupported when it is
+graded first-class on the container path. Pinned by `test_cli_cii_root.py`.
 The value to the caller is the same either way: a non-zero code plus a concrete,
 greppable reason on stdout/stderr — never a false green. Folding these into the
 existing `1` (rather than minting a new code) keeps the contract small and

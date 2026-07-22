@@ -2258,28 +2258,40 @@ def check(pages, surface):
     return 0
 
 
-def write(pages, surface):
-    """(Re)write the whole site tree, pruning orphan rule dirs."""
-    os.makedirs(RULES_DIR, exist_ok=True)
+def write(pages, surface, out_dir=None):
+    """(Re)write the whole site tree, pruning orphan rule dirs.
+
+    ``out_dir`` (T-VHSITEDET.1): when given, the IDENTICAL tree is written
+    under that directory instead of the committed ``www/`` — the surface
+    paths (keyed on :data:`SITE_DIR`) are re-rooted with ``os.path.relpath``.
+    Used by ``test_site.py`` to regenerate twice into two temp directories
+    and assert byte-identity WITHOUT dirtying the committed tree. The default
+    (``None``) writes exactly where it always did.
+    """
+    site_dir = SITE_DIR if out_dir is None else out_dir
+    rules_dir = os.path.join(site_dir, "rules")
+    os.makedirs(rules_dir, exist_ok=True)
     # Prune orphan rule directories so the tree never drifts from the catalog.
     # The rule index hub is a FILE (index.html) directly under www/rules/, not
-    # a directory, so _committed_rule_dirs() never sees it as an orphan.
-    for d in _committed_rule_dirs():
-        if d not in pages:
-            shutil.rmtree(os.path.join(RULES_DIR, d))
+    # a directory, so the listing never sees it as an orphan.
+    for d in os.listdir(rules_dir):
+        if os.path.isdir(os.path.join(rules_dir, d)) and d not in pages:
+            shutil.rmtree(os.path.join(rules_dir, d))
     for rid, text in pages.items():
-        d = os.path.join(RULES_DIR, rid)
+        d = os.path.join(rules_dir, rid)
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as fh:
             fh.write(text)
     # Surface files: landing, rule index hub, walkthrough, sitemap, robots.
     # Ensure each parent dir exists (the walkthrough lives in its own subdir).
     for path, text in surface.items():
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
+        dest = (path if out_dir is None
+                else os.path.join(out_dir, os.path.relpath(path, SITE_DIR)))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w", encoding="utf-8") as fh:
             fh.write(text)
     print("wrote %d rule pages + landing + hub + walkthrough + licensing + compare + de + sitemap + robots under %s"
-          % (len(pages), os.path.relpath(SITE_DIR, HERE)))
+          % (len(pages), os.path.relpath(site_dir, HERE)))
     return 0
 
 

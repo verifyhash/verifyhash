@@ -19,6 +19,15 @@ Asserted (each maps to a task acceptance criterion):
       literal <script> from invoice data lands in the output.
   (f) --baseline + --format html is rejected with a clear error and nonzero
       exit; the unknown-format usage lists html.
+  (g) DETERMINISM (RPT.8): building the FULL document twice from the same
+      committed fixture is byte-identical (byte-stability / regeneration
+      stability — catches timestamp, dict-order or set-order leakage), both
+      in-process via build_report+build_html and across two real CLI runs.
+  (h) PATH INVARIANCE (RPT.8): built from a fixture referenced via an
+      ABSOLUTE path under $HOME, the document contains no $HOME prefix, no
+      absolute input-file path, no username, and no wall-clock timestamp —
+      and a relative-path invocation of the same file (cwd = the fixture's
+      dir) yields byte-identical HTML to the absolute-path invocation.
 """
 
 import os
@@ -180,6 +189,81 @@ class HtmlInjectionSafety(unittest.TestCase):
         _assert_self_contained(self, out)
         self.assertNotIn(payload, out)
         self.assertNotIn("<script>alert", out)
+
+
+class HtmlDeterminism(unittest.TestCase):
+    """RPT.8: the HTML report is a reproducible CI artifact — byte-stable
+    across regenerations and invariant to how (and from where) the input file
+    path was spelled. No timestamp, no $HOME, no username in the bytes."""
+
+    def test_whole_document_regeneration_byte_identical(self):
+        # (g) Build the FULL document twice from the same committed fixture:
+        # the two outputs must be byte-identical (whole-document byte-stability
+        # over regeneration — any wall-clock timestamp, unordered-dict or
+        # set-iteration leakage in the emitter breaks this).
+        doc1 = build_html(build_report(BASE, profile="xrechnung"))
+        doc2 = build_html(build_report(BASE, profile="xrechnung"))
+        self.assertEqual(
+            doc1.encode("utf-8"), doc2.encode("utf-8"),
+            "regenerating the HTML report from the same fixture is NOT "
+            "byte-identical — nondeterminism in build_report/build_html")
+        _assert_self_contained(self, doc1)
+
+        # The same holds across two REAL CLI runs (catches env/process-level
+        # nondeterminism the in-process pair cannot see).
+        p1 = _run(["--profile", "xrechnung", "--format", "html", BASE])
+        p2 = _run(["--profile", "xrechnung", "--format", "html", BASE])
+        self.assertEqual(p1.returncode, 0, p1.stdout + p1.stderr)
+        self.assertEqual(p2.returncode, 0, p2.stdout + p2.stderr)
+        self.assertEqual(
+            p1.stdout, p2.stdout,
+            "two CLI runs over the same fixture emitted different HTML bytes")
+
+    def test_path_invariance_no_home_username_timestamp(self):
+        # (h) Precondition: the committed fixture IS referenced via an
+        # absolute path under $HOME (so a leak would be visible).
+        home = os.path.expanduser("~")
+        username = os.path.basename(home.rstrip(os.sep))
+        self.assertTrue(os.path.isabs(BASE), "fixture path must be absolute")
+        self.assertTrue(BASE.startswith(home + os.sep),
+                        "precondition: fixture must live under $HOME "
+                        "(got %r, home %r)" % (BASE, home))
+        self.assertTrue(username, "cannot derive a username from $HOME")
+
+        doc = build_html(build_report(BASE, profile="xrechnung"))
+        # No absolute input-file path, no $HOME prefix, no username.
+        self.assertNotIn(BASE, doc,
+                         "absolute input path leaked into the HTML")
+        self.assertNotIn(os.path.dirname(BASE), doc,
+                         "input directory path leaked into the HTML")
+        self.assertNotIn(home, doc, "$HOME leaked into the HTML")
+        self.assertNotIn(username, doc, "username leaked into the HTML")
+        # No wall-clock timestamp: today's ISO date must not appear (the
+        # document is rebuilt at test time, so any embedded 'now' would).
+        import datetime
+        self.assertNotIn(datetime.date.today().isoformat(), doc,
+                         "wall-clock date leaked into the HTML")
+        # The basename IS still shown (utility kept: which file was checked).
+        self.assertIn(os.path.basename(BASE), doc)
+
+        # Relative-path invocation (bare filename, cwd = the fixture's own
+        # directory) vs absolute-path invocation must be BYTE-IDENTICAL —
+        # the html surface follows sarif's path-invariance rule, not the
+        # text/json verbatim-echo rule (REPORT-FORMATS.md "Path echo").
+        env = dict(os.environ)
+        env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
+        rel = subprocess.run(
+            [sys.executable, "-m", "einvoice.report", "--profile",
+             "xrechnung", "--format", "html", os.path.basename(BASE)],
+            cwd=os.path.dirname(BASE), env=env,
+            capture_output=True, text=True, timeout=120)
+        absr = _run(["--profile", "xrechnung", "--format", "html", BASE])
+        self.assertEqual(rel.returncode, 0, rel.stdout + rel.stderr)
+        self.assertEqual(absr.returncode, 0, absr.stdout + absr.stderr)
+        self.assertEqual(
+            rel.stdout, absr.stdout,
+            "relative vs absolute invocation of the same fixture produced "
+            "different HTML bytes (path leaked into the document)")
 
 
 class HtmlBaselineRejected(unittest.TestCase):

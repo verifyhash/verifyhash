@@ -1781,6 +1781,12 @@ def build_html(report):
     references, no ``<img>``, no web fonts, no analytics — the file opens offline
     with zero network requests.
 
+    Determinism + path invariance (RPT.8, pinned by ``test_report_html.py``):
+    the document embeds NO wall-clock timestamp and NO machine path — the
+    ``source`` meta line shows only ``os.path.basename(report["source"])``, so
+    building the same report twice, or from a relative vs an absolute path to
+    the same file, yields byte-identical HTML (a reproducible CI artifact).
+
     Layout:
       * a pass/fail banner ("Conformant" vs "N finding(s)") built from the same
         summary fields (``valid``/``fatal_count``/``warning_count``/
@@ -1812,8 +1818,14 @@ def build_html(report):
     parts.append("<body>")
     parts.append("<main>")
     parts.append("<h1>EN 16931 / XRechnung conformance report</h1>")
+    # PATH-INVARIANCE (RPT.8): the HTML artifact is archived/shared from CI,
+    # so it must never embed the caller's filesystem layout — only the input
+    # file's BASENAME is shown (the json ``source`` field keeps the verbatim
+    # argv string; sarif embeds no path at all — see REPORT-FORMATS.md "Path
+    # echo"). Relative and absolute invocations of the same file therefore
+    # produce byte-identical HTML.
     parts.append('<p class="meta">source: %s &middot; profile: %s</p>'
-                 % (_h(source) or "(stdin)", _h(profile)))
+                 % (_h(os.path.basename(source)) or "(stdin)", _h(profile)))
 
     if report.get("error"):
         # Not-well-formed XML: a single error row — the HTML analogue of the

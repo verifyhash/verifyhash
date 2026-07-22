@@ -53,6 +53,18 @@ Checks (each an independent hard assert):
       attribute and bound to the live registries (coverage.engine_fireable_ids,
       the Peppol id sets, report.REPORT_FORMATS, the cli exit-code constants)
       — the page can never silently lie about the engine.
+  (i) DETERMINISM (T-VHSITEDET.1): the generator is run TWICE (fresh
+      render_all + render_surface + write each time) into two separate temp
+      output directories — never the committed www/ — and the two emitted
+      trees must have EQUAL file sets and every corresponding file must be
+      byte-identical (regeneration byte-identity: catches dict/set-order or
+      wall-clock leakage). The emitted set must cover every page family
+      (landing, hub, walkthrough, licensing, compare/, de/, de/walkthrough/,
+      sitemap.xml, robots.txt, and one page per catalog rule). PATH
+      INVARIANCE: no emitted byte contains $HOME, the repo's absolute path,
+      the temp output dir's own path, or the username — the tree is
+      publishable from any machine. (Committed-tree identity to a fresh
+      render is separately pinned by (d) --check.)
   (e) NAV + SITEMAP INTEGRITY (VHW.3, mirrors weatherhack WXQ.3): the landing
       page, rule index hub, walkthrough, licensing page, the comparison page,
       the German product/quickstart page, sitemap.xml and
@@ -761,6 +773,78 @@ def main():
             check('href="walkthrough/index.html"' in de_raw,
                   "www/de/index.html has no href=\"walkthrough/index.html\" "
                   "link to the German walkthrough")
+
+    # ---- (i) DETERMINISM (T-VHSITEDET.1): regenerate TWICE into two temp
+    # output dirs -> equal file sets + byte-identical files; no path leakage.
+    # The committed www/ tree is NEVER written by this section (out_dir=...).
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp1, \
+            tempfile.TemporaryDirectory() as tmp2:
+        # First run and second run: each is a FULL fresh generator pass
+        # (catalog load + render_all + render_surface + write), so any
+        # nondeterminism in ordering or rendering shows up between them.
+        cat1 = _remediation.load_catalog()
+        _gen.write(_gen.render_all(cat1), _gen.render_surface(cat1),
+                   out_dir=tmp1)
+        cat2 = _remediation.load_catalog()
+        _gen.write(_gen.render_all(cat2), _gen.render_surface(cat2),
+                   out_dir=tmp2)
+
+        def _tree(root):
+            """rel path -> raw bytes for every file under root."""
+            out = {}
+            for dirpath, _dirs, files in os.walk(root):
+                for fn in files:
+                    p = os.path.join(dirpath, fn)
+                    with open(p, "rb") as fh:
+                        out[os.path.relpath(p, root)] = fh.read()
+            return out
+
+        t1, t2 = _tree(tmp1), _tree(tmp2)
+        check(set(t1) == set(t2),
+              "second run emitted a DIFFERENT file set; only-in-run1=%s "
+              "only-in-run2=%s"
+              % (sorted(set(t1) - set(t2))[:5], sorted(set(t2) - set(t1))[:5]))
+        drifted = [rel for rel in sorted(set(t1) & set(t2))
+                   if t1[rel] != t2[rel]]
+        check(not drifted,
+              "regenerated files are NOT byte-identical across the two runs: "
+              "%s" % drifted[:10])
+
+        # The emitted set covers EVERY page family — incl. www/compare/ and
+        # www/de/ (the surfaces OWNER-GOLIVE Step 3 takes live) — plus one
+        # page per catalog rule.
+        for rel in ("index.html",
+                    os.path.join("rules", "index.html"),
+                    os.path.join("walkthrough", "index.html"),
+                    os.path.join("licensing", "index.html"),
+                    os.path.join("compare", "index.html"),
+                    os.path.join("de", "index.html"),
+                    os.path.join("de", "walkthrough", "index.html"),
+                    "sitemap.xml", "robots.txt"):
+            check(rel in t1,
+                  "regenerated tree is missing surface file %s" % rel)
+        for rid in sorted(want):
+            check(os.path.join("rules", rid, "index.html") in t1,
+                  "regenerated tree is missing rule page for %s" % rid)
+
+        # PATH INVARIANCE: no emitted byte may carry $HOME, the repo dir,
+        # the temp output dir's own path, or the username — the tree must be
+        # publishable from any machine with an unreviewable-diff-free deploy.
+        home = os.path.expanduser("~")
+        username = os.path.basename(home.rstrip(os.sep))
+        check(bool(username), "cannot derive a username from $HOME")
+        banned = [(home.encode("utf-8"), "$HOME path"),
+                  (HERE.encode("utf-8"), "repo absolute path"),
+                  (os.path.realpath(tmp1).encode("utf-8"), "temp output dir")]
+        if username:
+            banned.append((username.encode("utf-8"), "username"))
+        for rel in sorted(t1):
+            data = t1[rel]
+            for tok, label in banned:
+                check(tok not in data,
+                      "emitted file %s leaks the %s (%r)"
+                      % (rel, label, tok.decode("utf-8", "replace")))
 
     # ---- (d) --check is 0 on the committed tree, non-zero on a mutation -----
     check(_gen.main(["--check"]) == 0,

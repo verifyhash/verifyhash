@@ -71,6 +71,12 @@ Where the echoed path appears, per surface:
   `physicalLocation`/`artifactLocation`, and the only URIs are the static
   rule/help URLs. Relative-path and absolute-path invocations of the same file
   produce byte-identical SARIF.
+- **html** — shows only the input file's **basename** in its `source:` meta
+  line (the one place a path could appear), never the directory part: the
+  archived/shared HTML artifact embeds no home directory, username, or
+  machine path, and — like sarif — relative-path and absolute-path
+  invocations of the same file produce byte-identical HTML (no embedded
+  timestamp either; pinned by `test_report_html.py`).
 
 Two consequences worth relying on:
 
@@ -85,8 +91,9 @@ Two consequences worth relying on:
    a relative invocation emits no absolute path anywhere in json or sarif —
    reports are safe to commit or upload without exposing home directories or
    install locations. (Honest limit: if *you* pass an absolute path, that
-   string is echoed back verbatim, including whatever it reveals — choose the
-   spelling you are comfortable publishing.)
+   string is echoed back verbatim in **text** and **json**, including whatever
+   it reveals — choose the spelling you are comfortable publishing. **sarif**
+   and **html** never carry it: sarif embeds no path, html only the basename.)
 
 ## OS-level input errors
 

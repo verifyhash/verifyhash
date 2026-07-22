@@ -13,8 +13,82 @@ ever diverge.
 
 > Note: `verifyhash-einvoice` is **not** yet published to PyPI — publishing is
 > a deliberate human-gated step (see `REPUBLISH-PYPI.md`). Install it from a
-> checkout or vendored copy. The `0.1.0` section below records what the current
-> tree actually ships, not a PyPI release event.
+> checkout or vendored copy. Each section below records what the tree actually
+> ships at that version, not a PyPI release event.
+
+## [0.2.0] - 2026-07-22
+
+Everything here is in the tree today and covered by the committed test suite;
+like 0.1.0, this section describes the checkout, not a PyPI upload.
+
+### Added
+
+- **Rule coverage grew ~3.5x: the engine now fires 286 rules** (0.1.0
+  implemented a 50-rule EN 16931 core subset plus the 32 national `BR-DE-*`
+  asserts). The families 0.1.0 declared open — `BR-DEX-*` (extension) and
+  `BR-DE-CVD-*` — are now implemented, alongside the VAT-category rule
+  families (reverse charge `BR-AE-*`, intra-community `BR-IC-*`,
+  export `BR-G-*`, not-subject `BR-O-*`, zero/exempt/reduced rates,
+  allowance/charge `BR-AF-*`/`BR-AG-*`), `BR-TMP-*`, and a
+  `PEPPOL-EN16931-R*` subset. The count in this bullet is not prose-trusted:
+  `test_docs_rule_claims.py` fails the build if it stops equalling
+  `coverage.engine_fireable_ids()`, and every implemented rule remains
+  differential-tested against the official Schematron within the implemented
+  set (`CORRECTNESS.md` still declares what is NOT covered).
+- **GitHub Action** (`action/action.yml`): a composite action that validates
+  a file or directory of UBL/CII XML and Factur-X/ZUGFeRD PDF invoices in CI
+  and always writes a merged SARIF 2.1.0 file for
+  `github/codeql-action/upload-sarif` (inline PR annotations). It drives the
+  real `python3 -m einvoice.report` entrypoint — no second validation engine,
+  no new output format.
+- **`einvoice receipt --verify <receipt.json>`**: the tamper-evidence promise
+  as one command. Recomputes the receipt body hash and compares it to the
+  stored `content_sha256`: exit `0` VERIFIED, `1` TAMPERED, `2` not a
+  readable receipt; `--json` emits a machine object. Tamper detection is
+  totality-tested (every field/region of a golden receipt mutated and
+  rejected), and the documented CI recipe in `RECEIPT-VERIFICATION.md` is
+  executed verbatim by a drift-guard test.
+- **First-class `--help` / `-h`**, with a completeness guard binding the help
+  text to the real subcommand registry.
+- **Versioned JSON Schemas for the machine outputs** — `report.schema.json`,
+  `receipt.schema.json`, `attestation.schema.json`, plus info/rules/coverage
+  — each derived from the real emitter and drift-guarded, with a published
+  schema index.
+- **Reference-site surfaces** (committed under `www/`, deployed at
+  verifyhash.com/einvoice): German product/quickstart page `/de/` and a
+  German worked walkthrough `/de/walkthrough/` (original German prose,
+  hreflang-paired with the English pages); an honest KoSIT/Mustangproject
+  comparison at `/compare/` whose every stated engine figure is parsed back
+  out of the HTML and bound to the live registries; the licensing page
+  `/licensing/` (currently in explicit waitlist mode — checkout is not open
+  yet, and the page says so). `verify_live.py` now derives its post-deploy
+  checks from the committed tree, so no page family can silently escape
+  live verification again.
+
+### Changed
+
+- **First-run errors are actionable instead of raw internals** (previously a
+  wrong input could produce a bare parser message, a traceback, or a
+  misleading reason):
+  - an unknown subcommand or flag is now *named* in the usage error;
+  - a non-XML, non-PDF input still exits `3`, but the `S-WF` line now adds a
+    hint naming the two supported input shapes — and if the bytes carry the
+    `%PDF-` magic, the hint redirects to the container route
+    (`python3 -m einvoice.report <invoice.pdf>`);
+  - a genuine CII `CrossIndustryInvoice` root on the raw-XML `validate` path
+    gets an `S-ROOT` message naming the supported CII route instead of a
+    generic wrong-root failure;
+  - OS-level input problems (unreadable file, directory-instead-of-file,
+    dangling symlink, closed stdin) exit `2` with one line naming the path
+    and the reason — never a traceback, never a fake FAIL verdict.
+  All pinned in `EXIT-CODES.md`, whose code table is itself bound both
+  directions to the set of codes the CLI can actually produce.
+- **Quiet conventional exits for plumbing events**: `141` on a broken pipe,
+  `130` on SIGINT, `143` on SIGTERM — additive; codes `0/1/2/3` and all
+  report bytes are unchanged.
+- **Batch validation got measurably faster**: a per-document tag index
+  removed a ~48x repeated-scan constant in syntax binding, with findings
+  proven byte-identical before/after.
 
 ## [0.1.0] - 2026-07-07
 
@@ -79,4 +153,5 @@ installs and runs anywhere Python 3.8+ runs, with no supply chain to audit.
   `py.typed` marker for downstream type checkers, and a build that ships only
   the pure-Python package (the rule corpus and test vectors stay in the repo).
 
+[0.2.0]: https://github.com/verifyhash/verifyhash
 [0.1.0]: https://github.com/verifyhash/verifyhash

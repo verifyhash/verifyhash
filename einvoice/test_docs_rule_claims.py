@@ -56,6 +56,10 @@ satisfy the README.
 
 Fast, stdlib-only, offline. Adds no product behaviour and changes no
 validation. Run: python3 test_docs_rule_claims.py
+
+ALSO (T-VHDOCV.6, bottom of this file): the fireable-rule count stated in
+CHANGELOG.md's topmost released section is bound to the same
+``engine_fireable_ids()`` registry — see ChangelogFireableCountBound.
 """
 
 import os
@@ -409,6 +413,80 @@ class TestParserGrammar(unittest.TestCase):
         ids, _ = expand_chunk("BR-XX-999")
         self.assertEqual(ids, ["BR-XX-999"])
         self.assertNotIn("BR-XX-999", fireable())
+
+
+# --------------------------------------------------------------------------- #
+# T-VHDOCV.6: CHANGELOG fireable-count drift guard.
+#
+# The topmost CHANGELOG section states the engine's fireable-rule count in
+# prose ("… fires N rules …"). That number must never be hand-maintained
+# folklore: it is bound here to len(engine_fireable_ids()), the same live
+# registry the README guards above use. If the engine grows (or a rule is
+# removed) without the CHANGELOG being updated, this fails naming both
+# numbers; if the guarded phrase is reworded away entirely, the non-vacuity
+# assert fails loudly instead of the guard silently going vacuous.
+# --------------------------------------------------------------------------- #
+CHANGELOG = os.path.join(HERE, "CHANGELOG.md")
+# "the engine now fires 286 rules" — the guarded claim grammar. Reword the
+# CHANGELOG only together with this pattern.
+FIRES_N_RULES_RE = re.compile(r"\bfires\s+(\d+)\s+rules\b")
+# any other "<N> fireable" phrasing in the section is bound too, so a future
+# edit cannot introduce a second, stale copy of the count.
+N_FIREABLE_RE = re.compile(r"\b(\d+)\s+fireable\b")
+
+
+def changelog_topmost_section():
+    """The topmost released section of CHANGELOG.md: from the first
+    ``## [x.y.z]`` heading (Unreleased skipped) to the next ``## `` heading
+    or EOF. Heading included."""
+    with open(CHANGELOG, encoding="utf-8") as fh:
+        text = fh.read()
+    headings = [m for m in re.finditer(r"(?m)^## .*$", text)
+                if not re.search(r"unreleased", m.group(0), re.IGNORECASE)]
+    if not headings:
+        raise AssertionError("CHANGELOG.md has no '## [x.y.z]' section")
+    start = headings[0].start()
+    end = headings[1].start() if len(headings) > 1 else len(text)
+    return text[start:end]
+
+
+class ChangelogFireableCountBound(unittest.TestCase):
+    """The CHANGELOG's stated rule count == the live engine registry."""
+
+    def test_topmost_section_states_the_live_fireable_count(self):
+        section = changelog_topmost_section()
+        claims = [int(n) for n in FIRES_N_RULES_RE.findall(section)]
+        self.assertTrue(
+            claims,
+            "the topmost CHANGELOG section no longer contains the guarded "
+            "'fires <N> rules' phrase — if the wording was deliberately "
+            "changed, update FIRES_N_RULES_RE in the same edit so the count "
+            "stays bound to the engine")
+        live = len(fireable())
+        for n in claims:
+            self.assertEqual(
+                n, live,
+                "CHANGELOG's topmost section claims the engine fires %d "
+                "rules but engine_fireable_ids() returns %d — update the "
+                "CHANGELOG prose (doc fix); never touch the engine to match "
+                "the doc" % (n, live))
+
+    def test_no_stale_fireable_phrasing_in_topmost_section(self):
+        section = changelog_topmost_section()
+        live = len(fireable())
+        for n in (int(x) for x in N_FIREABLE_RE.findall(section)):
+            self.assertEqual(
+                n, live,
+                "CHANGELOG topmost section carries a '%d fireable' claim "
+                "that disagrees with engine_fireable_ids() == %d" % (n, live))
+
+    def test_topmost_section_is_nonempty_prose(self):
+        # Non-vacuity for the extractor itself: a real section with the live
+        # count present as a literal number.
+        section = changelog_topmost_section()
+        self.assertGreater(len(section.splitlines()), 5,
+                           "topmost CHANGELOG section suspiciously short")
+        self.assertIn(str(len(fireable())), section)
 
 
 if __name__ == "__main__":

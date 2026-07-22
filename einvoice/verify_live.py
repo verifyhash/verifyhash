@@ -6,6 +6,17 @@ compares what is served against the committed ``www/`` tree. It NEVER
 edits live content and NEVER touches the deploy pipeline — a mismatch is
 reported as a finding (redeploy needed), not fixed here.
 
+COVERAGE IS DERIVED, NOT HAND-KEPT: the byte-compare and 200-spot-check
+lists are walked from the committed ``www/`` tree when the module loads —
+a pure local directory listing, no network and no file reads (every
+``**/index.html`` page family — ``/``, ``/rules/`` + every rule page,
+``/walkthrough/``, ``/de/``, ``/de/walkthrough/``, ``/compare/``,
+``/licensing/`` — plus ``sitemap.xml`` and ``robots.txt``), so a newly
+committed page family is automatically verified live. That is ~290+ URLs
+fetched twice (200-check, then byte-compare); expect a run to take a few
+minutes on a normal link. ``test_verify_live_paths.py`` pins the derived
+lists to the committed tree without any network.
+
 This is intentionally NOT wired into any test/gate suite: it depends on
 the network and on a live deploy existing, which are not properties of
 the source tree. Run it by hand after a deploy:
@@ -33,24 +44,41 @@ WWW = os.path.join(HERE, "www")
 DEFAULT_BASE = "https://verifyhash.com/einvoice"
 TIMEOUT = 15
 
-# (live sub-path relative to base, committed file relative to www/)
-BYTE_COMPARE = [
-    ("/", "index.html"),
-    ("/rules/", "rules/index.html"),
-    ("/rules/BR-DE-15/", "rules/BR-DE-15/index.html"),
-    ("/rules/BR-DE-CVD-01/", "rules/BR-DE-CVD-01/index.html"),
-    ("/rules/PEPPOL-EN16931-R001/", "rules/PEPPOL-EN16931-R001/index.html"),
-    ("/walkthrough/", "walkthrough/index.html"),
-    ("/sitemap.xml", "sitemap.xml"),
-    ("/robots.txt", "robots.txt"),
-]
+def committed_pages():
+    """Every page of the committed ``www/`` tree as (live sub-path, rel file).
 
-# paths that must serve 200 (superset of the byte-compared ones)
-SPOT_200 = [
-    "/", "/rules/", "/rules/BR-DE-15/", "/rules/BR-DE-CVD-01/",
-    "/rules/PEPPOL-EN16931-R001/", "/walkthrough/",
-    "/sitemap.xml", "/robots.txt",
-]
+    DERIVED, not hand-kept: one entry per ``www/**/index.html`` (the sub-path
+    is the containing directory with a trailing slash, ``/`` for the root
+    page) plus ``sitemap.xml`` and ``robots.txt``. Because the list is walked
+    from disk, a future page family (the way ``/de/`` and ``/compare/`` were
+    added) can never silently drop out of live verification.
+
+    Pure local directory walk — NO network and no file reads; the committed
+    bytes are only read later, inside main()'s byte-compare phase.
+    ``test_verify_live_paths.py`` binds this mapping to the committed tree.
+    """
+    pairs = []
+    for dirpath, dirnames, filenames in os.walk(WWW):
+        dirnames.sort()
+        if "index.html" not in filenames:
+            continue
+        rel = os.path.relpath(os.path.join(dirpath, "index.html"), WWW)
+        rel = rel.replace(os.sep, "/")
+        sub = "/" if rel == "index.html" else "/" + rel[: -len("index.html")]
+        pairs.append((sub, rel))
+    for extra in ("sitemap.xml", "robots.txt"):
+        if os.path.isfile(os.path.join(WWW, extra)):
+            pairs.append(("/" + extra, extra))
+    return sorted(pairs)
+
+
+# (live sub-path relative to base, committed file relative to www/) —
+# the FULL committed surface, ~290+ pages; see committed_pages().
+BYTE_COMPARE = committed_pages()
+
+# paths that must serve 200 (same derived surface; byte-compare then also
+# proves content identity on top of the plain 200)
+SPOT_200 = [sub for sub, _rel in BYTE_COMPARE]
 
 NOINDEX_RE = re.compile(rb"noindex", re.IGNORECASE)
 CANONICAL_RE = re.compile(

@@ -7,8 +7,8 @@ at-a-glance record of *what artifact this is and where its parts come from*.
 | Field | Value |
 | --- | --- |
 | Package | `verifyhash-einvoice` (the pure-Python `einvoice` package) |
-| Version | `0.1.0` (source of truth: [`pyproject.toml`](pyproject.toml)) |
-| PURL | `pkg:pypi/verifyhash-einvoice@0.1.0` |
+| Version | `0.2.0` (source of truth: [`pyproject.toml`](pyproject.toml)) |
+| PURL | `pkg:pypi/verifyhash-einvoice@0.2.0` |
 | License | Apache-2.0 |
 | Runtime dependencies | **none** — Python 3 (>=3.8) stdlib only (`dependencies = []`) |
 | SBOM | [`sbom/bom.json`](sbom/bom.json), **CycloneDX 1.5** JSON (<https://cyclonedx.org/docs/1.5/json/>) |

@@ -185,7 +185,7 @@ context; a source checkout carries them all.
 
 ```python
 caps = einvoice.capabilities()
-print(caps["version"], caps["profiles"])   # e.g. 0.1.0 ['en16931', 'xrechnung']
+print(caps["version"], caps["profiles"])   # e.g. 0.2.0 ['en16931', 'xrechnung']
 if "sarif" in caps["formats"]:
     ...  # safe to request --format sarif from this build
 ```

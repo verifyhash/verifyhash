@@ -11,7 +11,7 @@ loop stages this packet but **never uploads** — publishing needs a PyPI accoun
 |---|---|---|
 | Distribution name | `verifyhash-einvoice` | `pyproject.toml` `[project] name` |
 | Name availability on PyPI | **AVAILABLE** — `GET https://pypi.org/pypi/verifyhash-einvoice/json` → **HTTP 404** (`{"message": "Not Found"}`), observed **2026-07-16T10:20:40Z** | public read-only GET; 404 = no such project = the name is free to claim |
-| Version to publish | `0.1.0` | `pyproject.toml` `[project] version`, matches `einvoice.__version__` |
+| Version to publish | `0.2.0` | `pyproject.toml` `[project] version`, matches `einvoice.__version__` |
 | Runtime dependencies | **none** (stdlib only) | `pyproject.toml` `dependencies = []`, enforced by `test_packaging.py` + `test_pypi_packaging.py` |
 | Console script | `einvoice = einvoice.cli:main` | `pyproject.toml` `[project.scripts]` |
 | Built artifact staged under `einvoice/dist/` | **NONE** — see next section | no wheel/sdist could be built on this box |
@@ -75,8 +75,8 @@ python3 test_pypi_packaging.py
 
 # 1. clean any stale build output, then build the sdist + wheel
 rm -rf dist build *.egg-info
-python3 -m build            # writes dist/verifyhash_einvoice-0.1.0-py3-none-any.whl
-                            #    and dist/verifyhash_einvoice-0.1.0.tar.gz
+python3 -m build            # writes dist/verifyhash_einvoice-0.2.0-py3-none-any.whl
+                            #    and dist/verifyhash_einvoice-0.2.0.tar.gz
 
 # 2. sanity-check the metadata renders (catches a bad long_description)
 python3 -m twine check dist/*
@@ -85,7 +85,7 @@ python3 -m twine check dist/*
 python3 -m twine upload --repository testpypi dist/*
 #   then, in a scratch venv:
 #   python3 -m pip install --index-url https://test.pypi.org/simple/ verifyhash-einvoice
-#   einvoice --version   # -> einvoice 0.1.0
+#   einvoice --version   # -> einvoice 0.2.0
 
 # 4. upload to the real PyPI
 python3 -m twine upload dist/*
@@ -105,7 +105,7 @@ script works:
 ```bash
 python3 -m venv /tmp/vh-check && . /tmp/vh-check/bin/activate
 python3 -m pip install verifyhash-einvoice && einvoice --version
-#   expected: einvoice 0.1.0
+#   expected: einvoice 0.2.0
 deactivate && rm -rf /tmp/vh-check
 ```
 

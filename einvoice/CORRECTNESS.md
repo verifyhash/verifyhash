@@ -6,8 +6,10 @@ importantly — what is **not** yet proven.
 
 The validator has **two distinct layers with separate coverage claims**:
 
-1. **EN 16931 core** — 108 of the ~200 EU-core business rules
-   (`einvoice/rules.py`), proven against the official CEN Schematron (§2);
+1. **EN 16931 core** — 108 of the ~200 EU-core business rules at this
+   document's differential snapshot (109 of ~200 once the deferred BR-S-08
+   landed — see §5; the current, larger engine-bound count is stated in
+   `CHANGELOG.md`), proven against the official CEN Schematron (§2);
 2. **XRechnung national CIUS (BR-DE-\*)** — all 32 German national asserts of
    the official KoSIT XRechnung 3.0.2 UBL Schematron
    (`einvoice/rules_xrechnung.py`), proven against that artifact (§2a). The
@@ -392,7 +394,12 @@ The 100% figure is **100% agreement on the 108 rules we implement, over this
 1085-invoice corpus.** It is not a claim of EN 16931 or XRechnung conformance.
 Specifically:
 
-- **Only 108 of ~200 EN 16931 business rules are implemented.** Still missing:
+- **Only 108 of ~200 EN 16931 business rules were implemented at this
+  snapshot — 109 of ~200 with BR-S-08, whose deferral (next bullet) has since
+  been closed; the engine has grown further since, and the CURRENT
+  engine-bound rule count lives in `CHANGELOG.md` and the package
+  description (guarded by `test_docs_rule_claims.py` /
+  `test_packaging.py`).** Still missing at the snapshot:
   BR-23 (quantity unit-of-measure code) and the rest of the BR-49..BR-67
   range (BR-52/53/54 supporting documents, BR-56 tax-representative VAT id,
   BR-58..60/64..67 identifier-scheme and item rules — BR-17..20, BR-49/50/51,
@@ -402,25 +409,32 @@ Specifically:
   **remaining** categories (`BR-AE/G/IC/O-02..10`: their seller-VAT-ID,
   taxable/tax-sum and exemption-reason rules — of AE/G/IC/O only the `-01`
   is implemented). The Standard-rated (S), Zero-rated (Z) and Exempt (E)
-  families ARE now fully covered (BR-S-01..07/09/10, BR-Z-01..10,
-  BR-E-01..10), with one deliberate exception: **BR-S-08 is deferred** —
-  see the note below. Also missing: the remaining `BR-DEC-*` (BT-136/137/141/142
+  families ARE now fully covered (BR-S-01..10, BR-Z-01..10,
+  BR-E-01..10 — BR-S-08, the one member deferred at the time of this
+  snapshot, has since been implemented and differential-proven; see the
+  note below). Also missing: the remaining `BR-DEC-*` (BT-136/137/141/142
   line allowance/charge amounts) and the `BR-CL-*` code lists beyond BR-CL-01. A
-  `valid: true` result means "none of our 108 rules fired", not "this invoice is
-  legally conformant". (BR-IG-*/BR-IP-* do not exist in the vendored CEN
+  `valid: true` result means "none of our implemented rules fired", not "this
+  invoice is legally conformant". (BR-IG-*/BR-IP-* do not exist in the vendored CEN
   artifact and therefore cannot be differential-proven; they are out of scope.)
-- **BR-S-08 (not implemented — an honest scope decision, not a parser limit).**
-  BR-S-08 requires, *for each distinct Standard VAT rate*, that the VAT
-  breakdown taxable amount (BT-116) equal Σ S-rated line net amounts (BT-131)
-  plus Σ S-rated document charge amounts (BT-99) minus Σ S-rated document
-  allowance amounts (BT-92) **restricted to lines/charges/allowances whose own
-  VAT rate equals that breakdown rate** (a per-rate `group-by` aggregation with
-  a ±1 tolerance band, and a parallel CreditNote arm). The parser now exposes
-  the per-line and per-allowance/charge category *rates*, so it is modelable;
-  it is deferred to its own batch so the multi-rate grouping and the CreditNote
-  path can be transcribed and differential-proven with the same rigour rather
-  than rushed in alongside the simpler S rules here. Until then it simply does
-  not fire, and the differential grades only the 108 rules we do implement.
+- **BR-S-08 (since implemented — the deferral is closed).** BR-S-08
+  requires, *for each distinct Standard VAT rate*, that the VAT breakdown
+  taxable amount (BT-116) equal Σ S-rated line net amounts (BT-131) plus
+  Σ S-rated document charge amounts (BT-99) minus Σ S-rated document
+  allowance amounts (BT-92) **restricted to lines/charges/allowances whose
+  own VAT rate equals that breakdown rate**. At this snapshot it was
+  deferred (an honest scope decision — the per-rate `group-by` and the
+  CreditNote arm deserved their own batch); it has since been transcribed
+  from BOTH vendored preprocessed artifacts into `einvoice/rules.py`
+  (`br_s_08`, flag `fatal`): the UBL binding's per-rate grouping with its
+  strict ±1 band (`TaxableAmount − 1 < sum and TaxableAmount + 1 > sum`),
+  its `exists()` gate on an S/$rate line or AllowanceCharge, and its
+  parallel CreditNote arm; and the CII binding's EXACT per-bucket
+  `round(x*100) div 100` equality (no tolerance band). It is graded in the
+  differential (`differential.py` carries a dedicated BT-116-shift mutation
+  on both syntaxes) and unit-pinned in `test_br_s08.py`, including the
+  official CEN `BR-S-08-1.xml`/`BR-S-08-3.xml` unit vectors. With BR-S-08
+  the set this snapshot describes becomes 109 of ~200 graded core rules.
 - **The XRechnung `BR-DE-*` CIUS layer is complete** for the UBL-Invoice
   artifact (all 32 asserts, §2a); the extension (`BR-DEX-*`) and CVD/TMP
   (`BR-DE-CVD-*`/`BR-TMP-*`) profiles have since been implemented too (see

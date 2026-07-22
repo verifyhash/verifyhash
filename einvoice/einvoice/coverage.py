@@ -283,6 +283,23 @@ def render_markdown(matrix, cii_parity=None):
         w("| `%s` | %s (`%s`) | %s | %s |"
           % (key, s["suite"], s["file"], s["version"], s["license"]))
     w("")
+    # Version-scope statement (T-VHXRV.1): pinned prose that
+    # test_xrechnung_version_scope.py asserts is present and current —
+    # emitted here so the byte-identical-render guard
+    # (test_coverage_matrix.py) and the version-scope guard can BOTH hold.
+    w("The vendored German national rule set is **KoSIT XRechnung "
+      "Schematron 2.5.0, which corresponds to the XRechnung 3.0.2 CIUS** "
+      "(the German EN 16931 Core Invoice Usage Specification). Every "
+      "`BR-DE-*`, `BR-DEX-*`, `BR-DE-CVD-*` and `BR-TMP-*` verdict on this "
+      "page is the ground truth of that specific published version — no "
+      "other XRechnung version is implied or supported. The version marker "
+      "is taken verbatim from the vendored artifact's Schematron title line "
+      "(`corpus/xrechnung-schematron/schematron/{ubl,cii}/"
+      "XRechnung-*-validation.sch`) and "
+      "`corpus/xrechnung-schematron/VENDORED.md`; "
+      "`test_xrechnung_version_scope.py` fails if the corpus is bumped "
+      "without this statement (and the table above) being updated to match.")
+    w("")
 
     # --- Summary counts ---
     rules = matrix["rules"]

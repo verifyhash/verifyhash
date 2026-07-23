@@ -504,6 +504,24 @@ def build_model(root):
         _norm_space(_text(el)) or ""
         for el in root.findall(".//ram:DueDateTypeCode", NS)
     ]
+    # BR-CL-07 context (CII) = ram:ReferenceTypeCode (any depth) — the object
+    # reference type code (BG-24). Unlike the UBL binding (which reads a
+    # cbc:ID @schemeID attribute under a DocumentTypeCode='130' reference),
+    # the CII assert tests the ELEMENT TEXT against the SAME UNTDID 1153
+    # restriction. Fed into the shared object_ref_scheme_codes slot.
+    inv.object_ref_scheme_codes = [
+        _norm_space(_text(el)) or ""
+        for el in root.findall(".//ram:ReferenceTypeCode", NS)
+    ]
+    # BR-CL-08 context (CII) = ram:SubjectCode (any depth) — the invoice note
+    # subject code (BT-21). The CII binding is an ordinary space-padded
+    # membership test of the element text against the CII UNTDID 4451 subset
+    # (a strict superset of the UBL subset). The UBL '#CODE#' note grammar has
+    # no CII analogue, so note_subject_texts stays empty on this leg.
+    inv.subject_codes = [
+        _norm_space(_text(el)) or ""
+        for el in root.findall(".//ram:SubjectCode", NS)
+    ]
     # BR-B-01/BR-B-02 (Italian split payment) node sets — RAW string values
     # (the official CII tests are the raw general comparisons
     # ``//ram:CategoryCode = 'B'`` / ``//ram:CountryID != 'IT'``). The two

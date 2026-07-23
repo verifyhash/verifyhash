@@ -23,6 +23,10 @@ from .codelists import (
     CII_COUNTRY_CODES,
     UBL_VAT_POINT_CODES,
     CII_VAT_POINT_CODES,
+    UNTDID_1153_CODES,
+    UBL_NOTE_SUBJECT_CODES,
+    CII_NOTE_SUBJECT_CODES,
+    UBL_NOTE_SUBJECT_PADDED,
     VAT_CATEGORY_CODES,
     VATEX_CODES,
     UNIT_CODES,
@@ -794,6 +798,93 @@ def br_cl_15(inv):
                 "Item origin country codes MUST be coded using ISO 3166-1; "
                 "%r is not a listed country code." % code,
                 "cac:OriginCountry/cbc:IdentificationCode")
+    return None
+
+
+def br_cl_07(inv):
+    """BR-CL-07: Object identifier identification scheme identifier MUST be
+    coded using a restriction of UNTDID 1153.
+
+    ONE 818-entry value set (both artifacts inline the same enumeration) but
+    two DIFFERENT context surfaces, transcribed per syntax into the shared
+    ``object_ref_scheme_codes`` slot:
+      * UBL: the @schemeID attribute of a cbc:ID under a DocumentReference /
+        AdditionalDocumentReference whose cbc:DocumentTypeCode = '130'
+        (BG-24). The value tested is the ATTRIBUTE, not the element text.
+      * CII: the text of ram:ReferenceTypeCode.
+    The official test HOLDS iff the value has no internal space AND is in the
+    list, so it FIRES exactly when ``_bad_code`` is true.
+    """
+    for code in inv.object_ref_scheme_codes:
+        if _bad_code(code, UNTDID_1153_CODES):
+            loc = ("ram:ReferenceTypeCode" if inv.syntax == "cii"
+                   else "cac:AdditionalDocumentReference/cbc:ID/@schemeID")
+            return Violation(
+                "BR-CL-07",
+                "Object identifier identification scheme identifier MUST be "
+                "coded using a restriction of UNTDID 1153; %r is not a listed "
+                "code." % code,
+                loc)
+    return None
+
+
+def _ubl_note_subject_fires(note_text):
+    """Reproduce EXACTLY the UBL BR-CL-08 '#CODE#' prefix grammar.
+
+    The official assert is the disjunction
+      ``(contains(.,'#') and string-length(T)=3 and contains(' L ', T))
+        or not(contains(.,'#')) or not(string-length(T)=3)``
+    where ``T = substring-before(substring-after(., '#'), '#')`` — the text
+    between the FIRST two '#' characters. It FAILS (the rule fires) only when
+    ALL three disjuncts are false, i.e. the note contains a '#', the token
+    between the first two '#' is exactly 3 characters, AND that token is not
+    found in the list. Crucially the artifact tests ``contains(' L ', T)``
+    with an UN-padded token, so a substring (not membership) test against the
+    exact padded list string is reproduced here.
+    """
+    if "#" not in note_text:
+        return False
+    after = note_text.split("#", 1)[1]
+    if "#" not in after:
+        # substring-before(after, '#') == '' when the second '#' is absent —
+        # length 0 != 3, so the assert holds (does not fire).
+        return False
+    token = after.split("#", 1)[0]
+    if len(token) != 3:
+        return False
+    return token not in UBL_NOTE_SUBJECT_PADDED
+
+
+def br_cl_08(inv):
+    """BR-CL-08: Invoice note subject code MUST be coded using UNTDID 4451.
+
+    Two DIFFERENT bindings AND two DIFFERENT subsets (the CII set is a strict
+    superset of the UBL set), selected per syntax:
+      * UBL context /ubl:Invoice/cbc:Note | /cn:CreditNote/cbc:Note: a
+        ``#CODE#`` prefix grammar in the document note free text — fires only
+        when a 3-char '#'-delimited token is present but outside the UBL 4451
+        subset (see ``_ubl_note_subject_fires``).
+      * CII context ram:SubjectCode: an ordinary space-padded membership test
+        of the element text against the CII 4451 subset.
+    """
+    if inv.syntax == "cii":
+        for code in inv.subject_codes:
+            if _bad_code(code, CII_NOTE_SUBJECT_CODES):
+                return Violation(
+                    "BR-CL-08",
+                    "Invoice note subject code MUST be coded using a "
+                    "restriction of UNTDID 4451; %r is not a listed code."
+                    % code,
+                    "ram:SubjectCode")
+        return None
+    for note in inv.note_subject_texts:
+        if _ubl_note_subject_fires(note):
+            token = note.split("#", 1)[1].split("#", 1)[0]
+            return Violation(
+                "BR-CL-08",
+                "Invoice note subject code MUST be coded using UNCL 4451; the "
+                "'#'-delimited subject token %r is not a listed code." % token,
+                "cbc:Note")
     return None
 
 
@@ -6000,7 +6091,8 @@ ALL_RULES = [
     br_49, br_50, br_51, br_52, br_53, br_54, br_55, br_56, br_57,
     br_61, br_62, br_63, br_64, br_65,
     br_cl_01,
-    br_cl_03, br_cl_04, br_cl_05, br_cl_06, br_cl_10, br_cl_11, br_cl_13,
+    br_cl_03, br_cl_04, br_cl_05, br_cl_06, br_cl_07, br_cl_08,
+    br_cl_10, br_cl_11, br_cl_13,
     br_cl_14, br_cl_15, br_cl_16,
     br_cl_17, br_cl_18, br_cl_19, br_cl_20, br_cl_21, br_cl_22, br_cl_23,
     br_cl_24, br_cl_25, br_cl_26,

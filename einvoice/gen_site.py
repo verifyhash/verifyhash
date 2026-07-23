@@ -655,7 +655,7 @@ def render_landing():
     title = ("EN 16931 / XRechnung conformance for German ERP & billing "
              "developers — einvoice")
     description = ("A free, zero-dependency EN 16931 / XRechnung conformance "
-                   "validator for German ERP and billing developers: 295 "
+                   "validator for German ERP and billing developers: 297 "
                    "differentially-proven business rules, what conformance "
                    "is, who needs it, and how to wire the CI gate or GitHub "
                    "Action in minutes.")
@@ -674,7 +674,7 @@ def render_landing():
     w('<p class="lead">A zero-dependency, self-hostable conformance validator '
       "for <strong>EN 16931</strong> electronic invoices, targeting the German "
       "<strong>XRechnung</strong> CIUS (UBL 2.1 <code>Invoice</code> and "
-      "UN/CEFACT CII syntaxes). It asserts <strong>295 business rules</strong>, "
+      "UN/CEFACT CII syntaxes). It asserts <strong>297 business rules</strong>, "
       "each differentially proven against the official Schematron artifacts, "
       "and runs offline against a vendored copy of the official rule corpus — "
       "no lxml, no Java, no Saxon, no Schematron toolchain, no network calls. "
@@ -710,7 +710,7 @@ def render_landing():
       "you whether the output is valid.</p>")
 
     w("<h2>What is proven — the current coverage numbers</h2>")
-    w("<p>The engine asserts <strong>295 business rules</strong>: 217 of the "
+    w("<p>The engine asserts <strong>297 business rules</strong>: 219 of the "
       "223 official EN 16931 <code>BR-*</code> rule ids per CEN syntax "
       "universe (UBL and CII), the complete German XRechnung CIUS + extension "
       "layer (<code>BR-DE-*</code>, <code>BR-DEX-*</code>, "
@@ -733,8 +733,8 @@ def render_landing():
       "both bindings</strong>. Proof parity between the two syntaxes is "
       "machine-tracked rather than frozen in prose: a test recomputes the "
       "worklist live from the coverage matrix and the vendored CII "
-      "Schematron. That worklist is now <strong>closed</strong>: 279 of the "
-      "295 asserted rules are differential-proven on both UBL and CII, 12 are "
+      "Schematron. That worklist is now <strong>closed</strong>: 281 of the "
+      "297 asserted rules are differential-proven on both UBL and CII, 12 are "
       "officially UBL-only and 4 are CII-only, with <strong>0 rules left on the "
       "cii-fireable worklist</strong> — every UBL-only rule is resolved with "
       "verbatim artifact evidence (4 cii-artifact-defective, 8 "
@@ -751,13 +751,13 @@ def render_landing():
       "machine-listed as known-open in <code>COVERAGE.md</code>, never guessed. "
       "They surface under a distinct <code>syntax_bindings</code> category in "
       "the <code>--json</code> output as advisory warnings that never change the "
-      "exit code, kept strictly separate from the 295 business-rule count.</p>")
+      "exit code, kept strictly separate from the 297 business-rule count.</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Coverage matrix (COVERAGE.md)</a> — the authoritative '
       "per-rule inventory: every asserted rule, the syntax it is proven in, "
       "its severity, and every deliberate exclusion with verbatim artifact "
       "evidence.</li>" % _h(_REPO_COVERAGE))
-    w('<li><a href="%s">Remediation catalog</a> — 295 machine-readable '
+    w('<li><a href="%s">Remediation catalog</a> — 297 machine-readable '
       "entries (rule, plain-language fix, XML location, severity, English and "
       "German), the single source of truth these rule pages are generated "
       "from.</li>" % _h(_REPO_REMEDIATION))
@@ -785,8 +785,10 @@ def render_landing():
     w('<h2>Honest scope</h2>')
     w("<p>Auditable, but not a legal guarantee. A green result means "
       "&ldquo;no implemented fatal rule fired&rdquo;, not &ldquo;certified "
-      "legally conformant&rdquo;: 4 official <code>BR-CL-*</code> code-list "
-      "checks are deferred (documented deliberate exclusions, not coverage), "
+      "legally conformant&rdquo;: every fireable official "
+      "<code>BR-CL-*</code> code-list check is now implemented in both "
+      "syntaxes (the ids the engine does not assert are documented deliberate "
+      "exclusions — never-firing <code>test=\"true()\"</code> tautologies), "
       "structural XSD validation is not performed, and there is no UBL "
       "<code>CreditNote</code> root. The exact implemented set and its limits "
       "are written up in the repository README, <code>COVERAGE.md</code> and "
@@ -875,7 +877,7 @@ def render_landing():
       "<code>Invoice</code> und UN/CEFACT CII). Er l&auml;uft offline gegen "
       "eine mitgelieferte, auditierbare Kopie des offiziellen Regelwerks — "
       "und damit unver&auml;ndert in jeder CI-Pipeline.</p>")
-    w("<p>Der Pr&uuml;fer setzt <strong>295 Gesch&auml;ftsregeln</strong> "
+    w("<p>Der Pr&uuml;fer setzt <strong>297 Gesch&auml;ftsregeln</strong> "
       "durch: 215 der 223 offiziellen EN-16931-<code>BR-*</code>-Regeln je "
       "CEN-Syntax-Universum (UBL und CII), die vollst&auml;ndige deutsche "
       "XRechnung-Schicht (<code>BR-DE-*</code>, <code>BR-DEX-*</code>, "
@@ -900,7 +902,7 @@ def render_landing():
       "Syntaxen <strong>geschlossen</strong>. Die Beweis-Parit&auml;t "
       "zwischen UBL und CII wird maschinell nachgehalten und von einem Test "
       "live neu berechnet, statt in Prosa eingefroren zu werden (Stand "
-      "2026-07-23: 279 von 295 Regeln auf beiden Syntaxen bewiesen, 0 "
+      "2026-07-23: 281 von 297 Regeln auf beiden Syntaxen bewiesen, 0 "
       "CII-ausl&ouml;sbare Regeln auf der Arbeitsliste). Alle "
       "Differentiall&auml;ufe gegen das offizielle Schematron laufen mit "
       "<strong>0 Abweichungen</strong>.</p>")
@@ -911,7 +913,7 @@ def render_landing():
       "zur&uuml;ckgestellt, eine XSD-Strukturvalidierung findet nicht statt. "
       'Details und Einstieg: die <a href="%s">Abdeckungsmatrix '
       "(COVERAGE.md)</a> als ma&szlig;gebliches Regelinventar, der "
-      '<a href="%s">Korrektur-Katalog (remediation_catalog.json)</a> mit 295 '
+      '<a href="%s">Korrektur-Katalog (remediation_catalog.json)</a> mit 297 '
       'maschinenlesbaren Eintr&auml;gen, das <a href="%s">CI-Rezept</a> '
       "(POSIX&nbsp;sh + GitHub&nbsp;Actions / GitLab&nbsp;CI) und die "
       '<a href="licensing/index.html">Lizenzseite</a> (Apache-2.0 f&uuml;r '
@@ -1419,8 +1421,8 @@ def render_de():
     deliberately NOT a translation of the explainer-shaped English landing
     page. HONESTY CONTRACT: every coverage/limit statement mirrors what the
     committed conformance artifacts and the guarded English prose already
-    claim (295 rules, deferred BR-CL checks, no XSD validation, green != legal
-    conformance) — no claim appears here first. Every shell command is one of
+    claim (297 rules, every fireable BR-CL check implemented, no XSD
+    validation, green != legal conformance) — no claim appears here first. Every shell command is one of
     :data:`DE_COMMANDS`, byte-identical to the test-pinned English docs
     (test_site.py asserts this both ways); this page invents NO command.
     Same self-containment contract as every surface page: one inline <style>,
@@ -1435,7 +1437,7 @@ def render_de():
     description = ("XRechnung und EN 16931 E-Rechnungen offline prüfen, "
                    "ohne Java, Saxon oder sonstige Abhängigkeiten: "
                    "Installation, erste Prüfung mit Exit-Code, "
-                   "CI-Anbindung und die ehrliche Abdeckung der 295 "
+                   "CI-Anbindung und die ehrliche Abdeckung der 297 "
                    "Geschäftsregeln — der deutschsprachige Schnellstart "
                    "für einvoice.")
     p = []
@@ -1467,7 +1469,7 @@ def render_de():
       "<code>xrechnung</code> (Kern plus die deutsche KoSIT-Schicht: "
       "<code>BR-DE-*</code>-Regeln wie Leitweg-ID/K&auml;uferreferenz, "
       "Verk&auml;uferkontakt, Zahlungsangaben, Skonto-Grammatik). Insgesamt "
-      "setzt der Pr&uuml;fer <strong>295 Gesch&auml;ftsregeln</strong> durch; "
+      "setzt der Pr&uuml;fer <strong>297 Gesch&auml;ftsregeln</strong> durch; "
       "jede ist differentiell gegen die offiziellen "
       "CEN-/KoSIT-Schematron-Artefakte bewiesen, mit 0 Abweichungen. Das "
       "Ergebnis kommt dreifach: als menschenlesbare Zusammenfassung, als "
@@ -1586,7 +1588,7 @@ def render_de():
       "installieren. Die Rechnung verl&auml;sst Ihren Rechner nie; nur die "
       "Laufzeit wird nach einem Klick einmalig geladen (~13&nbsp;MB).</li>")
     w('<li><a href="../rules/index.html">Regel-Referenz</a> &mdash; jede der '
-      "295 Regeln mit eigener Seite: Anforderung, BT-/BG-Begriffe, "
+      "297 Regeln mit eigener Seite: Anforderung, BT-/BG-Begriffe, "
       "XML-Position, Korrekturhinweis auf Englisch und Deutsch, w&ouml;rtlicher "
       "offizieller Schematron-Assert. Eigene deutsche Regelseiten gibt es "
       "bewusst nicht &mdash; der deutsche Text steht auf jeder Regelseite und "
@@ -1844,11 +1846,11 @@ def render_walkthrough(catalog):
       "until the invoice passes. Every finding below is produced by the real "
       "engine — the report is regenerated from the tool and a test fails the "
       "build if this page ever drifts from live output.</p>")
-    w("<p>The engine behind this walkthrough asserts <strong>295 EN 16931 / "
+    w("<p>The engine behind this walkthrough asserts <strong>297 EN 16931 / "
       "XRechnung business rules</strong> — every official EN 16931 "
       "<code>BR-*</code> rule that can actually fire in either CEN syntax "
-      "universe (UBL and CII) except two deferred code-list checks, the "
-      "complete German KoSIT layer including the Clean-Vehicle-Directive "
+      "universe (UBL and CII) — every fireable code-list check now included, "
+      "the complete German KoSIT layer including the Clean-Vehicle-Directive "
       "family, and the 21 <code>PEPPOL-EN16931-R*</code> rules KoSIT vendors "
       "(that subset only, not Peppol BIS Billing 3.0) — each rule "
       "differentially proven against the official Schematron artifacts at 0 "
@@ -2064,11 +2066,12 @@ def render_de_walkthrough(catalog):
       "unten stammt aus der echten Engine &mdash; der Bericht wird aus dem "
       "Werkzeug neu erzeugt, und ein Test l&auml;sst den Build fehlschlagen, "
       "sobald diese Seite von der Live-Ausgabe abweicht.</p>")
-    w("<p>Die Engine hinter diesem Beispiel setzt <strong>295 "
+    w("<p>Die Engine hinter diesem Beispiel setzt <strong>297 "
       "Gesch&auml;ftsregeln aus EN&nbsp;16931 und XRechnung</strong> durch &mdash; "
       "jede ausl&ouml;sbare offizielle <code>BR-*</code>-Regel in beiden "
-      "CEN-Syntaxwelten (UBL und CII) au&szlig;er zwei zur&uuml;ckgestellten "
-      "Codelisten-Pr&uuml;fungen, die komplette deutsche KoSIT-Schicht und die "
+      "CEN-Syntaxwelten (UBL und CII) &mdash; jetzt einschlie&szlig;lich jeder "
+      "ausl&ouml;sbaren Codelisten-Pr&uuml;fung, die komplette deutsche "
+      "KoSIT-Schicht und die "
       "21 <code>PEPPOL-EN16931-R*</code>-Regeln, die KoSIT im offiziellen "
       "XRechnung-Artefakt mitliefert (nur diese Teilmenge, nicht Peppol BIS "
       "Billing&nbsp;3.0) &mdash; jede differentiell gegen die offiziellen "

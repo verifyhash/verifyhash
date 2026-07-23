@@ -128,13 +128,14 @@ explicit, reviewable change rather than a silent drift.
 
 ## Honest scope
 
-- The validator asserts **295 business rules** in total: 217 of the 223
+- The validator asserts **297 business rules** in total: 219 of the 223
   official EN 16931 `BR-*` rule ids in each syntax universe (UBL and CII),
   plus — with `--profile=xrechnung` — the German XRechnung CIUS + extension
   layer (`BR-DE-*`, `BR-DE-CVD-*`, `BR-TMP-*`, `BR-DEX-*`) and the 21
   KoSIT-vendored `PEPPOL-EN16931-R*` rules. Each implemented rule is
   differential-tested to 0 divergences against the official Schematron
-  **within the implemented set**; 2 `BR-CL-*` code-list checks stay deferred.
+  **within the implemented set**; every fireable `BR-CL-*` code-list check
+  is now implemented in both syntaxes.
   See [`../README.md`](../README.md) §2 and
   [`../CORRECTNESS.md`](../CORRECTNESS.md) for what is NOT covered.
   A green gate means "no *implemented* rule fired", **not** "legally

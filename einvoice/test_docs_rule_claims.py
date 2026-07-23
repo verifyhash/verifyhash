@@ -355,17 +355,22 @@ class ParserHealth(unittest.TestCase):
         neg, _pos, _w = not_covered_claims()
         _p, _wl, neg_gaps = implemented_claims()
         self.assertGreaterEqual(
-            len(neg), 6,
-            "only %d NOT-covered ids parsed (expected the 2 BR-CL deferrals "
-            "+ BR-CO-05..08 at minimum) — extractor decay"
+            len(neg), 4,
+            "only %d NOT-covered ids parsed (expected the BR-CO-05..08 "
+            "tautology range at minimum) — extractor decay"
             % len(neg))
-        # BR-CL-06/15 moved to Implemented with T-VHCLX.2, so the deferral
-        # canaries are the last remaining BR-CL-07/08 pair.
-        for canary in ("BR-CL-07", "BR-CL-08",   # the last two deferrals
-                       "BR-CO-05", "BR-CO-08"):   # tautology range ends
+        # BR-CL-07/08 moved to Implemented with T-VHCLX.3 — the codelist
+        # deferral bucket is now empty, so the only NOT-covered concrete ids
+        # left are the four BR-CO-05..08 never-firing tautologies.
+        for canary in ("BR-CO-05", "BR-CO-06",   # tautology range
+                       "BR-CO-07", "BR-CO-08"):   # (all four)
             self.assertIn(canary, neg,
                           "known NOT-covered claim %s not parsed — extractor "
                           "decay" % canary)
+        # BR-CL-07/08 are implemented now — direction (b) goes red if the
+        # README ever lists them as NOT covered again.
+        self.assertNotIn("BR-CL-07", neg)
+        self.assertNotIn("BR-CL-08", neg)
         # BR-DEC-13/15 are implemented since T-VHCORE.6 — direction (b) would
         # go red if the README ever listed them as NOT covered again.
         self.assertNotIn("BR-DEC-13", neg)

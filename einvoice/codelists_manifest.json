@@ -150,5 +150,32 @@
     "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
     "count": 3,
     "sha256_sorted_newline_joined": "c0b01d5447824c30723c4b5e9704e876e7699a12c2829846e6f726753255a83c"
+  },
+  "UNTDID_1153_CODES": {
+    "official_list": "UNTDID 1153 reference code qualifier (EN 16931 object/document reference identifier scheme restriction, BR-CL-07)",
+    "issuing_body": "UNECE (UNTDID 1153)",
+    "source": "corpus/cen-en16931/{ubl,cii}/schematron/preprocessed/EN16931-*-validation-preprocessed.sch, assert BR-CL-07. BOTH preprocessed artifacts inline the SAME 818-entry enumeration (verified byte-identical after a whitespace split), so ONE set serves both syntaxes even though the two bindings read DIFFERENT surfaces: the UBL assert (context cac:AdditionalDocumentReference[cbc:DocumentTypeCode='130']/cbc:ID[@schemeID] | cac:DocumentReference[...]) tests the @schemeID attribute; the CII assert (context ram:ReferenceTypeCode) tests the element text.",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 818,
+    "sha256_sorted_newline_joined": "22fefcebd0a129a9dac2a893a2f8104fec12f3c6a85ab58a5cab090f20a09033"
+  },
+  "UBL_NOTE_SUBJECT_CODES": {
+    "official_list": "UNTDID 4451 text subject code qualifier (EN 16931 invoice note subject code restriction, UBL binding of BR-CL-08)",
+    "issuing_body": "UNECE (UNTDID 4451)",
+    "source": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch, assert BR-CL-08 (context /ubl:Invoice/cbc:Note | /cn:CreditNote/cbc:Note). The UBL assert reads a '#CODE#' note-prefix GRAMMAR, testing the 3-char token delimited by the first two '#' characters against this subset. Transcribed SEPARATELY from the CII binding: the CII BR-CL-08 subset is a strict SUPERSET (18 extra codes), so unifying them would accept CII-only note codes on UBL. UBL_NOTE_SUBJECT_PADDED preserves the exact list string (the artifact's un-padded contains() needs substring, not membership, semantics).",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 383,
+    "sha256_sorted_newline_joined": "424a1190c04bd2928df26c3c5ae7b7f2614b7e2609e5959b251ad5359599e4e9"
+  },
+  "CII_NOTE_SUBJECT_CODES": {
+    "official_list": "UNTDID 4451 text subject code qualifier (EN 16931 invoice note subject code restriction, CII binding of BR-CL-08)",
+    "issuing_body": "UNECE (UNTDID 4451)",
+    "source": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch, assert BR-CL-08 (context ram:SubjectCode). An ordinary space-padded membership test of the element text. Transcribed SEPARATELY from the UBL binding: this CII subset is a strict SUPERSET of the UBL subset, carrying 18 codes UBL omits (BAT-BBB, BMF-BMH, CCJ-CCO) — a measured artifact fact asserted in codelists.py.",
+    "version": "validation-1.3.16 (released 2026-04-10)",
+    "version_note": "upstream code-list revision not stated in the vendored artifact; version above is the vendored CEN corpus pin",
+    "count": 401,
+    "sha256_sorted_newline_joined": "5e1f8adb2420a5d672b9360e6318bfbd1ae859e10b6091c1923209cff309eaaf"
   }
 }

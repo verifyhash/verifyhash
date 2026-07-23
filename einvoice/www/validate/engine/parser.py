@@ -380,6 +380,17 @@ class Invoice:
         self.country_codes = []
         self.origin_country_codes = []
         self.vat_point_date_codes = []
+        #   object_ref_scheme_codes — object/document reference id scheme codes
+        #       at the BR-CL-07 context (UBL: @schemeID of a
+        #       DocumentReference[DocumentTypeCode='130']/cbc:ID; CII: the
+        #       ram:ReferenceTypeCode text) against the shared UNTDID 1153 pin
+        #   note_subject_texts — DOCUMENT-level note free text (UBL BR-CL-08
+        #       '#CODE#' grammar); CII carries no note grammar so this stays []
+        #   subject_codes — ram:SubjectCode text (CII BR-CL-08) against the
+        #       CII UNTDID 4451 subset; UBL has no such element so this stays []
+        self.object_ref_scheme_codes = []
+        self.note_subject_texts = []
+        self.subject_codes = []
         self.taxcategory_id_codes = []
         self.classified_tax_category_codes = []
         self.tax_exemption_reason_codes = []
@@ -871,6 +882,34 @@ def build_model(root):
     inv.vat_point_date_codes = [
         _norm_space(_strval(el)) or ""
         for el in root.findall(".//cac:InvoicePeriod/cbc:DescriptionCode", NS)
+    ]
+    # BR-CL-07 context (UBL) =
+    #   cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cbc:ID[@schemeID]
+    # | cac:DocumentReference[cbc:DocumentTypeCode = '130']/cbc:ID[@schemeID]
+    # — the object/document reference (BG-24) whose type code is '130'; the
+    # test reads the @schemeID ATTRIBUTE (not the element text) against the
+    # UNTDID 1153 restriction. Only cbc:ID children carrying a @schemeID are
+    # context nodes (the [@schemeID] predicate), and only when a sibling
+    # cbc:DocumentTypeCode equals '130'. Both container element names carry
+    # the same predicate, so both are scanned.
+    inv.object_ref_scheme_codes = []
+    for tag in ("AdditionalDocumentReference", "DocumentReference"):
+        for ref_el in root.iter("{%s}%s" % (NS_CAC, tag)):
+            dtc = ref_el.find("cbc:DocumentTypeCode", NS)
+            if dtc is None or _norm_space(_strval(dtc)) != "130":
+                continue
+            for id_el in ref_el.findall("cbc:ID", NS):
+                scheme = id_el.get("schemeID")
+                if scheme is not None:
+                    inv.object_ref_scheme_codes.append(_norm_space(scheme))
+    # BR-CL-08 context (UBL) = /ubl:Invoice/cbc:Note | /cn:CreditNote/cbc:Note
+    # — the DOCUMENT-level note free text ONLY (a direct child of the invoice
+    # root; line-level cac:InvoiceLine/cbc:Note is NOT a context node). The
+    # UBL assert does not test the whole value: it reads a '#CODE#' prefix
+    # grammar (see rules.br_cl_08). Raw text is kept (the grammar operates on
+    # the literal characters, matching the artifact's substring functions).
+    inv.note_subject_texts = [
+        _strval(el) or "" for el in root.findall("cbc:Note", NS)
     ]
     # BR-B-01/BR-B-02 (Italian split payment) node sets — RAW string values,
     # exactly the official comparisons (no normalize-space, no TaxScheme

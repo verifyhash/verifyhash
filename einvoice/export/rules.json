@@ -7,7 +7,7 @@
       "remediation_catalog.json"
     ]
   },
-  "rule_count": 295,
+  "rule_count": 297,
   "rules": [
     {
       "bindings": {
@@ -1710,6 +1710,60 @@
       "severity": "fatal",
       "syntax": "both",
       "title": "Value added tax point date code MUST be coded using a restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII)."
+    },
+    {
+      "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "version": "1.3.16"
+        },
+        "ubl": {
+          "differentially_proven": true,
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "version": "1.3.16"
+        }
+      },
+      "family": "core",
+      "id": "BR-CL-07",
+      "remediation": {
+        "fix": "Encode `cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cbc:ID[@schemeID]` using a valid value from the required code list.",
+        "title": "Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153."
+      },
+      "severity": "fatal",
+      "syntax": "both",
+      "title": "Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153."
+    },
+    {
+      "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "version": "1.3.16"
+        },
+        "ubl": {
+          "differentially_proven": true,
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "version": "1.3.16"
+        }
+      },
+      "family": "core",
+      "id": "BR-CL-08",
+      "remediation": {
+        "fix": "Encode `/ubl:Invoice/cbc:Note` using a valid value from the required code list.",
+        "title": "Invoice note subject code MUST be coded using UNTDID 4451."
+      },
+      "severity": "fatal",
+      "syntax": "both",
+      "title": "Invoice note subject code MUST be coded using UNTDID 4451."
     },
     {
       "bindings": {

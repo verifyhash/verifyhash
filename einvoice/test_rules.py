@@ -3415,5 +3415,90 @@ class EverydayFieldCodeLists(unittest.TestCase):
         self.assertNotIn("BR-CL-14", fired(r))
 
 
+# Object-reference / note-subject code-list pair (BR-CL-07 UNTDID 1153 +
+# BR-CL-08 UNTDID 4451, T-VHCLX.3) — the UBL bindings. BR-CL-07 reads the
+# @schemeID of a cbc:ID under a DocumentReference whose DocumentTypeCode is
+# '130'; BR-CL-08 reads a '#CODE#' prefix grammar in the document-level
+# cbc:Note. The clean base carries the innocuous note 'text' (no '#') and no
+# object reference, so it fires neither.
+OBJREF_CL_RULES = {"BR-CL-07", "BR-CL-08"}
+
+
+class ObjectRefNoteSubjectCodeLists(unittest.TestCase):
+    def add_object_ref(self, r, scheme, type_code="130", ref_id="OBJ-1"):
+        adr = ET.SubElement(r, q(NS_CAC, "AdditionalDocumentReference"))
+        idv = ET.SubElement(adr, q(NS_CBC, "ID"))
+        idv.text = ref_id
+        if scheme is not None:
+            idv.set("schemeID", scheme)
+        ET.SubElement(adr, q(NS_CBC, "DocumentTypeCode")).text = type_code
+        return adr
+
+    def set_note(self, r, text):
+        child(r, NS_CBC, "Note").text = text
+
+    def test_base_fires_neither(self):
+        self.assertFalse(fired(base()) & OBJREF_CL_RULES)
+
+    # ---- BR-CL-07 (DocumentReference[DocumentTypeCode='130']/cbc:ID/@schemeID)
+    def test_br_cl_07_valid_scheme_holds(self):
+        # 'AAA' is a listed UNTDID 1153 code.
+        r = base()
+        self.add_object_ref(r, "AAA")
+        self.assertFalse(fired(r) & OBJREF_CL_RULES)
+
+    def test_br_cl_07_bad_scheme_fires(self):
+        r = base()
+        self.add_object_ref(r, "ZZ9")
+        self.assertEqual(fired(r) & OBJREF_CL_RULES, {"BR-CL-07"})
+
+    def test_br_cl_07_only_when_type_code_130(self):
+        # The context predicate is cbc:DocumentTypeCode='130'; an off-list
+        # scheme on a reference of a DIFFERENT type is NOT a context node.
+        r = base()
+        self.add_object_ref(r, "ZZ9", type_code="916")
+        self.assertNotIn("BR-CL-07", fired(r))
+
+    def test_br_cl_07_ignores_reference_without_scheme(self):
+        # The [@schemeID] predicate: a cbc:ID with no @schemeID is not a
+        # context node even under a '130' reference.
+        r = base()
+        self.add_object_ref(r, None)
+        self.assertNotIn("BR-CL-07", fired(r))
+
+    # ---- BR-CL-08 (document cbc:Note '#CODE#' grammar) ------------------
+    def test_br_cl_08_valid_token_holds(self):
+        # '#AAI#' — AAI is a listed UNTDID 4451 code (UBL subset).
+        r = base()
+        self.set_note(r, "#AAI#general information note")
+        self.assertFalse(fired(r) & OBJREF_CL_RULES)
+
+    def test_br_cl_08_bad_token_fires(self):
+        r = base()
+        self.set_note(r, "#ZZ9#see remittance advice")
+        self.assertEqual(fired(r) & OBJREF_CL_RULES, {"BR-CL-08"})
+
+    def test_br_cl_08_no_hash_token_holds(self):
+        # No '#' → the grammar never fires (free text is unconstrained).
+        r = base()
+        self.set_note(r, "plain free-text note, no subject code")
+        self.assertFalse(fired(r) & OBJREF_CL_RULES)
+
+    def test_br_cl_08_non_three_char_token_holds(self):
+        # A '#'-delimited token that is not exactly 3 chars is outside the
+        # grammar and never fires.
+        r = base()
+        self.set_note(r, "#AB#too short to be a subject code")
+        self.assertFalse(fired(r) & OBJREF_CL_RULES)
+
+    def test_br_cl_08_cii_only_code_fires_on_ubl(self):
+        # 'BBB' is in the CII 4451 subset only (not the UBL subset) — the
+        # official UBL artifact rejects it, proving the per-syntax subsets
+        # are transcribed separately, never unified.
+        r = base()
+        self.set_note(r, "#BBB#comment")
+        self.assertEqual(fired(r) & OBJREF_CL_RULES, {"BR-CL-08"})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

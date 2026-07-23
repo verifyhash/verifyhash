@@ -177,24 +177,10 @@ _CII_DE_GENERIC = ("national rule not evaluated on the CII differential leg (LEG
 # Schematron but the engine does NOT yet assert — documented so the matrix is
 # honest about which code families are covered. (BR-CL-16/19/20/21/24 ARE now
 # asserted and appear in the rule table above, as are BR-CL-06/15 since
-# T-VHCLX.2; only the BR-CL-07/08 pair remains deferred.)
-CODELIST_NOT_ASSERTED = {
-    "BR-CL-07": "Object/document reference identifier scheme (UNTDID 1153). Not "
-                "asserted: the UBL context is scoped to a DocumentReference with "
-                "cbc:DocumentTypeCode='130' (a predicate the model does not "
-                "carry) and the CII context is ram:ReferenceTypeCode — two "
-                "distinct bindings, deferred.",
-    "BR-CL-08": "Invoice note subject code (UNTDID 4451). Not asserted: BOTH "
-                "vendored artifacts carry this assert, on two different "
-                "surfaces the model does not parse — the UBL binding tests a "
-                "'#CODE#' prefix grammar inside the cbc:Note free text (it "
-                "fires only when a 3-char '#'-delimited token is present but "
-                "outside the list), the CII binding tests the ram:SubjectCode "
-                "element; the 4451 subset IS machine-readable (inlined in "
-                "both .sch), so this is a deferred parser-surface gap "
-                "(note-text grammar + subject-code element), not a register "
-                "gap.",
-}
+# T-VHCLX.2; BR-CL-07/08 were closed on both syntaxes in T-VHCLX.3, so the
+# deferred codelist bucket is now EMPTY — every fireable BR-CL assert in the
+# vendored artifacts is implemented, both bindings.)
+CODELIST_NOT_ASSERTED = {}
 
 
 def _title(fn, rid):

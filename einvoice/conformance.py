@@ -577,6 +577,16 @@ CII_SYNTAX_COVERAGE = {
     "BR-CL-15": "Item origin country code (BT-159) in ISO 3166-1 alpha-2 "
                 "(CII binding: ram:OriginTradeCountry/ram:ID, tested against "
                 "the CII country pin — has AN, no SS)",
+    "BR-CL-07": "Object/document reference identifier scheme (BG-24) in a "
+                "UNTDID 1153 restriction (CII binding: ram:ReferenceTypeCode "
+                "element text — the UBL binding instead reads the @schemeID "
+                "of a DocumentReference[DocumentTypeCode='130']/cbc:ID; both "
+                "use the same 818-entry pin)",
+    "BR-CL-08": "Invoice note subject code (BT-21) in a UNTDID 4451 "
+                "restriction (CII binding: ram:SubjectCode element text "
+                "against the CII 4451 subset — a strict superset of the UBL "
+                "subset; the UBL binding is instead a '#CODE#' note-prefix "
+                "grammar)",
     "BR-CL-16": "Payment means code (BT-81) in UNCL 4461",
     "BR-CL-17": "Allowance/charge VAT category code in UNCL 5305 subset",
     "BR-CL-18": "Breakdown & line VAT category code in UNCL 5305 subset",

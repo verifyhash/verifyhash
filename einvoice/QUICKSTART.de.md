@@ -25,7 +25,7 @@ KoSIT-Originaltext liefert die CLI selbst, siehe `--lang de` unten).
 
 ## Was ein grünes Ergebnis ehrlich bedeutet
 
-Der Prüfer setzt **295 Geschäftsregeln** durch; jede ist differentiell gegen
+Der Prüfer setzt **297 Geschäftsregeln** durch; jede ist differentiell gegen
 die offiziellen CEN-/KoSIT-Schematron-Artefakte bewiesen. Das maßgebliche,
 maschinell geprüfte Regelinventar — mit jeder dokumentierten Ausnahme und
 wörtlichen Artefakt-Belegen — ist [`COVERAGE.md`](COVERAGE.md); jede Zahl in

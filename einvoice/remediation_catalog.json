@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement. message_de (present ONLY on de_source=='kosit' rules) is the official German <sch:assert> message VERBATIM, with a message_de_provenance {artifact, assert_id} tag naming the vendored file it was lifted from; the --lang de CLI surfaces it in place of the English message.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 295,
+  "rule_count": 297,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -1116,6 +1116,36 @@
       },
       "title_de": "Der Code für das Datum der Steuerfälligkeit MUSS anhand einer Einschränkung der Codeliste UNTDID 2005 codiert werden.",
       "fix_de": "Codieren Sie `cac:InvoicePeriod/cbc:DescriptionCode` mit einem gültigen Wert aus der geforderten Codeliste: Der Code für das Datum der Steuerfälligkeit MUSS anhand einer Einschränkung der Codeliste UNTDID 2005 codiert werden.",
+      "de_source": "translation"
+    },
+    "BR-CL-07": {
+      "title": "Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153.",
+      "requires": "Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153.",
+      "bt_bg": [],
+      "location_hint": "cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cbc:ID[@schemeID]",
+      "fix": "Encode `cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cbc:ID[@schemeID]` using a valid value from the required code list.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153."
+      },
+      "title_de": "Die Kennung des Schemas der Objektkennung MUSS anhand einer Einschränkung der Codeliste UNTDID 1153 codiert werden.",
+      "fix_de": "Codieren Sie `cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cbc:ID[@schemeID]` mit einem gültigen Wert aus der geforderten Codeliste: Die Kennung des Schemas der Objektkennung MUSS anhand einer Einschränkung der Codeliste UNTDID 1153 codiert werden.",
+      "de_source": "translation"
+    },
+    "BR-CL-08": {
+      "title": "Invoice note subject code MUST be coded using UNTDID 4451.",
+      "requires": "Invoiced note subject code shall be coded using UNCL4451",
+      "bt_bg": [],
+      "location_hint": "/ubl:Invoice/cbc:Note",
+      "fix": "Encode `/ubl:Invoice/cbc:Note` using a valid value from the required code list.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Invoiced note subject code shall be coded using UNCL4451"
+      },
+      "title_de": "Der Betreffcode der Rechnungsbemerkung MUSS anhand der Codeliste UNCL 4451 codiert werden.",
+      "fix_de": "Codieren Sie `/ubl:Invoice/cbc:Note` mit einem gültigen Wert aus der geforderten Codeliste: Der Betreffcode der Rechnungsbemerkung MUSS anhand der Codeliste UNCL 4451 codiert werden.",
       "de_source": "translation"
     },
     "BR-CL-10": {

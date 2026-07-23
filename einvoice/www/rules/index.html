@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EN 16931 / XRechnung rule index — einvoice rule reference</title>
-<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (295 rules across 21 families), grouped by rule family with a reference page for each.">
+<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (297 rules across 21 families), grouped by rule family with a reference page for each.">
 <link rel="canonical" href="https://verifyhash.com/einvoice/rules/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -80,11 +80,11 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../index.html">einvoice</a> / EN 16931 / XRechnung rule reference</p>
 <h1>Rule index</h1>
 <p class="lead">Every EN 16931 / XRechnung business rule the einvoice engine can fire, grouped by rule family. Each rule links to its own reference page: what it requires, the BT/BG business terms it touches, the XML location, a one-line fix, the engine severity, and the verbatim official Schematron assert.</p>
-<p><strong>295 rules</strong> in total — 282 fatal, 12 warning, 1 information — across 21 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
+<p><strong>297 rules</strong> in total — 284 fatal, 12 warning, 1 information — across 21 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
 <nav class="toc">
 <ul class="rules">
 <li><a href="#BR">BR</a> (58)</li>
-<li><a href="#BR-CL">BR-CL</a> (21)</li>
+<li><a href="#BR-CL">BR-CL</a> (23)</li>
 <li><a href="#BR-CO">BR-CO</a> (19)</li>
 <li><a href="#BR-DEC">BR-DEC</a> (21)</li>
 <li><a href="#BR-AE">BR-AE</a> (10)</li>
@@ -171,7 +171,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 </ul>
 </section>
 <section class="fam" id="BR-CL">
-<h2>BR-CL <small>(21)</small></h2>
+<h2>BR-CL <small>(23)</small></h2>
 <p class="intro">Code-list rules — a coded value must come from the referenced official code list.</p>
 <ul class="rules">
 <li><a href="BR-CL-01/index.html"><code>BR-CL-01</code></a> — The document type code (BT-3) MUST be coded per UNTDID 1001. <span class="sev">fatal</span></li>
@@ -179,6 +179,8 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="BR-CL-04/index.html"><code>BR-CL-04</code></a> — Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-05/index.html"><code>BR-CL-05</code></a> — Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-06/index.html"><code>BR-CL-06</code></a> — Value added tax point date code MUST be coded using a restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII). <span class="sev">fatal</span></li>
+<li><a href="BR-CL-07/index.html"><code>BR-CL-07</code></a> — Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-08/index.html"><code>BR-CL-08</code></a> — Invoice note subject code MUST be coded using UNTDID 4451. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-10/index.html"><code>BR-CL-10</code></a> — Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-11/index.html"><code>BR-CL-11</code></a> — Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-13/index.html"><code>BR-CL-13</code></a> — Item classification scheme identifier MUST be a UNTDID 7143 code. <span class="sev">fatal</span></li>

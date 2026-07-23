@@ -119,7 +119,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 217, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 219, OUR_RULE_IDS
 
 # EXCLUDED from the EN 16931 UBL grading (LEG 1 Invoice + LEG 1b CreditNote) —
 # kept out on purpose, not overlooked; the exact mirror of the CII-side
@@ -359,6 +359,15 @@ CII_GRADED_RULES = [
     # BR-CL-15 — tested against the CII country pin, which carries AN not
     # SS); the shared rule bodies select the per-syntax pinned set.
     _rules.br_cl_06, _rules.br_cl_15,
+    # Object-reference / note-subject code lists (BR-CL-07 UNTDID 1153,
+    # BR-CL-08 UNTDID 4451). The CII bindings are the plain element-text
+    # membership tests the shared bodies already handle: br_cl_07 reads
+    # ram:ReferenceTypeCode against the 818-entry UNTDID 1153 pin (identical
+    # to the UBL enumeration); br_cl_08 reads ram:SubjectCode against the CII
+    # 4451 subset (a strict superset of the UBL subset). The UBL-only
+    # '#CODE#' note grammar branch of br_cl_08 is inert on CII (no
+    # note_subject_texts), so the CII leg exercises only the SubjectCode path.
+    _rules.br_cl_07, _rules.br_cl_08,
     # VAT category code lists (BR-CL-17/18) + VAT exemption reason (BR-CL-22).
     # The CII parser feeds these the CII context nodes (ram:CategoryTradeTax
     # @CategoryCode for BR-CL-17, ram:ApplicableTradeTax/ram:CategoryCode for
@@ -1922,6 +1931,27 @@ def _mut_brcl06(r):
     _sub_el(ip, NS_CBC, "DescriptionCode", text="5")
 
 
+def _mut_brcl07(r):
+    # Add an object/document reference (BG-24) of type '130' whose cbc:ID
+    # carries a @schemeID off the UNTDID 1153 restriction. The cbc:ID text is
+    # non-empty so BR-52 holds; the DocumentTypeCode='130' is exactly the
+    # predicate the BR-CL-07 context requires, so BR-CL-07 is the sole rule
+    # that fires. 'ZZ9' is a deliberately off-list scheme code.
+    adr = ET.SubElement(r, _q(NS_CAC, "AdditionalDocumentReference"))
+    idv = _sub_el(adr, NS_CBC, "ID", text="OBJ-1")
+    idv.set("schemeID", "ZZ9")
+    _sub_el(adr, NS_CBC, "DocumentTypeCode", text="130")
+
+
+def _mut_brcl08(r):
+    # Rewrite the document-level cbc:Note free text so it carries a '#CODE#'
+    # prefix token whose 3-char code is outside the UBL UNTDID 4451 subset.
+    # The base note is the innocuous 'text' (no '#', so BR-CL-08 is clear on
+    # the base); '#ZZ9#' introduces a 3-char '#'-delimited token that fires
+    # exactly BR-CL-08 under the artifact's note-prefix grammar.
+    _child(r, NS_CBC, "Note").text = "#ZZ9#see attached remittance advice"
+
+
 def _mut_brcl17(r):
     # VAT breakdown category (cac:TaxTotal/.../cac:TaxCategory/cbc:ID) coded off
     # the UNCL 5305 subset. The line item category is left 'S', so this also
@@ -2533,7 +2563,7 @@ _MUTATIONS = {
     "BR-CO-04": _mut_brco04,
     "BR-CL-01": _mut_brcl01,
     "BR-CL-03": _mut_brcl03, "BR-CL-04": _mut_brcl04, "BR-CL-05": _mut_brcl05,
-    "BR-CL-06": _mut_brcl06,
+    "BR-CL-06": _mut_brcl06, "BR-CL-07": _mut_brcl07, "BR-CL-08": _mut_brcl08,
     "BR-CL-13": _mut_brcl13, "BR-CL-14": _mut_brcl14, "BR-CL-15": _mut_brcl15,
     "BR-CL-16": _mut_brcl16,
     "BR-CL-17": _mut_brcl17, "BR-CL-18": _mut_brcl18,
@@ -3816,6 +3846,29 @@ def _cmut_brcl06(r):
     # lists are NOT unified. BR-CL-06 is the sole rule that fires.
     tt = _cii_settlement(r).find("ram:ApplicableTradeTax", _NSC)
     ET.SubElement(tt, _cq(NS_RAM, "DueDateTypeCode")).text = "35"
+
+
+def _cmut_brcl07(r):
+    # Add an object-reference document (ram:AdditionalReferencedDocument)
+    # carrying a ram:ReferenceTypeCode off the UNTDID 1153 restriction. The
+    # CII BR-CL-07 context is the bare ram:ReferenceTypeCode element (no
+    # DocumentTypeCode='130' predicate — that scoping is UBL-only), tested
+    # against the SAME 818-entry 1153 pin. 'ZZ9' is a deliberately off-list
+    # scheme code; BR-CL-07 is the sole rule that fires.
+    agr = r.find("rsm:SupplyChainTradeTransaction/"
+                 "ram:ApplicableHeaderTradeAgreement", _NSC)
+    ard = ET.SubElement(agr, _cq(NS_RAM, "AdditionalReferencedDocument"))
+    ET.SubElement(ard, _cq(NS_RAM, "IssuerAssignedID")).text = "OBJ-1"
+    ET.SubElement(ard, _cq(NS_RAM, "TypeCode")).text = "130"
+    ET.SubElement(ard, _cq(NS_RAM, "ReferenceTypeCode")).text = "ZZ9"
+
+
+def _cmut_brcl08(r):
+    # The CII base carries ram:IncludedNote/ram:SubjectCode = 'AAR' (a valid
+    # UNTDID 4451 code). Re-code it off the CII 4451 subset; the CII binding
+    # is a plain element-text membership test, so BR-CL-08 is the sole rule
+    # that fires. 'ZZ9' is deliberately outside the list.
+    r.find(".//ram:SubjectCode", _NSC).text = "ZZ9"
 
 
 def _cmut_brcl17(r):
@@ -5608,6 +5661,7 @@ _CII_MUTATIONS = {
     "BR-CL-01": _cmut_brcl01,
     "BR-CL-03": _cmut_brcl03, "BR-CL-04": _cmut_brcl04, "BR-CL-05": _cmut_brcl05,
     "BR-CL-06": _cmut_brcl06,
+    "BR-CL-07": _cmut_brcl07, "BR-CL-08": _cmut_brcl08,
     "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,
     "BR-CL-15": _cmut_brcl15,
     "BR-CL-16": _cmut_brcl16,

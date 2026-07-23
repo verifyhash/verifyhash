@@ -20,24 +20,24 @@
     "validate.py"
   ],
   "sha256": {
-    "__init__.py": "65626b1e9ea0fbe85a97d108ad186522ec3ae1b89e89c93abf8ded21d9761b3e",
+    "__init__.py": "b6f903647b58b2f5c8951e295ab433997b00eee63175fc6c60f26f003d1f080a",
     "_xmlsec.py": "35afa2a1c5e26cb228ab5c6061216e2d05e99da943a028dc997dcd67c882ff6a",
     "cli.py": "8d2470fc08a0d1ee4ce4fe571d36a1c824e545ce73d32ca961882a240584de87",
-    "codelists.py": "ff96c72645c6faf14845881dba3fda77189da50881ce65f92b2eaf3675301870",
+    "codelists.py": "5ff19ec7a24be7c65734d7312a9f7e1b4739ce4645fb71a2dae027e03d8a6ad7",
     "config.py": "28e4c3d929041a0b47193980f094970d5693c6142f7166a7c1fb433d2565cd3a",
     "coverage.py": "065da40772b081c434069482f0176e89a7930106e318a2849365bb47a6dc84c5",
-    "parser.py": "9de4b299e813a273dc92adc881a91bde065abab2d1e545520c9ea6a25a752c37",
-    "parser_cii.py": "37a25d29a746bd870a582b4d9fda3b50c3a1de11e8a023e52b75d0c7fd2ac03d",
+    "parser.py": "9f11136984c67986285cfc46924a1faaa3e813f12b14829200187744fdfb7a19",
+    "parser_cii.py": "faa31374263409ade5fc576bcf6f4a22ef1da7ac952b2ef3009cdd7bf099a12a",
     "pdf_container.py": "3ba9944ef13de861f5307c09aaa1e1a59f9964a927f9c0ca805eb8e1523a8a07",
     "receipt.py": "651b589100f1e908fdcfed4dcefba54d35dc07d258b204f48f595c50c00a8ee4",
     "remediation.py": "543f16e3139f1c7109afde05bd6bc1bdb5941603fa9f63fe112eda432e0ce9de",
     "report.py": "6ccda28ed65eb369fbbbbe21e2902225ca3a5214004bd175a9fb0e3a2525a538",
-    "rules.py": "5fe76eac5e3ba941a062f4c0318fddd1cf15eee7408269632bb5af6023870003",
+    "rules.py": "c098377e43a1fdbb431f1ee872472ca0672bd00781a86bdac2b51dc73e4d3ad3",
     "rules_peppol.py": "a6f0b48ce211fd3afd27b27c0a37adc2569ea21bc3e137e70141cfff432a9c33",
     "rules_xrechnung.py": "113cd8cc43f1c2b7374f31884ccbd7335adc4c3cc06e2cb83493a7f8853cde2a",
     "syntax_binding.py": "e22c097268e6a7c37d32201838a56b5b11ed53b05e8bb15b29ee3a219347df52",
     "syntax_binding_eval.py": "d79cc3f4b157b17d2a72dcf4ed6aa7278745ed4b3adbb0e414003bdb0d0b2c21",
     "validate.py": "b671cbad551fbddf8c6aa638ee6b4c1232ccac76e745459c47ef24c35adfa1d0"
   },
-  "version": "0.2.5"
+  "version": "0.2.6"
 }

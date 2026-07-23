@@ -30,12 +30,12 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**295 rules** in total — 282 fatal, 12 warning, 1 information — across 21 families.
+**297 rules** in total — 284 fatal, 12 warning, 1 information — across 21 families.
 
 ## Families
 
 - **BR** (58) — Core EN 16931 content and cardinality rules.
-- **BR-CL** (21) — Code-list rules — a coded value must come from the referenced official code list.
+- **BR-CL** (23) — Code-list rules — a coded value must come from the referenced official code list.
 - **BR-CO** (19) — Calculation and consistency rules (cross-total arithmetic).
 - **BR-DEC** (21) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **BR-AE** (10) — VAT breakdown rules for VAT category code AE.
@@ -630,6 +630,24 @@ Code-list rules — a coded value must come from the referenced official code li
 - **Fix:** Encode `cac:InvoicePeriod/cbc:DescriptionCode` using a valid value from the required code list.
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “Value added tax point date code MUST be coded using a restriction of UNTDID 2005.”
+
+### BR-CL-07 — Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153.
+
+- **Requires:** Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cbc:ID[@schemeID]`
+- **Fix:** Encode `cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cbc:ID[@schemeID]` using a valid value from the required code list.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153.”
+
+### BR-CL-08 — Invoice note subject code MUST be coded using UNTDID 4451.
+
+- **Requires:** Invoiced note subject code shall be coded using UNCL4451
+- **Business terms:** — (no single business term)
+- **Location:** `/ubl:Invoice/cbc:Note`
+- **Fix:** Encode `/ubl:Invoice/cbc:Note` using a valid value from the required code list.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Invoiced note subject code shall be coded using UNCL4451”
 
 ### BR-CL-10 — Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.
 

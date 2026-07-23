@@ -11,6 +11,59 @@ Versions here are the single source of truth together with
 (`__version__`); `test_release_discipline.py` fails the build if the three
 ever diverge.
 
+## [0.2.6] - 2026-07-23
+
+The engine now fires 297 rules (was 295): the last two deferred code-list
+classes, `BR-CL-07` (object/document reference identifier scheme, UNTDID
+1153) and `BR-CL-08` (invoice note subject code, UNTDID 4451), are
+implemented on BOTH syntaxes. The `codelist_not_asserted` bucket is now
+EMPTY — every fireable EN 16931 `BR-CL-*` code-list assert in the vendored
+CEN artifacts is implemented in both bindings.
+
+### Added
+
+- **`BR-CL-07` (object/document reference identifier scheme, UNTDID 1153) is
+  implemented, both syntaxes.** BOTH vendored PREPROCESSED artifacts inline
+  the SAME 818-entry UNTDID 1153 enumeration (verified byte-identical after a
+  whitespace split), so one pinned set (`UNTDID_1153_CODES`) serves both
+  bindings even though they read DIFFERENT surfaces: the UBL assert (context
+  `cac:AdditionalDocumentReference[cbc:DocumentTypeCode='130']/cbc:ID[@schemeID]`
+  and the `cac:DocumentReference` variant) tests the `@schemeID` attribute;
+  the CII assert (context `ram:ReferenceTypeCode`) tests the element text.
+- **`BR-CL-08` (invoice note subject code, UNTDID 4451) is implemented, both
+  syntaxes.** The two artifacts inline DIFFERENT subsets — the CII subset
+  (`CII_NOTE_SUBJECT_CODES`, 401 codes) is a strict SUPERSET of the UBL
+  subset (`UBL_NOTE_SUBJECT_CODES`, 383 codes), carrying 18 extra codes
+  (`BAT`-`BBB`, `BMF`-`BMH`, `CCJ`-`CCO`) — so the two are pinned SEPARATELY
+  and selected per syntax. The two BINDINGS also differ in shape: the CII
+  binding is a plain space-padded membership test of `ram:SubjectCode`; the
+  UBL binding is a `#CODE#` note-prefix GRAMMAR on the document-level
+  `cbc:Note`, firing only when the 3-char token delimited by the first two
+  `#` characters is present but outside the UBL subset. Because the UBL
+  assert compares with an un-padded `contains()`, the exact padded list
+  string (`UBL_NOTE_SUBJECT_PADDED`) is pinned so the substring semantics are
+  reproduced verbatim, not approximated by set membership.
+- An invoice carrying a wrong object-reference scheme code or an off-list
+  `#`-delimited note subject token previously false-PASSed against the engine
+  while failing the official CEN Schematron; both rules are graded on all
+  differential legs (UBL, CreditNote, CII) with targeted mutations at 0
+  divergences — the BR-CL-08 mutations deliberately use a CII-only code on
+  the UBL leg to discriminate the per-syntax subsets — and unit-pinned
+  positive + negative per id per syntax in `test_rules.py` /
+  `test_rules_cii.py`.
+
+### Changed
+
+- CEN coverage per syntax universe moved 217 -> 219 of the 223 official
+  `BR-*` ids; the deferred `BR-CL-*` code-list class shrank 2 -> 0 — the
+  `codelist_not_asserted` exclusion bucket is now empty. Coverage/count
+  surfaces regenerated and re-pinned through the existing drift guards
+  (README §2, `COVERAGE.md`/`coverage_matrix.json`, `cii_parity.json`
+  279 -> 281 both-syntax, `RULES.md`, `remediation_catalog.json` incl. the
+  three new German renderings, exports, attestation, sbom, site, web bundle;
+  pyproject + `action/README.md` descriptions now say 297). No guard was
+  weakened.
+
 ## [0.2.5] - 2026-07-23
 
 The engine now fires 295 rules (was 293): the everyday-field code-list pair

@@ -59,6 +59,20 @@ Provenance (each file carries the header comment
   from each artifact and selected per syntax; unifying them would accept
   UBL codes on CII (and vice versa) that the official validator rejects.
 
+  * UNTDID_1153_CODES (object/document reference identifier scheme,
+    BR-CL-07): the 818-entry enumeration inlined in the BR-CL-07 assert of
+    BOTH preprocessed artifacts (verified byte-identical after split), so a
+    single set serves the two distinct bindings (UBL @schemeID / CII
+    ram:ReferenceTypeCode text).
+
+  * UBL_NOTE_SUBJECT_CODES / CII_NOTE_SUBJECT_CODES (invoice note subject
+    code, UNTDID 4451, BR-CL-08): the two artifacts inline DIFFERENT subsets
+    (the CII set is a strict superset carrying 18 extra codes), pinned
+    separately and selected per syntax. UBL_NOTE_SUBJECT_PADDED preserves the
+    exact list string because the UBL assert reads a ``#CODE#`` grammar with
+    an un-padded ``contains`` (substring semantics), not the ordinary
+    space-padded membership test the CII binding uses.
+
   * VAT_CATEGORY_CODES (UNCL 5305 EN 16931 subset — the VAT category codes):
     corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch
     (asserts BR-CL-17, context cac:TaxCategory/cbc:ID, and BR-CL-18, context
@@ -246,6 +260,134 @@ _UBL_VAT_POINT = "3 35 432 "
 # context ram:DueDateTypeCode) — exact preprocessed-artifact inline string,
 # NOT shared with the UBL binding (different UNTDID register).
 _CII_VAT_POINT = "5 29 72 "
+
+# --- UNTDID 1153 restriction, BR-CL-07 (object/document reference identifier
+# scheme). BOTH vendored PREPROCESSED artifacts inline the SAME 818-entry
+# enumeration for this assert (machine-verified byte-identical after a
+# whitespace split), so ONE pinned set serves both syntaxes even though the
+# two bindings read DIFFERENT surfaces (UBL: the @schemeID attribute of a
+# cbc:ID under a DocumentReference whose cbc:DocumentTypeCode='130'; CII: the
+# text of ram:ReferenceTypeCode). Source:
+# corpus/cen-en16931/{ubl,cii}/schematron/preprocessed/
+# EN16931-*-validation-preprocessed.sch, assert BR-CL-07 — the exact inline
+# ``contains(' … ', concat(' ', normalize-space(V), ' '))`` value string.
+_UNTDID_1153 = (
+    "AAA AAB AAC AAD AAE AAF AAG AAH AAI AAJ AAK AAL AAM AAN AAO AAP AAQ AAR "
+    "AAS AAT AAU AAV AAW AAX AAY AAZ ABA ABB ABC ABD ABE ABF ABG ABH ABI ABJ "
+    "ABK ABL ABM ABN ABO ABP ABQ ABR ABS ABT ABU ABV ABW ABX ABY ABZ AC ACA "
+    "ACB ACC ACD ACE ACF ACG ACH ACI ACJ ACK ACL ACN ACO ACP ACQ ACR ACT ACU "
+    "ACV ACW ACX ACY ACZ ADA ADB ADC ADD ADE ADF ADG ADI ADJ ADK ADL ADM ADN "
+    "ADO ADP ADQ ADT ADU ADV ADW ADX ADY ADZ AE AEA AEB AEC AED AEE AEF AEG "
+    "AEH AEI AEJ AEK AEL AEM AEN AEO AEP AEQ AER AES AET AEU AEV AEW AEX AEY "
+    "AEZ AF AFA AFB AFC AFD AFE AFF AFG AFH AFI AFJ AFK AFL AFM AFN AFO AFP "
+    "AFQ AFR AFS AFT AFU AFV AFW AFX AFY AFZ AGA AGB AGC AGD AGE AGF AGG AGH "
+    "AGI AGJ AGK AGL AGM AGN AGO AGP AGQ AGR AGS AGT AGU AGV AGW AGX AGY AGZ "
+    "AHA AHB AHC AHD AHE AHF AHG AHH AHI AHJ AHK AHL AHM AHN AHO AHP AHQ AHR "
+    "AHS AHT AHU AHV AHX AHY AHZ AIA AIB AIC AID AIE AIF AIG AIH AII AIJ AIK "
+    "AIL AIM AIN AIO AIP AIQ AIR AIS AIT AIU AIV AIW AIX AIY AIZ AJA AJB AJC "
+    "AJD AJE AJF AJG AJH AJI AJJ AJK AJL AJM AJN AJO AJP AJQ AJR AJS AJT AJU "
+    "AJV AJW AJX AJY AJZ AKA AKB AKC AKD AKE AKF AKG AKH AKI AKJ AKK AKL AKM "
+    "AKN AKO AKP AKQ AKR AKS AKT AKU AKV AKW AKX AKY AKZ ALA ALB ALC ALD ALE "
+    "ALF ALG ALH ALI ALJ ALK ALL ALM ALN ALO ALP ALQ ALR ALS ALT ALU ALV ALW "
+    "ALX ALY ALZ AMA AMB AMC AMD AME AMF AMG AMH AMI AMJ AMK AML AMM AMN AMO "
+    "AMP AMQ AMR AMS AMT AMU AMV AMW AMX AMY AMZ ANA ANB ANC AND ANE ANF ANG "
+    "ANH ANI ANJ ANK ANL ANM ANN ANO ANP ANQ ANR ANS ANT ANU ANV ANW ANX ANY "
+    "AOA AOD AOE AOF AOG AOH AOI AOJ AOK AOL AOM AON AOO AOP AOQ AOR AOS AOT "
+    "AOU AOV AOW AOX AOY AOZ AP APA APB APC APD APE APF APG APH API APJ APK "
+    "APL APM APN APO APP APQ APR APS APT APU APV APW APX APY APZ AQA AQB AQC "
+    "AQD AQE AQF AQG AQH AQI AQJ AQK AQL AQM AQN AQO AQP AQQ AQR AQS AQT AQU "
+    "AQV AQW AQX AQY AQZ ARA ARB ARC ARD ARE ARF ARG ARH ARI ARJ ARK ARL ARM "
+    "ARN ARO ARP ARQ ARR ARS ART ARU ARV ARW ARX ARY ARZ ASA ASB ASC ASD ASE "
+    "ASF ASG ASH ASI ASJ ASK ASL ASM ASN ASO ASP ASQ ASR ASS AST ASU ASV ASW "
+    "ASX ASY ASZ ATA ATB ATC ATD ATE ATF ATG ATH ATI ATJ ATK ATL ATM ATN ATO "
+    "ATP ATQ ATR ATS ATT ATU ATV ATW ATX ATY ATZ AU AUA AUB AUC AUD AUE AUF "
+    "AUG AUH AUI AUJ AUK AUL AUM AUN AUO AUP AUQ AUR AUS AUT AUU AUV AUW AUX "
+    "AUY AUZ AV AVA AVB AVC AVD AVE AVF AVG AVH AVI AVJ AVK AVL AVM AVN AVO "
+    "AVP AVQ AVR AVS AVT AVU AVV AVW AVX AVY AVZ AWA AWB AWC AWD AWE AWF AWG "
+    "AWH AWI AWJ AWK AWL AWM AWN AWO AWP AWQ AWR AWS AWT AWU AWV AWW AWX AWY "
+    "AWZ AXA AXB AXC AXD AXE AXF AXG AXH AXI AXJ AXK AXL AXM AXN AXO AXP AXQ "
+    "AXR AXS AXU BA BC BD BE BH BM BN BO BR BT BTP BW CAS CAT CAU CAV CAW "
+    "CAX CAY CAZ CBA CBB CD CEC CED CFE CFF CFO CG CH CK CKN CM CMR CN CNO "
+    "COF CP CR CRN CS CST CT CU CV CW CZ DA DAN DB DI DL DM DQ DR EA EB ED "
+    "EE EEP EI EN EQ ER ERN ET EX FC FF FI FLW FN FO FS FT FV FX GA GC GD "
+    "GDN GN HS HWB IA IB ICA ICE ICO II IL INB INN INO IP IS IT IV JB JE LA "
+    "LAN LAR LB LC LI LO LRC LS MA MB MF MG MH MR MRN MS MSS MWB NA NF OH OI "
+    "ON OP OR PB PC PD PE PF PI PK PL POR PP PQ PR PS PW PY RA RC RCN RE REN "
+    "RF RR RT SA SB SD SE SEA SF SH SI SM SN SP SQ SRN SS STA SW SZ TB TCR "
+    "TE TF TI TIN TL TN TP UAR UC UCN UN UO URI VA VC VGR VM VN VON VOR VP "
+    "VR VS VT VV WE WM WN WR WS WY XA XC XP ZZZ "
+)
+
+# --- UNTDID 4451 restriction, BR-CL-08 (invoice note subject code). The two
+# vendored artifacts inline DIFFERENT subsets of UNCL 4451 (measured this run:
+# the CII set is a strict SUPERSET of the UBL set, carrying 18 extra codes —
+# BAT..BBB, BMF..BMH, CCJ..CCO), so the two are pinned SEPARATELY and selected
+# per syntax. The two BINDINGS also differ in shape:
+#   * UBL (source: EN16931-UBL-validation-preprocessed.sch, assert BR-CL-08,
+#     context /ubl:Invoice/cbc:Note | /cn:CreditNote/cbc:Note): the assert
+#     does NOT test the whole element — it tests a ``#CODE#`` prefix GRAMMAR
+#     inside the free-text note. It extracts the 3-character token delimited
+#     by the FIRST two '#' characters and fires ONLY when such a 3-char token
+#     is present AND is not found in the list. Because the artifact compares
+#     with ``contains(' … ', token)`` (the token is NOT space-padded, unlike
+#     every other codelist assert), the padded list STRING — not just the set
+#     — is pinned so rules.py can reproduce the exact substring semantics.
+#   * CII (source: EN16931-CII-validation-preprocessed.sch, assert BR-CL-08,
+#     context ram:SubjectCode): a plain space-padded membership test of the
+#     element text against the CII subset — the ordinary codelist shape.
+_UBL_NOTE_SUBJECT = (
+    "AAA AAB AAC AAD AAE AAF AAG AAI AAJ AAK AAL AAM AAN AAO AAP AAQ AAR AAS "
+    "AAT AAU AAV AAW AAX AAY AAZ ABA ABB ABC ABD ABE ABF ABG ABH ABI ABJ ABK "
+    "ABL ABM ABN ABO ABP ABQ ABR ABS ABT ABU ABV ABW ABX ABZ ACA ACB ACC ACD "
+    "ACE ACF ACG ACH ACI ACJ ACK ACL ACM ACN ACO ACP ACQ ACR ACS ACT ACU ACV "
+    "ACW ACX ACY ACZ ADA ADB ADC ADD ADE ADF ADG ADH ADI ADJ ADK ADL ADM ADN "
+    "ADO ADP ADQ ADR ADS ADT ADU ADV ADW ADX ADY ADZ AEA AEB AEC AED AEE AEF "
+    "AEG AEH AEI AEJ AEK AEL AEM AEN AEO AEP AEQ AER AES AET AEU AEV AEW AEX "
+    "AEY AEZ AFA AFB AFC AFD AFE AFF AFG AFH AFI AFJ AFK AFL AFM AFN AFO AFP "
+    "AFQ AFR AFS AFT AFU AFV AFW AFX AFY AFZ AGA AGB AGC AGD AGE AGF AGG AGH "
+    "AGI AGJ AGK AGL AGM AGN AGO AGP AGQ AGR AGS AGT AGU AGV AGW AGX AGY AGZ "
+    "AHA AHB AHC AHD AHE AHF AHG AHH AHI AHJ AHK AHL AHM AHN AHO AHP AHQ AHR "
+    "AHS AHT AHU AHV AHW AHX AHY AHZ AIA AIB AIC AID AIE AIF AIG AIH AII AIJ "
+    "AIK AIL AIM AIN AIO AIP AIQ AIR AIS AIT AIU AIV AIW AIX AIY AIZ AJA AJB "
+    "ALC ALD ALE ALF ALG ALH ALI ALJ ALK ALL ALM ALN ALO ALP ALQ ARR ARS AUT "
+    "AUU AUV AUW AUX AUY AUZ AVA AVB AVC AVD AVE AVF BAG BAH BAI BAJ BAK BAL "
+    "BAM BAN BAO BAP BAQ BAR BAS BLC BLD BLE BLF BLG BLH BLI BLJ BLK BLL BLM "
+    "BLN BLO BLP BLQ BLR BLS BLT BLU BLV BLW BLX BLY BLZ BMA BMB BMC BMD BME "
+    "CCI CEX CHG CIP CLP CLR COI CUR CUS DAR DCL DEL DIN DOC DUT EUR FBC GBL "
+    "GEN GS7 HAN HAZ ICN IIN IMI IND INS INV IRP ITR ITS LAN LIN LOI MCO MDH "
+    "MKS ORI OSI PAC PAI PAY PKG PKT PMD PMT PRD PRF PRI PUR QIN QQD QUT RAH "
+    "REG RET REV RQR SAF SIC SIN SLR SPA SPG SPH SPP SPT SRN SSR SUR TCA TDT "
+    "TRA TRR TXD WHI ZZZ "
+)
+_CII_NOTE_SUBJECT = (
+    "AAA AAB AAC AAD AAE AAF AAG AAI AAJ AAK AAL AAM AAN AAO AAP AAQ AAR AAS "
+    "AAT AAU AAV AAW AAX AAY AAZ ABA ABB ABC ABD ABE ABF ABG ABH ABI ABJ ABK "
+    "ABL ABM ABN ABO ABP ABQ ABR ABS ABT ABU ABV ABW ABX ABZ ACA ACB ACC ACD "
+    "ACE ACF ACG ACH ACI ACJ ACK ACL ACM ACN ACO ACP ACQ ACR ACS ACT ACU ACV "
+    "ACW ACX ACY ACZ ADA ADB ADC ADD ADE ADF ADG ADH ADI ADJ ADK ADL ADM ADN "
+    "ADO ADP ADQ ADR ADS ADT ADU ADV ADW ADX ADY ADZ AEA AEB AEC AED AEE AEF "
+    "AEG AEH AEI AEJ AEK AEL AEM AEN AEO AEP AEQ AER AES AET AEU AEV AEW AEX "
+    "AEY AEZ AFA AFB AFC AFD AFE AFF AFG AFH AFI AFJ AFK AFL AFM AFN AFO AFP "
+    "AFQ AFR AFS AFT AFU AFV AFW AFX AFY AFZ AGA AGB AGC AGD AGE AGF AGG AGH "
+    "AGI AGJ AGK AGL AGM AGN AGO AGP AGQ AGR AGS AGT AGU AGV AGW AGX AGY AGZ "
+    "AHA AHB AHC AHD AHE AHF AHG AHH AHI AHJ AHK AHL AHM AHN AHO AHP AHQ AHR "
+    "AHS AHT AHU AHV AHW AHX AHY AHZ AIA AIB AIC AID AIE AIF AIG AIH AII AIJ "
+    "AIK AIL AIM AIN AIO AIP AIQ AIR AIS AIT AIU AIV AIW AIX AIY AIZ AJA AJB "
+    "ALC ALD ALE ALF ALG ALH ALI ALJ ALK ALL ALM ALN ALO ALP ALQ ARR ARS AUT "
+    "AUU AUV AUW AUX AUY AUZ AVA AVB AVC AVD AVE AVF BAG BAH BAI BAJ BAK BAL "
+    "BAM BAN BAO BAP BAQ BAR BAS BAT BAU BAV BAW BAX BAY BAZ BBA BBB BLC BLD "
+    "BLE BLF BLG BLH BLI BLJ BLK BLL BLM BLN BLO BLP BLQ BLR BLS BLT BLU BLV "
+    "BLW BLX BLY BLZ BMA BMB BMC BMD BME BMF BMG BMH CCI CCJ CCK CCL CCM CCN "
+    "CCO CEX CHG CIP CLP CLR COI CUR CUS DAR DCL DEL DIN DOC DUT EUR FBC GBL "
+    "GEN GS7 HAN HAZ ICN IIN IMI IND INS INV IRP ITR ITS LAN LIN LOI MCO MDH "
+    "MKS ORI OSI PAC PAI PAY PKG PKT PMD PMT PRD PRF PRI PUR QIN QQD QUT RAH "
+    "REG RET REV RQR SAF SIC SIN SLR SPA SPG SPH SPP SPT SRN SSR SUR TCA TDT "
+    "TRA TRR TXD WHI ZZZ "
+)
+# Padded list STRING for the UBL BR-CL-08 grammar — the artifact tests
+# ``contains(' … ', token)`` with an UN-padded token, so the substring
+# semantics (not set membership) must be reproduced against this exact string.
+UBL_NOTE_SUBJECT_PADDED = " " + _UBL_NOTE_SUBJECT
 
 # --- UNCL 5305 EN 16931 VAT category codes (UBL/CII BR-CL-17 & BR-CL-18) ---
 # Exact inline string of the BR-CL-17/18 asserts (order preserved verbatim).
@@ -530,6 +672,9 @@ UBL_COUNTRY_CODES = frozenset(_UBL_COUNTRY.split())
 CII_COUNTRY_CODES = frozenset(_CII_COUNTRY.split())
 UBL_VAT_POINT_CODES = frozenset(_UBL_VAT_POINT.split())
 CII_VAT_POINT_CODES = frozenset(_CII_VAT_POINT.split())
+UNTDID_1153_CODES = frozenset(_UNTDID_1153.split())
+UBL_NOTE_SUBJECT_CODES = frozenset(_UBL_NOTE_SUBJECT.split())
+CII_NOTE_SUBJECT_CODES = frozenset(_CII_NOTE_SUBJECT.split())
 VAT_CATEGORY_CODES = frozenset(_VAT_CATEGORY.split())
 # VATEX codes are pinned already upper-cased (they are in the vendored string);
 # the rule compares upper_case(value) so the set must be the upper-cased form.
@@ -554,6 +699,18 @@ assert len(CII_VAT_POINT_CODES) == 3, len(CII_VAT_POINT_CODES)
 # a transcription error.
 assert not (UBL_VAT_POINT_CODES & CII_VAT_POINT_CODES), (
     UBL_VAT_POINT_CODES & CII_VAT_POINT_CODES)
+# BR-CL-07 (UNTDID 1153): ONE 818-entry set — both artifacts inline the same
+# enumeration, so no per-syntax split (unlike the note-subject pair below).
+assert len(UNTDID_1153_CODES) == 818, len(UNTDID_1153_CODES)
+# BR-CL-08 (UNTDID 4451): the CII subset is a strict SUPERSET of the UBL
+# subset — a measured artifact fact (CII carries 18 codes UBL omits). Pinned
+# SEPARATELY; unifying them would accept CII-only note codes on UBL.
+assert len(UBL_NOTE_SUBJECT_CODES) == 383, len(UBL_NOTE_SUBJECT_CODES)
+assert len(CII_NOTE_SUBJECT_CODES) == 401, len(CII_NOTE_SUBJECT_CODES)
+assert UBL_NOTE_SUBJECT_CODES < CII_NOTE_SUBJECT_CODES
+assert CII_NOTE_SUBJECT_CODES - UBL_NOTE_SUBJECT_CODES == frozenset((
+    "BAT", "BAU", "BAV", "BAW", "BAX", "BAY", "BAZ", "BBA", "BBB",
+    "BMF", "BMG", "BMH", "CCJ", "CCK", "CCL", "CCM", "CCN", "CCO"))
 assert len(VAT_CATEGORY_CODES) == 10, len(VAT_CATEGORY_CODES)
 assert len(VATEX_CODES) == 88, len(VATEX_CODES)
 assert len(UNIT_CODES) == 2162, len(UNIT_CODES)

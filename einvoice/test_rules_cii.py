@@ -3773,5 +3773,63 @@ class TestEverydayFieldCodeListsCII(unittest.TestCase):
         self.assertNotIn("BR-CL-14", _fired_ids(r))
 
 
+# Object-reference / note-subject code-list pair (BR-CL-07 UNTDID 1153 +
+# BR-CL-08 UNTDID 4451, T-VHCLX.3) — the CII bindings. BR-CL-07 reads the
+# element text of ram:ReferenceTypeCode (no DocumentTypeCode='130' predicate
+# — that scoping is UBL-only); BR-CL-08 reads ram:SubjectCode against the CII
+# 4451 subset. The clean base carries a valid ram:SubjectCode ('AAR') and no
+# ram:ReferenceTypeCode, so it fires neither.
+OBJREF_CL_RULES_CII = {"BR-CL-07", "BR-CL-08"}
+
+
+class ObjectRefNoteSubjectCodeListsCii(unittest.TestCase):
+    def _objref_fired(self, r):
+        return _fired_ids(r) & OBJREF_CL_RULES_CII
+
+    def _add_reference_type(self, r, code):
+        agr = r.find("rsm:SupplyChainTradeTransaction/"
+                     "ram:ApplicableHeaderTradeAgreement", NS)
+        ard = ET.SubElement(agr, _q(NSA, "AdditionalReferencedDocument"))
+        ET.SubElement(ard, _q(NSA, "IssuerAssignedID")).text = "OBJ-1"
+        ET.SubElement(ard, _q(NSA, "TypeCode")).text = "130"
+        ET.SubElement(ard, _q(NSA, "ReferenceTypeCode")).text = code
+
+    def _subject_code(self, r):
+        return next(r.iter(_q(NSA, "SubjectCode")))
+
+    def test_base_fires_neither(self):
+        self.assertFalse(self._objref_fired(_good_root()))
+
+    # ---- BR-CL-07 (ram:ReferenceTypeCode text) -------------------------
+    def test_br_cl_07_valid_code_holds(self):
+        r = _good_root()
+        self._add_reference_type(r, "AAB")
+        self.assertFalse(self._objref_fired(r))
+
+    def test_br_cl_07_bad_code_fires(self):
+        r = _good_root()
+        self._add_reference_type(r, "ZZ9")
+        self.assertEqual(self._objref_fired(r), {"BR-CL-07"})
+
+    # ---- BR-CL-08 (ram:SubjectCode text against the CII subset) --------
+    def test_br_cl_08_valid_code_holds(self):
+        # The base already carries the valid 'AAR'; retest explicitly.
+        r = _good_root()
+        self._subject_code(r).text = "ADU"  # ADU is a listed CII 4451 code
+        self.assertFalse(self._objref_fired(r))
+
+    def test_br_cl_08_bad_code_fires(self):
+        r = _good_root()
+        self._subject_code(r).text = "ZZ9"
+        self.assertEqual(self._objref_fired(r), {"BR-CL-08"})
+
+    def test_br_cl_08_cii_only_code_holds_on_cii(self):
+        # 'BBB' is in the CII 4451 subset (not the UBL subset) — the CII
+        # binding must ACCEPT it, the mirror of the UBL test that rejects it.
+        r = _good_root()
+        self._subject_code(r).text = "BBB"
+        self.assertFalse(self._objref_fired(r))
+
+
 if __name__ == "__main__":
     unittest.main()

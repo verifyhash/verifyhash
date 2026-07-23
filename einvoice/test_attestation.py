@@ -116,7 +116,7 @@ class TestByteReproducibility(unittest.TestCase):
     def test_attestation_records_all_required_facts(self):
         body = gen_attestation.build_attestation()["attestation"]
         # rule counts
-        self.assertEqual(body["rules"]["count"], 295)
+        self.assertEqual(body["rules"]["count"], 297)
         self.assertIn("by_family", body["rules"])
         self.assertTrue(body["rules"]["rulesets"])
         # coverage headline

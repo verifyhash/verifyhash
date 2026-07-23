@@ -899,6 +899,21 @@ SPECIAL = {
     "Value added tax point date code MUST be coded using a restriction of UNTDID 2475.":
         "Der Code für das Datum der Steuerfälligkeit MUSS anhand einer "
         "Einschränkung der Codeliste UNTDID 2475 codiert werden.",
+    # ---- Object-reference / note-subject code-list pair (BR-CL-07/08,
+    # T-VHCLX.3). BR-CL-07 shares one official English text across both
+    # syntaxes; BR-CL-08 ships DIFFERENT wording per artifact (UBL:
+    # "Invoiced note subject code shall be coded using UNCL4451"; CII:
+    # "Subject Code MUST be coded using a restriction of UNTDID 4451"), so
+    # both are translated.
+    "Object identifier identification scheme identifier MUST be coded using a restriction of UNTDID 1153.":
+        "Die Kennung des Schemas der Objektkennung MUSS anhand einer "
+        "Einschränkung der Codeliste UNTDID 1153 codiert werden.",
+    "Invoiced note subject code shall be coded using UNCL4451":
+        "Der Betreffcode der Rechnungsbemerkung MUSS anhand der Codeliste "
+        "UNCL 4451 codiert werden.",
+    "Subject Code MUST be coded using a restriction of UNTDID 4451.":
+        "Der Betreffcode MUSS anhand einer Einschränkung der Codeliste "
+        "UNTDID 4451 codiert werden.",
     "Tax exemption reason code identifier scheme identifier MUST belong to the CEF VATEX code list":
         "Die Kennung des Schemas des Codes für den Grund der Umsatzsteuerbefreiung MUSS der "
         "Codeliste CEF VATEX angehören.",

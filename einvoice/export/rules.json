@@ -6072,6 +6072,13 @@
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6087,7 +6094,7 @@
         "title": "Skonto (cash-discount) lines in Payment terms (BT-20)."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Skonto (cash-discount) lines in Payment terms (BT-20)."
     },
     {

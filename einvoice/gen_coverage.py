@@ -153,18 +153,15 @@ _CII_CORE_GENERIC = ("core rule not included in the CII differential leg (LEG 3)
                      "the CII model but CII parity is not asserted for it.")
 
 # Honest reasons a BR-DE/BR-DEX rule is NOT graded on the CII leg.
-# (The payment-means group BR-DE-19/20/23/24/25-a/-b left this table with
-# T-VHCIIDE.1 — the CIIPaymentMeans surface now carries it and the group is
-# differentially graded on LEG 4. The direct-debit pair BR-DE-30/-31 and the
-# attachment-filename check BR-DE-22 left with T-VHCIIDE.2 — the BG-19
-# reconstruction facts and the sibling-grouped attachment filename surface
-# carry them.)
-CII_DE_REASON = {
-    "BR-DE-18": "Skonto grammar in the BT-20 payment-terms free text — a "
-                "structure the syntax-agnostic core model omits; "
-                "transcription staged as T-VHCIIDE.3 (deferred, not "
-                "overlooked).",
-}
+# EMPTY since T-VHCIIDE.3: the payment-means group BR-DE-19/20/23/24/25-a/-b
+# left this table with T-VHCIIDE.1 (CIIPaymentMeans surface), the direct-debit
+# pair BR-DE-30/-31 and the attachment-filename check BR-DE-22 with
+# T-VHCIIDE.2 (BG-19 reconstruction facts + sibling-grouped attachment
+# filename surface), and the last holdout BR-DE-18 (Skonto grammar in BT-20)
+# with T-VHCIIDE.3 (payment-terms Description[1] surface). Kept as a dict so
+# a future exclusion must document its reason HERE (the cii_de_oos build
+# below falls back to _CII_DE_GENERIC otherwise).
+CII_DE_REASON = {}
 _CII_DEX_GENERIC = ("part of the KoSIT XRechnung EXTENSION layer: this assert "
                     "is either absent from the vendored CII artifact "
                     "(BR-DEX-02/03/09..14 exist only in the UBL binding) or "
@@ -475,14 +472,15 @@ def kosit_documented_exclusion_ids(key):
     UBL: EMPTY — every family assert the vendored UBL artifact carries is
     implemented, so nothing is excluded.
 
-    CII: the 1-id ``cii_de_out_of_scope`` exclusion class (single
-    source of truth = ``differential.CII_XR_EXCLUDED_RULE_IDS`` — REUSED, the
-    per-id reasons stay documented once in ``exclusions.cii_de_out_of_scope``)
-    plus the extension-layer ``BR-DEX-*`` ids implemented on UBL but not on
-    CII, whose non-evaluation the rule table already documents per id (the
-    ``_CII_DEX_GENERIC`` cii-provenance reason: extension surfaces the
-    normalized CII model does not carry; only the CII-only BR-DEX-15 is
-    admitted there).
+    CII: the ``cii_de_out_of_scope`` exclusion class (single source of
+    truth = ``differential.CII_XR_EXCLUDED_RULE_IDS`` — REUSED, the per-id
+    reasons stay documented once in ``exclusions.cii_de_out_of_scope``;
+    EMPTY since T-VHCIIDE.3 admitted the last BR-DE holdout, the BR-DE-18
+    Skonto grammar) plus the extension-layer ``BR-DEX-*`` ids implemented on
+    UBL but not on CII, whose non-evaluation the rule table already documents
+    per id (the ``_CII_DEX_GENERIC`` cii-provenance reason: extension
+    surfaces the normalized CII model does not carry; only the CII-only
+    BR-DEX-15 is admitted there).
 
     Both sets are derived from LIVE engine sources — never from the artifact
     being measured — so a KoSIT artifact bump that adds or renames an assert
@@ -567,8 +565,10 @@ def build_kosit_gap():
             "registry (einvoice.rules_xrechnung ALL_RULES for UBL, "
             "CII_DE_RULES for CII) or covered by a documented deliberate "
             "exclusion: EMPTY for UBL (all asserts implemented); for CII the "
-            "1-id cii_de_out_of_scope class (reused from "
-            "differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented) plus "
+            "cii_de_out_of_scope class (reused from "
+            "differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented — "
+            "EMPTY since T-VHCIIDE.3 admitted the last BR-DE holdout, "
+            "BR-DE-18) plus "
             "the extension-layer BR-DEX ids the rule table documents as not "
             "carried by the normalized CII model. Both exclusion sets are "
             "derived from live engine sources, never from the artifact, so a "

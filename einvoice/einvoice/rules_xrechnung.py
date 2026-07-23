@@ -411,41 +411,54 @@ def br_de_17(root):
               "cbc:InvoiceTypeCode")
 
 
-@_rule("BR-DE-18", "fatal")
-def br_de_18(root):
-    """BR-DE-18: Skonto (cash-discount) lines in Payment terms (BT-20).
+def _skonto_terms_hold(notes):
+    """Shared BR-DE-18 Skonto-grammar quantifier over the BT-20 payment-terms
+    note strings — the ONE transcription both syntax bindings evaluate.
 
-    Official test (context /ubl:Invoice), over cac:PaymentTerms/cbc:Note[1]:
+    ``notes`` is the string-value of each official rule-path node: on UBL the
+    first ``cbc:Note`` per ``cac:PaymentTerms``, on CII the first
+    ``ram:Description`` per ``ram:SpecifiedTradePaymentTerms`` (both artifacts
+    quantify over the SAME test body). Official test::
 
-        every $line in tokenize(., '(\\r?\\n)')[starts-with(normalize-space(.), '#')]
+        every $line in <path>/tokenize(., '(\\r?\\n)')[starts-with(normalize-space(.), '#')]
         satisfies matches(normalize-space($line), $XR-SKONTO-REGEX)
-              and matches(tokenize(., '#.+#')[last()], '^\\s*\\n')
+              and matches(<path>/tokenize(., '#.+#')[last()], '^\\s*\\n')
 
     Only lines that start with '#' (after normalize-space) are constrained; a
     document without such lines holds vacuously. When they exist, each must
     match the SKONTO grammar AND the note must end each entry with a newline
-    after the final '#'. With MORE than one cac:PaymentTerms/cbc:Note[1] node
-    the official matches() call is a dynamic error (the whole official
-    transform aborts); we deterministically FIRE in that unreachable-for-
-    comparison corner.
+    after the final '#'. With MORE than one path node the official matches()
+    call is a dynamic error (the whole official transform aborts); we
+    deterministically FIRE in that unreachable-for-comparison corner.
+    Returns True when the assert holds, False when it fires.
     """
-    notes = [_sv(pt.find("cbc:Note", NS))
-             for pt in root.findall("cac:PaymentTerms", NS)
-             if pt.find("cbc:Note", NS) is not None]
     skonto_lines = [line
                     for note in notes
                     for line in re.split(r"\r?\n", note)
                     if _nsp(line).startswith("#")]
     if not skonto_lines:
-        return None
-    holds = all(_SKONTO_RE.search(_nsp(line)) for line in skonto_lines)
-    if holds:
-        if len(notes) != 1:
-            holds = False
-        else:
-            last_token = re.split(r"#.+#", notes[0])[-1]
-            holds = bool(_SKONTO_TERMINATOR_RE.search(last_token))
-    if holds:
+        return True
+    if not all(_SKONTO_RE.search(_nsp(line)) for line in skonto_lines):
+        return False
+    if len(notes) != 1:
+        return False
+    last_token = re.split(r"#.+#", notes[0])[-1]
+    return bool(_SKONTO_TERMINATOR_RE.search(last_token))
+
+
+@_rule("BR-DE-18", "fatal")
+def br_de_18(root):
+    """BR-DE-18: Skonto (cash-discount) lines in Payment terms (BT-20).
+
+    Official test (context /ubl:Invoice), over cac:PaymentTerms/cbc:Note[1] —
+    the shared quantifier body lives in :func:`_skonto_terms_hold` (the CII
+    twin ``cii_br_de_18`` evaluates the same transcription over the CII
+    payment-terms surface).
+    """
+    notes = [_sv(pt.find("cbc:Note", NS))
+             for pt in root.findall("cac:PaymentTerms", NS)
+             if pt.find("cbc:Note", NS) is not None]
+    if _skonto_terms_hold(notes):
         return None
     return _v(br_de_18, "Skonto entries in 'Payment terms' (BT-20) must "
               "follow the XRechnung grammar #SKONTO#TAGE=n#PROZENT=n.nn#"
@@ -1463,10 +1476,12 @@ def evaluate(root):
 # EXACT parity (0 false-positive / 0 false-negative) with the official
 # XRechnung-CII Schematron on the differential corpus are admitted here (list
 # ``CII_DE_RULES``). The rules whose CII binding needs structure the EN 16931
-# core model does not carry — the Skonto grammar (BR-DE-18) and the BR-DEX-*
-# extension asserts other than BR-DEX-15 (whose two-boolean surface the model
-# DOES carry; it is admitted below) — are EXCLUDED, not approximated (see the
-# documented exclusion list in ``differential.CII_XR_EXCLUDED_RULE_IDS``).
+# core model does not carry — the BR-DEX-* extension asserts other than
+# BR-DEX-15 (whose two-boolean surface the model DOES carry; it is admitted
+# below) — are EXCLUDED, not approximated (see the documented exclusion list
+# in ``differential.CII_XR_EXCLUDED_RULE_IDS``; the national BR-DE-* family
+# itself is COMPLETE on CII since T-VHCIIDE.3 admitted the Skonto grammar
+# BR-DE-18 via the parser_cii payment-terms Description surface).
 # The payment-means group (BR-DE-19/20 IBAN mod-97 and the type-code group
 # checks BR-DE-23/24/25-a/-b) IS admitted: ``parser_cii._build_cii_br_de``
 # carries one ``CIIPaymentMeans`` record per
@@ -1961,6 +1976,39 @@ def cii_br_de_17(inv):
               "ram:ExchangedDocument/ram:TypeCode")
 
 
+@_rule("BR-DE-18", "fatal")
+def cii_br_de_18(inv):
+    """BR-DE-18: Skonto (cash-discount) lines in Payment terms (BT-20), CII
+    binding. Official test (context /rsm:CrossIndustryInvoice, flag fatal,
+    XRechnung-CII-validation.sch)::
+
+        every $line in rsm:SupplyChainTradeTransaction/
+            ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/
+            ram:Description[1]/tokenize(., '(\\r?\\n)')
+            [starts-with(normalize-space(.), '#')]
+        satisfies matches(normalize-space($line), $XR-SKONTO-REGEX)
+        and matches(rsm:SupplyChainTradeTransaction/
+            ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/
+            ram:Description[1]/tokenize(., '#.+#')[last()], '^\\s*\\n')
+
+    Identical quantifier body to the UBL twin (:func:`br_de_18` over
+    cac:PaymentTerms/cbc:Note[1]) — both evaluate the shared
+    :func:`_skonto_terms_hold` transcription; only the path node set differs.
+    The model surface (``payment_terms_descriptions``) carries the FIRST
+    ram:Description per SpecifiedTradePaymentTerms context node, collected by
+    :func:`einvoice.parser_cii._build_cii_br_de` over every header settlement
+    (absolute official path), so the multi-node dynamic-error corner mirrors
+    the UBL twin exactly.
+    """
+    if _skonto_terms_hold(inv.payment_terms_descriptions):
+        return None
+    return _v(cii_br_de_18, "Skonto entries in 'Payment terms' (BT-20) must "
+              "follow the XRechnung grammar #SKONTO#TAGE=n#PROZENT=n.nn#"
+              "[BASISBETRAG=n.nn#] with a newline terminating each entry.",
+              "ram:ApplicableHeaderTradeSettlement/"
+              "ram:SpecifiedTradePaymentTerms/ram:Description")
+
+
 @_rule("BR-DE-21", "warning")
 def cii_br_de_21(inv):
     """BR-DE-21: BT-24 should be the XRechnung specification identifier (CIUS,
@@ -2315,7 +2363,7 @@ CII_DE_RULES = [
     # FIRST in the /rsm:CrossIndustryInvoice rule; kept with the
     # payment-means group they share the BG-19 reconstruction lets with).
     cii_br_de_30, cii_br_de_31,
-    cii_br_de_14, cii_br_de_15, cii_br_de_16, cii_br_de_17,
+    cii_br_de_14, cii_br_de_15, cii_br_de_16, cii_br_de_17, cii_br_de_18,
     cii_br_de_21, cii_br_de_22, cii_br_de_26, cii_br_de_27, cii_br_de_28,
     cii_br_de_tmp_32,
     cii_br_tmp_2, cii_br_tmp_3,

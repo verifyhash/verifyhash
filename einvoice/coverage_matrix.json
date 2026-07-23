@@ -5492,7 +5492,7 @@
       "id": "BR-DE-18",
       "title": "Skonto (cash-discount) lines in Payment terms (BT-20).",
       "family": "xrechnung-cius",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5508,8 +5508,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits; transcription staged as T-VHCIIDE.3 (deferred, not overlooked)."
+          "differentially_proven": true
         }
       }
     },
@@ -7156,12 +7155,7 @@
         "reason": "the official CII artifact ships this assert as test=\"true()\" — the same never-firing tautology as BR-AF-09 — so CII parity is impossible for a real check; the engine asserts the UBL binding's taxable × rate ±1 band on both syntaxes instead (deliberate strictness)."
       }
     ],
-    "cii_de_out_of_scope": [
-      {
-        "id": "BR-DE-18",
-        "reason": "Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits; transcription staged as T-VHCIIDE.3 (deferred, not overlooked)."
-      }
-    ],
+    "cii_de_out_of_scope": [],
     "peppol": {
       "status": "kosit-vendored-family-complete",
       "note": "Scoped honestly: the engine asserts ALL 21 canonical PEPPOL-EN16931-R* rules that KoSIT ships inside the official XRechnung Schematron artifact, in both bindings (see the peppol_kosit_family section and the rule table; each is differentially proven per binding). This is NOT full Peppol BIS Billing 3.0 support: the OpenPeppol ruleset proper (its own Schematron + test corpus) is a separate, not-vendored artifact, and nothing beyond the KoSIT-vendored asserts is claimed. The family enumeration stays machine-checked in peppol_kosit_family, recomputed live by test_coverage_gap.py, so an artifact bump that adds a new Peppol assert reopens the worklist automatically."
@@ -7219,7 +7213,7 @@
       }
     },
     "kosit": {
-      "description": "CIUS-layer mirror of the CEN gap: for each vendored KoSIT XRechnung artifact (Schematron 2.5.0 / XRechnung 3.0.2), the fireable universe is every sch:assert id in the German national rule families (prefixes BR-DE-/BR-DEX-/BR-TMP-, covering BR-DE-*, BR-DEX-*, BR-DE-CVD-* and BR-TMP-*), extracted by a real XML parse of the .sch — never authored from prose — minus any assert the artifact itself ships as a literal test=\"true()\" tautology (currently none in either artifact). Every fireable id is either implemented in that binding's live registry (einvoice.rules_xrechnung ALL_RULES for UBL, CII_DE_RULES for CII) or covered by a documented deliberate exclusion: EMPTY for UBL (all asserts implemented); for CII the 1-id cii_de_out_of_scope class (reused from differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented) plus the extension-layer BR-DEX ids the rule table documents as not carried by the normalized CII model. Both exclusion sets are derived from live engine sources, never from the artifact, so a KoSIT artifact bump that adds or renames an assert cannot self-classify: gen_coverage.py refuses to build and test_coverage_gap.py fails loudly, naming the id, until it is implemented or deliberately documented — the guard shape that would have auto-caught BR-DEX-15.",
+      "description": "CIUS-layer mirror of the CEN gap: for each vendored KoSIT XRechnung artifact (Schematron 2.5.0 / XRechnung 3.0.2), the fireable universe is every sch:assert id in the German national rule families (prefixes BR-DE-/BR-DEX-/BR-TMP-, covering BR-DE-*, BR-DEX-*, BR-DE-CVD-* and BR-TMP-*), extracted by a real XML parse of the .sch — never authored from prose — minus any assert the artifact itself ships as a literal test=\"true()\" tautology (currently none in either artifact). Every fireable id is either implemented in that binding's live registry (einvoice.rules_xrechnung ALL_RULES for UBL, CII_DE_RULES for CII) or covered by a documented deliberate exclusion: EMPTY for UBL (all asserts implemented); for CII the cii_de_out_of_scope class (reused from differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented — EMPTY since T-VHCIIDE.3 admitted the last BR-DE holdout, BR-DE-18) plus the extension-layer BR-DEX ids the rule table documents as not carried by the normalized CII model. Both exclusion sets are derived from live engine sources, never from the artifact, so a KoSIT artifact bump that adds or renames an assert cannot self-classify: gen_coverage.py refuses to build and test_coverage_gap.py fails loudly, naming the id, until it is implemented or deliberately documented — the guard shape that would have auto-caught BR-DEX-15.",
       "family_prefixes": [
         "BR-DE-",
         "BR-DEX-",
@@ -7302,8 +7296,8 @@
           "official_universe": 49,
           "tautologies_in_artifact": [],
           "fireable_universe": 49,
-          "implemented": 42,
-          "documented_exclusions": 7,
+          "implemented": 43,
+          "documented_exclusions": 6,
           "unclassified": 0,
           "implemented_ids": [
             "BR-DE-1",
@@ -7321,6 +7315,7 @@
             "BR-DE-15",
             "BR-DE-16",
             "BR-DE-17",
+            "BR-DE-18",
             "BR-DE-19",
             "BR-DE-20",
             "BR-DE-21",
@@ -7350,7 +7345,6 @@
             "BR-TMP-CVD-01"
           ],
           "documented_exclusion_ids": [
-            "BR-DE-18",
             "BR-DEX-01",
             "BR-DEX-04",
             "BR-DEX-05",

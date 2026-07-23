@@ -26,7 +26,7 @@ The vendored German national rule set is **KoSIT XRechnung Schematron 2.5.0, whi
 ## Coverage at a glance
 
 - **289 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **266** proven on both UBL and CII, **19** UBL-only, **4** CII-only.
+- Syntax: **267** proven on both UBL and CII, **18** UBL-only, **4** CII-only.
 - Severity (blocking class): **276** fatal (block validity), **13** warning / information (reported, non-blocking).
 - **Official German messages: 50 rules** carry an official German assert message, surfaced by the CLI `--lang de` flag (report human-message only; `--json` and exit codes are unchanged). That text is lifted VERBATIM from the vendored KoSIT XRechnung Schematron (`de_source == "kosit"`), never machine-translated; every other rule is English-only by design (no official German assert text exists to quote). See the README `--lang de` section.
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
@@ -275,7 +275,7 @@ the non-blocking `warning` class for the severity column).
 | `BR-DE-15` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Buyer reference (BT-10) must be transmitted (non-empty). |
 | `BR-DE-16` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | If VAT category codes S/Z/E/AE/K/G/L/M are used, one of Seller VAT identifier (BT-31), Seller tax registration identifier (BT-32) or SELLER TAX REPRESENTATIVE PARTY (BG-11) must be present. |
 | `BR-DE-17` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-3 should be one of 326, 380, 384, 389, 381, 875, 876, 877. |
-| `BR-DE-18` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Skonto (cash-discount) lines in Payment terms (BT-20). |
+| `BR-DE-18` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Skonto (cash-discount) lines in Payment terms (BT-20). |
 | `BR-DE-19` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription). |
 | `BR-DE-20` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN. |
 | `BR-DE-21` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) — untrimmed string equality. |
@@ -447,7 +447,6 @@ These BR-DE / BR-DEX rules bind CII document parts (payment-means, IBAN,
 skonto grammar, attachments, the extension layer) the syntax-agnostic
 core model does not carry; excluded on the CII leg, still proven on UBL.
 
-- **BR-DE-18** — Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits; transcription staged as T-VHCIIDE.3 (deferred, not overlooked).
 
 ### Peppol scope
 
@@ -577,9 +576,9 @@ worklist automatically.
 ## CII proof parity
 
 **TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **289**
-business rules the engine asserts, **266** are differentially proven
-on BOTH the UBL and CII bindings; **19** are officially UBL-only and
-**4** is CII-only. Every one of the **19** UBL-only rules the
+business rules the engine asserts, **267** are differentially proven
+on BOTH the UBL and CII bindings; **18** are officially UBL-only and
+**4** is CII-only. Every one of the **18** UBL-only rules the
 official CII artifacts were measured against is now resolved with
 evidence — **0 remain on the cii-fireable worklist** — so no CII
 assert the vendored artifacts carry is left unproven or silently
@@ -608,10 +607,10 @@ Measured split (committed as `cii_parity.json`, live-recomputed by
   and re-verified live by `test_cii_parity.py`; an artifact
   bump that fixes such an assert fails that gate and reopens
   the rule as cii-fireable.
-- **15 binding-inapplicable** — officially UBL-only for the
+- **14 binding-inapplicable** — officially UBL-only for the
   both-syntaxes core-model proof, in two evidence classes:
-  - **7 carried by a vendored CII artifact but out of
-    core-model scope** (`BR-DE-18`, `BR-DEX-01`, `BR-DEX-04`, `BR-DEX-05`, `BR-DEX-06`, `BR-DEX-07`, `BR-DEX-08`):
+  - **6 carried by a vendored CII artifact but out of
+    core-model scope** (`BR-DEX-01`, `BR-DEX-04`, `BR-DEX-05`, `BR-DEX-06`, `BR-DEX-07`, `BR-DEX-08`):
     the assert exists and fires on a CII document, but its
     `@context`/`@test` binds a CII-specific surface — the
     national-CIUS payment-means / payment-terms / direct-debit /

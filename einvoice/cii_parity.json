@@ -53,18 +53,6 @@
       }
     },
     {
-      "id": "BR-DE-18",
-      "family": "xrechnung-cius",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-payment-terms-surface",
-        "context": "/rsm:CrossIndustryInvoice",
-        "test": "every $line                        in rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description[1]/tokenize(. , '(\\r?\\n)')[starts-with( normalize-space(.) , '#')]                        satisfies matches ( normalize-space ($line), $XR-SKONTO-REGEX ) and                     matches( rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description[1]/tokenize(. ,  '#.+#')[last()], '^\\s*\\n' )",
-        "note": "carried by the vendored CII artifact and fires on a CII document, but its @test tokenizes ram:SpecifiedTradePaymentTerms/ram:Description free text against the KoSIT #SKONTO# grammar — a CII payment-terms surface the syntax-agnostic EN 16931 core model does not carry; fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
       "id": "BR-DEX-01",
       "family": "xrechnung-extension",
       "classification": "binding-inapplicable",

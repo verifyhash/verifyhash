@@ -296,6 +296,17 @@ class Invoice(parser.Invoice):
         self.settlement_payment_means = []      # [CIIPaymentMeans]
         self.has_direct_debit_mandate_id = False  # settlement …/ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID
         self.has_creditor_reference_id = False    # settlement …/ram:CreditorReferenceID
+        # -- Payment-terms surface (BR-DE-18, BT-20): the raw string-value of
+        #    the FIRST ram:Description per settlement
+        #    …/ram:SpecifiedTradePaymentTerms context node. The vendored CII
+        #    assert (XRechnung-CII-validation.sch, context
+        #    /rsm:CrossIndustryInvoice) tokenizes
+        #    rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/
+        #    ram:SpecifiedTradePaymentTerms/ram:Description[1] on newlines and
+        #    matches '#'-prefixed lines against $XR-SKONTO-REGEX plus the
+        #    trailing-newline check on tokenize(., '#.+#')[last()] — raw
+        #    (unstripped) text, whitespace is grammar-significant. -------------
+        self.payment_terms_descriptions = []    # [str] Description[1] string-values
         # -- Attachment surface (BR-DE-22): every ram:AdditionalReferencedDocument
         #    ANYWHERE in the document (the official test's // axis), grouped by
         #    PARENT element because the preceding-sibling axis scopes the
@@ -1163,6 +1174,18 @@ def _build_cii_br_de(inv, root):
     inv.has_creditor_reference_id = (
         txn.find("ram:ApplicableHeaderTradeSettlement/"
                  "ram:CreditorReferenceID", NS) is not None)
+    # BR-DE-18 payment-terms surface (BT-20): the official assert's path is
+    # rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/
+    # ram:SpecifiedTradePaymentTerms/ram:Description[1] — the FIRST
+    # ram:Description per SpecifiedTradePaymentTerms context node, collected
+    # over EVERY header settlement element (absolute path, like the
+    # payment-means surface above). Raw string-value: the Skonto grammar's
+    # trailing-newline check makes whitespace significant, so no stripping.
+    for terms in txn.findall("ram:ApplicableHeaderTradeSettlement/"
+                             "ram:SpecifiedTradePaymentTerms", NS):
+        desc = terms.find("ram:Description", NS)  # Description[1]
+        if desc is not None:
+            inv.payment_terms_descriptions.append(_strval(desc))
     def _sv_opt(el):
         # string-value of an OPTIONAL element (None when absent — the
         # official replace()/normalize-space() over the empty sequence

@@ -1275,8 +1275,9 @@ class CiiDirectDebitAttachmentShape(unittest.TestCase):
         for rid in self.ARTIFACT_FLAGS:
             self.assertIn(rid, set(_diff.CII_XR_RULE_IDS), rid)
             self.assertNotIn(rid, set(_diff.CII_XR_EXCLUDED_RULE_IDS), rid)
-        # BR-DE-18 stays deliberately excluded (T-VHCIIDE.3).
-        self.assertEqual(set(_diff.CII_XR_EXCLUDED_RULE_IDS), {"BR-DE-18"})
+        # The exclusion class is EMPTY since T-VHCIIDE.3 admitted the last
+        # national holdout (BR-DE-18 Skonto grammar).
+        self.assertEqual(set(_diff.CII_XR_EXCLUDED_RULE_IDS), set())
 
 
 class CiiDirectDebitFixtures(unittest.TestCase):
@@ -1494,6 +1495,137 @@ class CiiAttachmentFilenameFixtures(unittest.TestCase):
         inv = parser_cii.build_model(r)
         self.assertEqual(inv.additional_ref_doc_attachments,
                          [[["a.pdf"], [None]]])
+
+
+# --------------------------------------------------------------------------- #
+# CII Skonto payment-terms grammar — BR-DE-18 (T-VHCIIDE.3). Transcribed from #
+# the vendored XRechnung-CII Schematron (pattern cii-pattern, context         #
+# /rsm:CrossIndustryInvoice, flag fatal):                                     #
+#   every $line in rsm:SupplyChainTradeTransaction/                           #
+#       ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/   #
+#       ram:Description[1]/tokenize(., '(\r?\n)')                             #
+#       [starts-with(normalize-space(.), '#')]                                #
+#   satisfies matches(normalize-space($line), $XR-SKONTO-REGEX)               #
+#   and matches(…/ram:Description[1]/tokenize(., '#.+#')[last()], '^\s*\n')   #
+# Same quantifier body as the UBL twin over cac:PaymentTerms/cbc:Note[1] —    #
+# both bindings evaluate the shared xr._skonto_terms_hold transcription.      #
+# The clean 01.02a base carries ONE SpecifiedTradePaymentTerms with a plain   #
+# prose Description (no '#' line), so BR-DE-18 holds vacuously on it.         #
+# --------------------------------------------------------------------------- #
+def _cii_terms_description(root):
+    return _cii_settlement_el(root).find(
+        "ram:SpecifiedTradePaymentTerms/ram:Description", NS_CII)
+
+
+class CiiSkontoShape(unittest.TestCase):
+    """Registry shape: BR-DE-18 is in the CII layer with the artifact's exact
+    flag, and the CII exclusion class is now empty."""
+
+    def test_registered_with_official_flag(self):
+        cii_by_id = {fn.rule_id: fn.severity for fn in xr.CII_DE_RULES}
+        ubl_by_id = {fn.rule_id: fn.severity for fn in xr.ALL_RULES}
+        self.assertEqual(cii_by_id.get("BR-DE-18"), "fatal")
+        # Same id, same flag in the UBL layer (the artifact uses the same
+        # flag for both bindings).
+        self.assertEqual(ubl_by_id.get("BR-DE-18"), "fatal")
+
+    def test_flag_matches_vendored_cii_artifact(self):
+        """The severity above is not hand-trusted: re-read the vendored .sch
+        and compare the @flag (and pin the Description[1] context path the
+        parser surface transcribes)."""
+        sch = os.path.join(HERE, "corpus", "xrechnung-schematron",
+                           "schematron", "cii",
+                           "XRechnung-CII-validation.sch")
+        ns = "{http://purl.oclc.org/dsdl/schematron}"
+        asserts = [a for a in ET.parse(sch).getroot().iter(ns + "assert")
+                   if a.get("id") == "BR-DE-18"]
+        self.assertEqual(len(asserts), 1)
+        self.assertEqual(asserts[0].get("flag"), "fatal")
+        test = asserts[0].get("test")
+        self.assertIn("ram:SpecifiedTradePaymentTerms/ram:Description[1]",
+                      test)
+        self.assertIn("$XR-SKONTO-REGEX", test)
+        self.assertIn("'#.+#'", test)
+
+    def test_no_longer_excluded_from_cii_grading(self):
+        import differential as _diff
+        self.assertIn("BR-DE-18", set(_diff.CII_XR_RULE_IDS))
+        # T-VHCIIDE.3 emptied the class: the national BR-DE-* family is
+        # complete on CII.
+        self.assertEqual(set(_diff.CII_XR_EXCLUDED_RULE_IDS), set())
+
+
+class CiiSkontoFixtures(unittest.TestCase):
+    """Positive (fires) + negative (clean) BR-DE-18 unit fixtures, mutated
+    off the BR-DE-clean 01.02a base's BT-20 Description."""
+
+    def _fired(self, root):
+        return {v.rule_id for v in cii_violations(root)}
+
+    # ---- negative: valid Skonto grammar stays silent ----------------------
+    def test_valid_skonto_line_with_trailing_newline_holds(self):
+        r = cii_base()
+        _cii_terms_description(r).text = "#SKONTO#TAGE=14#PROZENT=2.00#\n"
+        self.assertEqual(self._fired(r), set())
+
+    def test_valid_skonto_with_basisbetrag_holds(self):
+        r = cii_base()
+        _cii_terms_description(r).text = \
+            "#SKONTO#TAGE=14#PROZENT=2.00#BASISBETRAG=357.93#\n"
+        self.assertEqual(self._fired(r), set())
+
+    def test_prose_description_without_hash_lines_holds_vacuously(self):
+        # The base's plain prose BT-20 has no '#'-prefixed line: vacuous pass
+        # (pinned by the clean-base fixture, restated here for the record).
+        self.assertEqual(self._fired(cii_base()), set())
+
+    # ---- positive: malformed grammar fires --------------------------------
+    def test_missing_two_decimals_fires(self):
+        r = cii_base()
+        # PROZENT lacks the mandatory 2 decimals (same malformed line as the
+        # differential CII mutant).
+        _cii_terms_description(r).text = "#SKONTO#TAGE=14#PROZENT=2#"
+        vs = cii_violations(r)
+        self.assertEqual({v.rule_id for v in vs}, {"BR-DE-18"})
+        self.assertEqual(vs[0].severity, "fatal")
+
+    def test_lowercase_skonto_fires(self):
+        r = cii_base()
+        _cii_terms_description(r).text = "#skonto#TAGE=14#PROZENT=2.00#\n"
+        self.assertEqual(self._fired(r), {"BR-DE-18"})
+
+    def test_missing_trailing_newline_fires(self):
+        r = cii_base()
+        # Grammar-valid line but the required newline after the final '#'
+        # is missing -> the tokenize(., '#.+#')[last()] check fails.
+        _cii_terms_description(r).text = "#SKONTO#TAGE=14#PROZENT=2.00#"
+        self.assertEqual(self._fired(r), {"BR-DE-18"})
+
+    def test_second_payment_terms_dynamic_error_corner_fires(self):
+        # TWO SpecifiedTradePaymentTerms with '#' lines: the official
+        # matches() over 2+ Description[1] nodes is a dynamic error (the
+        # whole transform aborts) — the engine deterministically FIRES in
+        # that unreachable-for-comparison corner, like the UBL twin.
+        r = cii_base()
+        _cii_terms_description(r).text = "#SKONTO#TAGE=14#PROZENT=2.00#\n"
+        terms2 = ET.SubElement(_cii_settlement_el(r),
+                               q(NS_RAM, "SpecifiedTradePaymentTerms"))
+        ET.SubElement(terms2, q(NS_RAM, "Description")).text = \
+            "#SKONTO#TAGE=30#PROZENT=1.00#\n"
+        self.assertEqual(self._fired(r), {"BR-DE-18"})
+
+    # ---- model surface sanity ---------------------------------------------
+    def test_model_carries_first_description_per_terms_node(self):
+        r = cii_base()
+        terms = _cii_settlement_el(r).find("ram:SpecifiedTradePaymentTerms",
+                                           NS_CII)
+        # A SECOND Description under the same terms node is NOT Description[1]
+        # and must not be carried.
+        ET.SubElement(terms, q(NS_RAM, "Description")).text = "ignored"
+        inv = parser_cii.build_model(r)
+        self.assertEqual(len(inv.payment_terms_descriptions), 1)
+        self.assertTrue(
+            inv.payment_terms_descriptions[0].startswith("Bitte überweisen"))
 
 
 if __name__ == "__main__":

@@ -196,35 +196,24 @@ assert CII_XR_RULE_SET - XR_RULE_SET == set(CII_ONLY_XR_RULE_IDS), (
     % sorted(CII_XR_RULE_SET - XR_RULE_SET))
 
 # EXCLUDED from the CII-graded BR-DE set (kept out on purpose, not overlooked).
-# These BR-DE / BR-DEX rules ARE present in the official XRechnung-CII Schematron
-# but bind CII document parts the syntax-agnostic EN 16931 core model deliberately
-# does not carry, so they cannot be evaluated over the normalized model without
-# adding a CII payment-terms / attachment / extension surface. Rather than
-# approximate a national rule (forbidden), they are excluded with the reason and
-# remain fully graded on the UBL XRechnung leg (LEG 2):
+# EMPTY since T-VHCIIDE.3: every national BR-DE-* assert the official
+# XRechnung-CII Schematron carries is now graded on LEG 4. The arc that got
+# here: T-VHCIIDE.1 admitted the payment-means group (BR-DE-19/20 IBAN mod-97
+# + the BR-DE-23/24/25-a/-b type-code groups) via the CIIPaymentMeans surface;
+# T-VHCIIDE.2 admitted the direct-debit pair BR-DE-30/-31 (document-level
+# BG-19 reconstruction facts) and BR-DE-22 (the sibling-grouped
+# additional_ref_doc_attachments filename surface); T-VHCIIDE.3 admitted the
+# last holdout BR-DE-18 (Skonto grammar in BT-20) via the parser_cii
+# payment-terms Description[1] surface — the same _skonto_terms_hold
+# transcription both bindings evaluate.
 #
-#  * BR-DE-18 (Skonto grammar in BT-20): the CII test tokenizes
-#    ram:SpecifiedTradePaymentTerms/ram:Description[1] and matches the KoSIT
-#    #SKONTO#…# regex — a free-text payment-terms structure the core model omits
-#    (transcription staged as T-VHCIIDE.3 — deferred, not overlooked).
-#  * BR-DEX-01/04/05/06/07/08 (extension profile): bind extension surfaces
-#    (attachment MIME codes, ISO 6523 scheme identifiers) the normalized model
-#    does not carry. BR-DEX-15 (sub invoice lines, CII-only) IS graded — its
-#    two-boolean surface (AssociatedDocumentLineDocument context presence +
-#    //ram:ParentLineID existence) is carried by parser_cii._build_cii_br_de.
-#    The CVD/TMP family (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2 and the CII-only
-#    BR-TMP-3) IS graded here, and so is the payment-means group (T-VHCIIDE.1:
-#    BR-DE-19/20 IBAN mod-97 + BR-DE-23/24/25-a/-b type-code groups) — the
-#    normalized model carries one CIIPaymentMeans record per
-#    ram:SpecifiedTradeSettlementPaymentMeans context node plus the
-#    document-level BG-19 reconstruction facts (parser_cii._build_cii_br_de).
-#    T-VHCIIDE.2 admitted the direct-debit pair BR-DE-30/-31 (read off the
-#    same document-level BG-19 reconstruction facts) and BR-DE-22 (the
-#    sibling-grouped additional_ref_doc_attachments filename surface), so
-#    ONLY BR-DE-18 remains excluded of the national BR-DE-* family.
-CII_XR_EXCLUDED_RULE_IDS = (
-    "BR-DE-18",
-)
+# The extension layer stays scoped as documented elsewhere: BR-DEX-01/04..08
+# bind extension surfaces (attachment MIME codes, ISO 6523 scheme identifiers)
+# the normalized model does not carry — they are counted as documented
+# exclusions in the KoSIT coverage gap (gen_coverage.kosit_documented_
+# exclusion_ids derives them live from the per-binding registries, so they
+# are NOT restated here). BR-DEX-15 (sub invoice lines, CII-only) IS graded.
+CII_XR_EXCLUDED_RULE_IDS = ()
 assert not (CII_XR_RULE_SET & set(CII_XR_EXCLUDED_RULE_IDS)), (
     "a CII-excluded BR-DE rule is also in the graded set")
 
@@ -5784,6 +5773,21 @@ def _xrcmut_de17(r):
     r.find("rsm:ExchangedDocument/ram:TypeCode", _NSC).text = "71"
 
 
+def _xrcmut_de18_bad(r):
+    # PROZENT lacks the mandatory 2 decimals -> Skonto grammar violation
+    # (same malformed line as the UBL BR-DE-18 mutant), written into the
+    # base's BT-20 ram:SpecifiedTradePaymentTerms/ram:Description.
+    _cii_settlement(r).find("ram:SpecifiedTradePaymentTerms/ram:Description",
+                            _NSC).text = "#SKONTO#TAGE=14#PROZENT=2#"
+
+
+def _xrcmut_de18_valid(r):
+    # Grammar-conformant Skonto WITH the required trailing newline -> holds
+    # (proves the HOLDS direction on CII, like the UBL "18-valid" mutant).
+    _cii_settlement(r).find("ram:SpecifiedTradePaymentTerms/ram:Description",
+                            _NSC).text = "#SKONTO#TAGE=14#PROZENT=2.00#\n"
+
+
 def _xrcmut_de21(r):
     r.find("rsm:ExchangedDocumentContext/"
            "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID",
@@ -5898,12 +5902,20 @@ _XR_CII_MUTATIONS = {
     "BR-DE-24-a": _xrcmut_de24a, "BR-DE-24-b": _xrcmut_de24b,
     "BR-DE-25-a": _xrcmut_de25a, "BR-DE-25-b": _xrcmut_de25b,
     "BR-DE-15": _xrcmut_de15, "BR-DE-16": _xrcmut_de16, "BR-DE-17": _xrcmut_de17,
+    "BR-DE-18": _xrcmut_de18_bad,
     "BR-DE-21": _xrcmut_de21, "BR-DE-26": _xrcmut_de26, "BR-DE-27": _xrcmut_de27,
     "BR-DE-28": _xrcmut_de28, "BR-DE-TMP-32": _xrcmut_de_tmp32,
     "BR-DE-30": _xrcmut_de30, "BR-DE-31": _xrcmut_de31,
     "BR-DE-22": _xrcmut_de22,
     "BR-DEX-15": _xrcmut_dex15,
 }
+
+# Extra CII mutations beyond the one-per-admitted-rule map: labeled entries
+# proving the HOLDS direction of tricky rules (the UBL corpus does the same
+# with its "18-valid" / "TMP-32-clear" entries).
+_XR_CII_EXTRA_MUTATIONS = (
+    ("BR-DE-18-valid", _xrcmut_de18_valid),
+)
 
 
 # --- PEPPOL-EN16931-R* (CII) targeted mutations, off the clean XR-CII base --- #
@@ -6444,8 +6456,9 @@ def _gather_xr_cii_mutations(scratch: str):
     dst = os.path.join(scratch, "xr-cii-mutations")
     os.makedirs(dst, exist_ok=True)
     out = []
-    for rid in CII_XR_RULE_IDS:
-        mut = _XR_CII_MUTATIONS.get(rid)
+    todo = [(rid, _XR_CII_MUTATIONS.get(rid)) for rid in CII_XR_RULE_IDS]
+    todo += list(_XR_CII_EXTRA_MUTATIONS)
+    for rid, mut in todo:
         if mut is None:
             continue
         root = copy.deepcopy(base_root)

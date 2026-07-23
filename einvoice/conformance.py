@@ -754,15 +754,21 @@ CII_SYNTAX_EXCLUDED = {
 # differentially proven equivalent to the official KoSIT XRechnung-CII           #
 # Schematron across the CII corpus (``differential.py xrechnung-cii`` green: 0   #
 # divergences). This manifest records which BR-DE rules reach that CII parity     #
-# (auditable + grep-able) and which are deliberately NOT graded on CII because    #
-# their CII binding needs document structure the EN 16931 core model does not     #
-# carry (payment-means / IBAN / skonto / attachment / extension) — excluded, not  #
-# approximated. The single source of truth is differential.CII_XR_RULE_IDS; the   #
-# assert below guarantees this manifest can never silently drift from it.         #
+# (auditable + grep-able); since T-VHCIIDE.3 (BR-DE-18 Skonto via the             #
+# payment-terms Description surface) EVERY national BR-DE assert the CII          #
+# artifact carries is graded — the excluded manifest below is empty and stays     #
+# pinned to differential.CII_XR_EXCLUDED_RULE_IDS. The single source of truth     #
+# is differential.CII_XR_RULE_IDS; the asserts below guarantee this manifest      #
+# can never silently drift from it.                                               #
 _CII_XR_ADMITTED_IDS = (
     "BR-DE-1", "BR-DE-2", "BR-DE-3", "BR-DE-4", "BR-DE-5", "BR-DE-6", "BR-DE-7",
     "BR-DE-8", "BR-DE-9", "BR-DE-10", "BR-DE-11", "BR-DE-14", "BR-DE-15",
-    "BR-DE-16", "BR-DE-17", "BR-DE-21", "BR-DE-26", "BR-DE-27", "BR-DE-28",
+    "BR-DE-16", "BR-DE-17",
+    # Skonto payment-terms grammar (T-VHCIIDE.3): BR-DE-18 reads the
+    # parser_cii payment-terms Description[1] surface — the last BR-DE-*
+    # holdout, closing the national family on CII.
+    "BR-DE-18",
+    "BR-DE-21", "BR-DE-26", "BR-DE-27", "BR-DE-28",
     "BR-DE-TMP-32",
     # Payment-means group (T-VHCIIDE.1): IBAN mod-97 + the BT-81 type-code
     # group checks, carried by the parser_cii CIIPaymentMeans surface.
@@ -790,11 +796,12 @@ CII_XRECHNUNG_CIUS_COVERAGE = {
           **XRECHNUNG_EXTENSION_COVERAGE}[rid]
     for rid in _CII_XR_ADMITTED_IDS
 }
-CII_XRECHNUNG_CIUS_EXCLUDED = {
-    "BR-DE-18": "Skonto grammar in BT-20 (free-text payment-terms structure not "
-                "in the core model; transcription staged as T-VHCIIDE.3 — "
-                "deferred, not overlooked)",
-}
+# EMPTY since T-VHCIIDE.3: the Skonto grammar BR-DE-18 (the last national
+# holdout) is now graded on CII via the parser_cii payment-terms
+# Description[1] surface. Kept as a dict (not deleted) so the drift assert
+# against differential.CII_XR_EXCLUDED_RULE_IDS below stays live — a future
+# artifact bump that forces a new exclusion must document it HERE.
+CII_XRECHNUNG_CIUS_EXCLUDED = {}
 
 
 def _all_asserted_rule_ids():
@@ -1215,10 +1222,13 @@ def main():
         % len(CII_XRECHNUNG_CIUS_COVERAGE))
     for rid in sorted(CII_XRECHNUNG_CIUS_COVERAGE):
         out("     %-13s %s\n" % (rid, CII_XRECHNUNG_CIUS_COVERAGE[rid]))
-    out("  not graded on CII (CII binding needs the skonto payment-terms free-text\n"
-        "  structure the core model omits; excluded, not approximated):\n")
-    for rid in sorted(CII_XRECHNUNG_CIUS_EXCLUDED):
-        out("     %-13s %s\n" % (rid, CII_XRECHNUNG_CIUS_EXCLUDED[rid]))
+    if CII_XRECHNUNG_CIUS_EXCLUDED:
+        out("  not graded on CII (excluded, not approximated):\n")
+        for rid in sorted(CII_XRECHNUNG_CIUS_EXCLUDED):
+            out("     %-13s %s\n" % (rid, CII_XRECHNUNG_CIUS_EXCLUDED[rid]))
+    else:
+        out("  national BR-DE-* exclusions on CII: none — every BR-DE assert\n"
+            "  the vendored CII artifact carries is graded (T-VHCIIDE.3).\n")
     out("\n")
 
     # Per valid vector

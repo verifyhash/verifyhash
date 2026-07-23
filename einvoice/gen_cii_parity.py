@@ -112,8 +112,9 @@ ARTIFACT_DEFECTS = {
 # Rules whose id IS carried by a vendored CII artifact (so the assert exists and
 # CAN fire on a CII document) but whose @context/@test bind a CII-SPECIFIC
 # document surface that the syntax-agnostic EN 16931 core model deliberately
-# does NOT carry — the national-CIUS payment-means / payment-terms / direct-debit
-# / attachment surfaces and the KoSIT XRechnung EXTENSION profile. These are the
+# does NOT carry — since T-VHCIIDE.3 only the KoSIT XRechnung EXTENSION
+# profile remains here (the national-CIUS payment-means / payment-terms /
+# direct-debit / attachment surfaces are all carried now). These are the
 # T-VHCIIP.9 TERMINAL close-out's evidence-backed deliberate CII-leg exclusions
 # (the T-VHCIIP.8 note anticipated them): each is FULLY differentially proven on
 # the UBL XRechnung leg (LEG 2) but is out of scope for the both-syntaxes
@@ -129,12 +130,6 @@ ARTIFACT_DEFECTS = {
 # artifact bump that re-binds the rule onto the core model (removing the marker)
 # fails generation loudly and forces a re-review. Each entry names the exact
 # surface marker that must remain present as the evidence anchor.
-_SCOPE_NOTE_PAYMENT_TERMS = (
-    "carried by the vendored CII artifact and fires on a CII document, but its "
-    "@test tokenizes ram:SpecifiedTradePaymentTerms/ram:Description free text "
-    "against the KoSIT #SKONTO# grammar — a CII payment-terms surface the "
-    "syntax-agnostic EN 16931 core model does not carry; fully proven on the "
-    "UBL leg, deliberately excluded from the both-syntaxes core-model CII proof.")
 _SCOPE_NOTE_EXTENSION = (
     "carried by the vendored CII artifact but gated behind the KoSIT XRechnung "
     "EXTENSION profile ($isExtension: the extension conformance "
@@ -151,11 +146,11 @@ _SCOPE_NOTE_EXTENSION = (
 # on the CII leg via the parser_cii CIIPaymentMeans surface — so they no
 # longer appear on the UBL-only worklist this file classifies. The
 # direct-debit pair BR-DE-30/-31 and the attachment-filename check BR-DE-22
-# left with T-VHCIIDE.2 the same way.)
+# left with T-VHCIIDE.2 the same way, and the Skonto grammar BR-DE-18 with
+# T-VHCIIDE.3 via the parser_cii payment-terms Description[1] surface — the
+# national BR-DE-* family is now fully syntax='both'; only the six
+# extension-profile ids below remain.)
 BINDING_SCOPE_EXCLUSIONS = {
-    "BR-DE-18": {"kind": "cii-payment-terms-surface",
-                 "marker": "ram:SpecifiedTradePaymentTerms",
-                 "note": _SCOPE_NOTE_PAYMENT_TERMS},
     "BR-DEX-01": {"kind": "cii-extension-profile",
                   "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
     "BR-DEX-04": {"kind": "cii-extension-profile",

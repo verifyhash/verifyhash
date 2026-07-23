@@ -11,6 +11,7 @@ Standard library only.
 from __future__ import annotations
 
 import datetime
+import math
 
 from collections import namedtuple
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
@@ -4357,10 +4358,139 @@ def br_dec_12(inv):
                     "the Invoice total amount without VAT", "TaxExclusiveAmount")
 
 
+def _cii_round2_equal(raw):
+    """CII BR-DEC-13/15 numeric test: ``. = round(. * 100) div 100``.
+
+    The atomized untyped value is cast to xs:double and compared against its
+    2-decimal rounding, where ``fn:round`` resolves ties toward positive
+    infinity — so ``12.340`` HOLDS (numerically round2-equal, unlike the UBL
+    character-count idiom) and ``12.345`` fires. An uncastable value can never
+    equal its rounding, so it does not satisfy the test.
+    """
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return False
+    if math.isnan(v) or math.isinf(v):
+        return False
+    return v == math.floor(v * 100 + 0.5) / 100
+
+
+def _cii_matches(cur, codes_raw):
+    """CII raw currency scoping: ``@currencyID = <code path>`` — an existential
+    general comparison over RAW untyped values; an absent @currencyID or an
+    absent code element never matches."""
+    return cur is not None and cur in codes_raw
+
+
+def _ubl_total_vat_dec_violation(inv, rule_id, bt, label, codes_raw):
+    """Shared UBL arm of BR-DEC-13/15: fire when a //cac:TaxTotal/cbc:TaxAmount
+    whose raw @currencyID equals the scoping currency code (BT-5 for BR-DEC-13,
+    BT-6 for BR-DEC-15) carries more than 2 characters after the '.' of its
+    literal string value; vacuously clear when no such amount exists."""
+    for cur, raw in inv.taxtotal_amounts_raw:
+        if cur is not None and cur in codes_raw and _dec_places(raw) > 2:
+            return _dec_violation(rule_id, bt, label,
+                                  "cac:TaxTotal/cbc:TaxAmount")
+    return None
+
+
+def br_dec_13(inv):
+    """BR-DEC-13: max 2 decimals for the Invoice total VAT amount (BT-110).
+
+    CII (transcribed EXACTLY from the vendored preprocessed artifact, context
+    //ram:SpecifiedTradeSettlementHeaderMonetarySummation, flag fatal)::
+
+        not(ram:TaxTotalAmount) or ram:TaxTotalAmount[(@currencyID =
+        /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+        ram:ApplicableHeaderTradeSettlement/ram:InvoiceCurrencyCode and
+        . = round(. * 100) div 100) or not (@currencyID = .../ram:InvoiceCurrencyCode)]
+
+    — existential over the summation's TaxTotalAmount children: the assert
+    HOLDS when no child exists, when any child's @currencyID differs from
+    BT-5 (or is absent), or when a BT-5-currency child is numerically
+    round2-equal; it FIRES only when every child matches BT-5 and none is
+    round2-equal.
+
+    UBL: the vendored UBL assert's predicate ``[@currencyID =
+    cbc:DocumentCurrencyCode]`` resolves cbc:DocumentCurrencyCode against the
+    TaxAmount context node (which has no such child), so the shipped UBL
+    assert is vacuous by defect and can never fire. The engine asserts the
+    rule's stated intent on UBL anyway — ≤ 2 characters after '.' on the
+    BT-5-currency //cac:TaxTotal/cbc:TaxAmount, Invoice and CreditNote alike
+    (deliberate strictness; excluded from the UBL differential legs, see
+    differential.EN_UBL_EXCLUDED_RULE_IDS).
+    """
+    if inv.syntax == "cii":
+        for ttas in inv.cii_summation_taxtotals:
+            if not ttas:
+                continue
+            if not any(
+                    (_cii_matches(cur, inv.cii_invoice_currency_codes_raw)
+                     and _cii_round2_equal(raw))
+                    or not _cii_matches(cur, inv.cii_invoice_currency_codes_raw)
+                    for cur, raw in ttas):
+                return _dec_violation(
+                    "BR-DEC-13", "BT-110", "the Invoice total VAT amount",
+                    "ram:SpecifiedTradeSettlementHeaderMonetarySummation/"
+                    "ram:TaxTotalAmount")
+        return None
+    return _ubl_total_vat_dec_violation(
+        inv, "BR-DEC-13", "BT-110", "the Invoice total VAT amount",
+        inv.document_currency_codes_raw)
+
+
 def br_dec_14(inv):
     """BR-DEC-14: max 2 decimals for the Invoice total amount with VAT (BT-112)."""
     return _dec_lmt(inv, "BR-DEC-14", "BT-112",
                     "the Invoice total amount with VAT", "TaxInclusiveAmount")
+
+
+def br_dec_15(inv):
+    """BR-DEC-15: max 2 decimals for the Invoice total VAT amount in
+    accounting currency (BT-111).
+
+    CII (transcribed EXACTLY from the vendored preprocessed artifact, context
+    //ram:SpecifiedTradeSettlementHeaderMonetarySummation, flag fatal)::
+
+        not(ram:TaxTotalAmount) or ram:TaxTotalAmount[(@currencyID =
+        /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+        ram:ApplicableHeaderTradeSettlement/ram:TaxCurrencyCode and
+        . = round(. * 100) div 100) or not (/rsm:CrossIndustryInvoice/
+        rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/
+        ram:TaxCurrencyCode)]
+
+    — NOT the BR-DEC-13 shape: the second disjunct tests the ABSENCE of the
+    BT-6 element itself, so with BT-6 present the assert FIRES unless some
+    TaxTotalAmount both matches the BT-6 currency and is numerically
+    round2-equal (a BT-6 with no matching total also fires, exactly like the
+    official engine — verified against the compiled CII XSLT).
+
+    UBL: the vendored UBL assert carries the same predicate-context defect as
+    BR-DEC-13 (``[@currencyID = cbc:TaxCurrencyCode]`` against the TaxAmount
+    node) and can never fire; the engine asserts the stated intent — ≤ 2
+    characters after '.' on the BT-6-currency //cac:TaxTotal/cbc:TaxAmount —
+    as deliberate strictness, excluded from the UBL differential legs.
+    """
+    if inv.syntax == "cii":
+        if not inv.tax_currency_codes_raw:
+            return None
+        for ttas in inv.cii_summation_taxtotals:
+            if not ttas:
+                continue
+            if not any(_cii_matches(cur, inv.tax_currency_codes_raw)
+                       and _cii_round2_equal(raw)
+                       for cur, raw in ttas):
+                return _dec_violation(
+                    "BR-DEC-15", "BT-111",
+                    "the Invoice total VAT amount in accounting currency",
+                    "ram:SpecifiedTradeSettlementHeaderMonetarySummation/"
+                    "ram:TaxTotalAmount")
+        return None
+    return _ubl_total_vat_dec_violation(
+        inv, "BR-DEC-15", "BT-111",
+        "the Invoice total VAT amount in accounting currency",
+        inv.tax_currency_codes_raw)
 
 
 def br_dec_16(inv):
@@ -5756,7 +5886,8 @@ ALL_RULES = [
     br_b_01, br_b_02,
     br_ae_01, br_e_01, br_g_01, br_ic_01, br_o_01,
     br_dec_01, br_dec_02, br_dec_05, br_dec_06,
-    br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_14,
-    br_dec_16, br_dec_17, br_dec_18, br_dec_19, br_dec_20, br_dec_23,
+    br_dec_09, br_dec_10, br_dec_11, br_dec_12, br_dec_13, br_dec_14,
+    br_dec_15, br_dec_16, br_dec_17, br_dec_18, br_dec_19, br_dec_20,
+    br_dec_23,
     br_dec_24, br_dec_25, br_dec_27, br_dec_28,
 ]

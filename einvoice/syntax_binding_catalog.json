@@ -1,5 +1,5 @@
 {
-  "description": "Machine-extracted catalog of the EN 16931 syntax-binding (non-BR) asserts from the two vendored preprocessed CEN Schematron artifacts. MEASUREMENT + DESIGN ONLY: no assert here is evaluated by the engine and none is counted in the 286 business-rule coverage matrix. Regenerate with `python3 gen_syntax_binding.py`; test_syntax_binding.py re-parses the artifacts and fails if this file drifts id-for-id.",
+  "description": "Machine-extracted catalog of the EN 16931 syntax-binding (non-BR) asserts from the two vendored preprocessed CEN Schematron artifacts. MEASUREMENT + DESIGN ONLY: no assert here is evaluated by the engine and none is counted in the 288 business-rule coverage matrix. Regenerate with `python3 gen_syntax_binding.py`; test_syntax_binding.py re-parses the artifacts and fails if this file drifts id-for-id.",
   "generated_by": "gen_syntax_binding.py",
   "artifacts": {
     "ubl": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",

@@ -34,10 +34,10 @@
       "license": "Apache-2.0"
     }
   },
-  "rule_count": 286,
+  "rule_count": 288,
   "german_message_coverage": {
     "official_message_de_count": 50,
-    "total_rules": 286,
+    "total_rules": 288,
     "surface": "--lang de (CLI / report human message only; not in --json)",
     "source": "verbatim from the vendored KoSIT XRechnung Schematron <sch:assert> text (de_source == \"kosit\"); never machine- or hand-translated",
     "other_rules_policy": "all other rules are English-only by design — no official German assert text exists for them, so --lang de falls back to the English message"
@@ -2458,6 +2458,31 @@
       }
     },
     {
+      "id": "BR-DEC-13",
+      "title": "Max 2 decimals for the Invoice total VAT amount (BT-110).",
+      "family": "core",
+      "syntax": "cii",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "the vendored UBL artifact's assert filters the BT-110 total with [@currencyID = cbc:DocumentCurrencyCode], but inside the predicate the context node is the cbc:TaxAmount being filtered — which has no cbc:DocumentCurrencyCode CHILD — so the predicate never matches, the node-set is always empty and the shipped UBL assert can never fire (verified against the compiled official UBL XSLT). The engine asserts the stated ≤2-decimals intent on UBL anyway (deliberate strictness); the rule is differentially proven on the CII leg, whose artifact ships a real numeric round2 test."
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
       "id": "BR-DEC-14",
       "title": "Max 2 decimals for the Invoice total amount with VAT (BT-112).",
       "family": "core",
@@ -2471,6 +2496,31 @@
           "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
           "version": "1.3.16",
           "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-DEC-15",
+      "title": "Max 2 decimals for the Invoice total VAT amount in accounting currency (BT-111).",
+      "family": "core",
+      "syntax": "cii",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": false,
+          "reason": "the vendored UBL artifact repeats the BR-DEC-13 predicate-context defect with cbc:TaxCurrencyCode, so the shipped UBL assert can never fire. The engine asserts the stated ≤2-decimals intent on the BT-6-currency total on UBL anyway (deliberate strictness); differentially proven on the CII leg."
         },
         "cii": {
           "source": "en16931-cii",
@@ -6960,16 +7010,7 @@
   ],
   "exclusions": {
     "description": "Rules deliberately NOT counted as coverage, documented so the matrix is honest about its boundaries.",
-    "vacuous": [
-      {
-        "id": "BR-DEC-13",
-        "reason": "vacuous in official Schematron (predicate references a non-existent child of cbc:TaxAmount) — never fires"
-      },
-      {
-        "id": "BR-DEC-15",
-        "reason": "vacuous in official Schematron (same defect, TaxCurrencyCode) — never fires"
-      }
-    ],
+    "vacuous": [],
     "official_tautology": [
       {
         "id": "BR-CO-05",
@@ -7173,16 +7214,14 @@
       "BR-CO-05",
       "BR-CO-06",
       "BR-CO-07",
-      "BR-CO-08",
-      "BR-DEC-13",
-      "BR-DEC-15"
+      "BR-CO-08"
     ],
     "artifacts": {
       "en16931-ubl": {
         "source": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
         "official_universe": 223,
-        "implemented": 209,
-        "excluded": 14,
+        "implemented": 211,
+        "excluded": 12,
         "missing": 0,
         "fireable_missing": 0,
         "non_business_rule_asserts": 756,
@@ -7196,8 +7235,8 @@
       "en16931-cii": {
         "source": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
         "official_universe": 223,
-        "implemented": 209,
-        "excluded": 14,
+        "implemented": 211,
+        "excluded": 12,
         "missing": 0,
         "fireable_missing": 0,
         "non_business_rule_asserts": 583,

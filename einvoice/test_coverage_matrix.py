@@ -87,8 +87,11 @@ def _proven_syntax(rid):
     """The syntax tag the differential graded sets justify for ``rid``:
     'both' only when the id is graded on a UBL leg AND a CII leg; 'cii' when
     it is graded on a CII leg only (e.g. BR-TMP-3 — the vendored UBL artifact
-    carries no such assert); 'ubl' otherwise."""
-    ubl_proven = (rid in _diff.OUR_RULE_SET or rid in _diff.XR_RULE_SET
+    carries no such assert — or BR-DEC-13/15, whose UBL asserts are
+    artifact-vacuous and held out via EN_UBL_EXCLUDED_RULE_IDS); 'ubl'
+    otherwise. UBL core proof reads the GRADED set (EN_RULE_SET), not the
+    implemented registry."""
+    ubl_proven = (rid in _diff.EN_RULE_SET or rid in _diff.XR_RULE_SET
                   or rid in _diff.PEPPOL_UBL_PROVEN_CANONICAL)
     cii_proven = (rid in _diff.CII_RULE_SET or rid in _diff.CII_XR_RULE_SET
                   or rid in _diff.PEPPOL_CII_PROVEN_CANONICAL)
@@ -181,12 +184,18 @@ def main():
           "coverage_matrix.json (re-run gen_coverage.py). first diff at offset %s"
           % _first_diff(rendered, committed))
 
-    # ---- 5. exclusions: vacuous rules present and NOT in the fireable set -
+    # ---- 5. exclusions: no vacuous-claimed rule may be fireable, and the
+    #         once-vacuous BR-DEC-13/15 pair (implemented in T-VHCORE.6 — the
+    #         CII artifact binds them with REAL numeric tests; only the UBL
+    #         asserts are defect-vacuous) must be IN the engine and must
+    #         never reappear in the vacuous bucket.
     exc = matrix.get("exclusions") or {}
     vacuous_ids = {e["id"] for e in exc.get("vacuous", [])}
-    check(vacuous_ids >= {"BR-DEC-13", "BR-DEC-15"},
-          "exclusions.vacuous must list BR-DEC-13 and BR-DEC-15; got %s"
-          % sorted(vacuous_ids))
+    check(not (vacuous_ids & {"BR-DEC-13", "BR-DEC-15"}),
+          "BR-DEC-13/15 are implemented (T-VHCORE.6) and must not be listed "
+          "as vacuous exclusions; got %s" % sorted(vacuous_ids))
+    check({"BR-DEC-13", "BR-DEC-15"} <= engine_ids,
+          "BR-DEC-13/15 must be in the fireable engine registry")
     overlap = sorted(vacuous_ids & engine_ids)
     check(not overlap,
           "a vacuous/excluded rule is ALSO claimed as fired coverage: %s" % overlap)

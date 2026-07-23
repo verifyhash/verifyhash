@@ -536,6 +536,19 @@ class Invoice:
         # compares against. Both stay [] on the UBL side.
         self.cii_summation_taxtotal_currencies = []  # list[list[str]]
         self.cii_invoice_currency_codes_raw = []     # list[str]
+        # BR-DEC-13/15 (UBL leg): (raw @currencyID or None, raw string value)
+        # of EVERY //cac:TaxTotal/cbc:TaxAmount (any depth), plus the raw
+        # string value(s) of BT-5 (cbc:DocumentCurrencyCode). The two
+        # total-VAT decimal rules scope an amount by its @currencyID against
+        # BT-5 / BT-6 and count the characters after the '.' of the literal
+        # string value, so both sides of the comparison stay RAW.
+        self.taxtotal_amounts_raw = []           # list[(str|None, str)]
+        self.document_currency_codes_raw = []    # list[str]
+        # BR-DEC-13/15 (CII leg): per header monetary summation (the official
+        # context node //ram:SpecifiedTradeSettlementHeaderMonetarySummation),
+        # one (raw @currencyID or None, raw string value) pair per
+        # ram:TaxTotalAmount child. Stays [] on the UBL side.
+        self.cii_summation_taxtotals = []        # list[list[(str|None, str)]]
         # BR-54: one (has_name, has_value) pair per Item attribute group
         # (BG-32 — UBL //cac:AdditionalItemProperty / CII
         # //ram:ApplicableProductCharacteristic); both official tests are pure
@@ -915,6 +928,16 @@ def build_model(root):
         el.get("currencyID")
         for el in root.findall(".//cac:TaxTotal/cbc:TaxAmount", NS)
         if el.get("currencyID") is not None]
+    # BR-DEC-13/15 (UBL): every //cac:TaxTotal/cbc:TaxAmount as a
+    # (raw @currencyID, raw string value) pair, plus the raw BT-5 value(s) —
+    # the decimal count runs over the literal string value
+    # (``string-length(substring-after(., '.'))``) and the currency scoping
+    # compares raw untyped values, so nothing is stripped here.
+    inv.taxtotal_amounts_raw = [
+        (el.get("currencyID"), _strval(el))
+        for el in root.findall(".//cac:TaxTotal/cbc:TaxAmount", NS)]
+    inv.document_currency_codes_raw = [
+        _strval(el) for el in root.findall("cbc:DocumentCurrencyCode", NS)]
     # BR-54 context = //cac:AdditionalItemProperty (BG-32). Test:
     # ``exists(cbc:Name) and exists(cbc:Value)`` — pure existence.
     for aip_el in root.iter("{%s}AdditionalItemProperty" % NS_CAC):

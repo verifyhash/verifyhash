@@ -14,7 +14,7 @@ restrictions the CEN model layers onto a concrete syntax binding:
   one of X").
 
 This module is a MEASUREMENT + DESIGN artifact only. It does **not** evaluate
-any assert and does **not** touch the 286-rule business-rule matrix. Its job is
+any assert and does **not** touch the 288-rule business-rule matrix. Its job is
 to enumerate the 756 UBL + 583 CII syntax-binding asserts, mechanically
 classify each ``@test`` into a coarse *shape* class, and hand back a histogram
 that decides the batch order for any later implementation work.
@@ -223,7 +223,7 @@ def build_catalog(root=None):
             "Machine-extracted catalog of the EN 16931 syntax-binding "
             "(non-BR) asserts from the two vendored preprocessed CEN "
             "Schematron artifacts. MEASUREMENT + DESIGN ONLY: no assert here "
-            "is evaluated by the engine and none is counted in the 286 "
+            "is evaluated by the engine and none is counted in the 288 "
             "business-rule coverage matrix. Regenerate with "
             "`python3 gen_syntax_binding.py`; test_syntax_binding.py re-parses "
             "the artifacts and fails if this file drifts id-for-id.",

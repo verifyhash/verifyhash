@@ -468,6 +468,7 @@ GLOSSARY = {
     "BT-108": "Summe der Zuschläge auf Dokumentenebene",
     "BT-109": "Gesamtbetrag der Rechnung ohne Umsatzsteuer",
     "BT-110": "Gesamtbetrag der Umsatzsteuer",
+    "BT-111": "Gesamtbetrag der Umsatzsteuer in der Abrechnungswährung",
     "BT-112": "Gesamtbetrag der Rechnung einschließlich Umsatzsteuer",
     "BT-113": "Bereits gezahlter Betrag",
     "BT-114": "Rundungsbetrag",

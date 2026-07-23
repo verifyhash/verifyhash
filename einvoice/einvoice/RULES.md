@@ -30,14 +30,14 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**286 rules** in total — 274 fatal, 11 warning, 1 information — across 21 families.
+**288 rules** in total — 276 fatal, 11 warning, 1 information — across 21 families.
 
 ## Families
 
 - **BR** (58) — Core EN 16931 content and cardinality rules.
 - **BR-CL** (15) — Code-list rules — a coded value must come from the referenced official code list.
 - **BR-CO** (19) — Calculation and consistency rules (cross-total arithmetic).
-- **BR-DEC** (19) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
+- **BR-DEC** (21) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **BR-AE** (10) — VAT breakdown rules for VAT category code AE.
 - **BR-AF** (10) — VAT breakdown rules for VAT category code L (IGIC, Canary Islands general indirect tax).
 - **BR-AG** (10) — VAT breakdown rules for VAT category code M (IPSI, tax for Ceuta and Melilla).
@@ -972,6 +972,15 @@ Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **Severity:** fatal
 - **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice total amount without VAT (BT-109) is 2.”
 
+### BR-DEC-13 — Max 2 decimals for the Invoice total VAT amount (BT-110).
+
+- **Requires:** The allowed maximum number of decimals for the Invoice total VAT amount (BT-110) is 2.
+- **Business terms:** BT-110
+- **Location:** `cac:TaxTotal/cbc:TaxAmount`
+- **Fix:** Round the value at `cac:TaxTotal/cbc:TaxAmount` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice total VAT amount (BT-110) is 2.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice total VAT amount (BT-110) is 2.”
+
 ### BR-DEC-14 — Max 2 decimals for the Invoice total amount with VAT (BT-112).
 
 - **Requires:** The allowed maximum number of decimals for the Invoice total amount with VAT (BT-112) is 2.
@@ -980,6 +989,15 @@ Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **Fix:** Round the value at `cac:LegalMonetaryTotal` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice total amount with VAT (BT-112) is 2.
 - **Severity:** fatal
 - **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice total amount with VAT (BT-112) is 2.”
+
+### BR-DEC-15 — Max 2 decimals for the Invoice total VAT amount in accounting currency (BT-111).
+
+- **Requires:** The allowed maximum number of decimals for the Invoice total VAT amount in accounting currency (BT-111) is 2.
+- **Business terms:** BT-111
+- **Location:** `cac:TaxTotal/cbc:TaxAmount`
+- **Fix:** Round the value at `cac:TaxTotal/cbc:TaxAmount` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice total VAT amount in accounting currency (BT-111) is 2.
+- **Severity:** fatal
+- **Provenance:** `xrechnung-ubl` — “The allowed maximum number of decimals for the Invoice total VAT amount in accounting currency (BT-111) is 2.”
 
 ### BR-DEC-16 — Max 2 decimals for the Paid amount (BT-113).
 

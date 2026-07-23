@@ -418,7 +418,7 @@ coverage headline — should consume the two files under `einvoice/export/`
 rather than reading engine internals or scraping `COVERAGE.md`:
 
 - **`export/rules.json`** — one entry per business-rule id the engine actually
-  fires (currently **286**). Each entry carries only what the engine already
+  fires (currently **288**). Each entry carries only what the engine already
   proves: `id`, `title`, `family` (`core` / `xrechnung-cius` /
   `xrechnung-extension` / `xrechnung-cvd-tmp` / `peppol-kosit-vendored`),
   `syntax` (`both` / `ubl` / `cii`), `severity` (`fatal` blocks validity;

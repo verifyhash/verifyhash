@@ -119,7 +119,33 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 209, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 211, OUR_RULE_IDS
+
+# EXCLUDED from the EN 16931 UBL grading (LEG 1 Invoice + LEG 1b CreditNote) —
+# kept out on purpose, not overlooked; the exact mirror of the CII-side
+# CII_EXCLUDED_RULE_IDS precedent (BR-AF-08/09, BR-AG-08/09), with the
+# defective artifact on the UBL side this time:
+#
+#  * BR-DEC-13 / BR-DEC-15 (≤2 decimals on the Invoice total VAT amount
+#    BT-110 / its accounting-currency twin BT-111): the vendored UBL artifact
+#    ships both asserts with the predicate ``[@currencyID =
+#    cbc:DocumentCurrencyCode]`` (resp. ``cbc:TaxCurrencyCode``) — but inside
+#    a predicate the context node is the cbc:TaxAmount being filtered, which
+#    has no such CHILD element, so the predicate never matches, the selected
+#    node-set is always empty and the shipped UBL assert can NEVER fire
+#    (verified against the compiled official UBL XSLT: a doc-currency VAT
+#    total carrying three decimals produces no failed-assert). The CII
+#    artifact binds the SAME two rules with real, fireable numeric round2
+#    tests — both are GRADED and mutation-proven on the CII leg (LEG 3)
+#    below. Our engine asserts the intended ≤2-decimals check on UBL anyway
+#    (deliberate strictness), so grading them on the UBL legs would ship a
+#    guaranteed false-positive divergence on every violating fixture.
+EN_UBL_EXCLUDED_RULE_IDS = ("BR-DEC-13", "BR-DEC-15")
+EN_RULE_IDS = [r for r in OUR_RULE_IDS if r not in EN_UBL_EXCLUDED_RULE_IDS]
+EN_RULE_SET = set(EN_RULE_IDS)
+assert set(EN_UBL_EXCLUDED_RULE_IDS) <= OUR_RULE_SET, (
+    "a UBL-excluded rule id is not implemented at all: %s"
+    % sorted(set(EN_UBL_EXCLUDED_RULE_IDS) - OUR_RULE_SET))
 
 # --------------------------------------------------------------------------- #
 # CreditNote leg (T-VHCN.2) — the SAME einvoice/rules.py core rule engine, run  #
@@ -130,11 +156,13 @@ assert len(OUR_RULE_IDS) == 209, OUR_RULE_IDS
 # cac:InvoiceLine | cac:CreditNoteLine``), so that SAME official artifact is the #
 # oracle for CreditNote exactly as for Invoice. The whole implemented core rule  #
 # set reaches EXACT parity on the vendored CreditNote corpus — no rule is        #
-# excluded — so CN_RULE_IDS is the full OUR_RULE_IDS. Grading the full set makes  #
+# excluded beyond the UBL-artifact-defective EN_UBL_EXCLUDED_RULE_IDS pair       #
+# (same defective asserts, same ``/ubl:Invoice | /cn:CreditNote`` rule context)  #
+# — so CN_RULE_IDS is the full EN_RULE_IDS. Grading the full set makes           #
 # the leg a live regression guard: if a future rule change diverges on a         #
 # CreditNote shape, this leg turns the 0-divergence gate red.                    #
 # --------------------------------------------------------------------------- #
-CN_RULE_IDS = list(OUR_RULE_IDS)
+CN_RULE_IDS = list(EN_RULE_IDS)
 # Machine-listed known-open CreditNote bindings (rule ids that could NOT be
 # proven equivalent on the CreditNote corpus and are therefore held out of the
 # graded set with a reason). Empty: every implemented core rule reached parity.
@@ -361,6 +389,16 @@ CII_GRADED_RULES = [
     # Decimal-place (≤2) rules that map cleanly to the CII monetary fields.
     _rules.br_dec_09, _rules.br_dec_12, _rules.br_dec_14, _rules.br_dec_18,
     _rules.br_dec_19, _rules.br_dec_20, _rules.br_dec_23,
+    # Total-VAT decimal rules (T-VHCORE.6): the CII artifact binds BR-DEC-13
+    # (BT-110) and BR-DEC-15 (BT-111) with REAL numeric round2 tests over the
+    # header summation's ram:TaxTotalAmount children — genuinely different
+    # from every other BR-DEC rule's character-count idiom, and existential
+    # per summation (a total in a non-matching currency satisfies BR-DEC-13;
+    # a present BT-6 with NO matching total fires BR-DEC-15). Both rule
+    # bodies transcribe the CII binding exactly and are mutation-proven here;
+    # the UBL twins are artifact-vacuous and held out of the UBL legs
+    # (EN_UBL_EXCLUDED_RULE_IDS).
+    _rules.br_dec_13, _rules.br_dec_15,
     # Core/decimals/VAT gap batch A (BR-CO-20..24/-26, BR-DEC-24/25/27/28,
     # BR-IC-10, BR-S-08): line billing periods, allowance/charge reasons
     # (document + line level — the CII parser now materializes the line-level
@@ -3613,6 +3651,29 @@ def _cmut_brdec14(r):
     _cii_summation(r).find("ram:GrandTotalAmount", _NSC).text = "625743.549"
 
 
+def _cmut_brdec13(r):
+    # Give the doc-currency BT-110 total a third decimal that is NOT
+    # round2-equal (the CII test is numeric: ``. = round(. * 100) div 100``);
+    # every TaxTotalAmount then matches InvoiceCurrencyCode without being
+    # round2-equal, so BR-DEC-13 fires. The changed BT-110 also breaks the
+    # BT-110 = Σ VAT identity, so BR-CO-14 fires alongside on both engines
+    # (agreement is per rule).
+    _cii_summation(r).find("ram:TaxTotalAmount", _NSC).text = "20.735"
+
+
+def _cmut_brdec15(r):
+    # Add a VAT accounting currency (BT-6) plus its accounting-currency
+    # BT-111 total with a third, not-round2-equal decimal: the only
+    # TaxCurrencyCode-matching TaxTotalAmount fails the numeric round2 test,
+    # so BR-DEC-15 fires. The SEK total also satisfies the CII BR-53 binding
+    # on both engines (BT-6 present -> a matching-currency total exists), and
+    # BR-DEC-13 stays clear (the EUR BT-110 is round2-equal).
+    ET.SubElement(_cii_settlement(r), _cq(NS_RAM, "TaxCurrencyCode")).text = "SEK"
+    ET.SubElement(_cii_summation(r),
+                  _cq(NS_RAM, "TaxTotalAmount")).set("currencyID", "SEK")
+    _cii_summation(r).findall("ram:TaxTotalAmount", _NSC)[-1].text = "207.305"
+
+
 def _cmut_brdec18(r):
     _cii_summation(r).find("ram:DuePayableAmount", _NSC).text = "625743.549"
 
@@ -5423,7 +5484,8 @@ _CII_MUTATIONS = {
     "BR-S-02": _cmut_brs02, "BR-S-05": _cmut_brs05,
     "BR-S-09": _cmut_brs09, "BR-S-10": _cmut_brs10,
     "BR-DEC-09": _cmut_brdec09, "BR-DEC-12": _cmut_brdec12,
-    "BR-DEC-14": _cmut_brdec14, "BR-DEC-18": _cmut_brdec18,
+    "BR-DEC-13": _cmut_brdec13, "BR-DEC-14": _cmut_brdec14,
+    "BR-DEC-15": _cmut_brdec15, "BR-DEC-18": _cmut_brdec18,
     "BR-DEC-19": _cmut_brdec19, "BR-DEC-20": _cmut_brdec20,
     "BR-DEC-23": _cmut_brdec23,
     # CII proof-parity batch 7 (T-VHCIIP.8).
@@ -6518,8 +6580,11 @@ def run_differential(legs=("en", "cn", "xrechnung", "cii", "xrechnung-cii", "sb"
         print("#" * 82)
         print("Corpus assembled: %d UBL Invoice documents" % len(corpus))
         print("  scratch dir: %s" % scratch)
+        print("  UBL-artifact-defective asserts held out (with reason, see "
+              "EN_UBL_EXCLUDED_RULE_IDS): %s"
+              % ", ".join(EN_UBL_EXCLUDED_RULE_IDS))
         divergences += _run_leg("official EN16931-UBL Schematron",
-                                OFFICIAL_XSLT, OUR_RULE_IDS, our_fired, corpus)
+                                OFFICIAL_XSLT, EN_RULE_IDS, our_fired, corpus)
     if "cn" in legs:
         corpus = build_cn_corpus(scratch)
         print("#" * 82)

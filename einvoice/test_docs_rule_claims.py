@@ -23,10 +23,11 @@ What it binds (against ``einvoice.coverage.engine_fireable_ids()``):
       (table cells AND surrounding prose, shorthand-expanded) is genuinely
       fireable — README may never overclaim;
   (b) every concrete rule id the README claims as NOT covered — the
-      "NOT covered yet" bullets (deferred BR-CL codelist checks, the vacuous
-      BR-DEC-13/15 pair, the BR-CO-05..08 tautologies) plus the
-      "no BR-DE-12/13/29 exist" numbering-gap statement inside the XRechnung
-      section — is genuinely NOT fireable — README may never underclaim;
+      "NOT covered yet" bullets (deferred BR-CL codelist checks, the
+      BR-CO-05..08 tautologies; BR-DEC-13/15 left this list when T-VHCORE.6
+      implemented them) plus the "no BR-DE-12/13/29 exist" numbering-gap
+      statement inside the XRechnung section — is genuinely NOT fireable —
+      README may never underclaim;
   (c) wildcard family claims made in a positive context (`BR-DEX-*`,
       `PEPPOL-EN16931-R*`, ...) match at least one fireable id.
 
@@ -354,16 +355,19 @@ class ParserHealth(unittest.TestCase):
         neg, _pos, _w = not_covered_claims()
         _p, _wl, neg_gaps = implemented_claims()
         self.assertGreaterEqual(
-            len(neg), 14,
+            len(neg), 12,
             "only %d NOT-covered ids parsed (expected the 8 BR-CL deferrals "
-            "+ BR-DEC-13/15 + BR-CO-05..08 at minimum) — extractor decay"
+            "+ BR-CO-05..08 at minimum) — extractor decay"
             % len(neg))
         for canary in ("BR-CL-06", "BR-CL-26",   # slash-shorthand deferrals
-                       "BR-DEC-13", "BR-DEC-15",  # vacuous pair
                        "BR-CO-05", "BR-CO-08"):   # tautology range ends
             self.assertIn(canary, neg,
                           "known NOT-covered claim %s not parsed — extractor "
                           "decay" % canary)
+        # BR-DEC-13/15 are implemented since T-VHCORE.6 — direction (b) would
+        # go red if the README ever listed them as NOT covered again.
+        self.assertNotIn("BR-DEC-13", neg)
+        self.assertNotIn("BR-DEC-15", neg)
         self.assertEqual(
             neg_gaps, {"BR-DE-12", "BR-DE-13", "BR-DE-29"},
             "the 'no BR-DE-12/13/29 exist' numbering-gap statement parsed "

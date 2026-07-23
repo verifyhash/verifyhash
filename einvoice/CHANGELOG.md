@@ -16,6 +16,53 @@ ever diverge.
 > Each section below records what the tree actually ships at that version —
 > only sections from 0.2.0 onward correspond to a PyPI release event.
 
+## [0.2.2] - 2026-07-22
+
+The engine now fires 288 rules (was 286): the last two fireable
+decimal-precision core rules landed, plus a BR-CO close-out that trues up the
+honesty surfaces (`test_docs_rule_claims.py` binds the 288 to the live
+`coverage.engine_fireable_ids()` registry, as before).
+
+### Added
+
+- **`BR-DEC-13` / `BR-DEC-15` (total-VAT decimals, BT-110/BT-111) are
+  implemented** (`einvoice/rules.py`, flag fatal, both syntaxes), closing the
+  engine's last two fireable decimal-precision false-PASS gaps: a VAT total
+  like `12.345` now fails on the CII/Factur-X path exactly as the official
+  CEN CII Schematron rejects it. The two vendored artifacts genuinely differ
+  and each arm transcribes its own binding: the **CII** binding is a REAL
+  numeric test (`. = round(. * 100) div 100`, existential over the header
+  summation's `ram:TaxTotalAmount` children, raw-`@currencyID`-scoped
+  against BT-5/BT-6 — so `12.340` HOLDS and a present BT-6 with no
+  matching-currency total FIRES BR-DEC-15) — GRADED and mutation-proven on
+  the CII differential leg; the **UBL** asserts are vacuous by artifact
+  defect (their currency predicate resolves against the TaxAmount node, so
+  they can never fire officially) — the engine asserts the stated
+  ≤2-decimals intent on UBL anyway (deliberate strictness, the BR-AF-08/09
+  posture) and the pair is held out of the UBL differential legs
+  (`differential.EN_UBL_EXCLUDED_RULE_IDS`, documented in
+  `CORRECTNESS.md` §5). Unit-pinned positive + negative per rule per syntax
+  in `test_brdec_totals.py`.
+
+### Changed
+
+- **BR-CO close-out — the stale unimplemented-rules claims in
+  `CORRECTNESS.md` §5 are trued up.** BR-CO-03/09/11/12/26 (long since
+  implemented in `rules.py`) are no longer listed as missing; BR-CO-05..08
+  are documented as official `test="true()"` no-ops in BOTH vendored CEN
+  artifacts (untestable by construction, the `official_tautology` exclusion
+  class); and BR-CO-25 is documented as ABSENT from both vendored
+  preprocessed artifacts (EDIFACT-only — the BR-IG-*/BR-IP-* precedent).
+  The implemented-core count now stated there (211 distinct rule ids
+  emitted by `rules.py`) carries its derivation.
+- Coverage/count surfaces regenerated and re-pinned through the existing
+  drift guards (README §2, `COVERAGE.md`/`coverage_matrix.json`,
+  `cii_parity.json`, `RULES.md`, `remediation_catalog.json`, exports,
+  attestation, site, web bundle; pyproject + `action/README.md`
+  descriptions now say 288). No guard was weakened: `test_coverage_matrix.py`
+  now asserts the pair is IN the fireable registry and may never reappear in
+  the vacuous-exclusions bucket.
+
 ## [0.2.1] - 2026-07-22
 
 Metadata correction only — **no engine change**: the engine still fires 286

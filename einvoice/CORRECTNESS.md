@@ -8,8 +8,15 @@ The validator has **two distinct layers with separate coverage claims**:
 
 1. **EN 16931 core** — 108 of the ~200 EU-core business rules at this
    document's differential snapshot (109 of ~200 once the deferred BR-S-08
-   landed — see §5; the current, larger engine-bound count is stated in
-   `CHANGELOG.md`), proven against the official CEN Schematron (§2);
+   landed — see §5). The engine has since grown to **211 of the ~200-rule
+   EU core** (the denominator is the standard's own "about 200 business
+   rules" framing; the vendored CEN artifacts enumerate 223 official
+   `BR-*` assert ids, several of which are tautologies or defects — see
+   §5). The 211 is not folklore: it is the number of distinct rule ids
+   emitted by `einvoice/rules.py` (`len(ALL_RULES)`, one function per rule
+   id, asserted to equal 211 in `differential.py` and drift-gated through
+   `CHANGELOG.md`/`test_docs_rule_claims.py`), proven against the official
+   CEN Schematron (§2);
 2. **XRechnung national CIUS (BR-DE-\*)** — all 32 German national asserts of
    the official KoSIT XRechnung 3.0.2 UBL Schematron
    (`einvoice/rules_xrechnung.py`), proven against that artifact (§2a). The
@@ -396,31 +403,41 @@ Specifically:
 
 - **Only 108 of ~200 EN 16931 business rules were implemented at this
   snapshot — 109 of ~200 with BR-S-08, whose deferral (next bullet) has since
-  been closed; the engine has grown further since, and the CURRENT
-  engine-bound rule count lives in `CHANGELOG.md` and the package
-  description (guarded by `test_docs_rule_claims.py` /
-  `test_packaging.py`).** Still missing at the snapshot:
-  BR-23 (quantity unit-of-measure code) and the rest of the BR-49..BR-67
-  range (BR-52/53/54 supporting documents, BR-56 tax-representative VAT id,
-  BR-58..60/64..67 identifier-scheme and item rules — BR-17..20, BR-49/50/51,
-  BR-55, BR-57 and BR-61/62/63 ARE now covered),
-  and the rest of the `BR-CO-*` arithmetic
-  (BR-CO-03/09/11/12/25/26 …). The Standard-rated (S), Zero-rated (Z) and
-  Exempt (E) families ARE now fully covered (BR-S-01..10, BR-Z-01..10,
-  BR-E-01..10 — BR-S-08, the one member deferred at the time of this
-  snapshot, has since been implemented and differential-proven; see the
-  note below). The Reverse charge (AE), Export outside the EU (G),
-  Intra-community supply (IC) and Not subject to VAT (O) families — of
-  which only the `-01` breakdown-presence rule existed at this snapshot —
-  ARE now fully covered as well (BR-AE-01..10, BR-G-01..10, BR-IC-01..12
-  and BR-O-01..14): their seller-VAT-ID, rate, taxable/tax-sum and
-  exemption-reason matrices have since been implemented and
-  differential-proven (graded in `differential.py`) and are unit-pinned,
-  positive and negative per rule, in `test_rules.py`. Also missing: the remaining `BR-DEC-*` (BT-136/137/141/142
-  line allowance/charge amounts) and the `BR-CL-*` code lists beyond BR-CL-01. A
-  `valid: true` result means "none of our implemented rules fired", not "this
-  invoice is legally conformant". (BR-IG-*/BR-IP-* do not exist in the vendored CEN
-  artifact and therefore cannot be differential-proven; they are out of scope.)
+  been closed.** The engine has since grown to **211 of the ~200-rule core**
+  — the count of distinct rule ids emitted by `einvoice/rules.py`
+  (`len(ALL_RULES) == 211`, asserted in `differential.py`; the derived
+  fireable total across all layers is bound to `CHANGELOG.md` and the
+  package description by `test_docs_rule_claims.py` / `test_packaging.py`).
+  Everything the snapshot listed as missing has since been implemented and
+  differential-proven: BR-23, the BR-49..BR-67 range (BR-52/53/54
+  supporting documents, BR-56 tax-representative VAT id, BR-58..60/64..67
+  identifier-scheme and item rules), the once-open `BR-CO-*` arithmetic
+  (BR-CO-03, BR-CO-09, BR-CO-11, BR-CO-12 and BR-CO-26 are all in
+  `rules.py`), the full S/Z/E families (BR-S-01..10, BR-Z-01..10,
+  BR-E-01..10), the AE/G/IC/O families (BR-AE-01..10, BR-G-01..10,
+  BR-IC-01..12, BR-O-01..14), the line allowance/charge `BR-DEC-*`
+  quartet (BR-DEC-24/25/27/28), the total-VAT decimal pair
+  BR-DEC-13/BR-DEC-15 (CII-proven; the UBL asserts are artifact-vacuous —
+  see the dedicated bullet below), and a broad `BR-CL-*` code-list subset
+  (8 `BR-CL-*` checks remain deferred, see `COVERAGE.md` §Exclusions). A
+  `valid: true` result still means "none of our implemented rules fired",
+  not "this invoice is legally conformant". (BR-IG-*/BR-IP-* do not exist
+  in the vendored CEN artifact and therefore cannot be
+  differential-proven; they are out of scope. **BR-CO-25 is the same
+  case**: no assert with that id exists in EITHER vendored preprocessed
+  CEN artifact — UBL or CII — it is presumably bound to the EDIFACT
+  syntax the CEN artifacts do not ship, so like BR-IG-*/BR-IP-* it cannot
+  be differential-proven and is out of scope.)
+- **BR-CO-05, BR-CO-06, BR-CO-07 and BR-CO-08 are official no-ops —
+  untestable by construction.** Both vendored preprocessed CEN artifacts
+  (UBL AND CII) ship all four asserts as the literal tautology
+  `test="true()"` (e.g. `<assert id="BR-CO-05" flag="fatal"
+  test="true()">` — the "allowance/charge reason code and reason shall
+  indicate the same type" prose has no machine encoding). An assert that
+  can never fire cannot be implemented with a differential proof, so these
+  four are documented deliberate exclusions (the `official_tautology`
+  class in `coverage_matrix.json`, with verbatim per-artifact evidence),
+  not coverage.
 - **BR-S-08 (since implemented — the deferral is closed).** BR-S-08
   requires, *for each distinct Standard VAT rate*, that the VAT breakdown
   taxable amount (BT-116) equal Σ S-rated line net amounts (BT-131) plus
@@ -439,6 +456,27 @@ Specifically:
   on both syntaxes) and unit-pinned in `test_br_s08.py`, including the
   official CEN `BR-S-08-1.xml`/`BR-S-08-3.xml` unit vectors. With BR-S-08
   the set this snapshot describes becomes 109 of ~200 graded core rules.
+- **BR-DEC-13 / BR-DEC-15 (total-VAT decimals, BT-110/BT-111) — implemented,
+  with an honest per-syntax split.** The two vendored artifacts genuinely
+  differ. The **CII** artifact ships REAL numeric tests
+  (`. = round(. * 100) div 100` over the header summation's
+  `ram:TaxTotalAmount` children, currency-scoped by raw `@currencyID`
+  against BT-5/BT-6): both rules transcribe that binding exactly, are
+  GRADED on the CII differential leg and mutation-proven there
+  (`test_brdec_totals.py` pins the verdicts, including the trailing-zero
+  `12.340` pass and the BT-6-present-without-matching-total fire). The
+  **UBL** artifact's asserts for the same pair are **vacuous by defect**:
+  their predicate `[@currencyID = cbc:DocumentCurrencyCode]` (resp.
+  `cbc:TaxCurrencyCode`) resolves the currency element against the
+  `cbc:TaxAmount` context node, which has no such child, so the predicate
+  never matches and the shipped UBL assert can never fire (verified
+  against the compiled official UBL XSLT). The engine asserts the stated
+  ≤2-decimals intent on UBL anyway — **deliberate strictness**, the same
+  documented posture as the CII-defective BR-AF-08/09 and BR-AG-08/09 —
+  and the pair is held out of the UBL differential legs
+  (`differential.EN_UBL_EXCLUDED_RULE_IDS`), because grading an assert
+  the official artifact can never fire would manufacture a guaranteed
+  false-positive divergence.
 - **The XRechnung `BR-DE-*` CIUS layer is complete** for the UBL-Invoice
   artifact (all 32 asserts, §2a); the extension (`BR-DEX-*`) and CVD/TMP
   (`BR-DE-CVD-*`/`BR-TMP-*`) profiles have since been implemented too (see

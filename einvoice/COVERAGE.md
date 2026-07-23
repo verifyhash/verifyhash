@@ -25,9 +25,9 @@ The vendored German national rule set is **KoSIT XRechnung Schematron 2.5.0, whi
 
 ## Coverage at a glance
 
-- **286 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **255** proven on both UBL and CII, **30** UBL-only, **1** CII-only.
-- Severity (blocking class): **274** fatal (block validity), **12** warning / information (reported, non-blocking).
+- **288 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **255** proven on both UBL and CII, **30** UBL-only, **3** CII-only.
+- Severity (blocking class): **276** fatal (block validity), **12** warning / information (reported, non-blocking).
 - **Official German messages: 50 rules** carry an official German assert message, surfaced by the CLI `--lang de` flag (report human-message only; `--json` and exit codes are unchanged). That text is lifted VERBATIM from the vendored KoSIT XRechnung Schematron (`de_source == "kosit"`), never machine-translated; every other rule is English-only by design (no official German assert text exists to quote). See the README `--lang de` section.
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -149,7 +149,9 @@ the non-blocking `warning` class for the severity column).
 | `BR-DEC-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Sum of allowances on document level (BT-107). |
 | `BR-DEC-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Sum of charges on document level (BT-108). |
 | `BR-DEC-12` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice total amount without VAT (BT-109). |
+| `BR-DEC-13` | CII | fatal | fatal | not proven | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice total VAT amount (BT-110). |
 | `BR-DEC-14` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice total amount with VAT (BT-112). |
+| `BR-DEC-15` | CII | fatal | fatal | not proven | CEN EN 16931 1.3.16 | Max 2 decimals for the Invoice total VAT amount in accounting currency (BT-111). |
 | `BR-DEC-16` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Paid amount (BT-113). |
 | `BR-DEC-17` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Rounding amount (BT-114). |
 | `BR-DEC-18` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Max 2 decimals for the Amount due for payment (BT-115). |
@@ -384,8 +386,6 @@ Rules deliberately NOT counted as coverage, documented so the matrix is honest a
 
 ### Vacuous / tautological rules (never fire — not asserted)
 
-- **BR-DEC-13** — vacuous in official Schematron (predicate references a non-existent child of cbc:TaxAmount) — never fires
-- **BR-DEC-15** — vacuous in official Schematron (same defect, TaxCurrencyCode) — never fires
 
 ### Official `test="true()"` tautologies (deliberate exclusion class)
 
@@ -467,10 +467,10 @@ Scoped honestly: the engine asserts ALL 21 canonical PEPPOL-EN16931-R* rules tha
 
 Machine-checked complement of the rule table: for each CEN EN 16931 artifact, every official BR-* assert id that is NEITHER implemented by the engine NOR listed as a deliberate exclusion — extracted by a real XML parse of sch:assert/@id from the vendored preprocessed Schematron, with the official rule text carried verbatim. fireable_missing further subtracts any missing assert the artifact itself ships as a literal test="true()" tautology (rules that can never fire officially belong to the official_tautology exclusion class, not this worklist). test_coverage_gap.py recomputes this live from the .sch files, fails on any drift, and asserts fireable_missing == 0 for every universe — so the gap can neither be hidden nor go stale, and any future artifact bump that turns a tautology into a real rule reopens the worklist automatically.
 
-Deliberate exclusions counted against each universe (14 ids, all
-documented with reasons in the Exclusions section above): `BR-CL-06`, `BR-CL-07`, `BR-CL-08`, `BR-CL-10`, `BR-CL-11`, `BR-CL-15`, `BR-CL-25`, `BR-CL-26`, `BR-CO-05`, `BR-CO-06`, `BR-CO-07`, `BR-CO-08`, `BR-DEC-13`, `BR-DEC-15`.
+Deliberate exclusions counted against each universe (12 ids, all
+documented with reasons in the Exclusions section above): `BR-CL-06`, `BR-CL-07`, `BR-CL-08`, `BR-CL-10`, `BR-CL-11`, `BR-CL-15`, `BR-CL-25`, `BR-CL-26`, `BR-CO-05`, `BR-CO-06`, `BR-CO-07`, `BR-CO-08`.
 
-### `en16931-ubl` — 209 implemented + 14 excluded + 0 missing = 223 official `BR-*` rules
+### `en16931-ubl` — 211 implemented + 12 excluded + 0 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 756 non-`BR-*` asserts (`UBL-CR-*`, `UBL-DT-*`, `UBL-SR-*`) — syntax-binding cardinality/
@@ -487,7 +487,7 @@ exclusion — including the official `test="true()"` tautologies
 listed in the Exclusions section above with verbatim artifact
 evidence.
 
-### `en16931-cii` — 209 implemented + 14 excluded + 0 missing = 223 official `BR-*` rules
+### `en16931-cii` — 211 implemented + 12 excluded + 0 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 583 non-`BR-*` asserts (`CII-DT-*`, `CII-SR-*`) — syntax-binding cardinality/
@@ -586,10 +586,10 @@ worklist automatically.
 
 ## CII proof parity
 
-**TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **286**
+**TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **288**
 business rules the engine asserts, **255** are differentially proven
 on BOTH the UBL and CII bindings; **30** are officially UBL-only and
-**1** is CII-only. Every one of the **30** UBL-only rules the
+**3** is CII-only. Every one of the **30** UBL-only rules the
 official CII artifacts were measured against is now resolved with
 evidence — **0 remain on the cii-fireable worklist** — so no CII
 assert the vendored artifacts carry is left unproven or silently
@@ -655,7 +655,7 @@ decimal-place cap — not EN 16931 business rules.
 
 - **756 UBL** + **583 CII** = **1339** syntax-binding asserts, extracted by a real XML parse of the two artifacts.
 - **Frozen honest headline (machine-recomputed):** **741 of 756 UBL** + **554 of 583 CII** syntax-binding asserts are differential-proven per binding (0 divergences against the official vendored CEN Schematron — `differential.py` LEG 5 `sb` / LEG 6 `sbcii`); the remaining **15 UBL** + **29 CII** are machine-listed known-open, each with its exact unsupported `@test` / `@context` form in the per-class worklists below. Nothing is approximated, hand-faked, or silently dropped — an id is promoted only where the restricted (non-general-XPath) evaluator proves exact equivalence, and the terminal per-class counts are asserted by `test_syntax_binding.py`.
-- Honesty note: these are **NOT** part of the **286 business rules**
+- Honesty note: these are **NOT** part of the **288 business rules**
   counted above, and none is folded into that matrix. The catalog is
   regenerated by `gen_syntax_binding.py` and re-parsed live by
   `test_syntax_binding.py`. The dominant **UBL `absence-restriction`**

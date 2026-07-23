@@ -82,7 +82,7 @@ GAP_ARTIFACT_SCH = {
 }
 
 # Differentially-proven graded sets (single source of truth = differential.py).
-CORE_UBL_PROVEN = set(_diff.OUR_RULE_SET)          # LEG 1: all 151 core on UBL
+CORE_UBL_PROVEN = set(_diff.EN_RULE_SET)           # LEG 1: UBL-graded core set
 CORE_CII_PROVEN = set(_diff.CII_RULE_SET)          # LEG 3: core subset on CII
 DE_UBL_PROVEN = set(_diff.XR_RULE_SET)             # LEG 2: all 46 BR-DE/DEX on UBL
 DE_CII_PROVEN = set(_diff.CII_XR_RULE_SET)         # LEG 4: BR-DE subset on CII
@@ -94,6 +94,30 @@ PEP_CII_PROVEN = set(_diff.PEPPOL_CII_PROVEN_CANONICAL)
 # The vendored artifacts carrying the PEPPOL-EN16931-R* family (the KoSIT
 # XRechnung Schematron ships them inside its peppol-* patterns).
 PEPPOL_ARTIFACT_ORDER = ["xrechnung-ubl", "xrechnung-cii"]
+
+# Honest reasons a core rule is NOT graded on the UBL legs (verbatim intent
+# from differential.EN_UBL_EXCLUDED_RULE_IDS' block comment) — the UBL-side
+# mirror of CII_CORE_REASON below.
+UBL_CORE_REASON = {
+    "BR-DEC-13": "the vendored UBL artifact's assert filters the BT-110 total "
+                 "with [@currencyID = cbc:DocumentCurrencyCode], but inside "
+                 "the predicate the context node is the cbc:TaxAmount being "
+                 "filtered — which has no cbc:DocumentCurrencyCode CHILD — so "
+                 "the predicate never matches, the node-set is always empty "
+                 "and the shipped UBL assert can never fire (verified against "
+                 "the compiled official UBL XSLT). The engine asserts the "
+                 "stated ≤2-decimals intent on UBL anyway (deliberate "
+                 "strictness); the rule is differentially proven on the CII "
+                 "leg, whose artifact ships a real numeric round2 test.",
+    "BR-DEC-15": "the vendored UBL artifact repeats the BR-DEC-13 "
+                 "predicate-context defect with cbc:TaxCurrencyCode, so the "
+                 "shipped UBL assert can never fire. The engine asserts the "
+                 "stated ≤2-decimals intent on the BT-6-currency total on UBL "
+                 "anyway (deliberate strictness); differentially proven on "
+                 "the CII leg.",
+}
+assert set(UBL_CORE_REASON) == set(_diff.EN_UBL_EXCLUDED_RULE_IDS), (
+    "UBL_CORE_REASON drifted from differential.EN_UBL_EXCLUDED_RULE_IDS")
 
 # Honest reasons a core rule is NOT graded on the CII leg (verbatim intent from
 # differential.CII_EXCLUDED_RULE_IDS' block comment).
@@ -756,8 +780,10 @@ def build_matrix():
         rid = _coverage._core_rule_id(fn)
         flag = _core_flag(fn)
         cii_ok = rid in CORE_CII_PROVEN
+        ubl_ok = rid in CORE_UBL_PROVEN
         prov = {
-            "ubl": _prov("en16931-ubl", rid in CORE_UBL_PROVEN),
+            "ubl": _prov("en16931-ubl", ubl_ok,
+                         None if ubl_ok else UBL_CORE_REASON[rid]),
             "cii": _prov("en16931-cii", cii_ok,
                          None if cii_ok else CII_CORE_REASON.get(rid, _CII_CORE_GENERIC)),
         }
@@ -765,7 +791,8 @@ def build_matrix():
             "id": rid,
             "title": _title(fn, rid),
             "family": "core",
-            "syntax": "both" if cii_ok else "ubl",
+            "syntax": ("both" if (cii_ok and ubl_ok)
+                       else ("cii" if cii_ok else "ubl")),
             "severity": _severity_class(flag),
             "flag": flag,
             "provenance": prov,

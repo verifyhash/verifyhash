@@ -128,7 +128,7 @@ explicit, reviewable change rather than a silent drift.
 
 ## Honest scope
 
-- The validator asserts **286 business rules** in total: 209 of the 223
+- The validator asserts **288 business rules** in total: 211 of the 223
   official EN 16931 `BR-*` rule ids in each syntax universe (UBL and CII),
   plus — with `--profile=xrechnung` — the German XRechnung CIUS + extension
   layer (`BR-DE-*`, `BR-DE-CVD-*`, `BR-TMP-*`, `BR-DEX-*`) and the 21

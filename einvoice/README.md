@@ -60,11 +60,11 @@ leak check, `/etc/passwd` XXE, external-DTD `SYSTEM`) and `test_robustness.py`,
 which also assert that a benign XRechnung invoice still parses and validates
 unchanged.
 
-Read §2 before trusting it with anything. The engine asserts **286 business
+Read §2 before trusting it with anything. The engine asserts **288 business
 rules** in total — the exact set the code fires, enumerated per rule in
 [`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` and drift-gated by
 `test_coverage_matrix.py` against the live rule registries. That total breaks
-down as: **209 of the 223 official EN 16931 `BR-*` rule ids** in each CEN
+down as: **211 of the 223 official EN 16931 `BR-*` rule ids** in each CEN
 syntax universe (UBL and CII) — **every official rule that can actually fire,
 except eight deferred `BR-CL-*` code-list checks** — plus, with
 `--profile=xrechnung`, the German XRechnung CIUS + extension layer
@@ -87,12 +87,18 @@ The caveat that keeps that claim honest, stated adjacent to it rather than in
 a footnote: **4 official ids (`BR-CO-05`–`BR-CO-08`) are shipped as literal
 `test="true()"` tautologies** in the CEN artifacts — asserts that can never
 fire, in either universe, so implementing them with a differential proof is
-impossible *by construction* — and 2 more (`BR-DEC-13/15`) are
-vacuous-by-defect there. Those 6, plus the 8 deferred code-list checks, are
-documented with verbatim artifact evidence in [`COVERAGE.md`](COVERAGE.md),
-the generated per-rule matrix that is the authoritative inventory (it
-supersedes the static first-slice tables in §2 where they disagree). This is
-deliberately **not** an uncaveated "100%" claim.
+impossible *by construction*. Those 4, plus the 8 deferred code-list checks,
+are documented with verbatim artifact evidence in
+[`COVERAGE.md`](COVERAGE.md), the generated per-rule matrix that is the
+authoritative inventory (it supersedes the static first-slice tables in §2
+where they disagree). A related asymmetry worth knowing: the total-VAT
+decimal pair `BR-DEC-13`/`BR-DEC-15` is implemented and
+differential-proven on the **CII** leg (that artifact ships real numeric
+round2 tests), while the **UBL** artifact's asserts for the same pair are
+vacuous-by-defect (a predicate-context bug means they can never fire there)
+— the engine asserts the stated ≤2-decimals intent on UBL anyway, as
+documented deliberate strictness. This is deliberately **not** an
+uncaveated "100%" claim.
 
 **How correctness is proven:** every implemented rule is differential-tested
 against the **official, normative compiled Schematron artifacts** (the legal
@@ -111,9 +117,11 @@ it is differentially proven on the CII artifact too, and which rules have that
 proof is machine-tracked: `test_cii_parity.py` recomputes the worklist
 (`cii_parity.json`) from the live coverage matrix plus a real XML parse of the
 vendored CII Schematron, and fails on any drift, so the parity gap can neither
-be hand-edited nor go stale. As of 2026-07-11 the arc is terminal: **255 of
-the 286 asserted rules are differential-proven on both the UBL and CII
-bindings, 30 are officially UBL-only, and 1 is CII-only** (`BR-TMP-3`).
+be hand-edited nor go stale. As of 2026-07-22 the arc is terminal: **255 of
+the 288 asserted rules are differential-proven on both the UBL and CII
+bindings, 30 are officially UBL-only, and 3 are CII-only** (`BR-TMP-3`, plus
+`BR-DEC-13`/`BR-DEC-15`, whose UBL asserts are artifact-vacuous — see the
+caveat in §1).
 **Zero rules remain on the cii-fireable worklist** — every one of the 30
 UBL-only rules the vendored CII artifacts were measured against is resolved
 with evidence: **4 are cii-artifact-defective** (the CII artifact ships them
@@ -166,7 +174,7 @@ black-box web form.
 
 The static tables below are the FIRST-SLICE inventory (108 core + 32 BR-DE
 rules), kept for the family-by-family orientation they give; the engine has
-since grown to 209 core + 55 German-layer rules, and the machine-generated
+since grown to 211 core + 55 German-layer rules, and the machine-generated
 [`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` (regenerated from the
 live rule registries by `gen_coverage.py`, drift-gated by
 `test_coverage_matrix.py`) is the authoritative per-rule inventory wherever
@@ -339,15 +347,14 @@ exact reason in
   "validates the EN 16931 core for a French invoice" is TRUE and useful, while
   **full French CIUS conformance is NOT claimed** — the same honesty label this
   README applies to Peppol BIS Billing 3.0 above.
-- **14 official `BR-*` ids per CEN universe are documented deliberate
+- **12 official `BR-*` ids per CEN universe are documented deliberate
   exclusions, NOT coverage**: 8 deferred `BR-CL-*` code-list checks
   (BR-CL-06/07/08/10/11/15/25/26 — real, fireable official rules the engine
-  does not yet assert), `BR-DEC-13`/`BR-DEC-15` (vacuous-by-defect in the
-  official artifact — they can never fire there), and the 4 official
-  **tautologies** `BR-CO-05`–`BR-CO-08`, shipped as literal `test="true()"`
-  asserts in both CEN universes, so no implementation could ever be
-  differentially proven for them. Per-rule reasons and verbatim artifact
-  evidence: [`COVERAGE.md`](COVERAGE.md) §Exclusions.
+  does not yet assert) and the 4 official **tautologies**
+  `BR-CO-05`–`BR-CO-08`, shipped as literal `test="true()"` asserts in both
+  CEN universes, so no implementation could ever be differentially proven
+  for them. Per-rule reasons and verbatim artifact evidence:
+  [`COVERAGE.md`](COVERAGE.md) §Exclusions.
 - **No XSD (structural schema) validation.** Layer S-XSD is deferred; only
   well-formedness and the root element are checked structurally.
 - **UBL `CreditNote` IS validated; no signatures.** A UBL 2.1 `CreditNote`
@@ -632,7 +639,7 @@ not a general processor) mirrors **735 of 756 UBL + 506 of 583 CII** of them, ea
 differential-proven equivalent to the official CEN Schematron at **0 divergences**
 over the corpus; the remaining **98 (21 UBL + 77 CII)** are left machine-listed as
 `known-open` in [`COVERAGE.md`](COVERAGE.md) — never guessed, never silently
-dropped. These counts are **kept strictly separate** from the 286 business rules
+dropped. These counts are **kept strictly separate** from the 288 business rules
 and are recomputed live by `test_syntax_binding.py`.
 
 `einvoice validate --json` surfaces the UBL findings under a distinct
@@ -715,7 +722,7 @@ This reads [`attestation.json`](attestation.json) — a byte-reproducible record
 that pins the exact numbers we publish — and confirms they still match the live
 source tree. It exits `0` only if nothing has moved. `attestation.json` pins:
 
-- **286 business rules** asserted by the engine (the frozen `rules.count`);
+- **288 business rules** asserted by the engine (the frozen `rules.count`);
 - the frozen syntax-binding coverage headline: **741 of 756 UBL** + **554 of
   583 CII** syntax-binding asserts differential-proven per binding;
 - the in-scope KoSIT test-suite pass rates: **39 of 39 UBL** and **39 of 39
@@ -793,7 +800,7 @@ conformance gate: 1/12 invoice(s) NON-CONFORMANT (profile=xrechnung) — FAIL
 ```
 
 Same honest scope as §2: the gate proves your invoices pass the
-**implemented** rule set (209 core + 55 German-layer rules — the
+**implemented** rule set (211 core + 55 German-layer rules — the
 authoritative list is `COVERAGE.md`), not the full standard. The gate's behaviour
 (fails naming the rule ID, passes conformant sets, refuses empty input) is
 itself under test in `test_packaging.py`.
@@ -948,7 +955,7 @@ A first slice earns further investment or it doesn't. The signal, timeboxed:
 **KILL** if neither happens: write up what was learned, archive the repo, and
 stop. The corpus and harness remain useful artifacts either way.
 
-Current status against this metric: 209 core rules + the 55-rule XRechnung
+Current status against this metric: 211 core rules + the 55-rule XRechnung
 CIUS/CVD/extension layer shipped (each batch differential-proven at 100% against
 its official Schematron, UBL and CII legs; fireable-missing = 0 in both CEN
 universes, with the 4 official `test="true()"` tautologies `BR-CO-05`–`08`

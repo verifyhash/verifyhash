@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement. message_de (present ONLY on de_source=='kosit' rules) is the official German <sch:assert> message VERBATIM, with a message_de_provenance {artifact, assert_id} tag naming the vendored file it was lifted from; the --lang de CLI surfaces it in place of the English message.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 286,
+  "rule_count": 288,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -1759,6 +1759,23 @@
       "fix_de": "Runden Sie den Wert bei `cac:LegalMonetaryTotal` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Gesamtbetrag der Rechnung ohne Umsatzsteuer“ (BT-109) beträgt 2.",
       "de_source": "translation"
     },
+    "BR-DEC-13": {
+      "title": "Max 2 decimals for the Invoice total VAT amount (BT-110).",
+      "requires": "The allowed maximum number of decimals for the Invoice total VAT amount (BT-110) is 2.",
+      "bt_bg": [
+        "BT-110"
+      ],
+      "location_hint": "cac:TaxTotal/cbc:TaxAmount",
+      "fix": "Round the value at `cac:TaxTotal/cbc:TaxAmount` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice total VAT amount (BT-110) is 2.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "The allowed maximum number of decimals for the Invoice total VAT amount (BT-110) is 2."
+      },
+      "title_de": "Die zulässige Höchstzahl an Nachkommastellen für „Gesamtbetrag der Umsatzsteuer“ (BT-110) beträgt 2.",
+      "fix_de": "Runden Sie den Wert bei `cac:TaxTotal/cbc:TaxAmount` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Gesamtbetrag der Umsatzsteuer“ (BT-110) beträgt 2.",
+      "de_source": "translation"
+    },
     "BR-DEC-14": {
       "title": "Max 2 decimals for the Invoice total amount with VAT (BT-112).",
       "requires": "The allowed maximum number of decimals for the Invoice total amount with VAT (BT-112) is 2.",
@@ -1774,6 +1791,23 @@
       },
       "title_de": "Die zulässige Höchstzahl an Nachkommastellen für „Gesamtbetrag der Rechnung einschließlich Umsatzsteuer“ (BT-112) beträgt 2.",
       "fix_de": "Runden Sie den Wert bei `cac:LegalMonetaryTotal` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Gesamtbetrag der Rechnung einschließlich Umsatzsteuer“ (BT-112) beträgt 2.",
+      "de_source": "translation"
+    },
+    "BR-DEC-15": {
+      "title": "Max 2 decimals for the Invoice total VAT amount in accounting currency (BT-111).",
+      "requires": "The allowed maximum number of decimals for the Invoice total VAT amount in accounting currency (BT-111) is 2.",
+      "bt_bg": [
+        "BT-111"
+      ],
+      "location_hint": "cac:TaxTotal/cbc:TaxAmount",
+      "fix": "Round the value at `cac:TaxTotal/cbc:TaxAmount` to the allowed number of decimals: The allowed maximum number of decimals for the Invoice total VAT amount in accounting currency (BT-111) is 2.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "xrechnung-ubl",
+        "assert": "The allowed maximum number of decimals for the Invoice total VAT amount in accounting currency (BT-111) is 2."
+      },
+      "title_de": "Die zulässige Höchstzahl an Nachkommastellen für „Gesamtbetrag der Umsatzsteuer in der Abrechnungswährung“ (BT-111) beträgt 2.",
+      "fix_de": "Runden Sie den Wert bei `cac:TaxTotal/cbc:TaxAmount` auf die zulässige Anzahl an Nachkommastellen: Die zulässige Höchstzahl an Nachkommastellen für „Gesamtbetrag der Umsatzsteuer in der Abrechnungswährung“ (BT-111) beträgt 2.",
       "de_source": "translation"
     },
     "BR-DEC-16": {

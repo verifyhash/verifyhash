@@ -264,9 +264,13 @@ class CiiParityTest(unittest.TestCase):
         n_both = sum(1 for r in mat if r["syntax"] == "both")
         n_ubl = sum(1 for r in mat if r["syntax"] == "ubl")
         n_cii = sum(1 for r in mat if r["syntax"] == "cii")
-        self.assertEqual((n_both, n_ubl, n_cii), (255, 30, 1),
+        # 3 CII-only: BR-TMP-3 (no UBL assert exists) plus BR-DEC-13/15
+        # (T-VHCORE.6 — implemented on both syntaxes, but the UBL asserts are
+        # artifact-vacuous and held out of the UBL grading, see
+        # differential.EN_UBL_EXCLUDED_RULE_IDS).
+        self.assertEqual((n_both, n_ubl, n_cii), (255, 30, 3),
                          "terminal matrix syntax split drifted from the frozen "
-                         "(255 both, 30 UBL-only, 1 CII-only)")
+                         "(255 both, 30 UBL-only, 3 CII-only)")
 
     # ---- 5. measurement-only guard ----------------------------------------
     def test_families_match_matrix_and_no_tag_flipped(self):

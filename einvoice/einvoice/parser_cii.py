@@ -532,6 +532,16 @@ def build_model(root):
          if tta.get("currencyID") is not None]
         for summ in root.findall(
             ".//ram:SpecifiedTradeSettlementHeaderMonetarySummation", NS)]
+    # BR-DEC-13/15 (CII): per official context node (every header monetary
+    # summation), each ram:TaxTotalAmount as a (raw @currencyID or None,
+    # raw string value) pair — the two total-VAT decimal rules test the
+    # NUMERIC round2 identity ``. = round(. * 100) div 100`` per child and
+    # scope by @currencyID against BT-5 / BT-6 with RAW comparisons.
+    inv.cii_summation_taxtotals = [
+        [(tta.get("currencyID"), _strval(tta))
+         for tta in summ.findall("ram:TaxTotalAmount", NS)]
+        for summ in root.findall(
+            ".//ram:SpecifiedTradeSettlementHeaderMonetarySummation", NS)]
     # BR-54 context = //ram:ApplicableProductCharacteristic (BG-32). Test:
     # ``(ram:Description) and (ram:Value)`` — child-element existence.
     for apc_el in root.findall(".//ram:ApplicableProductCharacteristic", NS):

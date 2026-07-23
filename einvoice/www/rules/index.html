@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EN 16931 / XRechnung rule index — einvoice rule reference</title>
-<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (286 rules across 21 families), grouped by rule family with a reference page for each.">
+<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (288 rules across 21 families), grouped by rule family with a reference page for each.">
 <link rel="canonical" href="https://verifyhash.com/einvoice/rules/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -80,13 +80,13 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../index.html">einvoice</a> / EN 16931 / XRechnung rule reference</p>
 <h1>Rule index</h1>
 <p class="lead">Every EN 16931 / XRechnung business rule the einvoice engine can fire, grouped by rule family. Each rule links to its own reference page: what it requires, the BT/BG business terms it touches, the XML location, a one-line fix, the engine severity, and the verbatim official Schematron assert.</p>
-<p><strong>286 rules</strong> in total — 274 fatal, 11 warning, 1 information — across 21 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
+<p><strong>288 rules</strong> in total — 276 fatal, 11 warning, 1 information — across 21 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
 <nav class="toc">
 <ul class="rules">
 <li><a href="#BR">BR</a> (58)</li>
 <li><a href="#BR-CL">BR-CL</a> (15)</li>
 <li><a href="#BR-CO">BR-CO</a> (19)</li>
-<li><a href="#BR-DEC">BR-DEC</a> (19)</li>
+<li><a href="#BR-DEC">BR-DEC</a> (21)</li>
 <li><a href="#BR-AE">BR-AE</a> (10)</li>
 <li><a href="#BR-AF">BR-AF</a> (10)</li>
 <li><a href="#BR-AG">BR-AG</a> (10)</li>
@@ -217,7 +217,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 </ul>
 </section>
 <section class="fam" id="BR-DEC">
-<h2>BR-DEC <small>(19)</small></h2>
+<h2>BR-DEC <small>(21)</small></h2>
 <p class="intro">Decimal-places rules — amounts must not exceed the allowed number of decimals.</p>
 <ul class="rules">
 <li><a href="BR-DEC-01/index.html"><code>BR-DEC-01</code></a> — Max 2 decimals for the Document level allowance amount (BT-92). <span class="sev">fatal</span></li>
@@ -228,7 +228,9 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="BR-DEC-10/index.html"><code>BR-DEC-10</code></a> — Max 2 decimals for the Sum of allowances on document level (BT-107). <span class="sev">fatal</span></li>
 <li><a href="BR-DEC-11/index.html"><code>BR-DEC-11</code></a> — Max 2 decimals for the Sum of charges on document level (BT-108). <span class="sev">fatal</span></li>
 <li><a href="BR-DEC-12/index.html"><code>BR-DEC-12</code></a> — Max 2 decimals for the Invoice total amount without VAT (BT-109). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-13/index.html"><code>BR-DEC-13</code></a> — Max 2 decimals for the Invoice total VAT amount (BT-110). <span class="sev">fatal</span></li>
 <li><a href="BR-DEC-14/index.html"><code>BR-DEC-14</code></a> — Max 2 decimals for the Invoice total amount with VAT (BT-112). <span class="sev">fatal</span></li>
+<li><a href="BR-DEC-15/index.html"><code>BR-DEC-15</code></a> — Max 2 decimals for the Invoice total VAT amount in accounting currency (BT-111). <span class="sev">fatal</span></li>
 <li><a href="BR-DEC-16/index.html"><code>BR-DEC-16</code></a> — Max 2 decimals for the Paid amount (BT-113). <span class="sev">fatal</span></li>
 <li><a href="BR-DEC-17/index.html"><code>BR-DEC-17</code></a> — Max 2 decimals for the Rounding amount (BT-114). <span class="sev">fatal</span></li>
 <li><a href="BR-DEC-18/index.html"><code>BR-DEC-18</code></a> — Max 2 decimals for the Amount due for payment (BT-115). <span class="sev">fatal</span></li>

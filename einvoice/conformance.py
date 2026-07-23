@@ -127,7 +127,12 @@ CALCULATION_ROUNDING_COVERAGE = {
     "BR-DEC-10": "≤2 decimals: Sum of allowances on document level (BT-107)",
     "BR-DEC-11": "≤2 decimals: Sum of charges on document level (BT-108)",
     "BR-DEC-12": "≤2 decimals: Invoice total amount without VAT (BT-109)",
+    "BR-DEC-13": "≤2 decimals: Invoice total VAT amount (BT-110) — CII "
+                 "differential-proven; the UBL arm asserts the stated intent "
+                 "(the vendored UBL assert is vacuous by defect, see below)",
     "BR-DEC-14": "≤2 decimals: Invoice total amount with VAT (BT-112)",
+    "BR-DEC-15": "≤2 decimals: VAT total in accounting currency (BT-111) — "
+                 "CII differential-proven; UBL arm intent-asserted (see below)",
     "BR-DEC-16": "≤2 decimals: Paid amount (BT-113)",
     "BR-DEC-17": "≤2 decimals: Rounding amount (BT-114)",
     "BR-DEC-18": "≤2 decimals: Amount due for payment (BT-115)",
@@ -136,30 +141,39 @@ CALCULATION_ROUNDING_COVERAGE = {
 }
 
 # BR-DEC-13 (BT-110, Invoice total VAT amount) and BR-DEC-15 (BT-111, VAT amount
-# in accounting currency) are DELIBERATELY NOT asserted. In the vendored,
-# normative CEN Schematron their test is
+# in accounting currency) are asserted since T-VHCORE.6 — with an honest split
+# per syntax, because the two vendored CEN artifacts genuinely differ:
 #
-#     (//cac:TaxTotal/cbc:TaxAmount[@currencyID = cbc:DocumentCurrencyCode] and
-#       string-length(substring-after(…,'.')) <= 2)
-#     or not(//cac:TaxTotal/cbc:TaxAmount[@currencyID = cbc:DocumentCurrencyCode])
+#  * CII: the artifact ships REAL, fireable numeric tests
+#    (``. = round(. * 100) div 100`` over the header summation's
+#    ram:TaxTotalAmount children, currency-scoped by RAW @currencyID against
+#    BT-5 / BT-6). Both rules are transcribed exactly, GRADED on the CII
+#    differential leg (LEG 3) and mutation-proven there.
+#  * UBL: the artifact's test is
 #
-# where the predicate ``cbc:DocumentCurrencyCode`` (resp. ``cbc:TaxCurrencyCode``
-# for BR-DEC-15) is a CHILD of the TaxAmount context node — an element that never
-# exists there — so the predicate is always false, the selected node-set is
-# always empty, and the assert ALWAYS HOLDS (it can never fire). Verified
-# empirically against the official XSLT: a top-level VAT TaxAmount carrying three
-# decimals in the document currency still produces NO BR-DEC-13 failed-assert.
-# Implementing them as active 2-decimal checks would therefore be a FALSE
-# POSITIVE against the legal artifact (the differential would go red); the only
-# faithful transcription is a no-op, which has no violating test case. They are
-# recorded here as a known-vacuous defect in the normative Schematron rather than
-# shipped as an approximation.
-CALCULATION_ROUNDING_VACUOUS = {
-    "BR-DEC-13": "vacuous in official Schematron (predicate references a "
-                 "non-existent child of cbc:TaxAmount) — never fires",
-    "BR-DEC-15": "vacuous in official Schematron (same defect, TaxCurrencyCode) "
-                 "— never fires",
-}
+#      (//cac:TaxTotal/cbc:TaxAmount[@currencyID = cbc:DocumentCurrencyCode] and
+#        string-length(substring-after(…,'.')) <= 2)
+#      or not(//cac:TaxTotal/cbc:TaxAmount[@currencyID = cbc:DocumentCurrencyCode])
+#
+#    where the predicate ``cbc:DocumentCurrencyCode`` (resp.
+#    ``cbc:TaxCurrencyCode`` for BR-DEC-15) is resolved as a CHILD of the
+#    TaxAmount context node — an element that never exists there — so the
+#    predicate is always false, the selected node-set is always empty, and the
+#    shipped UBL assert ALWAYS HOLDS (verified empirically against the official
+#    compiled XSLT: a top-level VAT TaxAmount carrying three decimals in the
+#    document currency produces NO BR-DEC-13 failed-assert). The engine asserts
+#    the rule's stated intent on UBL anyway — deliberate strictness, exactly
+#    the posture already taken for the CII-defective BR-AF-08/09 and
+#    BR-AG-08/09 — and the pair is held out of the UBL differential legs
+#    (differential.EN_UBL_EXCLUDED_RULE_IDS) because grading a rule the
+#    official UBL artifact can never fire would ship a guaranteed
+#    false-positive divergence on every violating fixture.
+#
+# The vacuous-defect bucket this dict used to carry is therefore EMPTY: every
+# BR-DEC rule in both vendored artifacts is now asserted by the engine. The
+# name is kept because gen_coverage.deliberate_exclusion_ids() and the
+# coverage-matrix exclusions section read it as the (now closed) worklist.
+CALCULATION_ROUNDING_VACUOUS = {}
 
 # --------------------------------------------------------------------------- #
 # XRechnung EXTENSION (BR-DEX-*) coverage manifest.                            #
@@ -665,7 +679,12 @@ CII_SYNTAX_COVERAGE = {
                "coexist",
     "BR-DEC-09": "≤2 decimals: Sum of Invoice line net amount (BT-106)",
     "BR-DEC-12": "≤2 decimals: Invoice total amount without VAT (BT-109)",
+    "BR-DEC-13": "Invoice total VAT amount (BT-110) numerically round2-equal "
+                 "(the CII binding is . = round(.*100) div 100, existential "
+                 "over the summation's TaxTotalAmount children)",
     "BR-DEC-14": "≤2 decimals: Invoice total amount with VAT (BT-112)",
+    "BR-DEC-15": "Accounting-currency VAT total (BT-111) present and "
+                 "numerically round2-equal whenever BT-6 is present",
     "BR-DEC-18": "≤2 decimals: Amount due for payment (BT-115)",
     "BR-DEC-19": "≤2 decimals: VAT category taxable amount (BT-116)",
     "BR-DEC-20": "≤2 decimals: VAT category tax amount (BT-117)",
@@ -1148,9 +1167,10 @@ def main():
         % len(CALCULATION_ROUNDING_COVERAGE))
     for rid in sorted(CALCULATION_ROUNDING_COVERAGE):
         out("     %-11s %s\n" % (rid, CALCULATION_ROUNDING_COVERAGE[rid]))
-    out("  known-vacuous in the normative Schematron (not asserted):\n")
-    for rid in sorted(CALCULATION_ROUNDING_VACUOUS):
-        out("     %-11s %s\n" % (rid, CALCULATION_ROUNDING_VACUOUS[rid]))
+    if CALCULATION_ROUNDING_VACUOUS:
+        out("  known-vacuous in the normative Schematron (not asserted):\n")
+        for rid in sorted(CALCULATION_ROUNDING_VACUOUS):
+            out("     %-11s %s\n" % (rid, CALCULATION_ROUNDING_VACUOUS[rid]))
     out("\n")
     out("  German CIUS (BR-DE-*) rules covered (%d), differentially proven vs\n"
         "  the official KoSIT XRechnung-UBL Schematron (CIUS layer):\n"

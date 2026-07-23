@@ -445,6 +445,149 @@ def build_gap(implemented_ids, excluded_ids):
         "artifact_order": GAP_ARTIFACT_ORDER,
         "excluded_ids_considered": sorted(excluded_ids, key=_sort_key),
         "artifacts": artifacts,
+        "kosit": build_kosit_gap(),
+    }
+
+
+# ---- KoSIT XRechnung CIUS-layer gap universes (T-VHCORE.11) --------------- #
+# The CIUS-layer mirror of the CEN gap: the two vendored KoSIT artifacts are
+# their own fireable-assert universes, scoped to the German national rule
+# families. The prefixes cover all four families the CIUS layer ships:
+# "BR-DE-" matches BR-DE-*, BR-DE-CVD-* AND BR-DE-TMP-32; "BR-DEX-" the
+# extension layer; "BR-TMP-" the ungated temporary rules (BR-TMP-2/-3 and
+# BR-TMP-CVD-01). Deliberately NOT "BR-DE" bare, which would swallow the CEN
+# core's BR-DEC-* family.
+KOSIT_GAP_ARTIFACT_ORDER = ["xrechnung-ubl", "xrechnung-cii"]
+KOSIT_GAP_FAMILY_PREFIXES = ("BR-DE-", "BR-DEX-", "BR-TMP-")
+
+
+def is_kosit_gap_id(rid):
+    """True iff ``rid`` belongs to the KoSIT CIUS-layer gap families
+    (``BR-DE-*`` incl. ``BR-DE-CVD-*``/``BR-DE-TMP-32``, ``BR-DEX-*``,
+    ``BR-TMP-*`` — never the CEN core's ``BR-DEC-*``)."""
+    return rid.startswith(KOSIT_GAP_FAMILY_PREFIXES)
+
+
+# Per-binding implemented sets, read from the LIVE registries — the same
+# source build_matrix uses for the rule table, so the gap can never claim a
+# rule the engine does not fire in that binding.
+_KOSIT_IMPLEMENTED_BY_ARTIFACT = {
+    "xrechnung-ubl": _coverage.ubl_de_rule_ids,
+    "xrechnung-cii": _coverage.cii_de_rule_ids,
+}
+
+
+def kosit_documented_exclusion_ids(key):
+    """Documented deliberate exclusions counted against a KoSIT universe.
+
+    UBL: EMPTY — every family assert the vendored UBL artifact carries is
+    implemented, so nothing is excluded.
+
+    CII: the existing 12-id ``cii_de_out_of_scope`` exclusion class (single
+    source of truth = ``differential.CII_XR_EXCLUDED_RULE_IDS`` — REUSED, the
+    per-id reasons stay documented once in ``exclusions.cii_de_out_of_scope``)
+    plus the extension-layer ``BR-DEX-*`` ids implemented on UBL but not on
+    CII, whose non-evaluation the rule table already documents per id (the
+    ``_CII_DEX_GENERIC`` cii-provenance reason: extension surfaces the
+    normalized CII model does not carry; only the CII-only BR-DEX-15 is
+    admitted there).
+
+    Both sets are derived from LIVE engine sources — never from the artifact
+    being measured — so a KoSIT artifact bump that adds or renames an assert
+    cannot silently self-classify as excluded: it surfaces as unclassified
+    and fails the build/gate by name until implemented or documented.
+    """
+    if key == "xrechnung-ubl":
+        return set()
+    dex_not_on_cii = {rid for rid in _coverage.ubl_de_rule_ids()
+                      if rid.startswith("BR-DEX-")
+                      and rid not in _coverage.cii_de_rule_ids()}
+    return set(_diff.CII_XR_EXCLUDED_RULE_IDS) | dex_not_on_cii
+
+
+def build_kosit_gap():
+    """Per KoSIT artifact: the fireable CIUS-family universe, partitioned into
+    implemented vs documented-exclusion ids with ZERO unclassified remainder.
+
+    The universe is extracted with a real XML parse of the vendored KoSIT
+    Schematron (:func:`einvoice.coverage.schematron_assert_index`) filtered by
+    :func:`is_kosit_gap_id` — never authored from prose — and any assert the
+    artifact itself ships as a literal ``test="true()"`` tautology is set
+    aside exactly like the CEN enumeration does (currently NONE in either
+    KoSIT artifact, so the fireable universe equals the official one). Any
+    fireable id that is neither implemented in that binding's live registry
+    nor covered by :func:`kosit_documented_exclusion_ids` aborts the build
+    loudly, naming the id — the guard shape that would have auto-caught
+    BR-DEX-15.
+    """
+    artifacts = {}
+    for key in KOSIT_GAP_ARTIFACT_ORDER:
+        rel = SCHEMATRON_SOURCES[key]["file"]
+        index = _coverage.schematron_assert_index(os.path.join(HERE, rel))
+        universe = {rid for rid in index if is_kosit_gap_id(rid)}
+        tautologies = sorted((rid for rid in universe
+                              if index[rid]["vacuous_in_artifact"]),
+                             key=_sort_key)
+        fireable = universe - set(tautologies)
+        implemented = {rid for rid in _KOSIT_IMPLEMENTED_BY_ARTIFACT[key]()
+                       if is_kosit_gap_id(rid)}
+        stray = sorted(implemented - universe, key=_sort_key)
+        if stray:
+            raise AssertionError(
+                "%s: engine claims KoSIT CIUS ids the vendored artifact does "
+                "not carry: %s" % (key, stray))
+        excluded = kosit_documented_exclusion_ids(key)
+        impl_in = fireable & implemented
+        excl_in = fireable & excluded
+        overlap = sorted(impl_in & excl_in, key=_sort_key)
+        if overlap:
+            raise AssertionError(
+                "%s: KoSIT id both implemented and excluded: %s"
+                % (key, overlap))
+        unclassified = sorted(fireable - impl_in - excl_in, key=_sort_key)
+        if unclassified:
+            raise AssertionError(
+                "%s: UNCLASSIFIED fireable KoSIT assert id(s): %s — "
+                "implement each or document it as a deliberate exclusion"
+                % (key, ", ".join(unclassified)))
+        artifacts[key] = {
+            "source": rel,
+            "official_universe": len(universe),
+            "tautologies_in_artifact": tautologies,
+            "fireable_universe": len(fireable),
+            "implemented": len(impl_in),
+            "documented_exclusions": len(excl_in),
+            "unclassified": 0,
+            "implemented_ids": sorted(impl_in, key=_sort_key),
+            "documented_exclusion_ids": sorted(excl_in, key=_sort_key),
+        }
+    return {
+        "description": (
+            "CIUS-layer mirror of the CEN gap: for each vendored KoSIT "
+            "XRechnung artifact (Schematron 2.5.0 / XRechnung 3.0.2), the "
+            "fireable universe is every sch:assert id in the German national "
+            "rule families (prefixes BR-DE-/BR-DEX-/BR-TMP-, covering "
+            "BR-DE-*, BR-DEX-*, BR-DE-CVD-* and BR-TMP-*), extracted by a "
+            "real XML parse of the .sch — never authored from prose — minus "
+            "any assert the artifact itself ships as a literal "
+            "test=\"true()\" tautology (currently none in either artifact). "
+            "Every fireable id is either implemented in that binding's live "
+            "registry (einvoice.rules_xrechnung ALL_RULES for UBL, "
+            "CII_DE_RULES for CII) or covered by a documented deliberate "
+            "exclusion: EMPTY for UBL (all asserts implemented); for CII the "
+            "existing 12-id cii_de_out_of_scope class (reused from "
+            "differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented) plus "
+            "the extension-layer BR-DEX ids the rule table documents as not "
+            "carried by the normalized CII model. Both exclusion sets are "
+            "derived from live engine sources, never from the artifact, so a "
+            "KoSIT artifact bump that adds or renames an assert cannot "
+            "self-classify: gen_coverage.py refuses to build and "
+            "test_coverage_gap.py fails loudly, naming the id, until it is "
+            "implemented or deliberately documented — the guard shape that "
+            "would have auto-caught BR-DEX-15."),
+        "family_prefixes": list(KOSIT_GAP_FAMILY_PREFIXES),
+        "artifact_order": list(KOSIT_GAP_ARTIFACT_ORDER),
+        "artifacts": artifacts,
     }
 
 

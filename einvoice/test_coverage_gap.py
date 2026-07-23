@@ -48,6 +48,18 @@ What is checked (each its own test):
      never 'both'), and no family id leaking into the CEN BR-* gap
      arithmetic — so the family accounting can never silently go stale after
      an artifact bump or a rule landing.
+  9. the KoSIT XRechnung CIUS-layer universes (T-VHCORE.11): the committed
+     gap["kosit"] section equals a LIVE recomputation, and for BOTH vendored
+     KoSIT artifacts (UBL and CII) the fireable BR-DE-*/BR-DEX-*/BR-DE-CVD-*/
+     BR-TMP-* assert universe — extracted by a real XML parse of the .sch,
+     minus literal test="true()" tautologies — is EXACTLY the union of the
+     ids implemented in that binding's live registry and the documented
+     deliberate exclusions (the reused 12-id cii_de_out_of_scope class plus
+     the extension-layer BR-DEX ids on CII; EMPTY on UBL). Any unclassified
+     artifact id, any engine claim the artifact does not carry, and any stale
+     documented id no longer in the artifact fails loudly BY NAME — so a
+     KoSIT artifact bump auto-reopens the worklist instead of drifting
+     silently (the guard shape that would have auto-caught BR-DEX-15).
   7. the KoSIT-vendored Peppol family (PEPPOL-EN16931-R*): the committed
      peppol_kosit_family section equals a LIVE recomputation — family
      extracted by a real XML parse of sch:assert/@id from BOTH vendored KoSIT
@@ -72,6 +84,7 @@ sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import coverage as _coverage  # noqa: E402
 import gen_coverage as _gen                  # noqa: E402
+import differential as _diff                 # noqa: E402
 
 
 def _live_gap():
@@ -631,6 +644,208 @@ class CoverageGapTest(unittest.TestCase):
                       "temporary (BR-TMP-*) rules", md)
         self.assertIn("BR-TMP-3", md)
         self.assertIn("CII-only `BR-TMP-3`", md)
+
+    # ---- 9. the KoSIT XRechnung CIUS-layer universes (T-VHCORE.11) ----------
+    def _kosit(self):
+        k = (self.gap or {}).get("kosit")
+        self.assertIsNotNone(
+            k, "coverage_matrix.json gap section has no 'kosit' universes — "
+               "re-run gen_coverage.py")
+        return k
+
+    def _kosit_index(self, key):
+        """Fresh assert index of one vendored KoSIT artifact (.sch parse)."""
+        return _coverage.schematron_assert_index(
+            os.path.join(HERE, _gen.SCHEMATRON_SOURCES[key]["file"]))
+
+    def test_kosit_committed_equals_live(self):
+        """The committed KoSIT gap section is deep-equal to a fresh
+        recomputation off the vendored KoSIT .sch artifacts + the live
+        registries + the live exclusion sources — it can neither be
+        hand-edited nor go stale after an artifact bump or a rule landing."""
+        self.assertEqual(
+            self._kosit(), _gen.build_kosit_gap(),
+            "committed gap['kosit'] differs from a fresh computation off the "
+            "vendored KoSIT Schematron + live registries — re-run "
+            "gen_coverage.py")
+
+    def test_kosit_family_predicate_scope(self):
+        """The family predicate captures exactly the four CIUS-layer families
+        and never leaks into the CEN core (BR-DEC-*!) or Peppol ids."""
+        for rid in ("BR-DE-1", "BR-DE-23-a", "BR-DE-CVD-01", "BR-DE-TMP-32",
+                    "BR-DEX-15", "BR-TMP-2", "BR-TMP-CVD-01"):
+            self.assertTrue(_gen.is_kosit_gap_id(rid), rid)
+        for rid in ("BR-DEC-13", "BR-DEC-15", "BR-CO-05", "BR-01", "BR-S-08",
+                    "PEPPOL-EN16931-R043", "UBL-CR-001", "CII-DT-097"):
+            self.assertFalse(_gen.is_kosit_gap_id(rid), rid)
+
+    def test_kosit_fireable_universe_fully_classified_live(self):
+        """THE CIUS-layer headline, recomputed from the artifacts + live
+        sources (never trusted from the committed matrix): for BOTH vendored
+        KoSIT artifacts, implemented UNION documented-exclusions == the
+        fireable family universe. Fails loudly, NAMING the id, on any
+        unclassified artifact id — a KoSIT artifact bump that adds or renames
+        an assert reopens the worklist here until the id is implemented or
+        deliberately documented."""
+        kosit = self._kosit()
+        for key in kosit["artifact_order"]:
+            index = self._kosit_index(key)
+            universe = {rid for rid in index if _gen.is_kosit_gap_id(rid)}
+            self.assertTrue(universe,
+                            "%s: vendored artifact carries no CIUS-family "
+                            "asserts?!" % key)
+            fireable = {rid for rid in universe
+                        if index[rid]["test"].strip() != "true()"}
+            implemented = {
+                rid for rid in _gen._KOSIT_IMPLEMENTED_BY_ARTIFACT[key]()
+                if _gen.is_kosit_gap_id(rid)}
+            excluded = _gen.kosit_documented_exclusion_ids(key)
+            unclassified = sorted(fireable - implemented - excluded,
+                                  key=_gen._sort_key)
+            self.assertEqual(
+                unclassified, [],
+                "%s: UNCLASSIFIED fireable KoSIT assert id(s): %s — "
+                "implement each or document it as a deliberate exclusion"
+                % (key, ", ".join(unclassified)))
+            self.assertEqual(
+                (implemented | excluded) & fireable, fireable,
+                "%s: implemented UNION documented-exclusions != fireable "
+                "universe" % key)
+            self.assertFalse(
+                implemented & excluded,
+                "%s: id(s) both implemented and excluded: %s"
+                % (key, sorted(implemented & excluded, key=_gen._sort_key)))
+            stray = sorted(implemented - universe, key=_gen._sort_key)
+            self.assertEqual(
+                stray, [],
+                "%s: engine claims KoSIT CIUS ids the vendored artifact "
+                "does not carry: %s" % (key, ", ".join(stray)))
+
+    def test_kosit_stale_documented_exclusions(self):
+        """The reverse direction: a documented id no longer in the artifact
+        fails loudly BY NAME. Every id of the reused 12-id
+        cii_de_out_of_scope class must still be carried by the vendored CII
+        artifact, and every documented-exclusion id the committed section
+        counts must exist in its artifact."""
+        cii_index = self._kosit_index("xrechnung-cii")
+        for rid in sorted(_diff.CII_XR_EXCLUDED_RULE_IDS,
+                          key=_gen._sort_key):
+            self.assertTrue(
+                rid in cii_index,
+                "STALE documented exclusion: %s (cii_de_out_of_scope) is no "
+                "longer carried by the vendored CII artifact — prune the "
+                "class and re-run gen_coverage.py" % rid)
+        kosit = self._kosit()
+        for key in kosit["artifact_order"]:
+            index = self._kosit_index(key)
+            for rid in kosit["artifacts"][key]["documented_exclusion_ids"]:
+                self.assertTrue(
+                    rid in index,
+                    "STALE documented exclusion: %s counted against %s but "
+                    "no longer in the artifact — re-run gen_coverage.py"
+                    % (rid, key))
+
+    def test_kosit_cii_exclusion_class_reused_not_duplicated(self):
+        """The CII exclusion set REUSES the existing 12-id
+        cii_de_out_of_scope class (single source of truth =
+        differential.CII_XR_EXCLUDED_RULE_IDS; its reasons stay documented
+        once, in exclusions.cii_de_out_of_scope) — and the only ids beyond it
+        are extension-layer BR-DEX rules whose non-evaluation on CII the rule
+        table already documents per id (unproven cii provenance carrying a
+        reason). Nothing is re-documented, nothing is undocumented."""
+        committed_class = {e["id"] for e in
+                           self.matrix["exclusions"]["cii_de_out_of_scope"]}
+        self.assertEqual(
+            committed_class, set(_diff.CII_XR_EXCLUDED_RULE_IDS),
+            "exclusions.cii_de_out_of_scope drifted from "
+            "differential.CII_XR_EXCLUDED_RULE_IDS")
+        cii = self._kosit()["artifacts"]["xrechnung-cii"]
+        excl = set(cii["documented_exclusion_ids"])
+        self.assertLessEqual(
+            committed_class, excl,
+            "the 12-id cii_de_out_of_scope class is not fully counted "
+            "against the CII universe: %s"
+            % sorted(committed_class - excl, key=_gen._sort_key))
+        rest = excl - committed_class
+        self.assertTrue(
+            all(rid.startswith("BR-DEX-") for rid in rest),
+            "non-DEX id excluded beyond the cii_de_out_of_scope class: %s"
+            % sorted(rest - {r for r in rest if r.startswith("BR-DEX-")},
+                     key=_gen._sort_key))
+        by_id = {r["id"]: r for r in self.matrix["rules"]}
+        for rid in sorted(rest, key=_gen._sort_key):
+            self.assertTrue(rid in by_id,
+                            "%s excluded on CII but absent from the rule "
+                            "table" % rid)
+            prov = (by_id[rid].get("provenance") or {}).get("cii") or {}
+            self.assertFalse(prov.get("differentially_proven"),
+                             "%s: excluded on CII yet claims a CII proof"
+                             % rid)
+            self.assertTrue((prov.get("reason") or "").strip(),
+                            "%s: CII exclusion carries no documented reason"
+                            % rid)
+
+    def test_kosit_count_arithmetic_and_shape(self):
+        """Published counts add up per KoSIT artifact: implemented +
+        documented_exclusions == fireable_universe, fireable + tautologies ==
+        official universe, unclassified == 0, id lists sorted, deduplicated,
+        family-scoped, and count fields equal to their list lengths."""
+        kosit = self._kosit()
+        self.assertEqual(kosit["artifact_order"],
+                         ["xrechnung-ubl", "xrechnung-cii"])
+        self.assertEqual(list(kosit["family_prefixes"]),
+                         list(_gen.KOSIT_GAP_FAMILY_PREFIXES))
+        for key in kosit["artifact_order"]:
+            art = kosit["artifacts"][key]
+            self.assertEqual(art["source"],
+                             _gen.SCHEMATRON_SOURCES[key]["file"], key)
+            self.assertEqual(art["implemented"],
+                             len(art["implemented_ids"]), key)
+            self.assertEqual(art["documented_exclusions"],
+                             len(art["documented_exclusion_ids"]), key)
+            self.assertEqual(art["unclassified"], 0, key)
+            self.assertEqual(
+                art["implemented"] + art["documented_exclusions"],
+                art["fireable_universe"],
+                "%s: implemented + documented_exclusions != fireable "
+                "universe" % key)
+            self.assertEqual(
+                art["fireable_universe"] + len(art["tautologies_in_artifact"]),
+                art["official_universe"],
+                "%s: fireable + tautologies != official universe" % key)
+            for lst in (art["implemented_ids"],
+                        art["documented_exclusion_ids"],
+                        art["tautologies_in_artifact"]):
+                self.assertEqual(lst, sorted(lst, key=_gen._sort_key),
+                                 "%s: ids not in canonical order" % key)
+                self.assertEqual(len(lst), len(set(lst)),
+                                 "%s: duplicate ids" % key)
+                for rid in lst:
+                    self.assertTrue(_gen.is_kosit_gap_id(rid),
+                                    "%s: non-family id %s" % (key, rid))
+            impl = set(art["implemented_ids"])
+            excl = set(art["documented_exclusion_ids"])
+            self.assertFalse(impl & excl,
+                             "%s: id both implemented and excluded: %s"
+                             % (key, sorted(impl & excl, key=_gen._sort_key)))
+
+    def test_kosit_universes_disjoint_from_cen_gap(self):
+        """Scope hygiene both ways: no CIUS-family id may appear in any CEN
+        missing list or the CEN deliberate-exclusion ids, and the CEN
+        universes themselves carry no CIUS-family asserts — the CEN
+        fireable-missing == 0 claim is untouched by the KoSIT universes."""
+        for key in self.gap["artifact_order"]:
+            for m in self.gap["artifacts"][key]["missing_rules"]:
+                self.assertFalse(_gen.is_kosit_gap_id(m["id"]),
+                                 "%s: CIUS-family id %s in the CEN gap"
+                                 % (key, m["id"]))
+            index = _index(key)
+            leaked = {r for r in index if _gen.is_kosit_gap_id(r)}
+            self.assertFalse(
+                leaked, "%s: CEN artifact unexpectedly carries CIUS-family "
+                "asserts: %s" % (key, sorted(leaked, key=_gen._sort_key)))
+        for rid in self.gap["excluded_ids_considered"]:
+            self.assertFalse(_gen.is_kosit_gap_id(rid), rid)
 
     def test_markdown_gap_section_rendered(self):
         """COVERAGE.md carries the rendered Gap section (render is separately

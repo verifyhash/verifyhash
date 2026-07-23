@@ -176,7 +176,19 @@
         "description": { "description": "What the gap block means.", "type": "string" },
         "artifact_order": { "description": "Stable ordering of the gap artifact keys.", "type": "array", "items": { "type": "string" } },
         "excluded_ids_considered": { "description": "The excluded rule ids the gap math accounts for.", "type": "array", "items": { "type": "string" } },
-        "artifacts": { "description": "Per-artifact universe/implemented/missing counts (keys are the artifact ids; inner counts described by the emitter).", "type": "object" }
+        "artifacts": { "description": "Per-artifact universe/implemented/missing counts (keys are the artifact ids; inner counts described by the emitter).", "type": "object" },
+        "kosit": {
+          "description": "CIUS-layer gap universes for the two vendored KoSIT XRechnung artifacts (additive within v1): per artifact, the fireable BR-DE-*/BR-DEX-*/BR-DE-CVD-*/BR-TMP-* assert universe partitioned into implemented vs documented-exclusion ids with zero unclassified remainder, recomputed live and guarded by test_coverage_gap.py.",
+          "type": "object",
+          "required": ["description", "family_prefixes", "artifact_order", "artifacts"],
+          "additionalProperties": false,
+          "properties": {
+            "description": { "description": "What the KoSIT gap block means.", "type": "string" },
+            "family_prefixes": { "description": "The id prefixes defining the CIUS-layer family universe.", "type": "array", "items": { "type": "string" } },
+            "artifact_order": { "description": "Stable ordering of the KoSIT artifact keys.", "type": "array", "items": { "type": "string" } },
+            "artifacts": { "description": "Per-artifact universe/implemented/documented-exclusion partition (keys are artifact ids; inner counts described by the emitter).", "type": "object" }
+          }
+        }
       }
     },
     "peppol_kosit_family": {

@@ -119,7 +119,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 215, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 217, OUR_RULE_IDS
 
 # EXCLUDED from the EN 16931 UBL grading (LEG 1 Invoice + LEG 1b CreditNote) —
 # kept out on purpose, not overlooked; the exact mirror of the CII-side
@@ -351,6 +351,14 @@ CII_GRADED_RULES = [
     # the shared rule bodies run unchanged against the same pinned ICD / CEN
     # EAS sets as UBL (both artifacts inline identical enumerations).
     _rules.br_cl_10, _rules.br_cl_11, _rules.br_cl_25, _rules.br_cl_26,
+    # Everyday-field code lists (BR-CL-06 VAT-point date code, BR-CL-15 item
+    # origin country). The CII parser feeds these the exact official CII
+    # context nodes (ram:DueDateTypeCode for BR-CL-06 — tested against the
+    # CII artifact's own UNTDID 2475 subset 5/29/72, NOT the UBL binding's
+    # UNTDID 2005 subset 3/35/432; ram:OriginTradeCountry/ram:ID for
+    # BR-CL-15 — tested against the CII country pin, which carries AN not
+    # SS); the shared rule bodies select the per-syntax pinned set.
+    _rules.br_cl_06, _rules.br_cl_15,
     # VAT category code lists (BR-CL-17/18) + VAT exemption reason (BR-CL-22).
     # The CII parser feeds these the CII context nodes (ram:CategoryTradeTax
     # @CategoryCode for BR-CL-17, ram:ApplicableTradeTax/ram:CategoryCode for
@@ -1891,6 +1899,29 @@ def _mut_brcl14(r):
     _child(pa, NS_CAC, "Country").find(_q(NS_CBC, "IdentificationCode")).text = "XX"
 
 
+def _mut_brcl15(r):
+    # First line's item ORIGIN country (BT-159) coded off ISO 3166-1. The
+    # base carries cac:Item/cac:OriginCountry/cbc:IdentificationCode = 'DK';
+    # only that code changes, so the postal-address countries stay valid
+    # (BR-CL-14 holds) and BR-CL-15 is the sole rule that fires (the base is
+    # not Italian-split-payment, so the raw BR-B-01 country set is inert).
+    item = _child(_first_line(r), NS_CAC, "Item")
+    oc = _child(item, NS_CAC, "OriginCountry")
+    oc.find(_q(NS_CBC, "IdentificationCode")).text = "XX"
+
+
+def _mut_brcl06(r):
+    # Add a VAT point date code (BT-8, cac:InvoicePeriod/cbc:DescriptionCode)
+    # off the UBL binding's UNTDID 2005 restriction (3/35/432). The base's
+    # document InvoicePeriod keeps its StartDate/EndDate, so BR-CO-19 holds;
+    # no cbc:TaxPointDate exists, so BR-CO-03 (BT-7/BT-8 mutual exclusion)
+    # holds; BR-CL-06 is the sole rule that fires. '5' is deliberately a
+    # CII-valid UNTDID 2475 code — the official UBL artifact rejects it,
+    # proving the per-syntax lists are NOT unified.
+    ip = _child(r, NS_CAC, "InvoicePeriod")
+    _sub_el(ip, NS_CBC, "DescriptionCode", text="5")
+
+
 def _mut_brcl17(r):
     # VAT breakdown category (cac:TaxTotal/.../cac:TaxCategory/cbc:ID) coded off
     # the UNCL 5305 subset. The line item category is left 'S', so this also
@@ -2502,7 +2533,8 @@ _MUTATIONS = {
     "BR-CO-04": _mut_brco04,
     "BR-CL-01": _mut_brcl01,
     "BR-CL-03": _mut_brcl03, "BR-CL-04": _mut_brcl04, "BR-CL-05": _mut_brcl05,
-    "BR-CL-13": _mut_brcl13, "BR-CL-14": _mut_brcl14,
+    "BR-CL-06": _mut_brcl06,
+    "BR-CL-13": _mut_brcl13, "BR-CL-14": _mut_brcl14, "BR-CL-15": _mut_brcl15,
     "BR-CL-16": _mut_brcl16,
     "BR-CL-17": _mut_brcl17, "BR-CL-18": _mut_brcl18,
     "BR-CL-10": _mut_brcl10, "BR-CL-11": _mut_brcl11,
@@ -3762,6 +3794,28 @@ def _cmut_brcl14(r):
     # Seller postal-address country (ram:CountryID) coded off ISO 3166-1.
     _cii_seller(r).find(
         "ram:PostalTradeAddress/ram:CountryID", _NSC).text = "XX"
+
+
+def _cmut_brcl15(r):
+    # Add an item ORIGIN country (ram:OriginTradeCountry/ram:ID, BT-159)
+    # coded off ISO 3166-1 to the first product. The origin country is a
+    # ram:ID child — NOT a ram:CountryID — so it is no BR-CL-14 context
+    # node (and it carries no @schemeID, so no scheme rule sees it):
+    # BR-CL-15 is the sole rule that fires.
+    prod = _cii_first_line(r).find("ram:SpecifiedTradeProduct", _NSC)
+    otc = ET.SubElement(prod, _cq(NS_RAM, "OriginTradeCountry"))
+    ET.SubElement(otc, _cq(NS_RAM, "ID")).text = "XX"
+
+
+def _cmut_brcl06(r):
+    # Add a VAT point date code (ram:DueDateTypeCode, BT-8) off the CII
+    # binding's UNTDID 2475 restriction (5/29/72) to the header VAT
+    # breakdown row. No ram:TaxPointDate exists, so BR-CO-03 (BT-7/BT-8
+    # mutual exclusion) holds; '35' is deliberately a UBL-valid UNTDID 2005
+    # code — the official CII artifact rejects it, proving the per-syntax
+    # lists are NOT unified. BR-CL-06 is the sole rule that fires.
+    tt = _cii_settlement(r).find("ram:ApplicableTradeTax", _NSC)
+    ET.SubElement(tt, _cq(NS_RAM, "DueDateTypeCode")).text = "35"
 
 
 def _cmut_brcl17(r):
@@ -5553,7 +5607,9 @@ _CII_MUTATIONS = {
     "BR-DEC-27": _cmut_brdec27, "BR-DEC-28": _cmut_brdec28,
     "BR-CL-01": _cmut_brcl01,
     "BR-CL-03": _cmut_brcl03, "BR-CL-04": _cmut_brcl04, "BR-CL-05": _cmut_brcl05,
+    "BR-CL-06": _cmut_brcl06,
     "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,
+    "BR-CL-15": _cmut_brcl15,
     "BR-CL-16": _cmut_brcl16,
     "BR-CL-17": _cmut_brcl17, "BR-CL-18": _cmut_brcl18,
     "BR-CL-10": _cmut_brcl10, "BR-CL-11": _cmut_brcl11,

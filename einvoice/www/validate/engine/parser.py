@@ -359,6 +359,16 @@ class Invoice:
         #   amount_currency_ids  — @currencyID on the amount elements (BR-CL-03)
         #   item_class_list_ids  — @listID on item-classification codes (BR-CL-13)
         #   country_codes        — country identification codes (BR-CL-14)
+        #   origin_country_codes — item origin-country codes at the BR-CL-15
+        #       context (UBL: cac:OriginCountry/cbc:IdentificationCode; CII:
+        #       ram:OriginTradeCountry/ram:ID), tested against the SAME
+        #       per-syntax ISO 3166-1 pins as BR-CL-14 (the preprocessed
+        #       artifacts' BR-CL-15 strings are machine-verified identical
+        #       to the BR-CL-14 pins per syntax)
+        #   vat_point_date_codes — VAT point date codes (BT-8) at the
+        #       BR-CL-06 context (UBL: cac:InvoicePeriod/cbc:DescriptionCode,
+        #       UNTDID 2005 subset; CII: ram:DueDateTypeCode, UNTDID 2475
+        #       subset — per-syntax lists, never unified)
         #   taxcategory_id_codes — VAT category codes at the BR-CL-17 context
         #       (distinct from ``vat_category_codes`` below, which is the
         #       VAT-scheme-scoped set the BR-AE/E/G/IC/O family rules use)
@@ -368,6 +378,8 @@ class Invoice:
         self.amount_currency_ids = []
         self.item_class_list_ids = []
         self.country_codes = []
+        self.origin_country_codes = []
+        self.vat_point_date_codes = []
         self.taxcategory_id_codes = []
         self.classified_tax_category_codes = []
         self.tax_exemption_reason_codes = []
@@ -842,6 +854,23 @@ def build_model(root):
     inv.country_codes = [
         _norm_space(_strval(el)) or ""
         for el in root.findall(".//cac:Country/cbc:IdentificationCode", NS)
+    ]
+    # BR-CL-15 context = cac:OriginCountry/cbc:IdentificationCode (a relative
+    # match pattern — the item origin country BT-159, at any depth; a plain
+    # cac:Country never matches it and vice versa). Same ISO 3166-1 pin as
+    # BR-CL-14 (preprocessed BR-CL-15 string verified identical per syntax).
+    inv.origin_country_codes = [
+        _norm_space(_strval(el)) or ""
+        for el in root.findall(
+            ".//cac:OriginCountry/cbc:IdentificationCode", NS)
+    ]
+    # BR-CL-06 context = cac:InvoicePeriod/cbc:DescriptionCode (a relative
+    # match pattern — any InvoicePeriod's DescriptionCode, document- or
+    # line-level, exactly like the official rule element); the UBL binding
+    # tests the value against the UNTDID 2005 restriction (3/35/432).
+    inv.vat_point_date_codes = [
+        _norm_space(_strval(el)) or ""
+        for el in root.findall(".//cac:InvoicePeriod/cbc:DescriptionCode", NS)
     ]
     # BR-B-01/BR-B-02 (Italian split payment) node sets — RAW string values,
     # exactly the official comparisons (no normalize-space, no TaxScheme

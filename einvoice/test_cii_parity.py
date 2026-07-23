@@ -289,10 +289,13 @@ class CiiParityTest(unittest.TestCase):
         # + 49/49 CII KoSIT asserts graded. T-VHCLX.1 added the four CEN
         # scheme-identifier code-list rules BR-CL-10/11/25/26, graded on BOTH
         # syntaxes from the start (273+4=277 both; UBL-only/CII-only
-        # unchanged).
-        self.assertEqual((n_both, n_ubl, n_cii), (277, 12, 4),
+        # unchanged). T-VHCLX.2 added the everyday-field pair BR-CL-06
+        # (per-syntax UNTDID 2005/2475 VAT-point lists) + BR-CL-15 (item
+        # origin country), again graded on BOTH syntaxes from the start
+        # (277+2=279 both; UBL-only/CII-only unchanged).
+        self.assertEqual((n_both, n_ubl, n_cii), (279, 12, 4),
                          "terminal matrix syntax split drifted from the frozen "
-                         "(277 both, 12 UBL-only, 4 CII-only)")
+                         "(279 both, 12 UBL-only, 4 CII-only)")
 
     # ---- 5. measurement-only guard ----------------------------------------
     def test_families_match_matrix_and_no_tag_flipped(self):

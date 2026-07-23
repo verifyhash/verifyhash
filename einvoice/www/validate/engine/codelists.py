@@ -30,6 +30,35 @@ Provenance (each file carries the header comment
   withdrawn) but not ``SS``. They are pinned SEPARATELY and selected per syntax
   so each rule matches its own official Schematron exactly.
 
+  The SAME two pinned sets also serve BR-CL-15 (item origin country, context
+  cac:Item/cac:OriginCountry/cbc:IdentificationCode on UBL /
+  ram:OriginTradeCountry/ram:ID on CII): the BR-CL-15 asserts in the vendored
+  PREPROCESSED artifacts (corpus/cen-en16931/{ubl,cii}/schematron/
+  preprocessed/EN16931-*-validation-preprocessed.sch) inline per-syntax
+  country enumerations that were machine-compared against these pins and
+  verified IDENTICAL per syntax (UBL BR-CL-15 == UBL BR-CL-14 string, 251
+  entries incl. SS; CII BR-CL-15 == CII BR-CL-14 string, 251 entries incl.
+  AN) — so no third or fourth country list is pinned.
+
+  * UBL_VAT_POINT_CODES (UNTDID 2005 restriction — VAT point date code,
+    UBL BR-CL-06): corpus/cen-en16931/ubl/schematron/preprocessed/
+    EN16931-UBL-validation-preprocessed.sch (assert BR-CL-06, context
+    cac:InvoicePeriod/cbc:DescriptionCode). The exact inline string is
+    `` 3 35 432 `` — three codes (3 invoice date, 35 delivery date,
+    432 paid-to-date).
+
+  * CII_VAT_POINT_CODES (UNTDID 2475 restriction — VAT point date code,
+    CII BR-CL-06): corpus/cen-en16931/cii/schematron/preprocessed/
+    EN16931-CII-validation-preprocessed.sch (assert BR-CL-06, context
+    ram:DueDateTypeCode). The exact inline string is `` 5 29 72 `` — three
+    codes (5 date of invoice, 29 date of delivery, 72 paid-to-date).
+
+  The two VAT-point lists are DIFFERENT code lists from DIFFERENT UNTDID
+  registers (2005 vs 2475) bound at different context nodes — the official
+  UBL and CII value sets share NOT ONE code. They are transcribed SEPARATELY
+  from each artifact and selected per syntax; unifying them would accept
+  UBL codes on CII (and vice versa) that the official validator rejects.
+
   * VAT_CATEGORY_CODES (UNCL 5305 EN 16931 subset — the VAT category codes):
     corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch
     (asserts BR-CL-17, context cac:TaxCategory/cbc:ID, and BR-CL-18, context
@@ -207,6 +236,16 @@ _CII_COUNTRY = (
     "SO SR ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ "
     "UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XI YE YT ZA ZM ZW "
 )
+
+# --- UNTDID 2005 restriction, UBL binding of BR-CL-06 (VAT point date code,
+# context cac:InvoicePeriod/cbc:DescriptionCode) — exact preprocessed-artifact
+# inline string, NOT shared with the CII binding (different UNTDID register).
+_UBL_VAT_POINT = "3 35 432 "
+
+# --- UNTDID 2475 restriction, CII binding of BR-CL-06 (VAT point date code,
+# context ram:DueDateTypeCode) — exact preprocessed-artifact inline string,
+# NOT shared with the UBL binding (different UNTDID register).
+_CII_VAT_POINT = "5 29 72 "
 
 # --- UNCL 5305 EN 16931 VAT category codes (UBL/CII BR-CL-17 & BR-CL-18) ---
 # Exact inline string of the BR-CL-17/18 asserts (order preserved verbatim).
@@ -489,6 +528,8 @@ CURRENCY_CODES = frozenset(_CURRENCY.split())
 ITEM_CLASS_LIST_CODES = frozenset(_ITEM_CLASS.split())
 UBL_COUNTRY_CODES = frozenset(_UBL_COUNTRY.split())
 CII_COUNTRY_CODES = frozenset(_CII_COUNTRY.split())
+UBL_VAT_POINT_CODES = frozenset(_UBL_VAT_POINT.split())
+CII_VAT_POINT_CODES = frozenset(_CII_VAT_POINT.split())
 VAT_CATEGORY_CODES = frozenset(_VAT_CATEGORY.split())
 # VATEX codes are pinned already upper-cased (they are in the vendored string);
 # the rule compares upper_case(value) so the set must be the upper-cased form.
@@ -506,6 +547,13 @@ assert len(CURRENCY_CODES) == 178, len(CURRENCY_CODES)
 assert len(ITEM_CLASS_LIST_CODES) == 185, len(ITEM_CLASS_LIST_CODES)
 assert len(UBL_COUNTRY_CODES) == 251, len(UBL_COUNTRY_CODES)
 assert len(CII_COUNTRY_CODES) == 251, len(CII_COUNTRY_CODES)
+assert len(UBL_VAT_POINT_CODES) == 3, len(UBL_VAT_POINT_CODES)
+assert len(CII_VAT_POINT_CODES) == 3, len(CII_VAT_POINT_CODES)
+# The two BR-CL-06 bindings come from DIFFERENT UNTDID registers (2005 vs
+# 2475) and share no code — a measured artifact fact; unification would be
+# a transcription error.
+assert not (UBL_VAT_POINT_CODES & CII_VAT_POINT_CODES), (
+    UBL_VAT_POINT_CODES & CII_VAT_POINT_CODES)
 assert len(VAT_CATEGORY_CODES) == 10, len(VAT_CATEGORY_CODES)
 assert len(VATEX_CODES) == 88, len(VATEX_CODES)
 assert len(UNIT_CODES) == 2162, len(UNIT_CODES)

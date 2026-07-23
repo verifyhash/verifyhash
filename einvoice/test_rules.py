@@ -3340,5 +3340,80 @@ class SchemeIdCodeLists(unittest.TestCase):
         self.assertFalse(fired(r) & SCHEME_CL_RULES)
 
 
+# Everyday-field code-list batch (BR-CL-06 VAT-point date code + BR-CL-15
+# item origin country, T-VHCLX.2 — differentially proven like the batches
+# above). The two ids under test, so each check isolates exactly them.
+EVERYDAY_CL_RULES = {"BR-CL-06", "BR-CL-15"}
+
+
+class EverydayFieldCodeLists(unittest.TestCase):
+    """BR-CL-06 (UBL binding: cac:InvoicePeriod/cbc:DescriptionCode against
+    the UNTDID 2005 restriction 3/35/432) and BR-CL-15 (UBL binding:
+    cac:OriginCountry/cbc:IdentificationCode against the UBL ISO 3166-1 pin
+    — has SS, no AN). The clean base carries OriginCountry 'DK' and an
+    InvoicePeriod with Start/End dates but no DescriptionCode, so it must
+    stay clean; each negative breaks exactly one field."""
+
+    def origin_country_code(self, r):
+        return first_line_item(r).find(
+            "%s/%s" % (q(NS_CAC, "OriginCountry"),
+                       q(NS_CBC, "IdentificationCode")))
+
+    def add_description_code(self, r, value):
+        ip = child(r, NS_CAC, "InvoicePeriod")
+        dc = ET.SubElement(ip, q(NS_CBC, "DescriptionCode"))
+        dc.text = value
+
+    def test_base_fires_neither(self):
+        self.assertFalse(fired(base()) & EVERYDAY_CL_RULES)
+
+    # ---- BR-CL-06 (cac:InvoicePeriod/cbc:DescriptionCode, UNTDID 2005) --
+    def test_br_cl_06_valid_code_holds(self):
+        # '432' (paid to date) is in the UBL binding's UNTDID 2005 subset.
+        r = base()
+        self.add_description_code(r, "432")
+        self.assertFalse(fired(r) & EVERYDAY_CL_RULES)
+
+    def test_br_cl_06_bad_code_fires(self):
+        r = base()
+        self.add_description_code(r, "999")
+        self.assertEqual(fired(r) & EVERYDAY_CL_RULES, {"BR-CL-06"})
+
+    def test_br_cl_06_cii_code_fires_on_ubl(self):
+        # '5' IS a valid CII UNTDID 2475 code but NOT a UBL UNTDID 2005
+        # code — the discriminating direction that proves the per-syntax
+        # lists are transcribed separately, never unified.
+        r = base()
+        self.add_description_code(r, "5")
+        self.assertEqual(fired(r) & EVERYDAY_CL_RULES, {"BR-CL-06"})
+
+    # ---- BR-CL-15 (cac:OriginCountry/cbc:IdentificationCode) ------------
+    def test_br_cl_15_bad_origin_country_fires(self):
+        r = base()
+        self.origin_country_code(r).text = "XX"
+        self.assertEqual(fired(r) & EVERYDAY_CL_RULES, {"BR-CL-15"})
+
+    def test_br_cl_15_ubl_only_ss_holds(self):
+        # 'SS' (South Sudan) is in the UBL country pin (and NOT in the CII
+        # pin) — the UBL rule must accept it.
+        r = base()
+        self.origin_country_code(r).text = "SS"
+        self.assertFalse(fired(r) & EVERYDAY_CL_RULES)
+
+    def test_br_cl_15_cii_only_an_fires_on_ubl(self):
+        # 'AN' (Netherlands Antilles) is in the CII pin only — the official
+        # UBL artifact rejects it, proving the per-syntax pin selection.
+        r = base()
+        self.origin_country_code(r).text = "AN"
+        self.assertEqual(fired(r) & EVERYDAY_CL_RULES, {"BR-CL-15"})
+
+    def test_br_cl_15_leaves_br_cl_14_alone(self):
+        # A broken ORIGIN country is not a postal-address country: BR-CL-14
+        # must not fire (distinct context nodes).
+        r = base()
+        self.origin_country_code(r).text = "XX"
+        self.assertNotIn("BR-CL-14", fired(r))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

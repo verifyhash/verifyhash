@@ -176,13 +176,9 @@ _CII_DE_GENERIC = ("national rule not evaluated on the CII differential leg (LEG
 # EN 16931 codelist (BR-CL-*) rules that ARE present in the official codes
 # Schematron but the engine does NOT yet assert — documented so the matrix is
 # honest about which code families are covered. (BR-CL-16/19/20/21/24 ARE now
-# asserted and appear in the rule table above; these remain deferred.)
+# asserted and appear in the rule table above, as are BR-CL-06/15 since
+# T-VHCLX.2; only the BR-CL-07/08 pair remains deferred.)
 CODELIST_NOT_ASSERTED = {
-    "BR-CL-06": "VAT-point date code. Not asserted: the UBL binding "
-                "(cac:InvoicePeriod/cbc:DescriptionCode, UNTDID 2005 subset "
-                "3/35/432) and the CII binding (ram:DueDateTypeCode, UNTDID 2475 "
-                "subset 5/29/72) use DIFFERENT code lists at DIFFERENT context "
-                "nodes; the per-syntax value set is not yet carried.",
     "BR-CL-07": "Object/document reference identifier scheme (UNTDID 1153). Not "
                 "asserted: the UBL context is scoped to a DocumentReference with "
                 "cbc:DocumentTypeCode='130' (a predicate the model does not "
@@ -198,10 +194,6 @@ CODELIST_NOT_ASSERTED = {
                 "both .sch), so this is a deferred parser-surface gap "
                 "(note-text grammar + subject-code element), not a register "
                 "gap.",
-    "BR-CL-15": "Item origin country code (ISO 3166-1). Not asserted: the same "
-                "code lists as BR-CL-14 but a distinct context node "
-                "(cac:OriginCountry / ram:OriginTradeCountry) the model does not "
-                "yet collect.",
 }
 
 

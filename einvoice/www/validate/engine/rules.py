@@ -21,6 +21,8 @@ from .codelists import (
     ITEM_CLASS_LIST_CODES,
     UBL_COUNTRY_CODES,
     CII_COUNTRY_CODES,
+    UBL_VAT_POINT_CODES,
+    CII_VAT_POINT_CODES,
     VAT_CATEGORY_CODES,
     VATEX_CODES,
     UNIT_CODES,
@@ -711,6 +713,31 @@ def br_cl_05(inv):
     return None
 
 
+def br_cl_06(inv):
+    """BR-CL-06: Value added tax point date code MUST be coded using a
+    restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII).
+
+    Official context differs by syntax AND so does the code list — the two
+    bindings draw on DIFFERENT UNTDID registers and share no code, so the
+    per-syntax pins are transcribed separately and never unified:
+      * UBL: cac:InvoicePeriod/cbc:DescriptionCode (BT-8) against the inlined
+        UNTDID 2005 restriction ``3 35 432``.
+      * CII: ram:DueDateTypeCode (BT-8) against the inlined UNTDID 2475
+        restriction ``5 29 72``.
+    """
+    allowed = CII_VAT_POINT_CODES if inv.syntax == "cii" else UBL_VAT_POINT_CODES
+    register = "2475" if inv.syntax == "cii" else "2005"
+    for code in inv.vat_point_date_codes:
+        if _bad_code(code, allowed):
+            return Violation(
+                "BR-CL-06",
+                "Value added tax point date code (BT-8) MUST be coded using "
+                "a restriction of UNTDID %s; %r is not a listed code."
+                % (register, code),
+                "cac:InvoicePeriod/cbc:DescriptionCode")
+    return None
+
+
 def br_cl_13(inv):
     """BR-CL-13: Item classification scheme identifier MUST be a UNTDID 7143 code.
 
@@ -745,6 +772,28 @@ def br_cl_14(inv):
                 "Country codes in an invoice MUST be coded using ISO 3166-1; "
                 "%r is not a listed country code." % code,
                 "cac:Country/cbc:IdentificationCode")
+    return None
+
+
+def br_cl_15(inv):
+    """BR-CL-15: Item origin country codes MUST be coded using ISO 3166-1.
+
+    Official context = cac:Item/cac:OriginCountry/cbc:IdentificationCode
+    (UBL) / ram:OriginTradeCountry/ram:ID (CII) — the item ORIGIN country
+    (BT-159), a distinct context node from BR-CL-14's postal-address
+    countries. The preprocessed artifacts' BR-CL-15 enumerations are
+    machine-verified IDENTICAL per syntax to the pinned BR-CL-14 country
+    sets (UBL has SS not AN; CII has AN not SS), so the SAME per-syntax
+    pins are reused — no duplicate list.
+    """
+    allowed = CII_COUNTRY_CODES if inv.syntax == "cii" else UBL_COUNTRY_CODES
+    for code in inv.origin_country_codes:
+        if _bad_code(code, allowed):
+            return Violation(
+                "BR-CL-15",
+                "Item origin country codes MUST be coded using ISO 3166-1; "
+                "%r is not a listed country code." % code,
+                "cac:OriginCountry/cbc:IdentificationCode")
     return None
 
 
@@ -5951,8 +6000,8 @@ ALL_RULES = [
     br_49, br_50, br_51, br_52, br_53, br_54, br_55, br_56, br_57,
     br_61, br_62, br_63, br_64, br_65,
     br_cl_01,
-    br_cl_03, br_cl_04, br_cl_05, br_cl_10, br_cl_11, br_cl_13, br_cl_14,
-    br_cl_16,
+    br_cl_03, br_cl_04, br_cl_05, br_cl_06, br_cl_10, br_cl_11, br_cl_13,
+    br_cl_14, br_cl_15, br_cl_16,
     br_cl_17, br_cl_18, br_cl_19, br_cl_20, br_cl_21, br_cl_22, br_cl_23,
     br_cl_24, br_cl_25, br_cl_26,
     br_co_03, br_co_04,

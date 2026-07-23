@@ -34,7 +34,7 @@
       "license": "Apache-2.0"
     }
   },
-  "rule_count": 293,
+  "rule_count": 295,
   "german_message_coverage": {
     "official_message_de_count": 50,
     "total_rules": 293,
@@ -45,7 +45,7 @@
   "creditnote_conformance": {
     "scope": "UBL 2.1 CreditNote (root CreditNote-2:CreditNote), routed through the SAME shared EN 16931 BR-* engine as an Invoice via the CreditNote syntax bindings (cac:CreditNoteLine, cbc:CreditedQuantity, cbc:CreditNoteTypeCode)",
     "oracle": "official CEN EN16931-UBL Schematron/XSLT, which binds the model to /ubl:Invoice | /cn:CreditNote — the same normative artifact that grades Invoices; proven at 0 divergences by differential.py cn",
-    "graded_rule_count": 213,
+    "graded_rule_count": 215,
     "known_open": {},
     "unit_corpus_total_cases": 211,
     "unit_corpus_graded_cases": 192,
@@ -1547,6 +1547,30 @@
       }
     },
     {
+      "id": "BR-CL-06",
+      "title": "Value added tax point date code MUST be coded using a restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII).",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
       "id": "BR-CL-10",
       "title": "Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.",
       "family": "core",
@@ -1621,6 +1645,30 @@
     {
       "id": "BR-CL-14",
       "title": "Country codes MUST be coded using ISO 3166-1 alpha-2.",
+      "family": "core",
+      "syntax": "both",
+      "severity": "fatal",
+      "flag": "fatal",
+      "provenance": {
+        "ubl": {
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        },
+        "cii": {
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "version": "1.3.16",
+          "differentially_proven": true
+        }
+      }
+    },
+    {
+      "id": "BR-CL-15",
+      "title": "Item origin country codes MUST be coded using ISO 3166-1.",
       "family": "core",
       "syntax": "both",
       "severity": "fatal",
@@ -7195,20 +7243,12 @@
     ],
     "codelist_not_asserted": [
       {
-        "id": "BR-CL-06",
-        "reason": "VAT-point date code. Not asserted: the UBL binding (cac:InvoicePeriod/cbc:DescriptionCode, UNTDID 2005 subset 3/35/432) and the CII binding (ram:DueDateTypeCode, UNTDID 2475 subset 5/29/72) use DIFFERENT code lists at DIFFERENT context nodes; the per-syntax value set is not yet carried."
-      },
-      {
         "id": "BR-CL-07",
         "reason": "Object/document reference identifier scheme (UNTDID 1153). Not asserted: the UBL context is scoped to a DocumentReference with cbc:DocumentTypeCode='130' (a predicate the model does not carry) and the CII context is ram:ReferenceTypeCode — two distinct bindings, deferred."
       },
       {
         "id": "BR-CL-08",
         "reason": "Invoice note subject code (UNTDID 4451). Not asserted: BOTH vendored artifacts carry this assert, on two different surfaces the model does not parse — the UBL binding tests a '#CODE#' prefix grammar inside the cbc:Note free text (it fires only when a 3-char '#'-delimited token is present but outside the list), the CII binding tests the ram:SubjectCode element; the 4451 subset IS machine-readable (inlined in both .sch), so this is a deferred parser-surface gap (note-text grammar + subject-code element), not a register gap."
-      },
-      {
-        "id": "BR-CL-15",
-        "reason": "Item origin country code (ISO 3166-1). Not asserted: the same code lists as BR-CL-14 but a distinct context node (cac:OriginCountry / ram:OriginTradeCountry) the model does not yet collect."
       }
     ],
     "cii_core_out_of_scope": [
@@ -7242,10 +7282,8 @@
       "en16931-cii"
     ],
     "excluded_ids_considered": [
-      "BR-CL-06",
       "BR-CL-07",
       "BR-CL-08",
-      "BR-CL-15",
       "BR-CO-05",
       "BR-CO-06",
       "BR-CO-07",
@@ -7255,8 +7293,8 @@
       "en16931-ubl": {
         "source": "corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch",
         "official_universe": 223,
-        "implemented": 215,
-        "excluded": 8,
+        "implemented": 217,
+        "excluded": 6,
         "missing": 0,
         "fireable_missing": 0,
         "non_business_rule_asserts": 756,
@@ -7270,8 +7308,8 @@
       "en16931-cii": {
         "source": "corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch",
         "official_universe": 223,
-        "implemented": 215,
-        "excluded": 8,
+        "implemented": 217,
+        "excluded": 6,
         "missing": 0,
         "fireable_missing": 0,
         "non_business_rule_asserts": 583,

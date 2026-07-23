@@ -888,6 +888,17 @@ SPECIAL = {
     "Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list":
         "Die Kennung des Schemas der Kennung des Lieferorts MUSS der Codeliste "
         "ISO 6523 ICD angehören.",
+    # ---- Everyday-field code-list batch (BR-CL-06/15, T-VHCLX.2) ----
+    # The two BR-CL-06 bindings restrict DIFFERENT UNTDID registers (UBL:
+    # 2005; CII: 2475) — two official texts, two translations. BR-CL-15
+    # reuses the BR-CL-14 country-code text (identical official wording),
+    # already translated above.
+    "Value added tax point date code MUST be coded using a restriction of UNTDID 2005.":
+        "Der Code für das Datum der Steuerfälligkeit MUSS anhand einer "
+        "Einschränkung der Codeliste UNTDID 2005 codiert werden.",
+    "Value added tax point date code MUST be coded using a restriction of UNTDID 2475.":
+        "Der Code für das Datum der Steuerfälligkeit MUSS anhand einer "
+        "Einschränkung der Codeliste UNTDID 2475 codiert werden.",
     "Tax exemption reason code identifier scheme identifier MUST belong to the CEF VATEX code list":
         "Die Kennung des Schemas des Codes für den Grund der Umsatzsteuerbefreiung MUSS der "
         "Codeliste CEF VATEX angehören.",

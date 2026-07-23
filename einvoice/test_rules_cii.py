@@ -3694,5 +3694,84 @@ class TestSchemeIdCodeListsCII(unittest.TestCase):
         self.assertFalse(self._scheme_fired(r))
 
 
+class TestEverydayFieldCodeListsCII(unittest.TestCase):
+    """BR-CL-06 and BR-CL-15 on the CII bindings (T-VHCLX.2): the exact
+    official context nodes — ram:DueDateTypeCode against the CII artifact's
+    OWN UNTDID 2475 restriction (5/29/72; NOT the UBL binding's UNTDID 2005
+    subset 3/35/432 — different registers, transcribed separately), and
+    ram:OriginTradeCountry/ram:ID against the CII ISO 3166-1 country pin
+    (has AN, no SS). The clean CII_example1 carries neither node."""
+
+    EVERYDAY_RULES = {"BR-CL-06", "BR-CL-15"}
+
+    def _everyday_fired(self, root):
+        return _fired_ids(root) & self.EVERYDAY_RULES
+
+    def _add_due_date_type_code(self, r, value):
+        tt = _first_breakdown(r)
+        el = ET.SubElement(tt, _q(NSA, "DueDateTypeCode"))
+        el.text = value
+
+    def _add_origin_country(self, r, value):
+        prod = _first_line(r).find("ram:SpecifiedTradeProduct", NS)
+        otc = ET.SubElement(prod, _q(NSA, "OriginTradeCountry"))
+        ET.SubElement(otc, _q(NSA, "ID")).text = value
+
+    def test_clean_base_fires_neither(self):
+        self.assertFalse(self._everyday_fired(_good_root()))
+
+    # ---- BR-CL-06 (ram:DueDateTypeCode, UNTDID 2475) ---------------------
+    def test_br_cl_06_valid_code_holds(self):
+        # '72' (paid to date) is in the CII binding's UNTDID 2475 subset.
+        r = _good_root()
+        self._add_due_date_type_code(r, "72")
+        self.assertFalse(self._everyday_fired(r))
+
+    def test_br_cl_06_bad_code_fires(self):
+        r = _good_root()
+        self._add_due_date_type_code(r, "999")
+        self.assertEqual(self._everyday_fired(r), {"BR-CL-06"})
+
+    def test_br_cl_06_ubl_code_fires_on_cii(self):
+        # '35' IS a valid UBL UNTDID 2005 code but NOT a CII UNTDID 2475
+        # code — the discriminating direction that proves the per-syntax
+        # lists are transcribed separately, never unified.
+        r = _good_root()
+        self._add_due_date_type_code(r, "35")
+        self.assertEqual(self._everyday_fired(r), {"BR-CL-06"})
+
+    # ---- BR-CL-15 (ram:OriginTradeCountry/ram:ID) ------------------------
+    def test_br_cl_15_valid_origin_country_holds(self):
+        r = _good_root()
+        self._add_origin_country(r, "DK")
+        self.assertFalse(self._everyday_fired(r))
+
+    def test_br_cl_15_bad_origin_country_fires(self):
+        r = _good_root()
+        self._add_origin_country(r, "XX")
+        self.assertEqual(self._everyday_fired(r), {"BR-CL-15"})
+
+    def test_br_cl_15_cii_only_an_holds(self):
+        # 'AN' (Netherlands Antilles) is in the CII country pin (and NOT in
+        # the UBL pin) — the CII rule must accept it.
+        r = _good_root()
+        self._add_origin_country(r, "AN")
+        self.assertFalse(self._everyday_fired(r))
+
+    def test_br_cl_15_ubl_only_ss_fires_on_cii(self):
+        # 'SS' (South Sudan) is in the UBL pin only — the official CII
+        # artifact rejects it, proving the per-syntax pin selection.
+        r = _good_root()
+        self._add_origin_country(r, "SS")
+        self.assertEqual(self._everyday_fired(r), {"BR-CL-15"})
+
+    def test_br_cl_15_leaves_br_cl_14_alone(self):
+        # An origin-country ram:ID is NOT a ram:CountryID: BR-CL-14 must
+        # not fire (distinct context nodes).
+        r = _good_root()
+        self._add_origin_country(r, "XX")
+        self.assertNotIn("BR-CL-14", _fired_ids(r))
+
+
 if __name__ == "__main__":
     unittest.main()

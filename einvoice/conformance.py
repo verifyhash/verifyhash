@@ -571,6 +571,12 @@ CII_SYNTAX_COVERAGE = {
     "BR-CL-05": "Tax currency code (BT-6) in ISO 4217 alpha-3",
     "BR-CL-13": "Item classification scheme id (@listID) in UNTDID 7143",
     "BR-CL-14": "Country codes (BT-40/55/…) in ISO 3166-1 alpha-2",
+    "BR-CL-06": "VAT point date code (BT-8) in the CII binding's own UNTDID "
+                "2475 restriction 5/29/72 (ram:DueDateTypeCode — a DIFFERENT "
+                "register from the UBL binding's UNTDID 2005 subset 3/35/432)",
+    "BR-CL-15": "Item origin country code (BT-159) in ISO 3166-1 alpha-2 "
+                "(CII binding: ram:OriginTradeCountry/ram:ID, tested against "
+                "the CII country pin — has AN, no SS)",
     "BR-CL-16": "Payment means code (BT-81) in UNCL 4461",
     "BR-CL-17": "Allowance/charge VAT category code in UNCL 5305 subset",
     "BR-CL-18": "Breakdown & line VAT category code in UNCL 5305 subset",

@@ -487,6 +487,23 @@ def build_model(root):
         _norm_space(_text(el)) or ""
         for el in root.findall(".//ram:CountryID", NS)
     ]
+    # BR-CL-15 context = ram:OriginTradeCountry/ram:ID (the item origin
+    # country BT-159; a ram:CountryID never matches it and vice versa —
+    # the origin country is a ram:ID child, not a CountryID). Same ISO
+    # 3166-1 pin as the CII BR-CL-14 (the preprocessed BR-CL-15 string is
+    # machine-verified identical to the pinned CII BR-CL-14 string).
+    inv.origin_country_codes = [
+        _norm_space(_text(el)) or ""
+        for el in root.findall(".//ram:OriginTradeCountry/ram:ID", NS)
+    ]
+    # BR-CL-06 context = ram:DueDateTypeCode (BT-8, any depth); the CII
+    # binding tests the value against the UNTDID 2475 restriction (5/29/72)
+    # — a DIFFERENT register from the UBL binding's UNTDID 2005, never
+    # unified (per-syntax pins in einvoice.codelists).
+    inv.vat_point_date_codes = [
+        _norm_space(_text(el)) or ""
+        for el in root.findall(".//ram:DueDateTypeCode", NS)
+    ]
     # BR-B-01/BR-B-02 (Italian split payment) node sets — RAW string values
     # (the official CII tests are the raw general comparisons
     # ``//ram:CategoryCode = 'B'`` / ``//ram:CountryID != 'IT'``). The two

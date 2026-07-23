@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement. message_de (present ONLY on de_source=='kosit' rules) is the official German <sch:assert> message VERBATIM, with a message_de_provenance {artifact, assert_id} tag naming the vendored file it was lifted from; the --lang de CLI surfaces it in place of the English message.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 293,
+  "rule_count": 295,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -1103,6 +1103,21 @@
       "fix_de": "Codieren Sie `cbc:TaxCurrencyCode` mit einem gültigen Wert aus der geforderten Codeliste: Der Code für die Steuerwährung MUSS anhand der ISO-Codeliste 4217 Alpha-3 codiert werden.",
       "de_source": "translation"
     },
+    "BR-CL-06": {
+      "title": "Value added tax point date code MUST be coded using a restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII).",
+      "requires": "Value added tax point date code MUST be coded using a restriction of UNTDID 2005.",
+      "bt_bg": [],
+      "location_hint": "cac:InvoicePeriod/cbc:DescriptionCode",
+      "fix": "Encode `cac:InvoicePeriod/cbc:DescriptionCode` using a valid value from the required code list.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Value added tax point date code MUST be coded using a restriction of UNTDID 2005."
+      },
+      "title_de": "Der Code für das Datum der Steuerfälligkeit MUSS anhand einer Einschränkung der Codeliste UNTDID 2005 codiert werden.",
+      "fix_de": "Codieren Sie `cac:InvoicePeriod/cbc:DescriptionCode` mit einem gültigen Wert aus der geforderten Codeliste: Der Code für das Datum der Steuerfälligkeit MUSS anhand einer Einschränkung der Codeliste UNTDID 2005 codiert werden.",
+      "de_source": "translation"
+    },
     "BR-CL-10": {
       "title": "Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.",
       "requires": "Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.",
@@ -1161,6 +1176,21 @@
       },
       "title_de": "Ländercodes in einer Rechnung MÜSSEN anhand der ISO-Codeliste 3166-1 codiert werden.",
       "fix_de": "Codieren Sie `cac:Country/cbc:IdentificationCode` mit einem gültigen Wert aus der geforderten Codeliste: Ländercodes in einer Rechnung MÜSSEN anhand der ISO-Codeliste 3166-1 codiert werden.",
+      "de_source": "translation"
+    },
+    "BR-CL-15": {
+      "title": "Item origin country codes MUST be coded using ISO 3166-1.",
+      "requires": "Country codes in an invoice MUST be coded using ISO code list 3166-1",
+      "bt_bg": [],
+      "location_hint": "cac:OriginCountry/cbc:IdentificationCode",
+      "fix": "Encode `cac:OriginCountry/cbc:IdentificationCode` using a valid value from ISO code list 3166-1.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Country codes in an invoice MUST be coded using ISO code list 3166-1"
+      },
+      "title_de": "Ländercodes in einer Rechnung MÜSSEN anhand der ISO-Codeliste 3166-1 codiert werden.",
+      "fix_de": "Codieren Sie `cac:OriginCountry/cbc:IdentificationCode` mit einem gültigen Wert aus der geforderten Codeliste: Ländercodes in einer Rechnung MÜSSEN anhand der ISO-Codeliste 3166-1 codiert werden.",
       "de_source": "translation"
     },
     "BR-CL-16": {

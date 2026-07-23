@@ -7,7 +7,7 @@
       "remediation_catalog.json"
     ]
   },
-  "rule_count": 293,
+  "rule_count": 295,
   "rules": [
     {
       "bindings": {
@@ -1702,6 +1702,33 @@
         }
       },
       "family": "core",
+      "id": "BR-CL-06",
+      "remediation": {
+        "fix": "Encode `cac:InvoicePeriod/cbc:DescriptionCode` using a valid value from the required code list.",
+        "title": "Value added tax point date code MUST be coded using a restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII)."
+      },
+      "severity": "fatal",
+      "syntax": "both",
+      "title": "Value added tax point date code MUST be coded using a restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII)."
+    },
+    {
+      "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "version": "1.3.16"
+        },
+        "ubl": {
+          "differentially_proven": true,
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "version": "1.3.16"
+        }
+      },
+      "family": "core",
       "id": "BR-CL-10",
       "remediation": {
         "fix": "Encode `cac:PartyIdentification/cbc:ID[@schemeID]` using a valid value from ISO 6523 ICD list..",
@@ -1791,6 +1818,33 @@
       "severity": "fatal",
       "syntax": "both",
       "title": "Country codes MUST be coded using ISO 3166-1 alpha-2."
+    },
+    {
+      "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/cen-en16931/cii/schematron/EN16931-CII-validation.sch",
+          "source": "en16931-cii",
+          "suite": "CEN EN 16931",
+          "version": "1.3.16"
+        },
+        "ubl": {
+          "differentially_proven": true,
+          "sch": "corpus/cen-en16931/ubl/schematron/EN16931-UBL-validation.sch",
+          "source": "en16931-ubl",
+          "suite": "CEN EN 16931",
+          "version": "1.3.16"
+        }
+      },
+      "family": "core",
+      "id": "BR-CL-15",
+      "remediation": {
+        "fix": "Encode `cac:OriginCountry/cbc:IdentificationCode` using a valid value from ISO code list 3166-1.",
+        "title": "Item origin country codes MUST be coded using ISO 3166-1."
+      },
+      "severity": "fatal",
+      "syntax": "both",
+      "title": "Item origin country codes MUST be coded using ISO 3166-1."
     },
     {
       "bindings": {

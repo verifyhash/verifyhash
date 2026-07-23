@@ -25,9 +25,9 @@ The vendored German national rule set is **KoSIT XRechnung Schematron 2.5.0, whi
 
 ## Coverage at a glance
 
-- **293 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **277** proven on both UBL and CII, **12** UBL-only, **4** CII-only.
-- Severity (blocking class): **280** fatal (block validity), **13** warning / information (reported, non-blocking).
+- **295 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **279** proven on both UBL and CII, **12** UBL-only, **4** CII-only.
+- Severity (blocking class): **282** fatal (block validity), **13** warning / information (reported, non-blocking).
 - **Official German messages: 50 rules** carry an official German assert message, surfaced by the CLI `--lang de` flag (report human-message only; `--json` and exit codes are unchanged). That text is lifted VERBATIM from the vendored KoSIT XRechnung Schematron (`de_source == "kosit"`), never machine-translated; every other rule is English-only by design (no official German assert text exists to quote). See the README `--lang de` section.
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -111,10 +111,12 @@ the non-blocking `warning` class for the severity column).
 | `BR-CL-03` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | CurrencyID MUST be coded using ISO 4217 alpha-3. |
 | `BR-CL-04` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3. |
 | `BR-CL-05` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3. |
+| `BR-CL-06` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Value added tax point date code MUST be coded using a restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII). |
 | `BR-CL-10` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list. |
 | `BR-CL-11` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list. |
 | `BR-CL-13` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Item classification scheme identifier MUST be a UNTDID 7143 code. |
 | `BR-CL-14` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Country codes MUST be coded using ISO 3166-1 alpha-2. |
+| `BR-CL-15` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Item origin country codes MUST be coded using ISO 3166-1. |
 | `BR-CL-16` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Payment means MUST be coded using the UNCL 4461 code list. |
 | `BR-CL-17` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice tax categories MUST be coded using the UNCL 5305 subset. |
 | `BR-CL-18` | UBL + CII | fatal | fatal | CEN EN 16931 1.3.16 | CEN EN 16931 1.3.16 | Invoice tax categories MUST be coded using the UNCL 5305 subset. |
@@ -369,7 +371,7 @@ Stated **separately from the Invoice numbers above** — no CreditNote case is f
 A UBL 2.1 credit-note is a first-class EN 16931 document here: it is routed through the identical `einvoice.rules.ALL_RULES` engine an Invoice runs through, differentially proven against the official CEN EN16931-UBL Schematron/XSLT, which binds the model to /ubl:Invoice | /cn:CreditNote — the same normative artifact that grades Invoices; proven at 0 divergences by differential.py cn.
 
 - **CreditNote in-scope pass rate: 192 of 192 graded unit cases (100.0%)** — over the vendored `CreditNote-unit-UBL` corpus, each split case whose scope rule the engine implements is classified exactly as the corpus's own difi `success`/`error` ground truth (the engine fires the scoped `BR-*` rule iff the case is an `error` case).
-- Graded across **213 implemented core rules**; **64 distinct `BR-*` rules** are actually exercised by the CreditNote corpus (the rest have no CreditNote unit case to fire on).
+- Graded across **215 implemented core rules**; **64 distinct `BR-*` rules** are actually exercised by the CreditNote corpus (the rest have no CreditNote unit case to fire on).
 - **Standalone CreditNote fixtures: 4 of 4 validate clean** — the CEN `ubl-tc434-creditnote1` example plus the `CreditNote-{Max,Min}_content` testfiles all pass with no fatal (a real pass through the engine, not a structural skip).
 - **Differential divergences on the CreditNote corpus: 0.** The `differential.py cn` leg grades OUR fired-rule set against the official XSLT over every split CreditNote case + fixture; 0 divergences must never grow silently, so a future CreditNote regression turns the gate red.
 - **Known-open CreditNote bindings: none** — every implemented core rule reached exact parity on the CreditNote corpus, so no binding is fabricated from prose or silently passed.
@@ -425,10 +427,8 @@ but the engine does not yet assert them; listed so the code-list
 coverage is honest about its boundary. (`BR-CL-16/19/20/21/24` ARE
 asserted and appear in the rule table above.)
 
-- **BR-CL-06** — VAT-point date code. Not asserted: the UBL binding (cac:InvoicePeriod/cbc:DescriptionCode, UNTDID 2005 subset 3/35/432) and the CII binding (ram:DueDateTypeCode, UNTDID 2475 subset 5/29/72) use DIFFERENT code lists at DIFFERENT context nodes; the per-syntax value set is not yet carried.
 - **BR-CL-07** — Object/document reference identifier scheme (UNTDID 1153). Not asserted: the UBL context is scoped to a DocumentReference with cbc:DocumentTypeCode='130' (a predicate the model does not carry) and the CII context is ram:ReferenceTypeCode — two distinct bindings, deferred.
 - **BR-CL-08** — Invoice note subject code (UNTDID 4451). Not asserted: BOTH vendored artifacts carry this assert, on two different surfaces the model does not parse — the UBL binding tests a '#CODE#' prefix grammar inside the cbc:Note free text (it fires only when a 3-char '#'-delimited token is present but outside the list), the CII binding tests the ram:SubjectCode element; the 4451 subset IS machine-readable (inlined in both .sch), so this is a deferred parser-surface gap (note-text grammar + subject-code element), not a register gap.
-- **BR-CL-15** — Item origin country code (ISO 3166-1). Not asserted: the same code lists as BR-CL-14 but a distinct context node (cac:OriginCountry / ram:OriginTradeCountry) the model does not yet collect.
 
 ### Fired on UBL, not differentially proven on CII
 
@@ -458,10 +458,10 @@ Scoped honestly: the engine asserts ALL 21 canonical PEPPOL-EN16931-R* rules tha
 
 Machine-checked complement of the rule table: for each CEN EN 16931 artifact, every official BR-* assert id that is NEITHER implemented by the engine NOR listed as a deliberate exclusion — extracted by a real XML parse of sch:assert/@id from the vendored preprocessed Schematron, with the official rule text carried verbatim. fireable_missing further subtracts any missing assert the artifact itself ships as a literal test="true()" tautology (rules that can never fire officially belong to the official_tautology exclusion class, not this worklist). test_coverage_gap.py recomputes this live from the .sch files, fails on any drift, and asserts fireable_missing == 0 for every universe — so the gap can neither be hidden nor go stale, and any future artifact bump that turns a tautology into a real rule reopens the worklist automatically.
 
-Deliberate exclusions counted against each universe (8 ids, all
-documented with reasons in the Exclusions section above): `BR-CL-06`, `BR-CL-07`, `BR-CL-08`, `BR-CL-15`, `BR-CO-05`, `BR-CO-06`, `BR-CO-07`, `BR-CO-08`.
+Deliberate exclusions counted against each universe (6 ids, all
+documented with reasons in the Exclusions section above): `BR-CL-07`, `BR-CL-08`, `BR-CO-05`, `BR-CO-06`, `BR-CO-07`, `BR-CO-08`.
 
-### `en16931-ubl` — 215 implemented + 8 excluded + 0 missing = 223 official `BR-*` rules
+### `en16931-ubl` — 217 implemented + 6 excluded + 0 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/ubl/schematron/preprocessed/EN16931-UBL-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 756 non-`BR-*` asserts (`UBL-CR-*`, `UBL-DT-*`, `UBL-SR-*`) — syntax-binding cardinality/
@@ -478,7 +478,7 @@ exclusion — including the official `test="true()"` tautologies
 listed in the Exclusions section above with verbatim artifact
 evidence.
 
-### `en16931-cii` — 215 implemented + 8 excluded + 0 missing = 223 official `BR-*` rules
+### `en16931-cii` — 217 implemented + 6 excluded + 0 missing = 223 official `BR-*` rules
 
 Universe parsed from `corpus/cen-en16931/cii/schematron/preprocessed/EN16931-CII-validation-preprocessed.sch` (`sch:assert/@id`). The same file also
 carries 583 non-`BR-*` asserts (`CII-DT-*`, `CII-SR-*`) — syntax-binding cardinality/
@@ -577,8 +577,8 @@ worklist automatically.
 
 ## CII proof parity
 
-**TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **293**
-business rules the engine asserts, **277** are differentially proven
+**TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **295**
+business rules the engine asserts, **279** are differentially proven
 on BOTH the UBL and CII bindings; **12** are officially UBL-only and
 **4** is CII-only. Every one of the **12** UBL-only rules the
 official CII artifacts were measured against is now resolved with
@@ -633,7 +633,7 @@ decimal-place cap — not EN 16931 business rules.
 
 - **756 UBL** + **583 CII** = **1339** syntax-binding asserts, extracted by a real XML parse of the two artifacts.
 - **Frozen honest headline (machine-recomputed):** **741 of 756 UBL** + **554 of 583 CII** syntax-binding asserts are differential-proven per binding (0 divergences against the official vendored CEN Schematron — `differential.py` LEG 5 `sb` / LEG 6 `sbcii`); the remaining **15 UBL** + **29 CII** are machine-listed known-open, each with its exact unsupported `@test` / `@context` form in the per-class worklists below. Nothing is approximated, hand-faked, or silently dropped — an id is promoted only where the restricted (non-general-XPath) evaluator proves exact equivalence, and the terminal per-class counts are asserted by `test_syntax_binding.py`.
-- Honesty note: these are **NOT** part of the **293 business rules**
+- Honesty note: these are **NOT** part of the **295 business rules**
   counted above, and none is folded into that matrix. The catalog is
   regenerated by `gen_syntax_binding.py` and re-parsed live by
   `test_syntax_binding.py`. The dominant **UBL `absence-restriction`**

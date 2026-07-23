@@ -11,6 +11,51 @@ Versions here are the single source of truth together with
 (`__version__`); `test_release_discipline.py` fails the build if the three
 ever diverge.
 
+## [0.2.5] - 2026-07-23
+
+The engine now fires 295 rules (was 293): the everyday-field code-list pair
+`BR-CL-06` (VAT point date code) and `BR-CL-15` (item origin country) is
+implemented on BOTH syntaxes; the deferred `BR-CL-*` class is down to the
+final `BR-CL-07`/`BR-CL-08` pair.
+
+### Added
+
+- **`BR-CL-06` (VAT point date code, BT-8) is implemented, per syntax** —
+  the two official bindings restrict DIFFERENT UNTDID registers, so the two
+  inlined subsets were transcribed SEPARATELY from the vendored PREPROCESSED
+  CEN artifacts and are selected per syntax, never unified (their sets share
+  no code — disjointness is asserted at import in `codelists.py`): UBL
+  `cac:InvoicePeriod/cbc:DescriptionCode` against the UNTDID 2005
+  restriction `3 35 432`; CII `ram:DueDateTypeCode` against the UNTDID 2475
+  restriction `5 29 72`. Both pins are provenance-locked in
+  `codelists_manifest.json` (`UBL_VAT_POINT_CODES` / `CII_VAT_POINT_CODES`).
+- **`BR-CL-15` (item origin country, BT-159) is implemented** — UBL
+  `cac:OriginCountry/cbc:IdentificationCode` / CII
+  `ram:OriginTradeCountry/ram:ID` values are checked against the SAME
+  per-syntax ISO 3166-1 pins BR-CL-14 already used (`UBL_COUNTRY_CODES` has
+  SS not AN; `CII_COUNTRY_CODES` has AN not SS): the preprocessed artifacts'
+  BR-CL-15 enumerations were machine-compared and verified IDENTICAL per
+  syntax to the BR-CL-14 pins, so no list was duplicated.
+- An invoice carrying a wrong item origin-country code or a wrong VAT-point
+  date code previously false-PASSed against the engine while failing the
+  official CEN Schematron; both rules are graded on all differential legs
+  (UBL, CreditNote, CII) with targeted mutations at 0 divergences — each
+  mutation deliberately uses the OTHER syntax's valid code (`5` on UBL,
+  `35` on CII; `AN` on UBL, `SS` on CII in the unit fixtures) so the proof
+  discriminates the per-syntax pins — and unit-pinned positive + negative
+  per id per syntax in `test_rules.py` / `test_rules_cii.py`.
+
+### Changed
+
+- CEN coverage per syntax universe moved 215 -> 217 of the 223 official
+  `BR-*` ids; the deferred `BR-CL-*` code-list class shrank 4 -> 2
+  (BR-CL-07/08 — the last two). Coverage/count surfaces regenerated and
+  re-pinned through the existing drift guards (README §2, `COVERAGE.md`/
+  `coverage_matrix.json`, `cii_parity.json` 277 -> 279 both-syntax,
+  `RULES.md`, `remediation_catalog.json` incl. the two new German
+  renderings, exports, attestation, sbom, site, web bundle; pyproject +
+  `action/README.md` descriptions now say 295). No guard was weakened.
+
 ## [0.2.4] - 2026-07-23
 
 The engine now fires 293 rules (was 289): the CEN scheme-identifier

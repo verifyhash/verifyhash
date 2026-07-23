@@ -30,12 +30,12 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**293 rules** in total — 280 fatal, 12 warning, 1 information — across 21 families.
+**295 rules** in total — 282 fatal, 12 warning, 1 information — across 21 families.
 
 ## Families
 
 - **BR** (58) — Core EN 16931 content and cardinality rules.
-- **BR-CL** (19) — Code-list rules — a coded value must come from the referenced official code list.
+- **BR-CL** (21) — Code-list rules — a coded value must come from the referenced official code list.
 - **BR-CO** (19) — Calculation and consistency rules (cross-total arithmetic).
 - **BR-DEC** (21) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **BR-AE** (10) — VAT breakdown rules for VAT category code AE.
@@ -622,6 +622,15 @@ Code-list rules — a coded value must come from the referenced official code li
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “Tax currency code MUST be coded using ISO code list 4217 alpha-3”
 
+### BR-CL-06 — Value added tax point date code MUST be coded using a restriction of UNTDID 2005 (UBL) / UNTDID 2475 (CII).
+
+- **Requires:** Value added tax point date code MUST be coded using a restriction of UNTDID 2005.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:InvoicePeriod/cbc:DescriptionCode`
+- **Fix:** Encode `cac:InvoicePeriod/cbc:DescriptionCode` using a valid value from the required code list.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Value added tax point date code MUST be coded using a restriction of UNTDID 2005.”
+
 ### BR-CL-10 — Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.
 
 - **Requires:** Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.
@@ -655,6 +664,15 @@ Code-list rules — a coded value must come from the referenced official code li
 - **Business terms:** — (no single business term)
 - **Location:** `cac:Country/cbc:IdentificationCode`
 - **Fix:** Encode `cac:Country/cbc:IdentificationCode` using a valid value from ISO code list 3166-1.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Country codes in an invoice MUST be coded using ISO code list 3166-1”
+
+### BR-CL-15 — Item origin country codes MUST be coded using ISO 3166-1.
+
+- **Requires:** Country codes in an invoice MUST be coded using ISO code list 3166-1
+- **Business terms:** — (no single business term)
+- **Location:** `cac:OriginCountry/cbc:IdentificationCode`
+- **Fix:** Encode `cac:OriginCountry/cbc:IdentificationCode` using a valid value from ISO code list 3166-1.
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “Country codes in an invoice MUST be coded using ISO code list 3166-1”
 

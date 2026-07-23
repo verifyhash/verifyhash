@@ -207,12 +207,13 @@ assert CII_XR_RULE_SET - XR_RULE_SET == set(CII_ONLY_XR_RULE_IDS), (
 # payment-terms Description[1] surface — the same _skonto_terms_hold
 # transcription both bindings evaluate.
 #
-# The extension layer stays scoped as documented elsewhere: BR-DEX-01/04..08
-# bind extension surfaces (attachment MIME codes, ISO 6523 scheme identifiers)
-# the normalized model does not carry — they are counted as documented
-# exclusions in the KoSIT coverage gap (gen_coverage.kosit_documented_
-# exclusion_ids derives them live from the per-binding registries, so they
-# are NOT restated here). BR-DEX-15 (sub invoice lines, CII-only) IS graded.
+# The extension layer is COMPLETE on CII since T-VHCIIDE.5: BR-DEX-01
+# (attachment MIME codes) and BR-DEX-04..08 (ISO 6523 ICD / CEF EAS scheme
+# identifiers) are graded via the parser_cii ext_* surfaces, alongside the
+# CII-only BR-DEX-15 (sub invoice lines). Every German-family assert the
+# vendored CII artifact carries is now in the graded set; the UBL-only
+# BR-DEX-02/03/09..14 have no CII assert to grade (gen_coverage derives that
+# residue live from the per-binding registries).
 CII_XR_EXCLUDED_RULE_IDS = ()
 assert not (CII_XR_RULE_SET & set(CII_XR_EXCLUDED_RULE_IDS)), (
     "a CII-excluded BR-DE rule is also in the graded set")
@@ -5892,6 +5893,97 @@ def _xrcmut_dex15(r):
     _sub_el(adld, NS_RAM, "ParentLineID", "1")
 
 
+def _cii_make_extension(r):
+    # Flip the guideline to the XRechnung EXTENSION specification identifier
+    # ($isExtension true; BR-DE-21 still holds — the extension id is a valid
+    # BT-24). Shared gate step for the BR-DEX-01/04..08 mutations.
+    r.find("rsm:ExchangedDocumentContext/"
+           "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID",
+           _NSC).text = _rules_xr.XR_EXTENSION_ID
+
+
+def _cii_add_header_attachment(r, mime):
+    # One header-agreement AdditionalReferencedDocument (TypeCode 916, unique
+    # @filename, no ram:URIID so BR-TMP-2 holds; single filename so BR-DE-22
+    # holds) whose AttachmentBinaryObject carries @mimeCode = ``mime``.
+    doc = _sub_el(_cii_agreement(r), NS_RAM, "AdditionalReferencedDocument")
+    _sub_el(doc, NS_RAM, "IssuerAssignedID", "attach-dex")
+    _sub_el(doc, NS_RAM, "TypeCode", "916")
+    obj = _sub_el(doc, NS_RAM, "AttachmentBinaryObject", "UkVDSA==")
+    obj.set("filename", "data.bin")
+    obj.set("mimeCode", mime)
+
+
+def _xrcmut_cii_dex1(r):
+    # Extension + an attachment with a MIME code the Extension forbids
+    # (application/zip is outside EN 8.2 + application/xml) -> BR-DEX-01.
+    _cii_make_extension(r)
+    _cii_add_header_attachment(r, "application/zip")
+
+
+def _xrcmut_cii_dex1_xml_valid(r):
+    # HOLDS direction: application/xml is the extension's extra allowance
+    # over the EN 8.2 list -> BR-DEX-01 holds on both engines.
+    _cii_make_extension(r)
+    _cii_add_header_attachment(r, "application/xml")
+
+
+def _xrcmut_cii_dex4(r):
+    # Extension + a seller ram:GlobalID whose scheme id is off the ISO 6523
+    # ICD (extension) list -> BR-DEX-04 (generic GlobalID context; the CII
+    # binding has NO SEPA allowance).
+    gid = ET.Element(_cq(NS_RAM, "GlobalID"))
+    gid.set("schemeID", "ZZZ")
+    gid.text = "X"
+    _cii_seller(r).insert(0, gid)
+    _cii_make_extension(r)
+
+
+def _xrcmut_cii_dex5(r):
+    # Extension + a seller ram:ID carrying an off-list scheme id (outside any
+    # SpecifiedTaxRegistration) -> BR-DEX-05.
+    idel = ET.Element(_cq(NS_RAM, "ID"))
+    idel.set("schemeID", "ZZZ")
+    idel.text = "X"
+    _cii_seller(r).insert(0, idel)
+    _cii_make_extension(r)
+
+
+def _xrcmut_cii_dex6(r):
+    # Extension + a SpecifiedTradeProduct/ram:GlobalID (BT-157) with an
+    # off-list scheme id -> BR-DEX-06.
+    product = r.find("rsm:SupplyChainTradeTransaction/"
+                     "ram:IncludedSupplyChainTradeLineItem/"
+                     "ram:SpecifiedTradeProduct", _NSC)
+    gid = ET.Element(_cq(NS_RAM, "GlobalID"))
+    gid.set("schemeID", "ZZZ")
+    gid.text = "0815"
+    product.insert(0, gid)
+    _cii_make_extension(r)
+
+
+def _xrcmut_cii_dex7(r):
+    # Extension + the seller endpoint URIID scheme id off the CEF EAS list
+    # ('ZZ' is neither an EAS nor a DIGA code) -> BR-DEX-07.
+    _cii_make_extension(r)
+    r.find("rsm:SupplyChainTradeTransaction/"
+           "ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/"
+           "ram:URIUniversalCommunication/ram:URIID",
+           _NSC).set("schemeID", "ZZ")
+
+
+def _xrcmut_cii_dex8(r):
+    # Extension + a header-delivery ShipToTradeParty/ram:GlobalID (BT-71)
+    # with an off-list scheme id -> BR-DEX-08 (and ONLY BR-DEX-08: the
+    # ancestor::ram:ShipToTradeParty predicate keeps it out of BR-DEX-04).
+    ship = ET.Element(_cq(NS_RAM, "ShipToTradeParty"))
+    gid = ET.SubElement(ship, _cq(NS_RAM, "GlobalID"))
+    gid.set("schemeID", "ZZZ")
+    gid.text = "LOC-1"
+    _cii_delivery(r).insert(0, ship)
+    _cii_make_extension(r)
+
+
 _XR_CII_MUTATIONS = {
     "BR-DE-1": _xrcmut_de1, "BR-DE-2": _xrcmut_de2, "BR-DE-3": _xrcmut_de3,
     "BR-DE-4": _xrcmut_de4, "BR-DE-5": _xrcmut_de5, "BR-DE-6": _xrcmut_de6,
@@ -5908,6 +6000,10 @@ _XR_CII_MUTATIONS = {
     "BR-DE-30": _xrcmut_de30, "BR-DE-31": _xrcmut_de31,
     "BR-DE-22": _xrcmut_de22,
     "BR-DEX-15": _xrcmut_dex15,
+    # Extension scheme-id / attachment layer (T-VHCIIDE.5).
+    "BR-DEX-01": _xrcmut_cii_dex1, "BR-DEX-04": _xrcmut_cii_dex4,
+    "BR-DEX-05": _xrcmut_cii_dex5, "BR-DEX-06": _xrcmut_cii_dex6,
+    "BR-DEX-07": _xrcmut_cii_dex7, "BR-DEX-08": _xrcmut_cii_dex8,
 }
 
 # Extra CII mutations beyond the one-per-admitted-rule map: labeled entries
@@ -5915,6 +6011,9 @@ _XR_CII_MUTATIONS = {
 # with its "18-valid" / "TMP-32-clear" entries).
 _XR_CII_EXTRA_MUTATIONS = (
     ("BR-DE-18-valid", _xrcmut_de18_valid),
+    # BR-DEX-01 HOLDS direction: application/xml is allowed ONLY under the
+    # extension profile (the extra allowance over EN 8.2).
+    ("BR-DEX-01-xml-valid", _xrcmut_cii_dex1_xml_valid),
 )
 
 

@@ -111,33 +111,21 @@ ARTIFACT_DEFECTS = {
 
 # Rules whose id IS carried by a vendored CII artifact (so the assert exists and
 # CAN fire on a CII document) but whose @context/@test bind a CII-SPECIFIC
-# document surface that the syntax-agnostic EN 16931 core model deliberately
-# does NOT carry — since T-VHCIIDE.3 only the KoSIT XRechnung EXTENSION
-# profile remains here (the national-CIUS payment-means / payment-terms /
-# direct-debit / attachment surfaces are all carried now). These are the
-# T-VHCIIP.9 TERMINAL close-out's evidence-backed deliberate CII-leg exclusions
-# (the T-VHCIIP.8 note anticipated them): each is FULLY differentially proven on
-# the UBL XRechnung leg (LEG 2) but is out of scope for the both-syntaxes
-# core-model CII proof, so it can never move to syntax='both'. They are NOT
-# artifact defects — the shipped assert fires correctly on a CII document that
-# carries the surface; they simply are not part of the core-model proof.
+# document surface the engine deliberately does not evaluate. EMPTY since
+# T-VHCIIDE.5: the last residents — the extension-profile scheme-id /
+# attachment group BR-DEX-01/04..08 (T-VHCIIP.9's evidence-backed deliberate
+# CII-leg exclusions) — are now graded on the CII differential leg via the
+# parser_cii ext_* surfaces, exactly like the national-CIUS payment-means /
+# payment-terms / direct-debit / attachment surfaces before them
+# (T-VHCIIDE.1..3), so every carried assert can reach syntax='both'.
 #
-# They classify as ``binding-inapplicable`` (like the not-carried UBL-only
-# rules), but — unlike those — they carry VERBATIM artifact_evidence
-# (@context + @test from a live parse + a one-line note naming the CII surface),
-# re-verified on every run and gate: ``verify_binding_scope_exclusion`` asserts
-# the recorded surface marker STILL appears in the live @context/@test, so an
-# artifact bump that re-binds the rule onto the core model (removing the marker)
-# fails generation loudly and forces a re-review. Each entry names the exact
-# surface marker that must remain present as the evidence anchor.
-_SCOPE_NOTE_EXTENSION = (
-    "carried by the vendored CII artifact but gated behind the KoSIT XRechnung "
-    "EXTENSION profile ($isExtension: the extension conformance "
-    "GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for "
-    "extension-profile CII documents, a national extension surface with no "
-    "both-syntaxes core-model counterpart (as on the UBL side); fully proven "
-    "on the UBL leg, deliberately excluded from the both-syntaxes core-model "
-    "CII proof.")
+# The mechanism stays live for future artifact bumps: an entry classifies as
+# ``binding-inapplicable`` (like the not-carried UBL-only rules) but carries
+# VERBATIM artifact_evidence (@context + @test from a live parse + a one-line
+# note naming the CII surface), re-verified on every run and gate —
+# ``verify_binding_scope_exclusion`` asserts the recorded surface marker
+# STILL appears in the live @context/@test, so an upstream re-binding fails
+# generation loudly and forces a re-review.
 
 # marker = a verbatim substring that MUST remain present in the live
 # @context + @test (the evidence anchor); kind = short slug; note = above.
@@ -146,24 +134,13 @@ _SCOPE_NOTE_EXTENSION = (
 # on the CII leg via the parser_cii CIIPaymentMeans surface — so they no
 # longer appear on the UBL-only worklist this file classifies. The
 # direct-debit pair BR-DE-30/-31 and the attachment-filename check BR-DE-22
-# left with T-VHCIIDE.2 the same way, and the Skonto grammar BR-DE-18 with
-# T-VHCIIDE.3 via the parser_cii payment-terms Description[1] surface — the
-# national BR-DE-* family is now fully syntax='both'; only the six
-# extension-profile ids below remain.)
-BINDING_SCOPE_EXCLUSIONS = {
-    "BR-DEX-01": {"kind": "cii-extension-profile",
-                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
-    "BR-DEX-04": {"kind": "cii-extension-profile",
-                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
-    "BR-DEX-05": {"kind": "cii-extension-profile",
-                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
-    "BR-DEX-06": {"kind": "cii-extension-profile",
-                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
-    "BR-DEX-07": {"kind": "cii-extension-profile",
-                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
-    "BR-DEX-08": {"kind": "cii-extension-profile",
-                  "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
-}
+# left with T-VHCIIDE.2 the same way, the Skonto grammar BR-DE-18 with
+# T-VHCIIDE.3 via the parser_cii payment-terms Description[1] surface, and
+# the last six — the extension-profile scheme-id/attachment group BR-DEX-01/
+# 04..08 — with T-VHCIIDE.5 via the parser_cii ext_* surfaces. EMPTY: every
+# rule the CII artifact binds is graded on the CII leg; kept as a dict so a
+# future exclusion must record its verbatim evidence anchor HERE.)
+BINDING_SCOPE_EXCLUSIONS = {}
 assert not (set(ARTIFACT_DEFECTS) & set(BINDING_SCOPE_EXCLUSIONS)), (
     "a rule is BOTH an artifact defect and a scope exclusion")
 

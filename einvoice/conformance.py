@@ -756,7 +756,8 @@ CII_SYNTAX_EXCLUDED = {
 # divergences). This manifest records which BR-DE rules reach that CII parity     #
 # (auditable + grep-able); since T-VHCIIDE.3 (BR-DE-18 Skonto via the             #
 # payment-terms Description surface) EVERY national BR-DE assert the CII          #
-# artifact carries is graded — the excluded manifest below is empty and stays     #
+# artifact carries is graded, and since T-VHCIIDE.5 so is EVERY extension         #
+# (BR-DEX) assert it carries — the excluded manifest below is empty and stays     #
 # pinned to differential.CII_XR_EXCLUDED_RULE_IDS. The single source of truth     #
 # is differential.CII_XR_RULE_IDS; the asserts below guarantee this manifest      #
 # can never silently drift from it.                                               #
@@ -783,9 +784,13 @@ _CII_XR_ADMITTED_IDS = (
     "BR-TMP-2", "BR-TMP-3",
     "BR-DE-CVD-01", "BR-DE-CVD-02", "BR-DE-CVD-03", "BR-DE-CVD-04",
     "BR-DE-CVD-05", "BR-DE-CVD-06-a", "BR-DE-CVD-06-b", "BR-TMP-CVD-01",
-    # Extension layer — the single CII extension assert the normalized model
-    # carries (BR-DEX-15 exists ONLY in the CII artifact, like BR-TMP-3).
+    # Extension layer — COMPLETE since T-VHCIIDE.5: BR-DEX-15 (CII-only, like
+    # BR-TMP-3) plus the six asserts the CII artifact shares with UBL —
+    # BR-DEX-01 (attachment MIME codes) and BR-DEX-04..08 (ISO 6523 ICD /
+    # CEF EAS scheme identifiers), carried by the parser_cii ext_* surfaces.
     "BR-DEX-15",
+    "BR-DEX-01", "BR-DEX-04", "BR-DEX-05", "BR-DEX-06", "BR-DEX-07",
+    "BR-DEX-08",
 )
 # Descriptions are reused verbatim from the UBL CIUS/TMP/extension manifests —
 # the rule SEMANTICS are identical across syntaxes; only the bound syntax

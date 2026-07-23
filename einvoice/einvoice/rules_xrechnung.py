@@ -1475,13 +1475,12 @@ def evaluate(root):
 # ONLY the BR-DE rules whose guarded fact the model carries AND which reach
 # EXACT parity (0 false-positive / 0 false-negative) with the official
 # XRechnung-CII Schematron on the differential corpus are admitted here (list
-# ``CII_DE_RULES``). The rules whose CII binding needs structure the EN 16931
-# core model does not carry — the BR-DEX-* extension asserts other than
-# BR-DEX-15 (whose two-boolean surface the model DOES carry; it is admitted
-# below) — are EXCLUDED, not approximated (see the documented exclusion list
-# in ``differential.CII_XR_EXCLUDED_RULE_IDS``; the national BR-DE-* family
-# itself is COMPLETE on CII since T-VHCIIDE.3 admitted the Skonto grammar
-# BR-DE-18 via the parser_cii payment-terms Description surface).
+# ``CII_DE_RULES``). The set is COMPLETE since T-VHCIIDE.5: every German-family
+# assert the vendored CII artifact carries (BR-DE-* incl. CVD/TMP since
+# T-VHCIIDE.3, and the full extension layer BR-DEX-15 + BR-DEX-01/04..08 via
+# the parser_cii ext_* surfaces) is admitted and graded —
+# ``differential.CII_XR_EXCLUDED_RULE_IDS`` is empty. BR-DEX-02/03/09..14
+# have NO CII assert in the artifact (UBL-only), so there is nothing to admit.
 # The payment-means group (BR-DE-19/20 IBAN mod-97 and the type-code group
 # checks BR-DE-23/24/25-a/-b) IS admitted: ``parser_cii._build_cii_br_de``
 # carries one ``CIIPaymentMeans`` record per
@@ -2317,13 +2316,18 @@ def cii_br_de_cvd_05(inv):
 
 # ---------------------------------------------------------------------------
 # CII EXTENSION layer (cii-extension-pattern), gated behind $isExtension.
-# ONLY BR-DEX-15 is admitted: it is the single extension assert whose CII
-# surface the normalized model carries (the remaining CII extension asserts —
-# BR-DEX-01 attachments, BR-DEX-04..08 ISO 6523 scheme identifiers — bind
-# node sets the model deliberately omits and stay excluded, documented in
-# differential.CII_XR_EXCLUDED comments). BR-DEX-15 exists ONLY in the CII
-# artifact (the vendored UBL artifact carries no such assert), exactly like
-# BR-TMP-3.
+# ALL SEVEN extension asserts the vendored CII artifact carries are admitted:
+# BR-DEX-15 (sub invoice lines — CII-only, like BR-TMP-3) plus, since
+# T-VHCIIDE.5, BR-DEX-01 (attachment MIME codes) and BR-DEX-04..08 (ISO 6523
+# ICD / CEF EAS scheme identifiers), each transcribed from its
+# XRechnung-CII-validation.sch assert and reading the parser_cii ext_*
+# surfaces (document-wide context patterns collected with the official
+# ancestor:: exclusions). The scheme membership predicate and code lists are
+# SHARED with the UBL twins (_ISO_6523_ICD_EXT_CODES / _CEF_EAS_EXT_CODES /
+# _XR_EXT_MIME_CODES — transcribed verbatim from common.sch, the single
+# source both official bindings compile from), so the two syntaxes can never
+# drift apart on a code list. The remaining BR-DEX-02/03/09..14 exist ONLY in
+# the UBL artifact — there is no CII assert to transcribe.
 # ---------------------------------------------------------------------------
 @_rule("BR-DEX-15", "warning")
 def cii_br_dex_15(inv):
@@ -2345,6 +2349,116 @@ def cii_br_dex_15(inv):
                   "ram:IncludedSupplyChainTradeLineItem/"
                   "ram:AssociatedDocumentLineDocument")
     return None
+
+
+def _cii_scheme_rule(fn, inv, schemes, code_set, message, element):
+    """Shared BR-DEX-04..08 body on CII (T-VHCIIDE.5). Official test per
+    assert: ``not(contains(normalize-space(@schemeID), ' ')) and
+    contains($LIST, concat(' ', normalize-space(@schemeID), ' '))`` — the
+    normalized scheme id must have no internal space AND be a member of
+    ``code_set``. Same membership predicate as the UBL twin ``_scheme_rule``;
+    the CII asserts carry NO SEPA branch (that allowance exists only in the
+    UBL BR-DEX-04 binding). ``schemes`` is the parser_cii surface holding the
+    raw @schemeID of every element the rule's context selects."""
+    if not _cii_is_extension(inv):
+        return None
+    for scheme in schemes:
+        if not (_scheme_no_internal_space(scheme)
+                and _nsp(scheme) in code_set):
+            return _v(fn, message, element)
+    return None
+
+
+@_rule("BR-DEX-01", "fatal")
+def cii_br_dex_1(inv):
+    """BR-DEX-01 (CII): every 'Attached Document' binary object (BT-125) must
+    use an Extension-allowed MIME code. Official context is every
+    ram:AttachmentBinaryObject[$isExtension]; the test compares the RAW
+    @mimeCode against the seven literals (EN 8.2 list + the extension's extra
+    application/xml allowance), so an ABSENT @mimeCode also fires (the
+    attribute node-set is empty and no equality holds). flag="fatal", copied
+    from the artifact — same as the UBL twin."""
+    if not _cii_is_extension(inv):
+        return None
+    for code in inv.ext_attachment_mime_codes:
+        if code not in _XR_EXT_MIME_CODES:
+            return _v(cii_br_dex_1, "The 'Attached Document' (BT-125) uses a "
+                      "MIME code that an XRechnung Extension does not permit: "
+                      "%r." % (code,),
+                      "ram:AttachmentBinaryObject/@mimeCode")
+    return None
+
+
+@_rule("BR-DEX-04", "fatal")
+def cii_br_dex_4(inv):
+    """BR-DEX-04 (CII): any scheme identifier on a generic ram:GlobalID —
+    official context //ram:GlobalID[@schemeID][not(ancestor::
+    ram:SpecifiedTradeProduct) and not(ancestor::ram:ShipToTradeParty)] —
+    must be an ISO 6523 ICD (extension) code. Unlike the UBL binding there is
+    no SEPA allowance on CII. flag="fatal"."""
+    return _cii_scheme_rule(
+        cii_br_dex_4, inv, inv.ext_generic_global_id_schemes,
+        _ISO_6523_ICD_EXT_CODES,
+        message="Any scheme identifier on a party/document ram:GlobalID must "
+                "be coded with an ISO 6523 ICD code.",
+        element="ram:GlobalID/@schemeID")
+
+
+@_rule("BR-DEX-05", "fatal")
+def cii_br_dex_5(inv):
+    """BR-DEX-05 (CII): any scheme identifier on a ram:ID outside a tax
+    registration — official context ram:ID[@schemeID][not(ancestor::
+    ram:SpecifiedTaxRegistration)] — must be an ISO 6523 ICD (extension)
+    code. flag="fatal"."""
+    return _cii_scheme_rule(
+        cii_br_dex_5, inv, inv.ext_id_schemes,
+        _ISO_6523_ICD_EXT_CODES,
+        message="Any scheme identifier on a ram:ID (outside a tax "
+                "registration) must be coded with an ISO 6523 ICD code.",
+        element="ram:ID/@schemeID")
+
+
+@_rule("BR-DEX-06", "fatal")
+def cii_br_dex_6(inv):
+    """BR-DEX-06 (CII): any scheme identifier on an item standard identifier
+    (BT-157) — official context ram:SpecifiedTradeProduct/
+    ram:GlobalID[@schemeID] — must be an ISO 6523 ICD (extension) code.
+    flag="fatal"."""
+    return _cii_scheme_rule(
+        cii_br_dex_6, inv, inv.ext_product_global_id_schemes,
+        _ISO_6523_ICD_EXT_CODES,
+        message="Any scheme identifier on an 'Item standard identifier' "
+                "(BT-157) must be coded with an ISO 6523 ICD code.",
+        element="ram:SpecifiedTradeProduct/ram:GlobalID/@schemeID")
+
+
+@_rule("BR-DEX-07", "fatal")
+def cii_br_dex_7(inv):
+    """BR-DEX-07 (CII): any scheme identifier on an Endpoint identifier
+    (BT-34/BT-49) — official context ram:URIUniversalCommunication/
+    ram:URIID[@schemeID] — must belong to the CEF EAS (extension) code list.
+    flag="fatal"."""
+    return _cii_scheme_rule(
+        cii_br_dex_7, inv, inv.ext_uri_id_schemes,
+        _CEF_EAS_EXT_CODES,
+        message="Any scheme identifier on an 'Electronic address' endpoint "
+                "(BT-34/BT-49) must belong to the CEF EAS code list.",
+        element="ram:URIUniversalCommunication/ram:URIID/@schemeID")
+
+
+@_rule("BR-DEX-08", "fatal")
+def cii_br_dex_8(inv):
+    """BR-DEX-08 (CII): any scheme identifier on a Deliver-to location
+    identifier (BT-71) — official context ram:ApplicableHeaderTradeDelivery/
+    ram:ShipToTradeParty/ram:GlobalID[@schemeID] — must be an ISO 6523 ICD
+    (extension) code. flag="fatal"."""
+    return _cii_scheme_rule(
+        cii_br_dex_8, inv, inv.ext_ship_to_global_id_schemes,
+        _ISO_6523_ICD_EXT_CODES,
+        message="Any scheme identifier on a 'Deliver to location identifier' "
+                "(BT-71) must be coded with an ISO 6523 ICD code.",
+        element="ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/"
+                "ram:GlobalID/@schemeID")
 
 
 # Admitted CII BR-DE set — document flow order. Every id here is proven at exact
@@ -2370,7 +2484,12 @@ CII_DE_RULES = [
     cii_br_de_cvd_01, cii_br_de_cvd_02, cii_br_de_cvd_03, cii_br_de_cvd_04,
     cii_br_de_cvd_05, cii_br_de_cvd_06_a, cii_br_de_cvd_06_b,
     cii_br_tmp_cvd_01,
+    # Extension layer, cii-extension-pattern document order (T-VHCIIDE.5
+    # admitted the last six): BR-DEX-15, then the scheme-id group 04..08,
+    # then the attachment MIME check 01.
     cii_br_dex_15,
+    cii_br_dex_4, cii_br_dex_5, cii_br_dex_6, cii_br_dex_7, cii_br_dex_8,
+    cii_br_dex_1,
 ]
 
 

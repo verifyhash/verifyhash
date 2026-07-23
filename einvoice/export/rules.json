@@ -6531,6 +6531,13 @@
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6546,7 +6553,7 @@
         "title": "Every 'Attached Document' binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set)."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Every 'Attached Document' binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set)."
     },
     {
@@ -6591,6 +6598,13 @@
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6606,11 +6620,18 @@
         "title": "Any scheme identifier on a Party identifier (cac:Party Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or 'SEPA' when the identifier belongs to the Seller or the Payee."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Any scheme identifier on a Party identifier (cac:Party Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or 'SEPA' when the identifier belongs to the Seller or the Payee."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6626,11 +6647,18 @@
         "title": "Any scheme identifier on a legal registration identifier (cac:PartyLegalEntity/cbc:CompanyID, BT-30/BT-47) must be an ISO 6523 ICD (extension) code."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Any scheme identifier on a legal registration identifier (cac:PartyLegalEntity/cbc:CompanyID, BT-30/BT-47) must be an ISO 6523 ICD (extension) code."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6646,11 +6674,18 @@
         "title": "Any scheme identifier on an item standard identifier (cac:StandardItemIdentification/cbc:ID, BT-157) must be an ISO 6523 ICD (extension) code."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Any scheme identifier on an item standard identifier (cac:StandardItemIdentification/cbc:ID, BT-157) must be an ISO 6523 ICD (extension) code."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6666,11 +6701,18 @@
         "title": "Any scheme identifier on an Endpoint identifier (cbc:Endpoint ID, BT-34/BT-49) must belong to the CEF EAS (extension) code list."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Any scheme identifier on an Endpoint identifier (cbc:Endpoint ID, BT-34/BT-49) must belong to the CEF EAS (extension) code list."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6686,7 +6728,7 @@
         "title": "Any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code."
     },
     {

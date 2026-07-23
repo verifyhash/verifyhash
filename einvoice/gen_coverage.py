@@ -162,13 +162,14 @@ _CII_CORE_GENERIC = ("core rule not included in the CII differential leg (LEG 3)
 # a future exclusion must document its reason HERE (the cii_de_oos build
 # below falls back to _CII_DE_GENERIC otherwise).
 CII_DE_REASON = {}
-_CII_DEX_GENERIC = ("part of the KoSIT XRechnung EXTENSION layer: this assert "
-                    "is either absent from the vendored CII artifact "
-                    "(BR-DEX-02/03/09..14 exist only in the UBL binding) or "
-                    "binds an extension surface (attachment MIME codes, "
-                    "ISO 6523 scheme identifiers — BR-DEX-01/04..08) the "
-                    "normalized CII model does not carry. Only the CII-only "
-                    "BR-DEX-15 is admitted and graded on the CII leg.")
+_CII_DEX_GENERIC = ("part of the KoSIT XRechnung EXTENSION layer: the "
+                    "vendored CII artifact carries NO assert with this id "
+                    "(BR-DEX-02/03/09..14 exist only in the UBL binding — "
+                    "verified by a live XML parse of the .sch), so a CII "
+                    "proof is impossible by construction. Since T-VHCIIDE.5 "
+                    "every extension assert the CII artifact DOES carry "
+                    "(BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded "
+                    "on the CII leg.")
 _CII_DE_GENERIC = ("national rule not evaluated on the CII differential leg (LEG 4).")
 
 
@@ -477,10 +478,12 @@ def kosit_documented_exclusion_ids(key):
     reasons stay documented once in ``exclusions.cii_de_out_of_scope``;
     EMPTY since T-VHCIIDE.3 admitted the last BR-DE holdout, the BR-DE-18
     Skonto grammar) plus the extension-layer ``BR-DEX-*`` ids implemented on
-    UBL but not on CII, whose non-evaluation the rule table already documents
-    per id (the ``_CII_DEX_GENERIC`` cii-provenance reason: extension
-    surfaces the normalized CII model does not carry; only the CII-only
-    BR-DEX-15 is admitted there).
+    UBL but not on CII (the ``_CII_DEX_GENERIC`` cii-provenance reason).
+    Since T-VHCIIDE.5 that residue is exactly BR-DEX-02/03/09..14 — ids the
+    CII artifact does not carry at all, so they never intersect the CII
+    fireable universe and the CII gap counts ZERO documented exclusions:
+    every fireable CII German-family assert is implemented (49/49, matching
+    55/55 on UBL).
 
     Both sets are derived from LIVE engine sources — never from the artifact
     being measured — so a KoSIT artifact bump that adds or renames an assert
@@ -569,8 +572,12 @@ def build_kosit_gap():
             "differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented — "
             "EMPTY since T-VHCIIDE.3 admitted the last BR-DE holdout, "
             "BR-DE-18) plus "
-            "the extension-layer BR-DEX ids the rule table documents as not "
-            "carried by the normalized CII model. Both exclusion sets are "
+            "the extension-layer BR-DEX ids implemented on UBL but absent "
+            "from the CII artifact (BR-DEX-02/03/09..14 — since T-VHCIIDE.5 "
+            "these never intersect the CII fireable universe, so the CII "
+            "artifact grades 49/49 with zero documented exclusions; the "
+            "carried extension asserts BR-DEX-15 and BR-DEX-01/04..08 are "
+            "all implemented). Both exclusion sets are "
             "derived from live engine sources, never from the artifact, so a "
             "KoSIT artifact bump that adds or renames an assert cannot "
             "self-classify: gen_coverage.py refuses to build and "

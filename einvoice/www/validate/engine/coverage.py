@@ -504,12 +504,20 @@ def render_markdown(matrix, cii_parity=None):
 
     w("### German CIUS rules fired on UBL, not evaluated on CII")
     w("")
-    w("These BR-DE / BR-DEX rules bind CII document parts (payment-means, IBAN,")
-    w("skonto grammar, attachments, the extension layer) the syntax-agnostic")
-    w("core model does not carry; excluded on the CII leg, still proven on UBL.")
-    w("")
-    for e in exc["cii_de_out_of_scope"]:
-        w("- **%s** — %s" % (e["id"], e["reason"]))
+    if exc["cii_de_out_of_scope"]:
+        w("These BR-DE / BR-DEX rules bind CII document parts (payment-means, IBAN,")
+        w("skonto grammar, attachments, the extension layer) the syntax-agnostic")
+        w("core model does not carry; excluded on the CII leg, still proven on UBL.")
+        w("")
+        for e in exc["cii_de_out_of_scope"]:
+            w("- **%s** — %s" % (e["id"], e["reason"]))
+    else:
+        w("**None.** Every German-family assert the vendored CII artifact")
+        w("carries — all 49 BR-DE-*/BR-DE-CVD-*/BR-TMP-*/BR-DEX-* fireable ids,")
+        w("including the extension scheme-id/attachment group BR-DEX-01/04..08")
+        w("(T-VHCIIDE.5) — is evaluated AND differentially graded on the CII")
+        w("leg. The class is kept so a future artifact bump that forces an")
+        w("exclusion must document it here.")
     w("")
 
     w("### Peppol scope")
@@ -734,7 +742,9 @@ def render_markdown(matrix, cii_parity=None):
             w("  the rule as cii-fireable.")
         w("- **%d binding-inapplicable** — officially UBL-only for the"
           % len(inapp))
-        w("  both-syntaxes core-model proof, in two evidence classes:")
+        w("  both-syntaxes core-model proof, in %s:"
+          % ("two evidence classes"
+             if (inapp_scoped and inapp_absent) else "one evidence class"))
         if inapp_scoped:
             w("  - **%d carried by a vendored CII artifact but out of"
               % len(inapp_scoped))

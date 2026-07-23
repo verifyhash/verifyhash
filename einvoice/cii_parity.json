@@ -53,18 +53,6 @@
       }
     },
     {
-      "id": "BR-DEX-01",
-      "family": "xrechnung-extension",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-extension-profile",
-        "context": "ram:AttachmentBinaryObject[$isExtension]",
-        "test": ".[@mimeCode = 'application/pdf' or               @mimeCode = 'image/png' or               @mimeCode = 'image/jpeg' or               @mimeCode = 'text/csv' or               @mimeCode = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or               @mimeCode = 'application/vnd.oasis.opendocument.spreadsheet' or               @mimeCode = 'application/xml']",
-        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
       "id": "BR-DEX-02",
       "family": "xrechnung-extension",
       "classification": "binding-inapplicable",
@@ -75,66 +63,6 @@
       "family": "xrechnung-extension",
       "classification": "binding-inapplicable",
       "cii_artifact": null
-    },
-    {
-      "id": "BR-DEX-04",
-      "family": "xrechnung-extension",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-extension-profile",
-        "context": "//ram:GlobalID[@schemeID and $isExtension][not(ancestor::ram:SpecifiedTradeProduct) and not(ancestor::ram:ShipToTradeParty)]",
-        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($ISO-6523-ICD-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
-        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
-      "id": "BR-DEX-05",
-      "family": "xrechnung-extension",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-extension-profile",
-        "context": "ram:ID[@schemeID and $isExtension][not(ancestor::ram:SpecifiedTaxRegistration)]",
-        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($ISO-6523-ICD-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
-        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
-      "id": "BR-DEX-06",
-      "family": "xrechnung-extension",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-extension-profile",
-        "context": "ram:SpecifiedTradeProduct/ram:GlobalID[@schemeID and $isExtension]",
-        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($ISO-6523-ICD-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
-        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
-      "id": "BR-DEX-07",
-      "family": "xrechnung-extension",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-extension-profile",
-        "context": "ram:URIUniversalCommunication/ram:URIID[@schemeID and $isExtension]",
-        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($CEF-EAS-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
-        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
-      "id": "BR-DEX-08",
-      "family": "xrechnung-extension",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-extension-profile",
-        "context": "ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:GlobalID[@schemeID and $isExtension]",
-        "test": "((not(contains(normalize-space(@schemeID), ' ')) and contains($ISO-6523-ICD-EXT-CODES, concat(' ', normalize-space(@schemeID), ' '))))",
-        "note": "carried by the vendored CII artifact but gated behind the KoSIT XRechnung EXTENSION profile ($isExtension: the extension conformance GuidelineSpecifiedDocumentContextParameter/ram:ID) — it fires only for extension-profile CII documents, a national extension surface with no both-syntaxes core-model counterpart (as on the UBL side); fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
     },
     {
       "id": "BR-DEX-09",

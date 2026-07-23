@@ -68,8 +68,9 @@ down as: **211 of the 223 official EN 16931 `BR-*` rule ids** in each CEN
 syntax universe (UBL and CII) — **every official rule that can actually fire,
 except eight deferred `BR-CL-*` code-list checks** — plus, with
 `--profile=xrechnung`, the German XRechnung CIUS + extension layer
-(55 `BR-DE-*`/`BR-DE-CVD-*`/`BR-TMP-*`/`BR-DEX-*` asserts on UBL, a 29-rule
-subset plus the CII-only `BR-TMP-3` and `BR-DEX-15` on CII) and the **21
+(all 55 `BR-DE-*`/`BR-DE-CVD-*`/`BR-TMP-*`/`BR-DEX-*` asserts the UBL
+artifact carries, and all 49 the CII artifact carries — including the
+CII-only `BR-TMP-3` and `BR-DEX-15`) and the **21
 `PEPPOL-EN16931-R*` rules KoSIT ships inside the official XRechnung
 Schematron artifact** — the KoSIT-vendored subset only, **not** Peppol BIS
 Billing 3.0 support (see §2). The machine-checked gap of official rules
@@ -117,24 +118,25 @@ it is differentially proven on the CII artifact too, and which rules have that
 proof is machine-tracked: `test_cii_parity.py` recomputes the worklist
 (`cii_parity.json`) from the live coverage matrix plus a real XML parse of the
 vendored CII Schematron, and fails on any drift, so the parity gap can neither
-be hand-edited nor go stale. As of 2026-07-23 the arc is terminal: **255 of
+be hand-edited nor go stale. As of 2026-07-23 the arc is terminal: **273 of
 the 289 asserted rules are differential-proven on both the UBL and CII
-bindings, 30 are officially UBL-only, and 4 are CII-only** (`BR-TMP-3` and
+bindings, 12 are officially UBL-only, and 4 are CII-only** (`BR-TMP-3` and
 `BR-DEX-15`, whose asserts exist only in the CII artifact, plus
 `BR-DEC-13`/`BR-DEC-15`, whose UBL asserts are artifact-vacuous — see the
-caveat in §1).
-**Zero rules remain on the cii-fireable worklist** — every one of the 30
+caveat in §1). The German KoSIT layer is complete on BOTH bindings: all
+**55** UBL and all **49** CII German-family asserts
+(`BR-DE-*`/`BR-DE-CVD-*`/`BR-TMP-*`/`BR-DEX-*`) the vendored artifacts carry
+are implemented and differentially graded — including the extension-profile
+scheme-id and attachment checks `BR-DEX-01/04/05/06/07/08` on CII.
+**Zero rules remain on the cii-fireable worklist** — every one of the 12
 UBL-only rules the vendored CII artifacts were measured against is resolved
 with evidence: **4 are cii-artifact-defective** (the CII artifact ships them
 as a `test="true()"` tautology or bound to a row whose `every $rate in ()` is
-vacuously true — they can never fire) and **26 are binding-inapplicable**
-(**18** carried by a CII artifact but binding a national-CIUS payment-means /
-payment-terms / direct-debit / attachment surface or the KoSIT XRechnung
-EXTENSION profile that the syntax-agnostic core model deliberately omits —
-each fully proven on the UBL leg and carrying verbatim `@context`/`@test`
-evidence — and **8** carried by no vendored CII artifact at all). Every one of
-those reasons is re-verified live against the vendored artifacts on each run;
-the committed worklist and `COVERAGE.md` are the authoritative state.
+vacuously true — they can never fire) and **8 are binding-inapplicable**
+(`BR-DEX-02/03/09/10/11/12/13/14`: carried by no vendored CII artifact at all, so a
+CII proof is impossible by construction). Every one of those reasons is
+re-verified live against the vendored artifacts on each run; the committed
+worklist and `COVERAGE.md` are the authoritative state.
 
 ---
 
@@ -224,8 +226,10 @@ Schematron (the numbering has official gaps: no BR-DE-12/13/29 exist there).
 Severities mirror the official flags — only **fatal** rules affect the exit
 code; warnings/information are reported in `--json`. The 15 `BR-DEX-*`
 extension-profile rules have since been implemented as well (14 UBL asserts
-plus the CII-only `BR-DEX-15` — sub invoice lines unsupported, warning,
-graded on the `xrechnung-cii` differential leg), and so has the
+plus the CII-only `BR-DEX-15` — sub invoice lines unsupported, warning; the
+seven extension asserts the CII artifact carries — `BR-DEX-15` plus the
+scheme-id/attachment group `BR-DEX-01/04/05/06/07/08` — are all graded on the
+`xrechnung-cii` differential leg), and so has the
 complete CVD/TMP family the same artifacts carry: the Clean-Vehicle-Directive
 profile (`BR-DE-CVD-01`–`05`, `BR-DE-CVD-06-a/-b`, `BR-TMP-CVD-01` — gated on
 the CVD `CustomizationID` `…xrechnung:cvd_0.9`, inert on plain invoices),

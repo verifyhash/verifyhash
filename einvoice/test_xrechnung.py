@@ -1628,5 +1628,257 @@ class CiiSkontoFixtures(unittest.TestCase):
             inv.payment_terms_descriptions[0].startswith("Bitte überweisen"))
 
 
+# --------------------------------------------------------------------------- #
+# CII extension scheme-id / attachment layer — BR-DEX-01/04..08 (T-VHCIIDE.5),#
+# transcribed from XRechnung-CII-validation.sch pattern                       #
+# "cii-extension-pattern", gated behind $isExtension. All six flags are       #
+# fatal in BOTH vendored bindings.                                            #
+# --------------------------------------------------------------------------- #
+_CII_DEX_IDS = ("BR-DEX-01", "BR-DEX-04", "BR-DEX-05", "BR-DEX-06",
+                "BR-DEX-07", "BR-DEX-08")
+
+
+def _cii_seller_party(root):
+    return root.find("rsm:SupplyChainTradeTransaction/"
+                     "ram:ApplicableHeaderTradeAgreement/"
+                     "ram:SellerTradeParty", NS_CII)
+
+
+def _cii_header_delivery(root):
+    return root.find("rsm:SupplyChainTradeTransaction/"
+                     "ram:ApplicableHeaderTradeDelivery", NS_CII)
+
+
+def _cii_first_product(root):
+    return root.find("rsm:SupplyChainTradeTransaction/"
+                     "ram:IncludedSupplyChainTradeLineItem/"
+                     "ram:SpecifiedTradeProduct", NS_CII)
+
+
+def _cii_add_scheme_el(parent, local, scheme, text="X"):
+    el = ET.SubElement(parent, q(NS_RAM, local))
+    el.set("schemeID", scheme)
+    el.text = text
+    return el
+
+
+class CiiExtensionDexShape(unittest.TestCase):
+    """Registry shape: BR-DEX-01/04..08 are in the CII layer with the
+    artifact's exact flags, graded on the CII differential leg, and the
+    exclusion class stays empty."""
+
+    def test_registered_with_official_fatal_flags(self):
+        cii_by_id = {fn.rule_id: fn.severity for fn in xr.CII_DE_RULES}
+        ubl_by_id = {fn.rule_id: fn.severity for fn in xr.ALL_RULES}
+        for rid in _CII_DEX_IDS:
+            self.assertEqual(cii_by_id.get(rid), "fatal", rid)
+            # Same id, same flag in the UBL layer (both artifacts flag fatal).
+            self.assertEqual(ubl_by_id.get(rid), "fatal", rid)
+
+    def test_flags_match_vendored_cii_artifact(self):
+        """Not hand-trusted: re-read the vendored CII .sch — each of the six
+        asserts exists exactly once, flagged fatal, and the scheme-id asserts
+        test the $isExtension-gated contains() membership."""
+        sch = os.path.join(HERE, "corpus", "xrechnung-schematron",
+                           "schematron", "cii",
+                           "XRechnung-CII-validation.sch")
+        ns = "{http://purl.oclc.org/dsdl/schematron}"
+        by_id = {}
+        for a in ET.parse(sch).getroot().iter(ns + "assert"):
+            if a.get("id") in _CII_DEX_IDS:
+                by_id.setdefault(a.get("id"), []).append(a)
+        self.assertEqual(sorted(by_id), sorted(_CII_DEX_IDS))
+        for rid, asserts in by_id.items():
+            self.assertEqual(len(asserts), 1, rid)
+            self.assertEqual(asserts[0].get("flag"), "fatal", rid)
+        for rid in ("BR-DEX-04", "BR-DEX-05", "BR-DEX-06", "BR-DEX-08"):
+            self.assertIn("$ISO-6523-ICD-EXT-CODES",
+                          by_id[rid][0].get("test"))
+        self.assertIn("$CEF-EAS-EXT-CODES", by_id["BR-DEX-07"][0].get("test"))
+        self.assertIn("@mimeCode = 'application/xml'",
+                      by_id["BR-DEX-01"][0].get("test"))
+
+    def test_graded_on_cii_leg_with_empty_exclusions(self):
+        import differential as _diff
+        for rid in _CII_DEX_IDS:
+            self.assertIn(rid, set(_diff.CII_XR_RULE_IDS), rid)
+        # T-VHCIIDE.5 closed the extension layer on CII: nothing excluded.
+        self.assertEqual(set(_diff.CII_XR_EXCLUDED_RULE_IDS), set())
+
+
+class CiiExtensionDexFixtures(unittest.TestCase):
+    """Positive (fires) + negative (holds) unit fixtures per rule on the CII
+    leg, mutated off the BR-DE-clean 01.02a base (its seller/buyer endpoint
+    URIIDs carry schemeID='EM' — a CEF EAS code — and its only schemeID'd
+    ram:ID sits under SpecifiedTaxRegistration, outside every context)."""
+
+    def _ext(self, root):
+        _cii_guideline_id(root).text = xr.XR_EXTENSION_ID
+        return root
+
+    def _add_attachment(self, root, mime):
+        agreement = root.find("rsm:SupplyChainTradeTransaction/"
+                              "ram:ApplicableHeaderTradeAgreement", NS_CII)
+        doc = ET.SubElement(agreement, q(NS_RAM,
+                                         "AdditionalReferencedDocument"))
+        ET.SubElement(doc, q(NS_RAM, "IssuerAssignedID")).text = "attach-1"
+        ET.SubElement(doc, q(NS_RAM, "TypeCode")).text = "916"
+        obj = ET.SubElement(doc, q(NS_RAM, "AttachmentBinaryObject"))
+        obj.text = "UkVDSA=="
+        obj.set("filename", "data.bin")
+        if mime is not None:
+            obj.set("mimeCode", mime)
+        return obj
+
+    def test_extension_base_is_clean(self):
+        self.assertEqual(cii_fired(self._ext(cii_base())), set())
+
+    # ---- BR-DEX-01 --------------------------------------------------------
+    def test_dex01_disallowed_mime_fires(self):
+        r = self._ext(cii_base())
+        self._add_attachment(r, "application/zip")
+        self.assertEqual(cii_fired(r), {"BR-DEX-01"})
+
+    def test_dex01_absent_mime_code_fires(self):
+        # The context has no @mimeCode predicate: an attribute-less binary
+        # object matches and fails the equality disjunction.
+        r = self._ext(cii_base())
+        self._add_attachment(r, None)
+        self.assertEqual(cii_fired(r), {"BR-DEX-01"})
+
+    def test_dex01_application_xml_holds_under_extension(self):
+        # The extension's extra allowance over the EN 8.2 list.
+        r = self._ext(cii_base())
+        self._add_attachment(r, "application/xml")
+        self.assertEqual(cii_fired(r), set())
+
+    def test_dex01_severity_is_fatal(self):
+        r = self._ext(cii_base())
+        self._add_attachment(r, "application/zip")
+        v = [v for v in xr.evaluate_cii(parser_cii.build_model(r))
+             if v.rule_id == "BR-DEX-01"]
+        self.assertEqual(len(v), 1)
+        self.assertEqual(v[0].severity, "fatal")
+
+    def test_dex01_inert_without_extension_gate(self):
+        r = cii_base()
+        self._add_attachment(r, "application/zip")
+        self.assertEqual(cii_fired(r), set())
+
+    # ---- BR-DEX-04 --------------------------------------------------------
+    def test_dex04_off_list_generic_global_id_fires(self):
+        r = self._ext(cii_base())
+        _cii_add_scheme_el(_cii_seller_party(r), "GlobalID", "ZZZ")
+        self.assertEqual(cii_fired(r), {"BR-DEX-04"})
+
+    def test_dex04_icd_and_diga_codes_hold(self):
+        r = self._ext(cii_base())
+        _cii_add_scheme_el(_cii_seller_party(r), "GlobalID", "0088")
+        _cii_add_scheme_el(_cii_seller_party(r), "GlobalID", "XR01")
+        self.assertEqual(cii_fired(r), set())
+
+    def test_dex04_no_sepa_allowance_on_cii(self):
+        # The UBL BR-DEX-04 admits 'SEPA' under Seller/Payee; the CII assert
+        # has no such branch — 'SEPA' fires.
+        r = self._ext(cii_base())
+        _cii_add_scheme_el(_cii_seller_party(r), "GlobalID", "SEPA")
+        self.assertEqual(cii_fired(r), {"BR-DEX-04"})
+
+    # ---- BR-DEX-05 --------------------------------------------------------
+    def test_dex05_off_list_id_fires(self):
+        r = self._ext(cii_base())
+        _cii_add_scheme_el(_cii_seller_party(r), "ID", "ZZZ")
+        self.assertEqual(cii_fired(r), {"BR-DEX-05"})
+
+    def test_dex05_tax_registration_id_is_outside_the_context(self):
+        # The base's only schemeID'd ram:ID (VA) sits under
+        # ram:SpecifiedTaxRegistration — excluded by the ancestor::
+        # predicate, so even a space-laden value cannot fire.
+        r = self._ext(cii_base())
+        tax_id = r.find("rsm:SupplyChainTradeTransaction/"
+                        "ram:ApplicableHeaderTradeAgreement/"
+                        "ram:SellerTradeParty/ram:SpecifiedTaxRegistration/"
+                        "ram:ID", NS_CII)
+        tax_id.text = "DE 123 456 789"
+        self.assertEqual(cii_fired(r), set())
+
+    # ---- BR-DEX-06 --------------------------------------------------------
+    def test_dex06_off_list_product_global_id_fires_06_not_04(self):
+        r = self._ext(cii_base())
+        _cii_add_scheme_el(_cii_first_product(r), "GlobalID", "ZZZ")
+        # ancestor::ram:SpecifiedTradeProduct keeps it out of BR-DEX-04.
+        self.assertEqual(cii_fired(r), {"BR-DEX-06"})
+
+    def test_dex06_icd_code_holds(self):
+        r = self._ext(cii_base())
+        _cii_add_scheme_el(_cii_first_product(r), "GlobalID", "0160")
+        self.assertEqual(cii_fired(r), set())
+
+    # ---- BR-DEX-07 --------------------------------------------------------
+    def test_dex07_off_list_endpoint_scheme_fires(self):
+        r = self._ext(cii_base())
+        _cii_seller_party(r).find("ram:URIUniversalCommunication/ram:URIID",
+                                  NS_CII).set("schemeID", "ZZ")
+        self.assertEqual(cii_fired(r), {"BR-DEX-07"})
+
+    def test_dex07_eas_code_holds(self):
+        # The base's EM endpoints are already the negative fixture; pin it.
+        r = self._ext(cii_base())
+        uriid = _cii_seller_party(r).find(
+            "ram:URIUniversalCommunication/ram:URIID", NS_CII)
+        self.assertEqual(uriid.get("schemeID"), "EM")
+        self.assertEqual(cii_fired(r), set())
+
+    # ---- BR-DEX-08 --------------------------------------------------------
+    def test_dex08_off_list_ship_to_global_id_fires_08_not_04(self):
+        r = self._ext(cii_base())
+        ship = ET.SubElement(_cii_header_delivery(r),
+                             q(NS_RAM, "ShipToTradeParty"))
+        _cii_add_scheme_el(ship, "GlobalID", "ZZZ")
+        # ancestor::ram:ShipToTradeParty keeps it out of BR-DEX-04; the
+        # header-delivery parent chain puts it in BR-DEX-08.
+        self.assertEqual(cii_fired(r), {"BR-DEX-08"})
+
+    def test_dex08_icd_code_holds(self):
+        r = self._ext(cii_base())
+        ship = ET.SubElement(_cii_header_delivery(r),
+                             q(NS_RAM, "ShipToTradeParty"))
+        _cii_add_scheme_el(ship, "GlobalID", "0088")
+        self.assertEqual(cii_fired(r), set())
+
+    def test_line_level_ship_to_matches_no_extension_rule(self):
+        # Official pattern hole, reproduced exactly: a line-level
+        # ShipToTradeParty GlobalID is excluded from BR-DEX-04 (ancestor
+        # axis) yet NOT selected by BR-DEX-08 (header-delivery path only).
+        r = self._ext(cii_base())
+        line = r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:IncludedSupplyChainTradeLineItem", NS_CII)
+        ltd = ET.SubElement(line, q(NS_RAM, "SpecifiedLineTradeDelivery"))
+        ship = ET.SubElement(ltd, q(NS_RAM, "ShipToTradeParty"))
+        _cii_add_scheme_el(ship, "GlobalID", "ZZZ")
+        self.assertEqual(cii_fired(r), set())
+
+    # ---- model surface sanity ---------------------------------------------
+    def test_model_carries_the_ext_surfaces(self):
+        r = cii_base()
+        _cii_add_scheme_el(_cii_seller_party(r), "GlobalID", "AAA")
+        _cii_add_scheme_el(_cii_seller_party(r), "ID", "BBB")
+        _cii_add_scheme_el(_cii_first_product(r), "GlobalID", "CCC")
+        ship = ET.SubElement(_cii_header_delivery(r),
+                             q(NS_RAM, "ShipToTradeParty"))
+        _cii_add_scheme_el(ship, "GlobalID", "DDD")
+        self._add_attachment(r, "application/pdf")
+        inv = parser_cii.build_model(r)
+        self.assertEqual(inv.ext_generic_global_id_schemes, ["AAA"])
+        self.assertIn("BBB", inv.ext_id_schemes)
+        self.assertEqual(inv.ext_product_global_id_schemes, ["CCC"])
+        self.assertEqual(inv.ext_ship_to_global_id_schemes, ["DDD"])
+        # base: seller + buyer endpoint EM
+        self.assertEqual(inv.ext_uri_id_schemes, ["EM", "EM"])
+        self.assertEqual(inv.ext_attachment_mime_codes, ["application/pdf"])
+        # The VA tax-registration ram:ID is excluded by the ancestor axis.
+        self.assertNotIn("VA", inv.ext_id_schemes)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -261,11 +261,15 @@ class CiiParityTest(unittest.TestCase):
         # 25-a/-b) off the UBL-only worklist to syntax='both', shrinking the
         # scoped-inapplicable bucket from 18 to 10; T-VHCIIDE.2 moved the
         # direct-debit pair BR-DE-30/-31 + BR-DE-22 the same way (10 -> 7);
-        # T-VHCIIDE.3 moved the Skonto grammar BR-DE-18 (7 -> 6) — only the
-        # six extension-profile BR-DEX ids remain scoped-inapplicable.
-        self.assertEqual((n_defect, n_inapp, n_scoped, n_absent), (4, 14, 6, 8),
+        # T-VHCIIDE.3 moved the Skonto grammar BR-DE-18 (7 -> 6); T-VHCIIDE.5
+        # moved the last six — the extension-profile scheme-id/attachment
+        # group BR-DEX-01/04..08 (6 -> 0) — the scoped-inapplicable bucket is
+        # EMPTY: every assert a vendored CII artifact carries is graded on
+        # the CII leg. Only the 8 UBL-only BR-DEX ids (no CII assert exists)
+        # remain inapplicable.
+        self.assertEqual((n_defect, n_inapp, n_scoped, n_absent), (4, 8, 0, 8),
                          "terminal cii_parity split drifted from the frozen "
-                         "(4 defective, 14 inapplicable = 6 scoped + 8 absent)")
+                         "(4 defective, 8 inapplicable = 0 scoped + 8 absent)")
         mat = self.matrix["rules"]
         n_both = sum(1 for r in mat if r["syntax"] == "both")
         n_ubl = sum(1 for r in mat if r["syntax"] == "ubl")
@@ -279,10 +283,13 @@ class CiiParityTest(unittest.TestCase):
         # (255+8=263 both, 30-8=22 UBL-only); T-VHCIIDE.2 flipped
         # BR-DE-22/-30/-31 (263+3=266 both, 22-3=19 UBL-only); T-VHCIIDE.3
         # flipped BR-DE-18 (266+1=267 both, 19-1=18 UBL-only) — the national
-        # BR-DE-* family is now complete on CII.
-        self.assertEqual((n_both, n_ubl, n_cii), (267, 18, 4),
+        # BR-DE-* family complete on CII; T-VHCIIDE.5 flipped the extension
+        # scheme-id/attachment group BR-DEX-01/04..08 (267+6=273 both,
+        # 18-6=12 UBL-only) — the German layer is complete on CII: 55/55 UBL
+        # + 49/49 CII KoSIT asserts graded.
+        self.assertEqual((n_both, n_ubl, n_cii), (273, 12, 4),
                          "terminal matrix syntax split drifted from the frozen "
-                         "(267 both, 18 UBL-only, 4 CII-only)")
+                         "(273 both, 12 UBL-only, 4 CII-only)")
 
     # ---- 5. measurement-only guard ----------------------------------------
     def test_families_match_matrix_and_no_tag_flipped(self):

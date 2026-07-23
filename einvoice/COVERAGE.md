@@ -26,7 +26,7 @@ The vendored German national rule set is **KoSIT XRechnung Schematron 2.5.0, whi
 ## Coverage at a glance
 
 - **289 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **267** proven on both UBL and CII, **18** UBL-only, **4** CII-only.
+- Syntax: **273** proven on both UBL and CII, **12** UBL-only, **4** CII-only.
 - Severity (blocking class): **276** fatal (block validity), **13** warning / information (reported, non-blocking).
 - **Official German messages: 50 rules** carry an official German assert message, surfaced by the CLI `--lang de` flag (report human-message only; `--json` and exit codes are unchanged). That text is lifted VERBATIM from the vendored KoSIT XRechnung Schematron (`de_source == "kosit"`), never machine-translated; every other rule is English-only by design (no official German assert text exists to quote). See the README `--lang de` section.
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
@@ -292,14 +292,14 @@ the non-blocking `warning` class for the severity column).
 | `BR-DE-30` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | DIRECT DEBIT (BG-19) requires the Bank assigned creditor identifier (BT-90: a SEPA-scheme PartyIdentification of the seller or payee). |
 | `BR-DE-31` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | DIRECT DEBIT (BG-19) requires the Debited account identifier (BT-91). |
 | `BR-DE-TMP-32` | UBL + CII | warning | information | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line. |
-| `BR-DEX-01` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Every 'Attached Document' binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set). |
+| `BR-DEX-01` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Every 'Attached Document' binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set). |
 | `BR-DEX-02` | UBL | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | The 'Invoice line net amount' (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs' net amounts. |
 | `BR-DEX-03` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | A SUB INVOICE LINE (BG-DEX-01) must carry exactly one SUB INVOICE LINE VAT INFORMATION (BG-DEX-06) — i.e. its Item must have exactly one cac:ClassifiedTaxCategory. Fires if any sub-line item has 0 or >1. |
-| `BR-DEX-04` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Any scheme identifier on a Party identifier (cac:Party Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or 'SEPA' when the identifier belongs to the Seller or the Payee. |
-| `BR-DEX-05` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Any scheme identifier on a legal registration identifier (cac:PartyLegalEntity/cbc:CompanyID, BT-30/BT-47) must be an ISO 6523 ICD (extension) code. |
-| `BR-DEX-06` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Any scheme identifier on an item standard identifier (cac:StandardItemIdentification/cbc:ID, BT-157) must be an ISO 6523 ICD (extension) code. |
-| `BR-DEX-07` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Any scheme identifier on an Endpoint identifier (cbc:Endpoint ID, BT-34/BT-49) must belong to the CEF EAS (extension) code list. |
-| `BR-DEX-08` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code. |
+| `BR-DEX-04` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Any scheme identifier on a Party identifier (cac:Party Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or 'SEPA' when the identifier belongs to the Seller or the Payee. |
+| `BR-DEX-05` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Any scheme identifier on a legal registration identifier (cac:PartyLegalEntity/cbc:CompanyID, BT-30/BT-47) must be an ISO 6523 ICD (extension) code. |
+| `BR-DEX-06` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Any scheme identifier on an item standard identifier (cac:StandardItemIdentification/cbc:ID, BT-157) must be an ISO 6523 ICD (extension) code. |
+| `BR-DEX-07` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Any scheme identifier on an Endpoint identifier (cbc:Endpoint ID, BT-34/BT-49) must belong to the CEF EAS (extension) code list. |
+| `BR-DEX-08` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code. |
 | `BR-DEX-09` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Amount due for payment (BT-115) = Invoice total amount with VAT (BT-112) - Paid amount (BT-113) + Rounding amount (BT-114) + Σ Third party payment amount (BT-DEX-002). |
 | `BR-DEX-10` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | 'Third party payment type' (BT-DEX-001, cbc:ID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). |
 | `BR-DEX-11` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | 'Third party payment amount' (BT-DEX-002, cbc:PaidAmount) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). |
@@ -443,10 +443,12 @@ graded set rather than approximated.
 
 ### German CIUS rules fired on UBL, not evaluated on CII
 
-These BR-DE / BR-DEX rules bind CII document parts (payment-means, IBAN,
-skonto grammar, attachments, the extension layer) the syntax-agnostic
-core model does not carry; excluded on the CII leg, still proven on UBL.
-
+**None.** Every German-family assert the vendored CII artifact
+carries — all 49 BR-DE-*/BR-DE-CVD-*/BR-TMP-*/BR-DEX-* fireable ids,
+including the extension scheme-id/attachment group BR-DEX-01/04..08
+(T-VHCIIDE.5) — is evaluated AND differentially graded on the CII
+leg. The class is kept so a future artifact bump that forces an
+exclusion must document it here.
 
 ### Peppol scope
 
@@ -576,9 +578,9 @@ worklist automatically.
 ## CII proof parity
 
 **TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **289**
-business rules the engine asserts, **267** are differentially proven
-on BOTH the UBL and CII bindings; **18** are officially UBL-only and
-**4** is CII-only. Every one of the **18** UBL-only rules the
+business rules the engine asserts, **273** are differentially proven
+on BOTH the UBL and CII bindings; **12** are officially UBL-only and
+**4** is CII-only. Every one of the **12** UBL-only rules the
 official CII artifacts were measured against is now resolved with
 evidence — **0 remain on the cii-fireable worklist** — so no CII
 assert the vendored artifacts carry is left unproven or silently
@@ -607,21 +609,8 @@ Measured split (committed as `cii_parity.json`, live-recomputed by
   and re-verified live by `test_cii_parity.py`; an artifact
   bump that fixes such an assert fails that gate and reopens
   the rule as cii-fireable.
-- **14 binding-inapplicable** — officially UBL-only for the
-  both-syntaxes core-model proof, in two evidence classes:
-  - **6 carried by a vendored CII artifact but out of
-    core-model scope** (`BR-DEX-01`, `BR-DEX-04`, `BR-DEX-05`, `BR-DEX-06`, `BR-DEX-07`, `BR-DEX-08`):
-    the assert exists and fires on a CII document, but its
-    `@context`/`@test` binds a CII-specific surface — the
-    national-CIUS payment-means / payment-terms / direct-debit /
-    attachment nodes or the KoSIT XRechnung EXTENSION profile
-    (`$isExtension`) — that the syntax-agnostic EN 16931 core
-    model deliberately does not carry. Each is FULLY
-    differentially proven on the UBL XRechnung leg and carries
-    verbatim `@context`/`@test` + a surface note in
-    `cii_parity.json`, re-verified live by `test_cii_parity.py`;
-    an artifact bump that re-binds it onto the core model fails
-    that gate and reopens the rule.
+- **8 binding-inapplicable** — officially UBL-only for the
+  both-syntaxes core-model proof, in one evidence class:
   - **8 not carried by any vendored CII artifact** (`BR-DEX-02`, `BR-DEX-03`, `BR-DEX-09`, `BR-DEX-10`, `BR-DEX-11`, `BR-DEX-12`, `BR-DEX-13`, `BR-DEX-14`):
     at the vendored artifact versions these rules are officially
     UBL-only — there is nothing to prove against on the CII leg.

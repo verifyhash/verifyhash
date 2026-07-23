@@ -323,6 +323,35 @@ class Invoice(parser.Invoice):
         #    — document-global, so two booleans carry it exactly. -----------------
         self.has_assoc_document_line_document = False  # any context node exists
         self.has_parent_line_id = False         # //ram:ParentLineID exists
+        # -- Extension scheme-id / attachment surfaces (BR-DEX-01/04..08,
+        #    T-VHCIIDE.5): the cii-extension-pattern contexts are document-wide
+        #    element patterns, so each list carries exactly the @schemeID (or
+        #    @mimeCode) values of the elements that rule's context selects, in
+        #    document order. Transcribed from XRechnung-CII-validation.sch:
+        #      BR-DEX-01: ram:AttachmentBinaryObject — EVERY binary object in
+        #        the document; @mimeCode raw value, None when absent (an
+        #        absent @mimeCode fails the equality disjunction and fires).
+        #      BR-DEX-04: //ram:GlobalID[@schemeID][not(ancestor::
+        #        ram:SpecifiedTradeProduct) and not(ancestor::
+        #        ram:ShipToTradeParty)] — the generic GlobalID contexts.
+        #      BR-DEX-05: ram:ID[@schemeID][not(ancestor::
+        #        ram:SpecifiedTaxRegistration)].
+        #      BR-DEX-06: ram:SpecifiedTradeProduct/ram:GlobalID[@schemeID]
+        #        (DIRECT child — a GlobalID deeper under the product, e.g. in
+        #        ram:IncludedReferencedProduct, matches NO extension rule:
+        #        excluded from 04 by ancestor, not selected by 06).
+        #      BR-DEX-07: ram:URIUniversalCommunication/ram:URIID[@schemeID].
+        #      BR-DEX-08: ram:ApplicableHeaderTradeDelivery/
+        #        ram:ShipToTradeParty/ram:GlobalID[@schemeID] — the HEADER
+        #        delivery path only; a line-level ShipToTradeParty GlobalID is
+        #        excluded from 04 (ancestor axis) yet not selected by 08,
+        #        exactly like the official pattern. ---------------------------
+        self.ext_attachment_mime_codes = []     # [mimeCode|None] per ABO
+        self.ext_generic_global_id_schemes = []  # [schemeID] (BR-DEX-04)
+        self.ext_id_schemes = []                # [schemeID] (BR-DEX-05)
+        self.ext_product_global_id_schemes = []  # [schemeID] (BR-DEX-06)
+        self.ext_uri_id_schemes = []            # [schemeID] (BR-DEX-07)
+        self.ext_ship_to_global_id_schemes = []  # [schemeID] (BR-DEX-08)
 
         # -- CVD / TMP surface (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2/3), also
         #    populated by _build_cii_br_de from the official CII rule paths. --
@@ -1120,6 +1149,57 @@ def _build_cii_br_de(inv, root):
         ]
         if group:
             inv.additional_ref_doc_attachments.append(group)
+    # BR-DEX-01/04..08 (cii-extension-pattern, T-VHCIIDE.5): the contexts are
+    # document-wide element patterns (see the surface comment in __init__), so
+    # they are collected before the transaction guard with a parent map for
+    # the ancestor:: predicates. Values are the RAW attribute strings; the
+    # rule bodies apply normalize-space exactly like the official @test.
+    _gid_tag = "{%s}GlobalID" % NS_RAM
+    _id_tag = "{%s}ID" % NS_RAM
+    _uriid_tag = "{%s}URIID" % NS_RAM
+    _product_tag = "{%s}SpecifiedTradeProduct" % NS_RAM
+    _ship_to_tag = "{%s}ShipToTradeParty" % NS_RAM
+    _hdr_delivery_tag = "{%s}ApplicableHeaderTradeDelivery" % NS_RAM
+    _tax_reg_tag = "{%s}SpecifiedTaxRegistration" % NS_RAM
+    _uri_comm_tag = "{%s}URIUniversalCommunication" % NS_RAM
+    pmap = {child: parent for parent in root.iter() for child in parent}
+
+    def _ancestor_tags(el):
+        out = []
+        p = pmap.get(el)
+        while p is not None:
+            out.append(p.tag)
+            p = pmap.get(p)
+        return out
+
+    for el in root.iter():
+        if el.tag == _abo_tag:
+            # BR-DEX-01 context: every ram:AttachmentBinaryObject (no
+            # @mimeCode predicate — an attribute-less object still matches
+            # the context and fails the test's equality disjunction).
+            inv.ext_attachment_mime_codes.append(el.get("mimeCode"))
+            continue
+        scheme = el.get("schemeID")
+        if scheme is None:
+            continue
+        if el.tag == _gid_tag:
+            parent = pmap.get(el)
+            ancestors = _ancestor_tags(el)
+            if parent is not None and parent.tag == _product_tag:
+                inv.ext_product_global_id_schemes.append(scheme)   # BR-DEX-06
+            elif (parent is not None and parent.tag == _ship_to_tag
+                    and pmap.get(parent) is not None
+                    and pmap[parent].tag == _hdr_delivery_tag):
+                inv.ext_ship_to_global_id_schemes.append(scheme)   # BR-DEX-08
+            if _product_tag not in ancestors and _ship_to_tag not in ancestors:
+                inv.ext_generic_global_id_schemes.append(scheme)   # BR-DEX-04
+        elif el.tag == _id_tag:
+            if _tax_reg_tag not in _ancestor_tags(el):
+                inv.ext_id_schemes.append(scheme)                  # BR-DEX-05
+        elif el.tag == _uriid_tag:
+            parent = pmap.get(el)
+            if parent is not None and parent.tag == _uri_comm_tag:
+                inv.ext_uri_id_schemes.append(scheme)              # BR-DEX-07
     txn = root.find("rsm:SupplyChainTradeTransaction", NS)
     if txn is None:
         return

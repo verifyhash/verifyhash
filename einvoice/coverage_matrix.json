@@ -5900,7 +5900,7 @@
       "id": "BR-DEX-01",
       "title": "Every 'Attached Document' binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set).",
       "family": "xrechnung-extension",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5916,8 +5916,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "differentially_proven": true
         }
       }
     },
@@ -5942,7 +5941,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "reason": "part of the KoSIT XRechnung EXTENSION layer: the vendored CII artifact carries NO assert with this id (BR-DEX-02/03/09..14 exist only in the UBL binding — verified by a live XML parse of the .sch), so a CII proof is impossible by construction. Since T-VHCIIDE.5 every extension assert the CII artifact DOES carry (BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded on the CII leg."
         }
       }
     },
@@ -5967,7 +5966,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "reason": "part of the KoSIT XRechnung EXTENSION layer: the vendored CII artifact carries NO assert with this id (BR-DEX-02/03/09..14 exist only in the UBL binding — verified by a live XML parse of the .sch), so a CII proof is impossible by construction. Since T-VHCIIDE.5 every extension assert the CII artifact DOES carry (BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded on the CII leg."
         }
       }
     },
@@ -5975,7 +5974,7 @@
       "id": "BR-DEX-04",
       "title": "Any scheme identifier on a Party identifier (cac:Party Identification/cbc:ID) must be an ISO 6523 ICD (extension) code — or 'SEPA' when the identifier belongs to the Seller or the Payee.",
       "family": "xrechnung-extension",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5991,8 +5990,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "differentially_proven": true
         }
       }
     },
@@ -6000,7 +5998,7 @@
       "id": "BR-DEX-05",
       "title": "Any scheme identifier on a legal registration identifier (cac:PartyLegalEntity/cbc:CompanyID, BT-30/BT-47) must be an ISO 6523 ICD (extension) code.",
       "family": "xrechnung-extension",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -6016,8 +6014,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "differentially_proven": true
         }
       }
     },
@@ -6025,7 +6022,7 @@
       "id": "BR-DEX-06",
       "title": "Any scheme identifier on an item standard identifier (cac:StandardItemIdentification/cbc:ID, BT-157) must be an ISO 6523 ICD (extension) code.",
       "family": "xrechnung-extension",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -6041,8 +6038,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "differentially_proven": true
         }
       }
     },
@@ -6050,7 +6046,7 @@
       "id": "BR-DEX-07",
       "title": "Any scheme identifier on an Endpoint identifier (cbc:Endpoint ID, BT-34/BT-49) must belong to the CEF EAS (extension) code list.",
       "family": "xrechnung-extension",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -6066,8 +6062,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "differentially_proven": true
         }
       }
     },
@@ -6075,7 +6070,7 @@
       "id": "BR-DEX-08",
       "title": "Any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code.",
       "family": "xrechnung-extension",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -6091,8 +6086,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "differentially_proven": true
         }
       }
     },
@@ -6117,7 +6111,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "reason": "part of the KoSIT XRechnung EXTENSION layer: the vendored CII artifact carries NO assert with this id (BR-DEX-02/03/09..14 exist only in the UBL binding — verified by a live XML parse of the .sch), so a CII proof is impossible by construction. Since T-VHCIIDE.5 every extension assert the CII artifact DOES carry (BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded on the CII leg."
         }
       }
     },
@@ -6142,7 +6136,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "reason": "part of the KoSIT XRechnung EXTENSION layer: the vendored CII artifact carries NO assert with this id (BR-DEX-02/03/09..14 exist only in the UBL binding — verified by a live XML parse of the .sch), so a CII proof is impossible by construction. Since T-VHCIIDE.5 every extension assert the CII artifact DOES carry (BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded on the CII leg."
         }
       }
     },
@@ -6167,7 +6161,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "reason": "part of the KoSIT XRechnung EXTENSION layer: the vendored CII artifact carries NO assert with this id (BR-DEX-02/03/09..14 exist only in the UBL binding — verified by a live XML parse of the .sch), so a CII proof is impossible by construction. Since T-VHCIIDE.5 every extension assert the CII artifact DOES carry (BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded on the CII leg."
         }
       }
     },
@@ -6192,7 +6186,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "reason": "part of the KoSIT XRechnung EXTENSION layer: the vendored CII artifact carries NO assert with this id (BR-DEX-02/03/09..14 exist only in the UBL binding — verified by a live XML parse of the .sch), so a CII proof is impossible by construction. Since T-VHCIIDE.5 every extension assert the CII artifact DOES carry (BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded on the CII leg."
         }
       }
     },
@@ -6217,7 +6211,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "reason": "part of the KoSIT XRechnung EXTENSION layer: the vendored CII artifact carries NO assert with this id (BR-DEX-02/03/09..14 exist only in the UBL binding — verified by a live XML parse of the .sch), so a CII proof is impossible by construction. Since T-VHCIIDE.5 every extension assert the CII artifact DOES carry (BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded on the CII leg."
         }
       }
     },
@@ -6242,7 +6236,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "part of the KoSIT XRechnung EXTENSION layer: this assert is either absent from the vendored CII artifact (BR-DEX-02/03/09..14 exist only in the UBL binding) or binds an extension surface (attachment MIME codes, ISO 6523 scheme identifiers — BR-DEX-01/04..08) the normalized CII model does not carry. Only the CII-only BR-DEX-15 is admitted and graded on the CII leg."
+          "reason": "part of the KoSIT XRechnung EXTENSION layer: the vendored CII artifact carries NO assert with this id (BR-DEX-02/03/09..14 exist only in the UBL binding — verified by a live XML parse of the .sch), so a CII proof is impossible by construction. Since T-VHCIIDE.5 every extension assert the CII artifact DOES carry (BR-DEX-15 and BR-DEX-01/04..08) is admitted and graded on the CII leg."
         }
       }
     },
@@ -7213,7 +7207,7 @@
       }
     },
     "kosit": {
-      "description": "CIUS-layer mirror of the CEN gap: for each vendored KoSIT XRechnung artifact (Schematron 2.5.0 / XRechnung 3.0.2), the fireable universe is every sch:assert id in the German national rule families (prefixes BR-DE-/BR-DEX-/BR-TMP-, covering BR-DE-*, BR-DEX-*, BR-DE-CVD-* and BR-TMP-*), extracted by a real XML parse of the .sch — never authored from prose — minus any assert the artifact itself ships as a literal test=\"true()\" tautology (currently none in either artifact). Every fireable id is either implemented in that binding's live registry (einvoice.rules_xrechnung ALL_RULES for UBL, CII_DE_RULES for CII) or covered by a documented deliberate exclusion: EMPTY for UBL (all asserts implemented); for CII the cii_de_out_of_scope class (reused from differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented — EMPTY since T-VHCIIDE.3 admitted the last BR-DE holdout, BR-DE-18) plus the extension-layer BR-DEX ids the rule table documents as not carried by the normalized CII model. Both exclusion sets are derived from live engine sources, never from the artifact, so a KoSIT artifact bump that adds or renames an assert cannot self-classify: gen_coverage.py refuses to build and test_coverage_gap.py fails loudly, naming the id, until it is implemented or deliberately documented — the guard shape that would have auto-caught BR-DEX-15.",
+      "description": "CIUS-layer mirror of the CEN gap: for each vendored KoSIT XRechnung artifact (Schematron 2.5.0 / XRechnung 3.0.2), the fireable universe is every sch:assert id in the German national rule families (prefixes BR-DE-/BR-DEX-/BR-TMP-, covering BR-DE-*, BR-DEX-*, BR-DE-CVD-* and BR-TMP-*), extracted by a real XML parse of the .sch — never authored from prose — minus any assert the artifact itself ships as a literal test=\"true()\" tautology (currently none in either artifact). Every fireable id is either implemented in that binding's live registry (einvoice.rules_xrechnung ALL_RULES for UBL, CII_DE_RULES for CII) or covered by a documented deliberate exclusion: EMPTY for UBL (all asserts implemented); for CII the cii_de_out_of_scope class (reused from differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented — EMPTY since T-VHCIIDE.3 admitted the last BR-DE holdout, BR-DE-18) plus the extension-layer BR-DEX ids implemented on UBL but absent from the CII artifact (BR-DEX-02/03/09..14 — since T-VHCIIDE.5 these never intersect the CII fireable universe, so the CII artifact grades 49/49 with zero documented exclusions; the carried extension asserts BR-DEX-15 and BR-DEX-01/04..08 are all implemented). Both exclusion sets are derived from live engine sources, never from the artifact, so a KoSIT artifact bump that adds or renames an assert cannot self-classify: gen_coverage.py refuses to build and test_coverage_gap.py fails loudly, naming the id, until it is implemented or deliberately documented — the guard shape that would have auto-caught BR-DEX-15.",
       "family_prefixes": [
         "BR-DE-",
         "BR-DEX-",
@@ -7296,8 +7290,8 @@
           "official_universe": 49,
           "tautologies_in_artifact": [],
           "fireable_universe": 49,
-          "implemented": 43,
-          "documented_exclusions": 6,
+          "implemented": 49,
+          "documented_exclusions": 0,
           "unclassified": 0,
           "implemented_ids": [
             "BR-DE-1",
@@ -7332,6 +7326,12 @@
             "BR-DE-30",
             "BR-DE-31",
             "BR-DE-TMP-32",
+            "BR-DEX-01",
+            "BR-DEX-04",
+            "BR-DEX-05",
+            "BR-DEX-06",
+            "BR-DEX-07",
+            "BR-DEX-08",
             "BR-DEX-15",
             "BR-DE-CVD-01",
             "BR-DE-CVD-02",
@@ -7344,14 +7344,7 @@
             "BR-TMP-3",
             "BR-TMP-CVD-01"
           ],
-          "documented_exclusion_ids": [
-            "BR-DEX-01",
-            "BR-DEX-04",
-            "BR-DEX-05",
-            "BR-DEX-06",
-            "BR-DEX-07",
-            "BR-DEX-08"
-          ]
+          "documented_exclusion_ids": []
         }
       }
     }

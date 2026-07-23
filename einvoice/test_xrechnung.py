@@ -1019,20 +1019,26 @@ class CiiPaymentMeansFixtures(unittest.TestCase):
         self.assertNotIn("BR-DE-19", self._fired(r))
 
     # ---- BR-DE-20 (warning): BT-91 IBAN mod-97 on code 59 ----------------
+    # (Since T-VHCIIDE.2 the document-level BR-DE-30/-31 are admitted on CII:
+    # a payer IBANID with no mandate/creditor-reference is a PARTIAL BG-19,
+    # so the official artifact — and now our layer — fires them alongside.)
     def test_de20_positive_bad_payer_iban(self):
         r = cii_base()
         self._set_code(r, "59")
         self._drop_payee(r)
         self._add_payer_account(r, "DE79000000001234567891")
-        v = self._only(r, "BR-DE-20")
-        self.assertEqual(v.severity, "warning")
+        vs = cii_violations(r)
+        by_id = {v.rule_id: v for v in vs}
+        self.assertEqual(set(by_id), {"BR-DE-20", "BR-DE-30", "BR-DE-31"})
+        self.assertEqual(by_id["BR-DE-20"].severity, "warning")
 
     def test_de20_negative_valid_payer_iban(self):
         r = cii_base()
         self._set_code(r, "59")
         self._drop_payee(r)
         self._add_payer_account(r, "DE79000000001234567890")
-        self.assertEqual(self._fired(r), set())
+        # BR-DE-20 holds; only the partial-BG-19 pair remains.
+        self.assertEqual(self._fired(r), {"BR-DE-30", "BR-DE-31"})
 
     # ---- BR-DE-23-a (fatal): 30/58 require BG-17 --------------------------
     def test_de23a_positive_no_payee_account(self):
@@ -1063,10 +1069,13 @@ class CiiPaymentMeansFixtures(unittest.TestCase):
 
     def test_de23b_positive_payer_ibanid_element_even_empty(self):
         # The BG-19 disjunct is ELEMENT PRESENCE of ram:PayerPartyDebtor
-        # FinancialAccount/ram:IBANID — an empty element still fires it.
+        # FinancialAccount/ram:IBANID — an empty element still fires it
+        # (and, as a partial BG-19 with neither BT-89 nor BT-90, the
+        # document-level BR-DE-30/-31 fire too — T-VHCIIDE.2).
         r = cii_base()
         self._add_payer_account(r, iban=None)
-        self.assertEqual(self._fired(r), {"BR-DE-23-b"})
+        self.assertEqual(self._fired(r),
+                         {"BR-DE-23-b", "BR-DE-30", "BR-DE-31"})
 
     def test_de23b_positive_document_level_mandate(self):
         # DirectDebitMandateID lives at DOCUMENT level (SpecifiedTradePayment
@@ -1075,7 +1084,10 @@ class CiiPaymentMeansFixtures(unittest.TestCase):
         terms = _cii_settlement_el(r).find("ram:SpecifiedTradePaymentTerms",
                                            NS_CII)
         ET.SubElement(terms, q(NS_RAM, "DirectDebitMandateID")).text = "M-1"
-        self.assertEqual(self._fired(r), {"BR-DE-23-b"})
+        # A mandate id alone is a partial BG-19: the document-level
+        # BR-DE-30/-31 fire alongside (T-VHCIIDE.2), like the artifact.
+        self.assertEqual(self._fired(r),
+                         {"BR-DE-23-b", "BR-DE-30", "BR-DE-31"})
 
     def test_de23b_negative_base(self):
         self.assertNotIn("BR-DE-23-b", self._fired(cii_base()))
@@ -1135,16 +1147,24 @@ class CiiPaymentMeansFixtures(unittest.TestCase):
         cr = ET.Element(q(NS_RAM, "CreditorReferenceID"))
         cr.text = "DE98ZZZ09999999999"
         _cii_settlement_el(r).insert(0, cr)
-        # BR-DE-25-a holds; BR-DE-20 still fires (there is no IBAN at all).
-        self.assertEqual(self._fired(r), {"BR-DE-20"})
+        # BR-DE-25-a holds; BR-DE-20 still fires (there is no IBAN at all),
+        # and a creditor reference alone is a partial BG-19 -> the
+        # document-level BR-DE-30/-31 fire too (T-VHCIIDE.2).
+        self.assertEqual(self._fired(r),
+                         {"BR-DE-20", "BR-DE-30", "BR-DE-31"})
 
     # ---- BR-DE-25-b (fatal): 59 forbids BG-17 / BG-18 ---------------------
+    # (A payer IBANID with no mandate/creditor-reference is a partial BG-19,
+    # so the document-level BR-DE-30/-31 — admitted with T-VHCIIDE.2 — fire
+    # alongside in each of these fixtures, exactly like the artifact.)
     def test_de25b_positive_payee_account_kept(self):
         r = cii_base()
         self._set_code(r, "59")
         self._add_payer_account(r, "DE79000000001234567890")
-        v = self._only(r, "BR-DE-25-b")
-        self.assertEqual(v.severity, "fatal")
+        vs = cii_violations(r)
+        by_id = {v.rule_id: v for v in vs}
+        self.assertEqual(set(by_id), {"BR-DE-25-b", "BR-DE-30", "BR-DE-31"})
+        self.assertEqual(by_id["BR-DE-25-b"].severity, "fatal")
 
     def test_de25b_positive_financial_institution_conjuncts(self):
         # The 25-b conjuncts the other group asserts do NOT test: payee and
@@ -1156,14 +1176,16 @@ class CiiPaymentMeansFixtures(unittest.TestCase):
             self._drop_payee(r)
             self._add_payer_account(r, "DE79000000001234567890")
             ET.SubElement(_cii_pm(r), q(NS_RAM, local))
-            self.assertEqual(self._fired(r), {"BR-DE-25-b"}, local)
+            self.assertEqual(self._fired(r),
+                             {"BR-DE-25-b", "BR-DE-30", "BR-DE-31"}, local)
 
     def test_de25b_negative_clean_direct_debit(self):
         r = cii_base()
         self._set_code(r, "59")
         self._drop_payee(r)
         self._add_payer_account(r, "DE79000000001234567890")
-        self.assertEqual(self._fired(r), set())
+        # BR-DE-25-b holds; only the partial-BG-19 pair remains.
+        self.assertEqual(self._fired(r), {"BR-DE-30", "BR-DE-31"})
 
     # ---- model surface sanity ---------------------------------------------
     def test_model_carries_the_payment_means_surface(self):
@@ -1177,6 +1199,301 @@ class CiiPaymentMeansFixtures(unittest.TestCase):
         self.assertFalse(pm.has_card)
         self.assertFalse(inv.has_direct_debit_mandate_id)
         self.assertFalse(inv.has_creditor_reference_id)
+
+
+# --------------------------------------------------------------------------- #
+# CII BR-DE-30/-31 (direct-debit surface) + BR-DE-22 (unique attachment       #
+# filenames) — T-VHCIIDE.2. Transcribed from the vendored XRechnung-CII       #
+# Schematron (pattern cii-pattern, context /rsm:CrossIndustryInvoice):        #
+#   let $BT-89-path = …/ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID
+#   let $BT-90-path = …/ram:ApplicableHeaderTradeSettlement/ram:CreditorReferenceID
+#   let $BT-91-path = …/ram:SpecifiedTradeSettlementPaymentMeans/             #
+#                     ram:PayerPartyDebtorFinancialAccount/ram:IBANID         #
+#   BR-DE-30: (($BT-89-path or $BT-91-path) and $BT-90-path) or              #
+#             $BG-19-not-existing                              flag="fatal"   #
+#   BR-DE-31: (($BT-89-path or $BT-90-path) and $BT-91-path) or              #
+#             $BG-19-not-existing                              flag="fatal"   #
+#   BR-DE-22: count(//ram:AdditionalReferencedDocument) =                     #
+#             count(//ram:AdditionalReferencedDocument[not(                   #
+#               ./ram:AttachmentBinaryObject/@filename =                      #
+#               preceding-sibling::ram:AdditionalReferencedDocument/          #
+#               ram:AttachmentBinaryObject/@filename)])        flag="fatal"   #
+# NOTE: the CII BR-DE-22 assert keys on ram:AttachmentBinaryObject/@filename  #
+# (its human MESSAGE says 'embeddedDocumentBinaryObject'; the TEST does not). #
+# --------------------------------------------------------------------------- #
+class CiiDirectDebitAttachmentShape(unittest.TestCase):
+    """Registry shape: BR-DE-22/-30/-31 are in the CII layer with the
+    artifact's exact flags, and are no longer differentially excluded."""
+
+    ARTIFACT_FLAGS = {
+        "BR-DE-22": "fatal", "BR-DE-30": "fatal", "BR-DE-31": "fatal",
+    }
+
+    def test_registered_with_official_flags(self):
+        cii_by_id = {fn.rule_id: fn.severity for fn in xr.CII_DE_RULES}
+        ubl_by_id = {fn.rule_id: fn.severity for fn in xr.ALL_RULES}
+        for rid, flag in self.ARTIFACT_FLAGS.items():
+            self.assertEqual(cii_by_id.get(rid), flag,
+                             "%s: CII severity != artifact flag" % rid)
+            # Same id, same flag in the UBL layer (the artifact uses the
+            # same flag for both bindings).
+            self.assertEqual(ubl_by_id.get(rid), flag,
+                             "%s: UBL/CII flag mismatch" % rid)
+
+    def test_flags_match_vendored_cii_artifact(self):
+        """The severities above are not hand-trusted: re-read the vendored
+        .sch and compare the @flag of each assert id."""
+        sch = os.path.join(HERE, "corpus", "xrechnung-schematron",
+                           "schematron", "cii",
+                           "XRechnung-CII-validation.sch")
+        ns = "{http://purl.oclc.org/dsdl/schematron}"
+        flags = {}
+        for a in ET.parse(sch).getroot().iter(ns + "assert"):
+            if a.get("id") in self.ARTIFACT_FLAGS:
+                flags[a.get("id")] = a.get("flag")
+        self.assertEqual(flags, self.ARTIFACT_FLAGS)
+
+    def test_cii_assert_keys_on_attachment_binary_object(self):
+        """The vendored CII BR-DE-22 @test keys on ram:AttachmentBinaryObject/
+        @filename (NOT 'EmbeddedDocumentBinaryObject' as its message says) —
+        pin that measurement so an artifact bump that re-binds it is caught."""
+        sch = os.path.join(HERE, "corpus", "xrechnung-schematron",
+                           "schematron", "cii",
+                           "XRechnung-CII-validation.sch")
+        ns = "{http://purl.oclc.org/dsdl/schematron}"
+        tests = [a.get("test")
+                 for a in ET.parse(sch).getroot().iter(ns + "assert")
+                 if a.get("id") == "BR-DE-22"]
+        self.assertEqual(len(tests), 1)
+        self.assertIn("ram:AttachmentBinaryObject/@filename", tests[0])
+        self.assertIn("preceding-sibling::ram:AdditionalReferencedDocument",
+                      tests[0])
+        self.assertNotIn("EmbeddedDocumentBinaryObject", tests[0])
+
+    def test_no_longer_excluded_from_cii_grading(self):
+        import differential as _diff
+        for rid in self.ARTIFACT_FLAGS:
+            self.assertIn(rid, set(_diff.CII_XR_RULE_IDS), rid)
+            self.assertNotIn(rid, set(_diff.CII_XR_EXCLUDED_RULE_IDS), rid)
+        # BR-DE-18 stays deliberately excluded (T-VHCIIDE.3).
+        self.assertEqual(set(_diff.CII_XR_EXCLUDED_RULE_IDS), {"BR-DE-18"})
+
+
+class CiiDirectDebitFixtures(unittest.TestCase):
+    """BR-DE-30/-31 positive + negative unit fixtures, mutated off the
+    BR-DE-clean 01.02a base (one means: 58 + valid payee IBAN, no
+    direct-debit surface at all)."""
+
+    def _fired(self, root):
+        return {v.rule_id for v in cii_violations(root)}
+
+    def _set_code(self, root, code):
+        _cii_pm(root).find("ram:TypeCode", NS_CII).text = code
+
+    def _drop_payee(self, root):
+        pm = _cii_pm(root)
+        pm.remove(pm.find("ram:PayeePartyCreditorFinancialAccount", NS_CII))
+
+    def _add_payer_account(self, root, iban=None):
+        acc = ET.SubElement(_cii_pm(root),
+                            q(NS_RAM, "PayerPartyDebtorFinancialAccount"))
+        el = ET.SubElement(acc, q(NS_RAM, "IBANID"))
+        if iban is not None:
+            el.text = iban
+
+    def _add_mandate(self, root):
+        # BT-89: document-level SpecifiedTradePaymentTerms/DirectDebitMandateID.
+        terms = _cii_settlement_el(root).find("ram:SpecifiedTradePaymentTerms",
+                                              NS_CII)
+        ET.SubElement(terms, q(NS_RAM, "DirectDebitMandateID")).text = "M-1"
+
+    def _add_creditor_reference(self, root):
+        # BT-90: document-level settlement ram:CreditorReferenceID.
+        cr = ET.Element(q(NS_RAM, "CreditorReferenceID"))
+        cr.text = "DE98ZZZ09999999999"
+        _cii_settlement_el(root).insert(0, cr)
+
+    def _direct_debit(self, root):
+        # Turn the base's single means into a clean SEPA direct debit shell:
+        # code 59, no payee account (so BR-DE-25-b holds).
+        self._set_code(root, "59")
+        self._drop_payee(root)
+
+    # ---- BR-DE-30 (fatal): BG-19 present requires BT-90 -------------------
+    def test_de30_positive_mandate_and_iban_without_bt90(self):
+        r = cii_base()
+        self._direct_debit(r)
+        self._add_mandate(r)
+        self._add_payer_account(r, "DE79000000001234567890")
+        vs = cii_violations(r)
+        self.assertEqual({v.rule_id for v in vs}, {"BR-DE-30"})
+        self.assertEqual(vs[0].severity, "fatal")
+
+    def test_de30_positive_bt91_alone(self):
+        # A debited IBAN alone makes BG-19 exist -> BT-90 missing fires 30;
+        # ((BT-89 or BT-90) and BT-91) is false too, so 31 fires as well.
+        r = cii_base()
+        self._direct_debit(r)
+        self._add_payer_account(r, "DE79000000001234567890")
+        self.assertEqual(self._fired(r), {"BR-DE-30", "BR-DE-31"})
+
+    # ---- BR-DE-31 (fatal): BG-19 present requires BT-91 -------------------
+    def test_de31_positive_mandate_and_bt90_without_iban(self):
+        r = cii_base()
+        self._direct_debit(r)
+        self._add_mandate(r)
+        self._add_creditor_reference(r)
+        vs = cii_violations(r)
+        by_id = {v.rule_id: v for v in vs}
+        self.assertIn("BR-DE-31", by_id)
+        self.assertEqual(by_id["BR-DE-31"].severity, "fatal")
+        # The absent payer IBAN also fails the BR-DE-20 IBAN shape on code
+        # 59 ('' has no shape) — exactly like the official artifact.
+        self.assertEqual(set(by_id), {"BR-DE-31", "BR-DE-20"})
+
+    def test_de30_and_de31_bt90_alone(self):
+        # A creditor reference alone: BG-19 exists, both BT-90-conjunct
+        # ((BT-89 or BT-91)) and BT-91 are missing -> 30 AND 31 fire
+        # (+ BR-DE-20: no debited IBAN on code 59).
+        r = cii_base()
+        self._direct_debit(r)
+        self._add_creditor_reference(r)
+        self.assertEqual(self._fired(r),
+                         {"BR-DE-30", "BR-DE-31", "BR-DE-20"})
+
+    # ---- negatives ---------------------------------------------------------
+    def test_negative_complete_bg19_fires_neither(self):
+        r = cii_base()
+        self._direct_debit(r)
+        self._add_mandate(r)
+        self._add_creditor_reference(r)
+        self._add_payer_account(r, "DE79000000001234567890")
+        self.assertEqual(self._fired(r), set())
+
+    def test_negative_no_direct_debit_surface_fires_neither(self):
+        # $BG-19-not-existing: none of BT-89/90/91 present -> both hold
+        # (the clean base, in any payment-means code).
+        self.assertEqual(self._fired(cii_base()), set())
+        r = cii_base()
+        self._set_code(r, "30")
+        fired = self._fired(r)
+        self.assertNotIn("BR-DE-30", fired)
+        self.assertNotIn("BR-DE-31", fired)
+
+    def test_negative_empty_iban_element_still_counts_as_bt91(self):
+        # The lets are node-set EXISTENCE tests: an empty ram:IBANID element
+        # still makes $BT-91-path true (so with BT-90 present, 31 holds and
+        # only the BT-90-missing side matters).
+        r = cii_base()
+        self._direct_debit(r)
+        self._add_mandate(r)
+        self._add_payer_account(r, iban=None)
+        # BT-90 missing -> 30 fires; 31 holds (BT-91 node exists);
+        # BR-DE-20 fires (empty IBAN fails the shape on code 59).
+        self.assertEqual(self._fired(r), {"BR-DE-30", "BR-DE-20"})
+
+    # ---- model surface sanity ---------------------------------------------
+    def test_model_carries_the_direct_debit_surface(self):
+        r = cii_base()
+        self._direct_debit(r)
+        self._add_mandate(r)
+        self._add_creditor_reference(r)
+        self._add_payer_account(r, "DE79000000001234567890")
+        inv = parser_cii.build_model(r)
+        self.assertTrue(inv.has_direct_debit_mandate_id)
+        self.assertTrue(inv.has_creditor_reference_id)
+        self.assertEqual([pm.has_payer_iban
+                          for pm in inv.settlement_payment_means], [True])
+
+
+class CiiAttachmentFilenameFixtures(unittest.TestCase):
+    """BR-DE-22 positive + negative unit fixtures. Attachments are
+    header-agreement ram:AdditionalReferencedDocument elements (TypeCode 916,
+    no ram:URIID so BR-TMP-2 holds on CII)."""
+
+    def _fired(self, root):
+        return {v.rule_id for v in cii_violations(root)}
+
+    def _agreement(self, root):
+        return root.find("rsm:SupplyChainTradeTransaction/"
+                         "ram:ApplicableHeaderTradeAgreement", NS_CII)
+
+    def _add_attachment_doc(self, parent, filename, n_objects=1):
+        """One ram:AdditionalReferencedDocument with ``n_objects``
+        ram:AttachmentBinaryObject children; filename=None omits the
+        attribute entirely."""
+        doc = ET.SubElement(parent, q(NS_RAM, "AdditionalReferencedDocument"))
+        ET.SubElement(doc, q(NS_RAM, "IssuerAssignedID")).text = "att"
+        ET.SubElement(doc, q(NS_RAM, "TypeCode")).text = "916"
+        for _ in range(n_objects):
+            obj = ET.SubElement(doc, q(NS_RAM, "AttachmentBinaryObject"))
+            obj.text = "QUJD"
+            obj.set("mimeCode", "application/pdf")
+            if filename is not None:
+                obj.set("filename", filename)
+        return doc
+
+    def test_positive_duplicate_filenames_fire(self):
+        r = cii_base()
+        self._add_attachment_doc(self._agreement(r), "duplicate.pdf")
+        self._add_attachment_doc(self._agreement(r), "duplicate.pdf")
+        vs = cii_violations(r)
+        self.assertEqual({v.rule_id for v in vs}, {"BR-DE-22"})
+        self.assertEqual(vs[0].severity, "fatal")
+
+    def test_negative_unique_filenames_hold(self):
+        r = cii_base()
+        self._add_attachment_doc(self._agreement(r), "a.pdf")
+        self._add_attachment_doc(self._agreement(r), "b.pdf")
+        self.assertEqual(self._fired(r), set())
+
+    def test_negative_filename_less_objects_hold(self):
+        # No @filename attribute -> no @filename node in the official test's
+        # node-set comparison -> can never compare equal (like the UBL twin).
+        r = cii_base()
+        self._add_attachment_doc(self._agreement(r), None)
+        self._add_attachment_doc(self._agreement(r), None)
+        self.assertEqual(self._fired(r), set())
+
+    def test_negative_duplicate_within_one_document_holds(self):
+        # Two equal @filename on the SAME AdditionalReferencedDocument: the
+        # preceding-sibling axis never looks at self, so the official assert
+        # holds — transcribed exactly.
+        r = cii_base()
+        self._add_attachment_doc(self._agreement(r), "same.pdf", n_objects=2)
+        self.assertEqual(self._fired(r), set())
+
+    def test_negative_duplicates_under_different_parents_hold(self):
+        # The preceding-sibling axis scopes the comparison to ONE sibling
+        # group: an equal filename on a LINE-level AdditionalReferencedDocument
+        # (child of ram:SpecifiedLineTradeAgreement) never compares against a
+        # header-agreement sibling group.
+        r = cii_base()
+        self._add_attachment_doc(self._agreement(r), "same.pdf")
+        line_agreement = r.find("rsm:SupplyChainTradeTransaction/"
+                                "ram:IncludedSupplyChainTradeLineItem/"
+                                "ram:SpecifiedLineTradeAgreement", NS_CII)
+        self.assertIsNotNone(line_agreement)
+        self._add_attachment_doc(line_agreement, "same.pdf")
+        self.assertEqual(self._fired(r), set())
+
+    def test_positive_duplicate_across_documents_of_one_group(self):
+        # Three siblings a/dup/dup: only the third has a preceding-sibling
+        # match, which is enough — the count()s differ and the assert fires.
+        r = cii_base()
+        self._add_attachment_doc(self._agreement(r), "a.pdf")
+        self._add_attachment_doc(self._agreement(r), "dup.pdf")
+        self._add_attachment_doc(self._agreement(r), "dup.pdf")
+        self.assertEqual(self._fired(r), {"BR-DE-22"})
+
+    # ---- model surface sanity ---------------------------------------------
+    def test_model_carries_the_attachment_surface(self):
+        r = cii_base()
+        self._add_attachment_doc(self._agreement(r), "a.pdf")
+        self._add_attachment_doc(self._agreement(r), None)
+        inv = parser_cii.build_model(r)
+        self.assertEqual(inv.additional_ref_doc_attachments,
+                         [[["a.pdf"], [None]]])
 
 
 if __name__ == "__main__":

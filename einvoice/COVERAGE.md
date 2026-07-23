@@ -26,7 +26,7 @@ The vendored German national rule set is **KoSIT XRechnung Schematron 2.5.0, whi
 ## Coverage at a glance
 
 - **289 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **263** proven on both UBL and CII, **22** UBL-only, **4** CII-only.
+- Syntax: **266** proven on both UBL and CII, **19** UBL-only, **4** CII-only.
 - Severity (blocking class): **276** fatal (block validity), **13** warning / information (reported, non-blocking).
 - **Official German messages: 50 rules** carry an official German assert message, surfaced by the CLI `--lang de` flag (report human-message only; `--json` and exit codes are unchanged). That text is lifted VERBATIM from the vendored KoSIT XRechnung Schematron (`de_source == "kosit"`), never machine-translated; every other rule is English-only by design (no official German assert text exists to quote). See the README `--lang de` section.
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
@@ -279,7 +279,7 @@ the non-blocking `warning` class for the severity column).
 | `BR-DE-19` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription). |
 | `BR-DE-20` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN. |
 | `BR-DE-21` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) — untrimmed string equality. |
-| `BR-DE-22` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | The filename attribute of all EmbeddedDocumentBinaryObject elements must be unique (across cac:AdditionalDocumentReference). |
+| `BR-DE-22` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | The filename attribute of all EmbeddedDocumentBinaryObject elements must be unique (across cac:AdditionalDocumentReference). |
 | `BR-DE-23-a` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Codes 30/58 (credit transfer) require CREDIT TRANSFER (BG-17). |
 | `BR-DE-23-b` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Codes 30/58 forbid PAYMENT CARD (BG-18) and DIRECT DEBIT (BG-19). |
 | `BR-DE-24-a` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Codes 48/54/55 (card) require PAYMENT CARD INFORMATION (BG-18). |
@@ -289,8 +289,8 @@ the non-blocking `warning` class for the severity column).
 | `BR-DE-26` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Type code 384 (Corrected invoice) should carry a PRECEDING INVOICE REFERENCE (BG-3). |
 | `BR-DE-27` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-42 should contain at least three digits. Evaluated per seller Contact; an ABSENT telephone normalizes to '' and fires too. |
 | `BR-DE-28` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-43 should look like an email address (exactly one '@', flanked per the official regex). |
-| `BR-DE-30` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | DIRECT DEBIT (BG-19) requires the Bank assigned creditor identifier (BT-90: a SEPA-scheme PartyIdentification of the seller or payee). |
-| `BR-DE-31` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | DIRECT DEBIT (BG-19) requires the Debited account identifier (BT-91). |
+| `BR-DE-30` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | DIRECT DEBIT (BG-19) requires the Bank assigned creditor identifier (BT-90: a SEPA-scheme PartyIdentification of the seller or payee). |
+| `BR-DE-31` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | DIRECT DEBIT (BG-19) requires the Debited account identifier (BT-91). |
 | `BR-DE-TMP-32` | UBL + CII | warning | information | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line. |
 | `BR-DEX-01` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Every 'Attached Document' binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set). |
 | `BR-DEX-02` | UBL | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | The 'Invoice line net amount' (BT-131) of an INVOICE LINE (BG-25) or a SUB INVOICE LINE (BG-DEX-01) should equal the sum of the directly nested SUB INVOICE LINEs' net amounts. |
@@ -447,10 +447,7 @@ These BR-DE / BR-DEX rules bind CII document parts (payment-means, IBAN,
 skonto grammar, attachments, the extension layer) the syntax-agnostic
 core model does not carry; excluded on the CII leg, still proven on UBL.
 
-- **BR-DE-18** — Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits.
-- **BR-DE-22** — unique attachment filename check over every EmbeddedDocumentBinaryObject/@filename — not carried.
-- **BR-DE-30** — BT-90/BT-91 with DIRECT DEBIT (BG-19), reconstructed from mandate / creditor-reference / IBAN presence — transcription staged as T-VHCIIDE.3 (deferred, not overlooked).
-- **BR-DE-31** — BT-90/BT-91 with DIRECT DEBIT (BG-19) — deferred with BR-DE-30 (see T-VHCIIDE.3).
+- **BR-DE-18** — Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits; transcription staged as T-VHCIIDE.3 (deferred, not overlooked).
 
 ### Peppol scope
 
@@ -580,9 +577,9 @@ worklist automatically.
 ## CII proof parity
 
 **TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **289**
-business rules the engine asserts, **263** are differentially proven
-on BOTH the UBL and CII bindings; **22** are officially UBL-only and
-**4** is CII-only. Every one of the **22** UBL-only rules the
+business rules the engine asserts, **266** are differentially proven
+on BOTH the UBL and CII bindings; **19** are officially UBL-only and
+**4** is CII-only. Every one of the **19** UBL-only rules the
 official CII artifacts were measured against is now resolved with
 evidence — **0 remain on the cii-fireable worklist** — so no CII
 assert the vendored artifacts carry is left unproven or silently
@@ -611,10 +608,10 @@ Measured split (committed as `cii_parity.json`, live-recomputed by
   and re-verified live by `test_cii_parity.py`; an artifact
   bump that fixes such an assert fails that gate and reopens
   the rule as cii-fireable.
-- **18 binding-inapplicable** — officially UBL-only for the
+- **15 binding-inapplicable** — officially UBL-only for the
   both-syntaxes core-model proof, in two evidence classes:
-  - **10 carried by a vendored CII artifact but out of
-    core-model scope** (`BR-DE-18`, `BR-DE-22`, `BR-DE-30`, `BR-DE-31`, `BR-DEX-01`, `BR-DEX-04`, `BR-DEX-05`, `BR-DEX-06`, `BR-DEX-07`, `BR-DEX-08`):
+  - **7 carried by a vendored CII artifact but out of
+    core-model scope** (`BR-DE-18`, `BR-DEX-01`, `BR-DEX-04`, `BR-DEX-05`, `BR-DEX-06`, `BR-DEX-07`, `BR-DEX-08`):
     the assert exists and fires on a CII document, but its
     `@context`/`@test` binds a CII-specific surface — the
     national-CIUS payment-means / payment-terms / direct-debit /

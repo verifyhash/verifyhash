@@ -205,15 +205,8 @@ assert CII_XR_RULE_SET - XR_RULE_SET == set(CII_ONLY_XR_RULE_IDS), (
 #
 #  * BR-DE-18 (Skonto grammar in BT-20): the CII test tokenizes
 #    ram:SpecifiedTradePaymentTerms/ram:Description[1] and matches the KoSIT
-#    #SKONTO#…# regex — a free-text payment-terms structure the core model omits.
-#  * BR-DE-22 (unique EmbeddedDocumentBinaryObject filenames): keyed on every
-#    ram:AdditionalReferencedDocument/ram:AttachmentBinaryObject/@filename.
-#  * BR-DE-30 / BR-DE-31 (BT-90 / BT-91 with DIRECT DEBIT BG-19): the CII
-#    binding reconstructs BG-19 from the document-level $BT-89/90/91-path lets
-#    (DirectDebitMandateID / CreditorReferenceID / payer IBANID). The
-#    T-VHCIIDE.1 payment-means surface now carries these facts, but the
-#    transcription + differential proof of this pair is deliberately staged as
-#    its own follow-up task (T-VHCIIDE.3) — deferred, not overlooked.
+#    #SKONTO#…# regex — a free-text payment-terms structure the core model omits
+#    (transcription staged as T-VHCIIDE.3 — deferred, not overlooked).
 #  * BR-DEX-01/04/05/06/07/08 (extension profile): bind extension surfaces
 #    (attachment MIME codes, ISO 6523 scheme identifiers) the normalized model
 #    does not carry. BR-DEX-15 (sub invoice lines, CII-only) IS graded — its
@@ -225,8 +218,12 @@ assert CII_XR_RULE_SET - XR_RULE_SET == set(CII_ONLY_XR_RULE_IDS), (
 #    normalized model carries one CIIPaymentMeans record per
 #    ram:SpecifiedTradeSettlementPaymentMeans context node plus the
 #    document-level BG-19 reconstruction facts (parser_cii._build_cii_br_de).
+#    T-VHCIIDE.2 admitted the direct-debit pair BR-DE-30/-31 (read off the
+#    same document-level BG-19 reconstruction facts) and BR-DE-22 (the
+#    sibling-grouped additional_ref_doc_attachments filename surface), so
+#    ONLY BR-DE-18 remains excluded of the national BR-DE-* family.
 CII_XR_EXCLUDED_RULE_IDS = (
-    "BR-DE-18", "BR-DE-22", "BR-DE-30", "BR-DE-31",
+    "BR-DE-18",
 )
 assert not (CII_XR_RULE_SET & set(CII_XR_EXCLUDED_RULE_IDS)), (
     "a CII-excluded BR-DE rule is also in the graded set")
@@ -5813,6 +5810,55 @@ def _xrcmut_de28(r):
         _NSC).text = "kein-email-hier"
 
 
+def _cii_add_mandate_id(r):
+    # BT-89: document-level ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID.
+    terms = _cii_settlement(r).find("ram:SpecifiedTradePaymentTerms", _NSC)
+    _sub_el(terms, NS_RAM, "DirectDebitMandateID", "MANDATE-1")
+
+
+def _cii_add_creditor_reference(r):
+    # BT-90: document-level ram:CreditorReferenceID (first settlement child
+    # in the XSD; order irrelevant to the Schematron, kept sane anyway).
+    cr = ET.Element(_cq(NS_RAM, "CreditorReferenceID"))
+    cr.text = "DE98ZZZ09999999999"
+    _cii_settlement(r).insert(0, cr)
+
+
+def _xrcmut_de30(r):
+    # Direct debit (code 59) with mandate (BT-89) + VALID debited IBAN
+    # (BT-91) but NO creditor reference (BT-90) -> BR-DE-30 fires;
+    # BR-DE-31/20/25-a/25-b all hold (payee account removed).
+    _cii_pm_set_code(r, "59")
+    _cii_pm_drop_payee(r)
+    _cii_pm_add_payer_account(r, "DE79000000001234567890")
+    _cii_add_mandate_id(r)
+
+
+def _xrcmut_de31(r):
+    # Direct debit (code 59) with mandate (BT-89) + creditor reference
+    # (BT-90) but NO debited IBAN (BT-91) -> BR-DE-31 fires (and BR-DE-20:
+    # the absent payer IBAN normalizes to '' which fails the IBAN shape);
+    # BR-DE-30 and BR-DE-25-a hold (BG-19 disjuncts satisfied).
+    _cii_pm_set_code(r, "59")
+    _cii_pm_drop_payee(r)
+    _cii_add_mandate_id(r)
+    _cii_add_creditor_reference(r)
+
+
+def _xrcmut_de22(r):
+    # Two header-agreement AdditionalReferencedDocuments whose
+    # AttachmentBinaryObjects share one @filename -> BR-DE-22 fires
+    # (TypeCode 916, no ram:URIID, so BR-TMP-2 holds on CII).
+    agreement = _cii_agreement(r)
+    for i in (1, 2):
+        doc = _sub_el(agreement, NS_RAM, "AdditionalReferencedDocument")
+        _sub_el(doc, NS_RAM, "IssuerAssignedID", "attachment-%d" % i)
+        _sub_el(doc, NS_RAM, "TypeCode", "916")
+        obj = _sub_el(doc, NS_RAM, "AttachmentBinaryObject", "QUJD")
+        obj.set("mimeCode", "application/pdf")
+        obj.set("filename", "duplicate.pdf")
+
+
 def _xrcmut_de_tmp32(r):
     # Strip every delivery-date / billing-period source -> BR-DE-TMP-32 fires.
     delivery = _cii_delivery(r)
@@ -5854,6 +5900,8 @@ _XR_CII_MUTATIONS = {
     "BR-DE-15": _xrcmut_de15, "BR-DE-16": _xrcmut_de16, "BR-DE-17": _xrcmut_de17,
     "BR-DE-21": _xrcmut_de21, "BR-DE-26": _xrcmut_de26, "BR-DE-27": _xrcmut_de27,
     "BR-DE-28": _xrcmut_de28, "BR-DE-TMP-32": _xrcmut_de_tmp32,
+    "BR-DE-30": _xrcmut_de30, "BR-DE-31": _xrcmut_de31,
+    "BR-DE-22": _xrcmut_de22,
     "BR-DEX-15": _xrcmut_dex15,
 }
 

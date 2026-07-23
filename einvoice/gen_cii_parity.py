@@ -135,21 +135,6 @@ _SCOPE_NOTE_PAYMENT_TERMS = (
     "against the KoSIT #SKONTO# grammar — a CII payment-terms surface the "
     "syntax-agnostic EN 16931 core model does not carry; fully proven on the "
     "UBL leg, deliberately excluded from the both-syntaxes core-model CII proof.")
-_SCOPE_NOTE_DIRECT_DEBIT = (
-    "carried by the vendored CII artifact and fires on a CII document, but its "
-    "@test reconstructs the DIRECT DEBIT group (BG-19) from "
-    "ram:DirectDebitMandateID / ram:CreditorReferenceID / "
-    "ram:PayerPartyDebtorFinancialAccount/ram:IBANID presence (the "
-    "$BG-19-not-existing let) — a CII payment surface the syntax-agnostic "
-    "EN 16931 core model does not carry; fully proven on the UBL leg, "
-    "deliberately excluded from the both-syntaxes core-model CII proof.")
-_SCOPE_NOTE_ATTACHMENT = (
-    "carried by the vendored CII artifact and fires on a CII document, but its "
-    "@test compares every ram:AdditionalReferencedDocument/"
-    "ram:AttachmentBinaryObject/@filename for uniqueness — a CII attachment "
-    "surface the syntax-agnostic EN 16931 core model does not carry; fully "
-    "proven on the UBL leg, deliberately excluded from the both-syntaxes "
-    "core-model CII proof.")
 _SCOPE_NOTE_EXTENSION = (
     "carried by the vendored CII artifact but gated behind the KoSIT XRechnung "
     "EXTENSION profile ($isExtension: the extension conformance "
@@ -164,20 +149,13 @@ _SCOPE_NOTE_EXTENSION = (
 # (The 8-id payment-means group BR-DE-19/20/23/24/25-a/-b left this table
 # with T-VHCIIDE.1: those rules are now syntax='both' in the matrix — graded
 # on the CII leg via the parser_cii CIIPaymentMeans surface — so they no
-# longer appear on the UBL-only worklist this file classifies.)
+# longer appear on the UBL-only worklist this file classifies. The
+# direct-debit pair BR-DE-30/-31 and the attachment-filename check BR-DE-22
+# left with T-VHCIIDE.2 the same way.)
 BINDING_SCOPE_EXCLUSIONS = {
     "BR-DE-18": {"kind": "cii-payment-terms-surface",
                  "marker": "ram:SpecifiedTradePaymentTerms",
                  "note": _SCOPE_NOTE_PAYMENT_TERMS},
-    "BR-DE-22": {"kind": "cii-attachment-surface",
-                 "marker": "ram:AttachmentBinaryObject/@filename",
-                 "note": _SCOPE_NOTE_ATTACHMENT},
-    "BR-DE-30": {"kind": "cii-direct-debit-surface",
-                 "marker": "$BG-19-not-existing",
-                 "note": _SCOPE_NOTE_DIRECT_DEBIT},
-    "BR-DE-31": {"kind": "cii-direct-debit-surface",
-                 "marker": "$BG-19-not-existing",
-                 "note": _SCOPE_NOTE_DIRECT_DEBIT},
     "BR-DEX-01": {"kind": "cii-extension-profile",
                   "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
     "BR-DEX-04": {"kind": "cii-extension-profile",

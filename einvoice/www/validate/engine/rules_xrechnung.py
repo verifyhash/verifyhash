@@ -1463,16 +1463,18 @@ def evaluate(root):
 # EXACT parity (0 false-positive / 0 false-negative) with the official
 # XRechnung-CII Schematron on the differential corpus are admitted here (list
 # ``CII_DE_RULES``). The rules whose CII binding needs structure the EN 16931
-# core model does not carry — the Skonto grammar (BR-DE-18), attachment
-# filename uniqueness (BR-DE-22), the BT-90/91-with-BG-19 pair
-# (BR-DE-30/-31) and the BR-DEX-* extension asserts other than BR-DEX-15
-# (whose two-boolean surface the model DOES carry; it is admitted below) —
-# are EXCLUDED, not approximated (see the documented exclusion list in
-# ``differential.CII_XR_EXCLUDED_RULE_IDS``). The payment-means group
-# (BR-DE-19/20 IBAN mod-97 and the type-code group checks
-# BR-DE-23/24/25-a/-b) IS admitted: ``parser_cii._build_cii_br_de`` carries
-# one ``CIIPaymentMeans`` record per ``ram:SpecifiedTradeSettlementPaymentMeans``
-# context node plus the document-level BG-19 reconstruction facts. The CVD/TMP family
+# core model does not carry — the Skonto grammar (BR-DE-18) and the BR-DEX-*
+# extension asserts other than BR-DEX-15 (whose two-boolean surface the model
+# DOES carry; it is admitted below) — are EXCLUDED, not approximated (see the
+# documented exclusion list in ``differential.CII_XR_EXCLUDED_RULE_IDS``).
+# The payment-means group (BR-DE-19/20 IBAN mod-97 and the type-code group
+# checks BR-DE-23/24/25-a/-b) IS admitted: ``parser_cii._build_cii_br_de``
+# carries one ``CIIPaymentMeans`` record per
+# ``ram:SpecifiedTradeSettlementPaymentMeans`` context node plus the
+# document-level BG-19 reconstruction facts, and so are the direct-debit pair
+# BR-DE-30/-31 (the same BG-19 reconstruction facts, T-VHCIIDE.2) and the
+# attachment-filename uniqueness check BR-DE-22 (the sibling-grouped
+# ``additional_ref_doc_attachments`` surface). The CVD/TMP family
 # (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2 and the CII-only BR-TMP-3) IS admitted:
 # ``parser_cii._build_cii_br_de`` carries its guarded facts (guideline ids,
 # header referenced documents, per-line trade-product classification /
@@ -1804,6 +1806,89 @@ def cii_br_de_25_b(inv):
                       "ram:PayeePartyCreditorFinancialAccount | "
                       "ram:SpecifiedTradeSettlementPaymentMeans/"
                       "ram:ApplicableTradeSettlementFinancialCard")
+    return None
+
+
+def _cii_bt91_exists(inv):
+    """The document-level ``$BT-91-path`` let of BR-DE-30/-31: any header
+    settlement payment means' ``ram:PayerPartyDebtorFinancialAccount/
+    ram:IBANID`` element (an ABSOLUTE path in the artifact, so it spans every
+    ``ram:SpecifiedTradeSettlementPaymentMeans``; element presence — an empty
+    element still counts)."""
+    return any(pm.has_payer_iban for pm in inv.settlement_payment_means)
+
+
+@_rule("BR-DE-30", "fatal")
+def cii_br_de_30(inv):
+    """BR-DE-30 (CII): when DIRECT DEBIT (BG-19) is present, the 'Bank
+    assigned creditor identifier' (BT-90) must be transmitted.
+
+    Because CII has no dedicated BG-19 (sub-)element, the artifact
+    reconstructs the group from three document-level lets — $BT-89-path
+    (settlement ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID),
+    $BT-90-path (settlement ram:CreditorReferenceID), $BT-91-path
+    (payment-means ram:PayerPartyDebtorFinancialAccount/ram:IBANID) — with
+    $BG-19-not-existing = not(exists(($BT-89-path, $BT-90-path,
+    $BT-91-path))). The test is (($BT-89-path or $BT-91-path) and
+    $BT-90-path) or $BG-19-not-existing, copied exactly."""
+    bt89 = inv.has_direct_debit_mandate_id
+    bt90 = inv.has_creditor_reference_id
+    bt91 = _cii_bt91_exists(inv)
+    if ((bt89 or bt91) and bt90) or not (bt89 or bt90 or bt91):
+        return None
+    return _v(cii_br_de_30, "DIRECT DEBIT (BG-19) is present, so 'Bank "
+              "assigned creditor identifier' (BT-90) must be transmitted.",
+              "ram:ApplicableHeaderTradeSettlement/ram:CreditorReferenceID")
+
+
+@_rule("BR-DE-31", "fatal")
+def cii_br_de_31(inv):
+    """BR-DE-31 (CII): when DIRECT DEBIT (BG-19) is present, the 'Debited
+    account identifier' (BT-91) must be transmitted. Same three
+    document-level lets as BR-DE-30; the test is (($BT-89-path or
+    $BT-90-path) and $BT-91-path) or $BG-19-not-existing, copied exactly."""
+    bt89 = inv.has_direct_debit_mandate_id
+    bt90 = inv.has_creditor_reference_id
+    bt91 = _cii_bt91_exists(inv)
+    if ((bt89 or bt90) and bt91) or not (bt89 or bt90 or bt91):
+        return None
+    return _v(cii_br_de_31, "DIRECT DEBIT (BG-19) is present, so 'Debited "
+              "account identifier' (BT-91) must be transmitted.",
+              "ram:SpecifiedTradeSettlementPaymentMeans/"
+              "ram:PayerPartyDebtorFinancialAccount/ram:IBANID")
+
+
+@_rule("BR-DE-22", "fatal")
+def cii_br_de_22(inv):
+    """BR-DE-22 (CII): the filename attributes of the embedded attachment
+    binary objects must be unique. Official test (transcribed from the
+    artifact, which keys on ram:AttachmentBinaryObject/@filename — the assert
+    MESSAGE says 'embeddedDocumentBinaryObject' but the TEST does not):
+
+        count(//ram:AdditionalReferencedDocument) =
+        count(//ram:AdditionalReferencedDocument[
+            not(./ram:AttachmentBinaryObject/@filename =
+                preceding-sibling::ram:AdditionalReferencedDocument/
+                ram:AttachmentBinaryObject/@filename)])
+
+    The preceding-sibling axis scopes the comparison to ONE sibling group:
+    equal filenames under DIFFERENT parents never fire. An
+    AdditionalReferencedDocument without the attribute contributes no
+    @filename node and can never compare equal — mirrored by skipping the
+    None entries, exactly like the UBL twin skips attribute-less
+    EmbeddedDocumentBinaryObjects."""
+    for group in inv.additional_ref_doc_attachments:
+        seen = []
+        for filenames in group:
+            present = [fn for fn in filenames if fn is not None]
+            for fn in present:
+                if fn in seen:
+                    return _v(cii_br_de_22, "The 'filename' attribute of all "
+                              "'AttachmentBinaryObject' elements must be "
+                              "unique; %r repeats." % fn,
+                              "ram:AdditionalReferencedDocument/"
+                              "ram:AttachmentBinaryObject/@filename")
+            seen.extend(present)
     return None
 
 
@@ -2226,8 +2311,13 @@ CII_DE_RULES = [
     cii_br_de_19, cii_br_de_23_a, cii_br_de_23_b,
     cii_br_de_24_a, cii_br_de_24_b,
     cii_br_de_20, cii_br_de_25_a, cii_br_de_25_b,
+    # Direct-debit surface (cii-pattern document order puts BR-DE-30/-31
+    # FIRST in the /rsm:CrossIndustryInvoice rule; kept with the
+    # payment-means group they share the BG-19 reconstruction lets with).
+    cii_br_de_30, cii_br_de_31,
     cii_br_de_14, cii_br_de_15, cii_br_de_16, cii_br_de_17,
-    cii_br_de_21, cii_br_de_26, cii_br_de_27, cii_br_de_28, cii_br_de_tmp_32,
+    cii_br_de_21, cii_br_de_22, cii_br_de_26, cii_br_de_27, cii_br_de_28,
+    cii_br_de_tmp_32,
     cii_br_tmp_2, cii_br_tmp_3,
     cii_br_de_cvd_01, cii_br_de_cvd_02, cii_br_de_cvd_03, cii_br_de_cvd_04,
     cii_br_de_cvd_05, cii_br_de_cvd_06_a, cii_br_de_cvd_06_b,

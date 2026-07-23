@@ -155,17 +155,15 @@ _CII_CORE_GENERIC = ("core rule not included in the CII differential leg (LEG 3)
 # Honest reasons a BR-DE/BR-DEX rule is NOT graded on the CII leg.
 # (The payment-means group BR-DE-19/20/23/24/25-a/-b left this table with
 # T-VHCIIDE.1 — the CIIPaymentMeans surface now carries it and the group is
-# differentially graded on LEG 4.)
+# differentially graded on LEG 4. The direct-debit pair BR-DE-30/-31 and the
+# attachment-filename check BR-DE-22 left with T-VHCIIDE.2 — the BG-19
+# reconstruction facts and the sibling-grouped attachment filename surface
+# carry them.)
 CII_DE_REASON = {
     "BR-DE-18": "Skonto grammar in the BT-20 payment-terms free text — a "
-                "structure the syntax-agnostic core model omits.",
-    "BR-DE-22": "unique attachment filename check over every "
-                "EmbeddedDocumentBinaryObject/@filename — not carried.",
-    "BR-DE-30": "BT-90/BT-91 with DIRECT DEBIT (BG-19), reconstructed from "
-                "mandate / creditor-reference / IBAN presence — transcription "
-                "staged as T-VHCIIDE.3 (deferred, not overlooked).",
-    "BR-DE-31": "BT-90/BT-91 with DIRECT DEBIT (BG-19) — deferred with "
-                "BR-DE-30 (see T-VHCIIDE.3).",
+                "structure the syntax-agnostic core model omits; "
+                "transcription staged as T-VHCIIDE.3 (deferred, not "
+                "overlooked).",
 }
 _CII_DEX_GENERIC = ("part of the KoSIT XRechnung EXTENSION layer: this assert "
                     "is either absent from the vendored CII artifact "
@@ -477,7 +475,7 @@ def kosit_documented_exclusion_ids(key):
     UBL: EMPTY — every family assert the vendored UBL artifact carries is
     implemented, so nothing is excluded.
 
-    CII: the 4-id ``cii_de_out_of_scope`` exclusion class (single
+    CII: the 1-id ``cii_de_out_of_scope`` exclusion class (single
     source of truth = ``differential.CII_XR_EXCLUDED_RULE_IDS`` — REUSED, the
     per-id reasons stay documented once in ``exclusions.cii_de_out_of_scope``)
     plus the extension-layer ``BR-DEX-*`` ids implemented on UBL but not on
@@ -569,7 +567,7 @@ def build_kosit_gap():
             "registry (einvoice.rules_xrechnung ALL_RULES for UBL, "
             "CII_DE_RULES for CII) or covered by a documented deliberate "
             "exclusion: EMPTY for UBL (all asserts implemented); for CII the "
-            "4-id cii_de_out_of_scope class (reused from "
+            "1-id cii_de_out_of_scope class (reused from "
             "differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented) plus "
             "the extension-layer BR-DEX ids the rule table documents as not "
             "carried by the normalized CII model. Both exclusion sets are "

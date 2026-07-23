@@ -296,6 +296,16 @@ class Invoice(parser.Invoice):
         self.settlement_payment_means = []      # [CIIPaymentMeans]
         self.has_direct_debit_mandate_id = False  # settlement …/ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID
         self.has_creditor_reference_id = False    # settlement …/ram:CreditorReferenceID
+        # -- Attachment surface (BR-DE-22): every ram:AdditionalReferencedDocument
+        #    ANYWHERE in the document (the official test's // axis), grouped by
+        #    PARENT element because the preceding-sibling axis scopes the
+        #    filename-uniqueness comparison to one sibling group. Each group is
+        #    a document-order list with one entry per AdditionalReferencedDocument
+        #    sibling: the ordered list of its ram:AttachmentBinaryObject
+        #    @filename attribute values (None when the attribute is absent — an
+        #    attribute-less object contributes no @filename node in the official
+        #    test and can never compare equal, exactly like the UBL twin). ------
+        self.additional_ref_doc_attachments = []  # [[[filename|None, …], …], …]
         # -- Extension (BR-DEX-15) surface: the rule context is each
         #    ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument
         #    (gated on $isExtension) and its test is not(exists(//ram:ParentLineID))
@@ -1083,6 +1093,22 @@ def _build_cii_br_de(inv, root):
     # transaction guard (matching the official // axis exactly).
     inv.has_parent_line_id = any(
         True for _ in root.iter("{%s}ParentLineID" % NS_RAM))
+    # BR-DE-22: //ram:AdditionalReferencedDocument spans the WHOLE document
+    # (header agreement, line agreements, …), so it is collected before the
+    # transaction guard, grouped by PARENT element (document order) — the
+    # official test's preceding-sibling axis restricts the @filename
+    # uniqueness comparison to siblings under the same parent. Each sibling
+    # carries the ordered list of its ram:AttachmentBinaryObject @filename
+    # values, None when the attribute is absent.
+    _ard_tag = "{%s}AdditionalReferencedDocument" % NS_RAM
+    _abo_tag = "{%s}AttachmentBinaryObject" % NS_RAM
+    for parent in root.iter():
+        group = [
+            [obj.get("filename") for obj in child if obj.tag == _abo_tag]
+            for child in parent if child.tag == _ard_tag
+        ]
+        if group:
+            inv.additional_ref_doc_attachments.append(group)
     txn = root.find("rsm:SupplyChainTradeTransaction", NS)
     if txn is None:
         return

@@ -5509,7 +5509,7 @@
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
           "differentially_proven": false,
-          "reason": "Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits."
+          "reason": "Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits; transcription staged as T-VHCIIDE.3 (deferred, not overlooked)."
         }
       }
     },
@@ -5589,7 +5589,7 @@
       "id": "BR-DE-22",
       "title": "The filename attribute of all EmbeddedDocumentBinaryObject elements must be unique (across cac:AdditionalDocumentReference).",
       "family": "xrechnung-cius",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5605,8 +5605,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "unique attachment filename check over every EmbeddedDocumentBinaryObject/@filename — not carried."
+          "differentially_proven": true
         }
       }
     },
@@ -5830,7 +5829,7 @@
       "id": "BR-DE-30",
       "title": "DIRECT DEBIT (BG-19) requires the Bank assigned creditor identifier (BT-90: a SEPA-scheme PartyIdentification of the seller or payee).",
       "family": "xrechnung-cius",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5846,8 +5845,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "BT-90/BT-91 with DIRECT DEBIT (BG-19), reconstructed from mandate / creditor-reference / IBAN presence — transcription staged as T-VHCIIDE.3 (deferred, not overlooked)."
+          "differentially_proven": true
         }
       }
     },
@@ -5855,7 +5853,7 @@
       "id": "BR-DE-31",
       "title": "DIRECT DEBIT (BG-19) requires the Debited account identifier (BT-91).",
       "family": "xrechnung-cius",
-      "syntax": "ubl",
+      "syntax": "both",
       "severity": "fatal",
       "flag": "fatal",
       "provenance": {
@@ -5871,8 +5869,7 @@
           "suite": "KoSIT XRechnung",
           "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
           "version": "2.5.0 (XRechnung 3.0.2)",
-          "differentially_proven": false,
-          "reason": "BT-90/BT-91 with DIRECT DEBIT (BG-19) — deferred with BR-DE-30 (see T-VHCIIDE.3)."
+          "differentially_proven": true
         }
       }
     },
@@ -7162,19 +7159,7 @@
     "cii_de_out_of_scope": [
       {
         "id": "BR-DE-18",
-        "reason": "Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits."
-      },
-      {
-        "id": "BR-DE-22",
-        "reason": "unique attachment filename check over every EmbeddedDocumentBinaryObject/@filename — not carried."
-      },
-      {
-        "id": "BR-DE-30",
-        "reason": "BT-90/BT-91 with DIRECT DEBIT (BG-19), reconstructed from mandate / creditor-reference / IBAN presence — transcription staged as T-VHCIIDE.3 (deferred, not overlooked)."
-      },
-      {
-        "id": "BR-DE-31",
-        "reason": "BT-90/BT-91 with DIRECT DEBIT (BG-19) — deferred with BR-DE-30 (see T-VHCIIDE.3)."
+        "reason": "Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits; transcription staged as T-VHCIIDE.3 (deferred, not overlooked)."
       }
     ],
     "peppol": {
@@ -7234,7 +7219,7 @@
       }
     },
     "kosit": {
-      "description": "CIUS-layer mirror of the CEN gap: for each vendored KoSIT XRechnung artifact (Schematron 2.5.0 / XRechnung 3.0.2), the fireable universe is every sch:assert id in the German national rule families (prefixes BR-DE-/BR-DEX-/BR-TMP-, covering BR-DE-*, BR-DEX-*, BR-DE-CVD-* and BR-TMP-*), extracted by a real XML parse of the .sch — never authored from prose — minus any assert the artifact itself ships as a literal test=\"true()\" tautology (currently none in either artifact). Every fireable id is either implemented in that binding's live registry (einvoice.rules_xrechnung ALL_RULES for UBL, CII_DE_RULES for CII) or covered by a documented deliberate exclusion: EMPTY for UBL (all asserts implemented); for CII the 4-id cii_de_out_of_scope class (reused from differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented) plus the extension-layer BR-DEX ids the rule table documents as not carried by the normalized CII model. Both exclusion sets are derived from live engine sources, never from the artifact, so a KoSIT artifact bump that adds or renames an assert cannot self-classify: gen_coverage.py refuses to build and test_coverage_gap.py fails loudly, naming the id, until it is implemented or deliberately documented — the guard shape that would have auto-caught BR-DEX-15.",
+      "description": "CIUS-layer mirror of the CEN gap: for each vendored KoSIT XRechnung artifact (Schematron 2.5.0 / XRechnung 3.0.2), the fireable universe is every sch:assert id in the German national rule families (prefixes BR-DE-/BR-DEX-/BR-TMP-, covering BR-DE-*, BR-DEX-*, BR-DE-CVD-* and BR-TMP-*), extracted by a real XML parse of the .sch — never authored from prose — minus any assert the artifact itself ships as a literal test=\"true()\" tautology (currently none in either artifact). Every fireable id is either implemented in that binding's live registry (einvoice.rules_xrechnung ALL_RULES for UBL, CII_DE_RULES for CII) or covered by a documented deliberate exclusion: EMPTY for UBL (all asserts implemented); for CII the 1-id cii_de_out_of_scope class (reused from differential.CII_XR_EXCLUDED_RULE_IDS, not re-documented) plus the extension-layer BR-DEX ids the rule table documents as not carried by the normalized CII model. Both exclusion sets are derived from live engine sources, never from the artifact, so a KoSIT artifact bump that adds or renames an assert cannot self-classify: gen_coverage.py refuses to build and test_coverage_gap.py fails loudly, naming the id, until it is implemented or deliberately documented — the guard shape that would have auto-caught BR-DEX-15.",
       "family_prefixes": [
         "BR-DE-",
         "BR-DEX-",
@@ -7317,8 +7302,8 @@
           "official_universe": 49,
           "tautologies_in_artifact": [],
           "fireable_universe": 49,
-          "implemented": 39,
-          "documented_exclusions": 10,
+          "implemented": 42,
+          "documented_exclusions": 7,
           "unclassified": 0,
           "implemented_ids": [
             "BR-DE-1",
@@ -7339,6 +7324,7 @@
             "BR-DE-19",
             "BR-DE-20",
             "BR-DE-21",
+            "BR-DE-22",
             "BR-DE-23-a",
             "BR-DE-23-b",
             "BR-DE-24-a",
@@ -7348,6 +7334,8 @@
             "BR-DE-26",
             "BR-DE-27",
             "BR-DE-28",
+            "BR-DE-30",
+            "BR-DE-31",
             "BR-DE-TMP-32",
             "BR-DEX-15",
             "BR-DE-CVD-01",
@@ -7363,9 +7351,6 @@
           ],
           "documented_exclusion_ids": [
             "BR-DE-18",
-            "BR-DE-22",
-            "BR-DE-30",
-            "BR-DE-31",
             "BR-DEX-01",
             "BR-DEX-04",
             "BR-DEX-05",

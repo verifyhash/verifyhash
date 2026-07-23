@@ -143,10 +143,12 @@ class TestReportWiringValid(unittest.TestCase):
         this file too), and since the T-VHCIIDE.1 payment-means group landed
         also the fatal BR-DE-23-b (document-level CreditorReferenceID +
         DirectDebitMandateID = BG-19 next to a code-58 credit-transfer means)
-        plus the BR-DE-19 warning (both code-58 IBANs fail mod-97) — the
-        official artifact fires all of these on this file (differential
-        LEG 4). The invariant under test is unchanged: the PDF path must
-        equal validating the inner XML directly, per profile."""
+        plus the BR-DE-19 warning (both code-58 IBANs fail mod-97), and since
+        the T-VHCIIDE.2 direct-debit pair landed also the fatal BR-DE-31
+        (BG-19 present via BT-89 + BT-90 but no debited-account IBAN BT-91;
+        BR-DE-30 holds) — the official artifact fires all of these on this
+        file (differential LEG 4). The invariant under test is unchanged: the
+        PDF path must equal validating the inner XML directly, per profile."""
         for profile in ("xrechnung", "en16931"):
             rep = report.build_report(VALID_PDF, profile=profile)
             self.assertNotIn("error", rep,
@@ -162,7 +164,8 @@ class TestReportWiringValid(unittest.TestCase):
                 self.assertFalse(rep["valid"], (profile, rep))
                 fatals = [v["rule"] for v in rep["violations"]
                           if v["severity"] == "fatal"]
-                self.assertEqual(fatals, ["BR-DE-23-b", "BR-TMP-3"], rep)
+                self.assertEqual(fatals,
+                                 ["BR-DE-23-b", "BR-DE-31", "BR-TMP-3"], rep)
 
     def test_valid_pdf_cli_exits_zero(self):
         # EN-core profile: the embedded invoice is clean -> exit 0.

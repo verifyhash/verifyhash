@@ -17,6 +17,10 @@
       "severity": "fatal"
     },
     {
+      "rule": "BR-DE-31",
+      "severity": "fatal"
+    },
+    {
       "rule": "BR-TMP-3",
       "severity": "fatal"
     }

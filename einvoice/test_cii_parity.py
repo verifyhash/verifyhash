@@ -259,10 +259,11 @@ class CiiParityTest(unittest.TestCase):
         # artifact bump reopened the worklist and needs a fresh resolution).
         # T-VHCIIDE.1 moved the 8-id payment-means group (BR-DE-19/20/23/24/
         # 25-a/-b) off the UBL-only worklist to syntax='both', shrinking the
-        # scoped-inapplicable bucket from 18 to 10.
-        self.assertEqual((n_defect, n_inapp, n_scoped, n_absent), (4, 18, 10, 8),
+        # scoped-inapplicable bucket from 18 to 10; T-VHCIIDE.2 moved the
+        # direct-debit pair BR-DE-30/-31 + BR-DE-22 the same way (10 -> 7).
+        self.assertEqual((n_defect, n_inapp, n_scoped, n_absent), (4, 15, 7, 8),
                          "terminal cii_parity split drifted from the frozen "
-                         "(4 defective, 18 inapplicable = 10 scoped + 8 absent)")
+                         "(4 defective, 15 inapplicable = 7 scoped + 8 absent)")
         mat = self.matrix["rules"]
         n_both = sum(1 for r in mat if r["syntax"] == "both")
         n_ubl = sum(1 for r in mat if r["syntax"] == "ubl")
@@ -273,10 +274,11 @@ class CiiParityTest(unittest.TestCase):
         # syntaxes, but the UBL asserts are artifact-vacuous and held out of
         # the UBL grading, see differential.EN_UBL_EXCLUDED_RULE_IDS).
         # T-VHCIIDE.1 flipped the 8-id payment-means group to 'both'
-        # (255+8=263 both, 30-8=22 UBL-only).
-        self.assertEqual((n_both, n_ubl, n_cii), (263, 22, 4),
+        # (255+8=263 both, 30-8=22 UBL-only); T-VHCIIDE.2 flipped
+        # BR-DE-22/-30/-31 (263+3=266 both, 22-3=19 UBL-only).
+        self.assertEqual((n_both, n_ubl, n_cii), (266, 19, 4),
                          "terminal matrix syntax split drifted from the frozen "
-                         "(263 both, 22 UBL-only, 4 CII-only)")
+                         "(266 both, 19 UBL-only, 4 CII-only)")
 
     # ---- 5. measurement-only guard ----------------------------------------
     def test_families_match_matrix_and_no_tag_flipped(self):

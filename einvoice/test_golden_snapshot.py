@@ -141,7 +141,12 @@ FIXTURES = [
                 "IBANs) and the fatal BR-DE-23-b (the file has document-level "
                 "CreditorReferenceID + DirectDebitMandateID, i.e. BG-19, "
                 "next to a credit-transfer means) — the official artifact "
-                "fires both on this file too (differential LEG 4).",
+                "fires both on this file too (differential LEG 4). Since the "
+                "T-VHCIIDE.2 direct-debit pair landed it also fires the "
+                "fatal BR-DE-31: BG-19 is present (BT-89 + BT-90) but the "
+                "debited-account IBAN (BT-91) is absent — the official "
+                "artifact fires BR-DE-31 on this file too (BR-DE-30 holds: "
+                "(BT-89 or BT-91) and BT-90 is satisfied).",
     },
     {
         "name": "cii-good-xrechnung-huf",

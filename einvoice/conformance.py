@@ -768,6 +768,10 @@ _CII_XR_ADMITTED_IDS = (
     # group checks, carried by the parser_cii CIIPaymentMeans surface.
     "BR-DE-19", "BR-DE-20", "BR-DE-23-a", "BR-DE-23-b",
     "BR-DE-24-a", "BR-DE-24-b", "BR-DE-25-a", "BR-DE-25-b",
+    # Direct-debit surface + attachment filenames (T-VHCIIDE.2): BR-DE-30/-31
+    # read the document-level BG-19 reconstruction facts, BR-DE-22 the
+    # sibling-grouped additional_ref_doc_attachments filename surface.
+    "BR-DE-22", "BR-DE-30", "BR-DE-31",
     # CVD/TMP family — the CII artifact carries all nine UBL family asserts
     # plus the CII-only BR-TMP-3.
     "BR-TMP-2", "BR-TMP-3",
@@ -788,12 +792,8 @@ CII_XRECHNUNG_CIUS_COVERAGE = {
 }
 CII_XRECHNUNG_CIUS_EXCLUDED = {
     "BR-DE-18": "Skonto grammar in BT-20 (free-text payment-terms structure not "
-                "in the core model)",
-    "BR-DE-22": "EmbeddedDocumentBinaryObject filename uniqueness (attachment "
-                "surface not in the core model)",
-    "BR-DE-30": "Bank assigned creditor id (BT-90) with BG-19 (transcription "
-                "staged as T-VHCIIDE.3 — deferred, not overlooked)",
-    "BR-DE-31": "Debited account id (BT-91) with BG-19 (same)",
+                "in the core model; transcription staged as T-VHCIIDE.3 — "
+                "deferred, not overlooked)",
 }
 
 
@@ -1215,8 +1215,8 @@ def main():
         % len(CII_XRECHNUNG_CIUS_COVERAGE))
     for rid in sorted(CII_XRECHNUNG_CIUS_COVERAGE):
         out("     %-13s %s\n" % (rid, CII_XRECHNUNG_CIUS_COVERAGE[rid]))
-    out("  not graded on CII (CII binding needs payment-means / IBAN / skonto /\n"
-        "  attachment structure the core model omits; excluded, not approximated):\n")
+    out("  not graded on CII (CII binding needs the skonto payment-terms free-text\n"
+        "  structure the core model omits; excluded, not approximated):\n")
     for rid in sorted(CII_XRECHNUNG_CIUS_EXCLUDED):
         out("     %-13s %s\n" % (rid, CII_XRECHNUNG_CIUS_EXCLUDED[rid]))
     out("\n")

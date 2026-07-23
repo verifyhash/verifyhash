@@ -65,42 +65,6 @@
       }
     },
     {
-      "id": "BR-DE-22",
-      "family": "xrechnung-cius",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-attachment-surface",
-        "context": "/rsm:CrossIndustryInvoice",
-        "test": "count(//ram:AdditionalReferencedDocument) = count(//ram:AdditionalReferencedDocument[not(./ram:AttachmentBinaryObject/@filename = preceding-sibling::ram:AdditionalReferencedDocument/ram:AttachmentBinaryObject/@filename)])",
-        "note": "carried by the vendored CII artifact and fires on a CII document, but its @test compares every ram:AdditionalReferencedDocument/ram:AttachmentBinaryObject/@filename for uniqueness — a CII attachment surface the syntax-agnostic EN 16931 core model does not carry; fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
-      "id": "BR-DE-30",
-      "family": "xrechnung-cius",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-direct-debit-surface",
-        "context": "/rsm:CrossIndustryInvoice",
-        "test": "(($BT-89-path or $BT-91-path) and $BT-90-path) or $BG-19-not-existing",
-        "note": "carried by the vendored CII artifact and fires on a CII document, but its @test reconstructs the DIRECT DEBIT group (BG-19) from ram:DirectDebitMandateID / ram:CreditorReferenceID / ram:PayerPartyDebtorFinancialAccount/ram:IBANID presence (the $BG-19-not-existing let) — a CII payment surface the syntax-agnostic EN 16931 core model does not carry; fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
-      "id": "BR-DE-31",
-      "family": "xrechnung-cius",
-      "classification": "binding-inapplicable",
-      "cii_artifact": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
-      "artifact_evidence": {
-        "kind": "cii-direct-debit-surface",
-        "context": "/rsm:CrossIndustryInvoice",
-        "test": "(($BT-89-path or $BT-90-path) and $BT-91-path) or $BG-19-not-existing",
-        "note": "carried by the vendored CII artifact and fires on a CII document, but its @test reconstructs the DIRECT DEBIT group (BG-19) from ram:DirectDebitMandateID / ram:CreditorReferenceID / ram:PayerPartyDebtorFinancialAccount/ram:IBANID presence (the $BG-19-not-existing let) — a CII payment surface the syntax-agnostic EN 16931 core model does not carry; fully proven on the UBL leg, deliberately excluded from the both-syntaxes core-model CII proof."
-      }
-    },
-    {
       "id": "BR-DEX-01",
       "family": "xrechnung-extension",
       "classification": "binding-inapplicable",

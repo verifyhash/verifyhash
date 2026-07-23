@@ -43,7 +43,11 @@ BR-DE violations carry the official severity (`fatal`, `warning`,
 document invalid / exit 1; warnings and information are reported but do not
 block, exactly like the KoSIT reference validator. One CORE rule carries a
 non-fatal flag too: BR-51 (card primary account number) is `warning` in the
-official CEN artifact, and our violation mirrors that.
+official CEN **UBL** artifact — the CII artifact flags the same rule `fatal`,
+an upstream cross-syntax inconsistency (present in both the abstract model
+and the preprocessed `.sch` of the vendored 1.3.16 release); we grade BR-51
+`warning` on both syntaxes so a document's validity verdict cannot depend on
+its serialization (the differential legs compare fired-sets, not flags).
 
 The arithmetic rules (BR-CO-10/13/14/15/16/17) use `decimal.Decimal`, not
 binary floats, so monetary equality is exact and reproducible. The newer rules
@@ -301,9 +305,12 @@ would get wrong:
   `cac:BillingReference`s), so ours does too.
 - **BR-62/BR-63 test attribute EXISTENCE** (`exists(@schemeID)`): an empty
   `schemeID=""` satisfies them.
-- **BR-51 is flagged `warning`** in the official artifact — the only non-fatal
-  core rule we implement; the violation carries that severity and does not
-  block validity, mirroring the SVRL.
+- **BR-51 is flagged `warning`** in the official UBL artifact but `fatal` in
+  the official CII artifact (an upstream cross-syntax inconsistency, verified
+  in both the abstract model and the preprocessed `.sch`) — the only
+  non-fatal core rule we implement; the violation carries `warning` on both
+  syntaxes (deliberate serialization-independent grading, mirroring the
+  milder UBL SVRL) and does not block validity.
 
 ## 4. Second, independent check: the conformance harness
 

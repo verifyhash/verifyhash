@@ -193,9 +193,16 @@ CODELIST_NOT_ASSERTED = {
                 "cbc:DocumentTypeCode='130' (a predicate the model does not "
                 "carry) and the CII context is ram:ReferenceTypeCode — two "
                 "distinct bindings, deferred.",
-    "BR-CL-08": "Subject code (UNTDID 4451). CII-only rule (ram:SubjectCode) "
-                "with no UBL counterpart, so it falls outside the both-syntaxes "
-                "codelist scope; not asserted.",
+    "BR-CL-08": "Invoice note subject code (UNTDID 4451). Not asserted: BOTH "
+                "vendored artifacts carry this assert, on two different "
+                "surfaces the model does not parse — the UBL binding tests a "
+                "'#CODE#' prefix grammar inside the cbc:Note free text (it "
+                "fires only when a 3-char '#'-delimited token is present but "
+                "outside the list), the CII binding tests the ram:SubjectCode "
+                "element; the 4451 subset IS machine-readable (inlined in "
+                "both .sch), so this is a deferred parser-surface gap "
+                "(note-text grammar + subject-code element), not a register "
+                "gap.",
     "BR-CL-10": "Party identifier scheme in the ISO 6523 ICD list. Not asserted: "
                 "a broad party-identification scheme surface across many context "
                 "nodes; the 243-code ICD enumeration IS inlined in the .sch, but "
@@ -787,6 +794,15 @@ def build_matrix():
             "cii": _prov("en16931-cii", cii_ok,
                          None if cii_ok else CII_CORE_REASON.get(rid, _CII_CORE_GENERIC)),
         }
+        if rid == "BR-51":
+            prov["cii"]["note"] = (
+                "official cross-syntax flag divergence: the vendored UBL "
+                "artifact flags BR-51 warning but the CII artifact flags it "
+                "fatal (abstract model and preprocessed .sch alike, CEN "
+                "1.3.16); the engine deliberately grades warning on BOTH "
+                "syntaxes so a document's validity verdict cannot depend on "
+                "its serialization — the differential legs compare "
+                "fired-sets, not flags.")
         entries[rid] = {
             "id": rid,
             "title": _title(fn, rid),

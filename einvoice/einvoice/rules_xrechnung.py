@@ -24,11 +24,15 @@ Severity mirrors the official ``flag``: ``fatal`` blocks acceptance,
 invalid.
 
 This module also implements the ``BR-DEX-*`` layer — the fourteen business
-rules the KoSIT artifact adds for the XRechnung *Extension* customization
+rules the KoSIT UBL artifact adds for the XRechnung *Extension* customization
 (``…#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0``). Those rules
 fire ONLY when the document carries the extension ``CustomizationID`` (the
 Schematron gates them behind a global ``$isExtension`` let); on a plain CIUS
 invoice they are inert. See ``_is_extension`` and the ``BR-DEX-*`` functions.
+On the CII binding the extension layer contributes exactly one admitted rule,
+``BR-DEX-15`` (sub invoice lines unsupported) — an assert that exists ONLY in
+the CII artifact — gated the same way behind the CII ``$isExtension`` let
+(see ``_cii_is_extension`` / ``cii_br_dex_15``).
 
 This module also implements the ``BR-DE-CVD-*`` / ``BR-TMP-CVD-01`` layer —
 the Clean-Vehicle-Directive (CVD) profile rules the KoSIT artifact gates
@@ -1461,9 +1465,10 @@ def evaluate(root):
 # ``CII_DE_RULES``). The rules whose CII binding needs structure the EN 16931
 # core model does not carry — payment-means type-code groups, IBAN mod-97
 # (BR-DE-19/20/23/24/25/30/31), the Skonto grammar (BR-DE-18), attachment
-# filename uniqueness (BR-DE-22) and the whole BR-DEX-* extension layer — are
-# EXCLUDED, not approximated (see the documented exclusion list in
-# ``differential.CII_XR_EXCLUDED_RULE_IDS``). The CVD/TMP family
+# filename uniqueness (BR-DE-22) and the BR-DEX-* extension asserts other than
+# BR-DEX-15 (whose two-boolean surface the model DOES carry; it is admitted
+# below) — are EXCLUDED, not approximated (see the documented exclusion list
+# in ``differential.CII_XR_EXCLUDED_RULE_IDS``). The CVD/TMP family
 # (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2 and the CII-only BR-TMP-3) IS admitted:
 # ``parser_cii._build_cii_br_de`` carries its guarded facts (guideline ids,
 # header referenced documents, per-line trade-product classification /
@@ -1755,6 +1760,18 @@ def _cii_is_cvd(inv):
     return XR_CVD_ID in inv.guideline_ids
 
 
+def _cii_is_extension(inv):
+    """The CII ``$isExtension`` let (cii-extension-pattern): true iff a
+    GuidelineSpecifiedDocumentContextParameter/ram:ID text node equals the
+    EXACT extension specification identifier (the official test is
+    ``ram:ID[text() = concat('urn:cen.eu:en16931:2017#compliant#urn:
+    xeinkauf.de:kosit:xrechnung_', $XR-MAJOR-MINOR-VERSION, '#conformant#urn:
+    xeinkauf.de:kosit:extension:xrechnung_', $XR-MAJOR-MINOR-VERSION)]`` —
+    the same string :data:`XR_EXTENSION_ID` spells out). On a plain CIUS
+    invoice the extension contexts never match, so the rule is inert."""
+    return XR_EXTENSION_ID in inv.guideline_ids
+
+
 def _cii_cva_characteristics(product):
     """The ram:ApplicableProductCharacteristic records with a
     ``ram:Description = 'cva'`` child (untrimmed node-set comparison)."""
@@ -1992,6 +2009,38 @@ def cii_br_de_cvd_05(inv):
     return None
 
 
+# ---------------------------------------------------------------------------
+# CII EXTENSION layer (cii-extension-pattern), gated behind $isExtension.
+# ONLY BR-DEX-15 is admitted: it is the single extension assert whose CII
+# surface the normalized model carries (the remaining CII extension asserts —
+# BR-DEX-01 attachments, BR-DEX-04..08 ISO 6523 scheme identifiers — bind
+# node sets the model deliberately omits and stay excluded, documented in
+# differential.CII_XR_EXCLUDED comments). BR-DEX-15 exists ONLY in the CII
+# artifact (the vendored UBL artifact carries no such assert), exactly like
+# BR-TMP-3.
+# ---------------------------------------------------------------------------
+@_rule("BR-DEX-15", "warning")
+def cii_br_dex_15(inv):
+    """BR-DEX-15: a CII file should not use the concept of Sub Invoice Lines
+    (ram:ParentLineID) — XRechnung does not support them (warning).
+
+    Official CII rule context is every /rsm:CrossIndustryInvoice/
+    rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/
+    ram:AssociatedDocumentLineDocument[$isExtension]; the assert test is
+    not(exists(//ram:ParentLineID)) with flag="warning" (copied exactly from
+    the artifact) — a document-global descendant search, so the rule fires iff
+    at least one context node exists AND any ram:ParentLineID appears anywhere
+    in the document."""
+    if not _cii_is_extension(inv):
+        return None
+    if inv.has_assoc_document_line_document and inv.has_parent_line_id:
+        return _v(cii_br_dex_15, "This CII file might use the concept of Sub "
+                  "Invoice Lines. However XRechnung does not support this.",
+                  "ram:IncludedSupplyChainTradeLineItem/"
+                  "ram:AssociatedDocumentLineDocument")
+    return None
+
+
 # Admitted CII BR-DE set — document flow order. Every id here is proven at exact
 # parity with the official XRechnung-CII Schematron by differential.py.
 CII_DE_RULES = [
@@ -2003,6 +2052,7 @@ CII_DE_RULES = [
     cii_br_de_cvd_01, cii_br_de_cvd_02, cii_br_de_cvd_03, cii_br_de_cvd_04,
     cii_br_de_cvd_05, cii_br_de_cvd_06_a, cii_br_de_cvd_06_b,
     cii_br_tmp_cvd_01,
+    cii_br_dex_15,
 ]
 
 

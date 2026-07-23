@@ -184,10 +184,12 @@ assert len(XR_RULE_IDS) == 55, XR_RULE_IDS  # 32 BR-DE + 9 CVD/TMP + 14 BR-DEX
 CII_XR_RULE_IDS = [fn.rule_id for fn in _rules_xr.CII_DE_RULES]
 CII_XR_RULE_SET = set(CII_XR_RULE_IDS)
 assert len(CII_XR_RULE_IDS) == len(CII_XR_RULE_SET), CII_XR_RULE_IDS
-# Every CII-graded national rule is also in the UBL layer EXCEPT BR-TMP-3:
-# only the vendored CII artifact carries that assert (the UBL artifact has no
-# BR-TMP-3), so it is legitimately CII-only.
-CII_ONLY_XR_RULE_IDS = ("BR-TMP-3",)
+# Every CII-graded national rule is also in the UBL layer EXCEPT BR-TMP-3 and
+# BR-DEX-15: only the vendored CII artifact carries those asserts (the UBL
+# artifact has neither id — verified by a live XML parse in
+# test_coverage_gap.py for BR-TMP-3 and by grep of the vendored .sch for
+# BR-DEX-15), so they are legitimately CII-only.
+CII_ONLY_XR_RULE_IDS = ("BR-TMP-3", "BR-DEX-15")
 assert CII_XR_RULE_SET - XR_RULE_SET == set(CII_ONLY_XR_RULE_IDS), (
     "CII BR-DE set names rules not in the UBL BR-DE layer (beyond the "
     "documented CII-only BR-TMP-3): %s"
@@ -215,10 +217,14 @@ assert CII_XR_RULE_SET - XR_RULE_SET == set(CII_ONLY_XR_RULE_IDS), (
 #  * BR-DE-30 / BR-DE-31 (BT-90 / BT-91 with DIRECT DEBIT BG-19): the CII binding
 #    reconstructs BG-19 semantically from DirectDebitMandateID / CreditorReferenceID
 #    / PayerPartyDebtorFinancialAccount IBANID presence — none in the core model.
-#  * BR-DEX-01/04/05/06/07/08/15 (extension profile): out of the CIUS scope of
-#    this leg (as on the UBL side). The CVD/TMP family (BR-DE-CVD-*,
-#    BR-TMP-CVD-01, BR-TMP-2 and the CII-only BR-TMP-3) IS graded here — the
-#    normalized model carries its facts (parser_cii._build_cii_br_de).
+#  * BR-DEX-01/04/05/06/07/08 (extension profile): bind extension surfaces
+#    (attachment MIME codes, ISO 6523 scheme identifiers) the normalized model
+#    does not carry. BR-DEX-15 (sub invoice lines, CII-only) IS graded — its
+#    two-boolean surface (AssociatedDocumentLineDocument context presence +
+#    //ram:ParentLineID existence) is carried by parser_cii._build_cii_br_de.
+#    The CVD/TMP family (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2 and the CII-only
+#    BR-TMP-3) IS graded here — the normalized model carries its facts
+#    (parser_cii._build_cii_br_de).
 CII_XR_EXCLUDED_RULE_IDS = (
     "BR-DE-18", "BR-DE-19", "BR-DE-20", "BR-DE-22",
     "BR-DE-23-a", "BR-DE-23-b", "BR-DE-24-a", "BR-DE-24-b",
@@ -5735,6 +5741,21 @@ def _xrcmut_de_tmp32(r):
             "ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod", _NSC))
 
 
+def _xrcmut_dex15(r):
+    # Flip the guideline to the XRechnung EXTENSION specification identifier
+    # (the $isExtension gate; BR-DE-21 still holds — the extension id is a
+    # valid BT-24) and add a ram:ParentLineID to the first line's
+    # AssociatedDocumentLineDocument: the context node set is non-empty and
+    # //ram:ParentLineID exists -> BR-DEX-15 (warning) fires on both engines.
+    r.find("rsm:ExchangedDocumentContext/"
+           "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID",
+           _NSC).text = _rules_xr.XR_EXTENSION_ID
+    adld = r.find("rsm:SupplyChainTradeTransaction/"
+                  "ram:IncludedSupplyChainTradeLineItem/"
+                  "ram:AssociatedDocumentLineDocument", _NSC)
+    _sub_el(adld, NS_RAM, "ParentLineID", "1")
+
+
 _XR_CII_MUTATIONS = {
     "BR-DE-1": _xrcmut_de1, "BR-DE-2": _xrcmut_de2, "BR-DE-3": _xrcmut_de3,
     "BR-DE-4": _xrcmut_de4, "BR-DE-5": _xrcmut_de5, "BR-DE-6": _xrcmut_de6,
@@ -5743,6 +5764,7 @@ _XR_CII_MUTATIONS = {
     "BR-DE-15": _xrcmut_de15, "BR-DE-16": _xrcmut_de16, "BR-DE-17": _xrcmut_de17,
     "BR-DE-21": _xrcmut_de21, "BR-DE-26": _xrcmut_de26, "BR-DE-27": _xrcmut_de27,
     "BR-DE-28": _xrcmut_de28, "BR-DE-TMP-32": _xrcmut_de_tmp32,
+    "BR-DEX-15": _xrcmut_dex15,
 }
 
 

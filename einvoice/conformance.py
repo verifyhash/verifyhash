@@ -179,13 +179,16 @@ CALCULATION_ROUNDING_VACUOUS = {}
 # XRechnung EXTENSION (BR-DEX-*) coverage manifest.                            #
 #                                                                             #
 # The KoSIT XRechnung Extension customization adds fourteen business rules on  #
-# top of the CIUS (BR-DE-*) layer. Each is implemented in                      #
-# einvoice/rules_xrechnung.py, gated behind the extension CustomizationID, and #
-# proven equivalent to the official compiled KoSIT XSLT across the differential #
-# corpus (differential.py, XRechnung leg, green — targeted mutations off the   #
-# clean extension fixture business-cases/extension/04.02a). Listed here so the #
-# extension coverage is auditable and grep-able; the assert below guarantees   #
-# the manifest can never claim a rule the validator does not actually emit.    #
+# top of the CIUS (BR-DE-*) layer in the UBL artifact, plus one CII-only       #
+# assert (BR-DEX-15 — the vendored UBL artifact does not carry it). Each is    #
+# implemented in einvoice/rules_xrechnung.py, gated behind the extension       #
+# CustomizationID/guideline, and proven equivalent to the official compiled    #
+# KoSIT XSLT across the differential corpus (differential.py, XRechnung leg,   #
+# green — targeted mutations off the clean extension fixture                   #
+# business-cases/extension/04.02a; BR-DEX-15 on the xrechnung-cii leg).        #
+# Listed here so the extension coverage is auditable and grep-able; the assert #
+# below guarantees the manifest can never claim a rule the validator does not  #
+# actually emit.                                                               #
 XRECHNUNG_EXTENSION_COVERAGE = {
     "BR-DEX-01": "Attached Document (BT-125) MIME code within the Extension set "
                  "(EN 8.2 list + application/xml)",
@@ -207,6 +210,11 @@ XRECHNUNG_EXTENSION_COVERAGE = {
                  "BG-DEX-09",
     "BR-DEX-13": "Third party payment amount (BT-DEX-002) ≤ 2 decimal places",
     "BR-DEX-14": "Third party payment amount currency = Invoice currency (BT-5)",
+    # CII-only extension assert (the vendored UBL artifact has no BR-DEX-15):
+    # registered on the CII layer (rules_xrechnung.CII_DE_RULES), graded on the
+    # xrechnung-cii differential leg.
+    "BR-DEX-15": "Sub invoice lines (ram:ParentLineID) are not supported by "
+                 "XRechnung — CII-only assert (warning)",
 }
 
 
@@ -761,11 +769,17 @@ _CII_XR_ADMITTED_IDS = (
     "BR-TMP-2", "BR-TMP-3",
     "BR-DE-CVD-01", "BR-DE-CVD-02", "BR-DE-CVD-03", "BR-DE-CVD-04",
     "BR-DE-CVD-05", "BR-DE-CVD-06-a", "BR-DE-CVD-06-b", "BR-TMP-CVD-01",
+    # Extension layer — the single CII extension assert the normalized model
+    # carries (BR-DEX-15 exists ONLY in the CII artifact, like BR-TMP-3).
+    "BR-DEX-15",
 )
-# Descriptions are reused verbatim from the UBL CIUS/TMP manifests — the rule
-# SEMANTICS are identical across syntaxes; only the bound syntax differs.
+# Descriptions are reused verbatim from the UBL CIUS/TMP/extension manifests —
+# the rule SEMANTICS are identical across syntaxes; only the bound syntax
+# differs (BR-DEX-15 has no UBL binding at all and is described in the
+# extension manifest above).
 CII_XRECHNUNG_CIUS_COVERAGE = {
-    rid: {**XRECHNUNG_CIUS_COVERAGE, **XRECHNUNG_TMP_COVERAGE}[rid]
+    rid: {**XRECHNUNG_CIUS_COVERAGE, **XRECHNUNG_TMP_COVERAGE,
+          **XRECHNUNG_EXTENSION_COVERAGE}[rid]
     for rid in _CII_XR_ADMITTED_IDS
 }
 CII_XRECHNUNG_CIUS_EXCLUDED = {
@@ -847,14 +861,18 @@ try:
         % (sorted(CII_XRECHNUNG_CIUS_EXCLUDED.keys() - _CII_XR_EXCLUDED),
            sorted(_CII_XR_EXCLUDED - CII_XRECHNUNG_CIUS_EXCLUDED.keys())))
     # Admitted CII national set must be a subset of the rules registered in
-    # rules_xrechnung.py (BR-DE-* via the CIUS scrape, BR-TMP-* via the same
-    # @_rule scrape — BR-TMP-3 is registered on the CII layer only, which the
-    # source scrape covers; differential.CII_ONLY_XR_RULE_IDS documents it).
+    # rules_xrechnung.py (BR-DE-* via the CIUS scrape, BR-TMP-* and BR-DEX-*
+    # via the same @_rule scrape — BR-TMP-3 and BR-DEX-15 are registered on
+    # the CII layer only, which the source scrape covers;
+    # differential.CII_ONLY_XR_RULE_IDS documents both).
+    _xr_ext_implemented = {
+        rid for rid in _XR_IMPLEMENTED if rid.startswith("BR-DEX-")}
     assert CII_XRECHNUNG_CIUS_COVERAGE.keys() <= (
-        _XR_CIUS_IMPLEMENTED | _XR_TMP_IMPLEMENTED), (
+        _XR_CIUS_IMPLEMENTED | _XR_TMP_IMPLEMENTED | _xr_ext_implemented), (
         "CII coverage names rules not implemented in rules_xrechnung.py: %s"
         % sorted(CII_XRECHNUNG_CIUS_COVERAGE.keys()
-                 - _XR_CIUS_IMPLEMENTED - _XR_TMP_IMPLEMENTED))
+                 - _XR_CIUS_IMPLEMENTED - _XR_TMP_IMPLEMENTED
+                 - _xr_ext_implemented))
 except ImportError:  # pragma: no cover - differential harness always co-located
     pass
 

@@ -20,24 +20,24 @@
     "validate.py"
   ],
   "sha256": {
-    "__init__.py": "30241373ad56cd7ccc9bd44fc5a14853b166706a67ac6aa05d89c732fd2133f2",
+    "__init__.py": "e0a57cbdd170698992de6d771fb5c106d7d674bafcdc009e18f1516516a1b908",
     "_xmlsec.py": "35afa2a1c5e26cb228ab5c6061216e2d05e99da943a028dc997dcd67c882ff6a",
     "cli.py": "8d2470fc08a0d1ee4ce4fe571d36a1c824e545ce73d32ca961882a240584de87",
     "codelists.py": "c16fb8cd486a9d3d21a2ec78118fa787402f047b14e840966fdf1e786e307fad",
     "config.py": "28e4c3d929041a0b47193980f094970d5693c6142f7166a7c1fb433d2565cd3a",
-    "coverage.py": "50cf5b0a6a2746ae6de33e5572e84b205baa40f35ef42a2a7654168716ab09e4",
+    "coverage.py": "035952577c76e4214594fc5d0e33d1d2b6130b09f2a9049d911f96777d1a67c5",
     "parser.py": "427d61533a7d968dcf988a1aa9ef4621a2f434bd7a2ce97f7e971518f6c154fd",
-    "parser_cii.py": "83039c59ca090854f81dfb3fe9a9efdf02a249848f9a3706b81c6f8cb6e8de08",
+    "parser_cii.py": "80e882b1e67ea8f46a5c0140cdbdae139755e17d92f6cc1945cc21d93b20034f",
     "pdf_container.py": "3ba9944ef13de861f5307c09aaa1e1a59f9964a927f9c0ca805eb8e1523a8a07",
     "receipt.py": "651b589100f1e908fdcfed4dcefba54d35dc07d258b204f48f595c50c00a8ee4",
     "remediation.py": "543f16e3139f1c7109afde05bd6bc1bdb5941603fa9f63fe112eda432e0ce9de",
     "report.py": "6ccda28ed65eb369fbbbbe21e2902225ca3a5214004bd175a9fb0e3a2525a538",
     "rules.py": "00484d80cf256969515310ed50ae7b61c0f3ca87e224039bbedf4f936d686fbd",
     "rules_peppol.py": "a6f0b48ce211fd3afd27b27c0a37adc2569ea21bc3e137e70141cfff432a9c33",
-    "rules_xrechnung.py": "2b2478be16b6a65c3cba84523a3e83aad269dd858d2d30ce993b8a95a4221011",
+    "rules_xrechnung.py": "5ec37dab6f8e5123624cde07b8b8ff6f56b5151fb95226d5ce06a7a1180505b9",
     "syntax_binding.py": "e22c097268e6a7c37d32201838a56b5b11ed53b05e8bb15b29ee3a219347df52",
     "syntax_binding_eval.py": "d79cc3f4b157b17d2a72dcf4ed6aa7278745ed4b3adbb0e414003bdb0d0b2c21",
     "validate.py": "b671cbad551fbddf8c6aa638ee6b4c1232ccac76e745459c47ef24c35adfa1d0"
   },
-  "version": "0.2.2"
+  "version": "0.2.3"
 }

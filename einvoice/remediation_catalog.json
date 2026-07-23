@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement. message_de (present ONLY on de_source=='kosit' rules) is the official German <sch:assert> message VERBATIM, with a message_de_provenance {artifact, assert_id} tag naming the vendored file it was lifted from; the --lang de CLI surfaces it in place of the English message.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 288,
+  "rule_count": 289,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -5041,6 +5041,21 @@
         "artifact": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
         "assert_id": "BR-DEX-14"
       }
+    },
+    "BR-DEX-15": {
+      "title": "A CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning).",
+      "requires": "a CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning).",
+      "bt_bg": [],
+      "location_hint": "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument",
+      "fix": "Remove the unsupported element at `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument`: a CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning).",
+      "severity": "warning",
+      "provenance": {
+        "source": "xrechnung-cii",
+        "assert": "This CII file might use the concept of Sub Invoice Lines. However XRechnung does not support this."
+      },
+      "title_de": "Eine CII-Datei sollte das Konzept der Unterrechnungspositionen (ram:ParentLineID) nicht verwenden — XRechnung unterstützt dies nicht (Warnung).",
+      "fix_de": "Entfernen Sie das nicht unterstützte Element bei `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument`: Eine CII-Datei sollte das Konzept der Unterrechnungspositionen (ram:ParentLineID) nicht verwenden — XRechnung unterstützt dies nicht (Warnung).",
+      "de_source": "translation"
     },
     "BR-DE-CVD-01": {
       "title": "A CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty).",

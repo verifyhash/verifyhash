@@ -171,8 +171,9 @@ def engine_severity(rid, core_fns, xr_fns, pep_fns=None):
 
 def source_key(rid):
     """The coverage-matrix schematron_sources key the wording is derived from."""
-    if rid == "BR-TMP-3":
-        # CII-only: the vendored UBL artifact carries no BR-TMP-3 assert.
+    if rid in ("BR-TMP-3", "BR-DEX-15"):
+        # CII-only: the vendored UBL artifact carries neither assert
+        # (differential.CII_ONLY_XR_RULE_IDS).
         return "xrechnung-cii"
     if (rid.startswith("BR-DE") or rid.startswith("BR-TMP")
             or rid.startswith("PEPPOL-")):
@@ -371,6 +372,11 @@ def derive_fix(rid, rec, requires, location, xr_fns):
     test = rec.get("test") or ""
     loc = "`%s`" % location
 
+    if rid == "BR-DEX-15":
+        # Whole-test prohibition (not(exists(//ram:ParentLineID))): the fix is
+        # REMOVAL of the offending element — the generic presence heuristic
+        # below would match the inner exists( and wrongly say "Add".
+        return "Remove the unsupported element at %s: %s." % (loc, req)
     if rid.startswith("PEPPOL-"):
         fam = _PEPPOL_FIX_FAMILY[rid]
         if fam == "presence":
@@ -897,6 +903,10 @@ SPECIAL = {
     "any scheme identifier on a Deliver-to location identifier (cac:DeliveryLocation/cbc:ID, BT-71) must be an ISO 6523 ICD (extension) code.":
         "Jede Schema-Kennung einer Kennung des Lieferorts (cac:DeliveryLocation/cbc:ID, BT-71) "
         "muss ein ISO-6523-ICD-Code (Extension) sein.",
+    "a CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning).":
+        "Eine CII-Datei sollte das Konzept der Unterrechnungspositionen "
+        "(ram:ParentLineID) nicht verwenden — XRechnung unterstützt "
+        "dies nicht (Warnung).",
     # ---- Supporting-document / item-metadata / VAT-point batch (2026-07) ----
     "An Invoice line (BG-25) shall have an Invoiced quantity unit of measure code (BT-130).":
         "Jede Rechnungsposition (BG-25) muss den Code der Maßeinheit der in Rechnung "
@@ -1087,8 +1097,9 @@ _DE_WORDS = re.compile(
 
 def assert_is_german(text):
     """True iff the vendored Schematron assert string is German prose (the ~40
-    BR-DE / BR-DE-TMP / German BR-DEX asserts). Six BR-DEX extension asserts are
-    written in English in the KoSIT sources and are handled as translations."""
+    BR-DE / BR-DE-TMP / German BR-DEX asserts). Seven BR-DEX extension asserts
+    are written in English in the KoSIT sources (six UBL ones plus the
+    CII-only BR-DEX-15) and are handled as translations."""
     return bool(_DE_WORDS.search(text or ""))
 
 
@@ -1097,6 +1108,8 @@ def _fix_family(rid, rec, requires):
     English requirement and the Schematron @test (all language-neutral), so the
     German fix picks the same imperative verb the English fix does."""
     test = rec.get("test") or ""
+    if rid == "BR-DEX-15":
+        return "prohibition"   # whole-test not(exists(...)) — see derive_fix
     if rid.startswith("PEPPOL-"):
         return _PEPPOL_FIX_FAMILY[rid]
     if rid.startswith("BR-CL"):
@@ -1116,6 +1129,7 @@ def _fix_family(rid, rec, requires):
 
 
 _FIX_DE = {
+    "prohibition": "Entfernen Sie das nicht unterst\u00fctzte Element bei %s: %s.",
     "codelist": "Codieren Sie %s mit einem g\u00fcltigen Wert aus der geforderten Codeliste: %s.",
     "decimals": "Runden Sie den Wert bei %s auf die zul\u00e4ssige Anzahl an Nachkommastellen: %s.",
     "calc": "Korrigieren Sie den berechneten Betrag bei %s, sodass gilt: %s.",

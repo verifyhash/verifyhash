@@ -11,6 +11,39 @@ Versions here are the single source of truth together with
 (`__version__`); `test_release_discipline.py` fails the build if the three
 ever diverge.
 
+## [0.2.3] - 2026-07-23
+
+The engine now fires 289 rules (was 288): `BR-DEX-15`, the last measured
+engine gap against the vendored KoSIT XRechnung-CII artifact, is implemented
+(`test_docs_rule_claims.py` binds the 289 to the live
+`coverage.engine_fireable_ids()` registry, as before).
+
+### Added
+
+- **`BR-DEX-15` (sub invoice lines unsupported) is implemented** — the ONE
+  XRechnung Extension assert that exists ONLY in the CII artifact (the
+  vendored UBL artifact carries no such id, exactly like `BR-TMP-3`).
+  Transcribed from `XRechnung-CII-validation.sch` pattern
+  `cii-extension-pattern`: context every
+  `ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument`
+  gated behind the CII `$isExtension` guideline let, test
+  `not(exists(//ram:ParentLineID))`, flag **warning** (copied exactly — it
+  does not block validity). A German CII extension invoice using sub invoice
+  lines previously false-PASSed silently; it now reports the same warning
+  the official KoSIT validator raises. Registered on the CII layer
+  (`rules_xrechnung.CII_DE_RULES`), carried by two new normalized-model
+  booleans (`parser_cii`), unit-pinned positive + negative in
+  `test_xrechnung.py`, and graded on the `xrechnung-cii` differential leg
+  with a targeted mutation (0 divergences).
+
+### Changed
+
+- Coverage/count surfaces regenerated and re-pinned through the existing
+  drift guards (README §2, `COVERAGE.md`/`coverage_matrix.json`,
+  `cii_parity.json`, `RULES.md`, `remediation_catalog.json`, exports,
+  attestation, site, web bundle; pyproject + `action/README.md`
+  descriptions now say 289). No guard was weakened.
+
 > Note: `verifyhash-einvoice` is published to PyPI as of 0.2.0 (2026-07-22);
 > republishing remains a deliberate human-gated step (see `REPUBLISH-PYPI.md`).
 > Each section below records what the tree actually ships at that version —

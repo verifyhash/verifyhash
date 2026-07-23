@@ -190,11 +190,12 @@ run by the repo's mechanical gate via `test/einvoice.test.js`).
 ### What the XRechnung layer does NOT cover
 
 - ~~`BR-DEX-*` / `BR-DE-CVD-*` / `BR-TMP-2`~~ — since implemented: the
-  extension profile, the Clean-Vehicle-Directive profile (each gated on its
-  own CustomizationID, inert on plain CIUS invoices), `BR-TMP-2` and the
-  CII-only `BR-TMP-3` are all shipped and differential-proven (see
-  `COVERAGE.md`); the **`PEPPOL-EN16931-*`** rules KoSIT ships in the same
-  artifact live in their own module (KoSIT-vendored subset only);
+  extension profile (including the CII-only `BR-DEX-15`), the
+  Clean-Vehicle-Directive profile (each gated on its own CustomizationID,
+  inert on plain CIUS invoices), `BR-TMP-2` and the CII-only `BR-TMP-3` are
+  all shipped and differential-proven (see `COVERAGE.md`); the
+  **`PEPPOL-EN16931-*`** rules KoSIT ships in the same artifact live in
+  their own module (KoSIT-vendored subset only);
 - ~~UBL `CreditNote`~~ — since implemented: a UBL 2.1 `CreditNote` (root
   `CreditNote-2:CreditNote`) is validated by the SAME EN 16931 core engine as an
   `Invoice`, differentially proven at 0 divergences over the vendored CreditNote

@@ -60,7 +60,7 @@ leak check, `/etc/passwd` XXE, external-DTD `SYSTEM`) and `test_robustness.py`,
 which also assert that a benign XRechnung invoice still parses and validates
 unchanged.
 
-Read §2 before trusting it with anything. The engine asserts **288 business
+Read §2 before trusting it with anything. The engine asserts **289 business
 rules** in total — the exact set the code fires, enumerated per rule in
 [`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` and drift-gated by
 `test_coverage_matrix.py` against the live rule registries. That total breaks
@@ -69,7 +69,7 @@ syntax universe (UBL and CII) — **every official rule that can actually fire,
 except eight deferred `BR-CL-*` code-list checks** — plus, with
 `--profile=xrechnung`, the German XRechnung CIUS + extension layer
 (55 `BR-DE-*`/`BR-DE-CVD-*`/`BR-TMP-*`/`BR-DEX-*` asserts on UBL, a 29-rule
-subset plus the CII-only `BR-TMP-3` on CII) and the **21
+subset plus the CII-only `BR-TMP-3` and `BR-DEX-15` on CII) and the **21
 `PEPPOL-EN16931-R*` rules KoSIT ships inside the official XRechnung
 Schematron artifact** — the KoSIT-vendored subset only, **not** Peppol BIS
 Billing 3.0 support (see §2). The machine-checked gap of official rules
@@ -117,9 +117,10 @@ it is differentially proven on the CII artifact too, and which rules have that
 proof is machine-tracked: `test_cii_parity.py` recomputes the worklist
 (`cii_parity.json`) from the live coverage matrix plus a real XML parse of the
 vendored CII Schematron, and fails on any drift, so the parity gap can neither
-be hand-edited nor go stale. As of 2026-07-22 the arc is terminal: **255 of
-the 288 asserted rules are differential-proven on both the UBL and CII
-bindings, 30 are officially UBL-only, and 3 are CII-only** (`BR-TMP-3`, plus
+be hand-edited nor go stale. As of 2026-07-23 the arc is terminal: **255 of
+the 289 asserted rules are differential-proven on both the UBL and CII
+bindings, 30 are officially UBL-only, and 4 are CII-only** (`BR-TMP-3` and
+`BR-DEX-15`, whose asserts exist only in the CII artifact, plus
 `BR-DEC-13`/`BR-DEC-15`, whose UBL asserts are artifact-vacuous — see the
 caveat in §1).
 **Zero rules remain on the cii-fireable worklist** — every one of the 30
@@ -221,8 +222,10 @@ root). Rule wording follows the vendored EN 16931 Schematron
 That is every `BR-DE-*` assert in the official KoSIT XRechnung 3.0.2 UBL
 Schematron (the numbering has official gaps: no BR-DE-12/13/29 exist there).
 Severities mirror the official flags — only **fatal** rules affect the exit
-code; warnings/information are reported in `--json`. The 14 `BR-DEX-*`
-extension-profile rules have since been implemented as well, and so has the
+code; warnings/information are reported in `--json`. The 15 `BR-DEX-*`
+extension-profile rules have since been implemented as well (14 UBL asserts
+plus the CII-only `BR-DEX-15` — sub invoice lines unsupported, warning,
+graded on the `xrechnung-cii` differential leg), and so has the
 complete CVD/TMP family the same artifacts carry: the Clean-Vehicle-Directive
 profile (`BR-DE-CVD-01`–`05`, `BR-DE-CVD-06-a/-b`, `BR-TMP-CVD-01` — gated on
 the CVD `CustomizationID` `…xrechnung:cvd_0.9`, inert on plain invoices),
@@ -316,12 +319,13 @@ exact reason in
 
 ### NOT covered yet (deliberate first-slice cuts — do not rely on these)
 
-- **`BR-TMP-3` is CII-only by artifact design** — the `BR-DE-*` CIUS core,
-  the `BR-DEX-*` extension layer AND the Clean-Vehicle-Directive/temporary
-  family (`BR-DE-CVD-*`, `BR-TMP-CVD-01`, `BR-TMP-2`, `BR-TMP-3`) are all
-  implemented (see `COVERAGE.md`), but the vendored UBL artifact carries no
-  `BR-TMP-3` assert, so that one rule is asserted and proven on the CII
-  syntax only — a UBL differential proof is impossible by construction.
+- **`BR-TMP-3` and `BR-DEX-15` are CII-only by artifact design** — the
+  `BR-DE-*` CIUS core, the `BR-DEX-*` extension layer AND the
+  Clean-Vehicle-Directive/temporary family (`BR-DE-CVD-*`, `BR-TMP-CVD-01`,
+  `BR-TMP-2`, `BR-TMP-3`) are all implemented (see `COVERAGE.md`), but the
+  vendored UBL artifact carries no `BR-TMP-3` or `BR-DEX-15` assert, so those
+  two rules are asserted and proven on the CII syntax only — a UBL
+  differential proof is impossible by construction.
 - **No Peppol BIS Billing 3.0 support.** All 21 `PEPPOL-EN16931-R*`
   rules KoSIT ships inside the official XRechnung Schematron artifact ARE
   implemented (both bindings, differential-proven; the enumeration stays
@@ -639,7 +643,7 @@ not a general processor) mirrors **735 of 756 UBL + 506 of 583 CII** of them, ea
 differential-proven equivalent to the official CEN Schematron at **0 divergences**
 over the corpus; the remaining **98 (21 UBL + 77 CII)** are left machine-listed as
 `known-open` in [`COVERAGE.md`](COVERAGE.md) — never guessed, never silently
-dropped. These counts are **kept strictly separate** from the 288 business rules
+dropped. These counts are **kept strictly separate** from the 289 business rules
 and are recomputed live by `test_syntax_binding.py`.
 
 `einvoice validate --json` surfaces the UBL findings under a distinct
@@ -722,7 +726,7 @@ This reads [`attestation.json`](attestation.json) — a byte-reproducible record
 that pins the exact numbers we publish — and confirms they still match the live
 source tree. It exits `0` only if nothing has moved. `attestation.json` pins:
 
-- **288 business rules** asserted by the engine (the frozen `rules.count`);
+- **289 business rules** asserted by the engine (the frozen `rules.count`);
 - the frozen syntax-binding coverage headline: **741 of 756 UBL** + **554 of
   583 CII** syntax-binding asserts differential-proven per binding;
 - the in-scope KoSIT test-suite pass rates: **39 of 39 UBL** and **39 of 39

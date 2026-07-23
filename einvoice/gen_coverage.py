@@ -173,8 +173,13 @@ CII_DE_REASON = {
 }
 for _a in ("BR-DE-23-b", "BR-DE-24-b", "BR-DE-25-b"):
     CII_DE_REASON[_a] = CII_DE_REASON[_a[:-1] + "a"].replace("-a ", "-b ")
-_CII_DEX_GENERIC = ("part of the KoSIT XRechnung EXTENSION layer (UBL "
-                    "CustomizationID only); no CII extension profile is in scope.")
+_CII_DEX_GENERIC = ("part of the KoSIT XRechnung EXTENSION layer: this assert "
+                    "is either absent from the vendored CII artifact "
+                    "(BR-DEX-02/03/09..14 exist only in the UBL binding) or "
+                    "binds an extension surface (attachment MIME codes, "
+                    "ISO 6523 scheme identifiers — BR-DEX-01/04..08) the "
+                    "normalized CII model does not carry. Only the CII-only "
+                    "BR-DEX-15 is admitted and graded on the CII leg.")
 _CII_DE_GENERIC = ("national rule not evaluated on the CII differential leg (LEG 4).")
 
 
@@ -848,9 +853,10 @@ def build_matrix():
         }
 
     # CII-only national rules (rules_xrechnung.CII_DE_RULES ids the UBL layer
-    # does not carry — currently exactly BR-TMP-3, whose assert exists ONLY in
-    # the vendored CII artifact). syntax is 'cii': there is no UBL assert to
-    # prove against, so 'both' would be a fabrication.
+    # does not carry — currently BR-TMP-3 and the extension-layer BR-DEX-15,
+    # whose asserts exist ONLY in the vendored CII artifact). syntax is 'cii':
+    # there is no UBL assert to prove against, so 'both' would be a
+    # fabrication.
     ubl_xr_ids = {fn.rule_id for fn in _rules_xr.ALL_RULES}
     for fn in _rules_xr.CII_DE_RULES:
         rid = fn.rule_id
@@ -868,11 +874,16 @@ def build_matrix():
             "cii": _prov("xrechnung-cii", cii_ok,
                          None if cii_ok else _CII_DE_GENERIC),
         }
+        if rid.startswith("BR-DEX"):
+            family = "xrechnung-extension"
+        elif _coverage.is_cvd_tmp_id(rid):
+            family = "xrechnung-cvd-tmp"
+        else:
+            family = "xrechnung-cius"
         entries[rid] = {
             "id": rid,
             "title": _title(fn, rid),
-            "family": ("xrechnung-cvd-tmp" if _coverage.is_cvd_tmp_id(rid)
-                       else "xrechnung-cius"),
+            "family": family,
             "syntax": "cii" if cii_ok else "ubl",
             "severity": _severity_class(flag),
             "flag": flag,

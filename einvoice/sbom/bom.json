@@ -5,10 +5,10 @@
   "metadata": {
     "component": {
       "type": "library",
-      "bom-ref": "pkg:pypi/verifyhash-einvoice@0.2.2",
+      "bom-ref": "pkg:pypi/verifyhash-einvoice@0.2.3",
       "name": "verifyhash-einvoice",
-      "version": "0.2.2",
-      "purl": "pkg:pypi/verifyhash-einvoice@0.2.2",
+      "version": "0.2.3",
+      "purl": "pkg:pypi/verifyhash-einvoice@0.2.3",
       "description": "Zero-dependency EN 16931 / XRechnung (UBL) e-invoice conformance validator (Python, stdlib only).",
       "licenses": [
         {
@@ -131,7 +131,7 @@
   ],
   "dependencies": [
     {
-      "ref": "pkg:pypi/verifyhash-einvoice@0.2.2",
+      "ref": "pkg:pypi/verifyhash-einvoice@0.2.3",
       "dependsOn": []
     }
   ]

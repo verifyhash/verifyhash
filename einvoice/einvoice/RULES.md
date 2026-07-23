@@ -30,7 +30,7 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**288 rules** in total — 276 fatal, 11 warning, 1 information — across 21 families.
+**289 rules** in total — 276 fatal, 12 warning, 1 information — across 21 families.
 
 ## Families
 
@@ -50,7 +50,7 @@ catalog.
 - **BR-Z** (10) — VAT breakdown rules for VAT category code Z.
 - **BR-DE** (31) — German XRechnung national CIUS rules (KoSIT).
 - **BR-DE-TMP** (1) — German XRechnung national rules (BR-DE-TMP).
-- **BR-DEX** (14) — German XRechnung extension-layer rules (BR-DEX).
+- **BR-DEX** (15) — German XRechnung extension-layer rules (BR-DEX).
 - **BR-DE-CVD** (7) — German XRechnung Clean-Vehicle-Directive profile rules — applied only when the invoice carries the CVD specification identifier (BT-24 ending in …xrechnung:cvd_0.9); they require the contract and tender references plus the vehicle-classification data (BT-158 'CVD' + BT-160 'cva') that Clean Vehicle Directive reporting needs.
 - **BR-TMP** (2) — German XRechnung temporary rules (KoSIT BR-TMP): BR-TMP-2 checks that an external document location (BT-124) is an absolute URL with a valid scheme; BR-TMP-3 exists only in the CII syntax binding and checks gross/net item-price base-quantity (BT-149/BT-150) consistency.
 - **BR-TMP-CVD** (1) — German XRechnung Clean-Vehicle-Directive code-list rule — the BT-158 scheme identifier must come from UNTDID 7143 (extended with 'CVD').
@@ -2436,6 +2436,15 @@ German XRechnung extension-layer rules (BR-DEX).
 - **Fix:** Correct the calculated amount at `/ubl:Invoice/cac:PrepaidPayment` so that the currency of 'Third party payment amount' (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -> fires.
 - **Severity:** fatal
 - **Provenance:** `xrechnung-ubl` — “Die Währungsangabe von "Third party payment amount" BT-DEX-002 muss BT-5 ("Invoice currency code") entsprechen.”
+
+### BR-DEX-15 — A CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning).
+
+- **Requires:** a CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning).
+- **Business terms:** — (no single business term)
+- **Location:** `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument`
+- **Fix:** Remove the unsupported element at `/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument`: a CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning).
+- **Severity:** warning
+- **Provenance:** `xrechnung-cii` — “This CII file might use the concept of Sub Invoice Lines. However XRechnung does not support this.”
 
 ## BR-DE-CVD
 

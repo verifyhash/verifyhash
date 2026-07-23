@@ -771,5 +771,120 @@ class CliProfile(unittest.TestCase):
         self.assertEqual(proc.returncode, 2)
 
 
+# --------------------------------------------------------------------------- #
+# BR-DEX-15 — the ONE extension assert that exists ONLY in the CII artifact   #
+# (XRechnung-CII-validation.sch, pattern cii-extension-pattern):              #
+#   context  .../ram:IncludedSupplyChainTradeLineItem/                        #
+#            ram:AssociatedDocumentLineDocument[$isExtension]                 #
+#   test     not(exists(//ram:ParentLineID))          flag="warning"          #
+# Unit fixtures mutate the clean XRechnung CII invoice 01.02a (fires NO       #
+# admitted CII rule — pinned by test_rules_cii.py) through the CII layer.     #
+# --------------------------------------------------------------------------- #
+from einvoice import parser_cii                       # noqa: E402
+
+XR_CII_BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src",
+                           "test", "business-cases", "standard",
+                           "01.02a-INVOICE_uncefact.xml")
+NS_RAM = parser_cii.NS_RAM
+NS_CII = parser_cii.NS
+_CII_BASE_ROOT = ET.parse(XR_CII_BASE).getroot()
+
+
+def cii_base():
+    return copy.deepcopy(_CII_BASE_ROOT)
+
+
+def cii_fired(root):
+    return {v.rule_id for v in xr.evaluate_cii(parser_cii.build_model(root))}
+
+
+def _cii_guideline_id(root):
+    return root.find("rsm:ExchangedDocumentContext/"
+                     "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID",
+                     NS_CII)
+
+
+def _cii_first_adld(root):
+    return root.find("rsm:SupplyChainTradeTransaction/"
+                     "ram:IncludedSupplyChainTradeLineItem/"
+                     "ram:AssociatedDocumentLineDocument", NS_CII)
+
+
+class BrDex15CiiShape(unittest.TestCase):
+    """Registry shape: BR-DEX-15 lives in the CII layer ONLY, flag copied
+    from the artifact (warning)."""
+
+    def test_registered_cii_only_with_official_warning_flag(self):
+        cii_by_id = {fn.rule_id: fn.severity for fn in xr.CII_DE_RULES}
+        self.assertEqual(cii_by_id.get("BR-DEX-15"), "warning")
+        # The vendored UBL artifact carries no BR-DEX-15 assert, so the UBL
+        # registry must not either.
+        self.assertNotIn("BR-DEX-15",
+                         {fn.rule_id for fn in xr.ALL_RULES})
+
+
+class BrDex15CiiFixtures(unittest.TestCase):
+    """Positive fixture fires BR-DEX-15; negative fixtures stay clean."""
+
+    def _make_extension(self, root):
+        _cii_guideline_id(root).text = xr.XR_EXTENSION_ID
+
+    def _add_parent_line_id(self, root):
+        ET.SubElement(_cii_first_adld(root),
+                      q(NS_RAM, "ParentLineID")).text = "1"
+
+    def test_positive_extension_sub_invoice_line_fires(self):
+        r = cii_base()
+        self._make_extension(r)
+        self._add_parent_line_id(r)
+        # The extension id is a valid BT-24 (BR-DE-21 holds), the base is
+        # BR-DE-clean, so EXACTLY BR-DEX-15 fires.
+        self.assertEqual(cii_fired(r), {"BR-DEX-15"})
+
+    def test_positive_severity_is_warning(self):
+        r = cii_base()
+        self._make_extension(r)
+        self._add_parent_line_id(r)
+        v = [v for v in xr.evaluate_cii(parser_cii.build_model(r))
+             if v.rule_id == "BR-DEX-15"]
+        self.assertEqual(len(v), 1)
+        self.assertEqual(v[0].severity, "warning")
+
+    def test_negative_clean_extension_does_not_fire(self):
+        # Extension guideline but no ParentLineID anywhere -> assert holds.
+        r = cii_base()
+        self._make_extension(r)
+        self.assertEqual(cii_fired(r), set())
+
+    def test_negative_cius_invoice_with_parent_line_id_is_inert(self):
+        # $isExtension is false on a plain CIUS invoice -> context never
+        # matches, the rule is inert even with a ParentLineID present.
+        r = cii_base()
+        self._add_parent_line_id(r)
+        self.assertNotIn("BR-DEX-15", cii_fired(r))
+
+    def test_negative_no_context_node_means_no_fire(self):
+        # Official context is the AssociatedDocumentLineDocument node set:
+        # remove every one -> empty context, no assert is evaluated, even
+        # though //ram:ParentLineID exists (here directly under the line).
+        r = cii_base()
+        self._make_extension(r)
+        for ln in r.findall("rsm:SupplyChainTradeTransaction/"
+                            "ram:IncludedSupplyChainTradeLineItem", NS_CII):
+            for adld in ln.findall("ram:AssociatedDocumentLineDocument",
+                                   NS_CII):
+                ln.remove(adld)
+            ET.SubElement(ln, q(NS_RAM, "ParentLineID")).text = "1"
+        self.assertNotIn("BR-DEX-15", cii_fired(r))
+
+    def test_model_carries_the_brdex15_surface(self):
+        inv = parser_cii.build_model(cii_base())
+        self.assertTrue(inv.has_assoc_document_line_document)
+        self.assertFalse(inv.has_parent_line_id)
+        r = cii_base()
+        self._add_parent_line_id(r)
+        self.assertTrue(parser_cii.build_model(r).has_parent_line_id)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

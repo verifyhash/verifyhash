@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EN 16931 / XRechnung rule index — einvoice rule reference</title>
-<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (288 rules across 21 families), grouped by rule family with a reference page for each.">
+<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (289 rules across 21 families), grouped by rule family with a reference page for each.">
 <link rel="canonical" href="https://verifyhash.com/einvoice/rules/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -80,7 +80,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../index.html">einvoice</a> / EN 16931 / XRechnung rule reference</p>
 <h1>Rule index</h1>
 <p class="lead">Every EN 16931 / XRechnung business rule the einvoice engine can fire, grouped by rule family. Each rule links to its own reference page: what it requires, the BT/BG business terms it touches, the XML location, a one-line fix, the engine severity, and the verbatim official Schematron assert.</p>
-<p><strong>288 rules</strong> in total — 276 fatal, 11 warning, 1 information — across 21 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
+<p><strong>289 rules</strong> in total — 276 fatal, 12 warning, 1 information — across 21 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
 <nav class="toc">
 <ul class="rules">
 <li><a href="#BR">BR</a> (58)</li>
@@ -99,7 +99,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="#BR-Z">BR-Z</a> (10)</li>
 <li><a href="#BR-DE">BR-DE</a> (31)</li>
 <li><a href="#BR-DE-TMP">BR-DE-TMP</a> (1)</li>
-<li><a href="#BR-DEX">BR-DEX</a> (14)</li>
+<li><a href="#BR-DEX">BR-DEX</a> (15)</li>
 <li><a href="#BR-DE-CVD">BR-DE-CVD</a> (7)</li>
 <li><a href="#BR-TMP">BR-TMP</a> (2)</li>
 <li><a href="#BR-TMP-CVD">BR-TMP-CVD</a> (1)</li>
@@ -446,7 +446,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 </ul>
 </section>
 <section class="fam" id="BR-DEX">
-<h2>BR-DEX <small>(14)</small></h2>
+<h2>BR-DEX <small>(15)</small></h2>
 <p class="intro">German XRechnung extension-layer rules (BR-DEX).</p>
 <ul class="rules">
 <li><a href="BR-DEX-01/index.html"><code>BR-DEX-01</code></a> — Every &#x27;Attached Document&#x27; binary object (BT-125) must use an Extension-allowed MIME code. Context is cbc:EmbeddedDocumentBinaryObject anywhere in the document; the extra allowance over EN 8.2 is application/xml. An absent @mimeCode also fires (empty node-set). <span class="sev">fatal</span></li>
@@ -463,6 +463,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="BR-DEX-12/index.html"><code>BR-DEX-12</code></a> — &#x27;Third party payment description&#x27; (BT-DEX-003, cbc:InstructionID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). <span class="sev">fatal</span></li>
 <li><a href="BR-DEX-13/index.html"><code>BR-DEX-13</code></a> — &#x27;Third party payment amount&#x27; (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, &#x27;.&#x27;)) &lt;= 2 (no &#x27;.&#x27; -&gt; &#x27;&#x27; -&gt; length 0 -&gt; holds). <span class="sev">fatal</span></li>
 <li><a href="BR-DEX-14/index.html"><code>BR-DEX-14</code></a> — The currency of &#x27;Third party payment amount&#x27; (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -&gt; fires. <span class="sev">fatal</span></li>
+<li><a href="BR-DEX-15/index.html"><code>BR-DEX-15</code></a> — A CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning). <span class="sev">warning</span></li>
 </ul>
 </section>
 <section class="fam" id="BR-DE-CVD">

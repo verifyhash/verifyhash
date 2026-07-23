@@ -25,9 +25,9 @@ The vendored German national rule set is **KoSIT XRechnung Schematron 2.5.0, whi
 
 ## Coverage at a glance
 
-- **288 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **255** proven on both UBL and CII, **30** UBL-only, **3** CII-only.
-- Severity (blocking class): **276** fatal (block validity), **12** warning / information (reported, non-blocking).
+- **289 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
+- Syntax: **255** proven on both UBL and CII, **30** UBL-only, **4** CII-only.
+- Severity (blocking class): **276** fatal (block validity), **13** warning / information (reported, non-blocking).
 - **Official German messages: 50 rules** carry an official German assert message, surfaced by the CLI `--lang de` flag (report human-message only; `--json` and exit codes are unchanged). That text is lifted VERBATIM from the vendored KoSIT XRechnung Schematron (`de_source == "kosit"`), never machine-translated; every other rule is English-only by design (no official German assert text exists to quote). See the README `--lang de` section.
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
   EN 16931 `BR-*` assert that can actually fire is either asserted by the engine
@@ -306,6 +306,7 @@ the non-blocking `warning` class for the severity column).
 | `BR-DEX-12` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | 'Third party payment description' (BT-DEX-003, cbc:InstructionID) must be present (non-empty) in every THIRD PARTY PAYMENT group (BG-DEX-09). |
 | `BR-DEX-13` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | 'Third party payment amount' (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, '.')) <= 2 (no '.' -> '' -> length 0 -> holds). |
 | `BR-DEX-14` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | The currency of 'Third party payment amount' (BT-DEX-002) must equal BT-5 (Invoice currency code): cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode. A missing @currencyID or a missing DocumentCurrencyCode makes the node-set comparison false -> fires. |
+| `BR-DEX-15` | CII | warning | warning | not proven | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | A CII file should not use the concept of Sub Invoice Lines (ram:ParentLineID) — XRechnung does not support them (warning). |
 | `BR-DE-CVD-01` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | A CVD invoice must transmit the 'Contract reference' (BT-12, cac:ContractDocumentReference/cbc:ID, non-empty). |
 | `BR-DE-CVD-02` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | A CVD invoice must transmit the 'Tender or lot reference' (BT-17, cac:OriginatorDocumentReference/cbc:ID, non-empty). |
 | `BR-DE-CVD-03` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | A CVD invoice must contain at least one INVOICE LINE (BG-25) whose Item carries an 'Item classification identifier' (BT-158) with scheme identifier 'CVD' AND an 'Item attribute name' (BT-160) with the value 'cva' — both on the SAME cac:Item. |
@@ -586,10 +587,10 @@ worklist automatically.
 
 ## CII proof parity
 
-**TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **288**
+**TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **289**
 business rules the engine asserts, **255** are differentially proven
 on BOTH the UBL and CII bindings; **30** are officially UBL-only and
-**3** is CII-only. Every one of the **30** UBL-only rules the
+**4** is CII-only. Every one of the **30** UBL-only rules the
 official CII artifacts were measured against is now resolved with
 evidence — **0 remain on the cii-fireable worklist** — so no CII
 assert the vendored artifacts carry is left unproven or silently
@@ -655,7 +656,7 @@ decimal-place cap — not EN 16931 business rules.
 
 - **756 UBL** + **583 CII** = **1339** syntax-binding asserts, extracted by a real XML parse of the two artifacts.
 - **Frozen honest headline (machine-recomputed):** **741 of 756 UBL** + **554 of 583 CII** syntax-binding asserts are differential-proven per binding (0 divergences against the official vendored CEN Schematron — `differential.py` LEG 5 `sb` / LEG 6 `sbcii`); the remaining **15 UBL** + **29 CII** are machine-listed known-open, each with its exact unsupported `@test` / `@context` form in the per-class worklists below. Nothing is approximated, hand-faked, or silently dropped — an id is promoted only where the restricted (non-general-XPath) evaluator proves exact equivalence, and the terminal per-class counts are asserted by `test_syntax_binding.py`.
-- Honesty note: these are **NOT** part of the **288 business rules**
+- Honesty note: these are **NOT** part of the **289 business rules**
   counted above, and none is folded into that matrix. The catalog is
   regenerated by `gen_syntax_binding.py` and re-parsed live by
   `test_syntax_binding.py`. The dominant **UBL `absence-restriction`**

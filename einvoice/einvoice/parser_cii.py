@@ -260,6 +260,12 @@ class Invoice(parser.Invoice):
         self.has_invoice_referenced_document = False  # BG-3 present (BR-DE-26)
         self.has_actual_delivery_date = False   # BT-72 present (BR-DE-TMP-32)
         self.has_billing_period = False         # BG-14 present (BR-DE-TMP-32)
+        # -- Extension (BR-DEX-15) surface: the rule context is each
+        #    ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument
+        #    (gated on $isExtension) and its test is not(exists(//ram:ParentLineID))
+        #    — document-global, so two booleans carry it exactly. -----------------
+        self.has_assoc_document_line_document = False  # any context node exists
+        self.has_parent_line_id = False         # //ram:ParentLineID exists
 
         # -- CVD / TMP surface (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2/3), also
         #    populated by _build_cii_br_de from the official CII rule paths. --
@@ -1036,6 +1042,11 @@ def _build_cii_br_de(inv, root):
             "rsm:ExchangedDocumentContext/"
             "ram:GuidelineSpecifiedDocumentContextParameter/ram:ID", NS):
         inv.guideline_ids.append(gid.text or "")
+    # BR-DEX-15: test is not(exists(//ram:ParentLineID)) — the descendant
+    # search spans the WHOLE document, so it is computed before the
+    # transaction guard (matching the official // axis exactly).
+    inv.has_parent_line_id = any(
+        True for _ in root.iter("{%s}ParentLineID" % NS_RAM))
     txn = root.find("rsm:SupplyChainTradeTransaction", NS)
     if txn is None:
         return
@@ -1043,6 +1054,12 @@ def _build_cii_br_de(inv, root):
     # CVD line surface: one record per IncludedSupplyChainTradeLineItem (the
     # BR-TMP-3 / BR-DE-CVD line contexts), independent of inv.lines.
     for ln_el in txn.findall("ram:IncludedSupplyChainTradeLineItem", NS):
+        # BR-DEX-15 rule context: ram:AssociatedDocumentLineDocument child of a
+        # top-level line item (the official context path is
+        # /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+        # ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument).
+        if ln_el.find("ram:AssociatedDocumentLineDocument", NS) is not None:
+            inv.has_assoc_document_line_document = True
         product_el = ln_el.find("ram:SpecifiedTradeProduct", NS)
         if product_el is None:
             inv.trade_products.append(None)

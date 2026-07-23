@@ -198,29 +198,10 @@ CODELIST_NOT_ASSERTED = {
                 "both .sch), so this is a deferred parser-surface gap "
                 "(note-text grammar + subject-code element), not a register "
                 "gap.",
-    "BR-CL-10": "Party identifier scheme in the ISO 6523 ICD list. Not asserted: "
-                "a broad party-identification scheme surface across many context "
-                "nodes; the 243-code ICD enumeration IS inlined in the .sch, but "
-                "the authoritative ISO 6523 register in corpus is a PDF "
-                "(codelist/iso6523/ICD-list.pdf), so it is deferred rather than "
-                "partially asserted.",
-    "BR-CL-11": "Party registration identifier scheme in the ISO 6523 ICD list. "
-                "Not asserted: same ICD surface as BR-CL-10 bound to "
-                "PartyLegalEntity/CompanyID / a scoped ram:ID; deferred.",
     "BR-CL-15": "Item origin country code (ISO 3166-1). Not asserted: the same "
                 "code lists as BR-CL-14 but a distinct context node "
                 "(cac:OriginCountry / ram:OriginTradeCountry) the model does not "
                 "yet collect.",
-    "BR-CL-25": "Electronic-address scheme identifier (CEF EAS). Not asserted: "
-                "the EAS code set IS inlined in the .sch "
-                "(cbc:EndpointID/@schemeID / ram:URIID/@schemeID), but the "
-                "endpoint scheme-identifier parser surface is deferred; the "
-                "authoritative register is the ISO 6523 PDF in corpus, not a "
-                "machine-readable list. The set is NOT fabricated from the PDF.",
-    "BR-CL-26": "Delivery-location identifier scheme (ISO 6523 ICD). Not "
-                "asserted: the same ICD list as BR-CL-21 bound to a different "
-                "context node (cac:DeliveryLocation/cbc:ID / "
-                "ram:ShipToTradeParty/ram:GlobalID @schemeID); deferred.",
 }
 
 

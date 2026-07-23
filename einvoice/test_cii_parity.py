@@ -286,10 +286,13 @@ class CiiParityTest(unittest.TestCase):
         # BR-DE-* family complete on CII; T-VHCIIDE.5 flipped the extension
         # scheme-id/attachment group BR-DEX-01/04..08 (267+6=273 both,
         # 18-6=12 UBL-only) — the German layer is complete on CII: 55/55 UBL
-        # + 49/49 CII KoSIT asserts graded.
-        self.assertEqual((n_both, n_ubl, n_cii), (273, 12, 4),
+        # + 49/49 CII KoSIT asserts graded. T-VHCLX.1 added the four CEN
+        # scheme-identifier code-list rules BR-CL-10/11/25/26, graded on BOTH
+        # syntaxes from the start (273+4=277 both; UBL-only/CII-only
+        # unchanged).
+        self.assertEqual((n_both, n_ubl, n_cii), (277, 12, 4),
                          "terminal matrix syntax split drifted from the frozen "
-                         "(273 both, 12 UBL-only, 4 CII-only)")
+                         "(277 both, 12 UBL-only, 4 CII-only)")
 
     # ---- 5. measurement-only guard ----------------------------------------
     def test_families_match_matrix_and_no_tag_flipped(self):

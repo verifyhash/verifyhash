@@ -1191,15 +1191,31 @@ def _build_cii_br_de(inv, root):
                     and pmap.get(parent) is not None
                     and pmap[parent].tag == _hdr_delivery_tag):
                 inv.ext_ship_to_global_id_schemes.append(scheme)   # BR-DEX-08
+                # CEN BR-CL-26 shares this exact HEADER-delivery context
+                # (ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/
+                # ram:GlobalID[@schemeID]); the rule body compares the
+                # normalize-space'd value against the ICD list.
+                inv.delivery_location_scheme_ids.append(_norm_space(scheme))
             if _product_tag not in ancestors and _ship_to_tag not in ancestors:
                 inv.ext_generic_global_id_schemes.append(scheme)   # BR-DEX-04
+                # CEN BR-CL-10 shares this exact generic-GlobalID context.
+                # The CII assert has NO 'SEPA' disjunct (unlike UBL), so the
+                # sepa_ancestor_ok flag is always False here.
+                inv.party_id_scheme_ids.append((_norm_space(scheme), False))
         elif el.tag == _id_tag:
             if _tax_reg_tag not in _ancestor_tags(el):
                 inv.ext_id_schemes.append(scheme)                  # BR-DEX-05
+                # CEN BR-CL-11 shares this exact non-tax-registration ram:ID
+                # context (the @schemeID='VA' VAT ids live under
+                # ram:SpecifiedTaxRegistration and are excluded).
+                inv.party_legal_scheme_ids.append(_norm_space(scheme))
         elif el.tag == _uriid_tag:
             parent = pmap.get(el)
             if parent is not None and parent.tag == _uri_comm_tag:
                 inv.ext_uri_id_schemes.append(scheme)              # BR-DEX-07
+                # CEN BR-CL-25 shares this exact endpoint context; the rule
+                # body compares against the CEN CEF EAS enumeration.
+                inv.endpoint_scheme_ids.append(_norm_space(scheme))
     txn = root.find("rsm:SupplyChainTradeTransaction", NS)
     if txn is None:
         return

@@ -8,13 +8,13 @@ The validator has **two distinct layers with separate coverage claims**:
 
 1. **EN 16931 core** — 108 of the ~200 EU-core business rules at this
    document's differential snapshot (109 of ~200 once the deferred BR-S-08
-   landed — see §5). The engine has since grown to **211 of the ~200-rule
+   landed — see §5). The engine has since grown to **215 of the ~200-rule
    EU core** (the denominator is the standard's own "about 200 business
    rules" framing; the vendored CEN artifacts enumerate 223 official
    `BR-*` assert ids, several of which are tautologies or defects — see
-   §5). The 211 is not folklore: it is the number of distinct rule ids
+   §5). The 215 is not folklore: it is the number of distinct rule ids
    emitted by `einvoice/rules.py` (`len(ALL_RULES)`, one function per rule
-   id, asserted to equal 211 in `differential.py` and drift-gated through
+   id, asserted to equal 215 in `differential.py` and drift-gated through
    `CHANGELOG.md`/`test_docs_rule_claims.py`), proven against the official
    CEN Schematron (§2);
 2. **XRechnung national CIUS (BR-DE-\*)** — all 32 German national asserts of
@@ -411,9 +411,9 @@ Specifically:
 
 - **Only 108 of ~200 EN 16931 business rules were implemented at this
   snapshot — 109 of ~200 with BR-S-08, whose deferral (next bullet) has since
-  been closed.** The engine has since grown to **211 of the ~200-rule core**
+  been closed.** The engine has since grown to **215 of the ~200-rule core**
   — the count of distinct rule ids emitted by `einvoice/rules.py`
-  (`len(ALL_RULES) == 211`, asserted in `differential.py`; the derived
+  (`len(ALL_RULES) == 215`, asserted in `differential.py`; the derived
   fireable total across all layers is bound to `CHANGELOG.md` and the
   package description by `test_docs_rule_claims.py` / `test_packaging.py`).
   Everything the snapshot listed as missing has since been implemented and

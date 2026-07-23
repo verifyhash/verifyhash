@@ -876,6 +876,18 @@ SPECIAL = {
         "Codierte Zuschlagsgründe MÜSSEN der Codeliste UNCL 7161 angehören.",
     "Item standard identifier scheme identifier MUST belong to the ISO 6523 ICD code list":
         "Die Kennung des Schemas der Artikel-Standardkennung MUSS der Codeliste ISO 6523 ICD angehören.",
+    # ---- Scheme-identifier code-list batch (BR-CL-10/11/25/26, 2026-07) ----
+    "Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.":
+        "Jede Kennung des Schemas einer Identifikationskennung MUSS anhand eines Wertes "
+        "der Liste ISO 6523 ICD codiert werden.",
+    "Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.":
+        "Jede Kennung des Schemas einer Registrierungskennung MUSS anhand eines Wertes "
+        "der Liste ISO 6523 ICD codiert werden.",
+    "Endpoint identifier scheme identifier MUST belong to the CEF EAS code list":
+        "Die Kennung des Schemas der Endpunktkennung MUSS der Codeliste CEF EAS angehören.",
+    "Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list":
+        "Die Kennung des Schemas der Kennung des Lieferorts MUSS der Codeliste "
+        "ISO 6523 ICD angehören.",
     "Tax exemption reason code identifier scheme identifier MUST belong to the CEF VATEX code list":
         "Die Kennung des Schemas des Codes für den Grund der Umsatzsteuerbefreiung MUSS der "
         "Codeliste CEF VATEX angehören.",

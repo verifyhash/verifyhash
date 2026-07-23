@@ -355,11 +355,13 @@ class ParserHealth(unittest.TestCase):
         neg, _pos, _w = not_covered_claims()
         _p, _wl, neg_gaps = implemented_claims()
         self.assertGreaterEqual(
-            len(neg), 12,
-            "only %d NOT-covered ids parsed (expected the 8 BR-CL deferrals "
+            len(neg), 8,
+            "only %d NOT-covered ids parsed (expected the 4 BR-CL deferrals "
             "+ BR-CO-05..08 at minimum) — extractor decay"
             % len(neg))
-        for canary in ("BR-CL-06", "BR-CL-26",   # slash-shorthand deferrals
+        # BR-CL-10/11/25/26 moved to Implemented with T-VHCLX.1, so the
+        # deferral canaries are the remaining BR-CL-06/07/08/15 family.
+        for canary in ("BR-CL-06", "BR-CL-15",   # slash-shorthand deferrals
                        "BR-CO-05", "BR-CO-08"):   # tautology range ends
             self.assertIn(canary, neg,
                           "known NOT-covered claim %s not parsed — extractor "

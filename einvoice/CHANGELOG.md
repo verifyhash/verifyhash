@@ -11,6 +11,55 @@ Versions here are the single source of truth together with
 (`__version__`); `test_release_discipline.py` fails the build if the three
 ever diverge.
 
+## [0.2.4] - 2026-07-23
+
+The engine now fires 293 rules (was 289): the CEN scheme-identifier
+code-list family `BR-CL-10`, `BR-CL-11`, `BR-CL-25` and `BR-CL-26` is
+implemented on BOTH syntaxes (`test_docs_rule_claims.py` binds the 293 to
+the live `coverage.engine_fireable_ids()` registry, as before).
+
+### Added
+
+- **`BR-CL-10` / `BR-CL-11` / `BR-CL-26` (ISO 6523 ICD scheme identifiers)
+  are implemented** — party-identification, party-registration and
+  delivery-location `@schemeID` values are now checked against the 243-entry
+  ISO 6523 ICD enumeration, transcribed from the vendored PREPROCESSED CEN
+  artifacts (each of the six inlined enumerations was machine-compared and
+  verified IDENTICAL to the pinned `ITEM_SCHEME_ID_CODES` set BR-CL-21
+  already used, so one pinned list serves all four rules; never read from
+  the PDF register). Context bindings are exact per artifact: UBL
+  `cac:PartyIdentification/cbc:ID[@schemeID]` (with the official
+  supplier/payee-scoped `'SEPA'` disjunct), `cac:PartyLegalEntity/
+  cbc:CompanyID[@schemeID]`, `cac:DeliveryLocation/cbc:ID[@schemeID]`; CII
+  the generic `//ram:GlobalID[@schemeID]` outside product/ship-to (NO SEPA
+  disjunct — the CII artifact carries none), `ram:ID[@schemeID]` outside
+  `ram:SpecifiedTaxRegistration`, and the HEADER
+  `ram:ShipToTradeParty/ram:GlobalID[@schemeID]`.
+- **`BR-CL-25` (CEF EAS endpoint scheme identifier) is implemented** — UBL
+  `cbc:EndpointID[@schemeID]` / CII `ram:URIUniversalCommunication/
+  ram:URIID[@schemeID]` values are checked against the CEN artifacts' inlined
+  104-entry EAS enumeration, pinned as `ENDPOINT_EAS_CODES`. Measured
+  artifact fact: this CEN set is NOT the KoSIT common.sch `$CEF-EAS-CODES`
+  set — it carries four additional entries (0242 0245 0246 0248) — so the
+  KoSIT set was promoted verbatim to `codelists.KOSIT_CEF_EAS_CODES` (single
+  module, separate pins, both locked in `codelists_manifest.json`).
+- An invoice carrying an invalid scheme id on any of these surfaces
+  previously false-PASSed against the engine while failing the official CEN
+  Schematron; all four rules are graded on all differential legs (UBL,
+  CreditNote, CII) with targeted mutations at 0 divergences, and unit-pinned
+  positive + negative per syntax in `test_rules.py` / `test_rules_cii.py`.
+
+### Changed
+
+- CEN coverage per syntax universe moved 211 -> 215 of the 223 official
+  `BR-*` ids; the deferred `BR-CL-*` code-list class shrank 8 -> 4
+  (BR-CL-06/07/08/15). Coverage/count surfaces regenerated and re-pinned
+  through the existing drift guards (README §2, `COVERAGE.md`/
+  `coverage_matrix.json`, `cii_parity.json`, `RULES.md`,
+  `remediation_catalog.json`, exports, attestation, site, web bundle;
+  pyproject + `action/README.md` descriptions now say 293). No guard was
+  weakened.
+
 ## [0.2.3] - 2026-07-23
 
 The engine now fires 289 rules (was 288): `BR-DEX-15`, the last measured

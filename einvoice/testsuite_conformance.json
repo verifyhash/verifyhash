@@ -58,12 +58,13 @@
       "category": "extension",
       "customization_id": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0",
       "fatal_rule_ids": [
+        "BR-CL-10",
         "BR-CL-21"
       ],
       "guideline": "xrechnung-3.0-extension",
       "in_scope": false,
       "path": "corpus/xrechnung-testsuite/src/test/business-cases/extension/04.05a-INVOICE_uncefact.xml",
-      "reason": "document declares the XRechnung EXTENSION guideline, which the engine does not target (it targets the plain xrechnung_3.0 CIUS); fatal: BR-CL-21",
+      "reason": "document declares the XRechnung EXTENSION guideline, which the engine does not target (it targets the plain xrechnung_3.0 CIUS); fatal: BR-CL-10, BR-CL-21",
       "scope_class": "extension-guideline-out-of-scope",
       "syntax": "CII",
       "verdict": "invalid"

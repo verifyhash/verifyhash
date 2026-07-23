@@ -2,7 +2,7 @@
   "artifact": "einvoice per-rule remediation catalog",
   "description": "Human-facing remediation guidance for every EN 16931 / XRechnung rule the einvoice engine can fire. One entry per rule id (einvoice.coverage.engine_fireable_ids); every field is derived from the vendored official Schematron assert text (corpus/) and the EN 16931 BT/BG model, not authored from memory. This is the single source the report writer, RULES.md and --explain read. Each entry also carries German title_de/fix_de: de_source=='kosit' means the German is the vendored KoSIT XRechnung Schematron assert verbatim; de_source=='translation' means a faithful, deterministic German rendering of the same English EN 16931 / codelist requirement. message_de (present ONLY on de_source=='kosit' rules) is the official German <sch:assert> message VERBATIM, with a message_de_provenance {artifact, assert_id} tag naming the vendored file it was lifted from; the --lang de CLI surfaces it in place of the English message.",
   "generated_by": "gen_remediation.py",
-  "rule_count": 289,
+  "rule_count": 293,
   "rules": {
     "BR-01": {
       "title": "An Invoice shall have a Specification identifier (BT-24).",
@@ -1103,6 +1103,36 @@
       "fix_de": "Codieren Sie `cbc:TaxCurrencyCode` mit einem gültigen Wert aus der geforderten Codeliste: Der Code für die Steuerwährung MUSS anhand der ISO-Codeliste 4217 Alpha-3 codiert werden.",
       "de_source": "translation"
     },
+    "BR-CL-10": {
+      "title": "Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.",
+      "requires": "Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.",
+      "bt_bg": [],
+      "location_hint": "cac:PartyIdentification/cbc:ID[@schemeID]",
+      "fix": "Encode `cac:PartyIdentification/cbc:ID[@schemeID]` using a valid value from ISO 6523 ICD list..",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list."
+      },
+      "title_de": "Jede Kennung des Schemas einer Identifikationskennung MUSS anhand eines Wertes der Liste ISO 6523 ICD codiert werden.",
+      "fix_de": "Codieren Sie `cac:PartyIdentification/cbc:ID[@schemeID]` mit einem gültigen Wert aus der geforderten Codeliste: Jede Kennung des Schemas einer Identifikationskennung MUSS anhand eines Wertes der Liste ISO 6523 ICD codiert werden.",
+      "de_source": "translation"
+    },
+    "BR-CL-11": {
+      "title": "Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.",
+      "requires": "Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.",
+      "bt_bg": [],
+      "location_hint": "cac:PartyLegalEntity/cbc:CompanyID[@schemeID]",
+      "fix": "Encode `cac:PartyLegalEntity/cbc:CompanyID[@schemeID]` using a valid value from ISO 6523 ICD list..",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list."
+      },
+      "title_de": "Jede Kennung des Schemas einer Registrierungskennung MUSS anhand eines Wertes der Liste ISO 6523 ICD codiert werden.",
+      "fix_de": "Codieren Sie `cac:PartyLegalEntity/cbc:CompanyID[@schemeID]` mit einem gültigen Wert aus der geforderten Codeliste: Jede Kennung des Schemas einer Registrierungskennung MUSS anhand eines Wertes der Liste ISO 6523 ICD codiert werden.",
+      "de_source": "translation"
+    },
     "BR-CL-13": {
       "title": "Item classification scheme identifier MUST be a UNTDID 7143 code.",
       "requires": "Item classification identifier identification scheme identifier MUST be coded using one of the UNTDID 7143 list.",
@@ -1266,6 +1296,36 @@
       },
       "title_de": "Für den MIME-Code im Attribut ist MIMEMediaType zu verwenden.",
       "fix_de": "Codieren Sie `cbc:EmbeddedDocumentBinaryObject[@mimeCode]` mit einem gültigen Wert aus der geforderten Codeliste: Für den MIME-Code im Attribut ist MIMEMediaType zu verwenden.",
+      "de_source": "translation"
+    },
+    "BR-CL-25": {
+      "title": "Endpoint identifier scheme identifier MUST belong to the CEF EAS code list.",
+      "requires": "Endpoint identifier scheme identifier MUST belong to the CEF EAS code list",
+      "bt_bg": [],
+      "location_hint": "cbc:EndpointID[@schemeID]",
+      "fix": "Encode `cbc:EndpointID[@schemeID]` using a valid value from CEF EAS code list.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Endpoint identifier scheme identifier MUST belong to the CEF EAS code list"
+      },
+      "title_de": "Die Kennung des Schemas der Endpunktkennung MUSS der Codeliste CEF EAS angehören.",
+      "fix_de": "Codieren Sie `cbc:EndpointID[@schemeID]` mit einem gültigen Wert aus der geforderten Codeliste: Die Kennung des Schemas der Endpunktkennung MUSS der Codeliste CEF EAS angehören.",
+      "de_source": "translation"
+    },
+    "BR-CL-26": {
+      "title": "Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list.",
+      "requires": "Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list",
+      "bt_bg": [],
+      "location_hint": "cac:DeliveryLocation/cbc:ID[@schemeID]",
+      "fix": "Encode `cac:DeliveryLocation/cbc:ID[@schemeID]` using a valid value from ISO 6523 ICD code list.",
+      "severity": "fatal",
+      "provenance": {
+        "source": "en16931-ubl",
+        "assert": "Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list"
+      },
+      "title_de": "Die Kennung des Schemas der Kennung des Lieferorts MUSS der Codeliste ISO 6523 ICD angehören.",
+      "fix_de": "Codieren Sie `cac:DeliveryLocation/cbc:ID[@schemeID]` mit einem gültigen Wert aus der geforderten Codeliste: Die Kennung des Schemas der Kennung des Lieferorts MUSS der Codeliste ISO 6523 ICD angehören.",
       "de_source": "translation"
     },
     "BR-CO-03": {

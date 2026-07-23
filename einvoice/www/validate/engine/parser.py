@@ -427,6 +427,35 @@ class Invoice:
         #       @schemeID; CII: ram:SpecifiedTradeProduct/ram:GlobalID @schemeID),
         #       tested against the ISO 6523 ICD list
         self.item_std_id_scheme_ids = []
+        #   party_id_scheme_ids — (schemeID, sepa_ancestor_ok) pairs at the
+        #       BR-CL-10 context (UBL: cac:PartyIdentification/cbc:ID
+        #       [@schemeID] at ANY depth; CII: //ram:GlobalID[@schemeID]
+        #       [not(ancestor::ram:SpecifiedTradeProduct) and
+        #        not(ancestor::ram:ShipToTradeParty)]). schemeID is
+        #       normalize-space'd like the official assert; sepa_ancestor_ok
+        #       carries the UBL assert's second disjunct gate — the node has
+        #       an ancestor cac:AccountingSupplierParty or cac:PayeeParty, so
+        #       the literal 'SEPA' is additionally allowed there. The CII
+        #       assert has NO SEPA disjunct, so the CII parser always stores
+        #       False.
+        self.party_id_scheme_ids = []
+        #   party_legal_scheme_ids — registration-identifier @schemeID at the
+        #       BR-CL-11 context (UBL: cac:PartyLegalEntity/cbc:CompanyID
+        #       [@schemeID]; CII: ram:ID[@schemeID][not(ancestor::
+        #       ram:SpecifiedTaxRegistration)]), tested against the ISO 6523
+        #       ICD list, normalize-space'd.
+        self.party_legal_scheme_ids = []
+        #   endpoint_scheme_ids — electronic-address @schemeID at the
+        #       BR-CL-25 context (UBL: cbc:EndpointID[@schemeID]; CII:
+        #       ram:URIUniversalCommunication/ram:URIID[@schemeID]), tested
+        #       against the CEF EAS list, normalize-space'd.
+        self.endpoint_scheme_ids = []
+        #   delivery_location_scheme_ids — delivery-location @schemeID at the
+        #       BR-CL-26 context (UBL: cac:DeliveryLocation/cbc:ID[@schemeID];
+        #       CII: ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/
+        #       ram:GlobalID[@schemeID] — the HEADER delivery path only),
+        #       tested against the ISO 6523 ICD list, normalize-space'd.
+        self.delivery_location_scheme_ids = []
         #   mime_codes — attachment @mimeCode at the BR-CL-24 context (UBL:
         #       cbc:EmbeddedDocumentBinaryObject[@mimeCode]; CII:
         #       ram:AttachmentBinaryObject[@mimeCode]). Kept RAW (the official
@@ -910,6 +939,46 @@ def build_model(root):
         for el in root.findall(".//cbc:EmbeddedDocumentBinaryObject", NS)
         if el.get("mimeCode") is not None
     ]
+    # BR-CL-10 context = cac:PartyIdentification/cbc:ID[@schemeID] (UBL),
+    # BR-CL-11 context = cac:PartyLegalEntity/cbc:CompanyID[@schemeID],
+    # BR-CL-25 context = cbc:EndpointID[@schemeID],
+    # BR-CL-26 context = cac:DeliveryLocation/cbc:ID[@schemeID] — all relative
+    # match patterns (any depth); only elements CARRYING @schemeID are context
+    # nodes, and each rule tests normalize-space(@schemeID) against its list.
+    # BR-CL-10's second disjunct additionally allows the literal 'SEPA' when
+    # the ID has an ancestor cac:AccountingSupplierParty or cac:PayeeParty —
+    # that ancestor fact is carried per entry (a parent map stands in for the
+    # ancestor:: axis, exactly like the CII parser's collection).
+    _pid_tag = "{%s}PartyIdentification" % NS_CAC
+    _ple_tag = "{%s}PartyLegalEntity" % NS_CAC
+    _dloc_tag = "{%s}DeliveryLocation" % NS_CAC
+    _sid_tag = "{%s}ID" % NS_CBC
+    _scid_tag = "{%s}CompanyID" % NS_CBC
+    _ep_tag = "{%s}EndpointID" % NS_CBC
+    _asp_tag = "{%s}AccountingSupplierParty" % NS_CAC
+    _payee_tag = "{%s}PayeeParty" % NS_CAC
+    _pmap = {c: p for p in root.iter() for c in p}
+    for el in root.iter():
+        scheme = el.get("schemeID")
+        if scheme is None:
+            continue
+        parent = _pmap.get(el)
+        ptag = parent.tag if parent is not None else None
+        if el.tag == _ep_tag:
+            inv.endpoint_scheme_ids.append(_norm_space(scheme))
+        elif el.tag == _sid_tag and ptag == _pid_tag:
+            sepa_ok = False
+            anc = _pmap.get(el)
+            while anc is not None:
+                if anc.tag in (_asp_tag, _payee_tag):
+                    sepa_ok = True
+                    break
+                anc = _pmap.get(anc)
+            inv.party_id_scheme_ids.append((_norm_space(scheme), sepa_ok))
+        elif el.tag == _sid_tag and ptag == _dloc_tag:
+            inv.delivery_location_scheme_ids.append(_norm_space(scheme))
+        elif el.tag == _scid_tag and ptag == _ple_tag:
+            inv.party_legal_scheme_ids.append(_norm_space(scheme))
 
     # --- BR-23/52/53/54/64/65/CO-03/CO-09/CO-19 context extraction (UBL) --- #
     # BR-52 context = cac:AdditionalDocumentReference (a match pattern — any

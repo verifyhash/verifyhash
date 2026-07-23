@@ -56,6 +56,8 @@ import re
 from collections import namedtuple
 from decimal import Decimal, ROUND_FLOOR, InvalidOperation
 
+from .codelists import KOSIT_CEF_EAS_CODES
+
 Violation = namedtuple("Violation", ["rule_id", "message", "element", "severity"])
 
 # UBL namespaces (same as einvoice.parser).
@@ -122,22 +124,18 @@ _ISO_6523_ICD_CODES = (
     "0230 0231 0232 0233 0234 0235 0236 0237 0238 0239 0240 0241 0242 0243 "
     "0244")
 
-# common.sch: <let name="CEF-EAS-CODES" ...>
-_CEF_EAS_CODES = (
-    "0002 0007 0009 0037 0060 0088 0096 0097 0106 0130 0135 0142 0147 0151 "
-    "0154 0158 0170 0177 0183 0184 0188 0190 0191 0192 0193 0194 0195 0196 "
-    "0198 0199 0200 0201 0202 0203 0204 0205 0208 0209 0210 0211 0212 0213 "
-    "0215 0216 0217 0218 0219 0220 0221 0225 0230 0235 0240 0244 9910 9913 "
-    "9914 9915 9918 9919 9920 9922 9923 9924 9925 9926 9927 9928 9929 9930 "
-    "9931 9932 9933 9934 9935 9936 9937 9938 9939 9940 9941 9942 9943 9944 "
-    "9945 9946 9947 9948 9949 9950 9951 9952 9953 9957 9959 AN AQ AS AU EM")
+# common.sch: <let name="CEF-EAS-CODES" ...> — promoted VERBATIM to
+# einvoice.codelists.KOSIT_CEF_EAS_CODES (single-sourced next to the CEN
+# BR-CL-25 ENDPOINT_EAS_CODES pin; the two enumerations DIFFER — the CEN set
+# carries 0242/0245/0246/0248, this KoSIT variable does not — so each rule
+# layer keeps its own artifact's exact set; provenance for both lives in
+# codelists_manifest.json).
 
 # ISO-6523-ICD-EXT-CODES = concat($DIGA-CODES, $ISO-6523-ICD-CODES)
 _ISO_6523_ICD_EXT_CODES = frozenset(
     (_DIGA_CODES + " " + _ISO_6523_ICD_CODES).split())
 # CEF-EAS-EXT-CODES = concat($DIGA-CODES, $CEF-EAS-CODES)
-_CEF_EAS_EXT_CODES = frozenset(
-    (_DIGA_CODES + " " + _CEF_EAS_CODES).split())
+_CEF_EAS_EXT_CODES = frozenset(_DIGA_CODES.split()) | KOSIT_CEF_EAS_CODES
 
 # ---------------------------------------------------------------------------
 # CVD (BR-DE-CVD-* / BR-TMP-CVD-01) code lists — transcribed VERBATIM from

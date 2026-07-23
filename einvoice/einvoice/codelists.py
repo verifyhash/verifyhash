@@ -108,6 +108,30 @@ Provenance (each file carries the header comment
     own gaps, e.g. no 0092/0103/0181/0182); the standalone ISO 6523 register in
     corpus/cen-en16931/.../codelist/iso6523 ships only as a PDF, so this set is
     pinned from the Schematron's inline enumeration, never from the PDF.
+    The BR-CL-10 (party-identification scheme), BR-CL-11 (party-registration
+    scheme) and BR-CL-26 (delivery-location scheme) asserts in the vendored
+    PREPROCESSED artifacts (corpus/cen-en16931/{ubl,cii}/schematron/
+    preprocessed/) inline the SAME 243-entry ICD string — all six inlined
+    enumerations were machine-compared against this set and verified
+    IDENTICAL — so this one pinned set serves BR-CL-10/11/21/26 on both
+    syntaxes.
+
+  * ENDPOINT_EAS_CODES (CEF EAS electronic-address schemes, UBL/CII BR-CL-25):
+    corpus/cen-en16931/ubl/schematron/preprocessed/
+    EN16931-UBL-validation-preprocessed.sch (assert BR-CL-25, context
+    cbc:EndpointID[@schemeID]) and the CII preprocessed file's BR-CL-25
+    (context ram:URIUniversalCommunication/ram:URIID[@schemeID]). Both asserts
+    inline the IDENTICAL 104-entry string (verified equal), so one pinned set
+    serves both syntaxes. Pinned from the Schematron inline enumeration,
+    never from the ISO 6523 PDF register in corpus.
+
+  * KOSIT_CEF_EAS_CODES (KoSIT XRechnung CEF EAS variable):
+    corpus/xrechnung-schematron/schematron/common.sch
+    (<let name="CEF-EAS-CODES">), promoted VERBATIM out of
+    einvoice/rules_xrechnung.py so both EAS pins share this module. 100
+    entries — the CEN BR-CL-25 set above minus 0242/0245/0246/0248 (a measured
+    artifact difference, asserted below); the KoSIT rules must keep matching
+    their own artifact, so the two sets stay separate.
 
   * MIME_CODES (EN 16931 MIMEMediaType subset, UBL/CII BR-CL-24):
     corpus/cen-en16931/ubl/schematron/codelist/EN16931-UBL-codes.sch
@@ -371,10 +395,19 @@ _CHARGE_REASON = (
     "YY ZZZ "
 )
 
-# --- ISO 6523 ICD scheme identifiers (UBL/CII BR-CL-21) ---
+# --- ISO 6523 ICD scheme identifiers (UBL/CII BR-CL-21, reused by
+#     BR-CL-10/BR-CL-11/BR-CL-26) ---
 # Exact inline value string of the BR-CL-21 assert (order preserved verbatim);
 # the UBL and CII asserts carry the IDENTICAL 243-entry string. The register's
 # own gaps (no 0092/0103/0181/0182/etc.) are preserved as extracted.
+# The party-identification (BR-CL-10), party-registration (BR-CL-11) and
+# delivery-location (BR-CL-26) asserts inline the SAME ICD enumeration — each
+# of those six inlined strings (3 rules x 2 syntaxes, preprocessed artifacts)
+# was machine-compared against this set and verified IDENTICAL before reuse,
+# so ONE pinned set serves all four rules on both syntaxes. (BR-CL-10's UBL
+# assert additionally allows the literal 'SEPA' under a supplier/payee
+# ancestor — that is a context-scoped disjunct in the rule body, not a member
+# of the ICD list.)
 _ITEM_SCHEME_ID = (
     "0002 0003 0004 0005 0006 0007 0008 0009 0010 0011 0012 0013 0014 0015 "
     "0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 "
@@ -394,6 +427,49 @@ _ITEM_SCHEME_ID = (
     "0216 0217 0218 0219 0220 0221 0222 0223 0224 0225 0226 0227 0228 0229 "
     "0230 0231 0232 0233 0234 0235 0236 0237 0238 0239 0240 0241 0242 0243 "
     "0244 0245 0246 0247 0248 "
+)
+
+# --- CEF EAS electronic-address scheme identifiers (UBL/CII BR-CL-25) ---
+# Exact inline value string of the CEN BR-CL-25 assert (order preserved
+# VERBATIM from the preprocessed artifacts, including the register's own
+# out-of-sequence run ``0240 0244 0242 0245 0246 0248``); the UBL
+# (cbc:EndpointID[@schemeID]) and CII (ram:URIUniversalCommunication/
+# ram:URIID[@schemeID]) asserts carry the IDENTICAL 104-entry string —
+# machine-compared and verified equal at extraction — so one pinned set
+# serves both syntaxes. NOTE this CEN enumeration is NOT the same as the
+# KoSIT XRechnung common.sch $CEF-EAS-CODES set below: the CEN artifact
+# carries four additional entries (0242 0245 0246 0248). The two sets are
+# pinned SEPARATELY, each from its own vendored artifact, so each rule
+# matches its own official Schematron exactly.
+_ENDPOINT_EAS = (
+    "0002 0007 0009 0037 0060 0088 0096 0097 0106 0130 0135 0142 0147 0151 "
+    "0154 0158 0170 0177 0183 0184 0188 0190 0191 0192 0193 0194 0195 0196 "
+    "0198 0199 0200 0201 0202 0203 0204 0205 0208 0209 0210 0211 0212 0213 "
+    "0215 0216 0217 0218 0219 0220 0221 0225 0230 0235 0240 0244 0242 0245 "
+    "0246 0248 9910 9913 9914 9915 9918 9919 9920 9922 9923 9924 9925 9926 "
+    "9927 9928 9929 9930 9931 9932 9933 9934 9935 9936 9937 9938 9939 9940 "
+    "9941 9942 9943 9944 9945 9946 9947 9948 9949 9950 9951 9952 9953 9957 "
+    "9959 AN AQ AS AU EM "
+)
+
+# --- KoSIT CEF EAS electronic-address scheme identifiers (XRechnung
+#     BR-DE-K-10/K-13 layer) ---
+# Exact inline value string of the ``$CEF-EAS-CODES`` <let> in the vendored
+# KoSIT XRechnung common.sch (corpus/xrechnung-schematron/schematron/common.sch),
+# moved here VERBATIM from einvoice/rules_xrechnung.py so the CEN and KoSIT
+# EAS pins live side by side in one module. 100 entries — the KoSIT variable
+# predates the four CEN additions (0242 0245 0246 0248) and MUST stay the
+# smaller set so the KoSIT rules match their own artifact exactly.
+# rules_xrechnung.py combines it with the KoSIT DiGA codes
+# ($CEF-EAS-EXT-CODES = concat($DIGA-CODES, $CEF-EAS-CODES)).
+_KOSIT_CEF_EAS = (
+    "0002 0007 0009 0037 0060 0088 0096 0097 0106 0130 0135 0142 0147 0151 "
+    "0154 0158 0170 0177 0183 0184 0188 0190 0191 0192 0193 0194 0195 0196 "
+    "0198 0199 0200 0201 0202 0203 0204 0205 0208 0209 0210 0211 0212 0213 "
+    "0215 0216 0217 0218 0219 0220 0221 0225 0230 0235 0240 0244 9910 9913 "
+    "9914 9915 9918 9919 9920 9922 9923 9924 9925 9926 9927 9928 9929 9930 "
+    "9931 9932 9933 9934 9935 9936 9937 9938 9939 9940 9941 9942 9943 9944 "
+    "9945 9946 9947 9948 9949 9950 9951 9952 9953 9957 9959 AN AQ AS AU EM"
 )
 
 # --- EN 16931 MIMEMediaType subset (UBL/CII BR-CL-24) ---
@@ -422,6 +498,8 @@ PAYMENT_MEANS_CODES = frozenset(_PAYMENT_MEANS.split())
 ALLOWANCE_REASON_CODES = frozenset(_ALLOWANCE_REASON.split())
 CHARGE_REASON_CODES = frozenset(_CHARGE_REASON.split())
 ITEM_SCHEME_ID_CODES = frozenset(_ITEM_SCHEME_ID.split())
+ENDPOINT_EAS_CODES = frozenset(_ENDPOINT_EAS.split())
+KOSIT_CEF_EAS_CODES = frozenset(_KOSIT_CEF_EAS.split())
 
 # Fail fast if an edit corrupts a pinned list (counts match the vendored .sch).
 assert len(CURRENCY_CODES) == 178, len(CURRENCY_CODES)
@@ -435,4 +513,11 @@ assert len(PAYMENT_MEANS_CODES) == 84, len(PAYMENT_MEANS_CODES)
 assert len(ALLOWANCE_REASON_CODES) == 19, len(ALLOWANCE_REASON_CODES)
 assert len(CHARGE_REASON_CODES) == 178, len(CHARGE_REASON_CODES)
 assert len(ITEM_SCHEME_ID_CODES) == 243, len(ITEM_SCHEME_ID_CODES)
+assert len(ENDPOINT_EAS_CODES) == 104, len(ENDPOINT_EAS_CODES)
+assert len(KOSIT_CEF_EAS_CODES) == 100, len(KOSIT_CEF_EAS_CODES)
+# The measured relationship between the two EAS pins (see comments above):
+# the CEN set is exactly the KoSIT set plus the four newer ICD entries.
+assert ENDPOINT_EAS_CODES - KOSIT_CEF_EAS_CODES == frozenset(
+    ("0242", "0245", "0246", "0248"))
+assert KOSIT_CEF_EAS_CODES <= ENDPOINT_EAS_CODES
 assert len(MIME_CODES) == 6, len(MIME_CODES)

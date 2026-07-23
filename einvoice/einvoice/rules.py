@@ -28,6 +28,7 @@ from .codelists import (
     ALLOWANCE_REASON_CODES,
     CHARGE_REASON_CODES,
     ITEM_SCHEME_ID_CODES,
+    ENDPOINT_EAS_CODES,
     MIME_CODES,
 )
 
@@ -893,6 +894,101 @@ def br_cl_20(inv):
                 "Coded charge reasons MUST belong to the UNCL 7161 code list; "
                 "%r is not a listed charge reason code." % code,
                 "cbc:AllowanceChargeReasonCode")
+    return None
+
+
+def br_cl_10(inv):
+    """BR-CL-10: Any identifier identification scheme identifier MUST be coded
+    using one of the ISO 6523 ICD list.
+
+    Official context = cac:PartyIdentification/cbc:ID[@schemeID] (UBL) /
+    //ram:GlobalID[@schemeID][not(ancestor::ram:SpecifiedTradeProduct) and
+    not(ancestor::ram:ShipToTradeParty)] (CII); only nodes carrying @schemeID
+    are context nodes. Both syntaxes inline the IDENTICAL 243-code ICD list
+    (verified equal to BR-CL-21's pinned set), so ``ITEM_SCHEME_ID_CODES``
+    serves both. The UBL assert carries a SECOND disjunct the CII assert does
+    not: the literal 'SEPA' also satisfies it when the ID has an ancestor
+    cac:AccountingSupplierParty or cac:PayeeParty — the parser stores that
+    ancestor fact per entry (always False on CII), so the rule body applies
+    each artifact's exact test.
+    """
+    for scheme, sepa_ok in inv.party_id_scheme_ids:
+        if not _bad_code(scheme, ITEM_SCHEME_ID_CODES):
+            continue
+        if sepa_ok and scheme == "SEPA":
+            continue
+        return Violation(
+            "BR-CL-10",
+            "Any identifier identification scheme identifier MUST be coded "
+            "using one of the ISO 6523 ICD list; %r is not a listed ICD "
+            "(and is not 'SEPA' under a supplier/payee party)." % scheme,
+            "cac:PartyIdentification/cbc:ID/@schemeID")
+    return None
+
+
+def br_cl_11(inv):
+    """BR-CL-11: Any registration identifier identification scheme identifier
+    MUST be coded using one of the ISO 6523 ICD list.
+
+    Official context = cac:PartyLegalEntity/cbc:CompanyID[@schemeID] (UBL) /
+    ram:ID[@schemeID][not(ancestor::ram:SpecifiedTaxRegistration)] (CII);
+    only nodes carrying @schemeID are context nodes (a tax-registration
+    ram:ID — e.g. the @schemeID='VA' VAT id — is excluded by the official
+    ancestor predicate, which the CII parser transcribes). Both syntaxes
+    inline the IDENTICAL 243-code ICD list (verified equal to BR-CL-21's
+    pinned set).
+    """
+    for scheme in inv.party_legal_scheme_ids:
+        if _bad_code(scheme, ITEM_SCHEME_ID_CODES):
+            return Violation(
+                "BR-CL-11",
+                "Any registration identifier identification scheme identifier "
+                "MUST be coded using one of the ISO 6523 ICD list; %r is not "
+                "a listed ICD." % scheme,
+                "cac:PartyLegalEntity/cbc:CompanyID/@schemeID")
+    return None
+
+
+def br_cl_25(inv):
+    """BR-CL-25: Endpoint identifier scheme identifier MUST belong to the CEF
+    EAS code list.
+
+    Official context = cbc:EndpointID[@schemeID] (UBL) /
+    ram:URIUniversalCommunication/ram:URIID[@schemeID] (CII); only nodes
+    carrying @schemeID are context nodes. Both syntaxes inline the IDENTICAL
+    104-entry CEF EAS enumeration (``ENDPOINT_EAS_CODES`` — pinned from the
+    preprocessed artifacts; NOT the same set as the KoSIT common.sch EAS
+    variable, which lacks 0242/0245/0246/0248).
+    """
+    for scheme in inv.endpoint_scheme_ids:
+        if _bad_code(scheme, ENDPOINT_EAS_CODES):
+            return Violation(
+                "BR-CL-25",
+                "Endpoint identifier scheme identifier MUST belong to the "
+                "CEF EAS code list; %r is not a listed EAS scheme." % scheme,
+                "cbc:EndpointID/@schemeID")
+    return None
+
+
+def br_cl_26(inv):
+    """BR-CL-26: Delivery location identifier scheme identifier MUST belong
+    to the ISO 6523 ICD code list.
+
+    Official context = cac:DeliveryLocation/cbc:ID[@schemeID] (UBL) /
+    ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:GlobalID
+    [@schemeID] (CII — the HEADER delivery path only; a line-level
+    ShipToTradeParty GlobalID matches neither this context nor BR-CL-10's,
+    exactly like the official patterns). Both syntaxes inline the IDENTICAL
+    243-code ICD list (verified equal to BR-CL-21's pinned set).
+    """
+    for scheme in inv.delivery_location_scheme_ids:
+        if _bad_code(scheme, ITEM_SCHEME_ID_CODES):
+            return Violation(
+                "BR-CL-26",
+                "Delivery location identifier scheme identifier MUST belong "
+                "to the ISO 6523 ICD code list; %r is not a listed ICD."
+                % scheme,
+                "cac:DeliveryLocation/cbc:ID/@schemeID")
     return None
 
 
@@ -5855,10 +5951,10 @@ ALL_RULES = [
     br_49, br_50, br_51, br_52, br_53, br_54, br_55, br_56, br_57,
     br_61, br_62, br_63, br_64, br_65,
     br_cl_01,
-    br_cl_03, br_cl_04, br_cl_05, br_cl_13, br_cl_14,
+    br_cl_03, br_cl_04, br_cl_05, br_cl_10, br_cl_11, br_cl_13, br_cl_14,
     br_cl_16,
     br_cl_17, br_cl_18, br_cl_19, br_cl_20, br_cl_21, br_cl_22, br_cl_23,
-    br_cl_24,
+    br_cl_24, br_cl_25, br_cl_26,
     br_co_03, br_co_04,
     br_co_09, br_co_10, br_co_11, br_co_12, br_co_13, br_co_14, br_co_15,
     br_co_16, br_co_17, br_co_18, br_co_19,

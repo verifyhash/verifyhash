@@ -119,7 +119,7 @@ def _fn_to_rule_id(fn) -> str:
 
 OUR_RULE_IDS = [_fn_to_rule_id(fn) for fn in _rules.ALL_RULES]
 OUR_RULE_SET = set(OUR_RULE_IDS)
-assert len(OUR_RULE_IDS) == 211, OUR_RULE_IDS
+assert len(OUR_RULE_IDS) == 215, OUR_RULE_IDS
 
 # EXCLUDED from the EN 16931 UBL grading (LEG 1 Invoice + LEG 1b CreditNote) —
 # kept out on purpose, not overlooked; the exact mirror of the CII-side
@@ -342,6 +342,15 @@ CII_GRADED_RULES = [
     # and reach EXACT parity with the official CII codes Schematron.
     _rules.br_cl_16, _rules.br_cl_19, _rules.br_cl_20, _rules.br_cl_21,
     _rules.br_cl_24,
+    # Scheme-identifier code lists (BR-CL-10/11/25/26). The CII parser feeds
+    # these the exact official CII context nodes (//ram:GlobalID[@schemeID]
+    # outside product/ship-to for BR-CL-10 — NO SEPA disjunct on CII;
+    # ram:ID[@schemeID] outside SpecifiedTaxRegistration for BR-CL-11;
+    # ram:URIUniversalCommunication/ram:URIID[@schemeID] for BR-CL-25;
+    # the header ram:ShipToTradeParty/ram:GlobalID[@schemeID] for BR-CL-26);
+    # the shared rule bodies run unchanged against the same pinned ICD / CEN
+    # EAS sets as UBL (both artifacts inline identical enumerations).
+    _rules.br_cl_10, _rules.br_cl_11, _rules.br_cl_25, _rules.br_cl_26,
     # VAT category code lists (BR-CL-17/18) + VAT exemption reason (BR-CL-22).
     # The CII parser feeds these the CII context nodes (ram:CategoryTradeTax
     # @CategoryCode for BR-CL-17, ram:ApplicableTradeTax/ram:CategoryCode for
@@ -1964,6 +1973,42 @@ def _mut_brcl21(r):
     _sub_el(sii, NS_CBC, "ID", "1234567890123").set("schemeID", "XXX")
 
 
+def _mut_brcl10(r):
+    # Set the BUYER PartyIdentification/cbc:ID @schemeID off the ISO 6523 ICD
+    # list. The buyer is outside the SEPA-allowed ancestors
+    # (AccountingSupplierParty / PayeeParty), so the official assert's SEPA
+    # disjunct cannot rescue it; a code-list label only — BR-CL-10 is the
+    # sole rule that fires (BR-07 etc. still hold, the ID text is untouched).
+    pid = _child(_customer_party(r), NS_CAC, "PartyIdentification")
+    _child(pid, NS_CBC, "ID").set("schemeID", "XXX")
+
+
+def _mut_brcl11(r):
+    # Set the SELLER PartyLegalEntity/cbc:CompanyID @schemeID off the ICD
+    # list. BR-CL-11's context is the CompanyID CARRYING @schemeID; the value
+    # text stays, so BR-06/BR-CO-26 hold and BR-CL-11 alone fires.
+    ple = _child(_supplier_party(r), NS_CAC, "PartyLegalEntity")
+    _child(ple, NS_CBC, "CompanyID").set("schemeID", "XXX")
+
+
+def _mut_brcl25(r):
+    # Set the SELLER cbc:EndpointID @schemeID off the CEF EAS list. The
+    # attribute stays present and non-empty, so BR-62 holds; BR-CL-25 alone
+    # fires ('XXX' is in neither the EAS nor the ICD list).
+    _child(_supplier_party(r), NS_CBC, "EndpointID").set("schemeID", "XXX")
+
+
+def _mut_brcl26(r):
+    # Give the existing cac:Delivery/cac:DeliveryLocation a cbc:ID whose
+    # @schemeID is off the ICD list. A DeliveryLocation ID is optional
+    # (BT-71); only the scheme label is wrong, so BR-CL-26 alone fires.
+    dloc = _child(_child(r, NS_CAC, "Delivery"), NS_CAC, "DeliveryLocation")
+    lid = ET.Element(_q(NS_CBC, "ID"))
+    lid.text = "LOC-1"
+    lid.set("schemeID", "XXX")
+    dloc.insert(0, lid)
+
+
 def _mut_brcl24(r):
     # Add a document attachment (cbc:EmbeddedDocumentBinaryObject) with a
     # @mimeCode outside the six-entry MIMEMediaType subset. A cbc:ID on the
@@ -2460,9 +2505,11 @@ _MUTATIONS = {
     "BR-CL-13": _mut_brcl13, "BR-CL-14": _mut_brcl14,
     "BR-CL-16": _mut_brcl16,
     "BR-CL-17": _mut_brcl17, "BR-CL-18": _mut_brcl18,
+    "BR-CL-10": _mut_brcl10, "BR-CL-11": _mut_brcl11,
     "BR-CL-19": _mut_brcl19, "BR-CL-20": _mut_brcl20, "BR-CL-21": _mut_brcl21,
     "BR-CL-22": _mut_brcl22,
     "BR-CL-23": _mut_brcl23, "BR-CL-24": _mut_brcl24,
+    "BR-CL-25": _mut_brcl25, "BR-CL-26": _mut_brcl26,
     "BR-CO-10": _mut_brco10,
     "BR-CO-11": _mut_brco11, "BR-CO-12": _mut_brco12,
     "BR-CO-13": _mut_brco13, "BR-CO-14": _mut_brco14, "BR-CO-15": _mut_brco15,
@@ -3807,6 +3854,53 @@ def _cmut_brcl21(r):
     gid = ET.SubElement(prod, _cq(NS_RAM, "GlobalID"))
     gid.set("schemeID", "XXX")
     gid.text = "1234567890123"
+
+
+def _cmut_brcl10(r):
+    # Add a SELLER ram:GlobalID with a @schemeID off the ISO 6523 ICD list.
+    # The seller GlobalID has neither a SpecifiedTradeProduct nor a
+    # ShipToTradeParty ancestor, so it IS a BR-CL-10 context node; the CII
+    # assert has NO SEPA disjunct. A code-list label only — BR-CL-10 alone
+    # fires.
+    gid = ET.Element(_cq(NS_RAM, "GlobalID"))
+    gid.set("schemeID", "XXX")
+    gid.text = "1234567890123"
+    _cii_seller(r).insert(0, gid)
+
+
+def _cmut_brcl11(r):
+    # Set the existing BUYER ram:ID's @schemeID off the ICD list. A ram:ID
+    # CARRYING @schemeID outside ram:SpecifiedTaxRegistration is the official
+    # BR-CL-11 context (the seller's schemeID='VA' tax registration stays
+    # excluded by the ancestor predicate); the ID text stays, so BR-CL-11
+    # alone fires.
+    _cii_buyer(r).find("ram:ID", _NSC).set("schemeID", "XXX")
+
+
+def _cmut_brcl25(r):
+    # Add a SELLER ram:URIUniversalCommunication/ram:URIID with a @schemeID
+    # off the CEF EAS list. The attribute is present and non-empty, so BR-62
+    # holds; BR-CL-25 alone fires ('XXX' is in neither EAS nor ICD).
+    uri = ET.SubElement(_cii_seller(r),
+                        _cq(NS_RAM, "URIUniversalCommunication"))
+    uid = ET.SubElement(uri, _cq(NS_RAM, "URIID"))
+    uid.set("schemeID", "XXX")
+    uid.text = "sales@dekoksmaat.nl"
+
+
+def _cmut_brcl26(r):
+    # Give the (empty) header ram:ApplicableHeaderTradeDelivery a
+    # ShipToTradeParty whose ram:GlobalID @schemeID is off the ICD list —
+    # the exact official context (HEADER delivery path). The ShipToTradeParty
+    # ancestor keeps the node OUT of BR-CL-10's generic-GlobalID context, so
+    # BR-CL-26 alone fires.
+    delivery = r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeDelivery", _NSC)
+    shipto = ET.Element(_cq(NS_RAM, "ShipToTradeParty"))
+    gid = ET.SubElement(shipto, _cq(NS_RAM, "GlobalID"))
+    gid.set("schemeID", "XXX")
+    gid.text = "1234567890123"
+    delivery.insert(0, shipto)
 
 
 def _cmut_brcl24(r):
@@ -5462,9 +5556,11 @@ _CII_MUTATIONS = {
     "BR-CL-13": _cmut_brcl13, "BR-CL-14": _cmut_brcl14,
     "BR-CL-16": _cmut_brcl16,
     "BR-CL-17": _cmut_brcl17, "BR-CL-18": _cmut_brcl18,
+    "BR-CL-10": _cmut_brcl10, "BR-CL-11": _cmut_brcl11,
     "BR-CL-19": _cmut_brcl19, "BR-CL-20": _cmut_brcl20, "BR-CL-21": _cmut_brcl21,
     "BR-CL-22": _cmut_brcl22,
     "BR-CL-23": _cmut_brcl23, "BR-CL-24": _cmut_brcl24,
+    "BR-CL-25": _cmut_brcl25, "BR-CL-26": _cmut_brcl26,
     "BR-CO-04": _cmut_brco04,
     "BR-CO-10": _cmut_brco10, "BR-CO-13": _cmut_brco13,
     "BR-CO-14": _cmut_brco14, "BR-CO-15": _cmut_brco15,

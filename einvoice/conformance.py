@@ -576,10 +576,23 @@ CII_SYNTAX_COVERAGE = {
     "BR-CL-18": "Breakdown & line VAT category code in UNCL 5305 subset",
     "BR-CL-19": "Coded allowance reason (BT-98/BT-140) in UNCL 5189",
     "BR-CL-20": "Coded charge reason (BT-105/BT-145) in UNCL 7161",
+    "BR-CL-10": "Party identification scheme (@schemeID) in ISO 6523 ICD "
+                "(CII binding: //ram:GlobalID[@schemeID] outside "
+                "SpecifiedTradeProduct/ShipToTradeParty — no SEPA disjunct, "
+                "unlike UBL)",
+    "BR-CL-11": "Party registration scheme (@schemeID) in ISO 6523 ICD "
+                "(CII binding: ram:ID[@schemeID] outside "
+                "SpecifiedTaxRegistration)",
     "BR-CL-21": "Item standard-id scheme (@schemeID) in ISO 6523 ICD",
     "BR-CL-22": "VAT exemption reason code (BT-121) in CEF VATEX list",
     "BR-CL-23": "Quantity/base-quantity unit code in UN/ECE Rec 20 + Rec 21",
     "BR-CL-24": "Attachment MIME code (BT-125-1) in the EN 16931 MIMEMediaType subset",
+    "BR-CL-25": "Endpoint-id scheme (@schemeID) in the CEF EAS list "
+                "(CII binding: ram:URIUniversalCommunication/"
+                "ram:URIID[@schemeID])",
+    "BR-CL-26": "Delivery-location-id scheme (@schemeID) in ISO 6523 ICD "
+                "(CII binding: the HEADER ram:ApplicableHeaderTradeDelivery/"
+                "ram:ShipToTradeParty/ram:GlobalID[@schemeID] only)",
     "BR-52": "Supporting document reference (BT-122) present per BG-24",
     "BR-53": "VAT accounting currency (BT-6) present ⇒ VAT total in that "
              "currency (BT-111) provided",

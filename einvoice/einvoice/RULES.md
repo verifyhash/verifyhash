@@ -30,12 +30,12 @@ Family headings are standard EN 16931 / XRechnung rule-family labels used
 only for navigation; every substantive per-rule string above comes from the
 catalog.
 
-**289 rules** in total — 276 fatal, 12 warning, 1 information — across 21 families.
+**293 rules** in total — 280 fatal, 12 warning, 1 information — across 21 families.
 
 ## Families
 
 - **BR** (58) — Core EN 16931 content and cardinality rules.
-- **BR-CL** (15) — Code-list rules — a coded value must come from the referenced official code list.
+- **BR-CL** (19) — Code-list rules — a coded value must come from the referenced official code list.
 - **BR-CO** (19) — Calculation and consistency rules (cross-total arithmetic).
 - **BR-DEC** (21) — Decimal-places rules — amounts must not exceed the allowed number of decimals.
 - **BR-AE** (10) — VAT breakdown rules for VAT category code AE.
@@ -622,6 +622,24 @@ Code-list rules — a coded value must come from the referenced official code li
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “Tax currency code MUST be coded using ISO code list 4217 alpha-3”
 
+### BR-CL-10 — Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.
+
+- **Requires:** Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:PartyIdentification/cbc:ID[@schemeID]`
+- **Fix:** Encode `cac:PartyIdentification/cbc:ID[@schemeID]` using a valid value from ISO 6523 ICD list..
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.”
+
+### BR-CL-11 — Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.
+
+- **Requires:** Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.
+- **Business terms:** — (no single business term)
+- **Location:** `cac:PartyLegalEntity/cbc:CompanyID[@schemeID]`
+- **Fix:** Encode `cac:PartyLegalEntity/cbc:CompanyID[@schemeID]` using a valid value from ISO 6523 ICD list..
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list.”
+
 ### BR-CL-13 — Item classification scheme identifier MUST be a UNTDID 7143 code.
 
 - **Requires:** Item classification identifier identification scheme identifier MUST be coded using one of the UNTDID 7143 list.
@@ -720,6 +738,24 @@ Code-list rules — a coded value must come from the referenced official code li
 - **Fix:** Encode `cbc:EmbeddedDocumentBinaryObject[@mimeCode]` using a valid value from Mime code in attribute use MIMEMediaType..
 - **Severity:** fatal
 - **Provenance:** `en16931-ubl` — “For Mime code in attribute use MIMEMediaType.”
+
+### BR-CL-25 — Endpoint identifier scheme identifier MUST belong to the CEF EAS code list.
+
+- **Requires:** Endpoint identifier scheme identifier MUST belong to the CEF EAS code list
+- **Business terms:** — (no single business term)
+- **Location:** `cbc:EndpointID[@schemeID]`
+- **Fix:** Encode `cbc:EndpointID[@schemeID]` using a valid value from CEF EAS code list.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Endpoint identifier scheme identifier MUST belong to the CEF EAS code list”
+
+### BR-CL-26 — Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list.
+
+- **Requires:** Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list
+- **Business terms:** — (no single business term)
+- **Location:** `cac:DeliveryLocation/cbc:ID[@schemeID]`
+- **Fix:** Encode `cac:DeliveryLocation/cbc:ID[@schemeID]` using a valid value from ISO 6523 ICD code list.
+- **Severity:** fatal
+- **Provenance:** `en16931-ubl` — “Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list”
 
 ## BR-CO
 

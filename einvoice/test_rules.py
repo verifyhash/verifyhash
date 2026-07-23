@@ -3215,5 +3215,130 @@ class PeppolKositBatch2Ubl(PeppolKositBatch1Ubl):
         self.assertEqual(self.pep_fired(r), {_pep("R130")})
 
 
+# Scheme-identifier code-list batch (BR-CL-10/11/25/26, T-VHCLX.1 —
+# differentially proven the same way as the batches above).
+SCHEME_CL_RULES = {"BR-CL-10", "BR-CL-11", "BR-CL-25", "BR-CL-26"}
+
+
+class SchemeIdCodeLists(unittest.TestCase):
+    """BR-CL-10/11/25/26 (UBL bindings): ISO 6523 ICD scheme ids on party
+    identification / party registration / delivery location, and the CEF EAS
+    list on endpoint ids. The clean base carries 0184 (a valid ICD AND EAS
+    entry) on every present surface, so it must stay clean; each negative
+    breaks exactly one scheme label."""
+
+    def seller_pid_id(self, r):
+        return supplier_party(r).find(
+            "%s/%s" % (q(NS_CAC, "PartyIdentification"), q(NS_CBC, "ID")))
+
+    def buyer_pid_id(self, r):
+        return buyer_party(r).find(
+            "%s/%s" % (q(NS_CAC, "PartyIdentification"), q(NS_CBC, "ID")))
+
+    def add_delivery_location_id(self, r, scheme):
+        dloc = child(doc_delivery(r), NS_CAC, "DeliveryLocation")
+        lid = ET.Element(q(NS_CBC, "ID"))
+        lid.text = "LOC-1"
+        lid.set("schemeID", scheme)
+        dloc.insert(0, lid)
+
+    def test_base_fires_none_of_the_scheme_rules(self):
+        self.assertFalse(fired(base()) & SCHEME_CL_RULES)
+
+    # ---- BR-CL-10 (cac:PartyIdentification/cbc:ID[@schemeID]) ------------
+    def test_br_cl_10_bad_buyer_scheme_fires(self):
+        r = base()
+        self.buyer_pid_id(r).set("schemeID", "XXX")
+        self.assertEqual(fired(r) & SCHEME_CL_RULES, {"BR-CL-10"})
+
+    def test_br_cl_10_valid_icd_holds(self):
+        r = base()
+        self.buyer_pid_id(r).set("schemeID", "0088")
+        self.assertFalse(fired(r) & SCHEME_CL_RULES)
+
+    def test_br_cl_10_sepa_under_supplier_holds(self):
+        # The official UBL assert's second disjunct: 'SEPA' is allowed when
+        # the ID has an ancestor cac:AccountingSupplierParty (or PayeeParty).
+        r = base()
+        self.seller_pid_id(r).set("schemeID", "SEPA")
+        self.assertFalse(fired(r) & SCHEME_CL_RULES)
+
+    def test_br_cl_10_sepa_under_buyer_fires(self):
+        # 'SEPA' is NOT in the ICD list and the buyer is outside the
+        # SEPA-allowed ancestors — the official assert fails there.
+        r = base()
+        self.buyer_pid_id(r).set("schemeID", "SEPA")
+        self.assertEqual(fired(r) & SCHEME_CL_RULES, {"BR-CL-10"})
+
+    def test_br_cl_10_empty_scheme_fires(self):
+        # normalize-space('') is not a list member — the official test fails.
+        r = base()
+        self.buyer_pid_id(r).set("schemeID", "")
+        self.assertEqual(fired(r) & SCHEME_CL_RULES, {"BR-CL-10"})
+
+    # ---- BR-CL-11 (cac:PartyLegalEntity/cbc:CompanyID[@schemeID]) --------
+    def test_br_cl_11_bad_scheme_fires(self):
+        r = base()
+        ple = supplier_party(r).find(q(NS_CAC, "PartyLegalEntity"))
+        child(ple, NS_CBC, "CompanyID").set("schemeID", "XXX")
+        self.assertEqual(fired(r) & SCHEME_CL_RULES, {"BR-CL-11"})
+
+    def test_br_cl_11_valid_icd_holds(self):
+        r = base()
+        ple = supplier_party(r).find(q(NS_CAC, "PartyLegalEntity"))
+        child(ple, NS_CBC, "CompanyID").set("schemeID", "0002")
+        self.assertFalse(fired(r) & SCHEME_CL_RULES)
+
+    # ---- BR-CL-25 (cbc:EndpointID[@schemeID], CEF EAS) -------------------
+    def test_br_cl_25_icd_only_code_fires(self):
+        # '0003' IS an ISO 6523 ICD but is NOT in the CEF EAS enumeration —
+        # the discriminating direction that proves the EAS pin is the EAS
+        # set, not the ICD set.
+        r = base()
+        child(supplier_party(r), NS_CBC, "EndpointID").set("schemeID", "0003")
+        self.assertEqual(fired(r) & SCHEME_CL_RULES, {"BR-CL-25"})
+
+    def test_br_cl_25_eas_only_code_holds(self):
+        # '9930' is EAS-only (not an ICD): BR-CL-25 holds and no ICD rule
+        # sees an endpoint node.
+        r = base()
+        child(supplier_party(r), NS_CBC, "EndpointID").set("schemeID", "9930")
+        self.assertFalse(fired(r) & SCHEME_CL_RULES)
+
+    def test_br_cl_25_cen_only_entry_holds(self):
+        # '0242' is in the CEN artifact's EAS enumeration but NOT in the
+        # KoSIT common.sch EAS variable — the measured 4-entry artifact
+        # difference; the CEN rule must accept it.
+        r = base()
+        child(buyer_party(r), NS_CBC, "EndpointID").set("schemeID", "0242")
+        self.assertFalse(fired(r) & SCHEME_CL_RULES)
+
+    def test_br_cl_25_bad_scheme_fires(self):
+        r = base()
+        child(buyer_party(r), NS_CBC, "EndpointID").set("schemeID", "XXX")
+        self.assertEqual(fired(r) & SCHEME_CL_RULES, {"BR-CL-25"})
+
+    # ---- BR-CL-26 (cac:DeliveryLocation/cbc:ID[@schemeID]) ---------------
+    def test_br_cl_26_bad_scheme_fires(self):
+        r = base()
+        self.add_delivery_location_id(r, "XXX")
+        self.assertEqual(fired(r) & SCHEME_CL_RULES, {"BR-CL-26"})
+
+    def test_br_cl_26_valid_icd_holds(self):
+        r = base()
+        self.add_delivery_location_id(r, "0088")
+        self.assertFalse(fired(r) & SCHEME_CL_RULES)
+
+    def test_br_cl_26_id_without_scheme_is_no_context_node(self):
+        # The [@schemeID] predicate: an attribute-less DeliveryLocation ID
+        # matches no context node, so nothing fires.
+        r = base()
+        dloc = child(doc_delivery(r), NS_CAC, "DeliveryLocation")
+        lid = ET.Element(q(NS_CBC, "ID"))
+        lid.text = "LOC-1"
+        dloc.insert(0, lid)
+        self.assertFalse(fired(r) & SCHEME_CL_RULES)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

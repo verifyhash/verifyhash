@@ -3563,5 +3563,136 @@ class CiiProofParityBatch5(CiiProofParityBatch4):
         self.assert_rule(r, "BR-S-01", expect=False)
 
 
+class TestSchemeIdCodeListsCII(unittest.TestCase):
+    """BR-CL-10/11/25/26 on the CII bindings (T-VHCLX.1): the exact official
+    context nodes — generic ram:GlobalID (BR-CL-10, NO SEPA disjunct on CII),
+    non-tax-registration ram:ID (BR-CL-11), URIUniversalCommunication/URIID
+    (BR-CL-25, CEF EAS) and the HEADER ShipToTradeParty GlobalID (BR-CL-26).
+    The clean CII_example1's only @schemeID is the seller's 'VA' tax
+    registration, which the BR-CL-11 ancestor predicate excludes."""
+
+    SCHEME_RULES = {"BR-CL-10", "BR-CL-11", "BR-CL-25", "BR-CL-26"}
+
+    def _scheme_fired(self, root):
+        return _fired_ids(root) & self.SCHEME_RULES
+
+    def _seller(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:SellerTradeParty", NS)
+
+    def _buyer(self, r):
+        return r.find("rsm:SupplyChainTradeTransaction/"
+                      "ram:ApplicableHeaderTradeAgreement/"
+                      "ram:BuyerTradeParty", NS)
+
+    def _add_seller_global_id(self, r, scheme):
+        gid = ET.Element(_q(NSA, "GlobalID"))
+        gid.set("schemeID", scheme)
+        gid.text = "1234567890123"
+        self._seller(r).insert(0, gid)
+
+    def _add_endpoint(self, r, scheme):
+        uri = ET.SubElement(self._seller(r),
+                            _q(NSA, "URIUniversalCommunication"))
+        uid = ET.SubElement(uri, _q(NSA, "URIID"))
+        uid.set("schemeID", scheme)
+        uid.text = "sales@dekoksmaat.nl"
+
+    def _add_header_ship_to_global_id(self, r, scheme):
+        delivery = r.find("rsm:SupplyChainTradeTransaction/"
+                          "ram:ApplicableHeaderTradeDelivery", NS)
+        shipto = ET.Element(_q(NSA, "ShipToTradeParty"))
+        gid = ET.SubElement(shipto, _q(NSA, "GlobalID"))
+        gid.set("schemeID", scheme)
+        gid.text = "1234567890123"
+        delivery.insert(0, shipto)
+
+    def test_clean_base_fires_none(self):
+        # The seller's SpecifiedTaxRegistration ram:ID schemeID='VA' is
+        # excluded from BR-CL-11 by the official ancestor predicate.
+        self.assertFalse(self._scheme_fired(_good_root()))
+
+    # ---- BR-CL-10 (generic ram:GlobalID[@schemeID]) ----------------------
+    def test_br_cl_10_bad_seller_global_id_fires(self):
+        r = _good_root()
+        self._add_seller_global_id(r, "XXX")
+        self.assertEqual(self._scheme_fired(r), {"BR-CL-10"})
+
+    def test_br_cl_10_valid_icd_holds(self):
+        r = _good_root()
+        self._add_seller_global_id(r, "0088")
+        self.assertFalse(self._scheme_fired(r))
+
+    def test_br_cl_10_sepa_fires_on_cii(self):
+        # UNLIKE the UBL binding, the CII BR-CL-10 assert carries NO SEPA
+        # disjunct — 'SEPA' on a seller GlobalID fires on CII.
+        r = _good_root()
+        self._add_seller_global_id(r, "SEPA")
+        self.assertEqual(self._scheme_fired(r), {"BR-CL-10"})
+
+    # ---- BR-CL-11 (ram:ID[@schemeID] outside tax registration) -----------
+    def test_br_cl_11_bad_buyer_id_scheme_fires(self):
+        r = _good_root()
+        self._buyer(r).find("ram:ID", NS).set("schemeID", "XXX")
+        self.assertEqual(self._scheme_fired(r), {"BR-CL-11"})
+
+    def test_br_cl_11_valid_icd_holds(self):
+        r = _good_root()
+        self._buyer(r).find("ram:ID", NS).set("schemeID", "0002")
+        self.assertFalse(self._scheme_fired(r))
+
+    def test_br_cl_11_tax_registration_id_stays_excluded(self):
+        # Flip the seller's VA tax-registration value: still under
+        # SpecifiedTaxRegistration, still NOT a BR-CL-11 context node.
+        r = _good_root()
+        reg = self._seller(r).find(
+            "ram:SpecifiedTaxRegistration/ram:ID", NS)
+        reg.set("schemeID", "FC")   # off the ICD list, but excluded context
+        self.assertFalse(self._scheme_fired(r))
+
+    # ---- BR-CL-25 (ram:URIUniversalCommunication/ram:URIID) --------------
+    def test_br_cl_25_icd_only_code_fires(self):
+        # '0003' is ICD-only (not EAS): the endpoint rule must fire.
+        r = _good_root()
+        self._add_endpoint(r, "0003")
+        self.assertEqual(self._scheme_fired(r), {"BR-CL-25"})
+
+    def test_br_cl_25_cen_only_entry_holds(self):
+        # '0242' is in the CEN EAS enumeration but not the KoSIT variable.
+        r = _good_root()
+        self._add_endpoint(r, "0242")
+        self.assertFalse(self._scheme_fired(r))
+
+    def test_br_cl_25_valid_eas_holds(self):
+        r = _good_root()
+        self._add_endpoint(r, "9930")
+        self.assertFalse(self._scheme_fired(r))
+
+    # ---- BR-CL-26 (HEADER ShipToTradeParty GlobalID) ---------------------
+    def test_br_cl_26_bad_scheme_fires(self):
+        r = _good_root()
+        self._add_header_ship_to_global_id(r, "XXX")
+        self.assertEqual(self._scheme_fired(r), {"BR-CL-26"})
+
+    def test_br_cl_26_valid_icd_holds(self):
+        r = _good_root()
+        self._add_header_ship_to_global_id(r, "0088")
+        self.assertFalse(self._scheme_fired(r))
+
+    def test_line_ship_to_global_id_matches_no_context(self):
+        # A LINE-level ShipToTradeParty GlobalID is excluded from BR-CL-10
+        # by the ancestor axis yet NOT selected by BR-CL-26 (header path
+        # only) — exactly like the official patterns: nothing fires.
+        r = _good_root()
+        ls = _first_line(r).find("ram:SpecifiedLineTradeSettlement", NS)
+        delivery = ET.SubElement(ls, _q(NSA, "SpecifiedLineTradeDelivery"))
+        shipto = ET.SubElement(delivery, _q(NSA, "ShipToTradeParty"))
+        gid = ET.SubElement(shipto, _q(NSA, "GlobalID"))
+        gid.set("schemeID", "XXX")
+        gid.text = "1234567890123"
+        self.assertFalse(self._scheme_fired(r))
+
+
 if __name__ == "__main__":
     unittest.main()

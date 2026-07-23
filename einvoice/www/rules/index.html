@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EN 16931 / XRechnung rule index — einvoice rule reference</title>
-<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (289 rules across 21 families), grouped by rule family with a reference page for each.">
+<meta name="description" content="Every EN 16931 / XRechnung business rule the einvoice validator checks (293 rules across 21 families), grouped by rule family with a reference page for each.">
 <link rel="canonical" href="https://verifyhash.com/einvoice/rules/">
 <style>:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -80,11 +80,11 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p class="crumb"><a href="../index.html">einvoice</a> / EN 16931 / XRechnung rule reference</p>
 <h1>Rule index</h1>
 <p class="lead">Every EN 16931 / XRechnung business rule the einvoice engine can fire, grouped by rule family. Each rule links to its own reference page: what it requires, the BT/BG business terms it touches, the XML location, a one-line fix, the engine severity, and the verbatim official Schematron assert.</p>
-<p><strong>289 rules</strong> in total — 276 fatal, 12 warning, 1 information — across 21 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
+<p><strong>293 rules</strong> in total — 280 fatal, 12 warning, 1 information — across 21 families. Family headings are the standard EN 16931 / XRechnung rule-family labels; every per-rule string on the linked pages is rendered from the remediation catalog. <a href="../index.html">Back to the overview</a>.</p>
 <nav class="toc">
 <ul class="rules">
 <li><a href="#BR">BR</a> (58)</li>
-<li><a href="#BR-CL">BR-CL</a> (15)</li>
+<li><a href="#BR-CL">BR-CL</a> (19)</li>
 <li><a href="#BR-CO">BR-CO</a> (19)</li>
 <li><a href="#BR-DEC">BR-DEC</a> (21)</li>
 <li><a href="#BR-AE">BR-AE</a> (10)</li>
@@ -171,13 +171,15 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 </ul>
 </section>
 <section class="fam" id="BR-CL">
-<h2>BR-CL <small>(15)</small></h2>
+<h2>BR-CL <small>(19)</small></h2>
 <p class="intro">Code-list rules — a coded value must come from the referenced official code list.</p>
 <ul class="rules">
 <li><a href="BR-CL-01/index.html"><code>BR-CL-01</code></a> — The document type code (BT-3) MUST be coded per UNTDID 1001. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-03/index.html"><code>BR-CL-03</code></a> — CurrencyID MUST be coded using ISO 4217 alpha-3. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-04/index.html"><code>BR-CL-04</code></a> — Invoice currency code (BT-5) MUST be coded using ISO 4217 alpha-3. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-05/index.html"><code>BR-CL-05</code></a> — Tax currency code (BT-6) MUST be coded using ISO 4217 alpha-3. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-10/index.html"><code>BR-CL-10</code></a> — Any identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-11/index.html"><code>BR-CL-11</code></a> — Any registration identifier identification scheme identifier MUST be coded using one of the ISO 6523 ICD list. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-13/index.html"><code>BR-CL-13</code></a> — Item classification scheme identifier MUST be a UNTDID 7143 code. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-14/index.html"><code>BR-CL-14</code></a> — Country codes MUST be coded using ISO 3166-1 alpha-2. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-16/index.html"><code>BR-CL-16</code></a> — Payment means MUST be coded using the UNCL 4461 code list. <span class="sev">fatal</span></li>
@@ -189,6 +191,8 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <li><a href="BR-CL-22/index.html"><code>BR-CL-22</code></a> — VAT exemption reason code MUST belong to the CEF VATEX list. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-23/index.html"><code>BR-CL-23</code></a> — Unit code MUST be coded per UN/ECE Rec 20 with Rec 21 extension. <span class="sev">fatal</span></li>
 <li><a href="BR-CL-24/index.html"><code>BR-CL-24</code></a> — For a MIME code in an attribute use the MIMEMediaType subset. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-25/index.html"><code>BR-CL-25</code></a> — Endpoint identifier scheme identifier MUST belong to the CEF EAS code list. <span class="sev">fatal</span></li>
+<li><a href="BR-CL-26/index.html"><code>BR-CL-26</code></a> — Delivery location identifier scheme identifier MUST belong to the ISO 6523 ICD code list. <span class="sev">fatal</span></li>
 </ul>
 </section>
 <section class="fam" id="BR-CO">

@@ -26,6 +26,7 @@ import importlib
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -412,13 +413,142 @@ class TestContainerFindingsInReport(unittest.TestCase):
         self.assertEqual(fx, [])
 
 
+def _load_fixture_generator():
+    """Load corpus/pdf/make_pdf_fixtures.py (the stdlib Factur-X builder) via
+    importlib — the same pattern TestFixturesReproducible uses."""
+    gen_path = os.path.join(PDF_DIR, "make_pdf_fixtures.py")
+    spec = importlib.util.spec_from_file_location("_make_pdf_fixtures",
+                                                  gen_path)
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    return gen
+
+
+class TestGermanRulesThroughContainer(unittest.TestCase):
+    """T-VHCIIDE.4: the new German CII rules fire END-TO-END through the
+    Factur-X PDF-container path (extract -> parse -> CII_DE_RULES), the way
+    real ZUGFeRD/Factur-X adopters actually ship invoices.
+
+    An in-test Factur-X PDF (built with the committed stdlib generator, never
+    written to corpus/) embeds a CII invoice violating BOTH:
+
+      * BR-DE-19 (warning) — the code-58 payee IBAN's mod-97 check fails
+        (``DE79...91``, the exact bad value of the T-VHCIIDE.1 unit fixture
+        ``test_de19_positive_bad_check_digits``), and
+      * BR-DE-18 (fatal)   — the BT-20 payment-terms Description carries the
+        malformed Skonto line ``#SKONTO#TAGE=14#PROZENT=2#`` (PROZENT lacks
+        the mandatory two decimals — the exact bad value of the T-VHCIIDE.3
+        unit fixture ``test_missing_two_decimals_fires``).
+
+    Base payload: the XRechnung testsuite CII invoice 01.02a — the SAME
+    BR-DE-clean base every CII BR-DE unit fixture mutates. It fires ZERO
+    rules under the xrechnung profile, so it doubles as the wrapped-identical
+    control. (The existing valid fixture's CII_example5.xml payload cannot
+    serve here: MEASURED, it already fires BR-DE-19 UNMUTATED under
+    xrechnung — both its code-58 IBANs fail mod-97 — so a control asserting
+    the absence of BR-DE-19 would be impossible on it.)
+
+    The container is MATCHING: 01.02a's CustomizationID is the XRechnung
+    CIUS URN, so the XMP declares ConformanceLevel XRECHNUNG — otherwise the
+    generator's "EN 16931" default would fire FX-CONTAINER-PROFILE on the
+    PDF path only and break the fired-id parity with direct XML validation.
+    """
+
+    # The clean XRechnung CII base the per-rule unit fixtures mutate
+    # (test_xrechnung.py XR_CII_BASE).
+    BASE_XML = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src",
+                            "test", "business-cases", "standard",
+                            "01.02a-INVOICE_uncefact.xml")
+    GOOD_IBAN = b"DE79000000001234567890"   # mod-97 valid (the base's value)
+    BAD_IBAN = b"DE79000000001234567891"    # last digit flipped -> BR-DE-19
+    # 01.02a's full BT-20 prose Description (unique in the file) ...
+    PROSE_TERMS = ("Bitte überweisen Sie den Betrag innerhalb von 14 Tagen "
+                   "auf unten stehendes Konto. Das Rechnungsdatum entspricht "
+                   "dem Versanddatum.").encode("utf-8")
+    # ... replaced by the malformed Skonto grammar -> BR-DE-18.
+    BAD_SKONTO = b"#SKONTO#TAGE=14#PROZENT=2#"
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory(prefix="einvoice-pdf-de-")
+        gen = _load_fixture_generator()
+        base = _read(cls.BASE_XML)
+        # Guard the mutation surfaces: each target string must be present
+        # EXACTLY once, or the byte-level mutation would silently miss.
+        assert base.count(cls.GOOD_IBAN) == 1, "base IBAN surface drifted"
+        assert base.count(cls.PROSE_TERMS) == 1, "base BT-20 surface drifted"
+        mutated = base.replace(cls.GOOD_IBAN, cls.BAD_IBAN)
+        mutated = mutated.replace(cls.PROSE_TERMS, cls.BAD_SKONTO)
+        assert mutated.count(cls.BAD_IBAN) == 1
+        assert mutated.count(cls.BAD_SKONTO) == 1
+
+        def _write(name, data):
+            path = os.path.join(cls._tmp.name, name)
+            with open(path, "wb") as fh:
+                fh.write(data)
+            return path
+
+        cls.mutated_xml = _write("de-violating.xml", mutated)
+        cls.bad_pdf = _write(
+            "facturx-de-violating.pdf",
+            gen.build_facturx_pdf(mutated, xmp_conformance_level="XRECHNUNG"))
+        # Control: the SAME payload unmutated, wrapped IDENTICALLY.
+        cls.control_pdf = _write(
+            "facturx-de-control.pdf",
+            gen.build_facturx_pdf(base, xmp_conformance_level="XRECHNUNG"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def test_violating_pdf_fires_both_german_rules_via_report(self):
+        rep = report.build_report(self.bad_pdf, profile="xrechnung")
+        self.assertNotIn("error", rep,
+                         "the violating PDF is a supported container")
+        fired = {v["rule"]: v["severity"] for v in rep["violations"]}
+        self.assertIn("BR-DE-19", fired, fired)
+        self.assertIn("BR-DE-18", fired, fired)
+        # Severities as registered from the official artifact.
+        self.assertEqual(fired["BR-DE-19"], "warning")
+        self.assertEqual(fired["BR-DE-18"], "fatal")
+        # BR-DE-18 is fatal -> the report is a non-pass.
+        self.assertFalse(rep["valid"], rep)
+        self.assertGreater(rep["fatal_count"], 0)
+
+    def test_violating_pdf_cli_exits_nonzero(self):
+        code, out, err = _run_cli("--profile", "xrechnung", self.bad_pdf)
+        self.assertNotEqual(code, 0, out)
+        self.assertEqual(err, "", err)  # a rule failure, not a traceback
+        self.assertIn('"valid":false', out)
+        self.assertIn("BR-DE-19", out)
+        self.assertIn("BR-DE-18", out)
+
+    def test_violating_pdf_equals_direct_xml_validation(self):
+        # The established parity invariant: PDF-path fired (id, severity)
+        # pairs EQUAL validating the same mutated XML directly through the
+        # CII engine.
+        rep = report.build_report(self.bad_pdf, profile="xrechnung")
+        self.assertEqual(_report_fired(rep),
+                         _direct_cii_fired(self.mutated_xml, "xrechnung"))
+
+    def test_control_unmutated_payload_does_not_fire_the_german_pair(self):
+        # The SAME base payload, wrapped identically: neither target id
+        # fires through the PDF path (assert absence of the two ids, per
+        # spec — not a blanket exit-0 claim).
+        rep = report.build_report(self.control_pdf, profile="xrechnung")
+        self.assertNotIn("error", rep)
+        fired_ids = {v["rule"] for v in rep["violations"]}
+        self.assertNotIn("BR-DE-19", fired_ids, fired_ids)
+        self.assertNotIn("BR-DE-18", fired_ids, fired_ids)
+        # And the control keeps the parity invariant with its own direct
+        # XML validation.
+        self.assertEqual(_report_fired(rep),
+                         _direct_cii_fired(self.BASE_XML, "xrechnung"))
+
+
 class TestFixturesReproducible(unittest.TestCase):
     def test_fixtures_are_byte_reproducible_from_generator(self):
-        gen_path = os.path.join(PDF_DIR, "make_pdf_fixtures.py")
-        spec = importlib.util.spec_from_file_location("_make_pdf_fixtures",
-                                                      gen_path)
-        gen = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(gen)
+        gen = _load_fixture_generator()
         for name, builder in gen.FIXTURES.items():
             committed = _read(os.path.join(PDF_DIR, name))
             self.assertEqual(builder(), committed,

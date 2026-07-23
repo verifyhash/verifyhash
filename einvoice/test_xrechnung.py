@@ -886,5 +886,298 @@ class BrDex15CiiFixtures(unittest.TestCase):
         self.assertTrue(parser_cii.build_model(r).has_parent_line_id)
 
 
+# --------------------------------------------------------------------------- #
+# CII payment means — BR-DE-19/20/23/24/25 (T-VHCIIDE.1), transcribed from    #
+# XRechnung-CII-validation.sch pattern "cii":                                 #
+#   context .../ram:ApplicableHeaderTradeSettlement/                          #
+#           ram:SpecifiedTradeSettlementPaymentMeans                          #
+#             [normalize-space(ram:TypeCode) = ('30','58')|('48','54','55')|  #
+#              '59']                                                          #
+#   flags copied exactly from the artifact: BR-DE-19/20 warning, the six      #
+#   group asserts fatal.                                                      #
+# The clean 01.02a base carries ONE means: TypeCode 58 + a valid payee IBAN   #
+# (DE79000000001234567890), so it satisfies the whole group.                  #
+# --------------------------------------------------------------------------- #
+def _cii_pm(root):
+    return root.find("rsm:SupplyChainTradeTransaction/"
+                     "ram:ApplicableHeaderTradeSettlement/"
+                     "ram:SpecifiedTradeSettlementPaymentMeans", NS_CII)
+
+
+def _cii_settlement_el(root):
+    return root.find("rsm:SupplyChainTradeTransaction/"
+                     "ram:ApplicableHeaderTradeSettlement", NS_CII)
+
+
+def cii_violations(root):
+    return xr.evaluate_cii(parser_cii.build_model(root))
+
+
+class CiiPaymentMeansShape(unittest.TestCase):
+    """Registry shape: all 8 payment-means ids are in the CII layer with the
+    artifact's exact flags, and are no longer differentially excluded."""
+
+    ARTIFACT_FLAGS = {
+        "BR-DE-19": "warning", "BR-DE-20": "warning",
+        "BR-DE-23-a": "fatal", "BR-DE-23-b": "fatal",
+        "BR-DE-24-a": "fatal", "BR-DE-24-b": "fatal",
+        "BR-DE-25-a": "fatal", "BR-DE-25-b": "fatal",
+    }
+
+    def test_registered_with_official_flags(self):
+        cii_by_id = {fn.rule_id: fn.severity for fn in xr.CII_DE_RULES}
+        ubl_by_id = {fn.rule_id: fn.severity for fn in xr.ALL_RULES}
+        for rid, flag in self.ARTIFACT_FLAGS.items():
+            self.assertEqual(cii_by_id.get(rid), flag,
+                             "%s: CII severity != artifact flag" % rid)
+            # Same id, same flag in the UBL layer (the artifact uses the
+            # same flag for both bindings).
+            self.assertEqual(ubl_by_id.get(rid), flag,
+                             "%s: UBL/CII flag mismatch" % rid)
+
+    def test_flags_match_vendored_cii_artifact(self):
+        """The severities above are not hand-trusted: re-read the vendored
+        .sch and compare the @flag of each assert id."""
+        sch = os.path.join(HERE, "corpus", "xrechnung-schematron",
+                           "schematron", "cii",
+                           "XRechnung-CII-validation.sch")
+        ns = "{http://purl.oclc.org/dsdl/schematron}"
+        flags = {}
+        for a in ET.parse(sch).getroot().iter(ns + "assert"):
+            if a.get("id") in self.ARTIFACT_FLAGS:
+                flags[a.get("id")] = a.get("flag")
+        self.assertEqual(flags, self.ARTIFACT_FLAGS)
+
+    def test_no_longer_excluded_from_cii_grading(self):
+        import differential as _diff
+        for rid in self.ARTIFACT_FLAGS:
+            self.assertIn(rid, set(_diff.CII_XR_RULE_IDS), rid)
+            self.assertNotIn(rid, set(_diff.CII_XR_EXCLUDED_RULE_IDS), rid)
+
+
+class CiiPaymentMeansFixtures(unittest.TestCase):
+    """Positive (fires) + negative (clean) unit fixtures per rule id, all
+    mutated off the BR-DE-clean 01.02a base (one means: 58 + valid IBAN)."""
+
+    def _fired(self, root):
+        return {v.rule_id for v in cii_violations(root)}
+
+    def _only(self, root, rid):
+        """Assert exactly {rid} fires and return its Violation."""
+        vs = cii_violations(root)
+        self.assertEqual({v.rule_id for v in vs}, {rid})
+        return [v for v in vs if v.rule_id == rid][0]
+
+    def _set_code(self, root, code):
+        _cii_pm(root).find("ram:TypeCode", NS_CII).text = code
+
+    def _drop_payee(self, root):
+        pm = _cii_pm(root)
+        pm.remove(pm.find("ram:PayeePartyCreditorFinancialAccount", NS_CII))
+
+    def _add_card(self, root):
+        ET.SubElement(_cii_pm(root),
+                      q(NS_RAM, "ApplicableTradeSettlementFinancialCard"))
+
+    def _add_payer_account(self, root, iban=None):
+        acc = ET.SubElement(_cii_pm(root),
+                            q(NS_RAM, "PayerPartyDebtorFinancialAccount"))
+        el = ET.SubElement(acc, q(NS_RAM, "IBANID"))
+        if iban is not None:
+            el.text = iban
+
+    # ---- BR-DE-19 (warning): BT-84 IBAN mod-97 on code 58 ----------------
+    def test_de19_positive_bad_check_digits(self):
+        r = cii_base()
+        # Shape-valid IBAN whose mod-97 fails (last digit flipped).
+        _cii_pm(r).find("ram:PayeePartyCreditorFinancialAccount/ram:IBANID",
+                        NS_CII).text = "DE79000000001234567891"
+        v = self._only(r, "BR-DE-19")
+        self.assertEqual(v.severity, "warning")
+
+    def test_de19_positive_whitespace_is_stripped_before_mod97(self):
+        # The official test replace()s whitespace FIRST: a spaced-out valid
+        # IBAN passes, a spaced-out invalid one still fires.
+        r = cii_base()
+        _cii_pm(r).find("ram:PayeePartyCreditorFinancialAccount/ram:IBANID",
+                        NS_CII).text = "DE79 0000 0000 1234 5678 91"
+        self.assertEqual(self._fired(r), {"BR-DE-19"})
+
+    def test_de19_negative_valid_iban_and_code30(self):
+        # Base (58 + valid IBAN) is clean...
+        self.assertEqual(self._fired(cii_base()), set())
+        r = cii_base()
+        _cii_pm(r).find("ram:PayeePartyCreditorFinancialAccount/ram:IBANID",
+                        NS_CII).text = "DE79 0000 0000 1234 5678 90"
+        self.assertEqual(self._fired(r), set())
+        # ...and code 30 holds VACUOUSLY even with a broken IBAN (the assert
+        # is not(TypeCode='58') or IBAN-ok).
+        r = cii_base()
+        self._set_code(r, "30")
+        _cii_pm(r).find("ram:PayeePartyCreditorFinancialAccount/ram:IBANID",
+                        NS_CII).text = "NOT-AN-IBAN"
+        self.assertNotIn("BR-DE-19", self._fired(r))
+
+    # ---- BR-DE-20 (warning): BT-91 IBAN mod-97 on code 59 ----------------
+    def test_de20_positive_bad_payer_iban(self):
+        r = cii_base()
+        self._set_code(r, "59")
+        self._drop_payee(r)
+        self._add_payer_account(r, "DE79000000001234567891")
+        v = self._only(r, "BR-DE-20")
+        self.assertEqual(v.severity, "warning")
+
+    def test_de20_negative_valid_payer_iban(self):
+        r = cii_base()
+        self._set_code(r, "59")
+        self._drop_payee(r)
+        self._add_payer_account(r, "DE79000000001234567890")
+        self.assertEqual(self._fired(r), set())
+
+    # ---- BR-DE-23-a (fatal): 30/58 require BG-17 --------------------------
+    def test_de23a_positive_no_payee_account(self):
+        r = cii_base()
+        self._drop_payee(r)
+        vs = cii_violations(r)
+        by_id = {v.rule_id: v for v in vs}
+        self.assertIn("BR-DE-23-a", by_id)
+        self.assertEqual(by_id["BR-DE-23-a"].severity, "fatal")
+        # The absent IBANID also fails the BR-DE-19 IBAN test ('' has no
+        # shape) — exactly like the official artifact.
+        self.assertEqual(set(by_id), {"BR-DE-23-a", "BR-DE-19"})
+
+    def test_de23a_negative_base_and_other_codes(self):
+        self.assertNotIn("BR-DE-23-a", self._fired(cii_base()))
+        # A non-group code (e.g. 20 cheque) never matches the context.
+        r = cii_base()
+        self._set_code(r, "20")
+        self._drop_payee(r)
+        self.assertEqual(self._fired(r), set())
+
+    # ---- BR-DE-23-b (fatal): 30/58 forbid BG-18 / BG-19 -------------------
+    def test_de23b_positive_card_present(self):
+        r = cii_base()
+        self._add_card(r)
+        v = self._only(r, "BR-DE-23-b")
+        self.assertEqual(v.severity, "fatal")
+
+    def test_de23b_positive_payer_ibanid_element_even_empty(self):
+        # The BG-19 disjunct is ELEMENT PRESENCE of ram:PayerPartyDebtor
+        # FinancialAccount/ram:IBANID — an empty element still fires it.
+        r = cii_base()
+        self._add_payer_account(r, iban=None)
+        self.assertEqual(self._fired(r), {"BR-DE-23-b"})
+
+    def test_de23b_positive_document_level_mandate(self):
+        # DirectDebitMandateID lives at DOCUMENT level (SpecifiedTradePayment
+        # Terms), outside the payment means — the official absolute path.
+        r = cii_base()
+        terms = _cii_settlement_el(r).find("ram:SpecifiedTradePaymentTerms",
+                                           NS_CII)
+        ET.SubElement(terms, q(NS_RAM, "DirectDebitMandateID")).text = "M-1"
+        self.assertEqual(self._fired(r), {"BR-DE-23-b"})
+
+    def test_de23b_negative_base(self):
+        self.assertNotIn("BR-DE-23-b", self._fired(cii_base()))
+
+    # ---- BR-DE-24-a (fatal): 48/54/55 require BG-18 -----------------------
+    def test_de24a_positive_no_card(self):
+        for code in ("48", "54", "55"):
+            r = cii_base()
+            self._set_code(r, code)
+            self._drop_payee(r)
+            v = self._only(r, "BR-DE-24-a")
+            self.assertEqual(v.severity, "fatal")
+
+    def test_de24a_negative_card_present(self):
+        r = cii_base()
+        self._set_code(r, "54")
+        self._drop_payee(r)
+        self._add_card(r)
+        self.assertEqual(self._fired(r), set())
+
+    # ---- BR-DE-24-b (fatal): 48/54/55 forbid BG-17 / BG-19 ----------------
+    def test_de24b_positive_payee_account_kept(self):
+        r = cii_base()
+        self._set_code(r, "48")
+        self._add_card(r)          # BR-DE-24-a holds
+        v = self._only(r, "BR-DE-24-b")
+        self.assertEqual(v.severity, "fatal")
+
+    def test_de24b_negative_card_only(self):
+        r = cii_base()
+        self._set_code(r, "48")
+        self._drop_payee(r)
+        self._add_card(r)
+        self.assertEqual(self._fired(r), set())
+
+    # ---- BR-DE-25-a (fatal): 59 requires BG-19 ----------------------------
+    def test_de25a_positive_bare_direct_debit(self):
+        r = cii_base()
+        self._set_code(r, "59")
+        self._drop_payee(r)
+        vs = cii_violations(r)
+        by_id = {v.rule_id: v for v in vs}
+        self.assertIn("BR-DE-25-a", by_id)
+        self.assertEqual(by_id["BR-DE-25-a"].severity, "fatal")
+        # Absent payer IBAN also fails the BR-DE-20 IBAN test, like the
+        # artifact.
+        self.assertEqual(set(by_id), {"BR-DE-25-a", "BR-DE-20"})
+
+    def test_de25a_negative_document_level_creditor_reference(self):
+        # ram:CreditorReferenceID at the settlement (document) level
+        # satisfies the BG-19 disjunct even with no payer account. Insert it
+        # at position 0 (it is the first settlement child in the XSD; order
+        # is irrelevant to the rules, kept sane anyway).
+        r = cii_base()
+        self._set_code(r, "59")
+        self._drop_payee(r)
+        cr = ET.Element(q(NS_RAM, "CreditorReferenceID"))
+        cr.text = "DE98ZZZ09999999999"
+        _cii_settlement_el(r).insert(0, cr)
+        # BR-DE-25-a holds; BR-DE-20 still fires (there is no IBAN at all).
+        self.assertEqual(self._fired(r), {"BR-DE-20"})
+
+    # ---- BR-DE-25-b (fatal): 59 forbids BG-17 / BG-18 ---------------------
+    def test_de25b_positive_payee_account_kept(self):
+        r = cii_base()
+        self._set_code(r, "59")
+        self._add_payer_account(r, "DE79000000001234567890")
+        v = self._only(r, "BR-DE-25-b")
+        self.assertEqual(v.severity, "fatal")
+
+    def test_de25b_positive_financial_institution_conjuncts(self):
+        # The 25-b conjuncts the other group asserts do NOT test: payee and
+        # payer SpecifiedFinancialInstitution presence.
+        for local in ("PayeeSpecifiedCreditorFinancialInstitution",
+                      "PayerSpecifiedDebtorFinancialInstitution"):
+            r = cii_base()
+            self._set_code(r, "59")
+            self._drop_payee(r)
+            self._add_payer_account(r, "DE79000000001234567890")
+            ET.SubElement(_cii_pm(r), q(NS_RAM, local))
+            self.assertEqual(self._fired(r), {"BR-DE-25-b"}, local)
+
+    def test_de25b_negative_clean_direct_debit(self):
+        r = cii_base()
+        self._set_code(r, "59")
+        self._drop_payee(r)
+        self._add_payer_account(r, "DE79000000001234567890")
+        self.assertEqual(self._fired(r), set())
+
+    # ---- model surface sanity ---------------------------------------------
+    def test_model_carries_the_payment_means_surface(self):
+        inv = parser_cii.build_model(cii_base())
+        self.assertEqual(len(inv.settlement_payment_means), 1)
+        pm = inv.settlement_payment_means[0]
+        self.assertEqual(pm.type_code, "58")
+        self.assertTrue(pm.has_payee_account)
+        self.assertEqual(pm.payee_iban, "DE79000000001234567890")
+        self.assertFalse(pm.has_payer_iban)
+        self.assertFalse(pm.has_card)
+        self.assertFalse(inv.has_direct_debit_mandate_id)
+        self.assertFalse(inv.has_creditor_reference_id)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

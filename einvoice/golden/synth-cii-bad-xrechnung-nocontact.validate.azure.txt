@@ -1,2 +1,3 @@
 ##vso[task.logissue type=error;sourcepath=corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml;code=BR-DE-2]The group 'SELLER CONTACT' (BG-6) must be transmitted.
+##vso[task.logissue type=warning;sourcepath=corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml;code=BR-DE-19]'Payment account identifier' (BT-84) should be a correct IBAN when 'Payment means type code' (BT-81) is 58 (SEPA).
 ##vso[task.logissue type=warning;sourcepath=corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml;code=BR-DE-21]'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier.

@@ -1463,12 +1463,16 @@ def evaluate(root):
 # EXACT parity (0 false-positive / 0 false-negative) with the official
 # XRechnung-CII Schematron on the differential corpus are admitted here (list
 # ``CII_DE_RULES``). The rules whose CII binding needs structure the EN 16931
-# core model does not carry — payment-means type-code groups, IBAN mod-97
-# (BR-DE-19/20/23/24/25/30/31), the Skonto grammar (BR-DE-18), attachment
-# filename uniqueness (BR-DE-22) and the BR-DEX-* extension asserts other than
-# BR-DEX-15 (whose two-boolean surface the model DOES carry; it is admitted
-# below) — are EXCLUDED, not approximated (see the documented exclusion list
-# in ``differential.CII_XR_EXCLUDED_RULE_IDS``). The CVD/TMP family
+# core model does not carry — the Skonto grammar (BR-DE-18), attachment
+# filename uniqueness (BR-DE-22), the BT-90/91-with-BG-19 pair
+# (BR-DE-30/-31) and the BR-DEX-* extension asserts other than BR-DEX-15
+# (whose two-boolean surface the model DOES carry; it is admitted below) —
+# are EXCLUDED, not approximated (see the documented exclusion list in
+# ``differential.CII_XR_EXCLUDED_RULE_IDS``). The payment-means group
+# (BR-DE-19/20 IBAN mod-97 and the type-code group checks
+# BR-DE-23/24/25-a/-b) IS admitted: ``parser_cii._build_cii_br_de`` carries
+# one ``CIIPaymentMeans`` record per ``ram:SpecifiedTradeSettlementPaymentMeans``
+# context node plus the document-level BG-19 reconstruction facts. The CVD/TMP family
 # (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2 and the CII-only BR-TMP-3) IS admitted:
 # ``parser_cii._build_cii_br_de`` carries its guarded facts (guideline ids,
 # header referenced documents, per-line trade-product classification /
@@ -1631,6 +1635,175 @@ def cii_br_de_11(inv):
                       "must be transmitted when DELIVER TO ADDRESS (BG-15) is "
                       "present.",
                       "ram:ShipToTradeParty/ram:PostalTradeAddress/ram:PostcodeCode")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# CII payment means (BR-DE-19/20/23/24/25) — contexts keyed on
+# normalize-space(ram:TypeCode) over the .../ram:ApplicableHeaderTradeSettlement/
+# ram:SpecifiedTradeSettlementPaymentMeans node set. The official BG-18 group
+# is ram:ApplicableTradeSettlementFinancialCard; the official BG-19 group is
+# RECONSTRUCTED by the artifact from document-level
+# SpecifiedTradePaymentTerms/DirectDebitMandateID or document-level
+# CreditorReferenceID or the means' PayerPartyDebtorFinancialAccount/IBANID
+# (element presence). Surface carried by parser_cii._build_cii_br_de.
+# ---------------------------------------------------------------------------
+def _cii_payment_means(inv):
+    for pm in inv.settlement_payment_means:
+        yield pm, _nsp(pm.type_code)
+
+
+def _cii_bg19_present(inv, pm):
+    """The artifact's BG-19 (DIRECT DEBIT) reconstruction disjunct, shared by
+    BR-DE-23-b / BR-DE-24-b (forbid) and BR-DE-25-a (require):
+    document-level ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID
+    or document-level ram:CreditorReferenceID or this payment means'
+    ram:PayerPartyDebtorFinancialAccount/ram:IBANID — all element-presence
+    tests (an empty element still counts), copied exactly."""
+    return (inv.has_direct_debit_mandate_id or inv.has_creditor_reference_id
+            or pm.has_payer_iban)
+
+
+@_rule("BR-DE-19", "warning")
+def cii_br_de_19(inv):
+    """BR-DE-19: with payment means code 58 (SEPA credit transfer), BT-84
+    should be a correct IBAN. CII context is TypeCode in (30, 58); the assert
+    is not(TypeCode = '58') or IBAN-ok(ram:PayeePartyCreditorFinancialAccount/
+    ram:IBANID) — so it holds vacuously for code 30 (official regex + mod-97
+    transcription, shared with the UBL twin via _iban_ok)."""
+    for pm, code in _cii_payment_means(inv):
+        if code not in ("30", "58"):
+            continue
+        if code != "58":
+            continue  # not(... = '58') -> assert holds for code 30
+        if not _iban_ok(pm.payee_iban):
+            return _v(cii_br_de_19, "'Payment account identifier' (BT-84) "
+                      "should be a correct IBAN when 'Payment means type "
+                      "code' (BT-81) is 58 (SEPA).",
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:PayeePartyCreditorFinancialAccount/ram:IBANID")
+    return None
+
+
+@_rule("BR-DE-20", "warning")
+def cii_br_de_20(inv):
+    """BR-DE-20: with payment means code 59 (SEPA direct debit), BT-91 should
+    be a correct IBAN (ram:PayerPartyDebtorFinancialAccount/ram:IBANID; the
+    assert's not(TypeCode = '59') disjunct is always false inside the
+    TypeCode = '59' context)."""
+    for pm, code in _cii_payment_means(inv):
+        if code != "59":
+            continue
+        if not _iban_ok(pm.payer_iban):
+            return _v(cii_br_de_20, "'Debited account identifier' (BT-91) "
+                      "should be a correct IBAN when 'Payment means type "
+                      "code' (BT-81) is 59 (SEPA direct debit).",
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:PayerPartyDebtorFinancialAccount/ram:IBANID")
+    return None
+
+
+@_rule("BR-DE-23-a", "fatal")
+def cii_br_de_23_a(inv):
+    """BR-DE-23-a: codes 30/58 (credit transfer) require CREDIT TRANSFER
+    (BG-17): assert ram:PayeePartyCreditorFinancialAccount exists."""
+    for pm, code in _cii_payment_means(inv):
+        if code in ("30", "58") and not pm.has_payee_account:
+            return _v(cii_br_de_23_a, "'Payment means type code' (BT-81) is a "
+                      "credit-transfer code (30, 58), so CREDIT TRANSFER "
+                      "(BG-17) must be transmitted.",
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:PayeePartyCreditorFinancialAccount")
+    return None
+
+
+@_rule("BR-DE-23-b", "fatal")
+def cii_br_de_23_b(inv):
+    """BR-DE-23-b: codes 30/58 forbid PAYMENT CARD (BG-18:
+    ram:ApplicableTradeSettlementFinancialCard) and DIRECT DEBIT (BG-19,
+    the reconstruction disjunct — see _cii_bg19_present)."""
+    for pm, code in _cii_payment_means(inv):
+        if code in ("30", "58") and (
+                pm.has_card or _cii_bg19_present(inv, pm)):
+            return _v(cii_br_de_23_b, "'Payment means type code' (BT-81) is a "
+                      "credit-transfer code (30, 58), so BG-18 and BG-19 must "
+                      "not be transmitted.",
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:ApplicableTradeSettlementFinancialCard | "
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:PayerPartyDebtorFinancialAccount/ram:IBANID")
+    return None
+
+
+@_rule("BR-DE-24-a", "fatal")
+def cii_br_de_24_a(inv):
+    """BR-DE-24-a: codes 48/54/55 (card) require PAYMENT CARD INFORMATION
+    (BG-18): assert ram:ApplicableTradeSettlementFinancialCard exists."""
+    for pm, code in _cii_payment_means(inv):
+        if code in ("48", "54", "55") and not pm.has_card:
+            return _v(cii_br_de_24_a, "'Payment means type code' (BT-81) is a "
+                      "card-payment code (48, 54, 55), so PAYMENT CARD "
+                      "INFORMATION (BG-18) must be transmitted.",
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:ApplicableTradeSettlementFinancialCard")
+    return None
+
+
+@_rule("BR-DE-24-b", "fatal")
+def cii_br_de_24_b(inv):
+    """BR-DE-24-b: codes 48/54/55 forbid CREDIT TRANSFER (BG-17:
+    ram:PayeePartyCreditorFinancialAccount) and DIRECT DEBIT (BG-19
+    reconstruction disjunct)."""
+    for pm, code in _cii_payment_means(inv):
+        if code in ("48", "54", "55") and (
+                pm.has_payee_account or _cii_bg19_present(inv, pm)):
+            return _v(cii_br_de_24_b, "'Payment means type code' (BT-81) is a "
+                      "card-payment code (48, 54, 55), so BG-17 and BG-19 "
+                      "must not be transmitted.",
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:PayeePartyCreditorFinancialAccount | "
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:PayerPartyDebtorFinancialAccount/ram:IBANID")
+    return None
+
+
+@_rule("BR-DE-25-a", "fatal")
+def cii_br_de_25_a(inv):
+    """BR-DE-25-a: code 59 (direct debit) requires DIRECT DEBIT (BG-19): the
+    assert IS the reconstruction disjunct — document-level
+    DirectDebitMandateID or document-level CreditorReferenceID or the means'
+    PayerPartyDebtorFinancialAccount/IBANID must exist."""
+    for pm, code in _cii_payment_means(inv):
+        if code == "59" and not _cii_bg19_present(inv, pm):
+            return _v(cii_br_de_25_a, "'Payment means type code' (BT-81) is "
+                      "the direct-debit code (59), so DIRECT DEBIT (BG-19) "
+                      "must be transmitted.",
+                      "ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID "
+                      "| ram:CreditorReferenceID | "
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:PayerPartyDebtorFinancialAccount/ram:IBANID")
+    return None
+
+
+@_rule("BR-DE-25-b", "fatal")
+def cii_br_de_25_b(inv):
+    """BR-DE-25-b: code 59 forbids CREDIT TRANSFER (BG-17) and PAYMENT CARD
+    (BG-18): not(PayeePartyCreditorFinancialAccount) and
+    not(PayeeSpecifiedCreditorFinancialInstitution) and
+    not(PayerSpecifiedDebtorFinancialInstitution) and
+    not(ApplicableTradeSettlementFinancialCard) — all four element-presence
+    conjuncts copied exactly."""
+    for pm, code in _cii_payment_means(inv):
+        if code == "59" and (
+                pm.has_payee_account or pm.has_payee_institution
+                or pm.has_payer_institution or pm.has_card):
+            return _v(cii_br_de_25_b, "'Payment means type code' (BT-81) is "
+                      "the direct-debit code (59), so BG-17 and BG-18 must "
+                      "not be transmitted.",
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:PayeePartyCreditorFinancialAccount | "
+                      "ram:SpecifiedTradeSettlementPaymentMeans/"
+                      "ram:ApplicableTradeSettlementFinancialCard")
     return None
 
 
@@ -2046,7 +2219,14 @@ def cii_br_dex_15(inv):
 CII_DE_RULES = [
     cii_br_de_1, cii_br_de_2, cii_br_de_3, cii_br_de_4, cii_br_de_5,
     cii_br_de_6, cii_br_de_7, cii_br_de_8, cii_br_de_9, cii_br_de_10,
-    cii_br_de_11, cii_br_de_14, cii_br_de_15, cii_br_de_16, cii_br_de_17,
+    cii_br_de_11,
+    # Payment means (artifact document order: the 30/58 context asserts
+    # BR-DE-19/23-a/23-b, then the 48/54/55 context BR-DE-24-a/24-b, then the
+    # 59 context BR-DE-20/25-a/25-b).
+    cii_br_de_19, cii_br_de_23_a, cii_br_de_23_b,
+    cii_br_de_24_a, cii_br_de_24_b,
+    cii_br_de_20, cii_br_de_25_a, cii_br_de_25_b,
+    cii_br_de_14, cii_br_de_15, cii_br_de_16, cii_br_de_17,
     cii_br_de_21, cii_br_de_26, cii_br_de_27, cii_br_de_28, cii_br_de_tmp_32,
     cii_br_tmp_2, cii_br_tmp_3,
     cii_br_de_cvd_01, cii_br_de_cvd_02, cii_br_de_cvd_03, cii_br_de_cvd_04,

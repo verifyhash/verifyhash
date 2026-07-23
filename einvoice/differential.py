@@ -199,36 +199,34 @@ assert CII_XR_RULE_SET - XR_RULE_SET == set(CII_ONLY_XR_RULE_IDS), (
 # These BR-DE / BR-DEX rules ARE present in the official XRechnung-CII Schematron
 # but bind CII document parts the syntax-agnostic EN 16931 core model deliberately
 # does not carry, so they cannot be evaluated over the normalized model without
-# adding a whole CII-payment / attachment / extension surface. Rather than
+# adding a CII payment-terms / attachment / extension surface. Rather than
 # approximate a national rule (forbidden), they are excluded with the reason and
 # remain fully graded on the UBL XRechnung leg (LEG 2):
 #
 #  * BR-DE-18 (Skonto grammar in BT-20): the CII test tokenizes
 #    ram:SpecifiedTradePaymentTerms/ram:Description[1] and matches the KoSIT
 #    #SKONTO#…# regex — a free-text payment-terms structure the core model omits.
-#  * BR-DE-19 / BR-DE-20 (BT-84 / BT-91 IBAN mod-97): keyed on
-#    SpecifiedTradeSettlementPaymentMeans[ram:TypeCode='58'|'59'] IBANID — the CII
-#    payment-means node set and IBAN digits are not in the core model.
 #  * BR-DE-22 (unique EmbeddedDocumentBinaryObject filenames): keyed on every
 #    ram:AdditionalReferencedDocument/ram:AttachmentBinaryObject/@filename.
-#  * BR-DE-23-a/-b, BR-DE-24-a/-b, BR-DE-25-a/-b (payment-means type-code groups):
-#    keyed on SpecifiedTradeSettlementPaymentMeans[ram:TypeCode] and its
-#    Creditor/Debtor financial-account / card / mandate children.
-#  * BR-DE-30 / BR-DE-31 (BT-90 / BT-91 with DIRECT DEBIT BG-19): the CII binding
-#    reconstructs BG-19 semantically from DirectDebitMandateID / CreditorReferenceID
-#    / PayerPartyDebtorFinancialAccount IBANID presence — none in the core model.
+#  * BR-DE-30 / BR-DE-31 (BT-90 / BT-91 with DIRECT DEBIT BG-19): the CII
+#    binding reconstructs BG-19 from the document-level $BT-89/90/91-path lets
+#    (DirectDebitMandateID / CreditorReferenceID / payer IBANID). The
+#    T-VHCIIDE.1 payment-means surface now carries these facts, but the
+#    transcription + differential proof of this pair is deliberately staged as
+#    its own follow-up task (T-VHCIIDE.3) — deferred, not overlooked.
 #  * BR-DEX-01/04/05/06/07/08 (extension profile): bind extension surfaces
 #    (attachment MIME codes, ISO 6523 scheme identifiers) the normalized model
 #    does not carry. BR-DEX-15 (sub invoice lines, CII-only) IS graded — its
 #    two-boolean surface (AssociatedDocumentLineDocument context presence +
 #    //ram:ParentLineID existence) is carried by parser_cii._build_cii_br_de.
 #    The CVD/TMP family (BR-DE-CVD-*, BR-TMP-CVD-01, BR-TMP-2 and the CII-only
-#    BR-TMP-3) IS graded here — the normalized model carries its facts
-#    (parser_cii._build_cii_br_de).
+#    BR-TMP-3) IS graded here, and so is the payment-means group (T-VHCIIDE.1:
+#    BR-DE-19/20 IBAN mod-97 + BR-DE-23/24/25-a/-b type-code groups) — the
+#    normalized model carries one CIIPaymentMeans record per
+#    ram:SpecifiedTradeSettlementPaymentMeans context node plus the
+#    document-level BG-19 reconstruction facts (parser_cii._build_cii_br_de).
 CII_XR_EXCLUDED_RULE_IDS = (
-    "BR-DE-18", "BR-DE-19", "BR-DE-20", "BR-DE-22",
-    "BR-DE-23-a", "BR-DE-23-b", "BR-DE-24-a", "BR-DE-24-b",
-    "BR-DE-25-a", "BR-DE-25-b", "BR-DE-30", "BR-DE-31",
+    "BR-DE-18", "BR-DE-22", "BR-DE-30", "BR-DE-31",
 )
 assert not (CII_XR_RULE_SET & set(CII_XR_EXCLUDED_RULE_IDS)), (
     "a CII-excluded BR-DE rule is also in the graded set")
@@ -5679,6 +5677,94 @@ def _xrcmut_de11(r):
     _cii_add_shipto_address(r, city="Bremen")  # zone missing -> BR-DE-11
 
 
+def _cii_payment_means_el(r):
+    return _cii_settlement(r).find(
+        "ram:SpecifiedTradeSettlementPaymentMeans", _NSC)
+
+
+def _cii_pm_set_code(r, code):
+    _cii_payment_means_el(r).find("ram:TypeCode", _NSC).text = code
+
+
+def _cii_pm_drop_payee(r):
+    pm = _cii_payment_means_el(r)
+    pm.remove(pm.find("ram:PayeePartyCreditorFinancialAccount", _NSC))
+
+
+def _cii_pm_add_card(r):
+    # BG-18: presence of ram:ApplicableTradeSettlementFinancialCard (XSD order
+    # puts it right after TypeCode/Information).
+    pm = _cii_payment_means_el(r)
+    card = ET.Element(_cq(NS_RAM, "ApplicableTradeSettlementFinancialCard"))
+    _sub_el(card, NS_RAM, "ID", "41234")
+    pm.insert(list(pm).index(pm.find("ram:TypeCode", _NSC)) + 1, card)
+
+
+def _cii_pm_add_payer_account(r, iban):
+    pm = _cii_payment_means_el(r)
+    acc = _sub_el(pm, NS_RAM, "PayerPartyDebtorFinancialAccount")
+    _sub_el(acc, NS_RAM, "IBANID", iban)
+
+
+def _xrcmut_de19(r):
+    # Corrupt the payee IBAN's check digits (shape ok, mod-97 fails) ->
+    # BR-DE-19 (warning) fires; BR-DE-23-a/-b hold.
+    _cii_payment_means_el(r).find(
+        "ram:PayeePartyCreditorFinancialAccount/ram:IBANID",
+        _NSC).text = "DE79000000001234567891"
+
+
+def _xrcmut_de20(r):
+    # Code 59 with a mod-97-failing debited IBAN -> BR-DE-20 (warning);
+    # payee account removed so BR-DE-25-b holds, and the payer IBANID element
+    # satisfies BR-DE-25-a.
+    _cii_pm_set_code(r, "59")
+    _cii_pm_drop_payee(r)
+    _cii_pm_add_payer_account(r, "DE79000000001234567891")
+
+
+def _xrcmut_de23a(r):
+    # Code 58 with no PayeePartyCreditorFinancialAccount -> BR-DE-23-a
+    # (and BR-DE-19: the absent IBANID normalizes to '' which fails the
+    # shape — both engines fire both).
+    _cii_pm_drop_payee(r)
+
+
+def _xrcmut_de23b(r):
+    # Code 58 with a PAYMENT CARD (BG-18) present -> BR-DE-23-b; the payee
+    # IBAN stays valid so BR-DE-19/23-a hold.
+    _cii_pm_add_card(r)
+
+
+def _xrcmut_de24a(r):
+    # Card code 48 with no ApplicableTradeSettlementFinancialCard ->
+    # BR-DE-24-a; payee account removed so BR-DE-24-b holds.
+    _cii_pm_set_code(r, "48")
+    _cii_pm_drop_payee(r)
+
+
+def _xrcmut_de24b(r):
+    # Card code 48 with BG-18 present (BR-DE-24-a holds) but the payee
+    # account (BG-17) kept -> BR-DE-24-b.
+    _cii_pm_set_code(r, "48")
+    _cii_pm_add_card(r)
+
+
+def _xrcmut_de25a(r):
+    # Code 59 with NO mandate / creditor reference / payer IBANID ->
+    # BR-DE-25-a (and BR-DE-20: absent IBAN -> '' fails the shape); payee
+    # account removed so BR-DE-25-b holds.
+    _cii_pm_set_code(r, "59")
+    _cii_pm_drop_payee(r)
+
+
+def _xrcmut_de25b(r):
+    # Code 59 with the payee account (BG-17) kept -> BR-DE-25-b; a VALID
+    # payer IBANID satisfies BR-DE-20 and BR-DE-25-a.
+    _cii_pm_set_code(r, "59")
+    _cii_pm_add_payer_account(r, "DE79000000001234567890")
+
+
 def _xrcmut_de14(r):
     _cii_remove(r, _cii_first_breakdown(r).find(
         "ram:RateApplicablePercent", _NSC))
@@ -5761,6 +5847,10 @@ _XR_CII_MUTATIONS = {
     "BR-DE-4": _xrcmut_de4, "BR-DE-5": _xrcmut_de5, "BR-DE-6": _xrcmut_de6,
     "BR-DE-7": _xrcmut_de7, "BR-DE-8": _xrcmut_de8, "BR-DE-9": _xrcmut_de9,
     "BR-DE-10": _xrcmut_de10, "BR-DE-11": _xrcmut_de11, "BR-DE-14": _xrcmut_de14,
+    "BR-DE-19": _xrcmut_de19, "BR-DE-20": _xrcmut_de20,
+    "BR-DE-23-a": _xrcmut_de23a, "BR-DE-23-b": _xrcmut_de23b,
+    "BR-DE-24-a": _xrcmut_de24a, "BR-DE-24-b": _xrcmut_de24b,
+    "BR-DE-25-a": _xrcmut_de25a, "BR-DE-25-b": _xrcmut_de25b,
     "BR-DE-15": _xrcmut_de15, "BR-DE-16": _xrcmut_de16, "BR-DE-17": _xrcmut_de17,
     "BR-DE-21": _xrcmut_de21, "BR-DE-26": _xrcmut_de26, "BR-DE-27": _xrcmut_de27,
     "BR-DE-28": _xrcmut_de28, "BR-DE-TMP-32": _xrcmut_de_tmp32,

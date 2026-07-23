@@ -195,6 +195,34 @@ CIIPriceQuantities = namedtuple("CIIPriceQuantities",
                                 ["gross_basis_quantities",
                                  "net_basis_quantities"])
 
+# One ``ram:SpecifiedTradeSettlementPaymentMeans`` (BG-16) — the rule context
+# node of the CII BR-DE-19/20/23/24/25 payment-means group, carried exactly as
+# the official asserts read it:
+#   type_code            first ram:TypeCode string-value (raw, untrimmed;
+#                        None when absent — normalize-space is applied by the
+#                        rules, matching normalize-space(ram:TypeCode))
+#   has_payee_account    ram:PayeePartyCreditorFinancialAccount exists (BG-17,
+#                        BR-DE-23-a/24-b/25-b element-presence tests)
+#   payee_iban           first ram:PayeePartyCreditorFinancialAccount/ram:IBANID
+#                        string-value (BT-84, BR-DE-19; None when absent — the
+#                        official replace() over the empty sequence yields ''
+#                        which fails the IBAN shape, reproduced by _iban_ok)
+#   has_payer_iban       ram:PayerPartyDebtorFinancialAccount/ram:IBANID element
+#                        exists (the BG-19 reconstruction disjunct of
+#                        BR-DE-23-b/24-b/25-a — element PRESENCE, even empty)
+#   payer_iban           first ram:PayerPartyDebtorFinancialAccount/ram:IBANID
+#                        string-value (BT-91, BR-DE-20; None when absent)
+#   has_card             ram:ApplicableTradeSettlementFinancialCard exists
+#                        (BG-18, BR-DE-23-b/24-a/25-b)
+#   has_payee_institution  ram:PayeeSpecifiedCreditorFinancialInstitution exists
+#                        (BR-DE-25-b only)
+#   has_payer_institution  ram:PayerSpecifiedDebtorFinancialInstitution exists
+#                        (BR-DE-25-b only)
+CIIPaymentMeans = namedtuple("CIIPaymentMeans",
+                             ["type_code", "has_payee_account", "payee_iban",
+                              "has_payer_iban", "payer_iban", "has_card",
+                              "has_payee_institution", "has_payer_institution"])
+
 
 class CIILine(parser.InvoiceLine):
     """One ``ram:IncludedSupplyChainTradeLineItem`` (BG-25).
@@ -260,6 +288,14 @@ class Invoice(parser.Invoice):
         self.has_invoice_referenced_document = False  # BG-3 present (BR-DE-26)
         self.has_actual_delivery_date = False   # BT-72 present (BR-DE-TMP-32)
         self.has_billing_period = False         # BG-14 present (BR-DE-TMP-32)
+        # -- Payment-means surface (BR-DE-19/20/23/24/25): one CIIPaymentMeans
+        #    record per .../ram:ApplicableHeaderTradeSettlement/
+        #    ram:SpecifiedTradeSettlementPaymentMeans context node, plus the
+        #    two DOCUMENT-level BG-19 reconstruction facts the official
+        #    forbid/require disjuncts read via absolute paths. ------------------
+        self.settlement_payment_means = []      # [CIIPaymentMeans]
+        self.has_direct_debit_mandate_id = False  # settlement …/ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID
+        self.has_creditor_reference_id = False    # settlement …/ram:CreditorReferenceID
         # -- Extension (BR-DEX-15) surface: the rule context is each
         #    ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument
         #    (gated on $isExtension) and its test is not(exists(//ram:ParentLineID))
@@ -1088,6 +1124,49 @@ def _build_cii_br_de(inv, root):
     agreement = txn.find("ram:ApplicableHeaderTradeAgreement", NS)
     settlement = txn.find("ram:ApplicableHeaderTradeSettlement", NS)
     delivery = txn.find("ram:ApplicableHeaderTradeDelivery", NS)
+
+    # BR-DE-19/20/23/24/25 payment-means surface. The official rule contexts
+    # and the BG-19 reconstruction disjuncts are ABSOLUTE paths
+    # (/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+    # ram:ApplicableHeaderTradeSettlement/…), so they are collected over EVERY
+    # header settlement element, not just the first.
+    inv.has_direct_debit_mandate_id = (
+        txn.find("ram:ApplicableHeaderTradeSettlement/"
+                 "ram:SpecifiedTradePaymentTerms/"
+                 "ram:DirectDebitMandateID", NS) is not None)
+    inv.has_creditor_reference_id = (
+        txn.find("ram:ApplicableHeaderTradeSettlement/"
+                 "ram:CreditorReferenceID", NS) is not None)
+    def _sv_opt(el):
+        # string-value of an OPTIONAL element (None when absent — the
+        # official replace()/normalize-space() over the empty sequence
+        # yields '', which the reading rule reproduces via _nsp/_iban_ok).
+        return None if el is None else _strval(el)
+    for pm in txn.findall("ram:ApplicableHeaderTradeSettlement/"
+                          "ram:SpecifiedTradeSettlementPaymentMeans", NS):
+        # Sequence-valued paths (TypeCode, IBANID) read the FIRST node — with
+        # 2+ nodes the official normalize-space()/replace() calls are XPath
+        # cardinality errors that abort the whole transform (the BR-TMP-2
+        # precedent: such invoices are excluded from the differential).
+        payer_iban_el = pm.find("ram:PayerPartyDebtorFinancialAccount/"
+                                "ram:IBANID", NS)
+        inv.settlement_payment_means.append(CIIPaymentMeans(
+            type_code=_sv_opt(pm.find("ram:TypeCode", NS)),
+            has_payee_account=pm.find(
+                "ram:PayeePartyCreditorFinancialAccount", NS) is not None,
+            payee_iban=_sv_opt(pm.find(
+                "ram:PayeePartyCreditorFinancialAccount/ram:IBANID", NS)),
+            has_payer_iban=payer_iban_el is not None,
+            payer_iban=_sv_opt(payer_iban_el),
+            has_card=pm.find(
+                "ram:ApplicableTradeSettlementFinancialCard", NS) is not None,
+            has_payee_institution=pm.find(
+                "ram:PayeeSpecifiedCreditorFinancialInstitution", NS)
+                is not None,
+            has_payer_institution=pm.find(
+                "ram:PayerSpecifiedDebtorFinancialInstitution", NS)
+                is not None,
+        ))
 
     # BR-DE-1: PAYMENT INSTRUCTIONS (BG-16) present.
     if settlement is not None:

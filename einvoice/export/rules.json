@@ -6092,6 +6092,13 @@
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6107,11 +6114,18 @@
         "title": "With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription)."
       },
       "severity": "warning",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription)."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6127,7 +6141,7 @@
         "title": "With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN."
       },
       "severity": "warning",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN."
     },
     {
@@ -6179,6 +6193,13 @@
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6194,11 +6215,18 @@
         "title": "Codes 30/58 (credit transfer) require CREDIT TRANSFER (BG-17)."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Codes 30/58 (credit transfer) require CREDIT TRANSFER (BG-17)."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6214,11 +6242,18 @@
         "title": "Codes 30/58 forbid PAYMENT CARD (BG-18) and DIRECT DEBIT (BG-19)."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Codes 30/58 forbid PAYMENT CARD (BG-18) and DIRECT DEBIT (BG-19)."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6234,11 +6269,18 @@
         "title": "Codes 48/54/55 (card) require PAYMENT CARD INFORMATION (BG-18)."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Codes 48/54/55 (card) require PAYMENT CARD INFORMATION (BG-18)."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6254,11 +6296,18 @@
         "title": "Codes 48/54/55 forbid CREDIT TRANSFER (BG-17) and DIRECT DEBIT (BG-19)."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Codes 48/54/55 forbid CREDIT TRANSFER (BG-17) and DIRECT DEBIT (BG-19)."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6274,11 +6323,18 @@
         "title": "Code 59 (direct debit) requires DIRECT DEBIT (BG-19)."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Code 59 (direct debit) requires DIRECT DEBIT (BG-19)."
     },
     {
       "bindings": {
+        "cii": {
+          "differentially_proven": true,
+          "sch": "corpus/xrechnung-schematron/schematron/cii/XRechnung-CII-validation.sch",
+          "source": "xrechnung-cii",
+          "suite": "KoSIT XRechnung",
+          "version": "2.5.0 (XRechnung 3.0.2)"
+        },
         "ubl": {
           "differentially_proven": true,
           "sch": "corpus/xrechnung-schematron/schematron/ubl/XRechnung-UBL-validation.sch",
@@ -6294,7 +6350,7 @@
         "title": "Code 59 forbids CREDIT TRANSFER (BG-17) and PAYMENT CARD (BG-18)."
       },
       "severity": "fatal",
-      "syntax": "ubl",
+      "syntax": "both",
       "title": "Code 59 forbids CREDIT TRANSFER (BG-17) and PAYMENT CARD (BG-18)."
     },
     {

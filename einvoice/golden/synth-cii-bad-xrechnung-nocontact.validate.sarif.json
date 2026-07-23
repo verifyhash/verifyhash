@@ -30,6 +30,26 @@
               "logicalLocations": [
                 {
                   "kind": "member",
+                  "name": "ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:IBANID"
+                }
+              ]
+            }
+          ],
+          "message": {
+            "text": "'Payment account identifier' (BT-84) should be a correct IBAN when 'Payment means type code' (BT-81) is 58 (SEPA)."
+          },
+          "partialFingerprints": {
+            "einvoice/v1": "f6b7c93e65a059e870be386cee6d3f84724cbfc33341650a699ce71bb9bfc8a9"
+          },
+          "ruleId": "BR-DE-19"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "kind": "member",
                   "name": "ram:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID"
                 }
               ]
@@ -61,6 +81,20 @@
               "name": "BR-DE-2",
               "shortDescription": {
                 "text": "SELLER CONTACT (BG-6) must be transmitted."
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Correct `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('30','58')]` so that with payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription)."
+              },
+              "help": {
+                "text": "Correct `/ubl:Invoice/cac:PaymentMeans[normalize-space(cbc:PaymentMeansCode) = ('30','58')]` so that with payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription).\nBusiness terms: BT-81, BT-84"
+              },
+              "helpUri": "https://verifyhash.com/einvoice/rules/BR-DE-19/",
+              "id": "BR-DE-19",
+              "name": "BR-DE-19",
+              "shortDescription": {
+                "text": "With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription)."
               }
             },
             {

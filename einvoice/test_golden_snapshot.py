@@ -135,7 +135,13 @@ FIXTURES = [
                 "it fires BR-DE-21 (warning) and, since the CVD/TMP family "
                 "landed, the fatal BR-TMP-3: its gross BasisQuantity '1.1' != "
                 "net '1' (string comparison, mirroring the official KoSIT CII "
-                "artifact, which fires BR-TMP-3 on this file too).",
+                "artifact, which fires BR-TMP-3 on this file too). Since the "
+                "T-VHCIIDE.1 payment-means group landed it also fires "
+                "BR-DE-19 (warning: both code-58 means carry mod-97-failing "
+                "IBANs) and the fatal BR-DE-23-b (the file has document-level "
+                "CreditorReferenceID + DirectDebitMandateID, i.e. BG-19, "
+                "next to a credit-transfer means) — the official artifact "
+                "fires both on this file too (differential LEG 4).",
     },
     {
         "name": "cii-good-xrechnung-huf",
@@ -250,7 +256,9 @@ FIXTURES = [
         "syntax": "CII",
         "profile": "xrechnung",
         "note": "XRechnung CII with the seller contact (BG-6) removed -> "
-                "BR-DE-2 fatal (German-mandatory contact point missing).",
+                "BR-DE-2 fatal (German-mandatory contact point missing). "
+                "Since T-VHCIIDE.1 the code-58 means' all-zero DE00… IBAN "
+                "also fires BR-DE-19 (warning: shape ok, mod-97 fails).",
     },
     # ======================================================================
     # SYNTHETIC EDGE-BREADTH corpus (T-VHR.15). Five more fully fictional

@@ -764,6 +764,10 @@ _CII_XR_ADMITTED_IDS = (
     "BR-DE-8", "BR-DE-9", "BR-DE-10", "BR-DE-11", "BR-DE-14", "BR-DE-15",
     "BR-DE-16", "BR-DE-17", "BR-DE-21", "BR-DE-26", "BR-DE-27", "BR-DE-28",
     "BR-DE-TMP-32",
+    # Payment-means group (T-VHCIIDE.1): IBAN mod-97 + the BT-81 type-code
+    # group checks, carried by the parser_cii CIIPaymentMeans surface.
+    "BR-DE-19", "BR-DE-20", "BR-DE-23-a", "BR-DE-23-b",
+    "BR-DE-24-a", "BR-DE-24-b", "BR-DE-25-a", "BR-DE-25-b",
     # CVD/TMP family — the CII artifact carries all nine UBL family asserts
     # plus the CII-only BR-TMP-3.
     "BR-TMP-2", "BR-TMP-3",
@@ -785,18 +789,10 @@ CII_XRECHNUNG_CIUS_COVERAGE = {
 CII_XRECHNUNG_CIUS_EXCLUDED = {
     "BR-DE-18": "Skonto grammar in BT-20 (free-text payment-terms structure not "
                 "in the core model)",
-    "BR-DE-19": "BT-84 IBAN mod-97 (SEPA credit-transfer payment-means detail)",
-    "BR-DE-20": "BT-91 IBAN mod-97 (SEPA direct-debit payment-means detail)",
     "BR-DE-22": "EmbeddedDocumentBinaryObject filename uniqueness (attachment "
                 "surface not in the core model)",
-    "BR-DE-23-a": "payment-means type-code 30/58 requires CREDIT TRANSFER",
-    "BR-DE-23-b": "payment-means type-code 30/58 forbids card / direct debit",
-    "BR-DE-24-a": "payment-means type-code 48/54/55 requires PAYMENT CARD",
-    "BR-DE-24-b": "payment-means type-code 48/54/55 forbids transfer / debit",
-    "BR-DE-25-a": "payment-means type-code 59 requires DIRECT DEBIT",
-    "BR-DE-25-b": "payment-means type-code 59 forbids transfer / card",
-    "BR-DE-30": "Bank assigned creditor id (BT-90) with BG-19 (semantic BG-19 "
-                "reconstruction not in the core model)",
+    "BR-DE-30": "Bank assigned creditor id (BT-90) with BG-19 (transcription "
+                "staged as T-VHCIIDE.3 — deferred, not overlooked)",
     "BR-DE-31": "Debited account id (BT-91) with BG-19 (same)",
 }
 

@@ -129,14 +129,6 @@ ARTIFACT_DEFECTS = {
 # artifact bump that re-binds the rule onto the core model (removing the marker)
 # fails generation loudly and forces a re-review. Each entry names the exact
 # surface marker that must remain present as the evidence anchor.
-_SCOPE_NOTE_PAYMENT_MEANS = (
-    "carried by the vendored CII artifact and fires on a CII document, but its "
-    "@context binds ram:SpecifiedTradeSettlementPaymentMeans (BG-16 payment "
-    "instructions: type code + financial-account / card / mandate children) — a "
-    "CII payment-means surface the syntax-agnostic EN 16931 core model does not "
-    "carry; the national CIUS rule is fully differentially proven on the UBL "
-    "leg and is deliberately excluded from the both-syntaxes core-model CII "
-    "proof.")
 _SCOPE_NOTE_PAYMENT_TERMS = (
     "carried by the vendored CII artifact and fires on a CII document, but its "
     "@test tokenizes ram:SpecifiedTradePaymentTerms/ram:Description free text "
@@ -169,9 +161,10 @@ _SCOPE_NOTE_EXTENSION = (
 
 # marker = a verbatim substring that MUST remain present in the live
 # @context + @test (the evidence anchor); kind = short slug; note = above.
-_SCOPE_PAYMENT_MEANS_IDS = (
-    "BR-DE-19", "BR-DE-20", "BR-DE-23-a", "BR-DE-23-b", "BR-DE-24-a",
-    "BR-DE-24-b", "BR-DE-25-a", "BR-DE-25-b")
+# (The 8-id payment-means group BR-DE-19/20/23/24/25-a/-b left this table
+# with T-VHCIIDE.1: those rules are now syntax='both' in the matrix — graded
+# on the CII leg via the parser_cii CIIPaymentMeans surface — so they no
+# longer appear on the UBL-only worklist this file classifies.)
 BINDING_SCOPE_EXCLUSIONS = {
     "BR-DE-18": {"kind": "cii-payment-terms-surface",
                  "marker": "ram:SpecifiedTradePaymentTerms",
@@ -198,12 +191,6 @@ BINDING_SCOPE_EXCLUSIONS = {
     "BR-DEX-08": {"kind": "cii-extension-profile",
                   "marker": "$isExtension", "note": _SCOPE_NOTE_EXTENSION},
 }
-for _rid in _SCOPE_PAYMENT_MEANS_IDS:
-    BINDING_SCOPE_EXCLUSIONS[_rid] = {
-        "kind": "cii-payment-means-surface",
-        "marker": "ram:SpecifiedTradeSettlementPaymentMeans",
-        "note": _SCOPE_NOTE_PAYMENT_MEANS,
-    }
 assert not (set(ARTIFACT_DEFECTS) & set(BINDING_SCOPE_EXCLUSIONS)), (
     "a rule is BOTH an artifact defect and a scope exclusion")
 

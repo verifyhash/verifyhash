@@ -26,7 +26,7 @@ The vendored German national rule set is **KoSIT XRechnung Schematron 2.5.0, whi
 ## Coverage at a glance
 
 - **289 business rules** the engine actually asserts (this is the exact set the code fires — `test_coverage_matrix.py` proves it against the live registries).
-- Syntax: **255** proven on both UBL and CII, **30** UBL-only, **4** CII-only.
+- Syntax: **263** proven on both UBL and CII, **22** UBL-only, **4** CII-only.
 - Severity (blocking class): **276** fatal (block validity), **13** warning / information (reported, non-blocking).
 - **Official German messages: 50 rules** carry an official German assert message, surfaced by the CLI `--lang de` flag (report human-message only; `--json` and exit codes are unchanged). That text is lifted VERBATIM from the vendored KoSIT XRechnung Schematron (`de_source == "kosit"`), never machine-translated; every other rule is English-only by design (no official German assert text exists to quote). See the README `--lang de` section.
 - **Fireable missing: 0** in both CEN universes (`en16931-ubl`, `en16931-cii`) — every official
@@ -276,16 +276,16 @@ the non-blocking `warning` class for the severity column).
 | `BR-DE-16` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | If VAT category codes S/Z/E/AE/K/G/L/M are used, one of Seller VAT identifier (BT-31), Seller tax registration identifier (BT-32) or SELLER TAX REPRESENTATIVE PARTY (BG-11) must be present. |
 | `BR-DE-17` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-3 should be one of 326, 380, 384, 389, 381, 875, 876, 877. |
 | `BR-DE-18` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Skonto (cash-discount) lines in Payment terms (BT-20). |
-| `BR-DE-19` | UBL | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription). |
-| `BR-DE-20` | UBL | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN. |
+| `BR-DE-19` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | With payment means code 58 (SEPA credit transfer), BT-84 should be a correct IBAN (official regex + mod-97 transcription). |
+| `BR-DE-20` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | With payment means code 59 (SEPA direct debit), BT-91 should be a correct IBAN. |
 | `BR-DE-21` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-24 should be the XRechnung specification identifier (CIUS, extension or CVD variant) — untrimmed string equality. |
 | `BR-DE-22` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | The filename attribute of all EmbeddedDocumentBinaryObject elements must be unique (across cac:AdditionalDocumentReference). |
-| `BR-DE-23-a` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Codes 30/58 (credit transfer) require CREDIT TRANSFER (BG-17). |
-| `BR-DE-23-b` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Codes 30/58 forbid PAYMENT CARD (BG-18) and DIRECT DEBIT (BG-19). |
-| `BR-DE-24-a` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Codes 48/54/55 (card) require PAYMENT CARD INFORMATION (BG-18). |
-| `BR-DE-24-b` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Codes 48/54/55 forbid CREDIT TRANSFER (BG-17) and DIRECT DEBIT (BG-19). |
-| `BR-DE-25-a` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Code 59 (direct debit) requires DIRECT DEBIT (BG-19). |
-| `BR-DE-25-b` | UBL | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | not proven | Code 59 forbids CREDIT TRANSFER (BG-17) and PAYMENT CARD (BG-18). |
+| `BR-DE-23-a` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Codes 30/58 (credit transfer) require CREDIT TRANSFER (BG-17). |
+| `BR-DE-23-b` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Codes 30/58 forbid PAYMENT CARD (BG-18) and DIRECT DEBIT (BG-19). |
+| `BR-DE-24-a` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Codes 48/54/55 (card) require PAYMENT CARD INFORMATION (BG-18). |
+| `BR-DE-24-b` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Codes 48/54/55 forbid CREDIT TRANSFER (BG-17) and DIRECT DEBIT (BG-19). |
+| `BR-DE-25-a` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Code 59 (direct debit) requires DIRECT DEBIT (BG-19). |
+| `BR-DE-25-b` | UBL + CII | fatal | fatal | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Code 59 forbids CREDIT TRANSFER (BG-17) and PAYMENT CARD (BG-18). |
 | `BR-DE-26` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | Type code 384 (Corrected invoice) should carry a PRECEDING INVOICE REFERENCE (BG-3). |
 | `BR-DE-27` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-42 should contain at least three digits. Evaluated per seller Contact; an ABSENT telephone normalizes to '' and fires too. |
 | `BR-DE-28` | UBL + CII | warning | warning | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | KoSIT XRechnung 2.5.0 (XRechnung 3.0.2) | BT-43 should look like an email address (exactly one '@', flanked per the official regex). |
@@ -448,17 +448,9 @@ skonto grammar, attachments, the extension layer) the syntax-agnostic
 core model does not carry; excluded on the CII leg, still proven on UBL.
 
 - **BR-DE-18** — Skonto grammar in the BT-20 payment-terms free text — a structure the syntax-agnostic core model omits.
-- **BR-DE-19** — IBAN mod-97 on a credit-transfer payment-means IBANID — the CII payment-means node set and IBAN digits are not in the core model.
-- **BR-DE-20** — IBAN mod-97 on a payment-means IBANID — not carried by the core model (see BR-DE-19).
 - **BR-DE-22** — unique attachment filename check over every EmbeddedDocumentBinaryObject/@filename — not carried.
-- **BR-DE-23-a** — payment-means type-code group check keyed on SpecifiedTradeSettlementPaymentMeans TypeCode and its financial-account children — not carried.
-- **BR-DE-23-b** — payment-means type-code group check keyed on SpecifiedTradeSettlementPaymentMeans TypeCode and its financial-account children — not carried.
-- **BR-DE-24-a** — payment-means type-code group check (card) — not carried.
-- **BR-DE-24-b** — payment-means type-code group check (card) — not carried.
-- **BR-DE-25-a** — payment-means type-code group check (direct debit) — not carried.
-- **BR-DE-25-b** — payment-means type-code group check (direct debit) — not carried.
-- **BR-DE-30** — BT-90/BT-91 with DIRECT DEBIT (BG-19), reconstructed from mandate / creditor-reference / IBAN presence — not in the core model.
-- **BR-DE-31** — BT-90/BT-91 with DIRECT DEBIT (BG-19) — not carried (see BR-DE-30).
+- **BR-DE-30** — BT-90/BT-91 with DIRECT DEBIT (BG-19), reconstructed from mandate / creditor-reference / IBAN presence — transcription staged as T-VHCIIDE.3 (deferred, not overlooked).
+- **BR-DE-31** — BT-90/BT-91 with DIRECT DEBIT (BG-19) — deferred with BR-DE-30 (see T-VHCIIDE.3).
 
 ### Peppol scope
 
@@ -588,9 +580,9 @@ worklist automatically.
 ## CII proof parity
 
 **TERMINAL — the CII proof-parity worklist is CLOSED.** Of the **289**
-business rules the engine asserts, **255** are differentially proven
-on BOTH the UBL and CII bindings; **30** are officially UBL-only and
-**4** is CII-only. Every one of the **30** UBL-only rules the
+business rules the engine asserts, **263** are differentially proven
+on BOTH the UBL and CII bindings; **22** are officially UBL-only and
+**4** is CII-only. Every one of the **22** UBL-only rules the
 official CII artifacts were measured against is now resolved with
 evidence — **0 remain on the cii-fireable worklist** — so no CII
 assert the vendored artifacts carry is left unproven or silently
@@ -619,10 +611,10 @@ Measured split (committed as `cii_parity.json`, live-recomputed by
   and re-verified live by `test_cii_parity.py`; an artifact
   bump that fixes such an assert fails that gate and reopens
   the rule as cii-fireable.
-- **26 binding-inapplicable** — officially UBL-only for the
+- **18 binding-inapplicable** — officially UBL-only for the
   both-syntaxes core-model proof, in two evidence classes:
-  - **18 carried by a vendored CII artifact but out of
-    core-model scope** (`BR-DE-18`, `BR-DE-19`, `BR-DE-20`, `BR-DE-22`, `BR-DE-23-a`, `BR-DE-23-b`, `BR-DE-24-a`, `BR-DE-24-b`, `BR-DE-25-a`, `BR-DE-25-b`, `BR-DE-30`, `BR-DE-31`, `BR-DEX-01`, `BR-DEX-04`, `BR-DEX-05`, `BR-DEX-06`, `BR-DEX-07`, `BR-DEX-08`):
+  - **10 carried by a vendored CII artifact but out of
+    core-model scope** (`BR-DE-18`, `BR-DE-22`, `BR-DE-30`, `BR-DE-31`, `BR-DEX-01`, `BR-DEX-04`, `BR-DEX-05`, `BR-DEX-06`, `BR-DEX-07`, `BR-DEX-08`):
     the assert exists and fires on a CII document, but its
     `@context`/`@test` binds a CII-specific surface — the
     national-CIUS payment-means / payment-terms / direct-debit /

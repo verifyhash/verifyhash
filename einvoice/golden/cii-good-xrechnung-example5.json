@@ -5,8 +5,16 @@
   "profile": "xrechnung",
   "rules": [
     {
+      "rule": "BR-DE-19",
+      "severity": "warning"
+    },
+    {
       "rule": "BR-DE-21",
       "severity": "warning"
+    },
+    {
+      "rule": "BR-DE-23-b",
+      "severity": "fatal"
     },
     {
       "rule": "BR-TMP-3",

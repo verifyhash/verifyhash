@@ -9,6 +9,15 @@
     "severity": "major"
   },
   {
+    "check_name": "BR-DE-19",
+    "description": "'Payment account identifier' (BT-84) should be a correct IBAN when 'Payment means type code' (BT-81) is 58 (SEPA).",
+    "fingerprint": "4d183bce2c3d5691fc07428b2995962edcc3568052081c22ec0d233d57604302",
+    "location": {
+      "path": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml"
+    },
+    "severity": "minor"
+  },
+  {
     "check_name": "BR-DE-21",
     "description": "'Specification identifier' (BT-24) should syntactically match the XRechnung standard identifier.",
     "fingerprint": "a0f10d2c23b3ba65d30ec761f74345976c65c576c3a795aece711703a1a5a159",

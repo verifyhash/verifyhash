@@ -5,6 +5,10 @@
   "profile": "xrechnung",
   "rules": [
     {
+      "rule": "BR-DE-19",
+      "severity": "warning"
+    },
+    {
       "rule": "BR-DE-2",
       "severity": "fatal"
     },

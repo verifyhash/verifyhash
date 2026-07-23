@@ -908,9 +908,9 @@ def render_landing():
       "<strong>0 Abweichungen</strong>.</p>")
     w("<p>Ehrlicher Geltungsbereich: Ein gr&uuml;nes Ergebnis bedeutet "
       "&bdquo;keine implementierte fatale Regel hat ausgel&ouml;st&ldquo;, "
-      "nicht &bdquo;rechtsverbindlich konform&ldquo; — 4 offizielle "
-      "<code>BR-CL-*</code>-Codelisten-Pr&uuml;fungen sind "
-      "zur&uuml;ckgestellt, eine XSD-Strukturvalidierung findet nicht statt. "
+      "nicht &bdquo;rechtsverbindlich konform&ldquo; — jede ausl&ouml;sbare "
+      "offizielle <code>BR-CL-*</code>-Codelisten-Pr&uuml;fung ist in beiden "
+      "Syntaxen implementiert, eine XSD-Strukturvalidierung findet nicht statt. "
       'Details und Einstieg: die <a href="%s">Abdeckungsmatrix '
       "(COVERAGE.md)</a> als ma&szlig;gebliches Regelinventar, der "
       '<a href="%s">Korrektur-Katalog (remediation_catalog.json)</a> mit 297 '
@@ -1489,9 +1489,10 @@ def render_de():
       "&bdquo;rechtsverbindlich konforme XRechnung&ldquo;. Die Grenzen im "
       "Einzelnen:</p>")
     w('<ul class="rules">')
-    w("<li>4 offizielle <code>BR-CL-*</code>-Codelisten-Pr&uuml;fungen sind "
-      "bewusst zur&uuml;ckgestellt und als dokumentierte Ausnahmen "
-      "gef&uuml;hrt &mdash; nicht als Abdeckung gez&auml;hlt.</li>")
+    w("<li>Jede ausl&ouml;sbare offizielle <code>BR-CL-*</code>-Codelisten-"
+      "Pr&uuml;fung ist in beiden Syntaxen (UBL und CII) implementiert &mdash; "
+      "die <code>BR-CL-*</code>-Klasse enth&auml;lt keine "
+      "zur&uuml;ckgestellten Pr&uuml;fungen mehr.</li>")
     w("<li>Eine strukturelle <strong>XSD-Validierung findet nicht statt</strong>; "
       "gepr&uuml;ft werden die Gesch&auml;ftsregeln, nicht das Schema. Ein "
       "UBL-<code>CreditNote</code>-Wurzelelement wird nicht "
@@ -2650,9 +2651,9 @@ def render_validate(catalog):
       "concrete fix in English and German.</p>")
     w("<p>Same limits as the CLI, stated plainly: no XSD structural "
       "validation, UBL <code>Invoice</code> and CII (via the ZUGFeRD/"
-      "Factur-X PDF container) only — no UBL <code>CreditNote</code> — and 8 "
-      "official <code>BR-CL-*</code> code-list checks are documented "
-      "deferrals. A green result means &ldquo;no implemented fatal rule "
+      "Factur-X PDF container) only — no UBL <code>CreditNote</code>. Every "
+      "fireable official <code>BR-CL-*</code> code-list check is now "
+      "implemented in both syntaxes. A green result means &ldquo;no implemented fatal rule "
       "fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. "
       "Browser-specific: the ~%d&nbsp;MB runtime is real — on a metered or "
       "very slow connection the terminal route below is the better tool. "

@@ -89,7 +89,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <h2>Ehrliche Abdeckung: was ein gr&uuml;nes Ergebnis bedeutet</h2>
 <p>Ein gr&uuml;nes Ergebnis hei&szlig;t: <em>keine implementierte fatale Regel hat ausgel&ouml;st</em>. Es hei&szlig;t nicht &bdquo;rechtsverbindlich konforme XRechnung&ldquo;. Die Grenzen im Einzelnen:</p>
 <ul class="rules">
-<li>4 offizielle <code>BR-CL-*</code>-Codelisten-Pr&uuml;fungen sind bewusst zur&uuml;ckgestellt und als dokumentierte Ausnahmen gef&uuml;hrt &mdash; nicht als Abdeckung gez&auml;hlt.</li>
+<li>Jede ausl&ouml;sbare offizielle <code>BR-CL-*</code>-Codelisten-Pr&uuml;fung ist in beiden Syntaxen (UBL und CII) implementiert &mdash; die <code>BR-CL-*</code>-Klasse enth&auml;lt keine zur&uuml;ckgestellten Pr&uuml;fungen mehr.</li>
 <li>Eine strukturelle <strong>XSD-Validierung findet nicht statt</strong>; gepr&uuml;ft werden die Gesch&auml;ftsregeln, nicht das Schema. Ein UBL-<code>CreditNote</code>-Wurzelelement wird nicht unterst&uuml;tzt.</li>
 <li>4 offizielle Regeln (<code>BR-CO-05</code>&#8211;<code>BR-CO-08</code>) sind in den CEN-Artefakten selbst als <code>test="true()"</code>-Tautologien ausgeliefert — sie k&ouml;nnen nie ausl&ouml;sen und sind deshalb nicht implementierbar; jede andere ausl&ouml;sbare offizielle <code>BR-*</code>-Regel ist implementiert oder eine dokumentierte, begr&uuml;ndete Ausnahme (maschinell gepr&uuml;fte L&uuml;cke: 0 in beiden CEN-Syntax-Universen).</li>
 <li>Von den <code>PEPPOL-EN16931-R*</code>-Regeln ist genau die Teilmenge implementiert, die KoSIT im offiziellen XRechnung-Artefakt mitliefert (21 Regeln) &mdash; das ist <em>keine</em> Peppol-BIS-Billing-3.0-Unterst&uuml;tzung.</li>

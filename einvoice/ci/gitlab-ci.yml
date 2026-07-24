@@ -8,9 +8,15 @@
 # einvoice-junit/, wired below as GitLab's `artifacts:reports:junit` so each
 # fatal rule renders in the pipeline's Tests tab.
 #
-# Install: merge this job into your .gitlab-ci.yml, vendor the einvoice
-# product directory at third_party/einvoice/, put invoices under invoices/.
-# See ci/README.md.
+# Install: merge this job into your .gitlab-ci.yml and put invoices under
+# invoices/. The released distribution is on PyPI as `verifyhash-einvoice`, so
+# the install step can simply be:
+#     - python3 -m pip install verifyhash-einvoice
+# (mind the name: the bare `einvoice` project on PyPI is unrelated).
+#
+# This template vendors the einvoice product directory at third_party/einvoice/
+# and installs that copy instead, because it also works on air-gapped runners
+# and pins the exact validated tree in your repo. See ci/README.md.
 
 invoice-conformance:
   image: python:3.12-alpine

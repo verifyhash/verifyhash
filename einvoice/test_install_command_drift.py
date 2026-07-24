@@ -4,16 +4,18 @@ brand-fatal honesty bug impossible to silently reintroduce.
 
 The bug it kills: shipped docs/manifests/recipes once told readers to run
 `pip install einvoice`. That command does NOT install this project — `einvoice`
-is an UNRELATED third-party package already on PyPI. The validator in this repo
-is NOT yet on PyPI; its future name is `verifyhash-einvoice` (staged by
-EPIC-PYPI, owner uploads later). Until that first publish, the only working
-install is from a checkout / vendored copy, e.g.:
+is an UNRELATED third-party package already on PyPI. This project's validator
+is published under the distribution name `verifyhash-einvoice`, so that is the
+one PyPI name docs may name. Installing from a checkout / vendored copy stays
+fully supported (it is the right answer for air-gapped CI and for pinning an
+exact tree), e.g.:
 
+    python3 -m pip install verifyhash-einvoice        # released package
     python3 -m pip install /path/to/einvoice          # from a checkout
     python3 -m pip install ./third_party/einvoice     # vendored copy
 
 So every install reference must be one of:
-  * `pip install verifyhash-einvoice` (the real, pending package name), or
+  * `pip install verifyhash-einvoice` (the real distribution name), or
   * a path install (`pip install /path/...`, `pip install ./...`, `pip install .`).
 
 This test walks every shipped Markdown / YAML file under the repo and FAILS if

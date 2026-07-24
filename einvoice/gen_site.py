@@ -304,6 +304,8 @@ DE_COMMANDS = (
      "examples/01-missing-fields/broken.xml", "QUICKSTART.md"),
     ("python3 einvoice.py validate --json --profile xrechnung "
      "examples/01-missing-fields/broken.xml", "QUICKSTART.md"),
+    ("python3 -m pip install verifyhash-einvoice",
+     os.path.join("ci", "README.md")),
     ("python3 -m pip install ./third_party/einvoice",
      os.path.join("ci", "README.md")),
     ("sh third_party/einvoice/ci/validate-invoices.sh invoices/",
@@ -834,8 +836,10 @@ def render_landing():
     w("<p>Everything is free and open source (Apache-2.0). Start here:</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Repository README</a> — install '
-      "(<code>pip install .</code> or copy the package dir), the CLI, and the "
-      "full honest scope.</li>" % _h(_REPO_README))
+      "(<code>pip install verifyhash-einvoice</code> from PyPI, or "
+      "<code>pip install .</code> / copy the package dir from a checkout when "
+      "you need an offline, exactly-pinned copy), the CLI, and the full "
+      "honest scope.</li>" % _h(_REPO_README))
     w('<li><a href="%s">CI conformance gate recipe</a> '
       "(<code>einvoice/ci/</code>) — copy-paste POSIX&nbsp;sh + GitHub&nbsp;"
       "Actions / GitLab&nbsp;CI that fails a build on any non-conformant "
@@ -1453,7 +1457,8 @@ def render_de():
     landing, no <script>, no external CSS/JS/CDN/font.
     """
     (cmd_validate_fixed, cmd_pip, cmd_console, cmd_validate_broken,
-     cmd_json, cmd_pip_vendor, cmd_gate) = (c for c, _doc in DE_COMMANDS)
+     cmd_json, cmd_pip_pypi, cmd_pip_vendor,
+     cmd_gate) = (c for c, _doc in DE_COMMANDS)
 
     title = ("E-Rechnung offline validieren: XRechnung / EN 16931 "
              "Schnellstart auf Deutsch — einvoice")
@@ -1545,8 +1550,12 @@ def render_de():
 
     # ---- Installation + erste Pruefung ------------------------------------
     w("<h2>Installation und erste Pr&uuml;fung</h2>")
-    w("<p>Alles Folgende l&auml;uft aus dem <code>einvoice/</code>-Verzeichnis "
-      "eines Repository-Checkouts &mdash; offline, ohne weitere Installation. "
+    w("<p>Es gibt zwei Wege: das ver&ouml;ffentlichte Paket "
+      "<code>verifyhash-einvoice</code> aus PyPI installieren (siehe "
+      "CI-Abschnitt weiter unten), oder &mdash; wie in diesem Abschnitt "
+      "&mdash; direkt aus einem Repository-Checkout arbeiten. Die Befehle "
+      "hier laufen aus dem <code>einvoice/</code>-Verzeichnis eines "
+      "Checkouts, offline und ohne vorherige Installation. "
       "Die beiden Beispielrechnungen liegen im Repository: eine g&uuml;ltige "
       "XRechnung (<code>fixed.xml</code>) und dieselbe Datei mit zwei "
       "entfernten Pflichtangaben (<code>broken.xml</code>: ohne "
@@ -1588,12 +1597,24 @@ def render_de():
       "<code>*.xml</code>-Datei, l&auml;sst den Build bei jeder fatalen "
       "Verletzung mit der Regel-ID im Log fehlschlagen und schreibt pro "
       "Rechnung einen JUnit-Report, den CI-Oberfl&auml;chen als Testergebnis "
-      "anzeigen. Das Werkzeug ist noch nicht auf PyPI &mdash; vendoren Sie "
-      "das Produktverzeichnis (z.&nbsp;B. nach "
-      "<code>third_party/einvoice/</code>) und installieren Sie es im "
-      "CI-Job:</p>")
+      "anzeigen. Im CI-Job wird der Validator aus PyPI installiert &mdash; "
+      "das ver&ouml;ffentlichte Paket hei&szlig;t "
+      "<code>verifyhash-einvoice</code> (nicht <code>einvoice</code>, das "
+      "ist ein fremdes Paket) und zieht keine weiteren Abh&auml;ngigkeiten "
+      "nach:</p>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_pip_pypi))
+    w("<p><strong>Offline-Alternative</strong> f&uuml;r Runner ohne "
+      "PyPI-Zugriff (air-gapped) oder wenn Sie einen exakten Stand "
+      "reproduzierbar pinnen wollen: das Produktverzeichnis vendoren "
+      "(z.&nbsp;B. nach <code>third_party/einvoice/</code>) und die "
+      "vendorte Kopie installieren &mdash; derselbe Code, nur ohne "
+      "Paketindex:</p>")
     w("<pre><code>%s</code></pre>" % _h(cmd_pip_vendor))
-    w("<p>Dann das Gate &uuml;ber Ihre Rechnungsdateien laufen lassen:</p>")
+    w("<p>Dann das Gate &uuml;ber Ihre Rechnungsdateien laufen lassen. Das "
+      "Gate-Skript selbst kopieren Sie mit ins Repository (der Pfad im "
+      "Beispiel zeigt auf die vendorte Ablage; es ruft nur "
+      "<code>python3 -m einvoice.report</code> auf, egal woher der "
+      "Validator installiert wurde):</p>")
     w("<pre><code>%s</code></pre>" % _h(cmd_gate))
     w("<p>Kopierfertige GitHub-Actions- und GitLab-CI-Definitionen liegen "
       'daneben im <a href="%s">CI-Rezept (einvoice/ci/)</a>; eine '

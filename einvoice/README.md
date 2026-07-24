@@ -6,10 +6,12 @@ A zero-dependency, embeddable, self-hostable conformance validator for
 PDF containers via `einvoice.report`).
 
 - **Zero dependency.** Python 3 (>=3.8) standard library only. No lxml, no
-  Java, no Schematron toolchain, no network calls. `python3 einvoice.py
-  validate x.xml` from a checkout is the whole install; `pip install .` adds
-  an `einvoice` console script (`pyproject.toml` pins `dependencies = []` —
-  a tested contract, see `test_packaging.py`).
+  Java, no Schematron toolchain, no network calls. `pip install
+  verifyhash-einvoice` gets you the released package and its `einvoice`
+  console script from PyPI; from a checkout, `python3 einvoice.py validate
+  x.xml` needs no install at all and `pip install .` installs that exact tree
+  (`pyproject.toml` pins `dependencies = []` — a tested contract, see
+  `test_packaging.py`).
 - **Embeddable.** The validator is a small pure-Python package
   (`einvoice/parser.py`, `einvoice/rules.py`, `einvoice/validate.py`,
   `einvoice/cli.py`); rules are plain functions over a parsed model, so an
@@ -403,10 +405,14 @@ python3 -m einvoice   validate <invoice.xml> [--json] [--profile=en16931|xrechnu
 # validate a whole folder or glob in one run (reuses the same rule engine):
 python3 -m einvoice   validate-batch <dir|glob> [--json] [--quiet] [--profile=…]
 
-# b) pip-install (from a checkout/vendored copy — NOT on PyPI yet, on purpose)
-python3 -m pip install /path/to/einvoice     # zero runtime dependencies
+# b) pip-install the released package from PyPI — the normal route
+python3 -m pip install verifyhash-einvoice
 einvoice validate <invoice.xml> [--json] [--profile=en16931|xrechnung]
 einvoice validate-batch <dir|glob> [--json] [--quiet] [--profile=en16931|xrechnung]
+
+# b2) …or install a checkout / vendored copy instead — same code, no package
+#     index needed: the right answer for air-gapped CI or an exact pin
+python3 -m pip install /path/to/einvoice     # zero runtime dependencies
 ```
 
 **c) embed in-process** — vendor the bare `einvoice/` package directory (the

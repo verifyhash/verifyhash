@@ -69,11 +69,21 @@ they do **not** affect the exit code the gate relies on. Full schema:
 
 ## 60-second install (any CI)
 
-1. **Vendor the validator** into your repo (it is not on PyPI yet — publishing
-   is a deliberate not-yet): copy this product directory (the parent of
-   `ci/`) to `third_party/einvoice/`, or add it as a git subtree/submodule.
-2. **Install it** in the CI job — zero runtime dependencies, stdlib only. This
-   is what makes `python3 -m einvoice.report` importable:
+1. **Install the validator** in the CI job — from PyPI, zero runtime
+   dependencies, stdlib only. This is what makes `python3 -m einvoice.report`
+   importable. The distribution is named **`verifyhash-einvoice`**; the bare
+   name `einvoice` on PyPI is an unrelated third-party package, so never
+   install that one:
+
+   ```sh
+   python3 -m pip install verifyhash-einvoice
+   ```
+
+2. **Offline / air-gapped alternative — vendor the validator** instead. If your
+   runners have no package-index access, or you want the validated tree pinned
+   byte-for-byte in your own repo, copy this product directory (the parent of
+   `ci/`) to `third_party/einvoice/` — or add it as a git subtree/submodule —
+   and install that copy:
 
    ```sh
    python3 -m pip install ./third_party/einvoice
@@ -82,7 +92,14 @@ they do **not** affect the exit code the gate relies on. Full schema:
    (Skippable: run from the vendored dir so the package is on `sys.path`, or set
    `EINVOICE_CMD="python3 -m einvoice.report"` with `PYTHONPATH` pointed at the
    vendored source — no install step at all.)
-3. **Run the gate** over your invoice files/fixtures:
+
+   The shipped `github-actions.yml` / `gitlab-ci.yml` templates use this
+   vendored form by default, because it is the variant that works everywhere;
+   each carries the PyPI one-liner as a commented alternative.
+3. **Run the gate** over your invoice files/fixtures. The gate script is copied
+   into your repo alongside the vendored directory (the path below assumes that
+   layout); it only shells out to `python3 -m einvoice.report`, so it works the
+   same whichever way the validator was installed:
 
    ```sh
    sh third_party/einvoice/ci/validate-invoices.sh invoices/

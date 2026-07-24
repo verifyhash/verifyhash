@@ -72,11 +72,19 @@ python3 -m pip install .
 einvoice validate --profile xrechnung examples/01-missing-fields/fixed.xml
 ```
 
-Ehrlicher Hinweis: das Paket ist **noch nicht auf PyPI** — installiert wird
-aus dem Checkout oder einer vendorten Kopie (siehe CI-Abschnitt unten); der
-für die Erstveröffentlichung vorgesehene Paketname ist `verifyhash-einvoice`.
-Ein bloßes `pip install` mit dem kurzen Namen `einvoice` holt heute ein
-fremdes, gleichnamiges PyPI-Paket — genau davor schützt der Drift-Test.
+**c) Aus PyPI installieren**, wenn Sie gar keinen Checkout wollen — das
+veröffentlichte Paket heißt `verifyhash-einvoice`:
+
+```sh
+python3 -m pip install verifyhash-einvoice
+```
+
+Achtung beim Namen: ein bloßes `pip install` mit dem kurzen Namen `einvoice`
+holt ein **fremdes, gleichnamiges PyPI-Paket** — genau davor schützt der
+Drift-Test (`test_install_command_drift.py`). Form b (`pip install .`)
+installiert dagegen genau den Checkout, den Sie vor sich haben: der Weg für
+air-gapped Rechner oder wenn Sie einen exakten Stand reproduzierbar pinnen
+wollen. Alle drei Formen fahren denselben Codepfad.
 
 Warum `--profile xrechnung`? Die zwei fehlenden Pflichtangaben sind deutsche
 `BR-DE-*`-Regeln aus der XRechnung-Schicht, nicht aus dem EN-16931-Kern —
@@ -148,15 +156,25 @@ python3 -m einvoice info --json | python3 -c "import json,sys; d=json.load(sys.s
 Für ein Repository voller Rechnungen liegt ein fertiges Gate-Skript bei
 (POSIX `sh`, keine Abhängigkeiten außer `python3`): es prüft rekursiv jede
 `*.xml`-Datei, lässt den Build bei jeder fatalen Verletzung mit der Regel-ID
-im Log fehlschlagen und schreibt pro Rechnung einen JUnit-Report. Da das
-Paket noch nicht auf PyPI liegt: das Produktverzeichnis vendoren (z. B. nach
-`third_party/einvoice/`) und im CI-Job installieren —
+im Log fehlschlagen und schreibt pro Rechnung einen JUnit-Report. Im CI-Job
+wird der Validator aus PyPI installiert —
+
+```sh
+python3 -m pip install verifyhash-einvoice
+```
+
+— oder, als **Offline-Alternative** für Runner ohne Zugriff auf einen
+Paketindex (air-gapped) bzw. wenn Sie den Stand reproduzierbar pinnen wollen,
+das Produktverzeichnis vendoren (z. B. nach `third_party/einvoice/`) und die
+vendorte Kopie installieren:
 
 ```sh
 python3 -m pip install ./third_party/einvoice        # vendored copy; zero deps
 ```
 
-— dann das Gate über die eigenen Rechnungsdateien laufen lassen:
+Dann das Gate über die eigenen Rechnungsdateien laufen lassen (das Gate-Skript
+selbst kopieren Sie mit ins Repository; der Pfad unten zeigt auf die vendorte
+Ablage):
 
 ```sh
 sh third_party/einvoice/ci/validate-invoices.sh invoices/

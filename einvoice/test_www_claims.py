@@ -20,13 +20,14 @@ one of these assertions goes red.
 
 Offline, standard-library only. The one import beyond the stdlib is the shipped
 ``einvoice`` package itself — that is the product under test, not a third party.
-No network, no subprocess, no file writes.
+No network, no child processes, no file writes.
 """
 
 import html
 import os
 import re
 import sys
+import types
 import unittest
 
 from einvoice.parser import parse_file
@@ -190,6 +191,47 @@ CLAIMS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# DISTRIBUTION TRUTH (T-VHTRUTH.1) — a static, network-free companion to the
+# capability table above.
+#
+# The bug it kills: for months every www/ page that mentioned installing said
+# the tool was "noch nicht auf PyPI" / "not on PyPI yet" and told the reader to
+# vendor a directory instead — while the distribution `verifyhash-einvoice` had
+# in fact been serving releases on PyPI. The German product page (www/de/), the
+# ONE page in this lane aimed at the German mandate buyer, carried the falsehood
+# in its CI section. A prospect who believed it either wasted five minutes
+# vendoring or concluded the project was unreleased.
+#
+# This is asserted as a STATIC COMMITTED FACT, deliberately NOT probed: this
+# module opens no sockets, fetches no URL and spawns no child process. PyPI
+# availability is a fact about the world we assert here and re-check by hand at
+# release time; a test that phoned home would be flaky, slow, and would silently
+# pass on a firewalled runner. If the project were ever unpublished, THIS
+# constant is what gets flipped — one edit, and the guard inverts with it.
+PYPI_DISTRIBUTION = "verifyhash-einvoice"
+
+# The claim shapes we have actually shipped (case-insensitive regexes matched
+# against the normalized page text). Every one of these was a real line in a
+# committed surface at some point; this is a denylist of history, not of
+# hypotheticals. Scoped tightly to PyPI-absence assertions so honest, still-true
+# prose ("install from a checkout", "pinned by sha256") never matches.
+PYPI_ABSENCE_DENIALS = (
+    r"not on pypi",
+    r"not yet on pypi",
+    r"noch nicht auf pypi",
+    r"nicht auf pypi",
+    r"not published to pypi",
+    r"pending first publish",
+    r"nicht auf pypi ver[öo]ffentlicht",
+    r"no[tc]h nicht ver[öo]ffentlicht[\w :.\-]{0,20}pypi",
+)
+
+# Pages that must NAME the real distribution: the English landing and the German
+# product page are the two install-facing surfaces this task fixed at source.
+PAGES_NAMING_DISTRIBUTION = ("index.html", os.path.join("de", "index.html"))
+
+
 class TestWwwClaims(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -235,6 +277,61 @@ class TestWwwClaims(unittest.TestCase):
             "www/ pages deny capabilities the shipped engine has:\n  "
             + "\n  ".join(offenders),
         )
+
+    def test_no_www_page_claims_pypi_absence(self):
+        """FAIL if any generated page (EN or DE) asserts the package is absent
+        from PyPI. Static and offline: the distribution's existence is a
+        committed fact (PYPI_DISTRIBUTION), never a network probe."""
+        patterns = [re.compile(p, re.IGNORECASE) for p in PYPI_ABSENCE_DENIALS]
+        offenders = []
+        for rel, text in sorted(self.pages.items()):
+            for pat in patterns:
+                m = pat.search(text)
+                if m:
+                    offenders.append(
+                        "www/%s claims PyPI-absence via /%s/ -> matched %r "
+                        "(the distribution %r is published; vendoring is an "
+                        "offline ALTERNATIVE, not the only route)"
+                        % (rel, pat.pattern, m.group(0), PYPI_DISTRIBUTION)
+                    )
+        self.assertEqual(
+            offenders, [],
+            "www/ pages tell readers the package is not on PyPI:\n  "
+            + "\n  ".join(offenders),
+        )
+
+    def test_install_facing_pages_name_the_real_distribution(self):
+        """The English landing and the German product page must each name the
+        real distribution `verifyhash-einvoice`, so a reader who wants to
+        install gets a command that actually works."""
+        for rel in PAGES_NAMING_DISTRIBUTION:
+            self.assertIn(
+                rel, self.pages,
+                "expected generated page www/%s is missing — run gen_site.py"
+                % rel)
+            self.assertIn(
+                PYPI_DISTRIBUTION, self.pages[rel],
+                "www/%s never names the real distribution %r — an install-"
+                "facing page that cannot be acted on" % (rel, PYPI_DISTRIBUTION))
+
+    def test_pypi_fact_is_static_not_probed(self):
+        """This guard must derive nothing from the outside world. Every module
+        object bound in this file's namespace has to come from the allowlist
+        below (stdlib text/test helpers plus the product package itself), so a
+        future edit that reaches for a fetching or process-spawning library to
+        'check PyPI live' fails HERE instead of turning the suite flaky on a
+        firewalled runner."""
+        allowed = {"html", "os", "re", "sys", "types", "unittest",
+                   "parser_cii", "rules", "einvoice", "__builtins__"}
+        imported = sorted(
+            name for name, obj in globals().items()
+            if isinstance(obj, types.ModuleType))
+        unexpected = [n for n in imported if n not in allowed]
+        self.assertEqual(
+            unexpected, [],
+            "test_www_claims bound unexpected module(s) %r — this gate is "
+            "static and offline by contract; PyPI availability is a committed "
+            "fact (%r), never a live lookup" % (unexpected, PYPI_DISTRIBUTION))
 
 
 if __name__ == "__main__":

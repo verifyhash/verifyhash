@@ -108,7 +108,7 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <p>New here? The fastest way in is the <a href="walkthrough/index.html">5-minute worked walkthrough</a>: it takes a broken XRechnung invoice, runs the checker, shows the real report it prints, and applies the two-element fix until the invoice passes.</p>
 <p>Everything is free and open source (Apache-2.0). Start here:</p>
 <ul class="rules">
-<li><a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/README.md">Repository README</a> — install (<code>pip install .</code> or copy the package dir), the CLI, and the full honest scope.</li>
+<li><a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/README.md">Repository README</a> — install (<code>pip install verifyhash-einvoice</code> from PyPI, or <code>pip install .</code> / copy the package dir from a checkout when you need an offline, exactly-pinned copy), the CLI, and the full honest scope.</li>
 <li><a href="https://github.com/verifyhash/verifyhash/tree/main/einvoice/ci">CI conformance gate recipe</a> (<code>einvoice/ci/</code>) — copy-paste POSIX&nbsp;sh + GitHub&nbsp;Actions / GitLab&nbsp;CI that fails a build on any non-conformant invoice and names the violated rule ID.</li>
 <li><a href="https://github.com/verifyhash/verifyhash/tree/main/einvoice/action">GitHub Action</a> (<code>einvoice/action/</code>) — a <code>uses:</code>-pinnable composite action that surfaces each finding as an inline PR annotation via SARIF.</li>
 </ul>

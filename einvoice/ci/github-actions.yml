@@ -30,8 +30,16 @@ jobs:
           python-version: "3.x"
 
       # Zero runtime dependencies — this installs ONLY the validator package,
-      # which makes `python3 -m einvoice.report` importable. (Not on PyPI yet;
-      # install from the vendored copy.)
+      # which makes `python3 -m einvoice.report` importable.
+      #
+      # The released distribution is on PyPI as `verifyhash-einvoice`, so the
+      # one-line form is:
+      #     python3 -m pip install verifyhash-einvoice
+      # (mind the name: the bare `einvoice` project on PyPI is unrelated).
+      #
+      # This template installs the VENDORED copy instead, because it also works
+      # on air-gapped runners and pins the exact validated tree in your repo.
+      # Swap in the commented line above if you would rather track releases.
       - name: Install the einvoice validator
         run: python3 -m pip install ./third_party/einvoice
 

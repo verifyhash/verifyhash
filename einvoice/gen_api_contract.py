@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Freeze the public embedding API surface into ``api_contract.json``.
 
-Task T-VHAPI.3: API.md ("Stability policy") promises that the eight public
+Task T-VHAPI.3: API.md ("Stability policy") promises that the nine public
 names in :data:`einvoice.__all__` are back-compat within a report schema
 version. This generator pins that promise as a committed, byte-reproducible
 artifact — for every public name it records the exact live shape:
@@ -47,7 +47,7 @@ CONTRACT_VERSION = 1
 
 #: Where the human-readable rules of engagement live.
 POLICY = (
-    "API.md 'Stability policy': the eight names in einvoice.__all__ are the "
+    "API.md 'Stability policy': the nine names in einvoice.__all__ are the "
     "supported embedding API, back-compat within a report schema version. "
     "If test_api_contract.py reports drift, that is a deliberate-regeneration "
     "event: rerun `python3 gen_api_contract.py`, review the diff against the "

@@ -107,8 +107,8 @@ class ApiContractTest(unittest.TestCase):
             sorted(pinned - exported), [],
             "api_contract.json pins names NO LONGER in einvoice.__all__ "
             "(removing a public name is a breaking change)" + DRIFT_HOWTO)
-        # And __all__ still has exactly the eight documented names.
-        self.assertEqual(len(exported), 8,
+        # And __all__ still has exactly the nine documented names.
+        self.assertEqual(len(exported), 9,
                          "einvoice.__all__ changed size" + DRIFT_HOWTO)
 
     # ------------------------------------------------------- live recompute

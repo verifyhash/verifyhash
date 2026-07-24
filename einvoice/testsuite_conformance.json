@@ -1,5 +1,5 @@
 {
-  "_about": "End-to-end classification of the KoSIT XRechnung test-suite's own official POSITIVE reference documents by the shipped einvoice engine (profile=xrechnung). UBL documents run through einvoice.validate_file; CII (UN/CEFACT) documents run through the shipped CII engine path report._report_from_invoice_bytes (parser_cii + rules.ALL_RULES + rules_xrechnung.evaluate_cii). Every applicable document's expected label is 'valid'. Regenerate with gen_testsuite_conformance.py; drift-guarded by test_testsuite_conformance.py.",
+  "_about": "End-to-end classification of the KoSIT XRechnung test-suite's own official POSITIVE reference documents by the shipped einvoice engine (profile=xrechnung). UBL documents run through einvoice.validate_file; CII (UN/CEFACT) documents run through the shipped CII engine path einvoice.validate_bytes (parser_cii + rules.ALL_RULES + rules_xrechnung.evaluate_cii). Every applicable document's expected label is 'valid'. Regenerate with gen_testsuite_conformance.py; drift-guarded by test_testsuite_conformance.py.",
   "documents": [
     {
       "accepted": true,
@@ -1130,7 +1130,7 @@
     }
   ],
   "engine": {
-    "cii_entry_point": "einvoice.report._report_from_invoice_bytes (parser_cii.build_model + rules.ALL_RULES + rules_xrechnung.evaluate_cii)",
+    "cii_entry_point": "einvoice.validate_bytes (parser_cii.build_model + rules.ALL_RULES + rules_xrechnung.evaluate_cii)",
     "entry_point": "einvoice.validate_file",
     "profile": "xrechnung",
     "targets": "plain EN 16931 / XRechnung-standard CIUS in BOTH the UBL and the CII (UN/CEFACT) syntax bindings; the extension and CVD guidelines are out of scope in either syntax and are machine-listed below"

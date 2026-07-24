@@ -2,7 +2,7 @@
 """test_api_example.py — execute the documented library embedding contract.
 
 Task T-VHAPI.1 (+ T-VHEMBED.1): API.md ("Embed einvoice as a library") pins a
-small, stable Python embedding API — exactly eight public names (``validate``,
+small, stable Python embedding API — exactly nine public names (``validate``,
 ``validate_file``, ``validate_root``, ``Result``, ``NotWellFormed``, and since
 T-VHEMBED.1 ``validate_batch``, ``fails_at``, ``capabilities``) with a
 documented ``Result`` shape (``.valid`` + ``.violations``). This test runs the
@@ -29,12 +29,15 @@ GOOD = os.path.join(
     HERE, "corpus", "xrechnung-testsuite", "src", "test", "business-cases",
     "standard", "01.01a-INVOICE_ubl.xml")
 
-# The eight names that make up the documented, supported public API. The
+# The nine names that make up the documented, supported public API. The
 # behavioural contract of the three T-VHEMBED.1 additions (``validate_batch``,
-# ``fails_at``, ``capabilities``) is exercised in ``test_api_embed.py``; here
-# they are pinned as part of the back-compat surface.
+# ``fails_at``, ``capabilities``) is exercised in ``test_api_embed.py`` and the
+# T-VHPROOF.4 addition (``validate_bytes``, the public CII-conformance entry
+# point) in the testsuite-conformance gate; here they are pinned as part of the
+# back-compat surface.
 PUBLIC_API = ("validate", "validate_file", "validate_root", "Result",
-              "NotWellFormed", "validate_batch", "fails_at", "capabilities")
+              "NotWellFormed", "validate_batch", "fails_at", "capabilities",
+              "validate_bytes")
 
 
 class DocumentedExample(unittest.TestCase):

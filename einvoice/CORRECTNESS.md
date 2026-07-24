@@ -352,10 +352,11 @@ each document end-to-end through the shipped engine that owns its syntax: UBL
 documents through the public entry point
 (`einvoice.validate_file(path, profile="xrechnung")`); CII (UN/CEFACT,
 `*_uncefact.xml`) documents through the same shipped CII path the
-golden-snapshot and PDF-container tests exercise —
-`report._report_from_invoice_bytes`, which dispatches a `CrossIndustryInvoice`
-root to `parser_cii.build_model` + the syntax-agnostic `rules.ALL_RULES` core +
-`rules_xrechnung.evaluate_cii` (German CIUS). No rule logic is re-implemented.
+golden-snapshot and PDF-container tests exercise — the public
+`einvoice.validate_bytes(xml_bytes, filename, profile="xrechnung")`, which
+dispatches a `CrossIndustryInvoice` root to `parser_cii.build_model` + the
+syntax-agnostic `rules.ALL_RULES` core + `rules_xrechnung.evaluate_cii`
+(German CIUS). No rule logic is re-implemented.
 It writes the full per-document table plus summary counts to
 [`testsuite_conformance.json`](testsuite_conformance.json).
 

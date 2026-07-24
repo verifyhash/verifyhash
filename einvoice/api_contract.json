@@ -1,6 +1,6 @@
 {
   "_contract": {
-    "policy": "API.md 'Stability policy': the eight names in einvoice.__all__ are the supported embedding API, back-compat within a report schema version. If test_api_contract.py reports drift, that is a deliberate-regeneration event: rerun `python3 gen_api_contract.py`, review the diff against the policy, and document the change in API.md — never loosen the test.",
+    "policy": "API.md 'Stability policy': the nine names in einvoice.__all__ are the supported embedding API, back-compat within a report schema version. If test_api_contract.py reports drift, that is a deliberate-regeneration event: rerun `python3 gen_api_contract.py`, review the diff against the policy, and document the change in API.md — never loosen the test.",
     "version": 1
   },
   "api": {
@@ -35,6 +35,10 @@
     "validate_batch": {
       "kind": "function",
       "signature": "(paths: '_typing.Iterable[str | _os.PathLike[str]]', profile: 'str' = 'xrechnung') -> 'dict'"
+    },
+    "validate_bytes": {
+      "kind": "function",
+      "signature": "(data: 'bytes', filename: 'str | None' = None, profile: 'str' = 'xrechnung') -> 'dict'"
     },
     "validate_file": {
       "kind": "function",

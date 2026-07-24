@@ -23,7 +23,7 @@ Both syntax bindings are shipped and tested, so each document is classified
 through the engine that owns its syntax: UBL documents through the public
 :func:`einvoice.validate_file`; CII (UN/CEFACT, ``*_uncefact.xml``) documents
 through the SAME shipped CII path the PDF-container and golden-snapshot tests
-exercise — :func:`einvoice.report._report_from_invoice_bytes`, which dispatches
+exercise — the PUBLIC :func:`einvoice.validate_bytes`, which dispatches
 a ``CrossIndustryInvoice`` root to ``parser_cii.build_model`` + the
 syntax-agnostic ``rules.ALL_RULES`` core + ``rules_xrechnung.evaluate_cii``
 (German CIUS). No rule logic is re-implemented here.
@@ -72,7 +72,6 @@ PROFILE = "xrechnung"
 
 sys.path.insert(0, HERE)
 import einvoice  # noqa: E402  (local package; sys.path set above)
-from einvoice import report as _report  # noqa: E402  (shipped CII engine path)
 
 
 # --------------------------------------------------------------------------- #
@@ -211,9 +210,10 @@ def _reason(scope_class, fatal_rule_ids):
 def _classify_cii(abs_path, rel_path):
     """Classify a CII (UN/CEFACT) document through the SHIPPED CII engine path.
 
-    Reuses :func:`einvoice.report._report_from_invoice_bytes` verbatim — the
-    exact end-to-end path ``test_golden_snapshot`` and ``test_rules_cii``
-    exercise. That helper dispatches a ``CrossIndustryInvoice`` root to
+    Reuses the PUBLIC :func:`einvoice.validate_bytes` verbatim — the exact
+    end-to-end path ``test_golden_snapshot`` and ``test_rules_cii`` exercise
+    (a thin, verdict-preserving wrapper over the shipped CII engine). That
+    entry point dispatches a ``CrossIndustryInvoice`` root to
     ``parser_cii.build_model`` + the syntax-agnostic ``rules.ALL_RULES`` core
     rules + (profile=xrechnung) ``rules_xrechnung.evaluate_cii`` for the German
     CIUS layer. This RE-IMPLEMENTS no rule logic; it feeds the raw bytes into
@@ -223,7 +223,7 @@ def _classify_cii(abs_path, rel_path):
     """
     with open(abs_path, "rb") as fh:
         xml_bytes = fh.read()
-    rep = _report._report_from_invoice_bytes(xml_bytes, rel_path, PROFILE)
+    rep = einvoice.validate_bytes(xml_bytes, rel_path, PROFILE)
     accepted = bool(rep["valid"])
     fatal = sorted({r["rule"] for r in rep["violations"]
                     if r.get("severity") == "fatal"})
@@ -362,7 +362,7 @@ def build_report():
                    "the shipped einvoice engine (profile=xrechnung). UBL "
                    "documents run through einvoice.validate_file; CII "
                    "(UN/CEFACT) documents run through the shipped CII engine "
-                   "path report._report_from_invoice_bytes (parser_cii + "
+                   "path einvoice.validate_bytes (parser_cii + "
                    "rules.ALL_RULES + rules_xrechnung.evaluate_cii). Every "
                    "applicable document's expected label is 'valid'. Regenerate "
                    "with gen_testsuite_conformance.py; drift-guarded by "
@@ -378,7 +378,7 @@ def build_report():
         },
         "engine": {
             "entry_point": "einvoice.validate_file",
-            "cii_entry_point": ("einvoice.report._report_from_invoice_bytes "
+            "cii_entry_point": ("einvoice.validate_bytes "
                                 "(parser_cii.build_model + rules.ALL_RULES + "
                                 "rules_xrechnung.evaluate_cii)"),
             "profile": PROFILE,

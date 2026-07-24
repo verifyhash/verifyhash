@@ -63,7 +63,7 @@ element and returns the same `Result`.
 
 ## The public API
 
-Exactly eight names make up the supported surface. They are re-exported at the
+Exactly nine names make up the supported surface. They are re-exported at the
 package top level and listed in `einvoice.__all__`:
 
 | Name | Kind | What it is |
@@ -76,6 +76,7 @@ package top level and listed in `einvoice.__all__`:
 | `einvoice.validate_batch(paths, profile="xrechnung")` | function | Validate a list of invoice files; returns the aggregate batch report `dict` — the same engine and shape as `einvoice validate-batch --json`. |
 | `einvoice.fails_at(result, level)` | function | The CLI `--fail-on` severity threshold as a pure predicate over a `Result`. Returns `bool`. Raises `ValueError` on an unknown level. |
 | `einvoice.capabilities()` | function | What this build contains, as a `dict` — the exact `einvoice info --json` payload. |
+| `einvoice.validate_bytes(data, filename=None, profile="xrechnung")` | function | Validate raw invoice **bytes** — UBL, UN/CEFACT CII (`CrossIndustryInvoice`), or a Factur-X/ZUGFeRD **PDF** container — and return the machine-readable report `dict` (keys `valid`, `fatal_count`, `warning_count`, `violations`, plus the other report fields). The public counterpart of `einvoice.report.build_report` for an in-memory buffer, and the entry point the CII test-suite conformance headline (39/39 `*_uncefact.xml` accepted) reproduces through. Adds no rule logic; parses through the same XXE-hardened guard. |
 
 `profile` is `"en16931"` (the EN 16931 core rules only) or `"xrechnung"` (the
 core rules plus the German CIUS layer, `BR-DE-*`).
@@ -235,9 +236,9 @@ means "no *implemented* rule fired", not "legally conformant" — see
 
 ## Stability policy
 
-- **Public names.** The eight names above (`validate`, `validate_file`,
+- **Public names.** The nine names above (`validate`, `validate_file`,
   `validate_root`, `Result`, `NotWellFormed`, `validate_batch`, `fails_at`,
-  `capabilities`) are the supported API. They will
+  `capabilities`, `validate_bytes`) are the supported API. They will
   not be renamed or removed, and their documented return shape will not change
   in a backward-incompatible way, within a given report schema version.
 - **Everything else is internal.** The other importable submodules — `parser`,
@@ -252,7 +253,7 @@ means "no *implemented* rule fired", not "legally conformant" — see
   version (currently `v1`) changes are additive and backward-compatible — new
   optional fields may appear, existing keys keep their meaning. A breaking
   change to the report shape bumps the schema id (`.../v1/...` → `.../v2/...`).
-  The eight public names above are back-compat **within a report `schema`
+  The nine public names above are back-compat **within a report `schema`
   version** (`validate_batch`'s aggregate dict is versioned by its own
   `einvoice-conformance-batch/v1` schema id, with the same additive-only
   rule).

@@ -190,6 +190,7 @@ from .report import (
     syntax_binding_section,
     build_batch_report, build_batch_report_from_files,
     batch_exit_code, build_batch_text,
+    REPORT_FORMATS,
 )
 from .remediation import resolve_message, SUPPORTED_LANGS
 from .config import load_config_with_source, ConfigError
@@ -215,6 +216,22 @@ USAGE = ("usage: einvoice validate <invoice.xml|-> "
 #: dispatched a few lines EARLIER than the single-file ``validate``/``receipt``
 #: leg; this tuple names the file-driven set an ERP adopter is choosing from.
 VALID_SUBCOMMANDS = ("validate", "validate-batch", "receipt")
+
+#: The DOCUMENTED command surface: everything a first-run user may legitimately
+#: type at this entry point. ``VALID_SUBCOMMANDS`` above is the DISPATCH set
+#: (the file-driven leg of the argv parser); this tuple is the DOCUMENTATION set
+#: and additionally names the informational commands, which are dispatched
+#: earlier and are therefore absent from the dispatch tuple.
+#:
+#: MEASURED defect this fixes: the ``unknown subcommand`` banner listed only the
+#: dispatch set, so a user who typed ``einvoice --explain BR-DE-1`` was told to
+#: "choose from validate, validate-batch, receipt" — ``info`` and
+#: ``--show-config`` exist and were simply never mentioned. Both the banner and
+#: ``test_cli_help.py``'s completeness guard read THIS tuple, so the error
+#: banner and ``--help`` can no longer drift apart. Adding a command means
+#: adding it here, and the help guard then fails until ``HELP`` describes it.
+COMMAND_SURFACE = VALID_SUBCOMMANDS + ("info", "--show-config", "--version",
+                                       "--help")
 
 EXIT_OK = 0
 EXIT_FAIL = 1
@@ -255,16 +272,32 @@ FAIL_ON_LEVELS = ("fatal", "warning", "information")
 #: belongs to ``python3 -m einvoice.report``, which this CLI does not front.
 OUTPUT_FORMATS = ("text", "json")
 
+#: The report-only ``--format`` names: every ``einvoice.report`` registry format
+#: that THIS CLI cannot emit itself. DERIVED from ``REPORT_FORMATS`` minus the
+#: forms this CLI does emit, never retyped — so registering a new emitter in
+#: :mod:`einvoice.report` documents itself in ``--help`` instead of staying
+#: invisible to a pip-only adopter (``test_cli_help.py`` fails if any registry
+#: name goes unnamed in the help text). MEASURED gap this closes: seven of the
+#: nine CI report formats (junit/sarif/gitlab/github/azure/html/badge) were
+#: never mentioned anywhere a wheel-only user could see them.
+REPORT_ONLY_FORMATS = tuple(sorted(set(REPORT_FORMATS) - set(OUTPUT_FORMATS)))
+
 #: The ``--help`` / ``-h`` text: the machine-readable ``USAGE`` synopsis PLUS a
 #: one-line-per-command description block. Every entry names a real command so
 #: an ERP adopter's first ``einvoice --help`` explains what each does rather
-#: than erroring. The command names here MUST cover every ``VALID_SUBCOMMANDS``
-#: entry and every informational command (``info`` / ``--show-config`` /
-#: ``--version``); ``test_cli_help.py`` is a completeness guard that fails if a
-#: subcommand is added to the registry but not documented here. The output-form
-#: line is sourced from ``OUTPUT_FORMATS`` so it can never advertise a form this
-#: CLI cannot emit (note: this CLI has NO ``--format`` flag — the richer
-#: nine-name report vocabulary lives in ``python3 -m einvoice.report``).
+#: than erroring. The command names here MUST cover every ``COMMAND_SURFACE``
+#: entry (the dispatch subcommands plus ``info`` / ``--show-config`` /
+#: ``--version`` / ``--help``); ``test_cli_help.py`` is a completeness guard
+#: that fails if a command is added to that tuple but not documented here.
+#:
+#: Both trailing format lines are REGISTRY-SOURCED so they can never advertise
+#: something that does not exist: ``OUTPUT_FORMATS`` for the forms this CLI
+#: emits itself, ``REPORT_ONLY_FORMATS`` for the rest of the
+#: :mod:`einvoice.report` vocabulary. This CLI still has NO ``--format`` flag of
+#: its own — the only ``--format`` named here belongs to the explicitly spelled
+#: ``python3 -m einvoice.report`` sibling entry point, which is exactly the
+#: pointer a pip-only adopter needs. Every reference is a URL, never a repo file
+#: the wheel does not ship.
 HELP = (
     USAGE + "\n\n"
     "Commands:\n"
@@ -278,10 +311,12 @@ HELP = (
     "  --show-config              resolve and print the effective config; run nothing\n"
     "  --version                  print the packaged einvoice version and exit\n"
     "  --help, -h                 show this help and exit\n\n"
-    "Output form: %s (text is the default; --json selects json). "
-    "See README.md for the full flag set.\n"
+    "Output form: %s (text is the default; --json selects json).\n"
+    "Other report formats (%s) come from the sibling entry point:\n"
+    "  python3 -m einvoice.report --format <fmt> <invoice.xml>\n"
+    "Full flag set and documentation: https://verifyhash.com/einvoice/\n"
     "This CLI validates; it never sends your invoice anywhere."
-    % " or ".join(OUTPUT_FORMATS))
+    % (" or ".join(OUTPUT_FORMATS), ", ".join(REPORT_ONLY_FORMATS)))
 
 #: Severity ordering used to decide whether a finding CROSSES a chosen
 #: ``--fail-on`` threshold: a finding crosses iff its rank is >= the threshold's
@@ -945,13 +980,18 @@ def _main(argv=None):
         # Distinguish a genuine MISTYPED subcommand (name it + the valid set,
         # the actionable first-run message) from the bare no-subcommand or
         # valid-subcommand-with-missing-file case (unchanged: plain USAGE, no
-        # false "unknown subcommand"). ``validate-batch``/``info`` are already
+        # false "unknown subcommand"). The choice list is COMMAND_SURFACE (the
+        # DOCUMENTED set, same source ``--help`` is guarded against), not the
+        # narrower dispatch tuple: a user who mistyped needs to see that ``info``
+        # and ``--show-config`` exist too. Membership below stays on
+        # VALID_SUBCOMMANDS — that is dispatch, and it is untouched.
+        # ``validate-batch``/``info`` are already
         # dispatched above, so a token in VALID_SUBCOMMANDS reaching here is
         # ``validate``/``receipt`` with a missing file argument.
         if args and args[0] not in VALID_SUBCOMMANDS:
             sys.stderr.write(
                 "error: unknown subcommand %r (choose from %s)\n%s\n"
-                % (args[0], ", ".join(VALID_SUBCOMMANDS), USAGE))
+                % (args[0], ", ".join(COMMAND_SURFACE), USAGE))
         else:
             sys.stderr.write(USAGE + "\n")
         return EXIT_USAGE

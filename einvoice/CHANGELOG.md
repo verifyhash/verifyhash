@@ -50,6 +50,34 @@ default report format crashes from the fixed one.
   from anywhere on argv. The BARE invocation is unchanged and still an error
   (usage to stderr, non-zero) — help is a requested output, a missing argument
   is not.
+- **Every runtime help pointer now resolves for a wheel-only install.**
+  `einvoice --help` ended with "See README.md for the full flag set." and
+  `python3 -m einvoice.report --help` ended its `--baseline` line with "See
+  REPORT-SCHEMA.md."; neither file is packaged, so a `pip install` user was
+  sent to a path that does not exist on their disk. Both now point at
+  <https://verifyhash.com/einvoice/>. Two runtime doc-pointers existed across
+  `cli.py` and `report.py`; both were changed, and `test_cli_help.py` now scans
+  every non-docstring string literal in both modules so a new `*.md` pointer
+  fails the build. (Docstrings and comments still reference the repo files —
+  they are read in a checkout, where those files exist.)
+- **`einvoice --help` now names the seven CI report formats and where to get
+  them.** `junit`, `sarif`, `gitlab`, `github`, `azure`, `html` and `badge`
+  were emitted only by `python3 -m einvoice.report`, which the main help never
+  mentioned — a pip-only adopter had no way to discover them. The help now
+  carries one derived line, `Other report formats (…): python3 -m
+  einvoice.report --format <fmt> <invoice.xml>`, computed from
+  `einvoice.report.REPORT_FORMATS` minus the two forms this CLI emits itself,
+  so registering a new emitter documents itself. This CLI still has no
+  `--format` flag of its own; `einvoice validate --format json` remains a usage
+  error (exit 2).
+- **The `unknown subcommand` banner now lists the whole documented surface.**
+  Its choice list was formatted from the dispatch tuple, so `einvoice --explain
+  BR-DE-1` was told to "choose from validate, validate-batch, receipt" while
+  `--help` also documents `info`, `--show-config`, `--version` and `--help`.
+  Banner and help now read one shared `COMMAND_SURFACE` definition and are
+  pinned equal by test. The exit code (2), the `unknown subcommand` wording and
+  the separate stray-flag / missing-file legs are unchanged, and `--explain`
+  was NOT added to this entry point — it remains an `einvoice.report` flag.
 
 ## [0.2.6] - 2026-07-23
 

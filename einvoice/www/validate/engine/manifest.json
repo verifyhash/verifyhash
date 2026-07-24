@@ -23,7 +23,7 @@
   "sha256": {
     "__init__.py": "1637cd2f9bb7343bd99f6028528c4f86abf48e16970aa48b655f47270a1211e3",
     "_xmlsec.py": "35afa2a1c5e26cb228ab5c6061216e2d05e99da943a028dc997dcd67c882ff6a",
-    "cli.py": "b6170e3b1a8d35087e316437546b0a846732839044e28fb73ea297c2af84a156",
+    "cli.py": "a4bfe42112500a64d5f1565b0c0edf30734525a771159b49f61f34eb3ca1dca9",
     "codelists.py": "5ff19ec7a24be7c65734d7312a9f7e1b4739ce4645fb71a2dae027e03d8a6ad7",
     "config.py": "28e4c3d929041a0b47193980f094970d5693c6142f7166a7c1fb433d2565cd3a",
     "coverage.py": "065da40772b081c434069482f0176e89a7930106e318a2849365bb47a6dc84c5",
@@ -33,7 +33,7 @@
     "receipt.py": "651b589100f1e908fdcfed4dcefba54d35dc07d258b204f48f595c50c00a8ee4",
     "remediation.py": "995b7c08faf8a9096b556ec3b3e76ed92d8797ae26514f5f81d1a5741095f56a",
     "remediation_catalog.json": "1cab361168b127ea2f5100ddd86b2ddd84ac36ce8966bfde9c46f13db32597de",
-    "report.py": "b147d2ffdf19e40d922cadebd49fbb113c831563fbd4f8f47c673d42d31308d7",
+    "report.py": "ea49bc7962aac5c60479d29c7dd998b6b7ebe84bfd0ee1db3e3a9ab1d0d1baca",
     "rules.py": "c098377e43a1fdbb431f1ee872472ca0672bd00781a86bdac2b51dc73e4d3ad3",
     "rules_peppol.py": "a6f0b48ce211fd3afd27b27c0a37adc2569ea21bc3e137e70141cfff432a9c33",
     "rules_xrechnung.py": "113cd8cc43f1c2b7374f31884ccbd7335adc4c3cc06e2cb83493a7f8853cde2a",

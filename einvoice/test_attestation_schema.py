@@ -202,13 +202,13 @@ class SchemaDocument(unittest.TestCase):
         self.assertEqual(body_props["format"]["const"],
                          "einvoice-conformance-attestation/1")
 
-    def test_body_requires_the_six_core_sections(self):
+    def test_body_requires_the_core_sections(self):
         schema = load_schema()
         body = schema["properties"]["attestation"]
         self.assertEqual(
             set(body["required"]),
-            {"format", "rules", "coverage", "testsuite_conformance",
-             "corpus", "artifacts"})
+            {"format", "package", "rules", "coverage",
+             "testsuite_conformance", "corpus", "artifacts"})
         self.assertIs(body["additionalProperties"], False)
 
 

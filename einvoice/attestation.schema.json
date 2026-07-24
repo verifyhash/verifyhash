@@ -15,6 +15,7 @@
       "type": "object",
       "required": [
         "format",
+        "package",
         "rules",
         "coverage",
         "testsuite_conformance",
@@ -26,6 +27,35 @@
         "format": {
           "description": "Stable attestation-format id; bound to ATTESTATION_FORMAT in einvoice/gen_attestation.py. Consumers should match on this exact string.",
           "const": "einvoice-conformance-attestation/1"
+        },
+        "package": {
+          "description": "Identity of the PUBLISHED distribution this attestation speaks for, sourced from pyproject.toml via gen_sbom.read_metadata (single source of truth) and derived byte-identically to the SBOM's root purl.",
+          "type": "object",
+          "required": [
+            "distribution",
+            "name",
+            "purl",
+            "version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "description": "PyPI distribution name, e.g. 'verifyhash-einvoice' (pyproject [project].name).",
+              "type": "string"
+            },
+            "version": {
+              "description": "Published version string, e.g. '0.2.6' (pyproject [project].version).",
+              "type": "string"
+            },
+            "purl": {
+              "description": "Package URL for the distribution, 'pkg:pypi/{name}@{version}' — byte-identical to the SBOM root component purl.",
+              "type": "string"
+            },
+            "distribution": {
+              "description": "Honest published-status literal; 'pypi' since verifyhash-einvoice has been live on PyPI from 0.2.0.",
+              "type": "string"
+            }
+          }
         },
         "rules": {
           "description": "Rule-set id(s) + counts, copied from export/rules.json (drift-guarded by test_export.py).",

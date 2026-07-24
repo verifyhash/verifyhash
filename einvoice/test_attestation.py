@@ -35,6 +35,10 @@ _TREE_FILES = [
     "gen_sbom.py",
     "verify_attestation.py",
     "attestation.json",
+    # pyproject.toml is the single source of truth for the package section
+    # (name/version/purl); gen_attestation reads it via gen_sbom.read_metadata,
+    # so the isolated regenerate-and-compare tree needs it too.
+    "pyproject.toml",
     "testsuite_conformance.json",
     "export/rules.json",
     "export/coverage.json",

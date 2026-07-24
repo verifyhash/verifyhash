@@ -7,13 +7,13 @@ at-a-glance record of *what artifact this is and where its parts come from*.
 | Field | Value |
 | --- | --- |
 | Package | `verifyhash-einvoice` (the pure-Python `einvoice` package) |
-| Version | `0.2.0` (source of truth: [`pyproject.toml`](pyproject.toml)) |
-| PURL | `pkg:pypi/verifyhash-einvoice@0.2.0` |
+| Version | `0.2.6` (source of truth: [`pyproject.toml`](pyproject.toml)) |
+| PURL | `pkg:pypi/verifyhash-einvoice@0.2.6` |
 | License | Apache-2.0 |
 | Runtime dependencies | **none** — Python 3 (>=3.8) stdlib only (`dependencies = []`) |
 | SBOM | [`sbom/bom.json`](sbom/bom.json), **CycloneDX 1.5** JSON (<https://cyclonedx.org/docs/1.5/json/>) |
 | SBOM generator | [`gen_sbom.py`](gen_sbom.py) — stdlib only, no network, deterministic output |
-| Distribution | source checkout / vendored copy — **not published to PyPI** |
+| Distribution | published to PyPI as `verifyhash-einvoice` 0.2.6 (see [`REPUBLISH-PYPI.md`](REPUBLISH-PYPI.md)); also installable from a source checkout / vendored copy |
 
 ## Rule corpus provenance
 

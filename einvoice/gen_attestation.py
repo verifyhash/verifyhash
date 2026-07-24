@@ -49,6 +49,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import gen_sbom
+
 HERE = Path(__file__).resolve().parent
 
 RULES_PATH = HERE / "export" / "rules.json"
@@ -250,6 +252,30 @@ def _corpus_section(bom):
     return entries
 
 
+def _package_section():
+    """Identity of the PUBLISHED distribution this attestation speaks for.
+
+    Sourced from ``pyproject.toml`` -- the single source of truth for the
+    package name and version -- via ``gen_sbom.read_metadata`` (the SAME reader
+    ``build_sbom`` uses), so the attestation's package identity can never drift
+    from the SBOM's. The purl is derived byte-identically to
+    ``gen_sbom.build_sbom`` (``pkg:pypi/{name}@{version}``). ``distribution`` is
+    the honest published-status literal ``"pypi"``: ``verifyhash-einvoice`` has
+    been live on PyPI since 0.2.0 (see PROVENANCE.md / REPUBLISH-PYPI.md).
+
+    Deterministic and timestamp-free: a fixed pyproject always yields the same
+    section, so the whole attestation stays byte-reproducible.
+    """
+    name, version, _ = gen_sbom.read_metadata()
+    purl = "pkg:pypi/{}@{}".format(name, version)
+    return {
+        "name": name,
+        "version": version,
+        "purl": purl,
+        "distribution": "pypi",
+    }
+
+
 def _artifacts_section():
     """Raw-bytes SHA-256 of every committed GENERATED TRUST artifact.
 
@@ -285,6 +311,7 @@ def build_attestation():
 
     body = {
         "format": ATTESTATION_FORMAT,
+        "package": _package_section(),
         "rules": _rules_section(rules),
         "coverage": _coverage_section(coverage),
         "testsuite_conformance": _testsuite_section(testsuite),

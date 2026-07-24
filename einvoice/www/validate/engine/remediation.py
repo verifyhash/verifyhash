@@ -21,12 +21,41 @@ import json
 import os
 
 
+#: Basename of the catalog file, shared by both resolution candidates below.
+_CATALOG_NAME = "remediation_catalog.json"
+
+
 def default_catalog_path():
-    """Path to the committed ``remediation_catalog.json`` next to the package
-    (mirrors :func:`einvoice.coverage.default_matrix_path`)."""
-    return os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "remediation_catalog.json")
+    """Path to the committed ``remediation_catalog.json``.
+
+    Two candidates, in this precedence order (same idea as
+    ``cli._packaged_attestation()`` winning over ``cli._artifact_json()``):
+
+    1. the PACKAGED copy that ships in the wheel as package-data, sitting right
+       next to this module (``einvoice/remediation_catalog.json``);
+    2. the repo-root-adjacent copy next to the package dir, which is what a
+       source checkout has always used (and which ``gen_remediation.py`` writes
+       first).
+
+    The packaged copy comes first because it is the ONLY one an installed wheel
+    has: ``packages=["einvoice"]`` ships the package dir alone, so in a
+    ``pip install`` context candidate 2 does not exist and every report record's
+    ``title``/``fix_hint``/``location`` would come back null. In a source
+    checkout both exist and are byte-identical by construction —
+    ``gen_remediation.main()`` writes them from one serialized string and
+    ``test_remediation_catalog.py`` asserts it — so the precedence cannot change
+    what any caller reads.
+
+    Falls through to the repo-root path when neither file is present, so the
+    error a caller sees is the familiar ``FileNotFoundError`` on the canonical
+    location rather than a confusing packaged-path one. Stdlib only, no I/O
+    beyond two ``os.path.exists`` probes, no side effects.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    packaged = os.path.join(here, _CATALOG_NAME)
+    if os.path.exists(packaged):
+        return packaged
+    return os.path.join(os.path.dirname(here), _CATALOG_NAME)
 
 
 def load_catalog_document(path=None):
@@ -69,9 +98,24 @@ def official_message(rule_id, lang, catalog=None, path=None):
 
     ``catalog`` may be a preloaded ``rule_id -> entry`` mapping (avoids re-reading
     the JSON per violation); otherwise the committed catalog is loaded.
+
+    An installation whose catalog file is MISSING or unreadable degrades to
+    ``None`` — i.e. the caller keeps its English message — exactly as an
+    uncatalogued rule id does. This is the ``report._remediation_catalog()``
+    discipline applied to the CLI's ``--lang de`` path (T-VHWHEEL.2): MEASURED
+    on a catalog-less wheel image, ``einvoice validate <valid-path> --lang de``
+    let a ``FileNotFoundError`` escape into ``cli.py``'s OSError arm, which
+    reported ``error: cannot read <invoice>: No such file or directory`` and
+    exit 2 — blaming an invoice file that plainly exists, for a run that had
+    already validated it. A missing translation must never change a verdict.
     """
     if lang == "de":
-        entry = (catalog or load_catalog(path)).get(rule_id)
+        if catalog is None:
+            try:
+                catalog = load_catalog(path)
+            except (OSError, ValueError, KeyError):
+                return None
+        entry = catalog.get(rule_id)
         if entry is not None:
             return entry.get("message_de")
     return None

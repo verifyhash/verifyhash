@@ -328,9 +328,31 @@ def _artifact_json(name):
     ``<repo>/export/rules.json``, ...). Returns the parsed object, or ``None``
     when the file is not reachable (e.g. an installed-package context, where
     only the ``einvoice/`` package itself ships) or unparsable — ``info`` then
-    reports ``null`` for that field instead of crashing."""
+    falls back to the packaged attestation (see :func:`_packaged_attestation`)
+    or reports ``null`` for that field instead of crashing."""
     path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), name)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _packaged_attestation():
+    """Load ``attestation.json`` shipped INSIDE the package (the ``package-data``
+    trust proof) — the copy that travels in the wheel, distinct from the
+    source-tree copy next to the package that :func:`_artifact_json` reads.
+
+    In a source checkout the two are byte-identical (``test_attestation.py``
+    guards that), so reading this copy yields the same numbers. In an installed
+    wheel the source-tree artifacts (``coverage_matrix.json``,
+    ``syntax_binding_catalog.json``, the top-level ``attestation.json``) are NOT
+    shipped — only this packaged attestation is — so it is the sole on-disk
+    source the installed artifact can self-report from. Returns the parsed
+    object, or ``None`` if it is somehow absent/unparsable."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "attestation.json")
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
@@ -366,9 +388,14 @@ def _info_payload():
                                ``attestation.json`` (a generated hash — it has
                                no in-module recompute by design).
 
-    Fields whose artifact is unreachable (installed-package context) degrade
-    to ``None`` rather than raising; test_info.py asserts artifact equality
-    from the source checkout, so any drift fails the suite.
+    In an installed-wheel context the source-tree artifacts above are absent,
+    so ``rule_count``, the ``syntax_binding`` counts and ``attestation_sha256``
+    fall back to the packaged ``attestation.json`` (the ``package-data`` trust
+    proof shipped inside the wheel) and self-report the same real numbers a
+    checkout produces — never ``None``/0. The fallback is purely additive: with
+    the source artifacts present it never fires, so test_info.py + the registry
+    gates (which assert artifact equality from the source checkout) still hold,
+    and test_wheel_self_report.py pins the wheel-only path.
     """
     # Local imports: only the info path needs the coverage-matrix loader and
     # the syntax-binding evaluator; every other CLI path is left untouched.
@@ -376,30 +403,71 @@ def _info_payload():
     from . import syntax_binding_eval as _sbe
     from .report import REPORT_FORMATS
 
+    # WHEEL-CARRIED FALLBACK (additive, source-tree behaviour unchanged).
+    # The primary sources — coverage_matrix.json, syntax_binding_catalog.json,
+    # the top-level attestation.json — sit next to the package in a checkout but
+    # are NOT shipped in the wheel; only the package-data attestation.json
+    # travels inside the installed package. Each field below resolves from its
+    # primary source first and only falls back to that packaged attestation when
+    # the primary is genuinely absent (installed-wheel context). In a source
+    # checkout every primary source is present, so no fallback fires and the
+    # payload is byte-identical to before (test_info.py + the registry gates
+    # pin that); in a wheel the artifact self-reports its real numbers instead
+    # of null/0.
+    packaged = _packaged_attestation()
+    att_body = (packaged or {}).get("attestation") or {}
+
     try:
         matrix = _coverage.load_matrix()
         rule_count = int(matrix["rule_count"])
     except (OSError, KeyError, TypeError, ValueError):
         rule_count = None
+    if rule_count is None:
+        fallback_rc = (att_body.get("rules") or {}).get("count")
+        if fallback_rc is not None:
+            rule_count = int(fallback_rc)
 
     catalog = _sbe.load_catalog()
-    acct = (catalog or {}).get("accounting", {})
+    if catalog is not None:
+        # Source checkout: live-recompute the proven counts + read the catalog's
+        # own totals (the exact calls gen_export.py makes) — unchanged path.
+        acct = catalog.get("accounting", {})
 
-    def _total(syntax):
-        total = acct.get(syntax, {}).get("total")
-        return int(total) if total is not None else None
+        def _total(syntax):
+            total = acct.get(syntax, {}).get("total")
+            return int(total) if total is not None else None
 
-    coverage = {
-        "business_rules": {"total_asserted": rule_count},
-        "syntax_binding": {
+        syntax_binding = {
             "ubl": {"proven": len(_sbe.implemented_ids()),
                     "total": _total("ubl")},
             "cii": {"proven": len(_sbe.cii_implemented_ids()),
                     "total": _total("cii")},
-        },
+        }
+    else:
+        # Installed wheel: the catalog is absent, so the restricted evaluator has
+        # nothing to recompute from; take the proven/total figures the packaged
+        # attestation already carries (the same numbers a checkout produces).
+        att_sb = (att_body.get("coverage") or {}).get("syntax_binding") or {}
+
+        def _leg(syntax):
+            leg = att_sb.get(syntax) or {}
+            proven = leg.get("proven")
+            total = leg.get("total")
+            return {
+                "proven": int(proven) if proven is not None else 0,
+                "total": int(total) if total is not None else None,
+            }
+
+        syntax_binding = {"ubl": _leg("ubl"), "cii": _leg("cii")}
+
+    coverage = {
+        "business_rules": {"total_asserted": rule_count},
+        "syntax_binding": syntax_binding,
     }
 
-    attestation = _artifact_json("attestation.json")
+    # attestation_sha256: prefer the source-tree copy (byte-identical to the
+    # packaged one in a checkout), fall back to the packaged copy in a wheel.
+    attestation = _artifact_json("attestation.json") or packaged
     attestation_sha256 = (attestation or {}).get("content_sha256")
 
     return {

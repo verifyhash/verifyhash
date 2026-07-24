@@ -122,6 +122,29 @@ class StagedMetadata(unittest.TestCase):
                          "pyproject version must match einvoice.__version__ "
                          "(a mismatch ships a mislabelled sdist)")
 
+    def test_package_data_is_tight(self):
+        """package-data must ship the trust proof (attestation.json) and the
+        PEP 561 marker — and NOTHING heavy. The 276 KB coverage_matrix.json and
+        the corpus/ci/tests stay out of the wheel by living outside the package
+        dir; this guard additionally forbids them from being pulled in via a
+        package-data glob. Asserted on EVERY box (no wheel build needed)."""
+        m = re.search(
+            r"^einvoice\s*=\s*\[(.*?)\]", self.text, re.M | re.S)
+        self.assertIsNotNone(
+            m, "pyproject.toml must declare [tool.setuptools.package-data] for "
+               "the einvoice package")
+        items = re.findall(r'"([^"]+)"', m.group(1))
+        self.assertIn("attestation.json", items,
+                      "the attestation.json trust proof must ship as package-data")
+        self.assertIn("py.typed", items,
+                      "the PEP 561 py.typed marker must still ship")
+        for banned in ("coverage_matrix.json", "*", "corpus", "differential"):
+            for it in items:
+                self.assertNotIn(
+                    banned, it,
+                    "package-data entry %r would widen the wheel scope "
+                    "(no globs / heavy artifacts allowed)" % it)
+
     def test_republish_packet_exists_and_is_complete(self):
         self.assertTrue(os.path.isfile(PACKET),
                         "einvoice/REPUBLISH-PYPI.md must be committed as the "
@@ -188,7 +211,24 @@ class WheelFromVenv(unittest.TestCase):
             with zipfile.ZipFile(wheel) as zf:
                 names = zf.namelist()
                 self.assertIn("einvoice/cli.py", names)
-                self.assertNotIn("corpus", " ".join(names))
+                # the conformance-CLAIM attestation ships INSIDE the package as
+                # package-data, so the installed artifact carries its own trust
+                # proof (the whole point of T-VHPROOF.2).
+                self.assertIn("einvoice/attestation.json", names,
+                              "wheel must ship the attestation.json trust proof "
+                              "as package-data")
+                # …but the heavy, out-of-scope repo artifacts stay OUT of the
+                # wheel: the multi-hundred-MB corpus, the CI harness, the tests,
+                # and the 276 KB coverage_matrix.json (packages=['einvoice'] +
+                # a TIGHT package-data list is the size/scope contract).
+                joined = " ".join(names)
+                self.assertNotIn("corpus", joined)
+                self.assertNotIn("coverage_matrix.json", joined,
+                                 "the 276 KB coverage_matrix.json must NOT be "
+                                 "in the wheel")
+                for stray in ("/ci/", "test_", "differential.py"):
+                    self.assertNotIn(stray, joined,
+                                     "%r must not ship in the wheel" % stray)
 
             # a genuinely clean venv, then install FROM THE WHEEL (offline)
             venv_dir = os.path.join(tmp, "venv")

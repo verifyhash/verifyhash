@@ -62,7 +62,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GENERATORS = {
     # single- or fixed-set JSON/Markdown artifacts
     "gen_export": ["export/rules.json", "export/coverage.json"],
-    "gen_attestation": ["attestation.json"],
+    # attestation.json (source tree) + einvoice/attestation.json (the
+    # byte-identical copy shipped as wheel package-data); gen_attestation writes
+    # both from the same serialized bytes, so both must regenerate identically.
+    "gen_attestation": ["attestation.json", "einvoice/attestation.json"],
     "gen_sbom": ["sbom/bom.json"],
     "gen_cii_parity": ["cii_parity.json"],
     "gen_coverage": ["coverage_matrix.json", "COVERAGE.md"],

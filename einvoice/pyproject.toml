@@ -44,4 +44,15 @@ packages = ["einvoice"]
 [tool.setuptools.package-data]
 # PEP 561: ship the `py.typed` marker so the embedded type hints are honoured
 # by downstream type checkers (mypy/pyright) when einvoice is vendored/installed.
-einvoice = ["py.typed"]
+#
+# attestation.json: the tiny (~1.8 KB) byte-reproducible conformance-CLAIM
+# attestation (rule count, coverage headline, in-scope test-suite pass rates,
+# pinned corpus content hashes). Shipping it INSIDE the package means an
+# evaluator who runs `pip install verifyhash-einvoice` receives the trust proof
+# with the artifact itself, instead of a wheel that carries zero trust data.
+# gen_attestation.py writes this copy byte-identically to the top-level
+# einvoice/attestation.json from the same serialized bytes; test_attestation.py
+# asserts the two never diverge. The heavy corpus/, ci/, tests and the 276 KB
+# coverage_matrix.json deliberately stay OUT of the wheel (packages =
+# ["einvoice"] ships the package dir only).
+einvoice = ["py.typed", "attestation.json"]

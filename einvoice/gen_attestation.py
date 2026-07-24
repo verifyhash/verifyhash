@@ -47,6 +47,7 @@ from __future__ import annotations
 import collections
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import gen_sbom
@@ -58,6 +59,13 @@ COVERAGE_PATH = HERE / "export" / "coverage.json"
 TESTSUITE_PATH = HERE / "testsuite_conformance.json"
 BOM_PATH = HERE / "sbom" / "bom.json"
 ATTESTATION_PATH = HERE / "attestation.json"
+#: Second, byte-identical copy shipped INSIDE the ``einvoice`` package so it
+#: lands in the wheel as package-data (see pyproject.toml). A `pip install`
+#: evaluator then receives the conformance-CLAIM attestation with the artifact
+#: itself. main() writes BOTH from the SAME serialized bytes, so the source-tree
+#: copy and the packaged copy can never drift apart; test_attestation.py asserts
+#: their byte-identity.
+PACKAGE_ATTESTATION_PATH = HERE / "einvoice" / "attestation.json"
 
 #: Version of the attestation format itself (bump only on a breaking layout
 #: change), so a consumer can tell how to read an older attestation.
@@ -91,6 +99,10 @@ BOUND_ELSEWHERE = {
     "testsuite_conformance.json": "testsuite_conformance section (pass rates)",
     "sbom/bom.json": "corpus section (per-corpus pinned + re-walked SHA-256)",
     "attestation.json": "the attestation document itself (self-referential)",
+    "einvoice/attestation.json": (
+        "byte-identical wheel package-data copy of the attestation document "
+        "(same bytes as attestation.json; asserted equal in test_attestation.py)"
+    ),
 }
 
 #: Generator outputs that are deliberately NOT hash-bound because they are not
@@ -327,10 +339,27 @@ def attestation_json():
     return canonical_json(build_attestation()) + "\n"
 
 
+def _atomic_write_text(path, text):
+    """Write ``text`` (UTF-8) to ``path`` atomically via a temp file + rename.
+
+    A partial/interrupted write can never leave a half-written attestation on
+    disk, and because both copies are written from the SAME ``text`` string the
+    source-tree and packaged attestations are byte-identical by construction.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(str(tmp), str(path))
+
+
 def main(argv=None):
     text = attestation_json()
-    with ATTESTATION_PATH.open("w", encoding="utf-8") as fh:
-        fh.write(text)
+    # Write BOTH copies from the SAME serialized bytes so einvoice/attestation.json
+    # (source tree) and einvoice/einvoice/attestation.json (wheel package-data)
+    # can NEVER diverge. The packaged copy is what a `pip install` evaluator
+    # receives; test_attestation.py asserts the two stay byte-identical.
+    _atomic_write_text(ATTESTATION_PATH, text)
+    _atomic_write_text(PACKAGE_ATTESTATION_PATH, text)
     return 0
 
 

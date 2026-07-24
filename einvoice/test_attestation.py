@@ -137,6 +137,63 @@ class TestByteReproducibility(unittest.TestCase):
             int(entry["sha256"], 16)  # hex
 
 
+class TestPackagedCopyByteIdentical(unittest.TestCase):
+    """The wheel ships einvoice/attestation.json as package-data so a
+    `pip install verifyhash-einvoice` evaluator receives the conformance-CLAIM
+    attestation with the artifact itself. That packaged copy MUST be byte-for-
+    byte identical to the source-tree attestation.json: gen_attestation.main()
+    writes both from the SAME serialized bytes, and this guard fails the moment
+    they diverge (a stale hand-edit, or a regen of only one copy)."""
+
+    def test_packaged_copy_is_byte_identical_to_source(self):
+        source = (HERE / "attestation.json").read_bytes()
+        packaged = HERE / "einvoice" / "attestation.json"
+        self.assertTrue(
+            packaged.is_file(),
+            "einvoice/einvoice/attestation.json must exist as wheel package-data; "
+            "regenerate with `python3 gen_attestation.py`.",
+        )
+        self.assertEqual(
+            packaged.read_bytes(), source,
+            "the packaged einvoice/attestation.json must be byte-identical to the "
+            "source-tree attestation.json; regenerate both with "
+            "`python3 gen_attestation.py` (never hand-edit one copy).",
+        )
+
+    def test_gen_writes_both_copies_from_the_same_bytes(self):
+        # Regenerate into an isolated temp tree and confirm BOTH emitted copies
+        # are byte-identical to each other AND to the current source-tree file,
+        # proving main() sources both writes from one serialized string.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            for rel in _TREE_FILES:
+                target = tree / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(HERE / rel, target)
+            # gen_attestation writes into <tree>/einvoice/, so that dir must exist.
+            (tree / "einvoice").mkdir(parents=True, exist_ok=True)
+            os.symlink(HERE / "corpus", tree / "corpus")
+            proc = subprocess.run(
+                [sys.executable, "gen_attestation.py"],
+                cwd=str(tree),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
+            self.assertEqual(
+                proc.returncode, 0,
+                "gen_attestation.py must exit 0.\nstdout=%s\nstderr=%s"
+                % (proc.stdout, proc.stderr),
+            )
+            top = (tree / "attestation.json").read_bytes()
+            pkg = (tree / "einvoice" / "attestation.json").read_bytes()
+            self.assertEqual(top, pkg, "gen must write both copies identically")
+            self.assertEqual(
+                top, (HERE / "attestation.json").read_bytes(),
+                "regenerated attestation must match the committed one",
+            )
+
+
 class TestCleanVerify(unittest.TestCase):
     def test_verify_exits_zero_on_committed_tree(self):
         proc = _run_verify(HERE)

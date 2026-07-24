@@ -153,12 +153,12 @@ DE_WALKTHROUGH_DIR = os.path.join(DE_DIR, "walkthrough")
 # In-browser validator ENGINE BUNDLE (T-VHWEB.1) — www/validate/engine/.
 #
 # A BYTE-IDENTICAL copy of every einvoice package module (.py) the validate
-# path transitively imports, plus a manifest.json (sorted file list, sha256
-# per file, package version). The bundle is what a future Pyodide page
-# (T-VHWEB.2 — NOT built here) loads to validate an invoice fully in the
-# browser with zero install; the byte-identity drift guard in
-# test_web_bundle.py means the browser can never run a stale or divergent
-# engine.
+# path transitively imports PLUS the package's declared data files (see
+# ENGINE_DATA_FILES below), plus a manifest.json (sorted file list, sha256
+# per file, package version). The bundle is what the Pyodide page
+# (T-VHWEB.2) loads to validate an invoice fully in the browser with zero
+# install; the byte-identity drift guard in test_web_bundle.py means the
+# browser can never run a stale or divergent engine.
 #
 # The module set is NOT hand-listed: :func:`engine_bundle_modules` traces
 # import statements (via ``ast``, so function-level imports count too) from
@@ -168,6 +168,19 @@ DE_WALKTHROUGH_DIR = os.path.join(DE_DIR, "walkthrough")
 # ``python -m einvoice``). Files are copied as raw BYTES — never re-encoded
 # or rewritten — and the manifest is rendered with sort_keys, so emission is
 # deterministic and the run-twice byte-identity check in test_site.py holds.
+#
+# DATA FILES (T-VHWHEEL.5). An import trace can only ever see ``.py`` files,
+# so a pure-DATA dependency is structurally invisible to it and has to be
+# DECLARED. ``remediation_catalog.json`` is exactly that: ``report._record()``
+# relays each finding's ``title``/``fix_hint``/``terms``/``location`` from it,
+# and ``remediation.default_catalog_path()`` resolves the copy sitting next to
+# the package modules FIRST — which, once mounted, is
+# ``/engine/einvoice/remediation_catalog.json``. Without it in the bundle the
+# browser validator silently degrades to bare rule ids with no fix guidance
+# (measured: engine/remediation_catalog.json -> 404 while manifest.json ->
+# 200). It is emitted byte-identically and sha256-pinned like every module,
+# and the Pyodide loader writes EVERY manifest entry to /engine/einvoice/
+# with no extension filter — do not add one.
 # ---------------------------------------------------------------------------
 VALIDATE_DIR = os.path.join(SITE_DIR, "validate")
 ENGINE_DIR = os.path.join(VALIDATE_DIR, "engine")
@@ -175,6 +188,12 @@ ENGINE_DIR = os.path.join(VALIDATE_DIR, "engine")
 PKG_DIR = os.path.join(HERE, "einvoice")
 # Trace roots: the package init (public API) + the validate module itself.
 ENGINE_SEEDS = ("__init__", "validate")
+# Non-.py package data the validate path reads at RUNTIME. Declared here
+# because no import trace can discover it; each name is a file that must
+# exist under PKG_DIR (the packaged copy, i.e. what the wheel ships).
+# test_web_bundle.py pins this set: the manifest may carry .py files plus
+# EXACTLY these names and nothing else.
+ENGINE_DATA_FILES = ("remediation_catalog.json",)
 
 EXAMPLE_DIR = os.path.join(HERE, "examples", "01-missing-fields")
 EX_BROKEN = os.path.join(EXAMPLE_DIR, "broken.xml")
@@ -240,8 +259,13 @@ PYODIDE_SRI = ("sha384-"
                "Y0xVpf8xnYY2wjyRPIe9ZRoE61jRI5ihohgCmZlml2k7pWtPdL7ebjaNml0Esgzg")
 # Honest download figure shown on the load button: the pinned Pyodide runtime
 # (pyodide.js ~19 KB + pyodide.asm.wasm ~9.6 MB + python_stdlib.zip ~2.5 MB +
-# pyodide-lock.json ~0.1 MB) plus the ~1 MB engine bundle — ~13 MB uncompressed
-# (the CDN serves it compressed, so the wire cost is lower).
+# pyodide-lock.json ~0.1 MB) is ~12.2 MB of that. The engine bundle is the
+# rest: ~1.5 MB since T-VHWHEEL.5 added the ~0.5 MB remediation_catalog.json
+# (the traced .py closure alone is ~1.0 MB). Uncompressed that totals
+# ~13.7 MB, so the page's rounded "~13 MB" is a runtime-dominated figure that
+# still sits on the safe side of what a visitor actually pays: jsDelivr
+# serves the runtime compressed, and the catalog is highly compressible JSON.
+# Revisit this constant if the engine bundle ever grows past ~2 MB.
 PYODIDE_APPROX_MB = 13
 
 # CHECKOUT_URL — the ONE committed placeholder for the commercial-license
@@ -2242,7 +2266,10 @@ def render_de_walkthrough(catalog):
 #     the runtime + engine files themselves).
 #   * Render only engine output: the findings table is built verbatim from
 #     report.build_report()'s JSON (severity / rule / message, plus its own
-#     fatal/warning counts). Nothing is authored client-side.
+#     fatal/warning counts, plus the catalog-relayed `title` and `fix_hint`
+#     when the report carries them). Nothing is authored client-side — the
+#     only strings this page contributes are the column headers and the
+#     "Fix:" label; every hint is the committed catalog's own wording.
 #   * Honest failure: if the CDN, WebAssembly, or the engine mount fails, the
 #     page says so and shows the pip-install fallback — never a fake result.
 #
@@ -2322,10 +2349,15 @@ _VALIDATE_JS = r"""
     var manifest = await resp.json();
     engineVersion = String(manifest.version || "");
     var files = manifest.files || [];
+    // EVERY manifest entry is mounted, with NO extension filter: the bundle
+    // is the traced .py closure plus declared data files (currently
+    // remediation_catalog.json, which remediation.default_catalog_path()
+    // resolves right here at /engine/einvoice/). Filtering by extension
+    // would silently strip the fix hints.
     pyodide.FS.mkdirTree("/engine/einvoice");
     for (var k = 0; k < files.length; k++) {
       var fn = files[k];
-      setStatus("Mounting engine module " + (k + 1) + " / " + files.length +
+      setStatus("Mounting engine file " + (k + 1) + " / " + files.length +
                 " (" + fn + ")…");
       var r = await fetch("engine/" + fn);
       if (!r.ok) {
@@ -2391,7 +2423,18 @@ _VALIDATE_JS = r"""
     return td;
   }
 
-  function ruleCell(ruleId) {
+  // A catalog-relayed string is usable only when it really is a non-empty
+  // string. The enrichment keys (title / fix_hint / location / terms) are
+  // null whenever the remediation catalog is unreachable or has no entry for
+  // the rule, so every use goes through this guard and the page renders
+  // exactly as it did before the catalog shipped.
+  function catalogText(value) {
+    if (typeof value !== "string") { return ""; }
+    var s = value.trim();
+    return s === "" ? "" : value;
+  }
+
+  function ruleCell(ruleId, title) {
     var td = document.createElement("td");
     var code = document.createElement("code");
     code.textContent = ruleId;
@@ -2402,6 +2445,13 @@ _VALIDATE_JS = r"""
       td.appendChild(a);
     } else {
       td.appendChild(code);
+    }
+    // Plain-language label for the id, verbatim from the catalog entry.
+    var label = catalogText(title);
+    if (label) {
+      var t = document.createElement("div");
+      t.textContent = label;
+      td.appendChild(t);
     }
     return td;
   }
@@ -2448,9 +2498,24 @@ _VALIDATE_JS = r"""
     for (var m = 0; m < v.length; m++) {
       var tr = document.createElement("tr");
       tr.appendChild(severityCell(v[m].severity));
-      tr.appendChild(ruleCell(v[m].rule));
+      tr.appendChild(ruleCell(v[m].rule, v[m].title));
       var msg = document.createElement("td");
-      msg.textContent = v[m].message;
+      var msgText = document.createElement("div");
+      msgText.textContent = v[m].message;
+      msg.appendChild(msgText);
+      // The catalog's own one-line fix guidance, relayed VERBATIM (no
+      // wording is authored here). Absent/null -> nothing is added and the
+      // row is byte-for-byte what it was before.
+      var hint = catalogText(v[m].fix_hint);
+      if (hint) {
+        var fix = document.createElement("p");
+        fix.className = "assert";
+        var lbl = document.createElement("strong");
+        lbl.textContent = "Fix: ";
+        fix.appendChild(lbl);
+        fix.appendChild(document.createTextNode(hint));
+        msg.appendChild(fix);
+      }
       tr.appendChild(msg);
       tbody.appendChild(tr);
     }
@@ -2566,6 +2631,9 @@ def render_validate(catalog):
         "\ntable.cmp th, table.cmp td { border: 1px solid #d0d7de;"
         " padding: .45rem .6rem; text-align: left; vertical-align: top; }"
         "\ntable.cmp th { background: #f6f8fa; }"
+        # Spacing only, applied to the EXISTING .assert class, for the
+        # catalog fix line rendered under a finding's message.
+        "\ntable.cmp .assert { margin: .45rem 0 0; }"
         "\n@media (prefers-color-scheme: dark) {"
         " table.cmp th, table.cmp td { border-color: #30363d; }"
         " table.cmp th { background: #161b22; }"
@@ -2645,10 +2713,15 @@ def render_validate(catalog):
     w("<p>The output is the engine&rsquo;s own conformance report: a "
       "pass/fail verdict (fail means a <em>fatal</em> rule fired), the fatal "
       "and warning counts, and one row per finding with its severity, rule "
-      "id and message. Every rule id that has a reference page links to it — "
-      "the same pages under <a href=\"../rules/index.html\">the rule "
-      "index</a>, with the official Schematron assert, the BT/BG terms and a "
-      "concrete fix in English and German.</p>")
+      "id and message. Where the bundled remediation catalog has an entry "
+      "for the rule, the row also carries that entry&rsquo;s plain-language "
+      "title and its one-line <em>Fix</em> hint &mdash; the same wording the "
+      "CLI&rsquo;s <code>--json</code> report and the rule pages use, "
+      "relayed verbatim, never rephrased in the browser. Every rule id that "
+      "has a reference page links to it &mdash; the same pages under "
+      "<a href=\"../rules/index.html\">the rule index</a>, with the official "
+      "Schematron assert, the BT/BG terms and a concrete fix in English and "
+      "German.</p>")
     w("<p>Same limits as the CLI, stated plainly: no XSD structural "
       "validation; UBL <code>Invoice</code> and UBL 2.1 <code>CreditNote</code> "
       "are both validated through the same EN 16931 engine, plus CII (via the ZUGFeRD/"
@@ -2779,11 +2852,17 @@ def _module_internal_deps(name, mods):
 def engine_bundle_modules():
     """Sorted transitive import closure from ENGINE_SEEDS over the package.
 
-    This IS the bundle's file set (plus manifest.json). Deterministic: the
-    closure is a fixed point of :func:`_module_internal_deps` and the result
-    is sorted. Modules outside the closure (as of T-VHWEB.1: only
-    ``__main__``) are provably never imported by the validate path — the
-    only exclusion ground the task allows.
+    This is the ``.py`` HALF of the bundle's file set: the bundle is this
+    traced closure PLUS the declared data files in :data:`ENGINE_DATA_FILES`
+    (plus manifest.json). An import trace sees ``.py`` modules only, so a
+    pure-data dependency such as ``remediation_catalog.json`` can never show
+    up here and is declared separately — see :func:`render_engine`.
+
+    Deterministic: the closure is a fixed point of
+    :func:`_module_internal_deps` and the result is sorted. Modules outside
+    the closure (as of T-VHWEB.1: only ``__main__``) are provably never
+    imported by the validate path — the only exclusion ground the task
+    allows.
     """
     mods = _pkg_module_names()
     seen = set()
@@ -2798,17 +2877,26 @@ def engine_bundle_modules():
 def render_engine():
     """Map absolute path -> raw BYTES for www/validate/engine/ (pure).
 
-    Every traced module is copied byte-identically (read ``rb``, emitted
-    ``wb`` — no decode/re-encode, no newline translation, no rewriting).
-    manifest.json carries the sorted file list, a sha256 per file, and the
-    package version read live from ``einvoice.__version__``. Rendered with
-    ``sort_keys=True`` + fixed indent, so it is byte-deterministic.
+    The bundle is the traced ``.py`` closure (:func:`engine_bundle_modules`)
+    PLUS the declared data files (:data:`ENGINE_DATA_FILES`) — currently the
+    one file ``remediation_catalog.json``, which the import trace cannot see
+    but which ``report._record()`` reads at runtime to attach each finding's
+    title/fix hint/terms/location.
+
+    Every file — module or data — is copied byte-identically from ``PKG_DIR``
+    (read ``rb``, emitted ``wb`` — no decode/re-encode, no newline
+    translation, no rewriting) and gets a sha256 entry, because the browser
+    loader hard-stops on a pin mismatch. manifest.json carries the sorted
+    file list, a sha256 per file, and the package version read live from
+    ``einvoice.__version__``. Rendered with ``sort_keys=True`` + fixed
+    indent, so it is byte-deterministic.
     """
     out = {}
     files = []
     hashes = {}
-    for mod in engine_bundle_modules():
-        fn = mod + ".py"
+    bundled = [mod + ".py" for mod in engine_bundle_modules()]
+    bundled += list(ENGINE_DATA_FILES)
+    for fn in bundled:
         with open(os.path.join(PKG_DIR, fn), "rb") as fh:
             data = fh.read()
         out[os.path.join(ENGINE_DIR, fn)] = data

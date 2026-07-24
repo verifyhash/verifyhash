@@ -2,26 +2,36 @@
 """test_web_bundle.py — the in-browser validator ENGINE BUNDLE
 (``einvoice/www/validate/engine/``, T-VHWEB.1) must be a byte-identical,
 manifest-pinned, SELF-CONTAINED copy of the einvoice package modules the
-validate path transitively imports. This is the drift guard that makes it
-impossible for a future browser page (T-VHWEB.2) to run a stale or divergent
-engine: any byte of difference between a bundled module and its package
-source fails here.
+validate path transitively imports, plus the ONE declared data file it reads
+at runtime. This is the drift guard that makes it impossible for the browser
+page (T-VHWEB.2) to run a stale or divergent engine: any byte of difference
+between a bundled file and its package source fails here.
 
 Standard library only; no network; no browser. Run from the einvoice dir:
 
     python3 test_web_bundle.py
 
+The bundle's file set is ``.py`` modules PLUS exactly the names in
+:data:`DATA_FILES` (T-VHWHEEL.5: ``remediation_catalog.json``, which
+``report._record()`` reads to attach each finding's title/fix hint and which
+no import trace can discover). That allowance is NAMED and closed: any other
+non-``.py`` manifest entry still fails, and the allowed set is pinned against
+``gen_site.ENGINE_DATA_FILES`` so the generator cannot widen it unilaterally.
+
 Checks (each an independent hard assert):
 
-  (a) BYTE-IDENTITY: every ``*.py`` listed in manifest.json is byte-for-byte
-      identical (raw ``rb`` comparison — no decode, no newline forgiveness)
-      to the same-named module under ``einvoice/einvoice/``.
+  (a) BYTE-IDENTITY: every file listed in manifest.json — modules and the
+      declared data file alike — is byte-for-byte identical (raw ``rb``
+      comparison — no decode, no newline forgiveness) to the same-named file
+      under ``einvoice/einvoice/``.
   (b) MANIFEST INTEGRITY: manifest.json holds exactly the keys
       ``files``/``sha256``/``version``; ``files`` is sorted and non-empty;
-      the sha256 map covers exactly the same file set; every digest is
-      64-char lowercase hex AND equals the actual sha256 of the bundled
-      bytes; the on-disk directory holds EXACTLY files + manifest.json (no
-      extra file, no missing file, no subdirectory).
+      every entry is a ``.py`` module or one of the declared data files, and
+      every declared data file is present; the sha256 map covers exactly the
+      same file set; every digest is 64-char lowercase hex AND equals the
+      actual sha256 of the bundled bytes; the on-disk directory holds EXACTLY
+      files + manifest.json (no extra file, no missing file, no
+      subdirectory).
   (c) VERSION BINDING: manifest["version"] equals the live
       ``einvoice.__version__`` — read from the package, never a literal here,
       so a version bump with a stale bundle fails.
@@ -30,9 +40,13 @@ Checks (each an independent hard assert):
       resolves inside the bundle set, and every ABSOLUTE import is Python
       stdlib — so the bundle needs nothing but itself + a Python runtime.
       The seed modules ``__init__.py`` and ``validate.py`` must be present.
-  (e) GENERATOR AGREEMENT: the bundle file set equals what
+  (e) GENERATOR AGREEMENT: the bundle's module set equals what
       ``gen_site.engine_bundle_modules()`` traces right now — a module newly
-      imported by the validate path cannot be silently absent.
+      imported by the validate path cannot be silently absent — and its data
+      set equals ``gen_site.ENGINE_DATA_FILES``.
+  (f) DATA FILE USABLE: each declared data file is non-empty, parses as JSON,
+      and (for the remediation catalog) carries the ``rules`` mapping the
+      browser needs, so a mounted-but-unusable catalog cannot pass.
 """
 
 from __future__ import annotations
@@ -61,6 +75,12 @@ MANIFEST_PATH = os.path.join(ENGINE_DIR, "manifest.json")
 # ModuleNotFoundError with a committed fallback — it is never an external
 # dependency. Anything else non-stdlib fails check (d).
 _NEWER_STDLIB = {"tomllib"}
+
+# The CLOSED list of non-.py files the bundle is allowed to carry, written
+# out literally here (never derived from the generator) so that widening it
+# takes a deliberate edit to this test. main() additionally asserts this set
+# equals gen_site.ENGINE_DATA_FILES, so generator and test cannot drift.
+DATA_FILES = {"remediation_catalog.json"}
 
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -102,9 +122,24 @@ def main():
           "manifest 'files' is empty or not a list")
     check(files == sorted(files), "manifest 'files' is not sorted")
     check(len(files) == len(set(files)), "manifest 'files' has duplicates")
-    check(all(fn.endswith(".py") for fn in files),
-          "manifest lists a non-.py file: %r"
-          % [fn for fn in files if not fn.endswith(".py")])
+    # A manifest entry is either a .py module or one of the NAMED data files.
+    # Anything else — a stray asset, a directory, a second data file nobody
+    # declared — still fails, exactly as the blanket .py rule used to.
+    check(all(fn.endswith(".py") or fn in DATA_FILES for fn in files),
+          "manifest lists a file that is neither .py nor a declared data "
+          "file %r: %r"
+          % (sorted(DATA_FILES),
+             [fn for fn in files
+              if not fn.endswith(".py") and fn not in DATA_FILES]))
+    # ...and every declared data file must actually be there: dropping the
+    # remediation catalog silently strips every fix hint in the browser.
+    check(DATA_FILES <= set(files),
+          "manifest is missing declared data file(s): %r"
+          % sorted(DATA_FILES - set(files)))
+    # The generator's declaration and this test's allowance must agree.
+    check(set(_gen.ENGINE_DATA_FILES) == DATA_FILES,
+          "gen_site.ENGINE_DATA_FILES %r != this test's allowed set %r"
+          % (sorted(_gen.ENGINE_DATA_FILES), sorted(DATA_FILES)))
     check(set(hashes) == set(files),
           "manifest sha256 keys != files list; only-in-sha256=%s "
           "only-in-files=%s"
@@ -127,6 +162,9 @@ def main():
              sorted(set(files) - set(entries))[:5]))
 
     # ---- (a) byte-identity + (b) hash correctness ---------------------------
+    # Covers modules AND the declared data files uniformly: each is compared
+    # raw against einvoice/<fn> and against its manifest sha256 pin (the
+    # browser hard-stops on a pin mismatch, so the pin has to be real).
     bundled = {}
     for fn in files:
         bpath = os.path.join(ENGINE_DIR, fn)
@@ -156,11 +194,11 @@ def main():
     # ---- (d) self-containment: bundle imports nothing outside itself +
     # stdlib. Parsed from the BUNDLED bytes (what the browser would run),
     # with ast so function-level imports count.
-    bundle_mods = {fn[:-3] for fn in files}
+    bundle_mods = {fn[:-3] for fn in files if fn.endswith(".py")}
     stdlib = set(getattr(sys, "stdlib_module_names", ())) | _NEWER_STDLIB
     check(bool(getattr(sys, "stdlib_module_names", ())),
           "sys.stdlib_module_names unavailable — cannot audit imports")
-    for fn in sorted(bundled):
+    for fn in sorted(f for f in bundled if f.endswith(".py")):
         try:
             tree = ast.parse(bundled[fn])
         except SyntaxError as exc:
@@ -211,19 +249,53 @@ def main():
     # ---- (e) generator agreement: the traced closure is exactly the bundle --
     traced = set(_gen.engine_bundle_modules())
     check(traced == bundle_mods,
-          "gen_site.engine_bundle_modules() != bundled set; "
+          "gen_site.engine_bundle_modules() != bundled module set; "
           "traced-not-bundled=%s bundled-not-traced=%s"
           % (sorted(traced - bundle_mods)[:5],
              sorted(bundle_mods - traced)[:5]))
+    bundle_data = {fn for fn in files if not fn.endswith(".py")}
+    check(bundle_data == DATA_FILES,
+          "bundled data files %r != declared %r"
+          % (sorted(bundle_data), sorted(DATA_FILES)))
+
+    # ---- (f) the mounted data must be USABLE, not merely present -----------
+    # A truncated or unparseable catalog would mount fine and then leave the
+    # browser with no fix hints at all, which is the exact failure this task
+    # exists to close.
+    for fn in sorted(DATA_FILES & set(bundled)):
+        raw = bundled[fn]
+        check(len(raw) > 0, "%s: bundled data file is EMPTY" % fn)
+        doc = None
+        try:
+            doc = json.loads(raw.decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            check(False, "%s: bundled data file does not parse as JSON: %s"
+                  % (fn, exc))
+        if doc is not None and fn == "remediation_catalog.json":
+            rules = doc.get("rules") if isinstance(doc, dict) else None
+            check(isinstance(rules, dict) and bool(rules),
+                  "%s: no non-empty 'rules' mapping — the browser would show "
+                  "rule ids with no fix guidance" % fn)
+            if isinstance(rules, dict) and rules:
+                # At least one entry must carry the 'fix' text the page
+                # renders as its Fix line (report._record maps fix ->
+                # fix_hint).
+                check(any(isinstance(e, dict) and
+                          isinstance(e.get("fix"), str) and e["fix"].strip()
+                          for e in rules.values()),
+                      "%s: no rule entry carries a non-empty 'fix' string"
+                      % fn)
 
     if failures:
         sys.stderr.write("WEB BUNDLE TEST: FAIL (%d)\n" % len(failures))
         for m in failures[:40]:
             sys.stderr.write("  !! " + m + "\n")
         return 1
-    print("web bundle OK: %d modules byte-identical to the package, manifest "
-          "hashes/list/version bound, imports self-contained (stdlib only), "
-          "traced closure matches." % len(files))
+    print("web bundle OK: %d modules + %d declared data file(s) (%s) "
+          "byte-identical to the package, manifest hashes/list/version "
+          "bound, imports self-contained (stdlib only), traced closure "
+          "matches."
+          % (len(bundle_mods), len(bundle_data), ", ".join(sorted(bundle_data))))
     return 0
 
 

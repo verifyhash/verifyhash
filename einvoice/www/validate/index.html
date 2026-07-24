@@ -88,6 +88,7 @@ button.load[disabled] { opacity: .6; cursor: wait; }
 table.cmp { border-collapse: collapse; width: 100%; min-width: 30rem; margin: 0; font-size: .9rem; }
 table.cmp th, table.cmp td { border: 1px solid #d0d7de; padding: .45rem .6rem; text-align: left; vertical-align: top; }
 table.cmp th { background: #f6f8fa; }
+table.cmp .assert { margin: .45rem 0 0; }
 @media (prefers-color-scheme: dark) { table.cmp th, table.cmp td { border-color: #30363d; } table.cmp th { background: #161b22; } .dropzone { border-color: #30363d; } .status { border-color: #30363d; } }</style>
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebApplication", "name": "einvoice in-browser XRechnung / EN 16931 validator", "url": "https://verifyhash.com/einvoice/validate/", "description": "Drag an XRechnung UBL XML or ZUGFeRD/Factur-X PDF onto this page and the real 297-rule EN 16931 engine grades it in your browser via Pyodide (WebAssembly). Nothing is installed and the invoice is never uploaded — validation runs locally after a one-time ~13 MB runtime download.", "applicationCategory": "DeveloperApplication", "operatingSystem": "Any browser with WebAssembly; the invoice is processed locally and never uploaded", "isAccessibleForFree": true}</script>
 </head>
@@ -112,7 +113,7 @@ einvoice validate --profile xrechnung invoice.xml</code></pre>
 </div>
 <div id="result" aria-live="polite"></div>
 <h2>What you get, and honest limits</h2>
-<p>The output is the engine&rsquo;s own conformance report: a pass/fail verdict (fail means a <em>fatal</em> rule fired), the fatal and warning counts, and one row per finding with its severity, rule id and message. Every rule id that has a reference page links to it — the same pages under <a href="../rules/index.html">the rule index</a>, with the official Schematron assert, the BT/BG terms and a concrete fix in English and German.</p>
+<p>The output is the engine&rsquo;s own conformance report: a pass/fail verdict (fail means a <em>fatal</em> rule fired), the fatal and warning counts, and one row per finding with its severity, rule id and message. Where the bundled remediation catalog has an entry for the rule, the row also carries that entry&rsquo;s plain-language title and its one-line <em>Fix</em> hint &mdash; the same wording the CLI&rsquo;s <code>--json</code> report and the rule pages use, relayed verbatim, never rephrased in the browser. Every rule id that has a reference page links to it &mdash; the same pages under <a href="../rules/index.html">the rule index</a>, with the official Schematron assert, the BT/BG terms and a concrete fix in English and German.</p>
 <p>Same limits as the CLI, stated plainly: no XSD structural validation; UBL <code>Invoice</code> and UBL 2.1 <code>CreditNote</code> are both validated through the same EN 16931 engine, plus CII (via the ZUGFeRD/Factur-X PDF container) only. Every fireable official <code>BR-CL-*</code> code-list check is now implemented in both syntaxes. A green result means &ldquo;no implemented fatal rule fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. Browser-specific: the ~13&nbsp;MB runtime is real — on a metered or very slow connection the terminal route below is the better tool. Encrypted or exotic PDF containers the zero-dependency extractor cannot open are reported honestly as <code>unsupported-container</code>, never silently passed.</p>
 <h2>Prefer the terminal?</h2>
 <p>The browser page and the package run the <em>same</em> engine modules — the copies under <code>engine/</code> are byte-identical to the released package, pinned by sha256 in a committed manifest. Locally that is:</p>
@@ -194,10 +195,15 @@ Free and open source (Apache-2.0); see <a href="../licensing/index.html">licensi
     var manifest = await resp.json();
     engineVersion = String(manifest.version || "");
     var files = manifest.files || [];
+    // EVERY manifest entry is mounted, with NO extension filter: the bundle
+    // is the traced .py closure plus declared data files (currently
+    // remediation_catalog.json, which remediation.default_catalog_path()
+    // resolves right here at /engine/einvoice/). Filtering by extension
+    // would silently strip the fix hints.
     pyodide.FS.mkdirTree("/engine/einvoice");
     for (var k = 0; k < files.length; k++) {
       var fn = files[k];
-      setStatus("Mounting engine module " + (k + 1) + " / " + files.length +
+      setStatus("Mounting engine file " + (k + 1) + " / " + files.length +
                 " (" + fn + ")…");
       var r = await fetch("engine/" + fn);
       if (!r.ok) {
@@ -263,7 +269,18 @@ Free and open source (Apache-2.0); see <a href="../licensing/index.html">licensi
     return td;
   }
 
-  function ruleCell(ruleId) {
+  // A catalog-relayed string is usable only when it really is a non-empty
+  // string. The enrichment keys (title / fix_hint / location / terms) are
+  // null whenever the remediation catalog is unreachable or has no entry for
+  // the rule, so every use goes through this guard and the page renders
+  // exactly as it did before the catalog shipped.
+  function catalogText(value) {
+    if (typeof value !== "string") { return ""; }
+    var s = value.trim();
+    return s === "" ? "" : value;
+  }
+
+  function ruleCell(ruleId, title) {
     var td = document.createElement("td");
     var code = document.createElement("code");
     code.textContent = ruleId;
@@ -274,6 +291,13 @@ Free and open source (Apache-2.0); see <a href="../licensing/index.html">licensi
       td.appendChild(a);
     } else {
       td.appendChild(code);
+    }
+    // Plain-language label for the id, verbatim from the catalog entry.
+    var label = catalogText(title);
+    if (label) {
+      var t = document.createElement("div");
+      t.textContent = label;
+      td.appendChild(t);
     }
     return td;
   }
@@ -320,9 +344,24 @@ Free and open source (Apache-2.0); see <a href="../licensing/index.html">licensi
     for (var m = 0; m < v.length; m++) {
       var tr = document.createElement("tr");
       tr.appendChild(severityCell(v[m].severity));
-      tr.appendChild(ruleCell(v[m].rule));
+      tr.appendChild(ruleCell(v[m].rule, v[m].title));
       var msg = document.createElement("td");
-      msg.textContent = v[m].message;
+      var msgText = document.createElement("div");
+      msgText.textContent = v[m].message;
+      msg.appendChild(msgText);
+      // The catalog's own one-line fix guidance, relayed VERBATIM (no
+      // wording is authored here). Absent/null -> nothing is added and the
+      // row is byte-for-byte what it was before.
+      var hint = catalogText(v[m].fix_hint);
+      if (hint) {
+        var fix = document.createElement("p");
+        fix.className = "assert";
+        var lbl = document.createElement("strong");
+        lbl.textContent = "Fix: ";
+        fix.appendChild(lbl);
+        fix.appendChild(document.createTextNode(hint));
+        msg.appendChild(fix);
+      }
       tr.appendChild(msg);
       tbody.appendChild(tr);
     }

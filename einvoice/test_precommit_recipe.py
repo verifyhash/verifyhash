@@ -24,6 +24,18 @@ Asserted (each maps to a task acceptance criterion):
       is a ref that can actually resolve — this repo has no git tags, so a
       `v*`-shaped rev would hand adopters an unresolvable pin. The full
       cross-file sweep lives in test_doc_refs_resolvable.py.
+  (h) INSTALL-HINT PARITY: the unimportable-validator hint printed by BOTH CI
+      scripts (ci/pre-commit-einvoice.sh, ci/validate-invoices.sh) and the
+      remote manifest that INVOKES the first of them (.pre-commit-hooks.yaml)
+      must offer the SAME primary install command, and it must be the real
+      published distribution `verifyhash-einvoice` — not a `/path/to/einvoice`
+      the stuck adopter does not have. Regression pinned: until T-VHTRUTH.3 the
+      manifest said `pip install verifyhash-einvoice` while the script it ran
+      said `pip install /path/to/einvoice`, so the recipe and its own script
+      disagreed at the exact moment an adopter was blocked. Also pinned here:
+      the local-checkout route is still OFFERED (air-gapped CI needs it) but
+      strictly AFTER the PyPI line, and neither script ever EXECUTES an install
+      — every `pip install` occurrence stays inside an `echo`.
 """
 
 import os
@@ -39,8 +51,20 @@ ROOT_MANIFEST = os.path.join(os.path.dirname(HERE), ".pre-commit-hooks.yaml")
 #: `main` or a full 40-hex commit SHA — the only refs that resolve today.
 RESOLVABLE_REV = re.compile(r"\A(?:main|[0-9a-f]{40})\Z")
 HOOK = os.path.join(CI_DIR, "pre-commit-einvoice.sh")
+GATE = os.path.join(CI_DIR, "validate-invoices.sh")
 CONFIG = os.path.join(CI_DIR, ".pre-commit-config.yaml")
 README = os.path.join(CI_DIR, "README.md")
+
+#: The ONE PyPI distribution name this project publishes the validator under,
+#: pinned as a literal so the parity assertion in (h) can never go vacuous by
+#: comparing two files that drifted together onto some other command.
+DIST = "verifyhash-einvoice"
+PRIMARY_INSTALL = "python3 -m pip install " + DIST
+#: First `python3 -m pip install <target>` a reader meets in a file. The target
+#: stops at whitespace or the punctuation these files wrap commands in.
+INSTALL_CMD = re.compile(r"python3 -m pip install ([^\s\"'`),;]+)")
+#: The local-checkout alternative that must stay offered, but only AFTER PyPI.
+CHECKOUT_PATH = "/path/to/einvoice"
 
 BROKEN = os.path.join(HERE, "examples", "01-missing-fields", "broken.xml")
 FIXED = os.path.join(HERE, "examples", "01-missing-fields", "fixed.xml")
@@ -69,6 +93,50 @@ def run_hook(args, cwd):
     return subprocess.run(
         ["sh", HOOK, *args], cwd=cwd, env=env,
         capture_output=True, text=True, timeout=120)
+
+
+def primary_install(path):
+    """The FIRST `python3 -m pip install <target>` command in `path`, i.e. the
+    remedy a stuck reader tries first. None if the file names none."""
+    m = INSTALL_CMD.search(read(path))
+    return m.group(0) if m else None
+
+
+def install_hint_parity():
+    """(h) The scripts' hint and the manifest that invokes them must name the
+    same primary install command, and the checkout route must stay available
+    below it without ever being executed."""
+    sources = (
+        ("ci/pre-commit-einvoice.sh", HOOK),
+        ("ci/validate-invoices.sh", GATE),
+        (".pre-commit-hooks.yaml", ROOT_MANIFEST),
+    )
+    primaries = {}
+    for label, path in sources:
+        cmd = primary_install(path)
+        primaries[label] = cmd
+        check(cmd == PRIMARY_INSTALL,
+              "%s offers %r as its FIRST install command (got %r)"
+              % (label, PRIMARY_INSTALL, cmd))
+    check(len(set(primaries.values())) == 1,
+          "the two CI scripts and .pre-commit-hooks.yaml agree on ONE primary "
+          "install command (no drift): %r" % (primaries,))
+
+    for label, path in sources[:2]:
+        body = read(path)
+        pypi_at = body.find(DIST)
+        checkout_at = body.find(CHECKOUT_PATH)
+        check(pypi_at != -1 and (checkout_at == -1 or pypi_at < checkout_at),
+              "%s names %s BEFORE any %s (PyPI is the first remedy offered)"
+              % (label, DIST, CHECKOUT_PATH))
+        check(checkout_at != -1,
+              "%s still offers the checkout/vendored route (%s) as an "
+              "alternative — the honest air-gapped answer" % (label, CHECKOUT_PATH))
+        executed = [l.strip() for l in body.splitlines()
+                    if "pip install" in l and "echo" not in l]
+        check(not executed,
+              "%s never EXECUTES an install (every `pip install` sits inside an "
+              "echo); offending line(s): %r" % (label, executed))
 
 
 def main():
@@ -123,6 +191,10 @@ def main():
     check(bool(revs) and all(RESOLVABLE_REV.match(r) for r in revs),
           "root .pre-commit-hooks.yaml documents resolvable rev(s) "
           "(main / 40-hex sha), not a v*-shaped tag: %r" % (revs,))
+
+    # (h) install-hint <-> manifest parity (see the module docstring)
+    check(os.path.isfile(GATE), "CI gate script exists: %s" % GATE)
+    install_hint_parity()
 
     if FAILURES:
         print("\nFAIL: %d check(s) failed" % len(FAILURES))

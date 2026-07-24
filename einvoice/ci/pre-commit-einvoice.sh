@@ -87,9 +87,11 @@ elif python3 -c "import einvoice.report" >/dev/null 2>&1; then
     RUNNER="python3 -m einvoice.report"
 else
     echo "error: the einvoice.report entrypoint is not importable." >&2
-    echo "  install the validator (python3 -m pip install /path/to/einvoice)," >&2
-    echo "  run from the vendored source dir, or set" >&2
-    echo "  EINVOICE_CMD=\"python3 -m einvoice.report\" with PYTHONPATH set." >&2
+    echo "  install it from PyPI:  python3 -m pip install verifyhash-einvoice" >&2
+    echo "  alternatives (air-gapped): install a checkout / vendored copy:" >&2
+    echo "    python3 -m pip install /path/to/einvoice" >&2
+    echo "  or install nothing and point the hook at a source dir:" >&2
+    echo "    EINVOICE_CMD=\"python3 -m einvoice.report\" PYTHONPATH=/path/to/einvoice" >&2
     exit 2
 fi
 

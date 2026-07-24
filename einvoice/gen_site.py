@@ -789,8 +789,10 @@ def render_landing():
       "<code>BR-CL-*</code> code-list check is now implemented in both "
       "syntaxes (the ids the engine does not assert are documented deliberate "
       "exclusions — never-firing <code>test=\"true()\"</code> tautologies), "
-      "structural XSD validation is not performed, and there is no UBL "
-      "<code>CreditNote</code> root. The exact implemented set and its limits "
+      "structural XSD validation is not performed, and a UBL 2.1 "
+      "<code>CreditNote</code> (root <code>CreditNote-2:CreditNote</code>) is "
+      "validated through the same EN 16931 engine as an <code>Invoice</code>. "
+      "The exact implemented set and its limits "
       "are written up in the repository README, <code>COVERAGE.md</code> and "
       "<code>CORRECTNESS.md</code>.</p>")
     w("<p>Weighing this against the free official toolchain? Read the honest "
@@ -1380,9 +1382,6 @@ def render_compare():
       "Mustangproject writes them — builds the PDF/A-3, embeds the XML. "
       "<code>einvoice</code> is validation-only and will never produce an "
       "invoice.</li>")
-    w("<li><strong>You validate UBL <code>CreditNote</code> documents.</strong> "
-      "There is no UBL <code>CreditNote</code> root support here; the "
-      "official toolchain handles them.</li>")
     w("</ul>")
     w("<p>The honest summary: use the official KoSIT validator as your "
       "authority, Mustangproject when Java or PDF-writing is in play, and "
@@ -1495,8 +1494,9 @@ def render_de():
       "zur&uuml;ckgestellten Pr&uuml;fungen mehr.</li>")
     w("<li>Eine strukturelle <strong>XSD-Validierung findet nicht statt</strong>; "
       "gepr&uuml;ft werden die Gesch&auml;ftsregeln, nicht das Schema. Ein "
-      "UBL-<code>CreditNote</code>-Wurzelelement wird nicht "
-      "unterst&uuml;tzt.</li>")
+      "UBL-2.1-<code>CreditNote</code> (Wurzel "
+      "<code>CreditNote-2:CreditNote</code>) wird durch dieselbe "
+      "EN-16931-Engine wie eine <code>Invoice</code> validiert.</li>")
     w("<li>4 offizielle Regeln (<code>BR-CO-05</code>&#8211;"
       "<code>BR-CO-08</code>) sind in den CEN-Artefakten selbst als "
       '<code>test="true()"</code>-Tautologien ausgeliefert — sie k&ouml;nnen '
@@ -2650,8 +2650,9 @@ def render_validate(catalog):
       "index</a>, with the official Schematron assert, the BT/BG terms and a "
       "concrete fix in English and German.</p>")
     w("<p>Same limits as the CLI, stated plainly: no XSD structural "
-      "validation, UBL <code>Invoice</code> and CII (via the ZUGFeRD/"
-      "Factur-X PDF container) only — no UBL <code>CreditNote</code>. Every "
+      "validation; UBL <code>Invoice</code> and UBL 2.1 <code>CreditNote</code> "
+      "are both validated through the same EN 16931 engine, plus CII (via the ZUGFeRD/"
+      "Factur-X PDF container) only. Every "
       "fireable official <code>BR-CL-*</code> code-list check is now "
       "implemented in both syntaxes. A green result means &ldquo;no implemented fatal rule "
       "fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. "

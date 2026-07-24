@@ -11,6 +11,46 @@ Versions here are the single source of truth together with
 (`__version__`); `test_release_discipline.py` fails the build if the three
 ever diverge.
 
+## [0.2.7] - 2026-07-24
+
+A packaging and robustness release for the INSTALLED artifact. The engine is
+untouched: no rule, coverage, corpus or test-suite numbers change from 0.2.6,
+and a source checkout behaves identically. What changes is what a
+`pip install verifyhash-einvoice` user actually receives.
+
+This is a new version rather than a re-cut of 0.2.6 because the 0.2.6 wheel on
+PyPI is published and immutable. Leaving both builds named `0.2.6` would mean a
+lockfile pin, a CI pin or a bug report could not distinguish the wheel whose
+default report format crashes from the fixed one.
+
+### Fixed
+
+- **`remediation_catalog.json` is now shipped inside the wheel** (as
+  `einvoice` package-data, 502,693 bytes raw / ~34 KB compressed). Reports
+  produced by a pip-installed copy now carry non-null `title`, `fix_hint`,
+  `terms` and `location` on each violation — the fields `report.schema.json`
+  advertises. Before, an installed user was told a rule id had failed with
+  nothing to fix it with; only a source checkout, which reads the catalog from
+  the repo root, produced populated guidance.
+- **`--format sarif` and `--explain` no longer raise `FileNotFoundError` when
+  the catalog is unreachable.** Every report path now degrades to the
+  catalog-less result (rule ids without enrichment) instead of aborting with a
+  traceback, so a missing or unreadable catalog can no longer turn a validation
+  run into a crash. This is the CI-visible one: `sarif` is the bundled GitHub
+  Action's default `format`, and the Action writes a SARIF file for
+  `codeql-action/upload-sarif` regardless of the format chosen, so on a
+  catalog-less install the default path was the crashing one. SARIF is now
+  emitted whole and valid; the only degradation is that no rule earns a
+  `helpUri` deep-link. `--explain` on a catalog-less install prints one honest
+  stderr line instead of a traceback.
+- **`python3 -m einvoice.report --help` and `-h` print usage to stdout and exit
+  0.** The help flags previously fell through to the positional-argument check,
+  so a documented entry point answered `--help` with `error: no such file:
+  --help`. `--help` is now answered before any path or flag-value resolution,
+  from anywhere on argv. The BARE invocation is unchanged and still an error
+  (usage to stderr, non-zero) — help is a requested output, a missing argument
+  is not.
+
 ## [0.2.6] - 2026-07-23
 
 The engine now fires 297 rules (was 295): the last two deferred code-list

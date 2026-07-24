@@ -70,7 +70,12 @@ GENERATORS = {
     "gen_cii_parity": ["cii_parity.json"],
     "gen_coverage": ["coverage_matrix.json", "COVERAGE.md"],
     "gen_known_open_audit": ["known_open_audit.json"],
-    "gen_remediation": ["remediation_catalog.json"],
+    # remediation_catalog.json (source tree) + einvoice/remediation_catalog.json
+    # (the byte-identical copy shipped as wheel package-data, so an installed
+    # wheel emits real fix guidance instead of null title/fix_hint/location);
+    # gen_remediation writes both from the same serialized bytes.
+    "gen_remediation": ["remediation_catalog.json",
+                        "einvoice/remediation_catalog.json"],
     "gen_rules_doc": ["einvoice/RULES.md"],
     "gen_syntax_binding": ["syntax_binding_catalog.json"],
     "gen_testsuite_conformance": ["testsuite_conformance.json"],

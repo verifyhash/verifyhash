@@ -55,4 +55,16 @@ packages = ["einvoice"]
 # asserts the two never diverge. The heavy corpus/, ci/, tests and the 276 KB
 # coverage_matrix.json deliberately stay OUT of the wheel (packages =
 # ["einvoice"] ships the package dir only).
-einvoice = ["py.typed", "attestation.json"]
+#
+# remediation_catalog.json: an installed wheel must carry ACTIONABLE fix
+# guidance, not just rule ids. einvoice.report relays the catalog's title /
+# fix_hint / terms / location into every violation record (the fields
+# report.schema.json advertises); without the catalog in the wheel those come
+# back null/empty and a `pip install` user is told a rule broke with nothing to
+# fix it with. It is the one heavy-ish exception, and it earns it: 502 KB raw
+# but ~35 KB gzipped (measured: 34,882 bytes) against a ~311 KB wheel — and it
+# must be a file, not a fetch, because zero-dependency OFFLINE operation is
+# what the compare page sells. gen_remediation.py writes this copy
+# byte-identically to the top-level einvoice/remediation_catalog.json from the
+# same serialized bytes; test_remediation_catalog.py asserts they never diverge.
+einvoice = ["py.typed", "attestation.json", "remediation_catalog.json"]

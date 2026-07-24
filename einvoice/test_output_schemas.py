@@ -95,6 +95,12 @@ VALIDATED_FILES = {
 SCHEMED_ELSEWHERE = {
     "attestation.json":
         "published attestation.schema.json; guarded by test_attestation_schema.py",
+    "einvoice/attestation.json":
+        "the byte-identical wheel package-data COPY of attestation.json above "
+        "(gen_attestation.py writes both from one serialized string); it carries "
+        "the same published attestation.schema.json shape, and "
+        "test_attestation.py asserts the two copies never diverge, so schema "
+        "coverage is inherited rather than duplicated.",
 }
 
 # ---------------------------------------------------------------------------
@@ -125,6 +131,13 @@ EXEMPT = {
     "remediation_catalog.json":
         "internal source-of-truth remediation catalog; its adopter-facing fields "
         "(title/fix) are surfaced through rules.json (schema'd) and the report.",
+    "einvoice/remediation_catalog.json":
+        "the byte-identical wheel package-data COPY of remediation_catalog.json "
+        "above (gen_remediation.py writes both from one serialized string, and "
+        "test_remediation_catalog.py asserts they never diverge); it ships so an "
+        "installed wheel can emit real fix guidance, and it inherits the same "
+        "exemption — a consumer parses the REPORT (report.schema.json), never "
+        "this catalog directly.",
     "syntax_binding_catalog.json":
         "internal syntax-binding restriction catalog feeding the engine + "
         "coverage export; its adopter-facing counts surface in info/coverage.",

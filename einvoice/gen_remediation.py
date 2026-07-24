@@ -50,6 +50,18 @@ from einvoice import rules_peppol as _rules_pep    # noqa: E402
 from einvoice import coverage as _coverage         # noqa: E402
 
 OUT_PATH = os.path.join(HERE, "remediation_catalog.json")
+#: Second, byte-identical copy shipped INSIDE the ``einvoice`` package so it
+#: lands in the wheel as package-data (see pyproject.toml). Without it a
+#: `pip install verifyhash-einvoice` user gets a validator that names a broken
+#: rule and hands them NOTHING to fix it with: every report record's
+#: ``title``/``fix_hint``/``location`` comes back null and ``terms`` empty,
+#: because :func:`einvoice.remediation.default_catalog_path` can only see the
+#: repo-root copy, which the wheel does not ship. main() writes BOTH copies from
+#: the SAME serialized bytes (and --check compares both), so they can never
+#: drift apart; test_remediation_catalog.py asserts their byte-identity. This
+#: mirrors gen_attestation.py's PACKAGE_ATTESTATION_PATH exactly — one
+#: mechanism, no hand-maintained second copy.
+PACKAGE_OUT_PATH = os.path.join(HERE, "einvoice", "remediation_catalog.json")
 SCH = "{http://purl.oclc.org/dsdl/schematron}"
 
 # The official UBL Schematron artifacts every fireable rule can be read out of.
@@ -1320,20 +1332,35 @@ def render(catalog):
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
 
+def _read_or_none(path):
+    """Current text of ``path``, or ``None`` when it does not exist."""
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
 def main(argv):
     text = render(build_catalog())
+    # BOTH copies are compared/written from the SAME serialized `text`, so the
+    # source-tree catalog and the wheel package-data copy can never diverge.
+    targets = [(OUT_PATH, "remediation_catalog.json"),
+               (PACKAGE_OUT_PATH, "einvoice/remediation_catalog.json")]
     if "--check" in argv:
-        cur = open(OUT_PATH, encoding="utf-8").read() if os.path.exists(OUT_PATH) else None
-        if cur != text:
+        stale = [label for path, label in targets
+                 if _read_or_none(path) != text]
+        if stale:
             sys.stderr.write("stale (re-run gen_remediation.py): %s\n"
-                             % os.path.basename(OUT_PATH))
+                             % ", ".join(stale))
             return 1
         print("remediation catalog up to date")
         return 0
-    with open(OUT_PATH, "w", encoding="utf-8") as fh:
-        fh.write(text)
+    for path, _label in targets:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
     n = json.loads(text)["rule_count"]
-    print("wrote %s (%d rules)" % (os.path.basename(OUT_PATH), n))
+    print("wrote %s + %s (%d rules)"
+          % (os.path.basename(OUT_PATH), targets[1][1], n))
     return 0
 
 

@@ -10,10 +10,11 @@ einvoice`` succeeds.
 The risk this test exists to catch
 --------------------------------------
 ``pyproject.toml`` ships ONLY the pure-Python ``einvoice`` package
-(``[tool.setuptools] packages = ["einvoice"]``, package-data = just
-``py.typed``). It deliberately does NOT ship the multi-hundred-MB ``corpus/``,
-nor the repo-root JSON catalogs (``remediation_catalog.json``,
-``coverage_matrix.json``, ``syntax_binding_catalog.json``). Several package
+(``[tool.setuptools] packages = ["einvoice"]``, plus a TIGHT package-data list:
+``py.typed``, ``attestation.json``, ``remediation_catalog.json``). It
+deliberately does NOT ship the multi-hundred-MB ``corpus/``, nor the heavy
+repo-root JSON catalogs (``coverage_matrix.json``,
+``syntax_binding_catalog.json``). Several package
 modules DO compute a repo-root path (``os.path.dirname(os.path.dirname(
 __file__))``) to read those catalogs. If the ``validate`` code path needed any
 of them at runtime, a genuine install — where that repo tree is ABSENT from the
@@ -79,11 +80,28 @@ EXIT_FAIL = 1
 
 # Repo-root data the wheel must NOT ship; if any appears in the install
 # location the "package only" packaging contract is broken.
+#
+# NOTE: `remediation_catalog.json` used to be on this list and was DELIBERATELY
+# removed (T-VHWHEEL.1). It is now declared package-data and ships INSIDE the
+# package, because einvoice.report relays that catalog's title / fix_hint /
+# terms / location into every violation record: without it an installed wheel
+# names a broken rule and hands the user nothing to fix it with (measured:
+# all four fields null/empty from a wheel, populated from a source checkout).
+# It is ~35 KB gzipped, so the size contract still holds. REQUIRED_IN_INSTALL
+# below asserts it is really there, so this is a moved requirement, not a
+# dropped one — the heavy artifacts above stay forbidden.
 FORBIDDEN_IN_INSTALL = (
     "corpus",
-    "remediation_catalog.json",
     "coverage_matrix.json",
     "syntax_binding_catalog.json",
+)
+
+# Package-data the wheel MUST ship: the trust proof an evaluator checks
+# (attestation.json, T-VHPROOF.2) and the remediation catalog that makes the
+# installed validator actionable (remediation_catalog.json, T-VHWHEEL.1).
+REQUIRED_IN_INSTALL = (
+    "einvoice/attestation.json",
+    "einvoice/remediation_catalog.json",
 )
 
 
@@ -413,21 +431,43 @@ class InstalledPackageValidates(unittest.TestCase):
         self.assertEqual(pkgs, ["einvoice"],
                          "unexpected top-level packages installed: %r" % pkgs)
 
-    def test_install_ships_no_corpus_or_catalogs(self):
-        """The install location must contain the package ONLY — never the
-        multi-hundred-MB corpus or the repo-root JSON catalogs. That the
-        validation tests above still pass proves validate() needs none of it."""
+    def _installed_files(self):
+        """Every file in the install location, as install-relative paths."""
         present = set()
         for root, _dirs, files in os.walk(self.site):
             for f in files:
                 present.add(os.path.relpath(os.path.join(root, f), self.site))
-        blob = "\n".join(present)
+        return present
+
+    def test_install_ships_no_corpus_or_heavy_catalogs(self):
+        """The install location must contain the package ONLY — never the
+        multi-hundred-MB corpus or the heavy repo-root JSON catalogs. That the
+        validation tests above still pass proves validate() needs none of it."""
+        blob = "\n".join(self._installed_files())
         for forbidden in FORBIDDEN_IN_INSTALL:
             self.assertNotIn(forbidden, blob,
                              "install must not ship %r" % forbidden)
         if self.wheel_manifest is not None:  # real wheel was built
             self.assertNotIn("corpus", " ".join(self.wheel_manifest))
             self.assertIn("einvoice/cli.py", self.wheel_manifest)
+
+    def test_install_ships_the_declared_package_data(self):
+        """The tight package-data list must actually LAND in the install — an
+        installed wheel that lost its trust proof or its remediation catalog is
+        the exact failure this pair of files exists to prevent."""
+        present = self._installed_files()
+        normalised = {p.replace(os.sep, "/") for p in present}
+        for required in REQUIRED_IN_INSTALL:
+            self.assertIn(
+                required, normalised,
+                "install must ship declared package-data %r (present: %s)"
+                % (required, sorted(n for n in normalised
+                                    if n.startswith("einvoice/")
+                                    and n.endswith(".json"))))
+        if self.wheel_manifest is not None:  # real wheel was built
+            for required in REQUIRED_IN_INSTALL:
+                self.assertIn(required, self.wheel_manifest,
+                              "wheel must ship %r as package-data" % required)
 
 
 if __name__ == "__main__":

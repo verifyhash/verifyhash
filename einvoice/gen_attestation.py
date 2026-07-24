@@ -103,6 +103,11 @@ BOUND_ELSEWHERE = {
         "byte-identical wheel package-data copy of the attestation document "
         "(same bytes as attestation.json; asserted equal in test_attestation.py)"
     ),
+    "einvoice/remediation_catalog.json": (
+        "byte-identical wheel package-data copy of remediation_catalog.json, "
+        "which is itself hashed once in TRUST_ARTIFACTS above (asserted equal "
+        "in test_remediation_catalog.py)"
+    ),
 }
 
 #: Generator outputs that are deliberately NOT hash-bound because they are not

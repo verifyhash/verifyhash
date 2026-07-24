@@ -101,10 +101,12 @@ def capabilities() -> dict:
     :func:`einvoice.cli._info_payload`): ``version``, ``profiles``,
     ``formats``, ``rule_count``, ``coverage`` and ``attestation_sha256``.
     Every value is read at runtime from the package or its committed
-    artifacts, never retyped. Honest limit: the artifact-sourced fields
-    (``rule_count``, parts of ``coverage``, ``attestation_sha256``) degrade to
-    ``None`` in an installed-package context where the repo artifacts are not
-    on disk — only a source checkout carries them.
+    artifacts, never retyped. In an installed-package context the repo-root
+    artifacts (``coverage_matrix.json``, ``syntax_binding_catalog.json``, the
+    top-level ``attestation.json``) are not on disk, so the artifact-sourced
+    fields (``rule_count``, parts of ``coverage``, ``attestation_sha256``) fall
+    back to the ``attestation.json`` shipped INSIDE the wheel and self-report
+    the same real numbers a source checkout produces.
 
     :returns: dict with the six documented keys (JSON-serialisable).
     """

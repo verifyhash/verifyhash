@@ -74,7 +74,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: einvoice
-        uses: verifyhash/einvoice-action@v1   # pin — see "Pinning & vendoring"
+        # `main` tracks the tip; swap it for a full 40-char commit SHA to pin.
+        uses: verifyhash/verifyhash/einvoice/action@main   # see "Pinning & vendoring"
         with:
           path: invoices/
           fail-on: fatal
@@ -95,33 +96,46 @@ the offending file.
 
 ## Pinning & vendoring (the version story)
 
-**Pin the Action to a tag, never a branch.** A consumer references it as:
+**There are no release tags today.** `git ls-remote --tags
+https://github.com/verifyhash/verifyhash` returns nothing, so any `@v1` /
+`@v1.2.0`-shaped reference you may have seen elsewhere would fail to resolve.
+The two refs that actually work are the branch and a commit SHA:
 
 ```yaml
-uses: verifyhash/einvoice-action@v1     # moving major tag, or
-uses: verifyhash/einvoice-action@v1.2.0 # exact release, or
-uses: verifyhash/einvoice-action@<40-char-sha>  # strictest (immutable)
+uses: verifyhash/verifyhash/einvoice/action@main             # tracks the tip, or
+uses: verifyhash/verifyhash/einvoice/action@<40-char-sha>    # reproducible (recommended)
 ```
 
-- **`@v1`** — a *moving* major tag that the maintainers advance to the latest
-  compatible release. Convenient; you trust the maintainer not to ship a
-  breaking change under the same major.
-- **`@v1.2.0`** — an exact, immutable-by-convention release tag. Reproducible
-  until you deliberately bump it.
-- **`@<sha>`** — pin to a commit SHA for a fully immutable reference (a tag can,
-  in principle, be moved; a SHA cannot). Recommended for supply-chain-strict
-  repos.
+- **`@main`** — always the newest committed Action *and* the newest committed
+  rule set. Fine for trying it out; it is a moving target, so a rule landing
+  upstream can change your build's verdict without a change on your side.
+- **`@<40-char-sha>`** — a full commit SHA from
+  `github.com/verifyhash/verifyhash/commits/main`. Immutable: the Action code
+  and the validator behind it are frozen at exactly that commit. Use this in
+  any repo where a reproducible build matters.
 
-**How the package ships with the Action.** The Action repository
-(`verifyhash/einvoice-action`) vendors the zero-dependency `einvoice` Python
-package alongside this `action/` directory, so at run time `run.py` locates the
-package by walking up from its own location (override with `$EINVOICE_ROOT`) and
-drives `python3 -m einvoice.report` against it. There is nothing to `pip
-install` — the runner uses only the Python standard library, and the validator
-itself has zero runtime dependencies. Because the package travels *inside* the
-pinned tag/SHA, pinning the Action pins the exact validator (and therefore the
-exact rule set) your build runs against. That is deliberate: an invoice that
-passes today keeps passing on the same pin even as new rules land upstream.
+Note the three-segment path: the Action is **not** a standalone repository, so
+`uses:` names `<owner>/<repo>/<subdirectory>@<ref>` — GitHub's documented form
+for an Action living in a subdirectory of another repo. If release tags are
+published later this section will name them; until then, treating a `v*` ref as
+valid is the one mistake to avoid.
+
+**How the package ships with the Action.** The Action lives in the
+`einvoice/action/` subdirectory of this monorepo — the same repository that
+holds the zero-dependency `einvoice` Python package at `einvoice/`. At run time
+`run.py` walks up from its own location to find that sibling package (override
+with `$EINVOICE_ROOT`) and drives `python3 -m einvoice.report` against it. There
+is nothing to `pip install` — the runner uses only the Python standard library,
+and the validator itself has zero runtime dependencies. Because the package
+lives in the same commit as the Action, pinning the ref pins the exact validator
+(and therefore the exact rule set) your build runs against. That is deliberate:
+an invoice that passes on a SHA pin keeps passing on that pin even as new rules
+land upstream.
+
+The same walk-up is what makes the Action work when you *vendor* the product
+into your own repo (e.g. at `third_party/einvoice/`): point `uses:` at the local
+directory — `uses: ./third_party/einvoice/action` — and `run.py` finds the
+vendored package next to itself, no `pip install` and no network fetch.
 
 To adopt newer rules, bump the pin and re-run — a diff in findings is then an
 explicit, reviewable change rather than a silent drift.
@@ -158,6 +172,7 @@ explicit, reviewable change rather than a silent drift.
 ## Publishing is human / supervisor
 
 This directory only *commits* the Action definition (`action.yml`), the runner
-(`run.py`), and this README. **Tagging a release, moving the `@v1` major tag,
-and listing on the GitHub Marketplace are performed by a human / the supervisor
-at a run boundary** — the build loop never pushes tags or publishes.
+(`run.py`), and this README. **Tagging a release and listing on the GitHub
+Marketplace are performed by a human / the supervisor at a run boundary** — the
+build loop never pushes tags or publishes. That is why no release tag exists
+yet, and why the pins documented above are `main` and commit SHAs.

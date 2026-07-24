@@ -26,10 +26,15 @@ defines NO second engine, and invents NO new output format. It only:
          entrypoint already emits (``--format json`` → ``warning_count``); we do
          NOT add an engine flag for this.
 
-Standard library only. No network. The runner locates the vendored ``einvoice``
-package by walking up from its own directory (override with ``$EINVOICE_ROOT``),
-so it works both in this repo and when the product is vendored into the Action
-repository the consumer pins with ``uses: verifyhash/einvoice-action@vX``.
+Standard library only. No network. There is no standalone Action repository:
+this Action ships in the ``einvoice/action/`` subdirectory of the verifyhash
+monorepo, next to the ``einvoice/`` package itself, and a consumer references it
+by the three-segment subdirectory form
+``uses: verifyhash/verifyhash/einvoice/action@<ref>`` (``<ref>`` = ``main`` or a
+full 40-char commit SHA — no release tags exist). The runner locates the
+``einvoice`` package by walking up from its own directory (override with
+``$EINVOICE_ROOT``), so it works both here and when the product is vendored into
+a consumer repo and referenced by local path (``uses: ./third_party/einvoice/action``).
 """
 
 from __future__ import annotations

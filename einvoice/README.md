@@ -886,7 +886,9 @@ Add this to **your** repo's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/verifyhash/verifyhash
-    rev: v0.1.1            # pin to a tag or commit sha
+    rev: main              # no release tags exist yet; for a reproducible
+                           # build pin a full 40-char commit SHA from
+                           # github.com/verifyhash/verifyhash/commits instead
     hooks:
       - id: einvoice
 ```
@@ -910,8 +912,8 @@ importable in the environment `pre-commit` runs in. Install it once:
 
 ```sh
 python3 -m pip install verifyhash-einvoice
-# (pending first publish — until then, install from a checkout/vendored copy:
-#  python3 -m pip install /path/to/einvoice)
+# or, from a checkout / vendored copy:
+#  python3 -m pip install /path/to/einvoice
 ```
 
 (or export `EINVOICE_CMD` / `PYTHONPATH` to point the wrapper at a source

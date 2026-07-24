@@ -18,9 +18,11 @@
 #   3. Point `uses:` at the vendored Action's directory. Below it is written
 #      `uses: ./action`, which assumes the einvoice `action/` folder sits at
 #      YOUR repo root; if you vendored under third_party/einvoice/ change it to
-#      `uses: ./third_party/einvoice/action`. Alternatively, once the Action is
-#      published, pin the marketplace version instead:
-#          uses: verifyhash/einvoice-action@v1   # pin a tag or 40-char SHA
+#      `uses: ./third_party/einvoice/action`. Alternatively, skip vendoring and
+#      reference the Action in place, by its monorepo subdirectory path:
+#          uses: verifyhash/verifyhash/einvoice/action@main
+#      There are NO release tags, so `main` (tracking) or a full 40-char commit
+#      SHA (reproducible, recommended) are the only refs that resolve.
 #   4. Put the invoices to validate under invoices/ (or set `path:` below).
 # No `pip install` is needed: the runner is Python-stdlib-only and the validator
 # has zero runtime dependencies (it is imported from the vendored package).

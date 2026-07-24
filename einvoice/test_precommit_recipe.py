@@ -20,9 +20,14 @@ Asserted (each maps to a task acceptance criterion):
       legacy `python3 -m einvoice` validate CLI).
   (f) ci/.pre-commit-config.yaml wires it as a local hook scoped to *.xml, and
       ci/README.md documents the opt-in hook driving einvoice.report.
+  (g) every `rev:` the REMOTE recipe documents (repo-root .pre-commit-hooks.yaml)
+      is a ref that can actually resolve — this repo has no git tags, so a
+      `v*`-shaped rev would hand adopters an unresolvable pin. The full
+      cross-file sweep lives in test_doc_refs_resolvable.py.
 """
 
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -30,6 +35,9 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CI_DIR = os.path.join(HERE, "ci")
+ROOT_MANIFEST = os.path.join(os.path.dirname(HERE), ".pre-commit-hooks.yaml")
+#: `main` or a full 40-hex commit SHA — the only refs that resolve today.
+RESOLVABLE_REV = re.compile(r"\A(?:main|[0-9a-f]{40})\Z")
 HOOK = os.path.join(CI_DIR, "pre-commit-einvoice.sh")
 CONFIG = os.path.join(CI_DIR, ".pre-commit-config.yaml")
 README = os.path.join(CI_DIR, "README.md")
@@ -109,6 +117,12 @@ def main():
           "README states the hook drives the real einvoice.report entrypoint")
     check("opt in" in doc.lower() or "opt-in" in doc.lower(),
           "README states the hook is opt-in / installs nothing automatically")
+
+    # (g) the remote recipe's documented rev must be resolvable (no tags exist)
+    revs = re.findall(r"\brev:\s*(\S+)", read(ROOT_MANIFEST))
+    check(bool(revs) and all(RESOLVABLE_REV.match(r) for r in revs),
+          "root .pre-commit-hooks.yaml documents resolvable rev(s) "
+          "(main / 40-hex sha), not a v*-shaped tag: %r" % (revs,))
 
     if FAILURES:
         print("\nFAIL: %d check(s) failed" % len(FAILURES))

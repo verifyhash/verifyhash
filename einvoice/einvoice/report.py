@@ -1128,8 +1128,13 @@ def build_sarif(report):
     results = []        # list of SARIF result dicts
 
     # The set of ids for which an authoritative rule-reference page exists;
-    # only these earn a ``helpUri`` deep-link. Loaded once per call.
-    catalog_ids = load_catalog()
+    # only these earn a ``helpUri`` deep-link. Read through the DEFENSIVE
+    # module accessor (never the raw catalog loader): an installation
+    # whose remediation catalog is missing or unreadable degrades to an empty
+    # mapping, which here simply means "no rule earns a helpUri" — the SARIF
+    # document is still produced in full and stays valid. A packaging slip must
+    # never turn the Action's DEFAULT ``format: sarif`` into a traceback.
+    catalog_ids = _remediation_catalog()
 
     if report.get("error"):
         # Not-well-formed XML: a single error result, no rule metadata — the
@@ -1940,9 +1945,14 @@ def format_explain(rule_id, catalog=None):
     meaning of its own. Lookup is case-insensitive and matched against the
     catalog keys (the fireable rule ids, e.g. ``BR-01``, ``BR-DE-15``,
     ``BR-DE-23-a``), and the canonical key is echoed back in the output.
+
+    With no ``catalog`` argument the DEFENSIVE module accessor supplies it, so
+    an installation whose catalog file is missing/unreadable yields an empty
+    mapping and this returns ``None`` (the caller reports it) rather than
+    raising ``FileNotFoundError`` at the user.
     """
     if catalog is None:
-        catalog = load_catalog()
+        catalog = _remediation_catalog()
     entry = catalog.get(rule_id)
     canonical = rule_id
     if entry is None:
@@ -2000,6 +2010,16 @@ def main(argv=None):
     i = 0
     while i < len(args):
         a = args[i]
+        # --help / -h is answered BEFORE any path or flag-value resolution, so
+        # it works from anywhere on argv and never reaches the positional check
+        # (which used to answer a documented entry point's `--help` with the
+        # nonsense "error: no such file: --help"). Help is a SUCCESSFUL,
+        # requested output: USAGE to STDOUT, exit 0. The BARE invocation keeps
+        # its pinned contract (USAGE to stderr, non-zero) — it is an error, not
+        # a request.
+        if a in ("--help", "-h"):
+            sys.stdout.write(USAGE + "\n")
+            return EXIT_OK
         if a == "--explain":
             if i + 1 >= len(args):
                 sys.stderr.write("error: --explain needs a rule id\n" + USAGE + "\n")
@@ -2068,7 +2088,18 @@ def main(argv=None):
                 "error: --explain is a catalog lookup and cannot be combined "
                 "with --format or --baseline\n%s\n" % USAGE)
             return EXIT_FAIL
-        block = format_explain(explain_id)
+        # An installation with NO usable catalog (missing/unreadable
+        # remediation_catalog.json) is a different failure from "that id is
+        # not catalogued": say so honestly in one line instead of blaming the
+        # user's rule id — and never a traceback.
+        catalog = _remediation_catalog()
+        if not catalog:
+            sys.stderr.write(
+                "error: no remediation catalog available in this installation "
+                "(remediation_catalog.json is missing or unreadable) — "
+                "--explain has nothing to look %r up in\n" % explain_id)
+            return EXIT_FAIL
+        block = format_explain(explain_id, catalog)
         if block is None:
             sys.stderr.write(
                 "error: unknown rule id %r — not in the remediation catalog "

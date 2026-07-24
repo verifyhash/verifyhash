@@ -19,6 +19,8 @@ from contextlib import redirect_stderr, redirect_stdout
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from einvoice.cli import main, VALID_SUBCOMMANDS, OUTPUT_FORMATS, EXIT_OK
+from einvoice.report import (  # noqa: E402
+    main as report_main, USAGE as REPORT_USAGE)
 
 
 def _run(argv):
@@ -26,6 +28,15 @@ def _run(argv):
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
         code = main(argv)
+    return code, out.getvalue(), err.getvalue()
+
+
+def _run_report(argv):
+    """Invoke ``python3 -m einvoice.report`` in-process with ``argv``;
+    return (exit_code, stdout, stderr)."""
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = report_main(argv)
     return code, out.getvalue(), err.getvalue()
 
 
@@ -88,6 +99,56 @@ class HelpFlagTest(unittest.TestCase):
         code, _, err = _run(["bogus", "/tmp/nope.xml"])
         self.assertEqual(code, 2)
         self.assertIn("unknown subcommand", err)
+
+
+class ReportHelpFlagTest(unittest.TestCase):
+    """``python3 -m einvoice.report`` is a DOCUMENTED public entry point (the
+    GitHub Action, README, QUICKSTART and every CI recipe invoke it), but until
+    T-VHWHEEL.2 it answered ``--help`` with the nonsense ``error: no such file:
+    --help`` and exited 1 — the argument loop fell through to the positional
+    path check. MEASURED at 4d5adb6, both ``--help`` and ``-h``.
+
+    Help is a REQUESTED output, so it goes to stdout with exit 0. The BARE
+    invocation is a different thing — a usage ERROR — and keeps its pinned
+    contract (usage on stderr, non-zero, empty stdout); that split is what
+    test_stdout_purity.py's machine-surface discipline relies on.
+    """
+
+    def test_help_exits_ok_with_usage_on_stdout(self):
+        code, out, err = _run_report(["--help"])
+        self.assertEqual(code, 0, "report --help must exit 0")
+        self.assertIn("usage:", out)
+        self.assertIn(REPORT_USAGE, out,
+                      "--help must print the module's own USAGE constant")
+        self.assertEqual(err, "", "--help must not write to stderr")
+
+    def test_short_h_is_byte_identical_to_long_help(self):
+        _, out_long, _ = _run_report(["--help"])
+        code, out_short, err = _run_report(["-h"])
+        self.assertEqual(code, 0, "report -h must exit 0")
+        self.assertEqual(out_short, out_long,
+                         "-h must produce byte-identical output to --help")
+        self.assertEqual(err, "")
+
+    def test_help_wins_before_any_path_resolution(self):
+        # The defect was that --help reached the positional/isfile check. Prove
+        # it is answered first even when a bogus path is also on argv.
+        for argv in (["/tmp/definitely-not-here.xml", "--help"],
+                     ["--format", "sarif", "--help"],
+                     ["-h", "/tmp/definitely-not-here.xml"]):
+            with self.subTest(argv=argv):
+                code, out, err = _run_report(argv)
+                self.assertEqual(code, 0, "help must win over %r" % (argv,))
+                self.assertIn("usage:", out)
+                self.assertNotIn("no such file", out + err)
+
+    def test_bare_invocation_keeps_its_pinned_error_contract(self):
+        # NOT changed by the --help work: no args is a usage ERROR.
+        code, out, err = _run_report([])
+        self.assertNotEqual(code, 0,
+                            "bare `python3 -m einvoice.report` must stay non-zero")
+        self.assertEqual(out, "", "a usage error must keep stdout empty")
+        self.assertIn("usage:", err, "bare invocation prints usage on stderr")
 
 
 if __name__ == "__main__":

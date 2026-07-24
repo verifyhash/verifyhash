@@ -98,9 +98,24 @@ def official_message(rule_id, lang, catalog=None, path=None):
 
     ``catalog`` may be a preloaded ``rule_id -> entry`` mapping (avoids re-reading
     the JSON per violation); otherwise the committed catalog is loaded.
+
+    An installation whose catalog file is MISSING or unreadable degrades to
+    ``None`` — i.e. the caller keeps its English message — exactly as an
+    uncatalogued rule id does. This is the ``report._remediation_catalog()``
+    discipline applied to the CLI's ``--lang de`` path (T-VHWHEEL.2): MEASURED
+    on a catalog-less wheel image, ``einvoice validate <valid-path> --lang de``
+    let a ``FileNotFoundError`` escape into ``cli.py``'s OSError arm, which
+    reported ``error: cannot read <invoice>: No such file or directory`` and
+    exit 2 — blaming an invoice file that plainly exists, for a run that had
+    already validated it. A missing translation must never change a verdict.
     """
     if lang == "de":
-        entry = (catalog or load_catalog(path)).get(rule_id)
+        if catalog is None:
+            try:
+                catalog = load_catalog(path)
+            except (OSError, ValueError, KeyError):
+                return None
+        entry = catalog.get(rule_id)
         if entry is not None:
             return entry.get("message_de")
     return None

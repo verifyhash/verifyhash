@@ -209,8 +209,9 @@ the two disagree.
 | Exempt (E) category | BR-E-02/03/04 (Seller VAT id for E line/allowance/charge), BR-E-05/06/07 (E rate = 0), BR-E-08 (taxable = Σ E line nets − allowances + charges), BR-E-09 (tax = 0), BR-E-10 (exemption reason text/code REQUIRED on E) |
 | Decimal precision (max 2 places) | BR-DEC-01, BR-DEC-02, BR-DEC-05, BR-DEC-06, BR-DEC-09, BR-DEC-10, BR-DEC-11, BR-DEC-12, BR-DEC-14, BR-DEC-16, BR-DEC-17, BR-DEC-18, BR-DEC-19, BR-DEC-20, BR-DEC-23 |
 
-Plus two structural checks: S-WF (well-formed XML) and S-ROOT (UBL Invoice-2
-root). Rule wording follows the vendored EN 16931 Schematron
+Plus two structural checks: S-WF (well-formed XML) and S-ROOT (the root is a
+gradeable one — UBL `Invoice`, UBL `CreditNote`, or CII `CrossIndustryInvoice`).
+Rule wording follows the vendored EN 16931 Schematron
 (`corpus/cen-en16931/ubl/schematron/abstract/EN16931-model.sch`) verbatim.
 
 ### Implemented — XRechnung CIUS layer (`--profile=xrechnung`, first-slice 32 BR-DE table; now 55 incl. `BR-DE-CVD-*`/`BR-TMP-*`/`BR-DEX-*`)
@@ -669,10 +670,13 @@ and are recomputed live by `test_syntax_binding.py`.
 `flag=warning`, and this category is **advisory only**: a syntax-binding finding
 **never** changes `valid` and **never** changes the exit code — the `0`/`1`
 verdict above stays driven solely by fatal `BR-*` violations. The human summary
-adds one line, `Syntax-binding warnings: N`. The CLI validates UBL `Invoice`
-documents (a CII document hits the `S-ROOT` structural rule under either profile),
-so it emits the UBL ids; the CII binding's syntax-binding layer is exercised
-through the report/library path. Full field docs:
+adds one line, `Syntax-binding warnings: N`. This array carries **UBL ids only**
+— not because CII is refused (the CLI grades a raw `CrossIndustryInvoice` on its
+business rules like any other document, see [`EXIT-CODES.md`](EXIT-CODES.md)) but
+because `report.syntax_binding_section` runs only the implemented UBL entries, so
+a CII document validates normally and reports `syntax_bindings: []`. The CII
+binding's own asserts are evaluated by `einvoice.syntax_binding_eval.cii_fired_ids`
+and differentially proven by the `differential.py sbcii` leg. Full field docs:
 [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md).
 
 ### Reproduce this yourself

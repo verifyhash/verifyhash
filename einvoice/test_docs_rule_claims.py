@@ -61,6 +61,11 @@ validation. Run: python3 test_docs_rule_claims.py
 ALSO (T-VHDOCV.6, bottom of this file): the fireable-rule count stated in
 CHANGELOG.md's topmost released section is bound to the same
 ``engine_fireable_ids()`` registry — see ChangelogFireableCountBound.
+
+ALSO (T-VHCII3.2, bottom of this file): the CII-absence denylist that
+``test_www_claims.py`` applies to the generated ``www/`` pages is REUSED here
+(imported, never re-declared) against the tracked markdown docs — see
+TrackedDocsCiiCapability.
 """
 
 import os
@@ -72,6 +77,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from einvoice import coverage as _coverage  # noqa: E402
+
+# T-VHCII3.2: the CII-absence denylist and its engine probe are DEFINED ONCE, in
+# test_www_claims.py, and reused here for the tracked markdown docs. Importing
+# (rather than copying the patterns) is the point: a forked denylist is exactly
+# the drift source this guard exists to kill. Only these two names are pulled in
+# — no TestCase class — so nothing is double-collected by a test runner.
+import test_www_claims as _www_claims  # noqa: E402
+from test_www_claims import (  # noqa: E402
+    CII_ABSENCE_DENIALS, probe_raw_cii_root_accepted)
 
 README = os.path.join(HERE, "README.md")
 EN_DASH = "–"
@@ -573,6 +587,192 @@ class InstallSurfaceRuleCountBound(unittest.TestCase):
         live = str(len(fireable()))
         self.assertIn(live, _read(PYPROJECT))
         self.assertIn(live, _read(ACTION_README))
+
+
+# --------------------------------------------------------------------------- #
+# T-VHCII3.2: CII-absence guard extended from www/ to the TRACKED MARKDOWN DOCS.
+#
+# T-VHCII3.1 made our raw-XML surfaces grade a `CrossIndustryInvoice` root on
+# its real business rules; T-VHCII3.3 added CII_ABSENCE_DENIALS in
+# test_www_claims.py so no GENERATED sales page could keep telling readers the
+# tool is UBL-only. But the denylist was scoped to www/ alone, and five TRACKED
+# documents kept the falsehood for two more releases — COVERAGE.md ("the raw-XML
+# CLI surface stays honestly UBL-only"), EXIT-CODES.md ("direct XML validation
+# is UBL-only"), REPORT-SCHEMA.md ("validates through the UBL-only validate_file
+# code path"), README.md and SPEC.md. An ERP developer evaluating the German
+# mandate reads EXIT-CODES.md or COVERAGE.md BEFORE installing anything, so the
+# docs are the earlier, more damaging surface. This class closes that gap by
+# pointing the SAME imported denylist at the same docs.
+#
+# Deliberately NOT a second pattern list: `CII_ABSENCE_DENIALS` is imported
+# above. Whoever tightens or loosens a pattern does it in one place and both
+# surfaces move together.
+# --------------------------------------------------------------------------- #
+
+#: The tracked markdown docs a prospect actually reads before installing.
+CII_GUARDED_DOCS = (
+    "README.md", "COVERAGE.md", "SPEC.md", "EXIT-CODES.md",
+    "REPORT-SCHEMA.md", "CHANGELOG.md",
+)
+
+#: Documents are matched in a whitespace-collapsed rendering (same convention as
+#: test_www_claims' `_normalize`, minus tag stripping) so a claim that happens to
+#: straddle a markdown line wrap is still caught.
+_WS_RE = re.compile(r"\s+")
+
+
+def _normalize_doc(text):
+    return _WS_RE.sub(" ", text)
+
+
+#: EXPLICIT ALLOWLIST — (doc, excerpt, reason). A denial match is excused only if
+#: it falls entirely INSIDE an occurrence of the excerpt in that document. Every
+#: entry is a rule-BINDING or measurement-METHOD statement about the official
+#: Schematron artifacts (how many EN 16931 asserts bind to which syntax, and how
+#: a `syntax = UBL + CII` tag is earned), never a claim about which documents we
+#: accept — so each must survive untouched. Both non-vacuity directions are
+#: asserted below: a stale excerpt and an unnecessary excerpt each fail the gate.
+CII_DENIAL_ALLOWLIST = (
+    ("README.md",
+     "12 are officially UBL-only, and 4 are CII-only** (`BR-TMP-3` and "
+     "`BR-DEX-15`, whose asserts exist only in the CII artifact",
+     "rule-binding COUNT fact: those two asserts exist in the official CII "
+     "artifact only — about the Schematron, not about our accepted roots"),
+    ("COVERAGE.md",
+     "The UBL artifact carries nine asserts; the CII artifact carries the same "
+     "nine plus BR-TMP-3, which exists ONLY in the CII binding",
+     "the same BR-TMP-3 binding fact, stated in the CVD/TMP worklist section"),
+    ("COVERAGE.md",
+     "a rule reaches `syntax = UBL + CII` only via a landed `differential.py` "
+     "proof",
+     "measurement METHOD: a both-syntaxes tag is only awarded by a landed "
+     "differential proof — a proof-discipline statement, not a capability "
+     "denial"),
+)
+
+
+def _doc_text(name):
+    with open(os.path.join(HERE, name), encoding="utf-8") as fh:
+        return _normalize_doc(fh.read())
+
+
+def _allowed_spans(doc, text):
+    """Character spans in ``text`` covered by this doc's allowlist excerpts."""
+    spans = []
+    for entry_doc, excerpt, _reason in CII_DENIAL_ALLOWLIST:
+        if entry_doc != doc:
+            continue
+        start = text.find(excerpt)
+        while start != -1:
+            spans.append((start, start + len(excerpt)))
+            start = text.find(excerpt, start + 1)
+    return spans
+
+
+#: The exact sentences these documents SHIPPED, kept as the non-vacuity anchor:
+#: if a future refactor of the shared patterns stopped catching them, this guard
+#: would silently become decoration.
+SHIPPED_DOC_FALSEHOODS = (
+    "- **The raw-XML CLI surface stays honestly UBL-only:** `einvoice "
+    "validate` on a raw CII `.xml` file returns the structural `S-ROOT` fatal",
+    "`build_receipt` validates through the UBL-only `validate_file` code path",
+)
+
+
+class TrackedDocsCiiCapability(unittest.TestCase):
+    """No tracked markdown doc may tell a reader raw CII is out of scope."""
+
+    def test_probe_shows_raw_cii_really_is_graded(self):
+        """Anchor the denylist to the engine, not to an opinion. If the engine
+        ever stopped grading a raw CII root the denials would become TRUE and
+        this guard must fail HERE, not by flagging honest prose."""
+        present, evidence = probe_raw_cii_root_accepted()
+        self.assertTrue(
+            present,
+            "PROBE FAILED — the engine no longer grades a raw CII root (%s). "
+            "Fix the engine; CII_ABSENCE_DENIALS is only a denylist of "
+            "falsehoods while this holds." % evidence)
+
+    def test_denylist_is_the_shared_one_not_a_fork(self):
+        """The patterns must be the SAME object test_www_claims applies to
+        www/. A pasted copy here would drift the moment one side is tuned."""
+        self.assertIs(CII_ABSENCE_DENIALS, _www_claims.CII_ABSENCE_DENIALS)
+        self.assertTrue(CII_ABSENCE_DENIALS, "denylist is empty — vacuous gate")
+
+    def test_no_tracked_doc_claims_cii_absence(self):
+        present, evidence = probe_raw_cii_root_accepted()
+        self.assertTrue(present, evidence)  # covered in detail above
+        patterns = [re.compile(p, re.IGNORECASE) for p in CII_ABSENCE_DENIALS]
+        offenders = []
+        for doc in CII_GUARDED_DOCS:
+            text = _doc_text(doc)
+            allowed = _allowed_spans(doc, text)
+            for pat in patterns:
+                for m in pat.finditer(text):
+                    if any(lo <= m.start() and m.end() <= hi
+                           for lo, hi in allowed):
+                        continue
+                    offenders.append(
+                        "%s claims CII-absence via /%s/ -> matched %r "
+                        "(engine proof: %s)"
+                        % (doc, pat.pattern, m.group(0), evidence))
+        self.assertEqual(
+            offenders, [],
+            "tracked docs tell readers raw CII is unsupported or PDF-"
+            "container-only:\n  " + "\n  ".join(offenders))
+
+    def test_guard_would_have_caught_the_shipped_doc_falsehoods(self):
+        """Non-vacuity #1: the shared patterns really fire on the exact
+        sentences this task removed from COVERAGE.md and REPORT-SCHEMA.md."""
+        patterns = [re.compile(p, re.IGNORECASE) for p in CII_ABSENCE_DENIALS]
+        for sample in SHIPPED_DOC_FALSEHOODS:
+            self.assertTrue(
+                any(p.search(sample) for p in patterns),
+                "no CII_ABSENCE_DENIALS pattern catches the falsehood this "
+                "lane actually shipped: %r" % sample)
+        # ...and those sentences are really gone from the docs.
+        for sample in SHIPPED_DOC_FALSEHOODS:
+            for doc in CII_GUARDED_DOCS:
+                self.assertNotIn(sample, _doc_text(doc),
+                                 "%s still carries %r" % (doc, sample))
+
+    def test_every_allowlist_excerpt_is_present_and_needed(self):
+        """Non-vacuity #2: the allowlist may not rot into a blanket escape
+        hatch. Each excerpt must still exist in its document (else it is stale
+        and must be deleted) AND must really be matched by some pattern (else
+        it is excusing nothing and must be deleted)."""
+        patterns = [re.compile(p, re.IGNORECASE) for p in CII_ABSENCE_DENIALS]
+        for doc, excerpt, reason in CII_DENIAL_ALLOWLIST:
+            self.assertIn(doc, CII_GUARDED_DOCS, doc)
+            self.assertTrue(reason.strip(),
+                            "allowlist entry for %s has no reason" % doc)
+            text = _doc_text(doc)
+            self.assertIn(
+                excerpt, text,
+                "STALE allowlist entry: %s no longer contains %r — delete the "
+                "entry in the same edit that reworded the doc" % (doc, excerpt))
+            self.assertTrue(
+                any(p.search(excerpt) for p in patterns),
+                "UNNECESSARY allowlist entry: no CII_ABSENCE_DENIALS pattern "
+                "matches %r in %s — delete it rather than leaving a hole"
+                % (excerpt, doc))
+
+    def test_rule_binding_count_facts_survive(self):
+        """The COUNT facts the allowlist protects are statements about the
+        official artifacts and must remain stated, verbatim, in both docs."""
+        readme = _doc_text("README.md")
+        self.assertIn("12 are officially UBL-only, and 4 are CII-only", readme)
+        coverage = _doc_text("COVERAGE.md")
+        self.assertIn("12", coverage)
+        self.assertIn("UBL-only", coverage)
+        self.assertIn("CII-only", coverage)
+
+    def test_docs_still_state_the_honest_limits(self):
+        """Correcting an underclaim must not have quietly deleted an overclaim
+        guard: the real, still-true scope limits stay on the page."""
+        readme = _doc_text("README.md")
+        self.assertIn("Peppol BIS Billing 3.0", readme)
+        self.assertIn("known-open", readme)
 
 
 if __name__ == "__main__":

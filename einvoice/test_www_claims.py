@@ -288,6 +288,13 @@ CII_ABSENCE_DENIALS = (
     r"(?:is|are|stays|remains|ist|bleibt)\s+(?:honestly\s+)?ubl[- ]only",
     # "a UBL-only validator", "UBL-only engine".
     r"ubl[- ]only\s+(?:engine|validator|cli|tool|surface|parser|support)",
+    # "build_receipt validates through the UBL-only `validate_file` code path"
+    # (REPORT-SCHEMA.md, found by T-VHCII3.2): the same claim with a backticked
+    # IDENTIFIER standing in where the product noun would be. Deliberately does
+    # NOT list "rule", so the honest "each remaining UBL-only rule is not …
+    # proven on CII" measurement prose in COVERAGE.md keeps passing.
+    r"ubl[- ]only\s+`[^`]{1,40}`\s+(?:code\s+)?"
+    r"(?:path|route|surface|entry\s+point|function|api)",
     # "plus CII (via the ZUGFeRD/Factur-X PDF container) only".
     r"(?:cii|zugferd|factur-x)[^.]{0,60}container\)?\s*only",
     # "CII is supported only via the PDF container".
@@ -410,6 +417,9 @@ class TestWwwClaims(unittest.TestCase):
             "the raw-xml cli surface stays honestly ubl-only: einvoice "
             "validate on a raw cii .xml returns s-root",
             "this is a ubl-only validator for now",
+            "`build_receipt` validates through the ubl-only `validate_file` "
+            "code path, so a cii/factur-x xml today yields the deterministic "
+            "`s-root` fail receipt",
             "are both validated through the same en 16931 engine, plus cii "
             "(via the zugferd/factur-x pdf container) only. every fireable",
             "cii documents are supported only via the factur-x pdf container",

@@ -497,11 +497,16 @@ CII/Factur-X invoice) against the schema, and asserts four malformed receipts
 wrong `format` const) are rejected — using the same stdlib-only recursive
 checker `test_report_schema.py` uses, so no runtime dependency is added.
 
-**Note on the CII path.** `build_receipt` validates through the UBL-only
-`validate_file` code path, so a CII/Factur-X XML today yields the deterministic
-`S-ROOT` FAIL receipt (`well_formed: true`, one `S-ROOT` fatal). That is a real,
-on-disk receipt shape and the schema accepts it; only the receipt **bytes**
-(its `input_sha256`) distinguish one CII document from another under this path.
+**Note on the CII path.** `build_receipt` validates through the same
+`validate_file` entry point every other surface uses, and since 0.2.7 that entry
+point routes a `CrossIndustryInvoice` root to the CII engine — so a raw
+CII/Factur-X XML yields a genuinely graded receipt, not a structural refusal.
+Measured on `corpus/synthetic/synth-cii-good-fullshape.xml`: `verdict: PASS`,
+`well_formed: true`, `failed_fatal_rules: []`, and `receipt --verify` reports
+VERIFIED for it. A CII document that breaks a rule carries that rule's id in
+`failed_fatal_rules`, exactly as a UBL one does. The deterministic `S-ROOT` FAIL
+receipt (`well_formed: true`, one `S-ROOT` fatal) is still reachable — for a root
+in neither syntax — and the schema accepts that shape too.
 
 **Stability / versioning policy.** The `$id` and the `format` const are STABLE
 within v1: additive, backward-compatible fields (like the optional `issued_at`)

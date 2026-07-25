@@ -71,7 +71,9 @@ VAT category codes).
 
 **Layer S — structural (all invoices):**
 - `S-WF`  — document is well-formed XML.
-- `S-ROOT`— root element is `Invoice` in the UBL Invoice-2 namespace.
+- `S-ROOT`— root element is one the engine grades: `Invoice` in the UBL
+  Invoice-2 namespace, `CreditNote` in the UBL CreditNote-2 namespace, or a
+  `CrossIndustryInvoice` (CII, matched by local name). Anything else is fatal.
 - `S-XSD` — document validates against the UBL 2.1 `Invoice` XSD
   (`corpus/cen-en16931/ubl/schema/`). Establishes that the paths in §2 exist and
   are correctly typed before business rules run.

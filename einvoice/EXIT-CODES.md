@@ -241,15 +241,18 @@ naming the failing rule and the offending element. (A UBL `CreditNote` is now a
 *supported* root — it is really validated through the shared EN 16931 engine, so
 an invalid CreditNote surfaces as exit `1` on its real business-rule fatal, not
 on `S-ROOT`.)
-One deliberate refinement of that message (same rule id `S-ROOT`, same fatal
-verdict, same exit `1`): when the unsupported root IS a CII
-`CrossIndustryInvoice` — the ZUGFeRD/Factur-X payload root — the message
-instead points at the supported route ("CrossIndustryInvoice (CII) root
-detected: direct XML validation is UBL-only. CII invoices (ZUGFeRD/Factur-X)
-are fully supported via the PDF container path — validate the Factur-X/ZUGFeRD
-PDF with 'python3 -m einvoice.report <invoice.pdf>' (see README)."), because
-"must be UBL" alone would misleadingly imply CII is unsupported when it is
-graded first-class on the container path. Pinned by `test_cli_cii_root.py`.
+A CII `CrossIndustryInvoice` is **not** one of those inputs and never reaches
+`S-ROOT`. Up to 0.2.6 it did — raw CII XML got a dedicated `S-ROOT` variant
+telling the caller to validate the Factur-X/ZUGFeRD PDF instead. Since 0.2.7 the
+raw-XML surfaces dispatch a `CrossIndustryInvoice` root (matched by LOCAL NAME,
+so a wrong-namespace root takes the same route) to the CII engine, so such a
+file is graded on its real business rules and gets a real verdict. Measured:
+`einvoice validate fixtures/creditnote-valid_cii.xml` exits `0` with `PASS:`,
+and the same credit note with BT-5 removed exits `1` naming `BR-05` — never
+`S-ROOT`, in text and `--json` form. `S-ROOT` now fires only on a root outside
+both syntaxes (a `buildConfigurations` file someone pointed the CI gate at, say),
+and there it carries the original, byte-frozen wording quoted above. Both halves
+are pinned by `test_cli_cii_root.py` (`RawCiiIsGraded`, `UnsupportedRootStillRefused`).
 The value to the caller is the same either way: a non-zero code plus a concrete,
 greppable reason on stdout/stderr — never a false green. Folding these into the
 existing `1` (rather than minting a new code) keeps the contract small and

@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
-"""test_json_surface_parity.py — pin the JSON surface `einvoice validate --json`
-and `python3 -m einvoice.report --format json` share (T-VHERG.2).
+"""test_json_surface_parity.py — pin the JSON surface `einvoice validate --json`,
+`python3 -m einvoice.report --format json` and `einvoice validate-batch --json`
+share (T-VHERG.2, third surface added T-VHERG.7).
 
 WHY THIS EXISTS
 ---------------
-The project advertises TWO machine-readable JSON surfaces over the same engine:
+The project advertises THREE machine-readable JSON surfaces over one engine:
 
     einvoice validate --json <invoice.xml>          (README §3, "--json shape")
     python3 -m einvoice.report --format json ...    (REPORT-SCHEMA.md)
+    einvoice validate-batch --json <dir>            (the nightly CI run)
+
+The first and the third are the NORMAL adoption pair — `validate --json` on a
+pre-commit hook, `validate-batch --json` on a nightly directory sweep — so a CI
+consumer that has to special-case which of our own two subcommands produced the
+JSON is paying for our drift. That is not hypothetical: until 0.2.7 the batch
+surface's per-file violations were missing `element` (9 keys on `validate
+--json`, 8 in every `report/v1` record), because the two surfaces have two
+record builders. The batch leg below exists so that class of drift fails a gate
+instead of reaching a user.
 
 QUICKSTART.md §5 goes further and tells a reader that ``field`` exists "under
 the name the ``python3 -m einvoice.report`` document uses ... so one parser
@@ -38,12 +49,24 @@ Five documents, at BOTH profiles (``en16931`` and ``xrechnung``), 10 pairs:
                                  — the one document in the corpus that makes
                                  both surfaces emit the OPTIONAL ``source_line``
                                  key, and the evidence that ``element`` is not
-                                 an alias of ``location`` (see below)
+                                 an alias of ``location`` (see below); it is
+                                 also the document the batch leg runs over
 
 For each pair the checker compares (a) the top-level key SETS, (b) the values
 of every shared top-level key, (c) per violation record, the key SETS, and
 (d) the values of every shared violation key. Anything not in
 ``DECLARED_DIVERGENCES`` is a failure naming the offending key.
+
+The THIRD surface is then compared ONCE, with the SAME ``compare_payloads()``
+rather than a second comparator that could drift from it: the credit note is
+dropped into a directory, ``validate-batch --json`` is run over it, and its one
+``files[]`` entry — which is a plain single-file report, stored UNCHANGED by
+``build_batch_report_from_files`` — is diffed against ``validate --json`` on the
+same document. An undeclared PER-VIOLATION divergence between them fails. The
+batch wrapper's own aggregate envelope (``file_count``, ``failed_file_count``,
+``files``, the summed counts, …) is legitimately batch-only and is pinned
+separately, by EXACT set equality against ``BATCH_ENVELOPE_KEYS`` below, so
+adding or dropping a wrapper key also fails.
 
 MEASURED FROM THE WHEEL, NOT THE SOURCE TREE
 --------------------------------------------
@@ -63,7 +86,11 @@ HONEST LIMITS
     not a conformance sweep (``conformance.py`` and ``test_testsuite_
     conformance.py`` do that job). A key that only ever appears on a rule none
     of these five documents fires would not be seen here.
-  * It compares the two surfaces to EACH OTHER. Neither is treated as correct;
+  * The batch leg is ONE directory holding ONE file, at one profile: it is a
+    SHAPE check on the per-file record, not a second batch-semantics suite
+    (``test_cli_batch.py`` / ``test_report_batch.py`` own the aggregation,
+    counts, ordering and empty-directory behaviour).
+  * It compares the surfaces to EACH OTHER. None is treated as correct;
     if both drifted the same way in the same commit, this test stays green
     (``test_report_schema.py`` / ``test_output_schemas.py`` pin the absolute
     shapes).
@@ -114,18 +141,10 @@ REPORT_SURFACE = "python3 -m einvoice.report --format json"
 #   side               the surface that carries the key the other one lacks
 # ---------------------------------------------------------------------------
 DECLARED_DIVERGENCES = (
-    # NOT an alias of `location`: `element` is what the DOCUMENT presented
-    # (credit note: 'cbc:CreditNoteTypeCode') where `location` is what the RULE
-    # declares ('cbc:InvoiceTypeCode'), so report/v1 genuinely loses one datum.
-    {
-        "scope": "violation",
-        "key": "element",
-        "side": "validate",
-        "reason": "validate-only: the element the document actually presented, "
-                  "which differs from the rule-declared `location` (evidenced "
-                  "below on the credit-note fixture); report/v1 has no field "
-                  "for it, and adding one would be a behaviour change",
-    },
+    # `element` used to be listed here as validate-only. It no longer is:
+    # report/v1 gained the key ADDITIVELY in 0.2.7 (report._record +
+    # VIOLATION_KEYS + report.schema.json), so all three surfaces now carry it
+    # and the "`element` CONVERGENCE" section below measures that directly.
     # Report-only envelope: the versioned-document header the CI contract owns.
     {
         "scope": "envelope",
@@ -188,13 +207,53 @@ def declared_keys(scope, side):
 
 
 # ---------------------------------------------------------------------------
+# BATCH_ENVELOPE_KEYS — the third surface, `einvoice validate-batch --json`, is
+# an AGGREGATE document: it legitimately has a wrapper envelope of its own that
+# no single-document surface can or should have. Those wrapper keys are
+# declared here with a one-line reason each and pinned by EXACT set equality
+# below, so adding or dropping one fails this test.
+#
+# The wrapper's `files[]` entries, by contrast, are plain single-file reports
+# (build_batch_report_from_files calls build_report per file and stores the dict
+# UNCHANGED), so ONE of them is fed to the SAME compare_payloads() used for the
+# other two surfaces. That is where the real guard lives: a per-violation key
+# present on `validate --json` and missing from a batch file entry is an
+# UNDECLARED divergence and fails — exactly the defect (`element` missing from
+# every report/v1 record) this pin was extended to catch in 0.2.7.
+# ---------------------------------------------------------------------------
+BATCH_SURFACE = "einvoice validate-batch --json"
+
+BATCH_ENVELOPE_KEYS = {
+    "report_version": "version of the einvoice-conformance-batch document",
+    "schema": "the 'einvoice-conformance-batch/v1' id consumers dispatch on",
+    "root": "the directory (or glob) the run covered — a batch-only fact",
+    "profile": "the resolved profile the whole run used",
+    "file_count": "how many invoice files the walk collected",
+    "failed_file_count": "files that errored or carry >=1 fatal (the CI gate)",
+    "fatal_count": "fatal violations SUMMED across every file",
+    "warning_count": "warnings SUMMED across every file",
+    "violation_count": "violations SUMMED across every file",
+    "files": "the per-file single-document reports themselves",
+}
+
+
+# ---------------------------------------------------------------------------
 # the checker (pure — no I/O, so the negative self-test can drive it directly)
 # ---------------------------------------------------------------------------
-def compare_payloads(validate_payload, report_payload, where):
+def compare_payloads(validate_payload, report_payload, where,
+                     other_surface=REPORT_SURFACE):
     """Return a list of problem strings, one per undeclared divergence.
 
     Every problem string NAMES the offending key, so a failure tells the reader
     what to add to ``DECLARED_DIVERGENCES`` (or what to fix).
+
+    ``other_surface`` is only the LABEL printed for the right-hand payload. It
+    exists so the third surface (`einvoice validate-batch --json`, whose
+    ``files[]`` entries are single-document reports) can be compared by THIS
+    comparator instead of a second one that could drift from it. The comparison
+    logic and the allowlist are identical for both right-hand surfaces, which
+    is the point: a batch file entry IS a report document, so it is held to the
+    report document's declared divergences and nothing looser.
     """
     problems = []
     env_validate_only = declared_keys("envelope", "validate")
@@ -211,7 +270,7 @@ def compare_payloads(validate_payload, report_payload, where):
     for key in sorted(rkeys - vkeys - env_report_only):
         problems.append(
             "%s: top-level key %r present only in `%s` (undeclared)"
-            % (where, key, REPORT_SURFACE))
+            % (where, key, other_surface))
 
     for key in sorted((vkeys & rkeys) - {"violations"}):
         if validate_payload[key] != report_payload[key]:
@@ -225,7 +284,7 @@ def compare_payloads(validate_payload, report_payload, where):
         problems.append(
             "%s: shared key 'violations' has %d record(s) on `%s` but %d on "
             "`%s`" % (where, len(vviol), VALIDATE_SURFACE, len(rviol),
-                      REPORT_SURFACE))
+                      other_surface))
 
     for idx, (a, b) in enumerate(zip(vviol, rviol)):
         rule = a.get("rule", b.get("rule", "?"))
@@ -236,7 +295,7 @@ def compare_payloads(validate_payload, report_payload, where):
                             % (tag, key, VALIDATE_SURFACE))
         for key in sorted(bkeys - akeys - vio_report_only):
             problems.append("%s: key %r present only in `%s` (undeclared)"
-                            % (tag, key, REPORT_SURFACE))
+                            % (tag, key, other_surface))
         for key in sorted(akeys & bkeys):
             if a[key] != b[key]:
                 problems.append(
@@ -278,12 +337,16 @@ def _synthetic_pair():
         "fix_hint": "Add the required element at `cbc:BuyerReference`.",
         "terms": ["BT-10"],
         "location": "cbc:BuyerReference",
+        # Since 0.2.7 `element` is on BOTH sides (report._record emits it), so
+        # it belongs in `shared` — that is exactly what makes it no longer a
+        # declared divergence.
+        "element": "cbc:BuyerReference",
     }
     validate = {
         "source": "invoice.xml",
         "valid": False,
         "violation_count": 1,
-        "violations": [dict(shared, element="cbc:BuyerReference")],
+        "violations": [dict(shared)],
         "syntax_bindings": [],
         "syntax_binding_fatal_count": 0,
         "syntax_binding_warning_count": 0,
@@ -375,15 +438,16 @@ def run_negative_self_test():
            "problem NAMES the drifted shared violation key",
            "problems: %r" % (probs,))
 
-    # A value drift on a key that IS declared as one-sided must still be caught
-    # when both sides carry it (the allowlist covers presence, not values).
-    def drift_declared_key_value(a, b):
+    # `element` is the key report/v1 gained in 0.2.7; a value drift on it must
+    # be caught like any other shared key (the allowlist covers presence only,
+    # and `element` is not even in the allowlist any more).
+    def drift_element_value(a, b):
         b["violations"][0]["element"] = "cbc:Other"
 
-    probs = problems_for(drift_declared_key_value)
+    probs = problems_for(drift_element_value)
     checks += 1
     expect(any("'element'" in p and "differs" in p for p in probs),
-           "a DECLARED one-sided key still gets value-checked when shared",
+           "a drifted `element` value is caught on both surfaces",
            "problems: %r" % (probs,))
 
     # --- case 5: a SHARED top-level key whose VALUE drifts ------------------
@@ -408,18 +472,34 @@ def run_negative_self_test():
            "problems: %r" % (probs,))
 
     # --- case 7: the stale-allowlist detector actually detects --------------
+    # Driven on a PROBE key rather than on a real one, so the case keeps
+    # working whichever way the surfaces converge next.
     a, b = _synthetic_pair()
+    a["violations"][0]["probe_only"] = "x"
     observed = observed_divergences(a, b)
     checks += 1
-    expect(("violation", "element", "validate") in observed,
-           "observed-divergence scan sees the validate-only `element` key",
+    expect(("violation", "probe_only", "validate") in observed,
+           "observed-divergence scan sees a validate-only violation key",
            "observed: %r" % (sorted(observed),))
     a2 = copy.deepcopy(a)
-    del a2["violations"][0]["element"]
+    del a2["violations"][0]["probe_only"]
     checks += 1
-    expect(("violation", "element", "validate")
+    expect(("violation", "probe_only", "validate")
            not in observed_divergences(a2, b),
-           "observed-divergence scan STOPS seeing `element` once it is gone")
+           "observed-divergence scan STOPS seeing the key once it is gone")
+
+    # --- case 8 (0.2.7): a batch FILE entry missing a per-violation key the
+    # single-file surface carries must FAIL, named. This is the exact defect
+    # the third-surface comparison was added for: `element` was absent from
+    # every report/v1 record, so `validate-batch --json` handed a CI consumer a
+    # different violation object than `validate --json` did.
+    a, b = _synthetic_pair()
+    del b["violations"][0]["element"]      # b stands in for a batch files[] entry
+    probs = compare_payloads(a, b, "self-test batch", other_surface=BATCH_SURFACE)
+    checks += 1
+    expect(any("'element'" in p and "self-test batch" in p for p in probs),
+           "a batch file entry missing `element` is reported, named, against "
+           "the batch comparison", "problems: %r" % (probs,))
 
     return failures, checks
 
@@ -520,6 +600,14 @@ class Runner(object):
         proc = self._run(args + [name])
         return self._parse(proc, "%s %s" % (REPORT_SURFACE, name))
 
+    def batch_json(self, directory, profile=None):
+        """The THIRD surface: `einvoice validate-batch --json <dir>`."""
+        args = ["-m", "einvoice", "validate-batch", "--json"]
+        if profile:
+            args += ["--profile", profile]
+        proc = self._run(args + [directory])
+        return self._parse(proc, "%s %s" % (BATCH_SURFACE, directory))
+
     @staticmethod
     def _parse(proc, what):
         if proc.returncode not in (0, 1):
@@ -611,10 +699,21 @@ def main():
                     "the surfaces converged; drop the allowlist entry"
                     % (entry["key"], entry["scope"], entry["side"]))
 
-        # ---- `element` is not an alias of `location` (the allowlist's reason)
-        print("\nDECLARED-DIVERGENCE EVIDENCE")
+        # ---- `element` converged in 0.2.7: it is on BOTH surfaces now, and it
+        # is still NOT an alias of `location` (which is why carrying it matters)
+        print("\n`element` CONVERGENCE (0.2.7, was a declared divergence)")
         _, cn_validate = runner.validate_json("creditnote-ubl.xml", "en16931")
         _, cn_report = runner.report_json("creditnote-ubl.xml", "en16931")
+        missing = [v.get("rule") for v in cn_report["violations"]
+                   if "element" not in v]
+        if missing:
+            problems.append(
+                "`%s` does NOT emit `element` on %r — report/v1 must carry it "
+                "since 0.2.7 (report._record + VIOLATION_KEYS)"
+                % (REPORT_SURFACE, missing))
+            print("  [FAIL] report/v1 lost `element` again")
+        else:
+            print("  [ok] every report/v1 violation carries `element`")
         alias_broken = [
             (v["rule"], v["element"], v["location"])
             for v in cn_validate["violations"]
@@ -622,18 +721,75 @@ def main():
         ]
         if not alias_broken:
             problems.append(
-                "no violation where validate's `element` differs from "
-                "`location` — the allowlist reason for the `element` key "
-                "(\"not an alias\") is no longer evidenced")
+                "no violation where `element` differs from `location` — the "
+                "reason `element` is a datum worth carrying (\"not an alias of "
+                "location\") is no longer evidenced")
             print("  [FAIL] `element` is indistinguishable from `location` here")
         else:
             rule, elem, loc = alias_broken[0]
-            print("  [ok] %s: element=%r != location=%r  (report/v1 carries "
-                  "only `location`)" % (rule, elem, loc))
-        if any("element" in v for v in cn_report["violations"]):
+            print("  [ok] %s: element=%r != location=%r  (a genuinely distinct "
+                  "datum, now on all three surfaces)" % (rule, elem, loc))
+
+        # ---- THIRD SURFACE: `einvoice validate-batch --json <dir>` ----------
+        # The adoption shape is `validate --json` on a pre-commit hook and
+        # `validate-batch --json` on a nightly directory run. Those two MUST
+        # hand back the same violation object or every consumer has to
+        # special-case which of our own subcommands produced the JSON.
+        print("\nTHIRD SURFACE — %s" % BATCH_SURFACE)
+        batchdir = os.path.join(workdir, "batchdir")
+        os.makedirs(batchdir)
+        shutil.copy(os.path.join(workdir, "creditnote-ubl.xml"),
+                    os.path.join(batchdir, "creditnote-ubl.xml"))
+        _, batch = runner.batch_json(batchdir, "en16931")
+
+        # (a) the wrapper envelope is exactly the declared aggregate key set.
+        got_env = set(batch)
+        declared_env = set(BATCH_ENVELOPE_KEYS)
+        for key in sorted(got_env - declared_env):
             problems.append(
-                "`report --format json` now emits `element` — the declared "
-                "validate-only divergence is stale")
+                "batch envelope key %r is undeclared — add it to "
+                "BATCH_ENVELOPE_KEYS with a reason, or drop it" % key)
+        for key in sorted(declared_env - got_env):
+            problems.append(
+                "declared batch envelope key %r was NOT emitted — "
+                "BATCH_ENVELOPE_KEYS has gone stale" % key)
+        print("  [%s] wrapper envelope = the %d declared aggregate key(s)"
+              % ("ok" if got_env == declared_env else "FAIL",
+                 len(declared_env)))
+
+        # (b) one files[] entry, through the SAME comparator as the report
+        # surface — an undeclared PER-VIOLATION divergence fails here.
+        entries = batch.get("files", [])
+        if len(entries) != 1:
+            problems.append(
+                "batch over a 1-file directory reported %d file entr(ies)"
+                % len(entries))
+        else:
+            entry = entries[0]
+            _, single = runner.validate_json("creditnote-ubl.xml", "en16931")
+            # `source` is the only legitimate VALUE difference: the two runs
+            # name the same document by the path each was given. Checked
+            # explicitly before it is normalised away, so normalising cannot
+            # hide a missing or wrong `source`.
+            if not str(entry.get("source", "")).endswith("creditnote-ubl.xml"):
+                problems.append(
+                    "batch files[0].source is %r — it must name the file that "
+                    "was validated" % (entry.get("source"),))
+            entry = dict(entry, source=single["source"])
+            found = compare_payloads(single, entry, "batch[creditnote]@en16931",
+                                     other_surface=BATCH_SURFACE)
+            problems.extend(found)
+            nvio = len(entry.get("violations", []))
+            if nvio < 1:
+                problems.append(
+                    "the batch file entry carries no violations — the "
+                    "per-violation comparison would prove nothing")
+            print("  [%s] files[0] vs `%s`: %d violation(s), %d problem(s)"
+                  % ("ok" if not found else "FAIL", VALIDATE_SURFACE, nvio,
+                     len(found)))
+            if not found:
+                print("       (same violation object: %s)"
+                      % ", ".join(sorted(entry["violations"][0])))
 
         # ---- the deliberate default-profile asymmetry, measured -------------
         print("\nDECLARED DEFAULT-PROFILE ASYMMETRY (no --profile flag)")
@@ -694,8 +850,10 @@ def main():
         for msg in failures + problems:
             print("  %s" % msg)
         return 1
-    print("PASS — the two JSON surfaces diverge in exactly the %d declared "
-          "way(s)" % len(DECLARED_DIVERGENCES))
+    print("PASS — the JSON surfaces diverge in exactly the %d declared way(s), "
+          "and `validate-batch --json` hands back the same violation object as "
+          "`validate --json` over the %d declared aggregate envelope key(s)"
+          % (len(DECLARED_DIVERGENCES), len(BATCH_ENVELOPE_KEYS)))
     return 0
 
 

@@ -44,6 +44,7 @@
             "BT-3"
           ],
           "location": "cbc:InvoiceTypeCode",
+          "element": "cbc:CreditNoteTypeCode",
           "source_line": 28
         }
       ],
@@ -71,7 +72,8 @@
           "terms": [
             "BT-5"
           ],
-          "location": "cbc:DocumentCurrencyCode"
+          "location": "cbc:DocumentCurrencyCode",
+          "element": "cbc:DocumentCurrencyCode"
         }
       ],
       "syntax_bindings": [],

@@ -11,6 +11,7 @@
   "violation_count": 3,
   "violations": [
     {
+      "element": "cac:AccountingSupplierParty/cac:Party/cac:Contact",
       "field": "cac:AccountingSupplierParty/cac:Party/cac:Contact",
       "fix_hint": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted.",
       "location": "/ubl:Invoice/cac:AccountingSupplierParty",
@@ -23,6 +24,7 @@
       "title": "SELLER CONTACT (BG-6) must be transmitted."
     },
     {
+      "element": "cbc:BuyerReference",
       "field": "cbc:BuyerReference",
       "fix_hint": "Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty).",
       "location": "cbc:BuyerReference",
@@ -35,6 +37,7 @@
       "title": "Buyer reference (BT-10) must be transmitted (non-empty)."
     },
     {
+      "element": "cac:Delivery/cbc:ActualDeliveryDate",
       "field": "cac:Delivery/cbc:ActualDeliveryDate",
       "fix_hint": "Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.",
       "location": "cac:Delivery/cbc:ActualDeliveryDate",

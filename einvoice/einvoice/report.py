@@ -193,6 +193,16 @@ REPORT_SCHEMA = {
                  "(from the catalog's bt_bg; empty list if none).",
         "location": "the catalog's XML location/path hint for the finding "
                     "(string or null).",
+        # --- Additive alias field (v1, non-breaking, added in 0.2.7). The SAME
+        # datum `field` carries, under the name `einvoice validate --json` has
+        # always used for it, so ONE consumer parser reads either surface
+        # (including the per-file entries of `validate-batch --json`, which are
+        # these very records). Not a rename: both keys are emitted and are
+        # always equal.
+        "element": "the offending element / path (Violation.element) — the "
+                   "same value as 'field', under the name `einvoice validate "
+                   "--json` uses. Always present, always equal to 'field'; "
+                   "null when unknown.",
         "source_line": "OPTIONAL, additive: the 1-based parser line of the "
                        "offending element in the source document. Present ONLY "
                        "for an attributable field-level violation (a rule that "
@@ -210,10 +220,14 @@ REPORT_SCHEMA = {
 
 #: The exact key set every violation record carries (tests assert on this).
 #: The original four identity keys come first and are unchanged for backward
-#: compatibility; the trailing four are the additive, catalog-relayed
-#: remediation fields (see :func:`_record` and REPORT_SCHEMA['violation_record']).
+#: compatibility; the next four are the additive, catalog-relayed remediation
+#: fields; `element` is the additive 0.2.7 alias of `field` (same value, the
+#: name `einvoice validate --json` uses) and is APPENDED last so the leading
+#: positions every consumer already relies on do not move. See :func:`_record`
+#: and REPORT_SCHEMA['violation_record'].
 VIOLATION_KEYS = ("rule", "severity", "message", "field",
-                  "title", "fix_hint", "terms", "location")
+                  "title", "fix_hint", "terms", "location",
+                  "element")
 
 
 def _remediation_catalog():
@@ -240,6 +254,12 @@ def _record(v, catalog=None):
     that wording. A rule id with no catalog entry degrades gracefully to
     null/empty fields (never a KeyError).
 
+    A ninth key, ``element``, is emitted unconditionally (0.2.7): it is the
+    SAME ``Violation.element`` value ``field`` carries, under the name
+    ``einvoice validate --json`` uses, so one consumer parser reads either
+    surface. Both keys are always present and always equal — no rename, no
+    removal, no new datum.
+
     :param catalog: optional pre-loaded catalog mapping (build_report passes it
         once for the whole result); when omitted, the cached module catalog is
         used so a lone ``_record(v)`` call still enriches.
@@ -251,6 +271,16 @@ def _record(v, catalog=None):
         "field": v.element,
     }
     record.update(_remediation.remediation_fields(v.rule_id, catalog))
+    # Additive, UNCONDITIONAL (0.2.7): `element` — the very same datum `field`
+    # already carries, emitted under the name `einvoice validate --json` has
+    # always used (validate.Result._violation_dict emits both too). This is not
+    # a rename and not a second datum: both keys are always present and always
+    # equal, so ONE consumer parser reads either surface. It matters most for
+    # `validate-batch --json`, whose per-file violation records ARE these
+    # records; before this the batch surface silently lacked a key the
+    # single-file CLI surface had. Appended after the remediation fields so no
+    # existing key changes position.
+    record["element"] = v.element
     # Additive, OPTIONAL: the 1-based parser line of the offending element,
     # present ONLY for an attributable field-level violation (see
     # einvoice.rules). Absence of the key means "not attributable to a source

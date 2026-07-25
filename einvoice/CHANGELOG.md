@@ -104,6 +104,38 @@ default report format crashes from the fixed one.
 
 ### Added
 
+- **Every `einvoice-conformance-report/v1` violation now carries `element`, so
+  `validate --json` and `validate-batch --json` hand back the SAME violation
+  object.** A CI consumer's normal adoption shape is `einvoice validate --json`
+  on a pre-commit hook and `einvoice validate-batch --json` on a nightly
+  directory run, and until now those two returned different records: measured
+  on `corpus/synthetic/synth-ubl-bad-vat-mismatch.xml`, `validate --json`
+  violations carried 9 keys (`element`, `field`, `fix_hint`, `location`,
+  `message`, `rule`, `severity`, `terms`, `title`) while every per-file
+  violation from `validate-batch --json` carried 8 — no `element` — forcing a
+  consumer to special-case which of our own two subcommands produced the JSON.
+  The gap was never CLI-local: batch returns `report.build_batch_report()`
+  verbatim, and `report._record` emitted the offending element only under the
+  name `field`, so `element` was missing from *every* report/v1 document
+  (`python3 -m einvoice.report --format json` included). The fix is in the
+  shared record, not in either CLI: `report._record` and
+  `report.VIOLATION_KEYS` now emit `element` unconditionally, and
+  `report.schema.json` declares it as a required property. It is the same
+  `Violation.element` value `field` already carried — both keys are always
+  present and always equal, neither is a rename of the other, and nothing was
+  removed, so a consumer reading `field` sees a byte-identical value. Purely
+  additive on the SAME schema id: `$id` and the `schema` const stay at
+  `einvoice-conformance-report/v1`, exactly as that schema's own versioning
+  policy sanctions, and `VIOLATION_KEYS` still begins with the four back-compat
+  identity keys (`rule`, `severity`, `message`, `field`) with `element`
+  appended last. `test_json_surface_parity.py` now measures
+  `validate-batch --json` as a third surface against `validate --json` — an
+  undeclared per-violation divergence between them fails the build, while the
+  legitimate batch-only *envelope* keys (`files`, `file_count`,
+  `failed_file_count`, `root`, …) are declared with a reason each. No rule,
+  format, data file, dependency, envelope key or exit code changed; the engine
+  still fires 297 rules.
+
 - **`einvoice validate <invoice.pdf>` accepts a Factur-X/ZUGFeRD PDF/A-3
   container.** ZUGFeRD/Factur-X — EN 16931 XML embedded in a PDF/A-3 — is the
   dominant delivery form under the German mandate and the first file an ERP

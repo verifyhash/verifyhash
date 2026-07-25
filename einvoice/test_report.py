@@ -84,11 +84,19 @@ class ViolationRecordShape(unittest.TestCase):
         self.assertTrue(report["violations"], "expected at least one violation")
         for rec in report["violations"]:
             self.assertEqual(set(rec.keys()), set(VIOLATION_KEYS), rec)
-            # Original identity keys stay present, first, and unchanged.
+            # Original identity keys stay present, first, and unchanged; the
+            # set is pinned EXACTLY (not a superset check) so any future drift
+            # in either direction still fails here. `element` joined the set
+            # additively in 0.2.7 — same value as `field`, under the name
+            # `einvoice validate --json` uses, so the batch surface (whose
+            # per-file violations ARE these records) carries it too.
             self.assertEqual(
                 set(rec.keys()),
                 {"rule", "severity", "message", "field",
-                 "title", "fix_hint", "terms", "location"}, rec)
+                 "title", "fix_hint", "terms", "location",
+                 "element"}, rec)
+            # ...and it really is the same datum, never a second one.
+            self.assertEqual(rec["element"], rec["field"], rec)
         # VIOLATION_KEYS keeps the four identity keys first for back-compat.
         self.assertEqual(VIOLATION_KEYS[:4],
                          ("rule", "severity", "message", "field"))

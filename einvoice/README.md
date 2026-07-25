@@ -636,7 +636,14 @@ directory and glob forms produce **byte-identical aggregate counts** over the sa
 file set. It reuses the batch engine in `einvoice/report.py`
 (`build_batch_report` / `build_batch_report_from_files` / `batch_exit_code` /
 `build_batch_text`) verbatim — no aggregation or rule logic is re-implemented, and
-each per-file report is byte-identical to validating that file on its own. Output
+each per-file report is byte-identical to validating that file on its own. That
+means the per-file `violations[]` under `--json` carry **the same nine keys**
+(`rule`, `message`, `element`, `severity`, `field`, `title`, `fix_hint`, `terms`,
+`location`) as `einvoice validate --json`, so a CI job can run `validate` on a
+pre-commit hook and `validate-batch` on a nightly sweep with **one** parser —
+`element` was the one key the batch records were missing before 0.2.7, and
+`test_json_surface_parity.py` now compares the two surfaces so it cannot recur.
+Output
 is a per-file `PASS`/`FAIL`/`ERROR` summary plus an aggregate tally, or the
 aggregate `einvoice-conformance-batch/v1` dict with `--json`; `--quiet` suppresses
 the human summary but keeps the exit code (and still emits JSON under `--json`). An

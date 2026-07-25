@@ -62,7 +62,8 @@
           "title",
           "fix_hint",
           "terms",
-          "location"
+          "location",
+          "element"
         ],
         "additionalProperties": false,
         "properties": {
@@ -97,6 +98,10 @@
           },
           "location": {
             "description": "The catalog's XML location/path hint; null if none.",
+            "type": ["string", "null"]
+          },
+          "element": {
+            "description": "REQUIRED, additive on this same v1 schema id (0.2.7): the element the document actually presented for the finding (Violation.element); null when unknown. This is the SAME value as 'field', emitted under the name `einvoice validate --json` has always used, so one consumer parser reads either surface — including the per-file entries of `validate-batch --json`, which are these very records. Both keys are always present and always equal; neither is a rename of the other.",
             "type": ["string", "null"]
           },
           "source_line": {

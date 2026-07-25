@@ -91,8 +91,8 @@ report/library path.
 
 ## Violation record
 
-Each entry of `violations` has these eight **always-present** keys, plus an
-OPTIONAL ninth (`source_line`, described below). The first four are the
+Each entry of `violations` has these nine **always-present** keys, plus an
+OPTIONAL tenth (`source_line`, described below). The first four are the
 **identity** fields taken verbatim from the validator; the next four are
 **additive remediation** fields (added in `v1`, backward-compatible — see
 **Versioning**) that are **relayed** from the committed remediation catalog
@@ -110,6 +110,7 @@ projects the already-committed, Schematron-traceable catalog data.
 | `fix_hint` | catalog `fix`                   | One-line "how to fix" guidance. `null` if uncatalogued. |
 | `terms`    | catalog `bt_bg`                 | List of the `BT-`/`BG-` business-term ids the rule touches; `[]` if none. |
 | `location` | catalog `location_hint`         | The XML location/path hint for the finding. `null` if uncatalogued. |
+| `element`  | `Violation.element`             | The offending element / path — **the same value as `field`**, under the name `einvoice validate --json` uses. Added in 0.2.7, additive on the same `v1` id. |
 
 The four remediation fields **degrade gracefully**: a rule id absent from the
 catalog yields `title`/`fix_hint`/`location` = `null` and `terms` = `[]` — never
@@ -126,24 +127,29 @@ The CLI's own `--json` result (`validate.Result.to_dict`, the shape the README
 `remediation_catalog.json` — one catalog, one loader, one process-wide cache, so
 the two surfaces cannot report different guidance for the same rule id.
 
-One naming difference, kept for backward compatibility rather than tidiness: the
-CLI record has always called the offending path **`element`**, while the report
-record above calls it **`field`**. Both keys are now present on the CLI record
-and are **always equal** (`field` is literally `Violation.element`, the same
-datum the report projects), so a consumer can read either name on either
-surface. Nothing was renamed or removed: a script written against the original
-`{rule, message, element, severity}` CLI record keeps working byte-for-byte.
+Two names for one datum, kept for backward compatibility rather than tidiness:
+the CLI record has always called the offending path **`element`**, while the
+report record calls it **`field`**. As of **0.2.7 both keys are on both
+records** and are **always equal** (each is literally `Violation.element`), so a
+consumer can read either name on either surface with one code path. Nothing was
+renamed or removed: a script written against the original
+`{rule, message, element, severity}` CLI record, or against a `field`-only
+report record, keeps working byte-for-byte.
 
-So a CLI violation record has nine always-present keys —
+So a violation record on **any** of the three JSON surfaces has the same nine
+always-present keys —
 
 ```
 rule, message, element, severity, field, title, fix_hint, terms, location
 ```
 
-— plus the optional `source_line` below. `validate-batch --json` aggregates
-per-file reports through `einvoice.report`, so its per-file `violations[]` are
-**report** records (`field`, no `element`) carrying the identical four
-remediation fields.
+— plus the optional `source_line` below. That includes `validate-batch --json`:
+it aggregates per-file reports through `einvoice.report`, so its per-file
+`violations[]` **are** report records, and before 0.2.7 they were the one
+surface missing `element` — a nightly directory run and a pre-commit single-file
+run handed a CI consumer different violation objects. `test_json_surface_parity.py`
+now measures all three surfaces against each other, so that cannot silently
+recur.
 
 ### Optional `source_line` (additive, `v1`)
 
@@ -427,8 +433,9 @@ violation-record key) bumps `report_version` to 2 and mints a new `schema` id
 never silently mis-read a newer report.
 
 The `title`, `fix_hint`, `terms` and `location` violation-record fields were
-added this way, and the OPTIONAL `source_line` field follows the identical
-pattern: they are **additive** on the **same** `einvoice-conformance-report/v1`
+added this way; the OPTIONAL `source_line` field and the always-present
+`element` field (0.2.7) follow the identical pattern: they are **additive** on
+the **same** `einvoice-conformance-report/v1`
 schema id. The original `rule`/`severity`/`message`/`field` keys are unchanged
 and remain first, so existing consumers keep working untouched; the schema id
 and `report_version` are deliberately **not** revved. (`source_line` goes

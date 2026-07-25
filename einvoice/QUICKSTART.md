@@ -829,8 +829,9 @@ prints `exit=0` after the summary.
 python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/broken.xml
 ```
 
-exits **1** and prints the first fatal rule it hit — **`BR-DE-2`** — with the
-offending element and the two routes to what that rule wants:
+exits **1**, details one fatal rule — **`BR-DE-2`** — with the offending
+element and the two routes to what that rule wants, then states the total and
+lists every other rule the same run violated:
 
 ```text
 FAIL: examples/01-missing-fields/broken.xml
@@ -838,11 +839,21 @@ FAIL: examples/01-missing-fields/broken.xml
   offending element: cac:AccountingSupplierParty/cac:Party/cac:Contact
   how to fix: einvoice --explain BR-DE-2
   rule page:  https://verifyhash.com/einvoice/rules/BR-DE-2/
+  3 finding(s) total: 2 fatal, 1 non-fatal (--format json carries every field of each)
+  also violated:
+    [fatal] BR-DE-15: The element 'Buyer reference' (BT-10) must be transmitted.
+    [information] BR-DE-TMP-32: The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line.
 Syntax-binding warnings: 0
 ```
 
-The full list (here `BR-DE-2` **and** `BR-DE-15`, plus one advisory
-`information` finding) comes out under `--json`:
+So one run tells you everything to fix — you do not re-run once per rule. The
+`also violated:` list is capped at 10 lines; a document with more says how many
+it omitted and names `--format json`, which never truncates. Only the headline
+rule gets the element/how-to-fix detail; run `einvoice --explain BR-DE-15` (or
+open its rule page) for the same depth on any of the others.
+
+The same findings (here `BR-DE-2` **and** `BR-DE-15`, plus one advisory
+`information` finding) come out structured under `--json`:
 
 ```sh
 python3 einvoice.py validate --json --profile xrechnung examples/01-missing-fields/broken.xml

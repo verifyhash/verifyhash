@@ -212,9 +212,13 @@ Exit codes (stable contract):
        and measurably leaked a stray ``einvoice-stdin-*.xml``), then exits
        quietly with this code. Purely additive.
 
-Default output on failure: the FIRST fatal violated rule id, a human message
-and the offending element. With --json, the full result (all violations,
-each with its severity) is emitted.
+Default output on failure: a headline detailing one fatal violation (its rule
+id, a human message, the offending element and the two remediation routes),
+then the total finding count and EVERY other rule the run violated, one
+indented ``[severity] RULE: message`` line each, capped at
+``_NON_FATAL_LIST_CAP`` with an explicit "N more not shown" line when a
+document exceeds it. With --json, the full result (all violations, each with
+its severity and every structured field) is emitted.
 
 Standard library only.
 """
@@ -1776,6 +1780,60 @@ def _main(argv=None):
                     sys.stdout.write(
                         "  rule page:  %s%s/\n"
                         % (SARIF_RULE_HELP_BASE_URL, v.rule_id))
+                # MEASURED defect this fixes (T-VHFULL.1, 2026-07-25): the
+                # headline above is the whole default report, so a run that had
+                # already computed 12 findings printed exactly ONE of them and
+                # exited. examples/01-missing-fields/broken.xml is the small
+                # case: --format json carries BR-DE-2, BR-DE-15 and
+                # BR-DE-TMP-32, `validate-batch` counts "2 fatal", and the
+                # default text said "BR-DE-2" and nothing else. Since
+                # --format text is byte-identical to the default there was no
+                # human-readable route to finding two at all, which turned one
+                # validation into a fix-and-re-run round trip per rule.
+                #
+                # Nothing above this point changed: the verdict line is still
+                # first and still the ONLY line starting with "FAIL", the rule
+                # id / message / offending element / how-to-fix / rule-page
+                # block is byte-identical, every line added here is INDENTED
+                # (so the stdout-purity prefix guard and any `grep '^FAIL'`
+                # keep their meaning), and the exit code is decided far below
+                # from `result`, not from anything rendered here.
+                #
+                # Shape, cap and truncation wording are DELIBERATELY the PASS
+                # path's (see ~40 lines up): one convention for "here is a
+                # finding", one `_NON_FATAL_LIST_CAP`, one honest sentence that
+                # names the exact flag carrying everything.
+                total = len(result.violations)
+                fatal_total = sum(1 for x in result.violations
+                                  if _severity(x) == "fatal")
+                sys.stdout.write(
+                    "  %d finding(s) total: %d fatal, %d non-fatal "
+                    "(--format json carries every field of each)\n"
+                    % (total, fatal_total, total - fatal_total))
+                # `is not v` — identity, not equality: two findings of the same
+                # rule on different lines must both survive, and only the ONE
+                # object already detailed in the headline is dropped.
+                others = [x for x in result.violations if x is not v]
+                if others:
+                    sys.stdout.write("  also violated:\n")
+                for x in others[:_NON_FATAL_LIST_CAP]:
+                    # Same message resolution as the headline, so --lang de
+                    # surfaces the official German text on these lines too.
+                    sys.stdout.write(
+                        "    [%s] %s: %s\n"
+                        % (_severity(x), x.rule_id,
+                           resolve_message(x.rule_id, x.message, lang)))
+                if len(others) > _NON_FATAL_LIST_CAP:
+                    # Identical honesty to the PASS path: say how many were
+                    # omitted and name the flag that shows all of them. "all %d"
+                    # is the TOTAL, not len(others), because that is what
+                    # --format json actually carries — the headline violation is
+                    # in the JSON too, and quoting 13 next to a "14 finding(s)"
+                    # line one row up would read as a discrepancy.
+                    sys.stdout.write(
+                        "    ... %d more not shown — use --format json for "
+                        "all %d\n"
+                        % (len(others) - _NON_FATAL_LIST_CAP, total))
             # Syntax-binding warnings are a separate, non-blocking category —
             # print the count on its own line so the exit-driving FAIL/PASS
             # verdict above stays unambiguous.

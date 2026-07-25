@@ -53,16 +53,17 @@ undo.
 | Relationship to 0.2.6 | **supersedes** it — 0.2.6 is immutable and stays downloadable forever | see the immutability section above |
 | Runtime dependencies | **none** (stdlib only) | `pyproject.toml` `dependencies = []`, enforced by `test_packaging.py` + `test_pypi_packaging.py` |
 | Console script | `einvoice = einvoice.cli:main` | `pyproject.toml` `[project.scripts]` |
-| Built artifact staged under `einvoice/dist/` | **none committed** — `einvoice/dist/` is gitignored; build it fresh at publish time | step 1 below |
+| Built artifact staged under `einvoice/dist/` | **none committed** — `einvoice/dist/` is gitignored; build it fresh at publish time — after the step-1 purge | steps 1 + 3 below |
 
 ### Build toolchain on the box
 
 Building used to be impossible here: the box shipped `setuptools` 59.6.0 — older
 than the `setuptools>=61` this project's PEP 621 `[project]` table requires — and
-no `build` module, so `python3 -m build` either failed or produced a broken
-`UNKNOWN-0.0.0` wheel. That was resolved on 2026-07-22 (`python3.10-venv` plus a
-user-level `pip install --upgrade build twine 'setuptools>=61'`), and
-`python3 -m build` now emits correctly-named 0.2.7 artifacts. The
+no `build` module, so the PEP 517 build front-end either failed or produced a
+broken `UNKNOWN-0.0.0` wheel. That was resolved on 2026-07-22 (`python3.10-venv`
+plus a user-level `pip install --upgrade build twine 'setuptools>=61'`), and the
+build step of the command sequence below now emits correctly-named 0.2.7
+artifacts. The
 `test_pypi_packaging.py` wheel-from-venv proof is consequently **no longer
 DEFERRED-ON-TOOLCHAIN** — it runs its full build → clean-venv →
 `einvoice --version` check, and the deferred variant now reports as skipped.
@@ -94,36 +95,67 @@ DEFERRED-ON-TOOLCHAIN** — it runs its full build → clean-venv →
 
 ## Owner command sequence (one sitting, ~10 min)
 
+### Step 1 is the purge, and skipping it ships the wrong code
+
+`setuptools` does not rebuild `build/lib/` from scratch: it copies sources into
+that directory and **leaves anything already there in place**. So a build run in
+a tree that still holds an old `build/` silently packages the *old* modules for
+any file whose stale copy setuptools decides not to refresh.
+Nothing warns you — the wheel is named correctly, imports fine, and reports the
+right `--version`. It just contains different code than your checkout.
+
+This was measured, not theorised. At commit `7c0a0d8` this tree carried a
+`build/lib/einvoice/` left over from an earlier build in which three modules —
+`validate.py`, `report.py` and `coverage.py` — were byte-for-byte different
+from the tracked sources (`cmp` over every module: 3 differ, 0 missing, 0
+extra). A wheel built in-tree from that state rejected a **valid raw CII
+invoice** with the pre-fix `S-ROOT` fatal and exited 1; a wheel built from
+`git archive HEAD` accepted the same invoice and exited 0. Same project, same
+commit, same declared version 0.2.7 — two different validators.
+
+Because PyPI versions are immutable, that mistake is not recoverable: it costs
+another version number to undo, and until then the index serves a validator
+that false-fails German invoices under docs that promise CII works.
+`test_build_freshness.py` (run in step 2) is the structural guard — it fails
+loudly and names every stale file if `build/lib/einvoice/` has drifted from
+`einvoice/`. Run the purge anyway; the test is the backstop, not the fix.
+
 From a checkout of this repo, in `einvoice/`:
 
 ```bash
 cd /path/to/verifyhash/einvoice
 
-# 0. gates first — never publish a red tree. The wheel-behaviour gate matters
-#    most here: it is what stops a second immutable version going out broken.
+# 1. PURGE stale build output. Do this FIRST, every time — see the section
+#    directly above: setuptools reuses an existing build/lib and will happily
+#    package modules from your last build instead of your checkout.
+rm -rf build/ dist/ *.egg-info
+
+# 2. gates — never publish a red tree. The wheel-behaviour gate matters most
+#    here: it is what stops a second immutable version going out broken.
+#    test_build_freshness.py re-checks that step 1 actually happened.
+python3 test_build_freshness.py
 python3 test_packaging.py
 python3 test_pypi_packaging.py
 python3 test_wheel_remediation.py
 
-# 1. clean any stale build output, then build the sdist + wheel
-rm -rf dist build *.egg-info
+# 3. build the sdist + wheel
 python3 -m build            # writes dist/verifyhash_einvoice-0.2.7-py3-none-any.whl
                             #    and dist/verifyhash_einvoice-0.2.7.tar.gz
 
-# 2. sanity-check the metadata renders (catches a bad long_description)
+# 4. sanity-check the metadata renders (catches a bad long_description)
 python3 -m twine check dist/*
 
-# 3. (recommended) upload to TestPyPI and dry-run the install
+# 5. (recommended) upload to TestPyPI and dry-run the install
 python3 -m twine upload --repository testpypi dist/*
 #   then, in a scratch venv:
 #   python3 -m pip install --index-url https://test.pypi.org/simple/ verifyhash-einvoice
 #   einvoice --version   # -> einvoice 0.2.7
 
-# 4. upload to the real PyPI
+# 6. upload to the real PyPI
 python3 -m twine upload dist/*
 ```
 
-`twine upload dist/*` ships both the wheel and the sdist built in step 1. It
+`twine upload dist/*` ships both the wheel and the sdist built in step 3. It
 adds 0.2.7 alongside the existing releases; it does not — and cannot — touch the
 already-published 0.2.6 files.
 

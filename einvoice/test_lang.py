@@ -36,7 +36,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from einvoice import remediation as R          # noqa: E402
-from einvoice.cli import main, EXIT_USAGE      # noqa: E402
+from einvoice.cli import main, EXIT_USAGE, EXIT_OK  # noqa: E402
+from einvoice.report import main as report_main     # noqa: E402
 
 SCH_NS = "{http://purl.oclc.org/dsdl/schematron}"
 
@@ -82,22 +83,30 @@ def _extract_assert_text(sch_path, assert_id):
 
 
 class _Capture:
-    """Run ``main(argv)`` capturing stdout/stderr and the exit code."""
+    """Run ``main(argv)`` capturing stdout/stderr and the exit code.
 
-    def __init__(self, argv):
+    ``fn`` defaults to the ``einvoice`` console-script entry point; pass
+    ``report_main`` to drive ``python3 -m einvoice.report`` through the very
+    same harness (the byte-identity checks below need both).
+    """
+
+    def __init__(self, argv, fn=None):
         self.argv = argv
+        self.fn = fn or main
         self.rc = self.out = self.err = None
 
     def __enter__(self):
         self._out, self._err = sys.stdout, sys.stderr
         sys.stdout, sys.stderr = io.StringIO(), io.StringIO()
-        self.rc = main(self.argv)
-        self.out = sys.stdout.getvalue()
-        self.err = sys.stderr.getvalue()
+        try:
+            self.rc = self.fn(self.argv)
+        finally:
+            self.out = sys.stdout.getvalue()
+            self.err = sys.stderr.getvalue()
+            sys.stdout, sys.stderr = self._out, self._err
         return self
 
     def __exit__(self, *exc):
-        sys.stdout, sys.stderr = self._out, self._err
         return False
 
 
@@ -261,6 +270,203 @@ class Cli(unittest.TestCase):
             pass
         self.assertEqual(cap.rc, EXIT_USAGE)
         self.assertIn("unknown lang", cap.err)
+
+
+# --------------------------------------------------------------------------- #
+# T-VHERG.6: `--explain --lang` on BOTH entry points, and the DERIVED check that
+# the German-coverage numbers printed in EXIT-CODES.md are the catalog's own.
+# --------------------------------------------------------------------------- #
+
+#: A rule with OFFICIAL German (de_source == "kosit") and one WITHOUT (the CEN
+#: core), both taken from the catalog rather than assumed.
+KOSIT_RULE = "BR-DE-15"
+TRANSLATED_RULE = "BR-01"
+
+#: The doc whose German-coverage claims are derived-checked below.
+EXIT_CODES_DOC = os.path.join(HERE, "EXIT-CODES.md")
+
+#: Claim key (as written in the doc's first table column, inside backticks) ->
+#: a callable computing the TRUE count straight from the committed catalog.
+#: Every key must appear in the doc, and every doc row must be one of these —
+#: so neither side can drop or invent a claim without failing here.
+COVERAGE_CLAIMS = {
+    "message_de":
+        lambda cat: sum(1 for e in cat.values() if e.get("message_de")),
+    "title_de":
+        lambda cat: sum(1 for e in cat.values() if e.get("title_de")),
+    "fix_de":
+        lambda cat: sum(1 for e in cat.values() if e.get("fix_de")),
+    "de_source: kosit":
+        lambda cat: sum(1 for e in cat.values()
+                        if e.get("de_source") == "kosit"),
+    "de_source: translation":
+        lambda cat: sum(1 for e in cat.values()
+                        if e.get("de_source") == "translation"),
+}
+
+#: ``| `<claim>` | <n> of <total> |`` — the machine-checkable shape the doc's
+#: coverage table is written in.
+_CLAIM_ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*(\d+) of (\d+)\s*\|", re.M)
+
+
+def _doc_text():
+    with open(EXIT_CODES_DOC, encoding="utf-8") as fh:
+        return fh.read()
+
+
+class DocumentedGermanCoverageIsDerived(unittest.TestCase):
+    """EXIT-CODES.md's German-coverage numbers must equal the catalog's.
+
+    The backlog premise for T-VHERG.6 said the catalog carried "0" German
+    entries; the catalog actually carries official KoSIT German on 50 rules and
+    project-authored German on the other 247. A number written into prose rots
+    silently, so this test re-derives every claim from
+    ``remediation_catalog.json`` and fails the build if the doc and the data
+    ever disagree — the disclosure cannot become the next shipped falsehood.
+    """
+
+    def test_every_claim_row_matches_the_catalog(self):
+        rows = _CLAIM_ROW.findall(_doc_text())
+        self.assertTrue(rows, "EXIT-CODES.md has no `<field>` | `<n> of <m>` "
+                              "coverage rows — the disclosure was removed")
+        seen = set()
+        for claim, count, total in rows:
+            self.assertIn(claim, COVERAGE_CLAIMS,
+                          "EXIT-CODES.md claims coverage for %r, which is not "
+                          "a catalog field this test can derive" % claim)
+            seen.add(claim)
+            self.assertEqual(
+                int(total), len(CATALOG),
+                "EXIT-CODES.md says %r is out of %s rules; the catalog has %d"
+                % (claim, total, len(CATALOG)))
+            self.assertEqual(
+                int(count), COVERAGE_CLAIMS[claim](CATALOG),
+                "EXIT-CODES.md says %s rules carry %r; the catalog says %d"
+                % (count, claim, COVERAGE_CLAIMS[claim](CATALOG)))
+        self.assertEqual(
+            seen, set(COVERAGE_CLAIMS),
+            "EXIT-CODES.md must state every German-coverage claim; missing %r"
+            % sorted(set(COVERAGE_CLAIMS) - seen))
+
+    def test_doc_names_kosit_as_the_official_source(self):
+        # The single most important word in the disclosure: the official German
+        # is KoSIT's, not ours. Its absence would make the rest unattributed.
+        self.assertIn("kosit", _doc_text().lower())
+
+    def test_message_de_claim_is_non_vacuous(self):
+        # Guard against a doc table of all-zero rows trivially "agreeing".
+        self.assertEqual(COVERAGE_CLAIMS["message_de"](CATALOG),
+                         EXPECTED_MESSAGE_DE_COUNT)
+        self.assertEqual(COVERAGE_CLAIMS["title_de"](CATALOG), len(CATALOG))
+        self.assertGreater(COVERAGE_CLAIMS["de_source: translation"](CATALOG),
+                           0)
+
+
+class ExplainLang(unittest.TestCase):
+    """``--explain <RULE-ID> --lang=de`` on both entry points."""
+
+    def test_english_default_is_unchanged(self):
+        with _Capture(["--explain", KOSIT_RULE]) as cap:
+            pass
+        self.assertEqual(cap.rc, EXIT_OK)
+        self.assertIn(CATALOG[KOSIT_RULE]["title"], cap.out)
+        # No German fields, and no provenance line: the English block is the
+        # historical one, byte for byte.
+        self.assertNotIn("german   :", cap.out)
+        self.assertNotIn(CATALOG[KOSIT_RULE]["fix_de"], cap.out)
+
+    def test_de_prints_german_and_exits_zero(self):
+        with _Capture(["--explain", KOSIT_RULE, "--lang=de"]) as cap:
+            pass
+        self.assertEqual(cap.rc, EXIT_OK)
+        entry = CATALOG[KOSIT_RULE]
+        # The official KoSIT sentence is the requires line...
+        self.assertIn("  requires : %s" % entry["message_de"], cap.out)
+        # ...the German fix and title come from the catalog verbatim...
+        self.assertIn("  fix      : %s" % entry["fix_de"], cap.out)
+        self.assertIn("%s  %s" % (KOSIT_RULE, entry["title_de"]), cap.out)
+        # ...and the provenance is disclosed rather than left to trust.
+        self.assertIn("  german   :", cap.out)
+        self.assertIn("KoSIT", cap.out)
+        # Language-independent facts are untouched.
+        self.assertIn("  severity : %s" % entry["severity"], cap.out)
+
+    def test_de_on_a_translated_rule_says_so_and_keeps_requires_english(self):
+        entry = CATALOG[TRANSLATED_RULE]
+        self.assertEqual(entry.get("de_source"), "translation")
+        with _Capture(["--explain", TRANSLATED_RULE, "--lang=de"]) as cap:
+            pass
+        self.assertEqual(cap.rc, EXIT_OK)
+        self.assertIn("  german   :", cap.out)
+        self.assertIn("translation", cap.out)
+        # No official German exists, so the normative line stays English —
+        # nothing is invented to fill the gap.
+        self.assertIn("  requires : %s" % entry["requires"], cap.out)
+        # The project-authored German fields are still shown, as the doc says.
+        self.assertIn("%s  %s" % (TRANSLATED_RULE, entry["title_de"]), cap.out)
+
+    def test_both_entry_points_are_byte_identical_under_lang(self):
+        # The reason `_run_explain` delegates instead of forking the renderer.
+        for argv_lang in (["--lang=de"], ["--lang", "de"], ["--lang=en"], []):
+            for rule in (KOSIT_RULE, TRANSLATED_RULE):
+                with _Capture(["--explain", rule] + argv_lang) as cli_cap:
+                    pass
+                with _Capture(["--explain", rule] + argv_lang,
+                              fn=report_main) as rep_cap:
+                    pass
+                self.assertEqual(cli_cap.rc, EXIT_OK, argv_lang)
+                self.assertEqual(rep_cap.rc, EXIT_OK, argv_lang)
+                self.assertEqual(cli_cap.out, rep_cap.out,
+                                 "entry points drifted for %s %r"
+                                 % (rule, argv_lang))
+
+    def test_split_and_joined_lang_forms_agree(self):
+        with _Capture(["--explain", KOSIT_RULE, "--lang", "de"]) as split:
+            pass
+        with _Capture(["--explain", KOSIT_RULE, "--lang=de"]) as joined:
+            pass
+        self.assertEqual(split.out, joined.out)
+        # ...and en is exactly the no-flag output.
+        with _Capture(["--explain", KOSIT_RULE, "--lang=en"]) as en:
+            pass
+        with _Capture(["--explain", KOSIT_RULE]) as bare:
+            pass
+        self.assertEqual(en.out, bare.out)
+
+    def test_unknown_lang_on_explain_is_a_usage_error(self):
+        with _Capture(["--explain", KOSIT_RULE, "--lang=fr"]) as cap:
+            pass
+        self.assertEqual(cap.rc, EXIT_USAGE)
+        self.assertIn("unknown lang", cap.err)
+        self.assertEqual(cap.out, "")
+        # Byte-identical to the validate form's error line (one vocabulary
+        # error, not a second dialect of it).
+        with _Capture(["validate", BR_DE_FIXTURE, "--lang=fr"]) as val:
+            pass
+        self.assertEqual(cap.err, val.err)
+
+    def test_unknown_rule_id_still_exits_one_under_lang(self):
+        with _Capture(["--explain", "NOPE-999", "--lang=de"]) as cap:
+            pass
+        self.assertEqual(cap.rc, 1)
+        self.assertEqual(cap.out, "")
+
+    def test_batch_banner_documents_lang(self):
+        # (2) The banner under-described a flag validate-batch really accepts.
+        from einvoice.cli import USAGE as CLI_USAGE
+        batch_line = [ln for ln in CLI_USAGE.splitlines()
+                      if "validate-batch" in ln]
+        self.assertEqual(len(batch_line), 1)
+        self.assertIn("--lang", batch_line[0])
+        # ...and the flag genuinely works there (banner must not outrun code).
+        with _Capture(["validate-batch", os.path.join(HERE, "fixtures"),
+                       "--lang=de", "--quiet"]) as cap:
+            pass
+        self.assertNotEqual(cap.rc, EXIT_USAGE)
+        explain_line = [ln for ln in CLI_USAGE.splitlines()
+                        if "--explain" in ln]
+        self.assertEqual(len(explain_line), 1)
+        self.assertIn("--lang", explain_line[0])
 
 
 if __name__ == "__main__":

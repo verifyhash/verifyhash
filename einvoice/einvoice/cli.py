@@ -1,8 +1,9 @@
 """Command-line interface for the einvoice validator.
 
 Usage:
-    einvoice validate <invoice.xml|invoice.pdf|-> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung]
-    einvoice validate-batch <dir|glob> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung]
+    einvoice validate <invoice.xml|invoice.pdf|-> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de]
+    einvoice validate-batch <dir|glob> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de]
+    einvoice --explain <RULE-ID> [--lang=en|de]
     einvoice receipt  <invoice.xml> [--profile=en16931|xrechnung]
     einvoice receipt  --verify <receipt.json>
     einvoice info [--json]
@@ -82,13 +83,20 @@ Global flags:
                the human summary and ``--quiet`` only suppresses it, so neither
                changes a machine-format body (identical to how they behave with
                ``--json`` today).
-    --lang     language of the HUMAN validate summary only: ``en`` (default,
-               unchanged behaviour) or ``de``. Under ``de`` a violated rule that
-               carries an OFFICIAL German message (the BR-DE family, whose
-               vendored KoSIT XRechnung ``<sch:assert>`` text is German) is shown
-               with that verbatim German string; every other rule keeps its
-               English message. ``--lang`` never affects ``--json`` output, rule
-               ids, severities or which rules fire — only the displayed text.
+    --lang     language of HUMAN-facing text only: ``en`` (default, unchanged
+               behaviour) or ``de``. Accepted on ``validate``, ``validate-batch``
+               and ``--explain``. Under ``de`` a violated rule that carries an
+               OFFICIAL German message (the BR-DE family, whose vendored KoSIT
+               XRechnung ``<sch:assert>`` text is German) is shown with that
+               verbatim German string; every other rule keeps its English
+               message. On ``--explain`` the block additionally swaps in the
+               catalog's ``title_de`` / ``fix_de`` and prints a ``german`` line
+               naming the provenance of what it just showed (official KoSIT text
+               vs. project-authored translation) — see EXIT-CODES.md for the
+               measured coverage. ``--lang`` never affects ``--json`` output,
+               rule ids, severities or which rules fire — only displayed text,
+               and nothing is translated at run time: every German byte is a
+               string already committed in ``remediation_catalog.json``.
 
 Config file (opt-in defaults — see ``einvoice/config.py``):
     A ``.einvoice.toml`` in the current working directory, else a
@@ -240,12 +248,12 @@ USAGE = ("usage: einvoice validate <invoice.xml|invoice.pdf|-> "
          "[--fail-on=fatal|warning|information]\n"
          "       einvoice validate-batch <dir|glob> "
          "[--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung] "
-         "[--fail-on=fatal|warning|information]\n"
+         "[--lang=en|de] [--fail-on=fatal|warning|information]\n"
          "       einvoice receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
          "       einvoice receipt --verify <receipt.json> [--json]\n"
          "       einvoice info [--json]\n"
-         "       einvoice --explain <RULE-ID>\n"
+         "       einvoice --explain <RULE-ID> [--lang=en|de]\n"
          "       einvoice --show-config\n"
          "       einvoice --version\n"
          "       einvoice --help")
@@ -376,7 +384,8 @@ HELP = (
     "                             id seen in a failure (what it requires, the BT/BG\n"
     "                             terms, where in the XML, the one-line fix, the\n"
     "                             Schematron it comes from). Reads no invoice;\n"
-    "                             exit 0 found, 1 unknown rule id\n"
+    "                             exit 0 found, 1 unknown rule id. --lang de shows\n"
+    "                             the catalog's German and names its provenance\n"
     "  --show-config              resolve and print the effective config; run nothing\n"
     "  --version                  print the packaged einvoice version and exit\n"
     "  --help, -h                 show this help and exit\n\n"
@@ -672,6 +681,7 @@ def _run_explain(args):
         return EXIT_USAGE
 
     rule_id = None
+    lang = None
     rest = []
     i = 0
     while i < len(args):
@@ -686,6 +696,20 @@ def _run_explain(args):
             rule_id = a.split("=", 1)[1]
             i += 1
             continue
+        # ``--lang`` in BOTH spellings, exactly as ``validate`` accepts it —
+        # the whole point of T-VHERG.6 is that the German a reader just saw in
+        # a `validate --lang de` summary can be expanded in German too.
+        if a == "--lang":
+            if i + 1 >= len(args):
+                sys.stderr.write("error: --lang needs a value\n" + USAGE + "\n")
+                return EXIT_USAGE
+            lang = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--lang="):
+            lang = a.split("=", 1)[1]
+            i += 1
+            continue
         rest.append(a)
         i += 1
     if not rule_id:
@@ -697,7 +721,20 @@ def _run_explain(args):
             "unexpected argument %s\n%s\n"
             % (", ".join(repr(a) for a in rest), USAGE))
         return EXIT_USAGE
-    return _report_main(["--explain", rule_id])
+    if lang is not None and lang not in SUPPORTED_LANGS:
+        # The IDENTICAL line and exit code ``validate --lang=fr`` produces
+        # (test_config_file.py pins that shape) — one vocabulary error, not a
+        # second dialect of it.
+        sys.stderr.write("error: unknown lang %r (choose from %s)\n%s\n"
+                         % (lang, ", ".join(SUPPORTED_LANGS), USAGE))
+        return EXIT_USAGE
+    # The delegation stays a NORMALISED argv, so the two entry points keep
+    # rendering the same bytes from the same renderer. Omitting the flag when
+    # the user omitted it keeps the English path literally the historical call.
+    argv = ["--explain", rule_id]
+    if lang is not None:
+        argv += ["--lang", lang]
+    return _report_main(argv)
 
 
 def _resolve_output_settings(cfg, cfg_source, fail_on_flag, lang_flag, json_flag,

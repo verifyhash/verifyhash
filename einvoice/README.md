@@ -559,13 +559,14 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   the human summary). It has no effect on `receipt`, whose canonical JSON *is*
   its output.
 - `--profile=en16931|xrechnung` — select the rule set (default `en16931`).
-- `--lang=en|de` — language of the human failure message only (default `en`).
+- `--lang=en|de` — language of human-facing text only (default `en`), accepted on
+  `validate`, `validate-batch` and `--explain`.
   Under `de` a rule that has an **official** German assert renders it; all other
   rules keep their English message. It changes nothing else — same rules fire,
   same offending element, byte-identical `--json`, same exit code. See
   [§German-language messages](#german-language-messages---lang-de) for the exact
   coverage.
-- `--explain <RULE-ID>` — **look up one rule id from a failure**. Prints the
+- `--explain <RULE-ID> [--lang=en|de]` — **look up one rule id from a failure**. Prints the
   `remediation_catalog.json` entry — what the rule requires, the BT/BG business
   terms, the XML location hint, the one-line fix, the severity, and the official
   Schematron assert it is derived from — then exits. It reads no invoice,
@@ -575,7 +576,12 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   to capture), `2` if the rule id is missing from the command line. This is the
   same code path as `python3 -m einvoice.report --explain <RULE-ID>` and prints
   byte-identical output; the flag exists on `einvoice` too because that is where
-  you already are when a rule id appears in a `FAIL:` line.
+  you already are when a rule id appears in a `FAIL:` line. `--lang de` reads the
+  block in German — the catalog's `title_de` / `fix_de`, the official KoSIT
+  message on the rules that have one, plus a `german` line naming which of those
+  two provenances you got; anything without a German string stays English. Both
+  entry points accept it and stay byte-identical. Exact per-field coverage:
+  [EXIT-CODES.md](EXIT-CODES.md#what---langde-actually-gives-you-measured-german-coverage).
 - `--show-config` — **read-only observability**: resolve the effective
   `format` / `fail-on` / `lang` exactly as a real `validate` run would (explicit
   flag > config file > built-in default) and print each with its **source** —

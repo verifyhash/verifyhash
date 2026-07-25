@@ -233,7 +233,7 @@ Scope and invariants:
   a SARIF body is meaningless. An invalid value there keeps its historical
   `error: unknown format '<x>' in config …` message and exit `2`.
 
-## `--explain <RULE-ID>` — catalog lookup, no new code (additive)
+## `--explain <RULE-ID> [--lang=en|de]` — catalog lookup, no new code (additive)
 
 `einvoice --explain BR-CO-15` prints the `remediation_catalog.json` entry for
 one rule id: what it requires, the BT/BG business terms it touches, the XML
@@ -241,11 +241,19 @@ location hint, the one-line fix, the severity, and the official Schematron it
 comes from. It reads **no** invoice, resolves no config, and produces no
 verdict — so it mints **no new exit code**; it reuses three existing ones.
 
+`--lang=en|de` (both spellings, `--lang de` and `--lang=de`, exactly as
+`validate` takes it) selects the language of that block on **both** entry
+points, `einvoice --explain` and `python3 -m einvoice.report --explain`; their
+stdout stays byte-identical because both render through the one
+`einvoice.report.format_explain`. An unknown value is the same usage error a bad
+`validate --lang` value gives (`2` on the `einvoice` CLI). The default is `en`
+and omitting the flag is byte-identical to the historical output.
+
 | Code | When | Stream |
 |------|------|--------|
 | `0` | The rule id is in the catalog. Lookup is **case-insensitive** and the canonical id is echoed back. | stdout: the plain-text block. Nothing on stderr. |
 | `1` | The rule id is **not catalogued** — or this installation has no readable `remediation_catalog.json` at all, which is reported as its own distinct line rather than blamed on your id. | stderr: one `error: unknown rule id '<id>' — not in the remediation catalog …` line. **stdout stays empty**, so `$(einvoice --explain …)` is safe to capture. |
-| `2` | Usage error: `--explain` with no rule id after it, or a rule id plus something else on the command line (it takes only the id). | stderr: one `error:` line plus the `usage:` banner. |
+| `2` | Usage error: `--explain` with no rule id after it, a rule id plus something else on the command line (it takes only the id and an optional `--lang`), a bare `--lang` with no value, or an unknown `--lang` value. | stderr: one `error:` line plus the `usage:` banner. |
 
 The `1` here is deliberate rather than a fourth usage case: it is exactly what
 `python3 -m einvoice.report --explain` has always returned, and the two entry
@@ -258,6 +266,34 @@ Honest limit: `1` means "not in *our* catalog", not "not a real EN 16931 rule".
 The catalog covers the rules this engine can fire; an id from a national CIUS
 this build does not implement is a legitimate rule id and still exits `1`.
 `einvoice info` prints how many business rules this build carries.
+
+### What `--lang=de` actually gives you (measured German coverage)
+
+`--lang de` does not translate anything at run time. It prints German strings
+that are already committed in `remediation_catalog.json`, and the coverage is
+uneven — so here is the whole truth, counted from the committed catalog:
+
+| Catalog field | Rules carrying it | What that German actually is |
+|---|---|---|
+| `message_de` | 50 of 297 | The **official** German: the vendored **KoSIT** XRechnung `<sch:assert>` text, lifted **verbatim** and tagged with the `{artifact, assert_id}` it came from. Only the German-authored `BR-DE-*` family has one. |
+| `de_source: kosit` | 50 of 297 | The same 50 rules — the tag that marks an entry as carrying official KoSIT German. |
+| `de_source: translation` | 247 of 297 | Every other rule: its German is **project-authored translation** of our own English wording. No standards body wrote it, and it is labelled as ours wherever it is shown. |
+| `title_de` | 297 of 297 | Present on every rule, but only KoSIT-official on the 50 above. |
+| `fix_de` | 297 of 297 | Present on every rule, and **always** project-authored — even for the 50 KoSIT rules, because the fix line is our own "add the element at `<xpath>`" sentence with the official message quoted inside it. |
+
+So in an `--explain <RULE-ID> --lang de` block: the header title and the `fix`
+line come from `title_de` / `fix_de`; the `requires` line is resolved through the
+same `einvoice.remediation.resolve_message` that `validate --lang de` uses, which
+means it is the official KoSIT sentence for one of the 50 and stays **English**
+for the other 247 rather than being invented; and a `german` line names which of
+the two provenances you are looking at. Any field with no German string falls
+back to its English text — nothing is machine-translated and no German rule text
+is authored to fill a gap.
+
+These counts are not prose kept by hand: `test_lang.py` re-reads this table and
+the catalog and fails if they disagree, so a catalog change that is not
+reflected here breaks the build rather than shipping a false claim. `README.md`
+describes the same coverage from the `validate --lang de` side.
 
 ## Code `3` — unsupported PDF container on the single-file path (additive)
 

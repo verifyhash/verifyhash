@@ -82,7 +82,7 @@ from xml.etree import ElementTree as ET
 from .validate import validate_file, validate_root, PROFILES, _severity
 from .parser import NotWellFormed, parse_file
 from ._xmlsec import _safe_fromstring
-from .remediation import load_catalog
+from .remediation import load_catalog, resolve_message, SUPPORTED_LANGS
 from . import remediation as _remediation
 from . import pdf_container
 from . import syntax_binding_eval as _sbe
@@ -1909,7 +1909,8 @@ USAGE = ("usage: python3 -m einvoice.report "
          "[--format json|junit|sarif|gitlab|github|azure|html|badge|text] "
          "[--pretty] [--recurse] "
          "[--baseline <prev-report.json>] <invoice.xml | directory>\n"
-         "   or: python3 -m einvoice.report --explain <RULE-ID>\n"
+         "   or: python3 -m einvoice.report --explain <RULE-ID> "
+         "[--lang en|de]\n"
          "  When the path is a DIRECTORY (or --recurse is given) every invoice "
          "file (*.xml / *.pdf, dotfiles skipped) under it is validated and "
          "wrapped in an aggregate 'einvoice-conformance-batch/v1' document. "
@@ -1923,10 +1924,37 @@ USAGE = ("usage: python3 -m einvoice.report "
          "https://verifyhash.com/einvoice/\n"
          "  --explain prints the remediation-catalog entry for one rule id "
          "(e.g. BR-DE-15) as a plain-text block and exits 0; it needs NO "
-         "invoice file and is not combinable with --format/--baseline.")
+         "invoice file and is not combinable with --format/--baseline. "
+         "--lang en|de selects the language of that block (de shows the "
+         "catalog's German fields and names their provenance; anything with no "
+         "German string stays English). --lang applies to --explain only — the "
+         "report documents themselves are machine-facing and language-neutral.")
 
 
-def format_explain(rule_id, catalog=None):
+#: One line per ``de_source`` value, printed as the ``german`` field of an
+#: ``--explain --lang de`` block so the reader can see WHERE the German they are
+#: reading came from instead of having to trust it. The three cases are the only
+#: ones ``remediation_catalog.json`` can produce (``gen_remediation.py`` writes
+#: ``de_source`` on every entry; the ``None`` key covers a catalog old enough or
+#: damaged enough not to carry the field at all).
+#:
+#: Wording discipline: nothing here claims more than the data supports. Only the
+#: ``kosit`` rules carry an OFFICIAL German string — the vendored KoSIT
+#: XRechnung ``<sch:assert>`` text, verbatim — and that string is the rule
+#: MESSAGE (title/requires). Their German fix line, and ALL German on every
+#: other rule, is project-authored translation of our own English wording; no
+#: standards body wrote it.
+GERMAN_PROVENANCE = {
+    "kosit": ("title/requires = official KoSIT XRechnung <sch:assert> text "
+              "(verbatim); fix = project translation"),
+    "translation": ("project-authored translation of the English wording; no "
+                    "official German text exists for this rule, so 'requires' "
+                    "stays English"),
+    None: "no German in the catalog for this rule — shown in English",
+}
+
+
+def format_explain(rule_id, catalog=None, lang="en"):
     """Render the remediation-catalog entry for ``rule_id`` as a plain-text
     block, or return ``None`` if the id is not catalogued.
 
@@ -1940,6 +1968,31 @@ def format_explain(rule_id, catalog=None):
     an installation whose catalog file is missing/unreadable yields an empty
     mapping and this returns ``None`` (the caller reports it) rather than
     raising ``FileNotFoundError`` at the user.
+
+    ``lang`` selects which of the catalog's SHIPPED strings are printed and is
+    a pure display choice — the rule id, the BT/BG terms, the location hint,
+    the severity and the Schematron provenance are language-independent facts
+    and are byte-identical in both languages. ``lang="en"`` (the default, and
+    what every caller that omits the argument gets) is the historical block,
+    unchanged to the byte. ``lang="de"`` swaps in:
+
+      * ``requires`` — through :func:`einvoice.remediation.resolve_message`,
+        the SAME resolver ``einvoice validate --lang de`` uses, so this line is
+        the official KoSIT German for the ~50 rules that have one and falls
+        back to the English requirement for every other rule rather than
+        inventing German;
+      * the header title and ``fix`` — the catalog's ``title_de`` / ``fix_de``,
+        which every entry carries;
+      * an extra ``german`` line naming the PROVENANCE of what was just printed
+        (see :data:`GERMAN_PROVENANCE`), because "official standards text" and
+        "our own translation" are very different things to an adopter arguing
+        with a German tax authority, and the block would otherwise present them
+        identically.
+
+    Nothing is translated at runtime and no German is generated here: every
+    German byte is a lookup of a string ``gen_remediation.py`` already committed.
+    An unrecognised ``lang`` renders as English (callers reject unknown values
+    with a usage error before reaching this function).
     """
     if catalog is None:
         catalog = _remediation_catalog()
@@ -1959,16 +2012,37 @@ def format_explain(rule_id, catalog=None):
     prov_source = prov.get("source") or "(unknown)"
     prov_assert = prov.get("assert") or ""
 
+    title = entry.get("title", "")
+    requires = entry.get("requires", "") or "(not stated)"
+    fix = entry.get("fix", "") or "(none given)"
+    german_line = None
+    if lang == "de":
+        # Shipped German only. resolve_message() returns the official KoSIT
+        # message where the rule has one and the English argument otherwise —
+        # the identical fallback `validate --lang de` performs.
+        requires = resolve_message(canonical, requires, "de", catalog=catalog)
+        title = entry.get("title_de") or title
+        fix = entry.get("fix_de") or fix
+        de_source = entry.get("de_source")
+        if de_source not in GERMAN_PROVENANCE:
+            # Unknown provenance tag: report it rather than silently claiming
+            # one of the two we understand.
+            german_line = "de_source %r — provenance not recognised" % de_source
+        else:
+            german_line = GERMAN_PROVENANCE[de_source]
+
     lines = [
-        "%s  %s" % (canonical, entry.get("title", "")),
+        "%s  %s" % (canonical, title),
         "",
-        "  requires : %s" % (entry.get("requires", "") or "(not stated)"),
+        "  requires : %s" % requires,
         "  BT/BG    : %s" % (", ".join(bt_bg) if bt_bg else "(none)"),
         "  location : %s" % (entry.get("location_hint", "") or "(unspecified)"),
-        "  fix      : %s" % (entry.get("fix", "") or "(none given)"),
+        "  fix      : %s" % fix,
         "  severity : %s" % (entry.get("severity", "") or "(unspecified)"),
         "  source   : %s (Schematron)" % prov_source,
     ]
+    if german_line:
+        lines.append("  german   : %s" % german_line)
     if prov_assert:
         lines.append("  assert   : %s" % prov_assert)
     return "\n".join(lines) + "\n"
@@ -2053,6 +2127,8 @@ def main(argv=None):
     baseline_path = None
     explain_id = None
     saw_explain = False
+    lang = "en"
+    saw_lang = False
     rest = []
     i = 0
     while i < len(args):
@@ -2078,6 +2154,24 @@ def main(argv=None):
         if a.startswith("--explain="):
             explain_id = a.split("=", 1)[1]
             saw_explain = True
+            i += 1
+            continue
+        # --lang is accepted HERE, in the shared parser, purely so ``--explain``
+        # can be read in German (T-VHERG.6). It is rejected below for every
+        # other mode rather than silently ignored: a report document is
+        # machine-facing and language-neutral, and a flag that is swallowed
+        # without effect is how a user comes to believe a translation happened.
+        if a == "--lang":
+            if i + 1 >= len(args):
+                sys.stderr.write("error: --lang needs a value\n" + USAGE + "\n")
+                return EXIT_FAIL
+            lang = args[i + 1]
+            saw_lang = True
+            i += 2
+            continue
+        if a.startswith("--lang="):
+            lang = a.split("=", 1)[1]
+            saw_lang = True
             i += 1
             continue
         if a == "--profile":
@@ -2135,6 +2229,10 @@ def main(argv=None):
                 "error: --explain is a catalog lookup and cannot be combined "
                 "with --format or --baseline\n%s\n" % USAGE)
             return EXIT_FAIL
+        if lang not in SUPPORTED_LANGS:
+            sys.stderr.write("error: unknown lang %r (choose from %s)\n%s\n"
+                             % (lang, ", ".join(SUPPORTED_LANGS), USAGE))
+            return EXIT_FAIL
         # An installation with NO usable catalog (missing/unreadable
         # remediation_catalog.json) is a different failure from "that id is
         # not catalogued": say so honestly in one line instead of blaming the
@@ -2146,7 +2244,7 @@ def main(argv=None):
                 "(remediation_catalog.json is missing or unreadable) — "
                 "--explain has nothing to look %r up in\n" % explain_id)
             return EXIT_FAIL
-        block = format_explain(explain_id, catalog)
+        block = format_explain(explain_id, catalog, lang=lang)
         if block is None:
             sys.stderr.write(
                 "error: unknown rule id %r — not in the remediation catalog "
@@ -2154,6 +2252,13 @@ def main(argv=None):
             return EXIT_FAIL
         sys.stdout.write(block)
         return EXIT_OK
+
+    if saw_lang:
+        sys.stderr.write(
+            "error: --lang applies only to --explain; a report document is "
+            "machine-facing and language-neutral (use 'einvoice validate "
+            "--lang de' for a German human summary)\n%s\n" % USAGE)
+        return EXIT_FAIL
 
     if fmt not in REPORT_FORMATS:
         sys.stderr.write(

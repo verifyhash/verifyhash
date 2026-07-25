@@ -256,6 +256,38 @@ the id is invalid, since the catalog covers the rules this build can actually
 fire. `python3 -m einvoice.report --explain BR-DE-15` prints the identical
 block; same code path, so use whichever entry point is already in your hand.
 
+**Reading it in German — `--lang de`.** If you found the rule through
+`einvoice validate --lang de` (which shows the official German message on the
+`BR-DE-*` family), you can expand it in German too — on either entry point:
+
+```sh
+einvoice --explain BR-DE-15 --lang=de
+```
+
+```text
+BR-DE-15  Das Element "Buyer reference" (BT-10) muss übermittelt werden.
+
+  requires : Das Element "Buyer reference" (BT-10) muss übermittelt werden.
+  BT/BG    : BT-10
+  location : cbc:BuyerReference
+  fix      : Ergänzen Sie das erforderliche Element bei `cbc:BuyerReference`: Das Element "Buyer reference" (BT-10) muss übermittelt werden.
+  severity : fatal
+  source   : xrechnung-ubl (Schematron)
+  german   : title/requires = official KoSIT XRechnung <sch:assert> text (verbatim); fix = project translation
+  assert   : Das Element "Buyer reference" (BT-10) muss übermittelt werden.
+```
+
+The extra `german` line is the point: it tells you **whose** German you are
+reading. For `BR-DE-15` the rule sentence is KoSIT's own, verbatim — you can
+quote it at a tax authority. For a CEN core rule such as `BR-01` the same line
+says `project-authored translation …`, the `requires` line stays English (there
+is no official German to quote), and only the title and fix are German. Exactly
+50 of the 297 catalogued rules carry official German; the numbers and what each
+field means are tabulated in
+[`EXIT-CODES.md`](EXIT-CODES.md#what---langde-actually-gives-you-measured-german-coverage).
+Nothing is translated at run time and no German rule text is invented to fill a
+gap — a missing German string simply falls back to English.
+
 ### Not UBL? The same walk in raw CII (UN/CEFACT)
 
 EN 16931 permits **two** syntaxes, and this validator reads both: the OASIS

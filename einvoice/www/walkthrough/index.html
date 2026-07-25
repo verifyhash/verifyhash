@@ -113,10 +113,13 @@ pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
 <h1>From failing CI to a fixed invoice</h1>
 <p class="lead">A five-minute worked example. We take a real German <strong>XRechnung</strong> (EN 16931 UBL) invoice with two required things removed, run the <code>einvoice</code> conformance checker exactly as a CI gate would, read the actual report it prints, and apply the fix until the invoice passes. Every finding below is produced by the real engine — the report is regenerated from the tool and a test fails the build if this page ever drifts from live output.</p>
 <p>The engine behind this walkthrough asserts <strong>297 EN 16931 / XRechnung business rules</strong> — every official EN 16931 <code>BR-*</code> rule that can actually fire in either CEN syntax universe (UBL and CII) — every fireable code-list check now included, the complete German KoSIT layer including the Clean-Vehicle-Directive family, and the 21 <code>PEPPOL-EN16931-R*</code> rules KoSIT vendors (that subset only, not Peppol BIS Billing 3.0) — each rule differentially proven against the official Schematron artifacts at 0 divergences. The per-rule inventory and its honest limits live in <code>COVERAGE.md</code> in the repository.</p>
-<p>You can reproduce every step yourself: you only need Python 3 and this repository, no dependencies and no network. Run the commands from the <code>einvoice/</code> directory.</p>
+<p>You can reproduce every step yourself. One install puts the <code>einvoice</code> console script on your PATH — Python&nbsp;3.10+, zero dependencies, no network at validation time:</p>
+<pre><code>python3 -m pip install verifyhash-einvoice
+einvoice validate --profile xrechnung invoice.xml</code></pre>
+<p>Every command below is that same console script. The two invoice files it is pointed at (<code>examples/01-missing-fields/broken.xml</code> and <code>examples/01-missing-fields/fixed.xml</code>) live in the <strong>repository checkout</strong> — the PyPI wheel deliberately ships only the <code>einvoice</code> package, not the examples — so clone the repository if you want to run these exact paths, and run the commands from its <code>einvoice/</code> directory. Against an invoice of your own, every command works unchanged straight from the pip install.</p>
 <section class="step">
 <h2>1. The broken invoice</h2>
-<p>A supplier exported this UBL invoice, but two mandatory items are missing: the <strong>Buyer reference</strong> (<code>BT-10</code>, the <em>Leitweg-ID</em> routing id a German public buyer requires) and the <strong>SELLER CONTACT</strong> group (<code>BG-6</code>, a <code>cac:Contact</code> under the supplier party). Everything else is a byte-for-byte copy of a valid KoSIT test document, so these two omissions are the <em>only</em> reason it fails. The full file is <code>examples/01-missing-fields/broken.xml</code>:</p>
+<p>A supplier exported this UBL invoice, but two mandatory items are missing: the <strong>Buyer reference</strong> (<code>BT-10</code>, the <em>Leitweg-ID</em> routing id a German public buyer requires) and the <strong>SELLER CONTACT</strong> group (<code>BG-6</code>, a <code>cac:Contact</code> under the supplier party). Everything else is a byte-for-byte copy of a valid KoSIT test document, so these two omissions are the <em>only</em> reason it fails. The full file is <code>examples/01-missing-fields/broken.xml</code> in the repository checkout:</p>
 <pre>&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
 &lt;!--
   DELIBERATELY NON-CONFORMANT onboarding example (broken invoice).
@@ -275,9 +278,12 @@ pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
 </section>
 <section class="step">
 <h2>2. Run the checker (this is your CI gate)</h2>
-<p>Point the tool at the invoice. In a CI pipeline this is the command whose non-zero exit fails the build:</p>
-<pre>$ python3 -m einvoice.report examples/01-missing-fields/broken.xml --format json</pre>
-<p>It exits <strong>1</strong> and prints the report below. Only <code>fatal</code> findings make an invoice invalid (mirroring the official Schematron <code>flag</code> semantics); <code>warning</code> and <code>information</code> findings are advisory and do not fail the build.</p>
+<p>Point the console script at the invoice (paths relative to the <code>einvoice/</code> directory of the repository checkout). In a CI pipeline this is the command whose non-zero exit fails the build:</p>
+<pre>$ einvoice validate --profile xrechnung examples/01-missing-fields/broken.xml</pre>
+<p><code>--profile xrechnung</code> is not optional here: the console script defaults to <code>--profile en16931</code> (the European core rule set), and under that profile this file <em>passes</em> — both missing fields are German <code>BR-DE-*</code> requirements. The command exits <strong>1</strong> and prints a two-line human verdict: <code>FAIL:</code> with the <em>first</em> fatal rule id and its offending element. For the whole finding list — what CI wants to archive — ask for JSON:</p>
+<pre>$ einvoice validate --profile xrechnung --format json examples/01-missing-fields/broken.xml</pre>
+<p>Same exit code, every finding in one array. Only <code>fatal</code> findings make an invoice invalid (mirroring the official Schematron <code>flag</code> semantics); <code>warning</code> and <code>information</code> findings are advisory and do not fail the build.</p>
+<p>The older module form, <code>python3 -m einvoice.report examples/01-missing-fields/broken.xml --format json</code>, is fully supported and does the same work — it is the entry point the shipped CI gate script <code>ci/validate-invoices.sh</code> and the GitHub Action drive, it already defaults to <code>--profile xrechnung</code> (the console script defaults to <code>en16931</code>), and its JSON wraps the same findings in a versioned envelope with <code>report_version</code>, <code>schema</code>, <code>profile</code>, <code>fatal_count</code> and <code>warning_count</code>. That envelope is what the summary and the finding cards below are rendered from.</p>
 </section>
 <section class="step">
 <h2>3. Read the report</h2>
@@ -297,7 +303,7 @@ pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
 <h3>An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.</h3>
 <p class="hint">Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.</p>
 </div>
-<p>The two <code>fatal</code> findings (<code>BR-DE-15</code> and <code>BR-DE-2</code>) are why the invoice is rejected. The <code>information</code> finding is advisory — we leave it as-is so this stays a minimal two-field fix. For a full remediation write-up of any rule, run <code>python3 -m einvoice.report --explain BR-DE-15</code>.</p>
+<p>The two <code>fatal</code> findings (<code>BR-DE-15</code> and <code>BR-DE-2</code>) are why the invoice is rejected. The <code>information</code> finding is advisory — we leave it as-is so this stays a minimal two-field fix. For a full remediation write-up of any rule id you see in a failure, run <code>einvoice --explain BR-DE-15</code> — it reads no invoice and prints what the rule requires, its BT/BG terms, the XML location, the one-line fix and the verbatim official Schematron assert (<code>--lang de</code> for the German text).</p>
 </section>
 <section class="step">
 <h2>4. Apply the fix</h2>
@@ -328,10 +334,10 @@ pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: .5rem;
 </section>
 <section class="step">
 <h2>5. The corrected invoice passes</h2>
-<p>Re-run the same command on the corrected file (<code>examples/01-missing-fields/fixed.xml</code>):</p>
-<pre>$ python3 -m einvoice.report examples/01-missing-fields/fixed.xml --format json</pre>
-<p class="pass">It now exits <strong>0</strong> and reports <code>valid: true</code> with <code>fatal_count: 0</code>. Both <code>BR-DE-*</code> fatals are gone and the invoice would pass this pre-flight. (This page&rsquo;s test re-runs the live engine on <code>fixed.xml</code> and fails the build unless it really passes with zero fatal findings.)</p>
-<p><strong>Honest limit:</strong> a green result means &ldquo;no implemented rule fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. This is a fast pre-flight that catches the mistakes which trip up most first submissions — still run your buyer&rsquo;s official validator before you file.</p>
+<p>Re-run the same command on the corrected file (<code>examples/01-missing-fields/fixed.xml</code>, also from the repository checkout):</p>
+<pre>$ einvoice validate --profile xrechnung --format json examples/01-missing-fields/fixed.xml</pre>
+<p class="pass">It now exits <strong>0</strong> and reports <code>&quot;valid&quot;: true</code> with no fatal finding left — the advisory <code>BR-DE-TMP-32</code> is still listed, which is exactly why the verdict keys on severity rather than on the finding count. Both <code>BR-DE-*</code> fatals are gone and the invoice would pass this pre-flight. (This page&rsquo;s test re-runs the live engine on <code>fixed.xml</code> and fails the build unless it really passes with zero fatal findings.)</p>
+<p><strong>Honest limit:</strong> a green result means &ldquo;no implemented <em>fatal</em> rule fired&rdquo; &mdash; advisory findings may still be listed, as above &mdash; not &ldquo;certified legally conformant&rdquo;. This is a fast pre-flight that catches the mistakes which trip up most first submissions — still run your buyer&rsquo;s official validator before you file.</p>
 </section>
 <section class="step">
 <h2>Next</h2>

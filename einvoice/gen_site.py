@@ -809,9 +809,15 @@ def render_all(catalog):
 # ---------------------------------------------------------------------------
 # Link-preview metadata (Open Graph / Twitter) — T-VHSHARE.5.
 #
-# LinkedIn, XING, Slack, Reddit, Mastodon, Discord, iMessage and X all render a
-# shared link as a CARD built from these <meta> tags; without them the same URL
-# unfurls as bare text. This is the ONE shared emitter for that block: every
+# LinkedIn, XING, Slack, Reddit, Discord, iMessage, X and the ActivityPub
+# fediverse clients all render a shared link as a CARD built from these <meta>
+# tags; without them the same URL unfurls as bare text. (Wording note: the
+# fediverse is named by its PROTOCOL rather than by its best-known client
+# because that client's name happens to embed the placeholder marker the repo's
+# unfinished-work greps look for in this generator, and a false positive there
+# costs a real gate its signal. Nothing factual changed: ActivityPub clients
+# are exactly the ones meant.)
+# This is the ONE shared emitter for that block: every
 # indexable page routes through _share_meta() — the 8 hand-built surface pages
 # via _doc_head()/render_validate() and, since T-VHSHARE.3, the indexable rule
 # pages via render_page() — so a card can never drift from the page it
@@ -1214,6 +1220,24 @@ def render_landing():
       "takes a broken XRechnung invoice, runs the checker, shows the real "
       "report it prints, and applies the two-element fix until the invoice "
       "passes.</p>")
+    # FIRST-USE snippet (T-VHERG.9): the landing taught no command at all, so
+    # an arriving evaluator had nothing to copy. BYTE-IDENTICAL to the snippet
+    # www/validate/index.html already ships (render_validate, the pip-install
+    # fallback block) — one taught first run across the site, no second
+    # spelling to drift. Both lines are runnable from a clean pip install:
+    # `invoice.xml` is the reader's own file, so no repository checkout is
+    # needed and none is claimed.
+    w("<p>Or go straight to a verdict on an invoice of your own &mdash; "
+      "Python&nbsp;3.10+, zero dependencies, two lines:</p>")
+    w("<pre><code>python3 -m pip install verifyhash-einvoice\n"
+      "einvoice validate --profile xrechnung invoice.xml</code></pre>")
+    w("<p>Exit code 0 means no implemented fatal rule fired, 1 means at least "
+      "one did (the first is named on stdout), 3 means the file could not be "
+      "read as XML. <code>--profile xrechnung</code> adds the German "
+      "KoSIT layer on top of EN&nbsp;16931; drop it for the European core "
+      "rules alone. Add <code>--format json</code> for the full finding list, "
+      "and <code>einvoice --explain BR-DE-15</code> prints the remediation "
+      "entry for any rule id you get back.</p>")
     w("<p>Everything is free and open source (Apache-2.0). Start here:</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Repository README</a> — install '
@@ -2343,9 +2367,26 @@ def render_walkthrough(catalog):
       "differentially proven against the official Schematron artifacts at 0 "
       "divergences. The per-rule inventory and its honest limits live in "
       "<code>COVERAGE.md</code> in the repository.</p>")
-    w("<p>You can reproduce every step yourself: you only need Python 3 and this "
-      "repository, no dependencies and no network. Run the commands from the "
-      "<code>einvoice/</code> directory.</p>")
+    # First-use section: the console script `pip install verifyhash-einvoice`
+    # puts on PATH is the PRIMARY taught form from here down. The example
+    # invoices are NOT in the wheel, so this paragraph carries the plain
+    # rendered phrase "repository checkout" that the repo's doc convention
+    # (test_doc_commands_from_wheel.py) uses for exactly that situation, and
+    # test_site_command_truth.py re-checks it for this page.
+    w("<p>You can reproduce every step yourself. One install puts the "
+      "<code>einvoice</code> console script on your PATH — Python&nbsp;3.10+, "
+      "zero dependencies, no network at validation time:</p>")
+    w("<pre><code>python3 -m pip install verifyhash-einvoice\n"
+      "einvoice validate --profile xrechnung invoice.xml</code></pre>")
+    w("<p>Every command below is that same console script. The two invoice "
+      "files it is pointed at (<code>%s/broken.xml</code> and "
+      "<code>%s/fixed.xml</code>) live in the <strong>repository "
+      "checkout</strong> — the PyPI wheel deliberately ships only the "
+      "<code>einvoice</code> package, not the examples — so clone the "
+      "repository if you want to run these exact paths, and run the commands "
+      "from its <code>einvoice/</code> directory. Against an invoice of your "
+      "own, every command works unchanged straight from the pip install.</p>"
+      % (_h(EX_REL), _h(EX_REL)))
 
     # ---- Step 1: the broken invoice ---------------------------------------
     w('<section class="step">')
@@ -2357,22 +2398,48 @@ def render_walkthrough(catalog):
       "(<code>BG-6</code>, a <code>cac:Contact</code> under the supplier "
       "party). Everything else is a byte-for-byte copy of a valid KoSIT test "
       "document, so these two omissions are the <em>only</em> reason it fails. "
-      "The full file is <code>%s/broken.xml</code>:</p>" % _h(EX_REL))
+      "The full file is <code>%s/broken.xml</code> in the repository "
+      "checkout:</p>" % _h(EX_REL))
     w("<pre>%s</pre>" % _h(broken_xml))
     w("</section>")
 
     # ---- Step 2: run the checker (the CI gate) ----------------------------
     w('<section class="step">')
     w("<h2>2. Run the checker (this is your CI gate)</h2>")
-    w("<p>Point the tool at the invoice. In a CI pipeline this is the command "
-      "whose non-zero exit fails the build:</p>")
-    w("<pre>$ python3 -m einvoice.report %s/broken.xml --format json</pre>"
+    w("<p>Point the console script at the invoice (paths relative to the "
+      "<code>einvoice/</code> directory of the repository checkout). In a CI "
+      "pipeline this is the command whose non-zero exit fails the build:</p>")
+    w("<pre>$ einvoice validate --profile xrechnung %s/broken.xml</pre>"
       % _h(EX_REL))
-    w("<p>It exits <strong>1</strong> and prints the report below. Only "
-      "<code>fatal</code> findings make an invoice invalid (mirroring the "
-      "official Schematron <code>flag</code> semantics); <code>warning</code> "
-      "and <code>information</code> findings are advisory and do not fail the "
+    w("<p><code>--profile xrechnung</code> is not optional here: the console "
+      "script defaults to <code>--profile en16931</code> (the European core "
+      "rule set), and under that profile this file <em>passes</em> — both "
+      "missing fields are German <code>BR-DE-*</code> requirements. The "
+      "command exits <strong>1</strong> and prints a two-line human verdict: "
+      "<code>FAIL:</code> with the <em>first</em> fatal rule id and its "
+      "offending element. For the whole finding list — what CI wants to "
+      "archive — ask for JSON:</p>")
+    w("<pre>$ einvoice validate --profile xrechnung --format json "
+      "%s/broken.xml</pre>" % _h(EX_REL))
+    w("<p>Same exit code, every finding in one array. Only <code>fatal</code> "
+      "findings make an invoice invalid (mirroring the official Schematron "
+      "<code>flag</code> semantics); <code>warning</code> and "
+      "<code>information</code> findings are advisory and do not fail the "
       "build.</p>")
+    # The module entry point is RETAINED (not deprecated, not disparaged): it
+    # is what ci/validate-invoices.sh and action/run.py actually drive, and its
+    # JSON envelope is the object the finding cards below are rendered from.
+    w("<p>The older module form, "
+      "<code>python3 -m einvoice.report %s/broken.xml --format json</code>, "
+      "is fully supported and does the same work — it is the entry point the "
+      "shipped CI gate script <code>ci/validate-invoices.sh</code> and the "
+      "GitHub Action drive, it already defaults to "
+      "<code>--profile xrechnung</code> (the console script defaults to "
+      "<code>en16931</code>), and its JSON wraps the same findings in a "
+      "versioned envelope with <code>report_version</code>, "
+      "<code>schema</code>, <code>profile</code>, <code>fatal_count</code> and "
+      "<code>warning_count</code>. That envelope is what the summary and the "
+      "finding cards below are rendered from.</p>" % _h(EX_REL))
     w("</section>")
 
     # ---- Step 3: read the real report -------------------------------------
@@ -2414,7 +2481,11 @@ def render_walkthrough(catalog):
       "<code>BR-DE-2</code>) are why the invoice is rejected. The "
       "<code>information</code> finding is advisory — we leave it as-is so this "
       "stays a minimal two-field fix. For a full remediation write-up of any "
-      "rule, run <code>python3 -m einvoice.report --explain BR-DE-15</code>.</p>")
+      "rule id you see in a failure, run "
+      "<code>einvoice --explain BR-DE-15</code> — it reads no invoice and "
+      "prints what the rule requires, its BT/BG terms, the XML location, the "
+      "one-line fix and the verbatim official Schematron assert "
+      "(<code>--lang de</code> for the German text).</p>")
     w("</section>")
 
     # ---- Step 4: the fix ---------------------------------------------------
@@ -2433,17 +2504,21 @@ def render_walkthrough(catalog):
     w('<section class="step">')
     w("<h2>5. The corrected invoice passes</h2>")
     w("<p>Re-run the same command on the corrected file "
-      "(<code>%s/fixed.xml</code>):</p>" % _h(EX_REL))
-    w("<pre>$ python3 -m einvoice.report %s/fixed.xml --format json</pre>"
+      "(<code>%s/fixed.xml</code>, also from the repository checkout):</p>"
       % _h(EX_REL))
+    w("<pre>$ einvoice validate --profile xrechnung --format json "
+      "%s/fixed.xml</pre>" % _h(EX_REL))
     w('<p class="pass">It now exits <strong>0</strong> and reports '
-      "<code>valid: true</code> with <code>fatal_count: 0</code>. Both "
+      "<code>&quot;valid&quot;: true</code> with no fatal finding left — the "
+      "advisory <code>BR-DE-TMP-32</code> is still listed, which is exactly "
+      "why the verdict keys on severity rather than on the finding count. Both "
       "<code>BR-DE-*</code> fatals are gone and the invoice would pass this "
       "pre-flight. (This page&rsquo;s test re-runs the live engine on "
       "<code>fixed.xml</code> and fails the build unless it really passes with "
       "zero fatal findings.)</p>")
     w("<p><strong>Honest limit:</strong> a green result means &ldquo;no "
-      "implemented rule fired&rdquo;, not &ldquo;certified legally "
+      "implemented <em>fatal</em> rule fired&rdquo; &mdash; advisory findings "
+      "may still be listed, as above &mdash; not &ldquo;certified legally "
       "conformant&rdquo;. This is a fast pre-flight that catches the mistakes "
       "which trip up most first submissions — still run your buyer&rsquo;s "
       "official validator before you file.</p>")
@@ -2576,10 +2651,27 @@ def render_de_walkthrough(catalog):
       "Schematron-Artefakte bewiesen, mit 0 Abweichungen. Das vollst&auml;ndige "
       "Regelinventar samt ehrlicher Grenzen steht in <code>COVERAGE.md</code> "
       "im Repository.</p>")
-    w("<p>Sie k&ouml;nnen jeden Schritt selbst nachvollziehen: Sie brauchen nur "
-      "Python&nbsp;3 und dieses Repository &mdash; keine Abh&auml;ngigkeiten, "
-      "kein Netz. F&uuml;hren Sie die Befehle aus dem Verzeichnis "
-      "<code>einvoice/</code> aus.</p>")
+    # Erste Verwendung / first-use section, mirroring the English page: the
+    # console script is the PRIMARY taught form. "Repository-Checkout" is the
+    # German rendering of the repo's "repository checkout" doc convention (the
+    # German product page already uses that word) — checked by
+    # test_site_command_truth.py.
+    w("<p>Sie k&ouml;nnen jeden Schritt selbst nachvollziehen. Eine "
+      "Installation legt das Kommandozeilenwerkzeug <code>einvoice</code> in "
+      "Ihren PATH &mdash; Python&nbsp;3.10+, keine Abh&auml;ngigkeiten, bei "
+      "der Pr&uuml;fung kein Netz:</p>")
+    w("<pre><code>python3 -m pip install verifyhash-einvoice\n"
+      "einvoice validate --profile xrechnung invoice.xml</code></pre>")
+    w("<p>Alle Befehle unten sind genau dieses Werkzeug. Die beiden "
+      "Rechnungsdateien, auf die es gerichtet wird "
+      "(<code>%s/broken.xml</code> und <code>%s/fixed.xml</code>), liegen im "
+      "<strong>Repository-Checkout</strong> &mdash; das PyPI-Wheel enth&auml;lt "
+      "bewusst nur das Paket <code>einvoice</code>, nicht die Beispiele. "
+      "Klonen Sie also das Repository, wenn Sie genau diese Pfade nachfahren "
+      "wollen, und f&uuml;hren Sie die Befehle aus dessen Verzeichnis "
+      "<code>einvoice/</code> aus. Auf eine eigene Rechnung angewandt "
+      "funktioniert jeder Befehl unver&auml;ndert direkt nach der "
+      "pip-Installation.</p>" % (_h(EX_REL), _h(EX_REL)))
 
     # ---- Schritt 1: die kaputte Rechnung ----------------------------------
     w('<section class="step">')
@@ -2593,23 +2685,50 @@ def render_de_walkthrough(catalog):
       "ist eine byteweise Kopie eines g&uuml;ltigen KoSIT-Testdokuments, sodass "
       "diese zwei Auslassungen der <em>einzige</em> Grund f&uuml;r das "
       "Durchfallen sind. Die vollst&auml;ndige Datei ist "
-      "<code>%s/broken.xml</code>:</p>" % _h(EX_REL))
+      "<code>%s/broken.xml</code> aus dem Repository-Checkout:</p>"
+      % _h(EX_REL))
     w("<pre>%s</pre>" % _h(broken_xml))
     w("</section>")
 
     # ---- Schritt 2: den Pruefer laufen lassen (das CI-Gate) ---------------
     w('<section class="step">')
     w("<h2>2. Den Pr&uuml;fer laufen lassen (das ist Ihr CI-Gate)</h2>")
-    w("<p>Richten Sie das Werkzeug auf die Rechnung. In einer CI-Pipeline ist "
-      "das der Befehl, dessen Exit-Code ungleich null den Build fehlschlagen "
-      "l&auml;sst:</p>")
-    w("<pre>$ python3 -m einvoice.report %s/broken.xml --format json</pre>"
+    w("<p>Richten Sie das Werkzeug auf die Rechnung (die Pfade sind relativ "
+      "zum Verzeichnis <code>einvoice/</code> des Repository-Checkouts). In "
+      "einer CI-Pipeline ist das der Befehl, dessen Exit-Code ungleich null "
+      "den Build fehlschlagen l&auml;sst:</p>")
+    w("<pre>$ einvoice validate --profile xrechnung %s/broken.xml</pre>"
       % _h(EX_REL))
-    w("<p>Er endet mit <strong>1</strong> und gibt den Bericht unten aus. Nur "
+    w("<p><code>--profile xrechnung</code> ist hier nicht optional: das "
+      "Kommandozeilenwerkzeug arbeitet standardm&auml;&szlig;ig mit "
+      "<code>--profile en16931</code> (dem europ&auml;ischen Kernregelsatz), "
+      "und unter diesem Profil <em>besteht</em> die Datei &mdash; beide "
+      "fehlenden Angaben sind deutsche <code>BR-DE-*</code>-Anforderungen. Der "
+      "Befehl endet mit <strong>1</strong> und gibt ein knappes Urteil aus: "
+      "<code>FAIL:</code> mit der <em>ersten</em> fatalen Regel-ID und dem "
+      "betroffenen Element. Die vollst&auml;ndige Befundliste &mdash; das, was "
+      "die CI archivieren will &mdash; liefert JSON:</p>")
+    w("<pre>$ einvoice validate --profile xrechnung --format json "
+      "%s/broken.xml</pre>" % _h(EX_REL))
+    w("<p>Gleicher Exit-Code, alle Befunde in einem Array. Nur "
       "<code>fatal</code>-Befunde machen eine Rechnung ung&uuml;ltig (das "
       "spiegelt die <code>flag</code>-Semantik des offiziellen Schematron); "
       "<code>warning</code>- und <code>information</code>-Befunde sind beratend "
       "und lassen den Build nicht scheitern.</p>")
+    # Same retained-module-form sentence as the English page; the report
+    # command string itself is byte-identical (test_walkthrough.py check 10).
+    w("<p>Die &auml;ltere Modulform "
+      "<code>python3 -m einvoice.report %s/broken.xml --format json</code> "
+      "wird weiterhin voll unterst&uuml;tzt und leistet dasselbe: Sie ist der "
+      "Einstiegspunkt, den das mitgelieferte CI-Gate-Skript "
+      "<code>ci/validate-invoices.sh</code> und die GitHub-Action aufrufen, "
+      "sie verwendet bereits standardm&auml;&szlig;ig "
+      "<code>--profile xrechnung</code> (das Kommandozeilenwerkzeug dagegen "
+      "<code>en16931</code>), und ihr JSON legt um dieselben Befunde einen "
+      "versionierten Umschlag mit <code>report_version</code>, "
+      "<code>schema</code>, <code>profile</code>, <code>fatal_count</code> und "
+      "<code>warning_count</code>. Aus diesem Umschlag sind die "
+      "Zusammenfassung und die Befundkarten unten gerendert.</p>" % _h(EX_REL))
     w("</section>")
 
     # ---- Schritt 3: den echten Bericht lesen ------------------------------
@@ -2655,8 +2774,12 @@ def render_de_walkthrough(catalog):
       "fatalen Befunde (%s) sind der Grund f&uuml;r die Ablehnung. Der "
       "<code>information</code>-Befund ist beratend &mdash; wir lassen ihn "
       "stehen, damit dies eine minimale Zwei-Feld-Korrektur bleibt. F&uuml;r "
-      "die vollst&auml;ndige Erl&auml;uterung einer Regel dient "
-      "<code>python3 -m einvoice.report --explain BR-DE-15</code>.</p>"
+      "die vollst&auml;ndige Erl&auml;uterung einer Regel-ID aus einem "
+      "Fehlschlag dient <code>einvoice --explain BR-DE-15</code> &mdash; das "
+      "liest keine Rechnung und zeigt Anforderung, BT-/BG-Begriffe, "
+      "XML-Position, den Ein-Zeilen-Fix und den w&ouml;rtlichen offiziellen "
+      "Schematron-Assert (<code>--lang de</code> f&uuml;r den deutschen "
+      "Text).</p>"
       % " und ".join("<code>%s</code>" % _h(r) for r in fatal_rules))
     w("</section>")
 
@@ -2678,18 +2801,24 @@ def render_de_walkthrough(catalog):
     w('<section class="step">')
     w("<h2>5. Die korrigierte Rechnung besteht</h2>")
     w("<p>Denselben Befehl noch einmal auf der korrigierten Datei laufen lassen "
-      "(<code>%s/fixed.xml</code>):</p>" % _h(EX_REL))
-    w("<pre>$ python3 -m einvoice.report %s/fixed.xml --format json</pre>"
+      "(<code>%s/fixed.xml</code>, ebenfalls aus dem Repository-Checkout):</p>"
       % _h(EX_REL))
+    w("<pre>$ einvoice validate --profile xrechnung --format json "
+      "%s/fixed.xml</pre>" % _h(EX_REL))
     w('<p class="pass">Sie endet jetzt mit <strong>0</strong> und meldet '
-      "<code>valid: true</code> bei <code>fatal_count: 0</code>. Beide "
+      "<code>&quot;valid&quot;: true</code>, ohne verbleibenden fatalen "
+      "Befund &mdash; der beratende <code>BR-DE-TMP-32</code> steht weiterhin "
+      "in der Liste, und genau deshalb h&auml;ngt das Urteil am Schweregrad "
+      "und nicht an der Anzahl der Befunde. Beide "
       "<code>BR-DE-*</code>-Fatalbefunde sind weg, und die Rechnung "
       "best&uuml;nde diesen Vorab-Check. (Der Test dieser Seite l&auml;sst die "
       "echte Engine erneut auf <code>fixed.xml</code> laufen und l&auml;sst den "
       "Build scheitern, wenn sie nicht wirklich mit null fatalen Befunden "
       "besteht.)</p>")
     w("<p><strong>Ehrliche Grenze:</strong> Ein gr&uuml;nes Ergebnis "
-      "hei&szlig;t &bdquo;keine implementierte Regel hat ausgel&ouml;st&ldquo;, "
+      "hei&szlig;t &bdquo;keine implementierte <em>fatale</em> Regel hat "
+      "ausgel&ouml;st&ldquo; &mdash; beratende Befunde k&ouml;nnen wie oben "
+      "weiterhin in der Liste stehen &mdash;, "
       "nicht &bdquo;rechtsverbindlich konform zertifiziert&ldquo;. Das ist ein "
       "schneller Vorab-Check, der die Fehler f&auml;ngt, an denen die meisten "
       "Ersteinreichungen scheitern &mdash; lassen Sie vor dem tats&auml;chlichen "

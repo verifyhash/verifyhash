@@ -116,6 +116,10 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2.5rem;
 <div class="onramp" id="onramp">
 <h2>Free on-ramp</h2>
 <p>New here? The fastest way in is the <a href="walkthrough/index.html">5-minute worked walkthrough</a>: it takes a broken XRechnung invoice, runs the checker, shows the real report it prints, and applies the two-element fix until the invoice passes.</p>
+<p>Or go straight to a verdict on an invoice of your own &mdash; Python&nbsp;3.10+, zero dependencies, two lines:</p>
+<pre><code>python3 -m pip install verifyhash-einvoice
+einvoice validate --profile xrechnung invoice.xml</code></pre>
+<p>Exit code 0 means no implemented fatal rule fired, 1 means at least one did (the first is named on stdout), 3 means the file could not be read as XML. <code>--profile xrechnung</code> adds the German KoSIT layer on top of EN&nbsp;16931; drop it for the European core rules alone. Add <code>--format json</code> for the full finding list, and <code>einvoice --explain BR-DE-15</code> prints the remediation entry for any rule id you get back.</p>
 <p>Everything is free and open source (Apache-2.0). Start here:</p>
 <ul class="rules">
 <li><a href="https://github.com/verifyhash/verifyhash/blob/main/einvoice/README.md">Repository README</a> — install (<code>pip install verifyhash-einvoice</code> from PyPI, or <code>pip install .</code> / copy the package dir from a checkout when you need an offline, exactly-pinned copy), the CLI, and the full honest scope.</li>

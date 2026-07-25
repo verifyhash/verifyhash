@@ -30,6 +30,11 @@ Checks (each an independent hard assert):
   (6) Self-contained + indexable: no external CSS/JS/CDN/font/network
       reference, all report/invoice-derived text HTML-escaped (no raw '<' from
       the corpus), no robots:noindex, and the page is listed in sitemap.xml.
+      The ONE <script> a page may carry is the inline schema.org ld+json
+      structured-data block (T-VHSHARE.2) — exactly one, it must parse, it must
+      not break out of its element, and it carries no src; anything else with a
+      <script>, a src= or an external URL still fails. Same allowance
+      test_site.py already grants every rule/sales page.
 """
 
 from __future__ import annotations
@@ -63,6 +68,17 @@ _TAG_RE = re.compile(r"<[^>]*>")
 _RULE_ID_RE = re.compile(r"\bBR-[A-Z]+(?:-[A-Z0-9]+)*-\d+\b")
 # Every CLI invocation of the tool shown on a page (a command line, not XML).
 _CMD_RE = re.compile(r"python3 -m einvoice\.report[^<\n]*")
+# The one inline schema.org JSON-LD block a page carries (T-VHSHARE.2 added the
+# BreadcrumbList block to both walkthroughs). Structured DATA consumed by
+# crawlers, never a fetched resource: its schema.org @context IRI and its
+# absolute BASE_URL item URLs are therefore stripped before the
+# external-resource scan — the SAME convention test_site.py uses (_LD_RE +
+# bad_script_re there). Nothing is loosened: a <script> that is NOT this inline
+# ld+json block, and any src= outside it, still fail hard below.
+_LD_RE = re.compile(
+    r'<script type="application/ld\+json">(.*?)</script>', re.S)
+_BAD_SCRIPT_RE = re.compile(
+    r'<script\b(?![^>]*type="application/ld\+json")', re.IGNORECASE)
 
 
 def _visible_text(page):
@@ -201,14 +217,27 @@ class WalkthroughTest(unittest.TestCase):
         scan = scan.replace(
             '<meta property="og:url" content="%s">' % _gen._url_walkthrough(),
             " ")
+        # Strip the inline ld+json structured-data block (see _LD_RE) before the
+        # scan, exactly as test_site.py does for every rule/sales page.
+        scan_no_ld = _LD_RE.sub(" ", scan)
         # No external CSS/JS/CDN/font/network references remain.
         self.assertNotRegex(
-            scan,
+            scan_no_ld,
             r'https?://|cdn\.|googleapis|fonts\.|goatcounter|url\(',
             "walkthrough references an external resource")
-        # No <script> and no src= (no JS, no external asset).
-        self.assertNotIn("<script", self.page.lower())
-        self.assertNotRegex(self.page, r"\bsrc\s*=")
+        # The ONLY <script> allowed is the inline ld+json block, exactly one of
+        # them, and it must parse and be unable to break out of its element.
+        self.assertNotRegex(self.page, _BAD_SCRIPT_RE,
+                            "walkthrough has a non-ld+json <script>")
+        ld_blocks = _LD_RE.findall(self.page)
+        self.assertEqual(len(ld_blocks), 1,
+                         "walkthrough: expected exactly 1 ld+json block, got %d"
+                         % len(ld_blocks))
+        self.assertNotIn("</script", ld_blocks[0].lower(),
+                         "raw '</script>' survived inside the JSON-LD")
+        json.loads(ld_blocks[0])  # raises -> test fails
+        # No src= anywhere (no external asset); the ld+json block carries none.
+        self.assertNotRegex(_LD_RE.sub(" ", self.page), r"\bsrc\s*=")
         # Every <link> is either the one self-referential rel=canonical or a
         # rel=alternate hreflang link (all absolute BASE_URL, none a fetched
         # resource) — no external stylesheet/icon/preload smuggled in.
@@ -329,10 +358,19 @@ class WalkthroughTest(unittest.TestCase):
             '<meta property="og:url" content="%s">'
             % _gen._url_de_walkthrough(), " ")
         self.assertNotRegex(
-            scan, r'https?://|cdn\.|googleapis|fonts\.|goatcounter|url\(',
+            _LD_RE.sub(" ", scan),
+            r'https?://|cdn\.|googleapis|fonts\.|goatcounter|url\(',
             "German walkthrough references an external resource")
-        self.assertNotIn("<script", de.lower())
-        self.assertNotRegex(de, r"\bsrc\s*=")
+        self.assertNotRegex(de, _BAD_SCRIPT_RE,
+                            "German walkthrough has a non-ld+json <script>")
+        de_ld = _LD_RE.findall(de)
+        self.assertEqual(len(de_ld), 1,
+                         "German walkthrough: expected exactly 1 ld+json "
+                         "block, got %d" % len(de_ld))
+        self.assertNotIn("</script", de_ld[0].lower(),
+                         "raw '</script>' survived inside the JSON-LD")
+        json.loads(de_ld[0])  # raises -> test fails
+        self.assertNotRegex(_LD_RE.sub(" ", de), r"\bsrc\s*=")
         links = re.findall(r"<link\b[^>]*>", de, re.IGNORECASE)
         canon = [l for l in links if 'rel="canonical"' in l]
         alt = [l for l in links if 'rel="alternate"' in l]

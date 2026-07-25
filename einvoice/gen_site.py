@@ -360,6 +360,96 @@ DE_CHECKOUT_NOTE = (
     "den Validator."
 )
 
+# ---------------------------------------------------------------------------
+# LANDING_CLAIMS (T-VHTRUTH.4) — the machine-checkable pairing between the two
+# LANDING pages: the English www/index.html and the German www/de/index.html.
+#
+# THE BUG CLASS THIS CLOSES. This lane has shipped TWO false limitation claims
+# to prospective buyers — the "no UBL CreditNote support" denial and "noch nicht
+# auf PyPI" — and BOTH survived every internal test, because each was a NEGATIVE
+# claim that existed only in German prose. A sentence with no English
+# counterpart cannot be contradicted by any English-side assertion, so no test
+# could see it. The German landing page carries most of this lane's limitation
+# prose (no XSD validation, the KoSIT-vendored Peppol subset, zero
+# dependencies, green != rechtsverbindlich konform), which is exactly where a
+# new asymmetry appears unnoticed after a German rewrite.
+#
+# THE FIX IS STRUCTURAL. Every limitation / capability claim on either landing
+# page is emitted through :func:`_claim`, which wraps it in the same
+# ``<span data-claim="…">`` convention :func:`render_compare` already uses for
+# its engine figures, and the SLUG is the pairing key: an EN claim and its DE
+# twin carry the SAME slug. ``test_de_claim_parity.py`` then compares the two
+# pages' slug SETS in both directions — an identity comparison, not a prose
+# heuristic — so a German claim with no English twin (or an English claim the
+# German page silently dropped) fails loudly instead of shipping unread.
+# Genuinely locale-specific claims stay legal, but must be declared in that
+# test's LOCALE_ONLY_CLAIMS allowlist with a written per-entry reason.
+#
+# Each value below is the one-line description of what the slug asserts. It is
+# documentation for the next editor AND the registry the parity test binds to:
+# a slug emitted on a landing page but absent here, or registered here but no
+# longer emitted anywhere, is a failure.
+# ---------------------------------------------------------------------------
+LANDING_CLAIMS = {
+    # --- claims that MUST appear on both landing pages ---------------------
+    "zero-deps":
+        "runs on the Python 3 standard library alone: no lxml, no Java, no "
+        "Saxon, no Schematron toolchain, no network access",
+    "no-xsd":
+        "structural XSD/schema validation is NOT performed — business rules "
+        "only",
+    "peppol-subset":
+        "only the 21 PEPPOL-EN16931-R* rules KoSIT vendors inside the "
+        "official XRechnung artifact are implemented; this is NOT Peppol BIS "
+        "Billing 3.0 support",
+    "green-not-legal-conformance":
+        "a green result means 'no implemented fatal rule fired', NOT "
+        "'certified legally conformant'",
+    "tautology-exclusions":
+        "BR-CO-05..BR-CO-08 ship as literal test=\"true()\" tautologies in "
+        "the CEN artifacts, so they can never fire and cannot be "
+        "differentially proven",
+    "creditnote-validated":
+        "a UBL 2.1 CreditNote (root CreditNote-2:CreditNote) IS validated, "
+        "through the same EN 16931 engine as an Invoice (the first shipped "
+        "falsehood — an affirmation, kept paired so its denial cannot return)",
+    "pypi-published":
+        "the distribution IS published on PyPI as verifyhash-einvoice (the "
+        "second shipped falsehood, likewise kept paired)",
+    "invoice-never-uploaded":
+        "the in-browser validator never uploads the invoice; only the "
+        "WebAssembly runtime is fetched, after an explicit click",
+    # --- deliberately single-locale (declared in the parity allowlist) -----
+    "no-german-rule-pages":
+        "DE only: there are deliberately no per-rule German pages; the "
+        "German text lives on each rule page and under --lang de",
+    "receiver-validator-still-required":
+        "DE only: run your receiver's official validator before actually "
+        "submitting — this tool is the fast pre-check",
+    "no-external-entity-resolution":
+        "EN only: no external entity and no external DTD is ever resolved, "
+        "so XXE reads and fetches nothing",
+}
+
+
+def _claim(slug, inner_html):
+    """Wrap already-rendered HTML in the site-wide ``data-claim`` convention.
+
+    Identical attribute contract to the engine figures :func:`render_compare`
+    emits (``<span data-claim="…">…</span>``); here the slug pairs an English
+    landing claim with its German twin. The slug MUST be registered in
+    :data:`LANDING_CLAIMS`, so a typo raises at render time instead of quietly
+    producing an unpaired claim.
+    """
+    if slug not in LANDING_CLAIMS:
+        raise KeyError(
+            "unregistered landing claim slug %r — register it in "
+            "LANDING_CLAIMS and give its EN/DE twin the SAME slug (or declare "
+            "it locale-only in test_de_claim_parity.LOCALE_ONLY_CLAIMS)"
+            % (slug,))
+    return '<span data-claim="%s">%s</span>' % (slug, inner_html)
+
+
 # The one and only stylesheet: inline, tiny, no external references.
 _STYLE = """
 :root { color-scheme: light dark; }
@@ -1276,9 +1366,11 @@ def render_landing():
       "It asserts <strong>297 business rules</strong>, "
       "each differentially proven against the official Schematron artifacts, "
       "and runs offline against a vendored copy of the official rule corpus — "
-      "no lxml, no Java, no Saxon, no Schematron toolchain, no network calls. "
-      "Pure Python&nbsp;3 standard library, so the same check runs unchanged "
-      "in any CI job.</p>")
+      + _claim("zero-deps",
+               "no lxml, no Java, no Saxon, no Schematron toolchain, no "
+               "network calls")
+      + ". Pure Python&nbsp;3 standard library, so the same check runs "
+      "unchanged in any CI job.</p>")
 
     w("<h2>What EN 16931 / XRechnung conformance means</h2>")
     w("<p><strong>EN 16931</strong> is the European standard that defines the "
@@ -1315,17 +1407,24 @@ def render_landing():
       "layer (<code>BR-DE-*</code>, <code>BR-DEX-*</code>, "
       "<code>BR-DE-CVD-*</code>, <code>BR-TMP-*</code>), and the 21 "
       "<code>PEPPOL-EN16931-R*</code> rules KoSIT ships inside the official "
-      "XRechnung Schematron artifact — the KoSIT-vendored subset only, "
-      "<em>not</em> Peppol&nbsp;BIS Billing&nbsp;3.0 support. The "
+      "XRechnung Schematron artifact — "
+      + _claim("peppol-subset",
+               "the KoSIT-vendored subset only, <em>not</em> "
+               "Peppol&nbsp;BIS Billing&nbsp;3.0 support")
+      + ". The "
       "machine-checked <strong>fireable-missing count is 0 in both CEN "
       "EN&nbsp;16931 universes</strong>: every official <code>BR-*</code> "
       "assert that can actually fire is either asserted by the engine or a "
       "documented deliberate exclusion. That is deliberately <em>not</em> an "
-      "uncaveated 100&nbsp;% claim: 4 official ids "
-      "(<code>BR-CO-05</code>&#8211;<code>BR-CO-08</code>) are shipped as "
-      'literal <code>test="true()"</code> tautologies in the CEN artifacts — '
-      "asserts that can never fire, in either universe, so implementing them "
-      "with a differential proof is impossible by construction.</p>")
+      "uncaveated 100&nbsp;% claim: "
+      + _claim("tautology-exclusions",
+               "4 official ids "
+               "(<code>BR-CO-05</code>&#8211;<code>BR-CO-08</code>) are "
+               'shipped as literal <code>test="true()"</code> tautologies in '
+               "the CEN artifacts — asserts that can never fire, in either "
+               "universe, so implementing them with a differential proof is "
+               "impossible by construction")
+      + ".</p>")
     w("<p>The last admitted gap in the KoSIT XRechnung artifact — the "
       "Clean-Vehicle-Directive family (<code>BR-DE-CVD-*</code>, "
       "<code>BR-TMP-*</code>) — is <strong>closed with differential proof in "
@@ -1382,16 +1481,21 @@ def render_landing():
       % (_h(_REPO_PROVE), _h(_REPO_COVERAGE)))
 
     w('<h2>Honest scope</h2>')
-    w("<p>Auditable, but not a legal guarantee. A green result means "
-      "&ldquo;no implemented fatal rule fired&rdquo;, not &ldquo;certified "
-      "legally conformant&rdquo;: every fireable official "
+    w("<p>Auditable, but not a legal guarantee. "
+      + _claim("green-not-legal-conformance",
+               "A green result means &ldquo;no implemented fatal rule "
+               "fired&rdquo;, not &ldquo;certified legally conformant&rdquo;")
+      + ": every fireable official "
       "<code>BR-CL-*</code> code-list check is now implemented in both "
       "syntaxes (the ids the engine does not assert are documented deliberate "
       "exclusions — never-firing <code>test=\"true()\"</code> tautologies), "
-      "structural XSD validation is not performed, and a UBL 2.1 "
-      "<code>CreditNote</code> (root <code>CreditNote-2:CreditNote</code>) is "
-      "validated through the same EN 16931 engine as an <code>Invoice</code>. "
-      "The exact implemented set and its limits "
+      + _claim("no-xsd", "structural XSD validation is not performed")
+      + ", and "
+      + _claim("creditnote-validated",
+               "a UBL 2.1 <code>CreditNote</code> (root "
+               "<code>CreditNote-2:CreditNote</code>) is validated through "
+               "the same EN 16931 engine as an <code>Invoice</code>")
+      + ". The exact implemented set and its limits "
       "are written up in the repository README, <code>COVERAGE.md</code> and "
       "<code>CORRECTNESS.md</code>.</p>")
     w("<p>Weighing this against the free official toolchain? Read the honest "
@@ -1427,10 +1531,13 @@ def render_landing():
     w("<p>Everything is free and open source (Apache-2.0). Start here:</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Repository README</a> — install '
-      "(<code>pip install verifyhash-einvoice</code> from PyPI, or "
+      "(%s, or "
       "<code>pip install .</code> / copy the package dir from a checkout when "
       "you need an offline, exactly-pinned copy), the CLI, and the full "
-      "honest scope.</li>" % _h(_REPO_README))
+      "honest scope.</li>"
+      % (_h(_REPO_README),
+         _claim("pypi-published",
+                "<code>pip install verifyhash-einvoice</code> from PyPI")))
     w('<li><a href="%s">CI conformance gate recipe</a> '
       "(<code>einvoice/ci/</code>) — copy-paste POSIX&nbsp;sh + GitHub&nbsp;"
       "Actions / GitLab&nbsp;CI that fails a build on any non-conformant "
@@ -1446,9 +1553,11 @@ def render_landing():
       '<a href="validate/index.html">in-browser validator</a> runs the same '
       "engine on your machine via WebAssembly (Pyodide): drop an XRechnung "
       "XML or a ZUGFeRD/Factur-X PDF and read the findings, each linked to "
-      "its rule page. The invoice is never uploaded — after an explicit "
+      "its rule page. %s — after an explicit "
       "one-time runtime download (~%d&nbsp;MB), validation happens entirely "
-      "in your browser.</p>" % PYODIDE_APPROX_MB)
+      "in your browser.</p>"
+      % (_claim("invoice-never-uploaded",
+                "The invoice is never uploaded"), PYODIDE_APPROX_MB))
 
     w("<h2>Browse the rules</h2>")
     w('<p>Every rule the engine can fire has its own reference page — what it '
@@ -1466,10 +1575,7 @@ def render_landing():
       "external subset — is rejected before any entity can be defined, so "
       "entity <em>definition</em> and <em>expansion</em> never happen "
       "(billion-laughs and quadratic-blowup payloads abort in constant time "
-      "and memory instead of exploding), and no external entity or external "
-      "DTD is ever resolved — expat opens no <code>file://</code> or "
-      "<code>http://</code> URL, so an <code>XXE</code> pointed at "
-      "<code>/etc/passwd</code> or an internal host reads and fetches nothing. "
+      "and memory instead of exploding), and %s. "
       "A hostile document is folded into the engine's ordinary "
       "<em>not-well-formed</em> outcome (its own report finding, CLI exit "
       "code&nbsp;3) — a bounded, actionable result, never a crash, a hang, or "
@@ -1477,7 +1583,13 @@ def render_landing():
       'This is documented in the &ldquo;Untrusted input / XML entity '
       'handling&rdquo; section of <a href="%s">SECURITY.md</a> and proven '
       "end-to-end by <code>test_security.py</code> and "
-      "<code>test_robustness.py</code>.</p>" % _h(_REPO_SECURITY))
+      "<code>test_robustness.py</code>.</p>"
+      % (_claim("no-external-entity-resolution",
+                "no external entity or external DTD is ever resolved — expat "
+                "opens no <code>file://</code> or <code>http://</code> URL, "
+                "so an <code>XXE</code> pointed at <code>/etc/passwd</code> "
+                "or an internal host reads and fetches nothing"),
+         _h(_REPO_SECURITY)))
 
     # ---- German landing section (lang="de") --------------------------------
     # Full content parity with the English sections above: same facts, same
@@ -1499,7 +1611,15 @@ def render_landing():
       "eine mitgelieferte, auditierbare Kopie des offiziellen Regelwerks — "
       "und damit unver&auml;ndert in jeder CI-Pipeline.</p>")
     w("<p>Der Pr&uuml;fer setzt <strong>297 Gesch&auml;ftsregeln</strong> "
-      "durch: 215 der 223 offiziellen EN-16931-<code>BR-*</code>-Regeln je "
+      # 219 + the 4 deliberate test="true()" exclusions = 223, per CEN
+      # universe — the figure COVERAGE.md ("en16931-ubl / en16931-cii: 219
+      # implemented + 4 excluded + 0 missing = 223") and the English prose 25
+      # lines above both carry. This German sentence still said "215", which
+      # is stale AND arithmetically impossible next to the "4 Tautologien"
+      # sentence it sits beside (215 + 4 = 219, not 223): a German-only
+      # figure with no English twin, i.e. the exact asymmetry class this page
+      # is now data-claim-guarded against. Corrected under T-VHTRUTH.4.
+      "durch: 219 der 223 offiziellen EN-16931-<code>BR-*</code>-Regeln je "
       "CEN-Syntax-Universum (UBL und CII), die vollst&auml;ndige deutsche "
       "XRechnung-Schicht (<code>BR-DE-*</code>, <code>BR-DEX-*</code>, "
       "<code>BR-DE-CVD-*</code>, <code>BR-TMP-*</code>) sowie die 21 "
@@ -2106,8 +2226,11 @@ def render_de():
       "Rechnungen gegen die Gesch&auml;ftsregeln von <strong>EN&nbsp;16931"
       "</strong> und der deutschen <strong>XRechnung</strong> &mdash; als "
       "Kommandozeilenwerkzeug, komplett offline, mit <strong>null "
-      "Abh&auml;ngigkeiten</strong> (reine Python-3-Standardbibliothek: kein "
-      "Java, kein Saxon, keine Schematron-Toolchain, kein Netzwerkzugriff). "
+      "Abh&auml;ngigkeiten</strong> ("
+      + _claim("zero-deps",
+               "reine Python-3-Standardbibliothek: kein Java, kein Saxon, "
+               "keine Schematron-Toolchain, kein Netzwerkzugriff")
+      + "). "
       "Diese Seite ist der deutschsprachige Schnellstart: was das Werkzeug "
       "ist, was es ehrlich abdeckt, und wie Sie es installieren, eine erste "
       "Rechnung pr&uuml;fen und als CI-Gate verdrahten.</p>")
@@ -2149,47 +2272,69 @@ def render_de():
 
     # ---- Ehrliche Abdeckung ------------------------------------------------
     w("<h2>Ehrliche Abdeckung: was ein gr&uuml;nes Ergebnis bedeutet</h2>")
-    w("<p>Ein gr&uuml;nes Ergebnis hei&szlig;t: <em>keine implementierte "
-      "fatale Regel hat ausgel&ouml;st</em>. Es hei&szlig;t nicht "
-      "&bdquo;rechtsverbindlich konforme XRechnung&ldquo;. Die Grenzen im "
-      "Einzelnen:</p>")
+    w("<p>"
+      + _claim("green-not-legal-conformance",
+               "Ein gr&uuml;nes Ergebnis hei&szlig;t: <em>keine "
+               "implementierte fatale Regel hat ausgel&ouml;st</em>. Es "
+               "hei&szlig;t nicht &bdquo;rechtsverbindlich konforme "
+               "XRechnung&ldquo;")
+      + ". Die Grenzen im Einzelnen:</p>")
     w('<ul class="rules">')
     w("<li>Jede ausl&ouml;sbare offizielle <code>BR-CL-*</code>-Codelisten-"
       "Pr&uuml;fung ist in beiden Syntaxen (UBL und CII) implementiert &mdash; "
       "die <code>BR-CL-*</code>-Klasse enth&auml;lt keine "
       "zur&uuml;ckgestellten Pr&uuml;fungen mehr.</li>")
-    w("<li>Eine strukturelle <strong>XSD-Validierung findet nicht statt</strong>; "
-      "gepr&uuml;ft werden die Gesch&auml;ftsregeln, nicht das Schema. Ein "
-      "UBL-2.1-<code>CreditNote</code> (Wurzel "
-      "<code>CreditNote-2:CreditNote</code>) wird durch dieselbe "
-      "EN-16931-Engine wie eine <code>Invoice</code> validiert.</li>")
-    w("<li>4 offizielle Regeln (<code>BR-CO-05</code>&#8211;"
-      "<code>BR-CO-08</code>) sind in den CEN-Artefakten selbst als "
-      '<code>test="true()"</code>-Tautologien ausgeliefert — sie k&ouml;nnen '
-      "nie ausl&ouml;sen und sind deshalb nicht implementierbar; jede "
+    w("<li>"
+      + _claim("no-xsd",
+               "Eine strukturelle <strong>XSD-Validierung findet nicht "
+               "statt</strong>; gepr&uuml;ft werden die "
+               "Gesch&auml;ftsregeln, nicht das Schema")
+      + ". "
+      + _claim("creditnote-validated",
+               "Ein UBL-2.1-<code>CreditNote</code> (Wurzel "
+               "<code>CreditNote-2:CreditNote</code>) wird durch dieselbe "
+               "EN-16931-Engine wie eine <code>Invoice</code> validiert")
+      + ".</li>")
+    w("<li>"
+      + _claim("tautology-exclusions",
+               "4 offizielle Regeln (<code>BR-CO-05</code>&#8211;"
+               "<code>BR-CO-08</code>) sind in den CEN-Artefakten selbst als "
+               '<code>test="true()"</code>-Tautologien ausgeliefert — sie '
+               "k&ouml;nnen nie ausl&ouml;sen und sind deshalb nicht "
+               "implementierbar")
+      + "; jede "
       "andere ausl&ouml;sbare offizielle <code>BR-*</code>-Regel ist "
       "implementiert oder eine dokumentierte, begr&uuml;ndete Ausnahme "
       "(maschinell gepr&uuml;fte L&uuml;cke: 0 in beiden "
       "CEN-Syntax-Universen).</li>")
-    w("<li>Von den <code>PEPPOL-EN16931-R*</code>-Regeln ist genau die "
-      "Teilmenge implementiert, die KoSIT im offiziellen "
-      "XRechnung-Artefakt mitliefert (21 Regeln) &mdash; das ist "
-      "<em>keine</em> Peppol-BIS-Billing-3.0-Unterst&uuml;tzung.</li>")
+    w("<li>"
+      + _claim("peppol-subset",
+               "Von den <code>PEPPOL-EN16931-R*</code>-Regeln ist genau die "
+               "Teilmenge implementiert, die KoSIT im offiziellen "
+               "XRechnung-Artefakt mitliefert (21 Regeln) &mdash; das ist "
+               "<em>keine</em> Peppol-BIS-Billing-3.0-Unterst&uuml;tzung")
+      + ".</li>")
     w("</ul>")
     w("<p>Nichts davon m&uuml;ssen Sie glauben: Das ma&szlig;gebliche "
       "Regelinventar mit jeder Ausnahme und w&ouml;rtlichen Artefakt-Belegen "
       'ist die <a href="%s">Abdeckungsmatrix (COVERAGE.md)</a> im Repository, '
       "und jede Zahl auf dieser Seite l&auml;sst sich dort nachrechnen. "
-      "Lassen Sie vor dem tats&auml;chlichen Einreichen trotzdem den "
-      "offiziellen Validator Ihres Empf&auml;ngers laufen &mdash; dieses "
-      "Werkzeug ist der schnelle Vorab-Check, der die typischen Fehler "
-      "fr&uuml;h f&auml;ngt.</p>" % _h(_REPO_COVERAGE))
+      "%s.</p>"
+      % (_h(_REPO_COVERAGE),
+         _claim("receiver-validator-still-required",
+                "Lassen Sie vor dem tats&auml;chlichen Einreichen trotzdem "
+                "den offiziellen Validator Ihres Empf&auml;ngers laufen "
+                "&mdash; dieses Werkzeug ist der schnelle Vorab-Check, der "
+                "die typischen Fehler fr&uuml;h f&auml;ngt")))
 
     # ---- Installation + erste Pruefung ------------------------------------
     w("<h2>Installation und erste Pr&uuml;fung</h2>")
-    w("<p>Zuerst installieren: das ver&ouml;ffentlichte Paket hei&szlig;t "
-      "<code>verifyhash-einvoice</code> (nicht <code>einvoice</code> &mdash; "
-      "das ist ein fremdes Paket) und zieht "
+    w("<p>Zuerst installieren: "
+      + _claim("pypi-published",
+               "das auf <strong>PyPI</strong> ver&ouml;ffentlichte Paket "
+               "hei&szlig;t <code>verifyhash-einvoice</code> (nicht "
+               "<code>einvoice</code> &mdash; das ist ein fremdes Paket)")
+      + " und zieht "
       "<strong>keine einzige Abh&auml;ngigkeit</strong> nach "
       "(<code>dependencies = []</code> in <code>pyproject.toml</code>, "
       "Python&nbsp;3.8+). Kein Java, kein Saxon, kein Netzzugriff beim "
@@ -2292,13 +2437,18 @@ def render_de():
     w('<li><a href="../validate/index.html">Im Browser validieren</a> '
       "&mdash; dieselbe Engine l&auml;uft per WebAssembly (Pyodide) direkt "
       "im Browser: Rechnung ausw&auml;hlen, Befunde lesen, nichts "
-      "installieren. Die Rechnung verl&auml;sst Ihren Rechner nie; nur die "
+      "installieren. "
+      + _claim("invoice-never-uploaded",
+               "Die Rechnung verl&auml;sst Ihren Rechner nie")
+      + "; nur die "
       "Laufzeit wird nach einem Klick einmalig geladen (~13&nbsp;MB).</li>")
     w('<li><a href="../rules/index.html">Regel-Referenz</a> &mdash; jede der '
       "297 Regeln mit eigener Seite: Anforderung, BT-/BG-Begriffe, "
       "XML-Position, Korrekturhinweis auf Englisch und Deutsch, w&ouml;rtlicher "
-      "offizieller Schematron-Assert. Eigene deutsche Regelseiten gibt es "
-      "bewusst nicht &mdash; der deutsche Text steht auf jeder Regelseite und "
+      "offizieller Schematron-Assert. "
+      + _claim("no-german-rule-pages",
+               "Eigene deutsche Regelseiten gibt es bewusst nicht")
+      + " &mdash; der deutsche Text steht auf jeder Regelseite und "
       "in der CLI unter <code>--lang de</code>.</li>")
     w('<li><a href="walkthrough/index.html">Praxisbeispiel &mdash; Schritt '
       "f&uuml;r Schritt</a> &mdash; dieselbe kaputte Rechnung von oben, vom "

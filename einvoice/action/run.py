@@ -14,10 +14,15 @@ defines NO second engine, and invents NO new output format. It only:
      can be handed to ``github/codeql-action/upload-sarif`` for inline PR
      annotations (SARIF merging is pure aggregation — it reorders/relabels
      nothing and adds no findings);
-  3. also emits the caller-chosen console ``--format`` (json | junit | sarif |
-     text) to stdout by driving the identical entrypoint
-     ``python3 -m einvoice.report --format <format> [--recurse] <path>`` — the
-     literal command the docs describe;
+  3. also emits the caller-chosen console ``--format`` to stdout by driving the
+     identical entrypoint ``python3 -m einvoice.report --format <format>
+     [--recurse] <path>`` — the literal command the docs describe. The offered
+     vocabulary is DERIVED from the engine's own ``report.REPORT_FORMATS``
+     registry minus :data:`FORMAT_EXCLUSIONS` (see below), so it can never drift
+     behind the engine. For a directory input under a format the engine has no
+     aggregate shape for (``report.BATCH_FORMATS``) — today that is ``github`` —
+     the runner drives the entrypoint ONCE PER FILE over the same file list the
+     SARIF leg walks and concatenates stdout; it invents no batch envelope;
   4. sets the process exit code so the build fails per ``--fail-on``:
        * ``fatal``  (default) — fail iff any FATAL violation is present, exactly
          the entrypoint's own exit-code contract (exit 1 fatal / 3 unparseable);
@@ -55,8 +60,45 @@ EXIT_PARSE = 3
 #: ``einvoice.report.BATCH_INVOICE_EXTS`` (``.xml`` UBL/CII, ``.pdf`` Factur-X).
 INVOICE_EXTS = (".xml", ".pdf")
 
-#: Console formats this Action exposes (a subset of the entrypoint's formats).
-CONSOLE_FORMATS = ("json", "junit", "sarif", "text")
+#: Engine formats this Action deliberately does NOT offer, each with its ONE
+#: reason. Everything else in ``einvoice.report.REPORT_FORMATS`` is offered, so
+#: a newly registered engine format is either exposed automatically or forces an
+#: explicit exclusion decision here — the list can no longer silently rot.
+FORMAT_EXCLUSIONS = {
+    "gitlab": "GitLab Code Quality artifact — another vendor's CI, not GitHub's.",
+    "azure": "Azure Pipelines logging commands — another vendor's CI, not GitHub's.",
+    "html": "document-shaped artifact (a whole HTML page), not job-log lines.",
+    "badge": "document-shaped artifact (an SVG badge), not job-log lines.",
+}
+
+
+def _import_report(root):
+    """Import the engine's ``einvoice.report`` module from ``root``.
+
+    Used ONLY to read the format registry constants (``REPORT_FORMATS`` /
+    ``BATCH_FORMATS``) so this runner never retypes the engine's vocabulary.
+    All actual validation still happens in the subprocess entrypoint — no rule
+    module is imported here and no second engine exists.
+    """
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from einvoice import report as _report
+    return _report
+
+
+def console_formats(root):
+    """The console ``--format`` names this Action offers, in engine order.
+
+    ``report.REPORT_FORMATS`` minus :data:`FORMAT_EXCLUSIONS`. Today that is
+    ``json, junit, sarif, github, text``.
+    """
+    return tuple(f for f in _import_report(root).REPORT_FORMATS
+                 if f not in FORMAT_EXCLUSIONS)
+
+
+def batch_formats(root):
+    """Formats the engine can emit for a whole directory (``--recurse``)."""
+    return tuple(_import_report(root).BATCH_FORMATS)
 
 
 def find_root(start=None):
@@ -192,9 +234,10 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
     """
     if root is None:
         root = find_root()
-    if fmt not in CONSOLE_FORMATS:
+    offered = console_formats(root)
+    if fmt not in offered:
         sys.stderr.write("error: unknown format %r (choose from %s)\n"
-                         % (fmt, ", ".join(CONSOLE_FORMATS)))
+                         % (fmt, ", ".join(offered)))
         return EXIT_FAIL
     if fail_on not in ("fatal", "warning"):
         sys.stderr.write("error: unknown fail-on %r (choose fatal or warning)\n"
@@ -255,10 +298,24 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
     _set_output("sarif-file", sarif_path)
 
     # (3) Console format: drive the identical entrypoint for the human/log view.
-    # For sarif we already have the merged document (batch sarif is single-file
-    # only in the engine); other formats support --recurse for directories.
+    # For sarif we already have the merged document. Formats in the engine's
+    # BATCH_FORMATS get --recurse for a directory; the rest (github) are driven
+    # once per file, because the engine defines no aggregate shape for them.
     if fmt == "sarif":
         sys.stdout.write(json.dumps(merged, indent=2, sort_keys=True) + "\n")
+    elif os.path.isdir(path) and fmt not in batch_formats(root):
+        # The engine gives this format no AGGREGATE shape (it is single-invoice
+        # by construction, e.g. `github` workflow commands are per-file lines),
+        # so `--recurse` is refused. Drive the identical entrypoint ONCE PER
+        # FILE over the SAME `files` list the SARIF leg walked, in the same
+        # order, and concatenate stdout. No batch envelope is invented, no
+        # finding is added or dropped — this is exactly what the caller would
+        # get from a `for f in ...; do einvoice.report --format <fmt> $f; done`.
+        for f in files:
+            cproc = _run_report(root, ["--profile", profile, "--format", fmt, f])
+            sys.stdout.write(cproc.stdout)
+            if cproc.stderr:
+                sys.stderr.write(cproc.stderr)
     else:
         console_args = ["--profile", profile, "--format", fmt]
         if os.path.isdir(path):
@@ -289,13 +346,16 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
 
 
 def main(argv=None):
+    # Resolve the package root ONCE here so the offered --format choices are
+    # read from the engine's own registry rather than retyped.
+    root = find_root()
     parser = argparse.ArgumentParser(
         prog="einvoice-action", add_help=True,
         description="Thin runner driving `python3 -m einvoice.report`.")
     parser.add_argument("--path", default=".",
                         help="file or directory of invoices (default '.').")
     parser.add_argument("--format", dest="fmt", default="sarif",
-                        choices=CONSOLE_FORMATS,
+                        choices=console_formats(root),
                         help="console report format (default sarif).")
     parser.add_argument("--fail-on", dest="fail_on", default="fatal",
                         choices=("fatal", "warning"),
@@ -307,7 +367,8 @@ def main(argv=None):
                         choices=("xrechnung", "en16931"),
                         help="validation profile (default xrechnung).")
     args = parser.parse_args(argv)
-    return run(args.path, args.fmt, args.fail_on, args.sarif_file, args.profile)
+    return run(args.path, args.fmt, args.fail_on, args.sarif_file, args.profile,
+               root=root)
 
 
 if __name__ == "__main__":

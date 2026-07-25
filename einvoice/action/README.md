@@ -24,7 +24,7 @@ fails per `fail-on`. It re-implements no rules: every verdict comes from
 | input | default | description |
 |---|---|---|
 | `path` | `.` | File or directory of invoices. A directory is walked recursively for `*.xml` (UBL/CII) and `*.pdf` (Factur-X/ZUGFeRD); dotfiles are skipped — the same selection the entrypoint's own batch mode makes. |
-| `format` | `sarif` | Report format written to the **job log**: `json` \| `junit` \| `sarif` \| `text`. A merged SARIF file is **always** written for upload regardless of this choice. |
+| `format` | `sarif` | Report format written to the **job log**, one of: `json`, `junit`, `sarif`, `github`, `text`. `github` emits native GitHub workflow commands (`::error file=…,title=…::…`) that annotate the PR inline **without** the `security-events: write` permission `upload-sarif` needs — see [below](#inline-annotations-without-security-events-format-github). A merged SARIF file is **always** written for upload regardless of this choice. |
 | `fail-on` | `fatal` | Severity that fails the build. `fatal` = fail on any fatal violation (the entrypoint's own exit contract). `warning` = *also* fail when a warning-severity finding is present. |
 | `sarif-file` | `einvoice.sarif` | Path the merged SARIF document is written to. |
 | `profile` | `xrechnung` | `xrechnung` (EN 16931 core + the German `BR-DE-*` CIUS) or `en16931` (core rules only). |
@@ -94,6 +94,69 @@ it the upload step is rejected by GitHub. Code scanning renders each SARIF
 result (rule id, message, remediation hint, business terms) as an annotation on
 the offending file.
 
+## Inline annotations without `security-events` (`format: github`)
+
+`security-events: write` is not available everywhere: pull requests from forks
+get a read-only `GITHUB_TOKEN`, many orgs pin workflow permissions by policy,
+and code scanning on private repos requires GitHub Advanced Security. In those
+repos the `upload-sarif` step above fails and you get no inline feedback at all.
+
+`format: github` is the fallback that needs **no** extra permission. The engine
+writes GitHub's own [workflow
+commands](https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions)
+to stdout — one line per finding, fatals as `::error`, warnings as `::warning`:
+
+```
+::error file=invoices/2024-08-acme.xml,title=BR-DE-2::The group 'SELLER CONTACT' (BG-6) must be transmitted.
+::error file=invoices/2024-08-acme.xml,title=BR-DE-15::The element 'Buyer reference' (BT-10) must be transmitted.
+```
+
+Copy-pasteable workflow:
+
+```yaml
+name: invoice-conformance
+on: [push, pull_request]
+
+permissions:
+  contents: read          # no security-events: write needed
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: verifyhash/verifyhash/einvoice/action@main
+        with:
+          path: invoices/
+          format: github
+          fail-on: fatal
+```
+
+Honest limits of this mode, so you can pick deliberately:
+
+- Annotations are attached to the **file and rule title only** — the engine's
+  `github` renderer emits `file=` and `title=`, not `line=`/`col=`, because a
+  business-rule violation like BR-DE-15 ("Buyer reference must be transmitted")
+  is about a *missing* element and has no honest line number. SARIF + code
+  scanning is still the richer surface where you can use it.
+- Annotations are ephemeral: they live on that check run, not in a code-scanning
+  database, so there is no alert history, no dismiss workflow, and no trend.
+- GitHub caps rendered annotations at **10 per level per step** (errors,
+  warnings, notices counted separately) and 50 per workflow run. All lines are
+  still in the job log; only the inline rendering is truncated.
+- For a directory, `github` is emitted **per file** — the runner drives the
+  entrypoint once per invoice (the engine's `--recurse` batch mode covers only
+  `json`, `junit`, `text`) and concatenates the lines, in the same order the
+  SARIF merge uses.
+
+The merged SARIF file is written either way, so you can start with
+`format: github` and add the `upload-sarif` step later without changing anything
+else. The offered `format` values are derived from the engine's own registry
+(`einvoice.report.REPORT_FORMATS`) minus a declared exclusion set in
+[`run.py`](run.py): `gitlab`/`azure` (other vendors' CI formats) and
+`html`/`badge` (document-shaped artifacts, not job-log lines).
+
 ## Pinning & vendoring (the version story)
 
 **There are no release tags today.** `git ls-remote --tags
@@ -157,7 +220,9 @@ explicit, reviewable change rather than a silent drift.
 - `sarif` output is single-file in the engine; for a directory this Action
   merges the per-file SARIF documents itself (pure aggregation — no result is
   dropped, relabelled, or synthesised). The `json` / `junit` / `text` log
-  formats use the engine's native `--recurse` batch mode.
+  formats use the engine's native `--recurse` batch mode; `github` has no
+  aggregate shape either, so for a directory the runner emits it per file and
+  concatenates (no batch envelope is invented).
 - Factur-X / ZUGFeRD PDFs are validated by the same zero-dependency container
   extractor the entrypoint uses; a container it cannot open zero-dep is reported
   as an error (build fails), never a false pass.

@@ -33,10 +33,17 @@ WHAT IT ASSERTS, per output format (text AND --json):
   constant ``einvoice.cli.EXIT_PIPE`` equals the documented 141.
 
 CORPUS: a temp directory of 560 copies of the committed invalid fixture
-``fixtures/sb-viol-CII-DT-001_cii.xml`` under deliberately LONG file names
+``fixtures/creditnote-invalid_cii.xml`` under deliberately LONG file names
 (the text report is one ~short line per file, so long paths are what push the
 text report past 128 KiB; measured ~257 B/line -> ~144 KiB text, ~540 KiB
-json). Invalid fixtures validate fast: the whole test runs in seconds.
+json). The fixture is a CII 381 credit note with BT-5 removed, so every copy
+fails on exactly one real fatal (BR-05) — the invalid-corpus premise the
+no-early-close control leg depends on. (It replaced
+``fixtures/sb-viol-CII-DT-001_cii.xml``, which stopped being a failing input
+once T-VHCII3.1 taught the raw-XML surfaces to grade CII on the CII engine:
+that fixture's only defect is a UBL syntax-binding one, and syntax bindings do
+not apply to CII, so it now correctly PASSES.) Invalid fixtures validate fast:
+the whole test runs in seconds.
 
 Zero new dependencies; plain ``python3 test_pipe_discipline.py``; nonzero
 exit on failure. No validation, rule, or report logic is touched.
@@ -56,8 +63,8 @@ sys.path.insert(0, HERE)
 from einvoice.cli import EXIT_FAIL, EXIT_PIPE  # noqa: E402
 
 #: Committed invalid fixture replicated into the temp batch corpus. It fails
-#: fast (one fatal), so even 560 copies validate in about a second.
-FIXTURE = os.path.join(HERE, "fixtures", "sb-viol-CII-DT-001_cii.xml")
+#: fast (one fatal, BR-05), so even 560 copies validate in about a second.
+FIXTURE = os.path.join(HERE, "fixtures", "creditnote-invalid_cii.xml")
 
 #: Both reports must exceed this many bytes so the early-close write reliably
 #: overruns the OS pipe buffer (usually 64 KiB on Linux): 2x margin.

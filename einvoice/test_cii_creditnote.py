@@ -21,11 +21,15 @@ no real company/personal data):
 
 MEASURED CONTRACT (what the engine does TODAY, pinned here):
 
-  1. The raw-XML CLI surface (``einvoice validate <file>``) is UBL-only by
-     design: BOTH fixtures — valid and broken alike — get the honest
-     structural ``S-ROOT`` fatal and exit 1 (``EXIT_FAIL``), in text and
-     ``--json`` form. The ``--json`` report carries the document verdict
-     (``valid: false``) for the 381 shape. No traceback, no silent pass.
+  1. The raw-XML CLI surface (``einvoice validate <file>``) grades the 381
+     shape for real (since 0.2.7 / T-VHCII3.1, which moved the root dispatch
+     into the one ``einvoice.validate.validate_root`` seam every surface
+     shares): the CLEAN credit note exits 0 with ``valid: true`` and zero
+     violations, the BT-5-less one exits 1 (``EXIT_FAIL``) on exactly the real
+     ``BR-05`` fatal — in text and ``--json`` form, with no traceback. Before
+     that fix this surface answered BOTH fixtures with a structural ``S-ROOT``
+     refusal, i.e. a red build on a valid German Gutschrift; the CLI verdict
+     is now asserted EQUAL to the engine verdict of leg 2 below.
   2. The CII rule ENGINE — the surface that actually grades CII documents
      (``einvoice.parser_cii`` + the syntax-agnostic ``einvoice.rules``, the
      exact path the Factur-X/ZUGFeRD embedded-XML product route runs via
@@ -87,7 +91,7 @@ sys.path.insert(0, HERE)
 
 import einvoice  # noqa: E402
 from einvoice import parser_cii, report, rules  # noqa: E402
-from einvoice.cli import EXIT_FAIL  # noqa: E402
+from einvoice.cli import EXIT_FAIL, EXIT_OK  # noqa: E402
 
 VALID_CN_CII = os.path.join(HERE, "fixtures", "creditnote-valid_cii.xml")
 INVALID_CN_CII = os.path.join(HERE, "fixtures", "creditnote-invalid_cii.xml")
@@ -172,33 +176,53 @@ class FixtureIntegrity(unittest.TestCase):
 
 
 class RawXmlCliContract(unittest.TestCase):
-    """The raw-XML CLI surface is UBL-only: a raw CII file — valid 381
-    credit note or broken alike — gets the honest structural S-ROOT fatal
-    and exit 1, never a traceback, never a silent pass. (CII documents are
-    graded for real on the embedded Factur-X path — next test class.)"""
+    """The raw-XML CLI surface grades the 381 CII credit note for real: the
+    clean fixture PASSES (exit 0), the BT-5-less one FAILS on the real BR-05
+    (exit 1). Never a structural S-ROOT refusal, never a traceback, never a
+    silent pass — and, asserted below, never a different answer from the CII
+    engine the next test class measures."""
 
-    def test_validate_text_both_fixtures(self):
-        for path in (VALID_CN_CII, INVALID_CN_CII):
-            with self.subTest(path=path):
-                rc, out = _run_cli("validate", path)
-                self.assertEqual(rc, EXIT_FAIL,
-                                 "raw CII via `validate` exits 1: %s" % out)
-                self.assertIn("FAIL:", out)
-                self.assertIn("S-ROOT", out)
-                self.assertNotIn("Traceback", out)
+    def test_validate_text_valid_fixture_passes(self):
+        rc, out = _run_cli("validate", VALID_CN_CII)
+        self.assertEqual(rc, EXIT_OK,
+                         "a clean CII 381 credit note must exit 0: %s" % out)
+        self.assertIn("PASS:", out)
+        self.assertNotIn("S-ROOT", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_validate_text_invalid_fixture_fails_on_br05(self):
+        rc, out = _run_cli("validate", INVALID_CN_CII)
+        self.assertEqual(rc, EXIT_FAIL,
+                         "the BT-5-less 381 credit note must exit 1: %s" % out)
+        self.assertIn("FAIL:", out)
+        self.assertIn("BR-05", out)
+        self.assertNotIn("S-ROOT", out)
+        self.assertNotIn("Traceback", out)
 
     def test_validate_json_both_fixtures(self):
-        for path in (VALID_CN_CII, INVALID_CN_CII):
+        expected = {VALID_CN_CII: (EXIT_OK, True, []),
+                    INVALID_CN_CII: (EXIT_FAIL, False, ["BR-05"])}
+        for path, (exp_rc, exp_valid, exp_rules) in expected.items():
             with self.subTest(path=path):
                 rc, out = _run_cli("validate", "--json", path)
-                self.assertEqual(rc, EXIT_FAIL)
+                self.assertEqual(rc, exp_rc)
                 rep = json.loads(out)  # well-formed machine report
-                # the --json output carries the document verdict for the
-                # 381 shape (here: not valid on the UBL-only raw surface).
-                self.assertIs(rep["valid"], False)
+                # the --json output carries the REAL document verdict for the
+                # 381 shape, graded on the CII engine.
+                self.assertIs(rep["valid"], exp_valid)
                 self.assertEqual(
-                    [v["rule"] for v in rep["violations"]], ["S-ROOT"])
-                self.assertEqual(rep["violations"][0]["severity"], "fatal")
+                    [v["rule"] for v in rep["violations"]], exp_rules)
+                for v in rep["violations"]:
+                    self.assertEqual(v["severity"], "fatal")
+
+    def test_cli_verdict_equals_cii_engine_verdict(self):
+        """The defect T-VHCII3.1 fixed, pinned as an equality: the shipped CLI
+        and the CII engine must fire the SAME rule ids for the same bytes."""
+        for path in (VALID_CN_CII, INVALID_CN_CII):
+            with self.subTest(path=path):
+                _rc, out = _run_cli("validate", "--json", path)
+                cli_fired = {v["rule"] for v in json.loads(out)["violations"]}
+                self.assertEqual(cli_fired, _cii_engine_fired(path))
 
 
 class CiiEngineVerdicts(unittest.TestCase):

@@ -289,17 +289,17 @@ class DeclaredIdVsProfileUBL(_CliContractMixin, unittest.TestCase):
 
 
 class DeclaredCiiIdBoundary(_CliContractMixin, unittest.TestCase):
-    """The CII ``ram:ID`` declared-id form. Pins the MEASURED behaviour of the
-    raw-XML CLI ``validate`` path: it dispatches on the XML root and reaches only
-    the UBL engine, so a raw CrossIndustryInvoice deterministically trips the
-    structural S-ROOT fatal — identically under BOTH profiles, with no
-    traceback. The declared XRechnung ``ram:ID`` never silently switches on the
-    CIUS scope; the raw-CII path rejects the same way regardless of the declared
-    id or the --profile token. (The engine's CII rule path is reached via the
-    Factur-X/ZUGFeRD PDF container or the internal API — see
-    ``test_golden_snapshot`` / ``test_rules_cii`` — not this raw-XML entry.)"""
+    """The CII ``ram:ID`` declared-id form, on the raw-XML CLI ``validate``
+    path. Since T-VHCII3.1 that path really grades a raw
+    ``CrossIndustryInvoice`` (one shared root dispatch with the Factur-X
+    container path), so this class pins the SAME invariant the UBL classes
+    above pin, now on the CII leg: the applied rule set is a pure function of
+    ``--profile``, never of the declared ``ram:ID``. The document declares the
+    XRechnung guideline urn, yet ``--profile=en16931`` must still apply the
+    core rules ONLY, with the German ``BR-DE-*`` layer added only when the
+    caller asks for ``--profile=xrechnung``."""
 
-    def test_declared_xrechnung_cii_is_deterministic_across_profiles(self):
+    def test_declared_xrechnung_cii_scope_follows_profile_not_declared_id(self):
         self.assertTrue(os.path.isfile(CII_XRECHNUNG_DECLARED),
                         CII_XRECHNUNG_DECLARED)
         # Sanity: the fixture really declares the XRechnung guideline urn.
@@ -313,18 +313,22 @@ class DeclaredCiiIdBoundary(_CliContractMixin, unittest.TestCase):
         self.assert_clean_documented_run(en, "cii-xrechnung-declared-en16931")
         self.assert_clean_documented_run(xr, "cii-xrechnung-declared-xrechnung")
 
-        # Same declared id, both profiles -> identical outcome (no wrong scope
-        # applied off the declared ram:ID).
-        self.assertEqual(en.returncode, xr.returncode,
-                         "raw-CII outcome must not depend on --profile here")
-        self.assertEqual(sorted(_rule_ids(en.stdout)),
-                         sorted(_rule_ids(xr.stdout)),
-                         "raw-CII rule ids must not depend on --profile here")
+        en_core, en_br = _split_ids(_rule_ids(en.stdout))
+        xr_core, _xr_br = _split_ids(_rule_ids(xr.stdout))
+        # The CORE rule set is identical under both profiles: xrechnung is
+        # 'core + CIUS', never a different core.
+        self.assertEqual(en_core, xr_core,
+                         "raw-CII core rule set must not depend on --profile")
         # And no BR-DE CIUS layer was silently switched on off the declared id.
-        _core, br_de = _split_ids(_rule_ids(en.stdout))
-        self.assertEqual(br_de, [],
+        self.assertEqual(en_br, [],
                          "declared CII ram:ID must not switch on BR-DE: %r"
-                         % br_de)
+                         % en_br)
+        # The document is core-clean, so it is graded — NOT structurally
+        # refused — under both profiles (its BR-DE findings are warnings).
+        self.assertNotIn("S-ROOT", _rule_ids(en.stdout))
+        self.assertNotIn("S-ROOT", _rule_ids(xr.stdout))
+        self.assertEqual(en.returncode, 0, en.stdout)
+        self.assertEqual(xr.returncode, 0, xr.stdout)
 
 
 class HonestContractDriftGuard(unittest.TestCase):

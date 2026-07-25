@@ -380,10 +380,12 @@ class TestBatchOrderIndependence(unittest.TestCase):
 
     Method: one temp fixture set reusing test_report_batch.py's makers
     (valid UBL + BR-DE-15-fatal UBL from ``BASE``/``make_bad_invoice``) plus a
-    parse-error file and a bare CII corpus file (the second syntax, as far as
-    the single-file ``.xml`` dispatch allows: it deterministically yields a
-    fatal report — the existing single-file contract, merely aggregated here).
-    The SAME four paths are fed through >=4 DISTINCT deterministic orderings
+    parse-error file and BOTH CII legs (the second syntax: a clean CII invoice
+    that the batch grades PASS and a defective one that fails on its real
+    business rules — since T-VHCII3.1 the batch reaches the CII engine through
+    the same root dispatch as every other surface, so a mixed-syntax folder is
+    graded, not refused). The SAME five paths are fed through >=4 DISTINCT
+    deterministic orderings
     (sorted baseline + fixed-seed ``random.Random(160716).shuffle`` — zero
     nondeterminism). Per-file comparison reuses the SingleFileUnchanged
     approach: byte-identical compact JSON vs the standalone ``build_report``
@@ -397,9 +399,9 @@ class TestBatchOrderIndependence(unittest.TestCase):
                 "failed_file_count")
 
     def _make_fixture_files(self):
-        """Four files, four behaviors: PASS (UBL), FATAL (UBL, BR-DE-15),
-        PARSE ERROR (not-well-formed), and a bare CII invoice (fatal via the
-        single-file dispatch contract). Returns the sorted path list."""
+        """Five files, five behaviors: PASS (UBL), FATAL (UBL, BR-DE-15),
+        PARSE ERROR (not-well-formed), PASS (clean CII) and FATAL (defective
+        CII). Returns the sorted path list."""
         tmp = tempfile.mkdtemp(prefix="vh-batchperm-")
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         good = os.path.join(tmp, "good.xml")
@@ -409,9 +411,11 @@ class TestBatchOrderIndependence(unittest.TestCase):
         broken = os.path.join(tmp, "broken.xml")
         with open(broken, "w", encoding="utf-8") as fh:
             fh.write("<Invoice><unclosed>")  # error: not-well-formed
-        cii = os.path.join(tmp, "cii.xml")
-        shutil.copyfile(CII_VALID, cii)
-        return sorted([good, bad, broken, cii])
+        cii_good = os.path.join(tmp, "cii-good.xml")
+        shutil.copyfile(CII_VALID, cii_good)
+        cii_bad = os.path.join(tmp, "cii-bad.xml")
+        shutil.copyfile(CII_INVALID, cii_bad)
+        return sorted([good, bad, broken, cii_good, cii_bad])
 
     def _distinct_permutations(self, paths, want=4):
         """Deterministic: the sorted baseline plus fixed-seed shuffles until
@@ -431,7 +435,7 @@ class TestBatchOrderIndependence(unittest.TestCase):
         return perms
 
     def test_aggregate_invariant_under_permuted_input_list(self):
-        """>=4 fixed-seed permutations of the SAME four-file list through
+        """>=4 fixed-seed permutations of the SAME five-file list through
         build_batch_report_from_files: identical aggregate exit code,
         identical aggregate counts/summary fields, and every per-file report
         byte-identical to its standalone build_report — position-independent.
@@ -470,12 +474,17 @@ class TestBatchOrderIndependence(unittest.TestCase):
                              "aggregate summary varied with input order")
 
         # Non-vacuous expectations on the invariant outcome itself: the fatal
-        # UBL file forces EXIT_FAIL (fatal outranks the parse error), all four
-        # files are counted, and exactly the bad + broken + cii files fail.
+        # UBL file forces EXIT_FAIL (fatal outranks the parse error), all five
+        # files are counted, and exactly the bad + broken + cii-bad files fail
+        # while good and cii-good pass — a MIXED-syntax folder graded on its
+        # merits, which is precisely what the raw-CII refusal used to prevent.
         self.assertEqual(first_code, report.EXIT_FAIL)
-        self.assertEqual(first_agg["file_count"], 4)
+        self.assertEqual(first_agg["file_count"], 5)
         self.assertGreaterEqual(first_agg["fatal_count"], 2)
         self.assertEqual(first_agg["failed_file_count"], 3)
+        failed = sorted(os.path.basename(r["source"])
+                        for r in batch["files"] if not r["valid"])
+        self.assertEqual(failed, ["bad.xml", "broken.xml", "cii-bad.xml"])
 
     def test_empty_and_single_element_lists_are_trivially_stable(self):
         """Degenerate inputs: the empty list yields the honest empty batch

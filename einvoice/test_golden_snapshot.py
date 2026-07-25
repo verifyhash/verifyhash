@@ -36,13 +36,15 @@ of internal rule-evaluation order, so re-running yields identical output.
 CODE PATH (no re-implemented rule logic)
 ----------------------------------------
 UBL fixtures go through ``einvoice.report.build_report`` verbatim — the exact
-code path behind ``python3 -m einvoice.report``. CII is NOT natively dispatched
-by ``report``/``validate`` today (they parse UBL only, so a CII file there just
-trips the S-ROOT structural check). To snapshot CII meaningfully we invoke the
-engine's real CII path — ``parser_cii.build_model`` + the same ``rules.ALL_RULES``
-core rules + ``rules_xrechnung.evaluate_cii`` for the German CIUS layer, exactly
-as ``test_rules_cii.py`` does — and reuse ``report._record`` for the identical
-violation->record mapping. No rule logic is duplicated here.
+code path behind ``python3 -m einvoice.report``. CII fixtures are projected
+through the engine's real CII path — ``parser_cii.build_model`` + the same
+``rules.ALL_RULES`` core rules + ``rules_xrechnung.evaluate_cii`` for the German
+CIUS layer, exactly as ``test_rules_cii.py`` does — reusing ``report._record``
+for the identical violation->record mapping. Since 0.2.7 that is also what
+``report``/``validate`` reach for a raw CII file: the root dispatch moved into
+``einvoice.validate.validate_root`` (via ``validate.cii_violations``), so these
+FIXTURES goldens and the shipped CLI now grade CII through one seam. No rule
+logic is duplicated here.
 
 REGENERATION (never automatic)
 ------------------------------
@@ -1040,16 +1042,18 @@ def check_container(failures):
 # unless an explicit issued_at is passed — we never pass one), so the bytes
 # are stable across runs, paths and time.
 #
-# HONEST NOTE on the CII fixtures: build_receipt validates through the UBL
-# validator (validate_file), which is what the shipping `receipt` subcommand
-# actually does — it does NOT dispatch CII natively. A CII document is
-# well-formed XML with a non-UBL root, so every CII fixture below yields a
-# deterministic FAIL receipt whose sole fatal is the real structural S-ROOT
-# check, exactly as `einvoice receipt <cii.xml>` prints today. We pin that
-# true output rather than a prettier fiction; the five receipts still differ
-# byte-for-byte (each carries its own input_sha256), so the pin catches any
-# canonicalization / format / self-hash drift per fixture. This is PURE
-# pinning of existing output — receipt.py is not touched.
+# NOTE on the CII fixtures: build_receipt validates through `validate_file`,
+# which since 0.2.7 dispatches a `CrossIndustryInvoice` root to the CII engine
+# (einvoice.validate.cii_violations) — the same seam `validate`, `report` and
+# the Factur-X container path use. So each CII fixture below now yields its
+# REAL graded verdict (PASS with an empty failed_fatal_rules for a clean
+# document, FAIL naming the real business rules for a broken one) instead of
+# the structural S-ROOT FAIL these goldens pinned before. Receipt SCHEMA and
+# `content_sha256` discipline are unchanged: the body layout is identical to
+# the UBL entries and each receipt still carries its own input_sha256, so the
+# pin still catches any canonicalization / format / self-hash drift per
+# fixture. receipt.py itself is untouched — only what validate_file answers
+# for a CII root changed.
 #
 # TWO independent assertions per fixture (so BOTH a body drift and a
 # hash-field drift are caught):
@@ -1081,26 +1085,28 @@ RECEIPT_FIXTURES = [
         "name": "receipt-cii-valid-example5",
         "path": "corpus/cen-en16931/cii/examples/CII_example5.xml",
         "profile": "en16931",
-        "note": "Reference EN 16931 CII invoice. Through the UBL-only receipt "
-                "code path it yields the deterministic S-ROOT FAIL receipt the "
-                "`receipt` CLI prints for any CII file today.",
+        "note": "Reference EN 16931 CII invoice. Graded on the CII engine by "
+                "the shared root dispatch, so `einvoice receipt` emits a PASS "
+                "receipt with failed_fatal_rules empty — the same receipt "
+                "shape a clean UBL invoice gets.",
     },
     # ---- (d) invalid CII ----
     {
         "name": "receipt-cii-invalid-vat-mismatch",
         "path": "corpus/synthetic/synth-cii-bad-vat-mismatch.xml",
         "profile": "en16931",
-        "note": "Synthetic CII with a VAT-total mismatch; via the receipt code "
-                "path it is the deterministic S-ROOT FAIL receipt (distinct "
-                "bytes: its own input_sha256).",
+        "note": "Synthetic CII with a VAT-total mismatch: a FAIL receipt whose "
+                "failed_fatal_rules names the REAL business rule BR-CO-14, not "
+                "a structural refusal (distinct bytes: its own input_sha256).",
     },
     # ---- (e) the CII-381 credit note ----
     {
         "name": "receipt-cii-creditnote-381",
         "path": "fixtures/creditnote-valid_cii.xml",
         "profile": "en16931",
-        "note": "CII credit note (BT-3 ram:TypeCode 381); via the receipt code "
-                "path it is the deterministic S-ROOT FAIL receipt with its own "
+        "note": "CII credit note (BT-3 ram:TypeCode 381): a PASS receipt with "
+                "failed_fatal_rules empty — 381 IS a listed code of the "
+                "official merged CII BR-CL-01 list — carrying its own "
                 "input_sha256, pinning the tamper-evidence bytes for the 381 "
                 "credit-note fixture.",
     },
@@ -1110,28 +1116,26 @@ RECEIPT_FIXTURES = [
         "path": "corpus/synthetic/synth-cii-good-reverse-charge.xml",
         "profile": "en16931",
         "note": "The T-VHCII2.2 reverse-charge (AE) CII invoice through the "
-                "`einvoice receipt` code path. HONEST LIMIT pinned (identical to "
-                "every other receipt-cii-* entry): build_receipt validates through "
-                "the UBL-only validate_file, so a CrossIndustryInvoice — "
-                "well-formed XML with a non-UBL root — yields the deterministic "
-                "S-ROOT FAIL receipt the `receipt` subcommand prints for any CII "
-                "file today (it does NOT dispatch CII natively). The AE document's "
-                "genuine PASS is pinned separately on the native CII validate path "
-                "by the synth-cii-good-reverse-charge FIXTURES golden; this entry "
-                "pins the tamper-evidence receipt bytes (its own input_sha256 over "
-                "the committed fixture) so any receipt-path drift over the AE "
-                "document surfaces here.",
+                "`einvoice receipt` code path. build_receipt validates through "
+                "validate_file, which dispatches the CrossIndustryInvoice root "
+                "to the CII engine, so the AE document's genuine PASS now "
+                "reaches the receipt: failed_fatal_rules empty, matching the "
+                "verdict the synth-cii-good-reverse-charge FIXTURES golden pins "
+                "on the engine path. This entry pins the tamper-evidence "
+                "receipt bytes (its own input_sha256 over the committed "
+                "fixture) so any receipt-path drift over the AE document "
+                "surfaces here.",
     },
     {
         "name": "receipt-cii-bad-reverse-charge",
         "path": "corpus/synthetic/synth-cii-bad-reverse-charge.xml",
         "profile": "en16931",
         "note": "The T-VHCII2.2 reverse-charge negative twin through the "
-                "`einvoice receipt` code path: the same deterministic S-ROOT FAIL "
-                "receipt (distinct bytes: its own input_sha256 over the twin). The "
-                "twin's engine-level defect (only BR-AE-10 fires) is pinned on the "
-                "native CII validate path by the synth-cii-bad-reverse-charge "
-                "FIXTURES golden; this pins the receipt bytes for the twin.",
+                "`einvoice receipt` code path: a FAIL receipt naming the real "
+                "BR-AE-10 (distinct bytes: its own input_sha256 over the twin). "
+                "The same single-rule verdict the synth-cii-bad-reverse-charge "
+                "FIXTURES golden pins on the engine path — receipt and engine "
+                "now agree because they share one dispatch.",
     },
     # ---- (f) the full-shape XRechnung invoice (T-VHR.18), end-to-end ----
     {
@@ -1420,12 +1424,14 @@ def check_receipts(failures):
 #   * b-invalid.xml     — fixtures/creditnote-invalid-typecode_ubl.xml, a UBL
 #                         CreditNote with BT-3=999 -> the real BR-CL-01 fatal
 #                         -> FAIL.
-#   * c-unsupported.xml — fixtures/creditnote-invalid_cii.xml, a CII document
-#                         fed through the UBL-only validate path: well-formed
-#                         XML with a non-UBL root -> the deterministic S-ROOT
-#                         "unsupported root" fatal (the batch's unsupported
-#                         leg), exactly as validate-batch prints for a CII file
-#                         today.
+#   * c-unsupported.xml — fixtures/creditnote-invalid_cii.xml, a CII (381)
+#                         credit note whose BT-5 InvoiceCurrencyCode was
+#                         removed. Since 0.2.7 the batch grades it on the CII
+#                         engine through the shared root dispatch, so it fails
+#                         on the REAL mandatory-term rule BR-05 rather than on
+#                         the structural S-ROOT refusal it used to get. (Its
+#                         stable basename is kept as-is so the golden's
+#                         normalized paths stay comparable across the change.)
 # So the aggregate is 1 pass + 2 fatal-failing files -> EXIT_FAIL (1).
 #
 # PATH NORMALIZATION (host-independence): the batch echoes the walked directory

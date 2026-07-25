@@ -84,9 +84,6 @@ from .parser import NotWellFormed, parse_file
 from ._xmlsec import _safe_fromstring
 from .remediation import load_catalog
 from . import pdf_container
-from . import parser_cii as _parser_cii
-from . import rules as _rules
-from . import rules_xrechnung as _rules_xr
 from . import syntax_binding_eval as _sbe
 
 #: Bump when the report shape changes in a way a consumer must notice.
@@ -319,14 +316,16 @@ def _report_from_invoice_bytes(xml_bytes, source, profile,
                                container_findings=None):
     """Validate already-extracted invoice XML bytes and return a report dict.
 
-    Used by the PDF-container path. Dispatches on the XML root: a UN/CEFACT
-    ``CrossIndustryInvoice`` (Factur-X / ZUGFeRD / CII XRechnung) is validated
-    through the CII engine (``parser_cii.build_model`` + the syntax-agnostic
+    Used by the PDF-container path and by :func:`einvoice.validate_bytes`. The
+    root dispatch lives in :func:`~einvoice.validate.validate_root` — ONE seam
+    shared with the raw-XML CLI, ``build_report`` and ``build_receipt`` — so a
+    UN/CEFACT ``CrossIndustryInvoice`` (Factur-X / ZUGFeRD / CII XRechnung) is
+    graded by the CII engine (``parser_cii.build_model`` + the syntax-agnostic
     ``rules.ALL_RULES`` core rules + ``rules_xrechnung.evaluate_cii`` for the
-    German CIUS layer) — exactly the path ``test_golden_snapshot`` and
-    ``test_rules_cii`` exercise. A UBL ``Invoice`` root is routed through the
-    existing :func:`~einvoice.validate.validate_root`. This RE-IMPLEMENTS no
-    rule logic; it only feeds the extracted bytes into the shipped engines.
+    German CIUS layer) and a UBL ``Invoice``/``CreditNote`` by the UBL engine,
+    with any other root falling out as the same structural ``S-ROOT`` fatal the
+    XML path emits. This RE-IMPLEMENTS no rule logic; it only feeds the
+    extracted bytes into the shipped engines.
 
     :param container_findings: optional list of FX-CONTAINER-* container
         declaration findings (``pdf_container.ContainerFinding``, structurally a
@@ -345,17 +344,8 @@ def _report_from_invoice_bytes(xml_bytes, source, profile,
     except ET.ParseError as exc:
         return _error_report(source, profile, "not-well-formed", str(exc))
 
-    localname = root.tag.rsplit("}", 1)[-1]
-    if localname == "CrossIndustryInvoice":
-        inv = _parser_cii.build_model(root)
-        violations = [v for v in (fn(inv) for fn in _rules.ALL_RULES)
-                      if v is not None]
-        if profile == "xrechnung":
-            violations.extend(_rules_xr.evaluate_cii(inv))
-        return _report_from_violations(violations + extra, source, profile)
-
-    # UBL (or any other root) — reuse the core UBL engine verbatim. A non-UBL,
-    # non-CII root falls out here as the same S-ROOT fatal the XML path emits.
+    # ONE dispatch for every surface (see validate.validate_root): CII through
+    # the CII engine, UBL through the UBL engine, anything else -> S-ROOT.
     result = validate_root(root, profile=profile)
     return _report_from_violations(
         list(result.violations) + extra, source, profile)

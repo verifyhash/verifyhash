@@ -27,11 +27,14 @@ uses — ``type`` (single or list), ``required``, ``properties``, ``items``,
 dependency: the engine gains no runtime dependency (``jsonschema`` is
 deliberately NOT imported), which ``test_packaging.py`` continues to prove.
 
-Note on the CII path: ``build_receipt`` validates through the UBL-only
-``validate_file`` code path, so a CII/Factur-X XML yields the deterministic
-``S-ROOT`` FAIL receipt the ``receipt`` CLI prints for any CII file today. That
-is still a real, on-disk receipt shape and is exactly what the schema must
-accept.
+Note on the CII path (T-VHCII3.5, delivered with T-VHCII3.1): ``build_receipt``
+validates through ``validate_file``, whose root dispatch now routes a
+``CrossIndustryInvoice`` to the CII engine, so a CII/Factur-X XML yields its
+REAL graded receipt — PASS with an empty ``failed_fatal_rules`` for a clean
+document, FAIL naming the real business rules for a broken one — instead of the
+structural ``S-ROOT`` FAIL it used to. The receipt SCHEMA is unchanged: the
+same body keys, the same ``content_sha256`` discipline, no new field and no new
+format version. That is exactly the point of asserting both CII legs here.
 
 Fast, offline, saxonche-free.
 """
@@ -44,7 +47,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from einvoice.receipt import build_receipt, RECEIPT_FORMAT  # noqa: E402
+from einvoice.receipt import (  # noqa: E402
+    build_receipt, canonical_json, RECEIPT_FORMAT, _sha256_hex)
 
 SCHEMA_PATH = os.path.join(HERE, "receipt.schema.json")
 
@@ -57,12 +61,12 @@ VALID_UBL = os.path.join(
 # UBL CreditNote with BT-3=999 -> one BR-CL-01 fatal (real rule, shared engine).
 INVALID_UBL = os.path.join(
     HERE, "fixtures", "creditnote-invalid-typecode_ubl.xml")
-# Reference EN 16931 CII invoice. Through the UBL-only receipt code path it is
-# the deterministic S-ROOT FAIL receipt the `receipt` CLI prints for any CII.
+# Reference EN 16931 CII invoice, EN-core clean: the receipt path grades it on
+# the CII engine, so it is a PASS receipt with failed_fatal_rules empty.
 VALID_CII = os.path.join(
     HERE, "corpus", "cen-en16931", "cii", "examples", "CII_example5.xml")
-# Synthetic CII with a VAT-total mismatch; via the receipt code path it is the
-# deterministic S-ROOT FAIL receipt with its own distinct input_sha256.
+# Synthetic CII with a VAT-total mismatch -> a FAIL receipt naming the real
+# BR-CO-14, with its own distinct input_sha256.
 INVALID_CII = os.path.join(
     HERE, "corpus", "synthetic", "synth-cii-bad-vat-mismatch.xml")
 
@@ -250,13 +254,31 @@ class RealEngineOutputValidates(unittest.TestCase):
         self.assertIn("BR-CL-01", rules)
 
     def test_valid_cii_receipt_validates(self):
-        # Via the UBL-only receipt path this is the deterministic S-ROOT FAIL.
-        doc = self._check(VALID_CII, "en16931", expect_verdict="FAIL")
-        self.assertTrue(doc["receipt"]["failed_fatal_rules"])
+        # Graded on the CII engine via the shared root dispatch: a genuine PASS
+        # receipt, in the SAME schema shape a clean UBL invoice produces.
+        doc = self._check(VALID_CII, "en16931", expect_verdict="PASS")
+        self.assertEqual(doc["receipt"]["failed_fatal_rules"], [])
+        # Same content_sha256 discipline as UBL: the hash recomputes from the
+        # canonicalized body, no CII-specific field or exemption.
+        self.assertEqual(doc["content_sha256"],
+                         _sha256_hex(canonical_json(doc["receipt"])
+                                     .encode("utf-8")))
 
     def test_invalid_cii_receipt_validates(self):
         doc = self._check(INVALID_CII, "en16931", expect_verdict="FAIL")
-        self.assertTrue(doc["receipt"]["failed_fatal_rules"])
+        rules = [r["rule"] for r in doc["receipt"]["failed_fatal_rules"]]
+        # The REAL business rule, never a structural refusal.
+        self.assertEqual(rules, ["BR-CO-14"])
+        self.assertNotIn("S-ROOT", rules)
+
+    def test_cii_and_ubl_receipts_share_one_body_shape(self):
+        """No new receipt field and no new format version for CII: the body
+        keys of a CII receipt are exactly those of a UBL receipt."""
+        cii = build_receipt(VALID_CII, profile="en16931")
+        ubl = build_receipt(VALID_UBL, profile="en16931")
+        self.assertEqual(set(cii["receipt"]), set(ubl["receipt"]))
+        self.assertEqual(set(cii), set(ubl))
+        self.assertEqual(cii["receipt"]["format"], ubl["receipt"]["format"])
 
     def test_explicit_issued_at_still_validates(self):
         # When a caller DOES pass issued_at, the (now-optional-present) key is

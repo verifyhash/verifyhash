@@ -13,10 +13,12 @@ ever diverge.
 
 ## [0.2.7] - 2026-07-24
 
-A packaging and robustness release for the INSTALLED artifact. The engine is
-untouched: no rule, coverage, corpus or test-suite numbers change from 0.2.6,
-and a source checkout behaves identically. What changes is what a
-`pip install verifyhash-einvoice` user actually receives.
+A packaging and robustness release for the INSTALLED artifact, plus one
+dispatch fix that changes verdicts. No rule was added, removed or altered: the
+engine still fires 297 rules, and the coverage and corpus numbers are unchanged
+from 0.2.6. What changes is what a `pip install verifyhash-einvoice` user
+receives, and which of the two EN 16931 syntaxes the raw-XML entry points will
+actually grade.
 
 This is a new version rather than a re-cut of 0.2.6 because the 0.2.6 wheel on
 PyPI is published and immutable. Leaving both builds named `0.2.6` would mean a
@@ -25,6 +27,26 @@ default report format crashes from the fixed one.
 
 ### Fixed
 
+- **Raw UN/CEFACT CII XML is now graded instead of refused.** XRechnung has two
+  official syntaxes — UBL and CII — and CII is also the ZUGFeRD/Factur-X
+  payload, so a German ERP's invoice folder is routinely raw CII. Every
+  raw-XML surface (`einvoice validate`, `validate-batch`, `einvoice receipt`,
+  `python3 -m einvoice.report`) previously answered such a file with a fatal
+  `S-ROOT` and exit 1 — a red build on VALID invoices, carrying a message that
+  told the user to convert their XML into a PDF. The engine had graded those
+  exact bytes correctly the whole time via the PDF-container path and the
+  public `einvoice.validate_bytes()`; only the dispatch layer withheld the
+  answer. Root dispatch now lives in one shared seam
+  (`einvoice.validate.validate_root` → `validate.cii_violations`), matched
+  namespace-tolerantly by localname, so the CLI and the API cannot drift into
+  disagreeing verdicts again. **No new rule logic:** CII runs the same
+  syntax-agnostic core rules as UBL, plus `rules_xrechnung.evaluate_cii` on the
+  `xrechnung` profile. A genuinely unsupported root (say a `buildConfigurations`
+  file someone pointed the CI gate at) still earns the same structural `S-ROOT`
+  fatal and exit 1, with its original wording. Limits: this fixes routing, not
+  coverage — CII grading remains bounded by the CII binding already documented
+  in `coverage.md`, and the browser validator bundled under `www/` still ships
+  the previous dispatch until its engine copy is refreshed.
 - **`remediation_catalog.json` is now shipped inside the wheel** (as
   `einvoice` package-data, 502,693 bytes raw / ~34 KB compressed). Reports
   produced by a pip-installed copy now carry non-null `title`, `fix_hint`,

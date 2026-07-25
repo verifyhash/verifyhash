@@ -4,7 +4,8 @@ This module is the validation entry point of the public API. It exposes the
 two callables and the result type that embedders use:
 
     * :func:`validate_file` — validate a path (or a binary bytes buffer).
-    * :func:`validate_root` — validate an already-parsed UBL Invoice root.
+    * :func:`validate_root` — validate an already-parsed invoice root (UBL
+      ``Invoice``/``CreditNote`` or UN/CEFACT ``CrossIndustryInvoice``).
     * :class:`Result` — the outcome, carrying ``.valid`` and ``.violations``.
 
 Both callables return a :class:`Result`. Each entry in ``Result.violations``
@@ -22,6 +23,7 @@ import typing
 import xml.etree.ElementTree as ET
 
 from . import parser as _parser
+from . import parser_cii as _parser_cii
 from . import rules as _rules
 from . import rules_xrechnung as _rules_xr
 from .rules import Violation
@@ -37,21 +39,12 @@ S_ROOT_MESSAGE = (
     "Root element must be Invoice in the UBL Invoice-2 namespace, or "
     "CreditNote in the UBL CreditNote-2 namespace.")
 
-#: The S-ROOT message when the unsupported root IS a CII
-#: ``CrossIndustryInvoice`` (matched by localname, namespace-tolerant, so a
-#: wrong-namespace CII root still gets the helpful text). Same rule id, same
-#: fatal severity, same exit code — ONLY the message differs, because "must be
-#: UBL" is misleading for a ZUGFeRD/Factur-X adopter: CII is fully supported
-#: here, just on the PDF container route (``python3 -m einvoice.report`` on
-#: the Factur-X/ZUGFeRD PDF extracts the embedded CII and grades it on the
-#: real CII engine). Raw-CII dispatch on this path is deliberately NOT added —
-#: the raw-XML surface stays honestly UBL-only (see coverage.py, "CII
-#: credit-note scope"). Single source for every emitter of the CII-case text.
-S_ROOT_CII_MESSAGE = (
-    "CrossIndustryInvoice (CII) root detected: direct XML validation is "
-    "UBL-only. CII invoices (ZUGFeRD/Factur-X) are fully supported via the "
-    "PDF container path — validate the Factur-X/ZUGFeRD PDF with "
-    "'python3 -m einvoice.report <invoice.pdf>' (see README).")
+#: Localname of the UN/CEFACT CII document root (Factur-X / ZUGFeRD /
+#: XRechnung-CII). Matched WITHOUT the namespace, mirroring the dispatch the
+#: PDF-container path has always used, so a CrossIndustryInvoice in a
+#: wrong/blank namespace is graded by the CII engine (and fails on the real
+#: mandatory-term rules) instead of being refused structurally.
+CII_ROOT_LOCALNAME = "CrossIndustryInvoice"
 
 
 def _severity(v):
@@ -127,10 +120,50 @@ class Result:
         return rec
 
 
-def validate_root(root: ET.Element, profile: str = "en16931") -> Result:
-    """Run structural + business rules over a parsed UBL Invoice root.
+def cii_violations(root: ET.Element, profile: str = "en16931") -> list:
+    """Grade a parsed UN/CEFACT CII root and return its violations.
 
-    :param root: a parsed UBL ``Invoice`` element (an ``xml.etree`` Element),
+    THE single CII evaluation seam. Every shipped surface that grades a
+    ``CrossIndustryInvoice`` — the raw-XML CLI (``validate`` /
+    ``validate-batch``), ``einvoice.report.build_report``,
+    ``einvoice.receipt.build_receipt``, the Factur-X/ZUGFeRD embedded-XML path
+    in ``einvoice.report._report_from_invoice_bytes``, and the public
+    ``einvoice.validate_bytes`` — reaches the CII engine through this one
+    function, so those surfaces cannot drift into disagreeing verdicts again.
+    (They did: until 0.2.7 the raw-XML surfaces answered a valid XRechnung-CII
+    invoice with a structural ``S-ROOT`` fatal while the container path graded
+    the identical bytes clean.)
+
+    It re-implements NO rule logic: it feeds the CII model to the same
+    syntax-agnostic core rules the UBL leg runs, plus the admitted CII BR-DE
+    layer on the ``xrechnung`` profile.
+
+    :param root: a parsed CII ``CrossIndustryInvoice`` element.
+    :param profile: ``"en16931"`` (core only) or ``"xrechnung"`` (core plus
+        the German ``BR-DE-*`` CIUS layer admitted for CII).
+    :returns: the list of :class:`~einvoice.rules.Violation` that fired, in
+        evaluation order.
+    """
+    inv = _parser_cii.build_model(root)
+    violations = [v for v in (fn(inv) for fn in _rules.ALL_RULES)
+                  if v is not None]
+    if profile == "xrechnung":
+        violations.extend(_rules_xr.evaluate_cii(inv))
+    return violations
+
+
+def validate_root(root: ET.Element, profile: str = "en16931") -> Result:
+    """Run structural + business rules over a parsed invoice root.
+
+    Dispatches on the root element, namespace-tolerantly by localname:
+
+    * a UN/CEFACT ``CrossIndustryInvoice`` (Factur-X / ZUGFeRD / XRechnung-CII)
+      is graded by the CII engine via :func:`cii_violations`;
+    * a UBL ``Invoice`` / ``CreditNote`` runs the UBL model plus, on the
+      ``xrechnung`` profile, ``rules_xrechnung.evaluate``;
+    * anything else is the structural ``S-ROOT`` fatal (:data:`S_ROOT_MESSAGE`).
+
+    :param root: a parsed invoice root element (an ``xml.etree`` Element),
         e.g. from ``einvoice.parser.parse_file(...)``.
     :param profile: ``"en16931"`` for the EN 16931 core rules only, or
         ``"xrechnung"`` to also apply the German CIUS layer (BR-DE-*).
@@ -140,22 +173,18 @@ def validate_root(root: ET.Element, profile: str = "en16931") -> Result:
     if profile not in PROFILES:
         raise ValueError("unknown profile: %r (choose from %s)"
                          % (profile, ", ".join(PROFILES)))
-    violations = []
 
-    # Layer S — structural.
+    # Layer S — structural. CII first: a CrossIndustryInvoice is a SUPPORTED
+    # root, so it must never fall into the UBL model's S-ROOT arm.
+    if _parser._localname(root.tag) == CII_ROOT_LOCALNAME:
+        return Result(cii_violations(root, profile))
+
+    violations = []
     inv = _parser.build_model(root)
     if not (inv.root_is_ubl_invoice or inv.is_creditnote):
-        localname = _parser._localname(root.tag)
-        # A genuine CII root gets an actionable message naming the supported
-        # ZUGFeRD/Factur-X container route instead of the misleading "must be
-        # UBL" text. Localname match only (namespace-tolerant, mirroring the
-        # spirit of parser_cii.build_model's root check) so a wrong-namespace
-        # CrossIndustryInvoice still earns the pointer. Verdict, rule id and
-        # exit code are IDENTICAL either way — message text only.
-        message = (S_ROOT_CII_MESSAGE if localname == "CrossIndustryInvoice"
-                   else S_ROOT_MESSAGE)
-        violations.append(Violation("S-ROOT", message, localname))
-        # Without a supported UBL root the business rules are meaningless.
+        violations.append(
+            Violation("S-ROOT", S_ROOT_MESSAGE, _parser._localname(root.tag)))
+        # Without a supported root the business rules are meaningless.
         return Result(violations)
 
     # Layer S-XSD is deferred (no XSD validator in the standard library; see
@@ -179,6 +208,13 @@ def validate_file(
     profile: str = "en16931",
 ) -> Result:
     """Parse an invoice and validate it.
+
+    Accepts either syntax of EN 16931 as raw XML: a UBL
+    ``Invoice``/``CreditNote`` or a UN/CEFACT ``CrossIndustryInvoice``
+    (ZUGFeRD / Factur-X / XRechnung-CII). The syntax is detected from the root
+    element by :func:`validate_root`; a Factur-X/ZUGFeRD **PDF** container is a
+    different input shape and goes through ``einvoice.report`` /
+    :func:`einvoice.validate_bytes` instead.
 
     :param path: the invoice to read. Either a filesystem path (``str`` /
         ``os.PathLike``) or an already-open binary file-like object — anything

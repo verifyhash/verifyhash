@@ -35,6 +35,7 @@ if HERE not in sys.path:
 from einvoice import pdf_container  # noqa: E402
 from einvoice import parser_cii, rules  # noqa: E402
 from einvoice import report as _report  # noqa: E402
+from einvoice import validate as _validate  # noqa: E402
 from einvoice._xmlsec import _safe_fromstring  # noqa: E402
 
 COVERAGE_MD = os.path.join(HERE, "COVERAGE.md")
@@ -157,10 +158,17 @@ class MeasuredEndToEndFactTest(unittest.TestCase):
         # The CII validation path applies rules.ALL_RULES unconditionally; the
         # profile argument only ADDS the XRechnung CIUS layer, it never removes
         # or gates a core rule. Pin that fact against the live source so a future
-        # profile-keyed rule filter would trip this test.
+        # profile-keyed rule filter would trip this test. Since T-VHCII3.1 that
+        # loop lives in the ONE shared seam einvoice.validate.cii_violations
+        # (which _report_from_invoice_bytes reaches through validate_root), so
+        # the guard follows it there — and additionally pins that the container
+        # path still routes through that seam rather than re-implementing it.
         import inspect
-        src = inspect.getsource(_report._report_from_invoice_bytes)
+        src = inspect.getsource(_validate.cii_violations)
         self.assertIn("for fn in _rules.ALL_RULES", src)
+        self.assertIn('if profile == "xrechnung"', src)
+        self.assertIn("validate_root(root, profile=profile)",
+                      inspect.getsource(_report._report_from_invoice_bytes))
 
     def test_valid_en16931_fixture_passes_full_validation(self):
         # A genuine EN 16931 profile document: its BT-24 canonicalises to

@@ -62,14 +62,16 @@
       "violation_count": 1,
       "violations": [
         {
-          "rule": "S-ROOT",
+          "rule": "BR-05",
           "severity": "fatal",
-          "message": "CrossIndustryInvoice (CII) root detected: direct XML validation is UBL-only. CII invoices (ZUGFeRD/Factur-X) are fully supported via the PDF container path \u2014 validate the Factur-X/ZUGFeRD PDF with 'python3 -m einvoice.report <invoice.pdf>' (see README).",
-          "field": "CrossIndustryInvoice",
-          "title": null,
-          "fix_hint": null,
-          "terms": [],
-          "location": null
+          "message": "An Invoice shall have an Invoice currency code (BT-5).",
+          "field": "cbc:DocumentCurrencyCode",
+          "title": "An Invoice shall have an Invoice currency code (BT-5).",
+          "fix_hint": "Add the required element at `cbc:DocumentCurrencyCode`: An Invoice shall have an Invoice currency code (BT-5).",
+          "terms": [
+            "BT-5"
+          ],
+          "location": "cbc:DocumentCurrencyCode"
         }
       ],
       "syntax_bindings": [],

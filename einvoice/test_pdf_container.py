@@ -267,15 +267,35 @@ class TestReportWiringUnsupported(unittest.TestCase):
             self.assertIn("unsupported-container", out, (pdf, out))
 
 
-class TestXmlPathUnchanged(unittest.TestCase):
-    """The plain-XML path must behave EXACTLY as before (no CII dispatch): a
-    raw CII XML file still reports as UBL S-ROOT, proving the PDF branch did
-    not leak CII handling into the XML path."""
+class TestXmlPathMatchesContainerPath(unittest.TestCase):
+    """The plain-XML path and the PDF-container path must agree on the same
+    CII payload. Since T-VHCII3.1 both reach the CII engine through the ONE
+    ``einvoice.validate.validate_root`` dispatch, so validating the extracted
+    inner XML directly fires exactly the rule ids the container path fires,
+    minus the container-only FX-CONTAINER-* records (which are a property of
+    the PDF wrapper, not of the invoice). Before that fix the XML path answered
+    the identical bytes with a structural S-ROOT refusal — the disagreement
+    this class now forbids."""
 
-    def test_raw_cii_xml_still_reports_s_root(self):
+    def test_raw_cii_xml_is_graded_not_refused(self):
         rep = report.build_report(VALID_INNER_XML, profile="en16931")
         rules_fired = {v["rule"] for v in rep["violations"]}
-        self.assertIn("S-ROOT", rules_fired)
+        self.assertNotIn("S-ROOT", rules_fired)
+        # CII_example5.xml is EN-core clean (same fact the container leg pins).
+        self.assertTrue(rep["valid"], rep["violations"])
+        self.assertEqual(rep["fatal_count"], 0)
+
+    def test_raw_xml_and_container_fire_the_same_business_rules(self):
+        for profile in ("en16931", "xrechnung"):
+            with self.subTest(profile=profile):
+                pdf_rep = report.build_report(VALID_PDF, profile=profile)
+                xml_rep = report.build_report(VALID_INNER_XML, profile=profile)
+                self.assertEqual(
+                    {v["rule"] for v in xml_rep["violations"]},
+                    {v["rule"] for v in pdf_rep["violations"]
+                     if not v["rule"].startswith("FX-CONTAINER-")},
+                    "raw-XML and PDF-container paths must grade the same "
+                    "payload identically (%s)" % profile)
 
 
 class TestContainerDeclarationChecks(unittest.TestCase):

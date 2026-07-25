@@ -8,8 +8,8 @@
     </testcase>
   </testsuite>
   <testsuite name="c-unsupported.xml" tests="1" failures="1" errors="0">
-    <testcase name="S-ROOT" classname="en16931">
-      <failure message="CrossIndustryInvoice (CII) root detected: direct XML validation is UBL-only. CII invoices (ZUGFeRD/Factur-X) are fully supported via the PDF container path — validate the Factur-X/ZUGFeRD PDF with 'python3 -m einvoice.report &lt;invoice.pdf&gt;' (see README).">fatal: CrossIndustryInvoice</failure>
+    <testcase name="BR-05" classname="en16931">
+      <failure message="An Invoice shall have an Invoice currency code (BT-5).">fatal: cbc:DocumentCurrencyCode</failure>
     </testcase>
   </testsuite>
 </testsuites>

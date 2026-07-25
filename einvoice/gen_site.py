@@ -2327,14 +2327,97 @@ def render_de():
     return "\n".join(p) + "\n"
 
 
+# The two conformance profiles a catalog rule can belong to. A rule's profile
+# is DERIVED from the catalog's own ``provenance.source`` (the Schematron
+# artifact the assert was lifted from) by taking the part before the syntax
+# suffix — ``en16931-ubl`` -> ``en16931``; ``xrechnung-ubl`` / ``xrechnung-cii``
+# -> ``xrechnung``. That is a mechanical split, not a hand-authored per-rule
+# table, so a new rule (or a new syntax binding of an existing profile) needs no
+# edit here; an UNKNOWN profile raises rather than silently rendering a wrong
+# cell.
+_RULE_PROFILES = ("en16931", "xrechnung")
+
+
+def _profile_of(rule_id, entry):
+    """Conformance profile of one catalog rule, derived from its provenance.
+
+    ``provenance.source`` names the official artifact the assert came from
+    (``en16931-ubl``, ``xrechnung-ubl``, ``xrechnung-cii``). The profile is the
+    segment before the first ``-``; anything outside :data:`_RULE_PROFILES` is a
+    catalog change this renderer has not been taught, and fails loudly here
+    instead of publishing an invented value.
+    """
+    source = (entry.get("provenance") or {}).get("source") or ""
+    profile = source.split("-", 1)[0]
+    if profile not in _RULE_PROFILES:
+        raise ValueError(
+            "rule %s: provenance.source %r yields profile %r, which is not one "
+            "of %r — teach _profile_of() before regenerating the site"
+            % (rule_id, source, profile, list(_RULE_PROFILES)))
+    return profile
+
+
+# Extra styling for the rule-index hub only (the reference table). Kept OUT of
+# the shared _STYLE so the 297 committed rule pages are untouched by it; it is
+# appended inside the hub's single <style> element by _doc_head(style_extra=).
+# Inline CSS only — this page family carries no JavaScript, and the only
+# <script> on the hub is its application/ld+json block.
+_HUB_STYLE = """
+main { max-width: 62rem; }
+.tw { overflow-x: auto; margin: 0 0 .3rem; }
+table.ruletab { border-collapse: collapse; width: 100%; font-size: .82rem;
+  line-height: 1.4; }
+table.ruletab th, table.ruletab td { border: 1px solid #d0d7de;
+  padding: .3rem .5rem; text-align: left; vertical-align: top; }
+table.ruletab thead th { background: #f6f8fa; font-size: .72rem;
+  text-transform: uppercase; letter-spacing: .03em; color: #57606a;
+  white-space: nowrap; }
+table.ruletab th[scope="row"] { font-weight: 400; white-space: nowrap; }
+table.ruletab td.loc code, table.ruletab td.terms { font-size: .95em; }
+table.ruletab td.terms, table.ruletab td.sevcell, table.ruletab td.profcell,
+table.ruletab td.famcell { white-space: nowrap; }
+table.ruletab tbody tr:target { outline: 2px solid #0969da;
+  background: #fff8c5; }
+@media (prefers-color-scheme: dark) {
+  table.ruletab th, table.ruletab td { border-color: #30363d; }
+  table.ruletab thead th { background: #161b22; color: #8b949e; }
+  table.ruletab tbody tr:target { background: #2d2a1a; }
+}
+""".strip()
+
+# Column headers of the rule table, in render order. One place to change, used
+# for the <thead> row of EVERY family section.
+_HUB_COLUMNS = ("Rule", "Requirement", "Severity", "Profile", "Family",
+                "BT/BG terms", "XML location")
+
+
 def render_hub(catalog):
     """The rule index hub (``www/rules/index.html``) — pure, deterministic.
 
-    Every generated rule grouped by rule family, REUSING gen_rules_doc's
-    ``family_of()`` + ``FAMILY_LABELS`` (imported — never a second hand-authored
-    copy). Each family section carries its real explanatory intro (E-E-A-T) and
-    links to every rule page in that family. This is genuine navigation with
-    per-rule titles, not a keyword list.
+    Since the crawl consolidation (T-VHCRAWL.1) this is the ONE rule URL the
+    sitemap asks Google to index, so it has to be the one destination a support
+    reply, a forum answer or a CI log can deep-link INTO. It therefore renders a
+    real reference ``<table>`` per rule family — one row per asserted rule,
+    every row carrying a stable ``id`` equal to its rule id, so
+    ``…/einvoice/rules/#BR-DE-15`` lands on that rule's row.
+
+    Every cell is READ from ``remediation_catalog.json`` (the same catalog the
+    engine and the per-rule pages render from): title, severity, BT/BG terms and
+    XML location verbatim, profile derived by :func:`_profile_of`, family by
+    gen_rules_doc's ``family_of()`` + ``FAMILY_LABELS`` (imported — never a
+    second hand-authored copy). Nothing on this page is hand-typed per rule, so
+    it cannot drift from the engine.
+
+    Cells are deliberately COMPACT (no ``fix`` / ``fix_de`` prose): the row is a
+    lookup line, the linked per-rule page is the full article. That also keeps
+    the hub far away from ``RULE_PAGE_SIMILARITY_CEILING`` against the rule
+    pages that are still sitemapped.
+
+    OUT OF SCOPE ON PURPOSE (T-VHCRAWL.4): the URL the CLI prints for
+    ``--explain`` (see einvoice/cli.py, T-VHUX2.1) is NOT repointed at an anchor
+    on this page. The per-rule page is the richer destination, it still resolves
+    live, and repointing it would force a golden-snapshot regeneration for no
+    user gain.
     """
     # Group rule ids by family using gen_rules_doc.family_of() (the ONE family
     # classifier). Families appear in first-seen catalog order; rules keep their
@@ -2354,16 +2437,23 @@ def render_hub(catalog):
     warn = sum(1 for e in catalog.values() if e.get("severity") == "warning")
     info = sum(1 for e in catalog.values()
                if e.get("severity") == "information")
+    # Profile split, DERIVED (never restated by hand) — this also validates
+    # every rule's provenance.source before a single row is emitted.
+    profiles = {rid: _profile_of(rid, entry) for rid, entry in catalog.items()}
+    n_en = sum(1 for v in profiles.values() if v == "en16931")
+    n_xr = sum(1 for v in profiles.values() if v == "xrechnung")
 
     title = "EN 16931 / XRechnung rule index — einvoice rule reference"
     description = ("Every EN 16931 / XRechnung business rule the einvoice "
-                   "validator checks (%d rules across %d families), grouped by "
-                   "rule family with a reference page for each." % (n, len(groups)))
+                   "validator checks (%d rules across %d families) in one "
+                   "table: severity, profile, BT/BG terms and XML location, "
+                   "each row linking to that rule's reference page."
+                   % (n, len(groups)))
     p = []
     w = p.append
     # Structured data: the visible "einvoice / EN 16931 / XRechnung rule
     # reference" trail (the 297 rule pages carry their own TechArticle block).
-    w(_doc_head(title, description, _url_hub(),
+    w(_doc_head(title, description, _url_hub(), style_extra=_HUB_STYLE,
                 ld=_ld_breadcrumb((
                     ("einvoice", _url_landing()),
                     ("EN 16931 / XRechnung rule reference", _url_hub())))))
@@ -2373,18 +2463,38 @@ def render_hub(catalog):
       "EN 16931 / XRechnung rule reference</p>")
     w("<h1>Rule index</h1>")
     w('<p class="lead">Every EN 16931 / XRechnung business rule the einvoice '
-      "engine can fire, grouped by rule family. Each rule links to its own "
-      "reference page: what it requires, the BT/BG business terms it touches, "
-      "the XML location, a one-line fix, the engine severity, and the verbatim "
-      "official Schematron assert.</p>")
+      "engine can fire, grouped by rule family, one row per rule. The row gives "
+      "you the answer most lookups actually need — engine severity, profile, "
+      "the BT/BG business terms the rule touches and the XML location it points "
+      "at. The rule id links to that rule's own page, which adds the one-line "
+      "fix in English and German and the verbatim official Schematron "
+      "assert.</p>")
     w("<p><strong>%d rules</strong> in total — %d fatal, %d warning, "
       "%d information — across %d families. Family headings are the standard "
-      "EN 16931 / XRechnung rule-family labels; every per-rule string on the "
-      "linked pages is rendered from the remediation catalog. "
+      "EN 16931 / XRechnung rule-family labels; every cell below is rendered "
+      "from the remediation catalog the engine itself validates against. "
       '<a href="../index.html">Back to the overview</a>.</p>'
       % (n, fatal, warn, info, len(groups)))
+    # How to READ the table, plus the one thing a reader cannot derive from the
+    # cells: where the profile column comes from. Counts are derived above.
+    w("<p><strong>Profile</strong> says which artifact asserts the rule: "
+      "<code>en16931</code> for the %d rules that come from the EN 16931 UBL "
+      "Schematron (they fire for any EN 16931 invoice), <code>xrechnung</code> "
+      "for the %d that come from the German KoSIT XRechnung Schematron (they "
+      "fire only when the invoice claims an XRechnung customization). "
+      "<strong>Severity</strong> is what the engine does: <code>fatal</code> "
+      "fails the run, <code>warning</code> and <code>information</code> are "
+      "reported without failing it unless you raise the threshold. "
+      "<strong>XML location</strong> is the element the rule is anchored to, "
+      "written as the UBL/CII path fragment the report prints.</p>"
+      % (n_en, n_xr))
+    # Deep-linking is the whole point of the consolidation: say it once, plainly.
+    w("<p>Every row has a stable anchor equal to its rule id, so "
+      "<code>%s#BR-DE-15</code> opens this page at that rule — usable in a "
+      "support reply, a ticket or a CI log.</p>" % _h(_url_hub()))
 
-    # Family table of contents (in-page anchors).
+    # Family table of contents (in-page anchors to the <section> ids below;
+    # rule rows carry their own anchors inside each section).
     w('<nav class="toc">')
     w('<ul class="rules">')
     for fam, ids in groups:
@@ -2393,22 +2503,48 @@ def render_hub(catalog):
     w("</ul>")
     w("</nav>")
 
-    # One section per family: real explanatory intro + a link per rule.
+    # One section per family: real explanatory intro + the family's rule table.
     for fam, ids in groups:
         label = _FAMILY_LABELS.get(fam, "%s rules." % fam)
         w('<section class="fam" id="%s">' % _h(fam))
         w("<h2>%s <small>(%d)</small></h2>" % (_h(fam), len(ids)))
         w('<p class="intro">%s</p>' % _h(label))
-        w('<ul class="rules">')
+        w('<div class="tw">')
+        w('<table class="ruletab">')
+        w("<thead>")
+        # Column headers use <th scope="col">; the id cell of each row uses
+        # <th scope="row"> so a screen reader announces the rule id as the row
+        # header for every other cell.
+        w("<tr>" + "".join('<th scope="col">%s</th>' % _h(c)
+                           for c in _HUB_COLUMNS) + "</tr>")
+        w("</thead>")
+        w("<tbody>")
         for rid in ids:
-            rtitle = catalog[rid].get("title", "")
-            sev = catalog[rid].get("severity", "")
-            # Relative link resolves offline: hub is www/rules/index.html, the
-            # rule page is www/rules/<id>/index.html.
-            w('<li><a href="%s/index.html"><code>%s</code></a> — %s '
-              '<span class="sev">%s</span></li>'
-              % (_h(rid), _h(rid), _h(rtitle), _h(sev)))
-        w("</ul>")
+            entry = catalog[rid]
+            rtitle = entry.get("title", "")
+            sev = entry.get("severity", "")
+            terms = ", ".join(entry.get("bt_bg") or []) or "—"
+            loc = entry.get("location_hint", "")
+            loc_cell = ("<code>%s</code>" % _h(loc)) if loc else "—"
+            # ONE <tr> per line (the site gates count rows by line) and the row
+            # id IS the catalog rule id, so the anchor cannot drift from the
+            # catalog. The link is relative: the hub is www/rules/index.html and
+            # the rule page is www/rules/<id>/index.html, so it also resolves
+            # offline.
+            w('<tr id="%s">'
+              '<th scope="row"><a href="%s/index.html"><code>%s</code></a></th>'
+              '<td>%s</td>'
+              '<td class="sevcell">%s</td>'
+              '<td class="profcell">%s</td>'
+              '<td class="famcell"><a href="#%s">%s</a></td>'
+              '<td class="terms">%s</td>'
+              '<td class="loc">%s</td>'
+              "</tr>"
+              % (_h(rid), _h(rid), _h(rid), _h(rtitle), _h(sev),
+                 _h(profiles[rid]), _h(fam), _h(fam), _h(terms), loc_cell))
+        w("</tbody>")
+        w("</table>")
+        w("</div>")
         w("</section>")
 
     w("<footer>")

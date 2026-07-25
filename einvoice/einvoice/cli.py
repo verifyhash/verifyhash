@@ -236,8 +236,9 @@ from .report import (
     build_batch_report, build_batch_report_from_files,
     batch_exit_code, build_batch_text,
     REPORT_FORMATS, BATCH_FORMATS,
+    SARIF_RULE_HELP_BASE_URL,
 )
-from .remediation import resolve_message, SUPPORTED_LANGS
+from .remediation import resolve_message, SUPPORTED_LANGS, entry_for
 from .config import load_config_with_source, ConfigError
 from . import pdf_container
 from .pdf_container import is_pdf_file
@@ -347,6 +348,14 @@ OUTPUT_FORMATS = ("text", "json")
 #: argument '--format'`` (exit 2). Seven of the nine advertised outputs were
 #: unreachable from the ONE binary a ``pip install`` puts on an adopter's PATH.
 DELEGATED_FORMATS = tuple(sorted(set(REPORT_FORMATS) - set(OUTPUT_FORMATS)))
+
+#: How many non-fatal findings a PASS summary lists inline before it truncates
+#: (T-VHUX2). A conformant invoice normally carries 0-2 advisories, so this cap
+#: is not reached in practice; it exists so a pathological document cannot turn
+#: a one-line green verdict into a screenful. When it IS reached the summary
+#: says how many were omitted and names ``--format json``, which carries every
+#: finding — the human summary truncates, it never silently drops.
+_NON_FATAL_LIST_CAP = 10
 
 #: The ``--help`` / ``-h`` text: the machine-readable ``USAGE`` synopsis PLUS a
 #: one-line-per-command description block. Every entry names a real command so
@@ -1641,6 +1650,44 @@ def _main(argv=None):
                 sys.stdout.write("PASS: %s (all implemented fatal rules, "
                                  "profile=%s)%s\n"
                                  % (display_path, profile, suffix))
+                # MEASURED defect this fixes (T-VHUX2, 2026-07-25): the line
+                # above announced "N non-fatal warning(s) reported" and then
+                # refused to say WHAT they were, even though --json had carried
+                # the whole finding all along. A green build that hides its own
+                # advisories reads as untrustworthy, and the reader's only
+                # recourse was to re-run with another flag.
+                #
+                # The listing is strictly additive and cannot be mistaken for a
+                # FAIL: the verdict line still comes first and still starts with
+                # "PASS:", every added line is INDENTED (so the stdout-purity
+                # prefix guard and any `grep '^FAIL'` keep their meaning), and
+                # the exit code below is untouched — result.ok is not consulted
+                # here beyond choosing this branch.
+                if non_fatal:
+                    # The label is careful about the exit code: these findings
+                    # never move the VERDICT (it stays PASS by construction —
+                    # result.ok is what selected this branch), but --fail-on
+                    # warning/information deliberately DOES gate the exit code
+                    # on them, so claiming "never changes the exit code" here
+                    # would be false for exactly the users who opted into that.
+                    sys.stdout.write(
+                        "  non-fatal findings (advisory — verdict stays PASS; "
+                        "only --fail-on gates on them):\n")
+                for v in result.violations[:_NON_FATAL_LIST_CAP]:
+                    # Same message resolution as the FAIL path, so --lang de
+                    # keeps surfacing the official German text where the rule
+                    # carries one.
+                    sys.stdout.write(
+                        "    [%s] %s: %s\n"
+                        % (_severity(v), v.rule_id,
+                           resolve_message(v.rule_id, v.message, lang)))
+                if non_fatal > _NON_FATAL_LIST_CAP:
+                    # Honest about the truncation AND about the exact flag that
+                    # shows everything — never a vague "see the JSON output".
+                    sys.stdout.write(
+                        "    ... %d more not shown — use --format json for "
+                        "all %d\n"
+                        % (non_fatal - _NON_FATAL_LIST_CAP, non_fatal))
             else:
                 v = next(x for x in result.violations
                          if _severity(x) == "fatal")
@@ -1652,6 +1699,39 @@ def _main(argv=None):
                 sys.stdout.write(
                     "FAIL: %s\n  %s: %s\n  offending element: %s\n"
                     % (display_path, v.rule_id, message, v.element))
+                # MEASURED defect this fixes (T-VHUX2, 2026-07-25): the failure
+                # output handed over a rule id and stopped, while this very
+                # wheel ships `--explain` (the EN+DE remediation catalog) and
+                # the 297 indexable rule pages — and named neither. The reader
+                # was left to guess what BR-DE-2 wants.
+                #
+                # Both routes are derived from the violation IN HAND, never
+                # from a hard-coded example id, so they can never point at a
+                # rule the run did not actually hit.
+                #
+                # The rule page is offered ONLY when the catalog really has an
+                # entry for this id (the page surface is generated from that
+                # same catalog), so we never advertise a URL that 404s. The
+                # lookup is wrapped because a wheel shipped WITHOUT the packaged
+                # catalog must degrade to "--explain only", never to a
+                # traceback on a verdict path (see remediation.cached_catalog's
+                # note on the 0.4.2 wheel).
+                try:
+                    catalogued = bool(entry_for(v.rule_id))
+                except (OSError, ValueError, KeyError):
+                    catalogued = False
+                sys.stdout.write("  how to fix: einvoice --explain %s\n"
+                                 % v.rule_id)
+                if catalogued:
+                    # ONE origin for the whole codebase: report.py's
+                    # SARIF_RULE_HELP_BASE_URL, which is the identical string
+                    # gen_site.py builds its rule-page URLs from
+                    # (BASE_URL + "/rules/"). No second origin literal is
+                    # introduced here, and gen_site is deliberately NOT imported
+                    # — it is not part of the wheel.
+                    sys.stdout.write(
+                        "  rule page:  %s%s/\n"
+                        % (SARIF_RULE_HELP_BASE_URL, v.rule_id))
             # Syntax-binding warnings are a separate, non-blocking category —
             # print the count on its own line so the exit-driving FAIL/PASS
             # verdict above stays unambiguous.

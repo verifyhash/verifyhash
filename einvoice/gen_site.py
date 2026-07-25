@@ -2186,7 +2186,11 @@ def render_de():
     w("<pre><code>%s</code></pre>" % _h(cmd_validate_broken))
     w("<p>Exit-Code <strong>1</strong>; die Ausgabe nennt die erste verletzte "
       "fatale Regel (<code>BR-DE-2</code>, fehlender Verk&auml;uferkontakt) "
-      "samt betroffenem Element. Die Exit-Codes sind der ganze Vertrag, den "
+      "samt betroffenem Element &mdash; und danach zwei Zeilen, die genau "
+      "diese Regel erkl&auml;ren: <code>how to fix: einvoice --explain "
+      "BR-DE-2</code> (offline, mit <code>--lang de</code> auf Deutsch) und "
+      "die <code>rule page:</code>-URL derselben Regel auf dieser Seite. Die "
+      "Exit-Codes sind der ganze Vertrag, den "
       "ein CI-Gate braucht: <code>0</code> = keine implementierte fatale "
       "Regel verletzt, <code>1</code> = mindestens eine fatale Verletzung, "
       "<code>2</code> = Bedienfehler, <code>3</code> = kein wohlgeformtes "
@@ -2576,10 +2580,14 @@ def render_walkthrough(catalog):
       "script defaults to <code>--profile en16931</code> (the European core "
       "rule set), and under that profile this file <em>passes</em> — both "
       "missing fields are German <code>BR-DE-*</code> requirements. The "
-      "command exits <strong>1</strong> and prints a two-line human verdict: "
-      "<code>FAIL:</code> with the <em>first</em> fatal rule id and its "
-      "offending element. For the whole finding list — what CI wants to "
-      "archive — ask for JSON:</p>")
+      "command exits <strong>1</strong> and prints a human verdict: "
+      "<code>FAIL:</code> with the <em>first</em> fatal rule id, its message "
+      "and its offending element, then two lookup lines &mdash; "
+      "<code>how to fix: einvoice --explain BR-DE-2</code> and the "
+      "<code>rule page:</code> URL for that same rule on this site. Both are "
+      "built from the rule the run actually hit, and the page line appears "
+      "only for rules the shipped remediation catalogue covers. For the whole "
+      "finding list — what CI wants to archive — ask for JSON:</p>")
     w("<pre>$ einvoice validate --profile xrechnung --format json "
       "%s/broken.xml</pre>" % _h(EX_REL))
     w("<p>Same exit code, every finding in one array. Only <code>fatal</code> "
@@ -2866,8 +2874,14 @@ def render_de_walkthrough(catalog):
       "und unter diesem Profil <em>besteht</em> die Datei &mdash; beide "
       "fehlenden Angaben sind deutsche <code>BR-DE-*</code>-Anforderungen. Der "
       "Befehl endet mit <strong>1</strong> und gibt ein knappes Urteil aus: "
-      "<code>FAIL:</code> mit der <em>ersten</em> fatalen Regel-ID und dem "
-      "betroffenen Element. Die vollst&auml;ndige Befundliste &mdash; das, was "
+      "<code>FAIL:</code> mit der <em>ersten</em> fatalen Regel-ID, ihrer "
+      "Meldung und dem betroffenen Element &mdash; danach zwei Zeilen, die "
+      "genau zu dieser Regel f&uuml;hren: <code>how to fix: einvoice --explain "
+      "BR-DE-2</code> und die <code>rule page:</code>-URL derselben Regel auf "
+      "dieser Website. Beide stammen aus der Regel, die dieser Lauf "
+      "tats&auml;chlich getroffen hat; die Seitenzeile erscheint nur f&uuml;r "
+      "Regeln, die der mitgelieferte Remediation-Katalog f&uuml;hrt. Die "
+      "vollst&auml;ndige Befundliste &mdash; das, was "
       "die CI archivieren will &mdash; liefert JSON:</p>")
     w("<pre>$ einvoice validate --profile xrechnung --format json "
       "%s/broken.xml</pre>" % _h(EX_REL))

@@ -207,6 +207,8 @@ einvoice validate --profile xrechnung broken.xml; echo "exit=$?"
 FAIL: broken.xml
   BR-DE-15: The element 'Buyer reference' (BT-10) must be transmitted.
   offending element: cbc:BuyerReference
+  how to fix: einvoice --explain BR-DE-15
+  rule page:  https://verifyhash.com/einvoice/rules/BR-DE-15/
 Syntax-binding warnings: 0
 exit=1
 ```
@@ -216,6 +218,14 @@ names only the *first* fatal rule and the element it looked for; the complete
 list comes out under `--json` next. The other exit codes are `2` (usage error)
 and `3` (not-well-formed XML) — the full table is
 [`EXIT-CODES.md`](EXIT-CODES.md).
+
+The last two indented lines are the two ways to find out what the rule wants:
+`einvoice --explain BR-DE-15` prints the catalogue entry offline (next
+section), and the `rule page` URL is the same rule written up for a browser —
+useful when the person who has to fix the invoice is not the person running
+the CI job. The rule id in both is always the one **this run** hit; the page
+line is emitted only for rules the shipped remediation catalogue actually
+covers, so it never points at a URL that does not exist.
 
 Note what did **not** happen: the same file under the default profile
 (`einvoice validate broken.xml`) exits `0`, because `BR-DE-15` is not an
@@ -418,6 +428,8 @@ einvoice validate --profile xrechnung cii-broken.xml; echo "exit=$?"
 FAIL: cii-broken.xml
   BR-DE-15: The element 'Buyer reference' (BT-10) must be transmitted.
   offending element: ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
+  how to fix: einvoice --explain BR-DE-15
+  rule page:  https://verifyhash.com/einvoice/rules/BR-DE-15/
 Syntax-binding warnings: 0
 exit=1
 ```
@@ -789,13 +801,21 @@ prints the human summary and exits **0**:
 
 ```text
 PASS: examples/01-missing-fields/fixed.xml (all implemented fatal rules, profile=xrechnung) — 1 non-fatal warning(s) reported
+  non-fatal findings (advisory — verdict stays PASS; only --fail-on gates on them):
+    [information] BR-DE-TMP-32: The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line.
 Syntax-binding warnings: 0
 ```
 
-The one non-fatal `information` finding it mentions is advisory and never moves
-the exit code. (That fixture states no delivery date; the §2 sample above does,
-which is why its summary carries no warning tail.) Read the exit code straight
-from your shell:
+The one non-fatal `information` finding is advisory: the verdict line still
+reads `PASS:` and, at the default `--fail-on fatal`, the shell still sees `0`.
+(Only `--fail-on warning` / `--fail-on information` makes such a finding gate
+the exit code — that is what the flag is for.) It is listed in full (rule id,
+severity, message) so a green build does not hide what it found; above ten
+findings the summary prints the first ten, then one line saying how many it
+omitted and pointing at `--format json`, which always carries all of them.
+(That fixture states no delivery date; the §2 sample above does, which is why
+its summary carries no warning tail at all.) Read the exit code straight from
+your shell:
 
 ```sh
 python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/fixed.xml; echo "exit=$?"
@@ -810,12 +830,14 @@ python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/brok
 ```
 
 exits **1** and prints the first fatal rule it hit — **`BR-DE-2`** — with the
-offending element:
+offending element and the two routes to what that rule wants:
 
 ```text
 FAIL: examples/01-missing-fields/broken.xml
   BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be transmitted.
   offending element: cac:AccountingSupplierParty/cac:Party/cac:Contact
+  how to fix: einvoice --explain BR-DE-2
+  rule page:  https://verifyhash.com/einvoice/rules/BR-DE-2/
 Syntax-binding warnings: 0
 ```
 

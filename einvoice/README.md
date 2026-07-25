@@ -451,7 +451,15 @@ Exit codes (stable contract):
 | 3 | input is not well-formed XML |
 
 Default output on failure is the **first** fatal violated rule, human message,
-and offending element. `--json` emits the full machine-readable result:
+and offending element, followed by two indented lookup lines — `how to fix:
+einvoice --explain <RULE-ID>` and, when the shipped remediation catalogue
+covers that rule, its `rule page:` URL under
+`https://verifyhash.com/einvoice/rules/`. On a **pass** with non-fatal
+findings, the same summary lists them (`[<severity>] <RULE-ID>: <message>`,
+first 10, then a count and a pointer to `--format json`); the verdict line
+still reads `PASS:` and, at the default `--fail-on fatal`, the exit code is
+still `0`. `--json` emits the full
+machine-readable result:
 
 ```json
 {
@@ -898,10 +906,15 @@ and a failure looks like:
 
 ```
 FAIL: invoices/2026-04-017.xml
-  BR-DE-15: The element 'Buyer reference' (BT-10) must be transmitted.
-  offending element: cbc:BuyerReference
+  BR-DE-15
+  JUnit: einvoice-junit/3_invoices_2026-04-017.xml.junit.xml
 conformance gate: 1/12 invoice(s) NON-CONFORMANT (profile=xrechnung) — FAIL
 ```
+
+(The gate script lists **rule ids only** and points at the per-invoice JUnit
+file, which carries the message and the offending XPath in its `<failure>`. The
+richer human summary — message, offending element, `--explain` and rule-page
+lines — is what `einvoice validate <file>` prints; see §3.)
 
 The next question is always *what is `BR-DE-15` and what do I change?* — so ask
 the same tool, no invoice and no repository checkout required:

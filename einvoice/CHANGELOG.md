@@ -104,6 +104,35 @@ default report format crashes from the fixed one.
 
 ### Added
 
+- **The human `validate` summary now answers the question it used to raise.**
+  The default text report is the artifact a stranger or a CI reviewer actually
+  reads, and both of its verdicts were dead ends. A `FAIL` printed a rule id,
+  its message and the offending element, then stopped — even though this same
+  wheel ships `einvoice --explain` (the EN+DE remediation catalogue) and 297
+  rule pages, and named neither. It now adds
+  `how to fix: einvoice --explain <RULE-ID>` and, only when the shipped
+  catalogue really has that rule, `rule page: https://verifyhash.com/einvoice/rules/<RULE-ID>/`.
+  Both are derived from the violation the run actually hit, never from a
+  hard-coded example id, and the URL is built from the single origin the
+  package already owns (`report.SARIF_RULE_HELP_BASE_URL`, byte-equal to
+  `gen_site.BASE_URL + "/rules/"`), so no second origin string exists. A `PASS`
+  announced `— N non-fatal warning(s) reported` and then refused to say what
+  they were, although `--json` had carried the whole finding all along; it now
+  lists them under an indented `non-fatal findings (advisory — verdict stays
+  PASS; only --fail-on gates on them)` heading as
+  `[<severity>] <RULE-ID>: <message>`, using the same message resolution as the
+  FAIL path (so `--lang de` still surfaces the official German text). Above ten
+  findings it prints the first ten plus one honest line naming how many were
+  omitted and the exact flag that shows all of them (`--format json`).
+  Everything added lives inside the existing human-output branch and is
+  indented, so the verdict line still comes first and still starts with
+  `PASS:`/`FAIL:`: `--json` and every machine format are byte-identical,
+  `--quiet` still writes nothing to stdout, and no exit code moves
+  (`test_exit_codes.py`, `test_fail_on.py`, `test_fail_on_format_invariance.py`
+  and `test_stdout_purity.py` pass unmodified). The QUICKSTART/QUICKSTART.de
+  transcripts, `EXIT-CODES.md`, `README.md` and the generated walkthroughs were
+  updated to show what the tool really prints.
+
 - **Every `einvoice-conformance-report/v1` violation now carries `element`, so
   `validate --json` and `validate-batch --json` hand back the SAME violation
   object.** A CI consumer's normal adoption shape is `einvoice validate --json`

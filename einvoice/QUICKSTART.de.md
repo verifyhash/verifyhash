@@ -100,7 +100,8 @@ python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/fixe
 
 druckt nach der menschenlesbaren Zusammenfassung die Zeile `exit=0`. Die
 kaputte Rechnung fällt mit Exit-Code **1** durch; die Ausgabe nennt die erste
-verletzte fatale Regel samt betroffenem XML-Element:
+verletzte fatale Regel samt betroffenem XML-Element und den beiden Wegen zur
+Erklärung dieser Regel:
 
 ```sh
 python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/broken.xml
@@ -110,8 +111,16 @@ python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/brok
 FAIL: examples/01-missing-fields/broken.xml
   BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be transmitted.
   offending element: cac:AccountingSupplierParty/cac:Party/cac:Contact
+  how to fix: einvoice --explain BR-DE-2
+  rule page:  https://verifyhash.com/einvoice/rules/BR-DE-2/
 Syntax-binding warnings: 0
 ```
+
+`einvoice --explain BR-DE-2 --lang de` gibt denselben Katalogeintrag mit dem
+amtlichen deutschen Wortlaut aus (`--lang de` färbt auch die Meldung in der
+zweiten Zeile oben ein); die `rule page` ist dieselbe Regel als Webseite. Die
+Regel-ID stammt immer aus **diesem** Lauf, und die `rule page`-Zeile erscheint
+nur für Regeln, die der mitgelieferte Remediation-Katalog wirklich führt.
 
 Der komplette Vertrag für Skripte und CI-Gates: `0` = keine implementierte
 fatale Regel verletzt, `1` = mindestens eine fatale Verletzung, `2` =

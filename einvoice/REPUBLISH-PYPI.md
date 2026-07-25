@@ -120,6 +120,46 @@ that false-fails German invoices under docs that promise CII works.
 loudly and names every stale file if `build/lib/einvoice/` has drifted from
 `einvoice/`. Run the purge anyway; the test is the backstop, not the fix.
 
+### Step 3b is the wheel-level preflight, and it is the purge's downstream half
+
+Why it exists, in one line: **an in-tree build over a stale `build/lib` shipped
+the pre-CII-fix engine at the same commit and the same declared version 0.2.7** —
+the step-1 purge is what prevents that, and `tools/release-preflight.sh` is what
+proves the prevention actually worked before you spend the version.
+
+The script installs the wheel you just built into a throwaway venv
+(`pip install --no-index`, offline, that wheel only), then re-asks the seven
+questions only the ARTIFACT can answer — from a temp working directory with the
+repo off `PYTHONPATH`, because a checkout in `cwd` shadows `site-packages` and
+you end up testing the source tree again instead of the wheel:
+
+1. `einvoice --version` matches the version in `pyproject.toml` and
+   `einvoice info` reports `rule_count: 297` (a wheel that resolves its rule
+   count from the source tree reports `None`);
+2. `remediation_catalog.json` **and** `attestation.json` are really in the
+   installed package dir — the exact 0.2.6 packaging slip;
+3. every `--format` the wheel itself declares (list read from `einvoice info` at
+   runtime, never hard-coded) plus `--explain <rule id>` runs traceback-free
+   with non-empty output;
+4. a violating invoice comes back with non-null `title`, `fix_hint` and
+   `location`;
+5. `python3 -m einvoice.report --help` exits 0;
+6. the installed `--help` points at a URL, and names no `*.md` file the wheel
+   does not ship;
+7. a **valid raw CII invoice exits 0** and its broken twin exits 1 — the
+   T-VHCII3.1 contract, and the check that catches the stale build.
+
+Each check prints `PASS <n> <name>`; the first failure prints `FAIL <n> <name>`,
+names itself, and exits nonzero. Fixtures are written inline into its own temp
+dir, which it removes on every exit path. It is SUPERVISOR-ONLY like
+`tools/einvoice-deploy.sh` — the loop never executes it — and it never uploads,
+pushes, sudos, or touches the network beyond the local `--no-index` install.
+
+Honest limit: green here does **not** mean the release is good. It means these
+seven source-invisible defect classes are absent from this specific wheel. Prose
+accuracy, rule correctness and the scope caveats are still on the source gates in
+step 2.
+
 From a checkout of this repo, in `einvoice/`:
 
 ```bash
@@ -141,6 +181,11 @@ python3 test_wheel_remediation.py
 # 3. build the sdist + wheel
 python3 -m build            # writes dist/verifyhash_einvoice-0.2.7-py3-none-any.whl
                             #    and dist/verifyhash_einvoice-0.2.7.tar.gz
+
+# 3b. PREFLIGHT THE BUILT WHEEL from a clean offline venv — the downstream half
+#     of the step-1 purge (see the section above). A FAIL here means DO NOT
+#     UPLOAD: the version is immutable and a bad artifact costs another one.
+bash tools/release-preflight.sh dist/verifyhash_einvoice-0.2.7-py3-none-any.whl
 
 # 4. sanity-check the metadata renders (catches a bad long_description)
 python3 -m twine check dist/*

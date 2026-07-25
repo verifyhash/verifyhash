@@ -524,6 +524,30 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   `test_cli_help.py`, so a new subcommand cannot go silently undocumented.
 - `--json` — emit the full machine-readable result instead of the human
   summary (shape below and in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md)).
+- `--format <fmt>` (also `--format=<fmt>`) — **select the output shape** on
+  `validate` and `validate-batch`. The vocabulary is the same nine names
+  `einvoice info` advertises under `formats`, read from the one registry
+  (`einvoice.report.REPORT_FORMATS`) rather than a second list: `json`, `junit`,
+  `sarif`, `gitlab`, `github`, `azure`, `html`, `badge`, `text`. `--format json`
+  is an **exact alias** for `--json` (same code path, byte-identical output) and
+  `--format text` is the default human summary, so the flag is purely additive.
+  The other seven are rendered by `einvoice.report.render_report` — the single
+  emitter dispatch `python3 -m einvoice.report --format <fmt>` itself uses — so
+  the report bodies are identical on both surfaces for the same invoice and
+  profile. The common CI line is
+  `einvoice validate --format sarif invoice.xml > results.sarif`, which GitHub
+  code scanning ingests directly. The verdict is graded by **this** subcommand's
+  rules: its `en16931` default profile (the sibling entry point defaults to
+  `xrechnung` — pass `--profile` explicitly when comparing them), its
+  `--fail-on` threshold, and the same non-blocking treatment of syntax-binding
+  findings the text/JSON forms use. `validate-batch` accepts the
+  aggregate-capable subset `json`/`junit`/`text`; the other six describe one
+  invoice, so a directory under those is a usage error (`2`) naming the per-file
+  command. An unknown format, `--format` with no value, `--format` twice with
+  conflicting values, or `--format` together with `--json` are all clean usage
+  errors (`2`) — never a silent last-wins. `--quiet` and `--lang` are no-ops for
+  a machine format, exactly as with `--json`. See
+  [`EXIT-CODES.md`](EXIT-CODES.md) for the full contract.
 - `--quiet` — suppress the human `PASS`/`FAIL`/`Syntax-binding warnings` summary
   on stdout. The **exit code is unchanged**, and `--quiet` does *not* suppress
   `--json`: `validate --quiet --json` still prints the JSON (quiet only silences
@@ -937,6 +961,22 @@ Batch mode supports `--format json` (default, `--pretty` for indented),
 and `--format text` (a concise one-line-per-file summary). `--format
 sarif/html/badge` validate a *single* file and are rejected on a directory with
 a clear error. Single-file invocation is completely unchanged.
+
+**This entry point is no longer the only route to those formats.** The
+`einvoice` console script accepts `--format <fmt>` on `validate` and
+`validate-batch` too (see the flag list above), and for the seven delegated
+formats — `junit`, `sarif`, `gitlab`, `github`, `azure`, `html`, `badge` — both
+surfaces call the same emitter, so those bodies are byte-identical for the same
+invoice and profile (measured). The two `json` documents and the two `text`
+summaries are *not* interchangeable: each surface keeps its own long-standing
+shape (`einvoice validate --json` is the CLI result object; `einvoice.report`
+emits the versioned `einvoice-conformance-report/v1` document), and `--format`
+deliberately changes neither. Reach for
+`python3 -m einvoice.report` when you want what only it offers: `--baseline`
+(fail on a *new* fatal versus a stored baseline), `--pretty`, `--recurse`, and
+the PDF-container dispatch that extracts the XML from a Factur-X/ZUGFeRD file.
+Mind the one deliberate difference: this module defaults to `--profile
+xrechnung`, the console script to `en16931`.
 
 ### Use as a pre-commit hook
 

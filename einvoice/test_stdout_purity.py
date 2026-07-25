@@ -28,8 +28,12 @@ fixture each, plus batch and receipt):
     format in the report registry (derived from report.py source, below);
   * ``python3 -m einvoice.report <dir> --format <fmt>`` for the machine subset
     of the batch registry (json, junit);
-  * ``python3 -m einvoice validate <file> --json`` (the cli machine surface —
-    the cli's ``validate`` takes ``--json``, not ``--format``);
+  * ``python3 -m einvoice validate <file> --json`` (the cli machine surface).
+    Since T-VHERG.4 the cli also accepts ``--format <fmt>``, routed to the SAME
+    ``einvoice.report`` emitters, so its machine bodies are byte-identical to the
+    report surface already covered above; the per-format stdout purity of that
+    console-script surface (empty stdout on every error class, one diagnostic on
+    stderr) is pinned by ``test_os_error_formats.py``;
   * ``python3 -m einvoice validate-batch <dir> --json``;
   * ``python3 -m einvoice receipt <file>`` (always canonical JSON).
 
@@ -54,7 +58,6 @@ keeps the valid/invalid split identical across all surfaces.
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -68,7 +71,7 @@ sys.path.insert(0, HERE)
 from einvoice.cli import (  # noqa: E402
     EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_PARSE,
 )
-from einvoice.report import REPORT_FORMATS  # noqa: E402
+from einvoice.report import REPORT_FORMATS, BATCH_FORMATS  # noqa: E402
 
 REPORT_PY = os.path.join(HERE, "einvoice", "report.py")
 
@@ -90,19 +93,6 @@ EXCLUDED = {
 }
 
 
-def _format_tuples():
-    """Every remaining inline ``fmt not in (...)`` tuple in report.py source,
-    as sets of names (today: only the batch-mode subset — the single-file
-    registry was hoisted to the named ``REPORT_FORMATS`` constant by
-    T-VHINTRO.1 and is read via :func:`registry` below).
-    """
-    with open(REPORT_PY, encoding="utf-8") as fh:
-        src = fh.read()
-    tuples = re.findall(r"fmt not in \(([^)]*)\)", src)
-    assert tuples, "could not find any `fmt not in (...)` tuple in report.py"
-    return [set(re.findall(r"[\"']([a-z]+)[\"']", t)) for t in tuples]
-
-
 def registry():
     """The full single-file ``--format`` registry: the NAMED module constant
     ``einvoice.report.REPORT_FORMATS`` (hoisted by T-VHINTRO.1). The source
@@ -118,9 +108,23 @@ def registry():
 
 
 def batch_registry():
-    """The batch-mode ``--format`` subset (the smallest tuple with 'json')."""
-    candidates = [s for s in _format_tuples() if "json" in s]
-    return min(candidates, key=len)
+    """The batch-mode ``--format`` subset: the NAMED module constant
+    ``einvoice.report.BATCH_FORMATS``.
+
+    This used to source-scrape the inline ``fmt not in ("json","junit","text")``
+    tuple in report.py's directory leg. T-VHERG.4 hoisted that tuple to a named
+    constant — exactly what T-VHINTRO.1 did for the single-file registry — because
+    ``einvoice.cli``'s ``validate-batch --format`` must enforce the SAME subset and
+    a second retyped tuple is precisely how the two surfaces would drift. So this
+    now mirrors :func:`registry`: import the constant, and assert in source that
+    the check site still tests against it, which keeps the drift guard the scrape
+    provided."""
+    with open(REPORT_PY, encoding="utf-8") as fh:
+        src = fh.read()
+    assert "fmt not in BATCH_FORMATS" in src, (
+        "report.py batch --format check no longer tests against BATCH_FORMATS — "
+        "batch_registry() would drift from the enforced set")
+    return set(BATCH_FORMATS)
 
 
 def machine_formats():

@@ -1,8 +1,8 @@
 """Command-line interface for the einvoice validator.
 
 Usage:
-    einvoice validate <invoice.xml|-> [--json] [--quiet] [--profile=en16931|xrechnung]
-    einvoice validate-batch <dir|glob> [--json] [--quiet] [--profile=en16931|xrechnung]
+    einvoice validate <invoice.xml|-> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung]
+    einvoice validate-batch <dir|glob> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung]
     einvoice receipt  <invoice.xml> [--profile=en16931|xrechnung]
     einvoice receipt  --verify <receipt.json>
     einvoice info [--json]
@@ -46,6 +46,42 @@ Global flags:
                ``validate-batch`` it is applied across the aggregate: exit 1 if
                ANY file crosses the chosen threshold; the parse-only ``3`` rule
                (some file only errored, none crossed) is left intact.
+    --format   select the OUTPUT SHAPE of ``validate`` / ``validate-batch``
+               (accepts ``--format X`` and ``--format=X``). The vocabulary is
+               ``einvoice.report.REPORT_FORMATS`` — the identical nine names
+               ``einvoice info`` advertises and ``einvoice.capabilities()``
+               returns, read from that registry rather than a second list, so a
+               newly registered emitter is reachable here the same day:
+                 ``text``   the human summary — the DEFAULT, unchanged;
+                 ``json``   an EXACT alias for ``--json`` (same code path, so
+                            byte-identical output; no drift is possible);
+                 ``junit`` / ``sarif`` / ``gitlab`` / ``github`` / ``azure`` /
+                 ``html`` / ``badge``
+                            rendered by ``einvoice.report.render_report`` — the
+                            SAME single emitter dispatch
+                            ``python3 -m einvoice.report --format <fmt>`` uses,
+                            not a copy, so the bytes agree by construction.
+               MEASURED gap this closes (T-VHERG.4): ``info``/``capabilities()``
+               advertised all nine formats while the console script accepted
+               none of them, so seven of the nine were unreachable from the one
+               binary ``pip install`` puts on an adopter's PATH — the SARIF file
+               GitHub code scanning wants most of all among them.
+               The verdict and the EXIT CODE are unaffected: the delegated
+               formats are graded by THIS subcommand's rules (profile default
+               ``en16931``, ``--profile``/``--fail-on`` honoured, syntax-binding
+               findings non-blocking exactly as in the text/JSON forms) — the
+               report module's own ``xrechnung`` default never leaks in.
+               ``validate-batch`` accepts the aggregate-capable subset
+               (``einvoice.report.BATCH_FORMATS``: json, junit, text); the other
+               six describe ONE invoice, so asking for them on a directory is an
+               actionable usage error (2) naming the per-file command instead of
+               inventing an aggregate shape. An unknown name is a usage error
+               (2) listing the valid ones; ``--format`` together with ``--json``,
+               or twice with conflicting values, is likewise a usage error (2)
+               rather than a silent last-wins surprise. ``--lang`` affects only
+               the human summary and ``--quiet`` only suppresses it, so neither
+               changes a machine-format body (identical to how they behave with
+               ``--json`` today).
     --lang     language of the HUMAN validate summary only: ``en`` (default,
                unchanged behaviour) or ``de``. Under ``de`` a violated rule that
                carries an OFFICIAL German message (the BR-DE family, whose
@@ -190,22 +226,24 @@ from .report import (
     syntax_binding_section,
     build_batch_report, build_batch_report_from_files,
     batch_exit_code, build_batch_text,
-    REPORT_FORMATS,
+    REPORT_FORMATS, BATCH_FORMATS,
 )
 from .remediation import resolve_message, SUPPORTED_LANGS
 from .config import load_config_with_source, ConfigError
 from .pdf_container import is_pdf_file
 
 USAGE = ("usage: einvoice validate <invoice.xml|-> "
-         "[--json] [--quiet] [--profile=en16931|xrechnung] [--lang=en|de] "
+         "[--json] [--format=<fmt>] [--quiet] "
+         "[--profile=en16931|xrechnung] [--lang=en|de] "
          "[--fail-on=fatal|warning|information]\n"
          "       einvoice validate-batch <dir|glob> "
-         "[--json] [--quiet] [--profile=en16931|xrechnung] "
+         "[--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung] "
          "[--fail-on=fatal|warning|information]\n"
          "       einvoice receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
          "       einvoice receipt --verify <receipt.json> [--json]\n"
          "       einvoice info [--json]\n"
+         "       einvoice --explain <RULE-ID>\n"
          "       einvoice --show-config\n"
          "       einvoice --version\n"
          "       einvoice --help")
@@ -224,14 +262,21 @@ VALID_SUBCOMMANDS = ("validate", "validate-batch", "receipt")
 #: earlier and are therefore absent from the dispatch tuple.
 #:
 #: MEASURED defect this fixes: the ``unknown subcommand`` banner listed only the
-#: dispatch set, so a user who typed ``einvoice --explain BR-DE-1`` was told to
+#: dispatch set, so a user who typed ``einvoice explain BR-DE-1`` was told to
 #: "choose from validate, validate-batch, receipt" — ``info`` and
 #: ``--show-config`` exist and were simply never mentioned. Both the banner and
 #: ``test_cli_help.py``'s completeness guard read THIS tuple, so the error
 #: banner and ``--help`` can no longer drift apart. Adding a command means
 #: adding it here, and the help guard then fails until ``HELP`` describes it.
-COMMAND_SURFACE = VALID_SUBCOMMANDS + ("info", "--show-config", "--version",
-                                       "--help")
+#:
+#: ``--explain`` joined the surface in T-VHERG.3 for the same reason, one step
+#: worse: the remediation catalog it prints is this tool's differentiator over
+#: the free official KoSIT validator, yet the single most natural keystroke
+#: after reading ``BR-CO-15`` in a failure — ``einvoice --explain BR-CO-15`` —
+#: answered ``error: unknown subcommand '--explain'`` (exit 2) because the
+#: lookup only ever existed on the ``python3 -m einvoice.report`` entry point.
+COMMAND_SURFACE = VALID_SUBCOMMANDS + ("info", "--explain", "--show-config",
+                                       "--version", "--help")
 
 EXIT_OK = 0
 EXIT_FAIL = 1
@@ -265,22 +310,33 @@ EXIT_TERM = 143
 #: DEFAULT is ``fatal`` — i.e. omitting the flag is byte-identical to today.
 FAIL_ON_LEVELS = ("fatal", "warning", "information")
 
-#: Accepted values for the config-file ``format`` key — the two output forms
-#: this CLI can emit: ``text`` (the human summary, the built-in default) and
-#: ``json`` (equivalent to passing ``--json``). This is deliberately NOT the
-#: nine-name ``einvoice.report`` ``--format`` vocabulary: that richer set
-#: belongs to ``python3 -m einvoice.report``, which this CLI does not front.
+#: The output forms this CLI writes with its OWN writers, and — unchanged — the
+#: accepted values for the config-file ``format`` key: ``text`` (the human
+#: summary, the built-in default) and ``json`` (identical to passing ``--json``).
+#: ``--format text`` / ``--format json`` are therefore exact aliases of the
+#: default form and of ``--json``: they take the very same code path, so not one
+#: byte of the historical output changes.
+#:
+#: The config FILE vocabulary stays these two on purpose. A config key is a
+#: project-wide default that also applies to ``info`` / ``receipt --verify``,
+#: where a SARIF or HTML body is meaningless; the seven single-invoice report
+#: bodies are an explicit per-invocation choice, so they live on the flag only.
 OUTPUT_FORMATS = ("text", "json")
 
-#: The report-only ``--format`` names: every ``einvoice.report`` registry format
-#: that THIS CLI cannot emit itself. DERIVED from ``REPORT_FORMATS`` minus the
-#: forms this CLI does emit, never retyped — so registering a new emitter in
-#: :mod:`einvoice.report` documents itself in ``--help`` instead of staying
-#: invisible to a pip-only adopter (``test_cli_help.py`` fails if any registry
-#: name goes unnamed in the help text). MEASURED gap this closes: seven of the
-#: nine CI report formats (junit/sarif/gitlab/github/azure/html/badge) were
-#: never mentioned anywhere a wheel-only user could see them.
-REPORT_ONLY_FORMATS = tuple(sorted(set(REPORT_FORMATS) - set(OUTPUT_FORMATS)))
+#: The ``--format`` names this CLI serves by DELEGATING to
+#: :func:`einvoice.report.render_report` — the registry minus the two forms above.
+#: DERIVED from ``REPORT_FORMATS``, never retyped, so registering a new emitter in
+#: :mod:`einvoice.report` reaches this console script and its ``--help`` in the
+#: same commit (``test_cli_help.py`` fails if any registry name goes unnamed in
+#: the help text).
+#:
+#: MEASURED defect this closes (T-VHERG.4, 2026-07-25): ``einvoice info`` has
+#: always advertised all nine registry formats as this build's capabilities, and
+#: ``einvoice.capabilities()['formats']`` returned the same nine-element list —
+#: yet ``einvoice validate --format sarif x.xml`` answered ``error: unexpected
+#: argument '--format'`` (exit 2). Seven of the nine advertised outputs were
+#: unreachable from the ONE binary a ``pip install`` puts on an adopter's PATH.
+DELEGATED_FORMATS = tuple(sorted(set(REPORT_FORMATS) - set(OUTPUT_FORMATS)))
 
 #: The ``--help`` / ``-h`` text: the machine-readable ``USAGE`` synopsis PLUS a
 #: one-line-per-command description block. Every entry names a real command so
@@ -290,13 +346,14 @@ REPORT_ONLY_FORMATS = tuple(sorted(set(REPORT_FORMATS) - set(OUTPUT_FORMATS)))
 #: ``--version`` / ``--help``); ``test_cli_help.py`` is a completeness guard
 #: that fails if a command is added to that tuple but not documented here.
 #:
-#: Both trailing format lines are REGISTRY-SOURCED so they can never advertise
-#: something that does not exist: ``OUTPUT_FORMATS`` for the forms this CLI
-#: emits itself, ``REPORT_ONLY_FORMATS`` for the rest of the
-#: :mod:`einvoice.report` vocabulary. This CLI still has NO ``--format`` flag of
-#: its own — the only ``--format`` named here belongs to the explicitly spelled
-#: ``python3 -m einvoice.report`` sibling entry point, which is exactly the
-#: pointer a pip-only adopter needs. Every reference is a URL, never a repo file
+#: Every trailing format line is REGISTRY-SOURCED so it can never advertise
+#: something that does not exist: ``OUTPUT_FORMATS`` for the two forms this CLI
+#: writes itself, ``DELEGATED_FORMATS`` for the ones it renders through
+#: :mod:`einvoice.report`, and ``BATCH_FORMATS`` for the aggregate-capable subset.
+#: The ``python3 -m einvoice.report`` pointer stays — that entry point is real,
+#: still works, and is the only place ``--baseline`` / ``--pretty`` / ``--recurse``
+#: live — but it is no longer presented as the ONLY route to the CI formats,
+#: because since T-VHERG.4 it is not. Every reference is a URL, never a repo file
 #: the wheel does not ship.
 HELP = (
     USAGE + "\n\n"
@@ -308,15 +365,33 @@ HELP = (
     "  receipt <invoice.xml>      emit a JSON conformance receipt for one invoice\n"
     "                             (receipt --verify <receipt.json> re-checks one)\n"
     "  info                       print read-only build/version metadata; run nothing\n"
+    "  --explain <RULE-ID>        print the remediation-catalog entry for ONE rule\n"
+    "                             id seen in a failure (what it requires, the BT/BG\n"
+    "                             terms, where in the XML, the one-line fix, the\n"
+    "                             Schematron it comes from). Reads no invoice;\n"
+    "                             exit 0 found, 1 unknown rule id\n"
     "  --show-config              resolve and print the effective config; run nothing\n"
     "  --version                  print the packaged einvoice version and exit\n"
     "  --help, -h                 show this help and exit\n\n"
-    "Output form: %s (text is the default; --json selects json).\n"
-    "Other report formats (%s) come from the sibling entry point:\n"
+    "Output form (validate / validate-batch): --format <fmt> selects any of\n"
+    "  %s\n"
+    "  e.g. einvoice validate --format sarif invoice.xml > results.sarif\n"
+    "%s are written by this CLI itself: text is the default summary and\n"
+    "--json is an exact alias for --format json. The other seven\n"
+    "  %s\n"
+    "are rendered by einvoice.report's emitters, so those bodies are\n"
+    "byte-identical to that module's for the same invoice and profile.\n"
+    "validate-batch has an aggregate shape for %s only; the other six\n"
+    "describe ONE invoice, so run them per file.\n"
+    "The sibling entry point still works and still owns the flags this one\n"
+    "has never had (baseline diffing, pretty JSON, explicit recursion) plus\n"
+    "the Factur-X/ZUGFeRD PDF-container route:\n"
     "  python3 -m einvoice.report --format <fmt> <invoice.xml>\n"
+    "Careful: it defaults to --profile xrechnung, this CLI to en16931.\n"
     "Full flag set and documentation: https://verifyhash.com/einvoice/\n"
     "This CLI validates; it never sends your invoice anywhere."
-    % (" or ".join(OUTPUT_FORMATS), ", ".join(REPORT_ONLY_FORMATS)))
+    % (", ".join(REPORT_FORMATS), " and ".join(OUTPUT_FORMATS),
+       ", ".join(DELEGATED_FORMATS), ", ".join(BATCH_FORMATS)))
 
 #: Severity ordering used to decide whether a finding CROSSES a chosen
 #: ``--fail-on`` threshold: a finding crosses iff its rank is >= the threshold's
@@ -546,7 +621,78 @@ def _run_info(as_json):
     return EXIT_OK
 
 
-def _resolve_output_settings(cfg, cfg_source, fail_on_flag, lang_flag, json_flag):
+def _run_explain(args):
+    """Drive ``einvoice --explain <RULE-ID>``: a read-only catalog lookup.
+
+    ROUTING, NOT A FORK. This function parses the flag and then hands the work
+    to :func:`einvoice.report.main` — the entry point that has always owned
+    ``--explain`` — with a normalised ``["--explain", <rule-id>]`` argv. So the
+    rendering (``einvoice.report.format_explain``), the catalog-loading path and
+    the exit codes are literally the same code, not a second implementation that
+    can drift: ``einvoice --explain BR-CO-15`` is byte-identical on stdout to
+    ``python3 -m einvoice.report --explain BR-CO-15``, and an unknown rule id
+    exits 1 on BOTH surfaces. No explanation text, no catalog and no exit code
+    is invented here.
+
+    Exit contract (all three MEASURED against the existing implementation, none
+    newly minted):
+
+      * 0  the id is in ``remediation_catalog.json`` — its block goes to stdout;
+      * 1  the id is not catalogued (or this installation has no readable
+           catalog at all) — one ``error:`` line on stderr, empty stdout. This
+           is ``einvoice.report``'s shipped behaviour and is deliberately NOT
+           re-coded as a usage error: an undeclared divergence between the two
+           surfaces is exactly the defect this task exists to close;
+      * 2  argv is wrong for THIS entry point — no rule id after ``--explain``,
+           or something else on the command line alongside it. That is the CLI's
+           own long-standing usage code, reached before any catalog work.
+
+    The wording of the missing-value line deliberately matches the
+    ``--profile``/``--lang``/``--fail-on`` family ("needs a value"), which is
+    also what ``test_cli_docs_parity.py``'s flag-recognition probe keys on.
+    """
+    # Local import to keep the flag's cost off every other CLI path; the module
+    # is already a module-level dependency of this file, so nothing new is
+    # pulled in.
+    from .report import main as _report_main
+
+    def _needs_value():
+        sys.stderr.write(
+            "error: --explain needs a value: the rule id to explain, "
+            "e.g. BR-CO-15\n" + USAGE + "\n")
+        return EXIT_USAGE
+
+    rule_id = None
+    rest = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--explain":
+            if i + 1 >= len(args):
+                return _needs_value()
+            rule_id = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--explain="):
+            rule_id = a.split("=", 1)[1]
+            i += 1
+            continue
+        rest.append(a)
+        i += 1
+    if not rule_id:
+        # Only reachable via the ``--explain=`` form with an empty value.
+        return _needs_value()
+    if rest:
+        sys.stderr.write(
+            "error: --explain takes only a rule id and reads no invoice; "
+            "unexpected argument %s\n%s\n"
+            % (", ".join(repr(a) for a in rest), USAGE))
+        return EXIT_USAGE
+    return _report_main(["--explain", rule_id])
+
+
+def _resolve_output_settings(cfg, cfg_source, fail_on_flag, lang_flag, json_flag,
+                             format_flag=None):
     """Resolve the effective ``format`` / ``fail-on`` / ``lang`` AND the SOURCE
     of each, using the ONE precedence rule the CLI has always applied: explicit
     CLI flag > config file > built-in default.
@@ -561,10 +707,15 @@ def _resolve_output_settings(cfg, cfg_source, fail_on_flag, lang_flag, json_flag
 
       * ``fail_on_flag`` / ``lang_flag`` — the flag value, or ``None`` when the
         flag was absent on the command line;
-      * ``json_flag`` — ``True`` iff ``--json`` was passed. The ``format`` setting
-        has no value-taking flag on this CLI; ``--json`` IS its flag, so a passed
-        ``--json`` resolves ``format`` to ``json`` with source ``flag`` (and, as
-        today, the config ``format`` key is not even consulted in that case).
+      * ``format_flag`` — the ``--format`` value, or ``None`` when the flag was
+        absent;
+      * ``json_flag`` — ``True`` iff ``--json`` was passed. ``--json`` is the
+        boolean spelling of ``--format json``, so it resolves ``format`` to
+        ``json`` with source ``flag`` (and, as today, the config ``format`` key is
+        not even consulted in that case). The two spellings are mutually
+        exclusive at the parse level in :func:`_main` — a usage error, never a
+        silent precedence puzzle here — so at most one of ``format_flag`` /
+        ``json_flag`` is ever set when this is called.
 
     ``cfg`` / ``cfg_source`` come from
     :func:`einvoice.config.load_config_with_source`; ``cfg_source`` is the config
@@ -582,7 +733,9 @@ def _resolve_output_settings(cfg, cfg_source, fail_on_flag, lang_flag, json_flag
             return cfg[key], cfg_source
         return default, "default"
 
-    fmt_value, fmt_source = resolve("json" if json_flag else None, "format", "text")
+    fmt_value, fmt_source = resolve(
+        format_flag if format_flag is not None else ("json" if json_flag else None),
+        "format", "text")
     fail_on_value, fail_on_source = resolve(fail_on_flag, "fail-on", "fatal")
     lang_value, lang_source = resolve(lang_flag, "lang", "en")
     return [
@@ -610,7 +763,71 @@ def _run_show_config(resolved):
     return EXIT_OK
 
 
-def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
+def _run_validate_format(path, display_path, fmt, profile, fail_on):
+    """Drive ``einvoice validate --format <fmt>`` for one of the seven
+    :data:`DELEGATED_FORMATS` (junit/sarif/gitlab/github/azure/html/badge).
+
+    ROUTING, NOT A FORK — the same shape :func:`_run_explain` uses for
+    ``--explain``. The report body comes from
+    :func:`einvoice.report.render_report`, the ONE emitter dispatch that
+    ``python3 -m einvoice.report --format <fmt>`` itself writes, over a report
+    dict from the ONE builder :func:`einvoice.report.build_report`. No renderer,
+    no format name and no severity mapping is reimplemented here, so the two
+    entry points cannot drift a byte apart.
+
+    WHAT THIS FUNCTION *DOES* OWN — and why it exists instead of a one-line
+    ``report.main([...])`` call. The two entry points have deliberately different
+    defaults and different exit rules, both MEASURED on this tree (2026-07-25):
+
+      1. DEFAULT PROFILE. ``einvoice validate`` defaults to ``en16931``;
+         ``einvoice.report`` defaults to ``xrechnung``. On
+         ``examples/01-missing-fields/broken.xml`` that is the difference between
+         PASS/exit 0 and 2 fatals (BR-DE-2, BR-DE-15)/exit 1. So the profile
+         ``validate`` RESOLVED for this run is passed in explicitly and is what
+         grades the invoice — a bare delegation would have silently flipped the
+         verdict of every ``--format`` run that did not spell ``--profile``.
+      2. SYNTAX-BINDING FINDINGS. ``report.main`` folds
+         ``syntax_binding_fatal_count`` into its exit code; ``einvoice validate``
+         documents syntax-binding findings as NON-blocking and never has. On this
+         corpus the two rules disagree on 25 (file, profile) pairs — e.g.
+         ``corpus/vendored/syntax-binding/sb-viol-UBL-SR-01_ubl.xml`` under
+         ``en16931``: ``validate`` exits 0, ``report`` exits 1. The exit code
+         below is therefore computed from the report's own ``violations`` records
+         with :func:`_report_crosses` — the identical threshold helper
+         ``validate-batch`` uses — so ``--format sarif`` returns exactly the code
+         the same command without ``--format`` would.
+
+    Exit contract, unchanged from ``validate``'s (EXIT-CODES.md): ``EXIT_PARSE``
+    (3) when the input could not be reduced to a validatable invoice (the report
+    still goes to stdout carrying its ``error`` field — a machine consumer gets a
+    document, not a bare stderr line), ``EXIT_FAIL`` (1) when a finding crosses
+    ``fail_on`` (default ``fatal``), else ``EXIT_OK`` (0).
+
+    ``--quiet`` is deliberately not a parameter: exactly as with ``--json``
+    today, the document IS the output of the run, so quiet has nothing to
+    suppress. ``--lang`` likewise only ever selected the human summary string.
+    """
+    # Local import, mirroring _run_explain: the module is already a module-level
+    # dependency of this file, so nothing new is pulled in and the cost stays off
+    # every other CLI path.
+    from .report import build_report, render_report
+
+    report = build_report(path, profile=profile)
+    # ``validate -`` stages stdin bytes in a temp file; the report must name what
+    # the USER named ("-"), never the throwaway path — same rule the text/JSON
+    # forms already follow via ``display_path``.
+    if display_path != path:
+        report["source"] = display_path
+    sys.stdout.write(render_report(report, fmt))
+    if report.get("error"):
+        return EXIT_PARSE
+    if _report_crosses(report, fail_on):
+        return EXIT_FAIL
+    return EXIT_OK
+
+
+def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal",
+                        fmt="text"):
     """Drive ``einvoice validate-batch <dir|glob>``.
 
     REUSES the batch engine in :mod:`einvoice.report` verbatim — no aggregation
@@ -639,11 +856,34 @@ def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
     fatal; 3 if some file only errored and none fatal). A zero-match glob /
     empty directory yields ``file_count: 0`` + a note, exit 0 — never a
     traceback.
+
+    ``fmt`` is the RESOLVED ``--format`` (default ``text``) and must be one of
+    :data:`einvoice.report.BATCH_FORMATS`. ``json`` keeps the historical
+    ``--json`` bytes exactly (same aggregate dict, same ``indent=2``, same
+    ``file_count``/``failed_file_count``/``files``/... envelope keys), ``text``
+    the historical human summary, and ``junit`` routes to ``einvoice.report``'s
+    aggregate emitter via :func:`einvoice.report.render_batch`. Anything else is
+    a usage error (2) — see the check below.
     """
     if len(rest) != 1:
         sys.stderr.write(
             "error: validate-batch takes exactly one <dir|glob> argument\n"
             + USAGE + "\n")
+        return EXIT_USAGE
+
+    # ``--format`` on a BATCH is limited to the aggregate-capable subset
+    # (einvoice.report.BATCH_FORMATS: json, junit, text). The other six emitters
+    # describe ONE invoice — a single SARIF run over one artifact, one
+    # Code-Quality array, one HTML page, one badge — so rather than invent an
+    # aggregate shape for them (a new format, which this task must not add) the
+    # request is refused with the per-file command that DOES work. Checked before
+    # any file is read, so nothing is validated on a usage error.
+    if fmt not in BATCH_FORMATS:
+        sys.stderr.write(
+            "error: --format %s describes a single invoice; validate-batch can "
+            "emit %s. Run it per file instead, e.g. einvoice validate "
+            "--format=%s <invoice.xml>\n%s\n"
+            % (fmt, ", ".join(BATCH_FORMATS), fmt, USAGE))
         return EXIT_USAGE
 
     target = rest[0]
@@ -658,7 +898,14 @@ def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal"):
         batch = build_batch_report_from_files(
             matches, profile=profile, root=target)
 
-    if as_json:
+    if fmt == "junit":
+        # The aggregate JUnit document (one <testsuite> per file) from
+        # einvoice.report's own batch emitter dispatch — reused, never copied.
+        # Like --json it IS the output of the run, so --quiet has nothing to
+        # suppress and the document is still written.
+        from .report import render_batch
+        sys.stdout.write(render_batch(batch, "junit"))
+    elif as_json:
         sys.stdout.write(json.dumps(batch, indent=2) + "\n")
     elif not quiet:
         sys.stdout.write(build_batch_text(batch))
@@ -797,6 +1044,14 @@ def _main(argv=None):
         sys.stdout.write(HELP + "\n")
         return EXIT_OK
 
+    # ``--explain <RULE-ID>`` is a standalone CATALOG LOOKUP, not a validation
+    # run: it reads no invoice, resolves no config and touches no verdict, so it
+    # is dispatched here beside --version/--help rather than through the
+    # file-driven subcommand parser below. The work itself is routed straight to
+    # ``einvoice.report`` — see :func:`_run_explain` for the exit contract.
+    if "--explain" in args or any(a.startswith("--explain=") for a in args):
+        return _run_explain(args)
+
     as_json = False
     if "--json" in args:
         as_json = True
@@ -849,10 +1104,30 @@ def _main(argv=None):
     # to validate / validate-batch. ``None`` = "not given on the command line"
     # (the config value or the built-in 'fatal' fills it in below).
     fail_on = None
+    # --format selects the OUTPUT SHAPE from einvoice.report.REPORT_FORMATS (the
+    # same nine names ``info`` advertises). Every occurrence is collected rather
+    # than last-wins-overwritten so that two conflicting spellings can be
+    # reported as the usage error they are instead of silently resolving to
+    # whichever came last. ``None`` after the loop = flag absent, and the config
+    # value or the built-in 'text' fills it in.
+    format_flags = []
     rest = []
     i = 0
     while i < len(args):
         a = args[i]
+        if a == "--format":
+            if i + 1 >= len(args):
+                sys.stderr.write(
+                    "error: --format needs a value: one of %s\n%s\n"
+                    % (", ".join(REPORT_FORMATS), USAGE))
+                return EXIT_USAGE
+            format_flags.append(args[i + 1])
+            i += 2
+            continue
+        if a.startswith("--format="):
+            format_flags.append(a.split("=", 1)[1])
+            i += 1
+            continue
         if a == "--fail-on":
             if i + 1 >= len(args):
                 sys.stderr.write(
@@ -908,25 +1183,59 @@ def _main(argv=None):
     except ConfigError as exc:
         sys.stderr.write("error: %s\n%s\n" % (exc, USAGE))
         return EXIT_USAGE
+    # --format / --json are two spellings of ONE setting, so they are resolved to
+    # a single value — but only after the two ways of asking for two different
+    # things at once are refused outright. Neither is allowed to become a silent
+    # last-wins surprise: a CI author who writes both meant one of them, and
+    # guessing which would corrupt an artifact quietly.
+    format_flag = None
+    if format_flags:
+        distinct = sorted(set(format_flags))
+        if len(distinct) > 1:
+            sys.stderr.write(
+                "error: conflicting --format values (%s) — pass it once\n%s\n"
+                % (", ".join(repr(v) for v in distinct), USAGE))
+            return EXIT_USAGE
+        format_flag = distinct[0]
+        if as_json:
+            sys.stderr.write(
+                "error: --json and --format cannot be combined; --json is the "
+                "alias for --format json, so pass one of them\n%s\n" % USAGE)
+            return EXIT_USAGE
     # ONE resolution seam (flag > config > default), shared with --show-config:
     # the effective value AND its source for each of format/fail-on/lang come
     # from the same helper, so an observability report can never drift from what
     # a real run uses. ``as_json`` here is the raw --json flag (True iff passed);
     # it is REASSIGNED below to the resolved format.
-    resolved = _resolve_output_settings(cfg, cfg_source, fail_on, lang, as_json)
+    resolved = _resolve_output_settings(cfg, cfg_source, fail_on, lang, as_json,
+                                        format_flag)
     _resolved_by_name = {name: (value, source)
                          for name, value, source in resolved}
     fmt = _resolved_by_name["format"][0]
     fail_on = _resolved_by_name["fail-on"][0]
     lang = _resolved_by_name["lang"][0]
-    # The config 'format' key defaults the output form; an explicit --json flag
-    # already decided (and wins, so an invalid config 'format' is not even
-    # consulted then — resolved to 'json'/flag above). 'text' is the built-in
-    # default, so absence of the key changes nothing. Only a config-sourced
-    # 'format' can be invalid, and it gets the same actionable exit-2 treatment
-    # as any bad flag value (there is no --format flag on THIS CLI to mistype,
-    # so the message names the config as the source).
-    if fmt not in OUTPUT_FORMATS:
+    # Vocabulary check for the output form. Two sources, two vocabularies, one
+    # exit code (2) and one shape of actionable message:
+    #
+    #   * an explicit ``--format`` is checked against the FULL registry
+    #     ``einvoice.report.REPORT_FORMATS`` — the identical nine-name list
+    #     ``einvoice info`` advertises and ``report.py``'s own --format validates
+    #     against, read from that registry so a newly registered emitter needs no
+    #     edit here and a format can never be advertised but unaccepted;
+    #   * the config-FILE ``format`` key keeps its historical two-value
+    #     vocabulary (OUTPUT_FORMATS) and its historical message naming the
+    #     config as the source: a project-wide default also applies to ``info``
+    #     and ``receipt --verify``, where a SARIF body is meaningless.
+    #
+    # An explicit ``--json`` resolves 'json'/flag with format_flag None, so it
+    # takes the config arm and passes, exactly as before.
+    if format_flag is not None:
+        if fmt not in REPORT_FORMATS:
+            sys.stderr.write(
+                "error: unknown format %r (choose from %s)\n%s\n"
+                % (fmt, ", ".join(REPORT_FORMATS), USAGE))
+            return EXIT_USAGE
+    elif fmt not in OUTPUT_FORMATS:
         sys.stderr.write(
             "error: unknown format %r in config (choose from %s)\n%s\n"
             % (fmt, ", ".join(OUTPUT_FORMATS), USAGE))
@@ -956,6 +1265,21 @@ def _main(argv=None):
     if show_config:
         return _run_show_config(resolved)
 
+    # A DELEGATED format (sarif/junit/gitlab/github/azure/html/badge) is a
+    # CONFORMANCE REPORT of an invoice, so it only means something on the two
+    # validating subcommands. Asking ``info`` or ``receipt`` for one used to be
+    # impossible (the flag did not exist); now that it does, say so instead of
+    # silently falling back to that subcommand's own output — the same discipline
+    # ``--verify`` already applies outside ``receipt``. ``text``/``json`` are NOT
+    # restricted: they are the output forms every subcommand has always had, and
+    # ``--format json`` must stay an exact alias of ``--json`` everywhere.
+    if (format_flag is not None and fmt in DELEGATED_FORMATS
+            and not (args and args[0] in ("validate", "validate-batch"))):
+        sys.stderr.write(
+            "error: --format %s emits a conformance report and is only valid "
+            "for validate / validate-batch\n%s\n" % (fmt, USAGE))
+        return EXIT_USAGE
+
     # ``info`` is a read-only build introspection: no input file, no
     # validation. Dispatched before the file-driven subcommands; it reuses
     # the already-parsed global ``--json`` flag and accepts NOTHING else —
@@ -974,7 +1298,8 @@ def _main(argv=None):
     # so the ``validate``/``receipt`` path below stays byte-for-byte unchanged.
     # It reuses the SAME already-parsed --json/--quiet/--profile flags.
     if args and args[0] == "validate-batch":
-        return _run_validate_batch(args[1:], profile, as_json, quiet, fail_on)
+        return _run_validate_batch(args[1:], profile, as_json, quiet, fail_on,
+                                   fmt)
 
     if len(args) < 2 or args[0] not in VALID_SUBCOMMANDS:
         # Distinguish a genuine MISTYPED subcommand (name it + the valid set,
@@ -1091,6 +1416,28 @@ def _main(argv=None):
             sys.stdout.write(canonical_json(receipt) + "\n")
             return (EXIT_OK if receipt["receipt"]["verdict"] == "PASS"
                     else EXIT_FAIL)
+
+        # ``validate --format <fmt>`` for one of the seven DELEGATED_FORMATS is
+        # rendered by einvoice.report's single emitter dispatch, graded by THIS
+        # subcommand's resolved profile and --fail-on threshold. Dispatched INSIDE
+        # this try so the BrokenPipeError (141) and OS-read-error (2) arms below
+        # cover it exactly as they cover the text/JSON forms. The text and json
+        # forms fall through to the untouched code below, so with --format absent
+        # — or set to text/json — not a byte of the historical behaviour changes.
+        #
+        # THE PDF EXCLUSION IS DELIBERATE, not an oversight. ``report.build_report``
+        # additionally dispatches on the ``%PDF-`` magic and extracts a
+        # Factur-X/ZUGFeRD container, while ``einvoice validate`` documents (see
+        # EXIT-CODES.md, "Code 3 — unsupported PDF container") that it has NO
+        # container dispatch: any PDF is read as XML and lands on the S-WF exit-3
+        # row with a hint naming the container entry point. Routing a PDF through
+        # the delegated path would silently grow that capability — and make a
+        # published doc statement false — as a side effect of an output-format
+        # flag. So a PDF keeps today's behaviour byte-for-byte on every format,
+        # and the hint still tells the user exactly where the container route is.
+        if fmt in DELEGATED_FORMATS and not is_pdf_file(path):
+            return _run_validate_format(path, display_path, fmt, profile,
+                                        fail_on)
 
         try:
             result = validate_file(path, profile=profile)

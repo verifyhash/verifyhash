@@ -26,6 +26,18 @@ MEASURE-FIRST FINDINGS (measured on disk 2026-07-20, BEFORE this was written)
   cli.py's ``validate`` emits only text / ``--json`` (``OUTPUT_FORMATS`` is
   ``("text","json")``); it has no ``--format`` flag. So the machine surface and
   the ``--fail-on`` surface are DISTINCT binaries.
+
+  UPDATE (T-VHERG.4, 2026-07-25): the surfaces are no longer distinct binaries —
+  ``einvoice validate`` now accepts ``--format <fmt>`` and serves the seven
+  report formats by calling ``einvoice.report.render_report``, the same emitter
+  dispatch this file drives. The CONTRACT under guard here is unaffected, and for
+  the same structural reason: ``--fail-on`` still never reaches
+  ``build_report()`` on either surface (the console script applies it strictly
+  after the fact, as a threshold over the report's own ``violations`` records, to
+  pick the exit code), so a machine body still cannot be filtered or re-levelled
+  by it. What changed is that a body byte-equal to the one measured below is now
+  ALSO reachable as ``einvoice validate --format sarif``; the cross-surface
+  byte-equality of those seven bodies is pinned by ``test_cli_help.py``.
 * ``einvoice.report`` has NO ``--fail-on`` flag at all: passing it is a usage
   error. That is the structural reason ``--fail-on`` cannot possibly filter a
   machine body — it is not even a knob there. (Locked in

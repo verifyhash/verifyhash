@@ -122,6 +122,43 @@ default report format crashes from the fixed one.
   `QUICKSTART.md` §4 and `README.md`. No validation behaviour changed:
   `validate`, `validate-batch`, `receipt` and `info` are untouched.
 
+- **`--format <fmt>` on `einvoice validate` / `validate-batch` — the one
+  installed binary now emits all nine formats it advertises.** `einvoice info`
+  (and `einvoice.capabilities()['formats']`) has always listed
+  `azure, badge, github, gitlab, html, json, junit, sarif, text` as this build's
+  capabilities, yet `einvoice validate --format sarif invoice.xml` answered
+  `error: unexpected argument '--format'` (exit 2): seven of the nine — the SARIF
+  file GitHub code scanning wants most of all among them — were reachable only
+  from the sibling `python3 -m einvoice.report` entry point, which a
+  `pip install` user has no reason to know exists. Both spellings
+  (`--format sarif`, `--format=sarif`) are now accepted, with the vocabulary read
+  from the one registry (`einvoice.report.REPORT_FORMATS`) so a format can never
+  again be advertised but unaccepted. **Routed, not forked:** the seven report
+  bodies come from the newly extracted `einvoice.report.render_report`, the SINGLE
+  emitter dispatch `python3 -m einvoice.report --format <fmt>` itself now writes,
+  so the two surfaces are byte-identical by construction. No format, rule, data
+  file, dependency or renderer was added.
+
+  Back-compatibility and the exit contract are intact, both measured: `--format
+  json` is an exact alias for `--json` (same code path, byte-identical output),
+  `--format text` is the unchanged default, and with the flag absent nothing moves
+  at all. Two real hazards were closed rather than shipped: the console script
+  defaults to `--profile en16931` while `einvoice.report` defaults to
+  `xrechnung` — on `examples/01-missing-fields/broken.xml` the difference is
+  `PASS`/exit 0 versus 2 fatals (`BR-DE-2`, `BR-DE-15`)/exit 1 — and
+  `report.main` folds `syntax_binding_fatal_count` into its exit code where
+  `validate` documents those findings as non-blocking (the two rules disagree on
+  25 (file, profile) pairs in the committed corpus). A bare delegation would have
+  silently flipped verdicts on both counts, so the resolved profile and
+  `--fail-on` threshold of the *console script* grade the invoice. Usage errors
+  (all exit 2, empty stdout): an unknown format naming the valid nine, `--format`
+  with no value, `--format` twice with conflicting values, `--format` together
+  with `--json`, a single-invoice format on `validate-batch` (which takes the
+  aggregate-capable `json`/`junit`/`text`) and a report format on `info` /
+  `receipt`. Batch envelope keys, the config-file `format` vocabulary
+  (`text`/`json`) and `EXIT-CODES.md`'s 0/1/2/3 taxonomy are unchanged;
+  `EXIT-CODES.md`, `QUICKSTART.md` §5 and `README.md` document the flag.
+
 ## [0.2.6] - 2026-07-23
 
 The engine now fires 297 rules (was 295): the last two deferred code-list

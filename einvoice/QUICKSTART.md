@@ -482,6 +482,57 @@ document is additionally pinned by a machine-checkable JSON Schema,
 by `test_report_schema.py`). This quickstart cross-links those rather than
 restating them.
 
+### The other eight formats: `--format <fmt>`
+
+`--json` is the boolean spelling of one format. The same `einvoice` binary emits
+all nine that `einvoice info` advertises, via `--format <fmt>` (or
+`--format=<fmt>`) on `validate` and `validate-batch`:
+
+```sh
+einvoice validate --format sarif invoice.xml > results.sarif
+einvoice validate --format=github invoice.xml            # ::error annotations
+einvoice validate-batch --format junit invoices/ > junit.xml
+```
+
+The nine names are `json`, `junit`, `sarif`, `gitlab`, `github`, `azure`,
+`html`, `badge`, `text` — the exact list `einvoice info --json` returns under
+`formats`, read from the same registry, so what the tool advertises is what it
+accepts. `--format json` is an **exact alias** for `--json` (same code path,
+byte-identical output) and `--format text` is the default human summary, so
+adding the flag changes nothing you already rely on. The most common CI use is
+the first line above: GitHub code scanning ingests a SARIF file directly, and
+this is the ergonomics half of what you are paying for over the free official
+KoSIT validator.
+
+Three honest limits, all measured:
+
+- **`validate-batch` takes only `json`, `junit`, `text`.** The other six describe
+  ONE invoice — a SARIF run over one artifact, one Code-Quality array, one HTML
+  page, one badge — so a directory under those is a usage error (`2`) that names
+  the per-file command rather than inventing an aggregate shape.
+- **Watch the profile when you compare entry points.** `einvoice validate`
+  defaults to `--profile en16931`; the sibling `python3 -m einvoice.report`
+  defaults to `xrechnung`. On `examples/01-missing-fields/broken.xml` that is the
+  difference between `PASS`/exit `0` and 2 fatals (`BR-DE-2`, `BR-DE-15`)/exit
+  `1`. `--format` does **not** change which profile grades the invoice: the
+  console script keeps its own `en16931` default, so pass `--profile` explicitly
+  whenever the two surfaces must agree.
+- **`--quiet` and `--lang` do nothing to a machine format.** The document *is*
+  the output (there is no human summary to suppress) and `--lang de` only ever
+  swapped the displayed summary string — exactly as both behave with `--json`.
+
+The sibling `python3 -m einvoice.report --format <fmt> <invoice.xml>` entry point
+still exists and still works; it remains the only place `--baseline` (fail only
+on a *new* fatal vs a stored baseline), `--pretty`, `--recurse` and the
+Factur-X/ZUGFeRD PDF route live. For the seven delegated formats both surfaces
+call the same emitter, so those bodies are byte-identical for the same invoice
+and profile (measured). The two `json` documents and the two `text` summaries are
+*not* interchangeable — each surface keeps its own long-standing shape, and
+`--format` deliberately changes neither. Format-by-format details —
+including how an unsupported PDF container appears in each — are in
+[`REPORT-FORMATS.md`](REPORT-FORMATS.md); the exit-code contract with `--format`
+set is in [`EXIT-CODES.md`](EXIT-CODES.md).
+
 ## 6. What does this build contain? `einvoice info`
 
 Before trusting a green result, ask the tool itself what it implements:
@@ -573,11 +624,14 @@ the directory you actually run `einvoice` from. When **both** files are present
 in that one directory, `.einvoice.toml` takes **precedence** over
 `pyproject.toml` (the `[tool.einvoice]` table is not even read).
 
-Two honest limits. First, there is no `--format` flag on this CLI (`--json`
-is the only format switch), so `format = "json"` can only be reverted by
-editing the config, not per-invocation; `format` here means the CLI's two
-output forms (`text`/`json`), **not** the nine-name `--format` vocabulary of
-`python3 -m einvoice.report`. Second, the keys never touch validation:
+Two honest limits. First, the config `format` key accepts only the CLI's two
+output forms (`text`/`json`), **not** the full nine-name `--format` vocabulary:
+a config key is a project-wide default that also applies to `info` and
+`receipt --verify`, where a SARIF or HTML body would be meaningless. The richer
+formats are a per-invocation choice, so they live on the `--format` flag only —
+and because that flag exists (see §5), a `format = "json"` default *can* now be
+overridden per invocation with `--format text`. Second, the keys never touch
+validation:
 `fail-on` moves only the exit-code threshold and `lang` only the human
 message text — findings, `--json` payloads and rule results are identical
 with and without a config file.

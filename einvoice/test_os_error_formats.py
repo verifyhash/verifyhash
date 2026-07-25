@@ -289,23 +289,104 @@ class DanglingSymlinkAllFormats(_FormatMatrixMixin, unittest.TestCase):
                 self.assertIn(b"no such file", err)
 
 
-class ValidateExposesNoFormatFlag(unittest.TestCase):
-    """Guard: ``python3 -m einvoice validate --format json <path>`` is NOT a
-    machine-format surface — cli.py's validate takes --json only. Measured:
-    the unrecognized extra arguments are a usage error (exit 2, empty
-    stdout, usage banner on stderr) BEFORE the path is even touched, for
-    every OS-error class alike. Pinned so the matrix above provably covers
-    the whole --format surface; if validate ever grows --format, this fails
-    and forces extending the matrix to it."""
+class ValidateFormatFlagObeysTheSameRule(_FormatMatrixMixin, unittest.TestCase):
+    """T-VHERG.4 EXTENSION of the matrix to the SECOND --format surface.
 
-    def test_validate_rejects_format_flag_with_clean_usage_error(self):
+    The original guard here pinned the NON-surface: ``einvoice validate
+    --format json <path>`` was a usage error because cli.py had no ``--format``
+    flag, and its docstring promised that "if validate ever grows --format, this
+    fails and forces extending the matrix to it". T-VHERG.4 grew the flag (the
+    console script now serves all nine registry formats), so this class is that
+    extension rather than a relaxation: the SAME empty-stdout / one-diagnostic
+    rule is now asserted for every format on the ``python3 -m einvoice
+    validate --format <fmt>`` surface too, for the three OS-error classes it
+    triages (a directory is NOT an error class here — ``validate`` deliberately
+    points the user at ``validate-batch``, which is itself an ``error:`` line, so
+    it satisfies the same rule).
+
+    ONE difference from the report surface, and it is the documented taxonomy,
+    not a discipline gap: cli.py's OS-level input errors are ``EXIT_USAGE`` (2)
+    per EXIT-CODES.md, where report.py has always used 1. ``want_rc`` carries
+    that.
+    """
+
+    def all_formats(self):
+        # Registry-sourced, exactly as the report-surface matrix above: a new
+        # emitter must be classified, never silently skipped.
+        self.assertEqual(set(REPORT_FORMATS),
+                         set(DOC_FORMATS) | set(OTHER_FORMATS),
+                         "report.py format registry changed — classify the "
+                         "new/removed format in test_os_error_formats.py")
+        return DOC_FORMATS + OTHER_FORMATS
+
+    def test_nonexistent_path_every_format(self):
         ghost = os.path.join(tempfile.gettempdir(),
                              "einvoice-zz-fictional-does-not-exist.xml")
         self.assertFalse(os.path.exists(ghost))
-        rc, out, err = _run_cli(["validate", "--format", "json", ghost])
+        for fmt in self.all_formats():
+            with self.subTest(fmt=fmt):
+                rc, out, err = _run_cli(["validate", "--format", fmt, ghost])
+                self.assert_empty_stdout_diag_on_stderr(
+                    fmt, rc, out, err, ghost, want_rc=EXIT_USAGE)
+                self.assertIn(b"no such file", err)
+
+    def test_directory_every_format_points_at_validate_batch(self):
+        tmpdir = tempfile.mkdtemp(prefix="einvoice-clifmt-dir-")
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        for fmt in self.all_formats():
+            with self.subTest(fmt=fmt):
+                rc, out, err = _run_cli(["validate", "--format", fmt, tmpdir])
+                self.assert_empty_stdout_diag_on_stderr(
+                    fmt, rc, out, err, tmpdir, want_rc=EXIT_USAGE)
+                self.assertIn(b"validate-batch", err)
+
+    def test_dangling_symlink_every_format(self):
+        tmpdir = tempfile.mkdtemp(prefix="einvoice-clifmt-link-")
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        link = os.path.join(tmpdir, "zz-fictional-dangling.xml")
+        os.symlink(os.path.join(tmpdir, "zz-fictional-missing-target.xml"),
+                   link)
+        for fmt in self.all_formats():
+            with self.subTest(fmt=fmt):
+                rc, out, err = _run_cli(["validate", "--format", fmt, link])
+                self.assert_empty_stdout_diag_on_stderr(
+                    fmt, rc, out, err, link, want_rc=EXIT_USAGE)
+                self.assertIn(b"dangling symlink", err)
+
+    def test_unreadable_file_every_format(self):
+        tmpdir = tempfile.mkdtemp(prefix="einvoice-clifmt-noread-")
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        path = os.path.join(tmpdir, "zz-fictional-unreadable.xml")
+        shutil.copyfile(PASS_FIXTURE, path)
+        os.chmod(path, 0o000)
+        self.addCleanup(os.chmod, path, 0o600)
+        # Same root-proofing probe as the report-surface leg.
+        if os.access(path, os.R_OK):
+            reason = ("chmod 000 file is still readable by this user (uid=%d) "
+                      "— the OS is not enforcing permission bits; skipping."
+                      % os.getuid())
+            print("SKIP cli unreadable-file legs: " + reason)
+            self.skipTest(reason)
+        for fmt in self.all_formats():
+            with self.subTest(fmt=fmt):
+                rc, out, err = _run_cli(["validate", "--format", fmt, path])
+                self.assert_empty_stdout_diag_on_stderr(
+                    fmt, rc, out, err, path, want_rc=EXIT_USAGE)
+                self.assertIn(b"cannot read", err)
+
+    def test_unknown_format_is_a_clean_usage_error(self):
+        # Non-vacuity for the surface as a whole: a real format is ACCEPTED
+        # (that is the T-VHERG.4 fix), a bogus one is still a clean exit-2
+        # usage error with empty stdout and no traceback.
+        rc, out, err = _run_cli(["validate", "--format", "json", PASS_FIXTURE])
+        self.assertEqual(rc, EXIT_OK, err)
+        self.assertTrue(json.loads(out.decode("utf-8")))
+        rc, out, err = _run_cli(["validate", "--format", "zz-nope",
+                                 PASS_FIXTURE])
         self.assertEqual(rc, EXIT_USAGE, err)
         self.assertEqual(out, b"")
         self.assertNotIn(b"Traceback", err)
+        self.assertIn(b"unknown format", err)
 
 
 class NoVerdictChange(unittest.TestCase):

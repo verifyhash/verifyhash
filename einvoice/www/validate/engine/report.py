@@ -122,6 +122,18 @@ EXIT_PARSE = 3
 REPORT_FORMATS = ("json", "junit", "sarif", "gitlab", "github", "azure",
                   "html", "badge", "text")
 
+#: The subset of :data:`REPORT_FORMATS` that has a defined AGGREGATE shape, i.e.
+#: can describe a whole directory/batch rather than one invoice: the
+#: ``einvoice-conformance-batch/v1`` JSON document, a JUnit ``<testsuites>`` with
+#: one suite per file, and the human per-file text summary. The other six
+#: emitters are single-invoice by construction (one SARIF ``run`` with one
+#: artifact, one Code-Quality array, one HTML page, one badge), so a directory
+#: input under those is refused with an actionable error rather than given an
+#: invented shape. Named here so the two places that enforce it — this module's
+#: directory leg and ``einvoice.cli``'s ``validate-batch --format`` — read ONE
+#: list instead of retyping the tuple.
+BATCH_FORMATS = ("json", "junit", "text")
+
 #: Documentation of the versioned report shape. Every key the report can carry
 #: is described here; REPORT-SCHEMA.md renders the same contract for humans, and
 #: ../report.schema.json is the MACHINE-CHECKABLE form (JSON Schema draft
@@ -1962,6 +1974,63 @@ def format_explain(rule_id, catalog=None):
     return "\n".join(lines) + "\n"
 
 
+def render_report(report, fmt, pretty=False):
+    """Render a SINGLE-FILE report dict as the exact text ``--format <fmt>``
+    emits, and return it as a string (nothing is written or validated here).
+
+    THE one emitter dispatch. :func:`main` writes ``render_report(...)`` verbatim
+    for the single-file leg, and :mod:`einvoice.cli`'s ``validate --format``
+    calls this same function — so the nine format bodies have exactly ONE
+    implementation and one dispatch table. Registering a new emitter here
+    therefore reaches BOTH entry points; there is no second copy to update and
+    no way for the two surfaces to drift a byte apart.
+
+    ``fmt`` must be a member of :data:`REPORT_FORMATS` (callers validate it and
+    report a usage error for anything else); ``pretty`` only affects the default
+    ``json`` form, exactly as the ``--pretty`` flag always has (indent=2 +
+    sorted keys instead of the compact separators).
+    """
+    if fmt == "junit":
+        return build_junit(report)
+    if fmt == "sarif":
+        return json.dumps(build_sarif(report), indent=2, sort_keys=True) + "\n"
+    if fmt == "gitlab":
+        return json.dumps(build_gitlab(report), indent=2, sort_keys=True) + "\n"
+    if fmt == "github":
+        return build_github(report)
+    if fmt == "azure":
+        return build_azure(report)
+    if fmt == "html":
+        return build_html(report)
+    if fmt == "badge":
+        return json.dumps(build_badge(report), indent=2, sort_keys=True) + "\n"
+    if fmt == "text":
+        return build_text(report)
+    if pretty:
+        return json.dumps(report, indent=2, sort_keys=True) + "\n"
+    return json.dumps(report, separators=(",", ":")) + "\n"
+
+
+def render_batch(batch, fmt, pretty=False):
+    """Render an aggregate BATCH dict as the exact text ``--format <fmt>`` emits
+    for a directory input, and return it as a string.
+
+    The batch counterpart of :func:`render_report` and, like it, the single
+    dispatch: :func:`main`'s directory leg writes this verbatim. ``fmt`` must be
+    one of :data:`BATCH_FORMATS` — the batch-capable subset of the registry (the
+    other six emitters describe ONE invoice: a SARIF run, a Code-Quality array
+    or an HTML page for a whole directory has no defined shape here, so callers
+    reject those with an actionable usage error instead of inventing one).
+    """
+    if fmt == "junit":
+        return build_junit_batch(batch)
+    if fmt == "text":
+        return build_batch_text(batch)
+    if pretty:
+        return json.dumps(batch, indent=2, sort_keys=True) + "\n"
+    return json.dumps(batch, separators=(",", ":")) + "\n"
+
+
 def main(argv=None):
     """Run the report CLI. Returns the process exit code (see module docstring)."""
     if argv is None:
@@ -2128,20 +2197,13 @@ def main(argv=None):
                 "error: --baseline validates a single file; it is not "
                 "compatible with a directory input\n%s\n" % USAGE)
             return EXIT_FAIL
-        if fmt not in ("json", "junit", "text"):
+        if fmt not in BATCH_FORMATS:
             sys.stderr.write(
                 "error: --format %s validates a single file; use "
-                "json/junit/text for a directory\n" % fmt)
+                "%s for a directory\n" % (fmt, "/".join(BATCH_FORMATS)))
             return EXIT_FAIL
         batch = build_batch_report(path, profile=profile)
-        if fmt == "junit":
-            sys.stdout.write(build_junit_batch(batch))
-        elif fmt == "text":
-            sys.stdout.write(build_batch_text(batch))
-        elif pretty:
-            sys.stdout.write(json.dumps(batch, indent=2, sort_keys=True) + "\n")
-        else:
-            sys.stdout.write(json.dumps(batch, separators=(",", ":")) + "\n")
+        sys.stdout.write(render_batch(batch, fmt, pretty))
         return batch_exit_code(batch)
 
     if not os.path.isfile(path):
@@ -2187,29 +2249,7 @@ def main(argv=None):
         sys.stderr.write("error: cannot read %s: %s\n"
                          % (path, exc.strerror or exc))
         return EXIT_FAIL
-    if fmt == "junit":
-        sys.stdout.write(build_junit(report))
-    elif fmt == "sarif":
-        sys.stdout.write(
-            json.dumps(build_sarif(report), indent=2, sort_keys=True) + "\n")
-    elif fmt == "gitlab":
-        sys.stdout.write(
-            json.dumps(build_gitlab(report), indent=2, sort_keys=True) + "\n")
-    elif fmt == "github":
-        sys.stdout.write(build_github(report))
-    elif fmt == "azure":
-        sys.stdout.write(build_azure(report))
-    elif fmt == "html":
-        sys.stdout.write(build_html(report))
-    elif fmt == "badge":
-        sys.stdout.write(
-            json.dumps(build_badge(report), indent=2, sort_keys=True) + "\n")
-    elif fmt == "text":
-        sys.stdout.write(build_text(report))
-    elif pretty:
-        sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
-    else:
-        sys.stdout.write(json.dumps(report, separators=(",", ":")) + "\n")
+    sys.stdout.write(render_report(report, fmt, pretty))
 
     # Any error field (not-well-formed XML, or an unsupported PDF container) is
     # a non-pass: exit non-zero, never 0. EXIT_PARSE reflects "could not reduce

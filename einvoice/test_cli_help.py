@@ -41,10 +41,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import einvoice  # noqa: E402
 from einvoice.cli import (  # noqa: E402
-    main, VALID_SUBCOMMANDS, COMMAND_SURFACE, OUTPUT_FORMATS, USAGE, HELP,
-    EXIT_OK)
+    main, VALID_SUBCOMMANDS, COMMAND_SURFACE, OUTPUT_FORMATS,
+    DELEGATED_FORMATS, USAGE, HELP, EXIT_OK, EXIT_USAGE)
 from einvoice.report import (  # noqa: E402
-    main as report_main, USAGE as REPORT_USAGE)
+    main as report_main, USAGE as REPORT_USAGE,
+    REPORT_FORMATS, BATCH_FORMATS)
 
 #: Doc files that live in the git checkout but are NOT packaged in the wheel.
 #: A runtime message may not send a pip-only user to any of them. Matched
@@ -158,34 +159,142 @@ class HelpFlagTest(unittest.TestCase):
             "help must name the sibling entry point that emits the CI formats")
 
     def test_help_only_advertises_real_output_forms(self):
-        # The only output forms THIS CLI emits are OUTPUT_FORMATS (text/json).
-        # It still has no --format flag of its own: any --format token in the
-        # help must sit on the line that spells out the einvoice.report sibling.
+        # T-VHERG.4 replaced the "this CLI has no --format" contract with a real
+        # flag, so this guard now pins the STRONGER property: the synopsis must
+        # advertise --format on BOTH validating subcommands (an ERP adopter reads
+        # the usage line, and before T-VHERG.4 `--format` appeared only on the
+        # sibling-entry-point line, so 7 of 9 advertised formats were invisible
+        # there), and every output form the help mentions must be a real one.
         _, out, _ = _run(["--help"])
         for form in OUTPUT_FORMATS:
             self.assertIn(form, out,
                           "help should mention output form %r" % form)
-        self.assertNotIn(
-            "--format", USAGE,
-            "the synopsis must not advertise a --format flag on this CLI")
-        for line in out.splitlines():
-            if "--format" in line:
-                self.assertIn(
-                    "einvoice.report", line,
-                    "only the einvoice.report pointer may mention --format; "
-                    "this CLI has no such flag. Offending line: %r" % line)
+        synopsis = [ln for ln in USAGE.splitlines() if "einvoice validate" in ln]
+        self.assertEqual(
+            len(synopsis), 2,
+            "expected exactly the validate + validate-batch synopsis lines: %r"
+            % synopsis)
+        for line in synopsis:
+            self.assertIn(
+                "--format", line,
+                "the synopsis line %r must document --format — the console "
+                "script emits every registry format, not just text/json" % line)
+        # No PHANTOM format name anywhere in the help: every lowercase word that
+        # follows a `--format` mention as a value must be in the registry.
+        for value in re.findall(r"--format[=\s]+([a-z]+)", out):
+            if value in ("fmt",):
+                continue
+            self.assertIn(
+                value, REPORT_FORMATS,
+                "help advertises --format %r, which is not in REPORT_FORMATS"
+                % value)
 
-    def test_this_cli_really_rejects_a_format_flag(self):
-        # Behavioural counterpart to the string check above: the flag the help
-        # attributes to einvoice.report must genuinely NOT be accepted here.
+    def test_this_cli_really_accepts_the_format_flag(self):
+        # Behavioural counterpart to the string check above: every format the
+        # help names must genuinely WORK on the console script, and a bogus one
+        # must be a usage error naming the valid set. This is the regression
+        # guard for the T-VHERG.4 defect — `einvoice validate --format sarif`
+        # used to exit 2 with "unexpected argument '--format'" while
+        # `einvoice info` advertised sarif as a capability of the same build.
         fixture = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "corpus", "vendored", "valid",
                                "cen-bis3-positive_ubl.xml")
         self.assertTrue(os.path.exists(fixture), "fixture went missing")
-        code, out, err = _run(["validate", "--format", "json", fixture])
-        self.assertEqual(code, 2,
-                         "einvoice validate --format must stay a usage error")
-        self.assertIn("--format", err)
+        for fmt in REPORT_FORMATS:
+            with self.subTest(fmt=fmt):
+                code, out, err = _run(["validate", "--format", fmt, fixture])
+                self.assertEqual(
+                    code, EXIT_OK,
+                    "einvoice validate --format %s must run and pass this "
+                    "conformant fixture (stderr: %r)" % (fmt, err))
+                self.assertTrue(
+                    out, "--format %s emitted nothing on stdout" % fmt)
+        # --format json is an EXACT alias for --json (same code path).
+        _c1, json_out, _e1 = _run(["validate", "--json", fixture])
+        _c2, fmt_out, _e2 = _run(["validate", "--format", "json", fixture])
+        self.assertEqual(fmt_out, json_out,
+                         "--format json must be byte-identical to --json")
+        # An unknown format is a usage error naming the valid formats.
+        code, out, err = _run(["validate", "--format", "nosuchfmt", fixture])
+        self.assertEqual(code, EXIT_USAGE)
+        self.assertEqual(out, "", "a usage error must not write to stdout")
+        for fmt in REPORT_FORMATS:
+            self.assertIn(fmt, err,
+                          "the unknown-format error must name %r" % fmt)
+
+    def test_delegated_bodies_are_byte_equal_to_the_sibling_entry_point(self):
+        # The point of routing rather than forking: for the seven delegated
+        # formats the console script and `python3 -m einvoice.report` must emit
+        # the SAME bytes for the same invoice and profile, because they call the
+        # same einvoice.report.render_report dispatch. Pinned on a fixture that
+        # actually carries findings, so an empty body cannot make this vacuous.
+        here = os.path.dirname(os.path.abspath(__file__))
+        fixture = os.path.join(here, "examples", "01-missing-fields",
+                               "broken.xml")
+        self.assertTrue(os.path.isfile(fixture), fixture)
+        profile = "xrechnung"  # the profile under which this fixture has fatals
+        for fmt in DELEGATED_FORMATS:
+            with self.subTest(fmt=fmt):
+                _c, cli_out, _e = _run(["validate", "--format", fmt,
+                                        "--profile", profile, fixture])
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err):
+                    report_main(["--format", fmt, "--profile", profile,
+                                 fixture])
+                self.assertTrue(cli_out.strip(), "%s emitted nothing" % fmt)
+                self.assertEqual(
+                    cli_out, out.getvalue(),
+                    "einvoice validate --format %s drifted from "
+                    "python3 -m einvoice.report --format %s" % (fmt, fmt))
+        # Non-vacuity: the fixture really does carry fatals under this profile,
+        # so the compared bodies are non-trivial.
+        code, _o, _e = _run(["validate", "--profile", profile, fixture])
+        self.assertEqual(code, 1, "fixture no longer has fatals under %s"
+                         % profile)
+
+    def test_batch_format_subset_is_enforced_not_invented(self):
+        # validate-batch accepts the aggregate-capable subset and refuses the
+        # single-invoice emitters with an actionable usage error rather than
+        # inventing an aggregate shape for them.
+        here = os.path.dirname(os.path.abspath(__file__))
+        batch_dir = os.path.join(here, "examples", "01-missing-fields")
+        self.assertTrue(os.path.isdir(batch_dir), batch_dir)
+        for fmt in BATCH_FORMATS:
+            with self.subTest(fmt=fmt):
+                code, out, err = _run(["validate-batch", "--format", fmt,
+                                       batch_dir])
+                self.assertNotEqual(
+                    code, EXIT_USAGE,
+                    "validate-batch --format %s must be accepted (stderr: %r)"
+                    % (fmt, err))
+                self.assertTrue(out, "--format %s emitted nothing" % fmt)
+        for fmt in set(DELEGATED_FORMATS) - set(BATCH_FORMATS):
+            with self.subTest(fmt=fmt):
+                code, out, err = _run(["validate-batch", "--format", fmt,
+                                       batch_dir])
+                self.assertEqual(
+                    code, EXIT_USAGE,
+                    "validate-batch --format %s has no aggregate shape and "
+                    "must be a usage error, not an invented document" % fmt)
+                self.assertEqual(out, "")
+                self.assertIn("einvoice validate --format=%s" % fmt, err,
+                              "the error must name the per-file command")
+
+    def test_json_and_format_together_are_a_clean_usage_error(self):
+        fixture = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "corpus", "vendored", "valid",
+                               "cen-bis3-positive_ubl.xml")
+        for argv in (["validate", "--json", "--format", "sarif", fixture],
+                     ["validate", "--format", "sarif", "--format", "json",
+                      fixture]):
+            with self.subTest(argv=argv):
+                code, out, err = _run(argv)
+                self.assertEqual(
+                    code, EXIT_USAGE,
+                    "%r must be a usage error, never a silent last-wins" % argv)
+                self.assertEqual(out, "")
+                self.assertIn("error:", err)
+                self.assertNotIn("Traceback", err)
 
     def test_short_h_is_byte_identical_to_long_help(self):
         _, out_long, _ = _run(["--help"])

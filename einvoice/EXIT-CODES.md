@@ -180,6 +180,59 @@ Scope and invariants:
 - `--fail-on` is accepted for `validate` and `validate-batch`; it does not apply
   to `receipt` (whose exit code always mirrors its PASS/FAIL verdict).
 
+## `--format <fmt>` on the console script — no new code (additive)
+
+Since T-VHERG.4 the `einvoice` console script accepts `--format <fmt>` (and
+`--format=<fmt>`) on `validate` and `validate-batch`, so the one binary a
+`pip install` puts on your PATH emits every format `einvoice info` advertises —
+including the SARIF file GitHub code scanning consumes. **This mints no new exit
+code and changes none of the rows above.** Before it, seven of the nine
+advertised formats were reachable only from the sibling
+`python3 -m einvoice.report` entry point:
+
+```
+einvoice validate --format sarif invoice.xml > results.sarif   # 0 / 1 / 3
+einvoice validate --format=junit invoice.xml > junit.xml
+einvoice validate-batch --format junit invoices/ > junit.xml
+```
+
+| Code | When, with `--format` set | Stream |
+|------|---------------------------|--------|
+| `0` | No finding crosses `--fail-on` (default: no **fatal** finding). Identical to the same command without `--format`. | stdout: the report document (SARIF/JUnit/…); nothing on stderr. |
+| `1` | A finding crosses the threshold. | stdout: the **complete** report document — a failing run still produces the artifact your CI wants to upload. |
+| `2` | Usage error: an **unknown** format name (one `error: unknown format '<x>' (choose from json, junit, sarif, gitlab, github, azure, html, badge, text)` line); `--format` with no value; `--format` twice with **conflicting** values; `--format` **together with** `--json` (`--json` is the alias for `--format json`, so pass one); a single-invoice format on `validate-batch`; or a report format on a subcommand that validates nothing (`info`, `receipt`). Also every OS-level input problem from the code-`2` row above, for **every** format alike: stdout stays completely empty, so no half-written document can reach a parser. | stderr: one `error:` line plus the `usage:` banner. stdout empty. |
+| `3` | Not-well-formed XML / unsupported container. | stdout: the report document carrying `"error": "not-well-formed"`, so a machine consumer gets a parseable document rather than only a stderr line. |
+
+Scope and invariants:
+
+- **`--format json` is an exact alias for `--json`** — the same code path, so the
+  bytes are identical (`test_cli_help.py` and the task gate `cmp` both pin it).
+  `--format text` is the default human summary. The other seven are rendered by
+  `einvoice.report.render_report`, the single emitter dispatch
+  `python3 -m einvoice.report --format <fmt>` itself uses, so the bodies agree by
+  construction rather than by review.
+- **The verdict is graded by `validate`'s own rules, not the report module's.**
+  This matters because the two entry points differ on purpose: `einvoice
+  validate` defaults to `--profile en16931`, while `python3 -m einvoice.report`
+  defaults to `xrechnung`. On `examples/01-missing-fields/broken.xml` that is the
+  difference between exit `0` and exit `1` (2 fatals: `BR-DE-2`, `BR-DE-15`). The
+  profile the console script resolved is what grades the invoice, and
+  syntax-binding findings stay non-blocking here exactly as they are in the
+  text/JSON forms. Pass `--profile` explicitly whenever you compare the two
+  surfaces.
+- `--fail-on` applies unchanged; `--quiet` and `--lang` are no-ops for a machine
+  format (the document *is* the output, and `--lang` only ever selected the human
+  summary string) — identical to how both behave with `--json` today.
+- `validate-batch` accepts the **aggregate-capable** subset — `json`, `junit`,
+  `text` (`einvoice.report.BATCH_FORMATS`). The other six describe ONE invoice
+  (one SARIF run, one Code-Quality array, one HTML page, one badge), so asking
+  for them on a directory is a usage error (`2`) that names the per-file command
+  instead of inventing an aggregate shape. The batch envelope keys are unchanged.
+- The config-file `format` key still accepts only `text` / `json`: it is a
+  project-wide default that also applies to `info` and `receipt --verify`, where
+  a SARIF body is meaningless. An invalid value there keeps its historical
+  `error: unknown format '<x>' in config …` message and exit `2`.
+
 ## `--explain <RULE-ID>` — catalog lookup, no new code (additive)
 
 `einvoice --explain BR-CO-15` prints the `remediation_catalog.json` entry for

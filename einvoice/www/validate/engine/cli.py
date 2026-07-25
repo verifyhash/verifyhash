@@ -243,21 +243,48 @@ from .config import load_config_with_source, ConfigError
 from . import pdf_container
 from .pdf_container import is_pdf_file
 
-USAGE = ("usage: einvoice validate <invoice.xml|invoice.pdf|-> "
+#: The ONE program token this CLI teaches — the name of the console script
+#: ``pyproject.toml`` installs on a user's PATH (``[project.scripts] einvoice``).
+#: EVERYTHING the tool tells a user to TYPE is built from this constant: the
+#: :data:`USAGE` synopsis below and the wrong-file-type hint in :func:`_main`.
+#: They therefore cannot drift apart, and neither can advertise a program name
+#: this package does not install.
+#:
+#: MEASURED defect this exists to prevent (T-VHUX2.3, reproduced 2026-07-25):
+#: ``einvoice validate <not-xml>`` answered with a hint that routed the user to
+#: ``python3 -m einvoice.report <invoice.pdf>`` for the Factur-X/ZUGFeRD
+#: PDF-container capability — a capability ``einvoice validate`` has owned
+#: NATIVELY since T-VHERG.4/.5 (``einvoice validate corpus/pdf/facturx-valid.pdf``
+#: exits 0 with a PASS line). The single binary the project puts on a stranger's
+#: PATH was underclaiming itself and sending first-run users to a longer command
+#: they did not need. ``test_cli_command_primacy.py`` is the standing guard: it
+#: asserts the hint's program token is THIS constant (imported, never re-spelled)
+#: and it EXECUTES the command the hint teaches.
+#:
+#: This is NOT a blanket ban on naming the sibling entry point. ``python3 -m
+#: einvoice.report`` is real and still genuinely owns ``--baseline`` /
+#: ``--pretty`` / explicit recursion, so the :data:`HELP` epilogue keeps its
+#: pointer — a true pointer to a capability this CLI does not have is help, not
+#: misdirection. What was wrong was pointing there for something this CLI does.
+PROG = "einvoice"
+
+#: Built from :data:`PROG`; the rendered bytes are pinned by
+#: ``test_cli_help.py`` (the help constant must equal what ``--help`` prints).
+USAGE = ("usage: %(p)s validate <invoice.xml|invoice.pdf|-> "
          "[--json] [--format=<fmt>] [--quiet] "
          "[--profile=en16931|xrechnung] [--lang=en|de] "
          "[--fail-on=fatal|warning|information]\n"
-         "       einvoice validate-batch <dir|glob> "
+         "       %(p)s validate-batch <dir|glob> "
          "[--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung] "
          "[--lang=en|de] [--fail-on=fatal|warning|information]\n"
-         "       einvoice receipt <invoice.xml> "
+         "       %(p)s receipt <invoice.xml> "
          "[--profile=en16931|xrechnung]\n"
-         "       einvoice receipt --verify <receipt.json> [--json]\n"
-         "       einvoice info [--json]\n"
-         "       einvoice --explain <RULE-ID> [--lang=en|de]\n"
-         "       einvoice --show-config\n"
-         "       einvoice --version\n"
-         "       einvoice --help")
+         "       %(p)s receipt --verify <receipt.json> [--json]\n"
+         "       %(p)s info [--json]\n"
+         "       %(p)s --explain <RULE-ID> [--lang=en|de]\n"
+         "       %(p)s --show-config\n"
+         "       %(p)s --version\n"
+         "       %(p)s --help") % {"p": PROG}
 
 #: The valid top-level subcommands, in one place so the dispatch membership
 #: test and the unknown-subcommand error message can never drift apart. Note
@@ -1605,6 +1632,23 @@ def _main(argv=None):
                 # input means the container opened but the XML it carries is
                 # itself ill-formed, so say exactly that instead of sending the
                 # user to a sibling command that would fail identically.
+                #
+                # T-VHUX2.3 (measured 2026-07-25): the non-PDF arm below used to
+                # teach the PDF route as `python3 -m einvoice.report
+                # <invoice.pdf>`. That was stale by two tasks — `einvoice
+                # validate <invoice.pdf>` opens the container itself since
+                # T-VHERG.5 and returns PASS/exit 0 on corpus/pdf/
+                # facturx-valid.pdf — so the tool was routing first-run users
+                # off the console script it installs, for a capability that
+                # script already has. Both accepted input shapes are now named
+                # as commands the installed binary can actually execute, and
+                # both program tokens come from PROG so they track the console
+                # script's real name. Unchanged on purpose: the leading
+                # "S-WF: input is not well-formed XML" line (pinned by
+                # test_exit_codes.py / test_stdout_purity.py), the
+                # "not a PDF container either" discriminator (asserted present
+                # here and ABSENT on the PDF arm by test_robustness.py), the
+                # --json payload, and EXIT_PARSE=3.
                 sys.stderr.write(
                     "S-WF: input is not well-formed XML: %s\n" % exc)
                 if pdf_xml is not None:
@@ -1617,9 +1661,9 @@ def _main(argv=None):
                     sys.stderr.write(
                         "  hint: not a PDF container either — supported "
                         "inputs are a UBL/CII e-invoice as well-formed XML "
-                        "('validate') or a Factur-X/ZUGFeRD PDF/A-3 "
-                        "container ('python3 -m einvoice.report "
-                        "<invoice.pdf>')\n")
+                        "('%(p)s validate <invoice.xml>') or a "
+                        "Factur-X/ZUGFeRD PDF/A-3 container "
+                        "('%(p)s validate <invoice.pdf>')\n" % {"p": PROG})
             return EXIT_PARSE
 
         # Surface the distinct 'syntax-binding' category (the UBL

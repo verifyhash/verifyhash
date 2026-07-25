@@ -348,10 +348,20 @@ class TestFirstRunErgonomics(unittest.TestCase):
                          proc.returncode, proc.stderr))
         # The stable pinned prefix (also asserted by test_exit_codes.py)...
         self.assertIn("S-WF: input is not well-formed XML", proc.stderr)
-        # ...now followed by a hint naming BOTH supported input shapes.
+        # ...now followed by a hint naming BOTH supported input shapes, each as
+        # a command the INSTALLED console script can actually execute.
+        # T-VHUX2.3: this used to assert `python3 -m einvoice.report`, which
+        # routed the user to a sibling entry point for the PDF-container
+        # capability `einvoice validate` has owned natively since T-VHERG.5.
+        # The substantive assertion is unchanged and unweakened — a wrong
+        # file type still gets an actionable hint naming both accepted shapes —
+        # only the command form is corrected, and the primacy of the console
+        # script is now pinned harder (see test_cli_command_primacy.py).
         self.assertIn("not a PDF container either", proc.stderr)
         self.assertIn("well-formed XML", proc.stderr)
-        self.assertIn("python3 -m einvoice.report", proc.stderr)
+        self.assertIn("einvoice validate <invoice.xml>", proc.stderr)
+        self.assertIn("einvoice validate <invoice.pdf>", proc.stderr)
+        self.assertNotIn("einvoice.report <invoice.pdf>", proc.stderr)
         self.assertNotIn("Traceback", proc.stderr)
 
     def test_wrong_file_type_pdf_bytes_get_pdf_route(self):

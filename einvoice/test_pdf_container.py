@@ -711,6 +711,15 @@ class TestValidateSubcommandTakesContainers(unittest.TestCase):
         self.assertEqual(rc, 3, err)
         self.assertIn("S-WF: input is not well-formed XML", err)
         self.assertIn("not a PDF container either", err)
+        # T-VHUX2.3: the hint must name BOTH accepted input shapes as commands
+        # the installed console script can run. It previously sent the reader to
+        # `python3 -m einvoice.report <invoice.pdf>` for the container route,
+        # which `einvoice validate` has handled natively since T-VHERG.5 — an
+        # underclaim of the one binary on the user's PATH. Assertion widened,
+        # never loosened.
+        self.assertIn("einvoice validate <invoice.xml>", err)
+        self.assertIn("einvoice validate <invoice.pdf>", err)
+        self.assertNotIn("einvoice.report <invoice.pdf>", err)
         self.assertNotIn("Traceback", err)
 
 

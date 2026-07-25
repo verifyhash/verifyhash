@@ -221,6 +221,41 @@ Note what did **not** happen: the same file under the default profile
 (`einvoice validate broken.xml`) exits `0`, because `BR-DE-15` is not an
 EN 16931 core rule. That is §3's asymmetry, demonstrated.
 
+### `BR-DE-15` means nothing to you? Ask the tool
+
+A rule id is not self-explanatory, and hunting it through the KoSIT Schematron
+is a ten-minute detour. Paste it straight back at the CLI instead:
+
+```sh
+einvoice --explain BR-DE-15
+```
+
+```text
+BR-DE-15  Buyer reference (BT-10) must be transmitted (non-empty).
+
+  requires : Buyer reference (BT-10) must be transmitted (non-empty).
+  BT/BG    : BT-10
+  location : cbc:BuyerReference
+  fix      : Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty).
+  severity : fatal
+  source   : xrechnung-ubl (Schematron)
+  assert   : Das Element "Buyer reference" (BT-10) muss übermittelt werden.
+```
+
+Read it as: **location** is the XPath-ish place in your document to look,
+**fix** is the concrete edit, **BT/BG** are the EN 16931 business terms the rule
+is about (searchable in the standard and in your ERP's field mapping), and
+**assert** is the original normative sentence from the official Schematron —
+German here, because `BR-DE-*` rules come from the KoSIT XRechnung artifact
+rather than from the CEN core.
+
+It reads no invoice and validates nothing, so it is safe to run from anywhere;
+lookup is case-insensitive (`br-de-15` works). Exit `0` when the id is
+catalogued, `1` when it is not — that `1` is a *lookup miss*, not a claim that
+the id is invalid, since the catalog covers the rules this build can actually
+fire. `python3 -m einvoice.report --explain BR-DE-15` prints the identical
+block; same code path, so use whichever entry point is already in your hand.
+
 ## 5. Machine-readable: `--json`
 
 ```sh

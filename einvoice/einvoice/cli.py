@@ -206,6 +206,7 @@ USAGE = ("usage: einvoice validate <invoice.xml|-> "
          "[--profile=en16931|xrechnung]\n"
          "       einvoice receipt --verify <receipt.json> [--json]\n"
          "       einvoice info [--json]\n"
+         "       einvoice --explain <RULE-ID>\n"
          "       einvoice --show-config\n"
          "       einvoice --version\n"
          "       einvoice --help")
@@ -224,14 +225,21 @@ VALID_SUBCOMMANDS = ("validate", "validate-batch", "receipt")
 #: earlier and are therefore absent from the dispatch tuple.
 #:
 #: MEASURED defect this fixes: the ``unknown subcommand`` banner listed only the
-#: dispatch set, so a user who typed ``einvoice --explain BR-DE-1`` was told to
+#: dispatch set, so a user who typed ``einvoice explain BR-DE-1`` was told to
 #: "choose from validate, validate-batch, receipt" — ``info`` and
 #: ``--show-config`` exist and were simply never mentioned. Both the banner and
 #: ``test_cli_help.py``'s completeness guard read THIS tuple, so the error
 #: banner and ``--help`` can no longer drift apart. Adding a command means
 #: adding it here, and the help guard then fails until ``HELP`` describes it.
-COMMAND_SURFACE = VALID_SUBCOMMANDS + ("info", "--show-config", "--version",
-                                       "--help")
+#:
+#: ``--explain`` joined the surface in T-VHERG.3 for the same reason, one step
+#: worse: the remediation catalog it prints is this tool's differentiator over
+#: the free official KoSIT validator, yet the single most natural keystroke
+#: after reading ``BR-CO-15`` in a failure — ``einvoice --explain BR-CO-15`` —
+#: answered ``error: unknown subcommand '--explain'`` (exit 2) because the
+#: lookup only ever existed on the ``python3 -m einvoice.report`` entry point.
+COMMAND_SURFACE = VALID_SUBCOMMANDS + ("info", "--explain", "--show-config",
+                                       "--version", "--help")
 
 EXIT_OK = 0
 EXIT_FAIL = 1
@@ -308,6 +316,11 @@ HELP = (
     "  receipt <invoice.xml>      emit a JSON conformance receipt for one invoice\n"
     "                             (receipt --verify <receipt.json> re-checks one)\n"
     "  info                       print read-only build/version metadata; run nothing\n"
+    "  --explain <RULE-ID>        print the remediation-catalog entry for ONE rule\n"
+    "                             id seen in a failure (what it requires, the BT/BG\n"
+    "                             terms, where in the XML, the one-line fix, the\n"
+    "                             Schematron it comes from). Reads no invoice;\n"
+    "                             exit 0 found, 1 unknown rule id\n"
     "  --show-config              resolve and print the effective config; run nothing\n"
     "  --version                  print the packaged einvoice version and exit\n"
     "  --help, -h                 show this help and exit\n\n"
@@ -544,6 +557,76 @@ def _run_info(as_json):
     else:
         sys.stdout.write("\n".join(_info_lines(payload)) + "\n")
     return EXIT_OK
+
+
+def _run_explain(args):
+    """Drive ``einvoice --explain <RULE-ID>``: a read-only catalog lookup.
+
+    ROUTING, NOT A FORK. This function parses the flag and then hands the work
+    to :func:`einvoice.report.main` — the entry point that has always owned
+    ``--explain`` — with a normalised ``["--explain", <rule-id>]`` argv. So the
+    rendering (``einvoice.report.format_explain``), the catalog-loading path and
+    the exit codes are literally the same code, not a second implementation that
+    can drift: ``einvoice --explain BR-CO-15`` is byte-identical on stdout to
+    ``python3 -m einvoice.report --explain BR-CO-15``, and an unknown rule id
+    exits 1 on BOTH surfaces. No explanation text, no catalog and no exit code
+    is invented here.
+
+    Exit contract (all three MEASURED against the existing implementation, none
+    newly minted):
+
+      * 0  the id is in ``remediation_catalog.json`` — its block goes to stdout;
+      * 1  the id is not catalogued (or this installation has no readable
+           catalog at all) — one ``error:`` line on stderr, empty stdout. This
+           is ``einvoice.report``'s shipped behaviour and is deliberately NOT
+           re-coded as a usage error: an undeclared divergence between the two
+           surfaces is exactly the defect this task exists to close;
+      * 2  argv is wrong for THIS entry point — no rule id after ``--explain``,
+           or something else on the command line alongside it. That is the CLI's
+           own long-standing usage code, reached before any catalog work.
+
+    The wording of the missing-value line deliberately matches the
+    ``--profile``/``--lang``/``--fail-on`` family ("needs a value"), which is
+    also what ``test_cli_docs_parity.py``'s flag-recognition probe keys on.
+    """
+    # Local import to keep the flag's cost off every other CLI path; the module
+    # is already a module-level dependency of this file, so nothing new is
+    # pulled in.
+    from .report import main as _report_main
+
+    def _needs_value():
+        sys.stderr.write(
+            "error: --explain needs a value: the rule id to explain, "
+            "e.g. BR-CO-15\n" + USAGE + "\n")
+        return EXIT_USAGE
+
+    rule_id = None
+    rest = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--explain":
+            if i + 1 >= len(args):
+                return _needs_value()
+            rule_id = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--explain="):
+            rule_id = a.split("=", 1)[1]
+            i += 1
+            continue
+        rest.append(a)
+        i += 1
+    if not rule_id:
+        # Only reachable via the ``--explain=`` form with an empty value.
+        return _needs_value()
+    if rest:
+        sys.stderr.write(
+            "error: --explain takes only a rule id and reads no invoice; "
+            "unexpected argument %s\n%s\n"
+            % (", ".join(repr(a) for a in rest), USAGE))
+        return EXIT_USAGE
+    return _report_main(["--explain", rule_id])
 
 
 def _resolve_output_settings(cfg, cfg_source, fail_on_flag, lang_flag, json_flag):
@@ -796,6 +879,14 @@ def _main(argv=None):
     if "--help" in args or "-h" in args:
         sys.stdout.write(HELP + "\n")
         return EXIT_OK
+
+    # ``--explain <RULE-ID>`` is a standalone CATALOG LOOKUP, not a validation
+    # run: it reads no invoice, resolves no config and touches no verdict, so it
+    # is dispatched here beside --version/--help rather than through the
+    # file-driven subcommand parser below. The work itself is routed straight to
+    # ``einvoice.report`` — see :func:`_run_explain` for the exit contract.
+    if "--explain" in args or any(a.startswith("--explain=") for a in args):
+        return _run_explain(args)
 
     as_json = False
     if "--json" in args:

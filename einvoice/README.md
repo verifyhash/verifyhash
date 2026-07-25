@@ -536,6 +536,17 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   same offending element, byte-identical `--json`, same exit code. See
   [§German-language messages](#german-language-messages---lang-de) for the exact
   coverage.
+- `--explain <RULE-ID>` — **look up one rule id from a failure**. Prints the
+  `remediation_catalog.json` entry — what the rule requires, the BT/BG business
+  terms, the XML location hint, the one-line fix, the severity, and the official
+  Schematron assert it is derived from — then exits. It reads no invoice,
+  resolves no config and produces no verdict, so it is safe to run anywhere;
+  lookup is case-insensitive. Exit `0` when the id is catalogued, `1` when it is
+  not (a *lookup miss*, not a verdict — stdout stays empty so the block is safe
+  to capture), `2` if the rule id is missing from the command line. This is the
+  same code path as `python3 -m einvoice.report --explain <RULE-ID>` and prints
+  byte-identical output; the flag exists on `einvoice` too because that is where
+  you already are when a rule id appears in a `FAIL:` line.
 - `--show-config` — **read-only observability**: resolve the effective
   `format` / `fail-on` / `lang` exactly as a real `validate` run would (explicit
   flag > config file > built-in default) and print each with its **source** —
@@ -849,6 +860,20 @@ FAIL: invoices/2026-04-017.xml
   offending element: cbc:BuyerReference
 conformance gate: 1/12 invoice(s) NON-CONFORMANT (profile=xrechnung) — FAIL
 ```
+
+The next question is always *what is `BR-DE-15` and what do I change?* — so ask
+the same tool, no invoice and no repository checkout required:
+
+```sh
+einvoice --explain BR-DE-15
+```
+
+It prints the rule's `requires` sentence, the BT/BG business terms, the XML
+`location` to look at (`cbc:BuyerReference` here), the one-line `fix`, the
+severity, and the original Schematron assert. Exit `0` when the id is
+catalogued, `1` when it is not. Identical output to
+`python3 -m einvoice.report --explain BR-DE-15` — one implementation, two entry
+points — and `REPORT-FORMATS.md` documents the mode in full.
 
 Same honest scope as §2: the gate proves your invoices pass the
 **implemented** rule set (219 core + 55 German-layer rules — the

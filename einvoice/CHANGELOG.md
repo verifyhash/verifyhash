@@ -98,8 +98,29 @@ default report format crashes from the fixed one.
   `--help` also documents `info`, `--show-config`, `--version` and `--help`.
   Banner and help now read one shared `COMMAND_SURFACE` definition and are
   pinned equal by test. The exit code (2), the `unknown subcommand` wording and
-  the separate stray-flag / missing-file legs are unchanged, and `--explain`
-  was NOT added to this entry point — it remains an `einvoice.report` flag.
+  the separate stray-flag / missing-file legs are unchanged. (`--explain` was
+  deliberately left off the surface at the time; it has since been routed
+  properly — see **Added** below.)
+
+### Added
+
+- **`einvoice --explain <RULE-ID>` — the remediation catalog is now reachable
+  from the entry point that printed the rule id.** After `einvoice validate`
+  prints `BR-CO-15: …`, the most natural next keystroke is
+  `einvoice --explain BR-CO-15`; it answered `error: unknown subcommand
+  '--explain'` (exit 2) because the lookup only existed on
+  `python3 -m einvoice.report`. The flag is now dispatched on the console
+  script beside `--version`/`--help` and **routed to the same implementation**
+  (`einvoice.report.main` → `format_explain` over `remediation_catalog.json`) —
+  not a fork, not a second catalog, and not a byte of new explanation text:
+  `einvoice --explain BR-CO-15` is byte-identical on stdout to
+  `python3 -m einvoice.report --explain BR-CO-15`. Exit codes are the shipped
+  ones, unchanged and now shared by both surfaces: `0` catalogued, `1` unknown
+  rule id (a lookup miss — stdout stays empty), `2` when the rule id is missing
+  from argv. `--explain` is listed in `--help` and in the `unknown subcommand`
+  banner (both read `COMMAND_SURFACE`), and documented in `EXIT-CODES.md`,
+  `QUICKSTART.md` §4 and `README.md`. No validation behaviour changed:
+  `validate`, `validate-batch`, `receipt` and `info` are untouched.
 
 ## [0.2.6] - 2026-07-23
 

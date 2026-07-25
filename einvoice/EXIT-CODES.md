@@ -180,6 +180,32 @@ Scope and invariants:
 - `--fail-on` is accepted for `validate` and `validate-batch`; it does not apply
   to `receipt` (whose exit code always mirrors its PASS/FAIL verdict).
 
+## `--explain <RULE-ID>` — catalog lookup, no new code (additive)
+
+`einvoice --explain BR-CO-15` prints the `remediation_catalog.json` entry for
+one rule id: what it requires, the BT/BG business terms it touches, the XML
+location hint, the one-line fix, the severity, and the official Schematron it
+comes from. It reads **no** invoice, resolves no config, and produces no
+verdict — so it mints **no new exit code**; it reuses three existing ones.
+
+| Code | When | Stream |
+|------|------|--------|
+| `0` | The rule id is in the catalog. Lookup is **case-insensitive** and the canonical id is echoed back. | stdout: the plain-text block. Nothing on stderr. |
+| `1` | The rule id is **not catalogued** — or this installation has no readable `remediation_catalog.json` at all, which is reported as its own distinct line rather than blamed on your id. | stderr: one `error: unknown rule id '<id>' — not in the remediation catalog …` line. **stdout stays empty**, so `$(einvoice --explain …)` is safe to capture. |
+| `2` | Usage error: `--explain` with no rule id after it, or a rule id plus something else on the command line (it takes only the id). | stderr: one `error:` line plus the `usage:` banner. |
+
+The `1` here is deliberate rather than a fourth usage case: it is exactly what
+`python3 -m einvoice.report --explain` has always returned, and the two entry
+points share one implementation (`einvoice.report.format_explain`), so a script
+that branches on the code behaves identically whichever it calls. Note the
+asymmetry this creates on purpose — a **bad rule id** is `1` (the lookup ran and
+found nothing), a **missing argument** is `2` (the lookup never ran).
+
+Honest limit: `1` means "not in *our* catalog", not "not a real EN 16931 rule".
+The catalog covers the rules this engine can fire; an id from a national CIUS
+this build does not implement is a legitimate rule id and still exits `1`.
+`einvoice info` prints how many business rules this build carries.
+
 ## Code `3` — unsupported PDF container on the single-file path (additive)
 
 Measured 2026-07-17 and golden-pinned byte-for-byte by `test_golden_snapshot.py`

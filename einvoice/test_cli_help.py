@@ -120,7 +120,11 @@ class HelpFlagTest(unittest.TestCase):
         # what --help documents. Both sides are read from the live outputs, and
         # the expected set comes from COMMAND_SURFACE (one shared definition).
         _, help_out, _ = _run(["--help"])
-        code, _, err = _run(["--explain", "BR-DE-1"])
+        # The probe token must be one the CLI genuinely does NOT accept. It used
+        # to be ``--explain``; T-VHERG.3 routed that flag to the real catalog
+        # lookup, so ``explain`` (the dash-less near-miss a user actually types)
+        # is the mistyped stand-in now — same banner path, still a real typo.
+        code, _, err = _run(["explain", "BR-DE-1"])
         self.assertEqual(code, 2, "a mistyped subcommand must still exit 2")
         banner = [ln for ln in err.splitlines() if "unknown subcommand" in ln]
         self.assertEqual(len(banner), 1,

@@ -25,12 +25,20 @@ distinct ``<title>`` and ``<meta name=description>`` per rule, one absolute
 documented placeholder bound at deploy, VHW.5), and one schema.org
 ``TechArticle`` JSON-LD block built with :func:`json.dumps` (every ``<`` in the
 serialized JSON is replaced with ``\\u003c`` so it can never break out of the
-``<script>`` element). As of VHW.3 the surface is INDEXABLE: rule pages, the
-rule index hub and the landing page carry NO ``robots:noindex`` meta, because
-this task also ships ``sitemap.xml`` + ``robots.txt`` (a noindexed surface with
-a sitemap would be self-contradictory). The canonical ``<link>`` and every
-sitemap ``<loc>`` are built from the SAME :data:`BASE_URL`, so they can never
-disagree.
+``<script>`` element). VHW.3 made the surface INDEXABLE (it ships
+``sitemap.xml`` + ``robots.txt``, and a noindexed surface with a sitemap would
+be self-contradictory); T-VHCRAWL.1 then narrowed WHICH pages ask to be
+indexed. The landing, the German landing, the compare / licensing / validate /
+walkthrough / German-walkthrough pages and the rule index hub are
+unconditionally indexable and unconditionally sitemapped. A per-rule page is
+indexable only if it clears :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR`; the rest
+carry ``<meta name="robots" content="noindex,follow">`` and are left out of
+``sitemap.xml``, while still being generated, linked and reachable. Both
+decisions read the ONE predicate :func:`indexable_rule_ids`, so the meta and
+the sitemap cannot disagree. The canonical ``<link>`` and every sitemap
+``<loc>`` are built from the SAME :data:`BASE_URL`, so they can never disagree
+either — and a noindexed page keeps its own self-referential canonical (a
+cross-page canonical on top of noindex would be a conflicting signal).
 
 Beyond the per-rule pages this generator also emits, from the same catalog:
 
@@ -531,13 +539,21 @@ def _h(value):
     return html.escape(str(value), quote=True)
 
 
-def render_page(rule_id, entry):
+def render_page(rule_id, entry, indexable=True):
     """Render ONE rule's full HTML page as a ``str``.
 
-    Pure and deterministic: the output depends only on ``rule_id`` and its
-    catalog ``entry`` (no clock, no environment, stable ordering), so
-    ``test_site.py`` can regenerate every page in memory and assert byte
-    equality with the committed tree.
+    Pure and deterministic: the output depends only on ``rule_id``, its
+    catalog ``entry`` and ``indexable`` (no clock, no environment, stable
+    ordering), so ``test_site.py`` can regenerate every page in memory and
+    assert byte equality with the committed tree.
+
+    ``indexable=False`` adds ONE line to <head>:
+    ``<meta name="robots" content="noindex,follow">``. Nothing else about the
+    page changes — same URL, same self-referential canonical, same links, same
+    body. See :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR` for who gets it and why.
+    The DEFAULT is ``True`` on purpose: the distinctiveness measure scores the
+    meta-free rendering of every page, so the meta can never feed back into the
+    score that decides whether to emit it.
     """
     title = entry.get("title", "")
     title_de = entry.get("title_de", "")
@@ -569,7 +585,14 @@ def render_page(rule_id, entry):
     w("<head>")
     w('<meta charset="utf-8">')
     w('<meta name="viewport" content="width=device-width, initial-scale=1">')
-    # INDEXABLE (VHW.3): no robots:noindex — this surface ships a sitemap.
+    # Crawl directive (T-VHCRAWL.1). A rule page scoring below
+    # RULE_PAGE_DISTINCTIVENESS_FLOOR is asked NOT to be indexed — but it stays
+    # on disk, stays linked from the hub, stays a first-class destination for
+    # humans and deep links, and keeps its OWN canonical below. "follow" (never
+    # "nofollow") is deliberate: link equity must keep flowing through this page
+    # to the licensing / quickstart / hub targets it points at.
+    if not indexable:
+        w('<meta name="robots" content="noindex,follow">')
     w("<title>%s — %s — einvoice rule reference</title>"
       % (_h(rule_id), _h(title)))
     w('<meta name="description" content="%s">' % _h(description))
@@ -641,9 +664,126 @@ def render_page(rule_id, entry):
     return "\n".join(p) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# Crawl-surface distinctiveness (T-VHCRAWL.1)
+# ---------------------------------------------------------------------------
+#
+# The rule pages are ONE template family: identical <head> skeleton, identical
+# breadcrumb, identical <dl> labels, identical three-link CTA, identical
+# footer. Only a handful of catalog strings actually vary per page (title,
+# title_de, fix, fix_de, location hint, provenance source/assert, business
+# terms). Asking a search engine to index all 297 of them is asking it to index
+# 297 near-duplicates of one template — exactly the thin/near-duplicate pattern
+# this project refuses to publish — and it is what our own declared crawl
+# surface did: 297 of 305 sitemap URLs were rule pages, and in nine days live
+# that family earned zero search-referred URLs.
+#
+# The fix is NOT deletion. Every page is still generated, still linked, still
+# reachable, still canonical to itself; the low-distinctiveness ones simply
+# stop *asking* to be indexed (noindex,FOLLOW) and drop out of sitemap.xml.
+#
+# MEASUREMENT THAT MOTIVATED THE FLOOR — offline analysis, run 329, quoted
+# verbatim: "median 26 distinctive tokens, 136/297 below 25, 269/297 below 40,
+# worst offenders BR-01 / BR-02 / BR-06 / PEPPOL-EN16931-R001 at 8-9, sampled
+# pairwise Jaccard 0.857-0.881".
+#
+# WHAT THIS FILE MEASURES, at generation time, every run (so the floor tracks
+# the pages as they actually render rather than a stale offline snapshot):
+# each page's visible text (markup, <script> and <style> removed, entities
+# unescaped) is tokenised case-folded; a token is DISTINCTIVE when it occurs on
+# at most _RULE_PAGE_RARE_DF_RATIO of the family (10% => at most 29 of the 297
+# pages); a page's score is how many distinctive tokens it carries.
+#
+# This in-tree measure is stricter than the run-329 one (it counts each token
+# once per page and drops <script>/<style>), so its absolute numbers sit lower
+# on the same shape. As generated today: median 16, min 4, max 101; BR-01 5,
+# BR-02 4, BR-06 4, PEPPOL-EN16931-R001 7 (the same four worst offenders
+# run 329 named); sampled pairwise Jaccard 0.437-0.914, mean 0.606 — i.e. a
+# typical pair of rule pages shares 60% of its vocabulary.
+#
+# CHOSEN FLOOR: 30 distinctive tokens — inside the 25-40 band the run-329
+# numbers imply, and on this measure it is "at least twice the family median
+# (16)", which is the line where a page stops being template and starts being
+# content. It excludes 273 of 297 rule pages and KEEPS 24, so sitemap.xml goes
+# from 305 URLs to 32 (8 hand-built surface pages + 24 rule pages). Raise it to
+# shrink the indexable set further; lower it to widen — nothing else changes,
+# because indexable_rule_ids() below is the single consumer.
+RULE_PAGE_DISTINCTIVENESS_FLOOR = 30
+
+# A token is "distinctive" when at most this fraction of the rule-page family
+# contains it. 10% of 297 pages = 29.7, i.e. document frequency <= 29.
+_RULE_PAGE_RARE_DF_RATIO = 0.10
+
+# Markup stripper: whole <script>/<style> ELEMENTS (content and all — inline
+# JSON-LD and CSS are not visible page content), then any remaining tag. Tag
+# attributes go with their tag, so meta/canonical/href values never count as
+# text the reader can see.
+_RULE_PAGE_MARKUP_RE = re.compile(r"(?is)<(script|style)\b.*?</\1\s*>|<[^>]*>")
+
+# Token: a run starting with an alphanumeric, allowing the punctuation that
+# holds real identifiers together (BR-01, cac:taxtotal, bt-112, 16931-1,
+# remediation_catalog.json), so rule ids and XPath-ish location hints stay
+# single tokens instead of shattering into shared fragments.
+_RULE_PAGE_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9._/:-]*")
+
+
+def _visible_tokens(page_html):
+    """Set of visible-text tokens in one rendered page (pure)."""
+    text = html.unescape(_RULE_PAGE_MARKUP_RE.sub(" ", page_html))
+    return set(_RULE_PAGE_TOKEN_RE.findall(text.lower()))
+
+
+def rule_page_distinctiveness(catalog):
+    """Map ``rule_id -> distinctive-token count`` across the rule family (pure).
+
+    Document frequency is computed over the WHOLE family, so the score is a
+    property of a page *relative to its siblings*, not of the page alone: a
+    token every rule page repeats (``severity``, ``licensing``, ``invoice``)
+    contributes nothing, a token only this page carries contributes 1.
+
+    Scoring always uses the meta-free rendering (``render_page`` default
+    ``indexable=True``), which is what makes the whole thing a fixed point:
+    emitting the robots meta cannot change the score that decided to emit it.
+    """
+    tokens = {rid: _visible_tokens(render_page(rid, catalog[rid]))
+              for rid in catalog}
+    df = {}
+    for toks in tokens.values():
+        for tok in toks:
+            df[tok] = df.get(tok, 0) + 1
+    limit = len(tokens) * _RULE_PAGE_RARE_DF_RATIO
+    return {rid: sum(1 for tok in toks if df[tok] <= limit)
+            for rid, toks in tokens.items()}
+
+
+def indexable_rule_ids(catalog):
+    """THE single source of truth for which rule pages ask to be indexed.
+
+    Returns the rule ids scoring at or above
+    :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR`, in catalog order (stable).
+
+    Both consumers go through here — :func:`render_all` (which pages get
+    ``noindex,follow``) and :func:`render_sitemap` (which pages get a
+    ``<loc>``) — so the meta and the sitemap cannot disagree by construction.
+    Everything NOT in this list is still generated, still linked, still
+    reachable; it is only absent from the indexable surface.
+    """
+    scores = rule_page_distinctiveness(catalog)
+    return [rid for rid in catalog
+            if scores[rid] >= RULE_PAGE_DISTINCTIVENESS_FLOOR]
+
+
 def render_all(catalog):
-    """Map ``rule_id -> rendered HTML`` for the whole catalog (pure)."""
-    return {rid: render_page(rid, catalog[rid]) for rid in catalog}
+    """Map ``rule_id -> rendered HTML`` for the whole catalog (pure).
+
+    EVERY catalog rule is rendered — nothing is skipped or dropped. The only
+    per-page difference is the crawl directive: pages outside
+    :func:`indexable_rule_ids` carry ``<meta name="robots" content="noindex,
+    follow">``.
+    """
+    indexable = set(indexable_rule_ids(catalog))
+    return {rid: render_page(rid, catalog[rid], indexable=rid in indexable)
+            for rid in catalog}
 
 
 # ---------------------------------------------------------------------------
@@ -3091,13 +3231,20 @@ def render_sitemap(catalog):
 
     The URL set is: landing + rule index hub + the worked walkthrough + the
     licensing page + the comparison page + the German product/quickstart page
-    + every rule page, each <loc> built from the SAME BASE_URL as the
+    + every INDEXABLE rule page, each <loc> built from the SAME BASE_URL as the
     canonical <link>s, so canonical and sitemap can never disagree. Rule
     order follows the catalog (stable).
+
+    The eight surface pages above are unconditionally listed. The rule pages
+    come from :func:`indexable_rule_ids` — the SAME predicate
+    :func:`render_all` uses to decide the ``noindex,follow`` meta, so a page
+    can never be sitemapped and noindexed at once (T-VHCRAWL.1). Rule pages
+    below the floor are still generated and still linked from the hub; they
+    are simply not advertised for indexing.
     """
     locs = [_url_landing(), _url_hub(), _url_walkthrough(), _url_licensing(),
             _url_compare(), _url_validate(), _url_de(), _url_de_walkthrough()]
-    locs += [_url_rule(rid) for rid in catalog]
+    locs += [_url_rule(rid) for rid in indexable_rule_ids(catalog)]
     lines = []
     w = lines.append
     w('<?xml version="1.0" encoding="UTF-8"?>')

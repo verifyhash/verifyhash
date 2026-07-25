@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,follow">
 <title>BR-DEX-13 — &#x27;Third party payment amount&#x27; (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, &#x27;.&#x27;)) &lt;= 2 (no &#x27;.&#x27; -&gt; &#x27;&#x27; -&gt; length 0 -&gt; holds). — einvoice rule reference</title>
 <meta name="description" content="BR-DEX-13 (EN 16931 / XRechnung rule): &#x27;Third party payment amount&#x27; (BT-DEX-002) may carry at most 2 fractional digits: string-length(substring-after(cbc:PaidAmount, &#x27;.&#x27;)) &lt;= 2 (no &#x27;.&#x27; -&gt; &#x27;&#x27; -&gt; length 0 -&gt; holds). Fix: Correct the calculated amount at `/ubl:Invoice/cac:PrepaidPayment` so that &#x27;Third">
 <link rel="canonical" href="https://verifyhash.com/einvoice/rules/BR-DEX-13/">

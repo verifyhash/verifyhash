@@ -102,10 +102,12 @@ Checks (each an independent hard assert):
       the German product/quickstart page, sitemap.xml and
       robots.txt exist; every INTERNAL
       href in every generated HTML file resolves to a real generated file (no
-      dangling link); sitemap.xml lists EXACTLY the generated canonical set
-      (landing + hub + all rule pages) with no orphan/missing/duplicate; no
-      page listed in the sitemap carries a noindex robots meta; robots.txt
-      allows crawl and references the sitemap URL.
+      dangling link); sitemap.xml lists EXACTLY the generated INDEXABLE
+      canonical set (the eight surface pages + the rule pages returned by
+      gen_site.indexable_rule_ids(), T-VHCRAWL.1) with no
+      orphan/missing/duplicate; no page listed in the sitemap carries a
+      noindex robots meta; robots.txt allows crawl and references the
+      sitemap URL.
 """
 
 from __future__ import annotations
@@ -524,8 +526,14 @@ def main():
                   "%s: internal href %r resolves to a NON-generated/nonexistent"
                   " target (%s)" % (os.path.relpath(pth, HERE), href, resolved))
 
-    # sitemap.xml must list EXACTLY the generated canonical page set: landing +
-    # rule index hub + every rule page (no orphan, no missing, no stale entry).
+    # sitemap.xml must list EXACTLY the generated INDEXABLE canonical page set:
+    # the eight surface pages + every rule page at or above gen_site's
+    # RULE_PAGE_DISTINCTIVENESS_FLOOR (no orphan, no missing, no stale entry).
+    # Still EXACT set equality — not a subset check — but re-derived from the
+    # SAME gen_site.indexable_rule_ids() predicate render_sitemap() consumes,
+    # so a drift between the noindex meta and the sitemap is a test failure
+    # rather than a silent contradiction (T-VHCRAWL.1). Rule pages below the
+    # floor are still on disk and still linked; they are just not advertised.
     if os.path.exists(sitemap_path):
         sm = open(sitemap_path, encoding="utf-8").read()
         locs = [html.unescape(x)
@@ -536,7 +544,12 @@ def main():
                     _gen._url_walkthrough(), _gen._url_licensing(),
                     _gen._url_compare(), _gen._url_validate(),
                     _gen._url_de(), _gen._url_de_walkthrough()}
-        expected |= {_gen._url_rule(rid) for rid in (want & have)}
+        indexable = set(_gen.indexable_rule_ids(catalog))
+        check(indexable <= want,
+              "indexable_rule_ids() returned ids outside the catalog: %s"
+              % sorted(indexable - want)[:5])
+        check(bool(indexable), "indexable_rule_ids() excluded EVERY rule page")
+        expected |= {_gen._url_rule(rid) for rid in (indexable & have)}
         check(got == expected,
               "sitemap <loc> set != generated canonical set; missing=%s "
               "orphan=%s" % (sorted(expected - got)[:5], sorted(got - expected)[:5]))

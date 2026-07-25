@@ -712,8 +712,123 @@ def _share_meta(title, description, canonical, lang="en"):
     return "\n".join(m)
 
 
+# Structured data (schema.org JSON-LD) for the SEVEN selling surfaces —
+# T-VHSHARE.2. The 297 rule pages (TechArticle, _jsonld()) and the browser
+# validator (WebApplication, render_validate()) already emit their own single
+# block; this section covers the pages that emitted NONE.
+#
+# Same DERIVED, NEVER INVENTED contract as _share_meta(): `name` is the string
+# the page already put in <title>, `description` the one it already put in
+# <meta name="description">, and `url` / every breadcrumb `item` are built from
+# the _url_*() helpers that produce the <link rel="canonical"> and the sitemap
+# <loc>. There is no second copy of any claim to drift.
+#
+# Deliberately NOT here, and never to be added: AggregateRating, Review,
+# ratingValue, reviewCount, an authored datePublished/author, or an `offers`
+# block with an availability implying purchasability. The product has zero
+# customers and CHECKOUT_URL is empty (the licensing page says so in words) —
+# structured data asserting otherwise would be a fabricated claim, and
+# structured data describing content a human cannot see on the page is
+# cloaking. Every field below is either read from the repo (_ENGINE_VERSION,
+# the Apache-2.0 license the package actually ships) or is a verbatim reuse of
+# a string the page itself renders.
+#
+# EXACTLY ONE <script type="application/ld+json"> per page: where a page needs
+# more than one node they go into ONE array inside that single element.
+
+# The license the package actually ships: pyproject.toml carries the classifier
+# "License :: OSI Approved :: Apache Software License" and the repo root holds
+# the Apache-2.0 LICENSE file that _REPO_LICENSE links to. SPDX short id, so
+# the value is machine-comparable and cannot be mistaken for a bespoke licence.
+_LD_LICENSE_ID = "Apache-2.0"
+
+# operatingSystem, honestly. We do NOT enumerate platforms we have not run on;
+# what the repo actually guarantees is pyproject.toml's requires-python
+# (">=3.8") plus the zero-third-party-dependency property the whole product is
+# built around. The German string uses the same terms the German page itself
+# renders ("reine Python-3-Standardbibliothek", "null Abhaengigkeiten") — it is
+# not a machine translation of a new English sentence.
+_LD_OPERATING_SYSTEM = {
+    "en": ("Any operating system with a Python 3.8+ interpreter — pure Python "
+           "standard library, zero third-party dependencies (no Java, no "
+           "Saxon, no network access)"),
+    "de": ("Jedes Betriebssystem mit Python 3.8+ — reine "
+           "Python-3-Standardbibliothek, null Abhängigkeiten (kein Java, "
+           "kein Saxon, kein Netzwerkzugriff)"),
+}
+
+
+def _ld_script(ld):
+    """Serialize ``ld`` as the page's ONE inline application/ld+json element.
+
+    ``ld`` is a dict (one node) or a list of dicts (several nodes in a single
+    element). Serialized with :func:`json.dumps` so every value is properly
+    JSON-escaped, then every ``<`` becomes ``\\u003c`` — valid JSON that
+    ``json.loads`` decodes back to ``<``, and which therefore can never contain
+    a literal ``</script>`` that breaks out of the enclosing element. This is
+    the identical escaping discipline used by :func:`_jsonld` for rule pages.
+    """
+    body = json.dumps(ld, ensure_ascii=False).replace("<", "\\u003c")
+    return '<script type="application/ld+json">%s</script>' % body
+
+
+def _ld_software_application(title, description, canonical, lang="en"):
+    """The landing pages' SoftwareApplication node — every value repo-derived.
+
+    ``title`` / ``description`` / ``canonical`` MUST be the very strings the
+    caller already emitted as ``<title>``, ``<meta name="description">`` and
+    ``<link rel="canonical">``, exactly as for :func:`_share_meta`.
+    ``softwareVersion`` is read from the imported ``_ENGINE_VERSION`` (the live
+    ``einvoice.__version__``), never hard-coded, so a version bump cannot leave
+    a stale number in the SERP.
+
+    ``isAccessibleForFree`` is true because the engine is Apache-2.0 and the
+    validator, the rule reference and the CI recipe cost nothing; the optional
+    $29/$290 commercial license adds support and a vendor key, it does not gate
+    the software. No ``offers`` node is emitted anywhere on this page.
+    """
+    if lang not in _LD_OPERATING_SYSTEM:
+        raise ValueError(
+            "no operatingSystem wording for <html lang=%r>; add one to "
+            "_LD_OPERATING_SYSTEM" % (lang,))
+    return {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": title,
+        "description": description,
+        "url": canonical,
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": _LD_OPERATING_SYSTEM[lang],
+        "softwareVersion": _ENGINE_VERSION,
+        "license": _LD_LICENSE_ID,
+        "isAccessibleForFree": True,
+    }
+
+
+def _ld_breadcrumb(trail):
+    """A BreadcrumbList built from ``(name, absolute-url)`` pairs.
+
+    Every ``item`` URL comes from an ``_url_*()`` helper — the same source as
+    the page's canonical and the sitemap <loc> — and the LAST pair is always
+    the page's own canonical, so the trail terminates where the reader is.
+    Every ``name`` is a verbatim label from the page's own visible
+    ``<p class="crumb">`` line (test_site.py re-checks that), so the structured
+    trail and the rendered trail cannot disagree.
+    """
+    if not trail:
+        raise ValueError("breadcrumb trail is empty")
+    return {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": i, "name": name, "item": url}
+            for i, (name, url) in enumerate(trail, 1)
+        ],
+    }
+
+
 def _doc_head(title, description, canonical, style_extra="", lang="en",
-              alternates=()):
+              alternates=(), ld=None):
     """Shared <head> lines for the landing + hub pages (indexable, no noindex).
 
     Same self-containment contract as the rule pages: one inline <style>, an
@@ -726,6 +841,11 @@ def _doc_head(title, description, canonical, style_extra="", lang="en",
     by pages without a language counterpart. These are navigational/SEO link
     elements (not fetched resources), built from the same BASE_URL as the
     canonical, so canonical/hreflang/sitemap can never disagree.
+
+    ``ld`` is the page's structured-data payload (a dict, or a list of nodes to
+    put in the SAME element) built by the call site from
+    :func:`_ld_software_application` / :func:`_ld_breadcrumb`. When None, no
+    ld+json element is emitted. At most ONE element is ever produced here.
     """
     h = []
     w = h.append
@@ -744,6 +864,10 @@ def _doc_head(title, description, canonical, style_extra="", lang="en",
     # Link-preview card (Open Graph / Twitter), derived from the SAME title /
     # description / canonical / lang this head already emitted above.
     w(_share_meta(title, description, canonical, lang=lang))
+    # Structured data (schema.org JSON-LD), from the SAME title / description /
+    # canonical this head already emitted. One element at most, no exceptions.
+    if ld is not None:
+        w(_ld_script(ld))
     # ONE inline <style> element (the self-containment contract): any
     # page-specific rules are APPENDED inside the same block, never a second
     # <style> and never an external sheet. style_extra is empty for every page
@@ -772,9 +896,13 @@ def render_landing():
     # hreflang alternates BOTH directions (T-VHDE.1): the English landing and
     # the German product/quickstart page reference each other (plus the
     # required self-referencing entry and an x-default pointing at English).
+    # Structured data: the product itself. This page IS the software's home,
+    # so SoftwareApplication (not a breadcrumb — the landing page is the root).
     w(_doc_head(title, description, _url_landing(),
                 alternates=(("en", _url_landing()), ("de", _url_de()),
-                            ("x-default", _url_landing()))))
+                            ("x-default", _url_landing())),
+                ld=_ld_software_application(title, description,
+                                            _url_landing(), lang="en")))
     w("<body>")
     w("<main>")
     w('<p class="crumb">einvoice — EN 16931 / XRechnung conformance</p>')
@@ -1126,7 +1254,12 @@ def render_licensing():
         " .tiers { border-color: #30363d; } }")
     p = []
     w = p.append
-    w(_doc_head(title, description, _url_licensing(), style_extra=style_extra))
+    # Structured data: the visible "einvoice / Licensing" trail, nothing more.
+    # NO `offers` node: CHECKOUT_URL is empty and the page says in words that
+    # checkout is not open, so no availability could be stated honestly.
+    w(_doc_head(title, description, _url_licensing(), style_extra=style_extra,
+                ld=_ld_breadcrumb((("einvoice", _url_landing()),
+                                   ("Licensing", _url_licensing())))))
     w("<body>")
     w("<main>")
     # Breadcrumb (relative, offline-resolvable): this page is
@@ -1323,7 +1456,10 @@ def render_compare():
         " table.cmp th { background: #161b22; } }")
     p = []
     w = p.append
-    w(_doc_head(title, description, _url_compare(), style_extra=style_extra))
+    # Structured data: the visible "einvoice / Comparison" trail.
+    w(_doc_head(title, description, _url_compare(), style_extra=style_extra,
+                ld=_ld_breadcrumb((("einvoice", _url_landing()),
+                                   ("Comparison", _url_compare())))))
     w("<body>")
     w("<main>")
     # Breadcrumb (relative, offline-resolvable): this page is
@@ -1582,9 +1718,13 @@ def render_de():
     w = p.append
     # hreflang alternates BOTH directions: this German page references the
     # English landing (and itself); the landing carries the mirror links.
+    # Structured data: the same product node as the English landing, with the
+    # German page's OWN title/description/canonical (nothing translated here).
     w(_doc_head(title, description, _url_de(), lang="de",
                 alternates=(("de", _url_de()), ("en", _url_landing()),
-                            ("x-default", _url_landing()))))
+                            ("x-default", _url_landing())),
+                ld=_ld_software_application(title, description, _url_de(),
+                                            lang="de")))
     w("<body>")
     w("<main>")
     w('<p class="crumb"><a href="../index.html">einvoice</a> / Deutsch</p>')
@@ -1824,7 +1964,12 @@ def render_hub(catalog):
                    "rule family with a reference page for each." % (n, len(groups)))
     p = []
     w = p.append
-    w(_doc_head(title, description, _url_hub()))
+    # Structured data: the visible "einvoice / EN 16931 / XRechnung rule
+    # reference" trail (the 297 rule pages carry their own TechArticle block).
+    w(_doc_head(title, description, _url_hub(),
+                ld=_ld_breadcrumb((
+                    ("einvoice", _url_landing()),
+                    ("EN 16931 / XRechnung rule reference", _url_hub())))))
     w("<body>")
     w("<main>")
     w('<p class="crumb"><a href="../index.html">einvoice</a> / '
@@ -2000,6 +2145,12 @@ def render_walkthrough(catalog):
     # Link-preview card (Open Graph / Twitter) from the same title/description/
     # canonical this head already emitted; lang matches <html lang="en"> above.
     w(_share_meta(title, description, canonical, lang="en"))
+    # Structured data: the visible "einvoice / rule reference / Walkthrough"
+    # trail, item URLs from the same _url_*() helpers as the canonical above.
+    w(_ld_script(_ld_breadcrumb((
+        ("einvoice", _url_landing()),
+        ("EN 16931 / XRechnung rule reference", _url_hub()),
+        ("Walkthrough", canonical)))))
     # One inline <style> block: the shared base plus the walkthrough-only extra.
     # No external CSS/JS/CDN/font/script — offline-openable.
     w("<style>%s\n%s</style>" % (_STYLE, _WALK_STYLE))
@@ -2221,6 +2372,14 @@ def render_de_walkthrough(catalog):
     # Link-preview card (Open Graph / Twitter) from the same German title/
     # description/canonical above; lang matches <html lang="de"> -> de_DE.
     w(_share_meta(title, description, canonical, lang="de"))
+    # Structured data: the visible German trail ("einvoice / Deutsch /
+    # EN 16931 / XRechnung Regel-Referenz / Praxisbeispiel"). The labels are
+    # the page's own rendered crumb words — nothing new was translated.
+    w(_ld_script(_ld_breadcrumb((
+        ("einvoice", _url_landing()),
+        ("Deutsch", _url_de()),
+        ("EN 16931 / XRechnung Regel-Referenz", _url_hub()),
+        ("Praxisbeispiel", canonical)))))
     # Reuse the walkthrough-only inline style (same block as the English page).
     w("<style>%s\n%s</style>" % (_STYLE, _WALK_STYLE))
     w("</head>")

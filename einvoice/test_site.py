@@ -80,6 +80,22 @@ Checks (each an independent hard assert):
       pages); the rule-count data-claim binds to the live registry; the
       canonical is gen_site._url_validate(); the landing page links to it
       visibly.
+  (k) SURFACE STRUCTURED DATA (T-VHSHARE.2): every selling page listed in the
+      module-level SURFACE_LDJSON_TYPES allowlist carries EXACTLY ONE
+      application/ld+json element; it parses via json.loads; every top-level
+      "@type" in it (unwrapping a JSON array or a "@graph") is allowlisted for
+      that page — an UNDECLARED type fails, and the grading predicate is itself
+      proven to reject one; its `url` (or its BreadcrumbList's terminal item)
+      equals the page's own rel=canonical; every breadcrumb item URL is one the
+      gen_site._url_*() helpers produce and every breadcrumb NAME appears in
+      the page's visible <p class="crumb"> line (anti-cloaking); a
+      SoftwareApplication's name/description are the page's own
+      title/meta-description, its softwareVersion is the LIVE
+      einvoice.__version__ (a hard-coded version fails) and its license is the
+      shipped Apache-2.0, with no `offers` node while CHECKOUT_URL is empty;
+      no unescaped '</script>' survives inside any block; and NO .html file
+      under www/ anywhere contains AggregateRating / ratingValue / reviewCount
+      / a "Review" type (zero customers — a rating node would be fabricated).
   (e) NAV + SITEMAP INTEGRITY (VHW.3, mirrors weatherhack WXQ.3): the landing
       page, rule index hub, walkthrough, licensing page, the comparison page,
       the in-browser validator page,
@@ -106,6 +122,10 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "einvoice"))
 
 from einvoice import remediation as _remediation  # noqa: E402
+# The LIVE package version, imported independently of gen_site: the landing
+# pages' SoftwareApplication.softwareVersion is checked against THIS, so a
+# hard-coded version string in the generator would fail here (T-VHSHARE.2).
+from einvoice import __version__ as _ENGINE_VERSION  # noqa: E402
 # Live registries for the compare-page CLAIMS-DRIFT guard (T-VHCMP.1): the
 # same sources gen_site.render_compare() reads at render time. The test
 # re-reads them here and fails if any figure emitted on the page disagrees.
@@ -139,6 +159,80 @@ _CANON_LINK_RE = re.compile(r'<link\b[^>]*\brel="canonical"[^>]*>',
 
 # de_source -> the honest provenance token that MUST appear on the page.
 _DE_TOKEN = {"kosit": "Amtlicher KoSIT-Text", "translation": "Übersetzung"}
+
+# ---------------------------------------------------------------------------
+# SURFACE_LDJSON_TYPES (T-VHSHARE.2) — the ALLOWLIST of schema.org top-level
+# @types each selling surface may emit, keyed by its www/-relative path.
+#
+# This is a deliberate whitelist, not a description of the status quo: a page
+# emitting a type that is not listed here FAILS. That is the point — schema.org
+# is the one place where a page can assert something to Google that no human
+# reader ever sees, so every new assertion has to be added HERE, consciously,
+# by someone who can defend it. Adding "AggregateRating" or "Review" to this
+# map is forbidden outright (we have zero customers; the check below rejects
+# those tokens anywhere in any block regardless of what this map says).
+#
+# The 297 rule pages (TechArticle) are NOT in this map — they are graded by the
+# per-rule loop above, which pins them to exactly one TechArticle block each.
+SURFACE_LDJSON_TYPES = {
+    # The product's own home pages: the software itself, in each language.
+    "index.html": {"SoftwareApplication"},
+    "de/index.html": {"SoftwareApplication"},
+    # Non-root selling pages: the navigational trail the reader can see. No
+    # primary type is claimed for these and NO `offers` node exists anywhere —
+    # gen_site.CHECKOUT_URL is empty and the licensing page says in words that
+    # checkout is not open, so no availability could be stated honestly.
+    "compare/index.html": {"BreadcrumbList"},
+    "licensing/index.html": {"BreadcrumbList"},
+    "walkthrough/index.html": {"BreadcrumbList"},
+    "de/walkthrough/index.html": {"BreadcrumbList"},
+    "rules/index.html": {"BreadcrumbList"},
+    # Pre-existing (T-VHWEB.2), listed so the map covers the whole surface.
+    "validate/index.html": {"WebApplication"},
+}
+
+# Tokens that may never appear in ANY emitted structured data: the product has
+# no customers, so a rating/review node would be a fabricated testimonial.
+_LD_BANNED_RE = re.compile(
+    r"aggregaterating|ratingvalue|reviewcount|\"review\"", re.IGNORECASE)
+
+
+def _ld_nodes(obj):
+    """Top-level schema.org nodes of one parsed ld+json block.
+
+    Unwraps the two legal multi-node containers — a bare JSON array and a
+    ``@graph`` wrapper — so a type can never be hidden one level down.
+    """
+    out = []
+    for node in (obj if isinstance(obj, list) else [obj]):
+        if isinstance(node, dict) and "@graph" in node:
+            graph = node["@graph"]
+            out.extend(graph if isinstance(graph, list) else [graph])
+        else:
+            out.append(node)
+    return out
+
+
+def _ld_type_violations(obj, allowed):
+    """The top-level @types in ``obj`` that ``allowed`` does not permit.
+
+    Returns a sorted list (empty == clean). A node with no ``@type`` at all is
+    itself a violation, reported as ``"<missing>"``: an untyped node would slip
+    past a naive membership test.
+    """
+    bad = []
+    for node in _ld_nodes(obj):
+        if not isinstance(node, dict):
+            bad.append("<not-an-object>")
+            continue
+        types = node.get("@type")
+        if types is None:
+            bad.append("<missing>")
+            continue
+        for t in (types if isinstance(types, list) else [types]):
+            if t not in allowed:
+                bad.append(str(t))
+    return sorted(bad)
 
 
 def _visible_text(page):
@@ -814,6 +908,156 @@ def main():
             check('href="validate/index.html"' in landing_doc_v,
                   "English landing has no visible href=\"validate/"
                   "index.html\" link to the browser validator")
+
+    # ---- (k) SURFACE-PAGE STRUCTURED DATA (T-VHSHARE.2) ---------------------
+    # Every selling page in SURFACE_LDJSON_TYPES must carry EXACTLY ONE
+    # application/ld+json element that parses, declares only allowlisted
+    # @types, points at its own canonical, and contains no rating/review token.
+    # A page that starts emitting an undeclared type fails here rather than
+    # quietly asserting something to a search engine that nobody reviewed.
+    #
+    # MUTATION PROOF first: the grading predicate itself must reject an
+    # undeclared type, including one hidden inside a list or a @graph — a
+    # vacuous predicate would make every assertion below meaningless.
+    check(_ld_type_violations({"@type": "Review"}, {"SoftwareApplication"})
+          == ["Review"],
+          "_ld_type_violations does not reject an undeclared top-level @type")
+    check(_ld_type_violations({"@graph": [{"@type": "BreadcrumbList"},
+                                          {"@type": "AggregateRating"}]},
+                              {"BreadcrumbList"}) == ["AggregateRating"],
+          "_ld_type_violations does not unwrap @graph")
+    check(_ld_type_violations([{"@type": "BreadcrumbList"}, {"name": "x"}],
+                              {"BreadcrumbList"}) == ["<missing>"],
+          "_ld_type_violations accepts an untyped node")
+
+    # Every absolute URL the generator's own _url_*() helpers can produce for a
+    # surface page. Breadcrumb `item` URLs must come from THIS set, so a
+    # hand-typed or drifted URL in the structured data cannot pass.
+    surface_urls = {_gen._url_landing(), _gen._url_hub(),
+                    _gen._url_walkthrough(), _gen._url_licensing(),
+                    _gen._url_compare(), _gen._url_validate(),
+                    _gen._url_de(), _gen._url_de_walkthrough()}
+    crumb_re = re.compile(r'<p class="crumb">(.*?)</p>', re.S)
+
+    for rel, allowed in sorted(SURFACE_LDJSON_TYPES.items()):
+        spath = os.path.join(WWW_DIR, *rel.split("/"))
+        if not os.path.exists(spath):
+            check(False, "surface page is missing entirely: www/%s" % rel)
+            continue
+        sraw = open(spath, encoding="utf-8").read()
+
+        # (1) exactly one ld+json element.
+        sblocks = _LD_RE.findall(sraw)
+        check(len(sblocks) == 1,
+              "www/%s: expected exactly 1 ld+json block, got %d"
+              % (rel, len(sblocks)))
+        if len(sblocks) != 1:
+            continue
+        sld_raw = sblocks[0]
+
+        # (6) no raw '</script>' survived inside the JSON (same guard the rule
+        # pages get): the serializer neutralises '<' to <.
+        check("</script>" not in sld_raw.lower()
+              and "</script " not in sld_raw.lower(),
+              "www/%s: raw '</script>' survived inside JSON-LD" % rel)
+
+        # (2) it parses.
+        try:
+            sobj = json.loads(sld_raw)
+        except Exception as exc:  # noqa: BLE001
+            sobj = None
+            check(False, "www/%s: JSON-LD does not parse: %s" % (rel, exc))
+        if sobj is None:
+            continue
+
+        # (3) every top-level @type is allowlisted for THIS page.
+        violations = _ld_type_violations(sobj, allowed)
+        check(not violations,
+              "www/%s: JSON-LD carries @type(s) %r not in "
+              "SURFACE_LDJSON_TYPES[%r] = %r"
+              % (rel, violations, rel, sorted(allowed)))
+
+        # (5) no fabricated social proof anywhere in the block.
+        check(not _LD_BANNED_RE.search(sld_raw),
+              "www/%s: JSON-LD contains a rating/review token" % rel)
+
+        # (4) the block points at THIS page: a node `url`, or the terminal
+        # breadcrumb item, must byte-equal the page's own rel=canonical.
+        scm = re.search(
+            r'<link\b[^>]*\brel="canonical"[^>]*\bhref="([^"]*)"', sraw)
+        check(scm is not None, "www/%s: no rel=canonical to bind to" % rel)
+        if scm is None:
+            continue
+        s_canon = html.unescape(scm.group(1))
+        self_urls = set()
+        crumb_vis = " ".join(
+            _visible_text(c) for c in crumb_re.findall(sraw))
+        for node in _ld_nodes(sobj):
+            if node.get("url"):
+                self_urls.add(node["url"])
+            if node.get("@type") == "BreadcrumbList":
+                items = node.get("itemListElement") or []
+                check(len(items) >= 2,
+                      "www/%s: BreadcrumbList has fewer than 2 items" % rel)
+                for pos, item in enumerate(items, 1):
+                    check(item.get("position") == pos,
+                          "www/%s: breadcrumb position %r is not %d"
+                          % (rel, item.get("position"), pos))
+                    # item URLs come from the _url_*() helpers, never typed.
+                    check(item.get("item") in surface_urls,
+                          "www/%s: breadcrumb item %r is not a gen_site "
+                          "_url_*() surface URL" % (rel, item.get("item")))
+                    # ANTI-CLOAKING: the structured trail must be the trail a
+                    # human sees in the page's own <p class="crumb"> line.
+                    check(str(item.get("name")) in crumb_vis,
+                          "www/%s: breadcrumb name %r is not in the visible "
+                          "crumb text" % (rel, item.get("name")))
+                if items:
+                    self_urls.add(items[-1].get("item"))
+        check(s_canon in self_urls,
+              "www/%s: JSON-LD url / terminal breadcrumb item %r does not "
+              "include the page canonical %r" % (rel, sorted(self_urls),
+                                                 s_canon))
+
+        # SoftwareApplication pages: name/description are the page's OWN
+        # <title>/<meta description> (no second copy of any claim to drift),
+        # and softwareVersion is the LIVE einvoice.__version__ — a hard-coded
+        # version string in gen_site.py fails right here.
+        for node in _ld_nodes(sobj):
+            if node.get("@type") != "SoftwareApplication":
+                continue
+            stm = _TITLE_RE.search(sraw)
+            sdm = _DESC_RE.search(sraw)
+            check(stm is not None and node.get("name")
+                  == html.unescape(stm.group(1)),
+                  "www/%s: SoftwareApplication name != the page <title>" % rel)
+            check(sdm is not None and node.get("description")
+                  == html.unescape(sdm.group(1)),
+                  "www/%s: SoftwareApplication description != the page meta "
+                  "description" % rel)
+            check(node.get("softwareVersion") == _ENGINE_VERSION,
+                  "www/%s: softwareVersion %r != live einvoice.__version__ %r"
+                  % (rel, node.get("softwareVersion"), _ENGINE_VERSION))
+            # The license the package actually ships (pyproject classifier
+            # "License :: OSI Approved :: Apache Software License").
+            check(node.get("license") == "Apache-2.0",
+                  "www/%s: SoftwareApplication license %r is not the shipped "
+                  "Apache-2.0" % (rel, node.get("license")))
+            check("offers" not in node,
+                  "www/%s: SoftwareApplication carries an offers node while "
+                  "gen_site.CHECKOUT_URL is empty" % rel)
+
+    # No page under www/ — surface, rule or otherwise — may carry a rating or
+    # review token, in structured data or in prose.
+    for droot, _dirs, files in os.walk(WWW_DIR):
+        for fname in files:
+            if not fname.endswith(".html"):
+                continue
+            fpath = os.path.join(droot, fname)
+            check(not _LD_BANNED_RE.search(
+                      open(fpath, encoding="utf-8").read()),
+                  "%s: carries a rating/review token"
+                  % os.path.relpath(fpath, HERE))
 
     # ---- (g) German product/quickstart page (T-VHDE.1) ---------------------
     # www/de/index.html is a first-class generated page: correct document

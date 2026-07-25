@@ -41,7 +41,11 @@ Checks (each an independent hard assert):
       among the surface pages, every shell command byte-identical to the
       test-pinned English docs (gen_site.DE_COMMANDS, checked against both the
       page and the doc), and www/de/ holds EXACTLY index.html — no per-rule
-      German pages (thin-content hard line).
+      German pages (thin-content hard line). ALSO (T-VHERG.10,
+      DE_CONSOLE_SCRIPT_PRIMACY): the first-use section teaches the INSTALLED
+      console script (`einvoice validate …`, install shown first), never the
+      checkout-only `python3 einvoice.py` wrapper, which survives at most once
+      and only next to gen_site.DE_CHECKOUT_NOTE.
   (h) COMPARE PAGE (T-VHCMP.1): www/compare/index.html names KoSIT and
       Mustangproject honestly (they are free; KoSIT is the official reference
       implementation), carries a 'When to prefer them' concession section (no
@@ -200,6 +204,56 @@ SURFACE_LDJSON_TYPES = {
     "rules/index.html": {"BreadcrumbList"},
     # Pre-existing (T-VHWEB.2), listed so the map covers the whole surface.
     "validate/index.html": {"WebApplication"},
+}
+
+# ---------------------------------------------------------------------------
+# DE_CONSOLE_SCRIPT_PRIMACY (T-VHERG.10) — a STANDING guard on the one page in
+# this lane aimed at the German mandate buyer (www/de/index.html).
+#
+# The bug it kills: the first-use section led with `python3 einvoice.py …`
+# while the install line on the same page is
+# `python3 -m pip install verifyhash-einvoice`. The wheel ships the `einvoice`
+# package only (pyproject.toml: packages = ["einvoice"]) — no `einvoice.py`
+# wrapper, no `examples/` tree — so the highest-intent reader's VERY FIRST
+# copy-pasted command died with "No such file or directory". Everything else on
+# the page was true; only the taught entry point was unrunnable.
+#
+# The invariant, asserted against the RENDERED page (not the generator source,
+# so a template refactor cannot dodge it):
+#   (i)   the installed console-script form `einvoice validate` is what the
+#         first-use section teaches — every DE_COMMANDS entry that starts with
+#         it must appear inside that section, and there must be at least
+#         `min_console_commands` of them (valid / broken / --json);
+#   (ii)  the checkout wrapper form `python3 einvoice.py` appears AT MOST
+#         `max_checkout_occurrences` time(s) on the whole page and, when it
+#         does, gen_site.DE_CHECKOUT_NOTE (the German sentence naming the
+#         checkout/air-gapped context AND saying those files are not in the
+#         wheel) sits immediately before it;
+#   (iii) install precedes use, and the FIRST <pre><code> block after the
+#         section heading does not teach the wrapper form as the primary one.
+# Command strings are derived from gen_site.DE_COMMANDS and the note from
+# gen_site.DE_CHECKOUT_NOTE rather than re-typed here, so this guard cannot
+# drift away from what the generator actually emits.
+DE_CONSOLE_SCRIPT_PRIMACY = {
+    # Section boundaries on the rendered German page (raw HTML, entity form).
+    "section_heading": "<h2>Installation und erste Pr&uuml;fung</h2>",
+    "section_end": "<h2>",
+    # The installed entry point that must be primary, and the checkout wrapper
+    # that must not be.
+    "console_form": "einvoice validate",
+    "checkout_form": "python3 einvoice.py",
+    "install_form": "python3 -m pip install",
+    # The German-language explain path — a DE-page-specific selling point.
+    "explain_command": "einvoice --explain BR-DE-15 --lang=de",
+    "min_console_commands": 3,
+    "max_checkout_occurrences": 1,
+    # Max characters allowed between the end of DE_CHECKOUT_NOTE and the
+    # wrapper command it explains (they must be adjacent, not merely both
+    # somewhere in the section).
+    "checkout_note_gap": 400,
+    # Wording the <h3>1. …</h3> heading may NOT carry any more: it used to
+    # promise "nichts zu installieren" for a step that now installs.
+    "banned_h3_1_phrase": "nichts zu installieren",
 }
 
 # Tokens that may never appear in ANY emitted structured data: the product has
@@ -1179,6 +1233,97 @@ def main():
                 check(cmd in doc_text,
                       "command on the de page is NOT byte-identical to any "
                       "line of %s: %r" % (doc_rel, cmd))
+
+        # CONSOLE-SCRIPT PRIMACY on the German first-use section — see the
+        # DE_CONSOLE_SCRIPT_PRIMACY docstring-comment above for the failure
+        # this pins shut.
+        _p = DE_CONSOLE_SCRIPT_PRIMACY
+        _sec_at = de_raw.find(_p["section_heading"])
+        check(_sec_at != -1,
+              "de page has no %r section (DE_CONSOLE_SCRIPT_PRIMACY cannot "
+              "grade the first-use block)" % _p["section_heading"])
+        if _sec_at != -1:
+            _body_at = _sec_at + len(_p["section_heading"])
+            _end = de_raw.find(_p["section_end"], _body_at)
+            _section = de_raw[_body_at:_end if _end != -1 else len(de_raw)]
+            _sec_vis = html.unescape(_section)
+
+            # (i) the console-script form is what the section teaches.
+            _console = [c for c, _d in _gen.DE_COMMANDS
+                        if c.startswith(_p["console_form"])]
+            check(len(_console) >= _p["min_console_commands"],
+                  "DE_COMMANDS carries only %d %r command(s); the German "
+                  "first-use section must teach at least %d"
+                  % (len(_console), _p["console_form"],
+                     _p["min_console_commands"]))
+            for _c in _console:
+                check(_c in _sec_vis,
+                      "console-script command is not in the German first-use "
+                      "section: %r" % _c)
+            check(_p["explain_command"] in _sec_vis,
+                  "German first-use section is missing the German-language "
+                  "explain path: %r" % _p["explain_command"])
+
+            # (iii) install precedes every taught console-script command.
+            _i_install = _sec_vis.find(_p["install_form"])
+            _uses = [_sec_vis.find(c) for c in _console
+                     if _sec_vis.find(c) != -1]
+            check(_i_install != -1,
+                  "German first-use section never shows %r, but teaches the "
+                  "installed console script" % _p["install_form"])
+            check(bool(_uses) and _i_install != -1
+                  and _i_install < min(_uses),
+                  "%r does not precede the console-script commands in the "
+                  "German first-use reading order" % _p["install_form"])
+
+            # ... and the FIRST code block is not the wrapper form.
+            _first = re.search(r"<pre><code>(.*?)</code></pre>", _section,
+                               re.S)
+            check(_first is not None,
+                  "German first-use section has no <pre><code> block")
+            if _first is not None:
+                _first_block = html.unescape(_first.group(1))
+                check(_p["checkout_form"] not in _first_block,
+                      "the FIRST code block of the German first-use section "
+                      "still teaches %r as the primary form"
+                      % _p["checkout_form"])
+                check(_p["install_form"] in _first_block,
+                      "the FIRST code block of the German first-use section "
+                      "is not the install step (%r)" % _p["install_form"])
+
+            # The step-1 heading may no longer promise "nothing to install".
+            _h3 = re.search(r"<h3>1\..*?</h3>", _section, re.S)
+            check(_h3 is not None,
+                  "German first-use section has no <h3>1. …</h3> heading")
+            if _h3 is not None:
+                check(_p["banned_h3_1_phrase"]
+                      not in html.unescape(_h3.group(0)).lower(),
+                      "<h3>1. …</h3> still promises %r for a step that "
+                      "installs" % _p["banned_h3_1_phrase"])
+
+            # (ii) at most one wrapper mention, and it must carry its context.
+            _n_ck = de_vis.count(_p["checkout_form"])
+            check(_n_ck <= _p["max_checkout_occurrences"],
+                  "the German page shows %r %d times (max %d)"
+                  % (_p["checkout_form"], _n_ck,
+                     _p["max_checkout_occurrences"]))
+            if _n_ck:
+                _note = html.unescape(_gen.DE_CHECKOUT_NOTE)
+                check("nicht im Paket" in _note and "examples/" in _note,
+                      "gen_site.DE_CHECKOUT_NOTE no longer says the wrapper / "
+                      "examples/ files are absent from the published package")
+                _i_note = _sec_vis.find(_note)
+                _i_ck = _sec_vis.find(_p["checkout_form"])
+                check(_i_note != -1,
+                      "gen_site.DE_CHECKOUT_NOTE is not rendered in the "
+                      "German first-use section, but %r is"
+                      % _p["checkout_form"])
+                check(_i_note != -1 and _i_ck != -1 and _i_note < _i_ck
+                      and (_i_ck - (_i_note + len(_note)))
+                      <= _p["checkout_note_gap"],
+                      "%r is not immediately preceded by the checkout-context "
+                      "sentence (gen_site.DE_CHECKOUT_NOTE)"
+                      % _p["checkout_form"])
 
         # HARD LINE: no per-rule German pages (thin-content line) — www/de/
         # holds EXACTLY the product page index.html plus the single worked

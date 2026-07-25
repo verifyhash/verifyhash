@@ -317,22 +317,47 @@ COMMERCIAL_EMAIL = "hello@verifyhash.com"
 # on the rendered German page — so a command edit in the docs that is not
 # mirrored here (or vice versa) fails the guard.
 # ---------------------------------------------------------------------------
+#
+# CONSOLE-SCRIPT PRIMACY (T-VHERG.10): the first-use section teaches the
+# INSTALLED entry point `einvoice …`, because the install line this page shows
+# is `python3 -m pip install verifyhash-einvoice` and the wheel ships the
+# `einvoice` package only — no `einvoice.py` wrapper and no `examples/` tree
+# (see pyproject.toml `packages = ["einvoice"]`). A reader who pip-installs and
+# then copies `python3 einvoice.py …` gets "No such file or directory", so the
+# checkout form survives in exactly ONE place, next to DE_CHECKOUT_NOTE, which
+# says in German where those files come from. test_site.DE_CONSOLE_SCRIPT_PRIMACY
+# pins that ordering so it cannot silently regress.
 DE_COMMANDS = (
-    ("python3 einvoice.py validate --profile xrechnung "
-     "examples/01-missing-fields/fixed.xml", "QUICKSTART.md"),
-    ("python3 -m pip install .", "QUICKSTART.md"),
-    ("einvoice validate --profile xrechnung "
-     "examples/01-missing-fields/fixed.xml", "QUICKSTART.md"),
-    ("python3 einvoice.py validate --profile xrechnung "
-     "examples/01-missing-fields/broken.xml", "QUICKSTART.md"),
-    ("python3 einvoice.py validate --json --profile xrechnung "
-     "examples/01-missing-fields/broken.xml", "QUICKSTART.md"),
     ("python3 -m pip install verifyhash-einvoice",
      os.path.join("ci", "README.md")),
+    ("einvoice validate --profile xrechnung invoice.xml", "QUICKSTART.md"),
+    ("einvoice validate --profile xrechnung broken.xml", "QUICKSTART.md"),
+    ("einvoice --explain BR-DE-15 --lang=de", "QUICKSTART.md"),
+    ("einvoice validate --json --profile xrechnung broken.xml",
+     "QUICKSTART.md"),
+    ("python3 einvoice.py validate --profile xrechnung "
+     "examples/01-missing-fields/fixed.xml", "QUICKSTART.md"),
     ("python3 -m pip install ./third_party/einvoice",
      os.path.join("ci", "README.md")),
     ("sh third_party/einvoice/ci/validate-invoices.sh invoices/",
      os.path.join("ci", "README.md")),
+)
+
+# The ONE German sentence that keeps the repository-checkout form honest: it
+# names the context in which `python3 einvoice.py …` is the right answer
+# (working from a checkout, air-gapped, pinning an exact tree) AND states that
+# the `examples/` fixtures are repository files, not wheel contents. Rendered
+# verbatim immediately before the single checkout command; test_site asserts
+# both the adjacency and the "not in the wheel" claim.
+DE_CHECKOUT_NOTE = (
+    "Aus einem <strong>Repository-Checkout</strong> &mdash; air-gapped, oder "
+    "wenn Sie einen exakten Stand pinnen wollen &mdash; l&auml;uft derselbe "
+    "Code auch ganz ohne Installation, direkt &uuml;ber den Wrapper im "
+    "<code>einvoice/</code>-Verzeichnis. Beachten Sie: dieser Wrapper und die "
+    "Beispieldateien unter <code>examples/</code> liegen nur im Repository "
+    "und sind <strong>nicht im Paket <code>verifyhash-einvoice</code> "
+    "enthalten</strong> &mdash; das Wheel enth&auml;lt ausschlie&szlig;lich "
+    "den Validator."
 )
 
 # The one and only stylesheet: inline, tiny, no external references.
@@ -2050,8 +2075,8 @@ def render_de():
     absolute canonical from BASE_URL, hreflang alternates to/from the English
     landing, no <script>, no external CSS/JS/CDN/font.
     """
-    (cmd_validate_fixed, cmd_pip, cmd_console, cmd_validate_broken,
-     cmd_json, cmd_pip_pypi, cmd_pip_vendor,
+    (cmd_pip_pypi, cmd_validate_ok, cmd_validate_broken, cmd_explain_de,
+     cmd_json, cmd_checkout, cmd_pip_vendor,
      cmd_gate) = (c for c, _doc in DE_COMMANDS)
 
     title = ("E-Rechnung offline validieren: XRechnung / EN 16931 "
@@ -2162,48 +2187,70 @@ def render_de():
 
     # ---- Installation + erste Pruefung ------------------------------------
     w("<h2>Installation und erste Pr&uuml;fung</h2>")
-    w("<p>Es gibt zwei Wege: das ver&ouml;ffentlichte Paket "
-      "<code>verifyhash-einvoice</code> aus PyPI installieren (siehe "
-      "CI-Abschnitt weiter unten), oder &mdash; wie in diesem Abschnitt "
-      "&mdash; direkt aus einem Repository-Checkout arbeiten. Die Befehle "
-      "hier laufen aus dem <code>einvoice/</code>-Verzeichnis eines "
-      "Checkouts, offline und ohne vorherige Installation. "
-      "Die beiden Beispielrechnungen liegen im Repository: eine g&uuml;ltige "
-      "XRechnung (<code>fixed.xml</code>) und dieselbe Datei mit zwei "
-      "entfernten Pflichtangaben (<code>broken.xml</code>: ohne "
-      "K&auml;uferreferenz <code>BT-10</code> und ohne "
-      "Verk&auml;uferkontakt <code>BG-6</code>).</p>")
-    w("<h3>1. Direkt aus dem Checkout &mdash; nichts zu installieren</h3>")
-    w("<pre><code>%s</code></pre>" % _h(cmd_validate_fixed))
-    w("<p>Die g&uuml;ltige Rechnung endet mit <strong>Exit-Code 0</strong>. "
-      "Wer stattdessen das <code>einvoice</code>-Kommando im PATH will, "
-      "installiert das Paket (null Laufzeitabh&auml;ngigkeiten, "
-      "<code>dependencies = []</code> in <code>pyproject.toml</code>) und "
-      "ruft es direkt auf &mdash; derselbe Codepfad, best&auml;tigt per "
-      "Test:</p>")
-    w("<pre><code>%s\n%s</code></pre>" % (_h(cmd_pip), _h(cmd_console)))
+    w("<p>Zuerst installieren: das ver&ouml;ffentlichte Paket hei&szlig;t "
+      "<code>verifyhash-einvoice</code> (nicht <code>einvoice</code> &mdash; "
+      "das ist ein fremdes Paket) und zieht "
+      "<strong>keine einzige Abh&auml;ngigkeit</strong> nach "
+      "(<code>dependencies = []</code> in <code>pyproject.toml</code>, "
+      "Python&nbsp;3.8+). Kein Java, kein Saxon, kein Netzzugriff beim "
+      "Pr&uuml;fen:</p>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_pip_pypi))
+    w("<p>Das legt das Kommando <code>einvoice</code> in den PATH &mdash; "
+      "die drei Schritte unten sind genau das, was Sie danach tippen. "
+      "<code>invoice.xml</code> ist dabei Ihre eigene Rechnung (UBL oder "
+      "CII, XRechnung oder EN&nbsp;16931); <code>broken.xml</code> ist "
+      "dieselbe Datei mit einer entfernten Pflichtangabe &mdash; der "
+      "K&auml;uferreferenz <code>BT-10</code> &mdash;, damit Sie einmal "
+      "sehen, wie ein Fehlschlag aussieht, bevor Ihr Empf&auml;nger ihn "
+      "Ihnen zeigt.</p>")
+    w("<h3>1. Erste Pr&uuml;fung einer g&uuml;ltigen Rechnung</h3>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_validate_ok))
+    w("<p>Ausgabe <code>PASS: invoice.xml</code>, <strong>Exit-Code 0</strong> "
+      "&mdash; keine implementierte fatale Regel hat ausgel&ouml;st. "
+      "<code>--profile xrechnung</code> ist f&uuml;r deutsche "
+      "Rechnungsempf&auml;nger der entscheidende Schalter: die Voreinstellung "
+      "ist <code>en16931</code> (der europ&auml;ische Kern), erst "
+      "<code>xrechnung</code> schaltet die deutsche CIUS-Schicht mit den "
+      "<code>BR-DE-*</code>- und <code>BR-DEX-*</code>-Regeln dazu. Ein "
+      "gr&uuml;nes Ergebnis unter <code>en16931</code> sagt &uuml;ber die "
+      "deutsche Schicht nichts aus &mdash; das ist die h&auml;ufigste "
+      "&Uuml;berraschung hier.</p>")
     w("<h3>2. Eine kaputte Rechnung f&auml;llt durch &mdash; mit Regel-ID</h3>")
     w("<pre><code>%s</code></pre>" % _h(cmd_validate_broken))
-    w("<p>Exit-Code <strong>1</strong>; die Ausgabe nennt die erste verletzte "
-      "fatale Regel (<code>BR-DE-2</code>, fehlender Verk&auml;uferkontakt) "
-      "samt betroffenem Element &mdash; und danach zwei Zeilen, die genau "
-      "diese Regel erkl&auml;ren: <code>how to fix: einvoice --explain "
-      "BR-DE-2</code> (offline, mit <code>--lang de</code> auf Deutsch) und "
-      "die <code>rule page:</code>-URL derselben Regel auf dieser Seite. Die "
-      "Exit-Codes sind der ganze Vertrag, den "
+    w("<p>Exit-Code <strong>1</strong>; die Ausgabe nennt die verletzte "
+      "fatale Regel (<code>BR-DE-15</code>, fehlende K&auml;uferreferenz "
+      "<code>BT-10</code>) samt betroffenem Element "
+      "(<code>cbc:BuyerReference</code>) &mdash; und danach zwei Zeilen, die "
+      "genau diese Regel erkl&auml;ren: <code>how to fix: einvoice --explain "
+      "BR-DE-15</code> und die <code>rule page:</code>-URL derselben Regel "
+      "auf dieser Seite. Die Exit-Codes sind der ganze Vertrag, den "
       "ein CI-Gate braucht: <code>0</code> = keine implementierte fatale "
       "Regel verletzt, <code>1</code> = mindestens eine fatale Verletzung, "
       "<code>2</code> = Bedienfehler, <code>3</code> = kein wohlgeformtes "
       "XML.</p>")
+    w("<p>Diese Erkl&auml;rung gibt es auch auf Deutsch, offline und ohne "
+      "Rechnungsdatei &mdash; <code>--lang=de</code> zieht f&uuml;r die "
+      "<code>BR-DE-*</code>-Familie den amtlichen KoSIT-Text heran (der "
+      "<code>fix:</code>-Satz ist eine als solche gekennzeichnete "
+      "&Uuml;bersetzung, nie amtlicher Text). Dasselbe Flag wirkt auch bei "
+      "<code>einvoice validate --lang de</code>:</p>")
+    w("<pre><code>%s</code></pre>" % _h(cmd_explain_de))
     w("<h3>3. Maschinenlesbar: <code>--json</code></h3>")
     w("<pre><code>%s</code></pre>" % _h(cmd_json))
     w("<p>Gibt das vollst&auml;ndige Ergebnis als JSON auf stdout aus "
-      "(Exit-Code unver&auml;ndert <code>1</code>): hier alle drei Befunde "
-      "&mdash; die zwei fatalen Regeln <code>BR-DE-2</code> und "
-      "<code>BR-DE-15</code> plus ein beratender "
-      "<code>information</code>-Hinweis, der den Exit-Code nie bewegt. "
-      "Verlassen Sie sich in Skripten auf das Feld <code>valid</code> oder "
+      "(Exit-Code unver&auml;ndert <code>1</code>): "
+      "<code>&quot;valid&quot;: false</code>, "
+      "<code>&quot;violation_count&quot;: 1</code> und "
+      "der Befund zu <code>BR-DE-15</code> mit <code>element</code>, "
+      "<code>severity</code>, <code>fix_hint</code> und den betroffenen "
+      "Gesch&auml;ftsbegriffen (<code>terms: [&quot;BT-10&quot;]</code>). "
+      "<code>valid</code> spiegelt exakt den Exit-Code und kippt nur bei "
+      "<code>fatal</code>-Befunden &mdash; beratende "
+      "<code>warning</code>/<code>information</code>-Eintr&auml;ge bewegen "
+      "ihn nie. Verlassen Sie sich in Skripten auf <code>valid</code> oder "
       "den Exit-Code, nicht auf den menschenlesbaren Text.</p>")
+    w("<p>%s</p>" % DE_CHECKOUT_NOTE)
+    w("<pre><code>%s</code></pre>" % _h(cmd_checkout))
 
     # ---- CI-Anbindung ------------------------------------------------------
     w("<h2>CI-Anbindung: kein Build mit kaputter Rechnung</h2>")
@@ -2213,11 +2260,9 @@ def render_de():
       "<code>*.xml</code>-Datei, l&auml;sst den Build bei jeder fatalen "
       "Verletzung mit der Regel-ID im Log fehlschlagen und schreibt pro "
       "Rechnung einen JUnit-Report, den CI-Oberfl&auml;chen als Testergebnis "
-      "anzeigen. Im CI-Job wird der Validator aus PyPI installiert &mdash; "
-      "das ver&ouml;ffentlichte Paket hei&szlig;t "
-      "<code>verifyhash-einvoice</code> (nicht <code>einvoice</code>, das "
-      "ist ein fremdes Paket) und zieht keine weiteren Abh&auml;ngigkeiten "
-      "nach:</p>")
+      "anzeigen. Im CI-Job installieren Sie den Validator mit demselben "
+      "Befehl wie oben &mdash; ein Schritt, kein Cache-Aufbau, keine "
+      "transitiven Pakete:</p>")
     w("<pre><code>%s</code></pre>" % _h(cmd_pip_pypi))
     w("<p><strong>Offline-Alternative</strong> f&uuml;r Runner ohne "
       "PyPI-Zugriff (air-gapped) oder wenn Sie einen exakten Stand "

@@ -21,17 +21,30 @@ failure mode:
   5. VERIFIED LIVE: the script invokes verify_live.py, checks its output for
      PASS, and exits nonzero on failure.
   6. MARKED: the SUPERVISOR-ONLY header marker is present.
+  7. SHARE CARD CARRIED (T-VHSHARE.4): the link-preview image every generated
+     page advertises via og:image is a NON-HTML file at the root of the
+     rsynced tree, and it is the one asset whose absence is invisible to a
+     human spot-check of the deployed site — no page links to it, so a live
+     tree missing it looks perfect in a browser while every LinkedIn/XING/
+     Reddit unfurl of the announce renders a blank tile. The announce is
+     one-shot, so this is asserted rather than eyeballed: the card must exist
+     inside the pinned SRC tree, and NO exclude pattern in the script — the
+     legacy --exclude-validate one included — may match it.
 
 Standard library only. Runs offline. No subprocess, no sudo, no execution
 of the script under test.
 """
 
+import fnmatch
 import os
 import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "tools", "einvoice-deploy.sh")
+
+sys.path.insert(0, HERE)
+import gen_site as _gen  # noqa: E402
 
 EXPECTED_SRC = "/home/loopdev/verifyhash/einvoice/www/"
 WEBROOT_ROOT = "/var/www/verifyhash.com/html/"
@@ -150,6 +163,42 @@ def main():
         check("--exclude " not in s.replace("EXCLUDE_ARGS", ""),
               "rsync line %d has no hardcoded --exclude (default deploys validate/)" % n, s)
     check("--exclude-validate" in text, "optional --exclude-validate flag documented")
+
+    # --- (7) the share card rides along with the deploy ---------------------
+    # The filename is READ from the generator (gen_site.CARD_FILENAME), never
+    # typed here, so renaming the card cannot leave this test guarding a name
+    # nothing emits any more.
+    card = _gen.CARD_FILENAME
+    card_src = os.path.join(HERE, "www", card)
+    check(os.path.isfile(card_src),
+          "share card www/%s exists inside the pinned SRC tree" % card,
+          "expected the og:image target at %s — the pages advertise a URL "
+          "the rsync would have nothing to copy for" % card_src)
+    # It must sit at the ROOT of www/, because SRC is www/ and the live URL
+    # the pages emit is BASE_URL + "/" + CARD_FILENAME with no intermediate
+    # directory; a card nested one level down would deploy to a path nothing
+    # references.
+    check(os.path.dirname(os.path.relpath(card_src, os.path.join(HERE, "www")))
+          == "",
+          "share card sits at the root of www/ (matches the advertised "
+          "BASE_URL/%s)" % card)
+    # No exclude pattern may swallow it. Every --exclude value in the script —
+    # whether hardcoded on an rsync line or parked in EXCLUDE_ARGS behind the
+    # legacy flag — is fnmatch'd against the card's name and its live path.
+    excludes = re.findall(r"--exclude\s+'([^']*)'", text)
+    excludes += re.findall(r'--exclude\s+"([^"]*)"', text)
+    check(bool(excludes) or "--exclude" not in text,
+          "every --exclude in the script is a parseable quoted pattern",
+          "found an --exclude whose value this test could not read; it must "
+          "be quoted so the card-safety check below can see it")
+    swallowed = [pat for pat in excludes
+                 if fnmatch.fnmatch(card, pat.rstrip("/"))
+                 or fnmatch.fnmatch("/" + card, pat.rstrip("/"))]
+    check(not swallowed,
+          "no --exclude pattern in the script drops the share card %s" % card,
+          "pattern(s) %s would exclude the og:image asset from the deploy, "
+          "so every social unfurl of the announce would render a blank tile"
+          % swallowed)
 
     if FAILURES:
         print("FAIL: %d assertion(s) failed: %s" % (len(FAILURES), "; ".join(FAILURES)))

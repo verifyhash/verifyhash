@@ -117,6 +117,14 @@ from gen_rules_doc import (  # noqa: E402
     FAMILY_LABELS as _FAMILY_LABELS,
     family_of as _family_of,
 )
+# The share-card renderer (T-VHSHARE.4). Standard library only — see
+# og_card.py's module docstring for why a hand-authored stroke font in Python
+# source is the whole "font stack" here.
+import og_card as _og_card  # noqa: E402
+# The attestation-backed capability payload `einvoice info --json` prints. The
+# share card states a rule count and an engine version; BOTH are read from
+# here at render time, so the card cannot outlive the numbers it advertises.
+from einvoice import capabilities as _capabilities  # noqa: E402
 
 # The generated site tree lives under einvoice/www/rules/<RULE-ID>/index.html.
 SITE_DIR = os.path.join(HERE, "www")
@@ -1108,14 +1116,81 @@ def render_all(catalog):
 # sitemap <loc> cannot disagree. There is no separate marketing copy to keep in
 # sync, and the card therefore cannot over- or under-claim relative to the page.
 #
-# Deliberately NOT here: og:image / twitter:image (needs an owner image
-# decision — tracked separately) and application/ld+json (the rule pages'
-# structured data is emitted elsewhere). twitter:card is "summary", the
-# image-less card type, which is the honest choice while no image exists.
+# Deliberately NOT here: application/ld+json (the rule pages' structured data
+# is emitted elsewhere).
 #
 # og:locale is derived from the document's own <html lang> rather than passed
 # per call site, so the two can never contradict each other.
 _OG_LOCALE = {"en": "en_US", "de": "de_DE"}
+
+# ---------------------------------------------------------------------------
+# THE SHARE CARD IMAGE — T-VHSHARE.4.
+#
+# Until this section existed the card was image-less (twitter:card "summary"),
+# which on LinkedIn/XING/Reddit is a one-line text strip; with an image it is a
+# 1.91:1 tile several times the size. The blocker was never the markup — the
+# nine text tags have shipped since T-VHSHARE.5/.3 — it was that an image meant
+# either a new dependency (Pillow), a vendored font binary, or a hand-made blob
+# nobody could regenerate. og_card.py removes that trade: it draws the card
+# from a stroke font written in Python source and writes the PNG with
+# zlib/struct/binascii, so the asset is BUILD OUTPUT like every page under
+# www/, is pruned and refreshed by write()/check() like every other surface
+# file, and is byte-reproducible (no tIME/tEXt chunk, no clock, no randomness).
+#
+# WHAT THE CARD IS ALLOWED TO SAY. Only claims this site already makes, and the
+# numbers are READ, not typed: the rule count and the engine version both come
+# from einvoice.capabilities() — the very payload `einvoice info --json` prints
+# and the attestation backs — so a rule landing or a version bump moves the
+# card automatically and a stale figure cannot survive a regeneration. The
+# wording "business rules" is the landing page's own. The eyebrow is BASE_URL
+# with its scheme stripped, i.e. where the card actually lives.
+#
+# og:image:alt is the card's text content, in reading order, so a screen-reader
+# user on a social client gets exactly what a sighted user sees — it is built
+# from the same four strings that are drawn, not written a second time.
+CARD_FILENAME = "og-card.png"
+CARD_PATH = os.path.join(SITE_DIR, CARD_FILENAME)
+
+# The one standards line the card carries. It is the phrase the landing page,
+# the <title> of every surface page and the German page all already use.
+CARD_STANDARD = "EN 16931 / XRechnung conformance"
+
+# Rendering the card costs ~2s of pure-Python rasterising, and render_surface()
+# is called more than once per test run (test_site.py regenerates twice into
+# temp dirs). Cache the bytes for the life of the process. This is NOT what
+# makes the output deterministic — og_card.render_card() is a pure function of
+# its four arguments — it only keeps the gates fast; the cross-process
+# byte-identity check in the task gates still compares two separate runs.
+_CARD_CACHE = {}
+
+
+def _card_strings():
+    """(source, title, standard, facts) — every string the card draws.
+
+    ``facts`` is assembled from :func:`einvoice.capabilities`: ``rule_count``
+    is the attestation-backed number of asserted business rules and
+    ``version`` is the engine version. Nothing here is a literal figure.
+    """
+    caps = _capabilities()
+    source = BASE_URL.split("://", 1)[-1]
+    facts = ("%d business rules · engine %s"
+             % (caps["rule_count"], caps["version"]))
+    return (source, SITE_NAME, CARD_STANDARD, facts)
+
+
+def _card_bytes():
+    """The card PNG, rendered once per process (see _CARD_CACHE)."""
+    if "png" not in _CARD_CACHE:
+        source, title, standard, facts = _card_strings()
+        _CARD_CACHE["png"] = _og_card.render_card(
+            title, standard, facts, source)
+    return _CARD_CACHE["png"]
+
+
+def _card_alt():
+    """The card's text content as one sentence, for og:image:alt."""
+    source, title, standard, facts = _card_strings()
+    return "%s: %s. %s." % (title, standard, facts)
 
 
 def _share_meta(title, description, canonical, lang="en"):
@@ -1150,10 +1225,25 @@ def _share_meta(title, description, canonical, lang="en"):
     w('<meta property="og:description" content="%s">' % _h(description))
     w('<meta property="og:url" content="%s">' % _h(canonical))
     w('<meta property="og:locale" content="%s">' % _h(_OG_LOCALE[lang]))
-    # Twitter/X reads name=, not property=; card type "summary" = no image.
-    w('<meta name="twitter:card" content="summary">')
+    # The image block. og:image is ABSOLUTE (LinkedIn and X will not resolve a
+    # relative one) and is built from the same BASE_URL as og:url, so the card
+    # cannot point at a different origin than the page it advertises. Declaring
+    # width/height lets a crawler reserve the tile before it has fetched the
+    # bytes; both are read from the renderer's own constants, never typed.
+    w('<meta property="og:image" content="%s">'
+      % _h("%s/%s" % (BASE_URL.rstrip("/"), CARD_FILENAME)))
+    w('<meta property="og:image:width" content="%d">' % _og_card.CARD_WIDTH)
+    w('<meta property="og:image:height" content="%d">' % _og_card.CARD_HEIGHT)
+    w('<meta property="og:image:alt" content="%s">' % _h(_card_alt()))
+    # Twitter/X reads name=, not property=. "summary_large_image" is the
+    # full-bleed card type and is only correct BECAUSE a real 1200x630 raster
+    # ships at the URL above; if the image were ever dropped this must go back
+    # to "summary", or X renders an empty tile.
+    w('<meta name="twitter:card" content="summary_large_image">')
     w('<meta name="twitter:title" content="%s">' % _h(title))
     w('<meta name="twitter:description" content="%s">' % _h(description))
+    w('<meta name="twitter:image" content="%s">'
+      % _h("%s/%s" % (BASE_URL.rstrip("/"), CARD_FILENAME)))
     return "\n".join(m)
 
 
@@ -4074,6 +4164,11 @@ def render_surface(catalog):
         DE_WALKTHROUGH_PATH: render_de_walkthrough(catalog),
         SITEMAP_PATH: render_sitemap(catalog),
         ROBOTS_PATH: render_robots(),
+        # The link-preview card (bytes, like the engine bundle) — registered
+        # here and NOWHERE else, so write() emits it, check() byte-compares it
+        # against a fresh render, and it can never become a hand-placed blob
+        # the generator does not account for.
+        CARD_PATH: _card_bytes(),
     }
     surface.update(render_engine())
     return surface

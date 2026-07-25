@@ -30,11 +30,22 @@ WHAT IT ASSERTS, over every ``*.html`` file under ``www/``:
   (5) every ``application/ld+json`` block parses and its top-level ``@type`` is
       in an explicit allowlist; no page carries more than one block;
   (6) any og:image / twitter:image must resolve to a file that EXISTS under
-      ``www/``. No image exists today; the check is live, not skipped, so the
-      day one is added a broken path fails here instead of on LinkedIn;
+      ``www/``, so a broken path fails here instead of on LinkedIn;
   (7) the pairing invariant: a page is in ``sitemap.xml`` IF AND ONLY IF it
       carries the share block, and no page carrying ``robots ... noindex`` may
-      appear in the sitemap.
+      appear in the sitemap;
+  (8) the IMAGE BLOCK is all-or-nothing and self-consistent (T-VHSHARE.4).
+      A page with an ``og:image`` must also declare ``og:image:width``,
+      ``og:image:height`` and a non-empty ``og:image:alt``, must repeat the
+      same URL as ``twitter:image``, and must say ``twitter:card:
+      summary_large_image``; a page WITHOUT one must say ``twitter:card:
+      summary``. The declared width/height are then checked against the PNG's
+      own IHDR chunk, the file must be >= 600x315 (below that LinkedIn and X
+      silently downgrade the tile to the small card), and it must carry no
+      ``tIME``/``tEXt``/``zTXt``/``iTXt`` chunk — those are what would make the
+      generated card differ between two runs and break the staleness gate.
+      A half-added image therefore fails the suite instead of shipping a blank
+      tile into a one-shot announce.
 
 Every legitimate exception is an explicit, commented allowlist entry below. An
 undeclared violation FAILS. Standard library only, no network, no pip; it reads
@@ -48,6 +59,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -126,9 +138,20 @@ _REQUIRED_TAGS = (
     ("name", "twitter:description"),
 )
 
-# Optional image tags — absent today (twitter:card is "summary", the image-less
-# card type). Check (6) fires only if one ever appears.
+# The image tags. Check (6) validates any that appear; check (8) validates the
+# block as a whole, in BOTH directions (present and absent).
 _IMAGE_TAGS = (("property", "og:image"), ("name", "twitter:image"))
+
+# Chunks a reproducible generated PNG must NOT contain: tIME is a wall clock
+# and the text chunks are where an encoder stamps its own version. Either one
+# makes two runs of gen_site.py differ, which the site staleness gate reads as
+# permanent drift.
+_FORBIDDEN_PNG_CHUNKS = (b"tIME", b"tEXt", b"zTXt", b"iTXt")
+
+# The smallest raster LinkedIn / X / Facebook will still render as a FULL-WIDTH
+# card. Below it they fall back to the small square thumbnail, which is exactly
+# the outcome summary_large_image is supposed to avoid.
+_MIN_CARD_W, _MIN_CARD_H = 600, 315
 
 _LD_RE = re.compile(
     r'<script\b[^>]*\btype="application/ld\+json"[^>]*>(.*?)</script>',
@@ -187,12 +210,13 @@ def _sitemap_urls():
         return set(_LOC_RE.findall(fh.read()))
 
 
-def _image_exists(content):
-    """True iff an og:image/twitter:image content value resolves under www/.
+def _image_path(content):
+    """The www/-relative filesystem path an og:image value names, or None.
 
     Accepts the two forms the generator could ever emit: an absolute URL under
     BASE_URL, or a site-root-relative path. Anything else (a third-party CDN,
-    say) is not a file we control and fails.
+    say) is not a file we control and yields None. Returns the path whether or
+    not it exists — existence is the caller's assertion.
     """
     base = _gen.BASE_URL.rstrip("/") + "/"
     if content.startswith(base):
@@ -205,9 +229,46 @@ def _image_exists(content):
         if prefix and rel.startswith(prefix):
             rel = rel[len(prefix):]
     else:
-        return False
+        return None
     rel = rel.split("?", 1)[0].split("#", 1)[0].lstrip("/")
-    return bool(rel) and os.path.exists(os.path.join(WWW_DIR, *rel.split("/")))
+    if not rel:
+        return None
+    return os.path.join(WWW_DIR, *rel.split("/"))
+
+
+def _image_exists(content):
+    """True iff an og:image/twitter:image content value resolves under www/."""
+    path = _image_path(content)
+    return path is not None and os.path.exists(path)
+
+
+def _png_facts(path):
+    """``(width, height, [offending chunk tags])`` for a PNG, or None.
+
+    Walks the chunk list from the 8-byte signature; ``None`` means the file is
+    not a PNG at all. Standard library ``struct`` only — the point of the whole
+    exercise is that no image library is needed to make or to check this file.
+    """
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    if not blob.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    width = height = None
+    offenders = []
+    off = 8
+    while off + 8 <= len(blob):
+        (length,) = struct.unpack(">I", blob[off:off + 4])
+        tag = blob[off + 4:off + 8]
+        if tag == b"IHDR" and length >= 8:
+            width, height = struct.unpack(">II", blob[off + 8:off + 16])
+        if tag in _FORBIDDEN_PNG_CHUNKS:
+            offenders.append(tag.decode("ascii"))
+        if tag == b"IEND":
+            break
+        off += 12 + length
+    if width is None:
+        return None
+    return (width, height, offenders)
 
 
 def main():
@@ -238,6 +299,11 @@ def main():
     listed = {}       # rel -> page text, for pages the sitemap lists
     carded = set()    # rel of pages carrying a share block
     urls_seen = set()
+    # (8) the surface must be UNIFORM: a card image is a property of the site,
+    # not of a page. Rolling one out to half the pages is the failure mode
+    # where the announce link happens to land on the half without it.
+    image_pages_with = set()
+    image_pages_without = set()
 
     for rel, page in pages:
         url = _url_for(rel)
@@ -291,6 +357,61 @@ def main():
 
         if not has_card:
             continue
+
+        # ---- (8) the image block is all-or-nothing and self-consistent ---
+        og_image = _meta(page, "property", "og:image")
+        tw_image = _meta(page, "name", "twitter:image")
+        tw_card = _meta(page, "name", "twitter:card")
+        if og_image is None:
+            # No raster ships: the card type MUST stay "summary". Claiming
+            # summary_large_image without an image renders an empty tile, and
+            # a stray twitter:image with no og:image is invisible to LinkedIn.
+            check(tw_card == "summary",
+                  "%s: no og:image, so twitter:card must be \"summary\", got %r"
+                  % (rel, tw_card))
+            check(tw_image is None,
+                  "%s: twitter:image %r with no og:image — half an image block"
+                  % (rel, tw_image))
+            image_pages_without.add(rel)
+        else:
+            image_pages_with.add(rel)
+            check(tw_card == "summary_large_image",
+                  "%s: og:image ships, so twitter:card must be "
+                  "\"summary_large_image\", got %r" % (rel, tw_card))
+            check(tw_image == og_image,
+                  "%s: twitter:image %r != og:image %r" % (rel, tw_image,
+                                                           og_image))
+            alt = _meta(page, "property", "og:image:alt")
+            check(alt is not None and alt.strip() != "",
+                  "%s: og:image without a non-empty og:image:alt — a social "
+                  "client shows the alt to screen-reader users" % rel)
+            declared = {}
+            for dim in ("width", "height"):
+                raw = _meta(page, "property", "og:image:%s" % dim)
+                check(raw is not None and raw.isdigit(),
+                      "%s: og:image:%s is %r, not a plain integer"
+                      % (rel, dim, raw))
+                declared[dim] = int(raw) if raw and raw.isdigit() else None
+            path = _image_path(og_image)
+            if path is not None and os.path.exists(path):
+                facts = _png_facts(path)
+                check(facts is not None,
+                      "%s: og:image %r is not a PNG (no IHDR)" % (rel, og_image))
+                if facts is not None:
+                    pw, ph, offenders = facts
+                    check(declared["width"] in (None, pw)
+                          and declared["height"] in (None, ph),
+                          "%s: declares og:image %sx%s but the file is %dx%d"
+                          % (rel, declared["width"], declared["height"],
+                             pw, ph))
+                    check(pw >= _MIN_CARD_W and ph >= _MIN_CARD_H,
+                          "%s: card is %dx%d, below the %dx%d a full-width "
+                          "preview needs" % (rel, pw, ph, _MIN_CARD_W,
+                                             _MIN_CARD_H))
+                    check(not offenders,
+                          "%s: card PNG carries %s — a non-reproducible chunk; "
+                          "two generator runs would differ"
+                          % (rel, ", ".join(offenders)))
 
         # ---- (1) complete tag set, every value non-empty -----------------
         for attr, key in _REQUIRED_TAGS:
@@ -374,6 +495,13 @@ def main():
             else:
                 seen[val] = rel
 
+    # ---- (8) uniformity across the carded surface -------------------------
+    check(not (image_pages_with and image_pages_without),
+          "the share-card image is on %d page(s) and missing from %d (e.g. %s) "
+          "— every carded page must advertise the same card"
+          % (len(image_pages_with), len(image_pages_without),
+             sorted(image_pages_without)[:3]))
+
     if failures:
         print("SHARE METADATA: FAIL (%d)" % len(failures))
         for msg in failures[:40]:
@@ -386,8 +514,10 @@ def main():
           "carry the full 9-tag card with og:url == canonical and og:locale == "
           "<html lang>; %d pages exempt from pairwise distinctness (declared); "
           "no page outside the sitemap advertises a card; every ld+json block "
-          "parses with an allowlisted @type; no dangling og:image."
-          % (len(pages), len(listed), len(exempt)))
+          "parses with an allowlisted @type; no dangling og:image; %d page(s) "
+          "advertise the share card and %d do not (uniform)."
+          % (len(pages), len(listed), len(exempt), len(image_pages_with),
+             len(image_pages_without)))
     return 0
 
 

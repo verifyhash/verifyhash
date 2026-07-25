@@ -172,6 +172,47 @@ def share_tags(html: str) -> dict:
     return tags
 
 
+def committed_share_assets():
+    """Non-page files the committed HTML advertises to link-preview crawlers.
+
+    Returns ``[(live sub-path, rel file under www/), ...]`` — today exactly
+    one entry, the Open Graph card ``www/og-card.png`` (T-VHSHARE.4).
+
+    WHY THIS EXISTS. Every other live check in this script is driven by
+    ``committed_pages()``, which walks for ``index.html`` — so the card, the
+    only non-HTML file the site advertises, was invisible to verification. It
+    is also the one asset whose absence a human cannot spot: no page links to
+    it, so a deploy that dropped it renders a perfect-looking site while every
+    LinkedIn/XING/Reddit unfurl of the announce shows a blank tile. The
+    announce is one-shot.
+
+    DERIVED, never hand-kept: the URL is read from the ``og:image`` the
+    committed landing page actually emits, and only accepted when it is on the
+    committed base AND resolves to a file in the tree. So a renamed card
+    follows automatically; a card pointed at a third-party CDN is not claimed
+    as ours to verify; and if the image metas are ever dropped this returns
+    ``[]`` and the phase self-disables rather than demanding a URL the tree
+    does not ship.
+    """
+    landing = os.path.join(WWW, "index.html")
+    if not os.path.isfile(landing):
+        return []
+    with open(landing, "rb") as fh:
+        tags = share_tags(_text(fh.read()))
+    cbase = committed_base().rstrip("/")
+    out = {}
+    for key in ("og:image", "twitter:image"):
+        url = tags.get(key, "")
+        if not url or not cbase or not url.startswith(cbase + "/"):
+            continue
+        rel = url[len(cbase) + 1:]
+        if not rel or "?" in rel or ".." in rel:
+            continue
+        if os.path.isfile(os.path.join(WWW, rel.replace("/", os.sep))):
+            out["/" + rel] = rel
+    return sorted(out.items())
+
+
 def _locs(data: bytes):
     """Every ``<loc>`` text in a sitemap document (raw, unnormalised)."""
     root = ElementTree.fromstring(data)
@@ -536,6 +577,39 @@ def main() -> int:
         if not same:
             failures.append("live %s differs from committed www/%s "
                             "(stale/partial deploy — redeploy needed)" % (sub, rel))
+
+    # 4b. SHARE ASSETS — the og:image card. Same byte-compare discipline as
+    # the pages above, on a file no page links to (see
+    # committed_share_assets()): a 404 or a stale card here is invisible in a
+    # browser and fatal to the one-shot announce.
+    share_assets = committed_share_assets()
+    print("== share assets (og:image card) live vs committed ==")
+    if not share_assets:
+        # Not a failure: the site is allowed to ship without a card. It IS
+        # reported, so a card that silently stopped being advertised does not
+        # look like a clean run.
+        print("  none advertised by the committed landing page — nothing to "
+              "check (the site ships no og:image)")
+    for sub, rel in share_assets:
+        cpath = os.path.join(WWW, rel)
+        code, live = _get(base + sub)
+        if code != 200 or not live:
+            failures.append(
+                "share asset %s served %s (expected 200) — pages advertise it "
+                "as og:image, so every social unfurl would render a blank tile"
+                % (sub, code))
+            print("  %s  fetch %s" % (code, sub))
+            continue
+        with open(cpath, "rb") as fh:
+            committed = fh.read()
+        same = (hashlib.sha256(live).hexdigest()
+                == hashlib.sha256(committed).hexdigest())
+        print("  %-11s %s  (live=%d committed=%d)"
+              % ("IDENTICAL" if same else "DIFF", sub, len(live),
+                 len(committed)))
+        if not same:
+            failures.append("live share asset %s differs from committed www/%s "
+                            "(stale card — redeploy needed)" % (sub, rel))
 
     print()
     if failures:

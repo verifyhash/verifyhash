@@ -414,5 +414,79 @@ class TestParityDerivations(unittest.TestCase):
         self.assertIsNone(re.search(r"(?m)^_get\(|^\w+\s*=\s*_get\(", src))
 
 
+class TestShareAssets(unittest.TestCase):
+    """``committed_share_assets()`` — the og:image card's live coverage.
+
+    The card (T-VHSHARE.4) is the only committed file the site advertises
+    that is NOT an ``index.html``, so ``committed_pages()`` cannot see it and
+    the byte-compare phase would have skipped it. It is also the only asset
+    whose absence is invisible to a human check of the deployed site: nothing
+    links to it, so a live tree missing it browses perfectly while every
+    social unfurl of the one-shot announce renders a blank tile. These tests
+    pin the derivation the same way the rest of this file pins the others.
+    """
+
+    def setUp(self):
+        self.assets = verify_live.committed_share_assets()
+
+    def test_matches_the_landing_pages_og_image(self):
+        """The list is DERIVED from the committed og:image, not typed."""
+        with open(os.path.join(WWW, "index.html"), encoding="utf-8") as fh:
+            page = fh.read()
+        m = re.search(
+            r'<meta property="og:image" content="([^"]*)">', page)
+        if m is None:
+            # Outcome (ii): no card ships. The derivation must then be empty
+            # rather than demanding a URL the tree does not have.
+            self.assertEqual(self.assets, [],
+                             "no og:image is advertised, yet a share asset is "
+                             "still claimed for live verification")
+            return
+        base = verify_live.committed_base().rstrip("/")
+        self.assertTrue(m.group(1).startswith(base + "/"),
+                        "og:image %r is not on the committed base %r"
+                        % (m.group(1), base))
+        rel = m.group(1)[len(base) + 1:]
+        self.assertEqual([sub for sub, _ in self.assets], ["/" + rel],
+                         "the derived share-asset set does not match the "
+                         "og:image the landing page actually emits")
+
+    def test_no_phantoms_and_no_pages(self):
+        """Every claimed asset is a real committed file, and never a page."""
+        for sub, rel in self.assets:
+            path = os.path.join(WWW, rel.replace("/", os.sep))
+            self.assertTrue(os.path.isfile(path),
+                            "share asset %s has no committed file www/%s"
+                            % (sub, rel))
+            self.assertTrue(os.path.getsize(path) > 0,
+                            "committed share asset www/%s is empty" % rel)
+            self.assertFalse(rel.endswith("index.html"),
+                             "%s is a page — it belongs to BYTE_COMPARE, not "
+                             "the share-asset phase" % rel)
+            # It must NOT be double-checked by the page walker.
+            self.assertNotIn(rel, [r for _, r in verify_live.BYTE_COMPARE])
+
+    def test_phase_is_wired_into_main(self):
+        """A derived list nothing consumes would be silently dead code."""
+        with open(os.path.join(HERE, "verify_live.py"), encoding="utf-8") as fh:
+            src = fh.read()
+        body = src.split("def main(", 1)[1]
+        self.assertIn("committed_share_assets()", body,
+                      "committed_share_assets() is never called from main() — "
+                      "the card would go unverified on every deploy")
+
+    def test_off_origin_image_is_not_claimed(self):
+        """An og:image on someone else's origin is not ours to verify."""
+        page = ('<meta property="og:image" '
+                'content="https://cdn.example.net/card.png">')
+        tags = verify_live.share_tags(page)
+        self.assertEqual(tags.get("og:image"),
+                         "https://cdn.example.net/card.png")
+        base = verify_live.committed_base().rstrip("/")
+        self.assertFalse(tags["og:image"].startswith(base + "/"),
+                         "the off-origin fixture must not look like our own "
+                         "card, or this test proves nothing")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

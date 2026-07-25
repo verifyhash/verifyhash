@@ -81,6 +81,24 @@ _BAD_SCRIPT_RE = re.compile(
     r'<script\b(?![^>]*type="application/ld\+json")', re.IGNORECASE)
 
 
+def _strip_share_image_metas(text):
+    """Remove the share-card image <meta>s before an external-resource scan.
+
+    Same reasoning — and the same EXACT-MATCH discipline — as the og:url strip
+    in the tests below (T-VHSHARE.4). ``og:image``/``twitter:image`` carry an
+    absolute BASE_URL address of a file this generator itself emits
+    (``www/og-card.png``); social crawlers read it as metadata and the page
+    never fetches it. Only the byte-exact string gen_site would emit is
+    removed, so an image tag pointing at any other origin — a CDN, a tracker —
+    still trips the scan it is being stripped for.
+    """
+    card = "%s/%s" % (_gen.BASE_URL.rstrip("/"), _gen.CARD_FILENAME)
+    for tag in ('<meta property="og:image" content="%s">' % card,
+                '<meta name="twitter:image" content="%s">' % card):
+        text = text.replace(tag, " ")
+    return text
+
+
 def _visible_text(page):
     """Human-visible text of a page: tags removed, then HTML-unescaped."""
     return html.unescape(_TAG_RE.sub(" ", page))
@@ -217,6 +235,7 @@ class WalkthroughTest(unittest.TestCase):
         scan = scan.replace(
             '<meta property="og:url" content="%s">' % _gen._url_walkthrough(),
             " ")
+        scan = _strip_share_image_metas(scan)
         # Strip the inline ld+json structured-data block (see _LD_RE) before the
         # scan, exactly as test_site.py does for every rule/sales page.
         scan_no_ld = _LD_RE.sub(" ", scan)
@@ -357,6 +376,7 @@ class WalkthroughTest(unittest.TestCase):
         scan = scan.replace(
             '<meta property="og:url" content="%s">'
             % _gen._url_de_walkthrough(), " ")
+        scan = _strip_share_image_metas(scan)
         self.assertNotRegex(
             _LD_RE.sub(" ", scan),
             r'https?://|cdn\.|googleapis|fonts\.|goatcounter|url\(',

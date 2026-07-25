@@ -171,6 +171,17 @@ _CANON_LINK_RE = re.compile(r'<link\b[^>]*\brel="canonical"[^>]*>',
 # strip can ever hide is the canonical itself. test_share_metadata.py enforces
 # the same equality across every page of the surface.
 _OG_URL_META_RE = re.compile(r'<meta property="og:url" content="[^"]*">')
+# The share-card image <meta>s (T-VHSHARE.4): og:image and twitter:image.
+# Stripped before the external-resource scan on the SAME grounds as og:url —
+# their content is an absolute BASE_URL address of a file this generator itself
+# emits (www/og-card.png), declared for link-preview crawlers, and no browser
+# rendering the page ever fetches it (there is still no <img>, no src=, no
+# stylesheet). The strip is compensated below by an explicit check that every
+# value byte-equals gen_site's ONE card URL and that the file exists in the
+# tree, so the only https:// string it can hide is our own card. A third-party
+# CDN URL smuggled into either tag fails there.
+_OG_IMAGE_META_RE = re.compile(
+    r'<meta (?:property="og:image"|name="twitter:image") content="[^"]*">')
 
 # de_source -> the honest provenance token that MUST appear on the page.
 _DE_TOKEN = {"kosit": "Amtlicher KoSIT-Text", "translation": "Übersetzung"}
@@ -478,7 +489,8 @@ def main():
         # anything else with https?:// / cdn. / url( is a real external
         # resource and fails.
         page_no_ld = _LD_RE.sub(" ", page)
-        page_scan = _OG_URL_META_RE.sub(" ", _CANON_LINK_RE.sub(" ", page_no_ld))
+        page_scan = _OG_IMAGE_META_RE.sub(
+            " ", _OG_URL_META_RE.sub(" ", _CANON_LINK_RE.sub(" ", page_no_ld)))
         check(not ext_re.search(page_scan),
               "%s: page references an external resource / url()" % rid)
         check(not bad_script_re.search(page),
@@ -508,6 +520,24 @@ def main():
                 check(og.group(1) == href,
                       "%s: og:url %r != canonical %r"
                       % (rid, og.group(1), href))
+            # Same deal for the card image (T-VHSHARE.4): OPTIONAL, but when
+            # present every og:image / twitter:image value must be the ONE card
+            # URL gen_site builds from BASE_URL + CARD_FILENAME, and that file
+            # must actually be in the tree. This is what keeps the
+            # _OG_IMAGE_META_RE strip above honest.
+            want_card = "%s/%s" % (_gen.BASE_URL.rstrip("/"),
+                                   _gen.CARD_FILENAME)
+            for img in re.findall(
+                    r'<meta (?:property="og:image"|name="twitter:image") '
+                    r'content="([^"]*)">', page):
+                check(img == want_card,
+                      "%s: share image %r is not the generator's own card URL "
+                      "%r — an off-origin image tag would sail past the "
+                      "external-resource scan" % (rid, img, want_card))
+                check(os.path.exists(os.path.join(WWW_DIR,
+                                                  _gen.CARD_FILENAME)),
+                      "%s: page advertises %s but www/%s does not exist"
+                      % (rid, want_card, _gen.CARD_FILENAME))
 
     # ---- (5) global uniqueness across ALL pages ----------------------------
     n_pages = len(sorted(want & have))

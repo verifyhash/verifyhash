@@ -192,6 +192,15 @@ class WalkthroughTest(unittest.TestCase):
         # strip every <link> before the external-resource scan, exactly like
         # test_site.py does for the landing/de pages that carry alternates.
         scan = re.sub(r"<link\b[^>]*>", " ", self.page, flags=re.IGNORECASE)
+        # Same reasoning for the link-preview og:url meta (T-VHSHARE.5): its
+        # content is the SAME absolute BASE_URL canonical string, consumed by
+        # social crawlers as metadata and never fetched by the page. The strip
+        # is deliberately EXACT-MATCH, not a pattern: only an og:url that
+        # byte-equals this page's own canonical disappears, so an og:url
+        # pointing at any other origin still trips the scan below.
+        scan = scan.replace(
+            '<meta property="og:url" content="%s">' % _gen._url_walkthrough(),
+            " ")
         # No external CSS/JS/CDN/font/network references remain.
         self.assertNotRegex(
             scan,
@@ -314,6 +323,11 @@ class WalkthroughTest(unittest.TestCase):
     def test_de_self_contained_and_indexable(self):
         de = self._read_de()
         scan = re.sub(r"<link\b[^>]*>", " ", de, flags=re.IGNORECASE)
+        # Exact-match strip of this page's own og:url (identical string to its
+        # canonical, metadata not a fetched resource) — see the English test.
+        scan = scan.replace(
+            '<meta property="og:url" content="%s">'
+            % _gen._url_de_walkthrough(), " ")
         self.assertNotRegex(
             scan, r'https?://|cdn\.|googleapis|fonts\.|goatcounter|url\(',
             "German walkthrough references an external resource")

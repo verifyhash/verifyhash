@@ -235,6 +235,14 @@ BASE_URL = "https://verifyhash.com/einvoice"
 # licensing) materially changes, so crawlers see an accurate last-modified.
 SITE_LASTMOD = "2026-07-22"
 
+# SITE_NAME — the name of this surface as it is ALREADY written everywhere on
+# it: the landing page's <h1>, the first breadcrumb crumb on every page, the
+# "— einvoice" suffix carried by the <title> of every surface page, the Python
+# package directory (einvoice/) and the distribution name
+# (verifyhash-einvoice). It is deliberately NOT a new/marketing name invented
+# for link previews: og:site_name must say what the site already calls itself.
+SITE_NAME = "einvoice"
+
 # ---------------------------------------------------------------------------
 # Pyodide CDN pin (T-VHWEB.2) — the in-browser validator page's ONLY external
 # resource, and it is NEVER fetched on page load: the generated
@@ -638,6 +646,72 @@ def render_all(catalog):
     return {rid: render_page(rid, catalog[rid]) for rid in catalog}
 
 
+# ---------------------------------------------------------------------------
+# Link-preview metadata (Open Graph / Twitter) — T-VHSHARE.5.
+#
+# LinkedIn, XING, Slack, Reddit, Mastodon, Discord, iMessage and X all render a
+# shared link as a CARD built from these <meta> tags; without them the same URL
+# unfurls as bare text. This is the ONE shared emitter for that block: every
+# surface page routes through _share_meta(), so a card can never drift from the
+# page it advertises.
+#
+# DERIVED, NEVER INVENTED. og:title / twitter:title are the SAME string the
+# page already puts in <title>; og:description / twitter:description are the
+# SAME string it already puts in <meta name="description">; og:url is the SAME
+# canonical string handed to <link rel="canonical"> (built from the single
+# BASE_URL constant via the _url_*() helpers), so canonical, og:url and the
+# sitemap <loc> cannot disagree. There is no separate marketing copy to keep in
+# sync, and the card therefore cannot over- or under-claim relative to the page.
+#
+# Deliberately NOT here: og:image / twitter:image (needs an owner image
+# decision — tracked separately) and application/ld+json (the rule pages'
+# structured data is emitted elsewhere). twitter:card is "summary", the
+# image-less card type, which is the honest choice while no image exists.
+#
+# og:locale is derived from the document's own <html lang> rather than passed
+# per call site, so the two can never contradict each other.
+_OG_LOCALE = {"en": "en_US", "de": "de_DE"}
+
+
+def _share_meta(title, description, canonical, lang="en"):
+    """The shared Open Graph / Twitter <head> lines for one page.
+
+    ``title``, ``description`` and ``canonical`` MUST be the very strings the
+    caller already emits as ``<title>``, ``<meta name="description">`` and
+    ``<link rel="canonical">``; ``lang`` MUST be the value the caller puts on
+    ``<html lang>``. Returns the meta lines joined by newlines (no trailing
+    newline), every value HTML-escaped through :func:`_h`.
+
+    Raises ``ValueError`` on an unmapped language or an empty title /
+    description / canonical: a preview card with a blank field is worse than a
+    loud build failure, and a new language must add its Open Graph locale here
+    consciously rather than silently inherit English.
+    """
+    if lang not in _OG_LOCALE:
+        raise ValueError(
+            "no og:locale mapping for <html lang=%r>; add one to _OG_LOCALE"
+            % (lang,))
+    for field, value in (("title", title), ("description", description),
+                         ("canonical", canonical)):
+        if not value or not str(value).strip():
+            raise ValueError("share metadata %s is empty" % field)
+    m = []
+    w = m.append
+    # Attribute order is fixed (property=/name= first, content= second) so the
+    # gates — and any later structural guard — can match deterministically.
+    w('<meta property="og:type" content="website">')
+    w('<meta property="og:site_name" content="%s">' % _h(SITE_NAME))
+    w('<meta property="og:title" content="%s">' % _h(title))
+    w('<meta property="og:description" content="%s">' % _h(description))
+    w('<meta property="og:url" content="%s">' % _h(canonical))
+    w('<meta property="og:locale" content="%s">' % _h(_OG_LOCALE[lang]))
+    # Twitter/X reads name=, not property=; card type "summary" = no image.
+    w('<meta name="twitter:card" content="summary">')
+    w('<meta name="twitter:title" content="%s">' % _h(title))
+    w('<meta name="twitter:description" content="%s">' % _h(description))
+    return "\n".join(m)
+
+
 def _doc_head(title, description, canonical, style_extra="", lang="en",
               alternates=()):
     """Shared <head> lines for the landing + hub pages (indexable, no noindex).
@@ -667,6 +741,9 @@ def _doc_head(title, description, canonical, style_extra="", lang="en",
     for hl, href in alternates:
         w('<link rel="alternate" hreflang="%s" href="%s">'
           % (_h(hl), _h(href)))
+    # Link-preview card (Open Graph / Twitter), derived from the SAME title /
+    # description / canonical / lang this head already emitted above.
+    w(_share_meta(title, description, canonical, lang=lang))
     # ONE inline <style> element (the self-containment contract): any
     # page-specific rules are APPENDED inside the same block, never a second
     # <style> and never an external sheet. style_extra is empty for every page
@@ -1920,6 +1997,9 @@ def render_walkthrough(catalog):
       % _h(_url_de_walkthrough()))
     w('<link rel="alternate" hreflang="x-default" href="%s">'
       % _h(_url_walkthrough()))
+    # Link-preview card (Open Graph / Twitter) from the same title/description/
+    # canonical this head already emitted; lang matches <html lang="en"> above.
+    w(_share_meta(title, description, canonical, lang="en"))
     # One inline <style> block: the shared base plus the walkthrough-only extra.
     # No external CSS/JS/CDN/font/script — offline-openable.
     w("<style>%s\n%s</style>" % (_STYLE, _WALK_STYLE))
@@ -2138,6 +2218,9 @@ def render_de_walkthrough(catalog):
       % _h(_url_de_walkthrough()))
     w('<link rel="alternate" hreflang="x-default" href="%s">'
       % _h(_url_walkthrough()))
+    # Link-preview card (Open Graph / Twitter) from the same German title/
+    # description/canonical above; lang matches <html lang="de"> -> de_DE.
+    w(_share_meta(title, description, canonical, lang="de"))
     # Reuse the walkthrough-only inline style (same block as the English page).
     w("<style>%s\n%s</style>" % (_STYLE, _WALK_STYLE))
     w("</head>")
@@ -2724,6 +2807,9 @@ def render_validate(catalog):
     w("<title>%s</title>" % _h(title))
     w('<meta name="description" content="%s">' % _h(description))
     w('<link rel="canonical" href="%s">' % _h(canonical))
+    # Link-preview card (Open Graph / Twitter) from the same title/description/
+    # canonical this head already emitted; lang matches <html lang="en"> above.
+    w(_share_meta(title, description, canonical, lang="en"))
     w("<style>%s%s</style>" % (_STYLE, style_extra))
     w('<script type="application/ld+json">%s</script>' % ld_json)
     w("</head>")

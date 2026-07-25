@@ -256,6 +256,167 @@ the id is invalid, since the catalog covers the rules this build can actually
 fire. `python3 -m einvoice.report --explain BR-DE-15` prints the identical
 block; same code path, so use whichever entry point is already in your hand.
 
+### Not UBL? The same walk in raw CII (UN/CEFACT)
+
+EN 16931 permits **two** syntaxes, and this validator reads both: the OASIS
+UBL 2.1 `Invoice` used above, and the UN/CEFACT **Cross Industry Invoice**
+(`rsm:CrossIndustryInvoice`) — XRechnung's other permitted flavour, and the
+syntax every ZUGFeRD / Factur-X document carries. There is no syntax flag: the
+validator dispatches on the root element's local name, and from there it is the
+same rule engine, the same `--profile`, the same exit codes. Nothing in §§3–5
+changes.
+
+Here is the §2 invoice again — same four consulting hours, 400.00 net /
+76.00 VAT / 476.00 gross — written as raw CII instead of UBL:
+
+```sh
+cat > cii-invoice.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rsm:CrossIndustryInvoice
+    xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+    xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+    xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+  <rsm:ExchangedDocumentContext>
+    <ram:GuidelineSpecifiedDocumentContextParameter>
+      <ram:ID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</ram:ID>
+    </ram:GuidelineSpecifiedDocumentContextParameter>
+  </rsm:ExchangedDocumentContext>
+  <rsm:ExchangedDocument>
+    <ram:ID>RE-2026-0001</ram:ID>
+    <ram:TypeCode>380</ram:TypeCode>
+    <ram:IssueDateTime><udt:DateTimeString format="102">20260302</udt:DateTimeString></ram:IssueDateTime>
+  </rsm:ExchangedDocument>
+  <rsm:SupplyChainTradeTransaction>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument><ram:LineID>1</ram:LineID></ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct><ram:Name>Beratungsleistung</ram:Name></ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice><ram:ChargeAmount>100.00</ram:ChargeAmount></ram:NetPriceProductTradePrice>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery><ram:BilledQuantity unitCode="HUR">4</ram:BilledQuantity></ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>19</ram:RateApplicablePercent>
+        </ram:ApplicableTradeTax>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>400.00</ram:LineTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:ApplicableHeaderTradeAgreement>
+      <ram:BuyerReference>04011000-12345-03</ram:BuyerReference>
+      <ram:SellerTradeParty>
+        <ram:Name>Lieferant GmbH</ram:Name>
+        <ram:DefinedTradeContact>
+          <ram:PersonName>Buchhaltung</ram:PersonName>
+          <ram:TelephoneUniversalCommunication><ram:CompleteNumber>+49 228 1234567</ram:CompleteNumber></ram:TelephoneUniversalCommunication>
+          <ram:EmailURIUniversalCommunication><ram:URIID>rechnung@lieferant.de</ram:URIID></ram:EmailURIUniversalCommunication>
+        </ram:DefinedTradeContact>
+        <ram:PostalTradeAddress>
+          <ram:PostcodeCode>53113</ram:PostcodeCode>
+          <ram:LineOne>Musterweg 1</ram:LineOne>
+          <ram:CityName>Bonn</ram:CityName>
+          <ram:CountryID>DE</ram:CountryID>
+        </ram:PostalTradeAddress>
+        <ram:URIUniversalCommunication><ram:URIID schemeID="EM">rechnung@lieferant.de</ram:URIID></ram:URIUniversalCommunication>
+        <ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">DE123456789</ram:ID></ram:SpecifiedTaxRegistration>
+      </ram:SellerTradeParty>
+      <ram:BuyerTradeParty>
+        <ram:Name>Kunde AG</ram:Name>
+        <ram:PostalTradeAddress>
+          <ram:PostcodeCode>50667</ram:PostcodeCode>
+          <ram:LineOne>Domplatz 2</ram:LineOne>
+          <ram:CityName>Koeln</ram:CityName>
+          <ram:CountryID>DE</ram:CountryID>
+        </ram:PostalTradeAddress>
+        <ram:URIUniversalCommunication><ram:URIID schemeID="EM">einkauf@kunde.de</ram:URIID></ram:URIUniversalCommunication>
+      </ram:BuyerTradeParty>
+    </ram:ApplicableHeaderTradeAgreement>
+    <ram:ApplicableHeaderTradeDelivery>
+      <ram:ActualDeliverySupplyChainEvent>
+        <ram:OccurrenceDateTime><udt:DateTimeString format="102">20260228</udt:DateTimeString></ram:OccurrenceDateTime>
+      </ram:ActualDeliverySupplyChainEvent>
+    </ram:ApplicableHeaderTradeDelivery>
+    <ram:ApplicableHeaderTradeSettlement>
+      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+      <ram:SpecifiedTradeSettlementPaymentMeans>
+        <ram:TypeCode>58</ram:TypeCode>
+        <ram:PayeePartyCreditorFinancialAccount><ram:IBANID>DE79000000001234567890</ram:IBANID></ram:PayeePartyCreditorFinancialAccount>
+      </ram:SpecifiedTradeSettlementPaymentMeans>
+      <ram:ApplicableTradeTax>
+        <ram:CalculatedAmount>76.00</ram:CalculatedAmount>
+        <ram:TypeCode>VAT</ram:TypeCode>
+        <ram:BasisAmount>400.00</ram:BasisAmount>
+        <ram:CategoryCode>S</ram:CategoryCode>
+        <ram:RateApplicablePercent>19</ram:RateApplicablePercent>
+      </ram:ApplicableTradeTax>
+      <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        <ram:LineTotalAmount>400.00</ram:LineTotalAmount>
+        <ram:TaxBasisTotalAmount>400.00</ram:TaxBasisTotalAmount>
+        <ram:TaxTotalAmount currencyID="EUR">76.00</ram:TaxTotalAmount>
+        <ram:GrandTotalAmount>476.00</ram:GrandTotalAmount>
+        <ram:DuePayableAmount>476.00</ram:DuePayableAmount>
+      </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+    </ram:ApplicableHeaderTradeSettlement>
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>
+XML
+```
+
+```sh
+einvoice validate --profile xrechnung cii-invoice.xml
+```
+
+```text
+PASS: cii-invoice.xml (all implemented fatal rules, profile=xrechnung)
+Syntax-binding warnings: 0
+```
+
+Exit **0** — the identical contract §3 describes, on the other syntax. Break
+it the identical way and the identical rule fires:
+
+```sh
+sed '/BuyerReference/d' cii-invoice.xml > cii-broken.xml
+einvoice validate --profile xrechnung cii-broken.xml; echo "exit=$?"
+```
+
+```text
+FAIL: cii-broken.xml
+  BR-DE-15: The element 'Buyer reference' (BT-10) must be transmitted.
+  offending element: ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
+Syntax-binding warnings: 0
+exit=1
+```
+
+The **rule id is syntax-independent** (`BR-DE-15` either way) but the
+`offending element` is not: CII reports
+`ram:ApplicableHeaderTradeAgreement/ram:BuyerReference` where UBL reported
+`cbc:BuyerReference`. Key a CI dashboard on the rule id, never on the element
+path, if you validate both syntaxes.
+
+**Honest limits on this sample.** Like the UBL one it is minimal for the rules
+*this build implements*, not a billing template: fake IBAN and VAT id, no
+order reference, no payment terms, no line-level allowances. It is also
+deliberately *dense* — every element in it is there to clear a specific
+XRechnung requirement (`ram:GuidelineSpecifiedDocumentContextParameter/ram:ID`
+for `BR-DE-21`, the `ram:DefinedTradeContact` block for `BR-DE-2`/`5`/`6`/`7`,
+the `ram:ActualDeliverySupplyChainEvent` date for `BR-DE-TMP-32`), so deleting
+almost any line moves it from exit `0` to exit `1`. That is the point: it is a
+probe, not a starting template. `test_json_surface_parity.py` re-validates
+this exact block out of this file against the installed wheel, so if the
+engine ever stopped passing it, that test would go red rather than this page
+going quietly wrong.
+
+**PDFs (ZUGFeRD / Factur-X) are the same CII, wrapped.** A hybrid
+PDF/A-3 invoice carries this very `rsm:CrossIndustryInvoice` XML as an
+embedded attachment; `einvoice validate` does not open PDFs (it tells you so
+and names the route), so hand the container to
+`python3 -m einvoice.report <invoice.pdf>` instead — it extracts the
+attachment with the stdlib and runs the same rules, plus the
+`FX-CONTAINER-*` container-declaration checks.
+
 ## 5. Machine-readable: `--json`
 
 ```sh

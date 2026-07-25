@@ -29,9 +29,10 @@ This suite targets exactly that seam. For each mutant it:
   4. drives the REAL end-to-end validate-from-PDF entry point
      ``einvoice.report.build_report(path, profile="en16931")`` — the same
      path-in / report-dict-out callable the ``python3 -m einvoice.report`` CLI
-     uses (the bare ``einvoice validate`` subcommand is XML-only; see
-     test_fuzz_pdf_container.py's LEG B note), plus a fixed-seed subset through
-     that CLI across a real process boundary (LEG B).
+     uses (since T-VHERG.5 the bare ``einvoice validate`` subcommand also opens
+     containers, through the same extractor; see test_fuzz_pdf_container.py's
+     LEG B note), plus a fixed-seed subset through that CLI across a real
+     process boundary (LEG B).
 
 THE SEAM INVARIANT (asserted for every mutant)
 ----------------------------------------------

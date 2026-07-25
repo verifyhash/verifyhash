@@ -355,17 +355,38 @@ class TestFirstRunErgonomics(unittest.TestCase):
         self.assertNotIn("Traceback", proc.stderr)
 
     def test_wrong_file_type_pdf_bytes_get_pdf_route(self):
-        # Companion pin: real %PDF magic fed to `validate` is redirected to
-        # the container entry point (sniffed by bytes via the shipped
-        # pdf_container.is_pdf_file, never the extension) — same exit 3.
+        # Companion pin: real %PDF magic fed to `validate` takes the CONTAINER
+        # route (sniffed by bytes via the shipped pdf_container.is_pdf_file,
+        # never the extension). Since T-VHERG.5 `validate` opens Factur-X /
+        # ZUGFeRD containers itself, so these 24 junk bytes are no longer an
+        # "XML that will not parse" — they are a PDF whose container cannot be
+        # reached, and the honest answer is the documented
+        # `unsupported-container` token on the SAME exit 3, never a false pass
+        # and never a traceback.
         with tempfile.TemporaryDirectory() as td:
             path = _write(td, "invoice.pdf", b"%PDF-1.7 not a real body")
             proc = self._run_validate(path)
         self.assertEqual(proc.returncode, _cli.EXIT_PARSE)
-        self.assertIn("S-WF: input is not well-formed XML", proc.stderr)
+        self.assertIn("unsupported-container", proc.stderr)
         self.assertIn("this file is a PDF", proc.stderr)
-        self.assertIn("python3 -m einvoice.report", proc.stderr)
+        # The concrete extractor reason is named, not just the token.
+        self.assertIn("classic PDF trailer", proc.stderr)
+        # Still clearly distinct from the non-PDF wrong-file-type hint above.
         self.assertNotIn("not a PDF container either", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_pdf_container_is_validated_not_refused(self):
+        # The behaviour change T-VHERG.5 exists for, pinned end to end at the
+        # `einvoice` entry point: a real Factur-X container is GRADED (exit 0
+        # under the CLI's default en16931 profile), not turned away.
+        pdf = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "corpus", "pdf", "facturx-valid.pdf")
+        self.assertTrue(os.path.isfile(pdf), "facturx-valid.pdf fixture missing")
+        proc = self._run_validate(pdf)
+        self.assertEqual(proc.returncode, 0,
+                         "a valid Factur-X container must validate, got %d\n"
+                         "stderr=%s" % (proc.returncode, proc.stderr))
+        self.assertIn("PASS", proc.stdout)
         self.assertNotIn("Traceback", proc.stderr)
 
 

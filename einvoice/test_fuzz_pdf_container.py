@@ -55,14 +55,12 @@ What the suite pins:
     real process boundaries, each with a per-case timeout:
 
       (i)  ``python3 -m einvoice validate <mutant.pdf>`` — the ``einvoice``
-           CLI. MEASURED asymmetry, documented here on purpose: this
-           single-file subcommand is XML-only (usage: ``validate
-           <invoice.xml|->``); the PDF container path is wired into
-           ``einvoice.report`` / ``validate-batch``, NOT into single-file
-           ``validate``. Any PDF (including the unmutated valid fixture)
-           therefore lands on the documented exit 3 (S-WF not-well-formed) —
-           an honest non-pass, never a false green, never a traceback. The
-           contract asserted is EXIT-CODES.md membership {0,1,2,3} + zero
+           CLI. Since T-VHERG.5 this single-file subcommand opens Factur-X /
+           ZUGFeRD containers itself (same zero-dep extractor, same rule
+           engine), so a mutant here is a REAL container run and not a
+           foregone exit 3: the unmutated base PASSes (exit 0) and a mutant
+           may legitimately land on 0/1/3 depending on what the mutation hit.
+           The contract asserted is EXIT-CODES.md membership {0,1,2,3} + zero
            traceback + no hang.
       (ii) ``python3 -m einvoice.report --profile en16931 <mutant.pdf>`` —
            the CLI that actually exercises the PDF container path across a
@@ -327,16 +325,21 @@ class TestFixturesAndSetup(FuzzPdfBase):
 
     def test_unmutated_bases_are_the_documented_controls(self):
         """Controls proving the mutants stress the pipeline BECAUSE of the
-        mutation: the report CLI really PASSes the unmutated bases under
-        en16931, and the XML-only validate subcommand lands every PDF on the
-        documented exit 3 (S-WF) with a clean stderr."""
+        mutation: BOTH CLIs really PASS the unmutated bases with a clean
+        stderr, so any non-zero exit under LEG B is the mutation talking.
+
+        Since T-VHERG.5 the second control is a real container run on the
+        `einvoice validate` surface too (it used to be a foregone exit 3,
+        which gave the leg no teeth); `validate` defaults to en16931, the
+        same profile spelled explicitly for the report surface."""
         for base in (_BASES["flate"], _BASES["raw"]):
             rc, out, err = self._run_cli(
                 ["einvoice.report", "--profile", "en16931"], base)
             self.assertEqual(rc, EXIT_OK, (out[-300:], err[-300:]))
             self.assertIn('"valid":true', out)
             rc, out, err = self._run_cli(["einvoice", "validate"], base)
-            self.assertEqual(rc, EXIT_PARSE, (out[-300:], err[-300:]))
+            self.assertEqual(rc, EXIT_OK, (out[-300:], err[-300:]))
+            self.assertIn("PASS", out)
             self.assertNotIn(TRACEBACK_MARK, err)
 
     def test_documented_exit_symbols(self):

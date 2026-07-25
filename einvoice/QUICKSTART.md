@@ -409,13 +409,44 @@ this exact block out of this file against the installed wheel, so if the
 engine ever stopped passing it, that test would go red rather than this page
 going quietly wrong.
 
-**PDFs (ZUGFeRD / Factur-X) are the same CII, wrapped.** A hybrid
-PDF/A-3 invoice carries this very `rsm:CrossIndustryInvoice` XML as an
-embedded attachment; `einvoice validate` does not open PDFs (it tells you so
-and names the route), so hand the container to
-`python3 -m einvoice.report <invoice.pdf>` instead — it extracts the
-attachment with the stdlib and runs the same rules, plus the
-`FX-CONTAINER-*` container-declaration checks.
+**PDFs (ZUGFeRD / Factur-X) are the same CII, wrapped — and `validate` takes
+them.** A hybrid PDF/A-3 invoice carries this very `rsm:CrossIndustryInvoice`
+XML as an embedded attachment. Since 0.2.7 you can hand the container straight
+to the same command you have been using: `einvoice validate invoice.pdf`
+extracts the attachment with the standard library only (no PyPDF, no Ghostscript,
+no network) and grades it against exactly the rules it would apply to that XML
+on its own. Worked example, on the fixture shipped in this repo:
+
+| command | exit | why |
+| --- | --- | --- |
+| `einvoice validate corpus/pdf/facturx-valid.pdf` | `0` | conformant under the CLI's default `en16931` profile |
+| `einvoice validate --profile xrechnung corpus/pdf/facturx-valid.pdf` | `1` | 3 fatal (`BR-DE-23-b`, `BR-DE-31`, `BR-TMP-3`) + 2 warnings |
+| `einvoice validate corpus/pdf/no-embedded.pdf` | `3` | a PDF with no embedded-files name tree → `unsupported-container` |
+
+Every output form behaves as it does for XML: `--json` returns the same keys
+(same top-level fields, same per-violation fields), and `--format sarif|junit|
+gitlab|github|azure|html|badge` render the same bodies.
+
+Honest limits worth knowing before you wire this into CI:
+
+- The extractor is a **classic-case** PDF reader. Encrypted PDFs,
+  cross-reference-stream / object-stream layouts (PDF 1.5+ without a classic
+  `trailer`), truncated files and unknown stream filters cannot be opened. Those
+  exit `3` with the literal token `unsupported-container` and a line naming the
+  concrete reason — never a guess and never a false `0`. In practice the
+  PDF/A-3 files real ERP exporters emit are the classic case; a PDF that has
+  been re-saved by an optimiser may not be.
+- Only the **first** embedded invoice file specification is read.
+- The `FX-CONTAINER-*` container-declaration checks (`/AFRelationship`, `/AF`,
+  the XMP Factur-X profile and its agreement with the CII `CustomizationID`,
+  PDF/A-3 identification) audit the *wrapper* rather than the invoice. They are
+  reported by `python3 -m einvoice.report <invoice.pdf>`, by `validate-batch`,
+  and by `einvoice validate --format <fmt> <invoice.pdf>` — but not in single-file
+  `validate`'s default text or `--json` output, which reports the invoice
+  verdict. If you care about wrapper conformance, use the report surface.
+
+`python3 -m einvoice.report <invoice.pdf>` still works exactly as before and is
+still the only place `--baseline`, `--pretty` and `--recurse` live.
 
 ## 5. Machine-readable: `--json`
 

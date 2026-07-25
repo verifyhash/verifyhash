@@ -18,11 +18,20 @@ What is asserted (mirrors the task acceptance criteria):
      'unsupported-container' non-pass report (valid=false + message), never a
      traceback and never exit 0.
   5. The committed fixtures are byte-reproducible from the stdlib generator.
+  6. T-VHERG.5, driven through the `einvoice` entry point across a real process
+     boundary: single-file `einvoice validate <container.pdf>` grades the
+     container (exit 0 on the default en16931 profile, 1 under xrechnung) with
+     a verdict identical to validating the extracted XML alone; `--json` on a
+     PDF carries the SAME top-level and per-violation key set as `--json` on an
+     XML file (no second output shape); an unreachable container keeps exit 3
+     naming the literal `unsupported-container` token; a delegated `--format`
+     renders a container; and non-PDF/non-XML input keeps its own hint.
 
 Run: python3 test_pdf_container.py
 """
 
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -573,6 +582,136 @@ class TestFixturesReproducible(unittest.TestCase):
             committed = _read(os.path.join(PDF_DIR, name))
             self.assertEqual(builder(), committed,
                              "%s drifted from its stdlib generator" % name)
+
+
+class TestValidateSubcommandTakesContainers(unittest.TestCase):
+    """T-VHERG.5: the SINGLE-FILE ``einvoice validate`` surface accepts a
+    Factur-X/ZUGFeRD container.
+
+    Driven through the ``einvoice`` entry point across a real process boundary
+    (not the library), because the defect being pinned was a CLI dispatch gap:
+    the wheel graded these exact files correctly via ``einvoice.report`` and
+    ``validate-batch`` while ``einvoice validate invoice.pdf`` exited 3 on the
+    not-well-formed row. Offline, stdlib-only, seconds.
+    """
+
+    #: A well-formed XML fixture — specifically the very CII invoice embedded in
+    #: VALID_PDF, so "same shape" comparisons are same-invoice comparisons.
+    XML_REFERENCE = VALID_INNER_XML
+
+    def _validate(self, *args):
+        proc = subprocess.run(
+            [sys.executable, "-m", "einvoice", "validate", *args],
+            cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return (proc.returncode, proc.stdout.decode("utf-8"),
+                proc.stderr.decode("utf-8"))
+
+    # (a) verdicts ---------------------------------------------------------
+    def test_valid_container_exits_zero_on_default_profile(self):
+        rc, out, err = self._validate(VALID_PDF)
+        self.assertEqual(rc, 0,
+                         "a valid Factur-X container must PASS under the CLI "
+                         "default en16931 profile\nstdout=%s\nstderr=%s"
+                         % (out, err))
+        self.assertIn("PASS", out)
+        self.assertNotIn("not well-formed", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_valid_container_exits_one_under_xrechnung(self):
+        rc, out, err = self._validate("--profile=xrechnung", VALID_PDF)
+        self.assertEqual(rc, 1, (out, err))
+        self.assertIn("FAIL", out)
+        self.assertNotIn("Traceback", err)
+
+    def test_container_verdict_equals_the_embedded_xml_validated_alone(self):
+        """The whole point of the one-seam design: extracting the attachment
+        and validating it as a plain file must give the SAME answer, byte for
+        byte, on both profiles."""
+        for profile in ("en16931", "xrechnung"):
+            with tempfile.TemporaryDirectory() as td:
+                inner = os.path.join(td, "inner.xml")
+                with open(inner, "wb") as fh:
+                    fh.write(pdf_container.extract_invoice_xml(VALID_PDF))
+                rc_x, out_x, _ = self._validate(
+                    "--json", "--profile=" + profile, inner)
+            rc_p, out_p, _ = self._validate(
+                "--json", "--profile=" + profile, VALID_PDF)
+            self.assertEqual(rc_p, rc_x, profile)
+            doc_p, doc_x = json.loads(out_p), json.loads(out_x)
+            # `source` legitimately differs (the two inputs have two paths);
+            # everything that is a VERDICT must be identical.
+            for key in ("valid", "violations", "syntax_bindings"):
+                self.assertEqual(doc_p.get(key), doc_x.get(key),
+                                 "%s diverged on %r" % (profile, key))
+
+    # (b) no second JSON shape --------------------------------------------
+    def test_json_key_sets_equal_those_of_an_xml_run(self):
+        """--json on a PDF must carry the SAME top-level and per-violation key
+        set as --json on an XML file — a container must not smuggle in the
+        report-schema envelope as a second output shape."""
+        # xrechnung so BOTH runs actually carry violation records to compare.
+        rc_p, out_p, err_p = self._validate(
+            "--json", "--profile=xrechnung", VALID_PDF)
+        rc_x, out_x, err_x = self._validate(
+            "--json", "--profile=xrechnung", self.XML_REFERENCE)
+        doc_p = json.loads(out_p)   # must parse at all
+        doc_x = json.loads(out_x)
+        self.assertEqual(set(doc_p), set(doc_x),
+                         "top-level --json keys diverge: pdf-only=%s xml-only=%s"
+                         % (sorted(set(doc_p) - set(doc_x)),
+                            sorted(set(doc_x) - set(doc_p))))
+        # The report-schema envelope must NOT have leaked in.
+        self.assertNotIn("report_version", doc_p)
+        self.assertNotIn("schema", doc_p)
+        self.assertTrue(doc_p["violations"],
+                        "fixture must produce violations for a key comparison")
+        keys_p = {frozenset(v) for v in doc_p["violations"]}
+        keys_x = {frozenset(v) for v in doc_x["violations"]}
+        self.assertEqual(keys_p, keys_x,
+                         "per-violation --json keys diverge: %s vs %s"
+                         % (keys_p, keys_x))
+        self.assertEqual(err_p, err_x, "stderr shapes diverge")
+        self.assertEqual(rc_p, rc_x)
+
+    # (c) unreadable containers stay an honest exit 3 ----------------------
+    def test_unreadable_containers_exit_three_naming_the_token(self):
+        for pdf in (NO_EMBED_PDF, ENCRYPTED_PDF):
+            rc, out, err = self._validate(pdf)
+            self.assertEqual(rc, 3, "%s must keep exit 3, got %d\nstderr=%s"
+                             % (pdf, rc, err))
+            self.assertIn("unsupported-container", err,
+                          "%s must name the documented error token" % pdf)
+            self.assertNotIn("Traceback", err)
+            self.assertEqual(out, "", "stdout must stay clean on stderr errors")
+
+    def test_unreadable_container_json_is_the_shared_error_object(self):
+        rc, out, err = self._validate("--json", NO_EMBED_PDF)
+        self.assertEqual(rc, 3, err)
+        doc = json.loads(out)
+        self.assertEqual(set(doc), {"source", "valid", "error", "message"})
+        self.assertEqual(doc["error"], "unsupported-container")
+        self.assertFalse(doc["valid"])
+
+    # (d) delegated formats work on a container ---------------------------
+    def test_delegated_format_renders_a_container(self):
+        rc, out, err = self._validate("--format", "sarif", VALID_PDF)
+        self.assertEqual(rc, 0, err)
+        self.assertNotIn("Traceback", err)
+        doc = json.loads(out)          # non-empty, real SARIF
+        self.assertIn("runs", doc)
+        self.assertTrue(out.strip())
+
+    # non-regression: non-PDF, non-XML input keeps its own route ------------
+    def test_non_pdf_non_xml_still_gets_the_wrong_file_type_hint(self):
+        with tempfile.TemporaryDirectory() as td:
+            junk = os.path.join(td, "export.json")
+            with open(junk, "wb") as fh:
+                fh.write(b'{"invoice": 1}\n')
+            rc, out, err = self._validate(junk)
+        self.assertEqual(rc, 3, err)
+        self.assertIn("S-WF: input is not well-formed XML", err)
+        self.assertIn("not a PDF container either", err)
+        self.assertNotIn("Traceback", err)
 
 
 if __name__ == "__main__":

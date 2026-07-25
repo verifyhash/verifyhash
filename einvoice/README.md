@@ -3,7 +3,8 @@
 A zero-dependency, embeddable, self-hostable conformance validator for
 **EN 16931** electronic invoices, targeting the German **XRechnung** CIUS
 (UBL 2.1 `Invoice` and UN/CEFACT CII syntaxes, including Factur-X/ZUGFeRD
-PDF containers via `einvoice.report`).
+PDF/A-3 containers — `einvoice validate invoice.pdf` extracts and grades the
+embedded XML directly, with the standard library only).
 
 - **Zero dependency.** Python 3 (>=3.8) standard library only. No lxml, no
   Java, no Schematron toolchain, no network calls. `pip install
@@ -375,8 +376,12 @@ exact reason in
   symmetrically), differentially proven at 0 divergences over the vendored
   CreditNote corpus — see `COVERAGE.md` §"UBL CreditNote scope". CII
   (`CrossIndustryInvoice`) and Factur-X/ZUGFeRD PDF containers ARE also
-  validated (via `einvoice.report`), with the graded CII rule subsets in
-  `COVERAGE.md`. XML signatures are not checked.
+  validated — since 0.2.7 by `einvoice validate <invoice.pdf>` itself as well
+  as by `einvoice.report` / `validate-batch` — with the graded CII rule subsets
+  in `COVERAGE.md`. The container reader handles classic-layout PDFs; encrypted,
+  cross-reference-stream (PDF 1.5+) and truncated files are refused as
+  `unsupported-container` (exit 3), never guessed at. XML signatures are not
+  checked.
 - **The 100% figures are agreement/pass rates for the implemented, graded
   rule × syntax pairs only** (the `differential.py` legs and the
   `conformance.py` vendored vectors quoted above). They are 100% of a

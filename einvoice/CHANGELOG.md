@@ -104,6 +104,43 @@ default report format crashes from the fixed one.
 
 ### Added
 
+- **`einvoice validate <invoice.pdf>` accepts a Factur-X/ZUGFeRD PDF/A-3
+  container.** ZUGFeRD/Factur-X — EN 16931 XML embedded in a PDF/A-3 — is the
+  dominant delivery form under the German mandate and the first file an ERP
+  developer hands this binary, yet the one command `QUICKSTART.md` teaches
+  first refused it: `einvoice validate corpus/pdf/facturx-valid.pdf` exited `3`
+  with `S-WF: input is not well-formed XML` and a hint redirecting to a sibling
+  entry point, while the *same wheel* graded that exact file correctly through
+  `python3 -m einvoice.report` and `einvoice validate-batch`. Single-file
+  `validate` now dispatches on the `%PDF-` magic (bytes, never the extension)
+  like those surfaces already did, reduces the container to its embedded
+  invoice XML with the already-shipped zero-dependency
+  `einvoice.pdf_container`, and hands those bytes to **the same seam the XML
+  path uses** (`validate.validate_file` over a `BytesIO`, then the identical
+  syntax-binding projection). Because a PDF becomes an ordinary graded invoice
+  one line after it is read, the default text summary, `--json` and all seven
+  delegated `--format` values are produced by the code that already produced
+  them for XML: no second PDF reader, no second JSON shape, no new dependency,
+  no rule change. Measured on the committed fixtures:
+  `validate corpus/pdf/facturx-valid.pdf` → `0` (CLI default profile
+  `en16931`), the same file with `--profile xrechnung` → `1` (3 fatal —
+  `BR-DE-23-b`, `BR-DE-31`, `BR-TMP-3` — and 2 warnings). That finding list is
+  byte-identical to running `einvoice validate` on the extracted XML as a plain
+  file, and its counts match `validate_bytes()` on the same bytes. A container the zero-dep
+  extractor cannot reach (encrypted, no `/EmbeddedFiles` name tree,
+  cross-reference-stream layout, truncated) keeps exit `3` and carries the
+  documented literal token `unsupported-container` — the same token the report
+  surface has always used, so **no new exit code and no new error code was
+  minted** — on stderr as an `S-CONTAINER:` line naming the concrete extractor
+  reason, and under `--json` as the four-key `source`/`valid`/`error`/`message`
+  object the not-well-formed arm already emits. Known limit, deliberate: the
+  `FX-CONTAINER-*` wrapper-declaration findings still come from the report
+  surface (and from `validate --format <fmt>`, which renders through it), not
+  from single-file `validate`'s text/`--json` output. `validate-batch` is
+  untouched — it already handled PDFs. Documented in `EXIT-CODES.md`,
+  `QUICKSTART.md` §4 and `README.md`; pinned by new CLI-level assertions in
+  `test_pdf_container.py`.
+
 - **`einvoice --explain <RULE-ID>` — the remediation catalog is now reachable
   from the entry point that printed the rule id.** After `einvoice validate`
   prints `BR-CO-15: …`, the most natural next keystroke is

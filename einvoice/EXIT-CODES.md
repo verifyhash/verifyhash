@@ -282,15 +282,30 @@ fixed-seed fuzz corpus of mangled containers):
   open is never a false pass) and never a traceback. How the error appears in
   each machine format is specified in
   [REPORT-FORMATS.md](REPORT-FORMATS.md#unsupported-pdf-container).
-- **`python3 -m einvoice validate <file.pdf>`** (the `cli.py` surface) has
-  **no PDF-container dispatch**: it reads the bytes as XML, so *any* `.pdf` —
-  including a fully valid Factur-X container — lands on the existing exit-`3`
-  `S-WF` not-well-formed row (measured). Since T-VHUX.4 the human stderr
-  output sniffs the `%PDF-` magic (bytes, never the extension) and appends a
-  `hint:` line redirecting to `python3 -m einvoice.report <invoice.pdf>` —
-  the exit code and the `--json` payload are unchanged. The
-  `unsupported-container` token only ever appears on the
-  `python3 -m einvoice.report` surface; point Factur-X/ZUGFeRD PDFs there.
+- **`python3 -m einvoice validate <file.pdf>`** (the `cli.py` surface) since
+  **0.2.7 (T-VHERG.5) dispatches on the same `%PDF-` magic** and grades the
+  container itself, so the two single-file surfaces now agree. The container
+  is reduced to its embedded invoice XML by the same zero-dependency
+  `einvoice.pdf_container` extractor, and from that point the bytes travel the
+  ordinary XML path — so the verdict, the default text summary, `--json` and
+  all seven delegated `--format` values are produced by exactly the code that
+  produces them for an XML file. Measured on the committed fixtures:
+  `einvoice validate corpus/pdf/facturx-valid.pdf` exits `0` (the CLI default
+  profile is `en16931`), the same file under `--profile=xrechnung` exits `1`
+  (3 fatal, 2 warning), and a container the extractor cannot reach
+  (`no-embedded.pdf`, `encrypted.pdf`, `facturx-truncated.pdf`) exits `3`
+  carrying the same literal `unsupported-container` token — on stderr as an
+  `S-CONTAINER:` line naming the concrete extractor reason, and under `--json`
+  as `{"source", "valid": false, "error": "unsupported-container", "message"}`,
+  the same four-key error object the not-well-formed arm already emits. **No
+  new exit code is minted** and no second JSON shape is introduced. A PDF whose
+  container opens but whose *embedded* XML is ill-formed still lands on the
+  `S-WF` not-well-formed row (`3`), now with a hint saying the defect is in the
+  attachment rather than the wrapper. A non-PDF, non-XML file is unaffected and
+  keeps its existing wrong-file-type hint.
+- **`python3 -m einvoice.report <file.pdf>`** remains fully supported and is
+  still the only place `--baseline` / `--pretty` / `--recurse` live; it is no
+  longer the *only* route to a container.
 - **`validate-batch`**: unchanged, as already documented in the table above —
   an unsupported container is an *errored* file, and the batch returns `3`
   only when some file **only** errored and no file had a fatal (a fatal

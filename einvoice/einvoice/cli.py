@@ -1,7 +1,7 @@
 """Command-line interface for the einvoice validator.
 
 Usage:
-    einvoice validate <invoice.xml|-> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung]
+    einvoice validate <invoice.xml|invoice.pdf|-> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung]
     einvoice validate-batch <dir|glob> [--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung]
     einvoice receipt  <invoice.xml> [--profile=en16931|xrechnung]
     einvoice receipt  --verify <receipt.json>
@@ -212,6 +212,7 @@ Standard library only.
 """
 
 import glob
+import io
 import json
 import os
 import signal
@@ -230,9 +231,10 @@ from .report import (
 )
 from .remediation import resolve_message, SUPPORTED_LANGS
 from .config import load_config_with_source, ConfigError
+from . import pdf_container
 from .pdf_container import is_pdf_file
 
-USAGE = ("usage: einvoice validate <invoice.xml|-> "
+USAGE = ("usage: einvoice validate <invoice.xml|invoice.pdf|-> "
          "[--json] [--format=<fmt>] [--quiet] "
          "[--profile=en16931|xrechnung] [--lang=en|de] "
          "[--fail-on=fatal|warning|information]\n"
@@ -352,15 +354,20 @@ DELEGATED_FORMATS = tuple(sorted(set(REPORT_FORMATS) - set(OUTPUT_FORMATS)))
 #: :mod:`einvoice.report`, and ``BATCH_FORMATS`` for the aggregate-capable subset.
 #: The ``python3 -m einvoice.report`` pointer stays — that entry point is real,
 #: still works, and is the only place ``--baseline`` / ``--pretty`` / ``--recurse``
-#: live — but it is no longer presented as the ONLY route to the CI formats,
-#: because since T-VHERG.4 it is not. Every reference is a URL, never a repo file
-#: the wheel does not ship.
+#: live — but it is no longer presented as the ONLY route to the CI formats
+#: (T-VHERG.4) nor as the only route to a Factur-X/ZUGFeRD PDF container
+#: (T-VHERG.5), because it is neither. Every reference is a URL, never a repo
+#: file the wheel does not ship.
 HELP = (
     USAGE + "\n\n"
     "Commands:\n"
-    "  validate <invoice.xml|->   validate one EN 16931 / XRechnung invoice\n"
-    "                             (XML file, or '-' to read from stdin);\n"
-    "                             exit 0 = conformant, 1 = findings, 3 = not XML\n"
+    "  validate <invoice.xml|invoice.pdf|->\n"
+    "                             validate one EN 16931 / XRechnung invoice:\n"
+    "                             a UBL/CII XML file, a Factur-X/ZUGFeRD\n"
+    "                             PDF/A-3 container (the embedded XML is\n"
+    "                             extracted and graded), or '-' for stdin;\n"
+    "                             exit 0 = conformant, 1 = findings,\n"
+    "                             3 = unreadable input\n"
     "  validate-batch <dir|glob>  validate every matching invoice and summarise\n"
     "  receipt <invoice.xml>      emit a JSON conformance receipt for one invoice\n"
     "                             (receipt --verify <receipt.json> re-checks one)\n"
@@ -384,9 +391,11 @@ HELP = (
     "validate-batch has an aggregate shape for %s only; the other six\n"
     "describe ONE invoice, so run them per file.\n"
     "The sibling entry point still works and still owns the flags this one\n"
-    "has never had (baseline diffing, pretty JSON, explicit recursion) plus\n"
-    "the Factur-X/ZUGFeRD PDF-container route:\n"
-    "  python3 -m einvoice.report --format <fmt> <invoice.xml>\n"
+    "has never had (baseline diffing, pretty JSON, explicit recursion). It no\n"
+    "longer owns the Factur-X/ZUGFeRD PDF-container route: since 0.2.7\n"
+    "'einvoice validate invoice.pdf' extracts and grades the embedded XML\n"
+    "itself, with the same extractor and the same rules.\n"
+    "  python3 -m einvoice.report --format <fmt> <invoice.xml|invoice.pdf>\n"
     "Careful: it defaults to --profile xrechnung, this CLI to en16931.\n"
     "Full flag set and documentation: https://verifyhash.com/einvoice/\n"
     "This CLI validates; it never sends your invoice anywhere."
@@ -761,6 +770,67 @@ def _run_show_config(resolved):
     for name, value, source in resolved:
         sys.stdout.write("%s: %s (source: %s)\n" % (name, value, source))
     return EXIT_OK
+
+
+def _invoice_input(path, pdf_xml):
+    """The invoice this run grades, in a shape :func:`validate_file` and
+    :func:`parse_file` already accept — and a FRESH reader on every call.
+
+    ``pdf_xml is None`` means plain XML input: ``path`` is returned unchanged,
+    so the XML path opens the file exactly as it always has and not one byte of
+    its behaviour moves. For a Factur-X/ZUGFeRD container ``pdf_xml`` holds the
+    embedded invoice XML already extracted by :mod:`einvoice.pdf_container`,
+    and each call wraps it in a NEW :class:`io.BytesIO` — the two consumers
+    (``validate_file``, then the syntax-binding re-parse) both read from
+    position 0, so a single shared stream would hand the second one an empty
+    buffer and silently drop every syntax-binding finding.
+
+    This is the whole of the PDF seam: one function, no second parser, and the
+    container is read from disk exactly once.
+    """
+    return path if pdf_xml is None else io.BytesIO(pdf_xml)
+
+
+def _report_unsupported_container(display_path, exc, as_json):
+    """Answer a PDF whose container the zero-dependency extractor cannot reach
+    (encrypted, no ``/EmbeddedFiles`` name tree, cross-reference-stream layout,
+    truncated, unknown filter chain) — and return :data:`EXIT_PARSE`.
+
+    Deliberately mints NO new exit code and NO new error token: the outcome is
+    the existing "could not reduce the input to a validatable invoice" family
+    (3), carrying the literal ``unsupported-container`` token that
+    :func:`einvoice.report.build_report` has always used for the same
+    condition, so the two surfaces name the same failure the same way. Never
+    exit 0 — a container we cannot open is never a false pass.
+
+    The ``--json`` body is the four-key ``source``/``valid``/``error``/
+    ``message`` error object the not-well-formed arm already emits, with a
+    different ``error`` value; no second JSON shape is introduced.
+    """
+    detail = str(exc)
+    if detail.startswith("unsupported container:"):
+        detail = detail[len("unsupported container:"):].strip()
+    message = ("unsupported container — could not extract embedded invoice "
+               "XML: %s" % detail)
+    if as_json:
+        sys.stdout.write(json.dumps({
+            "source": display_path,
+            "valid": False,
+            "error": "unsupported-container",
+            "message": message,
+        }, indent=2) + "\n")
+    else:
+        # The human line leads with the literal token so grepping stderr and
+        # grepping the --json body find the SAME string.
+        sys.stderr.write(
+            "S-CONTAINER: unsupported-container — could not extract the "
+            "embedded invoice XML from this PDF: %s\n" % detail)
+        sys.stderr.write(
+            "  hint: this file is a PDF, but not a Factur-X/ZUGFeRD container "
+            "this build can open. Re-export it as PDF/A-3 with the invoice XML "
+            "attached, remove the encryption, or validate the embedded XML on "
+            "its own with 'einvoice validate <invoice.xml>'\n")
+    return EXIT_PARSE
 
 
 def _run_validate_format(path, display_path, fmt, profile, fail_on):
@@ -1425,22 +1495,46 @@ def _main(argv=None):
         # forms fall through to the untouched code below, so with --format absent
         # — or set to text/json — not a byte of the historical behaviour changes.
         #
-        # THE PDF EXCLUSION IS DELIBERATE, not an oversight. ``report.build_report``
-        # additionally dispatches on the ``%PDF-`` magic and extracts a
-        # Factur-X/ZUGFeRD container, while ``einvoice validate`` documents (see
-        # EXIT-CODES.md, "Code 3 — unsupported PDF container") that it has NO
-        # container dispatch: any PDF is read as XML and lands on the S-WF exit-3
-        # row with a hint naming the container entry point. Routing a PDF through
-        # the delegated path would silently grow that capability — and make a
-        # published doc statement false — as a side effect of an output-format
-        # flag. So a PDF keeps today's behaviour byte-for-byte on every format,
-        # and the hint still tells the user exactly where the container route is.
-        if fmt in DELEGATED_FORMATS and not is_pdf_file(path):
+        # PDFs GO THROUGH HERE TOO (T-VHERG.5). ``report.build_report`` already
+        # dispatches on the ``%PDF-`` magic and extracts the Factur-X/ZUGFeRD
+        # container zero-dependency, so a container reaching this delegation is
+        # graded and rendered by exactly the code that grades and renders one on
+        # the ``python3 -m einvoice.report`` surface — nothing is reimplemented
+        # here. (Until T-VHERG.5 a PDF was excluded from this branch to keep it
+        # on the old XML-only exit-3 row; that exclusion is gone with the
+        # single-file refusal it existed to protect.)
+        if fmt in DELEGATED_FORMATS:
             return _run_validate_format(path, display_path, fmt, profile,
                                         fail_on)
 
+        # Factur-X / ZUGFeRD PDF/A-3 container (T-VHERG.5). The dominant
+        # delivery form under the German mandate is EN 16931 XML wrapped in a
+        # PDF/A-3, and it is the first file an ERP developer hands this binary;
+        # until now `einvoice validate invoice.pdf` read the container bytes as
+        # XML and died on the S-WF exit-3 row while the very same wheel graded
+        # that file correctly via `einvoice.report` and `validate-batch`.
+        #
+        # ONE SEAM, NO SECOND READER: reduce the container to its embedded
+        # invoice XML AS EARLY AS POSSIBLE with the already-shipped zero-dep
+        # extractor, then hand those bytes to the UNTOUCHED code below via
+        # :func:`_invoice_input`. From that line on a PDF *is* an ordinary
+        # graded invoice — the default text summary, ``--json`` and every
+        # delegated format are produced by the same statements that produce
+        # them for an XML file, so no second output shape can appear and the
+        # PDF path cannot drift from the XML path. No new dependency, no new
+        # parser, no rule change: identical bytes in, identical verdict out
+        # (asserted against direct XML validation in test_pdf_container.py).
+        pdf_xml = None
+        if is_pdf_file(path):
+            try:
+                pdf_xml = pdf_container.extract_invoice_xml(path)
+            except pdf_container.UnsupportedContainer as exc:
+                return _report_unsupported_container(
+                    display_path, exc, as_json=as_json)
+
         try:
-            result = validate_file(path, profile=profile)
+            result = validate_file(_invoice_input(path, pdf_xml),
+                                   profile=profile)
         except NotWellFormed as exc:
             if as_json:
                 sys.stdout.write(json.dumps({
@@ -1450,27 +1544,29 @@ def _main(argv=None):
                     "message": str(exc),
                 }, indent=2) + "\n")
             else:
-                # First-run ergonomics (T-VHUX.4, measured 2026-07-22): the two
-                # most common wrong-file-type mistakes both landed on the bare
-                # parser detail with no route forward — (1) a JSON/CSV export
-                # fed to `validate` learned nothing about the PDF container
-                # route, (2) a Factur-X/ZUGFeRD *PDF* fed to `validate` was
-                # told "not well-formed XML" instead of the correct entry
-                # point. Sniff the %PDF- magic (bytes, never the extension —
-                # reuses the shipped pdf_container.is_pdf_file, which returns
-                # False instead of raising on any read problem) and append ONE
-                # route-naming line. The first line is byte-identical to
-                # before (its prefix is pinned by test_exit_codes.py /
-                # test_stdout_purity.py), the --json payload is untouched
-                # (stable machine contract), and the exit code stays the
-                # documented EXIT_PARSE=3 in both branches.
+                # First-run ergonomics (T-VHUX.4, measured 2026-07-22): the most
+                # common wrong-file-type mistake landed on the bare parser
+                # detail with no route forward — a JSON/CSV export fed to
+                # `validate` learned nothing about the shapes this tool takes.
+                # The first line is byte-identical to before (its prefix is
+                # pinned by test_exit_codes.py / test_stdout_purity.py), the
+                # --json payload is untouched (stable machine contract), and
+                # the exit code stays the documented EXIT_PARSE=3.
+                #
+                # Since T-VHERG.5 a PDF no longer reaches this arm as a
+                # *container* problem — an unreadable container is answered by
+                # _report_unsupported_container above. Reaching here WITH a PDF
+                # input means the container opened but the XML it carries is
+                # itself ill-formed, so say exactly that instead of sending the
+                # user to a sibling command that would fail identically.
                 sys.stderr.write(
                     "S-WF: input is not well-formed XML: %s\n" % exc)
-                if is_pdf_file(path):
+                if pdf_xml is not None:
                     sys.stderr.write(
-                        "  hint: this file is a PDF — validate a Factur-X/"
-                        "ZUGFeRD PDF container with 'python3 -m "
-                        "einvoice.report <invoice.pdf>' instead\n")
+                        "  hint: this file is a PDF whose Factur-X/ZUGFeRD "
+                        "container opened, but the invoice XML embedded in it "
+                        "is not well-formed — the defect is in the attachment, "
+                        "not in the PDF wrapper\n")
                 else:
                     sys.stderr.write(
                         "  hint: not a PDF container either — supported "
@@ -1488,8 +1584,10 @@ def _main(argv=None):
         # exit stays driven solely by fatal business-rule violations,
         # byte-identical to today. validate_file already parsed this file cleanly
         # above, so this re-parse through the identical hardened parser cannot
-        # raise NotWellFormed.
-        sb = syntax_binding_section(parse_file(path))
+        # raise NotWellFormed. _invoice_input hands it a FRESH reader over the
+        # same bytes, so a PDF container is re-read from the already-extracted
+        # attachment rather than from disk (the file is opened exactly once).
+        sb = syntax_binding_section(parse_file(_invoice_input(path, pdf_xml)))
 
         if as_json:
             out = result.to_dict(source=display_path)

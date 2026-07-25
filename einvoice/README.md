@@ -395,7 +395,11 @@ See `SPEC.md` §6 for the full deferred list.
 > `test_quickstart.py`.
 
 Three ways in, one code path (`einvoice/cli.py` — proven identical by
-`test_packaging.py`):
+`test_packaging.py`). Mind the labels in the block below: the `(a)` and `(b2)`
+forms name `einvoice.py` or a local source directory, so they need a
+**repository checkout** (or a vendored copy of one); the `(b)` forms are what
+the published wheel gives you and need nothing from this repo.
+`test_doc_commands_from_wheel.py` enforces that split.
 
 ```sh
 # a) straight from a checkout — nothing to install
@@ -674,7 +678,9 @@ through the report/library path. Full field docs:
 ### Reproduce this yourself
 
 The whole "machine-proven-coverage" claim rebuilds from the vendored official
-artifacts with **one** committed command:
+artifacts with **one** committed command — from a **repository checkout**, not
+from the wheel (`prove.py`, `differential.py` and the corpus are repo-only, by
+design):
 
 ```sh
 PYTHONPATH=$HOME/.local/lib/python3.10/site-packages python3 prove.py
@@ -728,7 +734,9 @@ report live truth, never a frozen string.
 
 `prove.py` above rebuilds the claim from scratch (a few minutes, needs Saxon).
 If you instead want a **fast, single-command check that the published claim has
-not drifted from the committed source**, run:
+not drifted from the committed source**, run this — again from a **repository
+checkout**, since it re-derives the numbers from the source tree (the wheel
+carries the resulting `attestation.json`, not the verifier script):
 
 ```sh
 python3 verify_attestation.py
@@ -799,7 +807,11 @@ exit-code mapping, and the SARIF-upload step live in
 [`action/README.md`](action/README.md). It is referenced by in-repo path as
 shown — it is **not** listed on the GitHub Marketplace.
 
-The 60-second version (any CI system):
+The 60-second version (any CI system). This one vendors a **repository
+checkout** into `third_party/` — `ci/validate-invoices.sh` is a repo file, not
+part of the wheel; if you would rather install from PyPI, use
+`python3 -m pip install verifyhash-einvoice` and the recipes in
+[`ci/README.md`](ci/README.md):
 
 ```sh
 python3 -m pip install ./third_party/einvoice        # vendored copy; zero deps

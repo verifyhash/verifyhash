@@ -31,7 +31,9 @@ be self-contradictory); T-VHCRAWL.1 then narrowed WHICH pages ask to be
 indexed. The landing, the German landing, the compare / licensing / validate /
 walkthrough / German-walkthrough pages and the rule index hub are
 unconditionally indexable and unconditionally sitemapped. A per-rule page is
-indexable only if it clears :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR`; the rest
+indexable only if it clears :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR` AND is not
+a collapsed near-twin of a sibling that clears it too (T-VHCRAWL.3's
+:data:`RULE_PAGE_SIMILARITY_CEILING`); the rest
 carry ``<meta name="robots" content="noindex,follow">`` and are left out of
 ``sitemap.xml``, while still being generated, linked and reachable. Both
 decisions read the ONE predicate :func:`indexable_rule_ids`, so the meta and
@@ -592,8 +594,9 @@ def render_page(rule_id, entry, indexable=True):
     w("<head>")
     w('<meta charset="utf-8">')
     w('<meta name="viewport" content="width=device-width, initial-scale=1">')
-    # Crawl directive (T-VHCRAWL.1). A rule page scoring below
-    # RULE_PAGE_DISTINCTIVENESS_FLOOR is asked NOT to be indexed — but it stays
+    # Crawl directive (T-VHCRAWL.1, extended by T-VHCRAWL.3). A rule page
+    # scoring below RULE_PAGE_DISTINCTIVENESS_FLOOR, or collapsed as a near-twin
+    # by RULE_PAGE_SIMILARITY_CEILING, is asked NOT to be indexed — but it stays
     # on disk, stays linked from the hub, stays a first-class destination for
     # humans and deep links, and keeps its OWN canonical below. "follow" (never
     # "nofollow") is deliberate: link equity must keep flowing through this page
@@ -721,11 +724,69 @@ def render_page(rule_id, entry, indexable=True):
 # CHOSEN FLOOR: 30 distinctive tokens — inside the 25-40 band the run-329
 # numbers imply, and on this measure it is "at least twice the family median
 # (16)", which is the line where a page stops being template and starts being
-# content. It excludes 273 of 297 rule pages and KEEPS 24, so sitemap.xml goes
-# from 305 URLs to 32 (8 hand-built surface pages + 24 rule pages). Raise it to
-# shrink the indexable set further; lower it to widen — nothing else changes,
-# because indexable_rule_ids() below is the single consumer.
+# content. It excludes 273 of 297 rule pages and KEEPS 24 — and the ceiling
+# below then collapses those 24 to 16, so sitemap.xml goes from 305 URLs to 24
+# (8 hand-built surface pages + 16 rule pages). Raise the floor to shrink the
+# candidate set further; lower it to widen — nothing else changes, because
+# indexable_rule_ids() below is the single consumer.
 RULE_PAGE_DISTINCTIVENESS_FLOOR = 30
+
+# ---------------------------------------------------------------------------
+# WHY A SECOND, PAIRWISE GATE — RULE_PAGE_SIMILARITY_CEILING (T-VHCRAWL.3).
+#
+# The floor above is a per-page property: it asks "does THIS page carry enough
+# rare vocabulary to be worth reading". That question is blind to SIBLINGS. A
+# page can be rich in rare tokens (a long XPath location hint, several BT
+# references, a detailed German fix) and still be a 95%-identical restatement
+# of the page next to it, because the rare tokens it carries are the SAME rare
+# tokens its sibling carries. VAT-category rules are exactly that shape: the
+# "-08" family is one sentence per category code (AE reverse charge, E exempt,
+# G export, IC intra-community, O out-of-scope, S standard, Z zero-rated, AF/AG
+# the Spanish IGIC/IPSI twins) over the same taxable-amount arithmetic.
+#
+# MEASUREMENT THAT MOTIVATED THE CEILING — run 335, this generator's OWN
+# tokenizer, over the 24 pages the floor kept, quoted verbatim:
+# "BR-AF-08/BR-AG-08/BR-S-08 at Jaccard 0.950-0.955, and
+#  BR-AE-08/BR-O-08/BR-IC-08/BR-Z-08 a full clique at 0.932-0.942, plus
+#  BR-CL-10/BR-CL-11 at 0.953."
+# Reproduced here at the same run: of the 276 pairs among those 24 pages the
+# median is 0.474, the minimum 0.333, the maximum 0.955.
+#
+# THE MEASURE: Jaccard similarity |A n B| / |A u B| over _visible_tokens() of
+# the RENDERED page — the SAME tokenizer and the same rendered input the floor
+# uses, never a second one. Note this is *set* Jaccard over visible text, so it
+# is markup-blind and repetition-blind: two pages that differ only in a rule id
+# and a category letter land near 1.0, which is precisely the class of page
+# Constitution rule 7 forbids publishing.
+#
+# CHOSEN CEILING: 0.85. It sits 0.376 above the median pair and 0.13 below the
+# lowest genuine-cluster edge (0.927), so it is nowhere near a typical sibling
+# pair: at 0.85 exactly 19 of the 276 pairs are over the line, and they are not
+# scattered — they form three connected components covering 11 pages:
+#   * BR-AF-08 / BR-AG-08 / BR-S-08                (0.950-0.955)
+#   * BR-CL-10 / BR-CL-11                          (0.953)
+#   * BR-AE-08 / BR-E-08 / BR-G-08 / BR-IC-08 /
+#     BR-O-08  / BR-Z-08                           (0.860-0.942)
+# The third component is LARGER than the four-way clique run 335 named: at 0.85
+# BR-E-08 and BR-G-08 (0.927 to each other, 0.860-0.873 to the clique) join it.
+# That is the intended behaviour — they are the same one-sentence-per-category
+# family — and it is stated here rather than hidden, because the cluster shape,
+# not just the number, is what a future reader needs to re-derive.
+#
+# The next pair below the line is 0.837, and the gap 0.837 -> 0.860 is the only
+# place in the distribution where a small nudge changes the outcome; anywhere
+# in 0.84-0.85 gives the same three components. A ceiling of 0.96 or above
+# collapses NOTHING (the maximum pair is 0.955) and would be a no-op dressed up
+# as a policy — do not raise it there. Lowering the FLOOR to compensate for a
+# tighter ceiling is likewise forbidden: the two gates answer different
+# questions and must not trade against each other.
+#
+# WHAT THE CEILING DOES: nothing is deleted. All 297 rule pages are still
+# generated, still linked from the hub, still reachable, still canonical to
+# themselves. Within each over-ceiling cluster exactly ONE representative keeps
+# asking to be indexed; its near-twins get noindex,follow and drop out of
+# sitemap.xml — the identical treatment T-VHCRAWL.1 gave sub-floor pages.
+RULE_PAGE_SIMILARITY_CEILING = 0.85
 
 # A token is "distinctive" when at most this fraction of the rule-page family
 # contains it. 10% of 297 pages = 29.7, i.e. document frequency <= 29.
@@ -776,21 +837,121 @@ def rule_page_distinctiveness(catalog):
             for rid, toks in tokens.items()}
 
 
+def rule_page_similarity(catalog, rule_ids):
+    """Map ``(a, b) -> Jaccard`` for every unordered pair in ``rule_ids`` (pure).
+
+    Keys are tuples ``(a, b)`` with ``a`` before ``b`` in ``rule_ids`` order,
+    so each pair appears exactly once. Similarity is
+    ``|A n B| / |A u B|`` over :func:`_visible_tokens` of the RENDERED page —
+    the same tokenizer and the same rendered input :func:`rule_page_distinctiveness`
+    scores, never a second implementation.
+
+    Like the distinctiveness score this is INDEPENDENT of the ``indexable``
+    flag: the flag only toggles ``<meta>`` elements and ``_visible_tokens()``
+    strips all markup, so the measurement cannot be perturbed by the decision
+    it feeds. Pages are rendered with the default flag for that reason.
+
+    An empty page (no visible tokens at all) would give ``0/0``; that pair is
+    reported as ``0.0`` rather than raising, because "no shared vocabulary" is
+    the honest reading and a rendering regression that empties a page is
+    already a loud failure in ``test_site.py``.
+    """
+    ids = list(rule_ids)
+    tokens = {rid: _visible_tokens(render_page(rid, catalog[rid]))
+              for rid in ids}
+    out = {}
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            union = tokens[a] | tokens[b]
+            out[(a, b)] = (len(tokens[a] & tokens[b]) / len(union)
+                           if union else 0.0)
+    return out
+
+
+def near_duplicate_clusters(catalog, rule_ids):
+    """Group ``rule_ids`` into near-duplicate clusters (pure, deterministic).
+
+    Two ids are joined when their :func:`rule_page_similarity` STRICTLY exceeds
+    :data:`RULE_PAGE_SIMILARITY_CEILING`; clusters are the connected components
+    of that graph. Transitive closure — not cliques — is deliberate: A~B and
+    B~C with A~C just under the line still means three pages a reader cannot
+    tell apart, and component membership is order-independent, which cliques
+    (whose enumeration depends on a tie-breaking rule) are not.
+
+    Returns only components of size >= 2, each as a list in ``rule_ids`` order,
+    the components themselves ordered by their first member. Singletons are
+    omitted because they are exactly the ids nothing happens to.
+    """
+    ids = list(rule_ids)
+    rank = {rid: i for i, rid in enumerate(ids)}
+    parent = {rid: rid for rid in ids}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for (a, b), sim in rule_page_similarity(catalog, ids).items():
+        if sim > RULE_PAGE_SIMILARITY_CEILING:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                # Union toward the lower-ranked root purely so the structure is
+                # deterministic; the root is never used as the representative.
+                lo, hi = (ra, rb) if rank[ra] < rank[rb] else (rb, ra)
+                parent[hi] = lo
+
+    groups = {}
+    for rid in ids:
+        groups.setdefault(find(rid), []).append(rid)
+    return [members for _, members in sorted(groups.items(),
+                                            key=lambda kv: rank[kv[1][0]])
+            if len(members) > 1]
+
+
 def indexable_rule_ids(catalog):
     """THE single source of truth for which rule pages ask to be indexed.
 
-    Returns the rule ids scoring at or above
-    :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR`, in catalog order (stable).
+    Two gates, in order, both measured on the pages as they actually render:
 
-    Both consumers go through here — :func:`render_all` (which pages get
-    ``noindex,follow``) and :func:`render_sitemap` (which pages get a
-    ``<loc>``) — so the meta and the sitemap cannot disagree by construction.
-    Everything NOT in this list is still generated, still linked, still
-    reachable; it is only absent from the indexable surface.
+    1. FLOOR (T-VHCRAWL.1) — keep the ids scoring at or above
+       :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR`. This is a per-page question:
+       does this page carry enough rare vocabulary to be worth reading.
+    2. CEILING (T-VHCRAWL.3) — among the survivors, group ids whose pairwise
+       similarity exceeds :data:`RULE_PAGE_SIMILARITY_CEILING` into clusters
+       (:func:`near_duplicate_clusters`) and keep exactly ONE representative
+       per cluster. This is the sibling question a floor structurally cannot
+       answer: three pages can each clear the floor and still be 95% the same
+       page.
+
+    REPRESENTATIVE CHOICE, deterministic and re-derivable: the cluster member
+    with the HIGHEST distinctiveness score wins; ties break toward the earlier
+    catalog position. Highest score is the defensible pick because it is the
+    same measure gate 1 already trusts to rank "worth reading", so the page
+    that survives a cluster is the one carrying the most rare vocabulary of the
+    group. Catalog order is a total order over ids, so the outcome is unique —
+    there is no hidden dependence on dict iteration or set ordering.
+
+    Returns rule ids in catalog order (stable). Both consumers go through here
+    — :func:`render_all` (which pages get ``noindex,follow``) and
+    :func:`render_sitemap` (which pages get a ``<loc>``) — so the meta and the
+    sitemap cannot disagree by construction.
+
+    NOTHING IS DELETED by either gate. Every rule page is still generated,
+    still linked from the hub, still reachable, still canonical to itself; the
+    ones outside this list simply stop *asking* to be indexed.
     """
     scores = rule_page_distinctiveness(catalog)
-    return [rid for rid in catalog
-            if scores[rid] >= RULE_PAGE_DISTINCTIVENESS_FLOOR]
+    order = {rid: i for i, rid in enumerate(catalog)}
+    passing = [rid for rid in catalog
+               if scores[rid] >= RULE_PAGE_DISTINCTIVENESS_FLOOR]
+
+    collapsed = set()
+    for cluster in near_duplicate_clusters(catalog, passing):
+        keep = max(cluster, key=lambda rid: (scores[rid], -order[rid]))
+        collapsed.update(rid for rid in cluster if rid != keep)
+
+    return [rid for rid in passing if rid not in collapsed]
 
 
 def render_all(catalog):
@@ -3391,8 +3552,9 @@ def render_sitemap(catalog):
     come from :func:`indexable_rule_ids` — the SAME predicate
     :func:`render_all` uses to decide the ``noindex,follow`` meta, so a page
     can never be sitemapped and noindexed at once (T-VHCRAWL.1). Rule pages
-    below the floor are still generated and still linked from the hub; they
-    are simply not advertised for indexing.
+    below the floor, and near-twins collapsed by
+    :data:`RULE_PAGE_SIMILARITY_CEILING` (T-VHCRAWL.3), are still generated and
+    still linked from the hub; they are simply not advertised for indexing.
     """
     locs = [_url_landing(), _url_hub(), _url_walkthrough(), _url_licensing(),
             _url_compare(), _url_validate(), _url_de(), _url_de_walkthrough()]

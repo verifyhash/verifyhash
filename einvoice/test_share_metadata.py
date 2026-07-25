@@ -8,9 +8,10 @@ CARD built from Open Graph / Twitter ``<meta>`` tags, and falls back to bare
 grey text when they are missing. The announce is one-shot: a URL that unfurls
 badly the first time does not get a second first impression. The tags landed on
 the 8 hand-built surface pages in T-VHSHARE.5 with only grep-level verification,
-and 24 of the 32 URLs the sitemap asks Google to index (the indexable rule
-pages) still emitted none until T-VHSHARE.3. This guard makes the share surface
-COMPLETE and impossible to break silently.
+and the indexable rule pages — 24 of the 32 sitemap URLs at the time, 16 of 24
+since T-VHCRAWL.3 collapsed the near-duplicate clusters — still emitted none
+until T-VHSHARE.3. This guard makes the share surface COMPLETE and impossible
+to break silently.
 
 WHAT IT ASSERTS, over every ``*.html`` file under ``www/``:
 
@@ -75,7 +76,7 @@ _LDJSON_TYPES = ("SoftwareApplication", "BreadcrumbList", "WebApplication",
 # ---------------------------------------------------------------------------
 # ALLOWLIST 2 — pages EXEMPT from the pairwise-distinctness check (3) ONLY.
 #
-# The 24 indexable rule-detail pages share a description PATTERN by design:
+# The 16 indexable rule-detail pages share a description PATTERN by design:
 # gen_site._description() renders "<ID> (EN 16931 / XRechnung rule): <title>
 # Fix: <fix>". The strings are all different (the unique rule id leads every
 # one) but they are formulaic, so holding them to the same "no two pages may
@@ -83,16 +84,29 @@ _LDJSON_TYPES = ("SoftwareApplication", "BreadcrumbList", "WebApplication",
 # measuring the wrong thing. They remain fully subject to (1), (2), (4), (5),
 # (6) and (7), and to the non-empty / not-bare-SITE_NAME part of (3).
 #
+# This exemption covers the CARD STRINGS only, and it is NOT a licence for the
+# pages themselves to resemble each other: since T-VHCRAWL.3 the page BODIES of
+# exactly this set are held to gen_site.RULE_PAGE_SIMILARITY_CEILING by
+# test_page_uniqueness.py, which is the check that has teeth here.
+#
 # This list is checked for drift below: it must equal EXACTLY the set of
 # rule-detail pages sitemap.xml lists. Retuning
-# gen_site.RULE_PAGE_DISTINCTIVENESS_FLOOR changes that set and will fail here
+# gen_site.RULE_PAGE_DISTINCTIVENESS_FLOOR or
+# gen_site.RULE_PAGE_SIMILARITY_CEILING changes that set and will fail here
 # — deliberately, so the exemption is re-granted by a human rather than
 # inherited silently.
+#
+# RE-GRANTED 2026-07-25 (T-VHCRAWL.3): eight ids were REMOVED from this list —
+# BR-AE-08, BR-AG-08, BR-CL-10, BR-E-08, BR-IC-08, BR-O-08, BR-S-08, BR-Z-08.
+# They were not re-judged as pages; they simply left the sitemap when the new
+# similarity ceiling collapsed their three near-duplicate clusters to one
+# representative each (BR-AF-08, BR-CL-11, BR-G-08 survived and remain listed
+# below). Strictly fewer exemptions = strictly more pages held to check (3).
 _DISTINCTNESS_EXEMPT = tuple(
     os.path.join("rules", rid, "index.html") for rid in (
-        "BR-51", "BR-CL-01", "BR-CL-06", "BR-CL-07", "BR-CL-10", "BR-CL-11",
-        "BR-CO-09", "BR-DEC-25", "BR-AE-08", "BR-AF-08", "BR-AG-08", "BR-E-08",
-        "BR-G-08", "BR-IC-08", "BR-O-08", "BR-S-08", "BR-Z-08", "BR-DE-17",
+        "BR-51", "BR-CL-01", "BR-CL-06", "BR-CL-07", "BR-CL-11",
+        "BR-CO-09", "BR-DEC-25", "BR-AF-08",
+        "BR-G-08", "BR-DE-17",
         "BR-DE-18", "BR-DE-28", "BR-DEX-01", "BR-DEX-04", "BR-DEX-15",
         "BR-TMP-3",
     )

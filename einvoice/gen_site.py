@@ -547,13 +547,17 @@ def render_page(rule_id, entry, indexable=True):
     ordering), so ``test_site.py`` can regenerate every page in memory and
     assert byte equality with the committed tree.
 
-    ``indexable=False`` adds ONE line to <head>:
-    ``<meta name="robots" content="noindex,follow">``. Nothing else about the
-    page changes — same URL, same self-referential canonical, same links, same
-    body. See :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR` for who gets it and why.
-    The DEFAULT is ``True`` on purpose: the distinctiveness measure scores the
-    meta-free rendering of every page, so the meta can never feed back into the
-    score that decides whether to emit it.
+    ``indexable`` changes ONLY ``<head>`` ``<meta>`` lines, never the body:
+
+    * ``indexable=False`` adds ``<meta name="robots" content="noindex,follow">``;
+    * ``indexable=True`` adds the :func:`_share_meta` link-preview block.
+
+    Same URL, same self-referential canonical, same links, same body either
+    way. See :data:`RULE_PAGE_DISTINCTIVENESS_FLOOR` for who gets which and why.
+    Because both variations are ``<meta>`` elements and the distinctiveness
+    measure strips ALL markup before tokenising visible text, neither can feed
+    back into the score that decides which one a page gets — the fixed point
+    :func:`rule_page_distinctiveness` relies on holds for both.
     """
     title = entry.get("title", "")
     title_de = entry.get("title_de", "")
@@ -571,6 +575,9 @@ def render_page(rule_id, entry, indexable=True):
     de_note = _DE_NOTE.get(de_source, _DE_NOTE["translation"])
     description = _description(rule_id, title, fix)
     canonical = _url_rule(rule_id)
+    # The one string this page puts in <title>, built once so the <title>
+    # element and the link-preview card below cannot drift apart.
+    page_title = "%s — %s — einvoice rule reference" % (rule_id, title)
     ld_json = _jsonld(rule_id, title, title_de, fix, description)
 
     if bt_bg:
@@ -593,12 +600,22 @@ def render_page(rule_id, entry, indexable=True):
     # to the licensing / quickstart / hub targets it points at.
     if not indexable:
         w('<meta name="robots" content="noindex,follow">')
-    w("<title>%s — %s — einvoice rule reference</title>"
-      % (_h(rule_id), _h(title)))
+    w("<title>%s</title>" % _h(page_title))
     w('<meta name="description" content="%s">' % _h(description))
     # Single absolute canonical built from BASE_URL (same source as the sitemap
     # <loc>). EN and DE share this one URL, so no per-language hreflang.
     w('<link rel="canonical" href="%s">' % _h(canonical))
+    # Link-preview card (Open Graph / Twitter) — T-VHSHARE.3. Emitted ONLY on
+    # the pages that ask to be indexed, i.e. exactly the ones sitemap.xml
+    # lists, from the SAME title / description / canonical / lang this head
+    # already emitted above. Keeping it tied to `indexable` (the one predicate
+    # indexable_rule_ids() drives) makes "listed in the sitemap <=> carries a
+    # share card" an exact, self-maintaining invariant: retune
+    # RULE_PAGE_DISTINCTIVENESS_FLOOR and both sides move together. A noindexed
+    # page is still shareable as a plain link; it just does not advertise a card
+    # for a URL we are explicitly asking search engines to skip.
+    if indexable:
+        w(_share_meta(page_title, description, canonical, lang="en"))
     w("<style>%s</style>" % _STYLE)
     # One honest schema.org TechArticle block; JSON is dumps-built and its '<'
     # chars are neutralised so it cannot break out of the <script> element.
@@ -741,9 +758,12 @@ def rule_page_distinctiveness(catalog):
     token every rule page repeats (``severity``, ``licensing``, ``invoice``)
     contributes nothing, a token only this page carries contributes 1.
 
-    Scoring always uses the meta-free rendering (``render_page`` default
-    ``indexable=True``), which is what makes the whole thing a fixed point:
-    emitting the robots meta cannot change the score that decided to emit it.
+    Scoring is INDEPENDENT of the ``indexable`` flag, which is what makes the
+    whole thing a fixed point: the only things that flag changes are ``<meta>``
+    elements (``robots`` one way, the Open Graph / Twitter card the other), and
+    :func:`_visible_tokens` deletes every tag — attributes included — before
+    tokenising. So neither the robots meta nor the share card can change the
+    score that decided to emit it.
     """
     tokens = {rid: _visible_tokens(render_page(rid, catalog[rid]))
               for rid in catalog}
@@ -792,8 +812,11 @@ def render_all(catalog):
 # LinkedIn, XING, Slack, Reddit, Mastodon, Discord, iMessage and X all render a
 # shared link as a CARD built from these <meta> tags; without them the same URL
 # unfurls as bare text. This is the ONE shared emitter for that block: every
-# surface page routes through _share_meta(), so a card can never drift from the
-# page it advertises.
+# indexable page routes through _share_meta() — the 8 hand-built surface pages
+# via _doc_head()/render_validate() and, since T-VHSHARE.3, the indexable rule
+# pages via render_page() — so a card can never drift from the page it
+# advertises, and "in sitemap.xml <=> carries a card" holds exactly.
+# test_share_metadata.py enforces that pairing against the generated tree.
 #
 # DERIVED, NEVER INVENTED. og:title / twitter:title are the SAME string the
 # page already puts in <title>; og:description / twitter:description are the

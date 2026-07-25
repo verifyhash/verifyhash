@@ -158,6 +158,15 @@ _CANON_RE = re.compile(r'<link\b[^>]*\brel="canonical"', re.IGNORECASE)
 # resource). Matches only the single self-closing <link> element.
 _CANON_LINK_RE = re.compile(r'<link\b[^>]*\brel="canonical"[^>]*>',
                             re.IGNORECASE)
+# The Open Graph og:url <meta> on an INDEXABLE rule page (T-VHSHARE.3).
+# Stripped before the external-resource scan for exactly the same reason as the
+# canonical <link> above: its content is the page's own absolute BASE_URL
+# address, declared for link-preview crawlers, and no browser ever FETCHES it.
+# This is not a loophole — the scan is compensated below by an explicit check
+# that og:url byte-equals the canonical href, so the only https:// string this
+# strip can ever hide is the canonical itself. test_share_metadata.py enforces
+# the same equality across every page of the surface.
+_OG_URL_META_RE = re.compile(r'<meta property="og:url" content="[^"]*">')
 
 # de_source -> the honest provenance token that MUST appear on the page.
 _DE_TOKEN = {"kosit": "Amtlicher KoSIT-Text", "translation": "Übersetzung"}
@@ -406,14 +415,16 @@ def main():
                 check(obj.get("@type") == "TechArticle",
                       "%s: JSON-LD @type is not TechArticle" % rid)
 
-        # (c) no external resource references of any kind. Two http(s) tokens
+        # (c) no external resource references of any kind. Three http(s) tokens
         # are legitimately present and are NOT fetched resources: the schema.org
-        # @context IRI (inside the ld+json block) and the absolute canonical
-        # <link> href built from gen_site.BASE_URL. Both are removed before the
-        # scan; anything else with https?:// / cdn. / url( is a real external
+        # @context IRI (inside the ld+json block), the absolute canonical
+        # <link> href built from gen_site.BASE_URL, and — on indexable pages
+        # only — the og:url <meta> that repeats that same canonical for
+        # link-preview crawlers. All three are removed before the scan;
+        # anything else with https?:// / cdn. / url( is a real external
         # resource and fails.
         page_no_ld = _LD_RE.sub(" ", page)
-        page_scan = _CANON_LINK_RE.sub(" ", page_no_ld)
+        page_scan = _OG_URL_META_RE.sub(" ", _CANON_LINK_RE.sub(" ", page_no_ld))
         check(not ext_re.search(page_scan),
               "%s: page references an external resource / url()" % rid)
         check(not bad_script_re.search(page),
@@ -433,6 +444,16 @@ def main():
             check(href == _gen._url_rule(rid),
                   "%s: canonical %r is not gen_site._url_rule(rid) (%r)"
                   % (rid, href, _gen._url_rule(rid)))
+            # og:url is OPTIONAL on a rule page (only the indexable ones carry a
+            # share card), but when present it must byte-equal the canonical.
+            # This is what keeps the _OG_URL_META_RE strip above honest: an
+            # og:url pointing anywhere else fails here instead of slipping past
+            # the external-resource scan.
+            og = re.search(r'<meta property="og:url" content="([^"]*)">', page)
+            if og:
+                check(og.group(1) == href,
+                      "%s: og:url %r != canonical %r"
+                      % (rid, og.group(1), href))
 
     # ---- (5) global uniqueness across ALL pages ----------------------------
     n_pages = len(sorted(want & have))

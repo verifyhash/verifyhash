@@ -612,6 +612,23 @@ def main():
                   "compare page peppol-count claim %s != live Peppol subset "
                   "size %d" % (c, live_peppol))
 
+        # CLAIMS-DRIFT: accepted CII input syntax (T-VHCIISELL.1) — the
+        # compare page's "Input syntaxes accepted" row names the CII document
+        # root, and that token must equal the localname the ONE dispatch seam
+        # (einvoice.validate.CII_ROOT_LOCALNAME) actually matches on. If the
+        # engine ever stopped taking a raw CrossIndustryInvoice, or the
+        # constant were renamed, this row would become a lie and this check
+        # goes red.
+        from einvoice.validate import CII_ROOT_LOCALNAME as live_cii_root
+        croots = re.findall(r'data-claim="cii-root">rsm:(\w+)<', cmp_raw)
+        check(len(croots) >= 1,
+              "compare page emits no cii-root claim (the accepted-input-"
+              "syntax row is missing its data-claim)")
+        for r in croots:
+            check(r == live_cii_root,
+                  "compare page cii-root claim %r != live "
+                  "validate.CII_ROOT_LOCALNAME %r" % (r, live_cii_root))
+
         # CLAIMS-DRIFT: output-format list — the page's stated format set
         # must equal report.REPORT_FORMATS exactly, and each rendered group
         # of format claims must preserve the registry's order.

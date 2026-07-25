@@ -33,6 +33,11 @@ import unittest
 from einvoice.parser import parse_file
 from einvoice.report import validate_root
 from einvoice import parser_cii, rules
+# A plain str constant (the CII root localname) from the ONE dispatch seam, so
+# the affirmation check below hand-types no engine token. Deliberately imported
+# as a NAME, not a module — test_pypi_fact_is_static_not_probed keeps this
+# module's namespace free of new module objects.
+from einvoice.validate import CII_ROOT_LOCALNAME
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WWW_DIR = os.path.join(HERE, "www")
@@ -305,6 +310,28 @@ CII_ABSENCE_DENIALS = (
     r"nur\s+[üu]ber[^.]{0,60}(?:pdf|zugferd|factur-x)[- ]?container",
 )
 
+# ---------------------------------------------------------------------------
+# RAW-CII AFFIRMATION (T-VHCIISELL.1/.2) — the positive counterpart to the
+# denylist above.
+#
+# Not denying a capability is a weaker bar than STATING it, and silence cost us
+# the same prospect a denial would: the three surfaces a German ERP evaluator
+# reads before spending ten minutes on us — the English landing, the comparison
+# table, and the German product page — named the CII root element ZERO times
+# between them, while the compare page told that same reader to "use
+# Mustangproject when Java or PDF-writing is in play". A reader holding a
+# ZUGFeRD/Factur-X XML could not tell the tool applied to them at all.
+#
+# So each page below must name the CII document root by its conventional
+# prefixed form. Anchored to the SAME probe as the denylist: if the engine ever
+# stopped grading a raw CrossIndustryInvoice, the probe assertion fires first,
+# because then these pages SHOULD lose the claim rather than keep it.
+PAGES_AFFIRMING_CII_ROOT = (
+    "index.html",
+    os.path.join("compare", "index.html"),
+    os.path.join("de", "index.html"),
+)
+
 
 class TestWwwClaims(unittest.TestCase):
     @classmethod
@@ -454,6 +481,35 @@ class TestWwwClaims(unittest.TestCase):
                 hits, [],
                 "CII_ABSENCE_DENIALS false-positives on honest text %r via %r"
                 % (sample, hits))
+
+    def test_high_intent_pages_affirm_the_raw_cii_root(self):
+        """Each high-intent surface must NAME the CII document root, so a
+        reader holding a ZUGFeRD/Factur-X XML can tell the tool takes it.
+
+        The claim is anchored to the engine: the probe demonstrating that a raw
+        CrossIndustryInvoice really is graded runs FIRST, so this can never
+        force a page to assert something untrue.
+        """
+        present, evidence = probe_raw_cii_root_accepted()
+        self.assertTrue(
+            present,
+            "PROBE FAILED — the engine no longer grades a raw CII root (%s), "
+            "so these pages must not affirm it either." % evidence)
+
+        # The conventional prefixed form, with the localname taken from the ONE
+        # dispatch seam rather than hand-typed here.
+        expected = ("rsm:" + CII_ROOT_LOCALNAME).lower()
+        for rel in PAGES_AFFIRMING_CII_ROOT:
+            self.assertIn(
+                rel, self.pages,
+                "expected generated page www/%s is missing — run gen_site.py"
+                % rel)
+            self.assertIn(
+                expected, self.pages[rel],
+                "www/%s never names %s — the CII root the engine actually "
+                "accepts (%s). A German ERP reader with a ZUGFeRD/Factur-X "
+                "XML cannot tell this tool applies to them."
+                % (rel, expected, evidence))
 
     def test_install_facing_pages_name_the_real_distribution(self):
         """The English landing and the German product page must each name the

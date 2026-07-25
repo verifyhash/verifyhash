@@ -94,6 +94,11 @@ from einvoice import __version__ as _ENGINE_VERSION  # noqa: E402
 from einvoice import coverage as _coverage        # noqa: E402
 from einvoice import cli as _cli                  # noqa: E402
 from einvoice.report import REPORT_FORMATS as _REPORT_FORMATS  # noqa: E402
+# The CII document root localname, read from the ONE dispatch seam
+# (einvoice.validate) rather than hand-typed: the compare page states which
+# input syntaxes the engine accepts, and that claim carries a
+# data-claim="cii-root" attribute test_site.py binds back to this constant.
+from einvoice.validate import CII_ROOT_LOCALNAME as _CII_ROOT  # noqa: E402
 # Reuse the ONE family grouping + family-label source of truth (do NOT
 # hand-author a second copy of the family labels — constitution §7 / VHW.3 AC5).
 # family_of() classifies a rule id; FAMILY_LABELS holds the explanatory intro
@@ -699,8 +704,16 @@ def render_landing():
     w("<h1>einvoice</h1>")
     w('<p class="lead">A zero-dependency, self-hostable conformance validator '
       "for <strong>EN 16931</strong> electronic invoices, targeting the German "
-      "<strong>XRechnung</strong> CIUS (UBL 2.1 <code>Invoice</code> and "
-      "UN/CEFACT CII syntaxes). It asserts <strong>297 business rules</strong>, "
+      "<strong>XRechnung</strong> CIUS. Both official XRechnung syntaxes are "
+      "validated <strong>directly</strong>: UBL 2.1 (<code>ubl:Invoice</code> "
+      "or <code>CreditNote</code>) and UN/CEFACT CII "
+      "(<code>rsm:CrossIndustryInvoice</code> — the syntax ZUGFeRD and "
+      "Factur-X carry), through the same rule engine — the same "
+      "syntax-agnostic EN&nbsp;16931 core plus the German <code>BR-DE-*</code> "
+      "CIUS layer — the same <code>--profile</code> values and the same exit "
+      "codes. Dispatch is on the root element: no syntax flag to pass, and a "
+      "raw CII <code>.xml</code> needs no PDF container. "
+      "It asserts <strong>297 business rules</strong>, "
       "each differentially proven against the official Schematron artifacts, "
       "and runs offline against a vendored copy of the official rule corpus — "
       "no lxml, no Java, no Saxon, no Schematron toolchain, no network calls. "
@@ -1327,6 +1340,26 @@ def render_compare():
       "at 0 divergences</td>"
       "<td>Yes — runs the official Schematron itself</td>"
       "<td>Yes, for the profiles it targets</td></tr>" % n_rules)
+    # Input syntaxes (T-VHCIISELL.1). Strictly factual, and NOT a competitor
+    # claim: the einvoice cell is the dispatch seam einvoice.validate actually
+    # implements (root localname from _CII_ROOT, carried in a data-claim so
+    # test_site.py binds it back to the engine), and the other two cells only
+    # restate what this page already asserts above — that the official
+    # Schematron artifact carries both a UBL and a CII binding (the two legs
+    # our own differential proof runs against), and that Mustangproject's
+    # documented focus is ZUGFeRD / Factur-X hybrid PDFs. Nothing negative and
+    # nothing new about either alternative.
+    w("<tr><th>Input syntaxes accepted</th>"
+      "<td>Both XRechnung syntaxes, <strong>directly</strong>: UBL&nbsp;2.1 "
+      "<code>Invoice</code>&nbsp;/&nbsp;<code>CreditNote</code> and UN/CEFACT "
+      'CII <code data-claim="cii-root">rsm:%s</code> — dispatched on the root '
+      "element, no syntax flag, no PDF container needed for a raw CII "
+      "<code>.xml</code></td>"
+      "<td>The same two syntaxes — the official Schematron artifact carries "
+      "both a UBL and a CII binding (the two legs our differential proof runs "
+      "against, above)</td>"
+      "<td>The same two syntaxes, with the ZUGFeRD&nbsp;/&nbsp;Factur-X "
+      "hybrid-PDF focus described above</td></tr>" % _h(_CII_ROOT))
     w("<tr><th>Peppol BIS Billing 3.0</th>"
       '<td><strong>No</strong> — only the <span data-claim="peppol-count">'
       "%d</span> <code>PEPPOL-EN16931-R*</code> rules KoSIT vendors inside "
@@ -1491,9 +1524,23 @@ def render_de():
 
     # ---- Was ist das Werkzeug? --------------------------------------------
     w("<h2>Was das Werkzeug ist</h2>")
-    w("<p>Ein Konformit&auml;tspr&uuml;fer f&uuml;r E-Rechnungen im Format "
-      "UBL&nbsp;2.1 <code>Invoice</code> oder UN/CEFACT&nbsp;CII, mit den "
-      "Profilen <code>en16931</code> (europ&auml;ischer Kern) und "
+    # Beide XRechnung-Syntaxen (T-VHCIISELL.1/.2): substanzgleich mit der
+    # englischen Startseite (dieselbe Regel-Engine / dasselbe --profile /
+    # dieselben Exit-Codes / Erkennung am Wurzelelement / kein Syntax-Schalter)
+    # &mdash; keine Aussage, die dort nicht auch steht.
+    w("<p>Ein Konformit&auml;tspr&uuml;fer f&uuml;r E-Rechnungen. Beide "
+      "zul&auml;ssigen XRechnung-Syntaxen werden <strong>direkt</strong> "
+      "gepr&uuml;ft: UBL&nbsp;2.1 (<code>ubl:Invoice</code> oder "
+      "<code>CreditNote</code>) und UN/CEFACT&nbsp;CII "
+      "(<code>rsm:CrossIndustryInvoice</code> &mdash; die Syntax, die ZUGFeRD "
+      "und Factur-X tragen). Beide laufen durch dieselbe Regel-Engine &mdash; denselben "
+      "syntaxunabh&auml;ngigen EN&nbsp;16931-Kern plus die deutsche "
+      "<code>BR-DE-*</code>-CIUS-Schicht &mdash;, dasselbe "
+      "<code>--profile</code> und dieselben Exit-Codes. Die Erkennung "
+      "geschieht am Wurzelelement: es gibt keinen Syntax-Schalter, und eine "
+      "rohe CII-<code>.xml</code> braucht keinen PDF-Container. "
+      "Zur Verf&uuml;gung stehen die "
+      "Profile <code>en16931</code> (europ&auml;ischer Kern) und "
       "<code>xrechnung</code> (Kern plus die deutsche KoSIT-Schicht: "
       "<code>BR-DE-*</code>-Regeln wie Leitweg-ID/K&auml;uferreferenz, "
       "Verk&auml;uferkontakt, Zahlungsangaben, Skonto-Grammatik). Insgesamt "

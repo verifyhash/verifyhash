@@ -104,9 +104,17 @@ core rules plus the German CIUS layer, `BR-DE-*`).
 - **`result.first`** — the first `Violation`, or `None` when the list is empty.
 - **`result.to_dict(source=None)`** — the same result as the machine-readable
   JSON record: `{"source", "valid", "violation_count", "violations"}`, where
-  each violation is a dict `{"rule", "message", "element", "severity"}` plus
-  `"source_line"` **only when it is present**. This is the shape the
-  `einvoice validate --json` CLI and `einvoice.report` emit.
+  each violation is a dict
+  `{"rule", "message", "element", "severity", "field", "title", "fix_hint", "terms", "location"}`
+  plus `"source_line"` **only when it is present**. This is the shape the
+  `einvoice validate --json` CLI emits.
+  `field` is the same value as `element` (the report writer's name for it);
+  `title`, `fix_hint`, `terms` and `location` are relayed from the committed
+  `remediation_catalog.json` via `einvoice.remediation.remediation_fields()`,
+  the same helper `einvoice.report` uses, so the two surfaces cannot disagree.
+  Those four are always present — a rule id the catalog does not cover yields
+  `None` / `None` / `[]` / `None`, never a missing key — so a consumer may
+  index them unconditionally. `source_line` remains the one conditional key.
 
 ## Batch validation, severity gating, and build introspection
 

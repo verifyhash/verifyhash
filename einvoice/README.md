@@ -454,10 +454,29 @@ and offending element. `--json` emits the full machine-readable result:
   "valid": false,
   "violation_count": 2,
   "violations": [
-    {"rule": "BR-06", "message": "...", "element": "...", "severity": "fatal"}
+    {
+      "rule": "BR-06",
+      "message": "An Invoice shall contain the Seller name (BT-27).",
+      "element": "cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName",
+      "severity": "fatal",
+      "field": "cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName",
+      "title": "An Invoice shall contain the Seller name (BT-27).",
+      "fix_hint": "Add the required element at `cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName`: An Invoice shall contain the Seller name (BT-27).",
+      "terms": ["BT-27"],
+      "location": "cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName"
+    }
   ]
 }
 ```
+
+The first four keys are the identity of the finding; `field` repeats `element`
+under the name `python3 -m einvoice.report` uses, and `title` / `fix_hint` /
+`terms` / `location` are relayed from the committed
+[`remediation_catalog.json`](remediation_catalog.json) so a CI job can print
+*what to change*, not just a rule id. All five are always present: a rule with
+no catalog entry emits `null` / `[]` rather than dropping the keys. A violation
+that could be attributed to a concrete source position additionally carries
+`source_line` (that one key really is conditional).
 
 A `valid: true` result means "no implemented fatal rule fired" — given §2, it
 does **not** yet mean "legally conformant XRechnung."

@@ -24,6 +24,7 @@ import xml.etree.ElementTree as ET
 
 from . import parser as _parser
 from . import parser_cii as _parser_cii
+from . import remediation as _remediation
 from . import rules as _rules
 from . import rules_xrechnung as _rules_xr
 from .rules import Violation
@@ -71,8 +72,12 @@ class Result:
 
     ``to_dict(source=None)`` projects the result into the stable JSON record
     (keys ``valid`` and a ``violations`` list of
-    ``{rule, message, element, severity[, source_line]}`` dicts) used by the
-    ``--json`` report; the report format is unchanged by this class.
+    ``{rule, message, element, severity, field, title, fix_hint, terms,
+    location[, source_line]}`` dicts) used by the ``--json`` report. The four
+    leading identity keys are frozen for backward compatibility; ``field`` is
+    ``element`` under the report writer's name and the remaining four are
+    relayed from the committed remediation catalog (see
+    :meth:`_violation_dict`).
     """
 
     #: Every finding, in evaluation order (see the class docstring).
@@ -95,25 +100,57 @@ class Result:
         return self.violations[0] if self.violations else None
 
     def to_dict(self, source: str | None = None) -> dict:
+        # The remediation catalog is resolved ONCE here and threaded into every
+        # record, so projecting a 5000-violation batch costs one catalog lookup
+        # setup, not one per finding.
+        catalog = _remediation.cached_catalog()
         return {
             "source": source,
             "valid": self.ok,
             "violation_count": len(self.violations),
-            "violations": [self._violation_dict(v) for v in self.violations],
+            "violations": [self._violation_dict(v, catalog)
+                           for v in self.violations],
         }
 
     @staticmethod
-    def _violation_dict(v):
+    def _violation_dict(v, catalog=None):
         """Project one Violation into the --json record.
 
-        The four identity keys are unchanged. ``source_line`` (the optional
-        1-based parser line of the offending element) is added ONLY when the
-        violation actually carries one — an absence/document-level violation, or
-        any finding without a proven element position, omits the key entirely so
-        existing consumers see a byte-identical record.
+        The four identity keys (``rule``/``message``/``element``/``severity``)
+        are unchanged in name, order and value — a consumer written against the
+        original record keeps reading exactly what it read before.
+
+        Five keys are ADDED, so the surface an ERP developer automates against
+        (``einvoice validate --json``) finally carries the same actionable half
+        the ``einvoice.report`` writer has always emitted:
+
+        * ``field`` — the same datum as ``element`` under the report's name.
+          Not a rename: both are present, always equal, so one consumer can
+          read either surface with one code path.
+        * ``title`` / ``fix_hint`` / ``terms`` / ``location`` — RELAYED from
+          the committed remediation catalog through the shared
+          :func:`einvoice.remediation.remediation_fields` helper that
+          ``report._record`` also calls. Nothing here is authored locally, and
+          there is no second catalog: one file, one loader, one cache.
+
+        A rule id the catalog does not cover still emits all four, as
+        ``None``/``[]`` — present-and-empty, never absent, so the record shape
+        is unconditional. (``einvoice.remediation`` is imported directly rather
+        than ``einvoice.report``: report imports THIS module, so relaying via
+        it would be a circular import.)
+
+        ``source_line`` (the optional 1-based parser line of the offending
+        element) is still added ONLY when the violation actually carries one —
+        an absence/document-level violation, or any finding without a proven
+        element position, omits the key entirely, exactly as before.
+
+        :param catalog: optional pre-loaded ``rule_id -> entry`` mapping;
+            :meth:`to_dict` passes one for the whole result so a large batch
+            resolves the catalog once rather than per violation.
         """
         rec = {"rule": v.rule_id, "message": v.message, "element": v.element,
-               "severity": _severity(v)}
+               "severity": _severity(v), "field": v.element}
+        rec.update(_remediation.remediation_fields(v.rule_id, catalog))
         source_line = getattr(v, "source_line", None)
         if source_line is not None:
             rec["source_line"] = source_line

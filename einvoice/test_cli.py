@@ -328,5 +328,150 @@ class UsageErrorNamesTheOffendingToken(unittest.TestCase):
                       proc.stderr)
 
 
+# --------------------------------------------------------------------------
+# `validate --json` carries the remediation catalog (T-VHERG.1)
+# --------------------------------------------------------------------------
+# MEASURED BEFORE this feature: a `validate --json` violation carried exactly
+# ['element', 'message', 'rule', 'severity'] while `python3 -m einvoice.report
+# --format json` on the SAME file carried ['field', 'fix_hint', 'location',
+# 'message', 'rule', 'severity', 'terms', 'title'] — the actionable half. The
+# CLI is the surface a CI job parses, so the shipped remediation catalog was
+# invisible exactly where it is felt daily. These tests pin the enriched shape,
+# the back-compat keys it must NOT disturb, and the degradation on a rule the
+# catalog does not cover.
+
+#: A UBL invoice that fires four XRechnung-profile violations across three
+#: severities (BR-CO-14 fatal, BR-DE-19/-21 warning, BR-DE-TMP-32 information).
+ENRICHED_FIXTURE = os.path.join(HERE, "corpus", "synthetic",
+                                "synth-ubl-bad-vat-mismatch.xml")
+
+#: Every key a `validate --json` violation record must ALWAYS carry: the four
+#: frozen identity keys plus the five added by T-VHERG.1.
+ENRICHED_KEYS = frozenset((
+    "rule", "message", "element", "severity",
+    "field", "title", "fix_hint", "terms", "location"))
+
+
+def validate_json(*argv):
+    """Run the REAL CLI with --json and return (parsed doc, returncode)."""
+    proc = run_module("validate", "--json", *argv)
+    return json.loads(proc.stdout.decode("utf-8")), proc.returncode
+
+
+class ValidateJsonCarriesRemediation(unittest.TestCase):
+    def test_every_violation_carries_the_full_enriched_key_set(self):
+        doc, _rc = validate_json("--profile", "xrechnung", ENRICHED_FIXTURE)
+        self.assertTrue(doc["violations"], "fixture must fire violations")
+        for rec in doc["violations"]:
+            self.assertEqual(ENRICHED_KEYS - set(rec), set(),
+                             "missing keys on %r" % rec.get("rule"))
+
+    def test_field_is_the_same_datum_as_element(self):
+        # `field` is the report writer's NAME for `element`, not a new datum.
+        # Both are emitted so one consumer parses either surface.
+        doc, _rc = validate_json("--profile", "xrechnung", ENRICHED_FIXTURE)
+        for rec in doc["violations"]:
+            self.assertEqual(rec["field"], rec["element"], rec["rule"])
+
+    def test_values_are_relayed_verbatim_from_the_committed_catalog(self):
+        # Not "non-null" — the exact committed wording, so a placeholder or a
+        # locally-authored string would fail here.
+        from einvoice.remediation import load_catalog
+        catalog = load_catalog()
+        doc, _rc = validate_json("--profile", "xrechnung", ENRICHED_FIXTURE)
+        checked = 0
+        for rec in doc["violations"]:
+            entry = catalog.get(rec["rule"])
+            if entry is None:
+                continue
+            self.assertEqual(rec["title"], entry["title"])
+            self.assertEqual(rec["fix_hint"], entry["fix"])
+            self.assertEqual(rec["location"], entry["location_hint"])
+            self.assertEqual(rec["terms"], list(entry["bt_bg"]))
+            checked += 1
+        self.assertGreater(checked, 0, "no catalogued rule fired")
+
+    def test_uncatalogued_rule_still_emits_every_key_as_null_or_empty(self):
+        # S-ROOT is a STRUCTURAL refusal, not a graded business rule, so it is
+        # deliberately absent from the catalog: the shape must stay
+        # unconditional (present-and-empty), never drop keys.
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".xml")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(b'<?xml version="1.0"?>\n<Nonsense xmlns="urn:x"/>\n')
+            doc, _rc = validate_json(path)
+            rec = doc["violations"][0]
+            self.assertNotIn(rec["rule"], load_catalog_ids())
+            self.assertEqual(ENRICHED_KEYS - set(rec), set())
+            self.assertIsNone(rec["title"])
+            self.assertIsNone(rec["fix_hint"])
+            self.assertIsNone(rec["location"])
+            self.assertEqual(rec["terms"], [])
+            # ...and the identity keys are still real.
+            self.assertEqual(rec["element"], "Nonsense")
+            self.assertEqual(rec["severity"], "fatal")
+        finally:
+            os.unlink(path)
+
+    def test_source_line_stays_conditional(self):
+        # The one genuinely optional key: present for a violation attributable
+        # to a concrete element position, ABSENT otherwise. Enrichment must not
+        # have turned it into an always-present null.
+        doc, _rc = validate_json(FAIL_FIXTURE)
+        with_line = [r for r in doc["violations"] if "source_line" in r]
+        self.assertTrue(with_line,
+                        "BR-CL-01 fixture must still carry a source_line")
+        self.assertIsInstance(with_line[0]["source_line"], int)
+        doc2, _rc2 = validate_json("--profile", "xrechnung", ENRICHED_FIXTURE)
+        without = [r for r in doc2["violations"] if "source_line" not in r]
+        self.assertTrue(without,
+                        "an absence/document-level finding must still OMIT "
+                        "source_line, not emit it as null")
+
+    def test_parity_with_the_report_surface_on_the_shared_keys(self):
+        # The two surfaces read ONE catalog through ONE helper, so on the same
+        # file under the same profile they must agree on the finding list and
+        # on every shared key.
+        doc, _rc = validate_json("--profile", "xrechnung", ENRICHED_FIXTURE)
+        proc = subprocess.run(
+            [sys.executable, "-m", "einvoice.report", "--format", "json",
+             "--profile", "xrechnung", ENRICHED_FIXTURE],
+            cwd=HERE, capture_output=True)
+        report = json.loads(proc.stdout.decode("utf-8"))
+        self.assertEqual(doc["violation_count"], report["violation_count"])
+        for cli_rec, rep_rec in zip(doc["violations"], report["violations"]):
+            for key in ("rule", "severity", "message", "field",
+                        "title", "fix_hint", "terms", "location"):
+                self.assertEqual(cli_rec[key], rep_rec[key],
+                                 "%s disagrees on %r" % (cli_rec["rule"], key))
+
+    def test_human_text_output_is_untouched_by_enrichment(self):
+        # The remediation relay is a --json-only change: the human summary must
+        # not gain a line, and the exit code contract is unchanged.
+        proc = run_module("validate", "--profile", "xrechnung",
+                          ENRICHED_FIXTURE)
+        self.assertEqual(proc.returncode, EXIT_FAIL)
+        text = proc.stdout.decode("utf-8")
+        for token in ("fix_hint", "title", "terms", "location"):
+            self.assertNotIn(token, text)
+
+    def test_validate_module_does_not_import_report(self):
+        # The relay imports einvoice.remediation directly: einvoice.report
+        # imports einvoice.validate, so the reverse edge would be circular.
+        import einvoice.validate as validate_mod
+        with open(validate_mod.__file__, encoding="utf-8") as fh:
+            source = fh.read()
+        for line in source.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(("import ", "from ")):
+                self.assertNotIn("report", stripped, line)
+
+
+def load_catalog_ids():
+    from einvoice.remediation import load_catalog
+    return set(load_catalog())
+
+
 if __name__ == "__main__":
     unittest.main()

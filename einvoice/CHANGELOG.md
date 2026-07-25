@@ -153,6 +153,29 @@ CEN artifacts is implemented in both bindings.
   three new German renderings, exports, attestation, sbom, site, web bundle;
   pyproject + `action/README.md` descriptions now say 297). No guard was
   weakened.
+- **`einvoice validate --json` violation records now carry the remediation
+  half.** Measured before this change: `validate --json` emitted only
+  `rule`/`message`/`element`/`severity`, while `python3 -m einvoice.report
+  --format json` on the SAME file emitted `field`/`title`/`fix_hint`/`terms`/
+  `location` as well — so the surface an ERP developer actually automates
+  against (the CLI) returned a rule id and no guidance, and the shipped
+  remediation catalog was invisible exactly where it is felt daily. Each CLI
+  violation record now adds five always-present keys: `field` (the same value
+  as `element`, under the report writer's name for it) plus `title`,
+  `fix_hint`, `terms` and `location`, relayed from the same committed
+  `remediation_catalog.json`. Nothing was renamed or removed — `element` is
+  unchanged and `source_line` stays conditional — so an existing consumer is
+  unaffected. Which violations fire, every severity, the human/text output and
+  the 0/1/2/3 exit contract are all untouched.
+- Both relay surfaces now go through ONE helper,
+  `einvoice.remediation.remediation_fields()`, backed by one process-wide
+  catalog cache (`remediation.cached_catalog()`, which `report._remediation_catalog()`
+  now delegates to), so a large batch parses the catalog JSON once and the two
+  surfaces cannot drift into different guidance for the same rule id. The
+  report's emitted bytes are unchanged (its goldens are untouched), and the
+  catalog-less-installation degradation — every remediation key present with
+  `null`/`[]` values rather than a `FileNotFoundError` — now covers the CLI
+  path too.
 
 ## [0.2.5] - 2026-07-23
 

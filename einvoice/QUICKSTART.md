@@ -239,7 +239,14 @@ emits the full result on stdout (exit code still **1**):
       "rule": "BR-DE-15",
       "message": "The element 'Buyer reference' (BT-10) must be transmitted.",
       "element": "cbc:BuyerReference",
-      "severity": "fatal"
+      "severity": "fatal",
+      "field": "cbc:BuyerReference",
+      "title": "Buyer reference (BT-10) must be transmitted (non-empty).",
+      "fix_hint": "Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty).",
+      "terms": [
+        "BT-10"
+      ],
+      "location": "cbc:BuyerReference"
     }
   ],
   "syntax_bindings": [],
@@ -255,6 +262,21 @@ the whole `syntax_bindings` category, and still report `valid: true`. Each
 `violations` entry carries `rule`, `message`, `element`, `severity`; filter to
 `severity == "fatal"` to get exactly the findings that caused the non-zero
 exit. Branch on the exit code or on `valid`, never on the summary text.
+
+**The remediation half.** Every entry also carries `field` (the same XPath-ish
+element as `element`, under the name the `python3 -m einvoice.report` document
+uses — both are always present and always equal, so one parser reads either
+surface) plus four fields relayed from the committed
+[`remediation_catalog.json`](remediation_catalog.json): `title` (the rule
+restated in one line), `fix_hint` (what to change), `terms` (the BT/BG business
+terms the rule touches, e.g. `["BT-10"]`), and `location` (the XML location the
+official Schematron rule is anchored at). That is the difference between a CI
+log saying `BR-DE-15 failed` and one saying *add `cbc:BuyerReference`*. Caveat,
+so you can code defensively: a rule the catalog does not cover emits all four
+keys with `null` / `[]` values — the keys are never absent, but the values can
+be empty, and `terms` is `[]` for rules that are not term-scoped. The wording is
+derived from the official Schematron, not written by us, so it is terse and
+normative rather than tutorial.
 
 The field-by-field shape of this object is documented in the
 [CLI contract](README.md#cli-contract) (README §3, the **`--json` shape**
@@ -503,19 +525,42 @@ emits the full result on stdout (exit code still **1**):
       "rule": "BR-DE-2",
       "message": "The group 'SELLER CONTACT' (BG-6) must be transmitted.",
       "element": "cac:AccountingSupplierParty/cac:Party/cac:Contact",
-      "severity": "fatal"
+      "severity": "fatal",
+      "field": "cac:AccountingSupplierParty/cac:Party/cac:Contact",
+      "title": "SELLER CONTACT (BG-6) must be transmitted.",
+      "fix_hint": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted.",
+      "terms": [
+        "BG-6"
+      ],
+      "location": "/ubl:Invoice/cac:AccountingSupplierParty"
     },
     {
       "rule": "BR-DE-15",
       "message": "The element 'Buyer reference' (BT-10) must be transmitted.",
       "element": "cbc:BuyerReference",
-      "severity": "fatal"
+      "severity": "fatal",
+      "field": "cbc:BuyerReference",
+      "title": "Buyer reference (BT-10) must be transmitted (non-empty).",
+      "fix_hint": "Add the required element at `cbc:BuyerReference`: Buyer reference (BT-10) must be transmitted (non-empty).",
+      "terms": [
+        "BT-10"
+      ],
+      "location": "cbc:BuyerReference"
     },
     {
       "rule": "BR-DE-TMP-32",
       "message": "The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line.",
       "element": "cac:Delivery/cbc:ActualDeliveryDate",
-      "severity": "information"
+      "severity": "information",
+      "field": "cac:Delivery/cbc:ActualDeliveryDate",
+      "title": "An invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.",
+      "fix_hint": "Correct `cac:Delivery/cbc:ActualDeliveryDate` so that an invoice should state the delivery/service date via BT-72 (Actual delivery date), BG-14 (Invoicing period) or a BG-26 (Invoice line period) on EVERY line.",
+      "terms": [
+        "BG-14",
+        "BG-26",
+        "BT-72"
+      ],
+      "location": "cac:Delivery/cbc:ActualDeliveryDate"
     }
   ],
   "syntax_bindings": [],

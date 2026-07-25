@@ -285,5 +285,63 @@ class SingleFileUnchanged(unittest.TestCase):
         self.assertIn("FAIL", cap.stdout)
 
 
+class BatchJsonCarriesRemediation(unittest.TestCase):
+    """(T-VHERG.1) `validate-batch --json` must expose the remediation catalog
+    on every per-file violation, exactly as the single-file `validate --json`
+    surface now does.
+
+    Worth stating precisely, because the two surfaces reach the catalog by
+    DIFFERENT routes: `validate --json` projects through
+    `validate.Result.to_dict`, while `validate-batch --json` aggregates per-file
+    reports through `einvoice.report.build_batch_report`. Since T-VHERG.1 both
+    routes relay through the one
+    `einvoice.remediation.remediation_fields()` helper, so they cannot report
+    different guidance for the same rule id. The report record names the
+    offending path `field` (the CLI record carries both `field` and its
+    historical `element`); everything else is shared.
+    """
+
+    def _batch(self, path):
+        proc = _run("validate-batch", "--profile", "xrechnung", "--json", path)
+        return json.loads(proc.stdout)
+
+    def test_every_batched_violation_carries_the_remediation_fields(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            make_mixed_dir(tmp)
+            batch = self._batch(tmp)
+            seen = 0
+            for report in batch["files"]:
+                for rec in report.get("violations", []):
+                    for key in ("rule", "severity", "message", "field",
+                                "title", "fix_hint", "terms", "location"):
+                        self.assertIn(key, rec, rec.get("rule"))
+                    seen += 1
+            self.assertGreater(seen, 0, "the mixed dir must fire violations")
+
+    def test_batched_values_match_the_single_file_surface(self):
+        # Same file, same profile, two surfaces: identical count and identical
+        # values on every shared key.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            _copy(FAIL_FIXTURE, os.path.join(tmp, "only.xml"))
+            batch = self._batch(tmp)
+            self.assertEqual(batch["file_count"], 1)
+            batched = batch["files"][0]["violations"]
+            single = json.loads(_run("validate", "--profile", "xrechnung",
+                                     "--json",
+                                     os.path.join(tmp, "only.xml")).stdout)
+            self.assertEqual(len(batched), len(single["violations"]))
+            for rep_rec, cli_rec in zip(batched, single["violations"]):
+                for key in ("rule", "severity", "message", "field",
+                            "title", "fix_hint", "terms", "location"):
+                    self.assertEqual(rep_rec[key], cli_rec[key],
+                                     "%s disagrees on %r"
+                                     % (rep_rec["rule"], key))
+                # The CLI record additionally keeps its historical `element`
+                # key, always equal to `field`.
+                self.assertEqual(cli_rec["element"], cli_rec["field"])
+
+
 if __name__ == "__main__":
     unittest.main()

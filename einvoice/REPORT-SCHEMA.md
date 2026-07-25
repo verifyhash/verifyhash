@@ -118,6 +118,33 @@ every fireable rule has an entry, so this is only a safety fallback.) The
 baseline-diff identity key remains **`(rule, field, message, severity)`** — the
 additive fields do **not** affect diffing.
 
+### The same record on `einvoice validate --json` / `validate-batch --json`
+
+The CLI's own `--json` result (`validate.Result.to_dict`, the shape the README
+§3 documents) carries **the same remediation half**, relayed through the same
+`einvoice.remediation.remediation_fields()` helper from the same
+`remediation_catalog.json` — one catalog, one loader, one process-wide cache, so
+the two surfaces cannot report different guidance for the same rule id.
+
+One naming difference, kept for backward compatibility rather than tidiness: the
+CLI record has always called the offending path **`element`**, while the report
+record above calls it **`field`**. Both keys are now present on the CLI record
+and are **always equal** (`field` is literally `Violation.element`, the same
+datum the report projects), so a consumer can read either name on either
+surface. Nothing was renamed or removed: a script written against the original
+`{rule, message, element, severity}` CLI record keeps working byte-for-byte.
+
+So a CLI violation record has nine always-present keys —
+
+```
+rule, message, element, severity, field, title, fix_hint, terms, location
+```
+
+— plus the optional `source_line` below. `validate-batch --json` aggregates
+per-file reports through `einvoice.report`, so its per-file `violations[]` are
+**report** records (`field`, no `element`) carrying the identical four
+remediation fields.
+
 ### Optional `source_line` (additive, `v1`)
 
 | field         | source                       | meaning |

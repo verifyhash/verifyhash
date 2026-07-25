@@ -81,6 +81,71 @@ def entry_for(rule_id, path=None):
     return load_catalog(path).get(rule_id)
 
 
+#: Process-wide cache of the committed catalog (``rule_id -> entry``), loaded
+#: at most once. Shared by every relay surface (``einvoice.report``'s record
+#: writer and ``einvoice.validate.Result.to_dict``) so a large batch parses the
+#: JSON exactly once instead of per violation.
+_CATALOG_CACHE = None
+
+
+def cached_catalog():
+    """Return the cached remediation catalog mapping (loaded at most once).
+
+    On any failure to read/parse the committed catalog this degrades to an
+    EMPTY mapping, so enrichment falls back to null/empty fields rather than
+    raising — no surface may fail (or change a verdict) because remediation
+    data is missing. That is not hypothetical: verifyhash-einvoice 0.4.2
+    shipped a wheel WITHOUT the packaged catalog, and every unguarded
+    ``load_catalog()`` call became a ``FileNotFoundError`` traceback in the
+    user's CI (see ``test_wheel_remediation.WheelWithoutCatalog``).
+    """
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is None:
+        try:
+            _CATALOG_CACHE = load_catalog()
+        except (OSError, ValueError, KeyError):
+            _CATALOG_CACHE = {}
+    return _CATALOG_CACHE
+
+
+#: The four catalog-relayed remediation keys, in emission order. Consumers may
+#: rely on all four being PRESENT on every violation record of every machine
+#: surface; an uncatalogued rule id yields null/empty values, never absence.
+REMEDIATION_KEYS = ("title", "fix_hint", "terms", "location")
+
+
+def remediation_fields(rule_id, catalog=None):
+    """The four remediation fields for ``rule_id``, as a fresh ordered dict.
+
+    THE single relay from the committed catalog into a machine record. Both
+    ``einvoice.report._record`` (``--format json`` and friends) and
+    ``einvoice.validate.Result._violation_dict`` (``validate --json`` /
+    ``validate-batch --json``) call this one helper, so the two surfaces cannot
+    drift into disagreeing remediation values for the same rule id. It authors
+    no wording of its own: ``title``/``fix``/``bt_bg``/``location_hint`` come
+    verbatim from the Schematron-traceable catalog that ``gen_remediation.py``
+    builds and ``test_remediation_catalog.py`` pins.
+
+    A rule id with no catalog entry degrades to ``{"title": None, "fix_hint":
+    None, "terms": [], "location": None}`` — every key present, never a
+    ``KeyError`` and never a missing key, so a consumer can index the shape
+    unconditionally.
+
+    :param catalog: optional pre-loaded ``rule_id -> entry`` mapping (a caller
+        projecting a whole result passes it once); when omitted, the cached
+        module catalog is used.
+    """
+    if catalog is None:
+        catalog = cached_catalog()
+    entry = catalog.get(rule_id) or {}
+    return {
+        "title": entry.get("title"),
+        "fix_hint": entry.get("fix"),
+        "terms": list(entry.get("bt_bg") or []),
+        "location": entry.get("location_hint"),
+    }
+
+
 #: Human-facing languages the resolver understands. English is always the
 #: fallback; German is surfaced only where an OFFICIAL German string exists.
 SUPPORTED_LANGS = ("en", "de")

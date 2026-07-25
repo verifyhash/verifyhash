@@ -83,6 +83,7 @@ from .validate import validate_file, validate_root, PROFILES, _severity
 from .parser import NotWellFormed, parse_file
 from ._xmlsec import _safe_fromstring
 from .remediation import load_catalog
+from . import remediation as _remediation
 from . import pdf_container
 from . import syntax_binding_eval as _sbe
 
@@ -203,27 +204,16 @@ VIOLATION_KEYS = ("rule", "severity", "message", "field",
                   "title", "fix_hint", "terms", "location")
 
 
-#: Module-level cache of the remediation catalog (rule_id -> entry). Loaded
-#: once and reused so per-record enrichment stays O(1) and never re-parses the
-#: JSON in a hot loop. The report only RELAYS this committed, Schematron-
-#: traceable data — it authors no remediation wording of its own.
-_REMEDIATION_CATALOG = None
-
-
 def _remediation_catalog():
     """Return the cached remediation catalog mapping (loaded at most once).
 
-    On any failure to read/parse the committed catalog this degrades to an
-    empty mapping, so enrichment falls back to null/empty fields rather than
-    raising — the report must never fail because remediation data is missing.
+    A thin alias of :func:`einvoice.remediation.cached_catalog`, kept as the
+    report's own name because this module calls it in a dozen places. The cache
+    (and the degrade-to-``{}`` discipline for a catalog-less installation) now
+    lives ONCE in :mod:`einvoice.remediation`, so ``validate --json`` and the
+    report share a single parse of the JSON instead of one each.
     """
-    global _REMEDIATION_CATALOG
-    if _REMEDIATION_CATALOG is None:
-        try:
-            _REMEDIATION_CATALOG = load_catalog()
-        except (OSError, ValueError, KeyError):
-            _REMEDIATION_CATALOG = {}
-    return _REMEDIATION_CATALOG
+    return _remediation.cached_catalog()
 
 
 def _record(v, catalog=None):
@@ -231,27 +221,24 @@ def _record(v, catalog=None):
 
     The four identity fields (rule/severity/message/field) are taken verbatim
     from the Violation. The four remediation fields (title/fix_hint/terms/
-    location) are RELAYED from the committed remediation catalog entry for this
-    rule id — this function authors none of that wording. A rule id with no
-    catalog entry degrades gracefully to null/empty fields (never a KeyError).
+    location) are RELAYED — through the shared
+    :func:`einvoice.remediation.remediation_fields` helper that
+    ``validate.Result._violation_dict`` also calls — from the committed
+    remediation catalog entry for this rule id. This function authors none of
+    that wording. A rule id with no catalog entry degrades gracefully to
+    null/empty fields (never a KeyError).
 
     :param catalog: optional pre-loaded catalog mapping (build_report passes it
         once for the whole result); when omitted, the cached module catalog is
         used so a lone ``_record(v)`` call still enriches.
     """
-    if catalog is None:
-        catalog = _remediation_catalog()
-    entry = catalog.get(v.rule_id) or {}
     record = {
         "rule": v.rule_id,
         "severity": _severity(v),
         "message": v.message,
         "field": v.element,
-        "title": entry.get("title"),
-        "fix_hint": entry.get("fix"),
-        "terms": list(entry.get("bt_bg") or []),
-        "location": entry.get("location_hint"),
     }
+    record.update(_remediation.remediation_fields(v.rule_id, catalog))
     # Additive, OPTIONAL: the 1-based parser line of the offending element,
     # present ONLY for an attributable field-level violation (see
     # einvoice.rules). Absence of the key means "not attributable to a source

@@ -47,16 +47,30 @@ Checks (each an independent hard assert):
   (f) DATA FILE USABLE: each declared data file is non-empty, parses as JSON,
       and (for the remediation catalog) carries the ``rules`` mapping the
       browser needs, so a mounted-but-unusable catalog cannot pass.
+  (g) ACCEPTED-ROOT PARITY: the bundled engine and the packaged engine ACCEPT
+      exactly the same set of invoice root element tags. Checks (a)-(e) are
+      all about *bytes and file lists*; this one is about BEHAVIOUR. It exists
+      because the failure it catches actually shipped: after T-VHCII3.1 taught
+      ``validate.validate_root`` to dispatch a raw UN/CEFACT
+      ``CrossIndustryInvoice`` to the CII engine, the committed bundle was not
+      regenerated — so the browser validator kept answering the structural
+      ``S-ROOT`` fatal for a document the CLI graded fine. Both sets are
+      DERIVED (never a literal list here): the candidate roots are harvested
+      with ``ast`` from the two engines' own source, and acceptance is decided
+      by RUNNING each engine's ``validate_root`` and asking whether it emits
+      the structural refusal. See :func:`accepted_root_set`.
 """
 
 from __future__ import annotations
 
 import ast
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -84,10 +98,190 @@ DATA_FILES = {"remediation_catalog.json"}
 
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 
+# ---------------------------------------------------------------------------
+# (g) ACCEPTED-ROOT PARITY — derivation knobs.
+#
+# The rule id the engine emits when it REFUSES a root structurally. Read off
+# the packaged engine's own module (never spelled out as a literal here), so
+# renaming the structural fatal cannot leave this probe silently classifying
+# every root as "accepted".
+# ---------------------------------------------------------------------------
+#: Profile the probe validates under: the widest one the engine offers, so a
+#: root only reachable on the national CIUS layer still counts as accepted.
+ACCEPTED_ROOT_PROFILE = "xrechnung"
+
+#: Shapes harvested from source to build the candidate root universe: an
+#: element LOCALNAME (XML NCName, initial capital — every real invoice root in
+#: either syntax is one) and an XML NAMESPACE URI.
+_ROOT_LOCALNAME_RE = re.compile(r"[A-Z][A-Za-z0-9]{2,}")
+_ROOT_NAMESPACE_RE = re.compile(r"^(?:urn:|https?://)")
+
+#: Negative controls. These are NOT part of the derived accepted set — they are
+#: nonsense roots that both engines must REFUSE, which is what proves the probe
+#: actually discriminates (a probe that called everything "accepted" would make
+#: the parity assertion vacuously true) and that the generic structural fatal
+#: still fires for genuinely unsupported roots.
+ACCEPTED_ROOT_SENTINELS = (
+    "ZzDefinitelyNotAnInvoiceRoot",
+    "{urn:example:not-a-real-syntax}ZzDefinitelyNotAnInvoiceRoot",
+)
+
+#: Package name the bundled copy is imported under. Deliberately NOT
+#: ``einvoice``: the two engines must be live in the same interpreter at once
+#: for the comparison to mean anything.
+_BUNDLE_PKG_NAME = "_einvoice_bundle_under_test"
+
 
 def _read_bytes(path):
     with open(path, "rb") as fh:
         return fh.read()
+
+
+# ---------------------------------------------------------------------------
+# (g) ACCEPTED-ROOT PARITY — implementation.
+# ---------------------------------------------------------------------------
+
+def _harvest_root_literals(py_paths):
+    """Harvest candidate root localnames + XML namespaces from source.
+
+    Parses each file with ``ast`` and collects its string constants, keeping
+    the two shapes a root tag is built from: NCName-ish localnames
+    (``CrossIndustryInvoice``, ``CreditNote``, ``InvoiceLine``, …) and
+    namespace URIs (``urn:…`` / ``http(s)://…``). Deriving the universe from
+    the engines' OWN literals is the point: a dispatch change necessarily
+    mentions the root it newly handles, so the new root lands in the universe
+    automatically and the parity check sees it — nothing to remember to add
+    here.
+
+    :param py_paths: iterable of ``.py`` file paths to parse.
+    :returns: ``(localnames, namespaces)``, both sets of ``str``.
+    """
+    localnames = set()
+    namespaces = set()
+    for path in py_paths:
+        try:
+            tree = ast.parse(_read_bytes(path))
+        except SyntaxError:
+            continue  # reported by check (d); nothing to harvest here
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)):
+                continue
+            text = node.value
+            if _ROOT_LOCALNAME_RE.fullmatch(text):
+                localnames.add(text)
+            elif _ROOT_NAMESPACE_RE.match(text):
+                namespaces.add(text)
+    return localnames, namespaces
+
+
+def _root_tag_universe(localnames, namespaces):
+    """Every candidate root TAG to probe: each localname bare (no namespace)
+    and qualified with each harvested namespace, in ``xml.etree``'s
+    ``{ns}local`` form. Sorted, so failures report deterministically."""
+    tags = set(localnames)
+    for ns in namespaces:
+        for local in localnames:
+            tags.add("{%s}%s" % (ns, local))
+    return sorted(tags)
+
+
+def _import_bundled_engine():
+    """Import ``www/validate/engine/`` as a SECOND, independent package.
+
+    Loaded straight from the committed bundle directory in memory — no copy,
+    no temp dir, no write anywhere — with ``submodule_search_locations`` set
+    so the bundle's relative imports (``from . import parser``) resolve inside
+    the bundle and nothing leaks in from the installed ``einvoice``. That is
+    the same self-contained-package assumption the Pyodide page relies on, so
+    a bundle that cannot be imported this way is already broken in the
+    browser.
+
+    :returns: the bundled ``validate`` module, or ``None`` if it will not
+        import (the caller turns that into a failure).
+    """
+    for name in [n for n in sys.modules
+                 if n == _BUNDLE_PKG_NAME
+                 or n.startswith(_BUNDLE_PKG_NAME + ".")]:
+        del sys.modules[name]
+    init_path = os.path.join(ENGINE_DIR, "__init__.py")
+    if not os.path.isfile(init_path):
+        return None
+    spec = importlib.util.spec_from_file_location(
+        _BUNDLE_PKG_NAME, init_path,
+        submodule_search_locations=[ENGINE_DIR])
+    if spec is None or spec.loader is None:
+        return None
+    # Import WITHOUT emitting bytecode: a __pycache__/ dropped into the bundle
+    # would be an untracked extra file inside a directory whose exact contents
+    # check (b) pins, and would show up as site drift in test_site.py.
+    saved = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        pkg = importlib.util.module_from_spec(spec)
+        sys.modules[_BUNDLE_PKG_NAME] = pkg
+        spec.loader.exec_module(pkg)
+        return importlib.import_module(_BUNDLE_PKG_NAME + ".validate")
+    finally:
+        sys.dont_write_bytecode = saved
+
+
+def accepted_root_set(validate_mod, tags, refusal):
+    """The set of root tags this engine ACCEPTS, decided by running it.
+
+    For each candidate tag an empty element with that tag is handed to
+    ``validate_mod.validate_root``. The document is meaningless, so a heap of
+    business-rule violations is expected and irrelevant; the ONE thing read
+    off the result is whether the engine emitted its structural refusal (the
+    ``refusal`` rule id, itself discovered from the engine under test — see
+    :func:`refusal_rule_id`). No refusal means the engine took the root
+    seriously enough to run rules over it, i.e. it accepts that root.
+
+    :param validate_mod: a ``validate`` module (packaged or bundled).
+    :param tags: candidate root tags, from :func:`_root_tag_universe`.
+    :param refusal: the structural-refusal rule id for this engine.
+    :returns: ``(accepted, errors)`` — the accepted tag set, and a
+        ``tag -> exception class name`` map for tags the engine blew up on
+        (compared too, so a crash-divergence is not silently an "acceptance"
+        difference).
+    """
+    accepted = set()
+    errors = {}
+    for tag in tags:
+        try:
+            result = validate_mod.validate_root(
+                ET.Element(tag), ACCEPTED_ROOT_PROFILE)
+        except Exception as exc:  # noqa: BLE001 — a crash IS a divergence
+            errors[tag] = type(exc).__name__
+            continue
+        if not any(getattr(v, "rule_id", None) == refusal
+                   for v in result.violations):
+            accepted.add(tag)
+    return accepted, errors
+
+
+def refusal_rule_id(validate_mod):
+    """The structural-refusal rule id this engine emits for an unsupported
+    root, read from the engine itself rather than written out here: probe the
+    sentinel roots and take the id both come back with. Keeps the probe honest
+    if the id is ever renamed, and returns ``None`` when the engine does not
+    refuse a nonsense root with exactly one violation — a state the caller
+    must treat as a failure, because it would make the parity check vacuous.
+    """
+    ids = None
+    for sentinel in ACCEPTED_ROOT_SENTINELS:
+        try:
+            result = validate_mod.validate_root(
+                ET.Element(sentinel), ACCEPTED_ROOT_PROFILE)
+        except Exception:  # noqa: BLE001
+            return None
+        got = {getattr(v, "rule_id", None) for v in result.violations}
+        if len(got) != 1:
+            return None
+        if ids is not None and got != ids:
+            return None
+        ids = got
+    return next(iter(ids)) if ids else None
 
 
 def main():
@@ -286,6 +480,78 @@ def main():
                       "%s: no rule entry carries a non-empty 'fix' string"
                       % fn)
 
+    # ---- (g) ACCEPTED-ROOT PARITY ------------------------------------------
+    # Byte-identity above already compares the files the manifest LISTS; this
+    # asks the independent question "do the two engines answer the same way?",
+    # which is what a reader of the browser page actually experiences. It is
+    # what catches a dispatch change (T-VHCII3.1's raw-CII routing) shipped
+    # without a bundle regen.
+    accepted_pkg = accepted_bundle = None
+    bundled_validate = None
+    tags = []
+    try:
+        bundled_validate = _import_bundled_engine()
+    except Exception as exc:  # noqa: BLE001
+        check(False, "bundled engine does not import as a self-contained "
+                     "package (%s: %s) — the browser could not run it either"
+                     % (type(exc).__name__, exc))
+    check(bundled_validate is not None,
+          "bundled engine exposes no importable validate module")
+
+    if bundled_validate is not None:
+        pkg_validate = _einvoice.validate
+        # The candidate universe is the UNION of what both engines mention, so
+        # a root only one side knows about is still probed on both — exactly
+        # the stale-bundle case.
+        pkg_py = [os.path.join(PKG_DIR, fn) for fn in sorted(os.listdir(PKG_DIR))
+                  if fn.endswith(".py")]
+        bundle_py = [os.path.join(ENGINE_DIR, fn) for fn in sorted(files)
+                     if fn.endswith(".py")]
+        locals_pkg, ns_pkg = _harvest_root_literals(pkg_py)
+        locals_bun, ns_bun = _harvest_root_literals(bundle_py)
+        tags = _root_tag_universe(locals_pkg | locals_bun, ns_pkg | ns_bun)
+        check(len(tags) > 10,
+              "root-tag universe is implausibly small (%d) — the ast harvest "
+              "found nothing, so parity would be vacuous" % len(tags))
+
+        refusal_pkg = refusal_rule_id(pkg_validate)
+        refusal_bun = refusal_rule_id(bundled_validate)
+        check(refusal_pkg is not None,
+              "packaged engine does not refuse a nonsense root with exactly "
+              "one structural violation — cannot derive the refusal rule id")
+        check(refusal_bun == refusal_pkg,
+              "bundled engine's structural refusal id %r != packaged %r"
+              % (refusal_bun, refusal_pkg))
+
+        if refusal_pkg is not None and refusal_bun is not None:
+            accepted_pkg, errors_pkg = accepted_root_set(
+                pkg_validate, tags, refusal_pkg)
+            accepted_bundle, errors_bundle = accepted_root_set(
+                bundled_validate, tags, refusal_bun)
+
+            # The probe must discriminate: real roots in, nonsense out.
+            check(bool(accepted_pkg),
+                  "packaged engine accepted NO root at all — probe is broken")
+            for sentinel in ACCEPTED_ROOT_SENTINELS:
+                check(sentinel not in accepted_pkg,
+                      "packaged engine ACCEPTS the nonsense root %r — the "
+                      "generic structural fatal no longer fires" % sentinel)
+                check(sentinel not in accepted_bundle,
+                      "bundled engine ACCEPTS the nonsense root %r — the "
+                      "generic structural fatal no longer fires" % sentinel)
+
+            check(accepted_pkg == accepted_bundle,
+                  "ACCEPTED_ROOT set differs between the packaged engine and "
+                  "the browser bundle — re-run gen_site.py. "
+                  "package-only=%s bundle-only=%s"
+                  % (sorted(accepted_pkg - accepted_bundle)[:5],
+                     sorted(accepted_bundle - accepted_pkg)[:5]))
+            check(errors_pkg == errors_bundle,
+                  "the two engines CRASH on different roots; package-only=%s "
+                  "bundle-only=%s"
+                  % (sorted(set(errors_pkg) - set(errors_bundle))[:5],
+                     sorted(set(errors_bundle) - set(errors_pkg))[:5]))
+
     if failures:
         sys.stderr.write("WEB BUNDLE TEST: FAIL (%d)\n" % len(failures))
         for m in failures[:40]:
@@ -294,8 +560,10 @@ def main():
     print("web bundle OK: %d modules + %d declared data file(s) (%s) "
           "byte-identical to the package, manifest hashes/list/version "
           "bound, imports self-contained (stdlib only), traced closure "
-          "matches."
-          % (len(bundle_mods), len(bundle_data), ", ".join(sorted(bundle_data))))
+          "matches, ACCEPTED_ROOT parity holds (%d accepted of %d probed "
+          "root tags)."
+          % (len(bundle_mods), len(bundle_data), ", ".join(sorted(bundle_data)),
+             len(accepted_pkg or ()), len(tags) if accepted_pkg else 0))
     return 0
 
 

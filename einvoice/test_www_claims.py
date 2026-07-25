@@ -110,6 +110,23 @@ def probe_cii_validated():
         r for r in ids if r.startswith("BR-CL"))
 
 
+def probe_raw_cii_root_accepted():
+    """A RAW ``.xml`` file whose root is ``CrossIndustryInvoice`` is accepted
+    and graded — no PDF container involved.
+
+    This is the capability T-VHCII3.1 added and the one the ``CII_ABSENCE_``
+    ``DENIALS`` denylist below protects. It goes through the ONE dispatch seam
+    (``validate.validate_root``, which ``report.build_report`` and the CLI both
+    call), so it is exactly what the browser page and the terminal do. Proof of
+    acceptance: the structural ``S-ROOT`` refusal is ABSENT and real ``BR-*``
+    business rules fired, which can only happen on a root the engine took.
+    """
+    res = validate_root(parse_file(CII_WITH_BRCL), profile="en16931")
+    ids = {v.rule_id for v in res.violations}
+    present = "S-ROOT" not in ids and any(r.startswith("BR-") for r in ids)
+    return present, "raw CII root graded, rule_ids=%s" % sorted(ids)
+
+
 def probe_brcl_both_syntaxes():
     """The BR-CL-* code-list rule class fires in BOTH syntaxes: BR-CL-01 on the
     UBL CreditNote above, BR-CL-11 on the CII document above. Guards the
@@ -132,9 +149,14 @@ def probe_brcl_both_syntaxes():
 # ---------------------------------------------------------------------------
 # The claim table. Each `phrases` entry is a regex matched (case-insensitive)
 # against the NORMALIZED page text. Every phrase is a genuine *denial* of the
-# capability — never the honest, still-true limit prose (e.g. "CII (via the
-# ZUGFeRD/Factur-X PDF container) only" is a true scope note, not a denial, and
-# is deliberately NOT listed).
+# capability — never honest, still-true limit prose.
+#
+# HISTORY NOTE (T-VHCII3.3): this comment used to exempt "CII (via the
+# ZUGFeRD/Factur-X PDF container) only" as "a true scope note, not a denial".
+# It WAS true then and is NOT true now: since T-VHCII3.1 the engine grades a
+# raw CrossIndustryInvoice `.xml` through the same dispatch seam, so that
+# sentence became a false denial of a shipped capability. It now lives in
+# :data:`CII_ABSENCE_DENIALS` below.
 # ---------------------------------------------------------------------------
 
 # The gaps between anchor and denial verb are TIGHTLY bounded so a pattern
@@ -232,6 +254,51 @@ PYPI_ABSENCE_DENIALS = (
 PAGES_NAMING_DISTRIBUTION = ("index.html", os.path.join("de", "index.html"))
 
 
+# ---------------------------------------------------------------------------
+# RAW-CII CAPABILITY (T-VHCII3.3) — same denylist convention as
+# PYPI_ABSENCE_DENIALS above, but anchored to an executable probe rather than a
+# committed fact, because this one IS checkable in-process.
+#
+# The bug it kills: XRechnung has TWO official syntaxes, UBL and UN/CEFACT CII.
+# Until T-VHCII3.1 our raw-XML path only took UBL, and the surfaces said so —
+# the browser validator page carried "plus CII (via the ZUGFeRD/Factur-X PDF
+# container) only", and the coverage prose called the raw-XML CLI surface
+# "honestly UBL-only". Those lines were accurate when written. T-VHCII3.1 made
+# them false: a raw CrossIndustryInvoice `.xml` is now graded by the CII engine
+# through the same validate_root seam. A German mandate buyer whose ERP emits
+# CII (Factur-X's native syntax) reads a leftover line like that and concludes
+# the tool cannot handle their invoices — the exact prospect this lane is for.
+#
+# Every pattern below is a claim shape we ACTUALLY SHIPPED, not a hypothetical,
+# and each is anchored to a CII/ZUGFeRD/Factur-X token with a TIGHT, non-
+# sentence-crossing gap so honest prose survives. Two things that must keep
+# passing and were checked by hand:
+#
+#   * www/index.html's "12 are officially UBL-only and 4 are CII-only" — a
+#     RULE-BINDING fact (how many EN 16931 rules bind to which syntax in the
+#     official Schematron), not a capability claim. The `ubl-only` patterns
+#     require a product noun ("engine"/"validator"/"CLI"/"surface"/…) with an
+#     assertive verb, so a rule COUNT never matches.
+#   * honest limit prose that still mentions the PDF container route, which
+#     remains real and documented — only the exclusivity words ("only",
+#     "nur über") are denied.
+CII_ABSENCE_DENIALS = (
+    # "the raw-XML CLI surface stays honestly UBL-only" — product noun + verb.
+    r"(?:engine|validator|cli|surface|parser|tool|input|xml|path)\s+"
+    r"(?:is|are|stays|remains|ist|bleibt)\s+(?:honestly\s+)?ubl[- ]only",
+    # "a UBL-only validator", "UBL-only engine".
+    r"ubl[- ]only\s+(?:engine|validator|cli|tool|surface|parser|support)",
+    # "plus CII (via the ZUGFeRD/Factur-X PDF container) only".
+    r"(?:cii|zugferd|factur-x)[^.]{0,60}container\)?\s*only",
+    # "CII is supported only via the PDF container".
+    r"cii[^.]{0,80}only\s+(?:via|through|inside|in)\b",
+    # German: "CII nur über den ZUGFeRD/Factur-X-PDF-Container", and the
+    # reversed word order "nur über den PDF-Container … CII".
+    r"cii[^.]{0,80}nur\s+(?:[üu]ber|per|via|mit)\b",
+    r"nur\s+[üu]ber[^.]{0,60}(?:pdf|zugferd|factur-x)[- ]?container",
+)
+
+
 class TestWwwClaims(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -299,6 +366,84 @@ class TestWwwClaims(unittest.TestCase):
             "www/ pages tell readers the package is not on PyPI:\n  "
             + "\n  ".join(offenders),
         )
+
+    def test_no_www_page_claims_cii_absence(self):
+        """FAIL if any generated page (EN or DE) tells the reader raw CII is
+        out of scope — that the tool is UBL-only, or that CII works only
+        through the ZUGFeRD/Factur-X PDF container.
+
+        Anchored to the engine, not to an opinion: the probe must first
+        demonstrate that a raw CrossIndustryInvoice root really is graded. If
+        that capability were ever removed, the denials would become TRUE again
+        and this guard must not keep failing pages for telling the truth — so
+        the probe assertion below is what fires instead.
+        """
+        present, evidence = probe_raw_cii_root_accepted()
+        self.assertTrue(
+            present,
+            "PROBE FAILED — the engine no longer grades a raw CII root (%s). "
+            "Fix the engine, or the CII_ABSENCE_DENIALS denylist is no longer "
+            "a denylist of falsehoods." % evidence)
+
+        patterns = [re.compile(p, re.IGNORECASE) for p in CII_ABSENCE_DENIALS]
+        offenders = []
+        for rel, text in sorted(self.pages.items()):
+            for pat in patterns:
+                m = pat.search(text)
+                if m:
+                    offenders.append(
+                        "www/%s claims CII-absence via /%s/ -> matched %r "
+                        "(engine proof: %s)"
+                        % (rel, pat.pattern, m.group(0), evidence))
+        self.assertEqual(
+            offenders, [],
+            "www/ pages tell readers raw CII is unsupported or PDF-container-"
+            "only:\n  " + "\n  ".join(offenders))
+
+    def test_cii_denial_patterns_actually_match_the_shipped_falsehoods(self):
+        """A denylist nobody can trip is decoration. Each CII_ABSENCE_DENIALS
+        pattern is proved to fire on the real sentence it was written for, and
+        the whole list is proved NOT to fire on the rule-binding COUNT fact
+        (`12 are officially UBL-only and 4 are CII-only`) that must survive on
+        www/index.html."""
+        shipped_falsehoods = (
+            "the raw-xml cli surface stays honestly ubl-only: einvoice "
+            "validate on a raw cii .xml returns s-root",
+            "this is a ubl-only validator for now",
+            "are both validated through the same en 16931 engine, plus cii "
+            "(via the zugferd/factur-x pdf container) only. every fireable",
+            "cii documents are supported only via the factur-x pdf container",
+            "cii wird nur über den zugferd/factur-x-pdf-container "
+            "unterstützt",
+            "roh-xml wird nur über den zugferd-pdf-container gelesen",
+        )
+        patterns = [re.compile(p, re.IGNORECASE) for p in CII_ABSENCE_DENIALS]
+        for pat in patterns:
+            self.assertTrue(
+                any(pat.search(s) for s in shipped_falsehoods),
+                "CII_ABSENCE_DENIALS pattern %r matches none of the shipped "
+                "falsehoods it is supposed to catch — dead pattern" %
+                pat.pattern)
+        for sample in shipped_falsehoods:
+            self.assertTrue(
+                any(pat.search(sample) for pat in patterns),
+                "no CII_ABSENCE_DENIALS pattern catches the shipped falsehood "
+                "%r" % sample)
+
+        must_survive = (
+            "297 asserted rules are differential-proven on both ubl and cii, "
+            "12 are officially ubl-only and 4 are cii-only, with 0 rules left "
+            "on the cii-fireable worklist",
+            "and so is un/cefact cii — both as a plain .xml file whose "
+            "root element is crossindustryinvoice and as the xml embedded in "
+            "a zugferd/factur-x .pdf, which the page extracts for you",
+        )
+        for sample in must_survive:
+            hits = [p.pattern for p in patterns if p.search(sample)]
+            self.assertEqual(
+                hits, [],
+                "CII_ABSENCE_DENIALS false-positives on honest text %r via %r"
+                % (sample, hits))
 
     def test_install_facing_pages_name_the_real_distribution(self):
         """The English landing and the German product page must each name the

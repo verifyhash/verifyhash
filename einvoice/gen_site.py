@@ -2601,7 +2601,8 @@ def render_validate(catalog):
     n_rules = len(_coverage.engine_fireable_ids())
     title = ("Validate an XRechnung / ZUGFeRD invoice in your browser — "
              "no install, no upload — einvoice")
-    description = ("Drag an XRechnung UBL XML or ZUGFeRD/Factur-X PDF onto "
+    description = ("Drag an XRechnung XML (UBL or UN/CEFACT CII) or a "
+                   "ZUGFeRD/Factur-X PDF onto "
                    "this page and the real %d-rule EN 16931 engine grades it "
                    "in your browser via Pyodide (WebAssembly). Nothing is "
                    "installed and the invoice is never uploaded — validation "
@@ -2684,7 +2685,8 @@ def render_validate(catalog):
     w('<p class="crumb"><a href="../index.html">einvoice</a> / '
       "Browser validator</p>")
     w("<h1>Validate an invoice in your browser</h1>")
-    w('<p class="lead">Drop an <strong>XRechnung</strong> UBL XML or a '
+    w('<p class="lead">Drop an <strong>XRechnung</strong> XML &mdash; UBL or '
+      "UN/CEFACT&nbsp;CII, both official syntaxes &mdash; or a "
       "<strong>ZUGFeRD&nbsp;/&nbsp;Factur-X</strong> PDF here and the same "
       '<strong><span data-claim="rule-count">%d</span>-rule</strong> '
       "EN&nbsp;16931 engine that powers the CLI grades it — no account, no "
@@ -2716,8 +2718,8 @@ def render_validate(catalog):
     w("<h2>Step 2 — pick an invoice</h2>")
     w('<label class="dropzone" id="dropzone" for="file-input">'
       "Drag &amp; drop an invoice here, or click to choose a file "
-      "(<code>.xml</code> UBL XRechnung, or a ZUGFeRD/Factur-X "
-      "<code>.pdf</code>)</label>")
+      "(<code>.xml</code> XRechnung in UBL <em>or</em> CII, or a "
+      "ZUGFeRD/Factur-X <code>.pdf</code>)</label>")
     w('<p><input type="file" id="file-input" '
       'accept=".xml,.pdf,application/xml,text/xml,application/pdf" disabled> '
       '<label for="profile">Profile:</label> '
@@ -2745,8 +2747,14 @@ def render_validate(catalog):
       "German.</p>")
     w("<p>Same limits as the CLI, stated plainly: no XSD structural "
       "validation; UBL <code>Invoice</code> and UBL 2.1 <code>CreditNote</code> "
-      "are both validated through the same EN 16931 engine, plus CII (via the ZUGFeRD/"
-      "Factur-X PDF container) only. Every "
+      "are both validated through the same EN 16931 engine, and so is "
+      "UN/CEFACT&nbsp;CII &mdash; both as a plain <code>.xml</code> file "
+      "whose root element is <code>CrossIndustryInvoice</code> "
+      "(XRechnung&rsquo;s second official syntax, and what ZUGFeRD and "
+      "Factur-X carry) and as the XML embedded in a ZUGFeRD/Factur-X "
+      "<code>.pdf</code>, which the page extracts for you before grading. "
+      "Any other root element is still refused up front with the structural "
+      "<code>S-ROOT</code> fatal rather than half-graded. Every "
       "fireable official <code>BR-CL-*</code> code-list check is now "
       "implemented in both syntaxes. A green result means &ldquo;no implemented fatal rule "
       "fired&rdquo;, not &ldquo;certified legally conformant&rdquo;. "

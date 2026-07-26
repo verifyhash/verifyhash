@@ -13,7 +13,13 @@ defines NO second engine, and invents NO new output format. It only:
      and MERGES the per-file SARIF 2.1.0 documents into one, so the whole run
      can be handed to ``github/codeql-action/upload-sarif`` for inline PR
      annotations (SARIF merging is pure aggregation — it reorders/relabels
-     nothing and adds no findings);
+     nothing and adds no findings). While merging, each artifact URI is
+     rewritten to the path RELATIVE to the workspace root (``$GITHUB_WORKSPACE``
+     or the cwd) and anchored to the ``%SRCROOT%`` ``uriBaseId`` declared in
+     ``runs[0].originalUriBaseIds``, because code scanning resolves result
+     locations against the repository root: an absolute runner path matches no
+     tracked file and renders ZERO annotations. Files genuinely outside the
+     workspace keep their absolute URI (never a ``../`` escape);
   3. also emits the caller-chosen console ``--format`` to stdout by driving the
      identical entrypoint ``python3 -m einvoice.report --format <format>
      [--recurse] <path>`` — the literal command the docs describe. The offered
@@ -47,8 +53,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import subprocess
 import sys
+import urllib.parse
 
 # Exit codes — the entrypoint's contract, mirrored here (kept as literals so a
 # drift in einvoice.report is caught by test_action.py, not silently followed).
@@ -59,6 +67,12 @@ EXIT_PARSE = 3
 #: File extensions treated as invoices in directory mode. Matches
 #: ``einvoice.report.BATCH_INVOICE_EXTS`` (``.xml`` UBL/CII, ``.pdf`` Factur-X).
 INVOICE_EXTS = (".xml", ".pdf")
+
+#: The SARIF ``uriBaseId`` every workspace-relative artifact location is anchored
+#: to. ``%SRCROOT%`` is the conventional id GitHub's own code-scanning tooling
+#: uses for "the root of the checked-out repository"; ONE id is declared for the
+#: whole run (a per-file id would be meaningless to a consumer).
+SRCROOT_ID = "%SRCROOT%"
 
 #: Engine formats this Action deliberately does NOT offer, each with its ONE
 #: reason. Everything else in ``einvoice.report.REPORT_FORMATS`` is offered, so
@@ -199,6 +213,108 @@ def display_path(path):
     return trimmed or path
 
 
+def workspace_root():
+    """The absolute directory SARIF artifact URIs are made relative to.
+
+    ``$GITHUB_WORKSPACE`` when it is set and non-empty — that is the checkout
+    root GitHub's code-scanning ingest resolves every result location against —
+    otherwise this process's cwd, which is the same directory in a local run,
+    under ``act``, and under GitLab (``$CI_PROJECT_DIR`` is the cwd there too).
+    So the Action behaves identically in all four situations without special
+    casing any of them.
+
+    ``os.path.abspath`` only (no ``os.path.realpath``): a runner hands us BOTH
+    the workspace value and the ``--path`` value in unresolved form, and the two
+    are only comparable when neither side has its symlinks collapsed. On a
+    GitHub-hosted runner ``/home/runner/work/...`` is itself reachable through
+    symlinked parents; resolving one side alone would make a file that IS inside
+    the workspace look outside it and silently fall back to absolute URIs.
+    """
+    ws = os.environ.get("GITHUB_WORKSPACE") or ""
+    if not ws.strip():
+        ws = os.getcwd()
+    return os.path.abspath(ws)
+
+
+def workspace_base_uri(workspace):
+    """The ``originalUriBaseIds`` value for :data:`SRCROOT_ID`.
+
+    SARIF 2.1.0 §3.14.14 wants a base id to denote a DIRECTORY, i.e. an absolute
+    URI ending in ``/``. ``Path.as_uri()`` does the ``file://`` framing and the
+    percent-encoding; the trailing slash is appended here.
+    """
+    return pathlib.Path(workspace).as_uri().rstrip("/") + "/"
+
+
+def artifact_uri(path, workspace):
+    """-> ``(uri, inside)`` for one invoice: the SARIF URI and containment flag.
+
+    ``inside`` is True when ``path`` really lies under ``workspace``; then the
+    URI is the workspace-RELATIVE path, ``/``-separated (SARIF URIs are always
+    POSIX-style, never ``os.sep``) and percent-encoded except for the separators.
+    That is the only form GitHub can match against a tracked file — an absolute
+    runner path such as ``/home/runner/work/repo/repo/invoices/bad.xml`` matches
+    nothing in the repository tree, so ``upload-sarif`` succeeds and renders ZERO
+    annotations.
+
+    When ``path`` lies outside the workspace the ABSOLUTE path is returned and
+    ``inside`` is False. Escaping the repository root with ``../`` segments is
+    strictly worse than an absolute URI: code scanning rejects or mis-resolves
+    it, and the reader loses the file's real identity. Containment is decided on
+    path COMPONENTS via ``os.path.relpath`` + a ``..`` test — a ``startswith``
+    string test would wrongly call ``/tmp/ws-other/x`` a child of ``/tmp/ws``.
+    """
+    abs_path = os.path.abspath(path)
+    absolute_uri = abs_path.replace(os.sep, "/")
+    try:
+        rel = os.path.relpath(abs_path, workspace)
+    except ValueError:
+        # Different Windows drive letters — genuinely not relatable.
+        return absolute_uri, False
+    parts = rel.split(os.sep)
+    if os.path.isabs(rel) or ".." in parts or rel == os.curdir:
+        return absolute_uri, False
+    return urllib.parse.quote("/".join(parts), safe="/"), True
+
+
+def _localise_sarif(doc, path, workspace):
+    """Rewrite the artifact URIs of ONE per-file SARIF document in place.
+
+    This is the single place in the runner where a SARIF URI is rewritten. Every
+    location in ``doc`` describes ``path`` — the engine was driven on exactly one
+    invoice — so each ``artifactLocation`` gets the same URI, computed from the
+    FILE PATH rather than by string-munging whatever the engine printed (the
+    engine echoes the spelling it was given, which may be absolute, relative to
+    the cwd, or the user's own trailing-slash form).
+
+    Nothing else is touched: no result is added, dropped, reordered, relabelled
+    or deduplicated, no level or ruleId changes, and the region/logicalLocation
+    detail the engine attached is preserved verbatim.
+    """
+    uri, inside = artifact_uri(path, workspace)
+    for run in doc.get("runs", []):
+        for res in run.get("results", []):
+            locations = list(res.get("locations") or [])
+            locations += list(res.get("relatedLocations") or [])
+            for loc in locations:
+                if not isinstance(loc, dict):
+                    continue
+                phys = loc.get("physicalLocation")
+                if not isinstance(phys, dict):
+                    continue
+                art = phys.get("artifactLocation")
+                if not isinstance(art, dict):
+                    continue
+                art["uri"] = uri
+                if inside:
+                    art["uriBaseId"] = SRCROOT_ID
+                else:
+                    # An absolute URI must NOT claim a base id it is not
+                    # relative to.
+                    art.pop("uriBaseId", None)
+    return doc
+
+
 def _present(proc, execp, display):
     """Rewrite ``execp`` back to the user's ``display`` form in the child output.
 
@@ -306,7 +422,14 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
 
     files = collect_files(path)
 
+    # Every artifact URI in the merged document is expressed relative to this
+    # root and anchored to SRCROOT_ID, so a consumer that needs the absolute
+    # form can still recover it from originalUriBaseIds.
+    workspace = workspace_root()
     merged = _empty_sarif()
+    merged["runs"][0]["originalUriBaseIds"] = {
+        SRCROOT_ID: {"uri": workspace_base_uri(workspace)},
+    }
     total_fatal = 0
     total_warning = 0
     any_parse_error = False
@@ -328,7 +451,12 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
                 "error: einvoice.report produced no SARIF for %s\n%s\n"
                 % (f, proc.stderr))
             return EXIT_FAIL
-        _merge_sarif(merged, doc)
+        # Workspace-relative URIs BEFORE merging: GitHub resolves result
+        # locations against the repository root, so the absolute runner path the
+        # engine echoes back would match no tracked file and render zero
+        # annotations. The job log is untouched — this is the SARIF document
+        # only (see _present for the console path).
+        _merge_sarif(merged, _localise_sarif(doc, f, workspace))
 
         if proc.returncode == EXIT_PARSE:
             # Unparseable / unsupported container: not a fatal *violation*, but

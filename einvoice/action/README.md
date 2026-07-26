@@ -94,6 +94,21 @@ it the upload step is rejected by GitHub. Code scanning renders each SARIF
 result (rule id, message, remediation hint, business terms) as an annotation on
 the offending file.
 
+**Path semantics.** Code scanning resolves every result location against the
+root of the checked-out repository, so the merged document reports each invoice
+as a workspace-relative, forward-slashed URI (`invoices/2024-08-acme.xml`)
+anchored to a `%SRCROOT%` `uriBaseId` that `runs[0].originalUriBaseIds` maps to
+the absolute workspace (`file:///home/runner/work/repo/repo/`). The workspace is
+`$GITHUB_WORKSPACE` when set, otherwise the process working directory — so the
+same output comes out under GitHub, [`act`](https://github.com/nektos/act) and a
+plain local run, and `path:` may be written absolute or relative without
+changing what gets annotated. Honest limit: an invoice that lies **outside** the
+workspace (say `path: /mnt/shared/invoices`) keeps its absolute URI and no base
+id, because a `../`-escaping relative path is not resolvable by code scanning at
+all — those findings are in the SARIF and in the job log, but GitHub will not
+render them as inline annotations, since there is no tracked file to attach them
+to.
+
 ## Inline annotations without `security-events` (`format: github`)
 
 `security-events: write` is not available everywhere: pull requests from forks

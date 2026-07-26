@@ -23,6 +23,12 @@ Asserted (each maps to a task acceptance criterion):
       rejected, ``--format github`` works for BOTH a single file and a
       directory (the engine has no ``--recurse`` batch shape for it), and
       action.yml's documented list agrees with the runner's offered tuple.
+  (6) T-VHACT.3 — the merged SARIF carries WORKSPACE-RELATIVE artifact URIs
+      anchored to a declared ``uriBaseId``, for both the absolute and the
+      relative ``--path`` route; a file outside the workspace keeps its
+      absolute URI with no base id and no ``..`` escape; and the rewrite
+      changes nothing else (result count, order, levels and rule union are
+      identical to the unmodified engine's own SARIF).
 """
 
 import importlib.util
@@ -33,6 +39,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ACTION_DIR = os.path.join(HERE, "action")
@@ -417,22 +424,38 @@ def rules_reported(stdout):
     return {props.get("title") for _, props, _ in parse_annotations(stdout)}
 
 
-def run_runner_in_workspace(workspace, argv):
+def run_runner_in_workspace(workspace, argv, github_workspace=None):
     """Run the committed runner with the PROCESS cwd set to ``workspace``.
 
     This is the whole point of this layer: the child inherits the cwd exactly
     as it would inside a ``run:`` step, so relative ``--path`` values are
-    interpreted the way a real workflow interprets them. The original cwd is
-    restored in a ``finally`` so a failure here cannot poison the rest of the
-    suite (unittest shares one process).
+    interpreted the way a real workflow interprets them.
+
+    ``github_workspace`` sets ``$GITHUB_WORKSPACE`` for the child, which is what
+    a real GitHub runner exports and what the runner anchors its SARIF URIs to.
+    Passing ``None`` REMOVES the variable, so the tests that predate it
+    deterministically exercise the cwd fallback even if the ambient environment
+    (a CI job running this suite) happens to define one.
+
+    Both the cwd and the variable are restored in a ``finally`` so a failure
+    here cannot poison the rest of the suite (unittest shares one process).
     """
     saved = os.getcwd()
+    saved_ws = os.environ.get("GITHUB_WORKSPACE")
     try:
         os.chdir(workspace)
+        if github_workspace is None:
+            os.environ.pop("GITHUB_WORKSPACE", None)
+        else:
+            os.environ["GITHUB_WORKSPACE"] = github_workspace
         return subprocess.run([sys.executable, RUNNER] + list(argv),
                               capture_output=True, text=True, timeout=180)
     finally:
         os.chdir(saved)
+        if saved_ws is None:
+            os.environ.pop("GITHUB_WORKSPACE", None)
+        else:
+            os.environ["GITHUB_WORKSPACE"] = saved_ws
 
 
 def _write_workspace_invoice(dest, source=PKG_BROKEN, drop_buyer_ref=False):
@@ -594,6 +617,255 @@ class WorkspaceRelativePaths(unittest.TestCase):
             run_runner_in_workspace(tmp, ["--path", ".",
                                           "--sarif-file", "out.sarif"])
         self.assertEqual(os.getcwd(), before)
+
+
+# ---------------------------------------------------------------------------
+# T-VHACT.3 — SARIF artifact URIs must be workspace-relative.
+#
+# GitHub code scanning resolves every result location against the ROOT OF THE
+# CHECKED-OUT REPOSITORY. An absolute runner path
+# (`/home/runner/work/repo/repo/invoices/bad.xml`) matches no tracked file, so
+# `upload-sarif` returns success and renders ZERO inline annotations — the
+# Action's one headline promise silently produces nothing. The runner therefore
+# rewrites each artifactLocation to the workspace-relative path and anchors it
+# to a `%SRCROOT%` uriBaseId declared in runs[0].originalUriBaseIds.
+#
+# Every expected path below is DERIVED from the fixture layout with relpath —
+# never a hard-coded `/tmp/...` string, which would only test the test.
+# ---------------------------------------------------------------------------
+
+
+def artifact_locations(doc):
+    """Every ``artifactLocation`` mapping in a SARIF document, in order."""
+    out = []
+    for run in doc.get("runs", []):
+        for res in run.get("results", []):
+            locs = list(res.get("locations") or [])
+            locs += list(res.get("relatedLocations") or [])
+            for loc in locs:
+                art = (loc.get("physicalLocation") or {}).get("artifactLocation")
+                if isinstance(art, dict):
+                    out.append(art)
+    return out
+
+
+def result_signature(doc):
+    """``(ruleId, level)`` per result, in document order — the merge invariant.
+
+    Compared against the engine's OWN per-file SARIF to prove the URI rewrite
+    drops, reorders, relabels and synthesises nothing.
+    """
+    return [(r.get("ruleId"), r.get("level"))
+            for run in doc.get("runs", []) for r in run.get("results", [])]
+
+
+def engine_sarif(invoice):
+    """The unmodified engine's SARIF for one invoice — the comparison baseline."""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [sys.executable, "-m", "einvoice.report", "--profile", "xrechnung",
+         "--format", "sarif", os.path.abspath(invoice)],
+        cwd=HERE, env=env, capture_output=True, text=True, timeout=120)
+    assert proc.returncode in (0, 1, 3), proc.stderr
+    return json.loads(proc.stdout)
+
+
+class SarifWorkspaceUris(unittest.TestCase):
+    """(T-VHACT.3) artifact URIs are workspace-relative with a declared base id."""
+
+    def _workspace_with_invoice(self, tmp):
+        """-> ``(ws, invoice_dir, invoice_path)`` for a realistic checkout."""
+        ws = os.path.realpath(tmp)
+        self.assertFalse(
+            ws == os.path.realpath(HERE)
+            or ws.startswith(os.path.realpath(HERE) + os.sep),
+            "workspace fixture must live outside the package root")
+        invoice = os.path.join(ws, "invoices", "broken.xml")
+        _write_workspace_invoice(invoice)
+        return ws, os.path.join(ws, "invoices"), invoice
+
+    def _read(self, sarif):
+        self.assertTrue(os.path.isfile(sarif), "SARIF not written: " + sarif)
+        with open(sarif, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def _assert_no_dotdot(self, doc):
+        for art in artifact_locations(doc):
+            self.assertNotIn(
+                "..", art["uri"].split("/"),
+                "a '..' escape in a code-scanning upload is worse than an "
+                "absolute path: " + art["uri"])
+
+    def test_absolute_path_inside_workspace_is_rewritten_relative(self):
+        """(a) An ABSOLUTE --path under $GITHUB_WORKSPACE -> relative URI.
+
+        The cwd is deliberately NOT the workspace here, so this also proves the
+        runner anchors on $GITHUB_WORKSPACE rather than on wherever it happens
+        to be invoked from.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            ws, invoice_dir, invoice = self._workspace_with_invoice(tmp)
+            sarif = os.path.join(ws, "abs.sarif")
+            proc = run_runner_in_workspace(
+                tempfile.gettempdir(),
+                ["--path", invoice_dir, "--format", "sarif",
+                 "--sarif-file", sarif],
+                github_workspace=ws)
+            self.assertEqual(proc.returncode, 1,
+                             proc.stdout[-2000:] + proc.stderr)
+            doc = self._read(sarif)
+
+        expected = os.path.relpath(invoice, ws).replace(os.sep, "/")
+        self.assertEqual(expected, "invoices/broken.xml",
+                         "fixture layout drifted")
+        arts = artifact_locations(doc)
+        self.assertTrue(arts, "no artifact locations in the merged SARIF")
+        for art in arts:
+            self.assertEqual(art["uri"], expected,
+                             "absolute runner path leaked into the SARIF; "
+                             "GitHub would render zero annotations")
+            # (4) every rewritten location carries the base id ...
+            self.assertEqual(art.get("uriBaseId"), RUNNER_MOD.SRCROOT_ID)
+        self._assert_no_dotdot(doc)
+
+        # ... and the run DECLARES that id, pointing at the absolute workspace.
+        bases = doc["runs"][0].get("originalUriBaseIds")
+        self.assertIsInstance(bases, dict,
+                              "runs[0].originalUriBaseIds is missing: %r"
+                              % list(doc["runs"][0]))
+        self.assertIn(RUNNER_MOD.SRCROOT_ID, bases,
+                      "uriBaseId used by results is not declared: %r" % bases)
+        base_uri = bases[RUNNER_MOD.SRCROOT_ID]["uri"]
+        self.assertTrue(base_uri.startswith("file:///"), base_uri)
+        self.assertTrue(base_uri.endswith("/"),
+                        "a uriBaseId denotes a DIRECTORY: " + base_uri)
+        # The absolute form is recoverable: base + relative == the real file.
+        self.assertEqual(
+            urllib.parse.unquote(base_uri[len("file://"):] + expected),
+            invoice)
+
+    def test_relative_path_route_still_yields_the_same_relative_uri(self):
+        """(b) REGRESSION: `--path invoices/` from the workspace cwd."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ws, _, invoice = self._workspace_with_invoice(tmp)
+            sarif = os.path.join(ws, "rel.sarif")
+            proc = run_runner_in_workspace(
+                ws, ["--path", "invoices/", "--format", "github",
+                     "--sarif-file", sarif],
+                github_workspace=ws)
+            combined = proc.stdout + proc.stderr
+            self.assertNotIn("no such file", combined, combined)
+            self.assertEqual(proc.returncode, 1, combined)
+            doc = self._read(sarif)
+            stdout = proc.stdout
+
+        expected = os.path.relpath(invoice, ws).replace(os.sep, "/")
+        arts = artifact_locations(doc)
+        self.assertTrue(arts)
+        for art in arts:
+            self.assertEqual(art["uri"], expected)
+            self.assertEqual(art.get("uriBaseId"), RUNNER_MOD.SRCROOT_ID)
+        self._assert_no_dotdot(doc)
+
+        # (8) the JOB LOG is untouched by this task: it still shows the user's
+        # own spelling, and no runner-absolute path leaks into an annotation.
+        files = {props.get("file") for _, props, _ in parse_annotations(stdout)}
+        self.assertEqual(files, {expected}, stdout)
+        self.assertNotIn(ws, stdout,
+                         "runner-absolute path leaked into the job log")
+
+    def test_file_outside_the_workspace_keeps_its_absolute_uri(self):
+        """(c) OUTSIDE the workspace: absolute URI, no base id, no '..'."""
+        with tempfile.TemporaryDirectory() as ws_tmp, \
+                tempfile.TemporaryDirectory() as out_tmp:
+            ws = os.path.realpath(ws_tmp)
+            outside = os.path.join(os.path.realpath(out_tmp), "outside.xml")
+            _write_workspace_invoice(outside)
+            sarif = os.path.join(ws, "outside.sarif")
+            proc = run_runner_in_workspace(
+                ws, ["--path", outside, "--format", "sarif",
+                     "--sarif-file", sarif],
+                github_workspace=ws)
+            self.assertEqual(proc.returncode, 1,
+                             proc.stdout[-2000:] + proc.stderr)
+            doc = self._read(sarif)
+
+        arts = artifact_locations(doc)
+        self.assertTrue(arts, "no artifact locations for the outside file")
+        for art in arts:
+            self.assertEqual(art["uri"], outside.replace(os.sep, "/"),
+                             "the absolute URI must be left unchanged")
+            self.assertNotIn("uriBaseId", art,
+                             "an absolute URI must not claim a base id it is "
+                             "not relative to")
+        self._assert_no_dotdot(doc)
+
+    def test_sibling_prefix_directory_is_not_treated_as_inside(self):
+        """Containment is a COMPONENT test, not a string ``startswith``.
+
+        ``/tmp/x/ws-other/f.xml`` shares the textual prefix of ``/tmp/x/ws`` but
+        is a SIBLING, not a child. A naive prefix test would emit the nonsense
+        relative URI ``-other/f.xml``.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.realpath(tmp)
+            ws = os.path.join(root, "ws")
+            sibling = os.path.join(root, "ws-other")
+            os.makedirs(ws)
+            invoice = os.path.join(sibling, "broken.xml")
+            _write_workspace_invoice(invoice)
+            sarif = os.path.join(ws, "sibling.sarif")
+            proc = run_runner_in_workspace(
+                ws, ["--path", invoice, "--format", "sarif",
+                     "--sarif-file", sarif],
+                github_workspace=ws)
+            self.assertEqual(proc.returncode, 1,
+                             proc.stdout[-2000:] + proc.stderr)
+            doc = self._read(sarif)
+            expected_abs = invoice.replace(os.sep, "/")
+
+        for art in artifact_locations(doc):
+            self.assertEqual(art["uri"], expected_abs)
+            self.assertNotIn("uriBaseId", art)
+        self._assert_no_dotdot(doc)
+
+    def test_rewrite_preserves_result_count_and_rule_union(self):
+        """(d) The URI rewrite changes URIs and NOTHING else.
+
+        Baseline = the unmodified engine's own SARIF for the same file. The
+        merged document must carry the identical results in the identical order
+        with the identical levels, and the identical driver-rule id union.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            ws, invoice_dir, invoice = self._workspace_with_invoice(tmp)
+            sarif = os.path.join(ws, "invariant.sarif")
+            run_runner_in_workspace(
+                tempfile.gettempdir(),
+                ["--path", invoice_dir, "--format", "sarif",
+                 "--sarif-file", sarif],
+                github_workspace=ws)
+            doc = self._read(sarif)
+            baseline = engine_sarif(invoice)
+
+        self.assertEqual(doc["version"], "2.1.0")
+        self.assertEqual(doc["runs"][0]["tool"]["driver"]["name"], "einvoice")
+        self.assertEqual(result_signature(doc), result_signature(baseline),
+                         "the rewrite dropped, reordered or relabelled a "
+                         "result")
+        self.assertGreaterEqual(len(result_signature(doc)), 1,
+                                "baseline fixture stopped producing findings")
+
+        def rule_ids(d):
+            return {r["id"]
+                    for run in d.get("runs", [])
+                    for r in run["tool"]["driver"].get("rules", [])}
+
+        self.assertEqual(rule_ids(doc), rule_ids(baseline),
+                         "the driver rule union changed")
+        # No orphan results: every ruleId is still a declared driver rule.
+        for rid, _ in result_signature(doc):
+            self.assertIn(rid, rule_ids(doc))
 
 
 if __name__ == "__main__":

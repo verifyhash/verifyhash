@@ -14,6 +14,7 @@
       "element": "cac:AccountingSupplierParty/cac:Party/cac:Contact",
       "field": "cac:AccountingSupplierParty/cac:Party/cac:Contact",
       "fix_hint": "Add the required element at `/ubl:Invoice/cac:AccountingSupplierParty`: SELLER CONTACT (BG-6) must be transmitted.",
+      "insertion_point_line": 28,
       "location": "/ubl:Invoice/cac:AccountingSupplierParty",
       "message": "The group 'SELLER CONTACT' (BG-6) must be transmitted.",
       "rule": "BR-DE-2",

@@ -91,8 +91,9 @@ report/library path.
 
 ## Violation record
 
-Each entry of `violations` has these nine **always-present** keys, plus an
-OPTIONAL tenth (`source_line`, described below). The first four are the
+Each entry of `violations` has these nine **always-present** keys, plus two
+OPTIONAL ones (`source_line` and `insertion_point_line`, described below —
+never both on the same record). The first four are the
 **identity** fields taken verbatim from the validator; the next four are
 **additive remediation** fields (added in `v1`, backward-compatible — see
 **Versioning**) that are **relayed** from the committed remediation catalog
@@ -143,7 +144,8 @@ always-present keys —
 rule, message, element, severity, field, title, fix_hint, terms, location
 ```
 
-— plus the optional `source_line` below. That includes `validate-batch --json`:
+— plus the optional `source_line` / `insertion_point_line` below. That includes
+`validate-batch --json`:
 it aggregates per-file reports through `einvoice.report`, so its per-file
 `violations[]` **are** report records, and before 0.2.7 they were the one
 surface missing `element` — a nightly directory run and a pre-commit single-file
@@ -186,6 +188,66 @@ the finding, and the `junit` `<failure>` body ends with the same fragment — th
 `file:line` shape a terminal and an editor linkify. A finding **without** a
 `source_line` renders exactly as it did before the position existed: no
 placeholder, no `:0`, no `:1`.
+
+### Optional `insertion_point_line` (additive, `v1`)
+
+| field                  | source                                | meaning |
+|------------------------|---------------------------------------|---------|
+| `insertion_point_line` | `Violation.insertion_point_line` (int)| The **1-based parser line** of the deepest element of the finding's path that the document actually contains — **where the missing thing should go**. |
+
+**This is an insertion point, NOT the site of an error.** Nothing on that line is
+wrong. It answers *"where does the fix go?"*, not *"what is broken?"* — the
+opposite of `source_line`, which is the line of a thing that IS wrong. A tool
+presenting it must not call it an error location.
+
+Most findings on a real German invoice are absences: a required group or element
+is simply not there, so there is no offending element and no `source_line`.
+Worked example — `examples/01-missing-fields/broken.xml` at `--profile
+xrechnung` fires three findings, all absences:
+
+| rule | path | anchored? |
+|------|------|-----------|
+| `BR-DE-2` | `cac:AccountingSupplierParty/cac:Party/cac:Contact` | **yes, line 28** — the supplier party and its `<cac:Party>` exist, only `<cac:Contact>` is missing, so line 28 is the `<cac:Party>` the contact must be added to |
+| `BR-DE-15` | `cbc:BuyerReference` | no — the only named segment is the missing leaf itself |
+| `BR-DE-TMP-32` | `cac:Delivery/cbc:ActualDeliveryDate` | no — `cac:Delivery` is absent too, so no named ancestor resolves |
+
+Resolution walks the finding's `element` path (falling back to the catalog
+`location` hint when `element` is empty) from the document root, matching
+segments **namespace-tolerantly by localname**, and takes the last segment that
+resolves to a real element. Both absolute (`/ubl:Invoice/cac:…`) and
+root-relative (`cac:…`, `cbc:BuyerReference`) paths are handled, in UBL and CII
+alike (one post-pass in `einvoice.validate.validate_root` serves both syntaxes).
+
+**The key is ABSENT — never `0`, never the document root, never a guess —
+whenever:**
+
+* the finding already carries a `source_line`. The two are **mutually
+  exclusive**: no record ever has both;
+* **no** named segment below the root resolves (`BR-DE-15`, `BR-DE-TMP-32`
+  above). "Insert it somewhere in the invoice" is not attribution;
+* the path **fully** resolves. Then the named element exists and the finding is
+  about its value, so a line for it would be an error site, not an insertion
+  point;
+* a segment matches **more than one** child — any `cac:InvoiceLine/…` path on a
+  multi-line invoice, or `cac:TaxTotal/cac:TaxSubtotal/…` when there are two VAT
+  breakdowns. The path does not say which occurrence, and the shared parent
+  would be a guess. This is the largest honest gap in coverage today;
+* the path cannot be fully parsed (predicates, wildcards, `//`, attribute steps,
+  the XPath fragments some catalog `location` hints carry), or the resolved
+  element carries no parser line stamp.
+
+Like `source_line`, it is purely additive on the **same**
+`einvoice-conformance-report/v1` schema id, does **not** bump `report_version`,
+and does **not** participate in the baseline-diff identity key. It is appended
+after every existing key, so a consumer that ignores it reads a byte-identical
+record.
+
+**Where it is rendered.** Only the two JSON surfaces so far — `einvoice
+validate --json` and the `json` report (hence `validate-batch --json`, whose
+per-file entries are those records). The text, `junit`, `sarif`, `github`,
+`azure`, `gitlab` and `html` surfaces do **not** show it yet; wiring it into
+them, with the "insertion point, not an error" wording preserved, is tracked
+separately.
 
 ## Exit codes
 
@@ -458,15 +520,17 @@ violation-record key) bumps `report_version` to 2 and mints a new `schema` id
 never silently mis-read a newer report.
 
 The `title`, `fix_hint`, `terms` and `location` violation-record fields were
-added this way; the OPTIONAL `source_line` field and the always-present
+added this way; the OPTIONAL `source_line` and `insertion_point_line` fields and
+the always-present
 `element` field (0.2.7) follow the identical pattern: they are **additive** on
 the **same** `einvoice-conformance-report/v1`
 schema id. The original `rule`/`severity`/`message`/`field` keys are unchanged
 and remain first, so existing consumers keep working untouched; the schema id
-and `report_version` are deliberately **not** revved. (`source_line` goes
-further than the remediation keys — it is present only on the subset of
-violations that are attributable to a source position — but it is still
-strictly additive: a record without it is byte-identical to the previous
+and `report_version` are deliberately **not** revved. (`source_line` and
+`insertion_point_line` go
+further than the remediation keys — each is present only on the subset of
+violations it can honestly describe — but both are still
+strictly additive: a record without them is byte-identical to the previous
 shape.)
 
 ## Integrator export contract (`export/rules.json` + `export/coverage.json`)

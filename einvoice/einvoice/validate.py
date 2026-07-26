@@ -10,8 +10,12 @@ two callables and the result type that embedders use:
 
 Both callables return a :class:`Result`. Each entry in ``Result.violations``
 is an :class:`einvoice.rules.Violation` namedtuple with the fields
-``rule_id``, ``message``, ``element``, ``severity`` and the optional
-``source_line`` (the 1-based line of the offending element, or ``None``).
+``rule_id``, ``message``, ``element``, ``severity`` and the two optional,
+mutually exclusive position fields: ``source_line`` (the 1-based line of the
+offending element) and ``insertion_point_line`` (for an absence, the 1-based
+line of the deepest element of the finding's path that the document HAS — where
+the missing thing should go, not the site of an error). Both default to
+``None``.
 ``validate_file`` raises :class:`einvoice.parser.NotWellFormed` on malformed
 XML. Standard library only.
 """
@@ -19,6 +23,7 @@ XML. Standard library only.
 from __future__ import annotations
 
 import os
+import re
 import typing
 import xml.etree.ElementTree as ET
 
@@ -53,6 +58,161 @@ def _severity(v):
     return getattr(v, "severity", "fatal")
 
 
+#: A path segment we are willing to walk: an optionally-prefixed XML name
+#: (``cac:Party``, ``ram:SellerTradeParty``, ``BuyerReference``). Anything else
+#: in a path — a predicate (``cac:InvoiceLine[2]``), a wildcard, an attribute
+#: step, a function call, prose — makes the whole path UNWALKABLE and the
+#: finding carries no insertion point. We never partially interpret a path we
+#: do not fully understand.
+_PATH_SEGMENT_RE = re.compile(r"^(?:[A-Za-z_][\w.\-]*:)?[A-Za-z_][\w.\-]*$")
+
+
+def _segment_localname(segment):
+    """Localname of a PATH segment, dropping its ``cac:``-style QName prefix.
+
+    Note this is NOT :func:`einvoice.parser._localname`, which drops the
+    ``{uri}`` ElementTree prepends to a parsed TAG. Finding paths are written
+    with the conventional document prefixes (``cac:Party``) while the tree
+    carries resolved namespace URIs (``{urn:…:CommonAggregateComponents-2}
+    Party``), so the two sides need their own stripper and meet on the
+    localname.
+    """
+    return segment.rsplit(":", 1)[-1]
+
+
+def _insertion_point_line(root, path):
+    """1-based line of the deepest element of ``path`` the document HAS.
+
+    This is an INSERTION POINT, not an error site: for an absence finding
+    (``cac:AccountingSupplierParty/cac:Party/cac:Contact`` on a document whose
+    supplier party has no contact) it returns the line of the deepest ancestor
+    that does exist — ``<cac:Party>`` — because that is the element the missing
+    child would have to be inserted into. Nothing on that line is wrong.
+
+    ``path`` may be ABSOLUTE (``/ubl:Invoice/cac:AccountingSupplierParty``, in
+    which case the leading root segment must match ``root`` by localname) or
+    RELATIVE to the root (``cac:AccountingSupplierParty/cac:Party/cac:Contact``,
+    ``cbc:BuyerReference``). Segments are matched NAMESPACE-TOLERANTLY by
+    localname, exactly as the rest of the engine dispatches (see
+    :func:`einvoice.parser._localname`), because the finding paths are written
+    with the conventional ``cac:``/``cbc:``/``ram:`` prefixes while the parsed
+    tree carries resolved ``{uri}local`` tags.
+
+    Returns ``None`` — carrying NOTHING rather than guessing — whenever:
+
+    * the path is empty, unwalkable, or absolute with a non-matching root;
+    * NO segment below the root resolves (``cbc:BuyerReference`` when that leaf
+      is the only named segment and is absent; ``cac:Delivery/...`` when
+      ``cac:Delivery`` itself is absent). The document root is never the
+      answer: "insert it somewhere in the invoice" is not attribution;
+    * the WHOLE path resolves — then the named element exists, the finding is
+      not an absence, and a line for it would be an error site rather than an
+      insertion point (that case is ``source_line``'s job);
+    * a segment matches MORE THAN ONE child (e.g. ``cac:InvoiceLine/...`` on a
+      multi-line invoice): which occurrence the finding meant is unknown, so
+      the insertion point is ambiguous and is not emitted;
+    * the resolved element carries no parser line stamp (a tree not produced by
+      :mod:`einvoice._xmlsec`, e.g. one built in memory by a test).
+
+    :param root: the parsed invoice root element.
+    :param path: the finding's element path (or the catalog location hint).
+    :returns: an int line, or ``None``.
+    """
+    if not path or not isinstance(path, str):
+        return None
+    raw = path.strip()
+    if not raw:
+        return None
+    absolute = raw.startswith("/")
+    if raw.startswith("//"):
+        # A descendant-or-self step names no concrete parent chain.
+        return None
+    segments = [s for s in raw.split("/") if s]
+    if not segments:
+        return None
+    if not all(_PATH_SEGMENT_RE.match(s) for s in segments):
+        return None
+    if absolute:
+        if _segment_localname(segments[0]) != _parser._localname(root.tag):
+            return None
+        segments = segments[1:]
+        if not segments:
+            return None
+
+    node = root
+    depth = 0
+    for segment in segments:
+        want = _segment_localname(segment)
+        matches = [child for child in node
+                   if isinstance(child.tag, str)
+                   and _parser._localname(child.tag) == want]
+        if len(matches) > 1:
+            # AMBIGUOUS: e.g. ``cac:TaxTotal/cac:TaxSubtotal/...`` on an invoice
+            # with two VAT breakdowns, or any ``cac:InvoiceLine/...`` path on a
+            # multi-line invoice. Which occurrence the finding meant is not
+            # recoverable from the path, and pointing at the shared parent would
+            # be a guess dressed up as attribution. Carry nothing.
+            return None
+        if not matches:
+            # The absence we are anchoring: stop, and report the deepest
+            # element that DID resolve (``node``).
+            break
+        node = matches[0]
+        depth += 1
+    else:
+        # Every segment resolved: the named element EXISTS, so this is not an
+        # absence and there is no insertion point to report.
+        return None
+
+    if depth == 0:
+        # Nothing below the root resolved -> never fall back to the root.
+        return None
+    line = _parser._sourceline(node)
+    # Belt and braces: only a real 1-based line is a position. An unstamped
+    # element (None) or a degenerate 0 is silence, not attribution.
+    if not isinstance(line, int) or isinstance(line, bool) or line < 1:
+        return None
+    return line
+
+
+def _stamp_insertion_points(root, violations):
+    """Return ``violations`` with :data:`insertion_point_line` filled in.
+
+    THE single seam (see ``einvoice.rules.Violation``): both arms of
+    :func:`validate_root` — the UBL model and the CII engine — pass through
+    here, so the two syntaxes cannot drift into attributing absences
+    differently. It is a post-pass rather than a rule change because the parsed
+    tree and the finished finding list are only both in scope here; no rule
+    constructor is touched.
+
+    Per finding: a violation that already carries a ``source_line`` is returned
+    UNCHANGED (the two fields are mutually exclusive — a finding never claims
+    both an error site and an insertion point). Otherwise the finding's
+    ``element`` path is resolved against ``root``; when ``element`` is empty the
+    remediation catalog's ``location`` hint for the rule id is used instead.
+    When nothing resolves, the violation is returned unchanged and the field
+    stays ``None``.
+    """
+    catalog = None
+    out = []
+    for v in violations:
+        if getattr(v, "source_line", None) is not None:
+            out.append(v)
+            continue
+        path = getattr(v, "element", None)
+        if not (path or "").strip():
+            if catalog is None:
+                catalog = _remediation.cached_catalog()
+            path = _remediation.remediation_fields(
+                getattr(v, "rule_id", None), catalog).get("location")
+        line = _insertion_point_line(root, path)
+        if line is None or not hasattr(v, "_replace"):
+            out.append(v)
+            continue
+        out.append(v._replace(insertion_point_line=line))
+    return out
+
+
 class Result:
     """Outcome of validating one invoice.
 
@@ -66,14 +226,18 @@ class Result:
     * ``violations`` (list) — every finding, in evaluation order. Each item is
       an :class:`einvoice.rules.Violation` namedtuple with fields
       ``rule_id`` (e.g. ``"BR-02"``), ``message``, ``element``, ``severity``
-      (``"fatal"`` / ``"warning"`` / ``"information"``) and the optional
-      ``source_line`` (1-based line of the offending element, or ``None``).
+      (``"fatal"`` / ``"warning"`` / ``"information"``) and the two optional,
+      mutually exclusive position fields ``source_line`` (1-based line of the
+      offending element) and ``insertion_point_line`` (1-based line of the
+      deepest existing element of the finding's path — the insertion point for
+      an absence, never an error site). Both are ``None`` when unknown.
     * ``first`` — the first violation, or ``None`` when the list is empty.
 
     ``to_dict(source=None)`` projects the result into the stable JSON record
     (keys ``valid`` and a ``violations`` list of
     ``{rule, message, element, severity, field, title, fix_hint, terms,
-    location[, source_line]}`` dicts) used by the ``--json`` report. The four
+    location[, source_line | insertion_point_line]}`` dicts) used by the
+    ``--json`` report. The four
     leading identity keys are frozen for backward compatibility; ``field`` is
     ``element`` under the report writer's name and the remaining four are
     relayed from the committed remediation catalog (see
@@ -144,6 +308,14 @@ class Result:
         an absence/document-level violation, or any finding without a proven
         element position, omits the key entirely, exactly as before.
 
+        ``insertion_point_line`` is the same kind of optional, appended-last
+        addition for the OTHER half of the findings: the 1-based line of the
+        deepest element of the finding's path the document actually has — where
+        the missing thing has to GO, not a place where something is wrong. It
+        is never emitted together with ``source_line`` and never guesses (see
+        :func:`_insertion_point_line`). Both keys come after every existing key,
+        so a consumer byte-comparing the old record is unaffected.
+
         :param catalog: optional pre-loaded ``rule_id -> entry`` mapping;
             :meth:`to_dict` passes one for the whole result so a large batch
             resolves the catalog once rather than per violation.
@@ -154,6 +326,9 @@ class Result:
         source_line = getattr(v, "source_line", None)
         if source_line is not None:
             rec["source_line"] = source_line
+        insertion_point_line = getattr(v, "insertion_point_line", None)
+        if insertion_point_line is not None:
+            rec["insertion_point_line"] = insertion_point_line
         return rec
 
 
@@ -214,7 +389,8 @@ def validate_root(root: ET.Element, profile: str = "en16931") -> Result:
     # Layer S — structural. CII first: a CrossIndustryInvoice is a SUPPORTED
     # root, so it must never fall into the UBL model's S-ROOT arm.
     if _parser._localname(root.tag) == CII_ROOT_LOCALNAME:
-        return Result(cii_violations(root, profile))
+        return Result(_stamp_insertion_points(
+            root, cii_violations(root, profile)))
 
     violations = []
     inv = _parser.build_model(root)
@@ -237,7 +413,10 @@ def validate_root(root: ET.Element, profile: str = "en16931") -> Result:
     if profile == "xrechnung":
         violations.extend(_rules_xr.evaluate(root))
 
-    return Result(violations)
+    # Layer P — post-pass: anchor the absence findings (see
+    # :func:`_stamp_insertion_points`). Adds no finding, drops none, reorders
+    # none; it only fills the optional ``insertion_point_line`` field.
+    return Result(_stamp_insertion_points(root, violations))
 
 
 def validate_file(

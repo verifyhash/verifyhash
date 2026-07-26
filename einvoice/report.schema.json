@@ -107,6 +107,10 @@
           "source_line": {
             "description": "OPTIONAL, additive on this same v1 schema id: the 1-based parser line of the offending element in the source document. Present ONLY for an attributable field-level violation (a rule that held the concrete Element, e.g. BR-CL-01/04/05 on a present-but-invalid code); ABSENT when the finding is not attributable to a source position (an absence/document-level rule, or any finding without a proven element). Distinct from the remediation-catalog XML-path hint 'location'. A consumer may ignore it safely.",
             "type": "integer"
+          },
+          "insertion_point_line": {
+            "description": "OPTIONAL, additive on this same v1 schema id: the 1-based parser line of the DEEPEST element of the finding's path that the document actually contains — the INSERTION POINT for what is missing (where the absent element/group would have to be added). It is NOT the site of an error: nothing on that line is wrong. Present only for an absence finding whose path anchors unambiguously in this document; MUTUALLY EXCLUSIVE with 'source_line' (no record ever carries both). ABSENT — never 0, never the document root — when no named ancestor resolves, when the path fully resolves (then the element exists and it is not an absence), or when a repeated parent makes the anchor ambiguous. Distinct from the static remediation-catalog XML-path hint 'location'. A consumer may ignore it safely.",
+            "type": "integer"
           }
         }
       }

@@ -887,7 +887,8 @@ emits the full result on stdout (exit code still **1**):
       "terms": [
         "BG-6"
       ],
-      "location": "/ubl:Invoice/cac:AccountingSupplierParty"
+      "location": "/ubl:Invoice/cac:AccountingSupplierParty",
+      "insertion_point_line": 28
     },
     {
       "rule": "BR-DE-15",
@@ -927,6 +928,20 @@ emits the full result on stdout (exit code still **1**):
 Note the third entry: `valid` is `false` because of the two **fatal** rows, and
 would still be `true` if only the `information` row were present — the same
 severity contract §5 describes, on a document that actually exercises it.
+
+Note also `"insertion_point_line": 28` on the `BR-DE-2` row. All three findings
+here are **absences** — something is missing, so there is no offending element
+and no `source_line`. `insertion_point_line` is the next best honest thing: line
+28 of `broken.xml` is the `<cac:Party>` inside `<cac:AccountingSupplierParty>`,
+i.e. the element the missing `<cac:Contact>` group has to be added to. **It is
+not an error location** — nothing on line 28 is wrong. The other two rows have
+no such key on purpose: `cbc:BuyerReference` is a top-level element with no
+surviving parent to anchor to, and `BR-DE-TMP-32`'s `cac:Delivery` is absent as
+well, so there is nothing honest to point at and the key is simply omitted
+rather than defaulted to `0` or to the document root. The full rules — including
+why a path that appears twice (any `cac:InvoiceLine/…`) is left unanchored — are
+in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md). Today the key appears on the JSON
+surfaces only.
 
 ## Next steps
 

@@ -211,6 +211,16 @@ REPORT_SCHEMA = {
                        "not attributable to a source position (an "
                        "absence/document-level rule). Distinct from the "
                        "catalog XML-path hint 'location'.",
+        "insertion_point_line": "OPTIONAL, additive: the 1-based parser line "
+                                "of the DEEPEST element of the finding's path "
+                                "that the document actually contains — i.e. "
+                                "WHERE THE MISSING THING SHOULD GO. It is NOT "
+                                "the site of an error: nothing on that line is "
+                                "wrong. Present only for an absence finding "
+                                "whose path anchors unambiguously; mutually "
+                                "exclusive with 'source_line' (a finding never "
+                                "carries both), and absent — never 0, never "
+                                "the document root — when nothing resolves.",
     },
     "exit_codes": {
         "0": "no fatal violations (valid).",
@@ -293,6 +303,19 @@ def _record(v, catalog=None):
     source_line = getattr(v, "source_line", None)
     if source_line is not None:
         record["source_line"] = source_line
+    # Additive, OPTIONAL, and MUTUALLY EXCLUSIVE with `source_line`: the 1-based
+    # line of the deepest element of the finding's path that the document
+    # actually contains — the INSERTION POINT for what is missing, not a place
+    # where anything is wrong. Stamped once by
+    # einvoice.validate._stamp_insertion_points, which carries nothing rather
+    # than guessing (no root fallback, no 0, no ambiguous repeated parent).
+    # Emitted here in exactly the same present-only-when-known form as
+    # validate.Result._violation_dict, so the two JSON surfaces cannot diverge
+    # (test_json_surface_parity.py measures that). Appended last: a consumer
+    # that ignores it reads a byte-identical record.
+    insertion_point_line = getattr(v, "insertion_point_line", None)
+    if insertion_point_line is not None:
+        record["insertion_point_line"] = insertion_point_line
     return record
 
 

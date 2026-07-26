@@ -247,7 +247,7 @@ from .report import (
     build_batch_report, build_batch_report_from_files,
     batch_exit_code, build_batch_text,
     REPORT_FORMATS, BATCH_FORMATS,
-    SARIF_RULE_HELP_BASE_URL,
+    rule_page_url,
     _position_suffix,
     _insertion_point_suffix,
 )
@@ -1823,15 +1823,14 @@ def _main(argv=None):
                 sys.stdout.write("  how to fix: einvoice --explain %s\n"
                                  % v.rule_id)
                 if catalogued:
-                    # ONE origin for the whole codebase: report.py's
-                    # SARIF_RULE_HELP_BASE_URL, which is the identical string
-                    # gen_site.py builds its rule-page URLs from
-                    # (BASE_URL + "/rules/"). No second origin literal is
-                    # introduced here, and gen_site is deliberately NOT imported
-                    # — it is not part of the wheel.
+                    # ONE origin for the whole codebase: report.rule_page_url(),
+                    # which spells SARIF_RULE_HELP_BASE_URL + id + "/" — the
+                    # identical string gen_site.py builds its rule-page URLs
+                    # from (BASE_URL + "/rules/"). No second origin literal and
+                    # no second concatenation are introduced here, and gen_site
+                    # is deliberately NOT imported — it is not part of the wheel.
                     sys.stdout.write(
-                        "  rule page:  %s%s/\n"
-                        % (SARIF_RULE_HELP_BASE_URL, v.rule_id))
+                        "  rule page:  %s\n" % rule_page_url(v.rule_id))
                 # MEASURED defect this fixes (T-VHFULL.1, 2026-07-25): the
                 # headline above is the whole default report, so a run that had
                 # already computed 12 findings printed exactly ONE of them and

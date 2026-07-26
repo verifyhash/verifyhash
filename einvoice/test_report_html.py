@@ -12,8 +12,16 @@ Asserted (each maps to a task acceptance criterion):
       a pass indicator, exit 0.
   (b) --format html on a KNOWN-BAD invoice -> every finding's rule id AND its
       fix-hint text appear in the HTML, process exits non-zero.
-  (c) SELF-CONTAINMENT: the emitted HTML carries NO http(s) asset references
-      (no src=/href= remote URL, no <script src>).
+  (c) SELF-CONTAINMENT, stated precisely: the emitted HTML fetches NO external
+      SUBRESOURCE — no <script> at all, no <img>, no remote src= on any
+      element, no remote stylesheet <link>, no @import / url() web font, no
+      embedded frame/object. That is exactly what "opens offline with zero
+      network requests" means. A plain navigational <a href> is NOT a
+      subresource (it issues no request until a human clicks it) and IS
+      allowed — but only on an <a>, only absolute https. The guard is proved
+      to still bite by a positive control (HtmlSelfContainmentGuard) that
+      feeds it a remote stylesheet, a remote <script src> and a remote <img
+      src> and asserts each is REJECTED.
   (d) a malformed-XML input yields a single error row and exit 3.
   (e) INJECTION: an invoice value containing <script> appears escaped — no
       literal <script> from invoice data lands in the output.
@@ -28,6 +36,16 @@ Asserted (each maps to a task acceptance criterion):
       absolute input-file path, no username, and no wall-clock timestamp —
       and a relative-path invocation of the same file (cwd = the fixture's
       dir) yields byte-identical HTML to the absolute-path invocation.
+  (i) RULE LINKS (T-VHRPTH.1): a finding whose rule id is in the remediation
+      catalog renders its id as an anchor whose href EQUALS the canonical
+      rule-page URL `gen_site.py` publishes for that id (derived from
+      `gen_site._url_rule` and from the shared runtime builder
+      `report.rule_page_url`, never hard-coded here); an uncatalogued id and
+      the not-well-formed error row render with NO link; a catalog-less
+      installation degrades to a link-free document rather than a traceback;
+      and the document names the offline escape hatch in the CLI's TRUE form,
+      `einvoice --explain <RULE-ID>` (a global option, not a subcommand —
+      asserted against the real CLI, not from memory).
 """
 
 import os
@@ -40,15 +58,51 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from einvoice.report import build_report, build_html, _h  # noqa: E402
+from einvoice.report import (  # noqa: E402
+    build_report, build_html, rule_page_url, _h)
+from einvoice.remediation import load_catalog  # noqa: E402
 
 # Reuse the exact fixture + bad-invoice construction the other fast gates use.
 BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
                     "business-cases", "standard", "01.01a-INVOICE_ubl.xml")
+# The committed multi-finding example the docs and CI recipes use: three
+# findings, all absence-class, all catalogued.
+BROKEN = os.path.join(HERE, "examples", "01-missing-fields", "broken.xml")
 
-# Match src=/href= pointing at a remote http(s) URL, and any <script src=...>.
-_REMOTE_ASSET_RE = re.compile(r"""(?:src|href)\s*=\s*["']https?://""", re.I)
-_SCRIPT_SRC_RE = re.compile(r"""<script[^>]*\bsrc\s*=""", re.I)
+# --------------------------------------------------------------------------- #
+# SELF-CONTAINMENT, stated precisely (see docstring claim (c)).
+#
+# "Opens offline with zero network requests" is a claim about SUBRESOURCES —
+# the things a browser fetches BY ITSELF while rendering: <script src>, <link
+# rel="stylesheet" href>, <img src>, an @import or url(...) web font inside
+# CSS, an <iframe>/<object>/<embed>. A plain navigational <a href> is not one
+# of those: it costs zero requests until a human clicks it. So the guard below
+# rejects (1) any <script> or <img> element at all, (2) any embedded-content
+# element, (3) any CSS @import / remote url(), (4) any protocol-relative asset
+# URL, and (5) any remote src=/href= that is NOT a plain <a href> — and it
+# additionally requires every allowed link to be absolute https (the file is
+# read from disk, where a relative URL would dangle).
+#
+# The rejection half is NOT taken on trust: HtmlSelfContainmentGuard below is a
+# positive control that feeds this function synthetic documents carrying a
+# remote stylesheet <link>, a remote <script src> and a remote <img src> and
+# asserts each one is REJECTED.
+# --------------------------------------------------------------------------- #
+
+# One HTML start tag: group(1) = tag name, group(2) = its attribute text.
+_TAG_RE = re.compile(r"<([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>")
+# A src=/href= attribute whose value is a remote http(s) URL.
+_REMOTE_ATTR_RE = re.compile(
+    r"""\b(src|href)\s*=\s*["']\s*(https?://[^"']*)""", re.I)
+# A src=/href= attribute whose value is protocol-relative (//cdn.example/x.js).
+_PROTOCOL_RELATIVE_RE = re.compile(r"""\b(?:src|href)\s*=\s*["']//""", re.I)
+_SCRIPT_TAG_RE = re.compile(r"<script\b", re.I)
+_IMG_TAG_RE = re.compile(r"<img\b", re.I)
+_EMBED_TAG_RE = re.compile(
+    r"<(?:iframe|frame|object|embed|video|audio|source|track|portal)\b", re.I)
+_CSS_IMPORT_RE = re.compile(r"@import", re.I)
+# url(https://...), url('https://...), url(//cdn...) inside a CSS block.
+_CSS_REMOTE_URL_RE = re.compile(r"""url\(\s*["']?\s*(?:https?:)?//""", re.I)
 
 
 def make_bad_invoice(dest):
@@ -68,15 +122,53 @@ def _run(args):
         cwd=HERE, capture_output=True, text=True, timeout=120)
 
 
-def _assert_self_contained(tc, htmltext):
+def _assert_no_external_subresource(tc, htmltext):
+    """Fail unless ``htmltext`` fetches ZERO external subresources.
+
+    Strictly stronger than the old "no remote src=/href= anywhere" string
+    match in every direction that matters (it now also catches <img>, frames,
+    @import, web fonts and protocol-relative URLs), and deliberately weaker in
+    exactly one place: a navigational <a href="https://..."> is allowed,
+    because it is not a subresource.
+    """
     tc.assertRegex(htmltext.lower(), r"<!doctype html")
     tc.assertIn("<style>", htmltext.lower())
-    tc.assertFalse(_REMOTE_ASSET_RE.search(htmltext),
-                   "remote asset URL leaked into the HTML")
-    tc.assertFalse(_SCRIPT_SRC_RE.search(htmltext),
-                   "<script src=...> leaked into the HTML")
-    # No <img> at all (spec forbids external images; we emit none).
-    tc.assertNotIn("<img", htmltext.lower())
+    tc.assertFalse(_SCRIPT_TAG_RE.search(htmltext),
+                   "a <script> element leaked into the HTML")
+    tc.assertFalse(_IMG_TAG_RE.search(htmltext),
+                   "an <img> element leaked into the HTML")
+    tc.assertFalse(_EMBED_TAG_RE.search(htmltext),
+                   "an embedded-content element leaked into the HTML")
+    tc.assertFalse(_CSS_IMPORT_RE.search(htmltext),
+                   "a CSS @import leaked into the HTML")
+    tc.assertFalse(_CSS_REMOTE_URL_RE.search(htmltext),
+                   "a remote CSS url(...) (web font/image) leaked into the "
+                   "HTML")
+    tc.assertFalse(_PROTOCOL_RELATIVE_RE.search(htmltext),
+                   "a protocol-relative asset URL leaked into the HTML")
+    for tag_match in _TAG_RE.finditer(htmltext):
+        tag = tag_match.group(1).lower()
+        for attr_match in _REMOTE_ATTR_RE.finditer(tag_match.group(2)):
+            attr = attr_match.group(1).lower()
+            url = attr_match.group(2)
+            tc.assertEqual(
+                (tag, attr), ("a", "href"),
+                "remote %s= on <%s> is an external subresource the browser "
+                "would fetch: %s" % (attr, tag, url))
+            tc.assertTrue(
+                url.startswith("https://"),
+                "a link in a file-on-disk artifact must be absolute https, "
+                "got %r" % url)
+
+
+def _synthetic_doc(snippet):
+    """A minimal well-formed document with ``snippet`` spliced into <body>."""
+    return ('<!doctype html>\n<html lang="en">\n<head>\n'
+            '<meta charset="utf-8">\n'
+            '<meta name="robots" content="noindex">\n'
+            "<style>body { margin: 0; }</style>\n"
+            "</head>\n<body><main>\n" + snippet +
+            "\n</main></body>\n</html>\n")
 
 
 class HtmlGoodInvoice(unittest.TestCase):
@@ -84,7 +176,7 @@ class HtmlGoodInvoice(unittest.TestCase):
         proc = _run(["--profile", "xrechnung", "--format", "html", BASE])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         out = proc.stdout
-        _assert_self_contained(self, out)
+        _assert_no_external_subresource(self, out)
         # A pass indicator is present for a conformant invoice.
         self.assertIn("Conformant", out, out[:400])
         self.assertIn("banner pass", out)
@@ -100,7 +192,7 @@ class HtmlBadInvoice(unittest.TestCase):
 
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         out = proc.stdout
-        _assert_self_contained(self, out)
+        _assert_no_external_subresource(self, out)
         self.assertIn("Not conformant", out)
 
         self.assertTrue(report["violations"], "fixture must produce findings")
@@ -126,7 +218,7 @@ class HtmlMalformed(unittest.TestCase):
             proc = _run(["--profile", "xrechnung", "--format", "html", broken])
         self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
         out = proc.stdout
-        _assert_self_contained(self, out)
+        _assert_no_external_subresource(self, out)
         # Exactly one error row, and the not-well-formed code is shown.
         self.assertEqual(out.count('class="error-row"'), 1, out)
         self.assertIn("not-well-formed", out)
@@ -160,7 +252,7 @@ class HtmlInjectionSafety(unittest.TestCase):
             }],
         }
         out = build_html(report)
-        _assert_self_contained(self, out)
+        _assert_no_external_subresource(self, out)
         # No literal injected markup anywhere — not from message, field, title,
         # fix_hint, terms, location, rule id or source.
         self.assertNotIn(payload, out,
@@ -186,7 +278,7 @@ class HtmlInjectionSafety(unittest.TestCase):
                 fh.write(evil_src)
             proc = _run(["--profile", "xrechnung", "--format", "html", evil])
         out = proc.stdout
-        _assert_self_contained(self, out)
+        _assert_no_external_subresource(self, out)
         self.assertNotIn(payload, out)
         self.assertNotIn("<script>alert", out)
 
@@ -207,7 +299,7 @@ class HtmlDeterminism(unittest.TestCase):
             doc1.encode("utf-8"), doc2.encode("utf-8"),
             "regenerating the HTML report from the same fixture is NOT "
             "byte-identical — nondeterminism in build_report/build_html")
-        _assert_self_contained(self, doc1)
+        _assert_no_external_subresource(self, doc1)
 
         # The same holds across two REAL CLI runs (catches env/process-level
         # nondeterminism the in-process pair cannot see).
@@ -264,6 +356,274 @@ class HtmlDeterminism(unittest.TestCase):
             rel.stdout, absr.stdout,
             "relative vs absolute invocation of the same fixture produced "
             "different HTML bytes (path leaked into the document)")
+
+
+class HtmlSelfContainmentGuard(unittest.TestCase):
+    """POSITIVE CONTROL for :func:`_assert_no_external_subresource`.
+
+    The guard was tightened (not loosened) when rule-page links landed: it must
+    still REJECT every real subresource fetch. A guard nobody tests is a guard
+    that silently stops biting, so each hostile snippet below is fed through the
+    guard and asserted to fail, and the one benign snippet is asserted to pass.
+    """
+
+    REJECTED = {
+        "remote stylesheet link":
+            '<link rel="stylesheet" href="https://cdn.example.com/a.css">',
+        "remote script src":
+            '<script src="https://cdn.example.com/a.js"></script>',
+        "remote img src":
+            '<img src="https://cdn.example.com/pixel.png" alt="">',
+        "inline script element":
+            "<script>alert(1)</script>",
+        "css @import":
+            '<style>@import url("https://cdn.example.com/a.css");</style>',
+        "remote web font":
+            "<style>@font-face { font-family: x; "
+            "src: url(https://cdn.example.com/f.woff2); }</style>",
+        "protocol-relative script src":
+            '<script src="//cdn.example.com/a.js"></script>',
+        "remote iframe":
+            '<iframe src="https://cdn.example.com/frame.html"></iframe>',
+        "remote object data via src":
+            '<embed src="https://cdn.example.com/x.swf">',
+        "relative rule link (would dangle from disk)":
+            '<a href="http://verifyhash.com/einvoice/rules/BR-DE-2/">x</a>',
+    }
+
+    ACCEPTED = {
+        "absolute https navigational anchor":
+            '<a class="rule-id" '
+            'href="https://verifyhash.com/einvoice/rules/BR-DE-2/">'
+            "BR-DE-2</a>",
+        "plain text mentioning a URL":
+            "<p>See https://verifyhash.com/einvoice/rules/BR-DE-2/</p>",
+    }
+
+    def test_guard_rejects_every_remote_subresource(self):
+        for label, snippet in sorted(self.REJECTED.items()):
+            with self.subTest(snippet=label):
+                doc = _synthetic_doc(snippet)
+                with self.assertRaises(
+                        AssertionError,
+                        msg="guard ACCEPTED a document carrying %s — the "
+                            "self-containment invariant has stopped biting"
+                            % label):
+                    _assert_no_external_subresource(self, doc)
+
+    def test_guard_accepts_a_plain_navigational_link(self):
+        # The tightening must not become a blanket ban: an <a href> is not a
+        # subresource, and the whole point of this task is to emit one.
+        for label, snippet in sorted(self.ACCEPTED.items()):
+            with self.subTest(snippet=label):
+                _assert_no_external_subresource(self, _synthetic_doc(snippet))
+
+    def test_guard_still_requires_a_real_self_contained_document(self):
+        # A bare fragment (no doctype, no inline <style>) is still rejected.
+        with self.assertRaises(AssertionError):
+            _assert_no_external_subresource(self, "<p>hello</p>")
+
+
+class HtmlRuleLinks(unittest.TestCase):
+    """(i) The HTML report — the one artifact that travels to a second person
+    (a CI download, a mail attachment) — links each finding back to the
+    authoritative rule page, from the SAME URL builder the SARIF helpUri and
+    the text report use, and only where a page actually exists."""
+
+    def test_linked_rule_id_href_equals_the_site_canonical_url(self):
+        # The expected URL is DERIVED twice and cross-checked: from the site
+        # builder that actually publishes the pages (gen_site._url_rule) and
+        # from the shared runtime builder the emitters call
+        # (report.rule_page_url). Nothing here is a hard-coded literal, so a
+        # change to either origin fails this test instead of silently shipping
+        # a 404 to every reader.
+        import gen_site  # build script, importable from the repo root
+
+        report = build_report(BROKEN, profile="xrechnung")
+        out = build_html(report)
+        _assert_no_external_subresource(self, out)
+
+        catalog = load_catalog()
+        fired = {v["rule"] for v in report["violations"]}
+        self.assertIn("BR-DE-2", fired,
+                      "fixture drift: %s no longer fires BR-DE-2" % BROKEN)
+
+        linked = 0
+        for rule_id in sorted(fired):
+            expected = gen_site._url_rule(rule_id)
+            self.assertEqual(
+                expected, rule_page_url(rule_id),
+                "the runtime rule-page URL builder has drifted from the "
+                "URL gen_site.py actually publishes for %s" % rule_id)
+            self.assertTrue(expected.startswith("https://"),
+                            "rule links must be absolute: %r" % expected)
+            if rule_id in catalog:
+                self.assertIn(
+                    '<a class="rule-id" href="%s">%s</a>'
+                    % (_h(expected), _h(rule_id)), out,
+                    "catalogued rule %s is not linked in the HTML report"
+                    % rule_id)
+                linked += 1
+            else:
+                self.assertNotIn(expected, out,
+                                 "%s has no catalog entry (so no published "
+                                 "page) but the report linked to it anyway"
+                                 % rule_id)
+        self.assertGreaterEqual(
+            linked, 1, "no catalogued rule fired — the assertion is vacuous")
+
+    def test_html_link_matches_the_sarif_helpuri_for_the_same_run(self):
+        # One run, two formats: whatever the SARIF tells a scanner, the HTML
+        # tells the human. They cannot disagree.
+        from einvoice.report import build_sarif
+
+        report = build_report(BROKEN, profile="xrechnung")
+        out = build_html(report)
+        descriptors = build_sarif(report)["runs"][0]["tool"]["driver"]["rules"]
+        checked = 0
+        for descriptor in descriptors:
+            uri = descriptor.get("helpUri")
+            if uri is None:
+                self.assertNotIn('href="%s' % _h(
+                    rule_page_url(descriptor["id"])), out)
+                continue
+            self.assertIn('<a class="rule-id" href="%s">%s</a>'
+                          % (_h(uri), _h(descriptor["id"])), out,
+                          "SARIF deep-links %s but the HTML does not"
+                          % descriptor["id"])
+            checked += 1
+        self.assertGreaterEqual(checked, 1, "no helpUri in the SARIF run")
+
+    def test_uncatalogued_rule_id_renders_unlinked(self):
+        # A synthetic id has no catalog entry, therefore no published page,
+        # therefore no link — the same gate the SARIF descriptor path uses.
+        synthetic = "BR-DE-NOT-A-REAL-RULE-99"
+        self.assertNotIn(synthetic, load_catalog(),
+                         "precondition: the id must be absent from the "
+                         "catalog for this test to mean anything")
+        report = {
+            "source": "/tmp/x.xml",
+            "profile": "xrechnung",
+            "valid": False,
+            "fatal_count": 1,
+            "warning_count": 0,
+            "violation_count": 1,
+            "violations": [{
+                "rule": synthetic,
+                "severity": "fatal",
+                "message": "synthetic finding",
+                "field": None, "title": None, "fix_hint": None,
+                "terms": [], "location": None,
+            }],
+        }
+        out = build_html(report)
+        _assert_no_external_subresource(self, out)
+        self.assertIn('<span class="rule-id">%s</span>' % synthetic, out)
+        self.assertNotIn("href=", out,
+                         "an uncatalogued rule id must not be linked (the "
+                         "page does not exist)")
+
+    def test_not_well_formed_error_row_is_unchanged_and_unlinked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            broken = os.path.join(tmp, "broken.xml")
+            with open(broken, "w", encoding="utf-8") as fh:
+                fh.write("<Invoice><unclosed>")
+            proc = _run(["--profile", "xrechnung", "--format", "html", broken])
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        out = proc.stdout
+        _assert_no_external_subresource(self, out)
+        # Exactly the markup the error path has always emitted, and no link:
+        # "not-well-formed" is an error code, not a rule with a page.
+        self.assertEqual(out.count('class="error-row"'), 1, out)
+        self.assertIn('<span class="code">not-well-formed</span>', out)
+        self.assertNotIn("href=", out,
+                         "the not-well-formed error row must carry no link")
+        self.assertNotIn("--explain", out,
+                         "the parse-error document has no rule to explain")
+
+    def test_missing_catalog_degrades_to_a_link_free_document(self):
+        # A wheel shipped WITHOUT the packaged catalog (that really happened in
+        # 0.4.2) must still render the whole report — just with no links. Not a
+        # traceback: the HTML path reads the catalog through the DEFENSIVE
+        # accessor, whose degrade-to-{} discipline is exercised for real here
+        # by making the underlying loader raise.
+        from einvoice import remediation
+
+        report = build_report(BROKEN, profile="xrechnung")
+        saved_loader = remediation.load_catalog
+        saved_cache = remediation._CATALOG_CACHE
+        try:
+            remediation._CATALOG_CACHE = None
+
+            def _boom(*a, **kw):
+                raise OSError("catalog missing from this installation")
+
+            remediation.load_catalog = _boom
+            out = build_html(report)          # must not raise
+        finally:
+            remediation.load_catalog = saved_loader
+            remediation._CATALOG_CACHE = saved_cache
+
+        _assert_no_external_subresource(self, out)
+        self.assertNotIn("href=", out,
+                         "a catalog-less installation must emit the "
+                         "link-free document, not links to pages it cannot "
+                         "vouch for")
+        # ...and the findings themselves are still all there.
+        for v in report["violations"]:
+            self.assertIn(_h(v["rule"]), out)
+        # The cache really was restored for the rest of the suite.
+        self.assertIn("BR-DE-2", load_catalog())
+
+    def test_offline_escape_hatch_uses_the_cli_true_form(self):
+        out = build_html(build_report(BROKEN, profile="xrechnung"))
+        self.assertIn("einvoice --explain &lt;RULE-ID&gt;", out,
+                      "the report must name the offline escape hatch")
+        self.assertNotIn("einvoice explain", out,
+                         "there is no `explain` SUBCOMMAND — that spelling "
+                         "errors out")
+
+    def test_the_named_escape_hatch_actually_works(self):
+        # Assert the CLI form from the REAL CLI rather than from memory: the
+        # global option works, the subcommand spelling does not.
+        ok = subprocess.run(
+            [sys.executable, "-m", "einvoice", "--explain", "BR-DE-2"],
+            cwd=HERE, capture_output=True, text=True, timeout=120)
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+        self.assertIn("BR-DE-2", ok.stdout)
+        bad = subprocess.run(
+            [sys.executable, "-m", "einvoice", "explain", "BR-DE-2"],
+            cwd=HERE, capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(
+            bad.returncode, 0,
+            "an `explain` subcommand now exists — the report's wording needs "
+            "revisiting")
+
+    def test_links_survive_the_real_cli_path(self):
+        rel = os.path.relpath(BROKEN, HERE)
+        proc = _run(["--profile", "xrechnung", "--format", "html", rel])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        _assert_no_external_subresource(self, proc.stdout)
+        self.assertIn('href="%s"' % rule_page_url("BR-DE-2"), proc.stdout)
+
+    def test_links_do_not_break_path_invariance(self):
+        # RPT.8 again, on the linking build: a link is derived from the rule
+        # id alone, so it cannot vary with the caller's cwd or path spelling.
+        env = dict(os.environ)
+        env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
+        absr = subprocess.run(
+            [sys.executable, "-m", "einvoice.report", "--profile",
+             "xrechnung", "--format", "html", BROKEN],
+            cwd=tempfile.gettempdir(), env=env,
+            capture_output=True, text=True, timeout=120)
+        relr = _run(["--profile", "xrechnung", "--format", "html",
+                     os.path.relpath(BROKEN, HERE)])
+        self.assertEqual(absr.returncode, 1, absr.stdout + absr.stderr)
+        self.assertEqual(relr.returncode, 1, relr.stdout + relr.stderr)
+        self.assertEqual(absr.stdout, relr.stdout,
+                         "absolute vs relative invocation produced different "
+                         "HTML bytes")
+        self.assertIn("robots", absr.stdout)
 
 
 class HtmlBaselineRejected(unittest.TestCase):

@@ -1419,9 +1419,32 @@ SARIF_SCHEMA_URI = (
 #: ``https://verifyhash.com/einvoice`` + ``/rules/<id>/``, trailing slash). It
 #: is duplicated here as a plain string constant rather than imported because
 #: ``gen_site`` is a build script, not a runtime import; a static test pins the
-#: two forms together. Used only for a SARIF ``reportingDescriptor.helpUri``
-#: deep-link — no network is ever touched.
+#: two forms together. It is the ONE origin for every rule-page deep-link the
+#: product emits — the SARIF ``reportingDescriptor.helpUri``, the default text
+#: report's ``rule page:`` line and the HTML report's rule-id anchor all go
+#: through :func:`rule_page_url` below. The historical ``SARIF_`` prefix is kept
+#: because ``test_report_sarif.py`` and the published CHANGELOG name it; the
+#: constant is format-neutral in fact. No network is ever touched.
 SARIF_RULE_HELP_BASE_URL = "https://verifyhash.com/einvoice/rules/"
+
+
+def rule_page_url(rule_id):
+    """Return the canonical public reference-page URL for ``rule_id``.
+
+    THE single URL-building code path for the whole package: base constant +
+    id + trailing slash, exactly the shape ``gen_site.py``'s ``_url_rule``
+    generates on disk (``https://verifyhash.com/einvoice/rules/BR-DE-2/``).
+    Every emitter that deep-links a rule calls this, so the CLI text report,
+    the SARIF ``helpUri``, the HTML anchor and the published site are
+    structurally incapable of disagreeing.
+
+    The URL is ABSOLUTE on purpose: the HTML artifact is read from a local
+    file (a CI download, an email attachment), where a relative link dangles.
+
+    Callers are responsible for the "does a page exist?" gate — see
+    :func:`_remediation_catalog`; this function only spells the URL.
+    """
+    return SARIF_RULE_HELP_BASE_URL + rule_id + "/"
 
 #: SARIF result level for each report severity (fatal -> error, warning ->
 #: warning, everything else -> note). Static Analysis Results Interchange
@@ -1651,8 +1674,7 @@ def build_sarif(report):
                 # ONLY for a real catalog rule id (that is where a page exists);
                 # a synthetic/unknown id gets no helpUri.
                 if rule_id in catalog_ids:
-                    descriptor["helpUri"] = (
-                        SARIF_RULE_HELP_BASE_URL + rule_id + "/")
+                    descriptor["helpUri"] = rule_page_url(rule_id)
                 rules.append(descriptor)
 
             loc_name = field or location
@@ -2222,6 +2244,10 @@ h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
 .finding h2 { font-size: 1.05rem; margin: 0 0 .5rem;
   display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
 .rule-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+a.rule-id { color: #0a4a7a; text-decoration-color: #9fc4de; }
+.note { color: #57606a; font-size: .85rem; margin: 1.25rem 0 0; }
+.note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #eaeef2; border-radius: 4px; padding: .05rem .3rem; }
 .sev { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
   padding: .1rem .5rem; border-radius: 999px; font-weight: 700; }
 .sev.fatal { background: #fce8e6; color: #7a1f16; }
@@ -2269,10 +2295,24 @@ def build_html(report):
     location), and EVERY such value is HTML-escaped through :func:`_h` before it
     reaches the markup (injection-safe).
 
-    Self-containment (hard requirement): the only styling is an inline
-    ``<style>`` block (:data:`_HTML_STYLE`); there are NO external CSS/JS/CDN
-    references, no ``<img>``, no web fonts, no analytics — the file opens offline
-    with zero network requests.
+    Self-containment (hard requirement): the document fetches NO external
+    SUBRESOURCE. The only styling is an inline ``<style>`` block
+    (:data:`_HTML_STYLE`); there is no external CSS/JS/CDN reference, no
+    ``<script>``, no ``<img>``, no web font, no ``@import``, no analytics — so
+    the file RENDERS offline with zero network requests. Plain navigational
+    ``<a href>`` links to the public rule pages ARE emitted (see below): a
+    hyperlink issues no request until a human clicks it, so it costs the
+    offline reader nothing while giving the artifact — the one output that
+    travels to a second person — a way back to the authoritative rule text.
+
+    Rule-page links: each finding's rule id is an anchor to
+    :func:`rule_page_url` (the SAME single URL builder the SARIF ``helpUri``
+    and the text report's ``rule page:`` line use), and ONLY when the
+    remediation catalog really has an entry for that id — that catalog is what
+    the site's rule pages are generated from, so a link is emitted exactly when
+    a page exists. A synthetic/unknown rule id and the not-well-formed-XML row
+    render plain, with no link, and an installation whose catalog is missing
+    degrades to a link-free document (never a traceback).
 
     Determinism + path invariance (RPT.8, pinned by ``test_report_html.py``):
     the document embeds NO wall-clock timestamp and NO machine path — the
@@ -2296,6 +2336,12 @@ def build_html(report):
     """
     profile = report.get("profile", "")
     source = report.get("source", "")
+
+    # The set of rule ids for which an authoritative reference page exists —
+    # the SAME gate, read through the SAME defensive accessor, the SARIF
+    # helpUri path uses. A catalog-less installation yields {} here, which
+    # simply means "nothing links": the document is still produced in full.
+    catalog_ids = _remediation_catalog()
 
     parts = []
     parts.append("<!doctype html>")
@@ -2366,7 +2412,15 @@ def build_html(report):
                 "fatal", "warning", "information") else "information"
 
             parts.append('<div class="finding">')
-            head = ['<span class="rule-id">%s</span>' % _h(rule),
+            # The rule id becomes a link ONLY when the catalog has an entry for
+            # it (that is where a published page exists) — otherwise it renders
+            # exactly as it always did, as plain text.
+            if rule and rule in catalog_ids:
+                rule_markup = ('<a class="rule-id" href="%s">%s</a>'
+                               % (_h(rule_page_url(rule)), _h(rule)))
+            else:
+                rule_markup = '<span class="rule-id">%s</span>' % _h(rule)
+            head = [rule_markup,
                     '<span class="sev %s">%s</span>'
                     % (_h(sev_class), _h(severity))]
             if title:
@@ -2393,6 +2447,18 @@ def build_html(report):
                                  % (' class="mono"' if mono else "", val))
                 parts.append("</dl>")
             parts.append("</div>")
+
+        if violations:
+            # ONE short, factual line: what the links are, and the offline
+            # equivalent. `einvoice --explain <RULE-ID>` is the real CLI form
+            # (a global option, NOT an `explain` subcommand) and needs no
+            # network. The angle brackets are escaped so the placeholder can
+            # never be read as markup.
+            parts.append(
+                '<p class="note">Rule ids with a published reference page '
+                'link to it; ids without one are shown plain. Offline, '
+                '<code>einvoice --explain &lt;RULE-ID&gt;</code> prints the '
+                'same rule text from your local install.</p>')
 
     parts.append("<footer>Static conformance artifact — reflects this one "
                  "report run against the invoice above. Generated offline by "

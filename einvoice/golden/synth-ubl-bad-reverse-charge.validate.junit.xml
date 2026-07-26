@@ -2,7 +2,7 @@
 <testsuites name="einvoice-conformance" tests="1" failures="1" errors="0">
   <testsuite name="xrechnung" tests="1" failures="1" errors="0">
     <testcase name="BR-AE-10" classname="xrechnung">
-      <failure message="A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121), meaning 'Reverse charge', or the VAT exemption reason text (BT-120) 'Reverse charge'.">fatal: cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason</failure>
+      <failure message="A VAT breakdown (BG-23) with a Reverse charge (AE) VAT category code (BT-118) shall have a VAT exemption reason code (BT-121), meaning 'Reverse charge', or the VAT exemption reason text (BT-120) 'Reverse charge'.">fatal: cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason (insertion point fixtures/synth-ubl-bad-reverse-charge_ubl.xml:111)</failure>
     </testcase>
   </testsuite>
 </testsuites>

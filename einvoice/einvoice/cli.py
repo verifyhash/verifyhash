@@ -249,6 +249,7 @@ from .report import (
     REPORT_FORMATS, BATCH_FORMATS,
     SARIF_RULE_HELP_BASE_URL,
     _position_suffix,
+    _insertion_point_suffix,
 )
 from .remediation import resolve_message, SUPPORTED_LANGS, entry_for
 from .config import load_config_with_source, ConfigError
@@ -1735,18 +1736,22 @@ def _main(argv=None):
                 for v in result.violations[:_NON_FATAL_LIST_CAP]:
                     # Same message resolution as the FAIL path, so --lang de
                     # keeps surfacing the official German text where the rule
-                    # carries one — and the same `file:line` convention
-                    # (T-VHLOC.3). All three line-bearing rules (BR-CL-01 /
-                    # -04 / -05) are FATAL today, so no advisory finding can
-                    # actually reach this branch with a line; the call is here
-                    # so the convention is uniform if one ever does, and it
-                    # renders nothing until then.
+                    # carries one — and the same position convention
+                    # (T-VHLOC.3 `file:line`, T-VHLOC.6 insertion point). All
+                    # three line-bearing rules (BR-CL-01 / -04 / -05) are FATAL
+                    # today, so no advisory finding reaches this branch with a
+                    # source line; an advisory ABSENCE can be anchored though
+                    # (BR-DE-TMP-32 is information-severity), so this arm does
+                    # render an insertion point when one resolves.
                     sys.stdout.write(
                         "    [%s] %s: %s%s\n"
                         % (_severity(v), v.rule_id,
                            resolve_message(v.rule_id, v.message, lang),
-                           _position_suffix(display_path,
-                                            getattr(v, "source_line", None))))
+                           _position_suffix(
+                               display_path, getattr(v, "source_line", None))
+                           or _insertion_point_suffix(
+                               display_path,
+                               getattr(v, "insertion_point_line", None))))
                 if non_fatal > _NON_FATAL_LIST_CAP:
                     # Honest about the truncation AND about the exact flag that
                     # shows everything — never a vague "see the JSON output".
@@ -1773,11 +1778,27 @@ def _main(argv=None):
                 # section. A finding the engine could not attribute prints the
                 # historic bytes exactly (`_position_suffix` returns ""); a
                 # guessed line 0/1 would be worse than none.
+                #
+                # T-VHLOC.6 completes that line for the OTHER half of the
+                # findings. An absence has no offending element to attribute
+                # (its XPath names something that is NOT there), so when the
+                # engine resolved an insertion point it is rendered here in its
+                # own distinctly worded shape — "(insertion point
+                # broken.xml:28)", never "at broken.xml:28", because 28 is
+                # where the fix GOES and nothing on it is wrong. Worked example,
+                # the file our own onboarding docs tell a stranger to run:
+                #   FAIL: examples/01-missing-fields/broken.xml
+                #     BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be …
+                #     offending element: cac:AccountingSupplierParty/cac:Party/
+                #     cac:Contact (insertion point …/broken.xml:28)
                 sys.stdout.write(
                     "FAIL: %s\n  %s: %s\n  offending element: %s%s\n"
                     % (display_path, v.rule_id, message, v.element,
                        _position_suffix(display_path,
-                                        getattr(v, "source_line", None))))
+                                        getattr(v, "source_line", None))
+                       or _insertion_point_suffix(
+                           display_path,
+                           getattr(v, "insertion_point_line", None))))
                 # MEASURED defect this fixes (T-VHUX2, 2026-07-25): the failure
                 # output handed over a rule id and stopped, while this very
                 # wheel ships `--explain` (the EN+DE remediation catalog) and
@@ -1850,16 +1871,21 @@ def _main(argv=None):
                 for x in others[:_NON_FATAL_LIST_CAP]:
                     # Same message resolution as the headline, so --lang de
                     # surfaces the official German text on these lines too —
-                    # and the same `file:line` position convention (T-VHLOC.3),
-                    # so a reader does not have to re-run the tool per rule to
-                    # learn where the second finding lives. Findings without a
-                    # stamped line keep their exact previous bytes.
+                    # and the same position convention (T-VHLOC.3 `file:line`
+                    # for a proven error site, T-VHLOC.6 "(insertion point
+                    # file:line)" for an anchorable absence), so a reader does
+                    # not have to re-run the tool per rule to learn where the
+                    # second finding lives. Findings the engine could place
+                    # neither way keep their exact previous bytes.
                     sys.stdout.write(
                         "    [%s] %s: %s%s\n"
                         % (_severity(x), x.rule_id,
                            resolve_message(x.rule_id, x.message, lang),
-                           _position_suffix(display_path,
-                                            getattr(x, "source_line", None))))
+                           _position_suffix(
+                               display_path, getattr(x, "source_line", None))
+                           or _insertion_point_suffix(
+                               display_path,
+                               getattr(x, "insertion_point_line", None))))
                 if len(others) > _NON_FATAL_LIST_CAP:
                     # Identical honesty to the PASS path: say how many were
                     # omitted and name the flag that shows all of them. "all %d"

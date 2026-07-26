@@ -16,7 +16,9 @@ cases read. Every expected line number is computed from the fixture text, never
 hard-coded, so the assertions cannot silently drift.
 """
 
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -78,11 +80,64 @@ from test_report_schema import schema_errors, load_schema    # noqa: E402
 #     walk.)
 #   * A path we cannot fully parse — predicates, wildcards, attribute steps,
 #     "//", prose — and any element the parser left without a line stamp.
-#   * Rendering. This task ships the field on the two JSON surfaces only; text /
-#     junit / sarif / github / azure / gitlab / html do NOT show it yet (that is
-#     the queued follow-up T-VHLOC.6). Tests here assert JSON only.
+#   * Rendering. T-VHLOC.4 shipped the field on the two JSON surfaces only.
+#     T-VHLOC.6 added the HUMAN rendering and declared, per format, which
+#     surfaces show it — see :data:`INSERTION_POINT_SURFACES` immediately below,
+#     which is now the rendering half of this contract.
 # ---------------------------------------------------------------------------
 INSERTION_POINT_LINE = "insertion_point_line"
+
+#: The RENDERING half of the insertion-point contract (T-VHLOC.6), declared per
+#: position-capable format. ``format -> (renders_insertion_point, reason)``.
+#:
+#: THE DIVIDING LINE is the SEMANTIC of the position each format carries, not
+#: the format's age or importance:
+#:
+#:   * A HUMAN surface renders prose a person reads, so it can afford — and is
+#:     required to use — a token that says "insertion point" in words. The
+#:     reader is told the difference explicitly and cannot mistake the anchor
+#:     for an error site.
+#:   * A MACHINE/CI surface carries ONE bare integer whose meaning is fixed by
+#:     the vendor as "the problem is here" (SARIF ``region.startLine``, GitHub
+#:     ``line=``, Azure ``linenumber=``, GitLab ``location.lines.begin``). There
+#:     is no field in which to say "…but this one means something else". Feeding
+#:     it an insertion point would put a red squiggle on an INNOCENT line — on
+#:     ``examples/01-missing-fields/broken.xml`` that is line 28, the perfectly
+#:     valid ``<cac:Party>`` open tag. A wrong annotation is worse than no
+#:     annotation, so these formats DECLINE. The datum is not lost: ``--format
+#:     json`` carries ``insertion_point_line`` under its own distinct key, where
+#:     a consumer that understands the difference can act on it.
+#:
+#: T-VHLOC.7 reads this dict as its allowlist, so it is a data structure, not
+#: prose, and ``DeclaredInsertionPointSurfaces`` below MEASURES every entry
+#: against the real emitters — a verdict flipped here without the emitter
+#: changing (or vice versa) fails the suite.
+INSERTION_POINT_SURFACES = {
+    "text": (True, "human report; renders ' (insertion point <file>:<line>)', "
+                   "worded so it cannot be read as the error site"),
+    "batch-text": (True, "human per-file listing in build_batch_text; same "
+                         "token and same wording as the single-file report"),
+    "junit": (True, "the <failure>/<system-out> BODY is human prose a CI test "
+                    "pane shows; testcase attributes are untouched"),
+    "json": (True, "carries it as the separate 'insertion_point_line' KEY "
+                   "(T-VHLOC.4), never merged into 'source_line'"),
+    "sarif": (False, "region.startLine means 'the problem is here'; a code "
+                     "scanning alert on line 28 would flag a valid element"),
+    "github": (False, "::error line= anchors a PR annotation to the offending "
+                      "line; an insertion point would annotate innocent code"),
+    "azure": (False, "##vso[task.logissue linenumber=] is the same 'problem is "
+                     "here' anchor as GitHub's, so it declines identically"),
+    "gitlab": (False, "location.lines.begin identifies the defect's location "
+                      "in a Code Quality report; an anchor is not a defect"),
+    "html": (False, "renders NO position of any kind today, not even "
+                    "source_line, so there is nothing to be consistent with"),
+}
+
+#: The token every rendering surface must contain, lower-cased. Pinned as a
+#: constant so the honesty rule ("this is where the fix GOES, not where the
+#: error IS") is mechanically checkable and cannot be quietly collapsed back
+#: into the ``at <file>:<line>`` shape ``source_line`` owns.
+INSERTION_POINT_TOKEN = "insertion point"
 
 #: The committed onboarding example the insertion-point cases measure: a real
 #: XRechnung invoice with the BG-6 SELLER CONTACT group and the BT-10 buyer
@@ -396,6 +451,256 @@ class InsertionPointResolverBoundaries(unittest.TestCase):
                      "normalize-space(cbc:ID) = 'E'"):
             self.assertIsNone(self.resolve(self.root, path),
                               "path %r must not resolve" % (path,))
+
+
+# ---------------------------------------------------------------------------
+# T-VHLOC.6 — the RENDERING half. Everything below measures
+# INSERTION_POINT_SURFACES against the real emitters.
+# ---------------------------------------------------------------------------
+
+def _strip_insertion_points(report):
+    """A deep-ish copy of ``report`` with every ``insertion_point_line`` gone.
+
+    The control group for "a finding without an anchor reads EXACTLY as it did
+    before": rendering this copy reproduces the pre-T-VHLOC.6 bytes of every
+    surface, because the field is the ONLY input the task added.
+    """
+    out = dict(report)
+    out["violations"] = [{k: val for k, val in v.items()
+                          if k != INSERTION_POINT_LINE}
+                         for v in report.get("violations", [])]
+    return out
+
+
+def _with_insertion_point(report, rule, value):
+    """``report`` with ``rule``'s ``insertion_point_line`` forced to ``value``.
+
+    Used to drive the hostile inputs (``True``, ``0``, ``"28"``, ...) a
+    hand-edited or third-party report dict can carry through the SAME emitters
+    the engine feeds, without weakening the engine's own guarantees.
+    """
+    out = _strip_insertion_points(report)
+    for v in out["violations"]:
+        if v["rule"] == rule:
+            v[INSERTION_POINT_LINE] = value
+    return out
+
+
+class DeclaredInsertionPointSurfaces(unittest.TestCase):
+    """INSERTION_POINT_SURFACES is a CONTRACT, not a comment: every entry is
+    re-measured here against the emitter it names, so the declaration and the
+    code cannot drift. T-VHLOC.7 consumes this dict as its allowlist."""
+
+    def setUp(self):
+        from einvoice.report import REPORT_FORMATS
+        self.formats = REPORT_FORMATS
+        self.report = build_report(BROKEN_EXAMPLE, profile="xrechnung")
+        self.by_rule = {v["rule"]: v for v in self.report["violations"]}
+
+    def _render(self, fmt, report=None):
+        from einvoice.report import render_report
+        return render_report(report if report is not None else self.report,
+                             fmt)
+
+    def test_declaration_is_machine_readable(self):
+        self.assertIsInstance(INSERTION_POINT_SURFACES, dict)
+        for fmt, verdict in INSERTION_POINT_SURFACES.items():
+            self.assertIsInstance(fmt, str)
+            self.assertIsInstance(verdict, tuple, fmt)
+            self.assertEqual(len(verdict), 2, fmt)
+            renders, reason = verdict
+            self.assertIsInstance(renders, bool, fmt)
+            self.assertIsInstance(reason, str, fmt)
+            self.assertTrue(reason.strip(), "%s: needs a real reason" % fmt)
+
+    def test_declaration_names_every_real_format(self):
+        # Every declared key is a real emitter ("batch-text" is the batch leg of
+        # the "text" one), and every format that carries ANY position concept is
+        # declared. "badge" is the only omission and it is deliberate: it emits
+        # a shields.io colour/label pair with no per-finding structure at all.
+        for fmt in INSERTION_POINT_SURFACES:
+            self.assertIn(fmt.replace("batch-", ""), self.formats, fmt)
+        for fmt in ("text", "junit", "json", "sarif", "github", "azure",
+                    "gitlab", "html"):
+            self.assertIn(fmt, INSERTION_POINT_SURFACES,
+                          "position-capable format %r must declare a verdict"
+                          % fmt)
+        self.assertNotIn("badge", INSERTION_POINT_SURFACES)
+
+    def test_the_example_still_carries_exactly_one_anchor(self):
+        # Everything below is only meaningful while BR-DE-2 really is anchored
+        # and the other two really are not.
+        anchored = {v["rule"]: v[INSERTION_POINT_LINE]
+                    for v in self.report["violations"]
+                    if INSERTION_POINT_LINE in v}
+        self.assertEqual(list(anchored), ["BR-DE-2"], anchored)
+        self.assertGreaterEqual(anchored["BR-DE-2"], 1)
+
+    def test_rendering_surfaces_show_the_declared_token(self):
+        line = self.by_rule["BR-DE-2"][INSERTION_POINT_LINE]
+        src = self.report["source"]
+        expected = " (insertion point %s:%d)" % (src, line)
+        for fmt, (renders, _reason) in sorted(
+                INSERTION_POINT_SURFACES.items()):
+            if not renders or fmt == "json":
+                continue          # json is checked by KEY, see the test below
+            out = (self._batch_text() if fmt == "batch-text"
+                   else self._render(fmt))
+            self.assertIn(expected, out,
+                          "%s declares it renders the insertion point but the "
+                          "emitter does not:\n%s" % (fmt, out))
+            self.assertIn(INSERTION_POINT_TOKEN, out.lower(), fmt)
+
+    def test_json_carries_it_as_its_own_key_not_as_prose(self):
+        # The machine surface's contract is different in kind: a separate KEY,
+        # never merged into source_line and never rendered as a sentence.
+        doc = json.loads(self._render("json"))
+        rec = {v["rule"]: v for v in doc["violations"]}["BR-DE-2"]
+        self.assertEqual(rec[INSERTION_POINT_LINE],
+                         self.by_rule["BR-DE-2"][INSERTION_POINT_LINE])
+        self.assertNotIn("source_line", rec)
+        self.assertNotIn(INSERTION_POINT_TOKEN, self._render("json").lower())
+
+    def test_declining_surfaces_render_no_insertion_point_at_all(self):
+        # Not merely "no prose token": the vendor LINE property must stay absent
+        # too, because that is the failure this decision exists to prevent — an
+        # annotation anchored to line 28 would flag a perfectly valid
+        # <cac:Party> element as the defect.
+        line = self.by_rule["BR-DE-2"][INSERTION_POINT_LINE]
+        for fmt, (renders, _reason) in sorted(
+                INSERTION_POINT_SURFACES.items()):
+            if renders:
+                continue
+            out = self._render(fmt)
+            self.assertNotIn("insertion", out.lower(),
+                             "%s declined but leaked the token" % fmt)
+            self.assertEqual(out, self._render(
+                fmt, _strip_insertion_points(self.report)),
+                "%s must be byte-identical with and without the field" % fmt)
+        sarif = json.loads(self._render("sarif"))
+        for result in sarif["runs"][0]["results"]:
+            for loc in result["locations"]:
+                self.assertNotIn("region", loc["physicalLocation"],
+                                 result["ruleId"])
+        self.assertNotIn("line=", self._render("github"))
+        self.assertNotIn("linenumber=", self._render("azure"))
+        for entry in json.loads(self._render("gitlab")):
+            self.assertNotIn("lines", entry["location"], entry["check_name"])
+        self.assertNotIn(str(line), self._render("github"))
+
+    def _batch_text(self):
+        from einvoice.report import (build_batch_report_from_files,
+                                     build_batch_text)
+        batch = build_batch_report_from_files(
+            [BROKEN_EXAMPLE], profile="xrechnung",
+            root=os.path.dirname(BROKEN_EXAMPLE))
+        return build_batch_text(batch)
+
+
+class InsertionPointRenderingIsHonest(unittest.TestCase):
+    """The three rules the rendering must never break: it is distinguishable
+    from a source line, it is absent when nothing resolved, and it degrades on
+    a hostile value instead of printing nonsense."""
+
+    HUMAN = ("text", "junit")
+
+    def setUp(self):
+        self.report = build_report(BROKEN_EXAMPLE, profile="xrechnung")
+        self.src = self.report["source"]
+        self.line = {v["rule"]: v for v in self.report["violations"]
+                     }["BR-DE-2"][INSERTION_POINT_LINE]
+
+    def _render(self, fmt, report=None):
+        from einvoice.report import render_report
+        return render_report(report if report is not None else self.report,
+                             fmt)
+
+    def test_token_cannot_be_read_as_an_error_site(self):
+        # The source-line shape is " at <file>:<line>". The insertion-point
+        # shape must NOT be that shape on the same line number, or a reader
+        # (and an editor jumping there) would conclude line 28 is broken.
+        for fmt in self.HUMAN:
+            out = self._render(fmt)
+            self.assertIn(" (insertion point %s:%d)" % (self.src, self.line),
+                          out, fmt)
+            self.assertNotIn(" at %s:%d" % (self.src, self.line), out,
+                             "%s: the insertion point must not borrow the "
+                             "source-line wording" % fmt)
+
+    def test_findings_without_an_anchor_are_byte_identical_to_before(self):
+        # Removing the ONLY token this task adds must reproduce the pre-task
+        # bytes exactly — no reflow, no extra space, no blank position.
+        stripped = _strip_insertion_points(self.report)
+        token = " (insertion point %s:%d)" % (self.src, self.line)
+        for fmt in self.HUMAN:
+            full = self._render(fmt)
+            self.assertEqual(full.replace(token, ""), self._render(
+                fmt, stripped),
+                "%s changed something other than the added token" % fmt)
+            self.assertEqual(full.count(token), 1, fmt)
+        # And the two unanchorable findings never gained a position of any kind.
+        for fmt in self.HUMAN:
+            out = self._render(fmt)
+            for rule in ("BR-DE-15", "BR-DE-TMP-32"):
+                for chunk in out.splitlines():
+                    if rule in chunk:
+                        self.assertNotIn("insertion", chunk.lower(),
+                                         "%s/%s: %s" % (fmt, rule, chunk))
+
+    def test_hostile_values_degrade_to_no_position(self):
+        # A hand-edited or third-party report dict can carry anything. Every
+        # non-(int >= 1) must render as if the field were absent — never ":0",
+        # never "True", never a traceback.
+        stripped = _strip_insertion_points(self.report)
+        for bad in (True, False, 0, -1, "28", 28.0, None, [28], {"line": 28}):
+            doc = _with_insertion_point(self.report, "BR-DE-2", bad)
+            for fmt in self.HUMAN:
+                out = self._render(fmt, doc)
+                self.assertNotIn("insertion", out.lower(),
+                                 "%s accepted %r" % (fmt, bad))
+                self.assertEqual(out, self._render(fmt, stripped),
+                                 "%s: %r must render as no position" % (fmt,
+                                                                        bad))
+
+    def test_a_source_line_wins_over_an_insertion_point(self):
+        # The two fields are documented mutually exclusive and the engine never
+        # stamps both; a record that claims both is not a crash and not a double
+        # position — the PROVEN error site wins.
+        doc = _with_insertion_point(self.report, "BR-DE-2", self.line)
+        for v in doc["violations"]:
+            if v["rule"] == "BR-DE-2":
+                v["source_line"] = 7
+        for fmt in self.HUMAN:
+            out = self._render(fmt, doc)
+            self.assertIn(" at %s:7" % self.src, out, fmt)
+            self.assertNotIn("insertion", out.lower(), fmt)
+
+    def test_no_source_means_the_bare_line_form(self):
+        # Same degradation _position_suffix already applies: ":28" alone is not
+        # a jumpable address and inventing a filename would be a fabrication.
+        from einvoice.report import _insertion_point_suffix
+        self.assertEqual(_insertion_point_suffix("", 28),
+                         " (insertion point line 28)")
+        self.assertEqual(_insertion_point_suffix(None, 28),
+                         " (insertion point line 28)")
+        self.assertEqual(_insertion_point_suffix("f.xml", 28),
+                         " (insertion point f.xml:28)")
+        self.assertEqual(_insertion_point_suffix("f.xml", None), "")
+
+    def test_the_cli_headline_shows_it_on_the_documented_example(self):
+        # ACCEPTANCE: the one command the onboarding docs tell a stranger to
+        # run must show the insertion point in its HEADLINE block, where the
+        # offending element already is.
+        proc = subprocess.run(
+            [sys.executable, "-m", "einvoice", "validate", "--profile",
+             "xrechnung", "examples/01-missing-fields/broken.xml"],
+            cwd=HERE, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        headline = [ln for ln in proc.stdout.splitlines()
+                    if "offending element:" in ln]
+        self.assertEqual(len(headline), 1, proc.stdout)
+        self.assertIn("insertion point", headline[0].lower(), proc.stdout)
+        self.assertIn(":%d)" % self.line, headline[0], proc.stdout)
 
 
 if __name__ == "__main__":

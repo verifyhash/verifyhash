@@ -710,6 +710,65 @@ def _position_suffix(source, source_line):
     return " at %s:%d" % (source, source_line)
 
 
+def _insertion_point_suffix(source, insertion_point_line):
+    """The ``insertion point`` fragment every HUMAN surface appends to an
+    ABSENCE finding — the sibling of :func:`_position_suffix`, never a mode of
+    it.
+
+    MEASURED defect this closes (T-VHLOC.6, 2026-07-26): the engine has stamped
+    ``insertion_point_line`` on anchorable absence findings since T-VHLOC.4, and
+    the two JSON surfaces carry it — but on the ONE example our own onboarding
+    docs tell a stranger to run,
+    ``examples/01-missing-fields/broken.xml``, EVERY surface a person reads
+    (text report, batch listing, JUnit ``<failure>`` body) said only "BG-6 is
+    missing" and left them to find the spot in a 60-line invoice by hand. The
+    field existed; the payoff did not.
+
+    THE HONESTY RULE, AND WHY IT NEEDS ITS OWN WORDING. An insertion point is
+    where the missing thing GOES; nothing on that line is wrong. Rendering it
+    through :func:`_position_suffix` would print ``at broken.xml:28`` — which
+    every reader (and every editor jumping there) reads as "the error is on line
+    28", pointing at an innocent ``<cac:Party>``. So the token is deliberately
+    a DIFFERENT shape and carries the word "insertion" literally:
+
+        BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be transmitted.
+          (insertion point examples/01-missing-fields/broken.xml:28)
+
+    The vocabulary is the one the engine already uses
+    (``einvoice.validate._insertion_point_line`` / ``_stamp_insertion_points``),
+    not a third term. ``test_report_location.py`` pins the substring
+    "insertion", so the distinction is mechanically checkable and cannot be
+    quietly collapsed back into the ``at file:line`` shape.
+
+    PRECEDENCE. ``source_line`` and ``insertion_point_line`` are documented
+    mutually exclusive (see :data:`REPORT_SCHEMA`) and the engine never stamps
+    both. A hand-edited or third-party report dict that carries both is not a
+    crash: every call site asks for ``_position_suffix(...) or
+    _insertion_point_suffix(...)``, so a proven error site always wins over a
+    guessed-at destination.
+
+    ``insertion_point_line`` is validated here rather than trusted — the same
+    bool/int ``>= 1`` check :func:`_position_suffix` and :func:`build_sarif`
+    apply — so ``true``, ``0`` or a string degrades to "no position" instead of
+    printing nonsense. No placeholder, no ``:0``, no ``:1`` fallback: a finding
+    without an anchor reads EXACTLY as it did before.
+
+    :param source: the document path the finding belongs to. Falsy -> the bare
+        ``insertion point line N`` form, for the same reason
+        :func:`_position_suffix` degrades that way.
+    :param insertion_point_line: the record's optional ``insertion_point_line``.
+    :returns: ``" (insertion point <source>:<line>)"``,
+        ``" (insertion point line <line>)"``, or ``""``.
+    """
+    if (not isinstance(insertion_point_line, int)
+            or isinstance(insertion_point_line, bool)
+            or insertion_point_line < 1):
+        return ""
+    if not source:
+        return " (insertion point line %d)" % insertion_point_line
+    return " (insertion point %s:%d)" % (source, insertion_point_line)
+
+
 def _rule_sort_key(rule_id):
     """Natural sort key for a rule id, so BR-DE-2 sorts BEFORE BR-DE-15.
 
@@ -769,12 +828,17 @@ def _batch_file_finding_lines(report):
     ordered = sorted(violations, key=_batch_finding_sort_key)
     src = report.get("source", "")
     for v in ordered[:_BATCH_RULE_LIST_CAP]:
-        # ``file:line`` when this finding is attributable, nothing at all
-        # otherwise (T-VHLOC.3) — one convention, see :func:`_position_suffix`.
+        # ``file:line`` when this finding is attributable, the distinctly
+        # labelled insertion point when it is an anchorable ABSENCE instead
+        # (T-VHLOC.6), nothing at all otherwise (T-VHLOC.3) — one convention,
+        # see :func:`_position_suffix` / :func:`_insertion_point_suffix`. A
+        # proven error site wins if a hand-edited record claims both.
         lines.append("    [%s] %s: %s%s"
                      % (v.get("severity", ""), v.get("rule", ""),
                         v.get("message", ""),
-                        _position_suffix(src, v.get("source_line"))))
+                        _position_suffix(src, v.get("source_line"))
+                        or _insertion_point_suffix(
+                            src, v.get("insertion_point_line"))))
     if total > _BATCH_RULE_LIST_CAP:
         lines.append("    " + _batch_truncation_sentence(
             total - _BATCH_RULE_LIST_CAP, total))
@@ -946,13 +1010,16 @@ def build_text(report):
     lines = [head]
     for v in report.get("violations", []):
         field = v.get("field")
-        # The XPath says WHICH element; the position says WHERE it is. A
-        # finding the engine could not attribute keeps its historic bytes
-        # exactly (T-VHLOC.3) — see :func:`_position_suffix`.
+        # The XPath says WHICH element; the position says WHERE it is — either
+        # the proven error site (``at file:line``, T-VHLOC.3) or, for an
+        # anchorable absence, the distinctly worded insertion point where the
+        # missing thing GOES (T-VHLOC.6). A finding the engine could not place
+        # at all keeps its historic bytes exactly.
         lines.append("  [%s] %s: %s%s%s" % (
             v.get("severity", ""), v.get("rule", ""), v.get("message", ""),
             " (%s)" % field if field else "",
-            _position_suffix(src, v.get("source_line"))))
+            _position_suffix(src, v.get("source_line"))
+            or _insertion_point_suffix(src, v.get("insertion_point_line"))))
     return "\n".join(lines) + "\n"
 
 
@@ -1224,9 +1291,16 @@ def _junit_suite_block(report, suite_name=None):
             field = v.get("field") or ""
             # The <failure> body is what a CI test pane shows a human when the
             # build goes red, so it carries the ``file:line`` position whenever
-            # the finding is attributable, and is byte-identical to before when
-            # it is not (T-VHLOC.3) — see :func:`_position_suffix`.
-            position = _position_suffix(src, v.get("source_line"))
+            # the finding is attributable (T-VHLOC.3) and the distinctly
+            # labelled ``(insertion point file:line)`` when it is an anchorable
+            # absence (T-VHLOC.6), and is byte-identical to before when it is
+            # neither. This is the HUMAN body only — the surrounding testcase
+            # attributes and the machine CI formats are untouched, because an
+            # annotation anchored to an insertion point would draw a red
+            # squiggle on an innocent line.
+            position = (_position_suffix(src, v.get("source_line"))
+                        or _insertion_point_suffix(
+                            src, v.get("insertion_point_line")))
             lines.append(
                 "    <testcase name=%s classname=%s>"
                 % (quoteattr(rule), classname))

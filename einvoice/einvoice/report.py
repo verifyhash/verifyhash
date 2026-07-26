@@ -2255,6 +2255,8 @@ a.rule-id { color: #0a4a7a; text-decoration-color: #9fc4de; }
 .sev.information { background: #ddeeff; color: #0a4a7a; }
 .title { font-weight: 600; }
 .msg { margin: .35rem 0; }
+.pos { color: #57606a; font-family: ui-monospace, SFMono-Regular, Menlo,
+  monospace; font-size: .9em; word-break: break-all; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem;
   margin: .6rem 0 0; font-size: .9rem; }
 dt { color: #57606a; font-weight: 600; }
@@ -2314,18 +2316,36 @@ def build_html(report):
     render plain, with no link, and an installation whose catalog is missing
     degrades to a link-free document (never a traceback).
 
-    Determinism + path invariance (RPT.8, pinned by ``test_report_html.py``):
-    the document embeds NO wall-clock timestamp and NO machine path — the
-    ``source`` meta line shows only ``os.path.basename(report["source"])``, so
-    building the same report twice, or from a relative vs an absolute path to
-    the same file, yields byte-identical HTML (a reproducible CI artifact).
+    Determinism (RPT.8, pinned by ``test_report_html.py``): the document embeds
+    NO wall-clock timestamp and no set/dict iteration order, so building the
+    same report from the same input twice is byte-identical — a reproducible CI
+    artifact.
+
+    Path echo, stated exactly (changed by T-VHRPTH.3; see REPORT-FORMATS.md
+    "Path echo"): the ``source`` meta line still shows ONLY
+    ``os.path.basename(report["source"])``, never the directory part. The one
+    place the caller's spelling now appears is a FINDING'S POSITION, and only
+    when the engine actually resolved one — because ``line 28`` with no file
+    beside it is not an address a recipient can act on, and the position is the
+    entire point of this document travelling to a second person. That echo is
+    verbatim and is the SAME string the text, json and sarif surfaces already
+    emit: pass a relative path and the document holds a relative path; pass an
+    absolute one and it holds that. Consequence, and it is deliberate: for a
+    report that HAS a positioned finding, relative-path and absolute-path
+    invocations of the same file are no longer byte-identical — exactly the
+    trade sarif made when it gained ``region.startLine``. A report whose
+    findings carry no position (and every unpositioned finding in any report)
+    is unchanged, path-invariant, byte-for-byte.
 
     Layout:
       * a pass/fail banner ("Conformant" vs "N finding(s)") built from the same
         summary fields (``valid``/``fatal_count``/``warning_count``/
         ``violation_count``) the JSON path exposes;
       * one card per violation carrying the rule id, a severity pill, the
-        remediation ``title``, the violation ``message``, and a definition list
+        remediation ``title``, the violation ``message`` (with the finding's
+        position appended when there is one — ``at file:line`` for an
+        attributable finding, the distinctly worded
+        ``(insertion point file:line)`` for an absence), and a definition list
         of ``fix_hint`` / BT-BG ``terms`` / ``field`` / ``location``;
       * a not-well-formed input (``report`` has an ``error``) renders a single
         error row with the error code + parser message — mirroring the JSON /
@@ -2407,6 +2427,40 @@ def build_html(report):
             terms = v.get("terms") or []
             field = v.get("field")
             location = v.get("location")
+            # POSITION (T-VHRPTH.3). The HTML report is the ONE artifact of
+            # ours that travels to a second person — a CI download, a file
+            # attached to an invoice dispute, a forward to an accountant — and
+            # until now its recipient got strictly LESS than the CLI user who
+            # produced it: the engine had already computed the position and
+            # text/json/junit all rendered it, while this document handed over
+            # a bare XPath (a structural address that names WHICH element is
+            # wrong and gives the reader nothing to jump to).
+            #
+            # It is rendered through the SAME two helpers the other two HUMAN
+            # surfaces use (the text report, :func:`build_text`, and the JUnit
+            # <failure> body) — deliberately NOT a third formatter, so the
+            # three can never phrase a position differently — and with the
+            # same precedence: a proven error site (``at file:line``) always
+            # wins over a guessed-at destination.
+            #
+            # THE HONESTY RULE IS VISIBLE HERE, NOT JUST IN THE HELPERS. An
+            # insertion point is where the missing thing GOES; nothing on that
+            # line is wrong. So an absence never reads "at broken.xml:28" (a
+            # reader, and any editor that jumps there, would take that as "the
+            # error is on line 28" and land on an innocent <cac:Party>) — it
+            # reads "(insertion point broken.xml:28)" and carries the word
+            # "insertion" literally. Worked example, the file our onboarding
+            # docs tell a stranger to run:
+            #   BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be transmitted.
+            #     (insertion point examples/01-missing-fields/broken.xml:28)
+            # A finding the engine could place at a real element instead reads:
+            #   at fixtures/creditnote-invalid-typecode_ubl.xml:28
+            # A finding with NEITHER renders byte-identically to before: the
+            # helpers validate bool/int >= 1 and return "" otherwise, and
+            # nothing here adds a :0 or :1 fallback.
+            position = (_position_suffix(source, v.get("source_line"))
+                        or _insertion_point_suffix(
+                            source, v.get("insertion_point_line")))
 
             sev_class = severity if severity in (
                 "fatal", "warning", "information") else "information"
@@ -2426,8 +2480,22 @@ def build_html(report):
             if title:
                 head.append('<span class="title">%s</span>' % _h(title))
             parts.append("<h2>%s</h2>" % "".join(head))
-            if message:
-                parts.append('<p class="msg">%s</p>' % _h(message))
+            # The position rides on the message line, exactly where the text
+            # report puts it, and the helper's return is emitted VERBATIM
+            # (leading space and all) inside the span — so the bytes a reader
+            # sees are character-for-character the bytes the text report and
+            # the JUnit <failure> body show. ``test_report_location.py``
+            # asserts that one shared string against all three surfaces at
+            # once, which is what makes "they can never phrase a position
+            # differently" mechanically true rather than aspirational.
+            # It goes through :func:`_h` like every other report-derived
+            # string: the path comes from argv, so it is untrusted text and
+            # must never reach the markup raw.
+            if message or position:
+                body = _h(message)
+                if position:
+                    body += '<span class="pos">%s</span>' % _h(position)
+                parts.append('<p class="msg">%s</p>' % body)
 
             rows = []
             if fix_hint:

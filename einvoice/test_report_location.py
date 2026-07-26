@@ -83,7 +83,10 @@ from test_report_schema import schema_errors, load_schema    # noqa: E402
 #   * Rendering. T-VHLOC.4 shipped the field on the two JSON surfaces only.
 #     T-VHLOC.6 added the HUMAN rendering and declared, per format, which
 #     surfaces show it — see :data:`INSERTION_POINT_SURFACES` immediately below,
-#     which is now the rendering half of this contract.
+#     which is now the rendering half of this contract. T-VHRPTH.3 (2026-07-26)
+#     moved `html` from the declining side to the rendering side: it is the one
+#     artifact that TRAVELS to a second person, and it was handing that person
+#     strictly less than the CLI user who produced it.
 # ---------------------------------------------------------------------------
 INSERTION_POINT_LINE = "insertion_point_line"
 
@@ -129,8 +132,10 @@ INSERTION_POINT_SURFACES = {
                      "here' anchor as GitHub's, so it declines identically"),
     "gitlab": (False, "location.lines.begin identifies the defect's location "
                       "in a Code Quality report; an anchor is not a defect"),
-    "html": (False, "renders NO position of any kind today, not even "
-                    "source_line, so there is nothing to be consistent with"),
+    "html": (True, "the standalone artifact a person downloads/forwards, so "
+                   "it is a HUMAN surface: since T-VHRPTH.3 it renders the "
+                   "same worded token through the same helper as text/junit "
+                   "(before that it rendered no position at all)"),
 }
 
 #: The token every rendering surface must contain, lower-cased. Pinned as a

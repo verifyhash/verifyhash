@@ -88,12 +88,21 @@ Where the echoed path appears, per surface:
   in exactly the echoed path, like `json`. `partialFingerprints` stays
   line-independent (rule id + logical location only), so an edit that shifts a
   finding to a new line still de-duplicates against the previous run.
-- **html** — shows only the input file's **basename** in its `source:` meta
-  line (the one place a path could appear), never the directory part: the
-  archived/shared HTML artifact embeds no home directory, username, or
-  machine path, and — unlike sarif, which now echoes the path — relative-path
-  and absolute-path invocations of the same file still produce byte-identical
-  HTML (no embedded timestamp either; pinned by `test_report_html.py`).
+- **html** — the `source:` meta line shows only the input file's **basename**,
+  never the directory part. Since 2026-07-26 there is one other place a path
+  appears, and only there: a **finding's position**, which echoes your spelling
+  verbatim — `at invoices/march.xml:28` for an attributable finding,
+  `(insertion point invoices/march.xml:28)` for an absence. That is the same
+  string the text report and the JUnit `<failure>` body print, from the same
+  formatter, because the HTML file is the one artifact that travels to a second
+  person and `line 28` with no filename beside it is not an address the
+  recipient can act on. Consequence, the same trade sarif made when it gained
+  `region.startLine`: for a report that HAS a positioned finding, relative-path
+  and absolute-path invocations are no longer byte-identical — they differ in
+  exactly that echoed path. A report whose findings carry **no** position is
+  still fully path-invariant, and the document chrome (meta line, rule-page
+  links, style, footer) is invariant either way. No embedded timestamp in any
+  case. Pinned by `test_report_html.py`.
 
 Two consequences worth relying on:
 
@@ -114,9 +123,10 @@ Two consequences worth relying on:
    *you* pass an absolute path, that string is echoed back verbatim in
    **text**, **json** and now **sarif** too — including whatever it reveals —
    so pass the spelling you are comfortable publishing, and note that an
-   absolute `uri` is also one GitHub cannot match to a file in the diff.
-   **html** is the one surface that still never carries it: only the
-   basename.)
+   absolute `uri` is also one GitHub cannot match to a file in the diff. In
+   **html** the meta line still shows the basename only, but a positioned
+   finding echoes your spelling too — so if you plan to forward the HTML
+   report, run it with the relative path.)
 
 ## OS-level input errors
 

@@ -31,11 +31,24 @@ Asserted (each maps to a task acceptance criterion):
       committed fixture is byte-identical (byte-stability / regeneration
       stability — catches timestamp, dict-order or set-order leakage), both
       in-process via build_report+build_html and across two real CLI runs.
-  (h) PATH INVARIANCE (RPT.8): built from a fixture referenced via an
-      ABSOLUTE path under $HOME, the document contains no $HOME prefix, no
-      absolute input-file path, no username, and no wall-clock timestamp —
-      and a relative-path invocation of the same file (cwd = the fixture's
-      dir) yields byte-identical HTML to the absolute-path invocation.
+  (h) PATH INVARIANCE (RPT.8), as narrowed by T-VHRPTH.3: built from a
+      POSITIONLESS fixture referenced via an ABSOLUTE path under $HOME, the
+      document contains no $HOME prefix, no absolute input-file path, no
+      username, and no wall-clock timestamp — and a relative-path invocation
+      of the same file (cwd = the fixture's dir) yields byte-identical HTML.
+      The ONE place a caller's path spelling may now appear is a finding's
+      POSITION (see (j)); the document CHROME — meta line, links, style,
+      footer — stays path-invariant regardless, and two documents that differ
+      only in the echoed position path are byte-identical once that one string
+      is normalised. This is the same trade sarif made when it gained
+      `region.startLine` (REPORT-FORMATS.md "Path echo").
+  (j) POSITION (T-VHRPTH.3): the artifact that travels to a second person
+      carries the position the engine already computed, in BOTH kinds and in
+      the SAME words the text report and the JUnit body use — `at file:line`
+      for an attributable finding, the distinctly worded
+      `(insertion point file:line)` for an absence (so it can never be read as
+      "the error is on line N") — and a finding the engine could not place
+      carries NO position markup at all, no `:0`, no invented line.
   (i) RULE LINKS (T-VHRPTH.1): a finding whose rule id is in the remediation
       catalog renders its id as an anchor whose href EQUALS the canonical
       rule-page URL `gen_site.py` publishes for that id (derived from
@@ -68,6 +81,14 @@ BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
 # The committed multi-finding example the docs and CI recipes use: three
 # findings, all absence-class, all catalogued.
 BROKEN = os.path.join(HERE, "examples", "01-missing-fields", "broken.xml")
+# The ATTRIBUTABLE counterpart (T-VHRPTH.3): a CreditNote whose BT-3 document
+# type code is present but not a listed UNTDID 1001 code, so BR-CL-01 names a
+# real element the parser stamped with a real line — `source_line` 28, and no
+# insertion point anywhere in the report. BROKEN is the mirror image: an
+# absence with `insertion_point_line` 28 and no `source_line`, which makes the
+# pair a clean single-kind test of each form.
+TYPECODE = os.path.join(HERE, "fixtures",
+                        "creditnote-invalid-typecode_ubl.xml")
 
 # --------------------------------------------------------------------------- #
 # SELF-CONTAINMENT, stated precisely (see docstring claim (c)).
@@ -285,8 +306,21 @@ class HtmlInjectionSafety(unittest.TestCase):
 
 class HtmlDeterminism(unittest.TestCase):
     """RPT.8: the HTML report is a reproducible CI artifact — byte-stable
-    across regenerations and invariant to how (and from where) the input file
-    path was spelled. No timestamp, no $HOME, no username in the bytes."""
+    across regenerations, with no timestamp, no $HOME and no username in the
+    bytes for a report whose findings carry no position.
+
+    T-VHRPTH.3 narrowed the second half of that claim ON PURPOSE and this class
+    states the narrowed version precisely rather than quietly dropping it. A
+    finding's POSITION echoes the caller's path spelling verbatim — the same
+    string text/json/sarif emit — because ``line 28`` with no file beside it is
+    not an address the recipient of the artifact can act on. So: the ``source:``
+    meta line is still basename-only, the document CHROME is still invariant,
+    and two runs that differ only in the echoed position path are byte-identical
+    once that one string is normalised. A POSITIONLESS report is unchanged,
+    invariant, byte-for-byte — which is what
+    :meth:`test_path_invariance_no_home_username_timestamp` measures (it asserts
+    its fixture really is positionless first, so it can never pass by accident).
+    """
 
     def test_whole_document_regeneration_byte_identical(self):
         # (g) Build the FULL document twice from the same committed fixture:
@@ -322,7 +356,17 @@ class HtmlDeterminism(unittest.TestCase):
                         "(got %r, home %r)" % (BASE, home))
         self.assertTrue(username, "cannot derive a username from $HOME")
 
-        doc = build_html(build_report(BASE, profile="xrechnung"))
+        # SCOPE, made explicit (T-VHRPTH.3): this fixture's findings carry NO
+        # position, so "no path anywhere in the document" is the whole truth
+        # for it. Assert that precondition instead of relying on it silently —
+        # if the engine ever starts placing this fixture's finding, this test
+        # must fail loudly and be re-stated, not pass by luck.
+        rpt = build_report(BASE, profile="xrechnung")
+        for v in rpt.get("violations", []):
+            self.assertIsNone(v.get("source_line"), v.get("rule"))
+            self.assertIsNone(v.get("insertion_point_line"), v.get("rule"))
+
+        doc = build_html(rpt)
         # No absolute input-file path, no $HOME prefix, no username.
         self.assertNotIn(BASE, doc,
                          "absolute input path leaked into the HTML")
@@ -607,8 +651,14 @@ class HtmlRuleLinks(unittest.TestCase):
         self.assertIn('href="%s"' % rule_page_url("BR-DE-2"), proc.stdout)
 
     def test_links_do_not_break_path_invariance(self):
-        # RPT.8 again, on the linking build: a link is derived from the rule
-        # id alone, so it cannot vary with the caller's cwd or path spelling.
+        # RPT.8 again, on the linking build, and now on the POSITIONED build
+        # too. A link is derived from the rule id alone, so it cannot vary with
+        # the caller's cwd or path spelling; a POSITION echoes the caller's
+        # spelling verbatim (T-VHRPTH.3) and is the ONLY thing in the document
+        # allowed to. Both halves are asserted, so neither can drift: the whole
+        # document must be byte-identical between an absolute-path run from a
+        # foreign cwd and a relative-path run once — and only once — the echoed
+        # position path is normalised.
         env = dict(os.environ)
         env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
         absr = subprocess.run(
@@ -616,14 +666,216 @@ class HtmlRuleLinks(unittest.TestCase):
              "xrechnung", "--format", "html", BROKEN],
             cwd=tempfile.gettempdir(), env=env,
             capture_output=True, text=True, timeout=120)
+        rel_spelling = os.path.relpath(BROKEN, HERE)
         relr = _run(["--profile", "xrechnung", "--format", "html",
-                     os.path.relpath(BROKEN, HERE)])
+                     rel_spelling])
         self.assertEqual(absr.returncode, 1, absr.stdout + absr.stderr)
         self.assertEqual(relr.returncode, 1, relr.stdout + relr.stderr)
-        self.assertEqual(absr.stdout, relr.stdout,
+
+        # Every hyperlink is identical, in the same order: rule-page hrefs come
+        # from the rule id, never from the input path.
+        self.assertEqual(re.findall(r'href="([^"]*)"', absr.stdout),
+                         re.findall(r'href="([^"]*)"', relr.stdout),
+                         "a hyperlink varied with the caller's cwd / path "
+                         "spelling — links must derive from the rule id alone")
+        self.assertIn('href="%s"' % rule_page_url("BR-DE-2"), absr.stdout)
+
+        # The absolute run differs ONLY in the echoed position string. Rewrite
+        # that one substring and the documents must be byte-identical — proving
+        # the path did not leak into the meta line, the style, the links or the
+        # footer, and that nothing ELSE varies with cwd either.
+        self.assertIn("(insertion point %s:" % BROKEN, absr.stdout,
+                      "the absolute run should echo the absolute spelling in "
+                      "its position — the surface under test is missing")
+        self.assertEqual(absr.stdout.replace(BROKEN, rel_spelling),
+                         relr.stdout,
                          "absolute vs relative invocation produced different "
-                         "HTML bytes")
+                         "HTML bytes beyond the echoed position path")
+
+        # The meta line is STILL basename-only in the absolute run: the
+        # directory part of an absolute input never appears outside a position.
+        self.assertIn("source: %s " % os.path.basename(BROKEN), absr.stdout)
+        self.assertEqual(
+            1, absr.stdout.count(os.path.dirname(BROKEN)),
+            "the input's directory path appears somewhere other than the one "
+            "position echo")
         self.assertIn("robots", absr.stdout)
+
+
+class HtmlFindingPosition(unittest.TestCase):
+    """(j) T-VHRPTH.3 — the HTML report carries the position the engine already
+    computed, in BOTH kinds, worded exactly as the other two HUMAN surfaces
+    word it.
+
+    WHY THIS SUITE EXISTS. The HTML document is the only output of ours that
+    TRAVELS: it is downloaded as a CI artifact, attached to an invoice dispute,
+    forwarded to an accountant. Before this task its recipient got strictly
+    less than the CLI user who produced it — the same finding, minus the one
+    datum that turns it into a fix. Measured then on
+    `examples/01-missing-fields/broken.xml`: the computed position 28 appeared
+    once each in text, json and junit, and ZERO times in html.
+
+    THE HONESTY RULE IS THE POINT OF THE TWO-FORM SPLIT, so it is asserted as
+    such and not merely as "a number appears". An insertion point is where the
+    missing thing GOES; nothing on that line is wrong. Rendering it as
+    `at broken.xml:28` would tell every reader — and every editor that jumps
+    there — that line 28 is the defect, when line 28 is a perfectly valid
+    `<cac:Party>` open tag.
+    """
+
+    def _doc(self, path):
+        return build_html(build_report(path, profile="xrechnung"))
+
+    def _positions(self, doc):
+        """Every position span the document emitted, inner text only."""
+        return re.findall(r'<span class="pos">([^<]*)</span>', doc)
+
+    def test_attributable_finding_renders_the_at_form(self):
+        rel = os.path.relpath(TYPECODE, HERE)
+        rpt = build_report(rel, profile="xrechnung")
+        rec = {v["rule"]: v for v in rpt["violations"]}["BR-CL-01"]
+        # Precondition, measured not assumed: this really is the attributable
+        # kind — a source_line and NO insertion point.
+        self.assertEqual(rec.get("source_line"), 28, rec)
+        self.assertIsNone(rec.get("insertion_point_line"), rec)
+
+        doc = build_html(rpt)
+        self.assertIn("at %s:28" % rel, doc,
+                      "the attributable finding lost its position in HTML")
+        # The attributable form must NOT borrow the absence wording.
+        self.assertNotIn("insertion", doc.lower(),
+                         "an error site was labelled as an insertion point")
+        # Exactly one finding of the three carries a position: the other two
+        # have none, and none was invented for them.
+        self.assertEqual([" at %s:28" % rel], self._positions(doc), doc)
+        _assert_no_external_subresource(self, doc)
+
+    def test_absence_finding_renders_the_insertion_point_form(self):
+        rel = os.path.relpath(BROKEN, HERE)
+        rpt = build_report(rel, profile="xrechnung")
+        rec = {v["rule"]: v for v in rpt["violations"]}["BR-DE-2"]
+        self.assertEqual(rec.get("insertion_point_line"), 28, rec)
+        self.assertIsNone(rec.get("source_line"), rec)
+
+        doc = build_html(rpt)
+        self.assertIn("(insertion point %s:28)" % rel, doc,
+                      "the absence finding lost its insertion point in HTML")
+        # The literal word survives, and the error-site wording never appears
+        # for this report: no reader can take line 28 for the defect.
+        self.assertIn("insertion", doc.lower())
+        self.assertNotIn("at %s:28" % rel, doc,
+                         "an insertion point was rendered in the 'at "
+                         "file:line' shape — it reads as 'the error is here'")
+        self.assertEqual([" (insertion point %s:28)" % rel],
+                         self._positions(doc), doc)
+        _assert_no_external_subresource(self, doc)
+
+    def test_both_forms_are_byte_identical_to_the_text_surface(self):
+        # The whole reason build_html calls report._position_suffix /
+        # _insertion_point_suffix instead of formatting its own string: the
+        # three human surfaces cannot phrase a position differently. Assert the
+        # bytes, not the intent — the span's inner text (after unescaping) must
+        # equal the exact fragment the TEXT report appends for the same record.
+        from einvoice.report import (build_text, _position_suffix,
+                                     _insertion_point_suffix)
+        for path, rule in ((TYPECODE, "BR-CL-01"), (BROKEN, "BR-DE-2")):
+            rel = os.path.relpath(path, HERE)
+            rpt = build_report(rel, profile="xrechnung")
+            rec = {v["rule"]: v for v in rpt["violations"]}[rule]
+            expected = (_position_suffix(rel, rec.get("source_line"))
+                        or _insertion_point_suffix(
+                            rel, rec.get("insertion_point_line")))
+            self.assertTrue(expected, rec)
+            self.assertIn(expected, build_text(rpt), rule)
+            self.assertEqual([expected], self._positions(build_html(rpt)),
+                             "%s: HTML phrases the position differently from "
+                             "the text report" % rule)
+
+    def test_a_finding_with_no_position_renders_no_position_markup(self):
+        # BASE's single finding is document-level: the engine can attribute it
+        # to no element and anchor it nowhere, so the HTML must be exactly what
+        # it always was — no span, no ":0", no invented line, no empty
+        # parentheses left behind.
+        rpt = build_report(BASE, profile="xrechnung")
+        self.assertTrue(rpt["violations"], "fixture drift: BASE now passes")
+        for v in rpt["violations"]:
+            self.assertIsNone(v.get("source_line"), v.get("rule"))
+            self.assertIsNone(v.get("insertion_point_line"), v.get("rule"))
+        doc = build_html(rpt)
+        self.assertEqual([], self._positions(doc))
+        self.assertNotIn('class="pos"', doc)
+        self.assertNotIn("insertion", doc.lower())
+        self.assertNotIn(":0", doc)
+
+    def test_position_adds_the_span_and_nothing_else(self):
+        # "A finding with no usable position renders exactly as it did before"
+        # stated as a measurable invariant rather than a promise: strip the
+        # position fields out of a real report and the document must come back
+        # byte-identical to the positioned one MINUS the span — no reflowed
+        # markup, no stray parentheses, no changed dl rows, no changed banner.
+        for path in (TYPECODE, BROKEN):
+            rel = os.path.relpath(path, HERE)
+            rpt = build_report(rel, profile="xrechnung")
+            stripped = dict(rpt)
+            stripped["violations"] = [
+                {k: val for k, val in v.items()
+                 if k not in ("source_line", "insertion_point_line")}
+                for v in rpt["violations"]]
+            positioned = build_html(rpt)
+            bare = build_html(stripped)
+            self.assertNotEqual(positioned, bare, rel)
+            self.assertEqual(
+                re.sub(r'<span class="pos">[^<]*</span>', "", positioned),
+                bare,
+                "%s: rendering a position changed markup OTHER than the "
+                "position span itself" % rel)
+
+    def test_unusable_position_values_never_become_a_line(self):
+        # The no-placeholder rule, driven through build_html on hand-built
+        # report dicts (a third-party or hand-edited report can carry anything).
+        # True is an int in Python and 0/-1/"28" are the classic ways a bad
+        # position sneaks in; every one of them must degrade to "no position",
+        # never to ":1", ":0" or a rendered string.
+        for bad in (True, False, 0, -1, "28", 28.0, None):
+            for key in ("source_line", "insertion_point_line"):
+                rpt = {"schema": "einvoice-conformance-report/v1",
+                       "source": "x.xml", "profile": "xrechnung",
+                       "valid": False, "fatal_count": 1, "warning_count": 0,
+                       "violation_count": 1,
+                       "violations": [{"rule": "BR-1", "severity": "fatal",
+                                       "message": "m", key: bad}]}
+                doc = build_html(rpt)
+                self.assertEqual([], self._positions(doc),
+                                 "%s=%r produced a position" % (key, bad))
+                self.assertNotIn("x.xml:", doc,
+                                 "%s=%r produced a position" % (key, bad))
+
+    def test_position_survives_the_real_cli_path(self):
+        # End to end through the CLI the docs tell a stranger to run, so the
+        # claim is about the shipped binary and not only about the projection.
+        for path, expect in (
+                (BROKEN, "(insertion point %s:28)"),
+                (TYPECODE, "at %s:28")):
+            rel = os.path.relpath(path, HERE)
+            proc = _run(["--profile", "xrechnung", "--format", "html", rel])
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn(expect % rel, proc.stdout)
+            self.assertIn('name="robots" content="noindex"', proc.stdout)
+            _assert_no_external_subresource(self, proc.stdout)
+
+    def test_a_path_with_markup_characters_is_escaped(self):
+        # The echoed path is argv — untrusted text. A filename containing
+        # markup must not reach the document raw.
+        with tempfile.TemporaryDirectory() as tmp:
+            evil = os.path.join(tmp, 'a<b&"c.xml')
+            with open(BROKEN, encoding="utf-8") as fh:
+                payload = fh.read()
+            with open(evil, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+            doc = build_html(build_report(evil, profile="xrechnung"))
+        self.assertIn("insertion point", doc)
+        self.assertNotIn('a<b&"c.xml', doc, "raw path markup reached the HTML")
+        self.assertIn("a&lt;b&amp;&quot;c.xml", doc)
 
 
 class HtmlBaselineRejected(unittest.TestCase):

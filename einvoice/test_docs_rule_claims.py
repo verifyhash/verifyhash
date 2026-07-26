@@ -880,5 +880,446 @@ class TrackedDocsCiiCapability(unittest.TestCase):
         self.assertIn("known-open", readme)
 
 
+# --------------------------------------------------------------------------- #
+# T-VHCLAIM.3: rule-COUNT parity guard across every pre-install document.
+#
+# Five consecutive reviews found the SAME defect in four documents —
+# ci/README.md ("~155 unimplemented core rules", T-VHCLAIM.1), SPEC.md's §6
+# denials (T-VHCLAIM.2), CORRECTNESS.md ("the ~157 unimplemented EN core
+# rules", ~39x our real gap) and README.md's §2 table (T-VHCLAIM.4/.5). All
+# four UNDERCLAIMED the engine to the exact German buyer this product exists
+# for, and the CORRECTNESS.md one sat on the page BOTH CI surfaces send an
+# evaluator to for "what is NOT covered".
+#
+# T-VHCLAIM.1's repair guarded two literal STRINGS; "~157 unimplemented" walked
+# straight past it, because a string guard cannot close a NUMERIC class, and
+# `InstallSurfaceRuleCountBound` above closes only one PHRASE. This guard
+# closes the class: every count-shaped rule claim, in every document a prospect
+# reads before installing, must equal a number the RUNNING ENGINE produces — or
+# be listed, with a written reason, in RULE_COUNT_ALLOWLIST. It found one live
+# bug on the way in: SPEC.md §3 still said the ruleset "has since grown to 72"
+# (the engine asserts 297), fixed in this diff rather than allowlisted.
+# InstallSurfaceRuleCountBound stays as-is and green: it also pins
+# pyproject.toml's PyPI description, which no prospect reads as a document.
+# --------------------------------------------------------------------------- #
+
+#: The documents a prospect reads BEFORE installing anything. Explicit, not
+#: globbed: a glob would silently pull in generated pages (www/) and internal
+#: notes, and would never tell a future reader WHY a page is on the list.
+RULE_COUNT_GUARDED_DOCS = (
+    # front door: first page a GitHub/PyPI visitor lands on, linked from all.
+    "README.md",
+    # scope doc an evaluator opens before choosing us over KoSIT's validator.
+    "SPEC.md",
+    # proof doc a German buyer's auditor reads — and where BOTH CI surfaces
+    # below send readers for "what is NOT covered" (one number, three pages).
+    "CORRECTNESS.md",
+    # per-rule inventory an ERP integrator greps for the rule that rejects them.
+    "COVERAGE.md",
+    # highest-intent buyer page: the copy-paste CI recipes off the Action.
+    "ci/README.md",
+    # Marketplace listing body: scope a CI author reads before adopting it.
+    "action/README.md",
+)
+
+_CEN_UNIVERSE_CACHE = {}
+
+
+def official_cen_assert_ids():
+    """The official CEN EN 16931 ``BR-*`` assert-id universe — a real XML parse
+    of the two preprocessed CEN artifacts, i.e. the SAME generator input
+    COVERAGE.md's gap section is built from (``gen_coverage.GAP_ARTIFACT_SCH``).
+    Never a second hard-coded total: if CEN ship a new assert the number moves
+    on its own and the docs must follow."""
+    if "ids" not in _CEN_UNIVERSE_CACHE:
+        import gen_coverage as _gen  # local import: keeps module load cheap
+        ids = set()
+        for key in _gen.GAP_ARTIFACT_ORDER:
+            path = os.path.join(HERE, _gen.GAP_ARTIFACT_SCH[key])
+            ids |= {rid for rid in _coverage.schematron_assert_index(path)
+                    if rid.startswith("BR-")}
+        _CEN_UNIVERSE_CACHE["ids"] = ids
+    return _CEN_UNIVERSE_CACHE["ids"]
+
+
+def official_german_message_count():
+    """Rules carrying an official (verbatim KoSIT) German assert message —
+    read off the live remediation catalog exactly as
+    ``gen_coverage.build_german_message_coverage()`` derives the number it
+    publishes into COVERAGE.md."""
+    from einvoice import remediation as _remediation
+    catalog = _remediation.load_catalog()
+    return len([e for e in catalog.values()
+                if isinstance(e, dict) and "message_de" in e])
+
+
+def live_rule_counts():
+    """``{count: [why it is a legitimate live number, ...]}`` — EVERY entry read
+    off the running engine (or off the generator input COVERAGE.md is built
+    from). This guard holds NO hard-coded rule-count constant: that is the whole
+    point, the trusted numbers move when the code moves."""
+    import einvoice as _einvoice
+    from einvoice import rules as _rules
+    from einvoice import rules_xrechnung as _rules_xr
+
+    out = {}
+
+    def add(n, why):
+        out.setdefault(int(n), []).append(why)
+
+    add(_einvoice.capabilities()["rule_count"],
+        "capabilities()['rule_count'] — every rule the engine can fire")
+    add(len(fireable()),
+        "len(engine_fireable_ids()) — the same set enumerated by id")
+    add(len(_rules.ALL_RULES),
+        "len(einvoice.rules.ALL_RULES) — implemented EN 16931 core rules")
+    add(len(official_cen_assert_ids()),
+        "the official CEN BR-* assert universe, parsed from the vendored "
+        "preprocessed Schematron artifacts")
+    add(len(_rules_xr.ALL_RULES),
+        "len(rules_xrechnung.ALL_RULES) — German national asserts over UBL")
+    add(len(_rules_xr.CII_DE_RULES),
+        "len(rules_xrechnung.CII_DE_RULES) — German national asserts over CII")
+    add(len(_coverage.peppol_ubl_rule_ids()
+            | _coverage.peppol_cii_rule_ids()),
+        "canonical KoSIT-vendored PEPPOL-EN16931-R* ids")
+    add(official_german_message_count(),
+        "rules carrying an official German (KoSIT) assert message")
+    return out
+
+
+#: A number that is part of a STANDARD's name is not a count: "EN 16931
+#: business rules" must not be read as a claim of 16931 rules. Fixed-width
+#: lookbehind, prefixed onto every pattern below.
+_NOT_A_STANDARD_NUMBER = r"(?<!EN )"
+
+#: THE CLAIM GRAMMAR. Each entry is (human label, regex); every capturing group
+#: is one claimed count. Extending the family that `N_BUSINESS_RULES_RE` above
+#: started — a doc may reword freely, but a reworded count that stops matching
+#: is caught by the per-doc non-vacuity assert below, so silence is not an
+#: escape route.
+RULE_COUNT_CLAIM_PATTERNS = tuple(
+    (label, re.compile(_NOT_A_STANDARD_NUMBER + pattern))
+    for label, pattern in (
+        # "the engine asserts 297 business rules" — the headline phrase.
+        ("<N> business rules", r"\b(\d+)\s+business\s+rules\b"),
+        # "297 asserted rules" — CORRECTNESS.md's live-counts header.
+        ("<N> asserted rules", r"\b(\d+)\s+asserted\s+rules\b"),
+        # "219 core rules" / "217 implemented core rules" / the exact shape
+        # that shipped the two repaired understatements: "~155 unimplemented
+        # core rules" and "the ~157 unimplemented EN core rules".
+        ("<N> [un]implemented/graded [EN] core rules",
+         r"\b(\d+)\s+(?:(?:un)?implemented\s+|graded\s+)?"
+         r"(?:EN\s*(?:16931)?\s+)?core\s+rules\b"),
+        # "55 German national asserts" — the XRechnung CIUS layer headline.
+        ("<N> [German] national asserts",
+         r"\b(\d+)\s+(?:German\s+)?national\s+asserts\b"),
+        # "219 rule ids" — CORRECTNESS.md §1's table cell.
+        ("<N> rule ids", r"\b(\d+)\s+rule\s+ids\b"),
+        # "21 canonical rules" / "21 canonical PEPPOL-EN16931-R* rules".
+        ("<N> canonical rules",
+         r"\b(\d+)\s+canonical\s+(?:PEPPOL-EN16931-R\*\s+)?rules\b"),
+        # "the ruleset has since grown to 297" — SPEC.md's growth sentence,
+        # which is exactly where the "grown to 72" understatement hid.
+        ("(ruleset) grown to <N>", r"\b(?:grown|grew)\s+to\s+(\d+)\b"),
+        # "108 of ~200 core rules" — BOTH numbers are claims (numerator and
+        # denominator). Bounded to 40 non-sentence-ending chars so it cannot
+        # reach across into an unrelated clause.
+        ("<N> of ~<M> ... rules",
+         r"\b(\d+)\s+of\s+~?(\d+)\b[^.\n]{0,40}?\brules\b"),
+        # Catch-all for the bare forms the specific patterns miss:
+        # "1145 invoices x 209 rules", "50 rules", "(22 asserts)".
+        ("<N> rules", r"\b(\d+)\s+rules\b"),
+        ("<N> asserts", r"\b(\d+)\s+asserts\b"),
+    )
+)
+
+#: Markdown blockquote marker at the head of a line — dropped before matching
+#: so a claim inside a `>` snapshot notice reads as ordinary prose.
+_BLOCKQUOTE_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
+
+
+def _normalize_counts(text):
+    """Doc text as the count grammar sees it: bold markers, code ticks and
+    blockquote markers dropped, all whitespace collapsed. Line wraps therefore
+    never split a claim, and RULE_COUNT_ALLOWLIST excerpts can be written as
+    single plain-text lines."""
+    text = _BLOCKQUOTE_RE.sub("", text)
+    return _WS_RE.sub(" ", text.replace("**", "").replace("`", ""))
+
+
+def _count_doc_text(name):
+    with open(os.path.join(HERE, name), encoding="utf-8") as fh:
+        return _normalize_counts(fh.read())
+
+
+def extract_count_claims(text):
+    """-> ``[(number, label, matched_text, start, end)]`` for every
+    count-shaped rule claim in ``text`` (already normalized)."""
+    found = []
+    for label, pat in RULE_COUNT_CLAIM_PATTERNS:
+        for m in pat.finditer(text):
+            for group in m.groups():
+                if group is not None:
+                    found.append((int(group), label, m.group(0),
+                                  m.start(), m.end()))
+    return found
+
+
+#: EXPLICIT ALLOWLIST — (doc, excerpt, reason). A claim is excused only if its
+#: whole match falls INSIDE an occurrence of the excerpt in that document, so
+#: excusing a number costs you the surrounding sentence: a snapshot figure is
+#: allowed only where the snapshot LABELLING travels with it. Every entry below
+#: was read in context first; a number that was merely WRONG (SPEC.md's "grown
+#: to 72") was fixed in this diff instead of being excused. Both non-vacuity
+#: directions are asserted below — a stale excerpt and an unnecessary excerpt
+#: each fail the gate.
+RULE_COUNT_ALLOWLIST = (
+    # --- README.md: the frozen 2026-07-11 differential run table -----------
+    ("README.md",
+     "EN 16931 core on UBL — 209 rules × 1145 real invoices",
+     "frozen run record: LEG 1 graded 209 core rules at that snapshot (the live "
+     "UBL-graded set is the 219 core rules minus artifact-vacuous BR-DEC-13/15)"),
+    ("README.md",
+     "1145 invoices x 209 rules = 239,305",
+     "the same 2026-07-11 LEG 1 figure inside the verbatim run transcript"),
+    ("README.md",
+     "1067 invoices x 76 rules = 81,092",
+     "LEG 2 graded 76 = the 55 German national asserts + 21 canonical PEPPOL "
+     "ids together; both addends are live numbers"),
+
+    # --- SPEC.md: the historical first slice §4 still tabulates -------------
+    ("SPEC.md",
+     "The FIRST SLICE was the 20 rules specified in §4",
+     "history: the original 20-rule slice, kept because §4 still lists them"),
+    ("SPEC.md",
+     "## 4. First-slice business ruleset (the original 20 rules)",
+     "the §4 heading naming that same historical first slice"),
+
+    # --- COVERAGE.md: two measurement-scope figures -------------------------
+    ("COVERAGE.md",
+     "Graded across 217 implemented core rules",
+     "CreditNote leg scope = the 219 core rules minus BR-DEC-13/15, whose "
+     "vendored UBL asserts can never fire"),
+    ("COVERAGE.md",
+     "21 canonical rules (22 asserts)",
+     "asserts, not rules: the CII artifact splits PEPPOL-EN16931-R043 in two"),
+
+    # --- CORRECTNESS.md -----------------------------------------------------
+    # The founding-snapshot excerpts deliberately carry the snapshot LABELLING
+    # T-VHCLAIM.5 added, so deleting a label makes the entry stale (gate red).
+    ("CORRECTNESS.md",
+     "the standard's own \"about 200 business rules\" framing, not a second "
+     "measurement",
+     "EN 16931's own approximate framing, labelled here as NOT a measurement"),
+    ("CORRECTNESS.md",
+     "Where the sections below quote a smaller scope — \"108 of ~200 core "
+     "rules\", or a 32-assert BR-DE-* slice — that is the frozen scope of an "
+     "earlier differential snapshot",
+     "the doc's own up-front notice, quoting the figure it disclaims"),
+    ("CORRECTNESS.md",
+     "the graded rule count reported in this section are the frozen output of "
+     "the founding EN-core run, when 108 core rules were graded",
+     "the §2 Snapshot notice: 108 is the founding scope, stated beside 219"),
+    ("CORRECTNESS.md",
+     "That is 117,180 rule-vs-law comparisons (1085 invoices × 108 rules)",
+     "arithmetic of the founding run's own corpus (1085 × 108 = 117,180)"),
+    ("CORRECTNESS.md",
+     "TOTAL AGREEMENT: 32,512 / 32,512 = 100.0000% (1016 invoices x 32 rules)",
+     "verbatim transcript of the founding BR-DE leg's 32-assert CIUS slice"),
+    ("CORRECTNESS.md",
+     "The 23 rules added in the second batch",
+     "history: the size of the second implementation batch, not a scope claim"),
+    ("CORRECTNESS.md",
+     "This section is written from the founding snapshot and each bullet says "
+     "what has changed since; read it together with the live counts at the top "
+     "of this document (297 asserted rules, 219 core, 55 UBL / 49 CII "
+     "German-layer). The 100% figure of §2 is 100% agreement on the 108 core "
+     "rules graded in that run",
+     "§5's preamble, which states the live counts before quoting the 108"),
+    ("CORRECTNESS.md",
+     "Only 108 of ~200 EN 16931 business rules were implemented at this "
+     "snapshot",
+     "explicitly 'at this snapshot', against the standard's own ~200 framing"),
+    ("CORRECTNESS.md",
+     "With BR-S-08 the set this snapshot describes becomes 109 of ~200 graded "
+     "core rules",
+     "'the set this snapshot describes': the founding scope after BR-S-08"),
+    ("CORRECTNESS.md",
+     "At the snapshot this section describes, only the 32-assert CIUS core was "
+     "graded and the EN core was only 108/~200 rules",
+     "'at the snapshot this section describes': §2a's frozen XRechnung scope"),
+    ("CORRECTNESS.md",
+     "The run this document reports in full detail is the founding snapshot: "
+     "for the 108 core rules graded in §2",
+     "§7's closing restatement of the founding snapshot's 108-rule scope"),
+)
+
+
+def _count_allowed_spans(doc, text):
+    """Character spans in ``text`` covered by this doc's allowlist excerpts."""
+    spans = []
+    for entry_doc, excerpt, _reason in RULE_COUNT_ALLOWLIST:
+        if entry_doc != doc:
+            continue
+        start = text.find(excerpt)
+        while start != -1:
+            spans.append((start, start + len(excerpt)))
+            start = text.find(excerpt, start + 1)
+    return spans
+
+
+#: The exact sentences this defect class actually SHIPPED, kept as the
+#: non-vacuity anchor for the GRAMMAR: if the patterns ever stopped extracting
+#: a number from these, the guard would be decoration. The first two were
+#: deleted by T-VHCLAIM.1/.5; the third is the bug this task's own grammar
+#: found and fixed in SPEC.md.
+SHIPPED_UNDERCLAIMS = (
+    ("ci/README.md", "~155 unimplemented core rules", 155),
+    ("CORRECTNESS.md", "the ~157 unimplemented EN core rules", 157),
+    ("SPEC.md", "the ruleset has since grown to 72", 72),
+)
+
+
+class DocRuleCountParity(unittest.TestCase):
+    """Every count-shaped rule claim in a pre-install doc is a LIVE number."""
+
+    def test_every_count_claim_is_live_or_allowlisted(self):
+        live = live_rule_counts()
+        offenders = []
+        for doc in RULE_COUNT_GUARDED_DOCS:
+            text = _count_doc_text(doc)
+            allowed = _count_allowed_spans(doc, text)
+            for n, label, matched, lo, hi in extract_count_claims(text):
+                if n in live:
+                    continue
+                if any(a <= lo and hi <= b for a, b in allowed):
+                    continue
+                offenders.append(
+                    "%s claims %d via %s -> %r; live engine counts are %s"
+                    % (doc, n, label, matched,
+                       ", ".join("%d (%s)" % (k, v[0])
+                                 for k, v in sorted(live.items()))))
+        self.assertEqual(
+            offenders, [],
+            "a pre-install document states a rule count the engine does not "
+            "produce. Fix the DOC to the live number (never the engine), or — "
+            "if the figure is legitimately different (a frozen snapshot, an "
+            "assert-vs-rule count, the standard's own framing) — add a "
+            "(doc, excerpt, reason) entry to RULE_COUNT_ALLOWLIST:\n  "
+            + "\n  ".join(offenders))
+
+    def test_live_counts_come_from_the_engine(self):
+        """Derived, never declared: each probe is named here so a future edit
+        that swaps one for a literal is obvious."""
+        live = live_rule_counts()
+        import einvoice as _einvoice
+        from einvoice import rules as _rules
+        from einvoice import rules_xrechnung as _rules_xr
+        for probe in (_einvoice.capabilities()["rule_count"],
+                      len(_rules.ALL_RULES),
+                      len(official_cen_assert_ids()),
+                      len(_rules_xr.ALL_RULES),
+                      len(_rules_xr.CII_DE_RULES),
+                      official_german_message_count()):
+            self.assertIn(probe, live)
+        # The core registry is a strict subset of the official CEN universe:
+        # if that ever inverted, the "official universe" probe would be junk.
+        self.assertTrue(
+            _coverage.core_rule_ids() <= official_cen_assert_ids(),
+            "core_rule_ids() is no longer a subset of the official CEN BR-* "
+            "universe — the universe probe is measuring the wrong thing")
+
+    def test_every_guarded_doc_yields_claims(self):
+        """Non-vacuity #1: a doc whose grammar stopped matching FAILS rather
+        than silently passing with zero claims."""
+        for doc in RULE_COUNT_GUARDED_DOCS:
+            with self.subTest(doc=doc):
+                claims = extract_count_claims(_count_doc_text(doc))
+                self.assertTrue(
+                    claims,
+                    "%s yielded ZERO count claims — either the doc stopped "
+                    "stating its rule count (say it) or the grammar decayed "
+                    "(teach RULE_COUNT_CLAIM_PATTERNS the new wording)" % doc)
+
+    def test_guarded_docs_cover_the_audited_pages(self):
+        """The two pages the audit caught may never leave the guarded set."""
+        for required in ("ci/README.md", "CORRECTNESS.md"):
+            self.assertIn(required, RULE_COUNT_GUARDED_DOCS)
+
+    def test_allowlist_entries_are_scoped_present_and_needed(self):
+        """Non-vacuity #2, both directions: an entry for a doc OUTSIDE the
+        guarded set fails; a STALE excerpt (reworded away) fails; an
+        UNNECESSARY excerpt (excusing nothing) fails."""
+        live = live_rule_counts()
+        for doc, excerpt, reason in RULE_COUNT_ALLOWLIST:
+            with self.subTest(doc=doc, excerpt=excerpt[:40]):
+                self.assertIn(
+                    doc, RULE_COUNT_GUARDED_DOCS,
+                    "allowlist entry for %s, which is not in "
+                    "RULE_COUNT_GUARDED_DOCS — it excuses nothing and hides "
+                    "the fact that the doc is unguarded" % doc)
+                self.assertTrue(reason.strip(),
+                                "allowlist entry for %s has no reason" % doc)
+                text = _count_doc_text(doc)
+                self.assertIn(
+                    excerpt, text,
+                    "STALE allowlist entry: %s no longer contains %r — delete "
+                    "it in the same edit that reworded the doc (if the snapshot "
+                    "LABELLING moved, the figure is not excusable at all)"
+                    % (doc, excerpt))
+                excused = [n for n, _l, _m, _lo, _hi
+                           in extract_count_claims(excerpt) if n not in live]
+                self.assertTrue(
+                    excused,
+                    "UNNECESSARY allowlist entry: %r in %s excuses no "
+                    "non-live count — delete it rather than leaving a hole"
+                    % (excerpt, doc))
+
+    def test_grammar_catches_the_underclaims_that_shipped(self):
+        """Non-vacuity #3: the patterns really extract the numbers from the
+        exact sentences this defect class shipped — and those sentences are
+        really gone from the docs."""
+        live = live_rule_counts()
+        for doc, sentence, number in SHIPPED_UNDERCLAIMS:
+            with self.subTest(sentence=sentence):
+                got = [n for n, _l, _m, _lo, _hi
+                       in extract_count_claims(_normalize_counts(sentence))]
+                self.assertIn(
+                    number, got,
+                    "RULE_COUNT_CLAIM_PATTERNS no longer extracts %d from the "
+                    "underclaim this repo actually shipped (%r) — the guard "
+                    "would not have caught it" % (number, sentence))
+                self.assertNotIn(
+                    number, live,
+                    "%d is now a live engine count, so %r is no longer an "
+                    "underclaim — retire this anchor" % (number, sentence))
+                self.assertNotIn(sentence, _count_doc_text(doc),
+                                 "%s still carries %r" % (doc, sentence))
+
+    def test_a_fabricated_count_would_be_flagged(self):
+        """Non-vacuity #4: the checker itself. A synthetic doc line with an
+        invented count parses, is not live, and is not allowlisted."""
+        text = _normalize_counts("The engine asserts **4242 business rules**.")
+        claims = extract_count_claims(text)
+        self.assertEqual([c[0] for c in claims], [4242])
+        self.assertNotIn(4242, live_rule_counts())
+        self.assertEqual(_count_allowed_spans("README.md", text), [])
+
+    def test_standard_numbers_are_not_read_as_counts(self):
+        """The lookbehind really works: "EN 16931 business rules" is the
+        standard's name, not a claim of 16931 rules."""
+        self.assertEqual(
+            extract_count_claims(_normalize_counts(
+                "not EN 16931 business rules, so they are out of scope")),
+            [])
+        # ...while a real count in front of the standard's name still parses
+        # (synthetic number: this guard never hard-codes a live rule count).
+        self.assertEqual(
+            [c[0] for c in extract_count_claims(
+                _normalize_counts("314 EN 16931 core rules"))],
+            [314])
+
+
 if __name__ == "__main__":
     unittest.main()

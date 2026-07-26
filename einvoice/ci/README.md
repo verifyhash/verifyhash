@@ -6,11 +6,29 @@ has a **fatal** EN 16931 / XRechnung violation — with the **violated rule ID**
 CI can render as failed tests. This is the "your invoices can never regress
 below conformance" gate an ERP/billing vendor wires in once.
 
-Honest scope first: the gate checks the validator's **implemented** rules
-(43 EN 16931 core + all 32 XRechnung `BR-DE-*`; each differential-proven at
-100% agreement against the official Schematron). It does **not** check the
-~155 unimplemented core rules — a green gate means "no implemented rule
-fired", not "legally conformant". See [`../README.md`](../README.md) §2.
+Honest scope first — the same scope
+[`../action/README.md`](../action/README.md) states, because it is the same
+engine. The validator asserts **297 business rules** in total: 219 of the 223
+official EN 16931 `BR-*` rule ids in each syntax universe (UBL and CII) — the
+remaining 4 per syntax (`BR-CO-05`, `BR-CO-06`, `BR-CO-07`, `BR-CO-08`) are
+documented deliberate exclusions, not gaps that quietly went missing — plus,
+under `--profile xrechnung`, the German XRechnung CIUS + extension layer
+(`BR-DE-*`, `BR-DE-CVD-*`, `BR-TMP-*`, `BR-DEX-*`) and the 21 KoSIT-vendored
+`PEPPOL-EN16931-R*` rules. Each implemented rule is differential-tested to 0
+divergences against the official Schematron **within the implemented set**.
+Three limits that stay true no matter how green the build is:
+
+- A green gate means "no *implemented* rule fired" — **not** legal EN 16931
+  conformance. It is a regression fence, not a compliance certificate.
+- **No XSD structural validation is performed.** The gate checks business
+  rules; it does not check the document against the UBL 2.1 / CII schema, so a
+  structurally invalid document that no business rule happens to catch still
+  exits `0`.
+- The PEPPOL layer is exactly those 21 `PEPPOL-EN16931-R*` rules vendored from
+  the KoSIT XRechnung distribution — **not** Peppol BIS Billing 3.0, whose
+  wider rule set this gate does not claim.
+
+See [`../README.md`](../README.md) §2.
 
 Safe on untrusted input: because supplier XML runs through this gate in CI, the
 validator parses with the Python standard library only — no external-entity or
@@ -179,8 +197,9 @@ treat any non-zero as a failed gate. The human summary lists every file as
 failed  (F fatal, W warning across all files)`.
 
 Same honest scope as the rest of this gate: a `0` means **no implemented rule
-fired**, not legal EN 16931 conformance — the ~155 unimplemented core rules are
-not checked. See the scope note above and [`../README.md`](../README.md) §2.
+fired**, not legal EN 16931 conformance — the 4 deliberately excluded `BR-*`
+ids per syntax are not asserted, and no XSD structural validation happens
+here either. See the scope note above and [`../README.md`](../README.md) §2.
 
 ## What failure looks like
 

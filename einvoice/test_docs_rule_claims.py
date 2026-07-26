@@ -529,6 +529,14 @@ class ChangelogFireableCountBound(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 PYPROJECT = os.path.join(HERE, "pyproject.toml")
 ACTION_README = os.path.join(HERE, "action", "README.md")
+# T-VHCLAIM.1: ci/README.md is the third install surface — the page the
+# GitHub Action and both copy-paste CI recipes funnel an ERP developer into.
+# It underclaimed the engine ~4x ("43 EN 16931 core + 32 BR-DE-*", "~155
+# unimplemented core rules") for months while action/README.md next door
+# stated the true scope, so the two CI documents contradicted each other.
+# Bound to the SAME live registry through the SAME helper — never a second
+# hard-coded count.
+CI_README = os.path.join(HERE, "ci", "README.md")
 # "… 286 business rules …" — the guarded claim grammar shared by both
 # surfaces. Reword the docs only together with this pattern.
 N_BUSINESS_RULES_RE = re.compile(r"\b(\d+)\s+business\s+rules\b")
@@ -568,6 +576,38 @@ class InstallSurfaceRuleCountBound(unittest.TestCase):
     def test_action_readme_count_is_live(self):
         self._assert_counts_live(_read(ACTION_README), "action/README.md")
 
+    def test_ci_readme_count_is_live(self):
+        self._assert_counts_live(_read(CI_README), "ci/README.md")
+
+    def test_ci_readme_has_no_underclaiming_scope_prose(self):
+        # The exact fabricated figures this surface carried before
+        # T-VHCLAIM.1. They were not "softened" — they were deleted, and a
+        # doc that reintroduces either one fails here rather than shipping a
+        # ~4x understatement to the highest-intent buyer page.
+        text = _read(CI_README)
+        for stale in ("155 unimplemented", "43 EN 16931 core"):
+            self.assertNotIn(
+                stale, text,
+                "ci/README.md reintroduced the retired understatement %r — "
+                "state the live engine scope instead (see "
+                "action/README.md's Honest scope)" % stale)
+
+    def test_ci_readme_keeps_its_genuine_limits(self):
+        # Removing the understatement must never cost the real limits: the
+        # three statements below are TRUE and are the only thing standing
+        # between a green gate and a reader who thinks it means "legally
+        # conformant".
+        text = _read(CI_README)
+        for needle, what in (
+                ("implemented* rule fired", "the 'no implemented rule fired' "
+                                            "disclaimer"),
+                ("No XSD structural validation", "the no-XSD limit"),
+                ("PEPPOL-EN16931-R", "the KoSIT-vendored PEPPOL layer scope"),
+                ("not** Peppol BIS Billing 3.0", "the 'not Peppol BIS "
+                                                 "Billing 3.0' denial")):
+            self.assertIn(needle, text,
+                          "ci/README.md lost %s (%r)" % (what, needle))
+
     def test_no_stale_claims_on_install_surfaces(self):
         # The 0.1.0-era phrasing that actually shipped stale to PyPI must
         # never resurface on either install surface.
@@ -585,8 +625,18 @@ class InstallSurfaceRuleCountBound(unittest.TestCase):
         # the grammar really extracts it (a reworded doc fails loudly above,
         # not silently here).
         live = str(len(fireable()))
-        self.assertIn(live, _read(PYPROJECT))
-        self.assertIn(live, _read(ACTION_README))
+        for path, label in ((PYPROJECT, "pyproject.toml"),
+                            (ACTION_README, "action/README.md"),
+                            (CI_README, "ci/README.md")):
+            text = _read(path)
+            self.assertIn(live, text,
+                          "%s no longer carries the literal live count %s"
+                          % (label, live))
+            self.assertTrue(
+                N_BUSINESS_RULES_RE.search(text),
+                "%s lost the guarded '<N> business rules' phrase, so its "
+                "count guard would pass vacuously — restore the phrase or "
+                "update N_BUSINESS_RULES_RE in the same edit" % label)
 
 
 # --------------------------------------------------------------------------- #

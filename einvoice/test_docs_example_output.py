@@ -50,6 +50,43 @@ Plain python3: stdlib only, offline, no pytest. Exits 1 on the first failed
 assertion (repo style).
 """
 
+# ---------------------------------------------------------------------------
+# GATE REACHABILITY — READ THIS BEFORE TRUSTING A GREEN RUN
+#
+# This file is NOT reachable from any registered gate. That is a measured fact,
+# re-verified 2026-07-26 while repairing the drift this hole let ship, not a
+# suspicion:
+#
+#   * The REGISTERED verifyhash gates are exactly three (the `gates` array of
+#     properties.verifyhash in the loop's portfolio.json):
+#         python3 test_xrechnung.py
+#         python3 test_packaging.py
+#         python3 conformance.py
+#     NONE of the three executes this file, directly or transitively — none so
+#     much as names it. So a run that touches no doc task never runs this guard,
+#     and the docs can drift out from under a fully green board.
+#
+#   * The only gate strings that DO execute this file are PER-TASK gates in the
+#     loop backlog, i.e. they run only while one of those tasks is in flight:
+#         T-VHDRIFT.1  (this drift repair)      T-VHUX2.6  (examples/README.md)
+#         T-VHCLAIM.3  T-VHCLAIM.4  T-VHCLAIM.5 (doc rule-count claims)
+#         T-VHDE.1     (German walkthrough)
+#     Nothing outside that ad-hoc set carries it.
+#
+# What that cost, concretely: the engine grew the `(insertion point <file>:<n>)`
+# suffix on the `offending element:` line in cebb2bc (T-VHLOC.6). The two
+# walkthrough transcripts were not refreshed, so this guard went rc=1 on a
+# clean tree — and FIVE consecutive commits (cebb2bc..73f54ba) shipped green
+# while QUICKSTART.md and QUICKSTART.de.md showed output the engine no longer
+# produced. The guard knew. Nobody asked it.
+#
+# If you are wiring gates: adding `python3 test_docs_example_output.py` to a
+# registered gate closes this hole. Until someone does, treat "the doc guards
+# are green" as a claim that has to be RUN, never inferred from a green board.
+# Do not weaken this block into a promise of reachability that does not exist —
+# it is accurate as written, and its whole value is being accurate.
+# ---------------------------------------------------------------------------
+
 import getpass
 import os
 import re

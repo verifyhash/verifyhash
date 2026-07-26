@@ -55,8 +55,41 @@ $ python3 -m einvoice.report examples/01-missing-fields/broken.xml --format json
 
 (run from the `einvoice/` directory). It exits **1** and prints a JSON report;
 the exact bytes are committed next to the invoice as
-[`01-missing-fields/report.json`](01-missing-fields/report.json). Add
-`--pretty` for indented output, or `--format text` for a human summary.
+[`01-missing-fields/report.json`](01-missing-fields/report.json) — note that
+report's own `"profile": "xrechnung"` field, which the next paragraph explains.
+Add `--pretty` for indented output, or `--format text` for a human summary.
+
+**Use `--profile xrechnung` with the `validate` verb.** Two entry points ship
+and they have *deliberately different* default profiles. The `report` route
+above defaults to `xrechnung`. The `validate` verb — the one `einvoice --help`
+leads with, and what the installed `einvoice` console script runs — defaults to
+**`en16931`** instead, so on this directory you have to ask for the German
+rules explicitly:
+
+```console
+$ python3 -m einvoice validate --profile xrechnung examples/01-missing-fields/broken.xml
+```
+
+That exits **1** and names `BR-DE-2` and `BR-DE-15`. Drop the flag and the very
+same bytes come back
+`PASS: examples/01-missing-fields/broken.xml (all implemented fatal rules, profile=en16931)`
+with exit **0** — on the file this page calls broken. (With the console script
+installed, write `einvoice validate --profile xrechnung <invoice.xml>`; the two
+forms are the same code path.)
+
+**Why the default profile passes a file we just called broken.** Both planted
+defects are German **national** rules, not European ones. `BR-DE-2` (seller
+contact) and `BR-DE-15` (buyer reference / Leitweg-ID) come from the XRechnung
+CIUS — a *Core Invoice Usage Specification*, which narrows EN 16931 for German
+public-sector invoicing and **adds** requirements on top of it. The EN 16931
+core does not require either field: a seller contact group (`BG-6`) and a buyer
+reference (`BT-10`) are optional there. So both answers are correct. Under
+`en16931` this invoice really is conformant to the European core; under
+`xrechnung` the same file is two fatals short of what a German public buyer will
+accept. A file can be valid EN 16931 and invalid XRechnung at once — that is the
+normal relationship between a core standard and a CIUS, not a tool bug. If you
+are invoicing a German public authority, `xrechnung` is the profile that
+matters, and it is the one the rest of this walkthrough uses.
 
 ### 3. Read the findings and fix them
 

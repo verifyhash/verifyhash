@@ -845,7 +845,7 @@ lists every other rule the same run violated:
 ```text
 FAIL: examples/01-missing-fields/broken.xml
   BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be transmitted.
-  offending element: cac:AccountingSupplierParty/cac:Party/cac:Contact
+  offending element: cac:AccountingSupplierParty/cac:Party/cac:Contact (insertion point examples/01-missing-fields/broken.xml:28)
   how to fix: einvoice --explain BR-DE-2
   rule page:  https://verifyhash.com/einvoice/rules/BR-DE-2/
   3 finding(s) total: 2 fatal, 1 non-fatal (--format json carries every field of each)

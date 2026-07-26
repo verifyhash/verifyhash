@@ -95,8 +95,8 @@ fire, in either universe, so implementing them with a differential proof is
 impossible *by construction*. Those 4 tautologies are documented with
 verbatim artifact evidence in
 [`COVERAGE.md`](COVERAGE.md), the generated per-rule matrix that is the
-authoritative inventory (it supersedes the static first-slice tables in §2
-where they disagree). A related asymmetry worth knowing: the total-VAT
+authoritative inventory (it supersedes the partial family-orientation tables in
+§2, which name only about half the core rules, wherever they disagree). A related asymmetry worth knowing: the total-VAT
 decimal pair `BR-DEC-13`/`BR-DEC-15` is implemented and
 differential-proven on the **CII** leg (that artifact ships real numeric
 round2 tests), while the **UBL** artifact's asserts for the same pair are
@@ -179,15 +179,31 @@ black-box web form.
 **Profile:** XRechnung 3.x (the German CIUS of EN 16931-1:2017), UBL 2.1
 `Invoice` and UN/CEFACT CII syntaxes.
 
-The static tables below are the FIRST-SLICE inventory (108 core + 32 BR-DE
-rules), kept for the family-by-family orientation they give; the engine has
-since grown to 219 core + 55 German-layer rules, and the machine-generated
-[`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` (regenerated from the
-live rule registries by `gen_coverage.py`, drift-gated by
-`test_coverage_matrix.py`) is the authoritative per-rule inventory wherever
-the two disagree.
+**Live scope, stated before anything else.** The engine asserts **297 business
+rules**. That is **219 of the 223 official EN 16931 `BR-*` assert ids** in each
+CEN syntax universe — the four it leaves are `BR-CO-05`, `BR-CO-06`, `BR-CO-07`
+and `BR-CO-08`, which CEN ships as literal `test="true()"` tautologies that can
+never fire for anyone — plus **55** German national asserts on UBL and **49** on
+CII (55 of 55 and 49 of 49 of what the official KoSIT XRechnung 3.0.2
+Schematrons carry: the `BR-DE-*` CIUS core, the `BR-DEX-*` extension profile and
+the `BR-DE-CVD-*`/`BR-TMP-*` families), plus the **21 KoSIT-vendored
+`PEPPOL-EN16931-R*`** asserts. Verify it in one command without reading further:
+`python3 -m einvoice info --json` prints `"rule_count": 297`, and
+`python3 -c "from einvoice import rules, rules_xrechnung; print(len(rules.ALL_RULES), len(rules_xrechnung.ALL_RULES), len(rules_xrechnung.CII_DE_RULES))"`
+prints `219 55 49`.
 
-### Implemented — EN 16931 core (the first-slice 108 rules)
+> **The two tables below are NOT the implemented set — do not size the engine
+> from them.** They are a partial, family-by-family orientation view: the core
+> table names 108 concrete ids, about half of the 219 the engine asserts, and it
+> is kept only because reading "is this family covered at all?" off a short
+> table is faster than scanning 297 rows.
+> [`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` — regenerated from the
+> live rule registries by `gen_coverage.py` and drift-gated against them by
+> `test_coverage_matrix.py` — is the **authoritative per-rule inventory**, with
+> the official rule text and per-syntax proof state for every one of the 297
+> ids. Where it and these tables disagree, it wins.
+
+### Implemented — EN 16931 core (family orientation; full inventory in COVERAGE.md)
 
 | Family | Rule IDs |
 |---|---|
@@ -215,7 +231,7 @@ gradeable one — UBL `Invoice`, UBL `CreditNote`, or CII `CrossIndustryInvoice`
 Rule wording follows the vendored EN 16931 Schematron
 (`corpus/cen-en16931/ubl/schematron/abstract/EN16931-model.sch`) verbatim.
 
-### Implemented — XRechnung CIUS layer (`--profile=xrechnung`, first-slice 32 BR-DE table; now 55 incl. `BR-DE-CVD-*`/`BR-TMP-*`/`BR-DEX-*`)
+### Implemented — XRechnung CIUS layer (`--profile=xrechnung`; family orientation, full inventory in COVERAGE.md)
 
 | Family | Rule IDs |
 |---|---|
@@ -228,7 +244,10 @@ Rule wording follows the vendored EN 16931 Schematron
 
 That is every `BR-DE-*` assert in the official KoSIT XRechnung 3.0.2 UBL
 Schematron (the numbering has official gaps: no BR-DE-12/13/29 exist there).
-Severities mirror the official flags — only **fatal** rules affect the exit
+Those 32 CIUS-core asserts are only part of the German layer, though: counting
+the extension and CVD/TMP families described in the next paragraph, the engine
+asserts **55 German ids on UBL and 49 on CII** — every assert either official
+artifact carries. Severities mirror the official flags — only **fatal** rules affect the exit
 code; warnings/information are reported in `--json`. The 15 `BR-DEX-*`
 extension-profile rules have since been implemented as well (14 UBL asserts
 plus the CII-only `BR-DEX-15` — sub invoice lines unsupported, warning; the
@@ -326,7 +345,7 @@ exact reason in
 [`testsuite_conformance.json`](testsuite_conformance.json); see
 [`CORRECTNESS.md` §4a](CORRECTNESS.md) for provenance and scope.
 
-### NOT covered yet (deliberate first-slice cuts — do not rely on these)
+### NOT covered yet (deliberate scope limits — do not rely on these)
 
 - **`BR-TMP-3` and `BR-DEX-15` are CII-only by artifact design** — the
   `BR-DE-*` CIUS core, the `BR-DEX-*` extension layer AND the

@@ -160,12 +160,72 @@ def _run_report(root, args):
     Returns the completed process (``stdout``/``stderr`` captured, text mode).
     ``cwd`` is the package root and ``PYTHONPATH`` is prefixed with it so the
     vendored package imports whether or not it is pip-installed.
+
+    CWD WARNING: because ``cwd`` is the PACKAGE root and this runner's own cwd
+    is the WORKSPACE (a GitHub step runs in ``$GITHUB_WORKSPACE``), any path in
+    ``args`` must already be ABSOLUTE. A workspace-relative path handed to this
+    function is resolved by the child against the wrong directory — it either
+    fails with ``no such file`` or, worse, silently hits a same-named file that
+    happens to exist under the package root. Use :func:`_report_on` instead of
+    calling this with a user path.
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = root + os.pathsep + env.get("PYTHONPATH", "")
     return subprocess.run(
         _entrypoint_cmd(root) + list(args),
         cwd=root, env=env, capture_output=True, text=True)
+
+
+def exec_path(path):
+    """The ABSOLUTE form of ``path``, used for EXECUTION only.
+
+    Resolved against THIS process's cwd (the workspace) before it crosses the
+    cwd-changing subprocess boundary, so file identity can never depend on the
+    child's cwd. Selection (:func:`collect_files`) still happens on the caller's
+    own spelling; only the value handed to the subprocess is absolutised.
+    """
+    return os.path.abspath(path)
+
+
+def display_path(path):
+    """The user's OWN spelling of ``path``, used for PRESENTATION only.
+
+    GitHub resolves ``::error file=<p>`` and SARIF artifact URIs against the
+    workspace, so an annotation carrying a runner-absolute path points at
+    nothing. A trailing separator is dropped so that a child name joined back
+    onto a directory cannot come out as ``invoices//bad.xml``.
+    """
+    trimmed = path.rstrip(os.sep)
+    return trimmed or path
+
+
+def _present(proc, execp, display):
+    """Rewrite ``execp`` back to the user's ``display`` form in the child output.
+
+    The engine echoes the path it was GIVEN (report ``source`` -> ``file=`` in
+    the github format, ``artifactLocation.uri`` in SARIF, the filename headers
+    in text/junit). We gave it an absolute path so the read could not miss; the
+    caller must still see the path they typed. Pure string restoration of a
+    value this runner itself substituted — no finding is added, dropped or
+    relabelled, and it is a no-op when the caller already passed an absolute
+    path.
+    """
+    if execp == display:
+        return proc
+    return subprocess.CompletedProcess(
+        proc.args, proc.returncode,
+        stdout=(proc.stdout or "").replace(execp, display),
+        stderr=(proc.stderr or "").replace(execp, display))
+
+
+def _report_on(root, args, path):
+    """Drive the entrypoint on ``path``: absolute in, user's form out.
+
+    The one sanctioned way to run the report against a caller-supplied path.
+    """
+    execp = exec_path(path)
+    return _present(_run_report(root, list(args) + [execp]),
+                    execp, display_path(path))
 
 
 def _empty_sarif():
@@ -253,7 +313,9 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
 
     for f in files:
         # (1) SARIF projection of the REAL entrypoint, one file at a time.
-        proc = _run_report(root, ["--profile", profile, "--format", "sarif", f])
+        # `f` is the caller's own spelling (possibly relative to the WORKSPACE);
+        # _report_on absolutises it for the child and restores it afterwards.
+        proc = _report_on(root, ["--profile", profile, "--format", "sarif"], f)
         if proc.returncode not in (EXIT_OK, EXIT_FAIL, EXIT_PARSE):
             sys.stderr.write(
                 "error: einvoice.report failed on %s (exit %d)\n%s\n"
@@ -280,8 +342,8 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
         if fail_on == "warning":
             # DISCIPLINE: detect warnings by parsing the JSON report the
             # entrypoint already emits — never by inventing an engine flag.
-            jproc = _run_report(
-                root, ["--profile", profile, "--format", "json", f])
+            jproc = _report_on(
+                root, ["--profile", profile, "--format", "json"], f)
             try:
                 jdoc = json.loads(jproc.stdout)
                 total_warning += jdoc.get("warning_count", 0)
@@ -312,7 +374,7 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
         # finding is added or dropped — this is exactly what the caller would
         # get from a `for f in ...; do einvoice.report --format <fmt> $f; done`.
         for f in files:
-            cproc = _run_report(root, ["--profile", profile, "--format", fmt, f])
+            cproc = _report_on(root, ["--profile", profile, "--format", fmt], f)
             sys.stdout.write(cproc.stdout)
             if cproc.stderr:
                 sys.stderr.write(cproc.stderr)
@@ -320,8 +382,7 @@ def run(path, fmt, fail_on, sarif_file, profile, root=None):
         console_args = ["--profile", profile, "--format", fmt]
         if os.path.isdir(path):
             console_args.append("--recurse")
-        console_args.append(path)
-        cproc = _run_report(root, console_args)
+        cproc = _report_on(root, console_args, path)
         sys.stdout.write(cproc.stdout)
         if cproc.stderr:
             sys.stderr.write(cproc.stderr)

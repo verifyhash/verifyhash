@@ -371,5 +371,230 @@ class GithubAnnotationFormat(unittest.TestCase):
             self.assertEqual(doc.get("file_count"), 1)
 
 
+# ---------------------------------------------------------------------------
+# T-VHACT.2 — workspace-realistic layer.
+#
+# Every test above hands the runner an ABSOLUTE path, which is the one shape a
+# real workflow never uses: a GitHub step runs with the process cwd set to
+# $GITHUB_WORKSPACE and `path:` is written relative to it (`invoices/`, or
+# action.yml's own default `.`). That gap hid a real defect — the runner drives
+# `python3 -m einvoice.report` with cwd=<package root>, so a workspace-relative
+# path was resolved by the CHILD against the package root: it either died with
+# "no such file" or, when the name also existed under the package root, SILENTLY
+# validated OUR file while labelling the findings with the USER's path (a bad
+# invoice passing on a green build).
+#
+# These tests therefore set the PROCESS cwd (see run_runner_in_workspace) to a
+# temp directory that is neither the repo nor the package root, and drive the
+# shapes a real workflow uses. They assert on FINDINGS, never on path strings,
+# for the shadowing case — a path assertion would pass even while the wrong
+# file was read.
+# ---------------------------------------------------------------------------
+
+PKG_EXAMPLES = os.path.join(HERE, "examples", "01-missing-fields")
+PKG_BROKEN = os.path.join(PKG_EXAMPLES, "broken.xml")
+PKG_FIXED = os.path.join(PKG_EXAMPLES, "fixed.xml")
+
+#: A workflow-command line: ``::error file=x,title=BR-DE-2::message``.
+_WORKFLOW_CMD = re.compile(r"^::(error|warning|notice) (.*?)::(.*)$")
+
+
+def parse_annotations(stdout):
+    """-> list of ``(level, props_dict, message)`` for each workflow command."""
+    out = []
+    for line in stdout.splitlines():
+        m = _WORKFLOW_CMD.match(line)
+        if not m:
+            continue
+        props = dict(p.split("=", 1)
+                     for p in m.group(2).split(",") if "=" in p)
+        out.append((m.group(1), props, m.group(3)))
+    return out
+
+
+def rules_reported(stdout):
+    """The SET of rule ids the github format annotated (``title=``)."""
+    return {props.get("title") for _, props, _ in parse_annotations(stdout)}
+
+
+def run_runner_in_workspace(workspace, argv):
+    """Run the committed runner with the PROCESS cwd set to ``workspace``.
+
+    This is the whole point of this layer: the child inherits the cwd exactly
+    as it would inside a ``run:`` step, so relative ``--path`` values are
+    interpreted the way a real workflow interprets them. The original cwd is
+    restored in a ``finally`` so a failure here cannot poison the rest of the
+    suite (unittest shares one process).
+    """
+    saved = os.getcwd()
+    try:
+        os.chdir(workspace)
+        return subprocess.run([sys.executable, RUNNER] + list(argv),
+                              capture_output=True, text=True, timeout=180)
+    finally:
+        os.chdir(saved)
+
+
+def _write_workspace_invoice(dest, source=PKG_BROKEN, drop_buyer_ref=False):
+    """Copy a corpus example into the workspace, optionally mutating it.
+
+    ``drop_buyer_ref`` removes BT-10 from ``fixed.xml``, which yields a file
+    whose RULE SET differs from the package's own ``broken.xml``: BR-DE-15 fires
+    on both, but BR-DE-2 (missing SELLER CONTACT) fires ONLY on the package
+    copy. That divergence is what the shadowing test asserts on.
+    """
+    with open(source, encoding="utf-8") as fh:
+        text = fh.read()
+    if drop_buyer_ref:
+        mutated = re.sub(
+            r"[ \t]*<cbc:BuyerReference>[^<]*</cbc:BuyerReference>\n", "",
+            text, count=1)
+        assert mutated != text, "fixture drift: fixed.xml lost BuyerReference"
+        text = mutated
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+class WorkspaceRelativePaths(unittest.TestCase):
+    """The runner must work from a workspace cwd with relative paths."""
+
+    def _workspace(self, tmp):
+        """Assert the temp dir really is neither the repo nor the package root."""
+        ws = os.path.realpath(tmp)
+        self.assertFalse(
+            ws == os.path.realpath(HERE)
+            or ws.startswith(os.path.realpath(HERE) + os.sep),
+            "workspace fixture must live outside the package root")
+        return ws
+
+    def _assert_workspace_findings(self, proc, ws, sarif_name="out.sarif"):
+        combined = proc.stdout + proc.stderr
+        self.assertNotIn("no such file", combined,
+                         "child resolved the path against the wrong cwd:\n"
+                         + combined)
+        self.assertEqual(proc.returncode, 1,
+                         "a fatal invoice must fail the build:\n" + combined)
+        self.assertIn("BR-DE-2", rules_reported(proc.stdout),
+                      "workspace invoice's real findings missing:\n"
+                      + proc.stdout)
+        sarif = os.path.join(ws, sarif_name)
+        self.assertTrue(os.path.isfile(sarif), "SARIF file not written to " + sarif)
+        with open(sarif, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        self.assertGreaterEqual(len(doc["runs"][0]["results"]), 1, sarif)
+
+    def test_relative_directory_from_workspace_cwd(self):
+        # The shape `path: invoices/` in a workflow.
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._workspace(tmp)
+            _write_workspace_invoice(os.path.join(ws, "invoices", "broken.xml"))
+            proc = run_runner_in_workspace(
+                ws, ["--path", "invoices/", "--format", "github",
+                     "--sarif-file", "out.sarif"])
+            self._assert_workspace_findings(proc, ws)
+            # The annotation must carry the path the USER supplied: GitHub
+            # resolves `file=` against the workspace, so a runner-absolute path
+            # would annotate nothing.
+            files = {props.get("file")
+                     for _, props, _ in parse_annotations(proc.stdout)}
+            self.assertEqual(files, {"invoices/broken.xml"}, proc.stdout)
+            self.assertNotIn(ws, proc.stdout,
+                             "runner-absolute path leaked into the job log")
+
+    def test_relative_file_from_workspace_cwd(self):
+        # The shape `path: invoices/broken.xml` in a workflow.
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._workspace(tmp)
+            _write_workspace_invoice(os.path.join(ws, "invoices", "broken.xml"))
+            proc = run_runner_in_workspace(
+                ws, ["--path", "invoices/broken.xml", "--format", "github",
+                     "--sarif-file", "out.sarif"])
+            self._assert_workspace_findings(proc, ws)
+            files = {props.get("file")
+                     for _, props, _ in parse_annotations(proc.stdout)}
+            self.assertEqual(files, {"invoices/broken.xml"}, proc.stdout)
+
+    def test_default_dot_path_matches_relative_directory(self):
+        # action.yml's own default is `.` — omitting --path must behave
+        # identically to naming the directory relatively.
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._workspace(tmp)
+            _write_workspace_invoice(os.path.join(ws, "invoices", "broken.xml"))
+            explicit = run_runner_in_workspace(
+                ws, ["--path", ".", "--format", "github",
+                     "--sarif-file", "explicit.sarif"])
+            default = run_runner_in_workspace(
+                ws, ["--format", "github", "--sarif-file", "out.sarif"])
+            self._assert_workspace_findings(default, ws)
+            self.assertEqual(default.returncode, explicit.returncode,
+                             default.stderr + explicit.stderr)
+            self.assertEqual(rules_reported(default.stdout),
+                             rules_reported(explicit.stdout))
+            self.assertEqual(default.stdout, explicit.stdout,
+                             "default --path must equal an explicit '.'")
+
+    def test_shadowed_workspace_path_reports_the_workspace_file(self):
+        """SHADOWING: a workspace path that also exists under the package root.
+
+        `examples/01-missing-fields/` exists in BOTH the workspace fixture and
+        the einvoice package root. Before the fix the child (cwd=<package root>)
+        happily opened OUR copy and reported ITS findings under the user's path
+        — a green-looking run describing a file the user never wrote.
+
+        The assertion is on a value that genuinely DIFFERS between the two
+        files, never on a path string: the workspace copy is fixed.xml minus
+        BT-10, so it fires BR-DE-15 but NOT BR-DE-2, while the package's own
+        broken.xml fires BOTH. Seeing BR-DE-2 therefore means the wrong file
+        was read.
+        """
+        collision = os.path.join("examples", "01-missing-fields")
+        self.assertTrue(os.path.isfile(PKG_BROKEN),
+                        "shadowing fixture needs the package's own " + PKG_BROKEN)
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._workspace(tmp)
+            _write_workspace_invoice(
+                os.path.join(ws, collision, "broken.xml"),
+                source=PKG_FIXED, drop_buyer_ref=True)
+
+            proc = run_runner_in_workspace(
+                ws, ["--path", collision + os.sep, "--format", "github",
+                     "--sarif-file", "out.sarif"])
+            combined = proc.stdout + proc.stderr
+            self.assertNotIn("no such file", combined, combined)
+            reported = rules_reported(proc.stdout)
+
+            # Guard the fixture: the SHADOWING file (ours) must really differ,
+            # otherwise this test would prove nothing.
+            pkg = run_runner_in_workspace(
+                tempfile.gettempdir(),
+                ["--path", PKG_BROKEN, "--format", "github",
+                 "--sarif-file", os.path.join(ws, "pkg.sarif")])
+            pkg_rules = rules_reported(pkg.stdout)
+            self.assertIn("BR-DE-2", pkg_rules,
+                          "fixture drift: the package's broken.xml no longer "
+                          "fires BR-DE-2, so shadowing is undetectable")
+            self.assertNotEqual(reported, pkg_rules)
+
+            self.assertIn("BR-DE-15", reported,
+                          "workspace copy's own finding missing:\n"
+                          + proc.stdout)
+            self.assertNotIn(
+                "BR-DE-2", reported,
+                "SHADOWED: the runner reported the PACKAGE root's "
+                "examples/01-missing-fields/broken.xml, not the workspace's:\n"
+                + proc.stdout)
+            self.assertTrue(os.path.isfile(os.path.join(ws, "out.sarif")))
+
+    def test_cwd_is_restored_after_a_workspace_run(self):
+        # The `finally` in run_runner_in_workspace is load-bearing: a leaked cwd
+        # would silently break every later test in this process.
+        before = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            run_runner_in_workspace(tmp, ["--path", ".",
+                                          "--sarif-file", "out.sarif"])
+        self.assertEqual(os.getcwd(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

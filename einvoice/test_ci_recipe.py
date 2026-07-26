@@ -23,6 +23,16 @@ Asserted (each maps to a task acceptance criterion):
   (d) the gate script itself, run end-to-end against a good+bad corpus dir,
       exits 1, names BR-DE-15, and writes per-invoice JUnit into the results
       dir (proving it drives the junit projection, not the legacy CLI).
+  (e) CWD CONTRACT (T-VHACT.4): ci/README.md now states that the shell scripts
+      resolve every path relative to the directory you invoke them from. That
+      claim is EXECUTED here, not asserted as a string: the README's own
+      `sh <vendored>/ci/validate-invoices.sh invoices/` line is parsed out of
+      the doc, then run from a throwaway workspace that is neither this repo
+      nor the package root (real `os.chdir`, restored in a `finally`). The gate
+      must find the WORKSPACE's uniquely-named invoice — not something under
+      the script's own directory — and fail on it. A regression that made the
+      script resolve paths against its own location (a `cd` in the script, say)
+      would make the run find nothing and exit 2 instead of 1.
 """
 
 import json
@@ -46,6 +56,20 @@ README = os.path.join(CI_DIR, "README.md")
 
 BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
                     "business-cases", "standard", "01.01a-INVOICE_ubl.xml")
+
+#: Every `sh <…>/ci/validate-invoices.sh <target>` invocation ci/README.md
+#: documents. The command exercised by the cwd-contract case is PARSED from the
+#: doc rather than hand-copied, so the command under test cannot drift away from
+#: the command a reader copies out of the README.
+#: The target stops at whitespace or the markdown punctuation the doc wraps
+#: inline commands in, so a backticked bullet and a fenced block agree.
+DOCUMENTED_GATE_CMD = re.compile(
+    r"sh\s+(\S*ci/validate-invoices\.sh)\s+([^\s`'\"),;]+)")
+
+#: Name given to the invoice planted in the throwaway workspace. Deliberately
+#: unlike anything in this repo, so seeing it in the gate's output proves the
+#: gate read the WORKSPACE's file.
+WORKSPACE_INVOICE = "ws-only-invoice.xml"
 
 
 def make_bad_invoice(dest):
@@ -143,12 +167,20 @@ class RecipeFilesReferenceRealEntrypoint(unittest.TestCase):
 class GateScriptEndToEnd(unittest.TestCase):
     """(d) The gate script drives the junit projection end-to-end."""
 
-    def _run_gate(self, target, results_dir, profile="xrechnung"):
+    def _run_gate(self, target, results_dir, profile="xrechnung", cwd=HERE):
+        """Run the gate script on `target` with JUnit kept in `results_dir`.
+
+        `cwd` is the directory the gate is INVOKED from — the only thing the
+        script resolves `target` against (see the cwd-contract case below).
+        Pass ``cwd=None`` to inherit this process's own cwd. PYTHONPATH carries
+        the package root so the validator stays importable from any cwd.
+        """
         env = dict(os.environ)
         env["EINVOICE_CMD"] = "%s -m einvoice.report" % sys.executable
         env["EINVOICE_PROFILE"] = profile
         env["EINVOICE_RESULTS_DIR"] = results_dir
-        return subprocess.run(["sh", GATE, target], env=env, cwd=HERE,
+        env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
+        return subprocess.run(["sh", GATE, target], env=env, cwd=cwd,
                               capture_output=True, text=True, timeout=120)
 
     def test_gate_fails_and_writes_junit(self):
@@ -180,6 +212,68 @@ class GateScriptEndToEnd(unittest.TestCase):
             proc = self._run_gate(corpus, results)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             self.assertIn("PASS", proc.stdout)
+
+    def test_documented_command_resolves_paths_against_invoker_cwd(self):
+        """(e) Execute ci/README.md's own gate invocation from a FOREIGN cwd.
+
+        The doc's contract is "paths resolve relative to the directory you
+        invoke the script from". This proves it by standing in a temp workspace
+        that is neither this repo nor the package root and running the README's
+        `sh <abs>/ci/validate-invoices.sh invoices/` verbatim: the gate must
+        find the workspace's own invoice and fail on it.
+        """
+        invocations = DOCUMENTED_GATE_CMD.findall(read(README))
+        self.assertTrue(
+            invocations,
+            "ci/README.md no longer documents `sh .../ci/validate-invoices.sh "
+            "<target>` — the command this case executes must come from the doc")
+        targets = {t for _, t in invocations}
+        self.assertEqual(
+            targets, {"invoices/"},
+            "every documented gate invocation must use the same target; got %r"
+            % (sorted(targets),))
+        target = invocations[0][1]                       # "invoices/"
+        subdir = target.rstrip("/")
+
+        # Control: the script's OWN directory (and this package root) contain no
+        # `invoices/`, so a gate that resolved paths against its own location
+        # would find nothing and exit 2 — the assertions below could not pass by
+        # accident.
+        self.assertFalse(os.path.exists(os.path.join(HERE, subdir)))
+        self.assertFalse(os.path.exists(os.path.join(CI_DIR, subdir)))
+
+        origin = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = os.path.realpath(tmp)
+            os.mkdir(os.path.join(workspace, subdir))
+            make_bad_invoice(os.path.join(workspace, subdir, WORKSPACE_INVOICE))
+            results = os.path.join(workspace, "junit")
+            try:
+                os.chdir(workspace)                      # the foreign cwd
+                # GATE is absolute here; the README's vendored spelling
+                # (`third_party/einvoice/ci/...`) is the same file reached from
+                # the repo root. `target` stays RELATIVE — that is the point.
+                proc = self._run_gate(target, results, cwd=None)
+            finally:
+                os.chdir(origin)                         # never poison the suite
+
+            self.assertEqual(proc.returncode, 1,
+                             proc.stdout + proc.stderr)
+            # It found the WORKSPACE's invoice, named by the caller's spelling.
+            self.assertIn("%s/%s" % (subdir, WORKSPACE_INVOICE), proc.stdout)
+            self.assertIn("BR-DE-15", proc.stdout)
+            self.assertIn("1/1", proc.stdout)
+            self.assertIn("NON-CONFORMANT", proc.stdout)
+
+            # JUnit for exactly that invoice, written into the workspace.
+            files = [f for f in os.listdir(results) if f.endswith(".junit.xml")]
+            self.assertEqual(len(files), 1, files)
+            self.assertIn(WORKSPACE_INVOICE, files[0])
+            junit = read(os.path.join(results, files[0]))
+            minidom.parseString(junit)
+            self.assertIn("BR-DE-15", junit)
+
+        self.assertEqual(os.getcwd(), origin)
 
 
 if __name__ == "__main__":

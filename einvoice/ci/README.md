@@ -67,6 +67,27 @@ they do **not** affect the exit code the gate relies on. Full schema:
 | `pre-commit-einvoice.sh` | local git pre-commit hook — block a bad invoice before it is committed |
 | `.pre-commit-config.yaml` | opt-in [pre-commit framework](https://pre-commit.com) wiring for that hook |
 
+## Where paths resolve
+
+Neither shell script ever changes directory (`cd` appears in neither), so both
+resolve every path you hand them — and every path they print — **relative to the
+directory you invoke the script from**, i.e. the invoker's current working
+directory. Never relative to where the script, or the vendored package, happens
+to live. That is the whole contract; the two documented invocations follow from
+it:
+
+- `sh third_party/einvoice/ci/validate-invoices.sh invoices/` assumes you are
+  standing at your **repository root** — that is the one directory where both
+  `third_party/einvoice/ci/…` and `invoices/` exist; run it from a subdirectory
+  and it looks for `<subdir>/invoices/`, prints `no such file or directory` and
+  exits `2`.
+- The **pre-commit hook** needs no such care: git runs hooks with the top level
+  of the working tree as the cwd, so the repo-root-relative paths it gets from
+  `git diff --cached --name-only` already resolve.
+
+(`EINVOICE_CMD` and `PYTHONPATH` below select *which* validator runs; they have
+no effect on where paths resolve from.)
+
 ## 60-second install (any CI)
 
 1. **Install the validator** in the CI job — from PyPI, zero runtime
@@ -83,7 +104,8 @@ they do **not** affect the exit code the gate relies on. Full schema:
    runners have no package-index access, or you want the validated tree pinned
    byte-for-byte in your own repo, copy this product directory (the parent of
    `ci/`) to `third_party/einvoice/` — or add it as a git subtree/submodule —
-   and install that copy:
+   and install that copy (again from your repository root — `pip` reads
+   `./third_party/einvoice` relative to your cwd like everything else here):
 
    ```sh
    python3 -m pip install ./third_party/einvoice
@@ -96,9 +118,11 @@ they do **not** affect the exit code the gate relies on. Full schema:
    The shipped `github-actions.yml` / `gitlab-ci.yml` templates use this
    vendored form by default, because it is the variant that works everywhere;
    each carries the PyPI one-liner as a commented alternative.
-3. **Run the gate** over your invoice files/fixtures. The gate script is copied
-   into your repo alongside the vendored directory (the path below assumes that
-   layout); it only shells out to `python3 -m einvoice.report`, so it works the
+3. **Run the gate** over your invoice files/fixtures, **from your repository
+   root** (see [Where paths resolve](#where-paths-resolve) — both the script
+   path and `invoices/` are read from your cwd). The gate script is copied into
+   your repo alongside the vendored directory, and the path below assumes that
+   layout; it only shells out to `python3 -m einvoice.report`, so it works the
    same whichever way the validator was installed:
 
    ```sh
@@ -114,8 +138,11 @@ they do **not** affect the exit code the gate relies on. Full schema:
 If all you need is a **red build when any invoice is non-conformant** — no
 JUnit artifacts, no `EINVOICE_CMD` plumbing — you can skip the install step
 entirely and drive the batch validator straight from a bare checkout of this
-directory. From inside `einvoice/` (the directory that holds the `einvoice/`
-package folder), run:
+directory. This is the one recipe on this page that is **not** run from your
+repository root: `cd` into `einvoice/` first (the directory that holds the
+`einvoice/` package folder — e.g. `cd third_party/einvoice`), because
+`python3 -m einvoice` has to find the package on `sys.path[0]`, which is the
+cwd. Your `<dir|glob>` argument is then read relative to *that* directory too:
 
 ```sh
 python3 -m einvoice validate-batch '<dir|glob>'
@@ -123,8 +150,13 @@ python3 -m einvoice validate-batch '<dir|glob>'
 
 - `<dir|glob>` is one directory (walked recursively for `*.xml`) **or** one
   shell-style glob (e.g. `'invoices/**/*.xml'`, quoted so the shell does not
-  pre-expand it). Add `--profile xrechnung` for the German CIUS layer
-  (`--profile en16931` is the default: core rules only).
+  pre-expand it), read relative to the directory you just `cd`-ed into. Concrete
+  consequence of that: if you vendored to `third_party/einvoice`, your repo's
+  own `invoices/` is `'../../invoices/**/*.xml'` from here — pass an absolute
+  path if that bookkeeping annoys you, or use the `validate-invoices.sh` gate
+  above, which is the recipe you drive from the repo root. Add
+  `--profile xrechnung` for the German CIUS layer (`--profile en16931` is the
+  default: core rules only).
 - **Zero runtime dependencies**: it imports the Python **standard library
   only**, so a checkout plus any `python3` >= 3.8 is the whole toolchain — no
   `pip install`, no `PYTHONPATH`, no virtualenv, no container, offline. This is
@@ -216,10 +248,11 @@ developer opts in, one of two ways:
   `files: \.xml$` and passes the staged filenames to the script as arguments.
 
 Test it without committing by passing files explicitly (this is exactly what
-the framework does under the hood):
+the framework does under the hood) — again from your repository root, so both
+the script path and the invoice path resolve:
 
 ```sh
-sh ci/pre-commit-einvoice.sh path/to/invoice.xml        # exit 1 if it is bad
+sh third_party/einvoice/ci/pre-commit-einvoice.sh path/to/invoice.xml   # exit 1 if bad
 ```
 
 It honors the same `EINVOICE_PROFILE` (default `xrechnung`) and `EINVOICE_CMD`

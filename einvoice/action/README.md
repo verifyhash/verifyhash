@@ -29,6 +29,26 @@ fails per `fail-on`. It re-implements no rules: every verdict comes from
 | `sarif-file` | `einvoice.sarif` | Path the merged SARIF document is written to. |
 | `profile` | `xrechnung` | `xrechnung` (EN 16931 core + the German `BR-DE-*` CIUS) or `en16931` (core rules only). |
 
+### Where a relative `path:` resolves
+
+`path:` may be written absolute or relative. A **relative** `path:` is resolved
+**relative to the directory the step runs in** — the runner process's working
+directory. On GitHub that directory is **`$GITHUB_WORKSPACE`**, the checkout
+root `actions/checkout` populates: this is a composite action whose only step
+declares no `working-directory:`, and a workflow's
+`defaults.run.working-directory` does not reach inside a composite action. So
+`path: invoices/` means `$GITHUB_WORKSPACE/invoices` — the `invoices/` directory
+at the root of *your* repository, never one inside this Action's own checkout.
+
+The identical rule — process working directory — is what applies everywhere
+else: under [`act`](https://github.com/nektos/act), under GitLab (where
+`$CI_PROJECT_DIR` is the job's working directory), and in a plain local
+`python3 action/run.py --path invoices/`. There is no second rule and no
+`$GITHUB_WORKSPACE` special case in the resolution itself; `$GITHUB_WORKSPACE`
+is just what that directory is called on GitHub. An **absolute** `path:` (e.g.
+`/mnt/shared/invoices`) is used exactly as written, and nothing depends on where
+the Action itself was checked out.
+
 ### Outputs
 
 | output | description |
@@ -98,11 +118,17 @@ the offending file.
 root of the checked-out repository, so the merged document reports each invoice
 as a workspace-relative, forward-slashed URI (`invoices/2024-08-acme.xml`)
 anchored to a `%SRCROOT%` `uriBaseId` that `runs[0].originalUriBaseIds` maps to
-the absolute workspace (`file:///home/runner/work/repo/repo/`). The workspace is
-`$GITHUB_WORKSPACE` when set, otherwise the process working directory — so the
-same output comes out under GitHub, [`act`](https://github.com/nektos/act) and a
-plain local run, and `path:` may be written absolute or relative without
-changing what gets annotated. Honest limit: an invoice that lies **outside** the
+the absolute workspace (`file:///home/runner/work/repo/repo/`). The workspace
+those URIs are made relative to is `$GITHUB_WORKSPACE` when set, otherwise the
+process working directory — on every runner listed above, the **same** directory
+a relative `path:` resolves against ([the input contract
+above](#where-a-relative-path-resolves)). So the same output comes out under
+GitHub, [`act`](https://github.com/nektos/act) and a plain local run, and
+`path:` may be written absolute or relative without changing what gets
+annotated. (The one way to pull the two apart is to set `$GITHUB_WORKSPACE` by
+hand to a directory the step does *not* run in: `path:` would still resolve
+against the step's working directory while URIs were made relative to your
+value. Don't.) Honest limit: an invoice that lies **outside** the
 workspace (say `path: /mnt/shared/invoices`) keeps its absolute URI and no base
 id, because a `../`-escaping relative path is not resolvable by code scanning at
 all — those findings are in the SARIF and in the job log, but GitHub will not
@@ -213,7 +239,10 @@ land upstream.
 The same walk-up is what makes the Action work when you *vendor* the product
 into your own repo (e.g. at `third_party/einvoice/`): point `uses:` at the local
 directory — `uses: ./third_party/einvoice/action` — and `run.py` finds the
-vendored package next to itself, no `pip install` and no network fetch.
+vendored package next to itself, no `pip install` and no network fetch. GitHub
+resolves a `./`-prefixed `uses:` against the checkout root, the same anchor a
+relative `path:` uses, so both halves of that workflow are written from the
+repository root and `path: invoices/` keeps meaning what it did.
 
 To adopt newer rules, bump the pin and re-run — a diff in findings is then an
 explicit, reviewable change rather than a silent drift.

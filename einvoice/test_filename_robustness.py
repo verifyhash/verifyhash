@@ -48,10 +48,15 @@ guard — zero production-code changes):
                                 encoded); RE-MEASURED 2026-07-26   == exact
                                 for T-VHLOC.1 — it used to embed   path
                                 no path at all
-  einvoice.report --format      single-file mode embeds NO path    byte-equal
-  junit (single file)           (testcase name = rule id,          to clean-
-                                classname = profile)               named run +
-                                                                   parseable
+  einvoice.report --format      an ATTRIBUTED finding's            ET.fromstring
+  junit (single file)           <failure> body ends " at           of ENTIRE
+                                <path>:<line>"; RE-MEASURED        stdout; the
+                                2026-07-26 for T-VHLOC.3 — it      PARSED body's
+                                used to embed no path at all,      path == exact
+                                so the old byte-equality pin is    path, and an
+                                gone, exactly as it went on the    UNattributed
+                                sarif row one task earlier         body stays
+                                                                   byte-equal
   einvoice.report --format      BATCH (directory) mode puts the    ET.fromstring
   junit (directory batch)       full path in the <testsuite        of ENTIRE
                                 name="..."> attribute via          stdout; the
@@ -77,6 +82,7 @@ coverage) — it does not duplicate or modify it.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -162,6 +168,23 @@ def normalize(stdout_bytes, path):
     stable token, so verdict/finding text can be compared across names."""
     text = stdout_bytes.decode("utf-8")          # raises on invalid UTF-8
     return text.replace(path, "<PATH>")
+
+
+#: The ``file:line`` position a junit <failure> body carries for an ATTRIBUTED
+#: finding (``einvoice.report._position_suffix``), anchored to the end of the
+#: body. A path cannot contain ':' on the platforms this runs on, so the greedy
+#: group recovers the whole awkward name.
+JUNIT_POSITION_RE = re.compile(r" at (.+):(\d+)$")
+
+
+def _junit_failure_bodies(root):
+    """``[(rule id, <failure> body text)]`` in document order."""
+    out = []
+    for case in root.iter("testcase"):
+        failure = case.find("failure")
+        if failure is not None:
+            out.append((case.get("name"), failure.text or ""))
+    return out
 
 
 class FixturesPresent(unittest.TestCase):
@@ -344,17 +367,57 @@ class LegBMachineFormats(unittest.TestCase):
                                  % (kind, name))
 
     def test_junit_single_file_entire_stdout_parses(self):
-        # Measured: single-file junit embeds no path (testcase name = rule
-        # id, classname = profile) — pin parseability of the ENTIRE stdout
-        # and byte identity with the clean-named run.
+        # RE-MEASURED 2026-07-26 (T-VHLOC.3): the single-file junit <failure>
+        # body now ends " at <path>:<line>" for a finding the engine could
+        # attribute, so it embeds the input path and the byte-identity pin
+        # this leg used to carry cannot hold — the same retirement T-VHLOC.1
+        # made on the sarif leg one task earlier, for the same reason.
+        # Replaced by the STRONGER round-trip pin the json/gitlab/sarif legs
+        # already use, plus a residual byte pin that byte identity never gave:
+        #   * the ENTIRE stdout still parses and the testcase/rule order is
+        #     identical to the clean-named run;
+        #   * every POSITIONED body's path recovers the awkward name byte for
+        #     byte (umlaut, ß, space, apostrophe, '&' all survive escape());
+        #   * every UNPOSITIONED body is still byte-identical to the clean run,
+        #     so a path can never leak into a finding the engine did not
+        #     attribute;
+        #   * with the path normalized away, the whole body matches the clean
+        #     run — i.e. only the path varies, never the line or the XPath.
         for kind, name, path in self._each():
             proc = run(report_cmd(path, "junit"))
+            label = "junit %s %r" % (kind, name)
             root = ET.fromstring(proc.stdout.decode("utf-8"))
             self.assertEqual(root.tag, "testsuites")
-            base_proc, _ = self.base[(kind, "junit")]
-            self.assertEqual(proc.stdout, base_proc.stdout,
-                             "junit %s %r: output not path-independent"
-                             % (kind, name))
+            base_proc, base_path = self.base[(kind, "junit")]
+            base_root = ET.fromstring(base_proc.stdout.decode("utf-8"))
+            bodies = _junit_failure_bodies(root)
+            base_bodies = _junit_failure_bodies(base_root)
+            self.assertEqual([r for r, _ in bodies],
+                             [r for r, _ in base_bodies],
+                             "%s: failing rule set/order drifted" % label)
+            positioned = 0
+            for (rule, body), (_, base_body) in zip(bodies, base_bodies):
+                m = JUNIT_POSITION_RE.search(body)
+                if m is None:
+                    self.assertEqual(body, base_body,
+                                     "%s %s: unattributed body drifted"
+                                     % (label, rule))
+                    continue
+                positioned += 1
+                self.assertEqual(m.group(1), path,
+                                 "%s %s: path did not round-trip through the "
+                                 "<failure> body" % (label, rule))
+                self.assertEqual(body.replace(path, "<PATH>"),
+                                 base_body.replace(base_path, "<PATH>"),
+                                 "%s %s: body differs beyond the path"
+                                 % (label, rule))
+            if kind == "invalid":
+                # Non-vacuity: the invalid fixture is the BR-CL-01 credit note,
+                # an attributable present-but-invalid BT-3 — if nothing here is
+                # positioned, the round-trip assertions above never ran.
+                self.assertTrue(positioned,
+                                "%s: no <failure> body carried a position — "
+                                "the round-trip pin would be vacuous" % label)
 
     def test_junit_batch_attribute_escaping_roundtrip(self):
         # The one junit surface that DOES embed the filename: batch

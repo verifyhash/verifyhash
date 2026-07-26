@@ -1,7 +1,7 @@
 PASS  a-valid.xml  conformant
 FAIL  b-invalid.xml  1 fatal, 0 warning
   1 finding(s) total: 1 fatal, 0 non-fatal (--format json carries every field of each)
-    [fatal] BR-CL-01: The document type code (BT-3) MUST be coded according to UNTDID 1001; '999' is not a listed code.
+    [fatal] BR-CL-01: The document type code (BT-3) MUST be coded according to UNTDID 1001; '999' is not a listed code. at b-invalid.xml:28
 FAIL  c-unsupported.xml  1 fatal, 0 warning
   1 finding(s) total: 1 fatal, 0 non-fatal (--format json carries every field of each)
     [fatal] BR-05: An Invoice shall have an Invoice currency code (BT-5).

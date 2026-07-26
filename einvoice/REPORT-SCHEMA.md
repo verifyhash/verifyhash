@@ -177,6 +177,16 @@ from the remediation catalog, whereas `source_line` is the concrete line number
 in *this* document. The same optional key also appears in the `einvoice
 validate --json` per-violation records.
 
+**Where it is rendered.** Every surface that can carry a position does, and none
+of them invents one. Machine surfaces: `json` (`source_line`), `sarif`
+(`physicalLocation.region.startLine`), `github` (`line=`), `azure`
+(`linenumber=`), `gitlab` (`location.lines.begin`). Human surfaces: the text
+report and the `einvoice validate` default output append ` at <path>:<line>` to
+the finding, and the `junit` `<failure>` body ends with the same fragment — the
+`file:line` shape a terminal and an editor linkify. A finding **without** a
+`source_line` renders exactly as it did before the position existed: no
+placeholder, no `:0`, no `:1`.
+
 ## Exit codes
 
 Mirrors `einvoice.cli` so a build fails exactly when the invoice does:

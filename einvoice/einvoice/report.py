@@ -646,6 +646,47 @@ _BATCH_RULE_LIST_CAP = 11
 _BATCH_SEVERITY_RANK = {"fatal": 0, "warning": 1, "information": 2}
 
 
+def _position_suffix(source, source_line):
+    """The ONE ``file:line`` fragment every HUMAN surface appends to a finding.
+
+    MEASURED defect this closes (T-VHLOC.3, 2026-07-26): the engine has stamped
+    ``source_line`` on attributable findings since T-VHDIAG.1, and ``json``,
+    ``sarif`` (``region.startLine``), ``github`` (``line=``), ``azure``
+    (``linenumber=``) and ``gitlab`` (``location.lines.begin``) all render it —
+    but the two surfaces a PERSON reads, the text report and the JUnit
+    ``<failure>`` body, dropped it. They handed over an XPath, which is a
+    structural address: it tells an ERP developer WHICH element is wrong and
+    gives their editor nothing to jump to. ``file:line`` is the shape every
+    terminal and editor already linkifies (it is the gcc/pytest convention), so
+    it is the one used here.
+
+    HONESTY RULE (the same one ``test_report_location.py`` already proves for
+    the machine surfaces, not a second convention): a position is emitted ONLY
+    when the record really carries a usable 1-based line. No placeholder, no
+    ``:0``, no ``:1`` fallback — a finding without a line reads EXACTLY as it
+    did before, because an invented line number is worse than none (it sends
+    the reader to the wrong element and quietly discredits the tool).
+
+    ``source_line`` is validated here rather than trusted: the same bool/int
+    ``>= 1`` check :func:`build_sarif` applies, so a hand-edited or
+    third-party report dict carrying ``true`` or ``0`` degrades to "no
+    position" instead of printing nonsense.
+
+    :param source: the document path the finding belongs to (``report['source']``
+        / the CLI's display path). Falsy -> the bare ``line N`` form, because
+        ``:8`` on its own is not a jumpable address and inventing a filename
+        would be a fabrication.
+    :param source_line: the record's optional ``source_line``.
+    :returns: ``" at <source>:<line>"``, ``" at line <line>"``, or ``""``.
+    """
+    if (not isinstance(source_line, int) or isinstance(source_line, bool)
+            or source_line < 1):
+        return ""
+    if not source:
+        return " at line %d" % source_line
+    return " at %s:%d" % (source, source_line)
+
+
 def _rule_sort_key(rule_id):
     """Natural sort key for a rule id, so BR-DE-2 sorts BEFORE BR-DE-15.
 
@@ -703,10 +744,14 @@ def _batch_file_finding_lines(report):
              "(--format json carries every field of each)"
              % (total, fatal, total - fatal)]
     ordered = sorted(violations, key=_batch_finding_sort_key)
+    src = report.get("source", "")
     for v in ordered[:_BATCH_RULE_LIST_CAP]:
-        lines.append("    [%s] %s: %s"
+        # ``file:line`` when this finding is attributable, nothing at all
+        # otherwise (T-VHLOC.3) — one convention, see :func:`_position_suffix`.
+        lines.append("    [%s] %s: %s%s"
                      % (v.get("severity", ""), v.get("rule", ""),
-                        v.get("message", "")))
+                        v.get("message", ""),
+                        _position_suffix(src, v.get("source_line"))))
     if total > _BATCH_RULE_LIST_CAP:
         lines.append("    " + _batch_truncation_sentence(
             total - _BATCH_RULE_LIST_CAP, total))
@@ -878,9 +923,13 @@ def build_text(report):
     lines = [head]
     for v in report.get("violations", []):
         field = v.get("field")
-        lines.append("  [%s] %s: %s%s" % (
+        # The XPath says WHICH element; the position says WHERE it is. A
+        # finding the engine could not attribute keeps its historic bytes
+        # exactly (T-VHLOC.3) — see :func:`_position_suffix`.
+        lines.append("  [%s] %s: %s%s%s" % (
             v.get("severity", ""), v.get("rule", ""), v.get("message", ""),
-            " (%s)" % field if field else ""))
+            " (%s)" % field if field else "",
+            _position_suffix(src, v.get("source_line"))))
     return "\n".join(lines) + "\n"
 
 
@@ -1144,16 +1193,23 @@ def _junit_suite_block(report, suite_name=None):
         tests = len(violations)
         failures = report.get("fatal_count", 0)
         errors = 0
+        src = report.get("source", "")
         for v in violations:
             rule = v.get("rule") or ""
             severity = v.get("severity") or "fatal"
             message = v.get("message") or ""
             field = v.get("field") or ""
+            # The <failure> body is what a CI test pane shows a human when the
+            # build goes red, so it carries the ``file:line`` position whenever
+            # the finding is attributable, and is byte-identical to before when
+            # it is not (T-VHLOC.3) — see :func:`_position_suffix`.
+            position = _position_suffix(src, v.get("source_line"))
             lines.append(
                 "    <testcase name=%s classname=%s>"
                 % (quoteattr(rule), classname))
             if severity == "fatal":
                 body = "%s: %s" % (severity, field) if field else severity
+                body += position
                 lines.append(
                     "      <failure message=%s>%s</failure>"
                     % (quoteattr(message), escape(body)))
@@ -1161,6 +1217,12 @@ def _junit_suite_block(report, suite_name=None):
                 note = "%s: %s" % (severity, message)
                 if field:
                     note = "%s (%s)" % (note, field)
+                # Same convention on the advisory <system-out> note: a reader
+                # triaging a warning needs the position just as much. No rule
+                # ships a non-fatal attributable finding TODAY (the three
+                # line-bearing code-list rules are all fatal), so this arm is
+                # forward-consistency, not a rendered change.
+                note += position
                 lines.append("      <system-out>%s</system-out>" % escape(note))
             lines.append("    </testcase>")
 

@@ -248,6 +248,7 @@ from .report import (
     batch_exit_code, build_batch_text,
     REPORT_FORMATS, BATCH_FORMATS,
     SARIF_RULE_HELP_BASE_URL,
+    _position_suffix,
 )
 from .remediation import resolve_message, SUPPORTED_LANGS, entry_for
 from .config import load_config_with_source, ConfigError
@@ -1734,11 +1735,18 @@ def _main(argv=None):
                 for v in result.violations[:_NON_FATAL_LIST_CAP]:
                     # Same message resolution as the FAIL path, so --lang de
                     # keeps surfacing the official German text where the rule
-                    # carries one.
+                    # carries one — and the same `file:line` convention
+                    # (T-VHLOC.3). All three line-bearing rules (BR-CL-01 /
+                    # -04 / -05) are FATAL today, so no advisory finding can
+                    # actually reach this branch with a line; the call is here
+                    # so the convention is uniform if one ever does, and it
+                    # renders nothing until then.
                     sys.stdout.write(
-                        "    [%s] %s: %s\n"
+                        "    [%s] %s: %s%s\n"
                         % (_severity(v), v.rule_id,
-                           resolve_message(v.rule_id, v.message, lang)))
+                           resolve_message(v.rule_id, v.message, lang),
+                           _position_suffix(display_path,
+                                            getattr(v, "source_line", None))))
                 if non_fatal > _NON_FATAL_LIST_CAP:
                     # Honest about the truncation AND about the exact flag that
                     # shows everything — never a vague "see the JSON output".
@@ -1754,9 +1762,22 @@ def _main(argv=None):
                 # message. Only the DISPLAY string changes — rule_id/element and
                 # the exit code are untouched.
                 message = resolve_message(v.rule_id, v.message, lang)
+                # MEASURED defect this fixes (T-VHLOC.3, 2026-07-26): the
+                # headline named the offending element as an XPath and stopped
+                # there, while the engine had already stamped the concrete
+                # 1-based `source_line` for attributable findings (T-VHDIAG.1)
+                # and json/sarif/github/azure/gitlab were all rendering it. An
+                # XPath is a structural address; `file:line` is the one an
+                # editor and a terminal linkify, so the position is APPENDED to
+                # the existing "offending element" line — no new line, no new
+                # section. A finding the engine could not attribute prints the
+                # historic bytes exactly (`_position_suffix` returns ""); a
+                # guessed line 0/1 would be worse than none.
                 sys.stdout.write(
-                    "FAIL: %s\n  %s: %s\n  offending element: %s\n"
-                    % (display_path, v.rule_id, message, v.element))
+                    "FAIL: %s\n  %s: %s\n  offending element: %s%s\n"
+                    % (display_path, v.rule_id, message, v.element,
+                       _position_suffix(display_path,
+                                        getattr(v, "source_line", None))))
                 # MEASURED defect this fixes (T-VHUX2, 2026-07-25): the failure
                 # output handed over a rule id and stopped, while this very
                 # wheel ships `--explain` (the EN+DE remediation catalog) and
@@ -1828,11 +1849,17 @@ def _main(argv=None):
                     sys.stdout.write("  also violated:\n")
                 for x in others[:_NON_FATAL_LIST_CAP]:
                     # Same message resolution as the headline, so --lang de
-                    # surfaces the official German text on these lines too.
+                    # surfaces the official German text on these lines too —
+                    # and the same `file:line` position convention (T-VHLOC.3),
+                    # so a reader does not have to re-run the tool per rule to
+                    # learn where the second finding lives. Findings without a
+                    # stamped line keep their exact previous bytes.
                     sys.stdout.write(
-                        "    [%s] %s: %s\n"
+                        "    [%s] %s: %s%s\n"
                         % (_severity(x), x.rule_id,
-                           resolve_message(x.rule_id, x.message, lang)))
+                           resolve_message(x.rule_id, x.message, lang),
+                           _position_suffix(display_path,
+                                            getattr(x, "source_line", None))))
                 if len(others) > _NON_FATAL_LIST_CAP:
                     # Identical honesty to the PASS path: say how many were
                     # omitted and name the flag that shows all of them. "all %d"
